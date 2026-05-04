@@ -454,11 +454,20 @@ describe("awakeables-and-runs constraints", () => {
     })
   })
 
-  it("awakeables-and-runs.NO_WORKFLOW_SDK_PRIMARY_MODEL.3 — this feature owns completion/run state machines, not ready-work or claim ownership", () => {
-    const m = substrate as unknown as Record<string, unknown>
-    expect(m.deriveReadyWork).toBeUndefined()
-    expect(m.ReadyWorkProjection).toBeUndefined()
-    expect(m.claimReadyWork).toBeUndefined()
-    expect(m.deriveClaimWinner).toBeUndefined()
+  it("awakeables-and-runs.NO_WORKFLOW_SDK_PRIMARY_MODEL.3 — this feature owns completion/run state machines, not ready-work or claim ownership", async () => {
+    // Scope: the state-machine module itself must not expose ready-work or
+    // claim ownership symbols. Slice 4 legitimately adds deriveReadyWork to
+    // the broader package surface from a different module (ready-work.ts).
+    const sm = await import("../state-machine.js")
+    const smNames = Object.keys(sm)
+    for (const symbol of [
+      "deriveReadyWork",
+      "ReadyWorkProjection",
+      "ReadyWorkItem",
+      "claimReadyWork",
+      "deriveClaimWinner",
+    ]) {
+      expect(smNames).not.toContain(symbol)
+    }
   })
 })

@@ -18,6 +18,10 @@ components:
       4: A cancelled completion does not derive normal ready work in the minimal profile.
       5: A completed or failed run does not derive ready work.
       6: Ready-work derivation is deterministic over rebuilt projection state.
+      7: Ready-work items expose `runId`, `completionId`, and the resolved completion `result`.
+      8: Ready-work projection items are keyed by `runId`.
+      9: Ready-work derivation is exposed as a pure function over rebuilt projection state.
+      10: Ready-work projection carries the source projection `foldVersion`.
 
 constraints:
   FIRST_PHASE_LIMITS:

@@ -352,7 +352,13 @@ describe("Slice 3 boundaries (structural — semantic-producer + effect-native-a
     ])
   })
 
-  it("semantic-producer.PRODUCER_EFFECT.6 — Slice 3 does not expose sleep/waitFor/scheduleWork/awakeable-key/ready-work/operator/claim", () => {
+  it("semantic-producer.PRODUCER_EFFECT.6 — the Slice 3 producer module does not expose sleep/waitFor/scheduleWork/awakeable-key/ready-work/operator/claim", async () => {
+    // Scope: the producer module itself. Other slices may legitimately add
+    // ready-work derivation (Slice 4), wait APIs (Slice 7), operator/claim
+    // surfaces (Slice 5/6) to the broader package — the constraint is about
+    // what ships INSIDE the producer feature.
+    const producerMod = await import("../producer.js")
+    const producerNames = Object.keys(producerMod)
     for (const symbol of [
       "sleep",
       "waitFor",
@@ -368,7 +374,7 @@ describe("Slice 3 boundaries (structural — semantic-producer + effect-native-a
       "ClaimProducer",
       "claim",
     ]) {
-      expect(exports[symbol]).toBeUndefined()
+      expect(producerNames).not.toContain(symbol)
     }
   })
 
