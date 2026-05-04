@@ -1,0 +1,32 @@
+feature:
+  name: implementation-sequencing
+  product: durable-agent-substrate
+  description: Define the execution order for building the durable substrate without duplicating feature ownership or testing Durable Streams itself.
+
+components:
+  PHASES:
+    requirements:
+      1: The first implementation slice establishes durable row, projection, rebuild, and no-gap contracts before semantic producers or operators are built.
+      2: The second implementation slice establishes `durable.completion` and `durable.run` state-machine behavior before ready-work derivation is built.
+      3: The third implementation slice establishes Effect service shape and semantic producer operations before operator behavior is built.
+      4: The fourth implementation slice derives `ReadyWorkProjection` from rebuilt run and completion projections before handler invocation is built.
+      5: The fifth implementation slice invokes handlers only after the operator appends a claim attempt and observes that claim as the durable winner.
+      6: The sixth implementation slice proves competing claim attempts and once-only terminalization for the same work.
+      7: The seventh implementation slice adds `sleep`, `waitFor`, and externally resolved awakeable APIs by lowering them to durable completions.
+      8: The eighth implementation slice proves the integrated path from semantic producer through operator execution, durable suspension, external resolution, and rebuild.
+
+  SPEC_OWNERSHIP:
+    requirements:
+      1: "`durable-records-and-projections` owns durable row/projection vocabulary, rebuild rules, no-gap projection boundaries, and the Durable Streams / Durable Streams State boundary."
+      2: "`awakeables-and-runs` owns `durable.completion` and `durable.run` state machines, externally resolved awakeable semantics, no-live-callback truth, and no-stuck blocked runs."
+      3: "`ready-work-projection` owns `ReadyWorkProjection` derivation, claim-before-invoke, and operator terminalization after winning durable ownership."
+      4: "`effect-native-api` owns Effect Schema, Effect service/layer shape, scoped operator program API, and no framework registry or fat context."
+      5: "`semantic-producer` owns semantic producer operations for declaring durable work and resolving awakeables without exposing raw append or envelope APIs."
+
+constraints:
+  NO_DUPLICATE_PROOF:
+    requirements:
+      1: Unit tests avoid proving the same substrate behavior through multiple feature files.
+      2: Integration tests may reference multiple features only when proving a boundary between those features.
+      3: Tests may use real Durable Streams and Durable Streams State dependencies, but assertions target substrate-owned records, projections, state machines, operators, or public APIs.
+      4: Tests do not assert arbitrary Durable Streams append/read/tail behavior without a substrate-owned row, projection, state-machine, operator, or API behavior as the target.

@@ -1304,6 +1304,7 @@ awakeables-and-runs
 ready-work-projection
 effect-native-api
 semantic-producer
+implementation-sequencing
 ```
 
 Spec ownership is intentionally orthogonal:
@@ -1316,7 +1317,7 @@ Spec ownership is intentionally orthogonal:
 | `effect-native-api` | Effect Schema, Effect service/layer shape, scoped operator program API, and no framework registry/fat context. | Durable state-machine behavior, projection rules, or package naming. |
 | `semantic-producer` | Semantic producer operations for declaring durable work and resolving awakeables without exposing raw append/envelope APIs. | Row schema definitions, projection folds, operator behavior, or higher-level Fireline/Firepixel client design. |
 
-Feature sequencing is explicit in the Acai `feature.prerequisites` fields:
+Feature sequencing is explicit in `implementation-sequencing.feature.yaml`:
 
 ```text
 durable-records-and-projections

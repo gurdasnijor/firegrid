@@ -2,8 +2,6 @@ feature:
   name: awakeables-and-runs
   product: durable-agent-substrate
   description: Define generic durable promise and run rows as the first agent substrate primitives.
-  prerequisites:
-    - durable-records-and-projections
 
 components:
   AWAKEABLE:

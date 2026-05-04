@@ -2,10 +2,6 @@ feature:
   name: semantic-producer
   product: durable-agent-substrate
   description: Define semantic substrate producer operations, not a runtime launcher, adapter handle, higher-level application client, or raw stream append API.
-  prerequisites:
-    - durable-records-and-projections
-    - awakeables-and-runs
-    - effect-native-api
 
 components:
   PRODUCER_ROLE:
