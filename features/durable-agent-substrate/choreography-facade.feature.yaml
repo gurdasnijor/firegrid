@@ -58,7 +58,7 @@ components:
     requirements:
       1: ChoreographyTimeout is the only v1 recoverable tagged choreography error.
       2: ChoreographyTimeout carries a branded CompletionId and durable deadlineAtMs.
-      3: Timeout is represented as ChoreographyTimeout when a host runtime resumes a previously suspended wait from a timeout or cancelled completion.
+      3: ChoreographyTimeout is reserved for host-runtime resume from a timed-out or cancelled suspended wait; the v1 facade does not implement general continuation replay.
       4: Missing context, missing matcher, stream write failure, and internal run-blocking mistakes do not expand the public choreography error taxonomy in v1.
 
   INSTRUMENTATION:

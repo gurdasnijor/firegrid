@@ -694,9 +694,9 @@ class ChoreographyTimeout extends Data.TaggedError("ChoreographyTimeout")<{
 }> {}
 ```
 
-Timeout is represented with this error when a host runtime resumes a previously
-suspended wait from a timeout or cancelled completion. The first facade does not
-need to implement general continuation replay to define that presentation. Most
+Timeout is reserved for the host-runtime presentation when a previously
+suspended wait resumes from a timeout or cancelled completion. The first facade
+does not implement general continuation replay just to raise this error. Most
 other failures are substrate/runtime defects or ordinary handler failures and
 should be handled at the work-runner boundary instead of expanding the
 choreography API error taxonomy.
