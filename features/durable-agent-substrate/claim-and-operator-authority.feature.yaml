@@ -11,6 +11,9 @@ components:
       3: Claim attempt status is `attempted` in the first implementation profile.
       4: Claim attempts are preserved as evidence and are not collapsed into only the winning owner.
       5: Claim attempts are ordered by durable stream order, not wall-clock timestamp.
+      6: Slice 5 maps a ready-work item to claim `workId = runId`.
+      7: Slice 5 claim ids are unique per attempt and are not idempotency keys.
+      8: Slice 5 captures `observedCursor` from durable stream metadata before appending the claim attempt.
 
   CLAIM_AUTHORITY:
     requirements:
@@ -19,6 +22,7 @@ components:
       3: Later different-owner attempts are losing conflicts and do not authorize handler invocation.
       4: Claim authority is derived from origin-ordered durable evidence, not from a stale cached projection.
       5: A materialized claim projection may expose the winner, but the authority rule is the durable first-valid-claim fold.
+      6: Slice 5 exposes claim winner derivation as a pure list-in fold scoped to one `workId`.
 
   OPERATOR_INVOCATION:
     requirements:
@@ -30,6 +34,9 @@ components:
       6: Handler success becomes durable run completion and expected handler failure becomes durable run failure.
       7: The runner owns once-only durable terminalization from the handler Effect exit.
       8: Handlers return values or fail in the Effect error channel and do not call explicit durable complete or fail APIs.
+      9: Slice 5 operator processing is a single-shot function for one ready-work item, not a live watcher loop.
+      10: Slice 5 handlers receive the `ReadyWorkItem` as input.
+      11: Slice 5 run terminalization is appended internally by the operator using state-machine events after ownership is won.
 
 constraints:
   PHASE_BOUNDARY:

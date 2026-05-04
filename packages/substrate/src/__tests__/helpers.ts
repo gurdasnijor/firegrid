@@ -70,5 +70,8 @@ export async function publishToStream(
   for (const event of events) {
     await stream.append(JSON.stringify(event))
   }
-  await stream.close()
+  // Intentionally do not call stream.close() — close() is destructive and
+  // forbids further appends, which breaks operator/producer tests that
+  // append after seeding. Read-only consumers (rebuildProjection) work fine
+  // against open streams.
 }
