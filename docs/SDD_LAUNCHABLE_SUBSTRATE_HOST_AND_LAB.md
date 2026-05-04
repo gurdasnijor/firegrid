@@ -314,6 +314,11 @@ In development, a convenience command may start an embedded
 pnpm substrate dev
 ```
 
+For the first launchable slice, embedded Durable Streams dev-server ownership
+lives in `packages/host`. A separate CLI/dev package can be introduced later if
+process-launch concerns outgrow the host package, but splitting it now would add
+package surface without changing semantics.
+
 Host responsibilities:
 
 - start or connect to a Durable Streams server;
@@ -383,6 +388,24 @@ interface SubstrateHostProfile {
 Profile definitions can carry Effect layers and services in process. Serialized
 config only selects known local profile modules in dev; it does not create a
 mutable runtime registry.
+
+Profile discovery in development is explicit:
+
+```ts
+const profiles = {
+  prototype: PrototypeProfileLive,
+  fakePermission: FakePermissionProfileLive,
+} as const
+
+SubstrateHost.embeddedDev({
+  streamName: "substrate-prototype",
+  profile: profiles.prototype,
+})
+```
+
+Config may select a key from a caller-supplied local map, but the substrate does
+not dynamically import arbitrary modules, maintain a global registry, or fetch
+runtime profiles from durable state.
 
 ### Host Composition API
 
@@ -501,8 +524,10 @@ Fireline or Firepixel:
    - terminal domain row is emitted;
    - lab proves claim-before-side-effect ordering.
 
-Each scenario should be runnable from the command line and from the lab UI, with
-both paths using the same client package.
+Scenario harnesses live under `packages/lab` for the first slice. They are
+development examples, not production client/testing API. Each scenario should be
+runnable from the command line and from the lab UI, with both paths using the
+same client package and scenario definitions.
 
 ## Read-Only Host Diagnostics
 
@@ -510,14 +535,20 @@ The host may expose read-only endpoints or IPC for local status:
 
 - health;
 - version;
+- process id;
+- boot mode;
+- stream URL or stream name;
 - active profiles;
 - subscriber loop status;
 - last scan times;
+- operator loop status;
+- last non-secret error summary;
 - process metrics;
-- stream base URL.
+- uptime.
 
 These endpoints are diagnostic only. They do not mutate durable state and do
-not start scenarios.
+not start scenarios. Secret values and authorization headers are never returned
+through diagnostics.
 
 ## Relationship To Event Planes
 
@@ -593,15 +624,21 @@ The first slice should prove:
 This proves the process shape without adding Fireline/Firepixel runtime
 semantics.
 
-## Open Questions
+## Resolved Design Questions
 
-1. Should `packages/host` include the embedded Durable Streams dev server, or
-   should that live in a separate CLI/dev package?
-2. Should the first lab be a Vite React app like the Durable Streams test UI, or
-   a terminal/TUI inspector to reduce scope?
-3. Should scenario harnesses live under `packages/lab`, `examples/`, or
-   `packages/client/testing`?
-4. What is the minimum read-only host diagnostic surface needed for local
-   confidence?
-5. How should profile modules be discovered in dev without introducing a global
-   runtime registry?
+1. Embedded Durable Streams dev-server ownership starts in `packages/host`.
+   A separate CLI/dev package is deferred until process-launch concerns require
+   it.
+2. The first lab is a small Vite React app, following Durable Streams test UI
+   inspection patterns while using substrate client APIs for scenario actions.
+   A terminal inspector can be added later if useful, but the first goal is a
+   visual workbench for exploring state transitions.
+3. Scenario harnesses live under `packages/lab` for the first slice. They can be
+   invoked by the lab UI and by a command-line entrypoint, but they are not
+   exported from the production client root.
+4. Minimum host diagnostics are read-only health, version, process id, boot
+   mode, stream identity, active profile names, subscriber/operator loop status,
+   last scan times, uptime, process metrics, and non-secret error summaries.
+5. Profile discovery uses explicit local maps supplied by the host application
+   or lab. Config may select a known key from that map; there is no global
+   registry, dynamic module import, or durable profile catalog in the substrate.
