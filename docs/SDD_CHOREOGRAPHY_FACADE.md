@@ -48,12 +48,17 @@ This proposal is informed by these existing documents and code paths:
   defines durable promises/awaitables, completion keys, snapshot-first
   reconstruction, and required-action permission waits.
 - `/Users/gnijor/gurdasnijor/firepixel/rfc/operating/observability.md`
-  requires choreography invocations to emit durable trace/session records
-  readable through projections.
+  argues that choreography must be observable and that durable state remains
+  the reconstruction source. In this substrate SDD, that is treated as an
+  architectural requirement for instrumentation and projection access, not a
+  requirement to put trace rows into the core choreography data path.
 - `/Users/gnijor/gurdasnijor/fireline/rfc/concepts/choreography-and-combinators.fireline.md`
   documents the current Fireline tool names, input/output shapes, suspension
   sentinel pattern, and `fireline.agent.suspended` / `fireline.agent.resumed`
   behavior. This is useful prior art, not a substrate naming requirement.
+- `/Users/gnijor/gurdasnijor/fireline/vault/sdds/shipped/observability-integration.md`
+  treats OpenTelemetry spans and W3C trace context propagation as the lineage
+  mechanism, while agent-layer rows remain the source of durable state.
 
 ## Layer Boundary
 
@@ -92,7 +97,7 @@ interface CurrentWorkContext {
   readonly ownerId: string
   readonly correlationId?: string
   readonly causationId?: string
-  readonly trace?: Readonly<Record<string, string>>
+  readonly telemetry?: Readonly<Record<string, string>>
 }
 ```
 
@@ -114,7 +119,7 @@ that lowers to existing substrate facts:
 
 ```text
 operation invoked
-  -> durable trace/domain observation row is emitted when applicable
+  -> instrumentation boundary records span/log metadata when configured
   -> durable.completion pending row is created
   -> current durable.run records blockedOnCompletionId
   -> subscriber / external actor / projection match resolves the completion
@@ -231,7 +236,10 @@ these invariants:
 
 - tool descriptors are transport-agnostic;
 - tool call inputs are decoded with Effect Schema;
-- invoking a tool appends durable trace/intent before returning suspension;
+- invoking a tool creates the durable completion and blocked run before
+  returning suspension;
+- tool calls are ordinary model-visible tool calls, so the adapter/runtime can
+  observe them without requiring substrate trace rows;
 - the tool result shape maps back to the same result type as the runtime API.
 
 ## Lowering Semantics
@@ -255,13 +263,13 @@ There are two valid presentations of the same durable operation.
 
 ### Agent Tool Presentation
 
-An agent calls a choreography tool. The tool handler appends durable intent,
-creates the completion, blocks the current run, and returns a suspension
-sentinel to the agent adapter.
+An agent calls a choreography tool. The tool handler creates the durable
+completion, blocks the current run, and returns a suspension sentinel to the
+agent adapter.
 
 ```text
 tool call accepted
-  -> durable intent + completion + blocked run
+  -> completion + blocked run
   -> return SuspensionSentinel
   -> later resume/result is delivered by runtime adapter
 ```
@@ -292,10 +300,17 @@ The important invariant is:
 the durable wait survives process death even if the in-memory Effect fiber does not
 ```
 
-## Observability
+## Instrumentation And Observability Boundary
 
-Every choreography operation should emit durable trace or caller-owned domain
-observation records sufficient to explain:
+Tracing and observability are cross-cutting concerns, not default choreography
+data-plane rows.
+
+The first choreography facade should provide instrumentation boundaries around
+each operation, using Effect-native tracing APIs such as `Effect.withSpan` and
+span annotations where appropriate. OTLP/OpenTelemetry export, span naming, and
+trace-context propagation are host/runtime concerns.
+
+The facade should make it easy for a runtime to attach:
 
 - operation kind;
 - current work id;
@@ -305,11 +320,25 @@ observation records sufficient to explain:
 - causation/correlation metadata;
 - terminal outcome.
 
-Trace rows are observational. They do not replace `durable.completion`,
-`durable.run`, or `durable.claim.attempt` authority.
+The substrate should not require a `durable.trace` row for correctness or
+ordinary choreography usage. Existing model-visible tool calls, caller-owned
+event planes, and runtime spans are expected to cover most near-term
+observability needs.
+
+If a later use case requires durable agent-readable trace history independent
+of tool-call/session rows, it should be designed as a separate observability
+profile. That profile may use `durable.trace` or caller-owned event planes, but
+it must remain observational:
+
+```text
+trace/span/session/tool records do not replace durable.completion
+trace/span/session/tool records do not replace durable.run
+trace/span/session/tool records do not replace durable.claim.attempt
+```
 
 Agent-side introspection should be implemented as projection queries over these
-records, not by reading runtime memory.
+records, not by reading runtime memory. The first choreography facade only
+needs to preserve the architectural hook points.
 
 ## Concrete Use Cases
 
@@ -334,7 +363,6 @@ results.
 ```text
 agent/tool/runtime calls schedule_me(when, prompt)
   -> scheduled_work completion is created
-  -> run records durable scheduled intent / trace
   -> scheduled-work subscriber resolves when due
   -> Firepixel runtime checks live promptability
   -> runtime appends prompt intent or re-waits on promptability policy
@@ -375,7 +403,8 @@ The first slice should prove only:
 2. `sleep`, `waitFor`, `scheduleMe`, and `awakeable` facade methods that create
    completions through existing `DurableWaits`;
 3. current-run blocking without caller-threaded ids;
-4. durable trace/intent emission as observational records;
+4. Effect-native instrumentation boundaries around choreography operations,
+   without requiring durable trace rows;
 5. a simple tool-binding harness proving tool input -> choreography operation
    -> suspension sentinel;
 6. an ACP-permission-shaped example using a fake event plane, not ACP code.
@@ -434,33 +463,26 @@ internal lowering: durable.completion pending + durable.run blocked
 If a later runtime needs a lower-level block API, it should be justified by a
 separate SDD/spec. Do not add it as part of the choreography facade by default.
 
-### Trace Schema
+### Instrumentation Boundary
 
-Use the existing neutral `durable.trace` row family for the first build:
+Do not require `durable.trace` rows in the first choreography build.
 
-```ts
-type TraceValue = {
-  traceId: string
-  kind: string
-  data?: unknown
-}
-```
-
-Trace `kind` values should be substrate-neutral:
+The first implementation should wrap choreography operations in Effect-native
+instrumentation boundaries. The intended span names are neutral:
 
 ```text
-choreography.sleep.requested
-choreography.wait_for.requested
-choreography.schedule_me.requested
-choreography.awakeable.requested
+substrate.choreography.sleep
+substrate.choreography.wait_for
+substrate.choreography.schedule_me
+substrate.choreography.awakeable
 ```
 
-Trace `data` should carry the minimum correlation payload:
+Span/log attributes should be best-effort and non-authoritative:
 
 ```ts
 {
   workId: string
-  completionId: string
+  completionId?: string
   operation: "sleep" | "wait_for" | "schedule_me" | "awakeable"
   label?: string
   dueAtMs?: number
@@ -471,9 +493,10 @@ Trace `data` should carry the minimum correlation payload:
 }
 ```
 
-Do not introduce Fireline-specific `agent.suspended` or `agent.resumed` rows in
-the substrate. Fireline can map neutral trace rows or emit its own profile rows
-above the substrate.
+If a runtime wants durable agent-readable choreography history, it can emit
+caller-owned event-plane rows or map tool calls/session events into its own
+profile. That should be layered above this facade until a concrete substrate
+use case forces a durable observability profile.
 
 ### `waitFor` Trigger Scope
 
@@ -519,7 +542,8 @@ authority concepts. The Acai spec should target:
 - `Choreography` Effect service;
 - `CurrentWorkContext` layer/input;
 - internal current-run blocking;
-- neutral trace rows;
+- Effect-native instrumentation boundaries, with no required durable trace
+  rows;
 - projection-match-only `waitFor`;
 - separate `awaitAwakeable`;
 - `ChoreographyTools` neutral sentinel proof;
