@@ -33,6 +33,14 @@ SDK, or generic messaging framework.
      runtime APIs and agent tool bindings while remaining above the substrate
      kernel.
 
+4. Launchable substrate host and lab
+   - SDD: `docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md`
+   - Spec: `features/durable-agent-substrate/launchable-substrate-host.feature.yaml`
+   - Why fourth: passing tests are not enough to validate Fireline/Firepixel-
+     shaped runtime behavior. We need a narrow substrate client, a launchable
+     observer/operator host, and a lab inspector that exercises real durable
+     streams/state without introducing a host mutation control plane.
+
 ## Non-Goals For This PR
 
 - No implementation changes.
