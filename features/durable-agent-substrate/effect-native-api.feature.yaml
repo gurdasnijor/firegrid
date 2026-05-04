@@ -20,6 +20,7 @@ components:
       3: Service live layers may depend on Durable Streams, Durable Streams State, clocks, id generation, and projection internals without leaking those dependencies into method signatures.
       4: Durable wait APIs such as `sleep`, `waitFor`, `scheduleWork`, and public awakeables are owned by `durable-waits-and-scheduling`, not by the Slice 3 producer service.
       5: Operator running is owned by `claim-and-operator-authority`, not by the Slice 3 producer service.
+      6: Expected producer failures are represented in the Effect error channel rather than as defects.
 
   OPERATOR_PROGRAMS:
     requirements:

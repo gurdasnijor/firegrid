@@ -12,6 +12,7 @@ components:
       4: The producer does not imply that a runtime participant exists when it declares work.
       5: The producer exposes typed methods only when those methods are consumed or projected in the same implementation phase.
       6: The producer does not expose raw Durable Streams append or Durable Streams State envelope construction as the normal integration path.
+      7: Slice 3 live wiring configuration is provided through the producer layer factory rather than as a separate exported configuration service.
 
   PRODUCER_EFFECT:
     requirements:
