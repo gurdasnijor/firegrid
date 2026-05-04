@@ -15,9 +15,11 @@ components:
 
   EFFECT_SERVICES:
     requirements:
-      1: Durable waits, awakeable resolution, work declaration, and operator running are exposed as Effect services.
+      1: Slice 3 exposes work declaration and durable completion terminalization as Effect services.
       2: Service methods expose semantic substrate operations rather than raw Durable Streams append or envelope helpers.
       3: Service live layers may depend on Durable Streams, Durable Streams State, clocks, id generation, and projection internals without leaking those dependencies into method signatures.
+      4: Durable wait APIs such as `sleep`, `waitFor`, `scheduleWork`, and public awakeables are owned by `durable-waits-and-scheduling`, not by the Slice 3 producer service.
+      5: Operator running is owned by `claim-and-operator-authority`, not by the Slice 3 producer service.
 
   OPERATOR_PROGRAMS:
     requirements:

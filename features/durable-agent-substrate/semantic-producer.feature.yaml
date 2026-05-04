@@ -6,7 +6,7 @@ feature:
 components:
   PRODUCER_ROLE:
     requirements:
-      1: The producer exposes semantic substrate operations for declaring durable work and resolving externally completed awakeables.
+      1: The producer exposes semantic substrate operations for declaring durable work and terminalizing durable completions.
       2: The producer returns durable identities and projection-relevant fields rather than live runtime handles.
       3: The producer does not require direct access to ACP, stdio, process, provider, sandbox, or tool transport handles.
       4: The producer does not imply that a runtime participant exists when it declares work.
@@ -19,6 +19,8 @@ components:
       2: Resolving, rejecting, or cancelling an awakeable produces the `durable.completion` terminal state needed by the completion projection.
       3: Producer methods do not hide meaningful state transitions in process memory.
       4: Producer operations do not author derived projection rows such as ready work.
+      5: Slice 3 producer methods are limited to persisted forms of the existing run and completion state-machine transitions.
+      6: Slice 3 does not expose `sleep`, `waitFor`, `scheduleWork`, public awakeable key construction, ready-work derivation, operator running, or claim authority.
 
   PACKAGE_BOUNDARY:
     requirements:
