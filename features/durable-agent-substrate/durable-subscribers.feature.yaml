@@ -1,0 +1,69 @@
+feature:
+  name: durable-subscribers
+  product: durable-agent-substrate
+  description: Define substrate-owned durable subscriber profiles that advance existing durable completions without introducing Fireline runtime, agent tool, or final choreography API concepts.
+
+components:
+  SUBSCRIBER_SCOPE:
+    requirements:
+      1: Durable subscribers are substrate-owned scoped programs that observe durable substrate state and append completion terminal records when their profile-specific eligibility rule is satisfied.
+      2: Durable subscribers operate over existing `durable.completion` rows and do not introduce a separate scheduler, workflow, continuation, mailbox, channel registry, or driver registry concept.
+      3: Durable subscribers do not own live agent sessions, prompts, ACP, MCP, process launch, providers, resources, sandboxes, or Fireline/Firepixel client APIs.
+      4: Subscriber profiles may be exposed as low-level substrate services, but they are not the final ergonomic choreography API.
+      5: The first durable subscriber slice uses single-shot scan-and-resolve functions that a later long-running scoped program may wrap.
+
+  TIMER_SUBSCRIBER:
+    requirements:
+      1: "The timer subscriber observes pending `durable.completion` rows with `kind: timer`."
+      2: A timer completion is eligible only when its durable data contains a due time that is less than or equal to the subscriber's current clock reading.
+      3: When eligible, the timer subscriber appends a resolved terminal record for the timer completion.
+      4: Timer subscriber resolution data includes the durable due time and the observed fire time.
+      5: The timer subscriber does not resume a live callback or directly invoke a handler as authority.
+
+  SCHEDULED_WORK_SUBSCRIBER:
+    requirements:
+      1: "The scheduled-work subscriber observes pending `durable.completion` rows with `kind: scheduled_work`."
+      2: A scheduled-work completion is eligible only when its durable data contains a scheduled time that is less than or equal to the subscriber's current clock reading.
+      3: When eligible, the scheduled-work subscriber appends a resolved terminal record for the scheduled-work completion.
+      4: Scheduled-work subscriber resolution data preserves the scheduled time and opaque scheduled input from the pending completion data.
+      5: The scheduled-work subscriber does not append prompt, session, agent, or provider rows.
+
+  PROJECTION_MATCH_SUBSCRIBER:
+    requirements:
+      1: "The projection-match subscriber observes pending `durable.completion` rows with `kind: projection_match`."
+      2: A projection-match completion resolves only from a declared projection trigger and a matching projection value.
+      3: The projection-match subscriber evaluates an initial snapshot before following later stream changes.
+      4: The projection-match subscriber must use Durable Streams State snapshot boundaries or base Durable Streams no-gap cursor semantics for snapshot-then-follow behavior.
+      5: If the projection-match subscriber cannot prove a no-gap snapshot/follow boundary, it fails with a typed unsupported or no-gap error instead of resolving from a lossy observation.
+      6: If a projection-match completion has a timeout and no match appears before the timeout, the subscriber appends a cancelled or rejected terminal record with timeout reason.
+      7: The first projection-match subscriber slice uses a per-call evaluator function rather than a persistent matcher registry.
+      8: The first projection-match subscriber slice may be snapshot-only; unmatched pending completions remain pending for a later scan or future live-follow subscriber.
+      9: Projection-match timeout eligibility is based on an absolute durable deadline stored on the completion row, not on process-local elapsed time.
+
+  COMPLETION_AUTHORITY:
+    requirements:
+      1: Durable subscribers append candidate terminal records; the authoritative completion result remains the first valid terminal record for the completion id in durable stream order.
+      2: Duplicate subscriber attempts for the same completion are preserved as durable evidence and do not rewrite the authoritative completion result.
+      3: Competing subscriber attempts for the same completion are resolved by the existing completion first-valid-terminal fold.
+      4: Subscriber cursor or progress records are not completion authority.
+
+  RESTART_SAFETY:
+    requirements:
+      1: A subscriber can restart from retained durable state without requiring in-memory pending-work state.
+      2: A subscriber may conservatively rescan retained pending completions if duplicate terminal attempts remain harmless under completion authority rules.
+      3: A live-follow subscriber records or reconstructs enough cursor/progress information to avoid relying on a process-local offset after restart.
+      4: Subscriber tests prove restart or rescan behavior by rebuilding from durable state rather than by inspecting private in-memory state.
+
+constraints:
+  API_FUTURE_PROOFING:
+    requirements:
+      1: Subscriber implementation must remain wrap-able by a later shared choreography operation facade.
+      2: Subscriber implementation must remain bindable to a later agent tool layer without importing agent tool descriptor code.
+      3: Subscriber implementation does not add Fireline-branded tool names such as `sleep`, `wait_for`, `schedule_me`, `spawn`, `spawn_all`, or `execute` as native substrate primitives.
+      4: Subscriber implementation does not require callers to manually thread raw Durable Streams records, Durable Streams State envelopes, retained folds, or claim internals through the normal path.
+
+  TEST_BOUNDARY:
+    requirements:
+      1: Subscriber tests use real Durable Streams and Durable Streams State only to validate substrate-owned subscriber behavior.
+      2: Subscriber tests assert completion rows, projection snapshots, terminal folds, subscriber errors, or subscriber progress semantics rather than arbitrary Durable Streams append/read behavior.
+      3: Test-only helpers remain package-local and do not become product harness APIs.

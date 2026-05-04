@@ -20,6 +20,7 @@ components:
       4: Projection-match resolver implementations use Durable Streams State snapshot boundaries or base Durable Streams no-gap cursor semantics.
       5: If a resolver cannot prove a no-gap snapshot/follow boundary, it fails with a typed unsupported/no-gap error.
       6: A timeout, when supplied, is recorded as durable completion data and later resolves through durable completion terminal rules rather than an in-memory timer callback.
+      7: A timeout duration is converted to an absolute durable deadline when the projection-match completion is created.
 
   SCHEDULE_WORK:
     requirements:

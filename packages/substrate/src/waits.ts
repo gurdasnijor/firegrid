@@ -195,9 +195,21 @@ export const DurableWaitsLive = (
         waitFor: (input: WaitForInput) =>
           Effect.gen(function* () {
             const completionId = randomUUID()
-            const data: { trigger: ProjectionMatchTrigger; timeoutMs?: number } = {
+            // durable-waits-and-scheduling.WAIT_FOR.7 — convert the timeout
+            // DURATION to an absolute durable deadline at creation so the
+            // projection-match subscriber can evaluate timeout eligibility
+            // from the durable row alone (durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.9).
+            // Use Effect Clock so tests can control time.
+            const nowMs = yield* Clock.currentTimeMillis
+            const data: {
+              trigger: ProjectionMatchTrigger
+              timeoutMs?: number
+              deadlineAtMs?: number
+            } = {
               trigger: input.trigger,
-              ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+              ...(input.timeoutMs !== undefined
+                ? { timeoutMs: input.timeoutMs, deadlineAtMs: nowMs + input.timeoutMs }
+                : {}),
             }
             const event = createPendingCompletion({
               completionId,
