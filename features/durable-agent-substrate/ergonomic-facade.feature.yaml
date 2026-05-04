@@ -1,0 +1,59 @@
+feature:
+  name: ergonomic-facade
+  product: durable-agent-substrate
+  description: Define the first ergonomic Effect-native facade over the proven substrate kernel without freezing Fireline-specific concepts or low-level completion/claim machinery.
+
+components:
+  PROJECTION_API:
+    requirements:
+      1: The first ergonomic facade exposes projection snapshot, stream, and until operations over typed projection queries.
+      2: Snapshot operations return one Effect value and do not expose raw Durable Streams reads, Durable Streams State envelopes, or StreamDB internals.
+      3: Stream operations return Effect `Stream` values for projection changes over time.
+      4: Until operations evaluate a snapshot before following changes after the snapshot cursor.
+      5: Until operations resolve with the matching projection value or fail with a typed projection wait error.
+      6: Projection APIs preserve query dependency requirements in the returned Effect or Stream requirement channel.
+
+  CLAIMED_WORK_API:
+    requirements:
+      1: The first ergonomic claimed-work facade exposes Effect Stream combinators for claim-before-side-effect execution.
+      2: The facade observes candidate work from a typed Stream or Effect rather than through raw ready-work rows or retained claim folds.
+      3: The facade invokes the side-effect handler only after durable claim ownership is won.
+      4: Handler success, expected failure, and interruption are represented as an Effect `Exit` observed by the facade.
+      5: Public claimed-work APIs expose pipeline operations such as claim, perform, and record outcome rather than a single object literal with observe/execute/record callbacks.
+      6: Outcome recording appends or otherwise records the domain outcome without exposing raw append helpers as the normal path.
+      7: Handler dependency requirements are preserved in the returned Effect requirement channel.
+      8: The facade does not require handlers to receive a mutable context object, raw stream record, raw Durable Streams State event, or claim fold.
+      9: Claimed-work pipelines compose with ordinary Effect Stream operators and cross-cutting layers for logging, tracing, retry, metrics, and supervision.
+      10: The first claimed-work pipeline includes combinators equivalent to candidate observation, durable claiming, side-effect performance, outcome recording, and scoped execution, while final naming may evolve.
+
+  AWAITABLE_BOUNDARY:
+    requirements:
+      1: The first ergonomic facade does not expose raw completion CRUD as the normal runtime API.
+      2: Awaitable APIs remain narrow durable-promise operations used only when domain rows plus projection waits are not the better fit.
+      3: Timer and scheduled-work awaitable APIs accept Effect Duration or Clock-shaped inputs rather than process-local time strings.
+      4: Externally resolved awaitable APIs require stable semantic keys and typed expected errors.
+      5: Projection-backed awaitables are deferred until no-gap projection follow semantics are proven through the projection facade.
+
+  SUBSCRIBER_BOUNDARY:
+    requirements:
+      1: Subscriber profiles remain wrap-able by the ergonomic facade and shared choreography operations.
+      2: Subscriber profiles are not exposed as the first app-facing choreography API.
+      3: Long-running subscriber variants are represented as scoped Effect programs or Layers.
+      4: Subscriber APIs do not require callers to manually thread raw Durable Streams records, Durable Streams State envelopes, retained folds, or claim internals.
+
+  COMMON_USAGE_EXAMPLES:
+    requirements:
+      1: The facade implementation includes a prompt-await example using projection until semantics.
+      2: The facade implementation includes a required-action or approval example using projection stream and projection until semantics.
+      3: The facade implementation includes a launch or prompt-dispatch example using claimed-work semantics.
+      4: The facade implementation includes a tool-execution example using claimed-work semantics.
+      5: The facade implementation includes a sleep or schedule example showing awaitable timer/scheduled-work usage without making subscriber profiles app-facing.
+      6: Common usage examples are based on Fireline RFC or Firepixel flows rather than generic email, payment, or placeholder business examples.
+
+constraints:
+  API_BOUNDARY:
+    requirements:
+      1: The ergonomic facade does not introduce Fireline or Firepixel domain words such as session, prompt, permission, approval, spawn, schedule_me, execute, provider, sandbox, or tool descriptor as substrate-native concepts.
+      2: The ergonomic facade does not expose `DurableChannel`, `CompletionChannel`, raw `DurableCompletion` CRUD, or the nine-phase kernel modules as the primary public API.
+      3: Kernel modules may remain available through explicitly unstable, internal, advanced, or testing-oriented paths while the facade is being validated.
+      4: Public API examples use Effect generator style, Effect services or service-backed functions, typed errors, and Layer/provide composition where dependencies are needed.

@@ -21,6 +21,12 @@ components:
       4: Durable wait APIs such as `sleep`, `waitFor`, `scheduleWork`, and public awakeables are owned by `durable-waits-and-scheduling`, not by the Slice 3 producer service.
       5: Operator running is owned by `claim-and-operator-authority`, not by the Slice 3 producer service.
       6: Expected producer failures are represented in the Effect error channel rather than as defects.
+      7: Stable facade capabilities are represented as Effect services or service-backed functions whose dependencies remain in the `Effect` requirement channel.
+      8: Public stream observation APIs return Effect `Stream` values rather than callback registration functions or ad hoc async iterables.
+      9: Long-running subscribers and operators are exposed as scoped Effect programs or layers, not as poll loops or unmanaged background promises.
+      10: API durations and clocks use Effect `Duration` and `Clock` inputs instead of raw process-local `Date.now()` or untyped millisecond strings in the public surface.
+      11: Public expected errors use Effect-compatible tagged data errors and remain recoverable through the Effect error channel.
+      12: Public APIs should compose with `Effect.provide`, `Layer`, `Effect.all`, and ordinary generator-style Effect programs without requiring a framework registry.
 
   OPERATOR_PROGRAMS:
     requirements:
@@ -33,6 +39,8 @@ components:
       7: The canonical handler authoring style is an ordinary Effect function whose success value or expected failure is interpreted by the operator runner.
       8: Duplicate terminal authority rules are owned by `awakeables-and-runs` for run/completion state and by `claim-and-operator-authority` for owner gating.
       9: The canonical operator surface is not a polling API.
+      10: Claimed-work APIs preserve handler dependency requirements in the returned `Effect` type instead of erasing them behind `unknown`, `any`, or a mutable context argument.
+      11: Public claimed-work facade names use domain-facing language such as `recordOutcome` rather than exposing internal state-machine terms.
 
 constraints:
   NO_FRAMEWORK_REGISTRY:

@@ -16,6 +16,7 @@ components:
       8: The eighth implementation slice proves the integrated path from semantic producer through operator execution, durable suspension, external resolution, and rebuild.
       9: "In the first substrate profile, durable suspension is represented by a `durable.run` row with `state: blocked` and `blockedOnCompletionId`; no separate suspension or continuation row or API is introduced for the integrated proof."
       10: The durable subscriber slice adds timer, scheduled-work, and projection-match subscriber profiles that resolve existing durable completions without deciding the final public choreography API.
+      11: The ergonomic facade slice adds projection observation and claimed-work APIs over the proven kernel before any Fireline/Firepixel-specific runtime API is introduced.
 
   SPEC_OWNERSHIP:
     requirements:
@@ -27,6 +28,7 @@ components:
       6: "`claim-and-operator-authority` owns claim attempts, first-valid claim authority, claim-before-invoke, and owner-gated terminalization."
       7: "`durable-waits-and-scheduling` owns sleep, waitFor, scheduleWork, and public awakeable API lowering after core operator semantics exist."
       8: "`durable-subscribers` owns substrate subscriber profiles that autonomously terminalize eligible durable completions while preserving completion authority and runtime/API boundaries."
+      9: "`ergonomic-facade` owns the first Effect-native facade over projection observation, claimed-work execution, narrow awaitable usage, and example-driven API validation."
 
 constraints:
   NO_DUPLICATE_PROOF:
