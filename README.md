@@ -4,6 +4,10 @@ Canonical design source:
 
 - [Durable Agent Substrate SDD](docs/SDD_DURABLE_AGENT_SUBSTRATE.md)
 
+Ahead-of-stream SDD proposal:
+
+- [Choreography And Agent Tool Bindings](docs/SDD_CHOREOGRAPHY_TOOL_BINDINGS.md)
+
 Acai specs live under `features/durable-agent-substrate/` and should be
 rebuilt from the SDD as the design stabilizes.
 
