@@ -404,12 +404,21 @@ describe("Slice 3 boundaries (structural — semantic-producer + effect-native-a
     expect(typeof exports.SubstrateProducerLive).toBe("function")
   })
 
-  it("effect-native-api.EFFECT_SERVICES.4 — wait APIs are not part of the Slice 3 producer surface", () => {
-    expect(exports.sleep).toBeUndefined()
-    expect(exports.waitFor).toBeUndefined()
-    expect(exports.scheduleWork).toBeUndefined()
-    expect(exports.DurableWaits).toBeUndefined()
-    expect(exports.AwakeableProducer).toBeUndefined()
+  it("effect-native-api.EFFECT_SERVICES.4 — wait APIs are not part of the Slice 3 producer module", async () => {
+    // Scope: producer.ts module. Slice 7 legitimately adds DurableWaits to
+    // the broader package; the constraint is that the producer feature
+    // does not own those APIs.
+    const producerMod = await import("../producer.js")
+    const producerNames = Object.keys(producerMod)
+    for (const symbol of [
+      "sleep",
+      "waitFor",
+      "scheduleWork",
+      "DurableWaits",
+      "AwakeableProducer",
+    ]) {
+      expect(producerNames).not.toContain(symbol)
+    }
   })
 
   it("effect-native-api.EFFECT_SERVICES.5 — operator running is not part of the Slice 3 producer surface", () => {

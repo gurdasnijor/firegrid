@@ -52,11 +52,16 @@ export const CompletionState = Schema.Literal(
 export type CompletionState = Schema.Schema.Type<typeof CompletionState>
 
 // awakeables-and-runs.AWAKEABLE.1 — value shape only; transitions are Slice 2.
+// durable-records-and-projections.RECORDS.9 — pending completions may carry
+// optional `data` needed by their resolver or higher-level runtime
+// (e.g. timer durationMs/dueAtMs, projection-match trigger payload,
+// scheduled-work whenMs/input).
 export const CompletionValue = Schema.Struct({
   completionId: Schema.String,
   workId: Schema.optional(Schema.String),
   kind: CompletionKind,
   state: CompletionState,
+  data: Schema.optional(Schema.Unknown),
   result: Schema.optional(Schema.Unknown),
   error: Schema.optional(Schema.Unknown),
   terminalReason: Schema.optional(Schema.Unknown),

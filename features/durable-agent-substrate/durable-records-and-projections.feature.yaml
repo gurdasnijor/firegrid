@@ -14,6 +14,7 @@ components:
       6: The foundational durable authority row families are `durable.run`, `durable.completion`, and `durable.claim.attempt`.
       7: Timer, projection-trigger, child-run, fan-in, and external awakeable waits are represented as `durable.completion` variants rather than separate foundational row families.
       8: "`durable.trace` is an optional observability row family and is not wait, claim, terminal, or ownership authority."
+      9: Pending durable completions may carry optional `data` needed by their resolver or higher-level runtime.
 
   PROJECTIONS:
     requirements:

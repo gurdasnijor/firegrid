@@ -7,25 +7,28 @@ components:
   SLEEP:
     requirements:
       1: "`sleep(durationMs)` records durable timer intent by creating a timer-shaped `durable.completion`."
-      2: Timer firing resolves the timer completion durably.
+      2: Timer firing is represented by appending a durable resolved terminal record for the timer completion.
       3: Timer firing does not resume a live JS callback as authority.
       4: Optional trace rows may record scheduled, fired, or cancelled timer observability.
+      5: Slice 7 `sleep` creates the pending timer completion only; timer resolver execution is a later integration concern.
 
   WAIT_FOR:
     requirements:
       1: "`waitFor(trigger, timeoutMs?)` records a projection-match-shaped `durable.completion`."
-      2: Projection-match waits evaluate an initial snapshot before following live updates.
-      3: Projection-match waits use Durable Streams State snapshot boundaries or base Durable Streams no-gap cursor semantics.
-      4: If a no-gap snapshot/follow boundary cannot be proven, `waitFor` fails with a typed unsupported/no-gap error.
-      5: A timeout, when supplied, resolves through the same durable completion terminal rules rather than an in-memory timer callback.
+      2: Slice 7 `waitFor` records a typed projection-match trigger payload but does not run a projection matcher.
+      3: Projection-match resolver implementations must evaluate an initial snapshot before following live updates.
+      4: Projection-match resolver implementations use Durable Streams State snapshot boundaries or base Durable Streams no-gap cursor semantics.
+      5: If a resolver cannot prove a no-gap snapshot/follow boundary, it fails with a typed unsupported/no-gap error.
+      6: A timeout, when supplied, is recorded as durable completion data and later resolves through durable completion terminal rules rather than an in-memory timer callback.
 
   SCHEDULE_WORK:
     requirements:
       1: "`scheduleWork(when, input)` records scheduled work intent by creating a scheduled-work-shaped `durable.completion`."
       2: The substrate-level scheduled work primitive is generic and does not mention prompts or agents.
-      3: Timer firing resolves the scheduled-work completion and lets ready-work derivation resume the owning run.
+      3: Timer firing is represented by resolving the scheduled-work completion and lets ready-work derivation resume the owning run.
       4: Higher runtimes such as Fireline may map agent-facing `scheduleMe(when, prompt)` onto `scheduleWork`.
       5: Timer firing does not directly append agent prompt rows or assume live promptability.
+      6: Slice 7 `scheduleWork` creates the pending scheduled-work completion only and does not declare a new run.
 
   AWAKEABLE_API:
     requirements:
@@ -34,6 +37,9 @@ components:
       3: Awakeable APIs do not expose raw Durable Streams append or Durable Streams State envelope construction as the normal integration path.
       4: Awakeable keys are work-scoped by default using the owning `workId` plus a stable semantic name.
       5: Global awakeables require an explicit namespace.
+      6: Slice 7 work-scoped awakeable keys use `awk:work:${workId}:${name}`.
+      7: Slice 7 global awakeable keys use `awk:global:${namespace}:${name}`.
+      8: Creating the same awakeable key more than once is idempotent and returns the existing durable completion id.
 
 constraints:
   PHASE_BOUNDARY:
@@ -41,3 +47,4 @@ constraints:
       1: This feature starts after semantic producer operations, ready-work derivation, and claim-before-invoke authority are proven.
       2: This feature does not introduce separate timer, trigger, or wait row families.
       3: This feature does not introduce ACP, MCP, CLI, process launch, provider lifecycle, sandbox, resource, or tool transport behavior.
+      4: Slice 7 wait APIs create durable completions and return completion ids; they do not block runs or create continuations internally.

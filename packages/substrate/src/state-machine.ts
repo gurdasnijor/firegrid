@@ -77,10 +77,12 @@ export class IllegalRunTransition extends Error {
 
 // awakeables-and-runs.AWAKEABLE.1, .2 — completion creation.
 // awakeables-and-runs.COMPLETION_TRANSITIONS.1
+// durable-records-and-projections.RECORDS.9 — pending completions may carry optional data.
 export interface CreatePendingCompletionInput {
   readonly completionId: string
   readonly workId?: string
   readonly kind: CompletionKind
+  readonly data?: unknown
 }
 
 export function createPendingCompletion(
@@ -91,6 +93,7 @@ export function createPendingCompletion(
     ...(input.workId !== undefined ? { workId: input.workId } : {}),
     kind: input.kind,
     state: "pending",
+    ...(input.data !== undefined ? { data: input.data } : {}),
   }
   if (!isLegalCompletionTransition(undefined, value.state)) {
     throw new IllegalCompletionTransition(input.completionId, undefined, value.state)

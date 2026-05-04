@@ -170,26 +170,32 @@ describe("awakeables-and-runs.AWAKEABLE", () => {
     expect(observed?.result).toBe(42)
   })
 
-  it("awakeables-and-runs.AWAKEABLE.7 — public awakeable API is deferred; this feature proves only the backing durable.completion state machine", () => {
-    // Structural: no callable awakeable API ships with this slice.
-    const m = substrate as unknown as Record<string, unknown>
-    expect(m.awakeable).toBeUndefined()
-    expect(m.DurableWaits).toBeUndefined()
-    expect(m.DurableAwakeables).toBeUndefined()
-    // The state machine continues to operate on durable.completion only.
+  it("awakeables-and-runs.AWAKEABLE.7 — public awakeable API is deferred from this feature; backing durable.completion state machine only", async () => {
+    // Scope: this feature (state-machine.ts) does not ship a callable
+    // awakeable API. Slice 7 legitimately adds DurableWaits to the broader
+    // package; the deferral is per-feature, not package-wide.
+    const sm = await import("../state-machine.js")
+    const smNames = Object.keys(sm)
+    for (const symbol of ["awakeable", "DurableWaits", "DurableAwakeables"]) {
+      expect(smNames).not.toContain(symbol)
+    }
+    // State machine continues to operate on durable.completion only.
     const event = createPendingCompletion({ completionId: "c-7", kind: "externally_resolved_awakeable" })
     expect(event.type).toBe("durable.completion")
   })
 
-  it("awakeables-and-runs.AWAKEABLE.8 — awakeable key construction is deferred (no key utility APIs exposed in this feature)", () => {
-    const m = substrate as unknown as Record<string, unknown>
-    expect(m.workScopedAwakeableKey).toBeUndefined()
-    expect(m.awakeableKey).toBeUndefined()
+  it("awakeables-and-runs.AWAKEABLE.8 — awakeable key construction is deferred from this feature (no key utility APIs in state-machine.ts)", async () => {
+    const sm = await import("../state-machine.js")
+    const smNames = Object.keys(sm)
+    for (const symbol of ["workScopedAwakeableKey", "awakeableKey"]) {
+      expect(smNames).not.toContain(symbol)
+    }
   })
 
-  it("awakeables-and-runs.AWAKEABLE.9 — global awakeable namespace rules are deferred (no global key API exposed)", () => {
-    const m = substrate as unknown as Record<string, unknown>
-    expect(m.globalAwakeableKey).toBeUndefined()
+  it("awakeables-and-runs.AWAKEABLE.9 — global awakeable namespace rules are deferred from this feature (no global key API in state-machine.ts)", async () => {
+    const sm = await import("../state-machine.js")
+    const smNames = Object.keys(sm)
+    expect(smNames).not.toContain("globalAwakeableKey")
   })
 
   it("awakeables-and-runs.AWAKEABLE.10 — duplicate awakeable resolutions follow first-valid-terminal-wins", () => {
@@ -423,11 +429,15 @@ describe("awakeables-and-runs constraints", () => {
     expect(m.WaitValue).toBeUndefined()
   })
 
-  it("awakeables-and-runs.NO_SEPARATE_CONTINUATION_ROW_YET.4 — no public awakeable key construction helpers without a same-phase consumer", () => {
-    const m = substrate as unknown as Record<string, unknown>
-    expect(m.workScopedAwakeableKey).toBeUndefined()
-    expect(m.globalAwakeableKey).toBeUndefined()
-    expect(m.awakeableKey).toBeUndefined()
+  it("awakeables-and-runs.NO_SEPARATE_CONTINUATION_ROW_YET.4 — this feature does not ship awakeable key construction helpers (state-machine module surface)", async () => {
+    // Scope: state-machine.ts module. Slice 7 legitimately adds key helpers
+    // from waits.ts because that slice now has a same-phase consumer
+    // (DurableWaits.awakeable / awakeableGlobal).
+    const sm = await import("../state-machine.js")
+    const smNames = Object.keys(sm)
+    for (const symbol of ["workScopedAwakeableKey", "globalAwakeableKey", "awakeableKey"]) {
+      expect(smNames).not.toContain(symbol)
+    }
   })
 
   it("awakeables-and-runs.NO_WORKFLOW_SDK_PRIMARY_MODEL.1 — no workflow orchestration SDK exposed as primary application model", () => {
