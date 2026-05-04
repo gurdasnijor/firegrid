@@ -25,6 +25,8 @@ export * from "./event-plane/index.js"
 // can still import `ProjectionMatchTrigger` directly from
 // `./choreography/index.js`.
 export {
+  Choreography,
+  ChoreographyLive,
   ChoreographyTimeout,
   ChoreographyTrigger,
   CompletionId,
@@ -37,9 +39,12 @@ export {
   currentWorkContextLayer,
   dispatchTrigger,
   triggerMatchersLayer,
+  type ChoreographyLiveConfig,
   type ChoreographyOperation,
+  type ChoreographyService,
   type ChoreographySuspension,
   type CurrentWorkContextValue,
+  type ScheduleAtResult,
   type TriggerMatchEvaluation,
   type TriggerMatcher,
   type TriggerMatchersService,

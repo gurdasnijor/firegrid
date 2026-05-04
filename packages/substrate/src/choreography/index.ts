@@ -27,3 +27,11 @@ export {
   type ChoreographyOperation,
   type ChoreographySuspension,
 } from "./errors.js"
+
+export {
+  Choreography,
+  ChoreographyLive,
+  type ChoreographyLiveConfig,
+  type ChoreographyService,
+  type ScheduleAtResult,
+} from "./service.js"
