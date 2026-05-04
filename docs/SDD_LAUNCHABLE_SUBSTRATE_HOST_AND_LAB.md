@@ -40,10 +40,23 @@ client surface, not hidden host mutation endpoints.
   `/Users/gnijor/gurdasnijor/firepixel/packages/client/README.md`
 - Durable Streams test UI prior art:
   `https://github.com/durable-streams/durable-streams/blob/main/examples/test-ui/README.md`
+- Restate quickstart and SDK split:
+  `https://docs.restate.dev/get_started/quickstart/`
+- Restate TypeScript service/runtime SDK:
+  `https://docs.restate.dev/develop/ts/services`
+- Restate TypeScript client SDK:
+  `https://docs.restate.dev/services/invocation/clients/typescript-sdk`
 
 The Durable Streams test UI is useful for inspector mechanics: stream registry,
 live following, catchup, JSON rendering, and responsive stream inspection. It is
 not a model for substrate command endpoints.
+
+Restate is useful prior art for package altitude: a server-side runtime SDK for
+defining durable behavior, a standalone client SDK for external callers, and a
+launchable runtime/server that owns execution. The substrate should borrow that
+split, not Restate's ingress model. In this substrate, external callers append
+durable intent through the client, and the host observes durable state and runs
+configured profiles.
 
 ## Goals
 
@@ -90,6 +103,56 @@ Durable Streams + Durable State
 The client is the app-facing writer. The host is the durable observer/worker.
 The lab is a developer experience over both, but scenario actions still call the
 client.
+
+## Restate-Inspired Package Roles
+
+Restate separates three roles that are worth preserving at the package-boundary
+level:
+
+- a server-side runtime SDK that authors durable behavior close to handlers;
+- a standalone client SDK that invokes or schedules work from outside the
+  runtime;
+- a launchable runtime/server that owns execution, recovery, and operational
+  lifecycle.
+
+The substrate should map those roles without copying Restate's central service
+ingress model:
+
+```text
+@durable-agent-substrate/substrate
+  foundation library and Effect-native server-side primitives
+  Choreography, Projection, Work, EventPlane, subscribers, operator helpers
+
+@durable-agent-substrate/client
+  regular JS/TS app-facing SDK
+  Promise and AsyncIterable wrappers over the same substrate client core
+
+@durable-agent-substrate/client/effect
+  Effect service/layer presentation of the same client capability
+
+@durable-agent-substrate/host
+  launchable runtime process and non-Effect entrypoints
+
+@durable-agent-substrate/host/effect
+  Effect layer constructors and withHost-style dev/test composition
+
+@durable-agent-substrate/lab
+  development inspector and scenario workbench built on the client
+```
+
+The client and `/effect` client must not fork semantics. They are two
+presentations over one client core:
+
+```text
+client core
+  -> root package Promise / AsyncIterable API
+  -> /effect Effect services / layers
+```
+
+Likewise, `SubstrateHost.withHost(...)` may provide `SubstrateClient` to the
+program it runs, but that client is the same capability as the standalone
+client. `withHost` owns lifecycle composition in development; it is not a
+different writer surface.
 
 ## Firepixel Shape Review
 
@@ -138,7 +201,7 @@ const RuntimeProfileLive = Layer.mergeAll(
 const program = SubstrateHost.withHost(
   Effect.gen(function* () {
     const substrate = yield* SubstrateClient
-    return yield* substrate.work.observe("run:demo").snapshot
+    return yield* substrate.work.observe("run:demo").snapshot()
   }),
   {
     mode: "embedded-dev",
@@ -158,41 +221,89 @@ owns durable intent production.
 The client should follow the Fireline client altitude:
 
 - one root app-facing package;
-- scoped Effect resource;
-- one-shot `use` and Promise-edge `run` helpers;
+- regular JS/TS `open`, `use`, and `run` helpers on the root package;
+- scoped Effect service/layer APIs under `/effect`;
 - durable intent methods;
 - curated read handles;
 - explicit subpaths for operator/testing/diagnostics;
 - no raw stream, raw StreamDB collection, or raw row helper exports at the root.
 
-Proposed shape:
+The root package is suitable for non-Effect application runtimes:
+
+```ts
+import { Substrate } from "@durable-agent-substrate/client"
+
+const substrate = await Substrate.open({ streamUrl, clientId: "lab" })
+
+try {
+  const work = await substrate.work.declare({
+    idempotencyKey: "demo:review-1",
+    input: { kind: "review", target: "README.md" },
+  })
+
+  await substrate.choreography.scheduleAt({
+    at: new Date("2026-05-04T17:00:00.000Z"),
+    input: { prompt: "Follow up on review" },
+  })
+
+  const current = await substrate.work.observe(work.workId).snapshot()
+} finally {
+  await substrate.close()
+}
+```
+
+The Effect subpath exposes the same client capability as an Effect service:
 
 ```ts
 import { Effect } from "effect"
-import { Substrate } from "@durable-agent-substrate/client"
+import { Substrate, SubstrateClientLive } from "@durable-agent-substrate/client/effect"
 
-const result = await Substrate.run({ streamUrl, clientId: "lab" }, (substrate) =>
-  Effect.gen(function* () {
-    const work = yield* substrate.work.declare({
-      idempotencyKey: "demo:review-1",
-      input: { kind: "review", target: "README.md" },
-    })
+const program = Effect.gen(function* () {
+  const substrate = yield* Substrate
+  const work = yield* substrate.work.declare({
+    idempotencyKey: "demo:review-1",
+    input: { kind: "review", target: "README.md" },
+  })
 
-    yield* substrate.choreography.scheduleAt({
-      at: new Date("2026-05-04T17:00:00.000Z"),
-      input: { prompt: "Follow up on review" },
-    })
+  yield* substrate.choreography.scheduleAt({
+    at: new Date("2026-05-04T17:00:00.000Z"),
+    input: { prompt: "Follow up on review" },
+  })
 
-    return yield* substrate.work.observe(work.workId).snapshot
-  }),
+  return yield* substrate.work.observe(work.workId).snapshot()
+})
+
+await Effect.runPromise(
+  program.pipe(Effect.provide(SubstrateClientLive({ streamUrl, clientId: "lab" }))),
 )
 ```
+
+The root may still offer Promise-edge convenience helpers such as
+`Substrate.use(...)` and `Substrate.run(...)`; those helpers call the same client
+core as `/effect`.
+
+Read handles should make snapshot vs follow behavior explicit:
+
+```ts
+await substrate.work.observe(workId).snapshot()
+
+for await (const state of substrate.work.observe(workId).stream()) {
+  // live updates
+}
+
+await substrate.work.observe(workId).until((state) => state.state === "completed")
+```
+
+`snapshot()` reads the current no-gap materialized view once and returns the
+selected state. It does not mutate durable state and is not a live
+subscription.
 
 The exact method names can change, but the boundary should not:
 
 - root client writes semantic substrate intents;
 - root client reads curated projections;
 - root client hides stream URL and id threading after open;
+- root client and `/effect` client share one implementation core;
 - operator-only controls live under `@durable-agent-substrate/client/operator`;
 - testing harnesses live under `@durable-agent-substrate/client/testing`;
 - diagnostic raw stream/state inspection lives under a separate lab/diagnostic
@@ -325,6 +436,13 @@ SubstrateHost.withHost(effect, options)
 substrate client and the host layer to one Effect program. It should not blur
 the production process boundary: production apps normally run clients in app
 processes and hosts in worker/runtime processes.
+
+When `withHost` provides `SubstrateClient`, that client is the same capability
+exposed by `@durable-agent-substrate/client/effect`. The only difference is
+lifecycle ownership: `Substrate.run(...)` opens a client against an existing
+stream/runtime environment, while `SubstrateHost.withHost(...)` starts or
+attaches the host and provides a client connected to that same durable stream
+for the lifetime of the scope.
 
 ### Runtime Profile Boundary
 
