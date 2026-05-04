@@ -141,7 +141,7 @@ legible to humans, agents, and tests. No wait, claim, terminal, or ownership
 decision is made from trace rows unless a later profile explicitly says so. The
 first implementation can prove the authority loop with only run, completion,
 and claim-attempt rows, then introduce trace rows when implementing observable
-`sleep`, `wait_for`, `schedule_me`, `spawn`, or `execute` behavior.
+`sleep`, `waitFor`, `scheduleWork`, `spawn`, or `execute` behavior.
 
 ### 4.2 Projection
 
@@ -348,7 +348,7 @@ claim attempt row:
   claimId
   workId
   ownerId
-  attemptedAt cursor/sequence
+  observedCursor
   status = attempted
 
 claim fold:
@@ -865,8 +865,9 @@ The canonical agent-facing choreography tool surface is:
 
 ```text
 sleep(durationMs)
-wait_for(trigger, timeoutMs?)
-schedule_me(when, prompt)
+waitFor(trigger, timeoutMs?)
+scheduleMe(when, prompt)    # Fireline/agent-facing mapping
+scheduleWork(when, input)   # substrate-level primitive
 spawn(agent, prompt)
 spawn_all(tasks)
 execute(sandbox, input)
@@ -921,7 +922,7 @@ derive ready work
 optionally append durable trace row kind=sleep.fired or sleep.cancelled
 ```
 
-### 6.2 wait_for(trigger, timeoutMs?)
+### 6.2 waitFor(trigger, timeoutMs?)
 
 ```text
 optionally append durable trace row kind=wait.registered
@@ -958,23 +959,23 @@ if unmatched, live-follow from exactly Stream-Next-Offset
 If neither path can prove a no-gap snapshot/follow boundary, `waitFor` must fail
 with a typed unsupported/no-gap error rather than silently dropping matches.
 
-### 6.3 schedule_me(when, prompt)
+### 6.3 scheduleWork(when, input)
 
 ```text
 optionally append durable trace row kind=schedule.registered
-declare completion kind=scheduled_prompt
+declare completion kind=scheduled_work
 timer operator resolves completion when due
 ready work is derived
-higher runtime checks live promptability
-higher runtime appends prompt intent only after promptability passes
-higher runtime re-blocks or terminalizes by policy when promptability fails
+higher runtime maps the generic scheduled work to its own domain behavior
+higher runtime re-blocks or terminalizes by policy when required live capability is unavailable
 optionally append durable trace row kind=schedule.fired or schedule.cancelled
 ```
 
-Timer firing is not prompt dispatch authority. It only makes the scheduled
-self-prompt eligible. The prompt intent is a separate durable record and must be
-appended only after the higher runtime proves live promptability under its
-profile.
+Timer firing is not agent prompt dispatch authority. It only resolves the
+scheduled-work completion. Agent-facing `scheduleMe(when, prompt)` is a
+Fireline/Firepixel mapping layered over `scheduleWork`; prompt intent is a
+separate durable record and must be appended only after the higher runtime proves
+live promptability under its profile.
 
 If live promptability is unavailable when scheduled work becomes due, the
 runtime handler should not lose the schedule. It should either:
@@ -1148,7 +1149,7 @@ Phase 3: Effect service skeleton and semantic producer operations
 Phase 4: ReadyWork derivation from rebuilt projections
 Phase 5: claim-before-invoke operator program
 Phase 6: claim race and once-only terminalization proof
-Phase 7: DurableWaits sleep/waitFor/awakeable and external DurableAwakeables
+Phase 7: DurableWaits sleep/waitFor/scheduleWork/awakeable and external DurableAwakeables
 Phase 8: generic integration proof plus Firepixel mapping sketch
 ```
 
@@ -1267,7 +1268,7 @@ two handler runners see same work
 Phase 7, waits/triggers:
 
 ```text
-sleep / waitFor / awakeable
+sleep / waitFor / scheduleWork / awakeable
   -> durable trigger
   -> durable completion
   -> blocked run resumes through ready work
@@ -1304,6 +1305,8 @@ awakeables-and-runs
 ready-work-projection
 effect-native-api
 semantic-producer
+claim-and-operator-authority
+durable-waits-and-scheduling
 implementation-sequencing
 ```
 
@@ -1313,9 +1316,11 @@ Spec ownership is intentionally orthogonal:
 | --- | --- | --- |
 | `durable-records-and-projections` | Durable row/projection vocabulary, rebuild rules, no-gap projection boundaries, and the Durable Streams / Durable Streams State boundary. | Completion/run state-machine transitions, operator claim behavior, public Effect API shape, or producer ergonomics. |
 | `awakeables-and-runs` | `durable.completion` and `durable.run` state machines, externally resolved awakeable semantics, no-live-callback truth, and no-stuck blocked runs. | Ready-work derivation, claim ownership, Effect API wiring, or Durable Streams protocol behavior. |
-| `ready-work-projection` | `ReadyWorkProjection` derivation, claim-before-invoke, and operator terminalization after winning durable ownership. | Completion/run row definitions, semantic producer surface, or Effect service/layer style. |
+| `ready-work-projection` | `ReadyWorkProjection` derivation from rebuilt run and completion projections. | Completion/run row definitions, semantic producer surface, claim authority, operator invocation, or Effect service/layer style. |
 | `effect-native-api` | Effect Schema, Effect service/layer shape, scoped operator program API, and no framework registry/fat context. | Durable state-machine behavior, projection rules, or package naming. |
 | `semantic-producer` | Semantic producer operations for declaring durable work and resolving awakeables without exposing raw append/envelope APIs. | Row schema definitions, projection folds, operator behavior, or higher-level Fireline/Firepixel client design. |
+| `claim-and-operator-authority` | Claim attempts, first-valid claim authority, claim-before-invoke, and owner-gated terminalization. | Ready-work derivation, run/completion state-machine definitions, or real agent/runtime adapters. |
+| `durable-waits-and-scheduling` | `sleep`, `waitFor`, `scheduleWork`, and public awakeable API lowering to durable completions. | Claim authority, real timers as prompt dispatch authority, or higher-level Fireline/Firepixel choreography APIs. |
 
 Feature sequencing is explicit in `implementation-sequencing.feature.yaml`:
 
@@ -1325,6 +1330,8 @@ durable-records-and-projections
   -> effect-native-api
   -> semantic-producer
   -> ready-work-projection
+  -> claim-and-operator-authority
+  -> durable-waits-and-scheduling
 ```
 
 That order is the default implementation path. `effect-native-api` may be
@@ -1340,8 +1347,10 @@ The smallest useful execution units are:
 | 2. State Machines | `awakeables-and-runs` | Completion and run lifecycle rebuild from durable rows; no live callback truth. |
 | 3. Producer | `semantic-producer`, `effect-native-api.EFFECT_SERVICES` | Semantic operations create run/completion state without exposing append/envelope APIs. |
 | 4. Ready Work | `ready-work-projection.READY_WORK_PROJECTION` | Resolved completions derive ready work; rejected/cancelled/completed/failed rows do not. |
-| 5. Operator Ownership | `ready-work-projection.OPERATOR_TRANSITION`, `effect-native-api.OPERATOR_PROGRAMS` | Claim is observed as winner before handler invocation; terminalization is once-only. |
-| 6. Wait APIs | `awakeables-and-runs.CHOREOGRAPHY`, `effect-native-api.EFFECT_SERVICES` | `sleep`, `waitFor`, and `awakeable` lower to completions and resume through ready work. |
+| 5. Operator Ownership | `claim-and-operator-authority`, `effect-native-api.OPERATOR_PROGRAMS` | Claim is observed as winner before handler invocation; terminalization is once-only. |
+| 6. Claim Race | `claim-and-operator-authority.CLAIM_AUTHORITY` | Competing attempts preserve evidence and produce exactly one durable winner. |
+| 7. Wait APIs | `durable-waits-and-scheduling`, `effect-native-api.EFFECT_SERVICES` | `sleep`, `waitFor`, `scheduleWork`, and awakeables lower to completions and resume through ready work. |
+| 8. Integration | `implementation-sequencing.PHASES.8` | Semantic producer, operator ownership, durable suspension, external resolution, and rebuild compose without real agent/runtime adapters. |
 
 Implementation tests should follow the same ownership. A test may reference
 multiple ACIDs only when it is proving an integration boundary between those
@@ -1393,7 +1402,7 @@ Block these in implementation review:
 - A handler runs before durable ownership is won.
 - A durable session id is treated as live promptability.
 - A permission wait is held only as an in-memory JS promise.
-- `sleep`, `wait_for`, or `schedule_me` is implemented as only a timer callback
+- `sleep`, `waitFor`, or `scheduleWork` is implemented as only a timer callback
   without durable completion state.
 - A choreography primitive suspends, fans out, or invokes externally visible
   work without first recording durable intent through a run, completion, or
@@ -1422,7 +1431,7 @@ event-sourced systems. These are semantic references, not dependencies.
 | --- | --- | --- |
 | Restate awakeables / durable promises | Suspend while an external actor resolves or rejects durable state. | public `Awakeable` API backed by internal `DurableCompletion`. |
 | Temporal / Cadence | Durable history, deterministic replay, timers, signals, side effects outside deterministic workflow code. | durable records, triggers, replay discipline, side-effect claims. |
-| Azure Durable Functions | Durable timers, external events, fan-out/fan-in. | `sleep`, `wait_for`, `spawn_all` resolution policies. |
+| Azure Durable Functions | Durable timers, external events, fan-out/fan-in. | `sleep`, `waitFor`, `spawn_all` resolution policies. |
 | Inngest | TypeScript-native durable steps, sleep, and event waits. | semantic durable waits such as `sleep` and `waitForEvent`. |
 | DBOS | Lightweight durable workflow state inside application code. | small app-local substrate before runtime server. |
 | Airflow deferrable operators | Task defers until trigger fires, freeing workers. | run blocked on completion; trigger operator resolves completion. |

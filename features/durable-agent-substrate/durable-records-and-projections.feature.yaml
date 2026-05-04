@@ -31,6 +31,8 @@ components:
       1: A fresh process can rebuild the relevant projection rows from the retained stream.
       2: Rebuild does not depend on live JS promises, in-memory session objects, process ids, random values, or wall-clock decisions unless those values were captured durably.
       3: Rebuild gaps are explicit errors rather than silent partial truth.
+      3-note: First-slice proof asserts that transport-level retained-stream absence or failure surfaces explicitly; in-stream offset/snapshot gap detection is proven by live-tail snapshot/follow tests in later slices when cursor semantics are exercised.
+      4: Rebuild returns a typed projection snapshot containing the foundational projections plus the no-gap cursor reached.
 
 constraints:
   SUBSTRATE_SCOPE:
@@ -40,3 +42,6 @@ constraints:
       3: The portable contract is the durable record and projection vocabulary, not a Firepixel-specific wrapper.
       4: Tests for this feature assert substrate row, projection, rebuild, and no-gap semantics rather than proving Durable Streams append/read/tail behavior in isolation.
       5: Tests may use Durable Streams and Durable Streams State as real dependencies, but assertions target substrate-owned records and projections.
+      6: The substrate declares a canonical state schema using the `@durable-streams/state` state schema API, naming the row type and primary key for each foundational durable row family.
+      7: Row primary keys are declared once in the substrate state schema; tests and producers construct durable change events through the schema's typed helpers rather than hand-rolled change-event shapes.
+      8: "`MaterializedState` and raw `ChangeEvent` values are internal implementation details of projection storage; the substrate-facing projection API exposes a typed projection snapshot rather than a raw fold over change events."

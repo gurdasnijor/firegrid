@@ -1,0 +1,41 @@
+feature:
+  name: durable-waits-and-scheduling
+  product: durable-agent-substrate
+  description: Define wait and scheduling APIs that lower to durable completions after core state, producer, ready-work, and operator authority are proven.
+
+components:
+  SLEEP:
+    requirements:
+      1: "`sleep(durationMs)` records durable timer intent by creating a timer-shaped `durable.completion`."
+      2: Timer firing resolves the timer completion durably.
+      3: Timer firing does not resume a live JS callback as authority.
+      4: Optional trace rows may record scheduled, fired, or cancelled timer observability.
+
+  WAIT_FOR:
+    requirements:
+      1: "`waitFor(trigger, timeoutMs?)` records a projection-match-shaped `durable.completion`."
+      2: Projection-match waits evaluate an initial snapshot before following live updates.
+      3: Projection-match waits use Durable Streams State snapshot boundaries or base Durable Streams no-gap cursor semantics.
+      4: If a no-gap snapshot/follow boundary cannot be proven, `waitFor` fails with a typed unsupported/no-gap error.
+      5: A timeout, when supplied, resolves through the same durable completion terminal rules rather than an in-memory timer callback.
+
+  SCHEDULE_WORK:
+    requirements:
+      1: "`scheduleWork(when, input)` records scheduled work intent by creating a scheduled-work-shaped `durable.completion`."
+      2: The substrate-level scheduled work primitive is generic and does not mention prompts or agents.
+      3: Timer firing resolves the scheduled-work completion and lets ready-work derivation resume the owning run.
+      4: Higher runtimes such as Fireline may map agent-facing `scheduleMe(when, prompt)` onto `scheduleWork`.
+      5: Timer firing does not directly append agent prompt rows or assume live promptability.
+
+  AWAKEABLE_API:
+    requirements:
+      1: The public awakeable API creates a keyed externally resolved durable completion.
+      2: The public awakeable API resolves, rejects, or cancels by appending durable completion terminal records.
+      3: Awakeable APIs do not expose raw Durable Streams append or Durable Streams State envelope construction as the normal integration path.
+
+constraints:
+  PHASE_BOUNDARY:
+    requirements:
+      1: This feature starts after semantic producer operations, ready-work derivation, and claim-before-invoke authority are proven.
+      2: This feature does not introduce separate timer, trigger, or wait row families.
+      3: This feature does not introduce ACP, MCP, CLI, process launch, provider lifecycle, sandbox, resource, or tool transport behavior.

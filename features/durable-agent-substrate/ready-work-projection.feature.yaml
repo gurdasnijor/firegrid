@@ -19,22 +19,11 @@ components:
       5: A completed or failed run does not derive ready work.
       6: Ready-work derivation is deterministic over rebuilt projection state.
 
-  OPERATOR_TRANSITION:
-    requirements:
-      1: An operator program consumes `ReadyWorkProjection` as derived input and does not author ready state as truth.
-      2: An operator program claims ready work by appending `durable.claim.attempt`.
-      3: A winning operator completes claimed work by appending `durable.run` state `completed` or `failed`.
-      4: Claim attempts and terminal run transitions are emitted through the same semantic producer surface in the first implementation proof.
-      5: Rebuilding from zero after completion yields the completed run projection.
-      6: Ready-work derivation is separate from handler side effects and ownership claims.
-      7: A handler is not invoked until its claim attempt is observed as the winning attempt in durable claim projection.
-      8: Speculative handler invocation before winning-claim observation is forbidden.
-      9: The public substrate surface exposes scoped operator programs rather than a polling API.
-
 constraints:
   FIRST_PHASE_LIMITS:
     requirements:
       1: This feature does not require an operator package before the projection contract is proven.
       2: This feature does not require real agents, ACP, CLI, process launch, provider lifecycle, or tool transport.
       3: Test-local proof code names the real concept `ReadyWorkProjection` and does not become a shadow runtime API.
-      4: This feature owns ready-work derivation and claim-before-invoke behavior, not completion or run state-machine definitions.
+      4: This feature owns ready-work derivation, not completion state-machine definitions, run state-machine definitions, claim authority, or operator invocation.
+      5: Claim attempts, claim winners, handler invocation, and terminal owner authority are owned by `claim-and-operator-authority`.

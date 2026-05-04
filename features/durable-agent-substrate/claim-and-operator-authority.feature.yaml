@@ -1,0 +1,40 @@
+feature:
+  name: claim-and-operator-authority
+  product: durable-agent-substrate
+  description: Define durable claim authority and handler invocation ordering after ready work is derived.
+
+components:
+  CLAIM_ATTEMPT:
+    requirements:
+      1: "`durable.claim.attempt` records an append-only ownership attempt for a ready work item."
+      2: A claim attempt value includes `claimId`, `workId`, `ownerId`, `observedCursor`, and `status`.
+      3: Claim attempt status is `attempted` in the first implementation profile.
+      4: Claim attempts are preserved as evidence and are not collapsed into only the winning owner.
+      5: Claim attempts are ordered by durable stream order, not wall-clock timestamp.
+
+  CLAIM_AUTHORITY:
+    requirements:
+      1: The winning claim is the first valid claim attempt for a work item by durable stream order.
+      2: Same-owner duplicate attempts are duplicate evidence and do not create a second winner.
+      3: Later different-owner attempts are losing conflicts and do not authorize handler invocation.
+      4: Claim authority is derived from origin-ordered durable evidence, not from a stale cached projection.
+      5: A materialized claim projection may expose the winner, but the authority rule is the durable first-valid-claim fold.
+
+  OPERATOR_INVOCATION:
+    requirements:
+      1: An operator program consumes derived ready work and does not author ready state as truth.
+      2: An operator program claims ready work by appending `durable.claim.attempt`.
+      3: A handler is not invoked until the operator observes its claim attempt as the winning claim.
+      4: Speculative handler invocation before winning-claim observation is forbidden.
+      5: Only the winning owner may attempt to terminalize the work.
+      6: Handler success becomes durable run completion and expected handler failure becomes durable run failure.
+      7: The runner owns once-only durable terminalization from the handler Effect exit.
+      8: Handlers return values or fail in the Effect error channel and do not call explicit durable complete or fail APIs.
+
+constraints:
+  PHASE_BOUNDARY:
+    requirements:
+      1: This feature starts after `ReadyWorkProjection` is proven as a pure derived view.
+      2: This feature does not define run or completion state-machine transitions.
+      3: This feature does not require real agents, ACP, CLI, process launch, provider lifecycle, or tool transport.
+      4: Tests for this feature assert claim-before-invoke and once-only terminalization rather than generic stream append/read behavior.

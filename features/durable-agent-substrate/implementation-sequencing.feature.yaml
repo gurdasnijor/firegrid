@@ -12,16 +12,18 @@ components:
       4: The fourth implementation slice derives `ReadyWorkProjection` from rebuilt run and completion projections before handler invocation is built.
       5: The fifth implementation slice invokes handlers only after the operator appends a claim attempt and observes that claim as the durable winner.
       6: The sixth implementation slice proves competing claim attempts and once-only terminalization for the same work.
-      7: The seventh implementation slice adds `sleep`, `waitFor`, and externally resolved awakeable APIs by lowering them to durable completions.
+      7: The seventh implementation slice adds `sleep`, `waitFor`, `scheduleWork`, and externally resolved awakeable APIs by lowering them to durable completions.
       8: The eighth implementation slice proves the integrated path from semantic producer through operator execution, durable suspension, external resolution, and rebuild.
 
   SPEC_OWNERSHIP:
     requirements:
       1: "`durable-records-and-projections` owns durable row/projection vocabulary, rebuild rules, no-gap projection boundaries, and the Durable Streams / Durable Streams State boundary."
       2: "`awakeables-and-runs` owns `durable.completion` and `durable.run` state machines, externally resolved awakeable semantics, no-live-callback truth, and no-stuck blocked runs."
-      3: "`ready-work-projection` owns `ReadyWorkProjection` derivation, claim-before-invoke, and operator terminalization after winning durable ownership."
+      3: "`ready-work-projection` owns `ReadyWorkProjection` derivation only."
       4: "`effect-native-api` owns Effect Schema, Effect service/layer shape, scoped operator program API, and no framework registry or fat context."
       5: "`semantic-producer` owns semantic producer operations for declaring durable work and resolving awakeables without exposing raw append or envelope APIs."
+      6: "`claim-and-operator-authority` owns claim attempts, first-valid claim authority, claim-before-invoke, and owner-gated terminalization."
+      7: "`durable-waits-and-scheduling` owns sleep, waitFor, scheduleWork, and public awakeable API lowering after core operator semantics exist."
 
 constraints:
   NO_DUPLICATE_PROOF:

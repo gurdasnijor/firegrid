@@ -27,3 +27,7 @@ durable.run + durable.completion + durable.claim.attempt
   -> ReadyWorkProjection
   -> claim-before-invoke operator proof
 ```
+
+When implementation starts, tests should include full Acai ACID references in
+test names or nearby comments. The docs/spec-only baseline intentionally has no
+implementation references yet.

@@ -18,6 +18,15 @@ components:
       10: Duplicate awakeable resolutions follow first-valid-terminal-wins.
       11: A pending completion can cancel with durable terminal reason data.
 
+  COMPLETION_TRANSITIONS:
+    requirements:
+      1: A completion may transition from absent to pending.
+      2: A pending completion may transition to resolved, rejected, or cancelled.
+      3: Resolved, rejected, and cancelled are terminal completion states.
+      4: A terminal completion does not transition back to pending or to another terminal state.
+      5: Competing completion terminal records use first-valid-terminal-wins authority.
+      6: Later conflicting terminal records remain evidence and do not rewrite the terminal winner.
+
   RUN:
     requirements:
       1: "`durable.run` represents a durable unit of work."
@@ -28,17 +37,18 @@ components:
       6: A run can cancel with durable terminal reason data.
       7: Run state can be rebuilt from durable rows without a live runtime object.
       8: A rejected completion terminalizes a blocked run as failed in the minimal profile.
-      9: A cancelled completion terminalizes a blocked run as failed or cancelled by durable terminal state in the minimal profile.
+      9: A cancelled completion terminalizes a blocked run as cancelled by durable terminal state in the minimal profile.
       10: A blocked run must not remain permanently blocked after its awaited completion reaches any terminal state.
 
-  CHOREOGRAPHY:
+  RUN_TRANSITIONS:
     requirements:
-      1: "`sleep(durationMs)` appends a timer-shaped completion and may append durable trace rows for scheduled, fired, or cancelled observability."
-      2: "`schedule_me(when, prompt)` appends a scheduled-prompt-shaped completion and may append durable trace rows; timer firing does not append a prompt until a higher runtime proves live promptability."
-      3: "`wait_for(trigger, timeoutMs?)` appends a projection-match completion using snapshot-first and follow-after-cursor no-gap semantics."
-      4: Trace rows are durable traceable observability rows and do not require a real agent adapter in the first implementation phase.
-      5: Higher-layer choreography primitives record durable intent through run, completion, or claim-attempt rows before suspension, fanout, or externally visible work.
-      6: Higher-layer choreography primitives are tools compiled from substrate primitives plus combinators or materializer folds.
+      1: A run may transition from absent to started.
+      2: A started run may transition to blocked, completed, failed, or cancelled.
+      3: A blocked run may transition to completed, failed, or cancelled.
+      4: Completed, failed, and cancelled are terminal run states.
+      5: A terminal run does not transition back to started or blocked and does not transition to another terminal state.
+      6: Competing run terminal records use first-valid-terminal-wins authority.
+      7: Later conflicting terminal records remain evidence and do not rewrite the terminal winner.
 
 constraints:
   NO_SEPARATE_CONTINUATION_ROW_YET:
