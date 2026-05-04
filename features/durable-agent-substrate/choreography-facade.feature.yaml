@@ -1,0 +1,82 @@
+feature:
+  name: choreography-facade
+  product: durable-agent-substrate
+  description: Define the Effect-native choreography facade and agent tool bindings for durable sleep, projection waits, scheduled work, and externally resolved waits without expanding substrate authority concepts.
+
+components:
+  CURRENT_WORK_CONTEXT:
+    requirements:
+      1: Choreography operations read the current durable work identity from an Effect-provided CurrentWorkContext rather than requiring callers to pass work ids manually.
+      2: CurrentWorkContext includes branded WorkId and OwnerId values plus optional causation and correlation metadata.
+      3: New choreography-facing public signatures use branded WorkId, CompletionId, and OwnerId types.
+      4: Choreography callers do not pass completion ids, claim ids, stream URLs, raw run rows, or raw Durable Streams State envelopes.
+
+  CHOREOGRAPHY_API:
+    requirements:
+      1: Choreography exposes an Effect-native runtime API with sleep, waitFor, scheduleAt, and awaitAwakeable operations.
+      2: sleep creates a timer-shaped durable completion and blocks the current run on that completion.
+      3: waitFor creates a projection-match-shaped durable completion and blocks the current run on that completion.
+      4: scheduleAt creates a scheduled-work-shaped durable completion and blocks the current run on that completion.
+      5: awaitAwakeable creates or observes an externally-resolved awakeable-shaped durable completion and blocks the current run on that completion.
+      6: The runtime API does not expose raw completion CRUD, raw run transition builders, raw append helpers, retained fold readers, or processReadyWorkItem as the normal path.
+      7: scheduleAt is the substrate-facing scheduled-work name; profile-specific names such as schedule_me are tool aliases above the substrate API.
+
+  TRIGGERS:
+    requirements:
+      1: waitFor v1 accepts projection-match triggers only.
+      2: Projection-match trigger input is described with Effect Schema and can be decoded by runtime APIs and tool bindings from the same schema.
+      3: Projection-match trigger values contain serializable data such as label, projectionKey, and matcherId.
+      4: Projection-match trigger values do not embed JavaScript predicate functions or raw projection objects.
+      5: Matcher predicates are provided by a layer-scoped TriggerMatchers service keyed by matcherId.
+      6: The substrate does not maintain a mutable global matcher registry.
+      7: Lowering dispatch over trigger variants is exhaustive so adding a future trigger kind forces explicit handling.
+      8: Missing matcher configuration fails as an explicit runtime configuration error, not as a silent no-op or unmatched wait.
+
+  SUSPENSION:
+    requirements:
+      1: A suspending choreography operation writes the durable completion and blocked run before signalling in-process suspension.
+      2: Choreography methods may use Effect interruption as the in-process suspension signal after durable suspension is committed.
+      3: A work runner treats interruption as suspension only after verifying the durable run is blocked on an expected completion.
+      4: Host cancellation, shutdown interruption, or interruption before durable blocking is not reported as successful suspension.
+      5: Runtime presentation maps a verified suspension to a suspended work outcome.
+      6: Tool-binding presentation maps a verified suspension to a neutral ChoreographySuspension value.
+      7: ChoreographySuspension contains suspended=true, operation, branded workId, and branded completionId.
+
+  TOOL_BINDINGS:
+    requirements:
+      1: ChoreographyTools exposes agent-tool bindings for sleep, wait_for, schedule_me, and awaitable-style waits without making those tool names substrate-native row families.
+      2: Agent tool bindings call the same choreography lowering used by runtime APIs.
+      3: Tool inputs are decoded with Effect Schema-derived schemas rather than handwritten parallel decoders.
+      4: Tool bindings do not expose raw completions, raw runs, claims, stream URLs, or Durable Streams State envelopes to the agent.
+      5: The schedule_me tool binding lowers to the substrate scheduleAt operation.
+      6: Tool binding descriptors and wire result shapes remain adapter/profile owned; the substrate exposes only a neutral binding harness and neutral suspension result.
+
+  ERRORS:
+    requirements:
+      1: ChoreographyTimeout is the only v1 recoverable tagged choreography error.
+      2: ChoreographyTimeout carries a branded CompletionId and durable deadlineAtMs.
+      3: Timeout is observed when a previously suspended wait resumes from a timeout or cancelled completion.
+      4: Missing context, missing matcher, stream write failure, and internal run-blocking mistakes do not expand the public choreography error taxonomy in v1.
+
+  INSTRUMENTATION:
+    requirements:
+      1: Choreography operations create Effect-native instrumentation boundaries such as spans or span annotations when the host provides tracing.
+      2: Instrumentation metadata is non-authoritative and does not affect run, completion, claim, or projection authority.
+      3: The first choreography facade does not require durable.trace rows for correctness or ordinary API use.
+      4: Durable agent-readable trace history is deferred to a later observability profile or caller-owned event plane.
+
+  COMMON_USAGE_EXAMPLES:
+    requirements:
+      1: The implementation includes a fake ACP-permission-shaped event-plane example using waitFor without implementing ACP.
+      2: The implementation includes a delayed scheduled-work example using scheduleAt and the scheduled-work subscriber path.
+      3: The implementation includes a tool-layer sleep example proving an agent tool call lowers to the same durable shape as the runtime sleep API.
+      4: Examples use Fireline or Firepixel-shaped scenarios rather than generic email, payment, or placeholder business examples.
+
+constraints:
+  BOUNDARY:
+    requirements:
+      1: The choreography facade does not introduce ACP, Fireline, Firepixel, session, prompt, permission, provider, sandbox, tool-call, spawn, execute, or schedule_me as substrate-native row families.
+      2: The first choreography facade does not implement spawn, spawnAll, execute, stream forking, ACP adapters, process launch, live session ownership, or general JavaScript continuation replay.
+      3: The choreography facade does not introduce a workflow SDK, operation-definition framework, global registry, broad error taxonomy, DurableChannel, or CompletionChannel.
+      4: The runtime API and agent tool API share lowering semantics so the same operation produces the same durable completion and blocked-run shape.
+      5: Stream forking remains a future-compatible capability; choreography v1 does not expose forkSession or forkWork APIs.
