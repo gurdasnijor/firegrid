@@ -18,10 +18,18 @@ export const RunState = Schema.Literal(
 export type RunState = Schema.Schema.Type<typeof RunState>
 
 // awakeables-and-runs.RUN.1 — value shape only; transition enforcement is Slice 2.
+// launchable-substrate-host.CLIENT_SURFACE.11
+// launchable-substrate-host.CLIENT_SURFACE.12
+// `data` is substrate-generic optional run data carried for the run's
+// lifetime. Client work declaration places caller-supplied input here so
+// no Fireline / Firepixel / ACP / MCP / session / prompt / provider /
+// sandbox / transport row family is introduced. The field is optional
+// for backwards compatibility with runs that have no caller input.
 export const RunValue = Schema.Struct({
   runId: Schema.String,
   state: RunState,
   blockedOnCompletionId: Schema.optional(Schema.String),
+  data: Schema.optional(Schema.Unknown),
   result: Schema.optional(Schema.Unknown),
   error: Schema.optional(Schema.Unknown),
   terminalReason: Schema.optional(Schema.Unknown),

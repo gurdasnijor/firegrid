@@ -130,6 +130,14 @@ constraints:
       3: Event-plane projections do not replace substrate claim authority or completion authority.
       4: The launchable layer does not introduce new substrate-native row families for Fireline, Firepixel, ACP, MCP, sessions, prompts, providers, sandboxes, or process transports.
 
+  SCHEMA_OWNERSHIP:
+    requirements:
+      1: The package that owns a durable row family owns the Effect Schema and TypeScript type source of truth for that row family.
+      2: Client and host code reuse substrate-owned row schemas, types, state helpers, and transition builders rather than redefining durable.run, durable.completion, durable.claim.attempt, or durable.trace shapes.
+      3: Caller-owned event-plane schemas live with the runtime or application that owns the event plane and are supplied through EventPlane definitions.
+      4: Host-local configuration, diagnostics, and lifecycle types remain host-owned and are not durable substrate row families.
+      5: The launchable layer does not introduce a shared types package for substrate-owned or caller-owned row schemas.
+
   PRIOR_ART:
     requirements:
       1: Durable Streams test UI is prior art for registry discovery, live follow, catchup, JSON rendering, and stream inspection.

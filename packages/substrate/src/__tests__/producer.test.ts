@@ -472,3 +472,82 @@ describe("Slice 3 boundaries (structural — semantic-producer + effect-native-a
     expect(exports.AgentClient).toBeUndefined()
   })
 })
+
+describe("launchable-substrate-host.CLIENT_SURFACE.11 — declareWork keeps idempotency metadata out of the durable.run row value", () => {
+  it("WorkProducer.declareWork forwards idempotencyKey as a ChangeEvent header, not a RunValue field", async () => {
+    const url = await createSubstrateStream("declare-idempotency")
+    const layer = SubstrateProducerLive({ streamUrl: url })
+
+    const idempotencyKey = "demo:review-1"
+    const declared = await runProducer(
+      layer,
+      Effect.gen(function* () {
+        const wp = yield* WorkProducer
+        return yield* wp.declareWork({
+          runId: "run-idempotency",
+          idempotencyKey,
+        })
+      }),
+    )
+    expect(declared.runId).toBe("run-idempotency")
+
+    const snap = await rebuildProjection({ url })
+    const run = snap.runs.get("run-idempotency")
+    expect(run).toBeDefined()
+    expect(run?.state).toBe("started")
+    // RunValue must NOT carry idempotencyKey on the row.
+    expect((run as Record<string, unknown>).idempotencyKey).toBeUndefined()
+
+    // Read the raw stream and confirm the durable.run insert event
+    // carries idempotencyKey on its headers.
+    const handle = new DurableStream({ url, contentType: "application/json" })
+    const res = await handle.stream({ offset: "-1", live: false })
+    const items = (await res.json()) as ReadonlyArray<ChangeEvent>
+    const runEvent = items.find(
+      (it) => it.type === "durable.run" && it.key === "run-idempotency",
+    )
+    expect(runEvent).toBeDefined()
+    expect(
+      (runEvent!.headers as unknown as Record<string, string>).idempotencyKey,
+    ).toBe(idempotencyKey)
+  })
+})
+
+describe("launchable-substrate-host.CLIENT_SURFACE.12 — declareWork stores caller input as substrate-generic durable.run data", () => {
+  it("WorkProducer.declareWork({ data }) materializes the caller's input on the durable.run row's data field", async () => {
+    const url = await createSubstrateStream("declare-data")
+    const layer = SubstrateProducerLive({ streamUrl: url })
+
+    const data = { kind: "review", target: "README.md" } as const
+    await runProducer(
+      layer,
+      Effect.gen(function* () {
+        const wp = yield* WorkProducer
+        return yield* wp.declareWork({ runId: "run-with-data", data })
+      }),
+    )
+
+    const snap = await rebuildProjection({ url })
+    const run = snap.runs.get("run-with-data")
+    expect(run?.state).toBe("started")
+    expect(run?.data).toStrictEqual(data)
+  })
+
+  it("WorkProducer.declareWork without data leaves the row's data field absent", async () => {
+    const url = await createSubstrateStream("declare-no-data")
+    const layer = SubstrateProducerLive({ streamUrl: url })
+
+    await runProducer(
+      layer,
+      Effect.gen(function* () {
+        const wp = yield* WorkProducer
+        return yield* wp.declareWork({ runId: "run-without-data" })
+      }),
+    )
+
+    const snap = await rebuildProjection({ url })
+    const run = snap.runs.get("run-without-data")
+    expect(run?.state).toBe("started")
+    expect(run?.data).toBeUndefined()
+  })
+})

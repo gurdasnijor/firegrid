@@ -105,6 +105,33 @@ The client is how any consumer talks to the substrate. The host is how the
 substrate makes progress. The lab is one consumer of the client plus optional
 read-only diagnostics; it is not a third authority layer.
 
+## Schema And Type Ownership
+
+Every durable participant can append records to Durable Streams, but schema
+ownership stays with the row family owner:
+
+- substrate-owned rows (`durable.run`, `durable.completion`,
+  `durable.claim.attempt`, and substrate trace rows if used) are defined once in
+  `@durable-agent-substrate/substrate`;
+- client and host code import substrate-owned schemas, types, state helpers, and
+  transition builders from the substrate package instead of redefining parallel
+  row shapes;
+- caller-owned event-plane rows are defined by the runtime or application that
+  owns that plane, using `EventPlane.define(...)` and the caller's
+  `createStateSchema(...)` value;
+- host-local configuration, diagnostic status, and process-lifecycle types are
+  owned by `@durable-agent-substrate/host` because they are not durable
+  substrate row families;
+- client request/input types are owned by `@durable-agent-substrate/client`, but
+  when they lower into durable substrate rows they must use substrate-owned row
+  schemas and producers.
+
+The rule is intentionally simple: row family owner equals schema and type source
+of truth. Avoid a shared `types` package for now; it would make ownership less
+clear and expand the low-level concept space without adding authority. If a
+later package needs a schema, it should depend on the package that owns that row
+family or define its own caller-owned event plane.
+
 ## Restate-Inspired Package Roles
 
 Restate separates three roles that are worth preserving at the package-boundary

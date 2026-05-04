@@ -146,8 +146,19 @@ export function cancelCompletion(
 
 // awakeables-and-runs.RUN.2
 // awakeables-and-runs.RUN_TRANSITIONS.1
-export function startRun(input: { runId: string }): ChangeEvent {
-  const value: RunValue = { runId: input.runId, state: "started" }
+// launchable-substrate-host.CLIENT_SURFACE.11
+// launchable-substrate-host.CLIENT_SURFACE.12
+// `data` is optional caller input carried on the durable.run row from
+// declaration onward. It is NOT enforced or interpreted by the substrate.
+export function startRun(input: {
+  readonly runId: string
+  readonly data?: unknown
+}): ChangeEvent {
+  const value: RunValue = {
+    runId: input.runId,
+    state: "started",
+    ...(input.data !== undefined ? { data: input.data } : {}),
+  }
   if (!isLegalRunTransition(undefined, value.state)) {
     throw new IllegalRunTransition(input.runId, undefined, value.state)
   }
