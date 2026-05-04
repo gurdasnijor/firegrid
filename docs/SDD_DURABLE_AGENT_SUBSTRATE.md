@@ -1142,13 +1142,13 @@ Recommended phases:
 
 ```text
 Phase 0: repo/package skeleton
-Phase 1: internal durable records + Durable Streams State projection
-Phase 2: DurableCompletion + Run stores internally
-Phase 3: ReadyWork derivation internally
-Phase 4: operator program invokes handler after ownership
-Phase 5: Claim / Attempt rows and claim race proof
-Phase 6: DurableWaits sleep/waitFor/awakeable and external DurableAwakeables
-Phase 7: higher-layer choreography helpers schedule_me/spawn/spawn_all
+Phase 1: row/projection contracts and Effect schema baseline
+Phase 2: DurableCompletion and Run state machines
+Phase 3: Effect service skeleton and semantic producer operations
+Phase 4: ReadyWork derivation from rebuilt projections
+Phase 5: claim-before-invoke operator program
+Phase 6: claim race and once-only terminalization proof
+Phase 7: DurableWaits sleep/waitFor/awakeable and external DurableAwakeables
 Phase 8: generic integration proof plus Firepixel mapping sketch
 ```
 
@@ -1206,13 +1206,13 @@ No Firepixel dependency. No monorepo split.
 
 ### 9.2 Phase Acceptance Gates
 
-Phase 1, internal records and projection:
+Phase 1, row/projection contracts and Effect schema baseline:
 
 ```text
-semantic operation
-  -> internal Durable Streams State record
-  -> projection materializes
-  -> rebuild from zero yields same logical row
+DurableRunRow / DurableCompletionRow / DurableClaimAttemptRow schemas exist
+Durable Streams State-compatible row envelopes are internal
+projection folds rebuild from retained substrate rows
+tests assert substrate row/projection semantics, not generic stream append/read
 ```
 
 Phase 2, durable completion and run:
@@ -1224,25 +1224,37 @@ run blocked on completion
 rebuild
 completion resolved
 rebuild
+rejected/cancelled completion terminalizes blocked run by policy
 ```
 
-Phase 3, ready work:
+Phase 3, Effect services and semantic producer:
+
+```text
+Effect services expose semantic operations
+producer declares durable work without raw append/envelope access
+producer resolves/rejects/cancels awakeables without live handles
+producer methods return durable identities and projection-relevant fields
+```
+
+Phase 4, ready work:
 
 ```text
 blocked run + resolved completion
   -> ReadyWork contains run
+rejected/cancelled/completed/failed states do not derive normal ready work
 ```
 
-Phase 4, operator program:
+Phase 5, operator program:
 
 ```text
 ready work
-  -> durable ownership won internally
-  -> handler invoked once
+  -> operator appends claim attempt
+  -> operator observes winning claim
+  -> handler invoked only after winning claim is observed
   -> completed/failed terminal state recorded
 ```
 
-Phase 5, claim race:
+Phase 6, claim race:
 
 ```text
 two handler runners see same work
@@ -1252,13 +1264,24 @@ two handler runners see same work
   -> rebuild proves one terminal owner
 ```
 
-Phase 6, waits/triggers:
+Phase 7, waits/triggers:
 
 ```text
 sleep / waitFor / awakeable
   -> durable trigger
   -> durable completion
   -> blocked run resumes through ready work
+```
+
+Phase 8, integration proof:
+
+```text
+semantic producer declares work
+operator program claims and runs handler
+handler awaits durable completion
+external actor resolves awakeable
+ready work derives and terminalizes
+fresh rebuild proves final state from substrate rows
 ```
 
 Deferred side-effect replay:
@@ -1292,6 +1315,32 @@ Spec ownership is intentionally orthogonal:
 | `ready-work-projection` | `ReadyWorkProjection` derivation, claim-before-invoke, and operator terminalization after winning durable ownership. | Completion/run row definitions, semantic producer surface, or Effect service/layer style. |
 | `effect-native-api` | Effect Schema, Effect service/layer shape, scoped operator program API, and no framework registry/fat context. | Durable state-machine behavior, projection rules, or package naming. |
 | `semantic-producer` | Semantic producer operations for declaring durable work and resolving awakeables without exposing raw append/envelope APIs. | Row schema definitions, projection folds, operator behavior, or higher-level Fireline/Firepixel client design. |
+
+Feature sequencing is explicit in the Acai `feature.prerequisites` fields:
+
+```text
+durable-records-and-projections
+  -> awakeables-and-runs
+  -> effect-native-api
+  -> semantic-producer
+  -> ready-work-projection
+```
+
+That order is the default implementation path. `effect-native-api` may be
+sketched in parallel with state-machine work, but implementation PRs should not
+wire semantic producer or operator behavior before the row/projection and
+completion/run semantics exist.
+
+The smallest useful execution units are:
+
+| Slice | Primary specs | Must prove |
+| --- | --- | --- |
+| 1. Contracts | `durable-records-and-projections`, `effect-native-api.SCHEMA_FIRST` | Schema and projection contracts exist; no raw stream behavior is the assertion target. |
+| 2. State Machines | `awakeables-and-runs` | Completion and run lifecycle rebuild from durable rows; no live callback truth. |
+| 3. Producer | `semantic-producer`, `effect-native-api.EFFECT_SERVICES` | Semantic operations create run/completion state without exposing append/envelope APIs. |
+| 4. Ready Work | `ready-work-projection.READY_WORK_PROJECTION` | Resolved completions derive ready work; rejected/cancelled/completed/failed rows do not. |
+| 5. Operator Ownership | `ready-work-projection.OPERATOR_TRANSITION`, `effect-native-api.OPERATOR_PROGRAMS` | Claim is observed as winner before handler invocation; terminalization is once-only. |
+| 6. Wait APIs | `awakeables-and-runs.CHOREOGRAPHY`, `effect-native-api.EFFECT_SERVICES` | `sleep`, `waitFor`, and `awakeable` lower to completions and resume through ready work. |
 
 Implementation tests should follow the same ownership. A test may reference
 multiple ACIDs only when it is proving an integration boundary between those

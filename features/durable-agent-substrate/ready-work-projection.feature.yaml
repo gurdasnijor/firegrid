@@ -2,6 +2,11 @@ feature:
   name: ready-work-projection
   product: durable-agent-substrate
   description: "Define the first ready-work projection: resolved completions make blocked runs ready."
+  prerequisites:
+    - durable-records-and-projections
+    - awakeables-and-runs
+    - effect-native-api
+    - semantic-producer
 
 components:
   SOURCE_PROJECTIONS:
