@@ -274,6 +274,25 @@ The exact method names can change, but the boundary should not:
 - diagnostic raw stream/state inspection lives under a separate lab/diagnostic
   package, not the production root.
 
+### Client V1 Decisions
+
+The first client surface is intentionally narrow:
+
+- `work.declare({ idempotencyKey, input })` declares a durable run. The
+  idempotency key is event metadata/header information, not part of the
+  durable.run row value. The input is substrate-generic run data and may be
+  represented as an optional `data` field on durable.run, matching the existing
+  optional `data` pattern on durable.completion.
+- `choreography.scheduleAt(...)` is the only choreography method on the client
+  root in v1. `sleep`, `waitFor`, and `awaitAwakeable` require
+  `CurrentWorkContext` and remain server-side runtime primitives.
+- event-plane write/read APIs take the `EventPlane.define(...)` result at the
+  call site. The caller composes the plane layer; the client does not keep a
+  global plane registry.
+- event-plane reads use the plane projection service for
+  `snapshot`/`stream`/`until`, just as substrate reads use curated substrate
+  projections.
+
 ### Client Responsibilities
 
 The client may:
@@ -550,6 +569,11 @@ These endpoints are diagnostic only. They do not mutate durable state and do
 not start scenarios. Secret values and authorization headers are never returned
 through diagnostics.
 
+The first host diagnostic surface is local HTTP on a configurable port. The
+default diagnostic port is `4438`, leaving the embedded Durable Streams server
+on its own selected port. Routes are GET-only; unknown methods return 404 or
+405 and never append durable records.
+
 ## Relationship To Event Planes
 
 The launchable host should support event-plane profiles but not own their
@@ -642,3 +666,10 @@ semantics.
 5. Profile discovery uses explicit local maps supplied by the host application
    or lab. Config may select a known key from that map; there is no global
    registry, dynamic module import, or durable profile catalog in the substrate.
+6. Host auth config resolves deterministically: `SUBSTRATE_AUTHORIZATION` wins
+   over `SUBSTRATE_TOKEN`; a bare token becomes `Authorization: Bearer <token>`;
+   diagnostics never expose the resulting header.
+7. Vite lab implementation uses React with vanilla CSS or CSS modules. No UI
+   framework is introduced in the first slice.
+8. The scenario command shape is `pnpm --filter lab scenario <name>`, backed by
+   the same scenario descriptors the lab UI imports.
