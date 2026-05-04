@@ -271,6 +271,36 @@ also require runtime/provider/session/tool policies. They should be specified
 after the first `sleep` / `waitFor` / `scheduleAt` / permission slice proves the
 facade boundary.
 
+### Deferred Operation Sketches
+
+The first implementation should not build these, but the facade should remain
+compatible with them.
+
+`execute` should remain a higher-runtime operation:
+
+```text
+operation call
+  -> caller-owned execution request row
+  -> Work pipeline claims execution
+  -> provider/tool transport invoked
+  -> caller-owned execution terminal row
+```
+
+Provider, sandbox, resource, and permission policy stay above the substrate.
+
+`spawn` and `spawnAll` should remain higher-runtime operations:
+
+```text
+operation call
+  -> caller-owned child launch/prompt rows
+  -> Work pipeline claims launch side effects
+  -> Projection until observes child terminal rows
+  -> aggregate terminal results when needed
+```
+
+Spawn is not a substrate primitive. It composes event planes, projections, Work
+pipelines, and waits.
+
 ## Suspension Semantics
 
 There are two valid presentations of the same durable operation.
