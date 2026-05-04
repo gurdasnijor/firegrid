@@ -1,0 +1,36 @@
+feature:
+  name: effect-pipeline-facade
+  product: durable-agent-substrate
+  description: Define the first ergonomic Effect-native facade over projections, claim-before-side-effect work, and narrow awaitables without exposing kernel mechanics.
+
+components:
+  PROJECTION_FACADE:
+    requirements:
+      1: Projection snapshot returns a single Effect value for a typed query.
+      2: Projection stream returns an Effect Stream of typed projection values for a typed query.
+      3: Projection until evaluates a no-gap snapshot first, then follows changes after the snapshot boundary.
+      4: Projection until resolves with the matching typed projection value or fails with a typed timeout/cancel/no-gap error.
+      5: Projection operations preserve query dependency requirements in the Effect requirement channel.
+
+  WORK_PIPELINE:
+    requirements:
+      1: Work pipelines consume typed candidate work from an Effect Stream or Effect value.
+      2: Work pipelines include combinators equivalent to durable claim ownership, side-effect performance, outcome recording, and scoped execution.
+      3: A side-effect handler is not invoked until durable claim ownership has been observed as won.
+      4: Handler success, expected failure, defect, and interruption are observed as an Effect Exit by the outcome recorder.
+      5: Work pipelines preserve handler and recorder dependency requirements in the returned Effect requirement channel.
+      6: Work pipeline APIs do not require a callback bag with observe, execute, and record fields as the primary shape.
+
+  AWAITABLE_FACADE:
+    requirements:
+      1: Awaitable APIs remain narrow operations for durable timers, scheduled work, external durable promises, and projection-backed waits when direct Projection until is not enough.
+      2: Awaitable APIs do not expose raw durable completion create, resolve, reject, or cancel as the normal runtime-facing surface.
+      3: Timer and scheduled awaitables accept Effect Duration or Clock-shaped input.
+      4: External awaitables require stable semantic keys.
+
+constraints:
+  NO_KERNEL_LEAK:
+    requirements:
+      1: The facade does not expose raw Durable Streams records, StreamDB collections, retained fold readers, claim rows, run transition builders, or processReadyWorkItem as the normal API.
+      2: Kernel modules may remain available under explicitly advanced/testing/internal paths while facade ergonomics are validated.
+      3: Examples and tests use Fireline/Firepixel-shaped scenarios rather than placeholder business examples such as email or payments.
