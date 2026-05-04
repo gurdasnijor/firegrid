@@ -408,6 +408,39 @@ describe("awakeables-and-runs.RUN", () => {
   })
 })
 
+describe("launchable-substrate-host.CLIENT_SURFACE.11 — startRun without data leaves the run row's data field absent", () => {
+  it("startRun({ runId }) produces a RunValue with no data field", () => {
+    const started = runValueOf(startRun({ runId: "run-data-absent" }))
+    expect("data" in started).toBe(false)
+    expect(started.state).toBe("started")
+    expect(started.runId).toBe("run-data-absent")
+  })
+})
+
+describe("launchable-substrate-host.CLIENT_SURFACE.12 — startRun preserves caller input as substrate-generic durable.run data", () => {
+  it("startRun({ runId, data }) preserves the data value verbatim on the durable.run row", () => {
+    const data = { kind: "review", target: "README.md" } as const
+    const started = runValueOf(startRun({ runId: "run-data-present", data }))
+    expect(started.data).toStrictEqual(data)
+    expect(started.state).toBe("started")
+  })
+
+  it("startRun preserves arbitrary serializable shapes (string, array, nested object, null)", () => {
+    const samples: ReadonlyArray<unknown> = [
+      "plain-string",
+      [1, 2, 3],
+      { nested: { a: 1, b: ["x"] } },
+      null,
+    ]
+    for (const data of samples) {
+      const started = runValueOf(
+        startRun({ runId: `run-data-${JSON.stringify(data).slice(0, 16)}`, data }),
+      )
+      expect(started.data).toStrictEqual(data)
+    }
+  })
+})
+
 describe("awakeables-and-runs constraints", () => {
   it("awakeables-and-runs.NO_SEPARATE_CONTINUATION_ROW_YET.1 — no separate continuation row family is exposed", () => {
     const m = substrate as unknown as Record<string, unknown>

@@ -56,14 +56,45 @@ export class WorkProducer extends Effect.Service<WorkProducer>()(
           catch: (cause) => new ProducerStreamError(cause),
         })
 
+      // launchable-substrate-host.CLIENT_SURFACE.11
+      // Idempotency metadata travels as ChangeEvent headers, not inside
+      // the durable.run row value. Substrate readers ignore these
+      // headers; the kernel guarantees only that they are appended on
+      // the declaring event for downstream observability/dedupe layers.
+      const withIdempotencyHeader = (
+        event: ChangeEvent,
+        idempotencyKey: string | undefined,
+      ): ChangeEvent => {
+        if (idempotencyKey === undefined) return event
+        const merged: Record<string, string> = {
+          ...(event.headers as unknown as Record<string, string>),
+          idempotencyKey,
+        }
+        return {
+          ...event,
+          headers: merged as unknown as ChangeEvent["headers"],
+        }
+      }
+
       return {
         // semantic-producer.PRODUCER_EFFECT.1
-        // Returns durable identity + projection-relevant state, never a handle.
-        declareWork: (input?: { readonly runId?: string }) =>
+        // launchable-substrate-host.CLIENT_SURFACE.11
+        // launchable-substrate-host.CLIENT_SURFACE.12
+        // `input` is optional substrate-generic run data; it is stored
+        // verbatim on the durable.run row's `data` field. `idempotencyKey`
+        // travels as an event header, not on the run row value.
+        declareWork: (input?: {
+          readonly runId?: string
+          readonly data?: unknown
+          readonly idempotencyKey?: string
+        }) =>
           Effect.gen(function* () {
             const runId = input?.runId ?? randomUUID()
-            const event = startRun({ runId })
-            yield* append(event)
+            const event = startRun({
+              runId,
+              ...(input?.data !== undefined ? { data: input.data } : {}),
+            })
+            yield* append(withIdempotencyHeader(event, input?.idempotencyKey))
             return { runId, state: "started" as const }
           }),
       }

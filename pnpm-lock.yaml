@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      '@durable-streams/server':
+        specifier: ^0.3.1
+        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
 
   packages/client:
     dependencies:
@@ -69,9 +73,6 @@ importers:
       '@durable-agent-substrate/client':
         specifier: workspace:*
         version: link:../client
-      '@durable-agent-substrate/substrate':
-        specifier: workspace:*
-        version: link:../substrate
       effect:
         specifier: ^3.18.0
         version: 3.21.2

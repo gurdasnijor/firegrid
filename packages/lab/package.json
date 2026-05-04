@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@durable-agent-substrate/client": "workspace:*",
-    "@durable-agent-substrate/substrate": "workspace:*",
     "effect": "^3.18.0"
   },
   "devDependencies": {
