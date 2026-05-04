@@ -63,11 +63,13 @@ components:
 
   LAB_INSPECTOR:
     requirements:
-      1: The lab provides a developer inspector for raw streams, substrate projections, event-plane projections, ready work, and host status.
+      1: The lab is an example or development application built on the same substrate client used by other consuming runtimes.
       2: The lab supports replay plus live-follow views for stream-shaped data.
       3: The lab can use Durable Streams registry-style discovery for stream lists.
       4: The lab renders structured JSON stream records and projected state in substrate-specific panels.
       5: The lab starts scenarios by calling the substrate client, not by calling host mutation endpoints.
+      6: The lab does not receive privileged write authority beyond the substrate client.
+      7: Raw stream views in the lab are diagnostic panels and are visually or structurally separated from scenario controls.
 
   SCENARIOS:
     requirements:
@@ -95,6 +97,7 @@ constraints:
       2: Application and lab writes go through the substrate client durable intent surface.
       3: Read-only host diagnostics do not mutate durable streams/state.
       4: The lab does not depend on hidden host writer APIs for scenario execution.
+      5: The lab is not a privileged substrate layer or host backend.
 
   AUTHORITY_BOUNDARY:
     requirements:

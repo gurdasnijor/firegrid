@@ -22,14 +22,15 @@ This SDD defines that next layer:
   launchable observer/operator process
 
 @durable-agent-substrate/lab
-  dev inspector and scenario runner built on the client
+  example/dev consumer built on the client
 ```
 
-The key design decision is negative: the host is not a command/control API.
-Application writes should flow through a substrate-specific client that appends
-durable records. The host observes durable state and runs configured substrate
-programs. The lab can provide buttons and forms, but those controls use the
-client surface, not hidden host mutation endpoints.
+The key design decision is negative: the host is not a command/control API, and
+the lab is not privileged. Application and lab writes should flow through the
+same substrate-specific client that appends durable records. The host observes
+durable state and runs configured substrate programs. The lab can provide
+buttons and forms, but those controls use the client surface, not hidden host
+mutation endpoints or special lab-only writer paths.
 
 ## References
 
@@ -86,7 +87,7 @@ configured profiles.
 ## Layering
 
 ```text
-application / lab / prototype runtime
+applications / agent runtimes / lab
   -> @durable-agent-substrate/client
       append durable intents
       read curated projections
@@ -100,9 +101,9 @@ Durable Streams + Durable State
   source of truth
 ```
 
-The client is the app-facing writer. The host is the durable observer/worker.
-The lab is a developer experience over both, but scenario actions still call the
-client.
+The client is how any consumer talks to the substrate. The host is how the
+substrate makes progress. The lab is one consumer of the client plus optional
+read-only diagnostics; it is not a third authority layer.
 
 ## Restate-Inspired Package Roles
 
@@ -130,7 +131,7 @@ ingress model:
   Effect-native launchable runtime process and withHost-style dev/test composition
 
 @durable-agent-substrate/lab
-  development inspector and scenario workbench built on the client
+  example/dev application built on the client
 ```
 
 The first launchable substrate should be Effect-native. Non-Effect wrappers may
@@ -424,8 +425,10 @@ durable substrate remains generic.
 
 ## Lab UI
 
-The lab is an inspector and scenario workbench. It can reuse Durable Streams
-test UI ideas:
+The lab is an example/dev application built on the same substrate client that
+any consuming runtime would use. It can offer richer visualization and scenario
+buttons, but it does not get a privileged writer API and it does not use the
+host as a mutation backend. It can reuse Durable Streams test UI ideas:
 
 - stream registry discovery;
 - raw stream view for diagnostics;
@@ -447,7 +450,7 @@ Substrate-specific panels should include:
 - current host status.
 
 Scenario buttons in the lab should not call host mutation endpoints. They should
-call the same client APIs that an application would call:
+call the same client APIs that an application or prototype runtime would call:
 
 ```text
 Lab button
@@ -460,6 +463,10 @@ Lab button
 
 This keeps the lab honest: if a scenario cannot be expressed through the client,
 the client surface is not ready.
+
+Raw stream views are diagnostic panels, not the app-facing path. They should be
+visually separated from scenario controls so users can tell the difference
+between "inspect what happened" and "write a durable intent through the client."
 
 ## Scenario Harnesses
 
