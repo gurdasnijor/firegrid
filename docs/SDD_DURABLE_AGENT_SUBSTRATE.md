@@ -271,7 +271,7 @@ the first-valid-winner fold.
 
 `ReadyWork` is a derived view of work that can be claimed.
 
-It is not a client-authored row.
+It is not a producer-authored row.
 
 Minimal derivation:
 
@@ -1272,24 +1272,52 @@ future DurableStep service or equivalent
 
 ### 9.3 Acai Spec Direction
 
-The Acai specs should be regenerated from this SDD after the semantics settle.
-
-Suggested feature files:
+The Acai specs under `features/durable-agent-substrate` are the executable
+acceptance surface for this SDD. Current feature files:
 
 ```text
 durable-records-and-projections
-durable-completions
-durable-runs
-ready-work
-handler-ownership
-awakeables
-choreography-primitives
-custom-events-and-projections
-firepixel-integration-boundary
+awakeables-and-runs
+ready-work-projection
+effect-native-api
+semantic-producer
 ```
 
-The existing Acai specs under `features/durable-agent-substrate` are a starting
-point, not final truth.
+Spec ownership is intentionally orthogonal:
+
+| Spec | Owns | Does not own |
+| --- | --- | --- |
+| `durable-records-and-projections` | Durable row/projection vocabulary, rebuild rules, no-gap projection boundaries, and the Durable Streams / Durable Streams State boundary. | Completion/run state-machine transitions, operator claim behavior, public Effect API shape, or producer ergonomics. |
+| `awakeables-and-runs` | `durable.completion` and `durable.run` state machines, externally resolved awakeable semantics, no-live-callback truth, and no-stuck blocked runs. | Ready-work derivation, claim ownership, Effect API wiring, or Durable Streams protocol behavior. |
+| `ready-work-projection` | `ReadyWorkProjection` derivation, claim-before-invoke, and operator terminalization after winning durable ownership. | Completion/run row definitions, semantic producer surface, or Effect service/layer style. |
+| `effect-native-api` | Effect Schema, Effect service/layer shape, scoped operator program API, and no framework registry/fat context. | Durable state-machine behavior, projection rules, or package naming. |
+| `semantic-producer` | Semantic producer operations for declaring durable work and resolving awakeables without exposing raw append/envelope APIs. | Row schema definitions, projection folds, operator behavior, or higher-level Fireline/Firepixel client design. |
+
+Implementation tests should follow the same ownership. A test may reference
+multiple ACIDs only when it is proving an integration boundary between those
+features. Unit tests should avoid proving the same behavior through multiple
+feature files.
+
+Tests may use real Durable Streams and Durable Streams State dependencies, but
+the assertion target must be substrate-owned behavior:
+
+```text
+good:
+  semantic producer declares work
+    -> durable.run projection rebuilds
+    -> ready work derives only from resolved completion
+
+bad:
+  append one arbitrary Durable Streams record
+    -> read returns the same arbitrary record
+```
+
+The second test only proves Durable Streams itself and belongs upstream, not in
+this substrate package.
+
+If future implementation work proves a need for finer granularity, split specs
+from these current files without introducing Firepixel, Fireline, ACP, provider,
+or CLI concerns into the substrate requirements.
 
 ### 9.4 Parallelization
 

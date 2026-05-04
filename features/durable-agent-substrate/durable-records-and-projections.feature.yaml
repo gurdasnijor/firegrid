@@ -38,3 +38,5 @@ constraints:
       1: Durable Streams is the append/read/tail substrate for the first implementation phase.
       2: Durable Streams State is the projection envelope/protocol for the first implementation phase.
       3: The portable contract is the durable record and projection vocabulary, not a Firepixel-specific wrapper.
+      4: Tests for this feature assert substrate row, projection, rebuild, and no-gap semantics rather than proving Durable Streams append/read/tail behavior in isolation.
+      5: Tests may use Durable Streams and Durable Streams State as real dependencies, but assertions target substrate-owned records and projections.

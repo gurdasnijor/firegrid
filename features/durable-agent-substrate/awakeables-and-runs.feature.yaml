@@ -23,14 +23,13 @@ components:
       1: "`durable.run` represents a durable unit of work."
       2: A run can start.
       3: A run can block on a completion by recording `blockedOnCompletionId`.
-      4: A blocked run can become ready after the referenced completion resolves.
-      5: A blocked run with a resolved completion appears in `ReadyWorkProjection`.
-      6: A winning claim can complete a run.
-      7: A winning claim can fail a run.
-      8: Run state can be rebuilt from durable rows without a live runtime object.
-      9: A rejected completion terminalizes a blocked run as failed in the minimal profile.
-      10: A cancelled completion terminalizes a blocked run as failed or cancelled by durable terminal state in the minimal profile.
-      11: A blocked run must not remain permanently blocked after its awaited completion reaches any terminal state.
+      4: A run can complete with durable result data.
+      5: A run can fail with durable error data.
+      6: A run can cancel with durable terminal reason data.
+      7: Run state can be rebuilt from durable rows without a live runtime object.
+      8: A rejected completion terminalizes a blocked run as failed in the minimal profile.
+      9: A cancelled completion terminalizes a blocked run as failed or cancelled by durable terminal state in the minimal profile.
+      10: A blocked run must not remain permanently blocked after its awaited completion reaches any terminal state.
 
   CHOREOGRAPHY:
     requirements:
@@ -52,3 +51,4 @@ constraints:
     requirements:
       1: The first substrate model does not expose a workflow orchestration SDK as the primary application model.
       2: Workflow engines may drive the substrate externally, but substrate progress is represented by durable records, completions, projections, claims, and handler execution.
+      3: This feature owns completion and run state-machine behavior, not ready-work derivation or claim ownership.

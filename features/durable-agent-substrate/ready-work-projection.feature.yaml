@@ -1,5 +1,5 @@
 feature:
-  name: ready-run-projection
+  name: ready-work-projection
   product: durable-agent-substrate
   description: "Define the first ready-work projection: resolved completions make blocked runs ready."
 
@@ -10,22 +10,21 @@ components:
       2: "`RunProjection` is derived from `durable.run` rows keyed by `runId`."
       3: The ready-work derivation reads rebuilt projections rather than live in-memory wait state.
 
-  READY_RUN_PROJECTION:
+  READY_WORK_PROJECTION:
     requirements:
-      1: "`ReadyRunProjection` is a derived view, not a client-authored row."
+      1: "`ReadyWorkProjection` is a derived view, not a producer-authored row."
       2: A run is ready-derived when the run state is blocked, the run has `blockedOnCompletionId`, and the referenced completion is resolved.
       3: A rejected completion does not derive normal ready work in the minimal profile.
       4: A cancelled completion does not derive normal ready work in the minimal profile.
       5: A completed or failed run does not derive ready work.
       6: Ready-work derivation is deterministic over rebuilt projection state.
-      7: Rejected or cancelled completions derive durable terminal run state rather than leaving the run blocked.
 
-  SCHEDULER_TRANSITION:
+  OPERATOR_TRANSITION:
     requirements:
-      1: An operator program consumes `ReadyRunProjection` as derived input and does not author ready state as truth.
+      1: An operator program consumes `ReadyWorkProjection` as derived input and does not author ready state as truth.
       2: An operator program claims ready work by appending `durable.claim.attempt`.
       3: A winning operator completes claimed work by appending `durable.run` state `completed` or `failed`.
-      4: Claim attempts and terminal run transitions are emitted through the same durable client producer surface in the first implementation proof.
+      4: Claim attempts and terminal run transitions are emitted through the same semantic producer surface in the first implementation proof.
       5: Rebuilding from zero after completion yields the completed run projection.
       6: Ready-work derivation is separate from handler side effects and ownership claims.
       7: A handler is not invoked until its claim attempt is observed as the winning attempt in durable claim projection.
@@ -37,4 +36,5 @@ constraints:
     requirements:
       1: This feature does not require an operator package before the projection contract is proven.
       2: This feature does not require real agents, ACP, CLI, process launch, provider lifecycle, or tool transport.
-      3: Test-local proof code names the real concept `ReadyRunProjection` and does not become a shadow runtime API.
+      3: Test-local proof code names the real concept `ReadyWorkProjection` and does not become a shadow runtime API.
+      4: This feature owns ready-work derivation and claim-before-invoke behavior, not completion or run state-machine definitions.

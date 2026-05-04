@@ -1,12 +1,12 @@
 feature:
   name: effect-native-api
   product: durable-agent-substrate
-  description: Define the substrate public API as Effect schemas, services, layers, and worker programs rather than a framework registry.
+  description: Define the substrate public API as Effect schemas, services, layers, and scoped operator programs rather than a framework registry.
 
 components:
   SCHEMA_FIRST:
     requirements:
-      1: The foundational durable authority row families and derived projections are defined with Effect Schema.
+      1: Public substrate input, output, row, and projection contracts are defined with Effect Schema.
       2: Effect Schema is the source of truth for runtime validation and TypeScript types.
       3: Standard Schema V1 exports are generated from dependency-free Effect schemas for interop only.
       4: Projection types use Effect Schema for row decoding, projection validation, and test data generation.
@@ -15,21 +15,21 @@ components:
 
   EFFECT_SERVICES:
     requirements:
-      1: Durable waits, awakeable resolution, work declaration, and worker running are exposed as Effect services.
+      1: Durable waits, awakeable resolution, work declaration, and operator running are exposed as Effect services.
       2: Service methods expose semantic substrate operations rather than raw Durable Streams append or envelope helpers.
       3: Service live layers may depend on Durable Streams, Durable Streams State, clocks, id generation, and projection internals without leaking those dependencies into method signatures.
 
-  WORKER_PROGRAMS:
+  OPERATOR_PROGRAMS:
     requirements:
-      1: A durable worker is a scoped Effect operator program that consumes one semantic work type and invokes a provided handler after durable ownership is won.
+      1: A durable operator is a scoped Effect program that consumes one semantic work type and invokes a provided handler after durable ownership is won.
       2: Handler functions are ordinary Effect functions with explicit dependency requirements.
-      3: Worker programs decode input with the provided Effect Schema and encode output with the provided Effect Schema.
+      3: Operator programs decode input with the provided Effect Schema and encode output with the provided Effect Schema.
       4: Handler success becomes durable work completion and expected handler failure becomes durable work failure.
-      5: Multiple worker programs are composed with ordinary Effect composition such as `Effect.all`, `Layer.launch`, or managed runtimes.
+      5: Multiple operator programs are composed with ordinary Effect composition such as `Effect.all`, `Layer.launch`, or managed runtimes.
       6: The runner owns once-only durable terminalization from the handler Effect exit.
       7: Handlers return values or fail in the Effect error channel and do not call explicit durable complete or fail APIs.
       8: Duplicate terminal attempts for the same work key follow first-valid-terminal-wins and do not rewrite the winner.
-      9: The canonical worker surface is not a polling API.
+      9: The canonical operator surface is not a polling API.
 
 constraints:
   NO_FRAMEWORK_REGISTRY:
@@ -38,3 +38,4 @@ constraints:
       2: The canonical API does not require `DurableWorker.make` values as the main authoring pattern.
       3: Handlers do not receive a fat mutable context object for normal substrate operations.
       4: Handlers access durable behavior by yielding Effect services.
+      5: This feature owns public API shape and Effect integration, not durable state-machine semantics or projection derivation rules.
