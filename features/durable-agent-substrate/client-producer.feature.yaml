@@ -1,0 +1,36 @@
+feature:
+  name: client-producer
+  product: durable-agent-substrate
+  description: Define the app-facing substrate client as a semantic durable operation API, not a runtime launcher, adapter handle, or raw stream append API.
+
+components:
+  CLIENT_ROLE:
+    requirements:
+      1: The client exposes semantic operations for application intent.
+      2: The client observes durable projections when a method needs a returned handle or durable completion.
+      3: The client does not require direct access to ACP, stdio, process, provider, sandbox, or tool transport handles.
+      4: The client does not imply that a runtime participant exists when it declares an intent.
+      5: The client exposes typed methods for durable planes only when those methods are consumed or projected in the same implementation phase.
+      6: The client does not expose raw Durable Streams append or envelope construction as the normal integration path.
+
+  DURABLE_STATE_APPEND:
+    requirements:
+      1: Client operations are internally encoded as Durable Streams State-compatible insert or update envelopes.
+      2: Each encoded record declares a stable row type, stable key, value, and headers.
+      3: Internal headers include schema identifier, producer identity, correlation id, causation id or root-cause absence, and idempotency key when the method has a stable operation id.
+      4: Client methods return durable row identity and projection-relevant fields rather than live runtime handles.
+      5: Client methods do not hide meaningful state transitions in process memory.
+
+  PACKAGE_BOUNDARY:
+    requirements:
+      1: The first implementation package is `packages/client`.
+      2: The first implementation package is the app-facing `@fireline/client` surface.
+      3: A duplicate `@firepixel/client` package is not introduced for the same role.
+      4: Test-only helpers remain package-local and do not become product harness APIs.
+
+constraints:
+  NO_RUNTIME_STACK:
+    requirements:
+      1: This feature does not require a CLI.
+      2: This feature does not require ACP, MCP, conductor, stdio, process launch, provider, sandbox, resource, or tool transport code.
+      3: This feature does not require a custom StreamDB wrapper.

@@ -1,0 +1,40 @@
+feature:
+  name: durable-records-and-projections
+  product: durable-agent-substrate
+  description: Define the minimal durable record and projection contract used before runtime adapters are introduced.
+
+components:
+  RECORDS:
+    requirements:
+      1: Durable records are immutable facts once accepted by the stream substrate.
+      2: Durable records include row type, key, value, and headers.
+      3: Stream position or a documented cursor is authoritative for replay order.
+      4: Wall-clock timestamps are data fields and are not ordering authority when stream position is available.
+      5: Data needed for rebuild, scheduling, audit, or durable completion is written as durable row data rather than adapter-private live metadata.
+      6: The foundational durable authority row families are `durable.run`, `durable.completion`, and `durable.claim.attempt`.
+      7: Timer, projection-trigger, child-run, fan-in, and external awakeable waits are represented as `durable.completion` variants rather than separate foundational row families.
+      8: "`durable.trace` is an optional observability row family and is not wait, claim, terminal, or ownership authority."
+
+  PROJECTIONS:
+    requirements:
+      1: Projections are rebuildable views derived from accepted durable records.
+      2: Projections are not alternate sources of truth.
+      3: Rebuilding projections from the same retained records with the same fold version produces the same logical rows.
+      4: Projection consumers do not assume a row exists before its corresponding durable record is accepted.
+      5: Projection tests use `@durable-streams/state` for the first implementation phase.
+      6: Custom projections are materializer folds over durable records, not hidden callbacks or reaction DSLs.
+      7: A projected observation row cannot substitute for durable completion, claim, permission, or terminal authority unless its domain defines that authority rule.
+      8: Projection-triggered waits use Durable Streams State snapshot boundaries or base Durable Streams no-gap cursor semantics before following live updates.
+
+  REBUILD:
+    requirements:
+      1: A fresh process can rebuild the relevant projection rows from the retained stream.
+      2: Rebuild does not depend on live JS promises, in-memory session objects, process ids, random values, or wall-clock decisions unless those values were captured durably.
+      3: Rebuild gaps are explicit errors rather than silent partial truth.
+
+constraints:
+  SUBSTRATE_SCOPE:
+    requirements:
+      1: Durable Streams is the append/read/tail substrate for the first implementation phase.
+      2: Durable Streams State is the projection envelope/protocol for the first implementation phase.
+      3: The portable contract is the durable record and projection vocabulary, not a Firepixel-specific wrapper.

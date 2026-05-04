@@ -1,0 +1,54 @@
+feature:
+  name: awakeables-and-runs
+  product: durable-agent-substrate
+  description: Define generic durable promise and run rows as the first agent substrate primitives.
+
+components:
+  AWAKEABLE:
+    requirements:
+      1: "`durable.completion` represents the internal durable promise/deferred state machine."
+      2: A completion can be pending.
+      3: A pending completion can resolve with durable result data.
+      4: A pending completion can reject with durable error data.
+      5: Awakeable resolution does not resume a live JS callback as the source of truth.
+      6: Awakeable resolution is observed through rebuilt durable state.
+      7: The public awakeable API is a keyed externally-resolved durable promise backed by `durable.completion`.
+      8: Awakeable keys are work-scoped by default using the owning `workId` plus a stable semantic name.
+      9: Global awakeables require an explicit namespace.
+      10: Duplicate awakeable resolutions follow first-valid-terminal-wins.
+      11: A pending completion can cancel with durable terminal reason data.
+
+  RUN:
+    requirements:
+      1: "`durable.run` represents a durable unit of work."
+      2: A run can start.
+      3: A run can block on a completion by recording `blockedOnCompletionId`.
+      4: A blocked run can become ready after the referenced completion resolves.
+      5: A blocked run with a resolved completion appears in `ReadyWorkProjection`.
+      6: A winning claim can complete a run.
+      7: A winning claim can fail a run.
+      8: Run state can be rebuilt from durable rows without a live runtime object.
+      9: A rejected completion terminalizes a blocked run as failed in the minimal profile.
+      10: A cancelled completion terminalizes a blocked run as failed or cancelled by durable terminal state in the minimal profile.
+      11: A blocked run must not remain permanently blocked after its awaited completion reaches any terminal state.
+
+  CHOREOGRAPHY:
+    requirements:
+      1: "`sleep(durationMs)` appends a timer-shaped completion and may append durable trace rows for scheduled, fired, or cancelled observability."
+      2: "`schedule_me(when, prompt)` appends a scheduled-prompt-shaped completion and may append durable trace rows; timer firing does not append a prompt until a higher runtime proves live promptability."
+      3: "`wait_for(trigger, timeoutMs?)` appends a projection-match completion using snapshot-first and follow-after-cursor no-gap semantics."
+      4: Trace rows are durable traceable observability rows and do not require a real agent adapter in the first implementation phase.
+      5: Higher-layer choreography primitives record durable intent through run, completion, or claim-attempt rows before suspension, fanout, or externally visible work.
+      6: Higher-layer choreography primitives are tools compiled from substrate primitives plus combinators or materializer folds.
+
+constraints:
+  NO_SEPARATE_CONTINUATION_ROW_YET:
+    requirements:
+      1: The first substrate model does not expose a separate continuation row.
+      2: Continuation is implicit in run state until a real workflow checkpoint model proves a separate row is necessary.
+      3: The first substrate model does not introduce both wait rows and completion rows for the same durable promise role.
+
+  NO_WORKFLOW_SDK_PRIMARY_MODEL:
+    requirements:
+      1: The first substrate model does not expose a workflow orchestration SDK as the primary application model.
+      2: Workflow engines may drive the substrate externally, but substrate progress is represented by durable records, completions, projections, claims, and handler execution.
