@@ -35,3 +35,14 @@ export {
   type ChoreographyService,
   type ScheduleAtResult,
 } from "./service.js"
+
+export {
+  AwakeableToolInput,
+  ChoreographyTools,
+  ScheduleMeToolInput,
+  SleepToolInput,
+  WaitForToolInput,
+  type ChoreographyToolBinding,
+  type ChoreographyToolBindings,
+  type ChoreographyToolsConfig,
+} from "./tools.js"
