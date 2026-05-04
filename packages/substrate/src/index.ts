@@ -11,3 +11,5 @@ export * from "./waits.js"
 export * from "./subscribers.js"
 // ergonomic-facade — Phase 10 ergonomic Effect-native facade.
 export * from "./facade/index.js"
+// client-event-plane-registration — Phase 11 client event planes / state producers.
+export * from "./event-plane/index.js"
