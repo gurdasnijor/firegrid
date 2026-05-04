@@ -13,3 +13,34 @@ export * from "./subscribers.js"
 export * from "./facade/index.js"
 // client-event-plane-registration — Phase 11 client event planes / state producers.
 export * from "./event-plane/index.js"
+// choreography-facade — Phase 12 choreography facade (foundation slice).
+//
+// `ProjectionMatchTrigger` collides with the Phase-7 placeholder interface
+// in `./waits.js`. The two have different shapes (the placeholder is the
+// loose data field stored on `durable.completion` rows; the choreography
+// schema is the typed Effect Schema for runtime/tool input). Keep the
+// placeholder as the root `ProjectionMatchTrigger` to avoid silently
+// changing root meaning, and re-export the choreography schema under the
+// distinct root name `ChoreographyProjectionMatchTrigger`. Subpath consumers
+// can still import `ProjectionMatchTrigger` directly from
+// `./choreography/index.js`.
+export {
+  ChoreographyTimeout,
+  ChoreographyTrigger,
+  CompletionId,
+  CurrentWorkContext,
+  MissingTriggerMatcherError,
+  OwnerId,
+  ProjectionMatchTrigger as ChoreographyProjectionMatchTrigger,
+  TriggerMatchers,
+  WorkId,
+  currentWorkContextLayer,
+  dispatchTrigger,
+  triggerMatchersLayer,
+  type ChoreographyOperation,
+  type ChoreographySuspension,
+  type CurrentWorkContextValue,
+  type TriggerMatchEvaluation,
+  type TriggerMatcher,
+  type TriggerMatchersService,
+} from "./choreography/index.js"
