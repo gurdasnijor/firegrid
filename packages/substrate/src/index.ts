@@ -9,3 +9,5 @@ export * from "./operator.js"
 export * from "./retained-records.js"
 export * from "./waits.js"
 export * from "./subscribers.js"
+// ergonomic-facade — Phase 10 ergonomic Effect-native facade.
+export * from "./facade/index.js"

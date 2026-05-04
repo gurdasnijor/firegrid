@@ -1,13 +1,15 @@
-import { randomUUID } from "node:crypto"
 import { DurableStream } from "@durable-streams/client"
 import { Effect, Either } from "effect"
+import { attemptClaim } from "./internal-claim.js"
+import {
+  ClaimMissingCursorError,
+  ClaimStreamError,
+  ClaimWinnerMissingError,
+  firstValidClaim,
+} from "./operator-errors.js"
 import type { ClaimAttemptValue, RunState, RunValue } from "./rows.js"
 import type { ReadyWorkItem } from "./ready-work.js"
-import {
-  readRetainedClaimAttempts,
-  readRetainedRunRecords,
-} from "./retained-records.js"
-import { substrateState } from "./state-schema.js"
+import { readRetainedRunRecords } from "./retained-records.js"
 import {
   completeRun,
   failRun,
@@ -15,19 +17,13 @@ import {
   IllegalRunTransition,
 } from "./state-machine.js"
 
-// claim-and-operator-authority.CLAIM_AUTHORITY.1, .2, .3, .6
-// First-valid-claim-by-stream-order fold scoped to one workId.
-// Same-owner later attempts are duplicate evidence (.2). Different-owner later
-// attempts are losing conflicts (.3). Records for other workIds are filtered.
-export function firstValidClaim(
-  workId: string,
-  attempts: ReadonlyArray<ClaimAttemptValue>,
-): ClaimAttemptValue | undefined {
-  for (const attempt of attempts) {
-    if (attempt.workId !== workId) continue
-    return attempt
-  }
-  return undefined
+// Re-export of the claim-fold function and error classes for callers that
+// imported them from operator.ts before the shared-helper extraction.
+export {
+  ClaimMissingCursorError,
+  ClaimStreamError,
+  ClaimWinnerMissingError,
+  firstValidClaim,
 }
 
 // claim-and-operator-authority.OPERATOR_INVOCATION.6, .7, .12, .13
@@ -67,35 +63,10 @@ export type ClaimOutcome<A, E> =
       readonly terminalState: RunState
     }
 
-export class ClaimStreamError extends Error {
-  readonly _tag = "ClaimStreamError"
-  constructor(readonly cause: unknown) {
-    super(`claim stream error: ${String(cause)}`)
-  }
-}
-
-// claim-and-operator-authority.CLAIM_ATTEMPT.8
-// Fail typed if the stream has no cursor; do not synthesize one.
-export class ClaimMissingCursorError extends Error {
-  readonly _tag = "ClaimMissingCursorError"
-  constructor(readonly streamUrl: string) {
-    super(`claim attempt requires a stream cursor; HEAD ${streamUrl} returned no offset`)
-  }
-}
-
 export class RunNotFoundError extends Error {
   readonly _tag = "RunNotFoundError"
   constructor(readonly runId: string) {
     super(`run ${runId} not found in retained projection`)
-  }
-}
-
-export class ClaimWinnerMissingError extends Error {
-  readonly _tag = "ClaimWinnerMissingError"
-  constructor(readonly workId: string) {
-    super(
-      `internal: no claim attempts visible for workId ${workId} after appending — projection may be stale`,
-    )
   }
 }
 
@@ -154,41 +125,17 @@ export const processReadyWorkItem = <A, E>(
     const contentType = args.contentType ?? "application/json"
     const streamHandle = new DurableStream({ url: args.streamUrl, contentType })
 
-    // CLAIM_ATTEMPT.8 — capture cursor from real durable stream metadata.
-    const head = yield* Effect.tryPromise({
-      try: () => streamHandle.head(),
-      catch: (cause) => new ClaimStreamError(cause),
-    })
-    if (head.offset === undefined) {
-      return yield* Effect.fail(new ClaimMissingCursorError(args.streamUrl))
-    }
-    const observedCursor: string = head.offset
-
     // CLAIM_ATTEMPT.6 — workId = runId; CLAIM_ATTEMPT.7 — claimId is unique per attempt.
+    // CLAIM_ATTEMPT.8 + CLAIM_AUTHORITY.7 — head cursor + append + retained-fold are owned
+    // by the shared internal helper so kernel and facade cannot drift.
     const workId = args.item.runId
-    const claimId = args.claimId ?? randomUUID()
-    const claim: ClaimAttemptValue = {
-      claimId,
+    const { claimId, winner } = yield* attemptClaim({
+      streamUrl: args.streamUrl,
+      ...(args.contentType !== undefined ? { contentType: args.contentType } : {}),
       workId,
       ownerId: args.ownerId,
-      observedCursor,
-      status: "attempted",
-    }
-    const claimEvent = substrateState.claimAttempts.insert({ value: claim })
-    yield* Effect.tryPromise({
-      try: () => streamHandle.append(JSON.stringify(claimEvent)),
-      catch: (cause) => new ClaimStreamError(cause),
+      ...(args.claimId !== undefined ? { claimIdOverride: args.claimId } : {}),
     })
-
-    // CLAIM_AUTHORITY.7 — derive winner from retained claim attempts in append order.
-    const attempts = yield* Effect.mapError(
-      readRetainedClaimAttempts(args.streamUrl, workId),
-      (cause) => new ClaimStreamError(cause),
-    )
-    const winner = firstValidClaim(workId, attempts)
-    if (winner === undefined) {
-      return yield* Effect.fail(new ClaimWinnerMissingError(workId))
-    }
     if (winner.claimId !== claimId) {
       // OPERATOR_INVOCATION.4 — speculative invocation forbidden; we lost.
       // CLAIM_AUTHORITY.8 — same-owner duplicate is also a loss (no second handler invocation).
