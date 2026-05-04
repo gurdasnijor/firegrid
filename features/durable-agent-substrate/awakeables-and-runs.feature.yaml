@@ -12,9 +12,9 @@ components:
       4: A pending completion can reject with durable error data.
       5: Awakeable resolution does not resume a live JS callback as the source of truth.
       6: Awakeable resolution is observed through rebuilt durable state.
-      7: The public awakeable API is a keyed externally-resolved durable promise backed by `durable.completion`.
-      8: Awakeable keys are work-scoped by default using the owning `workId` plus a stable semantic name.
-      9: Global awakeables require an explicit namespace.
+      7: The public awakeable API is deferred to `durable-waits-and-scheduling`; this feature proves only the backing `durable.completion` state machine.
+      8: Awakeable key construction is deferred to `durable-waits-and-scheduling`; this feature does not introduce key utility APIs.
+      9: Global awakeable namespace rules are deferred to `durable-waits-and-scheduling`.
       10: Duplicate awakeable resolutions follow first-valid-terminal-wins.
       11: A pending completion can cancel with durable terminal reason data.
 
@@ -39,6 +39,7 @@ components:
       8: A rejected completion terminalizes a blocked run as failed in the minimal profile.
       9: A cancelled completion terminalizes a blocked run as cancelled by durable terminal state in the minimal profile.
       10: A blocked run must not remain permanently blocked after its awaited completion reaches any terminal state.
+      11: A resolved awaited completion does not directly terminalize the blocked run in this feature; resolved completions are consumed by `ReadyWorkProjection` in a later feature.
 
   RUN_TRANSITIONS:
     requirements:
@@ -56,6 +57,7 @@ constraints:
       1: The first substrate model does not expose a separate continuation row.
       2: Continuation is implicit in run state until a real workflow checkpoint model proves a separate row is necessary.
       3: The first substrate model does not introduce both wait rows and completion rows for the same durable promise role.
+      4: This feature does not introduce public awakeable key construction helpers without a same-phase consumer.
 
   NO_WORKFLOW_SDK_PRIMARY_MODEL:
     requirements:

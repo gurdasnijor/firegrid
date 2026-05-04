@@ -32,6 +32,8 @@ components:
       1: The public awakeable API creates a keyed externally resolved durable completion.
       2: The public awakeable API resolves, rejects, or cancels by appending durable completion terminal records.
       3: Awakeable APIs do not expose raw Durable Streams append or Durable Streams State envelope construction as the normal integration path.
+      4: Awakeable keys are work-scoped by default using the owning `workId` plus a stable semantic name.
+      5: Global awakeables require an explicit namespace.
 
 constraints:
   PHASE_BOUNDARY:
