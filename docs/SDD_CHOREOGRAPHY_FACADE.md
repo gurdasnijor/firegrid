@@ -93,8 +93,8 @@ Conceptually:
 
 ```ts
 interface CurrentWorkContext {
-  readonly workId: string
-  readonly ownerId: string
+  readonly workId: WorkId
+  readonly ownerId: OwnerId
   readonly correlationId?: string
   readonly causationId?: string
   readonly telemetry?: Readonly<Record<string, string>>
@@ -140,12 +140,17 @@ Initial trigger profiles:
 ```ts
 type ChoreographyTrigger<A> =
   | ProjectionMatchTrigger<A>
-  | AwakeableTrigger<A>
 ```
 
 Projection-match triggers reference caller-owned event planes and projection
-queries. Awakeable triggers reference stable semantic keys for externally
-resolved waits.
+queries. Externally resolved awakeable waits remain a separate facade method in
+v1.
+
+Trigger values must be described by Effect Schema so the runtime API and tool
+binding API can share decoding and avoid parallel hand-written input shapes.
+Non-serializable matcher predicates are registered in a layer-scoped matcher
+service and referenced by stable matcher id. There is no global matcher
+registry.
 
 ### Tool Binding
 
@@ -192,7 +197,7 @@ const program = Effect.gen(function* () {
     { timeout: Duration.minutes(10) },
   )
 
-  yield* Choreography.scheduleMe({
+  yield* Choreography.scheduleAt({
     at: new Date("2026-05-04T17:00:00.000Z"),
     input: { prompt: "Follow up on the review" },
   })
@@ -209,17 +214,24 @@ envelopes. Those are provided by layers and the current work context.
 Caller-owned planes define caller-owned triggers:
 
 ```ts
-const permissionResolved = (input: { permissionId: string }) =>
+const permissionResolved = (input: { permissionId: PermissionId }) =>
   ChoreographyTrigger.projectionMatch({
     label: `permission-resolved:${input.permissionId}`,
-    projection: FirepixelRequiredActionPlane.projections.byId(input.permissionId),
-    match: (row): row is PermissionResolvedRow =>
-      row !== undefined && row.state === "resolved",
+    projectionKey: FirepixelRequiredActionPlane.projections.byId(input.permissionId).key,
+    matcherId: "firepixel.required_action.permission_resolved",
   })
 ```
 
 The trigger refers to a plane projection. The substrate does not know that this
-is a permission or ACP tool-call decision.
+is a permission or ACP tool-call decision. The matcher implementation is
+provided by a layer:
+
+```ts
+const PermissionMatchersLive = TriggerMatchers.layer({
+  "firepixel.required_action.permission_resolved": (snapshot, trigger) =>
+    Effect.succeed(matchPermissionResolution(snapshot, trigger)),
+})
+```
 
 ### Tool Binding API
 
@@ -229,7 +241,7 @@ The same facade should be bindable as agent tools:
 const tools = ChoreographyTools.make({
   sleep: Choreography.sleepTool(),
   wait_for: Choreography.waitForTool(triggerDecoder),
-  schedule_me: Choreography.scheduleMeTool(),
+  schedule_me: Choreography.scheduleAtTool(),
 })
 ```
 
@@ -250,13 +262,13 @@ these invariants:
 | --- | --- | --- |
 | `sleep(duration)` | Durably wait until a duration elapses. | `DurableWaits.sleep` creates a `timer` completion with `dueAtMs`; current run blocks on it; timer subscriber resolves it; ready work is derived. |
 | `waitFor(trigger, timeout?)` | Durably wait until a typed trigger matches or timeout wins. | `DurableWaits.waitFor` creates a `projection_match` completion with durable trigger/deadline data; projection-match subscriber resolves or cancels it; current run blocks on the completion. |
-| `scheduleMe({ at, input })` | Queue future self-directed work without launching it early. | `DurableWaits.scheduleWork` creates a `scheduled_work` completion; scheduled-work subscriber resolves at due time; Fireline/Firepixel runtime maps the resolved completion into a self-prompt only after live promptability / runtime policy checks pass. |
+| `scheduleAt({ at, input })` | Queue future scheduled work without launching it early. | `DurableWaits.scheduleWork` creates a `scheduled_work` completion; scheduled-work subscriber resolves at due time; Fireline/Firepixel runtime maps the resolved completion into a self-prompt only after live promptability / runtime policy checks pass. |
 | `awaitAwakeable(key)` | Wait for an external actor to resolve a stable semantic key. | `DurableWaits.awakeable` creates an externally resolved completion; external UI/policy/adapter resolves through `CompletionProducer`; current run blocks on the completion. |
 | permission / required action | Wait for caller-owned permission state to terminalize. | Caller emits required-action rows through `EventPlane`; UI/policy emits resolution rows; facade waits through a projection-match trigger or stable awakeable, depending on the domain profile. |
 
 `spawn`, `spawnAll`, and `execute` should use the same pattern later, but they
 also require runtime/provider/session/tool policies. They should be specified
-after the first `sleep` / `waitFor` / `scheduleMe` / permission slice proves the
+after the first `sleep` / `waitFor` / `scheduleAt` / permission slice proves the
 facade boundary.
 
 ## Suspension Semantics
@@ -301,6 +313,23 @@ The important invariant is:
 ```text
 the durable wait survives process death even if the in-memory Effect fiber does not
 ```
+
+The first implementation may use Effect interruption as the in-process control
+signal after a durable suspension has been committed:
+
+```text
+create completion
+block current run
+interrupt current fiber
+runner catches interruption
+runner verifies durable.run is blocked on a completion
+runner reports suspended presentation
+```
+
+The verification step is required. Ordinary host cancellation or shutdown must
+not be misreported as successful durable suspension. Interruption means
+"suspended" only when the runner can observe the durable blocked run state it
+expected to write.
 
 ## Instrumentation And Observability Boundary
 
@@ -402,7 +431,7 @@ results.
 ### Delayed Self Prompt
 
 ```text
-agent/tool/runtime calls schedule_me(when, prompt)
+agent/tool/runtime calls schedule_at(when, input)
   -> scheduled_work completion is created
   -> scheduled-work subscriber resolves when due
   -> Firepixel runtime checks live promptability
@@ -441,7 +470,7 @@ The tool binding and runtime API lower to the same timer completion.
 The first slice should prove only:
 
 1. a `Choreography` Effect service that reads `CurrentWorkContext`;
-2. `sleep`, `waitFor`, `scheduleMe`, and `awakeable` facade methods that create
+2. `sleep`, `waitFor`, `scheduleAt`, and `awakeable` facade methods that create
    completions through existing `DurableWaits`;
 3. current-run blocking without caller-threaded ids;
 4. Effect-native instrumentation boundaries around choreography operations,
@@ -479,6 +508,21 @@ This avoids forcing tool descriptor concepts into normal Effect programs, while
 also avoiding divergent semantics between "runtime called sleep" and "agent
 called sleep."
 
+### Branded Ids
+
+New public choreography signatures should use branded ids:
+
+```ts
+type WorkId = string & Brand.Brand<"WorkId">
+type CompletionId = string & Brand.Brand<"CompletionId">
+type OwnerId = string & Brand.Brand<"OwnerId">
+```
+
+Branded ids have no runtime cost and prevent accidental swapping of string ids
+at the boundary between choreography, waits, runs, event planes, and work
+claims. The first build should use them for new choreography-facing types.
+Retrofitting every existing kernel export can happen incrementally.
+
 ### Current-Run Blocking
 
 Current-run blocking is internal facade machinery, not a public producer API.
@@ -514,7 +558,7 @@ instrumentation boundaries. The intended span names are neutral:
 ```text
 substrate.choreography.sleep
 substrate.choreography.wait_for
-substrate.choreography.schedule_me
+substrate.choreography.schedule_at
 substrate.choreography.awakeable
 ```
 
@@ -524,7 +568,7 @@ Span/log attributes should be best-effort and non-authoritative:
 {
   workId: string
   completionId?: string
-  operation: "sleep" | "wait_for" | "schedule_me" | "awakeable"
+  operation: "sleep" | "wait_for" | "schedule_at" | "awakeable"
   label?: string
   dueAtMs?: number
   deadlineAtMs?: number
@@ -558,6 +602,69 @@ This keeps two different concepts legible:
 A later API can add overloads or helper constructors if real call sites show
 the split is too verbose.
 
+### Schema Triggers And Scoped Matchers
+
+The first build should define the trigger input with Effect Schema, using a
+tagged shape such as:
+
+```ts
+const ProjectionMatchTrigger = Schema.TaggedStruct("ProjectionMatch", {
+  label: Schema.String,
+  projectionKey: Schema.String,
+  matcherId: Schema.String,
+})
+```
+
+The serialized trigger carries only data. The matcher predicate is supplied by
+a layer-scoped `TriggerMatchers` service keyed by `matcherId`.
+
+Rules:
+
+- no global matcher registry;
+- no function predicates embedded in serializable tool input;
+- tool decoders derive from the same trigger schema as runtime APIs;
+- lowering dispatch is exhaustive over the trigger union;
+- missing matcher is a runtime configuration error, not a hidden no-op.
+
+### Suspension As Interruption
+
+Choreography methods that suspend may interrupt the current Effect fiber after
+the durable completion and blocked run have been written. The work runner then
+translates interruption into the caller presentation.
+
+For runtime work:
+
+```text
+interrupted + verified blocked run -> WorkOutcome.suspended
+interrupted without verified block -> cancelled/interrupted failure
+```
+
+For tool bindings:
+
+```text
+interrupted + verified blocked run -> ChoreographySuspension
+```
+
+This keeps call sites linear while avoiding a second in-memory suspension
+primitive.
+
+### Minimal Error Surface
+
+Only expose tagged errors that callers can realistically branch on. For v1,
+the expected recoverable error is timeout:
+
+```ts
+class ChoreographyTimeout extends Data.TaggedError("ChoreographyTimeout")<{
+  readonly completionId: CompletionId
+  readonly deadlineAtMs: number
+}> {}
+```
+
+Timeout is observed when a previously suspended wait resumes from a timeout or
+cancelled completion. Most other failures are substrate/runtime defects or
+ordinary handler failures and should be handled at the work-runner boundary
+instead of expanding the choreography API error taxonomy.
+
 ### Suspension Sentinel
 
 The first tool-binding proof should return a neutral substrate sentinel:
@@ -565,15 +672,17 @@ The first tool-binding proof should return a neutral substrate sentinel:
 ```ts
 type ChoreographySuspension = {
   readonly suspended: true
-  readonly operation: "sleep" | "wait_for" | "schedule_me" | "awakeable"
-  readonly completionId: string
-  readonly workId: string
+  readonly operation: "sleep" | "wait_for" | "schedule_at" | "awakeable"
+  readonly completionId: CompletionId
+  readonly workId: WorkId
 }
 ```
 
 Fireline can map this to its profile-specific `SuspensionSentinel` shape and
-field names. The substrate should not ship Fireline-native sentinel naming as
-its canonical tool-binding result.
+field names. For example, Fireline may expose an agent tool named
+`schedule_me` while calling substrate `scheduleAt` internally. The substrate
+should not ship Fireline-native sentinel naming as its canonical tool-binding
+result.
 
 ### First Build Readiness
 
@@ -582,10 +691,14 @@ authority concepts. The Acai spec should target:
 
 - `Choreography` Effect service;
 - `CurrentWorkContext` layer/input;
+- branded ids for new choreography-facing signatures;
 - internal current-run blocking;
 - Effect-native instrumentation boundaries, with no required durable trace
   rows;
+- schema-described projection-match triggers with layer-scoped matchers;
 - projection-match-only `waitFor`;
 - separate `awaitAwakeable`;
+- suspension as interruption, guarded by durable blocked-run verification;
+- minimal `ChoreographyTimeout` tagged error;
 - `ChoreographyTools` neutral sentinel proof;
 - fake ACP-permission-shaped event-plane example with no ACP implementation.
