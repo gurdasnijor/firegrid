@@ -389,18 +389,138 @@ It should not implement:
 - a workflow SDK or registry;
 - new substrate authority row families.
 
-## Open Questions
+## Design Decisions For First Build
 
-1. Should the first implementation expose the runtime API and tool-binding API
-   in one module, or separate `Choreography` and `ChoreographyTools` modules?
-2. Should current-run blocking be a small new internal service over
-   `durable.run`, or should it reuse existing internal state-machine builders
-   behind the facade?
-3. What is the minimum trace row schema needed for agent-side introspection
-   without making Fireline-specific `agent.suspended` / `agent.resumed` rows
-   substrate-native?
-4. Should `waitFor` require projection-match triggers only in v1, or also
-   expose awakeable-key triggers through the same function?
-5. Should the first tool-binding proof return a Fireline-style
-   `SuspensionSentinel`, or a neutral substrate sentinel that Fireline maps to
-   its profile?
+### Module Split
+
+Expose separate modules:
+
+```text
+Choreography
+ChoreographyTools
+```
+
+`Choreography` is the Effect-native runtime API. `ChoreographyTools` adapts the
+same operations into agent-visible tool handlers/descriptors. The modules share
+lowering code internally, but the public shapes stay separate because runtime
+code and tool adapters have different presentation concerns.
+
+This avoids forcing tool descriptor concepts into normal Effect programs, while
+also avoiding divergent semantics between "runtime called sleep" and "agent
+called sleep."
+
+### Current-Run Blocking
+
+Current-run blocking is internal facade machinery, not a public producer API.
+
+The first implementation should add a small internal helper behind
+`ChoreographyLive`:
+
+```text
+blockCurrentRunOn(completionId)
+```
+
+It may use the existing `durable.run` state-machine builders and append the
+resulting row. Callers should not see `blockRun`, run builders, raw append, or
+`blockedOnCompletionId`.
+
+This preserves the existing boundary:
+
+```text
+runtime/user API: yield* Choreography.sleep(...)
+internal lowering: durable.completion pending + durable.run blocked
+```
+
+If a later runtime needs a lower-level block API, it should be justified by a
+separate SDD/spec. Do not add it as part of the choreography facade by default.
+
+### Trace Schema
+
+Use the existing neutral `durable.trace` row family for the first build:
+
+```ts
+type TraceValue = {
+  traceId: string
+  kind: string
+  data?: unknown
+}
+```
+
+Trace `kind` values should be substrate-neutral:
+
+```text
+choreography.sleep.requested
+choreography.wait_for.requested
+choreography.schedule_me.requested
+choreography.awakeable.requested
+```
+
+Trace `data` should carry the minimum correlation payload:
+
+```ts
+{
+  workId: string
+  completionId: string
+  operation: "sleep" | "wait_for" | "schedule_me" | "awakeable"
+  label?: string
+  dueAtMs?: number
+  deadlineAtMs?: number
+  semanticKey?: string
+  correlationId?: string
+  causationId?: string
+}
+```
+
+Do not introduce Fireline-specific `agent.suspended` or `agent.resumed` rows in
+the substrate. Fireline can map neutral trace rows or emit its own profile rows
+above the substrate.
+
+### `waitFor` Trigger Scope
+
+`waitFor` should support projection-match triggers in v1.
+
+Awakeable-key waits should remain a separate method:
+
+```ts
+yield* Choreography.waitFor(trigger, { timeout })
+yield* Choreography.awaitAwakeable({ name, key? })
+```
+
+This keeps two different concepts legible:
+
+- projection-match waits resolve because materialized state matched;
+- awakeables resolve because an external actor resolved a stable semantic key.
+
+A later API can add overloads or helper constructors if real call sites show
+the split is too verbose.
+
+### Suspension Sentinel
+
+The first tool-binding proof should return a neutral substrate sentinel:
+
+```ts
+type ChoreographySuspension = {
+  readonly suspended: true
+  readonly operation: "sleep" | "wait_for" | "schedule_me" | "awakeable"
+  readonly completionId: string
+  readonly workId: string
+}
+```
+
+Fireline can map this to its profile-specific `SuspensionSentinel` shape and
+field names. The substrate should not ship Fireline-native sentinel naming as
+its canonical tool-binding result.
+
+### First Build Readiness
+
+With these decisions, the first build can proceed without additional substrate
+authority concepts. The Acai spec should target:
+
+- `Choreography` Effect service;
+- `CurrentWorkContext` layer/input;
+- internal current-run blocking;
+- neutral trace rows;
+- projection-match-only `waitFor`;
+- separate `awaitAwakeable`;
+- `ChoreographyTools` neutral sentinel proof;
+- fake ACP-permission-shaped event-plane example with no ACP implementation.
