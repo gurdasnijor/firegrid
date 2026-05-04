@@ -8,6 +8,7 @@ Ahead-of-stream SDD proposals:
 
 - [Next Layer Review Sequence](docs/SDD_NEXT_LAYER_REVIEW_SEQUENCE.md)
 - [Client Event Planes And State Producers](docs/SDD_CLIENT_EVENT_PLANES_AND_STATE_PRODUCERS.md)
+- [Launchable Substrate Host And Lab](docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md)
 
 Acai specs live under `features/durable-agent-substrate/` and should be
 rebuilt from the SDD as the design stabilizes.
