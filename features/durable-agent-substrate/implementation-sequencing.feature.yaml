@@ -14,6 +14,7 @@ components:
       6: The sixth implementation slice proves competing claim attempts and once-only terminalization for the same work.
       7: The seventh implementation slice adds `sleep`, `waitFor`, `scheduleWork`, and externally resolved awakeable APIs by lowering them to durable completions.
       8: The eighth implementation slice proves the integrated path from semantic producer through operator execution, durable suspension, external resolution, and rebuild.
+      9: "In the first substrate profile, durable suspension is represented by a `durable.run` row with `state: blocked` and `blockedOnCompletionId`; no separate suspension or continuation row or API is introduced for the integrated proof."
 
   SPEC_OWNERSHIP:
     requirements:
