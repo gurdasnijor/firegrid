@@ -19,7 +19,7 @@ components:
       2: Resolving, rejecting, or cancelling an awakeable produces the `durable.completion` terminal state needed by the completion projection.
       3: Producer methods do not hide meaningful state transitions in process memory.
       4: Producer operations do not author derived projection rows such as ready work.
-      5: Slice 3 producer methods are limited to persisted forms of the existing run and completion state-machine transitions.
+      5: Slice 3 producer methods are limited to declaring new work and terminalizing existing durable completions.
       6: Slice 3 does not expose `sleep`, `waitFor`, `scheduleWork`, public awakeable key construction, ready-work derivation, operator running, or claim authority.
 
   PACKAGE_BOUNDARY:
