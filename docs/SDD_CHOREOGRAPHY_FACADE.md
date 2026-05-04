@@ -169,7 +169,9 @@ should create the same durable shape. They may differ in presentation:
 - host-runtime Effect programs may be interpreted by a runtime that suspends
   and later resumes.
 
-The durable records underneath should not fork.
+The durable lowering underneath should not diverge. A runtime call to
+`Choreography.sleep` and an agent tool call to `sleep` should produce the same
+substrate state transition shape.
 
 ## Proposed API Shape
 
@@ -339,6 +341,45 @@ trace/span/session/tool records do not replace durable.claim.attempt
 Agent-side introspection should be implemented as projection queries over these
 records, not by reading runtime memory. The first choreography facade only
 needs to preserve the architectural hook points.
+
+## Stream Forking Compatibility
+
+Durable Streams protocol forking is a separate concept from "shared lowering."
+A stream fork creates a new stream that references a source stream up to a fork
+offset, then accepts independent appends after that divergence point. This is a
+powerful future primitive for agent/session branching, review, experimentation,
+and replay.
+
+The choreography facade should not expose stream forking in the first build,
+but it should avoid choices that make forking hard later.
+
+Design implications:
+
+- Do not use stream offsets as business identifiers. Use semantic ids for
+  work, completions, tool calls, sessions, and prompts.
+- Include enough semantic identity in completion keys and projection rows that
+  a forked session can continue independently after the fork point.
+- Treat fork lineage as stream metadata/runtime context, not as a new
+  `durable.completion` or `durable.run` authority rule.
+- Keep runtime API and agent tool API lowering identical so either surface can
+  run on a source stream or a fork stream without changing operation meaning.
+- Defer explicit APIs such as `forkSession` or `forkWork` until Fireline /
+  Firepixel runtime semantics specify what should be copied, inherited,
+  redacted, or re-bound.
+
+Possible later API shape:
+
+```ts
+const fork = yield* RuntimeFork.forkCurrentSession({
+  at: { kind: "current_cursor" },
+  label: "try alternate repair strategy",
+})
+```
+
+The substrate role would be to make stream fork creation and projection rebuild
+work cleanly. Fireline/Firepixel would own session-level policy such as visible
+tool set, resource handles, live runtime ownership, and whether a fork can
+prompt immediately.
 
 ## Concrete Use Cases
 
