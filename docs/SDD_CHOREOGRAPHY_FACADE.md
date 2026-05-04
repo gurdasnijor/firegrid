@@ -101,6 +101,10 @@ interface CurrentWorkContext {
 }
 ```
 
+For v1, `workId` is a brand over the same string identity as the current
+`durable.run` `runId`. The facade does not introduce a separate work row; it
+only hides the current run identity from normal choreography callers.
+
 Runtime code should not normally write:
 
 ```ts
@@ -262,8 +266,8 @@ these invariants:
 | --- | --- | --- |
 | `sleep(duration)` | Durably wait until a duration elapses. | `DurableWaits.sleep` creates a `timer` completion with `dueAtMs`; current run blocks on it; timer subscriber resolves it; ready work is derived. |
 | `waitFor(trigger, timeout?)` | Durably wait until a typed trigger matches or timeout wins. | `DurableWaits.waitFor` creates a `projection_match` completion with durable trigger/deadline data; projection-match subscriber resolves or cancels it; current run blocks on the completion. |
-| `scheduleAt({ at, input })` | Queue future scheduled work without launching it early. | `DurableWaits.scheduleWork` creates a `scheduled_work` completion; scheduled-work subscriber resolves at due time; Fireline/Firepixel runtime maps the resolved completion into a self-prompt only after live promptability / runtime policy checks pass. |
-| `awaitAwakeable(key)` | Wait for an external actor to resolve a stable semantic key. | `DurableWaits.awakeable` creates an externally resolved completion; external UI/policy/adapter resolves through `CompletionProducer`; current run blocks on the completion. |
+| `scheduleAt({ at, input })` | Queue future scheduled work without launching it early. | `DurableWaits.scheduleWork` creates a `scheduled_work` completion; scheduled-work subscriber resolves at due time; Fireline/Firepixel runtime maps the resolved completion into a self-prompt only after live promptability / runtime policy checks pass. The calling run does not block. |
+| `awaitAwakeable({ name })` | Wait for an external actor to resolve a stable work-scoped semantic key. | `DurableWaits.awakeable` creates an externally resolved completion scoped by current `workId` and `name`; external UI/policy/adapter resolves through `CompletionProducer`; current run blocks on the completion. Global awakeables stay on `DurableWaits.awakeableGlobal` for now. |
 | permission / required action | Wait for caller-owned permission state to terminalize. | Caller emits required-action rows through `EventPlane`; UI/policy emits resolution rows; facade waits through a projection-match trigger or stable awakeable, depending on the domain profile. |
 
 `spawn`, `spawnAll`, and `execute` should use the same pattern later, but they
@@ -502,7 +506,7 @@ The first slice should prove only:
 1. a `Choreography` Effect service that reads `CurrentWorkContext`;
 2. `sleep`, `waitFor`, `scheduleAt`, and `awakeable` facade methods that create
    completions through existing `DurableWaits`;
-3. current-run blocking without caller-threaded ids;
+3. current-run blocking for suspending operations without caller-threaded ids;
 4. Effect-native instrumentation boundaries around choreography operations,
    without requiring durable trace rows;
 5. a simple tool-binding harness proving tool input -> choreography operation
@@ -621,7 +625,7 @@ Awakeable-key waits should remain a separate method:
 
 ```ts
 yield* Choreography.waitFor(trigger, { timeout })
-yield* Choreography.awaitAwakeable({ name, key? })
+yield* Choreography.awaitAwakeable({ name })
 ```
 
 This keeps two different concepts legible:
@@ -690,10 +694,12 @@ class ChoreographyTimeout extends Data.TaggedError("ChoreographyTimeout")<{
 }> {}
 ```
 
-Timeout is observed when a previously suspended wait resumes from a timeout or
-cancelled completion. Most other failures are substrate/runtime defects or
-ordinary handler failures and should be handled at the work-runner boundary
-instead of expanding the choreography API error taxonomy.
+Timeout is represented with this error when a host runtime resumes a previously
+suspended wait from a timeout or cancelled completion. The first facade does not
+need to implement general continuation replay to define that presentation. Most
+other failures are substrate/runtime defects or ordinary handler failures and
+should be handled at the work-runner boundary instead of expanding the
+choreography API error taxonomy.
 
 ### Suspension Sentinel
 

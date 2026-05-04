@@ -10,16 +10,18 @@ components:
       2: CurrentWorkContext includes branded WorkId and OwnerId values plus optional causation and correlation metadata.
       3: New choreography-facing public signatures use branded WorkId, CompletionId, and OwnerId types.
       4: Choreography callers do not pass completion ids, claim ids, stream URLs, raw run rows, or raw Durable Streams State envelopes.
+      5: In v1, CurrentWorkContext.workId is the durable.run runId of the run that choreography may block; no separate work row is introduced.
 
   CHOREOGRAPHY_API:
     requirements:
       1: Choreography exposes an Effect-native runtime API with sleep, waitFor, scheduleAt, and awaitAwakeable operations.
       2: sleep creates a timer-shaped durable completion and blocks the current run on that completion.
       3: waitFor creates a projection-match-shaped durable completion and blocks the current run on that completion.
-      4: scheduleAt creates a scheduled-work-shaped durable completion and blocks the current run on that completion.
+      4: scheduleAt creates a scheduled-work-shaped durable completion and does not block the current run.
       5: awaitAwakeable creates or observes an externally-resolved awakeable-shaped durable completion and blocks the current run on that completion.
       6: The runtime API does not expose raw completion CRUD, raw run transition builders, raw append helpers, retained fold readers, or processReadyWorkItem as the normal path.
       7: scheduleAt is the substrate-facing scheduled-work name; profile-specific names such as schedule_me are tool aliases above the substrate API.
+      8: v1 awaitAwakeable lowers to work-scoped awakeable keys derived from CurrentWorkContext.workId and a caller-supplied name; global awakeables remain on DurableWaits.
 
   TRIGGERS:
     requirements:
@@ -50,12 +52,13 @@ components:
       4: Tool bindings do not expose raw completions, raw runs, claims, stream URLs, or Durable Streams State envelopes to the agent.
       5: The schedule_me tool binding lowers to the substrate scheduleAt operation.
       6: Tool binding descriptors and wire result shapes remain adapter/profile owned; the substrate exposes only a neutral binding harness and neutral suspension result.
+      7: The neutral binding harness exposes a tool name, an Effect Schema input schema, and an Effect handler.
 
   ERRORS:
     requirements:
       1: ChoreographyTimeout is the only v1 recoverable tagged choreography error.
       2: ChoreographyTimeout carries a branded CompletionId and durable deadlineAtMs.
-      3: Timeout is observed when a previously suspended wait resumes from a timeout or cancelled completion.
+      3: Timeout is represented as ChoreographyTimeout when a host runtime resumes a previously suspended wait from a timeout or cancelled completion.
       4: Missing context, missing matcher, stream write failure, and internal run-blocking mistakes do not expand the public choreography error taxonomy in v1.
 
   INSTRUMENTATION:
