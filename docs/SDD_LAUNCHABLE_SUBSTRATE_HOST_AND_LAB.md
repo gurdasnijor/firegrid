@@ -124,30 +124,19 @@ ingress model:
   Choreography, Projection, Work, EventPlane, subscribers, operator helpers
 
 @durable-agent-substrate/client
-  regular JS/TS app-facing SDK
-  Promise and AsyncIterable wrappers over the same substrate client core
-
-@durable-agent-substrate/client/effect
-  Effect service/layer presentation of the same client capability
+  Effect-native app-facing SDK for durable intents and curated reads
 
 @durable-agent-substrate/host
-  launchable runtime process and non-Effect entrypoints
-
-@durable-agent-substrate/host/effect
-  Effect layer constructors and withHost-style dev/test composition
+  Effect-native launchable runtime process and withHost-style dev/test composition
 
 @durable-agent-substrate/lab
   development inspector and scenario workbench built on the client
 ```
 
-The client and `/effect` client must not fork semantics. They are two
-presentations over one client core:
-
-```text
-client core
-  -> root package Promise / AsyncIterable API
-  -> /effect Effect services / layers
-```
+The first launchable substrate should be Effect-native. Non-Effect wrappers may
+be added later for external client use, but they must be thin wrappers over the
+Effect-native client and must not attempt to expose runtime suspension until a
+real call site needs it.
 
 Likewise, `SubstrateHost.withHost(...)` may provide `SubstrateClient` to the
 program it runs, but that client is the same capability as the standalone
@@ -220,46 +209,22 @@ owns durable intent production.
 
 The client should follow the Fireline client altitude:
 
-- one root app-facing package;
-- regular JS/TS `open`, `use`, and `run` helpers on the root package;
-- scoped Effect service/layer APIs under `/effect`;
+- one Effect-native app-facing package;
+- scoped Effect service/layer APIs as the canonical surface;
+- `open`, `use`, and `run` helpers may exist as Effect-native conveniences;
 - durable intent methods;
 - curated read handles;
 - explicit subpaths for operator/testing/diagnostics;
 - no raw stream, raw StreamDB collection, or raw row helper exports at the root.
 
-The root package is suitable for non-Effect application runtimes:
-
-```ts
-import { Substrate } from "@durable-agent-substrate/client"
-
-const substrate = await Substrate.open({ streamUrl, clientId: "lab" })
-
-try {
-  const work = await substrate.work.declare({
-    idempotencyKey: "demo:review-1",
-    input: { kind: "review", target: "README.md" },
-  })
-
-  await substrate.choreography.scheduleAt({
-    at: new Date("2026-05-04T17:00:00.000Z"),
-    input: { prompt: "Follow up on review" },
-  })
-
-  const current = await substrate.work.observe(work.workId).snapshot()
-} finally {
-  await substrate.close()
-}
-```
-
-The Effect subpath exposes the same client capability as an Effect service:
+The canonical client surface is Effect-native:
 
 ```ts
 import { Effect } from "effect"
-import { Substrate, SubstrateClientLive } from "@durable-agent-substrate/client/effect"
+import { SubstrateClient, SubstrateClientLive } from "@durable-agent-substrate/client"
 
 const program = Effect.gen(function* () {
-  const substrate = yield* Substrate
+  const substrate = yield* SubstrateClient
   const work = yield* substrate.work.declare({
     idempotencyKey: "demo:review-1",
     input: { kind: "review", target: "README.md" },
@@ -278,9 +243,9 @@ await Effect.runPromise(
 )
 ```
 
-The root may still offer Promise-edge convenience helpers such as
-`Substrate.use(...)` and `Substrate.run(...)`; those helpers call the same client
-core as `/effect`.
+Non-Effect callers can use `Effect.runPromise(...)` at their own process edge. A
+separate Promise/AsyncIterable wrapper package is a later compatibility layer,
+not part of the first launchable substrate design.
 
 Read handles should make snapshot vs follow behavior explicit:
 
@@ -300,12 +265,11 @@ subscription.
 
 The exact method names can change, but the boundary should not:
 
-- root client writes semantic substrate intents;
-- root client reads curated projections;
-- root client hides stream URL and id threading after open;
-- root client and `/effect` client share one implementation core;
-- operator-only controls live under `@durable-agent-substrate/client/operator`;
-- testing harnesses live under `@durable-agent-substrate/client/testing`;
+- client writes semantic substrate intents;
+- client reads curated projections;
+- client hides stream URL and id threading after open;
+- operator-only controls live under explicit client subpaths if needed;
+- testing harnesses live under explicit client subpaths if needed;
 - diagnostic raw stream/state inspection lives under a separate lab/diagnostic
   package, not the production root.
 
@@ -438,8 +402,8 @@ the production process boundary: production apps normally run clients in app
 processes and hosts in worker/runtime processes.
 
 When `withHost` provides `SubstrateClient`, that client is the same capability
-exposed by `@durable-agent-substrate/client/effect`. The only difference is
-lifecycle ownership: `Substrate.run(...)` opens a client against an existing
+exposed by the standalone Effect-native client package. The only difference is
+lifecycle ownership: standalone client programs attach to an existing
 stream/runtime environment, while `SubstrateHost.withHost(...)` starts or
 attaches the host and provides a client connected to that same durable stream
 for the lifetime of the scope.
@@ -591,15 +555,16 @@ The substrate package remains the foundation library. The client package is the
 normal application dependency. The host package is the launchable process. The
 lab package is dev tooling.
 
-Production root exports should stay narrow:
+Production exports should stay narrow and Effect-native first:
 
 ```text
 @durable-agent-substrate/client
-@durable-agent-substrate/client/operator
-@durable-agent-substrate/client/testing
+@durable-agent-substrate/host
+@durable-agent-substrate/lab
 ```
 
-Raw stream inspection belongs to lab/diagnostics, not the client root.
+Optional operator/testing client subpaths can be added when real call sites need
+them. Raw stream inspection belongs to lab/diagnostics, not the client root.
 
 ## First Implementation Slice
 
@@ -607,7 +572,7 @@ The first slice should prove:
 
 1. a package boundary for `packages/client`, `packages/host`, and `packages/lab`
    without filling every feature;
-2. a client `open` / `use` / `run` resource shape against a Durable Streams URL;
+2. an Effect-native client resource shape against a Durable Streams URL;
 3. a client method that declares work through existing substrate producers;
 4. a host boot plan with embedded-dev and attached modes, Effect Config
    decoding, generated process identity, and auth header materialization;

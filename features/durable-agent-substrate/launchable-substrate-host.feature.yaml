@@ -7,7 +7,7 @@ components:
   CLIENT_SURFACE:
     requirements:
       1: The substrate client is the normal application-facing writer surface for durable intents.
-      2: The client root exposes regular JavaScript and TypeScript APIs for open, use, and run.
+      2: The first substrate client surface is Effect-native.
       3: The client can declare durable work through existing substrate producer semantics.
       4: The client can create choreography intents through the choreography facade.
       5: The client can emit rows to registered event planes.
@@ -17,12 +17,12 @@ components:
       9: Client read handles expose explicit snapshot, stream, and until operations so one-shot reads are distinct from live subscriptions.
       10: Client snapshot operations read the current no-gap materialized view once and do not mutate durable state.
 
-  CLIENT_EFFECT_PRESENTATION:
+  CLIENT_COMPATIBILITY:
     requirements:
-      1: The client exposes an `/effect` subpath with Effect services and layers for Effect-native runtimes.
-      2: The root client API and `/effect` client API share one implementation core and do not fork durable semantics.
-      3: The `/effect` client service exposed inside host development helpers is the same capability as the standalone client.
-      4: Root Promise and AsyncIterable wrappers call the same durable intent and projection implementation as the Effect presentation.
+      1: Non-Effect wrappers are deferred until a real external client call site requires them.
+      2: Future non-Effect wrappers must be thin wrappers over the Effect-native client and must not fork durable semantics.
+      3: Future non-Effect wrappers must not expose runtime suspension semantics until a real call site requires that presentation.
+      4: The client service exposed inside host development helpers is the same capability as the standalone Effect-native client.
 
   HOST_PROCESS:
     requirements:
@@ -85,8 +85,8 @@ components:
       4: The host package owns launchable process wiring.
       5: The lab package owns development inspection and scenario workbench UI.
       6: The host package exposes thin constructors for attached, attachedFromConfig, embeddedDev, bootPlanFromConfig, and withHost-style composition.
-      7: The client package exposes a root regular JavaScript and TypeScript API plus an `/effect` subpath.
-      8: The host package exposes a root launch API plus an `/effect` subpath for Effect layer composition.
+      7: The client package exposes an Effect-native root API.
+      8: The host package exposes an Effect-native launch and composition API.
 
 constraints:
   NO_CONTROL_PLANE:
