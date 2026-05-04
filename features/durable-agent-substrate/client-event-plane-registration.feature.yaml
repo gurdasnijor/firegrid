@@ -1,0 +1,41 @@
+feature:
+  name: client-event-plane-registration
+  product: durable-agent-substrate
+  description: Allow higher layers to define typed durable event planes and state projections that participate in substrate observation without becoming substrate-native domain concepts.
+
+components:
+  EVENT_PLANE_DEFINITION:
+    requirements:
+      1: A client event plane is declared as a typed value containing a stable plane name, event schemas, projection schemas, primary keys, and reducer/materializer rules.
+      2: Event plane declarations use Effect Schema as the TypeScript/runtime-validation source of truth and Standard Schema only for interop with Durable Streams State.
+      3: Event plane declarations may be provided through Effect Layers or imported module values and do not require a mutable global registry.
+      4: The substrate does not include Fireline, Firepixel, ACP, MCP, Claude, Codex, provider, sandbox, prompt, session, or tool-call words in its native row families.
+
+  PRODUCER_API:
+    requirements:
+      1: A client event plane exposes a typed producer that emits validated domain events without exposing raw Durable Streams append calls as the normal API.
+      2: Producers preserve stable idempotency keys and causation/correlation metadata supplied by the higher layer.
+      3: Producers do not bypass Durable Streams State schema validation for projection-owned rows.
+      4: Producer failures are represented as typed Effect errors, not thrown defects or boolean status values.
+
+  PROJECTION_API:
+    requirements:
+      1: A client event plane exposes typed projection queries that can be consumed by the substrate Projection facade.
+      2: Projection queries expose snapshot, stream, and until semantics without exposing raw StreamDB collections or Durable Streams State envelopes.
+      3: Projection query definitions specify whether a row is observational, eligibility-producing, or terminal-domain state.
+      4: Projection rows are non-authoritative for substrate ownership unless mapped through the Work pipeline claim boundary.
+
+  ACP_AGENT_PROFILE:
+    requirements:
+      1: ACP adapter events such as permission requests, tool-call updates, session updates, and terminal prompt updates can be modeled as a client-defined event plane.
+      2: ACP observation projections can drive runtime waits or work eligibility only through Projection or Work facade APIs.
+      3: A materialized ACP observation row is not a hidden substitute for a substrate durable completion, durable trigger, or durable ownership decision.
+      4: ACP permission handling can map an observed permission-request event into a domain permission row, then use Projection until or an awaitable only at the higher-layer policy boundary.
+
+constraints:
+  BOUNDARY:
+    requirements:
+      1: Event plane registration does not introduce a second stream store, a second state protocol, or a replacement for Durable Streams State.
+      2: Event plane registration does not force all domain events through a substrate-owned enum or universal event envelope.
+      3: The first implementation proves one non-substrate domain event plane with tests, but does not implement ACP itself.
+      4: The API remains small enough that Fireline and Firepixel can define separate planes without depending on each other's row vocabulary.
