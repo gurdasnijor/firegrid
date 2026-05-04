@@ -23,6 +23,8 @@ components:
       4: Claim authority is derived from origin-ordered durable evidence, not from a stale cached projection.
       5: A materialized claim projection may expose the winner, but the authority rule is the durable first-valid-claim fold.
       6: Slice 5 exposes claim winner derivation as a pure list-in fold scoped to one `workId`.
+      7: Slice 6 reads retained claim-attempt rows in append order for claim winner decisions.
+      8: Same-owner duplicate attempts do not authorize a second handler invocation.
 
   OPERATOR_INVOCATION:
     requirements:
@@ -37,6 +39,10 @@ components:
       9: Slice 5 operator processing is a single-shot function for one ready-work item, not a live watcher loop.
       10: Slice 5 handlers receive the `ReadyWorkItem` as input.
       11: Slice 5 run terminalization is appended internally by the operator using state-machine events after ownership is won.
+      12: If the run is already terminal when ownership is observed, the operator returns an already-terminal outcome without invoking the handler.
+      13: If terminalization loses to a concurrent terminal state, the operator returns a terminalization-lost outcome instead of surfacing a defect.
+      14: Slice 6 reads retained run rows in append order when proving once-only terminal authority.
+      15: Slice 6 operator terminal race detection uses retained run-row authority rather than materialized latest run state.
 
 constraints:
   PHASE_BOUNDARY:

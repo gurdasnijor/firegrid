@@ -1,13 +1,18 @@
 import { randomUUID } from "node:crypto"
 import { DurableStream } from "@durable-streams/client"
 import { Effect, Either } from "effect"
-import type { ClaimAttemptValue } from "./rows.js"
+import type { ClaimAttemptValue, RunState, RunValue } from "./rows.js"
 import type { ReadyWorkItem } from "./ready-work.js"
+import {
+  readRetainedClaimAttempts,
+  readRetainedRunRecords,
+} from "./retained-records.js"
 import { substrateState } from "./state-schema.js"
-import { rebuildProjection } from "./stream.js"
 import {
   completeRun,
   failRun,
+  foldRunRecords,
+  IllegalRunTransition,
 } from "./state-machine.js"
 
 // claim-and-operator-authority.CLAIM_AUTHORITY.1, .2, .3, .6
@@ -25,7 +30,7 @@ export function firstValidClaim(
   return undefined
 }
 
-// claim-and-operator-authority.OPERATOR_INVOCATION.6, .7
+// claim-and-operator-authority.OPERATOR_INVOCATION.6, .7, .12, .13
 export type ClaimOutcome<A, E> =
   | {
       readonly kind: "completed"
@@ -44,6 +49,22 @@ export type ClaimOutcome<A, E> =
       readonly runId: string
       readonly claimId: string
       readonly winner: ClaimAttemptValue
+    }
+  // OPERATOR_INVOCATION.12 — winning claim observed, but the run is already
+  // terminal; handler is NOT invoked.
+  | {
+      readonly kind: "already-terminal"
+      readonly runId: string
+      readonly claimId: string
+      readonly runState: RunState
+    }
+  // OPERATOR_INVOCATION.13 — handler ran, but a concurrent terminal state
+  // was observed before our terminal append; no new terminal event appended.
+  | {
+      readonly kind: "terminalization-lost"
+      readonly runId: string
+      readonly claimId: string
+      readonly terminalState: RunState
     }
 
 export class ClaimStreamError extends Error {
@@ -95,23 +116,47 @@ export interface ProcessReadyWorkItemArgs<A, E> {
   readonly claimId?: string
 }
 
-// claim-and-operator-authority.OPERATOR_INVOCATION.1, .2, .3, .4, .5, .9, .10, .11
-// Single-shot operator for one ReadyWorkItem. Steps:
-//   1. capture observedCursor from durable stream metadata (CLAIM_ATTEMPT.8)
-//   2. append durable.claim.attempt with workId=runId, ownerId, observedCursor
-//   3. rebuild and observe whether our claim is the first-valid winner
-//   4. invoke handler ONLY if winning (.3, .4)
-//   5. winning owner appends run terminal via state-machine builders (.5, .11)
+// Slice 6 adapter: state-machine builders throw IllegalRunTransition
+// synchronously for direct callers (Slice 2 boundary). Inside the operator we
+// route that throw into a typed Effect error so a stale terminal race becomes
+// a `terminalization-lost` outcome instead of a defect (OPERATOR_INVOCATION.13).
+const tryRunBuild = <A>(build: () => A) =>
+  Effect.try({
+    try: build,
+    catch: (cause): IllegalRunTransition => {
+      if (cause instanceof IllegalRunTransition) return cause
+      throw cause
+    },
+  })
+
+// claim-and-operator-authority.OPERATOR_INVOCATION.15 — terminal race detection
+// uses retained run-row authority via raw stream read + first-valid-terminal fold,
+// not StreamDB latest-state which can disagree with the durable origin order.
+const readAuthoritativeRun = (
+  streamUrl: string,
+  runId: string,
+): Effect.Effect<RunValue | undefined, ClaimStreamError> =>
+  Effect.mapError(
+    Effect.map(readRetainedRunRecords(streamUrl, runId), (records) =>
+      foldRunRecords(runId, records),
+    ),
+    (cause) => new ClaimStreamError(cause),
+  )
+
+// claim-and-operator-authority.OPERATOR_INVOCATION.1, .2, .3, .4, .5, .9, .10, .11, .12, .13
+// claim-and-operator-authority.CLAIM_AUTHORITY.7 — operator reads retained claim attempts
+// in append order to derive the winner (no longer depends on snapshot iteration).
+// Single-shot operator for one ReadyWorkItem.
 export const processReadyWorkItem = <A, E>(
   args: ProcessReadyWorkItemArgs<A, E>,
 ): Effect.Effect<ClaimOutcome<A, E>, OperatorError> =>
   Effect.gen(function* () {
     const contentType = args.contentType ?? "application/json"
-    const stream = new DurableStream({ url: args.streamUrl, contentType })
+    const streamHandle = new DurableStream({ url: args.streamUrl, contentType })
 
     // CLAIM_ATTEMPT.8 — capture cursor from real durable stream metadata.
     const head = yield* Effect.tryPromise({
-      try: () => stream.head(),
+      try: () => streamHandle.head(),
       catch: (cause) => new ClaimStreamError(cause),
     })
     if (head.offset === undefined) {
@@ -119,8 +164,7 @@ export const processReadyWorkItem = <A, E>(
     }
     const observedCursor: string = head.offset
 
-    // CLAIM_ATTEMPT.6 — workId = runId
-    // CLAIM_ATTEMPT.7 — claimId is unique per attempt
+    // CLAIM_ATTEMPT.6 — workId = runId; CLAIM_ATTEMPT.7 — claimId is unique per attempt.
     const workId = args.item.runId
     const claimId = args.claimId ?? randomUUID()
     const claim: ClaimAttemptValue = {
@@ -132,21 +176,22 @@ export const processReadyWorkItem = <A, E>(
     }
     const claimEvent = substrateState.claimAttempts.insert({ value: claim })
     yield* Effect.tryPromise({
-      try: () => stream.append(JSON.stringify(claimEvent)),
+      try: () => streamHandle.append(JSON.stringify(claimEvent)),
       catch: (cause) => new ClaimStreamError(cause),
     })
 
-    // OPERATOR_INVOCATION.3 — observe whether our claim is the winner before invoking handler.
-    const snapshot = yield* Effect.tryPromise({
-      try: () => rebuildProjection({ url: args.streamUrl, contentType }),
-      catch: (cause) => new ClaimStreamError(cause),
-    })
-    const winner = firstValidClaim(workId, [...snapshot.claimAttempts.values()])
+    // CLAIM_AUTHORITY.7 — derive winner from retained claim attempts in append order.
+    const attempts = yield* Effect.mapError(
+      readRetainedClaimAttempts(args.streamUrl, workId),
+      (cause) => new ClaimStreamError(cause),
+    )
+    const winner = firstValidClaim(workId, attempts)
     if (winner === undefined) {
       return yield* Effect.fail(new ClaimWinnerMissingError(workId))
     }
     if (winner.claimId !== claimId) {
       // OPERATOR_INVOCATION.4 — speculative invocation forbidden; we lost.
+      // CLAIM_AUTHORITY.8 — same-owner duplicate is also a loss (no second handler invocation).
       return {
         kind: "claim-lost" as const,
         runId: args.item.runId,
@@ -155,22 +200,69 @@ export const processReadyWorkItem = <A, E>(
       }
     }
 
-    // OPERATOR_INVOCATION.5 — only the winning owner may attempt to terminalize.
-    // OPERATOR_INVOCATION.11 — terminalization via state-machine builders.
-    const currentRun = snapshot.runs.get(args.item.runId)
-    if (currentRun === undefined) {
+    // OPERATOR_INVOCATION.12 + .15 — pre-handler stale check via authoritative
+    // retained run fold (NOT StreamDB latest). The fold returns the first-valid
+    // terminal if any exists; otherwise the most-recent non-terminal record.
+    const preRun = yield* readAuthoritativeRun(args.streamUrl, args.item.runId)
+    if (preRun === undefined) {
       return yield* Effect.fail(new RunNotFoundError(args.item.runId))
+    }
+    if (preRun.state !== "blocked") {
+      return {
+        kind: "already-terminal" as const,
+        runId: args.item.runId,
+        claimId,
+        runState: preRun.state,
+      }
     }
 
     // OPERATOR_INVOCATION.6, .8 — handler returns/fails in Effect channels.
     const handlerResult = yield* Effect.either(args.handler(args.item))
 
+    // OPERATOR_INVOCATION.13 + .15 — re-read authoritative folded run state
+    // after handler and detect a concurrent terminalization race before
+    // appending our terminal event.
+    const postRun = yield* readAuthoritativeRun(args.streamUrl, args.item.runId)
+    if (postRun === undefined) {
+      return yield* Effect.fail(new RunNotFoundError(args.item.runId))
+    }
+    if (postRun.state !== "blocked") {
+      return {
+        kind: "terminalization-lost" as const,
+        runId: args.item.runId,
+        claimId,
+        terminalState: postRun.state,
+      }
+    }
+
+    // OPERATOR_INVOCATION.11 — terminalization via state-machine builders, defensively wrapped.
+    const buildResult = yield* Effect.either(
+      Either.isRight(handlerResult)
+        ? tryRunBuild(() => completeRun(postRun, { result: handlerResult.right }))
+        : tryRunBuild(() => failRun(postRun, { error: handlerResult.left })),
+    )
+    if (Either.isLeft(buildResult)) {
+      // OPERATOR_INVOCATION.13 — race we did not catch via re-read; treat the
+      // builder-rejected `from` state as the observed terminal state.
+      const observed: RunState =
+        buildResult.left.from === undefined || buildResult.left.from === "blocked"
+          ? // Defensive fallback if `from` is somehow not a terminal label.
+            "completed"
+          : (buildResult.left.from as RunState)
+      return {
+        kind: "terminalization-lost" as const,
+        runId: args.item.runId,
+        claimId,
+        terminalState: observed,
+      }
+    }
+
+    yield* Effect.tryPromise({
+      try: () => streamHandle.append(JSON.stringify(buildResult.right)),
+      catch: (cause) => new ClaimStreamError(cause),
+    })
+
     if (Either.isRight(handlerResult)) {
-      const event = completeRun(currentRun, { result: handlerResult.right })
-      yield* Effect.tryPromise({
-        try: () => stream.append(JSON.stringify(event)),
-        catch: (cause) => new ClaimStreamError(cause),
-      })
       return {
         kind: "completed" as const,
         runId: args.item.runId,
@@ -178,11 +270,6 @@ export const processReadyWorkItem = <A, E>(
         result: handlerResult.right,
       }
     }
-    const event = failRun(currentRun, { error: handlerResult.left })
-    yield* Effect.tryPromise({
-      try: () => stream.append(JSON.stringify(event)),
-      catch: (cause) => new ClaimStreamError(cause),
-    })
     return {
       kind: "failed" as const,
       runId: args.item.runId,
