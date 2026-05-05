@@ -5,6 +5,8 @@ import {
   ClaimAttemptValue,
   CompletionRowType,
   CompletionValue,
+  EventStreamRowType,
+  EventStreamValue,
   RunRowType,
   RunValue,
 } from "./rows.ts"
@@ -13,6 +15,7 @@ import {
 const RunStandard = Schema.standardSchemaV1(RunValue)
 const CompletionStandard = Schema.standardSchemaV1(CompletionValue)
 const ClaimAttemptStandard = Schema.standardSchemaV1(ClaimAttemptValue)
+const EventStreamStandard = Schema.standardSchemaV1(EventStreamValue)
 
 // durable-records-and-projections.SUBSTRATE_SCOPE.6
 // durable-records-and-projections.SUBSTRATE_SCOPE.7
@@ -33,5 +36,10 @@ export const substrateState = createStateSchema({
     type: ClaimAttemptRowType,
     primaryKey: "claimId",
     schema: ClaimAttemptStandard,
+  },
+  eventStreams: {
+    type: EventStreamRowType,
+    primaryKey: "id",
+    schema: EventStreamStandard,
   },
 })

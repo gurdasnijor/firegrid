@@ -596,6 +596,79 @@ export default tseslint.config(
     },
   },
   {
+    // firegrid-event-streams.SCHEMA_OWNERSHIP.2
+    // The EventStream materializer must not write substrate authority
+    // rows. Operation handlers terminalize runs via state-machine
+    // builders, so this restriction is scoped to the materializer
+    // file rather than the whole runtime package.
+    //
+    // Two layers of enforcement:
+    //   • `no-restricted-imports` bans named imports of every state-
+    //     machine builder (and `DurableWaits`) from
+    //     `@durable-agent-substrate/substrate`.
+    //   • `no-restricted-syntax` bans default and namespace imports
+    //     from the substrate root for this file. A namespace import
+    //     would otherwise let the file reach the same banned builders
+    //     via member access (e.g. `Substrate.completeRun`); blocking
+    //     the import shape itself closes that hole.
+    files: [
+      "packages/runtime/src/runtime/internal/event-stream-materializer.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            restrictedInternalPackage(
+              "@durable-agent-substrate/client",
+              "Runtime → client is an architecture defect.",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/lab",
+              "Runtime must not depend on lab code.",
+            ),
+            restrictedInternalPackage(
+              "@durable-agent-substrate/types",
+              "Runtime owns its lifecycle/config types only.",
+            ),
+            {
+              name: "@durable-agent-substrate/substrate",
+              importNames: [
+                "completeRun",
+                "failRun",
+                "cancelRun",
+                "cancelCompletion",
+                "resolveCompletion",
+                "blockRun",
+                "startRun",
+                "createPendingCompletion",
+                "DurableWaits",
+              ],
+              message:
+                "EventStream materializer must not write substrate authority rows; durable downstream writes belong in the materializer Effect's body via runtime-allowed surfaces, not in the materializer module itself.",
+            },
+          ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        ...effectDebtGuardrails,
+        {
+          selector:
+            "ImportDeclaration[source.value='@durable-agent-substrate/substrate'] > ImportNamespaceSpecifier",
+          message:
+            "EventStream materializer must not use namespace imports from @durable-agent-substrate/substrate; namespace imports defeat the named-import authority guard. Import the specific names you need.",
+        },
+        {
+          selector:
+            "ImportDeclaration[source.value='@durable-agent-substrate/substrate'] > ImportDefaultSpecifier",
+          message:
+            "EventStream materializer must not use a default import from @durable-agent-substrate/substrate.",
+        },
+      ],
+    },
+  },
+  {
     files: ["packages/**/src/__tests__/**/*.ts", "packages/**/*.test.ts"],
     rules: {
       "@typescript-eslint/no-unsafe-argument": "warn",

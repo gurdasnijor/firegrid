@@ -2,6 +2,7 @@ import {
   runScheduledWorkSubscriberFromSnapshot,
   runTimerSubscriberFromSnapshot,
   type CompletionKind,
+  type EventStream,
   type Operation,
   type ProjectionSnapshot,
   type SubscriberError,
@@ -14,6 +15,7 @@ import {
   subscribeCompletions,
 } from "./internal/runner.ts"
 import { runOperationHandler } from "./internal/operation-handler.ts"
+import { runEventStreamMaterializer } from "./internal/event-stream-materializer.ts"
 import { RuntimeContext } from "./runtime-context.ts"
 
 // firegrid-architecture-boundary.SURFACE_AREA.2
@@ -88,6 +90,34 @@ const handler = <
 ): Layer.Layer<never, never, R | RuntimeContext> =>
   Layer.scopedDiscard(runOperationHandler({ op, run }))
 
+// firegrid-event-streams.RUNTIME_API.1
+// firegrid-event-streams.RUNTIME_API.2
+// firegrid-event-streams.RUNTIME_API.3
+// firegrid-event-streams.SCHEMA_OWNERSHIP.2
+// firegrid-event-streams.SCHEMA_OWNERSHIP.3
+//
+// Firegrid.eventStream installs a typed runtime materializer for the
+// given EventStream descriptor. The returned Layer follows the
+// runtime's substrate stream raw, filters for the Firegrid event
+// envelope (E1 wire format, decided in coordination with the client
+// slice), decodes the event via the descriptor's Schema, and runs
+// the caller's materializer Effect once per event in order.
+//
+// Materialized state lives in caller code or downstream durable
+// writes; the materializer never writes substrate authority rows.
+// Long-running materializer fibers are Scope-bound — finalizing
+// the providing Layer's scope interrupts the fiber and tears down
+// the underlying DurableStream session.
+const eventStream = <S extends EventStream.Any, E = never, R = never>(
+  descriptor: S,
+  materialize: (
+    event: EventStream.Event<S>,
+  ) => Effect.Effect<void, E, R>,
+): Layer.Layer<never, never, R | RuntimeContext> =>
+  Layer.scopedDiscard(
+    runEventStreamMaterializer({ descriptor, materialize }),
+  )
+
 export const Firegrid = {
   subscribers: {
     timer: deadlineSubscriberLayer({
@@ -102,4 +132,5 @@ export const Firegrid = {
     }),
   },
   handler,
+  eventStream,
 } as const

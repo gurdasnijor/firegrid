@@ -2,6 +2,12 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   EventStream,
+  EVENT_STREAM_ENVELOPE_TAG,
+  EVENT_STREAM_ROW_TYPE,
+  eventStreamEnvelopeFromStateRow,
+  eventStreamStateKey,
+  isEventStreamStateRow,
+  makeEventStreamStateRow,
   Operation,
   OperationHandle,
   type OperationDescriptor,
@@ -144,6 +150,29 @@ describe("EventStream.define — descriptor shape", () => {
     expect(Logs.name).toBe("Logs")
     expect(Logs.event).toBeDefined()
     expect(Object.isFrozen(Logs)).toBe(true)
+  })
+})
+
+describe("EventStream State Protocol helpers", () => {
+  it("firegrid-event-streams.SCHEMA_OWNERSHIP.2 — makeEventStreamStateRow uses the schema-generated insert helper", () => {
+    const row = makeEventStreamStateRow({
+      stream: "Hits",
+      eventId: "evt-1",
+      event: { url: "/x" },
+    })
+
+    expect(row).toEqual({
+      type: EVENT_STREAM_ROW_TYPE,
+      key: eventStreamStateKey("Hits", "evt-1"),
+      value: {
+        _envelope: EVENT_STREAM_ENVELOPE_TAG,
+        stream: "Hits",
+        event: { url: "/x" },
+      },
+      headers: { operation: "insert" },
+    })
+    expect(isEventStreamStateRow(row)).toBe(true)
+    expect(eventStreamEnvelopeFromStateRow(row)).toEqual(row.value)
   })
 })
 

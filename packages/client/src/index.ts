@@ -54,9 +54,16 @@ export {
 // can import the wire constant without reaching into substrate.
 export {
   EVENT_STREAM_ENVELOPE_TAG,
+  EVENT_STREAM_ROW_TYPE,
+  eventStreamEnvelopeFromStateRow,
+  eventStreamStateKey,
   isEventStreamEnvelope,
   isOperationEnvelope,
+  isEventStreamStateRow,
+  makeEventStreamEnvelope,
+  makeEventStreamStateRow,
   OPERATION_ENVELOPE_TAG,
   type EventStreamEnvelope,
+  type EventStreamStateRow,
   type OperationEnvelope,
 } from "@durable-agent-substrate/substrate"
