@@ -1,8 +1,12 @@
 #!/usr/bin/env tsx
 import { Command, CommandExecutor, Terminal } from "@effect/platform"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
-import { Effect } from "effect"
+import { Data, Effect } from "effect"
 import { FiregridRuntime, FiregridRuntimeBoot } from "../src/index.ts"
+
+class ChildExitError extends Data.TaggedError("ChildExitError")<{
+  readonly exitCode: number
+}> {}
 
 // firegrid-runtime-process.RUNTIME_PACKAGE.1
 // firegrid-runtime-process.BINARIES.1
@@ -73,13 +77,13 @@ const runDefault = Effect.scoped(
         ? FiregridRuntimeBoot.attached({ streamUrl: attachedUrl })
         : FiregridRuntimeBoot.embeddedDev({ streamName: "firegrid" })
 
-    yield* Effect.gen(function* () {
+    return yield* Effect.gen(function* () {
       const runtime = yield* FiregridRuntime
       yield* writeStdout(runtime.streamIdentity.streamUrl)
       yield* writeStdout(
         `firegrid runtime ready (${runtime.bootMode}); Ctrl-C to stop`,
       )
-      yield* Effect.never
+      return yield* Effect.never
     }).pipe(Effect.provide(runtimeLayer))
   }),
 )
@@ -129,9 +133,7 @@ const runDev = (childArgs: ReadonlyArray<string>) =>
 
         const exitCode = yield* Command.exitCode(command)
         if (exitCode !== 0) {
-          yield* Effect.fail(
-            new Error(`child exited with code ${exitCode}`),
-          )
+          return yield* new ChildExitError({ exitCode })
         }
       }).pipe(Effect.provide(runtimeLayer))
     }),
@@ -140,10 +142,9 @@ const runDev = (childArgs: ReadonlyArray<string>) =>
 const program = Effect.gen(function* () {
   const args = parseArgs(process.argv.slice(2))
   if (args.subcommand === "dev") {
-    yield* runDev(args.child)
-  } else {
-    yield* runDefault
+    return yield* runDev(args.child)
   }
+  return yield* runDefault
 }) satisfies Effect.Effect<
   void,
   unknown,

@@ -1,7 +1,11 @@
 import { rebuildProjection } from "@durable-agent-substrate/substrate"
-import { Effect } from "effect"
+import { Data, Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { FiregridRuntime, FiregridRuntimeBoot } from "../index.ts"
+
+class RebuildProjectionFailed extends Data.TaggedError(
+  "RebuildProjectionFailed",
+)<{ readonly cause: unknown }> {}
 
 // firegrid-runtime-process.RUNTIME_PACKAGE.2
 // firegrid-runtime-process.DEV_ENV_INJECTION.1
@@ -34,7 +38,7 @@ describe("firegrid-runtime-process.DEV_ENV_INJECTION — embedded-dev mode launc
               rebuildProjection({
                 url: runtime.streamIdentity.streamUrl,
               }),
-            catch: (cause) => cause,
+            catch: (cause) => new RebuildProjectionFailed({ cause }),
           })
           expect(snap.runs.size).toBe(0)
         }).pipe(

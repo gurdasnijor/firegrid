@@ -113,7 +113,7 @@ const runLoop = <E>(
         yield* latch.close
       })
 
-      yield* Effect.forever(step).pipe(
+      return yield* Effect.forever(step).pipe(
         Effect.tapErrorCause((cause) =>
           Cause.isInterruptedOnly(cause)
             ? Effect.void

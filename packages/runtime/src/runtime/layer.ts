@@ -1,6 +1,6 @@
 import { DurableStream } from "@durable-streams/client"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Context, Effect, type Scope, Layer } from "effect"
+import { Effect, type Scope, Layer } from "effect"
 import { generateProcessId } from "../boot/identity.ts"
 import { RuntimeContext } from "./runtime-context.ts"
 import {
@@ -76,7 +76,7 @@ const buildRuntimeLayer = <E, GraphRIn>(
   contentType: string,
   runtime: Layer.Layer<never, E, GraphRIn> | undefined,
 ): Layer.Layer<FiregridRuntime, E, Exclude<GraphRIn, RuntimeContext>> =>
-  Layer.scopedContext(
+  Layer.unwrapScoped(
     Effect.gen(function* () {
       const { bootMode, streamIdentity } = yield* acquireIdentity
 
@@ -85,21 +85,24 @@ const buildRuntimeLayer = <E, GraphRIn>(
         bootMode,
         streamIdentity,
       }
+      const serviceLayer = Layer.succeed(FiregridRuntime, runtimeService)
 
-      if (runtime !== undefined) {
-        const runtimeContextLayer = Layer.succeed(RuntimeContext, {
-          streamUrl: streamIdentity.streamUrl,
-          contentType,
-          processId,
-          streamIdentity,
-        })
-        const wired = runtime.pipe(Layer.provide(runtimeContextLayer))
-        yield* Layer.build(wired)
+      if (runtime === undefined) {
+        return serviceLayer as Layer.Layer<
+          FiregridRuntime,
+          E,
+          Exclude<GraphRIn, RuntimeContext>
+        >
       }
 
-      return Context.empty().pipe(
-        Context.add(FiregridRuntime, runtimeService),
-      )
+      const runtimeContextLayer = Layer.succeed(RuntimeContext, {
+        streamUrl: streamIdentity.streamUrl,
+        contentType,
+        processId,
+        streamIdentity,
+      })
+      const wired = runtime.pipe(Layer.provide(runtimeContextLayer))
+      return Layer.mergeAll(serviceLayer, wired)
     }),
   )
 
