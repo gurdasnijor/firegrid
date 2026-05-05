@@ -18,7 +18,7 @@ export const workspaceOf = (path) => {
   return match === null ? null : `${match[1]}/${match[2]}`
 }
 
-export const physicalAreaOf = (path) => {
+const physicalAreaOf = (path) => {
   const workspace = workspaceOf(path)
   if (workspace === null) return null
   const relativePath = path.slice(`${workspace}/src/`.length)

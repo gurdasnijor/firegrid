@@ -1,4 +1,8 @@
-import { DurableStream, type JsonBatch } from "@durable-streams/client"
+import {
+  DurableStream,
+  type StreamResponse,
+} from "@durable-streams/client"
+import { Data, Effect, Fiber, Stream, type Scope } from "effect"
 import { useEffect, useState } from "react"
 import styles from "./styles.module.css"
 
@@ -10,8 +14,8 @@ import styles from "./styles.module.css"
 // from the start of the stream and switches to live follow via the
 // external @durable-streams/client. There is no fixed-interval
 // polling: the durable streams client drives a streaming session
-// that the runtime emits records on; this hook subscribes via an
-// async iterator with backoff handled inside the client.
+// that the runtime emits records on; this hook subscribes via a
+// scoped Effect Stream bridge with backoff handled inside the client.
 //
 // This component intentionally has no writer controls. Application
 // and lab UI writes flow exclusively through the substrate client.
@@ -26,6 +30,61 @@ interface RawRecord {
   readonly raw: string
 }
 
+class RawStreamInspectorSessionError extends Data.TaggedError(
+  "firegrid/RawStreamInspectorSessionError",
+)<{
+  readonly streamUrl: string
+  readonly cause: unknown
+}> {}
+
+const summarizeError = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : String(cause)
+
+const acquireRawSession = (
+  streamUrl: string,
+): Effect.Effect<
+  StreamResponse<unknown>,
+  RawStreamInspectorSessionError,
+  Scope.Scope
+> =>
+  Effect.acquireRelease(
+    Effect.tryPromise({
+      try: async () => {
+        const handle = await DurableStream.connect({ url: streamUrl })
+        return await handle.stream<unknown>({ offset: "-1", live: true })
+      },
+      catch: (cause) =>
+        new RawStreamInspectorSessionError({ streamUrl, cause }),
+    }),
+    (response) => Effect.sync(() => response.cancel()),
+  )
+
+// launchable-substrate-host.LAB_INSPECTOR.2
+// launchable-substrate-host.LAB_INSPECTOR.4
+const rawRecords = (
+  response: StreamResponse<unknown>,
+): Stream.Stream<RawRecord> => {
+  let nextSeq = 0
+  return Stream.asyncScoped<RawRecord>(
+    (emit) =>
+      Effect.acquireRelease(
+        Effect.sync(() =>
+          response.subscribeJson<unknown>(async (batch) => {
+            for (const item of batch.items) {
+              const seq = nextSeq
+              nextSeq += 1
+              const raw =
+                typeof item === "string" ? item : JSON.stringify(item)
+              await emit.single({ seq, value: item, raw })
+            }
+          }),
+        ),
+        (unsubscribe) => Effect.sync(() => unsubscribe()),
+      ),
+    { bufferSize: 64, strategy: "suspend" },
+  )
+}
+
 export function RawStreamInspector({ streamUrl }: RawStreamInspectorProps) {
   const [records, setRecords] = useState<ReadonlyArray<RawRecord>>([])
   const [error, setError] = useState<string | undefined>(undefined)
@@ -34,45 +93,47 @@ export function RawStreamInspector({ streamUrl }: RawStreamInspectorProps) {
   )
 
   useEffect(() => {
-    let cancelled = false
     setRecords([])
     setError(undefined)
     setPhase("connecting")
 
-    const run = async () => {
-      try {
-        const handle = await DurableStream.connect({ url: streamUrl })
-        const session = await handle.stream({ offset: "-1", live: true })
-        if (cancelled) return
-        setPhase("live")
-        let nextSeq = 0
-        for await (const batch of session.jsonStream() as AsyncIterable<
-          JsonBatch
-        >) {
-          if (cancelled) return
-          for (const item of batch.items) {
-            const seq = nextSeq
-            nextSeq += 1
-            const raw =
-              typeof item === "string" ? item : JSON.stringify(item)
-            setRecords((prev) => {
-              const next = prev.slice()
-              next.push({ seq, value: item, raw })
-              if (next.length > 200) next.shift()
-              return next
-            })
-          }
-        }
-      } catch (cause) {
-        if (cancelled) return
-        setError(cause instanceof Error ? cause.message : String(cause))
-        setPhase("error")
-      }
-    }
-    void run()
+    // React effect boundary: start the raw Durable Streams follow
+    // fiber and interrupt it from cleanup so Scope finalization
+    // cancels the live session.
+    // eslint-disable-next-line no-restricted-syntax
+    const fiber = Effect.runFork(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const response = yield* acquireRawSession(streamUrl)
+          yield* Effect.sync(() => {
+            setPhase("live")
+          })
+          yield* rawRecords(response).pipe(
+            Stream.runForEach((record) =>
+              Effect.sync(() => {
+                setRecords((prev) => {
+                  const next = prev.slice()
+                  next.push(record)
+                  if (next.length > 200) next.shift()
+                  return next
+                })
+              }),
+            ),
+          )
+        }),
+      ).pipe(
+        Effect.catchAll((cause) =>
+          Effect.sync(() => {
+            setError(summarizeError(cause))
+            setPhase("error")
+          }),
+        ),
+      ),
+    )
 
     return () => {
-      cancelled = true
+      // eslint-disable-next-line no-restricted-syntax
+      void Effect.runPromise(Fiber.interrupt(fiber))
     }
   }, [streamUrl])
 

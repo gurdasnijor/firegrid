@@ -4,7 +4,16 @@ import {
   isEventStreamEnvelope,
   type EventStream,
 } from "@firegrid/substrate/descriptors"
-import { Cause, Data, Effect, Option, type ParseResult, Schema, type Scope, Stream } from "effect"
+import {
+  Cause,
+  Data,
+  Effect,
+  Option,
+  type ParseResult,
+  Schema,
+  type Scope,
+  Stream,
+} from "effect"
 import {
   RuntimeContext,
   type RuntimeContextService,
@@ -142,28 +151,20 @@ const runMaterializerLoop = <S extends EventStream.Any, E, R>(
   Effect.scoped(
     Effect.gen(function* () {
       const response = yield* acquireSession(cfg, input.descriptor.name)
-      const records = Stream.async<unknown, EventStreamSessionError>(
-        (emit) => {
-          // subscribeJson is the durable-streams client's
-          // backpressure-aware consumption hook. The unsubscribe
-          // function terminates iteration immediately on Scope
-          // finalization, which is what we want for clean teardown
-          // — async-iterable + interrupt does not propagate the
-          // cancel signal reliably across the HTTP reader boundary.
-          const subscribable = response as unknown as {
-            readonly subscribeJson: (
-              handler: (batch: {
-                readonly items: ReadonlyArray<unknown>
-              }) => unknown,
-            ) => () => void
-          }
-          const unsubscribe = subscribable.subscribeJson((batch) => {
-            for (const item of batch.items) {
-              void emit.single(item)
-            }
-          })
-          return Effect.sync(() => unsubscribe())
-        },
+      // firegrid-remediation-hardening.EFFECT_CONSISTENCY.3
+      const records = Stream.asyncScoped<unknown>(
+        (emit) =>
+          Effect.acquireRelease(
+            Effect.sync(() =>
+              response.subscribeJson<unknown>(async (batch) => {
+                for (const item of batch.items) {
+                  await emit.single(item)
+                }
+              }),
+            ),
+            (unsubscribe) => Effect.sync(() => unsubscribe()),
+          ),
+        { bufferSize: 64, strategy: "suspend" },
       )
       yield* records.pipe(
         Stream.filterMap((record) =>

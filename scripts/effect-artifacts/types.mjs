@@ -34,7 +34,7 @@ const topLevelSplit = (input, separators) => {
   return parts
 }
 
-export const effectChannelsFromType = (typeText) => {
+const effectChannelsFromType = (typeText) => {
   const marker = "Effect.Effect<"
   const start = typeText.indexOf(marker)
   if (start === -1) return null
@@ -183,7 +183,7 @@ export const layerChannelsOf = (node) => {
       }
 }
 
-export const flattenRequirements = (requirementText) =>
+const flattenRequirements = (requirementText) =>
   topLevelSplit(requirementText.replaceAll("\n", " "), ["|", "&"])
     .map((part) => part.trim())
     .filter((part) => part !== "" && part !== "never" && part !== "unknown")
@@ -261,9 +261,6 @@ export const declarationTypeText = (node) => {
   if (Node.isTypeAliasDeclaration(node)) return node.getType().getText(node)
   return node.getType().getText(node)
 }
-
-export const schemaSyntaxText = (node) =>
-  Node.isTypeAliasDeclaration(node) ? (node.getTypeNode()?.getText() ?? "") : ""
 
 const typeParametersOf = (node) => {
   if (

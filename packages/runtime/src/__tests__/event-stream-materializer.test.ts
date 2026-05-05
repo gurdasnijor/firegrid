@@ -4,6 +4,9 @@ import {
   makeEventStreamStateRow,
   type EventStreamStateRow,
 } from "@firegrid/substrate/descriptors"
+import { readFileSync } from "node:fs"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { Data, Deferred, Duration, Effect, Exit, Layer, Ref, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { Firegrid, FiregridRuntime, FiregridRuntimeBoot } from "../index.ts"
@@ -21,6 +24,9 @@ import { Firegrid, FiregridRuntime, FiregridRuntimeBoot } from "../index.ts"
 class AppendFailed extends Data.TaggedError("AppendFailed")<{
   readonly cause: unknown
 }> {}
+
+const here = dirname(fileURLToPath(import.meta.url))
+const internalRuntimeRoot = resolve(here, "..", "runtime", "internal")
 
 const Hits = EventStream.define({
   name: "Hits",
@@ -155,5 +161,22 @@ describe("firegrid-event-streams.RUNTIME_API.3 — Scope-bound materializer fibe
       ),
     )
     expect(Exit.isSuccess(exit)).toBe(true)
+  })
+})
+
+describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY.3 — materializer stream bridge guardrail", () => {
+  it("uses scoped subscribeJson backpressure instead of an unmanaged or unbounded callback loop", () => {
+    const source = readFileSync(
+      resolve(internalRuntimeRoot, "event-stream-materializer.ts"),
+      "utf8",
+    )
+
+    expect(source).toContain("Stream.asyncScoped<unknown>")
+    expect(source).toContain('strategy: "suspend"')
+    expect(source).toContain("await emit.single(item)")
+    expect(source).toContain("Effect.acquireRelease")
+    expect(source).toContain("subscribeJson")
+    expect(source).not.toContain("Stream.async<unknown, EventStreamSessionError>")
+    expect(source).not.toContain("void emit.single(item)")
   })
 })
