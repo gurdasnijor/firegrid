@@ -1,4 +1,26 @@
-import { Schema } from "effect"
+import type { Schema } from "effect"
+
+// firegrid-event-streams.CLIENT_API.1
+// firegrid-event-streams.CLIENT_API.2
+//
+// Wire envelope for EventStream rows. Client emit encodes the caller-owned
+// event payload and appends this envelope as a durable stream row; clients
+// and future runtime materializers share this shape from the descriptor
+// module so encode/decode boundaries cannot drift.
+export const EVENT_STREAM_ENVELOPE_TAG = "firegrid/event@1" as const
+
+export interface EventStreamEnvelope {
+  readonly _envelope: typeof EVENT_STREAM_ENVELOPE_TAG
+  readonly stream: string
+  readonly event: unknown
+}
+
+export const isEventStreamEnvelope = (
+  value: unknown,
+): value is EventStreamEnvelope =>
+  typeof value === "object" &&
+  value !== null &&
+  (value as EventStreamEnvelope)._envelope === EVENT_STREAM_ENVELOPE_TAG
 
 // firegrid-event-streams.EVENT_STREAM_DEFINITION.1
 // firegrid-event-streams.EVENT_STREAM_DEFINITION.2
