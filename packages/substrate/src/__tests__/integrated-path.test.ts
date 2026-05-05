@@ -9,7 +9,7 @@ import {
   WorkProducer,
 } from "../producer.ts"
 import { deriveReadyWork } from "../projection/ready-work.ts"
-import { blockRun } from "../state-machine.ts"
+import { blockRun } from "./state-machine-sync.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   DurableWaits,

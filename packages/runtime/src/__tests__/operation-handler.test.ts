@@ -68,14 +68,14 @@ const seedStartedRun = async (
     url: streamUrl,
     contentType: "application/json",
   })
-  const event = startRun({
+  const event = Effect.runSync(startRun({
     runId,
     data: {
       _envelope: OPERATION_ENVELOPE_TAG,
       operation,
       payload,
     },
-  })
+  }))
   await stream.append(JSON.stringify(event))
 }
 

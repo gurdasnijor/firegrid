@@ -11,7 +11,10 @@ import type {
   ScheduledWorkCompletionData,
   TimerCompletionData,
 } from "./schema/rows.ts"
-import { createPendingCompletion } from "./state-machine.ts"
+import {
+  createPendingCompletion,
+  type CreatePendingCompletionInput,
+} from "./schema/state-machine.ts"
 import { rebuildProjection } from "./stream.ts"
 
 // durable-waits-and-scheduling.AWAKEABLE_API.6
@@ -81,7 +84,18 @@ export class WaitsStreamError extends Data.TaggedError("WaitsStreamError")<{
   readonly cause: unknown
 }> {}
 
-export type WaitsError = WaitsStreamError
+export class WaitsStateMachineError extends Data.TaggedError(
+  "WaitsStateMachineError",
+)<{
+  readonly cause: unknown
+}> {}
+
+export type WaitsError = WaitsStreamError | WaitsStateMachineError
+
+const createPendingCompletionForWait = (input: CreatePendingCompletionInput) =>
+  createPendingCompletion(input).pipe(
+    Effect.mapError((cause) => new WaitsStateMachineError({ cause })),
+  )
 
 // Context.Tag service surface; instances are constructed via DurableWaitsLive(config).
 export class DurableWaits extends Context.Tag("Substrate/DurableWaits")<
@@ -157,7 +171,10 @@ export const DurableWaitsLive = (
               state: existing.state,
             }
           }
-          const event = createPendingCompletion({ completionId: key, kind })
+          const event = yield* createPendingCompletionForWait({
+            completionId: key,
+            kind,
+          })
           yield* append(event)
           return {
             completionId: key,
@@ -179,7 +196,7 @@ export const DurableWaitsLive = (
               durationMs: input.durationMs,
               dueAtMs: nowMs + input.durationMs,
             }
-            const event = createPendingCompletion({
+            const event = yield* createPendingCompletionForWait({
               completionId,
               kind: "timer",
               data,
@@ -207,7 +224,7 @@ export const DurableWaitsLive = (
                 ? { timeoutMs: input.timeoutMs, deadlineAtMs: nowMs + input.timeoutMs }
                 : {}),
             }
-            const event = createPendingCompletion({
+            const event = yield* createPendingCompletionForWait({
               completionId,
               kind: "projection_match",
               data,
@@ -227,7 +244,7 @@ export const DurableWaitsLive = (
               whenMs: input.whenMs,
               input: input.input,
             }
-            const event = createPendingCompletion({
+            const event = yield* createPendingCompletionForWait({
               completionId,
               kind: "scheduled_work",
               ...(input.workId !== undefined ? { workId: input.workId } : {}),

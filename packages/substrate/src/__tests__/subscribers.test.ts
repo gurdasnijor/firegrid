@@ -7,7 +7,7 @@ import {
   SubstrateProducerLive,
 } from "../producer.ts"
 import type { CompletionValue } from "../schema/rows.ts"
-import { createPendingCompletion } from "../state-machine.ts"
+import { createPendingCompletion } from "./state-machine-sync.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   runProjectionMatchSubscriber,

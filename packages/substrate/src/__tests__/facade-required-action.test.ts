@@ -6,7 +6,7 @@ import {
   ProjectionLive,
   type ProjectionQuery,
 } from "../facade/projection.ts"
-import { createPendingCompletion, resolveCompletion } from "../state-machine.ts"
+import { createPendingCompletion, resolveCompletion } from "./state-machine-sync.ts"
 import type { CompletionValue } from "../schema/rows.ts"
 import {
   freshStreamUrl,

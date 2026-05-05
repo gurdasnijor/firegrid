@@ -10,7 +10,7 @@ import {
   createPendingCompletion,
   resolveCompletion,
   startRun,
-} from "../state-machine.ts"
+} from "./state-machine-sync.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,

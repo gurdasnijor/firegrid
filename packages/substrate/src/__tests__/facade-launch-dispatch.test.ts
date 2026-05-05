@@ -30,7 +30,7 @@ import {
   failRun,
   resolveCompletion,
   startRun,
-} from "../state-machine.ts"
+} from "./state-machine-sync.ts"
 import type { CompletionValue, RunValue } from "../schema/rows.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
