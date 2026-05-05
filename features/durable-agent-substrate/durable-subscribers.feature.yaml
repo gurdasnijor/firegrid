@@ -1,15 +1,15 @@
 feature:
   name: durable-subscribers
   product: durable-agent-substrate
-  description: Define substrate-owned durable subscriber profiles that advance existing durable completions without introducing Fireline runtime, agent tool, or final choreography API concepts.
+  description: Define substrate-owned durable subscriber programs that advance existing durable completions without introducing Fireline runtime, agent tool, or final choreography API concepts.
 
 components:
   SUBSCRIBER_SCOPE:
     requirements:
-      1: Durable subscribers are substrate-owned scoped programs that observe durable substrate state and append completion terminal records when their profile-specific eligibility rule is satisfied.
+      1: Durable subscribers are substrate-owned scoped programs that observe durable substrate state and append completion terminal records when their subscriber-specific eligibility rule is satisfied.
       2: Durable subscribers operate over existing `durable.completion` rows and do not introduce a separate scheduler, workflow, continuation, mailbox, channel registry, or driver registry concept.
       3: Durable subscribers do not own live agent sessions, prompts, ACP, MCP, process launch, providers, resources, sandboxes, or Fireline/Firepixel client APIs.
-      4: Subscriber profiles may be exposed as low-level substrate services, but they are not the final ergonomic choreography API.
+      4: Subscriber programs may be exposed as low-level substrate services, but they are not the final ergonomic choreography API.
       5: The first durable subscriber slice uses single-shot scan-and-resolve functions that a later long-running scoped program may wrap.
 
   TIMER_SUBSCRIBER:

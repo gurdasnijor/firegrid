@@ -47,6 +47,8 @@ mutation endpoints or special lab-only writer paths.
   `https://docs.restate.dev/develop/ts/services`
 - Restate TypeScript client SDK:
   `https://docs.restate.dev/services/invocation/clients/typescript-sdk`
+- Apache Flink deployment overview:
+  `https://nightlies.apache.org/flink/flink-docs-stable/docs/deployment/overview/`
 
 The Durable Streams test UI is useful for inspector mechanics: stream registry,
 live following, catchup, JSON rendering, and responsive stream inspection. It is
@@ -57,7 +59,15 @@ defining durable behavior, a standalone client SDK for external callers, and a
 launchable runtime/server that owns execution. The substrate should borrow that
 split, not Restate's ingress model. In this substrate, external callers append
 durable intent through the client, and the host observes durable state and runs
-configured profiles.
+a caller-supplied Host Program Graph.
+
+Flink is useful prior art for the executable runtime seam. A Flink client turns
+an application into a job graph; the runtime then coordinates sources,
+operators, and sinks. The substrate equivalent is the Host Program Graph:
+runtime-owned event planes, subscriber programs, operator programs, evaluators,
+and adapters that a `SubstrateHost` runs against durable state. The graph is
+provided in process at host startup; it is not submitted through a host mutation
+endpoint or stored in a global/durable registry in v1.
 
 ## Goals
 
@@ -94,7 +104,7 @@ applications / agent runtimes / lab
 
 @durable-agent-substrate/host
   observe durable streams/state
-  run subscribers and operator programs
+  run a Host Program Graph of subscribers and operator programs
   expose read-only diagnostics and lifecycle status
 
 Durable Streams + Durable State
@@ -203,15 +213,28 @@ SubstrateClient.open/use/run
 SubstrateHostBoot.attached / attachedFromConfig
 SubstrateHostBoot.embeddedDev / bootPlanFromConfig
 SubstrateHostBoot.withHost
-SubstrateHostLive(plan, profiles)
+SubstrateHostLive(plan, profile) today
+SubstrateHostLive(plan, hostProgram) as the next vocabulary target
 ```
 
 The important ergonomic property is compositionality. A Firepixel-like runtime
-should provide profile layers to the host instead of forking its own process
-control surface:
+should provide a Host Program Graph to the host instead of forking its own
+process control surface:
 
 ```ts
-const RuntimeProfileLive = Layer.mergeAll(
+// Conceptual next-wave runtime contract.
+const FirelineHostProgram = defineHostProgramGraph({
+  name: "fireline",
+  eventPlanes: [AcpEventPlane],
+  subscribers: [PermissionMatcher],
+  operators: [PromptOperator],
+  providers: [LocalProvider],
+})
+
+// Current implementation still passes the executable Effect layer through the
+// `profile` option. The next host-program slice should rename or wrap this
+// surface around Host Program Graph terminology.
+const HostProgramLive = Layer.mergeAll(
   AcpEventPlaneLive,
   LocalProviderLive,
   PermissionMatcherLive,
@@ -227,14 +250,19 @@ const program = SubstrateHostBoot.withHost(
     mode: "embedded-dev",
     streamName: "firepixel-prototype",
     clientId: "prototype:lab",
-    profile: RuntimeProfileLive,
+    profile: HostProgramLive,
   },
 )
 ```
 
 This keeps operational complexity low: the host owns process lifetime and
-subscribers/operators, the profile owns adapter/provider choices, and the client
-owns durable intent production.
+subscribers/operators, the Host Program Graph owns adapter/provider choices, and
+the client owns durable intent production. The current TypeScript implementation
+still names this option `profile`; that is a transitional implementation name
+for the first boolean subscriber controls. The next host-program slice should
+rename or wrap it around Host Program Graph terminology before broad lab work.
+This is tracked by `launchable-substrate-host.RUNTIME_COMPOSITION.10` and
+`launchable-substrate-host.RUNTIME_COMPOSITION.11`.
 
 ## Client Surface
 
@@ -331,7 +359,7 @@ The client may:
 - create choreography intents through the choreography facade;
 - emit rows to registered event planes;
 - resolve externally owned completions when the caller is authorized by the
-  domain profile;
+  domain-specific program graph;
 - expose scoped read handles for runs, completions, ready work, event-plane
   projections, and scenario state;
 - expose replay+live streams where the substrate is stream-shaped.
@@ -372,7 +400,7 @@ Host responsibilities:
 
 - start or connect to a Durable Streams server;
 - run timer and scheduled-work subscribers;
-- run projection-match subscriber profiles supplied by the runtime;
+- run projection-match subscriber programs supplied by the Host Program Graph;
 - run claim-before-side-effect operator programs;
 - run configured event-plane projection observers;
 - expose read-only in-process status, metrics, and health for local tooling;
@@ -384,7 +412,7 @@ intent. The host then observes that durable intent and reacts.
 
 ### Host Configuration
 
-The host should separate boot planning from runtime profiles.
+The host should separate boot planning from the Host Program Graph.
 
 Boot plan:
 
@@ -419,42 +447,47 @@ options:
   default;
 - `SUBSTRATE_AUTHORIZATION` or `SUBSTRATE_TOKEN` materializes stream headers.
 
-Runtime profiles are Effect layers and values supplied in process, not a global
-registry:
+The Host Program Graph is made of Effect layers and values supplied in process,
+not a global registry. It is analogous to a Flink job graph at the semantic
+level: the graph describes the executable stream/state programs the host runs,
+but it is not submitted through an HTTP control plane. The current TypeScript
+surface still uses `profile` as the option name; Host Program Graph is the
+vocabulary target for the next implementation wave.
 
 ```ts
-interface SubstrateHostProfile {
+interface HostProgramGraph {
+  readonly name: string
   readonly subscribers?: {
     readonly timer?: boolean
     readonly scheduledWork?: boolean
-    readonly projectionMatch?: ReadonlyArray<ProjectionMatchProfile>
+    readonly projectionMatch?: ReadonlyArray<ProjectionMatchProgramEntry>
   }
-  readonly operators?: ReadonlyArray<OperatorProfile>
-  readonly eventPlanes?: ReadonlyArray<EventPlaneProfile>
+  readonly operators?: ReadonlyArray<OperatorProgramEntry>
+  readonly eventPlanes?: ReadonlyArray<EventPlaneProgramEntry>
 }
 ```
 
-Profile definitions can carry Effect layers and services in process. Serialized
-config only selects known local profile modules in dev; it does not create a
-mutable runtime registry.
+Host Program Graph definitions can carry Effect layers and services in process.
+Serialized config only selects known local graph definitions in dev; it does not
+create a mutable runtime registry.
 
-Profile discovery in development is explicit:
+Host Program Graph discovery in development is explicit:
 
 ```ts
-const profiles = {
-  prototype: PrototypeProfileLive,
-  fakePermission: FakePermissionProfileLive,
+const hostPrograms = {
+  prototype: PrototypeHostProgramLive,
+  fakePermission: FakePermissionHostProgramLive,
 } as const
 
 SubstrateHostBoot.embeddedDev({
   streamName: "substrate-prototype",
-  profile: profiles.prototype,
+  profile: hostPrograms.prototype,
 })
 ```
 
 Config may select a key from a caller-supplied local map, but the substrate does
 not dynamically import arbitrary modules, maintain a global registry, or fetch
-runtime profiles from durable state.
+Host Program Graph definitions from durable state.
 
 ### Host-Managed Subscriber Programs
 
@@ -479,35 +512,39 @@ Spec anchors:
 - `launchable-substrate-host.RUNTIME_COMPOSITION.2`
 - `launchable-substrate-host.RUNTIME_COMPOSITION.3`
 - `launchable-substrate-host.RUNTIME_COMPOSITION.9`
+- `launchable-substrate-host.RUNTIME_COMPOSITION.10`
+- `launchable-substrate-host.RUNTIME_COMPOSITION.11`
 - `launchable-substrate-host.AUTHORITY_BOUNDARY.2`
 - `launchable-substrate-host.NO_CONTROL_PLANE.1`
 - `launchable-substrate-host.NO_CONTROL_PLANE.3`
 
-The first host-managed subscriber profile covers only:
+The first host-managed subscriber program set covers only:
 
 - timer completions through `runTimerSubscriber`;
 - scheduled-work completions through `runScheduledWorkSubscriber`.
 
-Projection-match subscriber profiles and claim-before-side-effect operator
-profiles stay separate. They use the same host profile mechanism later, but
-they should not be pulled into the timer/scheduled-work loop slice just to
+Projection-match subscriber programs and claim-before-side-effect operator
+programs stay separate. They use the same Host Program Graph mechanism later,
+but they should not be pulled into the timer/scheduled-work loop slice just to
 claim broad host-process requirements.
 
 The subscriber runner configuration is a simple per-kind boolean in Slice 5:
 
 ```ts
-interface SubstrateHostProfile {
+interface HostProgramGraph {
+  readonly name: string
   readonly subscribers?: {
     readonly timer?: boolean
     readonly scheduledWork?: boolean
-    readonly projectionMatch?: ReadonlyArray<ProjectionMatchProfile>
+    readonly projectionMatch?: ReadonlyArray<ProjectionMatchProgramEntry>
   }
 }
 ```
 
-If a subscriber is disabled or omitted from the profile, the host does not start
-its fiber. A future slice may introduce per-kind tuning options if implementation
-genuinely needs them; until then the boolean keeps Slice 5 honest and avoids
+If a subscriber is disabled or omitted from the current `profile` implementation
+shape, the host does not start its fiber. A future Host Program Graph slice may
+rename or wrap that option and introduce per-kind tuning only if implementation
+genuinely needs it; until then the boolean keeps Slice 5 honest and avoids
 naming a polling-shaped knob.
 
 Each subscriber program is sequential for its own subscriber kind. A new wake-up
@@ -603,7 +640,8 @@ The first `withHost` implementation slice should stay narrow:
 - compose the existing host and client capabilities in one Effect scope;
 - expose no host mutation endpoints and no network diagnostics listener;
 - provide the same `SubstrateClient` service shape as the standalone client;
-- avoid creating a runtime registry or loading profile modules dynamically;
+- avoid creating a runtime registry or loading Host Program Graph definitions
+  dynamically;
 - keep process-signal handling out of scope unless the slice explicitly owns
   signal trapping and tests it.
 
@@ -617,9 +655,10 @@ finalization, and it should not claim `launchable-substrate-host.HOST_PROCESS.6`
 or `launchable-substrate-host.HOST_DIAGNOSTICS.*` unless an in-process
 diagnostic service is intentionally added.
 
-### Runtime Profile Boundary
+### Host Program Graph Boundary
 
-A Firepixel-like agent runtime should sit above the host as a profile:
+A Firepixel-like agent runtime should sit above the host as a Host Program
+Graph:
 
 - define its event planes;
 - provide projection-match evaluators;
@@ -628,8 +667,8 @@ A Firepixel-like agent runtime should sit above the host as a profile:
 - decide whether to launch local processes, remote agents, or fake test
   providers.
 
-The substrate host runs the profile. The profile owns agent semantics. The
-durable substrate remains generic.
+The substrate host runs the Host Program Graph. The graph owns agent semantics.
+The durable substrate remains generic.
 
 ## Lab UI
 
@@ -692,7 +731,7 @@ Fireline or Firepixel:
 2. Scheduled work scenario
    - client calls `scheduleAt`;
    - host scheduled-work subscriber resolves at due time;
-   - runtime profile maps resolved scheduled work into a domain event;
+   - Host Program Graph maps resolved scheduled work into a domain event;
    - lab shows that `scheduleAt` did not block the caller.
 
 3. Fake permission scenario
@@ -704,7 +743,7 @@ Fireline or Firepixel:
 
 4. Tool-call-shaped execution scenario
    - a caller-owned event plane records a tool execution request;
-   - an operator profile claims ready execution work;
+   - an operator program claims ready execution work;
    - fake provider performs the side effect;
    - terminal domain row is emitted;
    - lab proves claim-before-side-effect ordering.
@@ -729,7 +768,7 @@ In-process diagnostics may expose:
 - process id;
 - boot mode;
 - stream URL or stream name;
-- active profiles;
+- active Host Program Graphs;
 - subscriber program liveness;
 - operator program liveness;
 - last non-secret error summary;
@@ -747,18 +786,18 @@ start scenario work.
 
 ## Relationship To Event Planes
 
-The launchable host should support event-plane profiles but not own their
-domain vocabulary. A profile registers:
+The launchable host should support event-plane entries in the Host Program
+Graph, but it must not own their domain vocabulary. A graph entry registers:
 
 - event-plane definition;
 - stream URL;
 - projection queries;
 - optional subscriber evaluator adapter;
-- optional operator profile that consumes projected rows.
+- optional operator program that consumes projected rows.
 
 Event-plane rows are observational, eligibility-producing, or terminal-domain
-facts depending on the profile. They never replace substrate claim authority or
-completion authority.
+facts depending on the Host Program Graph entry. They never replace substrate
+claim authority or completion authority.
 
 ## Relationship To Choreography
 
@@ -767,7 +806,7 @@ The host runs the drivers that make choreography useful outside tests:
 - timer subscriber for sleep;
 - scheduled-work subscriber for scheduleAt;
 - projection-match subscriber for waitFor;
-- operator profiles for ready work;
+- operator programs for ready work;
 - future runtime-specific resume policy.
 
 The choreography facade writes durable records and blocks runs where
@@ -832,11 +871,14 @@ semantics.
    invoked by the lab UI and by a command-line entrypoint, but they are not
    exported from the production client root.
 4. Minimum host diagnostics are read-only health, version, process id, boot
-   mode, stream identity, active profile names, subscriber/operator program status,
-   last scan times, uptime, process metrics, and non-secret error summaries.
-5. Profile discovery uses explicit local maps supplied by the host application
-   or lab. Config may select a known key from that map; there is no global
-   registry, dynamic module import, or durable profile catalog in the substrate.
+   mode, stream identity, active Host Program Graph names,
+   subscriber/operator program liveness, uptime, process metrics, and
+   non-secret error summaries. Progress and terminalization facts come from
+   durable projections, not process-local diagnostics.
+5. Host Program Graph discovery uses explicit local maps supplied by the host
+   application or lab. Config may select a known key from that map; there is no
+   global registry, dynamic module import, or durable program catalog in the
+   substrate.
 6. Host auth config resolves deterministically: `SUBSTRATE_AUTHORIZATION` wins
    over `SUBSTRATE_TOKEN`; a bare token becomes `Authorization: Bearer <token>`;
    diagnostics never expose the resulting header.

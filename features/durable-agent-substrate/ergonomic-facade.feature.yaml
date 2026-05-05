@@ -36,8 +36,8 @@ components:
 
   SUBSCRIBER_BOUNDARY:
     requirements:
-      1: Subscriber profiles remain wrap-able by the ergonomic facade and shared choreography operations.
-      2: Subscriber profiles are not exposed as the first app-facing choreography API.
+      1: Durable subscriber programs remain wrap-able by the ergonomic facade and shared choreography operations.
+      2: Durable subscriber programs are not exposed as the first app-facing choreography API.
       3: Long-running subscriber variants are represented as scoped Effect programs or Layers.
       4: Subscriber APIs do not require callers to manually thread raw Durable Streams records, Durable Streams State envelopes, retained folds, or claim internals.
 
@@ -47,7 +47,7 @@ components:
       2: The facade implementation includes a required-action or approval example using projection stream and projection until semantics.
       3: The facade implementation includes a launch or prompt-dispatch example using claimed-work semantics.
       4: The facade implementation includes a tool-execution example using claimed-work semantics.
-      5: The facade implementation includes a sleep or schedule example showing awaitable timer/scheduled-work usage without making subscriber profiles app-facing.
+      5: The facade implementation includes a sleep or schedule example showing awaitable timer/scheduled-work usage without making subscriber programs app-facing.
       6: Common usage examples are based on Fireline RFC or Firepixel flows rather than generic email, payment, or placeholder business examples.
 
 constraints:
