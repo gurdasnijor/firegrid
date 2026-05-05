@@ -64,7 +64,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.2 — sleep creates a timer compl
 
     const program = Effect.gen(function* () {
       const choreo = yield* Choreography
-      yield* choreo.sleep(Duration.seconds(5))
+      return yield* choreo.sleep(Duration.seconds(5))
     })
 
     const exit = await Effect.runPromiseExit(
@@ -116,7 +116,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
 
     const program = Effect.gen(function* () {
       const choreo = yield* Choreography
-      yield* choreo.waitFor(trigger, { timeout: Duration.minutes(10) })
+      return yield* choreo.waitFor(trigger, { timeout: Duration.minutes(10) })
     })
 
     const exit = await Effect.runPromiseExit(
@@ -174,7 +174,7 @@ describe("choreography-facade.TRIGGERS.8 — waitFor with an unknown matcherId f
 
     const program = Effect.gen(function* () {
       const choreo = yield* Choreography
-      yield* choreo.waitFor(trigger)
+      return yield* choreo.waitFor(trigger)
     })
 
     const exit = await Effect.runPromiseExit(
@@ -298,7 +298,7 @@ describe("choreography-facade.SUSPENSION.4 — a run already blocked on a differ
 
     const program = Effect.gen(function* () {
       const choreo = yield* Choreography
-      yield* choreo.sleep(Duration.millis(500))
+      return yield* choreo.sleep(Duration.millis(500))
     })
 
     const ctxLayer = currentWorkContextLayer({
@@ -352,7 +352,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.5 — awaitAwakeable creates a wo
 
     const program = Effect.gen(function* () {
       const choreo = yield* Choreography
-      yield* choreo.awaitAwakeable({ name: "approval" })
+      return yield* choreo.awaitAwakeable({ name: "approval" })
     })
 
     const exit = await Effect.runPromiseExit(
@@ -399,7 +399,7 @@ describe("choreography-facade.SUSPENSION.1 — durable completion + blocked run 
 
     const program = Effect.gen(function* () {
       const choreo = yield* Choreography
-      yield* choreo.sleep(Duration.millis(250))
+      return yield* choreo.sleep(Duration.millis(250))
     })
 
     await Effect.runPromiseExit(
@@ -498,7 +498,7 @@ describe("choreography-facade.INSTRUMENTATION.3 — operations work without dura
     const program = Effect.gen(function* () {
       const choreo = yield* Choreography
       yield* choreo.scheduleAt({ at: Date.now() + 1000, input: {} })
-      yield* choreo.sleep(Duration.millis(10))
+      return yield* choreo.sleep(Duration.millis(10))
     })
 
     await Effect.runPromiseExit(
@@ -578,7 +578,7 @@ describe("choreography-facade.CURRENT_WORK_CONTEXT.1 — Choreography reads work
 
     const program = Effect.gen(function* () {
       const choreo = yield* Choreography
-      yield* choreo.sleep(Duration.millis(100))
+      return yield* choreo.sleep(Duration.millis(100))
     })
 
     const choreoLayer = buildLayer(url, {})
