@@ -261,8 +261,9 @@ the client owns durable intent production. The current TypeScript implementation
 still names this option `profile`; that is a transitional implementation name
 for the first boolean subscriber controls. The next host-program slice should
 rename or wrap it around Host Program Graph terminology before broad lab work.
-This is tracked by `launchable-substrate-host.RUNTIME_COMPOSITION.10` and
-`launchable-substrate-host.RUNTIME_COMPOSITION.11`.
+This is tracked by the Host Program Graph requirements in
+`launchable-substrate-host.RUNTIME_COMPOSITION.1` and
+`launchable-substrate-host.RUNTIME_COMPOSITION.2`.
 
 ## Client Surface
 
@@ -512,8 +513,6 @@ Spec anchors:
 - `launchable-substrate-host.RUNTIME_COMPOSITION.2`
 - `launchable-substrate-host.RUNTIME_COMPOSITION.3`
 - `launchable-substrate-host.RUNTIME_COMPOSITION.9`
-- `launchable-substrate-host.RUNTIME_COMPOSITION.10`
-- `launchable-substrate-host.RUNTIME_COMPOSITION.11`
 - `launchable-substrate-host.AUTHORITY_BOUNDARY.2`
 - `launchable-substrate-host.NO_CONTROL_PLANE.1`
 - `launchable-substrate-host.NO_CONTROL_PLANE.3`

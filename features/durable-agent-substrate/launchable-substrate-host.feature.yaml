@@ -68,8 +68,6 @@ components:
       7: withHost-style development helpers do not create a distinct writer API from the standalone substrate client.
       8: Development Host Program Graph discovery uses explicit caller-supplied local maps rather than dynamic module import.
       9: Host Program Graph definitions are not fetched from durable state.
-      10: The executable runtime contract is named Host Program Graph rather than module or profile once it carries event-plane definitions, subscriber programs, operator programs, evaluators, and adapters.
-      11: The current `profile` option name is transitional compatibility until the host exposes a Host Program Graph wrapper or rename without changing durable semantics.
 
   SERVER_RUNTIME_API:
     requirements:
