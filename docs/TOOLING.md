@@ -116,6 +116,19 @@ pnpm run lint:deps
 
 This runs dependency-cruiser with `.dependency-cruiser.cjs`. Unlike direct import lint rules, dependency-cruiser can flag transitive boundary violations, cycles, and orphan modules across the substrate, runtime, client packages and the lab app. It also gates general dependency hygiene for unresolvable imports, undeclared npm dependencies, deprecated package usage, production imports from test files, and duplicate dependency declarations.
 
+Generate Effect artifact architecture evidence:
+
+```sh
+pnpm run arch:effect-artifacts
+```
+
+This uses ts-morph to inventory exported declarations under `packages/*/src` and `apps/*/src`, classify Effect-facing artifacts, and emit:
+
+- `docs/effect-artifact-inventory.json` — structured data for independent SDD checks
+- `docs/effect-artifact-inventory.md` — human-readable summary for architecture review
+
+The first inventory slice covers exported service tags, Layers, Schemas, tagged errors, Effect-returning exports, service interfaces paired with tags, plain types, constants, and pure helpers. For `Effect.Effect<A, E, R>` exports it records `A`, `E`, `R`, flattened requirement-channel entries, and resolved requirement declarations when the service is visible in package/app source. Each artifact also carries richer type evidence: generic type parameters, call parameters, return or declared type text, class/interface heritage and members, variable binding shape, declaration-file imports, and the export binding that exposed the artifact. The Effect documentation index at `https://effect.website/llms.txt` points to additional API families that future slices may classify explicitly, including Runtime, Stream/Sink, Queue/PubSub/Deferred, Schedule, Ref, Config, Metrics/Tracing, and Platform services.
+
 Run structural duplication-shape checks:
 
 ```sh
