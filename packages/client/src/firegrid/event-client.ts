@@ -1,4 +1,5 @@
 import {
+  appendChange,
   eventStreamEnvelopeFromStateRow,
   makeEventStreamStateRow,
   type EventStream,
@@ -113,20 +114,15 @@ export const buildEventStreamService = (
   const emit: EventStreamClientService["emit"] = (stream, event) =>
     encodeEvent(stream, event).pipe(
       Effect.flatMap((encoded) =>
-        Effect.tryPromise({
-          try: () =>
-            durable.append(
-              JSON.stringify(
-                makeEventStreamStateRow({
-                  stream: stream.name,
-                  eventId: nextEventId(),
-                  event: encoded,
-                }),
-              ),
-            ),
-          catch: (cause) =>
-            new EventStreamAppendError({ stream: stream.name, cause }),
-        }),
+        appendChange(
+          durable,
+          makeEventStreamStateRow({
+            stream: stream.name,
+            eventId: nextEventId(),
+            event: encoded,
+          }),
+          (cause) => new EventStreamAppendError({ stream: stream.name, cause }),
+        ),
       ),
       Effect.asVoid,
     )

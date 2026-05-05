@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Context, Data, Effect, Layer } from "effect"
+import { appendChange } from "./descriptors/append.ts"
 import {
   cancelCompletion as buildCancelCompletion,
   rejectCompletion as buildRejectCompletion,
@@ -91,10 +92,7 @@ export class CompletionProducer extends Context.Tag(
 const makeAppend =
   (stream: DurableStream) =>
   (event: ChangeEvent): Effect.Effect<void, ProducerStreamError> =>
-    Effect.tryPromise({
-      try: () => stream.append(JSON.stringify(event)),
-      catch: (cause) => new ProducerStreamError({ cause }),
-    })
+    appendChange(stream, event, (cause) => new ProducerStreamError({ cause }))
 
 // launchable-substrate-host.CLIENT_SURFACE.11
 // Idempotency metadata travels as ChangeEvent headers, not inside

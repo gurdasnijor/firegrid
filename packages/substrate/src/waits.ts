@@ -1,6 +1,7 @@
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Clock, Context, Data, Effect, Layer } from "effect"
+import { appendChange } from "./descriptors/append.ts"
 import type { CompletionKind, CompletionState, CompletionValue } from "./schema/rows.ts"
 import { createPendingCompletion } from "./state-machine.ts"
 import { rebuildProjection } from "./stream.ts"
@@ -124,10 +125,7 @@ export const DurableWaitsLive = (
       const stream = new DurableStream({ url: config.streamUrl, contentType })
 
       const append = (event: ChangeEvent) =>
-        Effect.tryPromise({
-          try: () => stream.append(JSON.stringify(event)),
-          catch: (cause) => new WaitsStreamError({ cause }),
-        })
+        appendChange(stream, event, (cause) => new WaitsStreamError({ cause }))
 
       // durable-waits-and-scheduling.AWAKEABLE_API.8 — idempotent creation.
       // If a completion with this id is already in projection (any state),

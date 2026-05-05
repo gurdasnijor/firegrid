@@ -1,5 +1,6 @@
 import { DurableStream } from "@durable-streams/client"
 import { Data, Effect, Either } from "effect"
+import { appendChange } from "./descriptors/append.ts"
 import { attemptClaim } from "./internal-claim.ts"
 import {
   ClaimMissingCursorError,
@@ -9,11 +10,10 @@ import {
 } from "./operator-errors.ts"
 import type { ClaimAttemptValue, RunState, RunValue } from "./schema/rows.ts"
 import type { ReadyWorkItem } from "./schema/ready-work.ts"
-import { readRetainedRunRecords } from "./retained-records.ts"
+import { readAuthoritativeRun as readAuthoritativeRunRaw } from "./retained-records.ts"
 import {
   completeRun,
   failRun,
-  foldRunRecords,
 } from "./schema/state-machine.ts"
 
 // Re-export of the claim-fold function and error classes for callers that
@@ -91,9 +91,7 @@ const readAuthoritativeRun = (
   runId: string,
 ): Effect.Effect<RunValue | undefined, ClaimStreamError> =>
   Effect.mapError(
-    Effect.map(readRetainedRunRecords(streamUrl, runId), (records) =>
-      foldRunRecords(runId, records),
-    ),
+    readAuthoritativeRunRaw(streamUrl, runId),
     (cause) => new ClaimStreamError({ cause }),
   )
 
@@ -187,10 +185,9 @@ export const processReadyWorkItem = <A, E>(
       }
     }
 
-    yield* Effect.tryPromise({
-      try: () => streamHandle.append(JSON.stringify(buildResult.right)),
-      catch: (cause) => new ClaimStreamError({ cause }),
-    })
+    yield* appendChange(streamHandle, buildResult.right, (cause) =>
+      new ClaimStreamError({ cause }),
+    )
 
     if (Either.isRight(handlerResult)) {
       return {

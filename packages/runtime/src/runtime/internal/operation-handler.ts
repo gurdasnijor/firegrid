@@ -1,9 +1,9 @@
 import { DurableStream } from "@durable-streams/client"
 import {
   acquireSubstrateDb,
-  completeRun,
-  failRun,
-  IllegalRunTransition,
+  appendChange,
+  completeRunEffect,
+  failRunEffect,
   isOperationEnvelope,
   snapshotFromDb,
   type Operation,
@@ -47,6 +47,8 @@ class AppendEventError extends Data.TaggedError("AppendEventError")<{
   readonly cause: unknown
 }> {}
 
+type AppendableStateEvent = Parameters<typeof appendChange>[1]
+
 const acquireDb = (cfg: RuntimeContextService) =>
   acquireSubstrateDb(
     {
@@ -56,21 +58,8 @@ const acquireDb = (cfg: RuntimeContextService) =>
     (cause) => new AcquireDbError({ cause }),
   )
 
-const appendEvent = (stream: DurableStream, event: unknown) =>
-  Effect.tryPromise({
-    try: () => stream.append(JSON.stringify(event)),
-    catch: (cause) => new AppendEventError({ cause }),
-  })
-
-// firegrid-remediation-hardening.EFFECT_CONSISTENCY.4
-export const tryBuildRunEvent = <A>(build: () => A) =>
-  Effect.try({
-    try: build,
-    catch: (cause): IllegalRunTransition => {
-      if (cause instanceof IllegalRunTransition) return cause
-      throw cause
-    },
-  })
+const appendEvent = (stream: DurableStream, event: AppendableStateEvent) =>
+  appendChange(stream, event, (cause) => new AppendEventError({ cause }))
 
 interface MatchedRun<Op extends Operation.Any> {
   readonly run: RunValue
@@ -153,9 +142,7 @@ export const runOperationDispatchLoopWithAcquire = <
               ),
             )
             if (encoded === undefined) return
-            yield* tryBuildRunEvent(() =>
-              completeRun(matched.run, { result: encoded }),
-            ).pipe(
+            yield* completeRunEffect(matched.run, { result: encoded }).pipe(
               Effect.flatMap((event) => appendEvent(stream, event)),
               Effect.catchAll((cause) =>
                 Effect.logError(
@@ -186,9 +173,7 @@ export const runOperationDispatchLoopWithAcquire = <
               Effect.succeed(Cause.pretty(cause)),
             ),
           )
-          yield* tryBuildRunEvent(() =>
-            failRun(matched.run, { error: encodedError }),
-          ).pipe(
+          yield* failRunEffect(matched.run, { error: encodedError }).pipe(
             Effect.flatMap((event) => appendEvent(stream, event)),
             Effect.catchAll((appendCause) =>
               Effect.logError(

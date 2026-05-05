@@ -1,5 +1,5 @@
 import {
-  completeRun,
+  completeRunEffect,
   IllegalRunTransition,
   type CompletionValue,
 } from "@durable-agent-substrate/substrate/kernel"
@@ -17,7 +17,6 @@ import {
 import {
   AcquireDbError as HandlerAcquireDbError,
   runOperationDispatchLoopWithAcquire,
-  tryBuildRunEvent,
 } from "../runtime/internal/operation-handler.ts"
 
 type FakeSubscription = { readonly unsubscribe: () => void }
@@ -205,13 +204,11 @@ describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY — runtime source g
     }
   })
 
-  it("firegrid-remediation-hardening.EFFECT_CONSISTENCY.4 — operation handler run-event builders preserve IllegalRunTransition instead of unknown", async () => {
+  it("firegrid-remediation-hardening.CODE_REUSE.2, firegrid-remediation-hardening.EFFECT_CONSISTENCY.4 — operation handler uses Effect-returning run-event builders", async () => {
     const exit = await Effect.runPromiseExit(
-      tryBuildRunEvent(() =>
-        completeRun(
-          { runId: "already-completed", state: "completed", result: {} },
-          { result: {} },
-        ),
+      completeRunEffect(
+        { runId: "already-completed", state: "completed", result: {} },
+        { result: {} },
       ),
     )
 

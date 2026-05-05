@@ -1,9 +1,11 @@
-import { Context, Data, Duration, Effect, Layer, Stream } from "effect"
+import { Context, Data, Effect, Layer } from "effect"
+import type { Duration, Stream } from "effect"
 import {
   snapshotFromDb,
   type ProjectionSnapshot,
   type SubstrateStreamDB,
 } from "../projection.ts"
+import { buildProjectionCore } from "../projection-service.ts"
 import { acquireSubstrateDb } from "../stream.ts"
 
 // ergonomic-facade.PROJECTION_API.1, .2, .3, .4, .5, .6
@@ -74,64 +76,25 @@ const acquireDb = (cfg: ProjectionLiveConfig) =>
   )
 
 const buildService = (db: SubstrateStreamDB): ProjectionService => {
-  const snapshot: ProjectionService["snapshot"] = (query) =>
-    Effect.suspend(() => query.evaluate(snapshotFromDb(db)))
-
-  const stream: ProjectionService["stream"] = (query) =>
-    Stream.asyncScoped((emit) =>
-      Effect.acquireRelease(
-        Effect.sync(() => {
-          const evaluateAndEmit = () => {
-            void emit.fromEffect(query.evaluate(snapshotFromDb(db)))
-          }
-          // Subscribe to all canonical substrate collections so any change
-          // re-evaluates the user's query. `includeInitialState: true` on the
-          // first subscription yields the snapshot exactly once, satisfying
-          // PROJECTION_API.4 (snapshot evaluated before following changes).
-          // No polling.
-          const subs = [
-            db.collections.runs.subscribeChanges(evaluateAndEmit, {
-              includeInitialState: true,
-            }),
-            db.collections.completions.subscribeChanges(evaluateAndEmit),
-            db.collections.claimAttempts.subscribeChanges(evaluateAndEmit),
-          ]
-          return subs
-        }),
-        (subs) => Effect.sync(() => subs.forEach((s) => s.unsubscribe())),
-      ),
-    )
-
-  const until: ProjectionService["until"] = (query, predicate, options) => {
-    const findFirst = stream(query).pipe(
-      Stream.filter(predicate),
-      Stream.runHead,
-      Effect.flatMap((opt) =>
-        opt._tag === "Some"
-          ? Effect.succeed(opt.value)
-          : // Stream is unbounded (subscribeChanges) so runHead only returns
-            // None if the underlying scope/stream is interrupted before any
-            // value satisfies the predicate. That maps to a wait timeout.
-            Effect.fail(
-              new ProjectionWaitTimeout({
-                label: query.label,
-                elapsed: Duration.zero,
-              }),
-            ),
-      ),
-    )
-    if (options?.timeout === undefined) return findFirst
-    const timeout = Duration.decode(options.timeout)
-    return findFirst.pipe(
-      Effect.timeoutFail({
-        duration: timeout,
-        onTimeout: () =>
-          new ProjectionWaitTimeout({ label: query.label, elapsed: timeout }),
+  const core = buildProjectionCore<
+    SubstrateStreamDB,
+    ProjectionSnapshot,
+    ProjectionReadError,
+    ProjectionWaitTimeout
+  >({
+    db,
+    snapshotFromDb,
+    subscribe: (liveDb, evaluateAndEmit) => [
+      liveDb.collections.runs.subscribeChanges(evaluateAndEmit, {
+        includeInitialState: true,
       }),
-    )
-  }
-
-  return { snapshot, stream, until }
+      liveDb.collections.completions.subscribeChanges(evaluateAndEmit),
+      liveDb.collections.claimAttempts.subscribeChanges(evaluateAndEmit),
+    ],
+    timeout: (label, elapsed) =>
+      new ProjectionWaitTimeout({ label, elapsed }),
+  })
+  return core
 }
 
 // ergonomic-facade.PROJECTION_API.1
