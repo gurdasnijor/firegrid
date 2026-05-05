@@ -8,7 +8,8 @@ import {
   type SubscriberError,
   type SubscriberInput,
 } from "@firegrid/substrate/kernel"
-import { Effect, Layer } from "effect"
+import type { CurrentWorkContext } from "@firegrid/substrate"
+import { Effect, Layer, type Scope } from "effect"
 import {
   minPendingDueAtMs,
   runScopedSubscriberProgram,
@@ -71,11 +72,14 @@ const deadlineSubscriberLayer = <K extends CompletionKind>(
   )
 
 // firegrid-operation-messaging.RUNTIME_HANDLERS.1
+// firegrid-operation-messaging.RUNTIME_HANDLERS.2
+// firegrid-operation-messaging.RUNTIME_HANDLERS.3
 // firegrid-operation-messaging.RUNTIME_HANDLERS.4
 //
 // Firegrid.handler installs a typed runtime handler for the given
 // Operation. The returned Layer dispatches matching started runs
-// (envelope + operation name) to `run`, encodes the success/failure
+// (envelope + operation name) to `run` with the message-scoped
+// CurrentWorkContext already provided, encodes the success/failure
 // outcome via the descriptor's schemas, and durably appends a
 // completeRun / failRun event so client `result(handle)` resolves.
 const handler = <
@@ -87,7 +91,11 @@ const handler = <
   run: (
     input: Operation.Input<Op>,
   ) => Effect.Effect<Operation.Output<Op>, Operation.Error<Op> | E, R>,
-): Layer.Layer<never, never, R | RuntimeContext> =>
+): Layer.Layer<
+  never,
+  never,
+  Exclude<Exclude<R, CurrentWorkContext>, Scope.Scope> | RuntimeContext
+> =>
   Layer.scopedDiscard(runOperationHandler({ op, run }))
 
 // firegrid-event-streams.RUNTIME_API.1

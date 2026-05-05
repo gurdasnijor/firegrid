@@ -1,4 +1,12 @@
 import { DurableStream } from "@durable-streams/client"
+/* eslint-disable @effect/no-import-from-barrel-package -- choreography-facade.CURRENT_WORK_CONTEXT.1: CurrentWorkContext is intentionally exported from the curated substrate root. */
+import {
+  OwnerId,
+  WorkId,
+  currentWorkContextLayer,
+  type CurrentWorkContext,
+} from "@firegrid/substrate"
+/* eslint-enable @effect/no-import-from-barrel-package */
 import {
   acquireSubstrateDb,
   appendChange,
@@ -14,6 +22,8 @@ import {
   Cause,
   Data,
   Effect,
+  Exit,
+  Option,
   Schema,
   Stream,
   type ParseResult,
@@ -23,6 +33,8 @@ import { RuntimeContext, type RuntimeContextService } from "../runtime-context.t
 import { wakeStream } from "./wake-stream.ts"
 
 // firegrid-operation-messaging.RUNTIME_HANDLERS.1
+// firegrid-operation-messaging.RUNTIME_HANDLERS.2
+// firegrid-operation-messaging.RUNTIME_HANDLERS.3
 // firegrid-operation-messaging.RUNTIME_HANDLERS.4
 //
 // Private runtime helper: dispatch newly-started runs whose
@@ -79,6 +91,15 @@ const matchStartedRun = <Op extends Operation.Any>(
   ).pipe(Effect.map((input) => ({ run, input: input as Operation.Input<Op> })))
 }
 
+const currentWorkContextForRun = (
+  cfg: RuntimeContextService,
+  run: RunValue,
+) =>
+  currentWorkContextLayer({
+    workId: WorkId(run.runId),
+    ownerId: OwnerId(cfg.processId),
+  })
+
 interface DispatchInput<Op extends Operation.Any, E, R> {
   readonly op: Op
   readonly run: (
@@ -109,7 +130,11 @@ export const runOperationDispatchLoopWithAcquire = <
   cfg: RuntimeContextService,
   input: DispatchInput<Op, E, R>,
   acquire: Effect.Effect<SubstrateStreamDB, E2, Scope.Scope>,
-) =>
+): Effect.Effect<
+  void,
+  E2,
+  Exclude<Exclude<R, CurrentWorkContext>, Scope.Scope>
+> =>
   Effect.scoped(
     Effect.gen(function* () {
       const db = yield* acquire
@@ -130,59 +155,81 @@ export const runOperationDispatchLoopWithAcquire = <
           )
           if (matched === undefined) return
 
-          const exit = yield* Effect.exit(input.run(matched.input))
-          if (exit._tag === "Success") {
-            const encoded: unknown = yield* Schema.encodeUnknown(
-              input.op.output as Schema.Schema.AnyNoContext,
-            )(exit.value).pipe(
-              Effect.catchTag("ParseError", (cause) =>
-                Effect.logError(
-                  `firegrid handler ${input.op.name}: output encode failed for run ${matched.run.runId}`,
-                  cause,
-                ).pipe(Effect.as(undefined)),
-              ),
-            )
-            if (encoded === undefined) return
-            yield* completeRunEffect(matched.run, { result: encoded }).pipe(
-              Effect.flatMap((event) => appendEvent(stream, event)),
-              Effect.catchAll((cause) =>
-                Effect.logError(
-                  `firegrid handler ${input.op.name}: completeRun append failed for run ${matched.run.runId}`,
-                  cause,
-                ),
-              ),
-            )
-            return
-          }
-          // Failure cause → encode failure error (if typed) or surface the cause.
-          const cause = exit.cause
-          if (Cause.isInterruptedOnly(cause)) return
-          const failure = Cause.failureOption(cause)
-          const errorPayload = failure._tag === "Some" ? failure.value : cause
-          // op.error is `Schema.Schema.All`, which Effect documents as
-          // including `Schema<never, …>`-style branches. `encodeUnknown`
-          // is typed against `Schema.Schema.AnyNoContext` (the never-excluded
-          // alias), so we cast at the call boundary. ParseError
-          // captures both "schema cannot encode" and "no typed error
-          // declared" cases (the default Schema.Never rejects every
-          // payload), and we fall back to `Cause.pretty(cause)` so a
-          // failure event always lands.
-          const encodedError: unknown = yield* Schema.encodeUnknown(
-            input.op.error as Schema.Schema.AnyNoContext,
-          )(errorPayload).pipe(
-            Effect.catchTag("ParseError", () =>
-              Effect.succeed(Cause.pretty(cause)),
-            ),
+          const exit = yield* input.run(matched.input).pipe(
+            Effect.provide(currentWorkContextForRun(cfg, matched.run)),
+            Effect.exit,
           )
-          yield* failRunEffect(matched.run, { error: encodedError }).pipe(
-            Effect.flatMap((event) => appendEvent(stream, event)),
-            Effect.catchAll((appendCause) =>
-              Effect.logError(
-                `firegrid handler ${input.op.name}: failRun append failed for run ${matched.run.runId}`,
-                appendCause,
-              ),
-            ),
-          )
+
+          yield* Exit.match(exit, {
+            onSuccess: (value) =>
+              Effect.gen(function* () {
+                const encoded: unknown = yield* Schema.encodeUnknown(
+                  input.op.output as Schema.Schema.AnyNoContext,
+                )(value).pipe(
+                  Effect.catchTag("ParseError", (cause) =>
+                    Effect.logError(
+                      `firegrid handler ${input.op.name}: output encode failed for run ${matched.run.runId}`,
+                      cause,
+                    ).pipe(Effect.as(undefined)),
+                  ),
+                )
+                if (encoded === undefined) return
+                yield* completeRunEffect(matched.run, { result: encoded }).pipe(
+                  Effect.flatMap((event) => appendEvent(stream, event)),
+                  Effect.catchTags({
+                    AppendEventError: (cause) =>
+                      Effect.logError(
+                        `firegrid handler ${input.op.name}: completeRun append failed for run ${matched.run.runId}`,
+                        cause,
+                      ),
+                    IllegalRunTransition: (cause) =>
+                      Effect.logError(
+                        `firegrid handler ${input.op.name}: completeRun transition rejected for run ${matched.run.runId}`,
+                        cause,
+                      ),
+                  }),
+                )
+              }),
+            onFailure: (cause) =>
+              Effect.gen(function* () {
+                // Failure cause -> encode failure error (if typed) or surface the cause.
+                if (Cause.isInterruptedOnly(cause)) return
+                const errorPayload = Option.getOrElse(
+                  Cause.failureOption(cause),
+                  () => cause,
+                )
+                // op.error is `Schema.Schema.All`, which Effect documents as
+                // including `Schema<never, ...>`-style branches. `encodeUnknown`
+                // is typed against `Schema.Schema.AnyNoContext` (the never-excluded
+                // alias), so we cast at the call boundary. ParseError
+                // captures both "schema cannot encode" and "no typed error
+                // declared" cases (the default Schema.Never rejects every
+                // payload), and we fall back to `Cause.pretty(cause)` so a
+                // failure event always lands.
+                const encodedError: unknown = yield* Schema.encodeUnknown(
+                  input.op.error as Schema.Schema.AnyNoContext,
+                )(errorPayload).pipe(
+                  Effect.catchTag("ParseError", () =>
+                    Effect.succeed(Cause.pretty(cause)),
+                  ),
+                )
+                yield* failRunEffect(matched.run, { error: encodedError }).pipe(
+                  Effect.flatMap((event) => appendEvent(stream, event)),
+                  Effect.catchTags({
+                    AppendEventError: (appendCause) =>
+                      Effect.logError(
+                        `firegrid handler ${input.op.name}: failRun append failed for run ${matched.run.runId}`,
+                        appendCause,
+                      ),
+                    IllegalRunTransition: (appendCause) =>
+                      Effect.logError(
+                        `firegrid handler ${input.op.name}: failRun transition rejected for run ${matched.run.runId}`,
+                        appendCause,
+                      ),
+                  }),
+                )
+              }),
+          })
         })
 
       const wakes = wakeStream((wake) =>
