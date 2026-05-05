@@ -214,7 +214,7 @@ SubstrateHostBoot.attached / attachedFromConfig
 SubstrateHostBoot.embeddedDev / bootPlanFromConfig
 SubstrateHostBoot.withHost
 SubstrateHostLive(plan, profile) today
-SubstrateHostLive(plan, hostProgram) as the next vocabulary target
+SubstrateHostLive(plan, hostProgram.layer) as the next vocabulary target
 ```
 
 The important ergonomic property is compositionality. A Firepixel-like runtime
@@ -222,17 +222,15 @@ should provide a Host Program Graph to the host instead of forking its own
 process control surface:
 
 ```ts
-// Conceptual next-wave runtime contract.
-const FirelineHostProgram = defineHostProgramGraph({
+const FirelineHostProgram = HostProgramGraph.define({
   name: "fireline",
-  eventPlanes: [AcpEventPlane],
-  subscribers: [PermissionMatcher],
-  operators: [PromptOperator],
   layer: Layer.mergeAll(
-    AcpEventPlaneLive,
+    EventPlane.layer(AcpEventPlane, acpPlaneConfig),
+    HostPrograms.timerSubscriber(),
+    HostPrograms.scheduledWorkSubscriber(),
+    HostPrograms.projectionMatchSubscriber(permissionMatcher),
+    HostPrograms.operator(promptOperator),
     LocalModelAdapterLive,
-    PermissionMatcherLive,
-    PromptOperatorLive,
   ),
 })
 
@@ -460,22 +458,18 @@ vocabulary target for the next implementation wave.
 interface HostProgramGraph {
   readonly name: string
   readonly layer: Layer.Layer<unknown>
-  readonly subscribers?: {
-    readonly timer?: boolean
-    readonly scheduledWork?: boolean
-    readonly projectionMatch?: ReadonlyArray<ProjectionMatchProgramEntry>
-  }
-  readonly operators?: ReadonlyArray<OperatorProgramEntry>
-  readonly eventPlanes?: ReadonlyArray<EventPlaneProgramEntry>
 }
 ```
 
-Host Program Graph definitions carry ordinary Effect Layers and values supplied
-in process. The `layer` field is the dependency graph for adapters and runtime
-services. This follows Effect's layer model: services keep clean interfaces, and
-Layers construct and compose their dependencies. Serialized config only selects
-known local graph definitions in dev; it does not create a mutable runtime
-registry.
+Host Program Graph definitions are named Effect Layer compositions. The `layer`
+field contains both the host programs and their adapter/runtime dependencies.
+This follows Effect's layer model: services keep clean interfaces, and Layers
+construct and compose their dependencies. The substrate can provide helper
+constructors such as `HostPrograms.timerSubscriber()` or
+`HostPrograms.operator(...)`, but those helpers return Layers. They do not
+create a second registry beside Effect's dependency graph. Serialized config
+only selects known local graph definitions in dev; it does not create a mutable
+runtime registry.
 
 Host Program Graph discovery in development is explicit:
 
@@ -535,22 +529,19 @@ claim broad host-process requirements.
 The subscriber runner configuration is a simple per-kind boolean in Slice 5:
 
 ```ts
-interface HostProgramGraph {
-  readonly name: string
-  readonly layer: Layer.Layer<unknown>
+interface SubstrateHostProfile {
   readonly subscribers?: {
     readonly timer?: boolean
     readonly scheduledWork?: boolean
-    readonly projectionMatch?: ReadonlyArray<ProjectionMatchProgramEntry>
   }
 }
 ```
 
 If a subscriber is disabled or omitted from the current `profile` implementation
 shape, the host does not start its fiber. A future Host Program Graph slice may
-rename or wrap that option and introduce per-kind tuning only if implementation
-genuinely needs it; until then the boolean keeps Slice 5 honest and avoids
-naming a polling-shaped knob.
+rename or wrap that option. Per-kind tuning should only be introduced if
+implementation genuinely needs it; until then the boolean keeps Slice 5 honest
+and avoids naming a polling-shaped knob.
 
 Each subscriber program is sequential for its own subscriber kind. A new wake-up
 does not start a second scan if the previous scan is still running. Wakes should
@@ -666,8 +657,8 @@ A Firepixel-like agent runtime should sit above the host as a Host Program
 Graph:
 
 - define its event planes;
-- provide projection-match evaluators;
-- provide operator programs that consume ready work or event-plane projections;
+- compose projection-match evaluator programs;
+- compose operator programs that consume ready work or event-plane projections;
 - provide adapter, session, and resource layers;
 - decide whether to use local processes, remote agents, or fake test adapters.
 
@@ -685,14 +676,14 @@ Minimum scope:
 
 - introduce a `HostProgramGraph` or equivalent wrapper around today's
   transitional `profile` option;
-- express runtime dependencies as ordinary Effect Layers on the graph rather
-  than as a separate provider registry;
+- express runtime dependencies and host programs as ordinary Effect Layers
+  rather than as separate registry fields;
 - preserve compatibility with the existing timer and scheduled-work subscriber
   booleans;
-- add projection-match subscriber entries that carry caller-owned event-plane
-  definitions and evaluator wiring;
-- add claim-before-side-effect operator program entries that consume substrate
-  ready work or caller-owned event-plane projections;
+- add Layer constructors for projection-match subscriber programs that can use
+  caller-owned event-plane definitions and evaluator wiring;
+- add Layer constructors for claim-before-side-effect operator programs that
+  consume substrate ready work or caller-owned event-plane projections;
 - keep graph discovery explicit through caller-supplied local maps;
 - expose no host mutation endpoints, no HTTP diagnostics listener, and no
   durable program registry.

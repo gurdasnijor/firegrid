@@ -59,8 +59,8 @@ components:
   RUNTIME_COMPOSITION:
     requirements:
       1: Agent-runtime layers provide a Host Program Graph to the substrate host rather than adding host mutation endpoints.
-      2: The Host Program Graph can provide event-plane definitions, projection-match evaluators, operator programs, and adapter service layers.
-      3: Host Program Graph entries compose ordinary Effect Layers and values supplied in process.
+      2: The Host Program Graph composes event-plane layers, projection-match subscriber program layers, operator program layers, and adapter service layers.
+      3: Host Program Graph definitions are named ordinary Effect Layer compositions supplied in process.
       4: Serialized config may select known local Host Program Graph definitions but does not create a mutable global runtime registry.
       5: Development helpers can compose client and host layers in one Effect program without making that the production process boundary.
       5-note: The first withHost-style slice composes the existing host and client capabilities in one Effect scope and does not introduce network diagnostics, host mutation endpoints, a distinct writer API, or a separate runtime registry.
