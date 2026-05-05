@@ -121,16 +121,16 @@ For choreography brands the schema-first form is strictly stronger — `WorkId`/
 
 ## What strict-baseline already enforces
 
-The post-R0-R-STRICT-BASELINE work has the following schema-shaped guarantees in place, which the suggestions above build on rather than duplicate:
+Post-R0-R-STRICT-BASELINE schema-shaped guarantees that the suggestions above build on:
 
-- All substrate row families are `Schema.Struct` definitions in `schema/rows.ts` with `Schema.Literal` discriminants for `RunState`, `CompletionState`, `CompletionKind`, `ClaimAttemptStatus` (`schema/rows.ts:13, 50, 60, 85`).
-- The durable-streams State schema is built from those declarations exactly once via `createStateSchema` at `schema/state.ts:24-45`, with `Schema.standardSchemaV1` interop — no duplicate type definitions for collections.
-- State-machine builders (`createPendingCompletion`, `resolveCompletion`, `rejectCompletion`, `cancelCompletion`, `startRun`, `blockRun`, `completeRun`, `failRun`, `cancelRun` in `schema/state-machine.ts`) return `Effect<ChangeEvent, IllegalCompletionTransition | IllegalRunTransition>` — appendChange consumers (e.g. `appendChange` at `descriptors/append.ts`) never construct raw rows.
-- Transition adjacency is declarative (`completionTransitionMachine`, `runTransitionMachine` at `schema/state-machine.ts:24-48`) with `satisfies TransitionAdjacency<...>` constraints that the TS compiler checks.
-- `IllegalCompletionTransition` and `IllegalRunTransition` are `Data.TaggedError` (the `Schema.TaggedError` migration is the code-style review's call).
-- Descriptor schema slots are typed `Schema.Schema.All` (not the looser `Schema.Schema.Any`), per the rationale comment at `descriptors/operation.ts:45-55` and `descriptors/event-stream.ts:97-103`. This correctly admits `Schema.Never` as the default error schema (`Operation.define` defaults `error` to `Schema.Never` at `descriptors/operation.ts:91-100`).
-- Encode/decode at every IO boundary goes through `Schema.encodeUnknown` / `Schema.decodeUnknown` with explicit `ParseResult.ParseError` mapping into typed `Data.TaggedError` instances (`OperationEncodeError`, `OperationDecodeError`, `EventStreamEncodeError`, `EventStreamDecodeError`, `EventStreamMaterializerDecodeError`).
-- Public projection contract `ReadyWorkItem` is Schema-defined (`schema/ready-work.ts:6-11`) and re-exported through the public schema barrel.
-- Retained-record reads in `retained-records.ts:22-23` use `Schema.decodeUnknownEither` for `ClaimAttemptValue` and `RunValue` rather than ad-hoc parsing.
+- Substrate row families are `Schema.Struct` in `schema/rows.ts` with `Schema.Literal` discriminants for `RunState`, `CompletionState`, `CompletionKind`, `ClaimAttemptStatus` (`rows.ts:13, 50, 60, 85`).
+- Durable-streams State schema is built once via `createStateSchema` at `schema/state.ts:24-45` with `Schema.standardSchemaV1` interop — no duplicate collection definitions.
+- State-machine builders in `schema/state-machine.ts` (`createPendingCompletion`, `resolveCompletion`, `rejectCompletion`, `cancelCompletion`, `startRun`, `blockRun`, `completeRun`, `failRun`, `cancelRun`) return `Effect<ChangeEvent, IllegalCompletionTransition | IllegalRunTransition>` — append consumers never construct raw rows.
+- Transition adjacency is declarative (`completionTransitionMachine`, `runTransitionMachine` at `schema/state-machine.ts:24-48`) with `satisfies TransitionAdjacency<...>` compile-time checks.
+- `IllegalCompletionTransition` / `IllegalRunTransition` are `Data.TaggedError` (Schema.TaggedError migration is the code-style review's call).
+- Descriptor schema slots are typed `Schema.Schema.All` (not `Any`), per `descriptors/operation.ts:45-55` and `descriptors/event-stream.ts:97-103`; default error schema is `Schema.Never` (`operation.ts:91-100`).
+- Encode/decode at every IO boundary goes through `Schema.encodeUnknown` / `Schema.decodeUnknown` with `ParseError` mapping into typed errors (`OperationEncodeError`, `OperationDecodeError`, `EventStreamEncodeError`, `EventStreamDecodeError`, `EventStreamMaterializerDecodeError`).
+- `ReadyWorkItem` is Schema-defined (`schema/ready-work.ts:6-11`) and exported through the public schema barrel.
+- Retained-record reads use `Schema.decodeUnknownEither` for `ClaimAttemptValue` / `RunValue` (`retained-records.ts:22-23`).
 
-The remaining work is incremental: the wire shape is already schema-first; the leverage is in pulling the last `as`-casts and hand-rolled guards into the same Schema-driven decode pipeline.
+The remaining work is incremental: wire shape is already schema-first; the leverage is in pulling the last `as`-casts and hand-rolled guards into the same Schema-driven pipeline.
