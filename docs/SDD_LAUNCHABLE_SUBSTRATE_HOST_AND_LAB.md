@@ -774,7 +774,7 @@ depends on it:
   a graph-supplied projection-match subscriber;
 - an operator program claims work before invoking its handler and terminalizes
   through existing substrate claim/completion authority;
-- the same scenario can be started through the substrate client while the host
+- the same example program can be started through the substrate client while the host
   executes only graph-supplied programs.
 
 This slice is the right place to claim
@@ -783,7 +783,7 @@ This slice is the right place to claim
 `launchable-substrate-host.RUNTIME_COMPOSITION.2`, and
 `launchable-substrate-host.SERVER_RUNTIME_API.3` if the tests prove those
 behaviors. Scenario ACIDs should remain unclaimed until the corresponding
-lab/CLI scenario harness actually exists.
+lab/CLI example program entry actually exists.
 
 ## Lab UI
 
@@ -830,12 +830,17 @@ Raw stream views are diagnostic panels, not the app-facing path. They should be
 visually separated from scenario controls so users can tell the difference
 between "inspect what happened" and "write a durable intent through the client."
 
-## Scenario Harnesses
+## Example Programs
 
-Initial scenarios should be Fireline/Firepixel-shaped without importing
-Fireline or Firepixel:
+Initial example programs should be Fireline/Firepixel-shaped without importing
+Fireline or Firepixel. A scenario is not a substrate or host runtime
+abstraction; it is an ordinary Effect program that uses the existing
+`SubstrateClient`, `SubstrateHostBoot.withHost`, and Host Program Graph APIs.
+The lab can keep a small local map of names to programs for CLI/UI selection,
+but that map is lab-local metadata, not a registry, service definition, or
+durable catalog.
 
-1. Sleep scenario
+1. Sleep example program
    - client declares work;
    - choreography sleep creates a timer completion and blocks work;
    - host timer subscriber resolves it;
@@ -843,30 +848,33 @@ Fireline or Firepixel:
    - operator completes the run;
    - lab shows raw stream, completion, ready work, and terminal run.
 
-2. Scheduled work scenario
+2. Scheduled work example program
    - client calls `scheduleAt`;
    - host scheduled-work subscriber resolves at due time;
    - Host Program Graph maps resolved scheduled work into a domain event;
    - lab shows that `scheduleAt` did not block the caller.
 
-3. Fake permission scenario
+3. Fake permission example program
    - a caller-owned event plane records a required-action row;
    - client waits with projection-match trigger;
    - lab or policy client emits a resolution row;
    - host projection-match subscriber resolves the completion;
    - work becomes ready.
 
-4. Tool-call-shaped execution scenario
+4. Tool-call-shaped execution example program
    - a caller-owned event plane records a tool execution request;
    - an operator program claims ready execution work;
    - fake adapter service performs the side effect;
    - terminal domain row is emitted;
    - lab proves claim-before-side-effect ordering.
 
-Scenario harnesses live under `packages/lab` for the first slice. They are
-development examples, not production client/testing API. Each scenario should be
-runnable from the command line and from the lab UI, with both paths using the
-same client package and scenario definitions.
+Example program entries live under `packages/lab` for the first slice. They are
+development examples, not production client/testing API. Each entry should be a
+plain object only where metadata is useful, for example `{ name, program }`,
+where `program` is an `Effect` requiring existing services rather than a new
+scenario runtime type. Each entry should be runnable from the command line and
+from the lab UI, with both paths using the same client package and program
+definitions.
 
 ## Read-Only Host Diagnostics
 
@@ -967,7 +975,7 @@ The first slice should prove:
    runs configured host-managed timer + scheduled-work subscriber programs;
 6. a tiny lab UI or terminal inspector that shows substrate snapshot and stream
    registry state;
-7. one sleep scenario that can be launched through the client and observed
+7. one sleep example program that can be launched through the client and observed
    through the lab.
 
 This proves the process shape without adding Fireline/Firepixel runtime
@@ -982,8 +990,8 @@ semantics.
    inspection patterns while using substrate client APIs for scenario actions.
    A terminal inspector can be added later if useful, but the first goal is a
    visual workbench for exploring state transitions.
-3. Scenario harnesses live under `packages/lab` for the first slice. They can be
-   invoked by the lab UI and by a command-line entrypoint, but they are not
+3. Example program entries live under `packages/lab` for the first slice. They
+   can be invoked by the lab UI and by a command-line entrypoint, but they are not
    exported from the production client root.
 4. Minimum host diagnostics are read-only health, version, process id, boot
    mode, stream identity, active Host Program Graph names,
@@ -999,5 +1007,5 @@ semantics.
    diagnostics never expose the resulting header.
 7. Vite lab implementation uses React with vanilla CSS or CSS modules. No UI
    framework is introduced in the first slice.
-8. The scenario command shape is `pnpm --filter lab scenario <name>`, backed by
-   the same scenario descriptors the lab UI imports.
+8. The example command shape is `pnpm --filter lab scenario <name>`, backed by
+   the same lab-local example program entries the lab UI imports.
