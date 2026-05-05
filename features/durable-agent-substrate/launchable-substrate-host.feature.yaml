@@ -105,7 +105,7 @@ components:
     requirements:
       1: The first example program proves sleep through client intent, host timer subscriber, ready work derivation, operator completion, and lab observation.
       2: A scheduled-work example program proves scheduleAt creates future work intent without blocking the caller.
-      3: A fake permission example program proves a caller-owned event plane can drive waitFor through projection-match completion resolution without implementing ACP.
+      3: A fake permission or ACP-shaped example program proves a caller-owned event plane can drive waitFor through projection-match completion resolution without making ACP substrate-native.
       4: A tool-call-shaped example program proves event-plane observation plus claim-before-side-effect operator execution without making tool calls substrate-native.
       5: Example programs are ordinary Effect programs runnable from both command line and lab UI while using the same substrate client APIs.
       6: First-slice example program entries live under packages/lab and are not exported from the production client root.

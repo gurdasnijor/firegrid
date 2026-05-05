@@ -41,6 +41,10 @@ mutation endpoints or special lab-only writer paths.
   `/Users/gnijor/gurdasnijor/firepixel/packages/client/README.md`
 - Durable Streams test UI prior art:
   `https://github.com/durable-streams/durable-streams/blob/main/examples/test-ui/README.md`
+- Agent Client Protocol TypeScript example agent:
+  `https://github.com/agentclientprotocol/typescript-sdk/blob/main/src/examples/agent.ts`
+- Agent Client Protocol session setup:
+  `https://agentclientprotocol.com/protocol/session-setup`
 - Restate quickstart and SDK split:
   `https://docs.restate.dev/get_started/quickstart/`
 - Restate TypeScript service/runtime SDK:
@@ -68,6 +72,15 @@ runtime-owned event planes, subscriber programs, operator programs, evaluators,
 and adapter service layers that a `SubstrateHost` runs against durable state.
 The graph is provided in process at host startup; it is not submitted through a
 host mutation endpoint or stored in a global/durable registry in v1.
+
+Agent Client Protocol is useful prior art for the first runtime-owned
+event-plane validation target. It gives the substrate a real agent/client event
+vocabulary — session setup, prompts, session updates, and tool-call lifecycle —
+without forcing Fireline-specific session or prompt rows into the substrate.
+The ACP TypeScript SDK example agent can act as an event generator for the lab
+or test runner. Those ACP-shaped events must remain caller-owned event-plane
+rows and materialized state; the substrate should only observe their projection
+through Host Program Graph evaluators.
 
 ## Goals
 
@@ -796,6 +809,29 @@ durable catalog.
    - terminal domain row is emitted;
    - lab proves claim-before-side-effect ordering.
 
+5. ACP event-stream validation program
+   - a Node-side lab runner uses the ACP TypeScript SDK example agent, or a
+     small fixture derived from it, as an ACP event generator;
+   - the runner records ACP-shaped session, prompt, `sessionUpdate`,
+     `tool_call`, and `tool_call_update` events into a runtime-owned event
+     plane;
+   - the runtime owns the Effect Schema values, TypeScript types, and
+     materializer for that event plane;
+   - a Host Program Graph supplies a projection-match evaluator that reads the
+     ACP materialized state and resolves a substrate `projection_match`
+     completion when the ACP condition is satisfied;
+   - `Choreography.waitFor(...)` is satisfied by that runtime-owned projection,
+     while substrate completion authority and run readiness remain
+     substrate-owned;
+   - the lab can inspect both the ACP event-plane rows and the substrate runs /
+     completions that were driven by those rows.
+
+The ACP validation program is higher priority than adding more Fireline-shaped
+client ergonomics because it validates the central runtime boundary: an agent
+runtime can bring its own event stream, schemas, and materializers, and
+substrate choreography can still wait on that state through `waitFor` without
+making the runtime vocabulary substrate-native.
+
 Example program entries live under `packages/lab` for the first slice. They are
 development examples, not production client/testing API. Each entry should be a
 plain object only where metadata is useful, for example `{ name, program }`,
@@ -850,6 +886,38 @@ Graph, but it must not own their domain vocabulary. A graph entry registers:
 Event-plane rows are observational, eligibility-producing, or terminal-domain
 facts depending on the Host Program Graph entry. They never replace substrate
 claim authority or completion authority.
+
+Runtime-owned event planes are the intended integration path for agent runtime
+events. A runtime may define an ACP-shaped plane, a Fireline-shaped plane, or a
+test fixture plane, but the ownership rule is the same:
+
+- the runtime/application owns the Effect Schema values and TypeScript types;
+- the runtime/application owns the materializer and read model;
+- the Host Program Graph composes the event-plane layer and any materializer
+  services in process;
+- projection-match evaluators may read that runtime-owned materialized state;
+- substrate resolves only substrate-owned completions and runs only
+  substrate-owned claim / terminalization authority.
+
+The first serious validation target should use ACP-shaped events generated from
+the Agent Client Protocol TypeScript example agent or an equivalent derived
+fixture. ACP is a better early validation target than Fireline-specific rows
+because it has a defined wire vocabulary and agent/client semantics while still
+remaining external to the substrate. The validation should prove:
+
+```text
+ACP agent/client events
+  -> runtime-owned event plane
+  -> runtime-owned materializer
+  -> HostProgramGraph projection-match evaluator
+  -> substrate projection_match completion
+  -> blocked durable work becomes ready
+```
+
+The substrate must not import ACP schemas to make this work. If an ACP event
+condition can wake `Choreography.waitFor(...)` through a Host Program Graph
+evaluator, then the same pattern can support Fireline, Firepixel, or any other
+agent runtime that owns its event stream.
 
 ## Relationship To Choreography
 
