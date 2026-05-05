@@ -66,4 +66,4 @@ export {
   type EventStreamEnvelope,
   type EventStreamStateRow,
   type OperationEnvelope,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/descriptors"

@@ -1,3 +1,4 @@
+import { LabEventStreamPanel } from "./LabEventStreamPanel.tsx"
 import { RawStreamInspector } from "./RawStreamInspector.tsx"
 import styles from "./styles.module.css"
 
@@ -11,17 +12,15 @@ import styles from "./styles.module.css"
 // firegrid-architecture-boundary.DEPENDENCY_GRAPH.4
 // firegrid-runtime-process.DEV_ENV_INJECTION.5
 //
-// Lab shell — read-only inspector.
-//
-// This slice ships only the inspection surface. Scenario controls
-// and a writer path land with the typed Operation messaging slice;
-// until then the lab is a workbench for observing durable streams.
+// Lab shell with a typed EventStream workbench and a separate raw
+// diagnostic inspector.
 //
 // The entire surface is reachable through the external Durable
-// Streams client (read-only) and renders structured JSON. The lab
-// imports neither @firegrid/runtime nor @durable-agent-substrate/
-// substrate; the only contract with a running runtime is the
-// stream URL.
+// Streams URL. Typed writes go through the app-facing Firegrid
+// client; raw Durable Streams access stays read-only and diagnostic.
+// The lab imports neither @firegrid/runtime nor @durable-agent-
+// substrate/substrate; the only contract with a running runtime is
+// the stream URL.
 
 export interface AppProps {
   readonly streamUrl: string
@@ -35,14 +34,13 @@ export function App({ streamUrl }: AppProps) {
         <span className={styles.headerStreamUrl}>{streamUrl}</span>
       </header>
       <main
-        className={styles.diagnosticRegion}
-        aria-label="Diagnostics"
+        className={styles.scenarioRegion}
+        aria-label="Typed EventStream workbench"
       >
-        <h2>Diagnostics</h2>
+        <h2>Typed Workbench</h2>
         <p className={styles.note}>
-          Read-only inspector for a Durable Streams endpoint.
-          Scenario controls and writer surface land with typed
-          Operation messaging in a later slice.
+          Emit and observe caller-owned EventStream rows through
+          the app-facing Firegrid client.
         </p>
         <p className={styles.note}>
           Canonical workflow: boot the Firegrid runtime with the lab
@@ -54,6 +52,17 @@ export function App({ streamUrl }: AppProps) {
           {" "}so the browser attaches with no manual wiring. Override
           via <code>?streamUrl=...</code> or{" "}
           <code>VITE_DURABLE_STREAMS_URL</code> directly.
+        </p>
+        <LabEventStreamPanel streamUrl={streamUrl} />
+      </main>
+      <main
+        className={styles.diagnosticRegion}
+        aria-label="Raw diagnostics"
+      >
+        <h2>Diagnostics</h2>
+        <p className={styles.note}>
+          Read-only raw stream inspector. This panel is deliberately
+          separate from typed EventStream controls.
         </p>
         <RawStreamInspector streamUrl={streamUrl} />
       </main>

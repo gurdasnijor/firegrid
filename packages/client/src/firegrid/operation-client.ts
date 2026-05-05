@@ -1,25 +1,22 @@
 import {
   EventStream,
-  eventStreamEnvelopeFromStateRow,
-  isEventStreamEnvelope,
-  makeEventStreamStateRow,
   Operation,
   OperationHandle,
   OPERATION_ENVELOPE_TAG,
   type OperationEnvelope,
+} from "@durable-agent-substrate/substrate/descriptors"
+import {
   type ProjectionReadError,
   type ProjectionWaitTimeout,
   type RunValue,
 } from "@durable-agent-substrate/substrate"
-import { DurableStream } from "@durable-streams/client"
 import {
-  Context,
   Data,
   Effect,
   Layer,
-  Option,
   Schema,
   Stream,
+  type Context,
   type ParseResult,
 } from "effect"
 import {
@@ -27,6 +24,11 @@ import {
   SubstrateClientLive,
   type SubstrateClientConfig,
 } from "../client/service.ts"
+import {
+  buildEventStreamService,
+  FiregridClient as BrowserFiregridClient,
+  type FiregridClientService as EventStreamFiregridClientService,
+} from "./event-client.ts"
 
 // firegrid-operation-messaging.CLIENT_MESSAGING.1
 // firegrid-operation-messaging.CLIENT_MESSAGING.2
@@ -54,9 +56,6 @@ const wrap = (operation: string, payload: unknown): OperationEnvelope => ({
   operation,
   payload,
 })
-
-const nextEventId = (): string =>
-  `${Date.now()}:${Math.random().toString(36).slice(2)}`
 
 // ────────────────────────────────────────────────────────────────
 // Errors
@@ -89,36 +88,7 @@ export class OperationNotFound extends Data.TaggedError(
   readonly handleId: string
 }> {}
 
-export class EventStreamEncodeError extends Data.TaggedError(
-  "firegrid/EventStreamEncodeError",
-)<{
-  readonly stream: string
-  readonly cause: ParseResult.ParseError
-}> {}
-
-export class EventStreamDecodeError extends Data.TaggedError(
-  "firegrid/EventStreamDecodeError",
-)<{
-  readonly stream: string
-  readonly cause: ParseResult.ParseError
-}> {}
-
-export class EventStreamAppendError extends Data.TaggedError(
-  "firegrid/EventStreamAppendError",
-)<{
-  readonly stream: string
-  readonly cause: unknown
-}> {}
-
-export class EventStreamReadError extends Data.TaggedError(
-  "firegrid/EventStreamReadError",
-)<{
-  readonly stream: string
-  readonly cause: unknown
-}> {}
-
 export type SendError = OperationEncodeError
-export type EmitError = EventStreamEncodeError | EventStreamAppendError
 
 export type ResultError =
   | OperationDecodeError
@@ -128,7 +98,13 @@ export type ResultError =
   | ProjectionReadError
 
 export type ObserveError = ProjectionReadError | OperationDecodeError
-export type EventsError = EventStreamReadError | EventStreamDecodeError
+export {
+  EventStreamAppendError,
+  EventStreamDecodeError,
+  EventStreamEncodeError,
+  EventStreamReadError,
+} from "./event-client.ts"
+export type { EmitError, EventsError } from "./event-client.ts"
 
 // ────────────────────────────────────────────────────────────────
 // OperationState (narrow, grounded directly in substrate run states)
@@ -148,7 +124,7 @@ const isTerminalRun = (run: RunValue | undefined): boolean =>
 // ────────────────────────────────────────────────────────────────
 // Service
 
-export interface FiregridClientService {
+export interface FiregridClientService extends EventStreamFiregridClientService {
   readonly send: <Op extends Operation.Any>(
     op: Op,
     input: Operation.Input<Op>,
@@ -175,20 +151,16 @@ export interface FiregridClientService {
     handle: OperationHandle<Op>,
   ) => Stream.Stream<OperationState<Op>, ObserveError>
 
-  readonly emit: <S extends EventStream.Any>(
-    stream: S,
-    event: EventStream.Event<S>,
-  ) => Effect.Effect<void, EmitError>
-
-  readonly events: <S extends EventStream.Any>(
-    stream: S,
-  ) => Stream.Stream<EventStream.Event<S>, EventsError>
 }
 
-export class FiregridClient extends Context.Tag("firegrid/FiregridClient")<
+declare const FullFiregridClientIdentifier: unique symbol
+export interface FiregridClient {
+  readonly [FullFiregridClientIdentifier]?: typeof FullFiregridClientIdentifier
+}
+export const FiregridClient = BrowserFiregridClient as unknown as Context.Tag<
   FiregridClient,
   FiregridClientService
->() {}
+>
 
 // Re-export descriptor namespaces so app code can import a single
 // client module for operation messaging and EventStream APIs.
@@ -236,28 +208,6 @@ const decodeError = <Op extends Operation.Any>(
     ),
   ) as Effect.Effect<Operation.Error<Op>, OperationDecodeError>
 
-const encodeEvent = <S extends EventStream.Any>(
-  stream: S,
-  event: EventStream.Event<S>,
-): Effect.Effect<EventStream.EncodedEvent<S>, EventStreamEncodeError> =>
-  Schema.encodeUnknown(stream.event as Schema.Schema.AnyNoContext)(event).pipe(
-    Effect.mapError(
-      (cause) =>
-        new EventStreamEncodeError({ stream: stream.name, cause }),
-    ),
-  ) as Effect.Effect<EventStream.EncodedEvent<S>, EventStreamEncodeError>
-
-const decodeEvent = <S extends EventStream.Any>(
-  stream: S,
-  raw: unknown,
-): Effect.Effect<EventStream.Event<S>, EventStreamDecodeError> =>
-  Schema.decodeUnknown(stream.event as Schema.Schema.AnyNoContext)(raw).pipe(
-    Effect.mapError(
-      (cause) =>
-        new EventStreamDecodeError({ stream: stream.name, cause }),
-    ),
-  ) as Effect.Effect<EventStream.Event<S>, EventStreamDecodeError>
-
 const mapRunToState = <Op extends Operation.Any>(
   op: Op,
   run: RunValue | undefined,
@@ -287,10 +237,7 @@ const mapRunToState = <Op extends Operation.Any>(
 }
 
 const buildService = (cfg: SubstrateClientConfig): FiregridClientService => {
-  const durable = new DurableStream({
-    url: cfg.streamUrl,
-    contentType: cfg.contentType ?? "application/json",
-  })
+  const eventStreams = buildEventStreamService(cfg)
 
   const withSubstrate = <A, E>(
     f: (client: typeof SubstrateClient.Service) => Effect.Effect<A, E>,
@@ -380,65 +327,7 @@ const buildService = (cfg: SubstrateClientConfig): FiregridClientService => {
       }),
     ).pipe(Stream.provideLayer(SubstrateClientLive(cfg)))
 
-  const emit: FiregridClientService["emit"] = (stream, event) =>
-    encodeEvent(stream, event).pipe(
-      Effect.flatMap((encoded) => {
-        return Effect.tryPromise({
-          try: () =>
-            durable.append(
-              JSON.stringify(
-                makeEventStreamStateRow({
-                  stream: stream.name,
-                  eventId: nextEventId(),
-                  event: encoded,
-                }),
-              ),
-            ),
-          catch: (cause) =>
-            new EventStreamAppendError({ stream: stream.name, cause }),
-        })
-      }),
-      Effect.asVoid,
-    )
-
-  const rawEvents = <S extends EventStream.Any>(
-    stream: S,
-  ): Stream.Stream<unknown, EventStreamReadError> =>
-    Stream.unwrapScoped(
-      Effect.acquireRelease(
-        Effect.tryPromise({
-          try: () =>
-            durable.stream<unknown>({
-              offset: "-1",
-              live: true,
-            }),
-          catch: (cause) =>
-            new EventStreamReadError({ stream: stream.name, cause }),
-        }),
-        (response) => Effect.sync(() => response.cancel()),
-      ).pipe(
-        Effect.map((response) =>
-          Stream.fromAsyncIterable(
-            response.jsonStream(),
-            (cause) =>
-              new EventStreamReadError({ stream: stream.name, cause }),
-          ),
-        ),
-      ),
-    )
-
-  const events: FiregridClientService["events"] = (stream) =>
-    rawEvents(stream).pipe(
-      Stream.filterMapEffect((row) => {
-        const envelope = eventStreamEnvelopeFromStateRow(row)
-        if (envelope === undefined) return Option.none()
-        if (!isEventStreamEnvelope(envelope)) return Option.none()
-        if (envelope.stream !== stream.name) return Option.none()
-        return Option.some(decodeEvent(stream, envelope.event))
-      }),
-    )
-
-  return { send, result, call, observe, emit, events }
+  return { ...eventStreams, send, result, call, observe }
 }
 
 export type FiregridClientConfig = SubstrateClientConfig
