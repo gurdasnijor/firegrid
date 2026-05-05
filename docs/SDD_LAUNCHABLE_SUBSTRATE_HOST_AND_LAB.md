@@ -453,11 +453,20 @@ Config may select a key from a caller-supplied local map, but the substrate does
 not dynamically import arbitrary modules, maintain a global registry, or fetch
 runtime profiles from durable state.
 
-### Host-Managed Subscriber Loops
+### Host-Managed Subscriber Programs
 
 Slice 5 makes the timer and scheduled-work subscribers launchable under the
-host. The host owns the loop fibers; the substrate subscriber functions remain
-the authority for scan-and-resolve behavior.
+host. The host owns the scoped subscriber programs; the substrate subscriber
+functions remain the authority for catch-up scan-and-resolve behavior.
+
+This is not intended to be a naive polling loop. The durable-subscriber model
+is subscription/progress oriented:
+
+- active subscribers follow durable stream/state changes;
+- due-time subscribers also schedule a wake-up for the nearest known due time;
+- restart safety comes from durable records, not process-local memory;
+- duplicate terminalization attempts remain harmless under completion
+  authority.
 
 Spec anchors:
 
@@ -471,7 +480,7 @@ Spec anchors:
 - `launchable-substrate-host.NO_CONTROL_PLANE.1`
 - `launchable-substrate-host.NO_CONTROL_PLANE.3`
 
-The first host-managed loop profile covers only:
+The first host-managed subscriber profile covers only:
 
 - timer completions through `runTimerSubscriber`;
 - scheduled-work completions through `runScheduledWorkSubscriber`.
@@ -481,47 +490,64 @@ profiles stay separate. They use the same host profile mechanism later, but
 they should not be pulled into the timer/scheduled-work loop slice just to
 claim broad host-process requirements.
 
-The loop configuration should be explicit and host-local:
+The subscriber runner configuration should be explicit and host-local:
 
 ```ts
-interface HostSubscriberLoopConfig {
-  readonly scanIntervalMs?: number
+interface HostSubscriberConfig {
+  readonly minWakeIntervalMs?: number
 }
 
 interface SubstrateHostProfile {
   readonly subscribers?: {
-    readonly timer?: boolean | HostSubscriberLoopConfig
-    readonly scheduledWork?: boolean | HostSubscriberLoopConfig
+    readonly timer?: boolean | HostSubscriberConfig
+    readonly scheduledWork?: boolean | HostSubscriberConfig
     readonly projectionMatch?: ReadonlyArray<ProjectionMatchProfile>
   }
 }
 ```
 
-If a loop is disabled or omitted from the profile, the host does not start its
-fiber. If enabled with `true`, the host uses a conservative default interval.
-If enabled with an object, the host uses the supplied interval. The interval is
-not a durable fact and is not read from durable state.
+If a subscriber is disabled or omitted from the profile, the host does not start
+its fiber. If enabled with `true`, the host uses conservative defaults. If
+enabled with an object, the host uses the supplied options. These options are
+host-local runtime configuration, not durable facts and not read from durable
+state.
 
-Each loop is sequential for its own subscriber kind. A new tick does not start a
-second scan if the previous scan is still running. This keeps timer and
-scheduled-work resolution easy to reason about and avoids turning the host into
-a second authority; the underlying state machine and subscribers still decide
-which completions can terminalize.
+Each subscriber program is sequential for its own subscriber kind. A new wake-up
+does not start a second scan if the previous scan is still running. Wakes should
+come from the durable subscription boundary or the next known due-time deadline,
+not from a fixed poll cadence. This keeps timer and scheduled-work resolution
+easy to reason about and avoids turning the host into a second authority; the
+underlying state machine and subscribers still decide which completions can
+terminalize.
 
-The host should expose an in-process read-only status service for loop state.
-HTTP diagnostics can read from that service later, but Slice 5 does not create
-HTTP routes. Minimum loop status:
+The existing single-shot functions are still useful as the terminalization
+primitive:
+
+- on startup, run a catch-up scan from retained durable state;
+- after a relevant durable state change, run a catch-up scan;
+- when the nearest known due-time deadline arrives, run a catch-up scan.
+
+That shape lets the first implementation reuse `runTimerSubscriber` and
+`runScheduledWorkSubscriber` without baking in a polling API. A future active
+delivery subscriber can add durable cursor/progress records without changing the
+host/client boundary.
+
+The host should expose an in-process read-only status service for subscriber
+program state. HTTP diagnostics can read from that service later, but Slice 5
+does not create HTTP routes. Minimum subscriber status:
 
 ```ts
-interface SubscriberLoopStatus {
+interface SubscriberProgramStatus {
   readonly kind: "timer" | "scheduled_work"
   readonly enabled: boolean
   readonly running: boolean
+  readonly wakeCount: number
   readonly scanCount: number
   readonly successCount: number
   readonly failureCount: number
-  readonly lastStartedAtMs?: number
-  readonly lastFinishedAtMs?: number
+  readonly lastWakeAtMs?: number
+  readonly lastScanStartedAtMs?: number
+  readonly lastScanFinishedAtMs?: number
   readonly lastSuccessAtMs?: number
   readonly lastErrorSummary?: string
 }

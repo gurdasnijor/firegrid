@@ -34,11 +34,11 @@ components:
       1: The substrate host is a launchable process that starts or connects to a Durable Streams endpoint.
       2: The host runs configured substrate subscribers and operator programs from durable streams/state.
       3: The host can run timer and scheduled-work subscribers.
-      3-note: The first host-managed subscriber loop slice covers timer and scheduled-work subscribers as scoped fibers enabled by runtime profile configuration, using existing substrate subscriber functions, explicit intervals, and non-overlapping scans per subscriber kind.
+      3-note: The first launchable subscriber slice covers timer and scheduled-work subscribers as scoped, subscription-driven host programs enabled by runtime profile configuration. Single-shot scan functions remain catch-up/terminalization building blocks; the host runner should wake from durable stream/state changes or due-time deadlines rather than naive fixed-interval polling.
       4: The host can run projection-match subscriber profiles supplied by the runtime.
       5: The host can run claim-before-side-effect operator profiles.
       6: The host exposes read-only lifecycle status for local tooling.
-      6-note: Before HTTP diagnostics land, subscriber loop status may be exposed through an in-process read-only host service with enabled/running flags, scan timestamps, counts, and a non-secret last error summary.
+      6-note: Before HTTP diagnostics land, subscriber program status may be exposed through an in-process read-only host service with enabled/running flags, wake-up timestamps, scan counts, terminalization counts, and a non-secret last error summary.
       7: The host shuts down through Effect scopes and process-signal handling.
       8: The first host package owns embedded Durable Streams dev-server startup rather than requiring a separate CLI or dev package.
 
