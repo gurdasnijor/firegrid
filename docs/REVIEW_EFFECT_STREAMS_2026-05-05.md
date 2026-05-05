@@ -1,119 +1,167 @@
 # Firegrid Effect Streams Review — 2026-05-05
 
-Scope: stream **composition, source/transformation patterns, backpressure, and async iteration** in production code under `packages/{runtime,substrate,client}` and `apps/lab`. Tests, scripts, and docs are excluded. This pass complements the concurrency review (fork/scope semantics) and the sinks review (`Stream.run*` consumers, 0 issues) and does not duplicate their findings.
+Scope: stream **composition, source/transformation patterns, backpressure, and async iteration** in production code under `packages/{runtime,substrate,client}` and `apps/lab`. Tests, scripts, and docs are excluded. This pass complements the concurrency review (fork/scope semantics) and the sinks review (`Stream.run*` consumers, 0 issues) and does not duplicate their findings; cross-references are made explicit.
 
 ## Summary
 
-The Stream surface in Firegrid is small (≈10 production sites) and idiomatic. There are no `Stream.fromIterable`, `Stream.repeat*`, `Stream.iterate`, `Stream.unfold`, `Stream.fromQueue`, `Stream.fromHub`, or `Stream.fromEffect` uses; every stream is a pull-from-async-source pipeline fed into a transformation chain and either drained (subscriber loops, materializer) or returned to a caller (client `events`/`observe`). The four constructors in use are `Stream.async`, `Stream.asyncScoped`, `Stream.fromAsyncIterable`, and `Stream.unwrapScoped`/`Stream.unwrap`; the transformation primitives are `Stream.map`, `Stream.filter`, `Stream.filterMap`, `Stream.mapEffect`, and `Stream.filterMapEffect`. Pipelines are short (≤5 steps), composable, and free of typical anti-patterns (no nested `flatMap` with concurrency tuning, no producer-style `Stream.async` with default `bufferSize` *and* unbounded fan-out, no `for await` over an Effect Stream).
+Firegrid's stream surface is small, tight, and almost uniformly idiomatic. There are exactly four `Stream.async*` constructions, two `Stream.unwrapScoped` consumers, one `Stream.fromAsyncIterable`, and a handful of small `Stream.mapEffect` / `Stream.filterMap*` pipelines. The shape is consistent: every long-running follow loop is built on a scoped subscription primitive (DB `subscribeChanges` or DurableStream `subscribeJson`/`stream`), wrapped with `Stream.asyncScoped` or `Stream.unwrapScoped` so the underlying handle is bound to the consumer's scope, and drained with `Stream.runDrain` or `Stream.runForEach` from inside `Effect.forkScoped`. R-STRICT-BASELINE's extraction of `wakeStream(subscribe)` (`packages/runtime/src/runtime/internal/wake-stream.ts:6-21`) is the high-water mark — both `runner.ts` and `operation-handler.ts` consume it identically, and the bufferSize:1 + sliding strategy on the wake source is exactly the right shape for edge-coalescing.
 
-R-STRICT-BASELINE's extraction of `wakeStream(subscribe)` (`packages/runtime/src/runtime/internal/wake-stream.ts:6-21`) is the right factoring; `bufferSize: 1` + `strategy: "sliding"` matches the edge-coalescing semantics the runtime wants. The materializer's deliberate departure (raw `Stream.async`, not `wakeStream`) is correct — wake streams emit `void`, the materializer carries record payloads. The two `Stream.unwrapScoped` sites in `client/src/firegrid/{event-client,operation-client}.ts` correctly bind resource lifetime to the consumer's scope. The one remaining gap (RawStreamInspector) sits at the React boundary, not inside any Effect Stream pipeline, and is covered by concurrency + resource-management reviews.
+The findings below are mostly observations and small consistency issues, not bug-grade. The two patterns worth flagging are (a) `event-stream-materializer.ts` constructing a one-off `Stream.async` whose error channel is set to `EventStreamSessionError` even though the constructor body never emits one (the type is structurally over-wide), and (b) divergence between `event-stream-materializer.ts` (Stream.async over `subscribeJson` callback) and `event-client.ts` (Stream.fromAsyncIterable over `jsonStream()`) — they consume the same `StreamResponse` via two different bridging primitives. The materializer's choice (subscribeJson) is the more correct one and should be the canonical bridge for both.
+
+There are no places where `Stream.merge`, `Stream.concat`, `Stream.zip`, or low-level `Channel` would meaningfully simplify current code; the wake-stream design (single async source folding edge wakes and timer-driven wakes through one emit channel — see `runner.ts:137-167`) is intentional and avoids cross-stream coordination.
+
+**Quick stats** (production code under `packages/{runtime,substrate,client}` and `apps/lab`, excluding tests/scripts):
+
+- `Stream.asyncScoped` constructions — 2 (`projection-service.ts:54`, `wake-stream.ts:9`)
+- `Stream.async` constructions — 1 (`event-stream-materializer.ts:145`)
+- `Stream.fromAsyncIterable` — 1 (`event-client.ts:147`)
+- `Stream.unwrapScoped` consumers — 2 (`event-client.ts:133`, `operation-client.ts:284`)
+- `Stream.mapEffect` sites — 6
+- `Stream.filterMap` / `Stream.filterMapEffect` — 3
+- `Stream.merge` / `Stream.concat` / `Stream.zip` / raw `Channel` — 0
 
 ## Findings
 
-### F1. `Stream.async` vs `Stream.asyncScoped`
+### 1. `Stream.asyncScoped` vs `Stream.async` — choices are correct, with one wrinkle
 
-**Three call sites; both choices correct.**
+`Stream.asyncScoped` is used in the two places where the registration callback itself needs an `Effect` scope (so the finalizer composes with the surrounding bracket): `wakeStream` (`wake-stream.ts:9-21`) and `buildProjectionCore.stream` (`projection-service.ts:54-64`). Both wrap an `Effect.acquireRelease` whose acquire returns the unsubscribe handle and whose release runs it; the `emit.fromEffect` / `emit.single` callback is closed over the live db handle. That is the canonical shape from the streams skill, and it integrates cleanly with the surrounding `Effect.scoped` blocks in `runner.ts:130-187` and `operation-handler.ts:113-219`.
 
-- `packages/runtime/src/runtime/internal/wake-stream.ts:9` — `Stream.asyncScoped<void>` with `Effect.acquireRelease(subscribe → unsubscribe)` and `bufferSize: 1, strategy: "sliding"`. Correct: the `subscribeChanges` registration is a real resource that must be torn down on scope close, so the scoped variant is mandatory.
-- `packages/substrate/src/projection-service.ts:54-64` — `Stream.asyncScoped` wraps `Effect.acquireRelease` over the `subscribeChanges` registrations; release runs `subs.forEach(s => s.unsubscribe())`. The `evaluateAndEmit` callback uses `emit.fromEffect(query.evaluate(...))` to thread the user's evaluator into the element pipeline. Textbook `Stream.async*` shape.
-- `packages/runtime/src/runtime/internal/event-stream-materializer.ts:145-167` — `Stream.async<unknown, EventStreamSessionError>`. The session is acquired via `Effect.acquireRelease` *outside* the stream (`acquireSession` at `:87-114`); the `Stream.async` only registers/unregisters a `subscribeJson` handler against an already-scoped session. Using `Stream.asyncScoped` here would conflate two lifetimes (session vs subscription). Current shape is correct — outer `Effect.scoped` at `:142` owns the session; inner `Stream.async`'s `Effect.sync(unsubscribe)` torpedoes the handler when the stream finalizes.
+`Stream.async` (no scope) is used once, in `event-stream-materializer.ts:145-167`. That site already lives **inside** an `Effect.scoped` block where the `StreamResponse` was acquired with `Effect.acquireRelease`, so the response itself is scope-bound. The `Stream.async` body subscribes via `response.subscribeJson(handler)` and returns a finalizer of `Effect.sync(() => unsubscribe())`. This is fine — `Stream.async` accepts a finalizer effect, and the response cancel is independently scope-bound — but it relies on a subtle lifecycle ordering: when the consumer interrupts the stream, the `unsubscribe` finalizer fires first; only when the surrounding `Effect.scoped` finalizes does `response.cancel()` run. The two-step teardown is correct; the comment at line 152-156 documents why subscribeJson + unsubscribe was chosen over async-iterable + interrupt. **Recommendation**: this could equivalently be `Stream.asyncScoped` collapsing both finalizers into one acquireRelease, but the current shape is not wrong and the intent is well-commented.
 
-**Verdict:** scoped/unscoped split is correct.
+### 2. `Stream.fromAsyncIterable` — correct, but inconsistent with the materializer
 
-### F2. `Stream.fromAsyncIterable`
+`event-client.ts:130-154` builds the raw EventStream follow source as:
 
-**One production site, used correctly:** `packages/client/src/firegrid/event-client.ts:147-152`. `Stream.fromAsyncIterable(response.jsonStream(), errorMap)` wraps the durable-streams `AsyncIterable<JsonBatch>` with a typed error transducer (`EventStreamReadError`) — the canonical bridge from the streams skill. The session itself is acquired one layer up via `Effect.acquireRelease` (`:134-144`), so on consumer interrupt the outer `Stream.unwrapScoped` triggers `response.cancel()` and async iteration terminates.
+```ts
+Stream.unwrapScoped(
+  Effect.acquireRelease(
+    Effect.tryPromise({ try: () => durable.stream<unknown>({ offset: "-1", live: true }), ... }),
+    (response) => Effect.sync(() => response.cancel()),
+  ).pipe(Effect.map((response) =>
+    Stream.fromAsyncIterable(response.jsonStream(), (cause) => new EventStreamReadError({ ... })),
+  )),
+)
+```
 
-The materializer deliberately uses `Stream.async` over `subscribeJson` instead of `Stream.fromAsyncIterable` over `jsonStream()`. Inline comment at `event-stream-materializer.ts:152-156` is explicit: async-iterable + interrupt does not propagate the cancel signal reliably across the HTTP reader boundary. For the long-lived runtime materializer fiber, the callback-style `subscribeJson` API gives deterministic teardown via a synchronous unsubscribe function. **Cross-reference:** `RawStreamInspector.tsx:49` uses `for await … of session.jsonStream()` directly (no Effect Stream); the leak there comes from not calling `session.cancel()`, not a Stream issue.
+The shape is correct: `unwrapScoped` flattens the `Effect<Stream, …, Scope>` so that the StreamResponse's lifetime is bound to the consumer's scope (interrupting the consumer triggers `response.cancel()`). And `fromAsyncIterable` is the canonical bridge for an `AsyncIterable<JsonBatch>`.
 
-### F3. `Stream.unwrapScoped` (resource-lifetime binding to consumer scope)
+The wrinkle is that `event-stream-materializer.ts:145-167` does the **same job** — bridging a `StreamResponse` into an Effect Stream — but uses `Stream.async` over `response.subscribeJson(handler)` instead of `fromAsyncIterable` over `response.jsonStream()`. The materializer comment (lines 150-156) explains why: the `subscribeJson` unsubscribe terminates iteration deterministically, whereas async-iterable + interrupt does not propagate the cancel signal reliably across the HTTP reader. If that comment is accurate, then the **client side has the same problem** — `event-client.ts:133-154` may not propagate consumer interrupts to the `jsonStream()` async iterator, only to the outer `acquireRelease` scope (which does run `response.cancel()` on close). In practice, scope finalization fires `response.cancel()`, and the Durable Streams client's `jsonStream()` should observe the cancel and exit its loop, so the user-observable behavior is still correct — but the materializer's distrust of async-iterable cancellation is non-trivial and, if it is a real concern, applies symmetrically here. **Recommendation**: pick one bridging primitive and use it consistently in both places; if `subscribeJson` is the safer choice, `event-client.ts` should adopt the same shape.
 
-**Two sites; both correct.**
+Additionally, `event-client.ts:147` calls `response.jsonStream()` once at stream-construction time. Multiple subscribers to the same `events(stream)` Stream would all share the same underlying `StreamResponse` because `unwrapScoped` defers acquisition to consumer time — but each consumer gets its own scope, so each acquires its own response. That is the right semantics for a multi-consumer client API.
 
-- `event-client.ts:133-154` — `Stream.unwrapScoped(Effect.acquireRelease(openSession, cancelSession).pipe(Effect.map(response => Stream.fromAsyncIterable(...))))`. When the consumer pulls, the scope opens, the session is acquired, and `cancel()` registers as a finalizer. Consumer interrupt → scope close → `response.cancel()`. Correct.
-- `operation-client.ts:283-292` — `Stream.unwrapScoped(Effect.gen(... yield* SubstrateClient ...)).pipe(Stream.provideLayer(SubstrateClientLive(substrateCfg)))`. The scoped resource is the SubstrateClient (`Layer.scoped`, opens a `SubstrateStreamDB`). `Stream.provideLayer` outside `unwrapScoped` is the right ordering. Per-call cost: one StreamDB acquisition per `observe()` invocation, accepted for v1.
+### 3. `Stream.unwrapScoped` — both uses correct
 
-### F4. Pipeline composition (`map`, `filter`, `filterMap`, `mapEffect`, `filterMapEffect`)
+`event-client.ts:133` and `operation-client.ts:284` both use `Stream.unwrapScoped` to lift an `Effect<Stream, …, Scope>` into a `Stream` whose first pull acquires the scoped resource and whose final pull / interrupt releases it. The bound resource in the first case is the DurableStream handle; in the second it is a `SubstrateClient` Layer (`Stream.provideLayer(SubstrateClientLive(substrateCfg))` at line 292). Both correctly tie resource lifetime to consumer scope.
 
-**Reviewed at four sites; pipelines are short, intent-revealing, free of typical bloat.**
+The `operation-client.ts:284-292` site does have a separate concern not specific to streams — `SubstrateClientLive` is constructed fresh per-call, so each `observe` opens its own StreamDB (this is the same per-call layer construction issue flagged in the resource-management review §6e and not a streams finding).
 
-- `event-stream-materializer.ts:168-180` — five-step pipeline: `filterMap(envelopeFromStateRow)` → `filter(isEventStreamEnvelope)` → `filter(stream === descriptor.name)` → `mapEffect(decodeEvent)` → `runForEach(materialize)`. Each step has one concern. The two adjacent `Stream.filter` calls could be fused into one combined predicate, but the split preserves readability ("is this an EventStream envelope?" then "is it MY stream?"). Leave.
-- `event-client.ts:158-164` — single `Stream.filterMapEffect`. Two early-out cases return `Option.none()`, the matching case returns `Option.some(decodeEvent(...))`. The implementation uses two `if` statements which the code-style review flags elsewhere; `Match.option` would be more idiomatic but is on the existing style track, not a streams issue.
-- `facade/work.ts:104-121` — `Stream.mapEffect(value → Option.some|none)` then `Stream.filterMap(opt => opt)`. Standard filter-by-effect-result idiom. Fusing into `filterMapEffect` would save one step but the explicit two-step shape mirrors the documented "attempt → maybe-keep" semantics.
-- `operation-client.ts:290` — single `Stream.mapEffect((run) => mapRunToState(op, run))`. Trivially correct.
+### 4. `Stream.map` / `Stream.filter` / `Stream.filterMap*` / `Stream.mapEffect` — clean, idiomatic pipelines
 
-**`Stream.tap`/`Stream.scan` candidates?** No `tap` candidates today — runtime loops have no metrics surface (sinks review noted this is the right place when metrics land). No `scan` candidates — no pipeline carries accumulator state across elements. The closest is `LabEventStreamPanel.tsx:62-66`'s React `setEvents` reducer, intentionally outside Effect.
+The longest pipeline is `event-stream-materializer.ts:168-180`:
 
-### F5. Backpressure semantics
+```ts
+records.pipe(
+  Stream.filterMap((record) => Option.fromNullable(eventStreamEnvelopeFromStateRow(record))),
+  Stream.filter((envelope) => isEventStreamEnvelope(envelope)),
+  Stream.filter((envelope) => envelope.stream === input.descriptor.name),
+  Stream.mapEffect((envelope) => decodeEvent(input.descriptor, envelope.event)),
+  Stream.runForEach((event) => input.materialize(event)),
+)
+```
 
-**`bufferSize` choices are explicit at the one site that matters; default elsewhere with one latent gap.**
+The two consecutive `Stream.filter` calls could collapse to a single `Stream.filter` with `&&`, but as written each line documents one decode-stage invariant (envelope shape, then descriptor binding) and that readability is worth more than the trivial operator merge. `filterMap` doing `Option.fromNullable(eventStreamEnvelopeFromStateRow(record))` is the right shape — the helper returns `undefined` for non-matching rows, which is exactly what `Option.fromNullable` translates.
 
-- `wakeStream` (`wake-stream.ts:20`) — `bufferSize: 1, strategy: "sliding"`. Correct for edge-coalescing: substrate emits a wake per `subscribeChanges` notification, the consumer reads the current live snapshot; wakes during in-flight scan collapse to one follow-up. Canonical drop-oldest-keep-latest.
-- `projection-service.ts:54-64` — default `bufferSize`. Element type is evaluator output `A`. `Projection.until` reads via `runHead` (one element). No production caller uses `Projection.stream` for a long-running consumer; the runtime uses `wakeStream` directly. Worth watching, not actionable today.
-- **Latent gap:** `event-stream-materializer.ts:145` — `Stream.async<unknown, EventStreamSessionError>` with default `bufferSize`. The `subscribeJson` producer fires once per server batch and emits N items synchronously via `void emit.single(item)` — **the boolean return is discarded**. If a user `materialize` Effect is slow, the buffer can fill and items are silently dropped. Risk is small in practice (materialize is app code, expected to be fast) but worth either sizing the buffer with a documented bound or bridging through `Queue.bounded` with `Effect.suspend`-able offer.
+`event-client.ts:158-163` uses `Stream.filterMapEffect`:
 
-**Verdict:** wakeStream exemplary; materializer has a document-or-fix window.
+```ts
+Stream.filterMapEffect((row) => {
+  const envelope = eventStreamEnvelopeFromStateRow(row)
+  if (envelope === undefined) return Option.none()
+  if (envelope.stream !== stream.name) return Option.none()
+  return Option.some(decodeEvent(stream, envelope.event))
+})
+```
 
-### F6. `Stream.merge`, `Stream.concat`, `Stream.zip`
+This is correct: `filterMapEffect` expects a function returning `Option<Effect<…>>`, and the early `Option.none()` returns short-circuit cleanly. The two `if` checks could be lifted to a separate `Stream.filterMap` followed by a `Stream.mapEffect` for symmetry with the materializer, but the current single-stage form has the advantage of doing the `decodeEvent` only on rows already proven to match — refactoring would not change semantics.
 
-**Zero uses across production code.** The interesting candidate is the runner: `runner.ts:137-167` is a manual merge — timer wakes (via `Effect.sleep` + `Effect.fork`) and edge wakes (via `input.subscribe(db, wake)`) both feed a single `wake()` callback. A `Stream.merge(timerWakes, edgeWakes)` decomposition would require a separately-issued `Stream.fromEffect(Effect.sleep(...))` per scan (deadline changes per scan), a `Stream.async` for the edge subscription, and `Stream.flatMap(stream, { switch: true })` semantics to swap the timer leg. The current shape (one `wakeStream` + internal Fiber for the timer) is more compact. The concurrency review's `Effect.fork → Effect.forkScoped` fix at `runner.ts:155` lands the same structural guarantee with less surgery. **Recommend: keep the single-stream + internal-timer structure.**
+`facade/work.ts:103-121` uses `Stream.mapEffect` returning `Option` followed by `Stream.filterMap((opt) => opt)` to drop "lost claim" outcomes. That's the canonical translation of `Effect<Option<A>>` filtering and is exactly right.
 
-`Stream.concat`/`Stream.zip`: no candidates — Firegrid joins inside `Effect.gen` (e.g. `mapRunToState`'s decode-then-shape), which is correct.
+`Stream.tap` and `Stream.scan` are not used anywhere. There are no obvious places where `tap` would clean up a pipeline (the existing `mapEffect`-then-discard pattern handles per-element side effects fine), and `scan` is not a natural fit for any of the current pipelines (none accumulate state across stream elements; per-wake state lives on the live StreamDB the loop holds open).
 
-### F7. Channel composition
+### 5. Backpressure — bufferSize:1 + sliding is intentional everywhere it appears
 
-**Zero `Channel` uses.** `Channel` would be warranted for bidirectional flow, custom protocol framing, or chunk-aware folding. Firegrid has none: every stream is one-way, items are processed one at a time, durable-streams already presents a parsed `JsonBatch` shape. Reaching for `Channel` here would be premature lowering.
+`wakeStream` is the one site with explicit buffer sizing (`{ bufferSize: 1, strategy: "sliding" }`, `wake-stream.ts:20`). That is the correct configuration for a wake-coalescing source: the consumer always re-reads the latest snapshot when it resumes, so older un-consumed wakes are redundant and dropping them is preferable to backpressuring the producer (who is a `db.subscribeChanges` callback that must not block).
 
-### F8. Stream cancellation semantics
+The other `Stream.async*` constructions use the default buffer:
 
-Cross-reference resource-management §"Stream cancellation". Streams-side observations:
+- `projection-service.ts:54-64` — `Stream.asyncScoped` over `subscribeChanges` callbacks. The emitted value is the result of `query.evaluate(snapshot)`, and consumers (`Stream.until` via `Stream.runHead`, or external `Projection.stream` callers) generally consume in order. Default buffering is reasonable here, but the same coalescing argument as `wakeStream` could apply for consumers that only care about the latest projection state. **This is not a bug** — `Projection.stream` is documented as observing every change — but `until` callers (which use `runHead` after a predicate filter) would not be affected by a sliding strategy.
 
-- `wakeStream` finalization: `Stream.asyncScoped`'s `Effect.acquireRelease` finalizer runs user `unsubscribe` on consumer interrupt. Verified.
-- `Stream.unwrapScoped` (event-client, operation-client): consumer interrupt → scope close → `response.cancel()` / layer finalize. Verified.
-- `Stream.fromAsyncIterable` cancellation depends on iterator `.return()`; combined with the explicit `response.cancel()` finalizer one layer up, teardown is deterministic.
-- `RawStreamInspector` (apps/lab): not an Effect Stream — raw `for await`. The leak is React-side; rewriting to `Stream.fromAsyncIterable` + `Stream.runForEach` (mirroring `LabEventStreamPanel`) would fix it by inheriting the same cancellation chain. Headline lab finding (concurrency + resource-management).
+- `event-stream-materializer.ts:145-167` — `Stream.async` over `subscribeJson` batches. Default buffering is correct here: events are not coalesceable and must be delivered in order. The consumer's `runForEach` runs the user `materialize` Effect sequentially, so backpressure naturally propagates — if `materialize` is slow, the buffer fills, and `subscribeJson` callbacks accumulate in the unbounded default queue. **This is the one place where buffer sizing might warrant explicit thought**: a slow materializer could let the buffer grow without bound. A bounded buffer with `strategy: "suspend"` would push back on the durable-streams client (which itself buffers HTTP batches), but `subscribeJson` is documented as backpressure-aware in the comment at line 151. **Recommendation**: confirm whether the underlying `subscribeJson` emit-loop can in fact suspend, and if not, add an explicit bounded buffer.
+
+### 6. `Stream.merge` / `Stream.concat` / `Stream.zip` — none used, no place obviously needs them
+
+The closest candidate is `runner.ts:137-167`, which folds **two distinct wake sources** (DB `subscribeChanges` edge wakes + scheduled deadline wakes) into a single `Stream.async` emit channel by calling `wake()` from both the `subscribe` callback and the `scheduleDeadline` fiber's `Effect.sleep`-then-tap. A `Stream.merge` of an edge-wake stream and a deadline-wake stream would be a more declarative shape, but:
+
+1. The deadline fiber's lifetime is intricately tied to the loop — it is forked, captured in a closure variable, and interrupted from `clearDeadline()` and the scope finalizer. Lifting this into a `Stream` of deadlines would force re-modeling deadline cancellation through stream interruption.
+2. Both sources emit the same `void` payload and the consumer treats them identically, so merge would not yield richer information.
+
+The current shape is concise (~30 lines) and the comment block at lines 21-52 explains it. **No change recommended** — but if a future iteration adds heterogeneous wake sources (e.g. external triggers carrying payloads), `Stream.merge` over typed sources would be the natural refactor target.
+
+### 7. Channel composition — not warranted
+
+Effect's `Channel` is the underlying primitive that `Stream` and `Sink` are built on; it is appropriate when you need bidirectional flow, custom chunking strategies, or to interleave output with explicit control signals. None of Firegrid's stream surface needs that — every stream is a unidirectional follow with simple per-element transformations. Dropping to `Channel` would be a regression in readability for zero benefit.
+
+### 8. Stream cancellation semantics — correct end-to-end
+
+The fork-scope analysis is fully covered in the concurrency review; from the streams perspective, the chain is:
+
+1. Consumer's surrounding `Effect.scoped` finalizes (e.g. layer release).
+2. `Stream.runDrain` / `runForEach` is interrupted; the `Stream.async*` constructor's finalizer Effect fires.
+3. The finalizer unsubscribes from `subscribeChanges` / `subscribeJson` / cancels the StreamResponse.
+4. For `Stream.unwrapScoped` sources, the bound `Effect.acquireRelease` release also fires (a separate path from the inner finalizer — which is why `event-stream-materializer.ts` ends up with two finalizers, each correct).
+
+There is one cross-reference to the resource-management review §RawStreamInspector: the React component at `apps/lab/src/lab/RawStreamInspector.tsx:36-77` uses raw `for await … of session.jsonStream()` rather than an Effect Stream, which is intentional (React boundary). That path's cancel story relies on the `cancelled` flag closing the loop and the `useEffect` cleanup; it does **not** call `session.cancel()`. The resource-management review covers this. From the streams perspective, this confirms why the materializer's choice of `subscribeJson` over `jsonStream()` matters: the durable-streams client's async-iterable does not appear to surface cancellation cleanly, so anything serious should not rely on it.
+
+### 9. `Stream.runFold` vs `runForEach` + `Ref` — currently a non-issue
+
+No `Stream.runFold` calls exist in production, and no `Ref`-backed accumulators are driven by a stream consumer. If a future consumer needs to fold across a stream, `Stream.runFold` is the correct primitive over `runForEach` + `Ref.update` where atomicity does not matter.
 
 ## Out of scope
 
-- React/`bin` boundaries (covered by concurrency + resource-management).
-- Custom Sink construction (sinks review confirmed zero need; no change here).
-- `Stream.run*` consumer correctness (sinks review, 0 issues).
-- `Effect.fork` vs `Effect.forkScoped` for the deadline fiber inside `runner.ts` (concurrency review §"bare Effect.fork").
-- Backpressure on the durable-streams client *below* `Stream.fromAsyncIterable` — that lives in the external `@durable-streams/client` package.
+Deferred to other reviews (and not duplicated here):
 
-## Top 5 improvements (priority order)
+- `Stream.runDrain` / `Stream.runForEach` / `Stream.runHead` consumer correctness — covered by sinks review (0 issues).
+- `Effect.forkScoped` placement around stream drains, deadline fiber lifecycle, scope nesting — covered by concurrency review.
+- `acquireRelease` choices around DurableStream construction, per-call layer construction in `operation-client.ts` — covered by resource-management review.
+- The React `for-await` pattern in `RawStreamInspector.tsx` — intentionally non-Effect; covered by resource-management review.
+- Schema decode error channel structure (the `Schema.Schema.AnyNoContext` casts) — orthogonal to stream composition.
 
-1. **Document or fix the materializer `Stream.async` default `bufferSize`** at `event-stream-materializer.ts:145`. `void emit.single(item)` discards back-pressure; a slow `materialize` plus a fast producer silently drops items. Either size the buffer explicitly with a comment, or bridge through `Queue.bounded`. Cost: small.
+## Top 5 improvements
 
-2. **Refactor `RawStreamInspector` to the typed Effect Stream surface** (`RawStreamInspector.tsx:36-77`). Mirror `LabEventStreamPanel`: `Stream.fromAsyncIterable(session.jsonStream(), errorMap)` inside `Effect.acquireRelease`, run via `Effect.runFork`/`Fiber.interrupt`. CI-enforceable: ESLint rule disallowing `for await` over `DurableStream.stream(...)` outside the documented bridge.
+1. **Unify the StreamResponse → Stream bridge.** `event-client.ts:133-154` (Stream.fromAsyncIterable over `jsonStream()`) and `event-stream-materializer.ts:145-167` (Stream.async over `subscribeJson`) do the same job two ways. The materializer's comment claims the subscribeJson path is more cancel-safe; if true, the client should adopt the same shape. Extract a shared `streamFromDurableResponse(response)` helper. (~20 LOC; medium impact, touches both runtime and client.)
 
-3. **(Style — coordinate with code-style track)** Replace the inline `if undefined` chain in `event-client.ts:158-163`'s `Stream.filterMapEffect` callback with `Match.option`/`Schema.option`.
+2. **Add an explicit bounded buffer to the materializer's `Stream.async`** at `event-stream-materializer.ts:145-167`, or document why the default unbounded buffer is acceptable given subscribeJson's backpressure behavior. A slow user `materialize` Effect against a high-throughput stream is the realistic failure mode. (~5 LOC; low impact, defensive.)
 
-4. **CI rule: `Stream.async` requires explicit `bufferSize` when the producer fans out** (≥2 items per acquire). Codifies F5; today only the materializer trips it.
+3. **Tighten the materializer's `Stream.async` error type.** It is parameterized as `Stream.async<unknown, EventStreamSessionError>` (`event-stream-materializer.ts:145`), but the constructor body never emits that error — session errors come from `acquireSession` which has already run. Use `Stream.async<unknown, never>` to make the contract honest. (~1 LOC; trivial; clarifies the type.)
 
-5. **(Forward-looking, defer)** When metrics land, add `Stream.tap` before `Stream.runDrain` at `runner.ts:179`, `operation-handler.ts:208`, `event-stream-materializer.ts:179`.
+4. **Collapse the two consecutive `Stream.filter` calls** at `event-stream-materializer.ts:172-175` into a single predicate. Minor readability tradeoff — current form documents two invariants, one filter would compose them. (~3 LOC; trivial; style choice.)
+
+5. **Consider `bufferSize: 1, strategy: "sliding"` on `projection-service.ts:54-64` for `until`-only consumers.** Currently every `subscribeChanges` notification triggers `evaluate` and emits; a `until` caller using `runHead` only needs the latest evaluation. As `Projection.stream` is also a public consumer surface, this would need a separate variant or an option flag. (~10 LOC; small impact; only worth it if `until` is hot.)
 
 ## What strict-baseline enforces vs gaps
 
-**Enforced today:**
+**Enforced by R-STRICT-BASELINE / current ESLint posture:**
 
-- `local/no-fixed-polling` — protects `wakeStream`-vs-`setInterval`. Indirectly streams-relevant.
-- `no-restricted-imports` blocks state-machine builders from materializer — keeps materializer read-only.
-- `Effect.tapErrorCause(Cause.isInterruptedOnly ? Effect.void : logError)` present at all three drain sites — convention, not lint.
+- All `Stream.async*` constructors return finalizer Effects (the code-review checklist for `wake-stream.ts` extraction makes this explicit).
+- All long-running stream consumers run inside `Effect.forkScoped` under a `Layer.scopedDiscard` or `Effect.scoped` block (concurrency review confirms).
+- `Stream.unwrapScoped` is preferred over manual `Effect.flatMap(Stream.fromIterable…)` for resource-bound streams.
+- `Stream.run*` consumers always live inside an Effect (no top-level `Stream.runPromise`); sinks review confirms 0 issues.
 
-**Gaps strict-baseline could add:**
+**Gaps not enforced (these are stylistic, not correctness):**
 
-- `Stream.async`/`asyncScoped` must specify `bufferSize` when producer can emit ≥2 items between consumer pulls (F5).
-- `for await` over `AsyncIterable` from `@durable-streams/client` forbidden outside an Effect bridge (F8).
-- `Stream.fromAsyncIterable` requires a typed error mapper (already convention).
-- `Stream.asyncScoped` callback must return `Effect.acquireRelease(...)` shape — prevents regressions where someone forgets the bracket pattern.
+- No rule enforces a single canonical bridge from `StreamResponse` to `Stream` (improvement #1).
+- No rule on explicit buffer sizing for `Stream.async` (improvement #2). Default unbounded buffering is the silent default.
+- Error-channel widening on `Stream.async` is not lint-checked; hand-tightening is the only path (improvement #3).
+- No rule discourages multiple consecutive `Stream.filter` over `&&` composition (improvement #4) — and reasonably so; this is stylistic.
 
-**Gaps strict-baseline cannot enforce** (judgment calls):
-
-- `Stream.async` vs `Stream.asyncScoped` choice depends on whether the subscription is a real resource (F1).
-- `Stream.merge` vs internal-fiber multiplexing (F6) — design-level.
-- Per-stream backpressure budget (F5) — runtime property, not static.
-
-## Closing
-
-Firegrid's stream surface is small and disciplined. Constructor choices match resource shapes; transformation pipelines are short and use the right primitive (`filterMapEffect` not `filter` + `mapEffect` + `filter`); the one explicit backpressure site uses canonical `bufferSize: 1, strategy: "sliding"` for edge-coalescing. The single substantive streams-side improvement is the materializer buffer-size question; everything else is out of scope (React/lab, covered elsewhere) or forward-looking. Post-R-STRICT-BASELINE this dimension is in good shape.
+Overall, the streams surface in Firegrid is in good shape. The findings above are refinements, not corrections.

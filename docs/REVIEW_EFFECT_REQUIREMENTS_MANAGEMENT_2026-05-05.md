@@ -3,333 +3,348 @@
 Date: 2026-05-05
 Scope: Service definitions (`Context.Tag` / `Layer`), `Layer.*` constructor
 selection, `Effect.provide` vs `Effect.provideService`, default services,
-layer memoization and per-call construction, `R`-channel threading through
-`Firegrid.handler` / `Firegrid.eventStream`, and layer composition shapes
-(`Layer.merge` / `Layer.mergeAll` / `Layer.provide`). Production source
-under `packages/*/src` and `apps/*/src`; tests cross-referenced but not
+layer memoization, `R`-channel threading through `Firegrid.handler` /
+`Firegrid.eventStream`, and layer composition (`Layer.merge` /
+`Layer.mergeAll` / `Layer.provide`). Production sources under
+`packages/*/src` and `apps/*/src`; test files cross-referenced but not
 re-audited (see the testing review for the inline-layer story).
 
 ## Summary
 
-Post R0–R7 the Firegrid requirements story is in a deliberately
-homogeneous shape. R7 retired the last `Effect.Service` / `.Default`
-holdouts, and a literal source-text guard (`packages/substrate/src/__tests__/effect-consistency.test.ts:75-105`)
-now keeps substrate's producer module on `Context.Tag` + explicit
-`SubstrateProducerLive(config)` wiring. Every public service in the
-repo — `WorkProducer`, `CompletionProducer`, `Projection`, `WorkClaim`,
-`Choreography`, `CurrentWorkContext`, `TriggerMatchers`, `DurableWaits`,
-`SubstrateClient`, `FiregridClient`, `EventStreamClient`, `RuntimeContext`,
-`FiregridRuntime`, `RuntimeStreamResolver`, `EmbeddedDurableStreams`,
-`DurableStreamAdmin` — is a `Context.Tag` paired with a `*Live` Layer
-factory or pre-built Layer value. There are zero `Effect.Service` and
-zero `.Default` references in production source. Lab has no service
-tags, only Layers it consumes.
+Post R7 the Firegrid requirements story is structurally clean: every
+public service is a `Context.Tag` paired with a `*Live` Layer factory
+(or a pre-built Layer value), there are zero `Effect.Service` /
+`.Default` references in production source, and the per-package
+convention is uniform. A literal source-text guard
+(`packages/substrate/src/__tests__/effect-consistency.test.ts:78-79`)
+keeps the producer module on `Context.Tag` + explicit
+`SubstrateProducerLive(config)` wiring.
 
-The convention selection per Layer constructor matches the SDD intent:
+The constructor selection per Layer also matches SDD intent:
 `Layer.scopedDiscard` for long-running daemons (subscribers, handlers,
 materializers), `Layer.scoped` for resource-holding services
-(`Projection`, embedded resolver), and `Layer.succeed` / `Layer.sync` /
-`Layer.effect` for value-only services. `Layer.unwrapScoped` is used
-once at the runtime root to thread a resolved `RuntimeStreamResolver`
-into the downstream graph.
+(`SubstrateClient`, `Projection`), `Layer.succeed` for value-only
+services. Composition is bottom-up via `Layer.provide` / `Layer.mergeAll`
+in the runtime boot pipeline.
 
-The single real correctness gap is the same one runtime review #1
-called out: `runOperationDispatchLoopWithAcquire` invokes the
-caller-supplied handler without ever providing a `CurrentWorkContext`
-Layer around it, so any handler that uses `Choreography.sleep`,
-`waitFor`, or `awaitAwakeable` dies at runtime with an unsatisfied
-`R = CurrentWorkContext` — even though its outer Layer typechecks
-because the handler's `R` is propagated upward as a remaining
-requirement on the returned Layer. That is finding 1 below.
+There is, however, one **runtime-correctness bug** in the requirements
+story that the per-Layer guards don't catch: `Firegrid.handler` accepts
+caller code whose `R` includes choreography services like
+`CurrentWorkContext`, type-propagates `R` correctly into the returned
+`Layer<never, never, R | RuntimeContext>`, but never **provides**
+`CurrentWorkContext` around the per-message handler invocation inside
+the dispatch loop. Any `Choreography.sleep` / `scheduleAt` /
+`awaitAwakeable` invoked from a Firegrid handler dies at runtime with
+"service not found" — surfaced as a defect through `Effect.exit`,
+encoded as a generic `failRun`, and silently swallowed. This is the #1
+finding and overlaps with runtime review #1 — the runtime review
+characterized it through the lens of `Layer.scopedDiscard` /
+`Effect.forkScoped`; here it is the same bug viewed through the
+Requirements channel.
+
+Smaller hygiene findings: `SubstrateClientLive` is rebuilt **per call**
+from the FiregridClient adapter (`operation-client.ts:212` and `:292`),
+forfeiting layer memoization for every `send` / `result` / `observe`;
+the lab adapter has the same shape (`apps/lab/src/lab/LabEventStreamClient.ts:39`,
+`:48`). And a substantial fraction of the test suite still hand-builds
+its layer environment per `Effect.gen` call — see the testing review
+for the totals; this review only confirms the cause is structural
+(no shared `TestEnv` exported per package).
 
 ## Findings
 
-### 1. `CurrentWorkContext` is never provided around the handler invocation (correctness gap)
+### F1. (TOP) `CurrentWorkContext` is not provided around handler invocation in `Firegrid.handler` — `packages/runtime/src/runtime/internal/operation-handler.ts:133`
 
-`packages/runtime/src/runtime/internal/operation-handler.ts:133`
-calls `Effect.exit(input.run(matched.input))` directly. `input.run`
-has the signature
-`(input) => Effect.Effect<Output, Error | E, R>` where `R` is
-caller-controlled (`packages/runtime/src/runtime/firegrid.ts:81-91`,
-the `Firegrid.handler<Op, E, R>` factory). The factory's return type is
-`Layer.Layer<never, never, R | RuntimeContext>` — `R` is propagated
-upward as a remaining requirement on the wired Layer. That makes the
-Layer typecheck even when `R = CurrentWorkContext`, because the
-handler graph is supposed to provide `CurrentWorkContext` further up.
+`runOperationDispatchLoopWithAcquire` invokes the user-supplied handler
+through `Effect.exit(input.run(matched.input))` at
+`packages/runtime/src/runtime/internal/operation-handler.ts:133`. The
+public surface (`packages/runtime/src/runtime/firegrid.ts:81-91`) is
+typed:
 
-It does not. Nowhere in `packages/runtime/src/` does a
-`currentWorkContextLayer({...})` (`packages/substrate/src/choreography/context.ts:28-30`)
-get constructed. `processRun` derives `matched.run.runId` and could
-trivially synthesize a `CurrentWorkContextValue { workId, ownerId }`,
-but the dispatch site at `operation-handler.ts:133` provides nothing
-on the Effect call. Any handler that does
-`yield* Choreography.sleep(...)` therefore reaches
-`Choreography.sleep` (`packages/substrate/src/choreography/service.ts:248-259`,
-which yields `CurrentWorkContext` at line 155 / 322) with an empty
-Context, and Effect dies with `Service not found:
-substrate/CurrentWorkContext`.
+```
+Firegrid.handler<Op, E, R>(
+  op,
+  run: (input) => Effect.Effect<Output, Error | E, R>,
+): Layer.Layer<never, never, R | RuntimeContext>
+```
 
-Fix shape: synthesize a `CurrentWorkContextValue` from
-`matched.run.runId` (cast/branded as `WorkId`) plus a derived `OwnerId`
-(reusing `cfg.processId` is the obvious v1 choice), then provide it
-once per dispatch via `Effect.provide(currentWorkContextLayer(value))`
-on the `input.run(matched.input)` call at `operation-handler.ts:133`.
-The factory's `Firegrid.handler` return type then drops
-`CurrentWorkContext` from the propagated `R` — the public surface
-becomes `Layer<never, never, RuntimeContext | Exclude<R, CurrentWorkContext>>`
-(or the substrate types it provides explicitly: `DurableWaits`,
-`TriggerMatchers`). This is the same conclusion runtime review #1
-reached; flagged here because it is the largest single
-requirements-management defect in the repo.
+So `R` from the handler body propagates correctly into the returned
+Layer's third type parameter, and the application Layer that mounts
+`Firegrid.handler(Echo, body)` is required to provide whatever services
+`body` mentions. That's where the abstraction stops working: at
+`operation-handler.ts:133` `input.run(matched.input)` is run **as-is**
+inside an `Effect.gen` whose only environment is the dispatch loop
+(`RuntimeContext` + a `DurableStream` plus a `Scope`). Choreography
+services are addressed by the static type but never injected at the
+call site.
 
-### 2. Service-convention uniformity (post-R7) and `Effect.Service` cutover
+Concretely, the documented `CurrentWorkContext` is the per-message
+identity used by `Choreography.sleep` / `Choreography.awaitAwakeable`
+to pull `workId`/`ownerId`
+(`packages/substrate/src/choreography/service.ts:155`,
+`:322`,
+`packages/substrate/src/choreography/tools.ts:146`). Its tag and
+helper layer live at
+`packages/substrate/src/choreography/context.ts:21` and `:28-30`. No
+file under `packages/runtime/src` references `CurrentWorkContext` or
+`currentWorkContextLayer`, so the dispatch loop has no path to provide
+it. A handler such as
 
-Substrate, runtime, and client all use `Context.Tag` + a Layer
-factory. Tags by package:
+```
+Firegrid.handler(Echo, (input) =>
+  Effect.gen(function* () {
+    const choreo = yield* Choreography
+    yield* choreo.sleep("1 second")
+    return { msg: input.msg, len: input.msg.length }
+  }),
+)
+```
 
-- substrate: `WorkProducer` `producer.ts:78`, `CompletionProducer`
-  `producer.ts:88`, `Projection` `facade/projection.ts:59`,
-  `WorkClaim` `facade/work.ts:53`, `DurableWaits` `waits.ts:91-106`,
-  `Choreography` `choreography/service.ts:107`, `CurrentWorkContext`
-  `choreography/context.ts:21`, `TriggerMatchers` `choreography/triggers.ts`.
-- runtime: `RuntimeContext` `runtime/runtime-context.ts:26`,
-  `FiregridRuntime` `runtime/service.ts:27`, `RuntimeStreamResolver`
-  `runtime/internal/stream-resolver.ts:126`, `EmbeddedDurableStreams`
-  `:52`, `DurableStreamAdmin` `:93`.
-- client: `SubstrateClient` `client/service.ts:32`, `FiregridClient`
-  `firegrid/client.ts`, `EventStreamClient` `firegrid/event-client.ts`.
+type-checks (compiler infers `R = Choreography | DurableWaits |
+CurrentWorkContext`, the application layer provides those Lives), but at
+runtime `Choreography.sleep` does `yield* CurrentWorkContext` inside
+`blockAndSuspend` and dies because the tag is not in the local context.
+The defect path is then:
 
-Each Tag has exactly one `*Live` factory in the same file. Lab has
-zero service Tags. SDD §"Effect Type Conventions" item 3 ("one
-convention per package") holds across all four workspaces.
+1. `Effect.exit` at `operation-handler.ts:133` captures the cause as
+   `Failure`/`Die` and returns a `Success`-shaped Exit with `_tag:
+   "Failure"`.
+2. The non-interrupt branch
+   (`operation-handler.ts:158-185`) extracts `failureOption(cause)`,
+   tries to encode through `op.error`, falls back to
+   `Cause.pretty(cause)`, and writes a generic `failRunEffect`.
+3. The handler appears to "fail with a defect string" rather than
+   "suspend"; the run never blocks; `scheduleAt` records but the
+   completion flow can't link back to a workId.
 
-`grep -rn 'Effect\.Service' packages/*/src apps/*/src` returns one
-hit — the literal-text guard at
-`effect-consistency.test.ts:78`. `\.Default\b` returns only the
-matching negative assertion at `:79`. R7's cutover is complete.
+**Fix shape** (no patch — characterizing the requirements-side change):
+the handler body must be invoked with a per-message
+`currentWorkContextLayer` provided. The cleanest place is
+`operation-handler.ts:133` itself, replacing
+`Effect.exit(input.run(matched.input))` with
+`Effect.exit(input.run(matched.input).pipe(Effect.provide(
+  currentWorkContextLayer({ workId: matched.run.runId,
+  ownerId: cfg.processId, … }))))`. The `R` returned by `Firegrid.handler`
+must subtract `CurrentWorkContext` once provided (the public Layer's
+remaining `R` becomes `Exclude<R, CurrentWorkContext> | RuntimeContext`).
+This is the *same* observation as the runtime review's #1 finding;
+that review framed it via `Effect.forkScoped` and the
+`Layer.scopedDiscard` perimeter, this one frames it via the
+Requirements-channel — both fixes converge on providing the layer at
+the same call site.
 
-### 3. `Layer.*` constructor selection per intent
+### F2. Service-tag conventions are uniform after R7
 
-Constructor choice tracks the SKILL's mapping:
+Substrate (`producer.ts:78`, `:88`, `waits.ts:86`,
+`facade/projection.ts:59`, `facade/work.ts:53`,
+`choreography/context.ts:21`, `choreography/triggers.ts:60`,
+`choreography/service.ts:107`), client (`firegrid/event-client.ts:76`,
+`firegrid/client.ts:47`, `client/service.ts:32`), and runtime
+(`runtime/runtime-context.ts:26`, `runtime/service.ts:27`,
+`runtime/internal/stream-resolver.ts:52`, `:93`, `:126`) all use
+`class Tag extends Context.Tag("…")<Tag, Service>() {}`. Lab carries no
+service definitions — only consumes Layers. The substrate
+`effect-consistency.test.ts:78-79` source-text guard locks the
+`Effect.Service` / `.Default` ban into the test bar.
 
-- `Layer.scopedDiscard` for daemon Layers consuming `RuntimeContext`
-  and forking a loop: `runtime/firegrid.ts:50` (`deadlineSubscriberLayer`),
-  `:91` (`handler`), `:117` (`eventStream`). Each calls
-  `Effect.forkScoped`, so layer-finalization interrupts the daemon.
-- `Layer.scoped` for resource-holding services:
-  `substrate/src/facade/projection.ts:108`,
-  `substrate/src/event-plane/layer.ts:41`,
-  `runtime/src/runtime/internal/stream-resolver.ts:159` (embedded
-  resolver wraps a `DurableStreamTestServer`),
-  `client/src/client/service.ts:57` (`SubstrateClient` binds to the
-  `Projection` scope).
-- `Layer.succeed` for value-only services: `producer.ts:212-213`,
-  `facade/work.ts:68`, `firegrid/event-client.ts:172`,
-  `firegrid/operation-client.ts:300`,
-  `runtime/internal/stream-resolver.ts:57/98/135`,
-  `choreography/context.ts:30`, `choreography/triggers.ts:67`.
-- `Layer.sync` / `Layer.effect` where a side-effecting closure
-  constructs a one-shot `new DurableStream(...)`:
-  `choreography/service.ts:119` and `waits.ts:121`.
-- `Layer.unwrapScoped` once at `runtime/layer.ts:51` where the
-  resolver must run inside a Scope before the Layer graph is
-  assembled.
+### F3. `Effect.Service` / `.Default` — zero stragglers
 
-No misclassifications. Note: `Choreography` and `DurableWaits` could
-in principle be `Layer.scoped` to bind the `DurableStream` to the
-Layer scope, but `DurableStream` from `@durable-streams/client`
-exposes no explicit `acquireRelease` shape, so the current
-`Layer.sync` / `Layer.effect` choice tracks the upstream API. Not
-actionable.
+A grep across `packages/*/src` and `apps/*/src` for `Effect.Service`,
+`extends Effect.Service`, and `.Default` returns only the substrate
+consistency-test source (which forbids them). R7 finished the cutover
+cleanly; no follow-up sweep is needed.
 
-### 4. `Effect.provide` vs `Effect.provideService`
+### F4. `Layer.*` constructor selection matches intent
 
-Production `Effect.provide(...)` sites: `runtime/bin/firegrid.ts:87,
-138, 154` (boot-time runtime + `NodeContext.layer`),
-`client/src/firegrid/operation-client.ts:212` (`withSubstrate`
-helper, per-call), `apps/lab/src/lab/LabEventStreamClient.ts:39, 48`
-(per-call). Zero `Effect.provideService` calls. That is appropriate:
-`provideService` shines when injecting a single service, but
-Firegrid's graphs always route through `*Live` Layers, so
-`Effect.provide` is the consistent surface. `Stream.provideLayer`
-appears once at `firegrid/operation-client.ts:292` for the `observe`
-Stream — symmetric, required because `Stream` is the carrier. The
-two per-call sites are the layer-memoization concern in finding 6.
+| Constructor | Sites | Use |
+| --- | --- | --- |
+| `Layer.succeed` | `producer.ts:212-213`, `facade/work.ts:68`, `choreography/context.ts:30`, `choreography/triggers.ts:67`, `event-plane/layer.ts:34`, `runtime/layer.ts:61`, `:67`, `internal/stream-resolver.ts:57`, `:98`, `:135`, `client/operation-client.ts:300`, `client/event-client.ts:172` | Value-only services and per-message context wrappers. Correct. |
+| `Layer.effect` | `waits.ts:121`, `event-plane/layer.ts:41` (via `Layer.scoped`) | DurableWaits has effectful construction (resolves contentType, builds DurableStream); fine. |
+| `Layer.scoped` | `facade/projection.ts:108`, `client/service.ts:57`, `runtime/internal/stream-resolver.ts:159` | Resources whose lifetime must follow the Layer's scope (StreamDB, EmbeddedDurableStreams). Correct. |
+| `Layer.scopedDiscard` | `runtime/firegrid.ts:50` (subscribers), `:91` (handler), `:117` (eventStream) | Long-running daemon programs. Correct, matches SDD §"Effect Type Conventions" and the SDD intent the brief calls out. |
+| `Layer.unwrapScoped` | `runtime/layer.ts:51` | Builds the runtime layer inside an `Effect.gen` so the resolver runs once at boot. Correct. |
+| `Layer.merge` / `Layer.mergeAll` | `producer.ts:211`, `event-plane/layer.ts:58`, `runtime/layer.ts:74`, `:146`, `client/service.ts:79` | Two-arg uses pick `Layer.merge`; ≥3-arg uses pick `Layer.mergeAll`. Consistent. |
+| `Layer.provide` | `runtime/layer.ts:73`, `:130`, `:150-152`, `client/service.ts:77` | Bottom-up wiring (infra → resolver → core). Correct. |
 
-### 5. Layer memoization / per-call construction
+`Layer.fresh` / `Layer.scopedFresh` is not used anywhere. Given the
+`SubstrateClientLive(cfg)` per-call pattern in F7 it likely should not
+be — the right fix is structural (build the layer once and provide it
+at the FiregridClient root).
 
-Two sites build a Layer per call rather than once:
+### F5. `Effect.provide` vs `Effect.provideService`
 
-- `client/src/firegrid/operation-client.ts:206-212` — `withSubstrate`
-  builds `SubstrateClientLive(substrateCfg)` inside every `send` /
-  `result` / `observe` call's `pipe`. Each invocation acquires and
-  releases its own scoped `Projection` (and therefore a
-  `SubstrateStreamDB` and a fresh `DurableStream`). Scope-correct, but
-  foregoes Effect's per-graph memoization — a backend agent calling
-  `result` in a tight loop pays full StreamDB acquisition each time.
-- `apps/lab/src/lab/LabEventStreamClient.ts:26-30` — `layerFor(cfg)`
-  is rebuilt per `emitLabEvent` / `labEvents`. Same shape, lower
-  stakes (lab is short-lived).
+`Effect.provideService` does not appear in production sources — every
+provision uses a Layer (`Effect.provide(layer)`) which is the
+recommended shape per the skill (§"Effect.provide — Provide Layer").
+The five production `Effect.provide` sites
+(`bin/firegrid.ts:87`, `:138`, `:154`,
+`client/firegrid/operation-client.ts:212`,
+`apps/lab/src/lab/LabEventStreamClient.ts:39`, `:48`) all provide
+fully-resolved Layer values. Stream sites use `Stream.provideLayer`
+(`operation-client.ts:292`).
 
-Neither is a defect. The right fix lifts `withSubstrate` into a
-`Layer.scoped` over a long-lived `SubstrateClient`, with
-`FiregridClientLive` depending on it via `Layer.provide`, mirroring
-the runtime side where `RuntimeContext` is built once at
-`runtime/layer.ts:67` and threaded through.
+### F6. Default services — clean
 
-### 6. `R`-channel threading through `Firegrid.handler` / `eventStream`
+There are no references to `Clock`, `TestClock`, `Random`, or
+`*Default` in production source, and no `*.Default` static accessors
+(which is what R7 was tasked with eliminating). The only
+default-services touchpoint would be implicit usage by
+`Effect.timestamp` / `Schedule.spaced` etc., which take Effect's
+default `Clock` automatically and need no explicit Layer.
 
-`Firegrid.handler<Op, E, R>` (`runtime/firegrid.ts:81-91`) declares
-`run: (input) => Effect<Output, Error | E, R>` and returns
-`Layer<never, never, R | RuntimeContext>`. `runOperationHandler`
-(`operation-handler.ts:89-95`) yields `RuntimeContext` and forks the
-dispatch loop, which passes `input.run(matched.input)` straight
-through (`:133`). Inference threads the caller's `R` out to the
-wrapping `Layer.scopedDiscard` and TypeScript surfaces it on the
-returned Layer. The same shape holds for `Firegrid.eventStream<S, E, R>`
-(`runtime/firegrid.ts:111-119`).
+### F7. Layer memoization — structural per-call rebuild on the client adapter
 
-Where this matters: the handler `R` is exactly where the gap from
-finding 1 hides. `Choreography.sleep` / `awaitAwakeable` / `waitFor`
-add `CurrentWorkContext` to their R channel, so a handler that uses
-them returns `Effect<…, …, Choreography | DurableWaits | CurrentWorkContext>`,
-and `Firegrid.handler` faithfully widens the Layer's R to include
-`CurrentWorkContext` — but the runtime never satisfies it. The
-finding-1 fix internalizes `CurrentWorkContext`: the caller's `R`
-becomes `Choreography | DurableWaits` only. `eventStream` has no
-parallel concern (events have no "current run"), so its `R` channel
-is purely caller-domain dependencies.
+`buildFiregridClientService` at
+`packages/client/src/firegrid/operation-client.ts:206-292` defines a
+local helper
 
-### 7. Layer composition (`merge` / `mergeAll` / `provide`)
+```
+const withSubstrate = (f) =>
+  Effect.gen(function* () {
+    const client = yield* SubstrateClient
+    return yield* f(client)
+  }).pipe(Effect.provide(SubstrateClientLive(substrateCfg)))
+```
 
-`Layer.merge` is used twice:
-`producer.ts:211` and `event-plane/layer.ts:58`. Both are
-two-Layer combinations of independent services on the same config —
-appropriate. `Layer.mergeAll` is used twice in `runtime/layer.ts`
-(lines 74 and 146) for three-or-more Layer fan-ins (service + wired
-runtime; embedded streams + admin); appropriate. `Layer.provide`
-appears five times in `runtime/layer.ts` and once at
-`client/src/client/service.ts:77` to thread infra Layers under the
-service Layer; the chain shape is bottom-up (infra → repos →
-services), matching the SKILL's "Typical Pattern". No misuses
-spotted.
+and uses it on every `send`, `result`, and `call`. `observe`
+(`:283-292`) does the same with `Stream.provideLayer`. Each invocation
+constructs a *fresh* `SubstrateClientLive(cfg)` Layer, which in turn
+constructs fresh `ProjectionLive` (`Layer.scoped` over a new StreamDB)
+and fresh `SubstrateProducerLive` (two `Layer.succeed` / DurableStream
+instances). Effect memoizes services *within* a single Layer build, but
+not across separate `Effect.provide` calls — every operation pays the
+StreamDB-acquire cost.
 
-`Layer.fresh` and `Layer.empty` are unused — there is no service in
-the repo whose memoization needs to be defeated. Correct default.
+The lab `LabEventStreamClient.ts:26-30` builds a per-call
+`EventStreamClientLive` similarly. Less expensive (it's a `Layer.succeed`
+with a `DurableStream` constructor inside `buildEventStreamService`),
+but the same shape.
 
-### 8. Default services
+The fix is the standard Effect pattern: hoist the Layer build to module
+level (or a single `FiregridClientLive`), have `FiregridClientLive`
+**compose** `SubstrateClientLive` once via `Layer.provide`, and let
+methods yield from `SubstrateClient` directly — no per-call
+`Effect.provide`. The current code can't do this because the
+service interface methods promise an `R = never` channel; the
+restructure trades that "no requirements" promise for a single
+SubstrateClient-typed requirement at the public boundary, which is
+the Right Answer (the alternative is paying the layer-build cost on
+the hot path).
 
-The Firegrid repo does not use any `Effect.*.Default` layer (there
-are none — the `\.Default` test guard exists precisely to keep it
-that way). Default services Effect ships natively (`Clock`, `Random`,
-`Tracer`, `Logger`) are used through `Effect.logError` / `Effect.logInfo`
-calls in subscriber and handler error paths; there is no
-`Effect.provide(TestClock.layer)` or similar override in production.
-Tests do override (e.g., `TestClock`), but tests are out of scope.
+### F8. R-channel threading through `Firegrid.handler` / `Firegrid.eventStream`
 
-### 9. Test layers
+Apart from F1, the type-level threading is correct. Both
+`runtime/firegrid.ts:81-91` and `:111-119` declare the returned Layer
+as `Layer<never, never, R | RuntimeContext>` where `R` is exactly the
+caller's handler/materializer requirements. `Layer.scopedDiscard`
+preserves the `R` of its inner Effect because no `Layer.provide` is
+applied there, so the application is forced to provide `R` at the
+mounting site. The runtime boot pipeline at `runtime/layer.ts:67-74`
+does this for `RuntimeContext` only — every other `R` (Choreography,
+DurableWaits, EventStream services) must be supplied by the caller's
+runtime Layer. F1 is the gap inside the perimeter; the perimeter
+itself is correctly typed.
 
-Tests rely on inline `Effect.provide(Layer.mergeAll(...))` chains
-across a large surface (the testing review previously counted ~96
-inline composition sites). Same finding holds here — the fix is the
-same: per-feature `TestEnv` Layers in `helpers.ts` files. The tests
-do correctly use `Layer.succeed` for stateless stubs and
-`Layer.effect` + `Ref.make` for stateful stubs (e.g., the
-`TriggerMatchers` test stubs in `choreography-tools.test.ts`). The
-patterns the SKILL recommends are present; the repetition is the
-gap. Cross-reference the testing review; not duplicating here.
+### F9. Layer composition shapes
+
+`Layer.merge` (2-arg) vs `Layer.mergeAll` (n-arg) selection is
+consistent. `Layer.provide` is used bottom-up
+(`runtime/layer.ts:130-153` wires `infra → resolver → core`;
+`client/service.ts:77-85` wires `Projection + Producer → SubstrateClient`).
+No site uses `Layer.provideMerge`; nothing currently needs the
+"provide-and-keep" shape, so its absence isn't a defect.
+
+The runtime boot's `Layer.unwrapScoped`
+(`runtime/layer.ts:51`) is the right tool: the resolver must execute
+once at boot to produce `streamIdentity`, and `Layer.unwrapScoped`
+hoists that Effect into the Layer-build phase so the resolved value
+flows into both `Layer.succeed(FiregridRuntime, …)` and
+`Layer.succeed(RuntimeContext, …)` — exactly one stream identity per
+runtime, shared by every handler/eventStream Layer the caller
+mounts.
+
+### F10. Test layers — confirmation only
+
+The testing review's count of 96 inline `Layer.provide` chains
+(now 133 total `provide`-style references across `__tests__/*.test.ts`)
+holds: no shared `TestEnv` is exported per package, so each test
+file rebuilds its DurableStreamTestServer + `FiregridRuntimeBoot.embeddedDev`
++ Layer composition by hand. This is a testing concern (see
+`REVIEW_EFFECT_TESTING_2026-05-05.md`); from the requirements-management
+side, the structural cause is that no test fixture is published from
+each package's `*-test-support.ts` or similar.
 
 ## Out of scope
 
-- Test layer organization — covered in
-  `REVIEW_EFFECT_TESTING_2026-05-05.md`.
-- `Effect.runPromise` / `Effect.runSync` audit — covered in
-  `REVIEW_EFFECT_RUNTIME_2026-05-05.md`.
-- Schema R-channel handling — covered in
-  `REVIEW_EFFECT_SCHEMA_2026-05-05.md`.
-- The lab UI's `Effect.runFork` / `Effect.runPromise` boundary — by
-  design, with explicit ESLint suppressions.
+- Choreography facade business logic (`REVIEW_FIREGRID_2026-05-05.md`).
+- Test-suite layer cleanup count (testing review).
+- Hot-path Stream operator selection (streams review).
 
-## Top 5 Improvements
+## Top 5 improvements
 
-1. **Provide `CurrentWorkContext` inside the operation-handler dispatch.**
-   `operation-handler.ts:133`. Synthesize a
-   `CurrentWorkContextValue` from `matched.run.runId` and
-   `cfg.processId`, wrap `input.run(...)` in
-   `Effect.provide(currentWorkContextLayer(value))`. Drops the gap
-   from finding 1, simplifies the `Firegrid.handler` public R-channel,
-   and unblocks choreography use inside handlers. (Cross-references
-   runtime review finding #1.)
-
-2. **Hoist `SubstrateClient` to a long-lived scoped service in
-   `FiregridClient`.** Today
-   `firegrid/operation-client.ts:206-212` builds
-   `SubstrateClientLive(substrateCfg)` per call. Move that into a
-   single `Layer.scoped` chained under `FiregridClientLive` so the
-   underlying `Projection` / `StreamDB` are reused across `send`,
-   `result`, `observe`. This is finding 6 promoted to the top
-   because every backend agent that calls `result` repeatedly pays a
-   per-call StreamDB acquisition.
-
-3. **Mirror the move for `EventStreamClient` in lab.**
-   `apps/lab/src/lab/LabEventStreamClient.ts:26-30` rebuilds the
-   layer per emit and per stream. Hoist `layerFor(cfg)` to a
-   `useEffect`-bound Scope, or to a single Layer in the React module
-   wired through `runFork`. Same reuse story; lower stakes than #2
-   because lab is short-lived.
-
-4. **Drop the redundant inner `Effect.scoped` in the dispatch loop.**
-   `operation-handler.ts:113` wraps the body in `Effect.scoped`
-   inside an outer `Layer.scopedDiscard(...forkScoped...)`. Both
-   establish a Scope; the inner one is unused (no
-   `acquireRelease` is bound to it that isn't already bound to the
-   outer Layer scope). Remove for clarity. (Same callout as runtime
-   review finding #4.)
-
-5. **Make `Firegrid.subscribers.{timer, scheduledWork}` factories.**
-   They are eagerly materialized Layer values today
-   (`runtime/firegrid.ts:122-133`); `handler` and `eventStream` are
-   factories. Either align the subscribers to factories
-   (`subscribers.timer()`) or document why they are values. Cosmetic
-   but consistent with the runtime review.
+1. **Provide `CurrentWorkContext` around handler invocation in the
+   dispatch loop** (`operation-handler.ts:133`). Build a per-run
+   `currentWorkContextLayer({ workId: matched.run.runId, ownerId:
+   cfg.processId, … })` and apply via `Effect.provide` to
+   `input.run(matched.input)` before `Effect.exit`. Returns the
+   `Firegrid.handler` Layer's R to `Exclude<R, CurrentWorkContext> |
+   RuntimeContext`. (F1 — runtime correctness, not just type hygiene.)
+2. **Hoist `SubstrateClientLive` into `FiregridClientLive`** so every
+   `send` / `result` / `call` / `observe` reuses one StreamDB +
+   producer pair instead of rebuilding per call (F7 —
+   `operation-client.ts:206-292`). Adopt the same fix for the lab's
+   `LabEventStreamClient` (`apps/lab/src/lab/LabEventStreamClient.ts:39`,
+   `:48`).
+3. **Publish per-package test environments** (`*Test` Layers + a
+   shared `TestEnv` exported from `packages/*/src/test-support/index.ts`)
+   so test files yield from tags and provide one Layer instead of
+   re-wiring runtime + substrate by hand. Cuts the 133 `provide`-style
+   call sites in tests dramatically. (F10 — cross-references testing
+   review.)
+4. **Promote the `effect-consistency.test.ts` text guard** beyond
+   the substrate package — replicate it under `packages/runtime/src/__tests__`
+   and `packages/client/src/__tests__` so future drift in either
+   package fails the test bar in-place rather than at substrate.
+5. **Document the `Layer.scopedDiscard` daemon convention next to
+   `Firegrid.handler` / `Firegrid.eventStream`** in
+   `runtime/firegrid.ts` so the symmetry between subscribers/handlers/
+   materializers is explicit at the call site (currently the comment at
+   `:38-46` describes only the deadline subscribers; the same posture
+   applies to `:91` and `:117`).
 
 ## What strict-baseline enforces vs gaps
 
 **Enforced today:**
 
-- `Effect.Service` and `.Default` are forbidden in
-  `packages/substrate/src/producer.ts` by literal source-text checks
-  (`effect-consistency.test.ts:75-105`). The same test asserts
-  `Context.Tag` + `Layer.succeed` for `WorkProducer` /
-  `CompletionProducer`, and that `SubstrateProducerLive(config)`
-  returns a zero-requirement Layer.
-- Public expected error classes do not extend `Error` or hand-roll
-  `_tag` (`effect-consistency.test.ts:60-72`).
-- `Effect.runPromise|runSync|runFork` are ESLint-restricted (warn)
-  outside the documented binary and lab React boundary.
-- The substrate public-surface export shape is pinned by
-  `public-surface.test.ts`.
+- No `Effect.Service` or `.Default` in substrate (literal grep guard,
+  `effect-consistency.test.ts:78-79`).
+- One Effect convention per package — substrate is uniform
+  `Context.Tag` + `*Live(config)` factories returning Layers.
+- Public surface tests assert the exported tag set
+  (`__tests__/public-surface.test.ts:19`, `:39`).
+- Type-level R-channel threading on `Firegrid.handler` /
+  `Firegrid.eventStream` — TS compiler enforces the caller provides
+  every service mentioned by handler/materializer bodies.
+- Bottom-up `Layer.provide` boot pipeline (the runtime cannot be
+  constructed without `RuntimeStreamResolver`).
 
-**Gaps not enforced:**
+**Gaps the baseline does NOT catch:**
 
-- No guard catches a `Firegrid.handler` that forgets
-  `CurrentWorkContext`. A runtime test wiring a handler that uses
-  `Choreography.sleep` and asserting the dispatch loop completes
-  (instead of dying with "Service not found:
-  substrate/CurrentWorkContext") would close finding 1
-  permanently. Today the surface typechecks because
-  `CurrentWorkContext` propagates outward as part of `R`.
-- The Tag-uniformity guard is producer-scoped only — no repo-wide
-  "no `Effect.Service`" assertion. Easy to add.
-- No guard catches per-call layer construction (finding 6). A
-  repo-wide ESLint or static check could flag
-  `Effect.provide(<Tag>Live(...))` inside an `Effect.gen` body.
-- No test pins layer-constructor selection. The inventory in
-  `docs/effect-artifact-inventory.json` records the choices but
-  does not fail builds.
+- **F1**: TS sees `R = Choreography | DurableWaits | CurrentWorkContext`
+  on the user's handler, the application Layer satisfies it at the
+  surface, but the dispatch loop runs the handler in a smaller context
+  than the type promises. There is no test that mounts a handler whose
+  body yields `CurrentWorkContext` and asserts non-defect completion;
+  adding that test would surface this immediately.
+- **F7**: Layer-build cost per call. Effect's memoization is
+  per-`Layer.build`; rebuilding the Layer in a closure forfeits it.
+  No structural test catches this; it would surface as a runtime
+  perf regression or a missing-finalizer trace under load.
+- **F10**: the substrate consistency guard is text-based and substrate-
+  scoped; it doesn't cross-package, doesn't catch shape regressions in
+  runtime/client.
 
-The strict baseline is "correct conventions, with one runtime
-correctness gap (finding 1) that no syntactic guard can see because
-it is a wiring omission". Closing finding 1, adding the global
-Tag-usage guard, and adding the per-call layer-construction guard
-covers the remainder.
+The brief calls out R7 as making producer wiring uniform — it does, and
+the type-level review is clean. The remaining real-runtime risk is F1;
+the remaining hot-path risk is F7. Everything else is style /
+convention and stable.
