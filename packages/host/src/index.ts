@@ -5,12 +5,15 @@
 // launchable-substrate-host.PACKAGING.9
 // launchable-substrate-host.HOST_PROCESS.8
 //
-// v1 host root exports the launchable Effect-native API (boot plans,
-// constructors, Live layer, profile placeholder) needed by Slices 4-6.
-// Subscriber/operator wiring lands in Slice 5; HTTP diagnostics + the
-// withHost dev helper land in Slice 6. Embedded Durable Streams
-// dev-server ownership lives in this package; no separate CLI/dev
-// package is introduced.
+// The host root exports the launchable Effect-native API: boot
+// plans, constructors, Live layer, profile, and the SubstrateHost
+// Tag. Host-managed timer and scheduled-work subscriber programs
+// are wired through SubstrateHostLive and gated by the profile.
+// Network host diagnostics are deferred — the first lifecycle
+// status surface is in-process and read-only — and the
+// withHost-style process-runner helper remains a later concern.
+// Embedded Durable Streams dev-server ownership lives in this
+// package; no separate CLI/dev package is introduced.
 
 export {
   bootPlanFromConfig,

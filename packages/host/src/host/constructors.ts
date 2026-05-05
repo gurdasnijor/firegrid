@@ -10,9 +10,14 @@ import type {
   EmbeddedDevHostPlan,
   SubstrateHostBootPlan,
 } from "../boot/plan.js"
-import { SubstrateHostLive, type SubstrateHostLiveOptions } from "./live.js"
+import {
+  _internalSubstrateHostLive,
+  SubstrateHostLive,
+  type SubstrateHostLiveOptions,
+} from "./live.js"
 import type { SubstrateHostProfile } from "./profile.js"
 import { SubstrateHost } from "./service.js"
+import type { SubscriberLiveness } from "./subscribers/liveness.js"
 
 // launchable-substrate-host.HOST_CONFIGURATION.1
 // launchable-substrate-host.HOST_CONFIGURATION.2
@@ -125,4 +130,21 @@ export const SubstrateHostBoot = {
   // Re-export the Effect.Config decoder so callers can compose it
   // directly when they want the resolved plan as a value.
   bootPlanFromConfig,
+} as const
+
+// Package-internal constructors that retain SubscriberLiveness in
+// the Layer's output type. NOT re-exported from the host root —
+// host subscriber tests import this through internal relative paths. External
+// consumers must use SubstrateHostBoot above, which narrows the
+// public surface to Layer<SubstrateHost>.
+export const _internalSubstrateHostBoot = {
+  attached: (
+    opts: AttachedHostOptions,
+  ): Layer.Layer<SubstrateHost | SubscriberLiveness> =>
+    _internalSubstrateHostLive(buildAttachedPlan(opts), liveOptionsFrom(opts)),
+
+  embeddedDev: (
+    opts: EmbeddedDevHostOptions = {},
+  ): Layer.Layer<SubstrateHost | SubscriberLiveness> =>
+    _internalSubstrateHostLive(buildEmbeddedPlan(opts), liveOptionsFrom(opts)),
 } as const

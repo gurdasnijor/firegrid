@@ -1,6 +1,6 @@
 import { DurableStream } from "@durable-streams/client"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Effect, Layer } from "effect"
+import { Context, Effect, Layer } from "effect"
 import { bootModeOf, type SubstrateHostBootPlan } from "../boot/plan.js"
 import { emptyProfile, type SubstrateHostProfile } from "./profile.js"
 import {
@@ -8,17 +8,47 @@ import {
   type SubstrateHostService,
   type SubstrateHostStreamIdentity,
 } from "./service.js"
+import {
+  makeSubscriberLiveness,
+  SubscriberLiveness,
+  type SubscriberKind,
+  type SubscriberLivenessService,
+} from "./subscribers/liveness.js"
+import { runScheduledWorkSubscriberProgram } from "./subscribers/scheduled-work.js"
+import { runTimerSubscriberProgram } from "./subscribers/timer.js"
+
+// SubscriberLiveness is a package-internal Tag — it is intentionally
+// NOT re-exported from `@durable-agent-substrate/host`'s root entry
+// point, and the package does not expose a subpath export for it.
+// Tests reach it through internal relative imports of the host
+// source modules. Public-facing factories therefore narrow the
+// layer's output type to `Layer<SubstrateHost>` so the
+// SubscriberLiveness symbol cannot leak into external consumers'
+// type signatures. Internal callers (tests) use
+// `_internalSubstrateHostLive` to keep the wider output in the
+// type system.
 
 // launchable-substrate-host.HOST_PROCESS.1
+// launchable-substrate-host.HOST_PROCESS.3
 // launchable-substrate-host.HOST_PROCESS.8
 // launchable-substrate-host.HOST_CONFIGURATION.5
 // launchable-substrate-host.HOST_CONFIGURATION.6
+// launchable-substrate-host.AUTHORITY_BOUNDARY.2
+// effect-native-api.EFFECT_SERVICES.9
 //
 // SubstrateHostLive is the scoped Effect layer that resolves a
 // SubstrateHost from a SubstrateHostBootPlan. Embedded-dev mode owns
 // the DurableStreamTestServer lifetime through the layer scope; attached
 // mode joins an existing Durable Streams endpoint and does NOT start or
 // own the remote process.
+//
+// The layer also forks per-kind subscriber runner programs into
+// the same layer scope when enabled by the profile, and seeds the
+// package-internal SubscriberLiveness service. The liveness Tag is
+// not re-exported from the host root and not exposed as a subpath
+// — only internal modules in this package see it — so callers
+// cannot mistake liveness for durable subscriber progress
+// authority.
 
 class HostStartupError extends Error {
   readonly _tag = "HostStartupError"
@@ -39,9 +69,8 @@ const acquireEmbeddedServer = (host: string, port: number) =>
         new HostStartupError("embedded DurableStreamTestServer", cause),
     }),
     // Scope finalization stops the embedded server. Process-signal
-    // handling (SIGINT/SIGTERM → scope close) is a higher-runtime
-    // concern that lands with the public withHost helper in a later
-    // slice; this layer alone is enough for Effect-scoped shutdown.
+    // handling (SIGINT/SIGTERM → scope close) remains a higher-
+    // runtime concern and is not part of this slice.
     (server) => Effect.promise(() => server.stop()),
   )
 
@@ -57,36 +86,31 @@ export interface SubstrateHostLiveOptions {
   readonly contentType?: string
 }
 
-export const SubstrateHostLive = (
+const enabledKindsFrom = (profile: SubstrateHostProfile): ReadonlyArray<SubscriberKind> => {
+  const kinds: Array<SubscriberKind> = []
+  if (profile.subscribers?.timer === true) kinds.push("timer")
+  if (profile.subscribers?.scheduledWork === true) kinds.push("scheduled_work")
+  return kinds
+}
+
+export const _internalSubstrateHostLive = (
   plan: SubstrateHostBootPlan,
   options: SubstrateHostLiveOptions = {},
-): Layer.Layer<SubstrateHost> => {
+): Layer.Layer<SubstrateHost | SubscriberLiveness> => {
   const profile = options.profile ?? emptyProfile
   const contentType = options.contentType ?? "application/json"
   const bootMode = bootModeOf(plan)
 
-  return Layer.scoped(
-    SubstrateHost,
+  return Layer.scopedContext(
     Effect.gen(function* () {
-      // Internal startup failures (server start, stream create) become
-      // defects via Effect.orDie below so the public Layer's error
-      // channel stays empty. A failing embedded server / stream create
-      // crashes the host process; that is the intended local-dev
-      // behaviour.
       let streamIdentity: SubstrateHostStreamIdentity
       if (plan._tag === "EmbeddedDevHost") {
-        // launchable-substrate-host.HOST_PROCESS.8
-        // The host package owns embedded Durable Streams dev-server
-        // startup. The OS-assigned port (when port=0) is read back
-        // from the running server.
         const server = yield* acquireEmbeddedServer(
           plan.durableStreams.host,
           plan.durableStreams.port,
         )
         const url = new URL(server.url)
         const streamUrl = `${server.url}/substrate/${plan.durableStreams.streamName}`
-        // Pre-create the substrate stream so client snapshots/observes
-        // before the first write find a valid endpoint.
         yield* ensureSubstrateStream(streamUrl, contentType)
         streamIdentity = {
           streamUrl,
@@ -95,14 +119,10 @@ export const SubstrateHostLive = (
           port: Number(url.port) || plan.durableStreams.port,
         }
       } else {
-        // launchable-substrate-host.HOST_CONFIGURATION.6
-        // Attached mode joins an existing endpoint and does not own
-        // the remote process. The substrate stream is assumed to be
-        // managed by the operator of that endpoint.
         streamIdentity = { streamUrl: plan.streamUrl }
       }
 
-      const service: SubstrateHostService = {
+      const hostService: SubstrateHostService = {
         processId: plan.processId,
         bootMode,
         streamIdentity,
@@ -110,7 +130,56 @@ export const SubstrateHostLive = (
         profile,
         bootPlan: plan,
       }
-      return service
+
+      // Build the package-internal liveness state seeded from the
+      // profile-enabled kinds. When no kinds are enabled the
+      // liveness snapshot is empty.
+      const enabledKinds = enabledKindsFrom(profile)
+      const livenessInternal = yield* makeSubscriberLiveness(enabledKinds)
+      const livenessPublic: SubscriberLivenessService = {
+        snapshot: livenessInternal.snapshot,
+      }
+
+      // Fork enabled subscriber runner programs into the surrounding
+      // layer scope. Each runner is forkScoped, so layer finalization
+      // interrupts and awaits cleanly. Runners never resolve through
+      // a control plane: terminalization stays inside the substrate-
+      // owned single-shot subscriber Effects.
+      if (profile.subscribers?.timer === true) {
+        yield* Effect.forkScoped(
+          runTimerSubscriberProgram({
+            streamUrl: streamIdentity.streamUrl,
+            contentType,
+            liveness: livenessInternal.handle("timer"),
+          }),
+        )
+      }
+      if (profile.subscribers?.scheduledWork === true) {
+        yield* Effect.forkScoped(
+          runScheduledWorkSubscriberProgram({
+            streamUrl: streamIdentity.streamUrl,
+            contentType,
+            liveness: livenessInternal.handle("scheduled_work"),
+          }),
+        )
+      }
+
+      return Context.empty().pipe(
+        Context.add(SubstrateHost, hostService),
+        Context.add(SubscriberLiveness, livenessPublic),
+      )
     }).pipe(Effect.orDie),
   )
 }
+
+// Public host layer — narrow output type. Internally the layer also
+// provides SubscriberLiveness, but that Tag is package-internal and
+// must not leak into external consumers' type signatures. Effect's
+// runtime accepts a Layer that produces more services than its type
+// advertises; the cast trims the public surface without changing
+// runtime behaviour.
+export const SubstrateHostLive = (
+  plan: SubstrateHostBootPlan,
+  options: SubstrateHostLiveOptions = {},
+): Layer.Layer<SubstrateHost> =>
+  _internalSubstrateHostLive(plan, options) as Layer.Layer<SubstrateHost>

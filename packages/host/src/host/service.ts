@@ -3,16 +3,14 @@ import type { BootMode, SubstrateHostBootPlan } from "../boot/plan.js"
 import type { SubstrateHostProfile } from "./profile.js"
 
 // launchable-substrate-host.HOST_PROCESS.1
-// launchable-substrate-host.HOST_PROCESS.6
-// launchable-substrate-host.HOST_DIAGNOSTICS.1
 // launchable-substrate-host.PACKAGING.4
 // launchable-substrate-host.PACKAGING.8
 //
-// SubstrateHost is the launchable-host capability. v1 (Slice 4)
-// exposes only resolved boot identity + read-only access to the
-// active profile snapshot. Subscriber/operator loop status, last scan
-// times, uptime, process metrics, and HTTP diagnostics ship in
-// Slice 5/6.
+// SubstrateHost is the launchable-host capability. It exposes
+// resolved boot identity plus a read-only view of the active
+// profile snapshot. Host lifecycle status and host diagnostics
+// surfaces are deferred to a later slice and are not part of this
+// Tag — do not add fields here for them.
 export interface SubstrateHostStreamIdentity {
   readonly streamUrl: string
   readonly streamName?: string
