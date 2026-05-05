@@ -1,0 +1,37 @@
+feature:
+  name: fireline-firepixel-adapter-fit
+  product: durable-agent-runtime-lab
+  description: Validate how Fireline and Firepixel runtime concepts map onto substrate client, event planes, Host Program Graphs, and runtime-owned adapters.
+
+components:
+  CLIENT_FIT:
+    requirements:
+      1: Fireline-style session launch can be represented as a client-visible durable intent without making session rows substrate-native.
+      2: Fireline-style prompt submission can be represented as runtime-owned event-plane rows or client wrappers built on substrate client semantics.
+      3: Fireline-style prompt updates can be exposed as runtime-owned replay plus live-follow streams.
+      4: Fireline-style operator or testing escape hatches remain outside the production substrate client root.
+
+  HOST_GRAPH_FIT:
+    requirements:
+      1: Provider kernels compose as ordinary Host Program Graph adapter layers.
+      2: Session kernels compose as ordinary Host Program Graph adapter layers.
+      3: Launch, prompt, permission, and tool-call processors compose as host operator or projection-match layers rather than host mutation endpoints.
+      4: Adapter layers may own process-local live handles, but those handles do not become durable substrate authority.
+
+  EVENT_VOCABULARY:
+    requirements:
+      1: Fireline and Firepixel session, prompt, permission, provider, sandbox, and tool-call rows remain runtime-owned schemas.
+      2: Runtime-owned Fireline or Firepixel schemas are not imported by the substrate package.
+      3: Runtime-owned materializers may read substrate projections, but they do not replace substrate run, completion, or claim authority.
+
+  FIT_REPORT:
+    requirements:
+      1: Each adapter-fit slice records gaps as either runtime-lab gaps or substrate product gaps.
+      2: Missing substrate primitives are specified in the substrate product before substrate code changes are made.
+
+constraints:
+  CONCEPT_BOUNDARY:
+    requirements:
+      1: Adapter-fit work does not rename substrate concepts to Fireline or Firepixel concepts at the substrate layer.
+      2: Adapter-fit work may provide compatibility wrappers above the substrate client.
+

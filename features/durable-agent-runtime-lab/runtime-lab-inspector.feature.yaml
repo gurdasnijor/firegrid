@@ -1,0 +1,37 @@
+feature:
+  name: runtime-lab-inspector
+  product: durable-agent-runtime-lab
+  description: Define the runtime lab inspector that displays substrate state and runtime-owned event-plane state without adding privileged write authority.
+
+components:
+  INSPECTION_SURFACE:
+    requirements:
+      1: The lab renders substrate runs, completions, ready work, and claim attempts from curated client or substrate read paths.
+      2: The lab renders runtime-owned event-plane rows and materialized runtime read state.
+      3: The lab renders structured JSON records for both substrate-owned and runtime-owned rows.
+      4: Raw stream views are diagnostic panels and are visually or structurally separated from scenario controls.
+
+  LIVE_FOLLOW:
+    requirements:
+      1: The lab supports replay plus live-follow for stream-shaped data.
+      2: The lab can use Durable Streams registry-style discovery for stream lists.
+      3: Browser live-follow code must not use fixed-interval polling as its primary update mechanism.
+
+  WRITE_BOUNDARY:
+    requirements:
+      1: Browser scenario controls write only through the substrate client or runtime-lab client wrappers built on that client.
+      2: Browser lab code does not import the substrate host package.
+      3: Browser lab code does not call host mutation endpoints.
+      4: Node-only lab runners that launch Host Program Graphs live outside the browser source tree.
+
+  PACKAGING:
+    requirements:
+      1: The first runtime lab inspector is a Vite React application.
+      2: The first runtime lab inspector uses React with vanilla CSS or CSS modules and does not introduce a UI framework dependency.
+
+constraints:
+  NO_PRIVILEGED_LAB:
+    requirements:
+      1: The lab is a consumer of durable state, not a substrate authority layer.
+      2: Lab-only convenience controls must not bypass the same client APIs an application runtime would use.
+

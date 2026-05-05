@@ -1,0 +1,37 @@
+feature:
+  name: runtime-stress-and-restart
+  product: durable-agent-runtime-lab
+  description: Validate runtime integration under restart, concurrency, duplicate events, and replay/live-follow stress.
+
+components:
+  RESTART:
+    requirements:
+      1: Runtime-owned materializers rebuild from durable rows after process restart.
+      2: Host Program Graphs resume progress from durable state after restart without relying on module-scope caches.
+      3: A restarted runtime-lab harness can continue an in-flight waitFor flow from durable state alone.
+
+  CONCURRENCY:
+    requirements:
+      1: Two host processes running the same Host Program Graph against one stream do not create duplicate substrate terminal completions.
+      2: Two host processes running runtime-owned materializers against one stream converge on the same materialized runtime state.
+      3: Claim-before-side-effect operator examples remain safe under concurrent host execution.
+
+  DUPLICATES:
+    requirements:
+      1: Duplicate runtime-owned events do not produce duplicate substrate terminal completions for the same logical wait.
+      2: Duplicate runtime-owned events are visible in raw inspection panels even when materialized state deduplicates them.
+      3: Runtime-owned dedupe keys are derived from runtime event semantics, not substrate-generated random identifiers.
+
+  LIVE_FOLLOW_STRESS:
+    requirements:
+      1: Replay plus live-follow views converge with whole-stream rebuild snapshots.
+      2: Burst runtime event writes do not require fixed-interval polling to become visible.
+      3: Stress harnesses distinguish test polling from production runtime update mechanisms.
+
+constraints:
+  TEST_VS_LAB:
+    requirements:
+      1: Integration tests are CI validation harnesses and may assert invariants without rendering a browser UI.
+      2: The lab is a human inspection workbench and may reuse the same Effect programs and fixtures without becoming the test harness itself.
+      3: Shared fixtures must not create a separate scenario runtime abstraction.
+

@@ -1,0 +1,38 @@
+feature:
+  name: acp-event-plane-runtime-validation
+  product: durable-agent-runtime-lab
+  description: Validate that an agent runtime can own an ACP-shaped event plane and materializer while substrate waitFor resolves through Host Program Graph evaluation.
+
+components:
+  ACP_EVENT_SOURCE:
+    requirements:
+      1: The validation uses ACP-shaped session setup, prompt, sessionUpdate, tool_call, and tool_call_update events.
+      2: The first ACP event source is derived from the Agent Client Protocol TypeScript SDK example agent or an equivalent fixture with the same agent/client semantics.
+      3: ACP event generation runs in a Node-side runner or test fixture, not in the browser lab as a privileged host process.
+
+  EVENT_PLANE_OWNERSHIP:
+    requirements:
+      1: ACP-shaped event rows are defined with runtime-lab-owned Effect Schema values and TypeScript types.
+      2: ACP-shaped event rows are emitted to a caller-owned event plane rather than substrate-native row families.
+      3: The substrate package does not import ACP schemas, ACP SDK modules, session schemas, prompt schemas, or tool-call schemas to support this validation.
+
+  MATERIALIZER:
+    requirements:
+      1: The runtime-lab owns a materializer that projects ACP event-plane rows into ACP session, prompt, and tool-call read state.
+      2: The ACP materializer output is runtime-owned read state and does not replace substrate projections.
+      3: The materializer supports replay from durable event rows before live-follow updates are observed.
+
+  WAIT_FOR_INTEGRATION:
+    requirements:
+      1: A Host Program Graph projection-match evaluator can depend on the ACP materializer layer.
+      2: Choreography waitFor can be satisfied by ACP materialized state through a substrate projection_match completion.
+      3: Resolving the waitFor condition uses substrate completion authority; the ACP materializer does not write substrate terminal rows directly.
+      4: A blocked durable run becomes ready through existing substrate completion and ready-work derivation after the ACP condition is satisfied.
+
+constraints:
+  AUTHORITY:
+    requirements:
+      1: Durable Streams and Durable State remain the source of truth for both ACP event rows and substrate rows.
+      2: ACP event-plane projections do not replace substrate claim authority or completion authority.
+      3: Duplicate ACP events must not create duplicate substrate terminal completions for the same wait.
+
