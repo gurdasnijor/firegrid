@@ -1,5 +1,5 @@
 import type { Schema } from "effect"
-import type { ChangeEvent } from "@durable-streams/state"
+import { isChangeEvent, type ChangeEvent } from "@durable-streams/state"
 import {
   EventStreamEnvelopeTag,
   EventStreamRowType,
@@ -21,6 +21,8 @@ export const EVENT_STREAM_ROW_TYPE = EventStreamRowType
 export type EventStreamEnvelope = EventStreamValue
 
 export type EventStreamStateRow = ChangeEvent<EventStreamEnvelope>
+
+type UnknownChangeEvent = ChangeEvent<unknown>
 
 export const eventStreamStateKey = (
   streamName: string,
@@ -55,13 +57,22 @@ export const isEventStreamEnvelope = (
 
 export const isEventStreamStateRow = (
   value: unknown,
-): value is EventStreamStateRow =>
-  typeof value === "object" &&
-  value !== null &&
-  (value as EventStreamStateRow).type === EVENT_STREAM_ROW_TYPE &&
-  typeof (value as EventStreamStateRow).key === "string" &&
-  (value as EventStreamStateRow).headers?.operation === "insert" &&
-  isEventStreamEnvelope((value as EventStreamStateRow).value)
+): value is EventStreamStateRow => {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("headers" in value)
+  ) {
+    return false
+  }
+  if (!isChangeEvent(value as never)) return false
+  const row = value as UnknownChangeEvent
+  return (
+    row.type === EVENT_STREAM_ROW_TYPE &&
+    row.headers.operation === "insert" &&
+    isEventStreamEnvelope(row.value)
+  )
+}
 
 export const eventStreamEnvelopeFromStateRow = (
   value: unknown,
