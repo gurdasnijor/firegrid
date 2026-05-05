@@ -1,4 +1,4 @@
-import { Duration, Effect, Stream } from "effect"
+import { Duration, Effect, Option, Stream } from "effect"
 
 interface ProjectionCoreQuery<Snapshot, A, E = never, R = never> {
   readonly label: string
@@ -72,9 +72,10 @@ export const buildProjectionCore = <Db, Snapshot, ReadError, TimeoutError>(
       Stream.filter(predicate),
       Stream.runHead,
       Effect.flatMap((opt) =>
-        opt._tag === "Some"
-          ? Effect.succeed(opt.value)
-          : Effect.fail(input.timeout(query.label, Duration.zero)),
+        Option.match(opt, {
+          onNone: () => Effect.fail(input.timeout(query.label, Duration.zero)),
+          onSome: (value) => Effect.succeed(value),
+        }),
       ),
     )
     if (options?.timeout === undefined) return findFirst

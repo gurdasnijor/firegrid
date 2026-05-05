@@ -4,7 +4,7 @@ import type {
   CollectionDefinition,
 } from "@durable-streams/state"
 import { DurableStream } from "@durable-streams/client"
-import { Data, Effect } from "effect"
+import { Data, Effect, Option } from "effect"
 import { appendChange } from "../descriptors/append.ts"
 
 // client-event-plane-registration.PRODUCER_API.1, .2, .3, .4
@@ -92,6 +92,40 @@ const mergeMetadataIntoHeaders = (
 // registered Standard Schema for the event's type. Catches forged
 // ChangeEvents that bypass the State helpers.
 type RevalidateError = PlaneProducerValidationError | PlaneProducerUnknownTypeError
+type StandardValidationResult = Awaited<
+  ReturnType<CollectionDefinition["schema"]["~standard"]["validate"]>
+>
+
+const validationIssues = (
+  result: StandardValidationResult,
+): Option.Option<unknown> =>
+  "issues" in result ? Option.fromNullable(result.issues) : Option.none()
+
+const validationResultEffect = (
+  planeName: string,
+  eventType: string,
+  result: StandardValidationResult,
+): Effect.Effect<void, PlaneProducerValidationError> =>
+  Option.match(validationIssues(result), {
+    onNone: () => Effect.void,
+    onSome: (issues) =>
+      Effect.fail(new PlaneProducerValidationError({ planeName, eventType, issues })),
+  })
+
+const validationPromiseEffect = (
+  planeName: string,
+  eventType: string,
+  result: Promise<StandardValidationResult>,
+): Effect.Effect<void, PlaneProducerValidationError> =>
+  Effect.tryPromise({
+    try: () => result,
+    catch: (issues) =>
+      new PlaneProducerValidationError({ planeName, eventType, issues }),
+  }).pipe(
+    Effect.flatMap((validationResult) =>
+      validationResultEffect(planeName, eventType, validationResult),
+    ),
+  )
 
 const revalidate = (
   planeName: string,
@@ -113,37 +147,9 @@ const revalidate = (
     // Standard Schema validate may return Promise; the helpers used by
     // createStateSchema are synchronous in practice. Handle both.
     if (result instanceof Promise) {
-      return Effect.tryPromise({
-        try: async () => {
-          const r = await result
-          if ("issues" in r && r.issues !== undefined) {
-            throw new PlaneProducerValidationError({
-              planeName,
-              eventType: event.type,
-              issues: r.issues,
-            })
-          }
-        },
-        catch: (cause): RevalidateError =>
-          cause instanceof PlaneProducerValidationError
-            ? cause
-            : new PlaneProducerValidationError({
-                planeName,
-                eventType: event.type,
-                issues: cause,
-              }),
-      })
+      return validationPromiseEffect(planeName, event.type, result)
     }
-    if ("issues" in result && result.issues !== undefined) {
-      return Effect.fail(
-        new PlaneProducerValidationError({
-          planeName,
-          eventType: event.type,
-          issues: result.issues,
-        }),
-      )
-    }
-    return Effect.void
+    return validationResultEffect(planeName, event.type, result)
   })
 
 interface MakePlaneProducerArgs {
