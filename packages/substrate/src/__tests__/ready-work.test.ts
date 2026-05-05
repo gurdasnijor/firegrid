@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import type {
   CompletionValue,
   RunValue,
-} from "../rows.ts"
+} from "../schema/rows.ts"
 import { FOLD_VERSION, type ProjectionSnapshot } from "../projection.ts"
-import { deriveReadyWork } from "../ready-work.ts"
+import { deriveReadyWork } from "../projection/ready-work.ts"
 import {
   blockRun,
   createPendingCompletion,
@@ -300,11 +300,16 @@ describe("ready-work-projection — integration: rebuildProjection + deriveReady
 })
 
 describe("ready-work-projection.FIRST_PHASE_LIMITS", () => {
-  it("ready-work-projection.FIRST_PHASE_LIMITS.4 — ready-work module owns derivation only (no completion/run state-machine, claim, or operator surface)", async () => {
-    // Pure structural: ready-work.ts exports only the projection contract.
-    const mod = await import("../ready-work.ts")
-    const exportNames = Object.keys(mod).sort()
-    expect(exportNames).toEqual(["ReadyWorkItem", "deriveReadyWork"])
+  it("ready-work-projection.FIRST_PHASE_LIMITS.4 — ready-work modules own only the projection contract and the pure derivation", async () => {
+    // Pure structural: schema/ready-work.ts owns the projection-output
+    // contract (ReadyWorkItem schema; ReadyWorkProjection interface is
+    // erased at runtime). projection/ready-work.ts owns the pure
+    // deriveReadyWork function. Neither module exports completion/run
+    // state-machine, claim, or operator surface.
+    const schemaMod = await import("../schema/ready-work.ts")
+    expect(Object.keys(schemaMod).sort()).toEqual(["ReadyWorkItem"])
+    const projectionMod = await import("../projection/ready-work.ts")
+    expect(Object.keys(projectionMod).sort()).toEqual(["deriveReadyWork"])
   })
 
   it("ready-work-projection.FIRST_PHASE_LIMITS.5 — claim attempts / winners / handler invocation / terminal owner authority are not produced here", () => {

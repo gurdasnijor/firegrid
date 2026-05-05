@@ -7,7 +7,7 @@ import {
   type ProjectionQuery,
 } from "../facade/projection.ts"
 import { createPendingCompletion, resolveCompletion } from "../state-machine.ts"
-import type { CompletionValue } from "../rows.ts"
+import type { CompletionValue } from "../schema/rows.ts"
 import {
   freshStreamUrl,
   publishToStream,

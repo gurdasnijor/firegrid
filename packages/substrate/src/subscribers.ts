@@ -1,7 +1,7 @@
 import { DurableStream } from "@durable-streams/client"
 import { Clock, Data, Effect, Option } from "effect"
 import type { ProjectionSnapshot } from "./projection.ts"
-import type { CompletionKind, CompletionValue } from "./rows.ts"
+import type { CompletionKind, CompletionValue } from "./schema/rows.ts"
 import {
   cancelCompletion,
   IllegalCompletionTransition,
@@ -99,6 +99,22 @@ const loadSnapshot = (input: SubscriberInput) =>
     catch: (cause) => new SubscriberStreamError({ cause }),
   })
 
+// Public single-shot wrappers reuse this to avoid repeating the
+// `loadSnapshot(input).pipe(Effect.flatMap(...))` shape.
+const withLoadedSnapshot = <A>(
+  input: SubscriberInput,
+  scan: (
+    snapshot: ProjectionSnapshot,
+  ) => Effect.Effect<A, SubscriberError>,
+): Effect.Effect<A, SubscriberError> =>
+  loadSnapshot(input).pipe(Effect.flatMap(scan))
+
+const collectPending = <K extends CompletionKind>(
+  snapshot: ProjectionSnapshot,
+  kind: K,
+): ReadonlyArray<PendingOf<K>> =>
+  Array.from(snapshot.completions.values()).filter(isPendingOf(kind))
+
 const appendEvent = (stream: DurableStream, event: unknown) =>
   Effect.tryPromise({
     try: () => stream.append(JSON.stringify(event)),
@@ -132,25 +148,28 @@ type DueTimeDecision =
   | { readonly kind: "skip" }
   | { readonly kind: "resolve"; readonly result: unknown }
 
-const runDueTimeSubscriber = <K extends "timer" | "scheduled_work">(
+interface DueTimeProfile<K extends "timer" | "scheduled_work"> {
+  readonly kind: K
+  readonly decide: (
+    completion: PendingOf<K>,
+    nowMs: number,
+  ) => DueTimeDecision
+}
+
+const runDueTimeSubscriberFromSnapshot = <
+  K extends "timer" | "scheduled_work",
+>(
+  snapshot: ProjectionSnapshot,
   input: SubscriberInput,
-  profile: {
-    readonly kind: K
-    readonly decide: (
-      completion: PendingOf<K>,
-      nowMs: number,
-    ) => DueTimeDecision
-  },
+  profile: DueTimeProfile<K>,
 ): Effect.Effect<ReadonlyArray<string>, SubscriberError> =>
   Effect.gen(function* () {
     const stream = openStream(input)
-    const snapshot = yield* loadSnapshot(input)
     const nowMs = yield* Clock.currentTimeMillis
-    const candidates = Array.from(snapshot.completions.values()).filter(
-      isPendingOf(profile.kind),
-    )
-    const outcomes = yield* Effect.forEach(candidates, (completion) =>
-      processDueTimeCandidate(stream, completion, nowMs, profile.decide),
+    const outcomes = yield* Effect.forEach(
+      collectPending(snapshot, profile.kind),
+      (completion) =>
+        processDueTimeCandidate(stream, completion, nowMs, profile.decide),
     )
     return outcomes.flatMap(Option.toArray)
   })
@@ -164,12 +183,10 @@ const processDueTimeCandidate = <K extends "timer" | "scheduled_work">(
   Effect.gen(function* () {
     const decision = decide(completion, nowMs)
     if (decision.kind === "data-error") {
-      return yield* Effect.fail(
-        new SubscriberDataError({
-          completionId: completion.completionId,
-          reason: decision.reason,
-        }),
-      )
+      return yield* new SubscriberDataError({
+        completionId: completion.completionId,
+        reason: decision.reason,
+      })
     }
     if (decision.kind === "skip") return Option.none()
     const eventOpt = yield* tryBuildOrSkip(() =>
@@ -180,48 +197,85 @@ const processDueTimeCandidate = <K extends "timer" | "scheduled_work">(
     return Option.some(completion.completionId)
   })
 
+// durable-subscribers.TIMER_SUBSCRIBER.4 — resolution data carries due
+// time + observed fire time.
+const timerProfile: DueTimeProfile<"timer"> = {
+  kind: "timer",
+  decide: (completion, nowMs) => {
+    const data = completion.data as { readonly dueAtMs?: unknown } | undefined
+    if (data === undefined || typeof data.dueAtMs !== "number") {
+      return { kind: "data-error", reason: "missing or invalid dueAtMs" }
+    }
+    if (data.dueAtMs > nowMs) return { kind: "skip" }
+    return {
+      kind: "resolve",
+      result: { dueAtMs: data.dueAtMs, observedFireMs: nowMs },
+    }
+  },
+}
+
+// durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.4 — preserve scheduled
+// time and opaque input.
+const scheduledWorkProfile: DueTimeProfile<"scheduled_work"> = {
+  kind: "scheduled_work",
+  decide: (completion, nowMs) => {
+    const data = completion.data as
+      | { readonly whenMs?: unknown; readonly input?: unknown }
+      | undefined
+    if (data === undefined || typeof data.whenMs !== "number") {
+      return { kind: "data-error", reason: "missing or invalid whenMs" }
+    }
+    if (data.whenMs > nowMs) return { kind: "skip" }
+    return {
+      kind: "resolve",
+      result: { whenMs: data.whenMs, input: data.input },
+    }
+  },
+}
+
 // durable-subscribers.TIMER_SUBSCRIBER.1, .2, .3, .4, .5
 // durable-subscribers.SUBSCRIBER_SCOPE.5 — single-shot scan.
 export const runTimerSubscriber = (
   input: SubscriberInput,
 ): Effect.Effect<TimerSubscriberResult, SubscriberError> =>
-  runDueTimeSubscriber<"timer">(input, {
-    kind: "timer",
-    decide: (completion, nowMs) => {
-      const data = completion.data as { readonly dueAtMs?: unknown } | undefined
-      if (data === undefined || typeof data.dueAtMs !== "number") {
-        return { kind: "data-error", reason: "missing or invalid dueAtMs" }
-      }
-      if (data.dueAtMs > nowMs) return { kind: "skip" }
-      return {
-        kind: "resolve",
-        // TIMER_SUBSCRIBER.4 — resolution data carries due time + observed fire time.
-        result: { dueAtMs: data.dueAtMs, observedFireMs: nowMs },
-      }
-    },
-  }).pipe(Effect.map((resolvedIds) => ({ resolvedIds })))
+  withLoadedSnapshot(input, (snapshot) =>
+    runTimerSubscriberFromSnapshot(snapshot, input),
+  )
+
+// firegrid-runtime-process.RUNTIME_HOT_PATH.1
+// durable-subscribers.SUBSCRIBER_SCOPE.5
+// Snapshot-input variant for callers (e.g. the Firegrid runtime
+// runner) that already hold a live `SubstrateStreamDB` and want the
+// scan to read from it instead of triggering a fresh
+// `rebuildProjection()` + `db.preload()` per wake.
+export const runTimerSubscriberFromSnapshot = (
+  snapshot: ProjectionSnapshot,
+  input: SubscriberInput,
+): Effect.Effect<TimerSubscriberResult, SubscriberError> =>
+  runDueTimeSubscriberFromSnapshot<"timer">(
+    snapshot,
+    input,
+    timerProfile,
+  ).pipe(Effect.map((resolvedIds) => ({ resolvedIds })))
 
 // durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.1, .2, .3, .4, .5
 export const runScheduledWorkSubscriber = (
   input: SubscriberInput,
 ): Effect.Effect<ScheduledWorkSubscriberResult, SubscriberError> =>
-  runDueTimeSubscriber<"scheduled_work">(input, {
-    kind: "scheduled_work",
-    decide: (completion, nowMs) => {
-      const data = completion.data as
-        | { readonly whenMs?: unknown; readonly input?: unknown }
-        | undefined
-      if (data === undefined || typeof data.whenMs !== "number") {
-        return { kind: "data-error", reason: "missing or invalid whenMs" }
-      }
-      if (data.whenMs > nowMs) return { kind: "skip" }
-      return {
-        kind: "resolve",
-        // SCHEDULED_WORK_SUBSCRIBER.4 — preserve scheduled time and opaque input.
-        result: { whenMs: data.whenMs, input: data.input },
-      }
-    },
-  }).pipe(Effect.map((resolvedIds) => ({ resolvedIds })))
+  withLoadedSnapshot(input, (snapshot) =>
+    runScheduledWorkSubscriberFromSnapshot(snapshot, input),
+  )
+
+// firegrid-runtime-process.RUNTIME_HOT_PATH.1
+export const runScheduledWorkSubscriberFromSnapshot = (
+  snapshot: ProjectionSnapshot,
+  input: SubscriberInput,
+): Effect.Effect<ScheduledWorkSubscriberResult, SubscriberError> =>
+  runDueTimeSubscriberFromSnapshot<"scheduled_work">(
+    snapshot,
+    input,
+    scheduledWorkProfile,
+  ).pipe(Effect.map((resolvedIds) => ({ resolvedIds })))
 
 // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.1, .2, .3, .4, .6, .7, .8, .9
 // Snapshot-only (.8); per-call evaluator (.7); timeout uses the durable
@@ -237,21 +291,31 @@ type ProjectionMatchOutcome =
 export const runProjectionMatchSubscriber = (
   input: ProjectionMatchSubscriberInput,
 ): Effect.Effect<ProjectionMatchSubscriberResult, SubscriberError> =>
+  withLoadedSnapshot(input, (snapshot) =>
+    runProjectionMatchSubscriberFromSnapshot(snapshot, input),
+  )
+
+// firegrid-runtime-process.RUNTIME_HOT_PATH.1
+// Snapshot-input variant for callers that already hold a live
+// `SubstrateStreamDB`; the scan reads from the supplied snapshot
+// instead of triggering a fresh `rebuildProjection()` + `db.preload()`.
+export const runProjectionMatchSubscriberFromSnapshot = (
+  snapshot: ProjectionSnapshot,
+  input: ProjectionMatchSubscriberInput,
+): Effect.Effect<ProjectionMatchSubscriberResult, SubscriberError> =>
   Effect.gen(function* () {
     const stream = openStream(input)
-    const snapshot = yield* loadSnapshot(input)
     const nowMs = yield* Clock.currentTimeMillis
-    const candidates = Array.from(snapshot.completions.values()).filter(
-      isPendingOf("projection_match"),
-    )
-    const outcomes = yield* Effect.forEach(candidates, (completion) =>
-      processProjectionMatchCandidate(
-        stream,
-        snapshot,
-        completion,
-        nowMs,
-        input.evaluate,
-      ),
+    const outcomes = yield* Effect.forEach(
+      collectPending(snapshot, "projection_match"),
+      (completion) =>
+        processProjectionMatchCandidate(
+          stream,
+          snapshot,
+          completion,
+          nowMs,
+          input.evaluate,
+        ),
     )
     const flat = outcomes.flatMap(Option.toArray)
     return {
@@ -276,12 +340,10 @@ const processProjectionMatchCandidate = (
         }
       | undefined
     if (data === undefined || data.trigger === undefined) {
-      return yield* Effect.fail(
-        new SubscriberDataError({
-          completionId: completion.completionId,
-          reason: "missing trigger",
-        }),
-      )
+      return yield* new SubscriberDataError({
+        completionId: completion.completionId,
+        reason: "missing trigger",
+      })
     }
     const trigger = data.trigger as ProjectionMatchTrigger
 

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { CompletionKind } from "../rows.ts"
+import { CompletionKind } from "../schema/rows.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   claimAttemptEvent,

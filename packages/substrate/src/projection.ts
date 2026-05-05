@@ -3,8 +3,8 @@ import type {
   ClaimAttemptValue,
   CompletionValue,
   RunValue,
-} from "./rows.ts"
-import type { substrateState } from "./state-schema.ts"
+} from "./schema/rows.ts"
+import type { substrateState } from "./schema/state.ts"
 
 // durable-records-and-projections.PROJECTIONS.6
 // Materializer-fold contract; backed by Durable Streams State's StreamDB.

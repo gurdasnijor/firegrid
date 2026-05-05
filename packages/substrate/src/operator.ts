@@ -7,8 +7,8 @@ import {
   ClaimWinnerMissingError,
   firstValidClaim,
 } from "./operator-errors.ts"
-import type { ClaimAttemptValue, RunState, RunValue } from "./rows.ts"
-import type { ReadyWorkItem } from "./ready-work.ts"
+import type { ClaimAttemptValue, RunState, RunValue } from "./schema/rows.ts"
+import type { ReadyWorkItem } from "./schema/ready-work.ts"
 import { readRetainedRunRecords } from "./retained-records.ts"
 import {
   completeRun,

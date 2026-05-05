@@ -4,7 +4,7 @@ import {
   type ProjectionSnapshot,
   type SubstrateStreamDB,
 } from "./projection.ts"
-import { substrateState } from "./state-schema.ts"
+import { substrateState } from "./schema/state.ts"
 
 export interface OpenSubstrateDbOptions {
   readonly url: string

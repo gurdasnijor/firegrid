@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import type { CompletionValue, RunValue } from "../rows.ts"
+import type { CompletionValue, RunValue } from "../schema/rows.ts"
 import * as substrate from "../index.ts"
 import {
   blockRun,

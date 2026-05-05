@@ -1,28 +1,17 @@
-import { Schema } from "effect"
-import type { ProjectionSnapshot } from "./projection.ts"
-
-// ready-work-projection.READY_WORK_PROJECTION.7
-// Public projection-output contract; defined with Effect Schema per
-// effect-native-api.SCHEMA_FIRST.1.
-export const ReadyWorkItem = Schema.Struct({
-  runId: Schema.String,
-  completionId: Schema.String,
-  result: Schema.Unknown,
-})
-export type ReadyWorkItem = Schema.Schema.Type<typeof ReadyWorkItem>
-
-// ready-work-projection.READY_WORK_PROJECTION.1, .8, .10
-export interface ReadyWorkProjection {
-  readonly foldVersion: number
-  readonly readyWork: ReadonlyMap<string, ReadyWorkItem>
-}
+import type { ProjectionSnapshot } from "../projection.ts"
+import {
+  type ReadyWorkItem,
+  type ReadyWorkProjection,
+} from "../schema/ready-work.ts"
 
 // ready-work-projection.READY_WORK_PROJECTION.2, .3, .4, .5, .6, .9
 // ready-work-projection.SOURCE_PROJECTIONS.3
 // Pure derivation: a run is ready-derived iff state=blocked AND has a
 // blockedOnCompletionId AND the referenced completion is resolved.
 // Rejected/cancelled completions and terminal runs do not derive ready work.
-export function deriveReadyWork(snapshot: ProjectionSnapshot): ReadyWorkProjection {
+export function deriveReadyWork(
+  snapshot: ProjectionSnapshot,
+): ReadyWorkProjection {
   const readyWork = new Map<string, ReadyWorkItem>()
   for (const run of snapshot.runs.values()) {
     if (run.state !== "blocked") continue

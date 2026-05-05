@@ -6,9 +6,9 @@ import {
   CompletionProducer,
   SubstrateProducerLive,
 } from "../producer.ts"
-import type { CompletionValue } from "../rows.ts"
+import type { CompletionValue } from "../schema/rows.ts"
 import { createPendingCompletion } from "../state-machine.ts"
-import { substrateState } from "../state-schema.ts"
+import { substrateState } from "../schema/state.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   runProjectionMatchSubscriber,

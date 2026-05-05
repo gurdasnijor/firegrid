@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as substrate from "../index.ts"
 import { CompletionProducer, SubstrateProducerLive } from "../producer.ts"
-import type { CompletionValue } from "../rows.ts"
+import type { CompletionValue } from "../schema/rows.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   DurableWaits,

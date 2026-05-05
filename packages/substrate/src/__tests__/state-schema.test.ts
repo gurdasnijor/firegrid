@@ -4,8 +4,8 @@ import {
   CompletionRowType,
   RunRowType,
   type RunValue,
-} from "../rows.ts"
-import { substrateState } from "../state-schema.ts"
+} from "../schema/rows.ts"
+import { substrateState } from "../schema/state.ts"
 
 describe("durable-records-and-projections.SUBSTRATE_SCOPE", () => {
   it("durable-records-and-projections.SUBSTRATE_SCOPE.6 — canonical substrate state schema declares row type and primary key per family", () => {

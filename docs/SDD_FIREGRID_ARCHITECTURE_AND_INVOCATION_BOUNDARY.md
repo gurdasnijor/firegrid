@@ -202,6 +202,13 @@ It must not:
 2. Require app clients to construct kernel row shapes.
 3. Depend on client, runtime, lab, or product-specific packages.
 
+Substrate-owned durable row schemas, the durable-streams state schema, and the
+ready-work projection-output contract live under a single canonical `schema/`
+module inside the substrate package so the kernel's authoritative type
+definitions are easy to discover at one location. Greenfield drops of these
+definitions do not retain compatibility re-export shims at the prior root paths
+(`durable-records-and-projections.SCHEMA_LAYOUT.1`).
+
 ### Lab Constraints
 
 The lab is an inspector first.
@@ -773,6 +780,12 @@ Runtime:
 5. Avoid full projection rebuild per wake when a live durable-state handle can
    be reused safely.
 6. Treat local memory as coordination only, never durable authority.
+
+Long-running runtime subscriber and handler loops use a single scoped live
+`SubstrateStreamDB` after the initial no-gap catch-up; per-wake `rebuildProjection` /
+`db.preload` calls are forbidden while a live handle is held. One-shot snapshot
+APIs and tests may still rebuild
+(`firegrid-runtime-process.RUNTIME_HOT_PATH.1`).
 
 Substrate:
 

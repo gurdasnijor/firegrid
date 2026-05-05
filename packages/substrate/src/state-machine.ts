@@ -5,8 +5,8 @@ import {
   type CompletionValue,
   type RunState,
   type RunValue,
-} from "./rows.ts"
-import { substrateState } from "./state-schema.ts"
+} from "./schema/rows.ts"
+import { substrateState } from "./schema/state.ts"
 
 // awakeables-and-runs.COMPLETION_TRANSITIONS.3
 const TERMINAL_COMPLETION_STATES = new Set<CompletionState>([

@@ -1,7 +1,7 @@
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Clock, Context, Effect, Layer } from "effect"
-import type { CompletionKind, CompletionState, CompletionValue } from "./rows.ts"
+import type { CompletionKind, CompletionState, CompletionValue } from "./schema/rows.ts"
 import { createPendingCompletion } from "./state-machine.ts"
 import { rebuildProjection } from "./stream.ts"
 

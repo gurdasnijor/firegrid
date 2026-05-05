@@ -24,3 +24,29 @@ export type {
   SubstrateWorkHandle,
   WorkObservation,
 } from "./client/work.ts"
+
+// firegrid-operation-messaging.* — typed operation messaging surface.
+// firegrid-event-streams.EVENT_STREAM_DEFINITION.* — descriptor surface.
+export {
+  EventStream,
+  FiregridClient,
+  FiregridClientLive,
+  Operation,
+  OperationCancelled,
+  OperationDecodeError,
+  OperationEncodeError,
+  OperationHandle,
+  OperationNotFound,
+  type FiregridClientService,
+  type ObserveError,
+  type OperationState,
+  type ResultError,
+  type SendError,
+} from "./firegrid/operation-client.ts"
+// Re-export shared-kernel descriptor envelope so client consumers
+// can import the wire constant without reaching into substrate.
+export {
+  isOperationEnvelope,
+  OPERATION_ENVELOPE_TAG,
+  type OperationEnvelope,
+} from "@durable-agent-substrate/substrate"

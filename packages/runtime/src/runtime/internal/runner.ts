@@ -7,11 +7,23 @@ import {
 import { Cause, Clock, Data, Duration, Effect } from "effect"
 import { RuntimeContext, type RuntimeContextService } from "../runtime-context.ts"
 
+// firegrid-runtime-process.RUNTIME_HOT_PATH.1
+//
 // Private subscription/deadline-driven runner skeleton used by the
 // public `Firegrid.subscribers.{timer, scheduledWork}` Layers. The
 // substrate exposes single-shot scan effects; until substrate gains
 // an edge-driven runner natively, the runtime owns the wake/loop
 // scheduling. This module is NOT part of the public API.
+//
+// Hot-path discipline: the loop holds a single live SubstrateStreamDB
+// for the lifetime of the scoped fiber. The initial `db.preload()`
+// inside `acquireDb` establishes the no-gap snapshot boundary; every
+// subsequent wake reads `snapshotFromDb(db)` from the live handle and
+// hands the same snapshot to both `scan` and `nextDeadlineMs`. The
+// runner does NOT call `rebuildProjection()` on each wake, and the
+// caller-supplied `scan` is expected to use a snapshot-input
+// substrate helper (e.g. `runTimerSubscriberFromSnapshot`) so the
+// hot path is rebuild-free.
 //
 // Error policy (honest, transitional):
 //   - openSubstrateDb / preload failures surface as a typed
@@ -75,7 +87,11 @@ export const subscribeCompletions = (
 export interface ScopedProgramInput<E> {
   readonly subscribe: (db: CollectionsDb, onEdge: () => void) => () => void
   readonly nextDeadlineMs: (snapshot: ProjectionSnapshot) => number | undefined
-  readonly scan: Effect.Effect<unknown, E>
+  // The scan reads from the live-db snapshot supplied each wake. It
+  // must NOT call `rebuildProjection()` itself; the runtime holds the
+  // db open for the fiber's lifetime so the initial preload is the
+  // only no-gap catch-up boundary needed.
+  readonly scan: (snapshot: ProjectionSnapshot) => Effect.Effect<unknown, E>
 }
 
 export const runScopedSubscriberProgram = <E>(
@@ -98,8 +114,8 @@ const runLoop = <E>(
       yield* Effect.addFinalizer(() => Effect.sync(() => unsubscribe()))
 
       const step = Effect.gen(function* () {
-        yield* input.scan
         const snapshot = snapshotFromDb(db)
+        yield* input.scan(snapshot)
         const nowMs = yield* Clock.currentTimeMillis
         const nextDue = input.nextDeadlineMs(snapshot)
         const wait =

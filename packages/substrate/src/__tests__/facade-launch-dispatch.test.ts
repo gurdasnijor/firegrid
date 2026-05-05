@@ -21,7 +21,8 @@ import {
   type ClaimAttemptOutcome,
   type WorkClaimError,
 } from "../facade/work.ts"
-import { deriveReadyWork, type ReadyWorkItem } from "../ready-work.ts"
+import { deriveReadyWork } from "../projection/ready-work.ts"
+import type { ReadyWorkItem } from "../schema/ready-work.ts"
 import {
   blockRun,
   completeRun,
@@ -30,7 +31,7 @@ import {
   resolveCompletion,
   startRun,
 } from "../state-machine.ts"
-import type { CompletionValue, RunValue } from "../rows.ts"
+import type { CompletionValue, RunValue } from "../schema/rows.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,

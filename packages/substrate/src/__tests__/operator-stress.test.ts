@@ -5,12 +5,13 @@ import {
   firstValidClaim,
   processReadyWorkItem,
 } from "../operator.ts"
-import { deriveReadyWork, type ReadyWorkItem } from "../ready-work.ts"
+import { deriveReadyWork } from "../projection/ready-work.ts"
+import type { ReadyWorkItem } from "../schema/ready-work.ts"
 import {
   readRetainedClaimAttempts,
   readRetainedRunRecords,
 } from "../retained-records.ts"
-import type { CompletionValue, RunValue } from "../rows.ts"
+import type { CompletionValue, RunValue } from "../schema/rows.ts"
 import {
   blockRun,
   cancelRun,
@@ -21,7 +22,7 @@ import {
   resolveCompletion,
   startRun,
 } from "../state-machine.ts"
-import { substrateState } from "../state-schema.ts"
+import { substrateState } from "../schema/state.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,

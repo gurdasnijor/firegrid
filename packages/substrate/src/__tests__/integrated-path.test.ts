@@ -8,7 +8,7 @@ import {
   SubstrateProducerLive,
   WorkProducer,
 } from "../producer.ts"
-import { deriveReadyWork } from "../ready-work.ts"
+import { deriveReadyWork } from "../projection/ready-work.ts"
 import { blockRun } from "../state-machine.ts"
 import { rebuildProjection } from "../stream.ts"
 import {

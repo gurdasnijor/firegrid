@@ -8,8 +8,8 @@ import {
   firstValidClaim,
 } from "./operator-errors.ts"
 import { readRetainedClaimAttempts } from "./retained-records.ts"
-import type { ClaimAttemptValue } from "./rows.ts"
-import { substrateState } from "./state-schema.ts"
+import type { ClaimAttemptValue } from "./schema/rows.ts"
+import { substrateState } from "./schema/state.ts"
 
 // Internal-only shared claim helper. Used by:
 //   - operator.processReadyWorkItem (kernel single-shot operator)

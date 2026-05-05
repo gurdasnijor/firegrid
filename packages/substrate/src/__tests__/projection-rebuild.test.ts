@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { CompletionValue, RunValue } from "../rows.ts"
+import { CompletionValue, RunValue } from "../schema/rows.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   claimAttemptEvent,

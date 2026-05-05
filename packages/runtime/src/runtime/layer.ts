@@ -1,13 +1,16 @@
-import { DurableStream } from "@durable-streams/client"
-import { DurableStreamTestServer } from "@durable-streams/server"
-import { Effect, type Scope, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { generateProcessId } from "../boot/identity.ts"
+import {
+  attachedResolverLayer,
+  DurableStreamAdminLive,
+  embeddedResolverLayer,
+  EmbeddedDurableStreamsLive,
+  RuntimeStreamResolver,
+} from "./internal/stream-resolver.ts"
 import { RuntimeContext } from "./runtime-context.ts"
 import {
   FiregridRuntime,
-  type BootMode,
   type FiregridRuntimeService,
-  type FiregridRuntimeStreamIdentity,
 } from "./service.ts"
 
 // firegrid-architecture-boundary.AUTHORITY.4
@@ -20,65 +23,35 @@ import {
 // firegrid-runtime-process.CONFIG_SURFACE.3
 //
 // Single public construction surface for the Firegrid runtime:
-// `FiregridRuntimeBoot.{attached, embeddedDev}`. Both take
-// explicit values and return Effect Layers. There is no
-// boot-plan-from-env helper, no FiregridRuntimeBootPlan public
-// type, no FiregridRuntimeLive public factory — those would only
-// reify ceremony around process configuration that belongs at the
-// binary process edge (bin/firegrid.ts).
+// `FiregridRuntimeBoot.{attached, embeddedDev}`. Both take explicit
+// values and return Effect Layers. There is no boot-plan-from-env
+// helper, no FiregridRuntimeBootPlan public type, no
+// FiregridRuntimeLive public factory — those would only reify
+// ceremony around process configuration that belongs at the binary
+// process edge (bin/firegrid.ts).
 //
-// Runtime composition uses ordinary `Layer.mergeAll` /
-// `Layer.provide`. The optional `runtime` Layer is launched inside
-// the runtime's scope; RuntimeContext is injected so helpers can
-// read streamUrl / contentType / processId / streamIdentity.
+// Internally, attached and embedded-dev are not bespoke runtime
+// implementations. They are different live providers of the same
+// internal `RuntimeStreamResolver` Tag (see
+// `internal/stream-resolver.ts`); the core layer here resolves the
+// stream identity through that Tag, builds the `FiregridRuntime`
+// service, and provides `RuntimeContext` to the optional
+// caller-supplied runtime program. Tests can drive the core via a
+// fake resolver layer (see `runtime-foundations.test.ts`).
 
-class RuntimeStartupError extends Error {
-  readonly _tag = "RuntimeStartupError"
-  constructor(reason: string, cause?: unknown) {
-    super(
-      `firegrid runtime startup failed: ${reason}${cause ? `: ${String(cause)}` : ""}`,
-    )
-  }
-}
-
-const acquireEmbeddedServer = (host: string, port: number) =>
-  Effect.acquireRelease(
-    Effect.tryPromise({
-      try: async () => {
-        const server = new DurableStreamTestServer({ host, port })
-        await server.start()
-        return server
-      },
-      catch: (cause) =>
-        new RuntimeStartupError("embedded DurableStreamTestServer", cause),
-    }),
-    (server) => Effect.promise(() => server.stop()),
-  )
-
-const ensureSubstrateStream = (streamUrl: string, contentType: string) =>
-  Effect.tryPromise({
-    try: () => DurableStream.create({ url: streamUrl, contentType }),
-    catch: (cause) =>
-      new RuntimeStartupError(
-        `creating substrate stream ${streamUrl}`,
-        cause,
-      ),
-  })
-
-interface ResolvedIdentity {
-  readonly bootMode: BootMode
-  readonly streamIdentity: FiregridRuntimeStreamIdentity
-}
-
-const buildRuntimeLayer = <E, GraphRIn>(
-  acquireIdentity: Effect.Effect<ResolvedIdentity, never, Scope.Scope>,
+const buildCoreRuntimeLayer = <E, GraphRIn>(
   processId: string,
   contentType: string,
   runtime: Layer.Layer<never, E, GraphRIn> | undefined,
-): Layer.Layer<FiregridRuntime, E, Exclude<GraphRIn, RuntimeContext>> =>
+): Layer.Layer<
+  FiregridRuntime,
+  E,
+  RuntimeStreamResolver | Exclude<GraphRIn, RuntimeContext>
+> =>
   Layer.unwrapScoped(
     Effect.gen(function* () {
-      const { bootMode, streamIdentity } = yield* acquireIdentity
+      const resolver = yield* RuntimeStreamResolver
+      const { bootMode, streamIdentity } = yield* resolver.resolve
 
       const runtimeService: FiregridRuntimeService = {
         processId,
@@ -134,20 +107,21 @@ export const FiregridRuntimeBoot = {
   ): Layer.Layer<FiregridRuntime, E, Exclude<GraphRIn, RuntimeContext>> => {
     const contentType = opts.contentType ?? "application/json"
     const processId = opts.processId ?? generateProcessId()
-    const acquireIdentity: Effect.Effect<
-      ResolvedIdentity,
-      never,
-      Scope.Scope
-    > = Effect.succeed({
-      bootMode: "attached",
-      streamIdentity: { streamUrl: opts.streamUrl },
-    })
-    return buildRuntimeLayer<E, GraphRIn>(
-      acquireIdentity,
+    const core = buildCoreRuntimeLayer<E, GraphRIn>(
       processId,
       contentType,
       opts.runtime,
     )
+    // The internal `RuntimeStreamResolver` Tag is never part of
+    // the caller's supplied GraphRIn, so eliminating it via
+    // `Layer.provide` cleanly leaves only `Exclude<GraphRIn,
+    // RuntimeContext>`. TS preserves the redundant
+    // `Exclude<…, RuntimeStreamResolver>` peel; cast to the
+    // user-visible signature.
+    return Layer.provide(
+      core,
+      attachedResolverLayer(opts.streamUrl),
+    ) as Layer.Layer<FiregridRuntime, E, Exclude<GraphRIn, RuntimeContext>>
   },
 
   embeddedDev: <E = never, GraphRIn = RuntimeContext>(
@@ -155,31 +129,24 @@ export const FiregridRuntimeBoot = {
   ): Layer.Layer<FiregridRuntime, E, Exclude<GraphRIn, RuntimeContext>> => {
     const contentType = opts.contentType ?? "application/json"
     const processId = opts.processId ?? generateProcessId()
-    const host = opts.durableStreamsHost ?? "127.0.0.1"
-    const port = opts.durableStreamsPort ?? 0
-    const streamName = opts.streamName ?? "substrate"
-    const acquireIdentity = Effect.gen(function* () {
-      const server = yield* acquireEmbeddedServer(host, port).pipe(
-        Effect.orDie,
-      )
-      const url = new URL(server.url)
-      const streamUrl = `${server.url}/substrate/${streamName}`
-      yield* ensureSubstrateStream(streamUrl, contentType).pipe(Effect.orDie)
-      return {
-        bootMode: "embedded-dev" as const,
-        streamIdentity: {
-          streamUrl,
-          streamName,
-          host,
-          port: Number(url.port) || port,
-        },
-      }
-    })
-    return buildRuntimeLayer<E, GraphRIn>(
-      acquireIdentity,
+    const core = buildCoreRuntimeLayer<E, GraphRIn>(
       processId,
       contentType,
       opts.runtime,
     )
+    const resolver = embeddedResolverLayer({
+      host: opts.durableStreamsHost ?? "127.0.0.1",
+      port: opts.durableStreamsPort ?? 0,
+      streamName: opts.streamName ?? "substrate",
+      contentType,
+    })
+    const infra = Layer.mergeAll(
+      EmbeddedDurableStreamsLive,
+      DurableStreamAdminLive,
+    )
+    return Layer.provide(
+      core,
+      Layer.provide(resolver, infra),
+    ) as Layer.Layer<FiregridRuntime, E, Exclude<GraphRIn, RuntimeContext>>
   },
 } as const

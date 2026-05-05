@@ -8,15 +8,15 @@ import {
   firstValidClaim,
   processReadyWorkItem,
 } from "../operator.ts"
-import { deriveReadyWork } from "../ready-work.ts"
-import type { ClaimAttemptValue, CompletionValue, RunValue } from "../rows.ts"
+import { deriveReadyWork } from "../projection/ready-work.ts"
+import type { ClaimAttemptValue, CompletionValue, RunValue } from "../schema/rows.ts"
 import {
   blockRun,
   createPendingCompletion,
   resolveCompletion,
   startRun,
 } from "../state-machine.ts"
-import { substrateState } from "../state-schema.ts"
+import { substrateState } from "../schema/state.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,

@@ -1,4 +1,4 @@
-import type { ClaimAttemptValue } from "./rows.ts"
+import type { ClaimAttemptValue } from "./schema/rows.ts"
 
 // Error classes shared between operator.ts (kernel single-shot operator) and
 // internal-claim.ts (shared claim helper used by facade/work.WorkClaimLive).
