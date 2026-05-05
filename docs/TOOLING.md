@@ -18,6 +18,20 @@ pnpm run format
 
 The ESLint config intentionally keeps one stack for formatting, type-aware linting, Effect guardrails, and package-boundary checks. Current Effect defect-boundary debt such as `Effect.orDie` and `Layer.orDie` is reported as warnings so the lint setup can land before the behavioral refactor.
 
+The repo also carries local durable-authority guardrails. These do not prove distributed correctness; they catch shapes that commonly bypass durable state:
+
+- `local/no-production-js-timers` errors on production `setInterval`, `setTimeout`, and `setImmediate`.
+- `local/no-hidden-control-plane` errors on HTTP/control-plane imports in host/client production paths.
+- `local/no-module-durable-cache` warns on module-scope mutable durable-state caches or registries.
+- `local/no-fixed-polling` warns on fixed schedules, stream ticks, and `Effect.sleep` inside loops.
+- `local/no-host-authority-registry` warns on host-owned run/completion/claim/event-plane registry names.
+
+Reviewed production exceptions should use a nearby escape comment with a reason, for example:
+
+```ts
+// durable-lint-allow-polling: subscription deadline fallback with bounded scope
+```
+
 ## Build
 
 Run:
