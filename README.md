@@ -35,33 +35,33 @@ Acai ACID references in test names or nearby comments.
 
 ## Run the lab
 
-The lab is a read-only Durable Streams inspector. The Firegrid
-runtime binary launches an embedded Durable Streams server, injects
-the resolved URL into a child process, and forwards stdio:
-
-```sh
-firegrid dev -- pnpm --filter @firegrid/lab dev
-```
-
-That spawns Vite with `VITE_DURABLE_STREAMS_URL` set; open the
-printed Vite URL and the lab attaches with no manual wiring.
-Ctrl-C tears down both the embedded Durable Streams server and the
-child via the same Effect scope.
-
-The repo also exposes a thin pnpm shortcut wrapping the same
-command:
+The lab is a read-only Durable Streams inspector. From the repo root,
+run:
 
 ```sh
 pnpm dev:lab
 ```
 
-For attached mode against an existing Durable Streams endpoint,
-either set `DURABLE_STREAMS_URL` in the env and run `firegrid` (no
-subcommand), or call the runtime constructors directly:
+That uses the local `@firegrid/runtime` package to launch an embedded
+Durable Streams server, injects the resolved URL into Vite as
+`VITE_DURABLE_STREAMS_URL`, and forwards stdio. Open the printed Vite
+URL and the lab attaches with no manual wiring. Ctrl-C tears down both
+the embedded Durable Streams server and the child via the same Effect
+scope.
+
+The equivalent package-script form is:
 
 ```sh
-firegrid                                                    # attached or embedded based on env
-DURABLE_STREAMS_URL=https://… firegrid                      # attached
+pnpm --filter @firegrid/runtime run firegrid dev -- pnpm --filter @firegrid/lab dev
+```
+
+For attached mode against an existing Durable Streams endpoint,
+set `DURABLE_STREAMS_URL` in the env and run the runtime script with
+no subcommand, or call the runtime constructors directly:
+
+```sh
+pnpm --filter @firegrid/runtime run firegrid
+DURABLE_STREAMS_URL=https://… pnpm --filter @firegrid/runtime run firegrid
 ```
 
 The lab can be pointed elsewhere via `?streamUrl=...` in the
