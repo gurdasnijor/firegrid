@@ -9,7 +9,7 @@ components:
       1: The substrate package target name is `@firegrid/substrate`.
       2: The client package target name is `@firegrid/client`.
       3: The runtime package target name is `@firegrid/runtime`.
-      4: The lab package target name is `@firegrid/lab`.
+      4: The lab app workspace target name is `@firegrid/lab`.
 
   RUNTIME_RENAME:
     requirements:

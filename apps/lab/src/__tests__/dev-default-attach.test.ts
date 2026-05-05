@@ -18,7 +18,7 @@ import { describe, expect, it } from "vitest"
 const here = dirname(fileURLToPath(import.meta.url))
 
 describe("lab attach: env-name contract with the firegrid runtime", () => {
-  it("packages/lab/src/main.tsx reads VITE_DURABLE_STREAMS_URL and has no fixed-port default", () => {
+  it("apps/lab/src/main.tsx reads VITE_DURABLE_STREAMS_URL and has no fixed-port default", () => {
     const main = readFileSync(resolve(here, "..", "main.tsx"), "utf8")
     expect(main).toContain('"VITE_DURABLE_STREAMS_URL"')
     // No fixed-port default constant — the legacy
@@ -29,7 +29,17 @@ describe("lab attach: env-name contract with the firegrid runtime", () => {
 
   it("packages/runtime/bin/firegrid.ts injects VITE_DURABLE_STREAMS_URL into the child env", () => {
     const bin = readFileSync(
-      resolve(here, "..", "..", "..", "runtime", "bin", "firegrid.ts"),
+      resolve(
+        here,
+        "..",
+        "..",
+        "..",
+        "..",
+        "packages",
+        "runtime",
+        "bin",
+        "firegrid.ts",
+      ),
       "utf8",
     )
     expect(bin).toContain("VITE_DURABLE_STREAMS_URL")

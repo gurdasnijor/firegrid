@@ -136,7 +136,7 @@ Current workspace packages:
 - `packages/client` - app-facing Firegrid client plus legacy low-level client.
 - `packages/runtime` - `@firegrid/runtime`; server-side runtime process and
   runtime Layers.
-- `packages/lab` - `@firegrid/lab`; browser lab/inspector.
+- `apps/lab` - `@firegrid/lab`; browser lab/inspector app.
 
 Naming is mid-migration:
 
@@ -437,13 +437,13 @@ rg -n 'firegrid.event|EVENT_STREAM_ENVELOPE_TAG|makeEventStreamStateRow|isEventS
 Find browser-safety boundaries:
 
 ```sh
-rg -n 'client/firegrid|substrate/descriptors|SubstrateClientLive|@firegrid/runtime|@durable-agent-substrate/substrate' packages/client packages/lab eslint.config.js
+rg -n 'client/firegrid|substrate/descriptors|SubstrateClientLive|@firegrid/runtime|@durable-agent-substrate/substrate' packages/client apps/lab eslint.config.js
 ```
 
 Find runtime process code:
 
 ```sh
-rg -n 'firegrid dev|DURABLE_STREAMS_URL|VITE_DURABLE_STREAMS_URL|Command\\.make|NodeRuntime' packages/runtime packages/lab README.md
+rg -n 'firegrid dev|DURABLE_STREAMS_URL|VITE_DURABLE_STREAMS_URL|Command\\.make|NodeRuntime' packages/runtime apps/lab README.md
 ```
 
 ## Current Repo Hygiene
@@ -473,4 +473,3 @@ git stash show -p stash@{0}
 
 Do not apply stashes directly into `main` unless the user explicitly asks for
 that work to be revived.
-

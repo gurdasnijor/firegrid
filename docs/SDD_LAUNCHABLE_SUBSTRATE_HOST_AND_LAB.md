@@ -21,7 +21,7 @@ This SDD defines that next layer:
 @durable-agent-substrate/host
   launchable observer/operator process
 
-@durable-agent-substrate/lab
+@firegrid/lab
   example/dev consumer built on the client
 ```
 
@@ -181,7 +181,7 @@ ingress model:
 @durable-agent-substrate/host
   Effect-native launchable runtime process and withHost-style dev/test composition
 
-@durable-agent-substrate/lab
+@firegrid/lab
   example/dev application built on the client
 ```
 
@@ -832,7 +832,7 @@ runtime can bring its own event stream, schemas, and materializers, and
 substrate choreography can still wait on that state through `waitFor` without
 making the runtime vocabulary substrate-native.
 
-Example program entries live under `packages/lab` for the first slice. They are
+Example program entries live under `apps/lab` for the first slice. They are
 development examples, not production client/testing API. Each entry should be a
 plain object only where metadata is useful, for example `{ name, program }`,
 where `program` is an `Effect` requiring existing services rather than a new
@@ -840,14 +840,14 @@ scenario runtime type. Each entry should be runnable from the command line and
 from the lab UI, with both paths using the same client package and program
 definitions.
 
-The lab package is internally split by execution surface:
+The lab app is internally split by execution surface:
 
-- `packages/lab/src` is the browser-side surface. It is bundled by Vite
+- `apps/lab/src` is the browser-side surface. It is bundled by Vite
   and may import only `@durable-agent-substrate/client` and external
   packages. The repository ESLint configuration enforces that surface as
   client-only — `@durable-agent-substrate/host` and
   `@durable-agent-substrate/substrate` are not allowed there.
-- `packages/lab/runner` and `packages/lab/bin` are Node-only dev harness
+- `apps/lab/runner` and `apps/lab/bin` are Node-only dev harness
   paths. They may import `@durable-agent-substrate/host` to launch a
   Host Program Graph and orchestrate `SubstrateHostBoot.withHost` for
   the example programs. They are not bundled into the browser app and
@@ -855,10 +855,10 @@ The lab package is internally split by execution surface:
   writes still flow exclusively through `@durable-agent-substrate/client`.
 
 Program kickoff Effects (the part each example program runs against
-`SubstrateClient`) live under `packages/lab/src/programs` so the same
+`SubstrateClient`) live under `apps/lab/src/programs` so the same
 kickoff can be invoked from the browser UI and from the Node runner.
 Host Program Graph definitions and the Node CLI live under
-`packages/lab/runner` and `packages/lab/bin` respectively.
+`apps/lab/runner` and `apps/lab/bin` respectively.
 
 ## Host Diagnostics
 
@@ -940,19 +940,18 @@ Proposed packages:
 ```text
 packages/client
 packages/host
-packages/lab
+apps/lab
 ```
 
 The substrate package remains the foundation library. The client package is the
 normal application dependency. The host package is the launchable process. The
-lab package is dev tooling.
+lab app is dev tooling.
 
 Production exports should stay narrow and Effect-native first:
 
 ```text
 @durable-agent-substrate/client
 @durable-agent-substrate/host
-@durable-agent-substrate/lab
 ```
 
 Optional operator/testing client subpaths can be added when real call sites need
@@ -962,7 +961,8 @@ them. Raw stream inspection belongs to lab/diagnostics, not the client root.
 
 The first slice should prove:
 
-1. a package boundary for `packages/client`, `packages/host`, and `packages/lab`
+1. a package boundary for `packages/client` and `packages/host`, plus an app
+   boundary for `apps/lab`,
    without filling every feature;
 2. an Effect-native client resource shape against a Durable Streams URL;
 3. a client method that declares work through existing substrate producers;
@@ -987,7 +987,7 @@ semantics.
    inspection patterns while using substrate client APIs for scenario actions.
    A terminal inspector can be added later if useful, but the first goal is a
    visual workbench for exploring state transitions.
-3. Example program entries live under `packages/lab` for the first slice. They
+3. Example program entries live under `apps/lab` for the first slice. They
    can be invoked by the lab UI and by a command-line entrypoint, but they are not
    exported from the production client root.
 4. Host diagnostics are deferred beyond the core launchable lab slice. Progress

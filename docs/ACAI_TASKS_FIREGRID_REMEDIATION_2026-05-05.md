@@ -290,7 +290,7 @@ ACIDs:
 - `firegrid-package-migration.PACKAGE_NAMES.1`: The substrate package target name is `@firegrid/substrate`.
 - `firegrid-package-migration.PACKAGE_NAMES.2`: The client package target name is `@firegrid/client`.
 - `firegrid-package-migration.PACKAGE_NAMES.3`: The runtime package target name is `@firegrid/runtime`.
-- `firegrid-package-migration.PACKAGE_NAMES.4`: The lab package target name is `@firegrid/lab`.
+- `firegrid-package-migration.PACKAGE_NAMES.4`: The lab app workspace target name is `@firegrid/lab`.
 - `firegrid-package-migration.COMPATIBILITY.1`: Compatibility exports may be kept temporarily during migration.
 - `firegrid-package-migration.COMPATIBILITY.2`: Compatibility exports must point toward the Firegrid names in docs and tests.
 - `firegrid-package-migration.COMPATIBILITY.3`: New public docs should prefer Firegrid names over durable-agent-substrate names.

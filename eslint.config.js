@@ -45,6 +45,8 @@ const tsOnly = (configs) =>
     files: [
       "packages/**/*.ts",
       "packages/**/*.tsx",
+      "apps/**/*.ts",
+      "apps/**/*.tsx",
       "test-support/**/*.ts",
     ],
   }))
@@ -401,6 +403,8 @@ export default tseslint.config(
     files: [
       "packages/**/*.ts",
       "packages/**/*.tsx",
+      "apps/**/*.ts",
+      "apps/**/*.tsx",
       "test-support/**/*.ts",
     ],
     languageOptions: {
@@ -471,8 +475,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/**/src/**/*.ts"],
-    ignores: ["packages/**/src/__tests__/**/*.ts", "packages/**/*.test.ts"],
+    files: ["packages/**/src/**/*.ts", "apps/**/src/**/*.ts"],
+    ignores: [
+      "packages/**/src/__tests__/**/*.ts",
+      "apps/**/src/__tests__/**/*.ts",
+      "packages/**/*.test.ts",
+      "apps/**/*.test.ts",
+    ],
     rules: {
       "local/no-fixed-polling": "warn",
       "local/no-module-durable-cache": "warn",
@@ -489,8 +498,18 @@ export default tseslint.config(
     // `no-import-from-barrel-package`; dprint conflicts with this repo's
     // stylistic formatter stack, so the applicable package-boundary rule is
     // enabled explicitly for production package source.
-    files: ["packages/**/src/**/*.ts", "packages/**/src/**/*.tsx"],
-    ignores: ["packages/**/src/__tests__/**/*.ts", "packages/**/*.test.ts"],
+    files: [
+      "packages/**/src/**/*.ts",
+      "packages/**/src/**/*.tsx",
+      "apps/**/src/**/*.ts",
+      "apps/**/src/**/*.tsx",
+    ],
+    ignores: [
+      "packages/**/src/__tests__/**/*.ts",
+      "apps/**/src/__tests__/**/*.ts",
+      "packages/**/*.test.ts",
+      "apps/**/*.test.ts",
+    ],
     rules: {
       "@effect/no-import-from-barrel-package": [
         "warn",
@@ -498,7 +517,6 @@ export default tseslint.config(
           packageNames: [
             "@durable-agent-substrate/client",
             "@durable-agent-substrate/substrate",
-            "@firegrid/lab",
             "@firegrid/runtime",
           ],
         },
@@ -529,12 +547,28 @@ export default tseslint.config(
             ),
             restrictedInternalPackage(
               "@firegrid/lab",
-              "Substrate must not depend on lab code.",
+              "Substrate must not depend on the lab app.",
             ),
             restrictedInternalPackage(
               "@durable-agent-substrate/types",
               "Substrate owns its durable schemas; do not introduce a shared types package.",
             ),
+          ],
+          patterns: [
+            {
+              group: [
+                "apps/*",
+                "apps/*/*",
+                "../apps/*",
+                "../apps/*/*",
+                "../../apps/*",
+                "../../apps/*/*",
+                "../../../apps/*",
+                "../../../apps/*/*",
+              ],
+              message:
+                "firegrid-architecture-boundary.DEPENDENCY_GRAPH.6: reusable packages must not import workspace apps.",
+            },
           ],
         },
       ],
@@ -553,19 +587,35 @@ export default tseslint.config(
             ),
             restrictedInternalPackage(
               "@firegrid/lab",
-              "Client must not depend on lab code.",
+              "Client must not depend on the lab app.",
             ),
             restrictedInternalPackage(
               "@durable-agent-substrate/types",
               "Client should reuse substrate-owned schemas directly.",
             ),
           ],
+          patterns: [
+            {
+              group: [
+                "apps/*",
+                "apps/*/*",
+                "../apps/*",
+                "../apps/*/*",
+                "../../apps/*",
+                "../../apps/*/*",
+                "../../../apps/*",
+                "../../../apps/*/*",
+              ],
+              message:
+                "firegrid-architecture-boundary.DEPENDENCY_GRAPH.6: reusable packages must not import workspace apps.",
+            },
+          ],
         },
       ],
     },
   },
   {
-    files: ["packages/lab/src/**/*.ts", "packages/lab/src/**/*.tsx"],
+    files: ["apps/lab/src/**/*.ts", "apps/lab/src/**/*.tsx"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -583,6 +633,20 @@ export default tseslint.config(
               "@durable-agent-substrate/types",
               "Lab UI must not depend on a shared types package.",
             ),
+          ],
+          patterns: [
+            {
+              group: [
+                "packages/*",
+                "packages/*/*",
+                "../../packages/*",
+                "../../packages/*/*",
+                "../../../packages/*",
+                "../../../packages/*/*",
+              ],
+              message:
+                "firegrid-architecture-boundary.DEPENDENCY_GRAPH.6: apps must depend on packages through public workspace package entrypoints.",
+            },
           ],
         },
       ],
@@ -606,12 +670,28 @@ export default tseslint.config(
             ),
             restrictedInternalPackage(
               "@firegrid/lab",
-              "Runtime must not depend on lab code.",
+              "Runtime must not depend on the lab app.",
             ),
             restrictedInternalPackage(
               "@durable-agent-substrate/types",
               "Runtime owns its lifecycle/config types only; do not introduce a shared types package.",
             ),
+          ],
+          patterns: [
+            {
+              group: [
+                "apps/*",
+                "apps/*/*",
+                "../apps/*",
+                "../apps/*/*",
+                "../../apps/*",
+                "../../apps/*/*",
+                "../../../apps/*",
+                "../../../apps/*/*",
+              ],
+              message:
+                "firegrid-architecture-boundary.DEPENDENCY_GRAPH.6: reusable packages must not import workspace apps.",
+            },
           ],
         },
       ],
@@ -647,7 +727,7 @@ export default tseslint.config(
             ),
             restrictedInternalPackage(
               "@firegrid/lab",
-              "Runtime must not depend on lab code.",
+              "Runtime must not depend on the lab app.",
             ),
             restrictedInternalPackage(
               "@durable-agent-substrate/types",
@@ -668,6 +748,22 @@ export default tseslint.config(
               ],
               message:
                 "EventStream materializer must not write substrate authority rows; durable downstream writes belong in the materializer Effect's body via runtime-allowed surfaces, not in the materializer module itself.",
+            },
+          ],
+          patterns: [
+            {
+              group: [
+                "apps/*",
+                "apps/*/*",
+                "../apps/*",
+                "../apps/*/*",
+                "../../apps/*",
+                "../../apps/*/*",
+                "../../../apps/*",
+                "../../../apps/*/*",
+              ],
+              message:
+                "firegrid-architecture-boundary.DEPENDENCY_GRAPH.6: reusable packages must not import workspace apps.",
             },
           ],
         },
