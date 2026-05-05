@@ -4,9 +4,9 @@ import type { ProjectionSnapshot } from "./projection.ts"
 import type { CompletionKind, CompletionValue } from "./schema/rows.ts"
 import {
   cancelCompletion,
-  IllegalCompletionTransition,
+  type IllegalCompletionTransition,
   resolveCompletion,
-} from "./state-machine.ts"
+} from "./schema/state-machine.ts"
 import { rebuildProjection } from "./stream.ts"
 import type { ProjectionMatchTrigger } from "./waits.ts"
 
@@ -121,22 +121,19 @@ const appendEvent = (stream: DurableStream, event: unknown) =>
     catch: (cause) => new SubscriberStreamError({ cause }),
   })
 
-// Defensive wrap: state-machine builders throw IllegalCompletionTransition
-// synchronously for direct callers. In a subscriber loop that throw is a race
-// signal (another writer terminalized between our snapshot read and our
-// append attempt). Map IllegalCompletionTransition -> Option.none so the
-// caller skips this completion silently. Authority remains the first-valid-
-// terminal fold (durable-subscribers.COMPLETION_AUTHORITY.1/.2).
-const tryBuildOrSkip = <A>(build: () => A): Effect.Effect<Option.Option<A>> =>
-  Effect.try({
-    try: build,
-    catch: (cause): IllegalCompletionTransition => {
-      if (cause instanceof IllegalCompletionTransition) return cause
-      throw cause
-    },
-  }).pipe(
+// Defensive wrap: the declarative state-machine builders return
+// IllegalCompletionTransition through the Effect error channel. In a
+// subscriber loop that failure is a race signal (another writer terminalized
+// between our snapshot read and our append attempt), so the caller skips this
+// completion silently. Authority remains the first-valid-terminal fold.
+const buildOrSkip = <A>(
+  effect: Effect.Effect<A, IllegalCompletionTransition>,
+): Effect.Effect<Option.Option<A>> =>
+  effect.pipe(
     Effect.map(Option.some),
-    Effect.catchAll(() => Effect.succeed(Option.none())),
+    Effect.catchTag("IllegalCompletionTransition", () =>
+      Effect.succeed(Option.none()),
+    ),
   )
 
 // Shared scan skeleton for due-time-driven subscribers (timer / scheduled_work).
@@ -189,7 +186,7 @@ const processDueTimeCandidate = <K extends "timer" | "scheduled_work">(
       })
     }
     if (decision.kind === "skip") return Option.none()
-    const eventOpt = yield* tryBuildOrSkip(() =>
+    const eventOpt = yield* buildOrSkip(
       resolveCompletion(completion, { result: decision.result }),
     )
     if (Option.isNone(eventOpt)) return Option.none()
@@ -352,7 +349,7 @@ const processProjectionMatchCandidate = (
     const deadlineAtMs =
       typeof data.deadlineAtMs === "number" ? data.deadlineAtMs : undefined
     if (deadlineAtMs !== undefined && nowMs >= deadlineAtMs) {
-      const cancelOpt = yield* tryBuildOrSkip(() =>
+      const cancelOpt = yield* buildOrSkip(
         cancelCompletion(completion, {
           terminalReason: {
             kind: "timeout" as const,
@@ -386,7 +383,7 @@ const processProjectionMatchCandidate = (
       // .8 — leave pending for a future scan / live-follow.
       return Option.none()
     }
-    const eventOpt = yield* tryBuildOrSkip(() =>
+    const eventOpt = yield* buildOrSkip(
       resolveCompletion(completion, {
         result: { matchedValue: evaluation.value },
       }),

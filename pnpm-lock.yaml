@@ -158,6 +158,9 @@ importers:
       effect:
         specifier: ^3.18.0
         version: 3.21.2
+      xstate:
+        specifier: ^5.31.0
+        version: 5.31.0
     devDependencies:
       '@durable-streams/server':
         specifier: ^0.3.1
@@ -2046,6 +2049,9 @@ packages:
       utf-8-validate:
         optional: true
 
+  xstate@5.31.0:
+    resolution: {integrity: sha512-5B+0DqC0uNUrcLUEY3pn3iNy+swvK2E0ZpYp5gnV3oxMX5y87vzXkU5YXv9CAtyG5c5FOJ1SzvTWHrwE8fMZNQ==}
+
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
 
@@ -3732,6 +3738,8 @@ snapshots:
   word-wrap@1.2.5: {}
 
   ws@8.20.0: {}
+
+  xstate@5.31.0: {}
 
   yallist@3.1.1: {}
 

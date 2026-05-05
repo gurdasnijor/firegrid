@@ -289,7 +289,24 @@ describe("producer error semantics", () => {
     expect(Either.isLeft(result)).toBe(true)
     if (Either.isLeft(result)) {
       expect(result.left).toBeInstanceOf(IllegalCompletionTransition)
+      expect(result.left._tag).toBe("IllegalCompletionTransition")
     }
+
+    const recovered = await runProducer(
+      layer,
+      Effect.gen(function* () {
+        const cp = yield* CompletionProducer
+        return yield* cp.resolveCompletion({
+          completionId: "c-err",
+          result: "recoverable",
+        }).pipe(
+          Effect.catchTag("IllegalCompletionTransition", (error) =>
+            Effect.succeed(error._tag),
+          ),
+        )
+      }),
+    )
+    expect(recovered).toBe("IllegalCompletionTransition")
 
     // Sanity: the projection still reflects the first valid terminal.
     const snapshot = await rebuildProjection({ url })

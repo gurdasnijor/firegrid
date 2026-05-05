@@ -19,7 +19,8 @@
     "@durable-streams/client": "^0.2.3",
     "@durable-streams/state": "^0.2.5",
     "@tanstack/db": "^0.5.0",
-    "effect": "^3.18.0"
+    "effect": "^3.18.0",
+    "xstate": "^5.31.0"
   },
   "devDependencies": {
     "@durable-streams/server": "^0.3.1",
