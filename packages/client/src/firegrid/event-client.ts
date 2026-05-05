@@ -24,7 +24,7 @@ import {
 // barrel so browser bundlers never resolve Node-only substrate modules
 // while compiling EventStream emit/events.
 
-export interface FiregridClientConfig {
+export interface EventStreamClientConfig {
   readonly streamUrl: string
   readonly contentType?: string
   readonly clientId?: string
@@ -61,7 +61,7 @@ export class EventStreamReadError extends Data.TaggedError(
 export type EmitError = EventStreamEncodeError | EventStreamAppendError
 export type EventsError = EventStreamReadError | EventStreamDecodeError
 
-export interface FiregridClientService {
+export interface EventStreamClientService {
   readonly emit: <S extends EventStream.Any>(
     stream: S,
     event: EventStream.Event<S>,
@@ -72,9 +72,9 @@ export interface FiregridClientService {
   ) => Stream.Stream<EventStream.Event<S>, EventsError>
 }
 
-export class FiregridClient extends Context.Tag("firegrid/FiregridClient")<
-  FiregridClient,
-  FiregridClientService
+export class EventStreamClient extends Context.Tag("firegrid/EventStreamClient")<
+  EventStreamClient,
+  EventStreamClientService
 >() {}
 
 const encodeEvent = <S extends EventStream.Any>(
@@ -103,14 +103,14 @@ const nextEventId = (): string =>
   `${Date.now()}:${Math.random().toString(36).slice(2)}`
 
 export const buildEventStreamService = (
-  cfg: FiregridClientConfig,
-): FiregridClientService => {
+  cfg: EventStreamClientConfig,
+): EventStreamClientService => {
   const durable = new DurableStream({
     url: cfg.streamUrl,
     contentType: cfg.contentType ?? "application/json",
   })
 
-  const emit: FiregridClientService["emit"] = (stream, event) =>
+  const emit: EventStreamClientService["emit"] = (stream, event) =>
     encodeEvent(stream, event).pipe(
       Effect.flatMap((encoded) =>
         Effect.tryPromise({
@@ -157,7 +157,7 @@ export const buildEventStreamService = (
       ),
     )
 
-  const events: FiregridClientService["events"] = (stream) =>
+  const events: EventStreamClientService["events"] = (stream) =>
     rawEvents(stream).pipe(
       Stream.filterMapEffect((row) => {
         const envelope = eventStreamEnvelopeFromStateRow(row)
@@ -170,25 +170,11 @@ export const buildEventStreamService = (
   return { emit, events }
 }
 
-export const FiregridClientLive = (
-  cfg: FiregridClientConfig,
-): Layer.Layer<FiregridClient> =>
-  Layer.succeed(FiregridClient, buildEventStreamService(cfg))
+export const EventStreamClientLive = (
+  cfg: EventStreamClientConfig,
+): Layer.Layer<EventStreamClient> =>
+  Layer.succeed(EventStreamClient, buildEventStreamService(cfg))
 
 export {
-  EVENT_STREAM_ENVELOPE_TAG,
-  EVENT_STREAM_ROW_TYPE,
-  eventStreamEnvelopeFromStateRow,
-  eventStreamStateKey,
   EventStream,
-  isEventStreamStateRow,
-  isEventStreamEnvelope,
-  makeEventStreamEnvelope,
-  makeEventStreamStateRow,
-  Operation,
-  OperationHandle,
-  OPERATION_ENVELOPE_TAG,
-  type EventStreamEnvelope,
-  type EventStreamStateRow,
-  type OperationEnvelope,
 } from "@durable-agent-substrate/substrate/descriptors"

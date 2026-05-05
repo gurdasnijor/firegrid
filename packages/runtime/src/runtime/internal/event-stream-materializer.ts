@@ -3,7 +3,7 @@ import {
   eventStreamEnvelopeFromStateRow,
   isEventStreamEnvelope,
   type EventStream,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/descriptors"
 import { Cause, Data, Effect, Option, type ParseResult, Schema, type Scope, Stream } from "effect"
 import {
   RuntimeContext,

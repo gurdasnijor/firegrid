@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import * as Substrate from "@durable-agent-substrate/substrate"
+import * as SubstrateKernel from "@durable-agent-substrate/substrate/kernel"
 import * as RuntimeSurface from "../index.ts"
 
 // firegrid-architecture-boundary.DEPENDENCY_GRAPH.2
@@ -107,10 +108,15 @@ describe("firegrid-architecture-boundary.DEPENDENCY_GRAPH — runtime does not r
   })
 
   it("substrate is the source of truth for row schemas", () => {
-    expect(Substrate.RunValue).toBeDefined()
-    expect(Substrate.CompletionValue).toBeDefined()
-    expect(Substrate.ClaimAttemptValue).toBeDefined()
-    expect(Substrate.TraceValue).toBeDefined()
+    expect(SubstrateKernel.RunValue).toBeDefined()
+    expect(SubstrateKernel.CompletionValue).toBeDefined()
+    expect(SubstrateKernel.ClaimAttemptValue).toBeDefined()
+    expect(SubstrateKernel.TraceValue).toBeDefined()
+    const root = Substrate as unknown as Record<string, unknown>
+    expect(root.RunValue).toBeUndefined()
+    expect(root.CompletionValue).toBeUndefined()
+    expect(root.ClaimAttemptValue).toBeUndefined()
+    expect(root.TraceValue).toBeUndefined()
   })
 
   it("the runtime root introduces no banned product-domain row families", () => {

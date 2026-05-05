@@ -1,6 +1,6 @@
 import {
-  FiregridClient,
-  FiregridClientLive,
+  EventStreamClient,
+  EventStreamClientLive,
   type EventsError,
   type EmitError,
 } from "@durable-agent-substrate/client/firegrid"
@@ -24,7 +24,7 @@ export interface LabEventStreamClientConfig {
 }
 
 const layerFor = (cfg: LabEventStreamClientConfig) =>
-  FiregridClientLive({
+  EventStreamClientLive({
     streamUrl: cfg.streamUrl,
     clientId: "firegrid-lab",
   })
@@ -34,7 +34,7 @@ export const emitLabEvent = (
   event: LabEvent,
 ): Effect.Effect<void, EmitError> =>
   Effect.gen(function* () {
-    const client = yield* FiregridClient
+    const client = yield* EventStreamClient
     yield* client.emit(LabEvents, event)
   }).pipe(Effect.provide(layerFor(cfg)))
 
@@ -43,7 +43,7 @@ export const labEvents = (
 ): Stream.Stream<LabEvent, EventsError> =>
   Stream.unwrap(
     Effect.gen(function* () {
-      const client = yield* FiregridClient
+      const client = yield* EventStreamClient
       return client.events(LabEvents)
     }).pipe(Effect.provide(layerFor(cfg))),
   )

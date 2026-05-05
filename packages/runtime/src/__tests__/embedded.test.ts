@@ -1,4 +1,4 @@
-import { rebuildProjection } from "@durable-agent-substrate/substrate"
+import { rebuildProjection } from "@durable-agent-substrate/substrate/kernel"
 import { Data, Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { FiregridRuntime, FiregridRuntimeBoot } from "../index.ts"

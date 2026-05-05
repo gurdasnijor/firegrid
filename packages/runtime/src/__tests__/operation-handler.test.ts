@@ -2,9 +2,11 @@ import { DurableStream } from "@durable-streams/client"
 import {
   Operation,
   OPERATION_ENVELOPE_TAG,
+} from "@durable-agent-substrate/substrate/descriptors"
+import {
   rebuildProjection,
   startRun,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/kernel"
 import { Data, Effect, Schedule, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { Firegrid, FiregridRuntime, FiregridRuntimeBoot } from "../index.ts"

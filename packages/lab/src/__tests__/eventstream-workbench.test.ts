@@ -1,9 +1,4 @@
 import { DurableStream } from "@durable-streams/client"
-import {
-  EVENT_STREAM_ENVELOPE_TAG,
-  EVENT_STREAM_ROW_TYPE,
-  isEventStreamStateRow,
-} from "@durable-agent-substrate/client/firegrid"
 import { readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -30,6 +25,38 @@ afterAll(async () => {
 
 const here = dirname(fileURLToPath(import.meta.url))
 const labRoot = resolve(here, "..", "lab")
+
+interface LabEventStreamStateRow {
+  readonly type: "firegrid.event"
+  readonly key: string
+  readonly value: {
+    readonly _envelope: "firegrid/event@1"
+    readonly stream: string
+    readonly event: unknown
+  }
+  readonly headers: {
+    readonly operation: "insert"
+  }
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
+const isLabEventStreamStateRow = (
+  value: unknown,
+): value is LabEventStreamStateRow => {
+  if (!isObject(value) || !isObject(value.value) || !isObject(value.headers)) {
+    return false
+  }
+
+  return (
+    value.type === "firegrid.event" &&
+    typeof value.key === "string" &&
+    value.value._envelope === "firegrid/event@1" &&
+    typeof value.value.stream === "string" &&
+    value.headers.operation === "insert"
+  )
+}
 
 describe("runtime-lab-inspector.WRITE_BOUNDARY.1 + firegrid-event-streams.CLIENT_API.1-.3 — typed lab EventStream workbench uses the Firegrid client", () => {
   it("emits through the lab helper and replays decoded events through the Stream-first helper", async () => {
@@ -59,16 +86,16 @@ describe("runtime-lab-inspector.WRITE_BOUNDARY.1 + firegrid-event-streams.CLIENT
     )
 
     const row = retained[0]
-    expect(isEventStreamStateRow(row)).toBe(true)
-    if (!isEventStreamStateRow(row)) {
+    expect(isLabEventStreamStateRow(row)).toBe(true)
+    if (!isLabEventStreamStateRow(row)) {
       throw new Error("expected typed lab EventStream state row")
     }
     expect(row.key.startsWith("firegrid.lab.events:")).toBe(true)
     expect(row).toEqual({
-      type: EVENT_STREAM_ROW_TYPE,
+      type: "firegrid.event",
       key: row.key,
       value: {
-        _envelope: EVENT_STREAM_ENVELOPE_TAG,
+        _envelope: "firegrid/event@1",
         stream: "firegrid.lab.events",
         event: first,
       },
@@ -92,8 +119,11 @@ describe("runtime-lab-inspector.NO_PRIVILEGED_LAB.2 — typed workbench does not
     const combined = `${clientHelper}\n${panel}\n${descriptor}`
 
     expect(combined).toContain("@durable-agent-substrate/client/firegrid")
+    expect(combined).toContain("EventStreamClientLive")
     expect(combined).not.toContain("@firegrid/runtime")
     expect(combined).not.toContain("@durable-agent-substrate/substrate")
+    expect(combined).not.toContain("@durable-agent-substrate/client\"")
+    expect(combined).not.toContain("'@durable-agent-substrate/client'")
     expect(combined).not.toContain("@durable-streams/client")
     expect(combined).not.toContain(".append(")
     expect(combined).not.toContain("work.declare")

@@ -7,7 +7,7 @@ import {
   rebuildProjection,
   type ProjectionQuery,
   type RunValue,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/kernel"
 
 // launchable-substrate-host.CLIENT_SURFACE.1
 // launchable-substrate-host.CLIENT_SURFACE.3

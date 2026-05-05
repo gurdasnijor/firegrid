@@ -1,9 +1,9 @@
 import {
   completeRun,
   IllegalRunTransition,
-  Operation,
   type CompletionValue,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/kernel"
+import { Operation } from "@durable-agent-substrate/substrate"
 import { Deferred, Effect, Fiber, Ref, Schema } from "effect"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"

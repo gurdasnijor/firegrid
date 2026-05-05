@@ -1,7 +1,7 @@
 import { DurableStream } from "@durable-streams/client"
 import { Effect, Either } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as substrate from "../index.ts"
+import * as substrate from "../kernel/index.ts"
 import {
   ClaimMissingCursorError,
   ClaimStreamError,

@@ -9,14 +9,13 @@ import {
   type ProjectionReadError,
   type ProjectionWaitTimeout,
   type RunValue,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/kernel"
 import {
   Data,
   Effect,
   Layer,
   Schema,
   Stream,
-  type Context,
   type ParseResult,
 } from "effect"
 import {
@@ -26,9 +25,13 @@ import {
 } from "../client/service.ts"
 import {
   buildEventStreamService,
-  FiregridClient as BrowserFiregridClient,
-  type FiregridClientService as EventStreamFiregridClientService,
 } from "./event-client.ts"
+import {
+  FiregridClient,
+  type FiregridClientConfig,
+  type FiregridClientService,
+  type OperationState,
+} from "./client.ts"
 
 // firegrid-operation-messaging.CLIENT_MESSAGING.1
 // firegrid-operation-messaging.CLIENT_MESSAGING.2
@@ -107,14 +110,6 @@ export {
 export type { EmitError, EventsError } from "./event-client.ts"
 
 // ────────────────────────────────────────────────────────────────
-// OperationState (narrow, grounded directly in substrate run states)
-
-export type OperationState<Op extends Operation.Any> =
-  | { readonly _tag: "Pending" }
-  | { readonly _tag: "Completed"; readonly output: Operation.Output<Op> }
-  | { readonly _tag: "Failed"; readonly error: Operation.Error<Op> }
-  | { readonly _tag: "Cancelled"; readonly terminalReason?: unknown }
-
 const isTerminalRun = (run: RunValue | undefined): boolean =>
   run !== undefined &&
   (run.state === "completed" ||
@@ -123,44 +118,6 @@ const isTerminalRun = (run: RunValue | undefined): boolean =>
 
 // ────────────────────────────────────────────────────────────────
 // Service
-
-export interface FiregridClientService extends EventStreamFiregridClientService {
-  readonly send: <Op extends Operation.Any>(
-    op: Op,
-    input: Operation.Input<Op>,
-  ) => Effect.Effect<OperationHandle<Op>, SendError>
-
-  readonly result: <Op extends Operation.Any>(
-    op: Op,
-    handle: OperationHandle<Op>,
-  ) => Effect.Effect<
-    Operation.Output<Op>,
-    ResultError | Operation.Error<Op>
-  >
-
-  readonly call: <Op extends Operation.Any>(
-    op: Op,
-    input: Operation.Input<Op>,
-  ) => Effect.Effect<
-    Operation.Output<Op>,
-    SendError | ResultError | Operation.Error<Op>
-  >
-
-  readonly observe: <Op extends Operation.Any>(
-    op: Op,
-    handle: OperationHandle<Op>,
-  ) => Stream.Stream<OperationState<Op>, ObserveError>
-
-}
-
-declare const FullFiregridClientIdentifier: unique symbol
-export interface FiregridClient {
-  readonly [FullFiregridClientIdentifier]?: typeof FullFiregridClientIdentifier
-}
-export const FiregridClient = BrowserFiregridClient as unknown as Context.Tag<
-  FiregridClient,
-  FiregridClientService
->
 
 // Re-export descriptor namespaces so app code can import a single
 // client module for operation messaging and EventStream APIs.
@@ -236,8 +193,15 @@ const mapRunToState = <Op extends Operation.Any>(
   })
 }
 
-const buildService = (cfg: SubstrateClientConfig): FiregridClientService => {
+export const buildFiregridClientService = (
+  cfg: FiregridClientConfig,
+): FiregridClientService => {
   const eventStreams = buildEventStreamService(cfg)
+  const substrateCfg: SubstrateClientConfig = {
+    streamUrl: cfg.streamUrl,
+    clientId: cfg.clientId ?? "firegrid-client",
+    ...(cfg.contentType !== undefined ? { contentType: cfg.contentType } : {}),
+  }
 
   const withSubstrate = <A, E>(
     f: (client: typeof SubstrateClient.Service) => Effect.Effect<A, E>,
@@ -245,7 +209,7 @@ const buildService = (cfg: SubstrateClientConfig): FiregridClientService => {
     Effect.gen(function* () {
       const client = yield* SubstrateClient
       return yield* f(client)
-    }).pipe(Effect.provide(SubstrateClientLive(cfg)))
+    }).pipe(Effect.provide(SubstrateClientLive(substrateCfg)))
 
   const send: FiregridClientService["send"] = (op, input) =>
     Schema.encodeUnknown(op.input as Schema.Schema.AnyNoContext)(input).pipe(
@@ -325,14 +289,22 @@ const buildService = (cfg: SubstrateClientConfig): FiregridClientService => {
           .stream()
           .pipe(Stream.mapEffect((run) => mapRunToState(op, run)))
       }),
-    ).pipe(Stream.provideLayer(SubstrateClientLive(cfg)))
+    ).pipe(Stream.provideLayer(SubstrateClientLive(substrateCfg)))
 
   return { ...eventStreams, send, result, call, observe }
 }
 
-export type FiregridClientConfig = SubstrateClientConfig
-
 export const FiregridClientLive = (
   cfg: FiregridClientConfig,
 ): Layer.Layer<FiregridClient> =>
-  Layer.succeed(FiregridClient, buildService(cfg))
+  Layer.succeed(FiregridClient, buildFiregridClientService(cfg))
+
+export {
+  FiregridClient,
+}
+
+export type {
+  FiregridClientConfig,
+  FiregridClientService,
+  OperationState,
+} from "./client.ts"

@@ -1,18 +1,39 @@
-export * from "./descriptors/index.ts"
-export * from "./schema/index.ts"
-export * from "./projection.ts"
-export * from "./stream.ts"
-export * from "./state-machine.ts"
-export * from "./producer.ts"
-export * from "./projection/ready-work.ts"
-export * from "./operator.ts"
-export * from "./retained-records.ts"
-export * from "./waits.ts"
-export * from "./subscribers.ts"
-// ergonomic-facade — Phase 10 ergonomic Effect-native facade.
-export * from "./facade/index.ts"
-// client-event-plane-registration — Phase 11 client event planes / state producers.
-export * from "./event-plane/index.ts"
+// firegrid-remediation-hardening.PUBLIC_SURFACES.5
+// firegrid-architecture-boundary.SURFACE_AREA.1
+//
+// Curated substrate root. Raw kernel modules are available only from
+// `@durable-agent-substrate/substrate/kernel`.
+export {
+  EventStream,
+  Operation,
+  OperationHandle,
+  type EventStreamDescriptor,
+  type EventStreamDefinition,
+  type OperationDefinition,
+  type OperationDescriptor,
+  type OperationHandleId,
+} from "./descriptors/index.ts"
+
+export {
+  Projection,
+  ProjectionLive,
+  ProjectionReadError,
+  ProjectionWaitTimeout,
+  Work,
+  WorkClaim,
+  WorkClaimError,
+  WorkClaimLive,
+  type ClaimAttemptOutcome,
+  type Claimed,
+  type Performed,
+  type ProjectionLiveConfig,
+  type ProjectionQuery,
+  type ProjectionService,
+  type Recorded,
+  type WorkClaimLiveConfig,
+  type WorkClaimService,
+} from "./facade/index.ts"
+
 // choreography-facade — Phase 12 choreography facade (foundation slice).
 //
 // `ProjectionMatchTrigger` collides with the Phase-7 placeholder interface

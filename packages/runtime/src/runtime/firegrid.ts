@@ -7,7 +7,7 @@ import {
   type ProjectionSnapshot,
   type SubscriberError,
   type SubscriberInput,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/kernel"
 import { Effect, Layer } from "effect"
 import {
   minPendingDueAtMs,

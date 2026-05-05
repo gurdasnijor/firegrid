@@ -4,10 +4,12 @@ import {
   makeEventStreamStateRow,
   Operation,
   OPERATION_ENVELOPE_TAG,
+  type EventStreamStateRow,
+} from "@durable-agent-substrate/substrate/descriptors"
+import {
   rebuildProjection,
   startRun,
-  type EventStreamStateRow,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/kernel"
 import {
   Data,
   Deferred,
