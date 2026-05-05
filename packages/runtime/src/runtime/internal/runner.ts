@@ -11,12 +11,11 @@ import {
   Data,
   Duration,
   Effect,
-  Fiber,
+  Queue,
   Stream,
   type Scope,
 } from "effect"
 import { RuntimeContext, type RuntimeContextService } from "../runtime-context.ts"
-import { wakeStream } from "./wake-stream.ts"
 
 // firegrid-runtime-process.RUNTIME_HOT_PATH.1
 //
@@ -53,6 +52,11 @@ import { wakeStream } from "./wake-stream.ts"
 
 type CollectionsDb = SubstrateStreamDB
 
+interface DeadlineSchedule {
+  readonly nextDue: number | undefined
+  readonly nowMs: number
+}
+
 export class AcquireDbError extends Data.TaggedError("AcquireDbError")<{
   readonly cause: unknown
 }> {}
@@ -87,6 +91,20 @@ export const subscribeCompletions = (
   const sub = db.collections.completions.subscribeChanges(onEdge)
   return () => sub.unsubscribe()
 }
+
+const deadlineWakeStream = (
+  schedules: Queue.Dequeue<DeadlineSchedule>,
+): Stream.Stream<void> =>
+  Stream.fromQueue(schedules).pipe(
+    Stream.flatMap(
+      ({ nextDue, nowMs }) => {
+        if (nextDue === undefined) return Stream.empty
+        const delayMs = Math.max(0, nextDue - nowMs)
+        return Stream.fromEffect(Effect.sleep(Duration.millis(delayMs)))
+      },
+      { concurrency: 1, switch: true, bufferSize: 1 },
+    ),
+  )
 
 interface ScopedProgramInput<E> {
   readonly subscribe: (db: CollectionsDb, onEdge: () => void) => () => void
@@ -129,42 +147,36 @@ export const runScopedSubscriberLoopFromDb = <E>(
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
-      let scheduleDeadline: (
+      const wakeEvents = yield* Queue.sliding<void>(1)
+      const deadlineSchedules = yield* Queue.sliding<DeadlineSchedule>(1)
+      yield* Effect.addFinalizer(() =>
+        Queue.shutdown(wakeEvents).pipe(
+          Effect.zipRight(Queue.shutdown(deadlineSchedules)),
+        ),
+      )
+      const wake = () => {
+        void wakeEvents.unsafeOffer(undefined)
+      }
+      const scheduleDeadline = (
         nextDue: number | undefined,
         nowMs: number,
-      ) => Effect.Effect<void> = () => Effect.void
+      ) =>
+        Queue.offer(deadlineSchedules, { nextDue, nowMs }).pipe(Effect.asVoid)
 
-      const wakes = wakeStream((wake) =>
-        Effect.gen(function* () {
-          let deadlineFiber:
-            | Fiber.RuntimeFiber<void, never>
-            | undefined
-          const clearDeadline = (): Effect.Effect<void> => {
-            if (deadlineFiber === undefined) return Effect.void
-            const fiber = deadlineFiber
-            deadlineFiber = undefined
-            return Fiber.interrupt(fiber).pipe(Effect.asVoid)
-          }
-          scheduleDeadline = (nextDue, nowMs) => {
-            return Effect.gen(function* () {
-              yield* clearDeadline()
-              if (nextDue === undefined) return
-              const delayMs = Math.max(0, nextDue - nowMs)
-              deadlineFiber = yield* Effect.sleep(
-                Duration.millis(delayMs),
-              ).pipe(Effect.tap(() => Effect.sync(wake)), Effect.fork)
-            })
-          }
-          const unsubscribe = input.subscribe(db, wake)
-          wake()
-          return Effect.sync(() => {
-            scheduleDeadline = () => Effect.void
-          }).pipe(
-            Effect.zipRight(clearDeadline()),
-            Effect.zipRight(Effect.sync(unsubscribe)),
-          )
-        }),
+      yield* deadlineWakeStream(deadlineSchedules).pipe(
+        Stream.runForEach(() => Effect.sync(wake)),
+        Effect.forkScoped,
       )
+      yield* Effect.acquireRelease(
+        Effect.sync(() => input.subscribe(db, wake)),
+        (unsubscribe) => Effect.sync(unsubscribe),
+      )
+      wake()
+      // firegrid-remediation-hardening.EFFECT_CONSISTENCY.3
+      // Subscription and deadline edges both mean "re-read the live
+      // snapshot"; a single sliding queue preserves coalescing across
+      // both wake sources while a scan is in flight.
+      const wakes = Stream.fromQueue(wakeEvents)
 
       return yield* wakes.pipe(
         Stream.mapEffect(() =>
