@@ -34,23 +34,13 @@ components:
       1: The substrate host is a launchable process that starts or connects to a Durable Streams endpoint.
       2: The host runs configured substrate subscribers and operator programs from durable streams/state.
       3: The host can run timer and scheduled-work subscribers.
+      3-note: The first host-managed subscriber loop slice covers timer and scheduled-work subscribers as scoped fibers enabled by runtime profile configuration, using existing substrate subscriber functions, explicit intervals, and non-overlapping scans per subscriber kind.
       4: The host can run projection-match subscriber profiles supplied by the runtime.
       5: The host can run claim-before-side-effect operator profiles.
       6: The host exposes read-only lifecycle status for local tooling.
+      6-note: Before HTTP diagnostics land, subscriber loop status may be exposed through an in-process read-only host service with enabled/running flags, scan timestamps, counts, and a non-secret last error summary.
       7: The host shuts down through Effect scopes and process-signal handling.
       8: The first host package owns embedded Durable Streams dev-server startup rather than requiring a separate CLI or dev package.
-
-  HOST_SUBSCRIBER_LOOPS:
-    requirements:
-      1: Timer and scheduled-work subscriber loops are host-managed scoped fibers enabled by the runtime profile.
-      2: Host subscriber loops call the existing substrate subscriber functions rather than reimplementing completion transition logic.
-      3: Each host subscriber loop scans the resolved host substrate stream using the host stream URL and content type.
-      4: Subscriber loop intervals are explicit host configuration with a conservative default.
-      5: A subscriber loop does not overlap scans for the same subscriber kind; the next scan waits for the current scan to finish.
-      6: Subscriber scan failures are captured in read-only host loop status and do not become a separate durable authority.
-      7: Subscriber loop status includes whether the loop is enabled and running, last scan start and finish times, scan counts, success counts, failure counts, and the last non-secret error summary.
-      8: Disabling a subscriber loop in the runtime profile means the host does not start that loop fiber.
-      9: Host subscriber loops do not introduce host mutation endpoints, raw append APIs, or new substrate-native row families.
 
   HOST_CONFIGURATION:
     requirements:

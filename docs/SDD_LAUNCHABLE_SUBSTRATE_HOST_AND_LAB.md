@@ -461,15 +461,15 @@ the authority for scan-and-resolve behavior.
 
 Spec anchors:
 
-- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.1`
-- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.2`
-- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.3`
-- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.4`
-- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.5`
-- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.6`
-- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.7`
-- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.8`
-- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.9`
+- `launchable-substrate-host.HOST_PROCESS.3`
+- `launchable-substrate-host.HOST_PROCESS.6`
+- `launchable-substrate-host.RUNTIME_COMPOSITION.1`
+- `launchable-substrate-host.RUNTIME_COMPOSITION.2`
+- `launchable-substrate-host.RUNTIME_COMPOSITION.3`
+- `launchable-substrate-host.RUNTIME_COMPOSITION.9`
+- `launchable-substrate-host.AUTHORITY_BOUNDARY.2`
+- `launchable-substrate-host.NO_CONTROL_PLANE.1`
+- `launchable-substrate-host.NO_CONTROL_PLANE.3`
 
 The first host-managed loop profile covers only:
 
