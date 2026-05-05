@@ -780,6 +780,78 @@ Operational guidance:
   the reviews classify many of those as micro-syntax style debt rather than
   architecture defects.
 
+The raw detector file at `/tmp/firegrid-detect.json` was also inspected. It is
+not committed because it includes tests, fixtures, generated guard fixtures, and
+all detector categories. Filtered to production source under `packages/*/src`
+and `apps/*/src`, excluding tests and fixtures, it contains roughly 900
+findings, with 272 definite findings. The highest-signal categories remain the
+same as the curated reviews: conditionals, error modeling, async boundaries,
+imperative loops, schema boundary modeling, and direct discriminant checks.
+
+### Effect Skill Review Inputs
+
+Three additional skill-focused reviews refine the remediation plan:
+
+- `docs/REVIEW_EFFECT_CONCURRENCY_2026-05-05.md`
+- `docs/REVIEW_EFFECT_CONFIGURATION_2026-05-05.md`
+- `docs/REVIEW_EFFECT_RESOURCE_MANAGEMENT_2026-05-05.md`
+
+Concurrency implications:
+
+- The runtime's long-running loops are structurally sound: `Stream.asyncScoped`
+  and `Effect.forkScoped` are used under scoped layers for runner,
+  operation-handler, and materializer lifetimes.
+- The deadline timer in `packages/runtime/src/runtime/internal/runner.ts`
+  should use `Effect.forkScoped` rather than bare `Effect.fork`.
+- The operation-handler's serial dispatch is an intentional v1 invariant and
+  should be named in code before any future concurrency expansion.
+- Choreography suspension via `Effect.interrupt` remains a deliberate design
+  decision because suspension must be durable, not in-process.
+
+Configuration implications:
+
+- Firegrid has one production `process.env` read,
+  `packages/runtime/bin/firegrid.ts`, and otherwise passes plain config shapes
+  through Layers.
+- The right Effect Config adoption point is the binary/runtime boundary, not
+  every downstream `*Config` interface.
+- A future `RuntimeConfigLive` layer should read `DURABLE_STREAMS_URL` via
+  `Config.option(Config.string(...))`, validate the URL, and provide
+  `RuntimeContext`.
+- Do not make substrate/client layer factories read environment variables
+  directly; they should continue receiving plain values from the runtime edge.
+
+Resource-management implications:
+
+- `acquireSubstrateDb`, `acquireStreamDb`, `wakeStream`, projection streams, and
+  runtime materializer sessions already follow scoped acquire/release patterns.
+- `packages/client/src/firegrid/operation-client.ts` still builds
+  `SubstrateClientLive(substrateCfg)` per public client call. That means
+  send/result/call can open, preload, and close a StreamDB per operation. This
+  is a stronger client-structure issue than a naming issue.
+- `apps/lab/src/lab/RawStreamInspector.tsx` still owns an unscoped live stream
+  session. It should mirror the `Effect.runFork` / `Fiber.interrupt` boundary
+  used by `LabEventStreamPanel`.
+- `packages/substrate/src/retained-records.ts` opens a non-live stream session
+  for hot-path reads without an explicit `cancel()` finalizer. It should use an
+  `Effect.acquireRelease` bracket around the stream session.
+- The repeated `new DurableStream(...)` construction pattern is not currently a
+  leak if the handle remains disposable-free, but it is an architectural seam.
+  A future scoped helper can centralize the construction before the upstream
+  client grows release semantics.
+
+These reviews do not change the package-boundary target, but they do change the
+order of cleanup. The highest-leverage next slices are:
+
+1. Fix scoped resource leaks and per-call layer construction before large naming
+   moves.
+2. Add runtime/config boundary cleanup at `bin/firegrid.ts` and
+   `RuntimeContext`.
+3. Triage Data-vs-Schema tagged error policy before running broad error
+   codemods.
+4. Use detector-backed strict rules only after the corresponding source cleanup
+   lands.
+
 Dependency-cruiser and ESLint are the current enforcement tools. If those tools
 change, the same properties must remain enforced by CI.
 
@@ -804,6 +876,9 @@ Migration steps:
    internal durable-core folders into separate workspace packages.
 7. Triage Effect detector findings into policy decisions, remediation slices,
    and future local strict rules.
+8. Address resource/configuration findings that would otherwise obscure package
+   boundary cleanup, especially per-call client layer construction and unscoped
+   stream sessions.
 
 ## Success Criteria
 
