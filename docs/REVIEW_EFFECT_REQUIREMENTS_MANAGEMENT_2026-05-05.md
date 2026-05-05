@@ -108,7 +108,7 @@ hit — the literal-text guard at
 `effect-consistency.test.ts:78`. `\.Default\b` returns only the
 matching negative assertion at `:79`. R7's cutover is complete.
 
-### 4. `Layer.*` constructor selection per intent
+### 3. `Layer.*` constructor selection per intent
 
 Constructor choice tracks the SKILL's mapping:
 
@@ -142,7 +142,7 @@ exposes no explicit `acquireRelease` shape, so the current
 `Layer.sync` / `Layer.effect` choice tracks the upstream API. Not
 actionable.
 
-### 5. `Effect.provide` vs `Effect.provideService`
+### 4. `Effect.provide` vs `Effect.provideService`
 
 Production `Effect.provide(...)` sites: `runtime/bin/firegrid.ts:87,
 138, 154` (boot-time runtime + `NodeContext.layer`),
@@ -299,46 +299,37 @@ gap. Cross-reference the testing review; not duplicating here.
 
 - `Effect.Service` and `.Default` are forbidden in
   `packages/substrate/src/producer.ts` by literal source-text checks
-  (`effect-consistency.test.ts:75-105`). The same test asserts that
-  `WorkProducer` and `CompletionProducer` use `Context.Tag` +
-  `Layer.succeed` and that `SubstrateProducerLive(config)` returns a
-  Layer with zero remaining requirements when given `streamUrl`.
+  (`effect-consistency.test.ts:75-105`). The same test asserts
+  `Context.Tag` + `Layer.succeed` for `WorkProducer` /
+  `CompletionProducer`, and that `SubstrateProducerLive(config)`
+  returns a zero-requirement Layer.
 - Public expected error classes do not extend `Error` or hand-roll
-  `_tag` (`effect-consistency.test.ts:60-72`, scanning
-  `operator-errors.ts`, `operator.ts`, `retained-records.ts`,
-  `waits.ts`, `choreography/service.ts`).
-- `Effect.runPromise|runSync|runFork` are warn-restricted by
-  `eslint.config.js` outside the documented binary entry and lab
-  React boundary (cross-reference: runtime review).
-- Public-surface tests pin the curated substrate root export shape
-  (`public-surface.test.ts:19, 39`).
+  `_tag` (`effect-consistency.test.ts:60-72`).
+- `Effect.runPromise|runSync|runFork` are ESLint-restricted (warn)
+  outside the documented binary and lab React boundary.
+- The substrate public-surface export shape is pinned by
+  `public-surface.test.ts`.
 
 **Gaps not enforced:**
 
-- No guard prevents a future
-  `Firegrid.handler` from forgetting to provide
-  `CurrentWorkContext`. A plausible enforcement: a runtime test
-  that wires a handler using `Choreography.sleep` and asserts the
-  Effect returns instead of dying with "Service not found:
-  substrate/CurrentWorkContext". Today the surface typechecks
-  because `CurrentWorkContext` propagates outward as part of the
-  caller's `R`.
-- The convention-uniformity guard is producer-scoped only. There is
-  no test that walks every package's source tree asserting "no
-  `Effect.Service`" globally. Easy to add.
+- No guard catches a `Firegrid.handler` that forgets
+  `CurrentWorkContext`. A runtime test wiring a handler that uses
+  `Choreography.sleep` and asserting the dispatch loop completes
+  (instead of dying with "Service not found:
+  substrate/CurrentWorkContext") would close finding 1
+  permanently. Today the surface typechecks because
+  `CurrentWorkContext` propagates outward as part of `R`.
+- The Tag-uniformity guard is producer-scoped only — no repo-wide
+  "no `Effect.Service`" assertion. Easy to add.
 - No guard catches per-call layer construction (finding 6). A
   repo-wide ESLint or static check could flag
-  `Effect.provide(<Tag>Live(...))` inside a function body that is
-  itself `Effect.gen`-shaped.
-- No test pins the layer-constructor selection. A repo-wide
-  inventory step that reports which Tags use `Layer.scoped` vs
-  `Layer.succeed` exists in `effect-artifact-inventory.json`
-  (referenced from `SDD_FIREGRID_EFFECT_QUALITY.md`), but it is not
-  failing.
+  `Effect.provide(<Tag>Live(...))` inside an `Effect.gen` body.
+- No test pins layer-constructor selection. The inventory in
+  `docs/effect-artifact-inventory.json` records the choices but
+  does not fail builds.
 
-The strict baseline shape is "correct conventions, with one runtime
-correctness gap (finding 1) that the convention guard cannot see
-because it is a wiring omission, not a syntactic one". Closing
-finding 1 plus adding the global Tag-usage guard (finding 3 in
-"What strict-baseline enforces") and the per-call layer-construction
-guard (finding 6) covers the rest.
+The strict baseline is "correct conventions, with one runtime
+correctness gap (finding 1) that no syntactic guard can see because
+it is a wiring omission". Closing finding 1, adding the global
+Tag-usage guard, and adding the per-call layer-construction guard
+covers the remainder.

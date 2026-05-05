@@ -46,6 +46,7 @@ Review inputs:
 - `docs/REVIEW_EFFECT_STATE_MANAGEMENT_2026-05-05.md`
 - `docs/REVIEW_EFFECT_STREAMS_2026-05-05.md`
 - `docs/REVIEW_EFFECT_REQUIREMENTS_MANAGEMENT_2026-05-05.md`
+- `docs/REVIEW_EFFECT_CORE_2026-05-05.md`
 
 External detector reference:
 
@@ -302,6 +303,28 @@ Additional error-management findings:
 - document the `Data.TaggedError` policy in the repo's code-style guidance
 - make `Effect.orDie` justification comments mechanically auditable if the
   guardrail evolves beyond warning on the call itself
+
+## Effect-Core Findings
+
+The Effect-core review finds post-R0B fundamentals are solid:
+constructor selection is consistent, I/O boundaries use `tryPromise`,
+run boundaries are confined to the runtime binary and documented React lab
+bridges, and multi-step logic generally uses `Effect.gen` while simple
+transforms use pipes.
+
+Actionable findings:
+
+- flatten the remaining one-yield `findExisting` gen in `waits.ts`
+- resolve or document the unusual `Effect.try(blockRun)` wrapper in
+  choreography service
+- remove unnecessary `Effect.suspend` in event-plane producer if the closed-over
+  state is immutable
+- document the operator `Effect.either` shape as deliberate because a fresh
+  authoritative read must occur between handler exit and terminalization
+- optionally extract a helper for repeated choreography tool bindings
+
+These are style and legibility cleanups, except the `Effect.try(blockRun)` item
+which should be clarified before broader state-machine shim retirement.
 
 ## Data-Type Findings
 
@@ -680,12 +703,14 @@ the relevant protection.
     Request primitives.
 12. Replace direct `_tag` probes and the operator `Either` cluster with
     Effect data-type matchers.
-13. Add first-pass observability at claim and operation-dispatch boundaries.
-14. Adopt `@effect/vitest` on pure/time-sensitive tests before broad test
+13. Resolve the choreography `Effect.try(blockRun)` question and document the
+    operator `Effect.either` authority-read shape.
+14. Add first-pass observability at claim and operation-dispatch boundaries.
+15. Adopt `@effect/vitest` on pure/time-sensitive tests before broad test
    rewrites.
-15. Address async boundary escapes, selected imperative loops, and schema
+16. Address async boundary escapes, selected imperative loops, and schema
    boundary modeling as focused slices.
-16. Use detector-backed strict rules only after the corresponding source cleanup
+17. Use detector-backed strict rules only after the corresponding source cleanup
    lands.
 
 ## Future Strict Guards
@@ -708,6 +733,8 @@ Candidate strict gates after remediation:
   single-error channel
 - no fan-out `Stream.async` without an explicit buffer/backpressure decision
 - no raw durable-streams async iteration outside an explicit Effect bridge
+- no `Effect.try` wrapper around a function that already returns `Effect`
+  unless the call is explicitly crossing a throwing shim
 
 Do not flip these gates before cleanup. They should first run as advisory
 reports or narrowly scoped local rules.

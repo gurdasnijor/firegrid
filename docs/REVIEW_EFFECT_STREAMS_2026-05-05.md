@@ -62,16 +62,16 @@ The materializer deliberately uses `Stream.async` over `subscribeJson` instead o
 
 ### F7. Channel composition
 
-**Zero `Channel` uses across the codebase.** Effect's `Channel` primitive sits below `Stream` and is warranted when you need bidirectional flow, custom protocol framing, or chunk-aware folding that the `Stream` API doesn't expose. Firegrid has none of these: every stream is a one-way pipe from a subscription source to a consumer, items are processed one at a time (no chunk-fold optimization opportunities), and there is no protocol framing under the durable-streams client (which already presents a parsed `JsonBatch` shape). Reaching for `Channel` here would be premature lowering. **No remediation.**
+**Zero `Channel` uses.** `Channel` would be warranted for bidirectional flow, custom protocol framing, or chunk-aware folding. Firegrid has none: every stream is one-way, items are processed one at a time, durable-streams already presents a parsed `JsonBatch` shape. Reaching for `Channel` here would be premature lowering.
 
-### F8. Stream cancellation semantics (consumer interrupt → upstream teardown)
+### F8. Stream cancellation semantics
 
-**Cross-reference, do not duplicate.** Resource-management review §"Stream cancellation" already enumerates this. The relevant streams-side observation is:
+Cross-reference resource-management §"Stream cancellation". Streams-side observations:
 
-- `wakeStream` finalization: `Stream.asyncScoped` runs the `Effect.acquireRelease` finalizer on consumer interrupt; the user `subscribe` returns a finalizer Effect that runs `unsubscribe`. Verified.
-- `Stream.unwrapScoped` (event-client, operation-client): consumer interrupt → outer scope close → `acquireRelease` release → `response.cancel()` / layer finalize. Verified.
-- `Stream.fromAsyncIterable` cancellation: depends on the underlying iterator honoring `.return()`. Combined with the explicit `response.cancel()` finalizer registered around the `acquireRelease`, teardown is deterministic for the durable-streams session.
-- `RawStreamInspector` (apps/lab): not an Effect Stream — uses raw `for await` over `session.jsonStream()`. The leak is on the React side; a `Stream.fromAsyncIterable` rewrite + `Stream.runForEach` (mirroring `LabEventStreamPanel`) would fix it by inheriting the same cancellation chain. Concurrency review and resource-management review both list this as the headline lab finding; it is the single highest-leverage change in the lab UI.
+- `wakeStream` finalization: `Stream.asyncScoped`'s `Effect.acquireRelease` finalizer runs user `unsubscribe` on consumer interrupt. Verified.
+- `Stream.unwrapScoped` (event-client, operation-client): consumer interrupt → scope close → `response.cancel()` / layer finalize. Verified.
+- `Stream.fromAsyncIterable` cancellation depends on iterator `.return()`; combined with the explicit `response.cancel()` finalizer one layer up, teardown is deterministic.
+- `RawStreamInspector` (apps/lab): not an Effect Stream — raw `for await`. The leak is React-side; rewriting to `Stream.fromAsyncIterable` + `Stream.runForEach` (mirroring `LabEventStreamPanel`) would fix it by inheriting the same cancellation chain. Headline lab finding (concurrency + resource-management).
 
 ## Out of scope
 
@@ -83,15 +83,15 @@ The materializer deliberately uses `Stream.async` over `subscribeJson` instead o
 
 ## Top 5 improvements (priority order)
 
-1. **Document or address the materializer `Stream.async` default `bufferSize`** at `packages/runtime/src/runtime/internal/event-stream-materializer.ts:145`. The `void emit.single(item)` discards the back-pressure signal, so a slow `materialize` Effect plus a fast producer can silently drop items. Either size the buffer explicitly with a comment ("bufferSize: 64 — materialize is expected to complete in <100ms; raise if user materialize is heavy"), or migrate to a `Queue.bounded`-based bridge. Cost: small.
+1. **Document or fix the materializer `Stream.async` default `bufferSize`** at `event-stream-materializer.ts:145`. `void emit.single(item)` discards back-pressure; a slow `materialize` plus a fast producer silently drops items. Either size the buffer explicitly with a comment, or bridge through `Queue.bounded`. Cost: small.
 
-2. **Refactor `RawStreamInspector` to use the typed Effect Stream surface** (`apps/lab/src/lab/RawStreamInspector.tsx:36-77`). The current `for await` + `cancelled` flag pattern leaks the durable-streams session on unmount (already filed by concurrency + resource-management). The streams-correct fix mirrors `LabEventStreamPanel`: `Stream.fromAsyncIterable(session.jsonStream(), errorMap)` inside an `Effect.acquireRelease` for the session, run via `Effect.runFork` + `Fiber.interrupt`. Cost: small. CI-enforceable: ESLint rule disallowing `for await` over `DurableStream.stream(...)` results outside the documented bridge pattern.
+2. **Refactor `RawStreamInspector` to the typed Effect Stream surface** (`RawStreamInspector.tsx:36-77`). Mirror `LabEventStreamPanel`: `Stream.fromAsyncIterable(session.jsonStream(), errorMap)` inside `Effect.acquireRelease`, run via `Effect.runFork`/`Fiber.interrupt`. CI-enforceable: ESLint rule disallowing `for await` over `DurableStream.stream(...)` outside the documented bridge.
 
-3. **(Stylistic — coordinate with code-style review)** Replace the inline `if undefined` chain in `event-client.ts:158-163`'s `Stream.filterMapEffect` callback with `Match.option` or `Schema.option`. Not a streams issue per se, but a code-style remediation that intersects this site. Defer to the code-style track.
+3. **(Style — coordinate with code-style track)** Replace the inline `if undefined` chain in `event-client.ts:158-163`'s `Stream.filterMapEffect` callback with `Match.option`/`Schema.option`.
 
-4. **Add a CI assertion that no production file calls `Stream.async` without explicit `bufferSize`** when the producer fans out items (i.e. emits more than once per acquire). This codifies the F5 finding above; today only the materializer trips it. A simple AST check or grep-based lint over `packages/runtime/src/**` and `packages/substrate/src/**` would suffice.
+4. **CI rule: `Stream.async` requires explicit `bufferSize` when the producer fans out** (≥2 items per acquire). Codifies F5; today only the materializer trips it.
 
-5. **(Forward-looking, defer)** When the runtime gains a metrics surface, add `Stream.tap` calls before `Stream.runDrain` at `runner.ts:179`, `operation-handler.ts:208`, and `event-stream-materializer.ts:179` to emit per-element counters. Sinks review noted this; reaffirmed here. Today neither is required.
+5. **(Forward-looking, defer)** When metrics land, add `Stream.tap` before `Stream.runDrain` at `runner.ts:179`, `operation-handler.ts:208`, `event-stream-materializer.ts:179`.
 
 ## What strict-baseline enforces vs gaps
 
