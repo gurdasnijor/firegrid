@@ -196,9 +196,8 @@ can substitute Layers without changing durable semantics.
 Firepixel has a useful shape to preserve while removing Firepixel-specific
 vocabulary from the substrate:
 
-- `@firepixel/client` exposes `open`, `use`, and `run` over a scoped StreamDB
-  store, durable intent writers, and curated session/prompt/operator read
-  handles.
+- `@firepixel/client` exposes a narrow app client over scoped StreamDB state,
+  durable intent writers, and curated session/prompt/operator read handles.
 - `@firepixel/runtime` exposes thin Effect layer constructors:
   `attached`, `attachedFromConfig`, `attachedRuntime`,
   `attachedRuntimeFromConfig`, `attachedRuntimeClient`, and
@@ -216,7 +215,7 @@ vocabulary from the substrate:
 The substrate should adopt the shape, not the domain names:
 
 ```text
-SubstrateClient.open/use/run
+SubstrateClient service + Layer constructors
 SubstrateHostBoot.attached / attachedFromConfig
 SubstrateHostBoot.embeddedDev / bootPlanFromConfig
 SubstrateHostBoot.withHost
@@ -282,7 +281,6 @@ The client should follow the Fireline client altitude:
 
 - one Effect-native app-facing package;
 - scoped Effect service/layer APIs as the canonical surface;
-- `open`, `use`, and `run` helpers may exist as Effect-native conveniences;
 - durable intent methods;
 - curated read handles;
 - explicit subpaths for operator/testing/diagnostics;
@@ -319,6 +317,10 @@ instance. A future config-driven constructor should use Effect `Config` and
 `Layer.unwrapEffect` so production boot can decode the client layer from the
 same configuration source as the host.
 
+When the client API is revisited, prefer Effect's naming convention:
+`SubstrateClient.layer(config)` for the parameterized constructor and
+`SubstrateClientLive` for a config-decoded Layer value.
+
 Non-Effect callers can use `Effect.runPromise(...)` at their own process edge. A
 long-lived non-Effect caller such as the lab can use `ManagedRuntime` to build
 the client layer once and run many Effects through it. A separate
@@ -347,7 +349,7 @@ The exact method names can change, but the boundary should not:
 
 - client writes semantic substrate intents;
 - client reads curated projections;
-- client hides stream URL and id threading after open;
+- client hides stream URL and id threading after layer construction;
 - operator-only controls live under explicit client subpaths if needed;
 - testing harnesses live under explicit client subpaths if needed;
 - diagnostic raw stream/state inspection lives under a separate lab/diagnostic
@@ -492,7 +494,9 @@ is executable: it is launched for its scoped effects and should not expose
 durable-runtime dependencies through service method signatures. A graph handed
 to `SubstrateHostLive` should be fully wired with `RIn = never`; an incompletely
 wired graph can remain generic while tests or applications provide missing
-services.
+services. If graph construction can fail, its `E` parameter should flow into the
+host launch Effect's failure channel instead of being converted to a defect by
+default.
 
 This follows Effect's layer model: services keep clean interfaces, and Layers
 construct and compose their dependencies. The substrate can provide helper
@@ -663,6 +667,11 @@ interface SubscriberProgramLiveness {
   readonly lastErrorSummary?: string
 }
 ```
+
+If liveness is exposed, it should be an in-process `Context.Tag` or
+`Effect.Service` consumed with `Effect.serviceOption(...)` by optional
+diagnostic layers. Subscriber programs may publish liveness when the service is
+present, but they must not require diagnostics to be wired in order to run.
 
 Counts, cursor positions, retry/dead-letter state, and durable terminalization
 history should come from durable records/projections once the corresponding row
