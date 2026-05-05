@@ -669,6 +669,46 @@ Graph:
 The substrate host runs the Host Program Graph. The graph owns agent semantics.
 The durable substrate remains generic.
 
+### Next Host Program Graph Slice
+
+The next implementation slice should make the Host Program Graph an explicit
+host contract before broad lab UI work begins. Its purpose is not to introduce a
+framework registry; it is to give the existing host a typed in-process graph of
+runtime programs it can run.
+
+Minimum scope:
+
+- introduce a `HostProgramGraph` or equivalent wrapper around today's
+  transitional `profile` option;
+- preserve compatibility with the existing timer and scheduled-work subscriber
+  booleans;
+- add projection-match subscriber entries that carry caller-owned event-plane
+  definitions and evaluator wiring;
+- add claim-before-side-effect operator program entries that consume substrate
+  ready work or caller-owned event-plane projections;
+- keep graph discovery explicit through caller-supplied local maps;
+- expose no host mutation endpoints, no HTTP diagnostics listener, and no
+  durable program registry.
+
+The slice should prove the runtime contract with host-level tests before the lab
+depends on it:
+
+- timer and scheduled-work programs still run through the graph;
+- a fake permission or required-action event plane resolves a `waitFor` through
+  a graph-supplied projection-match subscriber;
+- an operator program claims work before invoking its handler and terminalizes
+  through existing substrate claim/completion authority;
+- the same scenario can be started through the substrate client while the host
+  executes only graph-supplied programs.
+
+This slice is the right place to claim
+`launchable-substrate-host.HOST_PROCESS.4`,
+`launchable-substrate-host.HOST_PROCESS.5`,
+`launchable-substrate-host.RUNTIME_COMPOSITION.2`, and
+`launchable-substrate-host.SERVER_RUNTIME_API.3` if the tests prove those
+behaviors. Scenario ACIDs should remain unclaimed until the corresponding
+lab/CLI scenario harness actually exists.
+
 ## Lab UI
 
 The lab is an example/dev application built on the same substrate client that

@@ -3,20 +3,21 @@
 Canonical design source:
 
 - [Durable Agent Substrate SDD](docs/SDD_DURABLE_AGENT_SUBSTRATE.md)
+- [Docs map](docs/README.md)
 
-Ahead-of-stream SDD proposals:
+Current canonical SDDs:
 
-- [Next Layer Review Sequence](docs/SDD_NEXT_LAYER_REVIEW_SEQUENCE.md)
 - [Client Event Planes And State Producers](docs/SDD_CLIENT_EVENT_PLANES_AND_STATE_PRODUCERS.md)
+- [Choreography Facade](docs/SDD_CHOREOGRAPHY_FACADE.md)
 - [Launchable Substrate Host And Lab](docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md)
 
-Acai specs live under `features/durable-agent-substrate/` and should be
-rebuilt from the SDD as the design stabilizes.
+Acai specs live under `features/durable-agent-substrate/` and are the stable
+acceptance criteria for implementation.
 
 ## Current State
 
-This repo is intentionally docs/specs first. There is no implementation package
-yet.
+This repo is implementing the substrate in spec-driven slices. The launchable
+host/client/lab work is currently in phase 13.
 
 Run the baseline validation before editing:
 
@@ -24,16 +25,5 @@ Run the baseline validation before editing:
 pnpm check
 ```
 
-Next implementation work should start from the Acai specs, then add the minimum
-TypeScript package needed to satisfy the first vertical slice:
-
-```text
-durable.run + durable.completion + durable.claim.attempt
-  -> Durable Streams State projection rebuild
-  -> ReadyWorkProjection
-  -> claim-before-invoke operator proof
-```
-
-When implementation starts, tests should include full Acai ACID references in
-test names or nearby comments. The docs/spec-only baseline intentionally has no
-implementation references yet.
+Implementation work should start from the Acai specs and include full Acai ACID
+references in test names or nearby comments.
