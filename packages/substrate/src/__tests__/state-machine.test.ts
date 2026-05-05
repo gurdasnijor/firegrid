@@ -8,6 +8,7 @@ import {
   cancelCompletion,
   cancelRun,
   completeRun,
+  completionTransitionMachine,
   createPendingCompletion,
   deriveBlockedRunOutcome,
   failRun,
@@ -21,6 +22,7 @@ import {
   isTerminalRun,
   rejectCompletion,
   resolveCompletion,
+  runTransitionMachine,
   startRun,
 } from "../state-machine.ts"
 
@@ -51,6 +53,13 @@ const runStates = [
 
 describe("awakeables-and-runs.COMPLETION_TRANSITIONS", () => {
   it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.1 + awakeables-and-runs.COMPLETION_TRANSITIONS.1/.2/.3/.4 — declarative completion machine proves legal and illegal transitions", () => {
+    expect(completionTransitionMachine).toEqual({
+      absent: ["pending"],
+      pending: ["resolved", "rejected", "cancelled"],
+      resolved: [],
+      rejected: [],
+      cancelled: [],
+    })
     const legal = new Set([
       "absent->pending",
       "pending->resolved",
@@ -293,6 +302,14 @@ describe("awakeables-and-runs.AWAKEABLE", () => {
 
 describe("awakeables-and-runs.RUN_TRANSITIONS", () => {
   it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.1 + awakeables-and-runs.RUN_TRANSITIONS.1/.2/.3/.4/.5 — declarative run machine proves legal and illegal transitions", () => {
+    expect(runTransitionMachine).toEqual({
+      absent: ["started"],
+      started: ["blocked", "completed", "failed", "cancelled"],
+      blocked: ["completed", "failed", "cancelled"],
+      completed: [],
+      failed: [],
+      cancelled: [],
+    })
     const legal = new Set([
       "absent->started",
       "started->blocked",

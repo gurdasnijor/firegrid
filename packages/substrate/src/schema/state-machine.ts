@@ -1,5 +1,4 @@
 import type { ChangeEvent } from "@durable-streams/state"
-import { createMachine, transition } from "xstate"
 import { Data, Effect } from "effect"
 import {
   type CompletionKind,
@@ -13,35 +12,25 @@ import { substrateState } from "./state.ts"
 type CompletionMachineState = CompletionState | "absent"
 type RunMachineState = RunState | "absent"
 
-type CompletionTransitionEvent = { readonly type: CompletionState }
-type RunTransitionEvent = { readonly type: RunState }
+type TransitionAdjacency<State extends string, Target extends string> = {
+  readonly [Key in State]: readonly Target[]
+}
 
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.1
 // awakeables-and-runs.COMPLETION_TRANSITIONS.1
 // awakeables-and-runs.COMPLETION_TRANSITIONS.2
 // awakeables-and-runs.COMPLETION_TRANSITIONS.3
 // awakeables-and-runs.COMPLETION_TRANSITIONS.4
-export const completionTransitionMachine = createMachine({
-  id: "durable.completion",
-  initial: "absent",
-  states: {
-    absent: {
-      on: {
-        pending: "pending",
-      },
-    },
-    pending: {
-      on: {
-        resolved: "resolved",
-        rejected: "rejected",
-        cancelled: "cancelled",
-      },
-    },
-    resolved: {},
-    rejected: {},
-    cancelled: {},
-  },
-})
+export const completionTransitionMachine = {
+  absent: ["pending"],
+  pending: ["resolved", "rejected", "cancelled"],
+  resolved: [],
+  rejected: [],
+  cancelled: [],
+} as const satisfies TransitionAdjacency<
+  CompletionMachineState,
+  CompletionState
+>
 
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.1
 // awakeables-and-runs.RUN_TRANSITIONS.1
@@ -49,35 +38,14 @@ export const completionTransitionMachine = createMachine({
 // awakeables-and-runs.RUN_TRANSITIONS.3
 // awakeables-and-runs.RUN_TRANSITIONS.4
 // awakeables-and-runs.RUN_TRANSITIONS.5
-export const runTransitionMachine = createMachine({
-  id: "durable.run",
-  initial: "absent",
-  states: {
-    absent: {
-      on: {
-        started: "started",
-      },
-    },
-    started: {
-      on: {
-        blocked: "blocked",
-        completed: "completed",
-        failed: "failed",
-        cancelled: "cancelled",
-      },
-    },
-    blocked: {
-      on: {
-        completed: "completed",
-        failed: "failed",
-        cancelled: "cancelled",
-      },
-    },
-    completed: {},
-    failed: {},
-    cancelled: {},
-  },
-})
+export const runTransitionMachine = {
+  absent: ["started"],
+  started: ["blocked", "completed", "failed", "cancelled"],
+  blocked: ["completed", "failed", "cancelled"],
+  completed: [],
+  failed: [],
+  cancelled: [],
+} as const satisfies TransitionAdjacency<RunMachineState, RunState>
 
 const TERMINAL_COMPLETION_STATES = new Set<CompletionState>([
   "resolved",
@@ -99,36 +67,24 @@ export function isTerminalRun(state: RunState): boolean {
   return TERMINAL_RUN_STATES.has(state)
 }
 
+const isLegalTransition = <State extends string>(
+  machine: TransitionAdjacency<State | "absent", State>,
+  from: State | undefined,
+  to: State,
+): boolean => machine[from ?? "absent"].includes(to)
+
 export function isLegalCompletionTransition(
   from: CompletionState | undefined,
   to: CompletionState,
 ): boolean {
-  const event: CompletionTransitionEvent = { type: to }
-  const snapshot = completionTransitionMachine.resolveState({
-    value: (from ?? "absent") satisfies CompletionMachineState,
-    context: {},
-  })
-  const [next] = transition(completionTransitionMachine, snapshot, event)
-  return (
-    completionTransitionMachine.getTransitionData(snapshot, event).length > 0 &&
-    next.value === to
-  )
+  return isLegalTransition(completionTransitionMachine, from, to)
 }
 
 export function isLegalRunTransition(
   from: RunState | undefined,
   to: RunState,
 ): boolean {
-  const event: RunTransitionEvent = { type: to }
-  const snapshot = runTransitionMachine.resolveState({
-    value: (from ?? "absent") satisfies RunMachineState,
-    context: {},
-  })
-  const [next] = transition(runTransitionMachine, snapshot, event)
-  return (
-    runTransitionMachine.getTransitionData(snapshot, event).length > 0 &&
-    next.value === to
-  )
+  return isLegalTransition(runTransitionMachine, from, to)
 }
 
 export class IllegalCompletionTransition extends Data.TaggedError(
@@ -165,6 +121,11 @@ const validateRunTransition = (
     ? Effect.void
     : Effect.fail(new IllegalRunTransition({ runId, from, to }))
 
+const validatedChangeEvent = <E>(
+  validate: Effect.Effect<void, E>,
+  event: ChangeEvent,
+): Effect.Effect<ChangeEvent, E> => validate.pipe(Effect.as(event))
+
 export interface CreatePendingCompletionInput {
   readonly completionId: string
   readonly workId?: string
@@ -181,22 +142,23 @@ export interface CreatePendingCompletionInput {
 // durable-records-and-projections.RECORDS.9
 export const createPendingCompletion = (
   input: CreatePendingCompletionInput,
-): Effect.Effect<ChangeEvent, IllegalCompletionTransition> =>
-  Effect.gen(function* () {
-    const value: CompletionValue = {
-      completionId: input.completionId,
-      ...(input.workId !== undefined ? { workId: input.workId } : {}),
-      kind: input.kind,
-      state: "pending",
-      ...(input.data !== undefined ? { data: input.data } : {}),
-    }
-    yield* validateCompletionTransition(
+): Effect.Effect<ChangeEvent, IllegalCompletionTransition> => {
+  const value: CompletionValue = {
+    completionId: input.completionId,
+    ...(input.workId !== undefined ? { workId: input.workId } : {}),
+    kind: input.kind,
+    state: "pending",
+    ...(input.data !== undefined ? { data: input.data } : {}),
+  }
+  return validatedChangeEvent(
+    validateCompletionTransition(
       input.completionId,
       undefined,
       value.state,
-    )
-    return substrateState.completions.insert({ value })
-  })
+    ),
+    substrateState.completions.insert({ value }),
+  )
+}
 
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.3
@@ -206,20 +168,17 @@ export const createPendingCompletion = (
 export const resolveCompletion = (
   current: CompletionValue,
   args: { readonly result: unknown },
-): Effect.Effect<ChangeEvent, IllegalCompletionTransition> =>
-  Effect.gen(function* () {
-    yield* validateCompletionTransition(
-      current.completionId,
-      current.state,
-      "resolved",
-    )
-    const value: CompletionValue = {
-      ...current,
-      state: "resolved",
-      result: args.result,
-    }
-    return substrateState.completions.upsert({ value })
-  })
+): Effect.Effect<ChangeEvent, IllegalCompletionTransition> => {
+  const value: CompletionValue = {
+    ...current,
+    state: "resolved",
+    result: args.result,
+  }
+  return validatedChangeEvent(
+    validateCompletionTransition(current.completionId, current.state, "resolved"),
+    substrateState.completions.upsert({ value }),
+  )
+}
 
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.3
@@ -229,20 +188,17 @@ export const resolveCompletion = (
 export const rejectCompletion = (
   current: CompletionValue,
   args: { readonly error: unknown },
-): Effect.Effect<ChangeEvent, IllegalCompletionTransition> =>
-  Effect.gen(function* () {
-    yield* validateCompletionTransition(
-      current.completionId,
-      current.state,
-      "rejected",
-    )
-    const value: CompletionValue = {
-      ...current,
-      state: "rejected",
-      error: args.error,
-    }
-    return substrateState.completions.upsert({ value })
-  })
+): Effect.Effect<ChangeEvent, IllegalCompletionTransition> => {
+  const value: CompletionValue = {
+    ...current,
+    state: "rejected",
+    error: args.error,
+  }
+  return validatedChangeEvent(
+    validateCompletionTransition(current.completionId, current.state, "rejected"),
+    substrateState.completions.upsert({ value }),
+  )
+}
 
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.3
@@ -252,20 +208,17 @@ export const rejectCompletion = (
 export const cancelCompletion = (
   current: CompletionValue,
   args: { readonly terminalReason: unknown },
-): Effect.Effect<ChangeEvent, IllegalCompletionTransition> =>
-  Effect.gen(function* () {
-    yield* validateCompletionTransition(
-      current.completionId,
-      current.state,
-      "cancelled",
-    )
-    const value: CompletionValue = {
-      ...current,
-      state: "cancelled",
-      terminalReason: args.terminalReason,
-    }
-    return substrateState.completions.upsert({ value })
-  })
+): Effect.Effect<ChangeEvent, IllegalCompletionTransition> => {
+  const value: CompletionValue = {
+    ...current,
+    state: "cancelled",
+    terminalReason: args.terminalReason,
+  }
+  return validatedChangeEvent(
+    validateCompletionTransition(current.completionId, current.state, "cancelled"),
+    substrateState.completions.upsert({ value }),
+  )
+}
 
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.3
@@ -277,16 +230,17 @@ export const cancelCompletion = (
 export const startRun = (input: {
   readonly runId: string
   readonly data?: unknown
-}): Effect.Effect<ChangeEvent, IllegalRunTransition> =>
-  Effect.gen(function* () {
-    const value: RunValue = {
-      runId: input.runId,
-      state: "started",
-      ...(input.data !== undefined ? { data: input.data } : {}),
-    }
-    yield* validateRunTransition(input.runId, undefined, value.state)
-    return substrateState.runs.insert({ value })
-  })
+}): Effect.Effect<ChangeEvent, IllegalRunTransition> => {
+  const value: RunValue = {
+    runId: input.runId,
+    state: "started",
+    ...(input.data !== undefined ? { data: input.data } : {}),
+  }
+  return validatedChangeEvent(
+    validateRunTransition(input.runId, undefined, value.state),
+    substrateState.runs.insert({ value }),
+  )
+}
 
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.3
@@ -296,16 +250,17 @@ export const startRun = (input: {
 export const blockRun = (
   current: RunValue,
   args: { readonly blockedOnCompletionId: string },
-): Effect.Effect<ChangeEvent, IllegalRunTransition> =>
-  Effect.gen(function* () {
-    yield* validateRunTransition(current.runId, current.state, "blocked")
-    const value: RunValue = {
-      ...current,
-      state: "blocked",
-      blockedOnCompletionId: args.blockedOnCompletionId,
-    }
-    return substrateState.runs.upsert({ value })
-  })
+): Effect.Effect<ChangeEvent, IllegalRunTransition> => {
+  const value: RunValue = {
+    ...current,
+    state: "blocked",
+    blockedOnCompletionId: args.blockedOnCompletionId,
+  }
+  return validatedChangeEvent(
+    validateRunTransition(current.runId, current.state, "blocked"),
+    substrateState.runs.upsert({ value }),
+  )
+}
 
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.3
@@ -316,12 +271,13 @@ export const blockRun = (
 export const completeRun = (
   current: RunValue,
   args: { readonly result: unknown },
-): Effect.Effect<ChangeEvent, IllegalRunTransition> =>
-  Effect.gen(function* () {
-    yield* validateRunTransition(current.runId, current.state, "completed")
-    const value: RunValue = { ...current, state: "completed", result: args.result }
-    return substrateState.runs.upsert({ value })
-  })
+): Effect.Effect<ChangeEvent, IllegalRunTransition> => {
+  const value: RunValue = { ...current, state: "completed", result: args.result }
+  return validatedChangeEvent(
+    validateRunTransition(current.runId, current.state, "completed"),
+    substrateState.runs.upsert({ value }),
+  )
+}
 
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.3
@@ -332,12 +288,13 @@ export const completeRun = (
 export const failRun = (
   current: RunValue,
   args: { readonly error: unknown },
-): Effect.Effect<ChangeEvent, IllegalRunTransition> =>
-  Effect.gen(function* () {
-    yield* validateRunTransition(current.runId, current.state, "failed")
-    const value: RunValue = { ...current, state: "failed", error: args.error }
-    return substrateState.runs.upsert({ value })
-  })
+): Effect.Effect<ChangeEvent, IllegalRunTransition> => {
+  const value: RunValue = { ...current, state: "failed", error: args.error }
+  return validatedChangeEvent(
+    validateRunTransition(current.runId, current.state, "failed"),
+    substrateState.runs.upsert({ value }),
+  )
+}
 
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.3
@@ -348,19 +305,20 @@ export const failRun = (
 export const cancelRun = (
   current: RunValue,
   args: { readonly terminalReason: unknown },
-): Effect.Effect<ChangeEvent, IllegalRunTransition> =>
-  Effect.gen(function* () {
-    yield* validateRunTransition(current.runId, current.state, "cancelled")
-    const value: RunValue = {
-      ...current,
-      state: "cancelled",
-      terminalReason: args.terminalReason,
-    }
-    return substrateState.runs.upsert({ value })
-  })
+): Effect.Effect<ChangeEvent, IllegalRunTransition> => {
+  const value: RunValue = {
+    ...current,
+    state: "cancelled",
+    terminalReason: args.terminalReason,
+  }
+  return validatedChangeEvent(
+    validateRunTransition(current.runId, current.state, "cancelled"),
+    substrateState.runs.upsert({ value }),
+  )
+}
 
 // firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.5
-const firstValidTerminalFold = <A>(
+const foldFirstValidTerminalWinner = <A>(
   records: ReadonlyArray<A>,
   matchesTarget: (record: A) => boolean,
   isTerminal: (record: A) => boolean,
@@ -389,7 +347,7 @@ export function foldCompletionRecords(
   completionId: string,
   records: ReadonlyArray<CompletionValue>,
 ): CompletionValue | undefined {
-  return firstValidTerminalFold(
+  return foldFirstValidTerminalWinner(
     records,
     (record) => record.completionId === completionId,
     (record) => isTerminalCompletion(record.state),
@@ -404,7 +362,7 @@ export function foldRunRecords(
   runId: string,
   records: ReadonlyArray<RunValue>,
 ): RunValue | undefined {
-  return firstValidTerminalFold(
+  return foldFirstValidTerminalWinner(
     records,
     (record) => record.runId === runId,
     (record) => isTerminalRun(record.state),
