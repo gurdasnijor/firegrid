@@ -16,7 +16,7 @@ import styles from "./styles.module.css"
 // This component intentionally has no writer controls. Application
 // and lab UI writes flow exclusively through the substrate client.
 
-export interface RawStreamInspectorProps {
+interface RawStreamInspectorProps {
   readonly streamUrl: string
 }
 

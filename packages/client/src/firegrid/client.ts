@@ -26,7 +26,7 @@ export type OperationState<Op extends Operation.Any> =
   | { readonly _tag: "Failed"; readonly error: Operation.Error<Op> }
   | { readonly _tag: "Cancelled"; readonly terminalReason?: unknown }
 
-export interface EventStreamClientService {
+interface EventStreamClientService {
   readonly emit: <S extends EventStream.Any>(
     stream: S,
     event: EventStream.Event<S>,

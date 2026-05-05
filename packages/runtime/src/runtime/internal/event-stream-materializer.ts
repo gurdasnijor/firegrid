@@ -44,21 +44,21 @@ import {
 // `Effect.logError` so a failed materializer dies loudly via the
 // runtime's default cause logger.
 
-export class EventStreamSessionError extends Data.TaggedError(
+class EventStreamSessionError extends Data.TaggedError(
   "firegrid/EventStreamSessionError",
 )<{
   readonly stream: string
   readonly cause: unknown
 }> {}
 
-export class EventStreamMaterializerDecodeError extends Data.TaggedError(
+class EventStreamMaterializerDecodeError extends Data.TaggedError(
   "firegrid/EventStreamMaterializerDecodeError",
 )<{
   readonly stream: string
   readonly cause: ParseResult.ParseError
 }> {}
 
-export interface EventStreamMaterializerInput<
+interface EventStreamMaterializerInput<
   S extends EventStream.Any,
   E,
   R,

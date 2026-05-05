@@ -42,14 +42,22 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Semgrep's npm packages are unmaintained; install the maintained CLI
+      # with pipx, matching docs/TOOLING.md.
       - name: Install semgrep CLI
         run: pipx install semgrep
 
       - name: Lint
         run: pnpm run lint
 
+      - name: Check dead-code baseline
+        run: pnpm run lint:dead
+
       - name: Check duplicate-token baseline
         run: pnpm run lint:dup
+
+      - name: Check transitive dependency boundaries
+        run: pnpm run lint:deps
 
       - name: Check structural duplication shapes
         run: pnpm run lint:semgrep

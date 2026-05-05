@@ -68,6 +68,14 @@ The runtime tracer dependency `@effect/experimental` is not installed yet. Add i
 
 ## Static-quality tooling
 
+Run the complete review gate:
+
+```sh
+pnpm verify
+```
+
+This is the canonical ready-for-review gate for agent work. cmux review-request payloads must include `pnpm verify: PASS` before asking for approval.
+
 Run duplicate-token detection:
 
 ```sh
@@ -84,6 +92,28 @@ pnpm run lint:dup:baseline
 
 This is intended for remediation slices such as R4 after helper extractions reduce duplication. The script refuses to raise the threshold automatically; lowering the count is a ratchet, while accepting a higher count requires an explicit config edit.
 
+Run dead-code detection:
+
+```sh
+pnpm run lint:dead
+```
+
+This runs knip and compares the current unused-export, unused-file, unused-dependency, and unlisted-binary finding count against `.knip-baseline.json`. Recompute the baseline after intentional cleanup with:
+
+```sh
+pnpm run lint:dead:baseline
+```
+
+The baseline script refuses to ratchet upward automatically. New knip findings should be fixed when they are real, or justified in the PR description when they are intentional tool or fixture shapes.
+
+Run transitive dependency boundary checks:
+
+```sh
+pnpm run lint:deps
+```
+
+This runs dependency-cruiser with `.dependency-cruiser.cjs`. Unlike direct import lint rules, dependency-cruiser can flag transitive boundary violations, cycles, and orphan modules across the substrate, runtime, client, and lab packages.
+
 Run structural duplication-shape checks:
 
 ```sh
@@ -98,10 +128,16 @@ pipx install semgrep
 
 The CI workflow uses the same `pipx install semgrep` path before running the root `.semgrep.yml` rules. The current rules flag repeated shapes for durable-stream append wrappers, scoped substrate-database acquisition, retained-row reads, and authoritative-run lookups.
 
+The Effect ESLint plugin currently ships only two rules in `@effect/eslint-plugin@0.3.2`: `dprint` and `no-import-from-barrel-package`. `dprint` conflicts with this repo's existing stylistic formatter stack, so only `@effect/no-import-from-barrel-package` is enabled. If the plugin adds or changes rules during an upgrade, audit the shipped rule list before enabling anything new.
+
 To add a semgrep rule, add a focused rule to `.semgrep.yml`, include path filters or exclusions if the rule needs narrower scope, and add a matching fixture in `semgrep-tests/` with `ruleid` and `ok` comments. Verify it with:
 
 ```sh
 semgrep --test --config .semgrep.yml semgrep-tests/dup-detection.ts
 ```
 
-This tooling exists because the original manual review missed near-duplicates in `packages/substrate/src/retained-records.ts` and similar repeated shapes. Manual review windows are too narrow to serve as the only DRY guardrail.
+To add a dependency-cruiser rule, add it to `.dependency-cruiser.cjs`, keep the severity at `warn` while triaging existing debt, and promote to `error` once the rule is clean enough to gate CI.
+
+To add a knip rule or exception, prefer making the code reachable or dropping unused exports first. Use `knip.json` ignores only for intentional tool fixtures, external binaries, or dependencies invoked through scripts that knip cannot statically infer.
+
+This tooling exists because the original manual review missed near-duplicates in `packages/substrate/src/retained-records.ts` and similar repeated static-quality issues. Manual review windows are too narrow to serve as the only guardrail.

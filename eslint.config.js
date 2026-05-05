@@ -484,6 +484,28 @@ export default tseslint.config(
     },
   },
   {
+    // firegrid-remediation-hardening.STATIC_QUALITY.4
+    // @effect/eslint-plugin@0.3.2 ships only `dprint` and
+    // `no-import-from-barrel-package`; dprint conflicts with this repo's
+    // stylistic formatter stack, so the applicable package-boundary rule is
+    // enabled explicitly for production package source.
+    files: ["packages/**/src/**/*.ts", "packages/**/src/**/*.tsx"],
+    ignores: ["packages/**/src/__tests__/**/*.ts", "packages/**/*.test.ts"],
+    rules: {
+      "@effect/no-import-from-barrel-package": [
+        "warn",
+        {
+          packageNames: [
+            "@durable-agent-substrate/client",
+            "@durable-agent-substrate/substrate",
+            "@firegrid/lab",
+            "@firegrid/runtime",
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["packages/{client,runtime}/src/**/*.ts"],
     ignores: ["packages/**/src/__tests__/**/*.ts", "packages/**/*.test.ts"],
     rules: {

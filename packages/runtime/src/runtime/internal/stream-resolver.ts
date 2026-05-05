@@ -28,7 +28,7 @@ import type {
 // ────────────────────────────────────────────────────────────────
 // Errors
 
-export class RuntimeStartupError extends Data.TaggedError(
+class RuntimeStartupError extends Data.TaggedError(
   "firegrid/RuntimeStartupError",
 )<{
   readonly reason: string
@@ -38,18 +38,18 @@ export class RuntimeStartupError extends Data.TaggedError(
 // ────────────────────────────────────────────────────────────────
 // EmbeddedDurableStreams
 
-export interface EmbeddedDurableStreamsConfig {
+interface EmbeddedDurableStreamsConfig {
   readonly host: string
   readonly port: number
 }
 
-export interface EmbeddedDurableStreamsService {
+interface EmbeddedDurableStreamsService {
   readonly start: (
     cfg: EmbeddedDurableStreamsConfig,
   ) => Effect.Effect<{ readonly url: string }, RuntimeStartupError, Scope.Scope>
 }
 
-export class EmbeddedDurableStreams extends Context.Tag(
+class EmbeddedDurableStreams extends Context.Tag(
   "firegrid/internal/EmbeddedDurableStreams",
 )<EmbeddedDurableStreams, EmbeddedDurableStreamsService>() {}
 
@@ -79,18 +79,18 @@ export const EmbeddedDurableStreamsLive: Layer.Layer<EmbeddedDurableStreams> =
 // ────────────────────────────────────────────────────────────────
 // DurableStreamAdmin
 
-export interface DurableStreamAdminCreateInput {
+interface DurableStreamAdminCreateInput {
   readonly streamUrl: string
   readonly contentType: string
 }
 
-export interface DurableStreamAdminService {
+interface DurableStreamAdminService {
   readonly create: (
     input: DurableStreamAdminCreateInput,
   ) => Effect.Effect<void, RuntimeStartupError>
 }
 
-export class DurableStreamAdmin extends Context.Tag(
+class DurableStreamAdmin extends Context.Tag(
   "firegrid/internal/DurableStreamAdmin",
 )<DurableStreamAdmin, DurableStreamAdminService>() {}
 
@@ -114,12 +114,12 @@ export const DurableStreamAdminLive: Layer.Layer<DurableStreamAdmin> =
 // ────────────────────────────────────────────────────────────────
 // RuntimeStreamResolver
 
-export interface ResolvedStream {
+interface ResolvedStream {
   readonly bootMode: BootMode
   readonly streamIdentity: FiregridRuntimeStreamIdentity
 }
 
-export interface RuntimeStreamResolverService {
+interface RuntimeStreamResolverService {
   readonly resolve: Effect.Effect<ResolvedStream>
 }
 
@@ -139,7 +139,7 @@ export const attachedResolverLayer = (
     } satisfies ResolvedStream),
   })
 
-export interface EmbeddedResolverConfig {
+interface EmbeddedResolverConfig {
   readonly host: string
   readonly port: number
   readonly streamName: string

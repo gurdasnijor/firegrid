@@ -60,6 +60,13 @@ components:
       3: Duplication tooling configuration excludes test fixtures and dist output and stays under repo root configuration files.
       4: Baseline duplication counts are tracked in the repository so the threshold can be ratcheted down by remediation slices rather than reset.
 
+  STATIC_QUALITY:
+    requirements:
+      1: Unused exports, files, dependencies, and binaries are detected by an automated dead-code tool that runs in CI.
+      2: Transitive package boundaries (substrate/runtime/client/lab) are enforced by a transitive-import checker, not just direct-import lint rules.
+      3: A single repo-level verification script runs lint, typecheck, dead-code detection, duplication detection, and pattern-shape checks together, and is the canonical "ready for review" gate for agent work.
+      4: Available @effect/eslint-plugin rules that fit this codebase's conventions are enabled with explicit per-package scope.
+
   TEST_GUARDRAILS:
     requirements:
       1: Client and substrate public export surfaces have allowlist or strict banned-vocabulary tests.

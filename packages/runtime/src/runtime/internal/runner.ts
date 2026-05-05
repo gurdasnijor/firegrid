@@ -87,7 +87,7 @@ export const subscribeCompletions = (
   return () => sub.unsubscribe()
 }
 
-export interface ScopedProgramInput<E> {
+interface ScopedProgramInput<E> {
   readonly subscribe: (db: CollectionsDb, onEdge: () => void) => () => void
   readonly nextDeadlineMs: (snapshot: ProjectionSnapshot) => number | undefined
   // The scan reads from the live-db snapshot supplied each wake. It
@@ -105,7 +105,7 @@ export const runScopedSubscriberProgram = <E>(
     yield* Effect.forkScoped(runScopedSubscriberLoop(cfg, input))
   })
 
-export const runScopedSubscriberLoop = <E>(
+const runScopedSubscriberLoop = <E>(
   cfg: RuntimeContextService,
   input: ScopedProgramInput<E>,
 ) =>

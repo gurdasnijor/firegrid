@@ -22,7 +22,7 @@ import styles from "./styles.module.css"
 // substrate/substrate; the only contract with a running runtime is
 // the stream URL.
 
-export interface AppProps {
+interface AppProps {
   readonly streamUrl: string
 }
 

@@ -29,12 +29,12 @@ export interface AttemptClaimArgs {
   readonly claimIdOverride?: string
 }
 
-export interface AttemptClaimOutcome {
+interface AttemptClaimOutcome {
   readonly claimId: string
   readonly winner: ClaimAttemptValue
 }
 
-export type AttemptClaimError =
+type AttemptClaimError =
   | ClaimStreamError
   | ClaimMissingCursorError
   | ClaimWinnerMissingError
