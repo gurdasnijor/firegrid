@@ -804,6 +804,26 @@ scenario runtime type. Each entry should be runnable from the command line and
 from the lab UI, with both paths using the same client package and program
 definitions.
 
+The lab package is internally split by execution surface:
+
+- `packages/lab/src` is the browser-side surface. It is bundled by Vite
+  and may import only `@durable-agent-substrate/client` and external
+  packages. The repository ESLint configuration enforces that surface as
+  client-only — `@durable-agent-substrate/host` and
+  `@durable-agent-substrate/substrate` are not allowed there.
+- `packages/lab/runner` and `packages/lab/bin` are Node-only dev harness
+  paths. They may import `@durable-agent-substrate/host` to launch a
+  Host Program Graph and orchestrate `SubstrateHostBoot.withHost` for
+  the example programs. They are not bundled into the browser app and
+  do not become a privileged writer surface — application and lab UI
+  writes still flow exclusively through `@durable-agent-substrate/client`.
+
+Program kickoff Effects (the part each example program runs against
+`SubstrateClient`) live under `packages/lab/src/programs` so the same
+kickoff can be invoked from the browser UI and from the Node runner.
+Host Program Graph definitions and the Node CLI live under
+`packages/lab/runner` and `packages/lab/bin` respectively.
+
 ## Host Diagnostics
 
 Host diagnostics are deferred beyond the core launchable lab slice. This keeps
