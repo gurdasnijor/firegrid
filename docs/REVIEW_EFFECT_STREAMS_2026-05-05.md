@@ -22,29 +22,16 @@ R-STRICT-BASELINE's extraction of `wakeStream(subscribe)` (`packages/runtime/src
 
 ### F2. `Stream.fromAsyncIterable`
 
-**One production site, used correctly.** `packages/client/src/firegrid/event-client.ts:147-152`:
+**One production site, used correctly:** `packages/client/src/firegrid/event-client.ts:147-152`. `Stream.fromAsyncIterable(response.jsonStream(), errorMap)` wraps the durable-streams `AsyncIterable<JsonBatch>` with a typed error transducer (`EventStreamReadError`) — the canonical bridge from the streams skill. The session itself is acquired one layer up via `Effect.acquireRelease` (`:134-144`), so on consumer interrupt the outer `Stream.unwrapScoped` triggers `response.cancel()` and async iteration terminates.
 
-```
-Stream.fromAsyncIterable(
-  response.jsonStream(),
-  (cause) => new EventStreamReadError({ stream: stream.name, cause }),
-)
-```
-
-The `jsonStream()` call returns the durable-streams client's `AsyncIterable<JsonBatch>`. Wrapping it in `Stream.fromAsyncIterable` *with* the error transducer is the canonical bridge — iteration errors land on the typed error channel (`EventStreamReadError`) rather than as a defect. The session resource itself is acquired one layer up via `Effect.acquireRelease` (`:134-144`), so on consumer interrupt, `Stream.unwrapScoped` triggers the release which calls `response.cancel()` and then async iteration terminates normally. This is the textbook composition pattern from the streams skill ("From Async Sources" → `Stream.fromAsyncIterable(asyncGenerator(), errorMap)`).
-
-The materializer (`packages/runtime/src/runtime/internal/event-stream-materializer.ts:145-167`) intentionally uses `Stream.async` over `subscribeJson` instead of `Stream.fromAsyncIterable` over `jsonStream()`. The inline comment at `:152-156` is explicit: "async-iterable + interrupt does not propagate the cancel signal reliably across the HTTP reader boundary." This is a real concern — `Stream.fromAsyncIterable` cancellation depends on the iterator's `.return()` method being called and the underlying HTTP reader honoring it. The substrate materializer fiber lives for the lifetime of the runtime; using the callback-style `subscribeJson` API where unsubscribe is a synchronous function gives deterministic teardown. **Cross-reference:** the React-side `RawStreamInspector.tsx:49` uses `for await … of session.jsonStream()` directly (no Effect Stream) — same iterator, different consumer, and the leak there comes from not calling `session.cancel()`, not from any Stream issue.
-
-**Verdict:** `Stream.fromAsyncIterable` use is correct. No remediation.
+The materializer deliberately uses `Stream.async` over `subscribeJson` instead of `Stream.fromAsyncIterable` over `jsonStream()`. Inline comment at `event-stream-materializer.ts:152-156` is explicit: async-iterable + interrupt does not propagate the cancel signal reliably across the HTTP reader boundary. For the long-lived runtime materializer fiber, the callback-style `subscribeJson` API gives deterministic teardown via a synchronous unsubscribe function. **Cross-reference:** `RawStreamInspector.tsx:49` uses `for await … of session.jsonStream()` directly (no Effect Stream); the leak there comes from not calling `session.cancel()`, not a Stream issue.
 
 ### F3. `Stream.unwrapScoped` (resource-lifetime binding to consumer scope)
 
 **Two sites; both correct.**
 
-- `packages/client/src/firegrid/event-client.ts:133-154` — `Stream.unwrapScoped(Effect.acquireRelease(openSession, cancelSession).pipe(Effect.map(response => Stream.fromAsyncIterable(...))))`. The `unwrapScoped` provides a stream-shaped wrapper around an `Effect<Stream, E, Scope>`; when a downstream consumer (e.g. `LabEventStreamPanel`'s `Stream.runForEach`) starts pulling, the scope is opened, the session is acquired, and `cancel()` is registered as a finalizer. When the consumer fiber is interrupted (or completes), the scope closes and the session is cancelled. **Correct lifetime binding.** Cross-reference: resource-management review §"Effect.acquireRelease — durable-streams sessions" confirms this site.
-- `packages/client/src/firegrid/operation-client.ts:283-292` — `Stream.unwrapScoped(Effect.gen(... yield* SubstrateClient ...)).pipe(Stream.provideLayer(SubstrateClientLive(substrateCfg)))`. Here the scoped resource is the SubstrateClient itself (a `Layer.scoped` aggregator that opens a `SubstrateStreamDB`). `Stream.provideLayer` *outside* `unwrapScoped` is the right ordering — the layer is provided into the resulting `Stream`, and the `unwrapScoped` ensures that when the consumer's scope closes, the layer's scoped finalizers run. Per-call cost: one StreamDB acquisition per `observe()` invocation, paid once per stream lifetime, not once per emit. (Resource-management review explicitly notes this trade-off and accepts it for v1; this review concurs.)
-
-**Verdict:** correct. No remediation.
+- `event-client.ts:133-154` — `Stream.unwrapScoped(Effect.acquireRelease(openSession, cancelSession).pipe(Effect.map(response => Stream.fromAsyncIterable(...))))`. When the consumer pulls, the scope opens, the session is acquired, and `cancel()` registers as a finalizer. Consumer interrupt → scope close → `response.cancel()`. Correct.
+- `operation-client.ts:283-292` — `Stream.unwrapScoped(Effect.gen(... yield* SubstrateClient ...)).pipe(Stream.provideLayer(SubstrateClientLive(substrateCfg)))`. The scoped resource is the SubstrateClient (`Layer.scoped`, opens a `SubstrateStreamDB`). `Stream.provideLayer` outside `unwrapScoped` is the right ordering. Per-call cost: one StreamDB acquisition per `observe()` invocation, accepted for v1.
 
 ### F4. `Stream.map`, `Stream.filter`, `Stream.filterMap`, `Stream.mapEffect`, `Stream.filterMapEffect`
 

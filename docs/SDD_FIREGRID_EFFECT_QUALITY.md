@@ -45,6 +45,7 @@ Review inputs:
 - `docs/REVIEW_EFFECT_BATCHING_CACHING_2026-05-05.md`
 - `docs/REVIEW_EFFECT_STATE_MANAGEMENT_2026-05-05.md`
 - `docs/REVIEW_EFFECT_STREAMS_2026-05-05.md`
+- `docs/REVIEW_EFFECT_REQUIREMENTS_MANAGEMENT_2026-05-05.md`
 
 External detector reference:
 
@@ -451,6 +452,29 @@ Highest-leverage runtime findings:
 The `CurrentWorkContext` gap is more than style: it affects whether handlers can
 compose with durable choreography primitives without the caller manually
 providing internal context.
+
+## Requirements-Management Findings
+
+The requirements-management review confirms R7's service-convention cleanup
+held: production source has zero `Effect.Service` / `.Default` usage, and
+public services use `Context.Tag` paired with explicit `*Live` Layers.
+
+Findings:
+
+- `Layer.scopedDiscard` is used consistently for long-running runtime daemons
+- `Layer.scoped` is used for resource-holding service graphs
+- `Layer.succeed`, `Layer.sync`, and `Layer.effect` match value-only service
+  construction intent
+- `Effect.provide` is consistently used for full Layer graphs; there is no
+  mixed `provideService` style to police
+- runtime root Layer composition is correct and resolves context once at boot
+- `CurrentWorkContext` remains the single correctness gap: handler invocation
+  propagates that requirement outward instead of satisfying it per dispatch
+- client and lab per-call Layer construction are not leaks, but they bypass
+  Layer memoization and should be lifted for long-lived clients
+
+This review strengthens the priority of the `CurrentWorkContext` slice and the
+client lifecycle slice. It does not call for another service-convention rewrite.
 
 ## Resource-Management Findings
 
