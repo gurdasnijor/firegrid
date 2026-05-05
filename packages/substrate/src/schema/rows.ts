@@ -5,6 +5,8 @@ import { Schema } from "effect"
 export const RunRowType = "durable.run" as const
 export const CompletionRowType = "durable.completion" as const
 export const ClaimAttemptRowType = "durable.claim.attempt" as const
+export const EventStreamRowType = "firegrid.event" as const
+export const EventStreamEnvelopeTag = "firegrid/event@1" as const
 // durable-records-and-projections.RECORDS.8
 export const TraceRowType = "durable.trace" as const
 
@@ -89,6 +91,19 @@ export const ClaimAttemptValue = Schema.Struct({
   status: ClaimAttemptStatus,
 })
 export type ClaimAttemptValue = Schema.Schema.Type<typeof ClaimAttemptValue>
+
+// firegrid-event-streams.SCHEMA_OWNERSHIP.2
+// firegrid-event-streams.SCHEMA_OWNERSHIP.3
+//
+// State Protocol row value for Firegrid EventStream records. The
+// caller-owned event payload remains `Unknown`; this schema owns only
+// the shared envelope needed for Durable Streams State compatibility.
+export const EventStreamValue = Schema.Struct({
+  _envelope: Schema.Literal(EventStreamEnvelopeTag),
+  stream: Schema.String,
+  event: Schema.Unknown,
+})
+export type EventStreamValue = Schema.Schema.Type<typeof EventStreamValue>
 
 // durable-records-and-projections.RECORDS.8 — observability only.
 export const TraceValue = Schema.Struct({

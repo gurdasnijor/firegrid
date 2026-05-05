@@ -1,9 +1,10 @@
 import { DurableStream, type StreamResponse } from "@durable-streams/client"
 import {
+  eventStreamEnvelopeFromStateRow,
   isEventStreamEnvelope,
   type EventStream,
 } from "@durable-agent-substrate/substrate"
-import { Cause, Data, Effect, type ParseResult, Schema, type Scope, Stream } from "effect"
+import { Cause, Data, Effect, Option, type ParseResult, Schema, type Scope, Stream } from "effect"
 import {
   RuntimeContext,
   type RuntimeContextService,
@@ -18,12 +19,13 @@ import {
 //
 // Private runtime helper backing the public `Firegrid.eventStream`
 // Layer. The materializer follows the runtime's substrate stream as
-// raw JSON records (E1 wire envelope, owned by the substrate
-// descriptor module: `EVENT_STREAM_ENVELOPE_TAG = "firegrid/event@1"`,
-// shape `{ _envelope, stream, event }`), filters envelopes whose
-// `stream` matches the descriptor's `name`, decodes the event payload
-// via the descriptor's Schema, and runs the caller's materialize
-// Effect once per event in arrival order.
+// Durable Streams State Protocol rows (`type`, `key`, `value`,
+// `headers.operation`). Firegrid EventStream rows use `type:
+// "firegrid.event"` and carry the shared envelope as `value`. The
+// materializer filters rows whose envelope stream matches the
+// descriptor's `name`, decodes the event payload via the descriptor's
+// Schema, and runs the caller's materialize Effect once per event in
+// arrival order.
 //
 // Authority (SCHEMA_OWNERSHIP.2): the materializer never writes
 // substrate authority rows. ESLint enforces this at the file level
@@ -164,7 +166,10 @@ const runMaterializerLoop = <S extends EventStream.Any, E, R>(
         },
       )
       yield* records.pipe(
-        Stream.filter((record) => isEventStreamEnvelope(record)),
+        Stream.filterMap((record) =>
+          Option.fromNullable(eventStreamEnvelopeFromStateRow(record)),
+        ),
+        Stream.filter((envelope) => isEventStreamEnvelope(envelope)),
         Stream.filter(
           (envelope) => envelope.stream === input.descriptor.name,
         ),

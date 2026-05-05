@@ -4,8 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   EventStream,
   EVENT_STREAM_ENVELOPE_TAG,
+  EVENT_STREAM_ROW_TYPE,
   FiregridClient,
   FiregridClientLive,
+  isEventStreamStateRow,
   isEventStreamEnvelope,
 } from "../index.ts"
 import {
@@ -47,7 +49,7 @@ const readRetained = async (url: string): Promise<ReadonlyArray<unknown>> => {
 }
 
 describe("firegrid-event-streams.CLIENT_API.1 — client.emit appends encoded EventStream envelopes", () => {
-  it("writes only the shared Firegrid EventStream envelope to the configured durable stream", async () => {
+  it("writes a State Protocol row whose value is the shared Firegrid EventStream envelope", async () => {
     const url = await createSubstrateStream("firegrid-event-emit")
 
     await Effect.runPromise(
@@ -59,12 +61,23 @@ describe("firegrid-event-streams.CLIENT_API.1 — client.emit appends encoded Ev
 
     const retained = await readRetained(url)
     expect(retained).toHaveLength(1)
-    expect(retained[0]).toEqual({
-      _envelope: EVENT_STREAM_ENVELOPE_TAG,
-      stream: "widget.events",
-      event: { id: "w-1", count: "7" },
+    const row = retained[0]
+    expect(isEventStreamStateRow(row)).toBe(true)
+    if (!isEventStreamStateRow(row)) {
+      throw new Error("expected EventStream State Protocol row")
+    }
+    expect(row.key.startsWith("widget.events:")).toBe(true)
+    expect(row).toEqual({
+      type: EVENT_STREAM_ROW_TYPE,
+      key: row.key,
+      value: {
+        _envelope: EVENT_STREAM_ENVELOPE_TAG,
+        stream: "widget.events",
+        event: { id: "w-1", count: "7" },
+      },
+      headers: { operation: "insert" },
     })
-    expect(isEventStreamEnvelope(retained[0])).toBe(true)
+    expect(isEventStreamEnvelope(row.value)).toBe(true)
   })
 })
 

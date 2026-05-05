@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   ClaimAttemptRowType,
   CompletionRowType,
+  EventStreamRowType,
   RunRowType,
   type RunValue,
 } from "../schema/rows.ts"
@@ -15,6 +16,8 @@ describe("durable-records-and-projections.SUBSTRATE_SCOPE", () => {
     expect(substrateState.completions.primaryKey).toBe("completionId")
     expect(substrateState.claimAttempts.type).toBe(ClaimAttemptRowType)
     expect(substrateState.claimAttempts.primaryKey).toBe("claimId")
+    expect(substrateState.eventStreams.type).toBe(EventStreamRowType)
+    expect(substrateState.eventStreams.primaryKey).toBe("id")
   })
 
   it("durable-records-and-projections.SUBSTRATE_SCOPE.7 — typed helpers derive change-event key from declared primaryKey", () => {

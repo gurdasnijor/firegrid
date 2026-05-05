@@ -1,11 +1,11 @@
 import {
-  EVENT_STREAM_ENVELOPE_TAG,
   EventStream,
+  eventStreamEnvelopeFromStateRow,
   isEventStreamEnvelope,
+  makeEventStreamStateRow,
   Operation,
   OperationHandle,
   OPERATION_ENVELOPE_TAG,
-  type EventStreamEnvelope,
   type OperationEnvelope,
   type ProjectionReadError,
   type ProjectionWaitTimeout,
@@ -55,14 +55,8 @@ const wrap = (operation: string, payload: unknown): OperationEnvelope => ({
   payload,
 })
 
-// EventStreams carry caller-owned events on ordinary durable stream
-// rows. The envelope lives with the descriptor so future runtime
-// materializers and client readers share the same wire shape.
-const wrapEvent = (stream: string, payload: unknown): EventStreamEnvelope => ({
-  _envelope: EVENT_STREAM_ENVELOPE_TAG,
-  stream,
-  event: payload,
-})
+const nextEventId = (): string =>
+  `${Date.now()}:${Math.random().toString(36).slice(2)}`
 
 // ────────────────────────────────────────────────────────────────
 // Errors
@@ -391,7 +385,15 @@ const buildService = (cfg: SubstrateClientConfig): FiregridClientService => {
       Effect.flatMap((encoded) => {
         return Effect.tryPromise({
           try: () =>
-            durable.append(JSON.stringify(wrapEvent(stream.name, encoded))),
+            durable.append(
+              JSON.stringify(
+                makeEventStreamStateRow({
+                  stream: stream.name,
+                  eventId: nextEventId(),
+                  event: encoded,
+                }),
+              ),
+            ),
           catch: (cause) =>
             new EventStreamAppendError({ stream: stream.name, cause }),
         })
@@ -427,7 +429,9 @@ const buildService = (cfg: SubstrateClientConfig): FiregridClientService => {
 
   const events: FiregridClientService["events"] = (stream) =>
     rawEvents(stream).pipe(
-      Stream.filterMapEffect((envelope) => {
+      Stream.filterMapEffect((row) => {
+        const envelope = eventStreamEnvelopeFromStateRow(row)
+        if (envelope === undefined) return Option.none()
         if (!isEventStreamEnvelope(envelope)) return Option.none()
         if (envelope.stream !== stream.name) return Option.none()
         return Option.some(decodeEvent(stream, envelope.event))

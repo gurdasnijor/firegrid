@@ -1,8 +1,8 @@
 import { DurableStream } from "@durable-streams/client"
 import {
-  EVENT_STREAM_ENVELOPE_TAG,
   EventStream,
-  type EventStreamEnvelope,
+  makeEventStreamStateRow,
+  type EventStreamStateRow,
 } from "@durable-agent-substrate/substrate"
 import { Data, Deferred, Duration, Effect, Exit, Layer, Ref, Schema } from "effect"
 import { describe, expect, it } from "vitest"
@@ -30,9 +30,9 @@ const Hits = EventStream.define({
   }),
 })
 
-const appendEnvelopeRaw = (
+const appendRowRaw = (
   streamUrl: string,
-  envelope: unknown,
+  row: unknown,
 ): Effect.Effect<void, AppendFailed> =>
   Effect.tryPromise({
     try: async () => {
@@ -40,7 +40,7 @@ const appendEnvelopeRaw = (
         url: streamUrl,
         contentType: "application/json",
       })
-      await handle.append(JSON.stringify(envelope))
+      await handle.append(JSON.stringify(row))
     },
     catch: (cause) => new AppendFailed({ cause }),
   })
@@ -83,31 +83,31 @@ describe("firegrid-event-streams.RUNTIME_API.1, .3 — materializer dispatches m
           const runtime = yield* FiregridRuntime
           const streamUrl = runtime.streamIdentity.streamUrl
 
-          const matchingA: EventStreamEnvelope = {
-            _envelope: EVENT_STREAM_ENVELOPE_TAG,
+          const matchingA: EventStreamStateRow = makeEventStreamStateRow({
             stream: Hits.name,
+            eventId: "a",
             event: { url: "/a", count: 1 },
-          }
-          const matchingB: EventStreamEnvelope = {
-            _envelope: EVENT_STREAM_ENVELOPE_TAG,
+          })
+          const matchingB: EventStreamStateRow = makeEventStreamStateRow({
             stream: Hits.name,
+            eventId: "b",
             event: { url: "/b", count: 2 },
-          }
-          const otherStream: EventStreamEnvelope = {
-            _envelope: EVENT_STREAM_ENVELOPE_TAG,
+          })
+          const otherStream: EventStreamStateRow = makeEventStreamStateRow({
             stream: "OtherEventStream",
+            eventId: "other",
             event: { url: "/other", count: 99 },
-          }
+          })
           const notAnEnvelope = { hello: "world" }
 
-          // Append a non-envelope, an envelope for a different
-          // EventStream, and the two real events. The materializer
-          // must skip the first two and decode the latter two in
-          // arrival order.
-          yield* appendEnvelopeRaw(streamUrl, notAnEnvelope)
-          yield* appendEnvelopeRaw(streamUrl, otherStream)
-          yield* appendEnvelopeRaw(streamUrl, matchingA)
-          yield* appendEnvelopeRaw(streamUrl, matchingB)
+          // Append a non-State-Protocol row, a State Protocol row
+          // for a different EventStream, and the two real events.
+          // The materializer must skip the first two and decode the
+          // latter two in arrival order.
+          yield* appendRowRaw(streamUrl, notAnEnvelope)
+          yield* appendRowRaw(streamUrl, otherStream)
+          yield* appendRowRaw(streamUrl, matchingA)
+          yield* appendRowRaw(streamUrl, matchingB)
 
           yield* Deferred.await(reachedTarget).pipe(
             Effect.timeout(Duration.seconds(5)),
@@ -157,4 +157,3 @@ describe("firegrid-event-streams.RUNTIME_API.3 — Scope-bound materializer fibe
     expect(Exit.isSuccess(exit)).toBe(true)
   })
 })
-

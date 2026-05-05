@@ -108,10 +108,6 @@ const handler = <
 // Long-running materializer fibers are Scope-bound — finalizing
 // the providing Layer's scope interrupts the fiber and tears down
 // the underlying DurableStream session.
-//
-// Decode/dispatch is currently a Scope-bound skeleton awaiting the
-// substrate-exported envelope helper from the client slice; see
-// `internal/event-stream-materializer.ts` for the seam.
 const eventStream = <S extends EventStream.Any, E = never, R = never>(
   descriptor: S,
   materialize: (

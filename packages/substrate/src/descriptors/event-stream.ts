@@ -1,19 +1,50 @@
 import type { Schema } from "effect"
+import type { ChangeEvent } from "@durable-streams/state"
+import {
+  EventStreamEnvelopeTag,
+  EventStreamRowType,
+  type EventStreamValue,
+} from "../schema/rows.ts"
+import { substrateState } from "../schema/state.ts"
 
 // firegrid-event-streams.CLIENT_API.1
 // firegrid-event-streams.CLIENT_API.2
 //
 // Wire envelope for EventStream rows. Client emit encodes the caller-owned
-// event payload and appends this envelope as a durable stream row; clients
-// and future runtime materializers share this shape from the descriptor
-// module so encode/decode boundaries cannot drift.
-export const EVENT_STREAM_ENVELOPE_TAG = "firegrid/event@1" as const
+// event payload into this envelope, then stores it as the `value` of a
+// Durable Streams State Protocol change message; clients and runtime
+// materializers share this shape from the descriptor module so encode/decode
+// boundaries cannot drift.
+export const EVENT_STREAM_ENVELOPE_TAG = EventStreamEnvelopeTag
+export const EVENT_STREAM_ROW_TYPE = EventStreamRowType
 
-export interface EventStreamEnvelope {
-  readonly _envelope: typeof EVENT_STREAM_ENVELOPE_TAG
+export type EventStreamEnvelope = EventStreamValue
+
+export type EventStreamStateRow = ChangeEvent<EventStreamEnvelope>
+
+export const eventStreamStateKey = (
+  streamName: string,
+  eventId: string,
+): string => `${streamName}:${eventId}`
+
+export const makeEventStreamEnvelope = (
+  streamName: string,
+  encodedEvent: unknown,
+): EventStreamEnvelope => ({
+  _envelope: EVENT_STREAM_ENVELOPE_TAG,
+  stream: streamName,
+  event: encodedEvent,
+})
+
+export const makeEventStreamStateRow = (input: {
   readonly stream: string
+  readonly eventId: string
   readonly event: unknown
-}
+}): EventStreamStateRow =>
+  substrateState.eventStreams.insert({
+    key: eventStreamStateKey(input.stream, input.eventId),
+    value: makeEventStreamEnvelope(input.stream, input.event),
+  })
 
 export const isEventStreamEnvelope = (
   value: unknown,
@@ -21,6 +52,21 @@ export const isEventStreamEnvelope = (
   typeof value === "object" &&
   value !== null &&
   (value as EventStreamEnvelope)._envelope === EVENT_STREAM_ENVELOPE_TAG
+
+export const isEventStreamStateRow = (
+  value: unknown,
+): value is EventStreamStateRow =>
+  typeof value === "object" &&
+  value !== null &&
+  (value as EventStreamStateRow).type === EVENT_STREAM_ROW_TYPE &&
+  typeof (value as EventStreamStateRow).key === "string" &&
+  (value as EventStreamStateRow).headers?.operation === "insert" &&
+  isEventStreamEnvelope((value as EventStreamStateRow).value)
+
+export const eventStreamEnvelopeFromStateRow = (
+  value: unknown,
+): EventStreamEnvelope | undefined =>
+  isEventStreamStateRow(value) ? value.value : undefined
 
 // firegrid-event-streams.EVENT_STREAM_DEFINITION.1
 // firegrid-event-streams.EVENT_STREAM_DEFINITION.2
