@@ -37,7 +37,7 @@ components:
       3-note: The first launchable subscriber slice covers timer and scheduled-work subscribers as scoped, subscription-driven host programs enabled by runtime profile configuration. Single-shot scan functions remain catch-up/terminalization building blocks; the host runner should wake from durable stream/state changes or due-time deadlines rather than naive fixed-interval polling.
       4: The host can run projection-match subscriber profiles supplied by the runtime.
       5: The host can run claim-before-side-effect operator profiles.
-      6: The host exposes read-only lifecycle status for local tooling.
+      6: The first host lifecycle status surface is in-process and read-only; network diagnostics are deferred.
       6-note: "Subscriber status is projection-first: durable completion state and any future subscriber progress or cursor records are materialized from durable streams/state. Host-local diagnostics may expose ephemeral process liveness such as configured/enabled/running, but must not become completion, cursor, retry, or progress authority."
       7: The host shuts down through Effect scopes and process-signal handling.
       8: The first host package owns embedded Durable Streams dev-server startup rather than requiring a separate CLI or dev package.
@@ -110,11 +110,11 @@ components:
 
   HOST_DIAGNOSTICS:
     requirements:
-      1: The minimum read-only diagnostics include health, version, process id, boot mode, stream identity, active profile names, subscriber program status, operator program status, last scan or wake times, uptime, process metrics, and non-secret error summaries.
+      1: The minimum in-process diagnostics include health, version, process id, boot mode, stream identity, active profile names, subscriber program liveness, operator program liveness, uptime, process metrics, and non-secret error summaries.
       2: Host diagnostics do not start scenarios or mutate durable streams/state.
-      3: The first host diagnostics surface is local HTTP on a configurable port.
-      4: The default diagnostics port is 4438.
-      5: Diagnostic routes are GET-only; unknown methods do not mutate durable streams/state.
+      3: The first host diagnostics surface is in-process rather than HTTP.
+      4: The host does not allocate a default diagnostics port while network diagnostics are deferred.
+      5: Future network diagnostic routes, if introduced, must be read-only and must not mutate durable streams/state.
 
 constraints:
   NO_CONTROL_PLANE:

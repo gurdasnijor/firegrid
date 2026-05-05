@@ -372,7 +372,7 @@ Host responsibilities:
 - run projection-match subscriber profiles supplied by the runtime;
 - run claim-before-side-effect operator programs;
 - run configured event-plane projection observers;
-- expose read-only status, metrics, and health for local tooling;
+- expose read-only in-process status, metrics, and health for local tooling;
 - shut down through Effect scopes and process signals.
 
 The host does not expose a mutation control plane. If the lab or an application
@@ -490,27 +490,22 @@ profiles stay separate. They use the same host profile mechanism later, but
 they should not be pulled into the timer/scheduled-work loop slice just to
 claim broad host-process requirements.
 
-The subscriber runner configuration should be explicit and host-local:
+The subscriber runner configuration is a simple per-kind boolean in Slice 5:
 
 ```ts
-interface HostSubscriberConfig {
-  readonly minWakeIntervalMs?: number
-}
-
 interface SubstrateHostProfile {
   readonly subscribers?: {
-    readonly timer?: boolean | HostSubscriberConfig
-    readonly scheduledWork?: boolean | HostSubscriberConfig
+    readonly timer?: boolean
+    readonly scheduledWork?: boolean
     readonly projectionMatch?: ReadonlyArray<ProjectionMatchProfile>
   }
 }
 ```
 
 If a subscriber is disabled or omitted from the profile, the host does not start
-its fiber. If enabled with `true`, the host uses conservative defaults. If
-enabled with an object, the host uses the supplied options. These options are
-host-local runtime configuration, not durable facts and not read from durable
-state.
+its fiber. A future slice may introduce per-kind tuning options if implementation
+genuinely needs them; until then the boolean keeps Slice 5 honest and avoids
+naming a polling-shaped knob.
 
 Each subscriber program is sequential for its own subscriber kind. A new wake-up
 does not start a second scan if the previous scan is still running. Wakes should
@@ -519,6 +514,16 @@ not from a fixed poll cadence. This keeps timer and scheduled-work resolution
 easy to reason about and avoids turning the host into a second authority; the
 underlying state machine and subscribers still decide which completions can
 terminalize.
+
+Wakes are coalesced rather than dropped. If a stream-edge or due-time wake
+fires while a scan is already running, the runner records the wake and arms
+exactly one follow-up scan that runs after the current one finishes. The
+follow-up scan executes a fresh authoritative scan: the runner re-invokes the
+existing single-shot subscriber function, which rebuilds from durable state
+and decides terminalization. No observed change is silently lost. This
+coalescing is a host-local execution detail; it is not durable subscriber
+progress authority and does not replace completion/cursor/retry/terminalization
+records.
 
 The existing single-shot functions are still useful as the terminalization
 primitive:
@@ -542,7 +547,8 @@ configured and whether a scoped subscriber program is currently alive, but it is
 not subscriber progress authority and it must not replace durable cursor,
 retry, dead-letter, completion, or terminalization records.
 
-HTTP diagnostics can later combine both views:
+Future network diagnostics, if a release need proves them necessary, can later
+combine both views:
 
 - durable projections for substrate facts and future subscriber progress rows;
 - ephemeral host process status for local liveness only.
@@ -688,7 +694,13 @@ same client package and scenario definitions.
 
 ## Read-Only Host Diagnostics
 
-The host may expose read-only endpoints or IPC for local status:
+The first host diagnostics surface is in-process, not HTTP. This keeps the
+host from becoming an operational side channel and preserves the durable stream
+as the only application command path. HTTP, Unix socket, or other networked
+diagnostics are deferred until an actual release need proves they are worth the
+extra surface area.
+
+In-process diagnostics may expose:
 
 - health;
 - version;
@@ -696,21 +708,20 @@ The host may expose read-only endpoints or IPC for local status:
 - boot mode;
 - stream URL or stream name;
 - active profiles;
-- subscriber program status;
-- last scan or wake times;
-- operator program status;
+- subscriber program liveness;
+- operator program liveness;
 - last non-secret error summary;
 - process metrics;
 - uptime.
 
-These endpoints are diagnostic only. They do not mutate durable state and do
-not start scenarios. Secret values and authorization headers are never returned
-through diagnostics.
+Diagnostics are read-only. They do not mutate durable state and do not start
+scenarios. Secret values and authorization headers are never returned through
+diagnostics.
 
-The first host diagnostic surface is local HTTP on a configurable port. The
-default diagnostic port is `4438`, leaving the embedded Durable Streams server
-on its own selected port. Routes are GET-only; unknown methods return 404 or
-405 and never append durable records.
+There is no default diagnostics port in v1 because there is no network
+diagnostics listener. If a future slice introduces routes, they must be
+read-only by construction; unknown methods must not append durable records or
+start scenario work.
 
 ## Relationship To Event Planes
 
