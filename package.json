@@ -4,12 +4,26 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "pnpm run check:specs && pnpm run check:docs && pnpm -r run check",
+    "check": "pnpm run check:specs && pnpm run check:docs && pnpm run lint && pnpm -r run check",
     "check:specs": "ruby -e 'require \"yaml\"; ARGV.each { |f| YAML.load_file(f); puts \"ok #{File.basename(f)}\" }' features/durable-agent-substrate/*.feature.yaml",
     "check:docs": "find README.md docs features -type f \\( -name '*.md' -o -name '*.yaml' \\) -print0 | xargs -0 perl -ne 'print \"$ARGV:$.: trailing whitespace\\n\" if /[ \\t]$/; close ARGV if eof' && ! grep -R -n -E '<<<<<<<|>>>>>>>|=======' README.md docs features",
+    "effect:check": "effect-language-service check",
+    "effect:diagnostics": "sh -c 'status=0; for f in packages/*/tsconfig.json; do echo \"== $f ==\"; effect-language-service diagnostics --project \"$f\" --format text || status=$?; done; exit \"$status\"'",
+    "effect:patch": "effect-language-service patch",
+    "effect:unpatch": "effect-language-service unpatch",
+    "format": "eslint . --fix",
+    "lint": "eslint .",
     "test": "pnpm -r run test"
   },
   "devDependencies": {
-    "@durable-streams/server": "^0.3.1"
+    "@durable-streams/server": "^0.3.1",
+    "@effect/eslint-plugin": "^0.3.2",
+    "@effect/language-service": "^0.85.1",
+    "@eslint/js": "^10.0.1",
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.59.2"
   }
 }

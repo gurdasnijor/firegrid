@@ -1,0 +1,41 @@
+# Tooling
+
+This repo standardizes TypeScript hygiene on ESLint plus the Effect language service.
+
+## ESLint
+
+Run:
+
+```sh
+pnpm run lint
+```
+
+Autofix formatting and safe lint fixes:
+
+```sh
+pnpm run format
+```
+
+The ESLint config intentionally keeps one stack for formatting, type-aware linting, Effect guardrails, and package-boundary checks. Current Effect defect-boundary debt such as `Effect.orDie` and `Layer.orDie` is reported as warnings so the lint setup can land before the behavioral refactor.
+
+## Effect Devtools
+
+The repo installs `@effect/language-service` at the workspace root and enables it in each package tsconfig. Editors must use the workspace TypeScript version for the plugin to load.
+
+For VS Code and Cursor, this repo recommends the Effect Dev Tools extension and configures:
+
+```json
+{
+  "typescript.tsdk": "node_modules/typescript/lib"
+}
+```
+
+Build-time Effect diagnostics are available after patching the local TypeScript install:
+
+```sh
+pnpm run effect:patch
+```
+
+This is intentionally opt-in for now: the current codebase has existing Effect diagnostics that should be fixed in a dedicated refactor before the patch becomes part of the default install/check path. Use `pnpm run effect:unpatch` to restore the normal TypeScript compiler.
+
+The runtime tracer dependency `@effect/experimental` is not installed yet. Add it when there is a concrete app/runtime entrypoint that should connect to the editor DevTools tracer.
