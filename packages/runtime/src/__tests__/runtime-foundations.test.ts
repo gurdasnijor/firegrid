@@ -36,10 +36,11 @@ describe("firegrid-architecture-boundary.SURFACE_AREA — runtime root exposes a
     }
   })
 
-  it("Firegrid namespace exposes subscribers.{timer, scheduledWork} (transitional) plus handler", () => {
+  it("Firegrid namespace exposes subscribers.{timer, scheduledWork} (transitional), handler, and eventStream", () => {
     expect(RuntimeSurface.Firegrid.subscribers.timer).toBeDefined()
     expect(RuntimeSurface.Firegrid.subscribers.scheduledWork).toBeDefined()
     expect(typeof RuntimeSurface.Firegrid.handler).toBe("function")
+    expect(typeof RuntimeSurface.Firegrid.eventStream).toBe("function")
     const subscriberKeys = Object.keys(
       RuntimeSurface.Firegrid.subscribers,
     )
@@ -47,7 +48,7 @@ describe("firegrid-architecture-boundary.SURFACE_AREA — runtime root exposes a
       new Set(["timer", "scheduledWork"]),
     )
     expect(new Set(Object.keys(RuntimeSurface.Firegrid))).toEqual(
-      new Set(["subscribers", "handler"]),
+      new Set(["subscribers", "handler", "eventStream"]),
     )
   })
 })
