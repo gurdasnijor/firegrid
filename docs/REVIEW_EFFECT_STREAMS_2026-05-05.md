@@ -55,46 +55,21 @@ The `operation-client.ts:284-292` site does have a separate concern not specific
 
 ### 4. `Stream.map` / `Stream.filter` / `Stream.filterMap*` / `Stream.mapEffect` — clean, idiomatic pipelines
 
-The longest pipeline is `event-stream-materializer.ts:168-180`:
+The longest pipeline (`event-stream-materializer.ts:168-180`) chains `filterMap` (envelope decode) → `filter` (envelope shape) → `filter` (descriptor binding) → `mapEffect` (schema decode) → `runForEach`. The two consecutive `Stream.filter` calls could collapse to a single predicate with `&&`, but each line documents one decode-stage invariant. `filterMap` doing `Option.fromNullable(eventStreamEnvelopeFromStateRow(record))` is the right shape.
 
-```ts
-records.pipe(
-  Stream.filterMap((record) => Option.fromNullable(eventStreamEnvelopeFromStateRow(record))),
-  Stream.filter((envelope) => isEventStreamEnvelope(envelope)),
-  Stream.filter((envelope) => envelope.stream === input.descriptor.name),
-  Stream.mapEffect((envelope) => decodeEvent(input.descriptor, envelope.event)),
-  Stream.runForEach((event) => input.materialize(event)),
-)
-```
+`event-client.ts:158-163` uses `Stream.filterMapEffect` correctly: early `Option.none()` returns short-circuit before the schema decode runs. `facade/work.ts:103-121` uses `Stream.mapEffect` returning `Option` followed by `Stream.filterMap((opt) => opt)` to drop "lost claim" outcomes — the canonical translation of `Effect<Option<A>>` filtering.
 
-The two consecutive `Stream.filter` calls could collapse to a single `Stream.filter` with `&&`, but as written each line documents one decode-stage invariant (envelope shape, then descriptor binding) and that readability is worth more than the trivial operator merge. `filterMap` doing `Option.fromNullable(eventStreamEnvelopeFromStateRow(record))` is the right shape — the helper returns `undefined` for non-matching rows, which is exactly what `Option.fromNullable` translates.
-
-`event-client.ts:158-163` uses `Stream.filterMapEffect`:
-
-```ts
-Stream.filterMapEffect((row) => {
-  const envelope = eventStreamEnvelopeFromStateRow(row)
-  if (envelope === undefined) return Option.none()
-  if (envelope.stream !== stream.name) return Option.none()
-  return Option.some(decodeEvent(stream, envelope.event))
-})
-```
-
-This is correct: `filterMapEffect` expects a function returning `Option<Effect<…>>`, and the early `Option.none()` returns short-circuit cleanly. The two `if` checks could be lifted to a separate `Stream.filterMap` followed by a `Stream.mapEffect` for symmetry with the materializer, but the current single-stage form has the advantage of doing the `decodeEvent` only on rows already proven to match — refactoring would not change semantics.
-
-`facade/work.ts:103-121` uses `Stream.mapEffect` returning `Option` followed by `Stream.filterMap((opt) => opt)` to drop "lost claim" outcomes. That's the canonical translation of `Effect<Option<A>>` filtering and is exactly right.
-
-`Stream.tap` and `Stream.scan` are not used anywhere. There are no obvious places where `tap` would clean up a pipeline (the existing `mapEffect`-then-discard pattern handles per-element side effects fine), and `scan` is not a natural fit for any of the current pipelines (none accumulate state across stream elements; per-wake state lives on the live StreamDB the loop holds open).
+`Stream.tap` and `Stream.scan` are not used. There are no places where `tap` would clean up a pipeline (the existing `mapEffect`-then-discard handles per-element side effects), and `scan` is not a natural fit (none of the pipelines accumulate state across elements; per-wake state lives on the live StreamDB the loop holds open).
 
 ### 5. Backpressure — bufferSize:1 + sliding is intentional everywhere it appears
 
 `wakeStream` is the one site with explicit buffer sizing (`{ bufferSize: 1, strategy: "sliding" }`, `wake-stream.ts:20`). That is the correct configuration for a wake-coalescing source: the consumer always re-reads the latest snapshot when it resumes, so older un-consumed wakes are redundant and dropping them is preferable to backpressuring the producer (who is a `db.subscribeChanges` callback that must not block).
 
-The other `Stream.async*` constructions use the default buffer:
+The other `Stream.async*` constructions use the default (unbounded) buffer:
 
-- `projection-service.ts:54-64` — `Stream.asyncScoped` over `subscribeChanges` callbacks. The emitted value is the result of `query.evaluate(snapshot)`, and consumers (`Stream.until` via `Stream.runHead`, or external `Projection.stream` callers) generally consume in order. Default buffering is reasonable here, but the same coalescing argument as `wakeStream` could apply for consumers that only care about the latest projection state. **This is not a bug** — `Projection.stream` is documented as observing every change — but `until` callers (which use `runHead` after a predicate filter) would not be affected by a sliding strategy.
+- `projection-service.ts:54-64` — `Stream.asyncScoped` over `subscribeChanges` callbacks. Default buffering is reasonable; `Projection.stream` is documented as observing every change. `until` callers using `runHead` after a predicate filter would not be affected by a sliding strategy.
 
-- `event-stream-materializer.ts:145-167` — `Stream.async` over `subscribeJson` batches. Default buffering is correct here: events are not coalesceable and must be delivered in order. The consumer's `runForEach` runs the user `materialize` Effect sequentially, so backpressure naturally propagates — if `materialize` is slow, the buffer fills, and `subscribeJson` callbacks accumulate in the unbounded default queue. **This is the one place where buffer sizing might warrant explicit thought**: a slow materializer could let the buffer grow without bound. A bounded buffer with `strategy: "suspend"` would push back on the durable-streams client (which itself buffers HTTP batches), but `subscribeJson` is documented as backpressure-aware in the comment at line 151. **Recommendation**: confirm whether the underlying `subscribeJson` emit-loop can in fact suspend, and if not, add an explicit bounded buffer.
+- `event-stream-materializer.ts:145-167` — `Stream.async` over `subscribeJson` batches. Events must be delivered in order, so coalescing is wrong. But the consumer's `runForEach` runs the user `materialize` Effect sequentially, so a slow materializer could let the unbounded buffer grow without bound. `subscribeJson` is documented as backpressure-aware (comment at line 151). **Recommendation**: confirm that the `subscribeJson` emit-loop can actually suspend, and if not, add an explicit bounded buffer.
 
 ### 6. `Stream.merge` / `Stream.concat` / `Stream.zip` — none used, no place obviously needs them
 
