@@ -82,11 +82,10 @@ becomes `Layer<never, never, RuntimeContext | Exclude<R, CurrentWorkContext>>`
 reached; flagged here because it is the largest single
 requirements-management defect in the repo.
 
-### 2. Service-convention uniformity (post-R7)
+### 2. Service-convention uniformity (post-R7) and `Effect.Service` cutover
 
-Substrate, runtime, and client now all use `Context.Tag` + a Layer
-factory. Concrete sites (with the public Tags listed in the order
-they appear):
+Substrate, runtime, and client all use `Context.Tag` + a Layer
+factory. Tags by package:
 
 - substrate: `WorkProducer` `producer.ts:78`, `CompletionProducer`
   `producer.ts:88`, `Projection` `facade/projection.ts:59`,
@@ -94,31 +93,20 @@ they appear):
   `Choreography` `choreography/service.ts:107`, `CurrentWorkContext`
   `choreography/context.ts:21`, `TriggerMatchers` `choreography/triggers.ts`.
 - runtime: `RuntimeContext` `runtime/runtime-context.ts:26`,
-  `FiregridRuntime` `runtime/service.ts:27`,
-  `RuntimeStreamResolver` `runtime/internal/stream-resolver.ts:126`,
-  `EmbeddedDurableStreams` `runtime/internal/stream-resolver.ts:52`,
-  `DurableStreamAdmin` `runtime/internal/stream-resolver.ts:93`.
-- client: `SubstrateClient` `client/service.ts:32`,
-  `FiregridClient` `firegrid/client.ts`, `EventStreamClient`
-  `firegrid/event-client.ts`.
+  `FiregridRuntime` `runtime/service.ts:27`, `RuntimeStreamResolver`
+  `runtime/internal/stream-resolver.ts:126`, `EmbeddedDurableStreams`
+  `:52`, `DurableStreamAdmin` `:93`.
+- client: `SubstrateClient` `client/service.ts:32`, `FiregridClient`
+  `firegrid/client.ts`, `EventStreamClient` `firegrid/event-client.ts`.
 
-Each Tag has exactly one `*Live` factory in the same file. None of
-them re-export a `.Default` constructor. Lab has zero service Tags;
-it consumes Layers (`apps/lab/src/lab/LabEventStreamClient.ts:26-30`)
-and never declares its own. SDD §"Effect Type Conventions" item 3
-("one convention per package") is satisfied across the four
-workspaces.
+Each Tag has exactly one `*Live` factory in the same file. Lab has
+zero service Tags. SDD §"Effect Type Conventions" item 3 ("one
+convention per package") holds across all four workspaces.
 
-### 3. `Effect.Service` vs `Context.Tag + Live` — full cutover
-
-`grep -rn 'Effect\.Service'` over `packages/*/src` and `apps/*/src`
-returns one hit, and that hit is the literal string match guard at
-`packages/substrate/src/__tests__/effect-consistency.test.ts:78`.
-Symmetrically, `\.Default\b` returns only the test's negative
-assertion (`effect-consistency.test.ts:79`). No production file uses
-the constructor, no production file consumes a `*.Default` layer, and
-no runtime helper depends on `Effect.Service`'s implicit Layer
-materialization. R7's cutover is complete.
+`grep -rn 'Effect\.Service' packages/*/src apps/*/src` returns one
+hit — the literal-text guard at
+`effect-consistency.test.ts:78`. `\.Default\b` returns only the
+matching negative assertion at `:79`. R7's cutover is complete.
 
 ### 4. `Layer.*` constructor selection per intent
 
@@ -170,38 +158,24 @@ two per-call sites are the layer-memoization concern in finding 6.
 
 ### 6. Layer memoization / per-call construction
 
-Two related sites construct a Layer per call rather than once:
+Two sites build a Layer per call rather than once:
 
 - `client/src/firegrid/operation-client.ts:206-212` — `withSubstrate`
-  builds `SubstrateClientLive(substrateCfg)` *inside* every `send` /
-  `result` call's `pipe`. Each invocation acquires and releases its
-  own `SubstrateClient` graph (which itself wraps a scoped
-  `Projection` and therefore a `SubstrateStreamDB`). For browser /
-  one-shot CLI use cases this is fine — the `Layer.scoped` correctly
-  scopes the per-call resource — but it foregoes Effect's
-  per-graph memoization. Result: each `client.work.declare(...)`
-  reads a fresh `StreamDB` snapshot, materializes a new
-  `DurableStream` handle inside each producer, and tears it all down
-  at the end of the call. Not a leak (scope guarantees release), but
-  not the "build once" posture you'd want for a backend agent that
-  calls `result` in a tight loop.
+  builds `SubstrateClientLive(substrateCfg)` inside every `send` /
+  `result` / `observe` call's `pipe`. Each invocation acquires and
+  releases its own scoped `Projection` (and therefore a
+  `SubstrateStreamDB` and a fresh `DurableStream`). Scope-correct, but
+  foregoes Effect's per-graph memoization — a backend agent calling
+  `result` in a tight loop pays full StreamDB acquisition each time.
 - `apps/lab/src/lab/LabEventStreamClient.ts:26-30` — `layerFor(cfg)`
-  is called once per `emitLabEvent` and once per `labEvents` Stream.
-  Same shape, with the same posture justification (lab is one-shot
-  per panel session).
+  is rebuilt per `emitLabEvent` / `labEvents`. Same shape, lower
+  stakes (lab is short-lived).
 
-Neither is a defect. Both are improvement opportunities: a
-`SubstrateClient`-scoped service held at the client root would let
-`send` / `result` / `observe` reuse one StreamDB. The right fix is
-to lift `withSubstrate` into a `Layer.scoped` over a long-lived
-`SubstrateClient`, then make `FiregridClientLive` itself depend on
-it (`Layer.provide` chain). That mirrors the runtime side, where
-`RuntimeContext` is built once at boot and threaded through.
-
-The runtime side has no per-call layer construction. `RuntimeContext`
-is built exactly once at `runtime/layer.ts:67`, the resolver runs
-exactly once at `layer.ts:54`, and downstream daemon Layers consume
-the resolved context. Correct.
+Neither is a defect. The right fix lifts `withSubstrate` into a
+`Layer.scoped` over a long-lived `SubstrateClient`, with
+`FiregridClientLive` depending on it via `Layer.provide`, mirroring
+the runtime side where `RuntimeContext` is built once at
+`runtime/layer.ts:67` and threaded through.
 
 ### 7. `R`-channel threading through `Firegrid.handler` / `eventStream`
 

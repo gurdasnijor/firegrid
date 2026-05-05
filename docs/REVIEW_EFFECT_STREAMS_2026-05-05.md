@@ -46,27 +46,19 @@ The materializer deliberately uses `Stream.async` over `subscribeJson` instead o
 
 ### F5. Backpressure semantics
 
-**`bufferSize` choices are explicit at the one site that matters and default-correct elsewhere.**
+**`bufferSize` choices are explicit at the one site that matters; default elsewhere with one latent gap.**
 
-- `wakeStream` — `bufferSize: 1, strategy: "sliding"` (`wake-stream.ts:20`). Correct for edge-coalescing: substrate emits a wake per `subscribeChanges` notification, but the consumer always reads the *current* live snapshot. Wakes that arrive while a scan is in flight collapse into exactly one follow-up rescan. This matches the canonical "drop-oldest-keep-latest" use case from the streams skill.
-- `projection-service.buildProjectionCore` (`projection-service.ts:54-64`) uses `Stream.asyncScoped` with **default** `bufferSize`. The element type here is the user's evaluator output `A`, not a wake — and the `Projection.until` consumer reads at most until the predicate matches, then runs `Stream.runHead`. For a one-shot wait, the default buffer is fine. For long-running consumers using `Projection.stream(query)`, the default (16) is a reasonable starting point, but if a downstream consumer is slow, queue pressure could build. **Today no production caller uses `Projection.stream` for a long-running consumer** — the runtime substrate uses `wakeStream` directly, and the only `until` site is `operation-client.result` which collects exactly one element. Worth watching, not actionable today.
-- `event-stream-materializer` (`event-stream-materializer.ts:145`) — `Stream.async<unknown, EventStreamSessionError>` with default `bufferSize`. The producer is `subscribeJson`, which fires once per server batch and emits N items synchronously via `void emit.single(item)`. If the materializer consumer is faster than the producer (typical case), backpressure is irrelevant. If the consumer is slower (e.g. user `materialize` Effect blocks on I/O), the default buffer can fill and `emit.single` returns a `boolean`-ish "rejected" — but the implementation **discards the return value** (`void emit.single(item)`). This is a latent backpressure gap: a stuck consumer plus a fast producer = silently dropped items. The risk is small in practice (materialize Effects are app code, expected to be fast), but if a future user materializer is genuinely slow, items could be lost without diagnostic. **Improvement candidate.** Either: (a) increase `bufferSize` and document the bound, or (b) use `emit.fromEffect(...)`-style flow control, or (c) bridge through a `Queue.bounded` whose offer is `Effect.suspend`-able. Today's right answer is probably (a) with a comment.
+- `wakeStream` (`wake-stream.ts:20`) — `bufferSize: 1, strategy: "sliding"`. Correct for edge-coalescing: substrate emits a wake per `subscribeChanges` notification, the consumer reads the current live snapshot; wakes during in-flight scan collapse to one follow-up. Canonical drop-oldest-keep-latest.
+- `projection-service.ts:54-64` — default `bufferSize`. Element type is evaluator output `A`. `Projection.until` reads via `runHead` (one element). No production caller uses `Projection.stream` for a long-running consumer; the runtime uses `wakeStream` directly. Worth watching, not actionable today.
+- **Latent gap:** `event-stream-materializer.ts:145` — `Stream.async<unknown, EventStreamSessionError>` with default `bufferSize`. The `subscribeJson` producer fires once per server batch and emits N items synchronously via `void emit.single(item)` — **the boolean return is discarded**. If a user `materialize` Effect is slow, the buffer can fill and items are silently dropped. Risk is small in practice (materialize is app code, expected to be fast) but worth either sizing the buffer with a documented bound or bridging through `Queue.bounded` with `Effect.suspend`-able offer.
 
-**Verdict:** wakeStream is exemplary; the materializer has a small documented-or-fix-it window. No other site has a backpressure decision worth changing.
+**Verdict:** wakeStream exemplary; materializer has a document-or-fix window.
 
 ### F6. `Stream.merge`, `Stream.concat`, `Stream.zip`
 
-**Zero uses across production code.** Worth examining whether the `runner` would benefit:
+**Zero uses across production code.** The interesting candidate is the runner: `runner.ts:137-167` is a manual merge — timer wakes (via `Effect.sleep` + `Effect.fork`) and edge wakes (via `input.subscribe(db, wake)`) both feed a single `wake()` callback. A `Stream.merge(timerWakes, edgeWakes)` decomposition would require a separately-issued `Stream.fromEffect(Effect.sleep(...))` per scan (deadline changes per scan), a `Stream.async` for the edge subscription, and `Stream.flatMap(stream, { switch: true })` semantics to swap the timer leg. The current shape (one `wakeStream` + internal Fiber for the timer) is more compact. The concurrency review's `Effect.fork → Effect.forkScoped` fix at `runner.ts:155` lands the same structural guarantee with less surgery. **Recommend: keep the single-stream + internal-timer structure.**
 
-`runner.ts:137-167` schedules timer wakes (via `Effect.sleep` + `Effect.fork` inside the `Stream.asyncScoped` acquire callback) and edge wakes (via `input.subscribe(db, wake)`). Both feed a single `wake()` callback registered with the same emit. This is a **manual merge** — two producers, one consumer. A `Stream.merge(timerWakes, edgeWakes)` decomposition would be theoretically cleaner, but it would require:
-
-- A separate `Stream.fromEffect(Effect.sleep(...))` per scheduled deadline, re-issued each scan (the deadline changes per scan based on `nextDeadlineMs`).
-- A `Stream.async` for the edge subscription.
-- Some form of "switch the timer leg whenever the edge stream produces" — i.e. `Stream.flatMap` semantics with cancel-previous. That's `Stream.switchMap`-shaped, which Effect Stream doesn't expose directly; you'd build it from `Stream.flatMap(stream, { switch: true })`.
-
-The current shape — one `wakeStream`, internal Fiber tracking for the deadline timer — is more compact than the decomposed merge. The concurrency review's observation (§"bare `Effect.fork` for deadline timer" → switch to `Effect.forkScoped`) is a smaller fix that lands the same structural guarantee without introducing two streams. **Recommend: keep the single-stream + internal-timer structure; apply the concurrency review's `forkScoped` fix.**
-
-`Stream.concat` and `Stream.zip` have no current candidates. `Stream.zip` would only matter for join-style flows; Firegrid joins inside `Effect.gen` blocks (e.g. `mapRunToState`'s decode-then-shape) which is correct.
+`Stream.concat`/`Stream.zip`: no candidates — Firegrid joins inside `Effect.gen` (e.g. `mapRunToState`'s decode-then-shape), which is correct.
 
 ### F7. Channel composition
 
