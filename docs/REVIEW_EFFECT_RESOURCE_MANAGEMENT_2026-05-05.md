@@ -119,19 +119,17 @@ No `node:fs` direct imports in production code (detector hits are all in `__test
 
 ## What strict-baseline already enforces
 
-The existing strict-mode quality gates already cover several resource-lifecycle invariants:
+Existing strict-mode gates that cover resource-lifecycle invariants:
 
-- **depcruise (`.dependency-cruiser.cjs`)** — enforces package-boundary integrity (`client-no-runtime`, `runtime-no-client`, `lab-no-substrate-or-runtime`, `kernel-internals-stay-internal`, `packages-no-apps`). This indirectly protects the layer-composition story: nothing outside the kernel can build a fresh `SubstrateStreamDB` outside of the acquireSubstrateDb helper, since the kernel internals are not importable from runtime/client/apps.
-- **Semgrep (`.semgrep.yml`)** — already has `firegrid-acquire-db-shape` (DUP_DETECTION.2) which enforces the canonical shape of the acquire-DB helper, plus `firegrid-tryPromise-stream-append`, `firegrid-retained-fold-by-field`, `firegrid-authoritative-run-call`. These prevent re-introduction of the acquire-DB anti-pattern.
-- **Knip (`.knip-baseline.json`)** — orphan/unused code surfacing.
-- **The Effect-TS detector (`/tmp/effect-detect-packages.txt`)** — already catches `services/rule-001` (node:fs, node:crypto, process.env outside config services).
+- **depcruise (`.dependency-cruiser.cjs`)** — package-boundary integrity (`client-no-runtime`, `runtime-no-client`, `lab-no-substrate-or-runtime`, `kernel-internals-stay-internal`). Indirectly protects layer composition: nothing outside the kernel can construct a fresh `SubstrateStreamDB` outside the acquireSubstrateDb helper.
+- **Semgrep (`.semgrep.yml`)** — `firegrid-acquire-db-shape` (DUP_DETECTION.2) enforces canonical acquire-DB shape; plus `firegrid-tryPromise-stream-append`, `firegrid-retained-fold-by-field`, `firegrid-authoritative-run-call`.
+- **Effect-TS detector** — catches `services/rule-001` (node:crypto, process.env outside config services).
 
-What is **not** enforced and would need new rules after the recommendations land:
+Not enforced; would need new rules after the recommendations land:
 
-- A "every `new DurableStream` lives inside an `acquireRelease`" rule (covers top-5 #2). New Semgrep rule.
-- A "no `Effect.provide(...)` inside per-call helpers that takes a fresh layer constructor" rule (covers top-5 #1). Hard to write generically; an AST-level lint or a pattern-specific Semgrep rule keyed to `withSubstrate`-shape helpers is the realistic option.
-- A "no `process.env[…]` outside `bin/`" rule (covers top-5 #5). Easy Semgrep rule.
+- "every `new DurableStream` lives inside an `acquireRelease`" — new Semgrep rule (top-5 #2).
+- "no `Effect.provide(LayerLive(...))` inside a per-call helper" — pattern-specific Semgrep rule keyed to `withSubstrate`-shape helpers (top-5 #1).
+- "no `process.env[…]` outside `bin/`" — easy Semgrep rule (top-5 #5).
+- The detector's `services/rule-001` already covers top-5 #4; a depcruise `forbidden` rule on `node:crypto` would promote it from advisory to gate.
 
-The detector's `services/rule-001` already handles `node:crypto` (top-5 #4) — it is "potential" today, but a depcruise `forbidden` rule would lift it from advisory to gate.
-
-No new rules need their strict-mode gates flipped to advance these recommendations; #2 and #5 can be added as advisory Semgrep rules first and promoted to errors once the cleanup lands.
+No new rules need their strict-mode gates flipped to advance these recommendations; new rules can be added as advisory Semgrep first and promoted to errors after cleanup.
