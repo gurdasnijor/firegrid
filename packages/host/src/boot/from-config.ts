@@ -1,5 +1,4 @@
 import { Config, Effect, Option } from "effect"
-import { buildHostHeaders } from "./headers.js"
 import { generateProcessId } from "./identity.js"
 import type { SubstrateHostBootPlan } from "./plan.js"
 
@@ -7,8 +6,6 @@ import type { SubstrateHostBootPlan } from "./plan.js"
 // launchable-substrate-host.HOST_CONFIGURATION.5
 // launchable-substrate-host.HOST_CONFIGURATION.6
 // launchable-substrate-host.HOST_CONFIGURATION.7
-// launchable-substrate-host.HOST_CONFIGURATION.10
-// launchable-substrate-host.HOST_CONFIGURATION.11
 //
 // `bootPlanFromConfig` decodes a `SubstrateHostBootPlan` from Effect
 // Config:
@@ -17,9 +14,6 @@ import type { SubstrateHostBootPlan } from "./plan.js"
 //   SUBSTRATE_DS_PORT       -> embedded-dev DS port (default 0; OS-assigned)
 //   SUBSTRATE_STREAM        -> embedded-dev stream name (default "substrate")
 //   SUBSTRATE_PROCESS_ID    -> explicit override (advanced)
-//   SUBSTRATE_AUTHORIZATION -> Authorization header verbatim
-//   SUBSTRATE_TOKEN         -> bare bearer token; materialized as
-//                              "Authorization: Bearer <token>"
 
 const optionalString = (key: string) => Config.option(Config.string(key))
 const optionalInteger = (key: string) => Config.option(Config.integer(key))
@@ -33,19 +27,10 @@ export const bootPlanFromConfig: Effect.Effect<
   const dsPort = yield* optionalInteger("SUBSTRATE_DS_PORT")
   const streamName = yield* optionalString("SUBSTRATE_STREAM")
   const processIdOverride = yield* optionalString("SUBSTRATE_PROCESS_ID")
-  const authorization = yield* optionalString("SUBSTRATE_AUTHORIZATION")
-  const bearerToken = yield* optionalString("SUBSTRATE_TOKEN")
 
   const processId = Option.match(processIdOverride, {
     onNone: () => generateProcessId(),
     onSome: (id) => id,
-  })
-
-  const headers = buildHostHeaders({
-    ...(Option.isSome(authorization)
-      ? { authorization: authorization.value }
-      : {}),
-    ...(Option.isSome(bearerToken) ? { bearerToken: bearerToken.value } : {}),
   })
 
   if (Option.isSome(streamUrl)) {
@@ -55,7 +40,6 @@ export const bootPlanFromConfig: Effect.Effect<
     return {
       _tag: "AttachedHost",
       processId,
-      headers,
       streamUrl: streamUrl.value,
     } satisfies SubstrateHostBootPlan
   }
@@ -66,7 +50,6 @@ export const bootPlanFromConfig: Effect.Effect<
   return {
     _tag: "EmbeddedDevHost",
     processId,
-    headers,
     durableStreams: {
       host: Option.match(dsHost, {
         onNone: () => "127.0.0.1",

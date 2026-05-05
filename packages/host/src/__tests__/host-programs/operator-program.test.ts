@@ -199,4 +199,87 @@ describe("HostProgramGraph — operator program via graph", () => {
     expect(handlerA).toBe(1)
     expect(handlerB).toBe(1)
   })
+
+  // durable-subscribers.RESTART_SAFETY.1
+  // launchable-substrate-host.HOST_PROCESS.5
+  //
+  // The graph operator path has its own runner code, so restart
+  // safety is pinned here rather than inherited from the boolean
+  // subscriber tests. Ready work that exists before a later host
+  // scope starts is claimed and terminalized from durable state.
+  it("restarts from durable state and claims ready work after a previous graph scope exits", async () => {
+    const streamUrl = await createSubstrateStream("graph-operator-restart")
+    const runId = "r-operator-restart"
+    await seedReadyRun(streamUrl, runId, "c-operator-restart")
+
+    const NoopGraph = HostProgramGraph.define({
+      name: "operator-restart-noop",
+      layer: HostPrograms.operator({
+        name: "noop",
+        select: () => false,
+        handler: () => Effect.succeed({ unreachable: true }),
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.sleep("250 millis").pipe(
+          Effect.provide(
+            SubstrateHostBoot.attached({
+              streamUrl,
+              program: NoopGraph,
+            }),
+          ),
+        ),
+      ),
+    )
+
+    const blocked = await waitForRunState(
+      streamUrl,
+      runId,
+      (r) => r !== undefined,
+      500,
+    )
+    expect(blocked?.state).toBe("blocked")
+
+    let handlerInvocations = 0
+    const ResolveGraph = HostProgramGraph.define({
+      name: "operator-restart-resolve",
+      layer: HostPrograms.operator({
+        name: "restart-operator",
+        handler: (item) =>
+          Effect.sync(() => {
+            handlerInvocations += 1
+            return { restarted: true, runId: item.runId }
+          }),
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const run = yield* Effect.tryPromise({
+            try: () =>
+              waitForRunState(
+                streamUrl,
+                runId,
+                (r) => r !== undefined && r.state === "completed",
+                3000,
+              ),
+            catch: (cause) => cause,
+          })
+          expect(run?.state).toBe("completed")
+        }).pipe(
+          Effect.provide(
+            SubstrateHostBoot.attached({
+              streamUrl,
+              program: ResolveGraph,
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(handlerInvocations).toBe(1)
+  })
 })

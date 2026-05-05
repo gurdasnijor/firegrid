@@ -134,4 +134,86 @@ describe("HostProgramGraph — projection-match subscriber via graph", () => {
     )
     expect(finalState?.state).toBe("pending")
   })
+
+  // durable-subscribers.RESTART_SAFETY.1
+  // launchable-substrate-host.HOST_PROCESS.4
+  //
+  // Graph-driven projection-match runners rebuild from durable state
+  // on startup. A pending completion left unresolved by one host scope
+  // is resolved by a later host scope with a matching evaluator.
+  it("restarts from durable state and resolves a pending projection_match after a previous graph scope exits", async () => {
+    const streamUrl = await createSubstrateStream("graph-pm-restart")
+    const completionId = "c-pm-restart"
+    await seedPendingProjectionMatch(streamUrl, completionId, {
+      kind: "restart-permission",
+    })
+
+    const NoMatch = HostProgramGraph.define({
+      name: "pm-restart-nomatch",
+      layer: HostPrograms.projectionMatchSubscriber({
+        evaluate: () => Effect.succeed({ kind: "no-match" as const }),
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.sleep("250 millis").pipe(
+          Effect.provide(
+            SubstrateHostBoot.attached({
+              streamUrl,
+              program: NoMatch,
+            }),
+          ),
+        ),
+      ),
+    )
+
+    const stillPending = await waitForCompletionState(
+      streamUrl,
+      completionId,
+      (c) => c !== undefined,
+      500,
+    )
+    expect(stillPending?.state).toBe("pending")
+
+    const Match = HostProgramGraph.define({
+      name: "pm-restart-match",
+      layer: HostPrograms.projectionMatchSubscriber({
+        evaluate: () =>
+          Effect.succeed({
+            kind: "match" as const,
+            value: { restarted: true },
+          }),
+      }),
+    })
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const completion = yield* Effect.tryPromise({
+            try: () =>
+              waitForCompletionState(
+                streamUrl,
+                completionId,
+                (c) => c?.state === "resolved",
+                3000,
+              ),
+            catch: (cause) => cause,
+          })
+          expect(completion?.state).toBe("resolved")
+          const r = completion?.result as
+            | { matchedValue: { restarted: boolean } }
+            | undefined
+          expect(r?.matchedValue.restarted).toBe(true)
+        }).pipe(
+          Effect.provide(
+            SubstrateHostBoot.attached({
+              streamUrl,
+              program: Match,
+            }),
+          ),
+        ),
+      ),
+    )
+  })
 })

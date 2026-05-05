@@ -12,10 +12,8 @@
 // HostProgramGraph plus HostPrograms Layer constructors and the
 // narrow HostProgramRuntime service Tag. Host-managed runtime
 // programs (timer / scheduled-work / projection-match subscribers
-// and claim-before-side-effect operators) are wired either through
-// the new `program: HostProgramGraph` option (graph path) or
-// through the transitional `profile.subscribers` booleans (Slice 5
-// boolean path); when both are supplied the graph path supersedes.
+// and claim-before-side-effect operators) are wired through the
+// `program: HostProgramGraph` option.
 // Network host diagnostics and the process-runner / signal-
 // handling concerns remain deferred to later slices. Embedded
 // Durable Streams dev-server ownership lives in this package; no
@@ -25,8 +23,6 @@ export {
   bootPlanFromConfig,
   type ConfigError,
 } from "./boot/from-config.js"
-
-export { buildHostHeaders, type HeaderInput } from "./boot/headers.js"
 
 export { generateProcessId } from "./boot/identity.js"
 
@@ -54,8 +50,6 @@ export {
   SubstrateHostLive,
   type SubstrateHostLiveOptions,
 } from "./host/live.js"
-
-export { emptyProfile, type SubstrateHostProfile } from "./host/profile.js"
 
 export {
   HostProgramGraph,

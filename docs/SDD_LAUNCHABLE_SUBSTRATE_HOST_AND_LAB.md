@@ -219,8 +219,7 @@ SubstrateClient service + Layer constructors
 SubstrateHostBoot.attached / attachedFromConfig
 SubstrateHostBoot.embeddedDev / bootPlanFromConfig
 SubstrateHostBoot.withHost
-SubstrateHostLive(plan, profile) today
-SubstrateHostLive(plan, hostProgram.layer) as the next vocabulary target
+SubstrateHostLive(plan, { program })
 ```
 
 The important ergonomic property is compositionality. A Firepixel-like runtime
@@ -245,11 +244,6 @@ const FirelineHostProgram = HostProgramGraph.define({
   ),
 })
 
-// Current implementation still passes the executable Effect layer through the
-// `profile` option. The next host-program slice should rename or wrap this
-// surface around Host Program Graph terminology.
-const HostProgramLive = FirelineHostProgram.layer
-
 const program = SubstrateHostBoot.withHost(
   Effect.gen(function* () {
     const substrate = yield* SubstrateClient
@@ -259,7 +253,7 @@ const program = SubstrateHostBoot.withHost(
     mode: "embedded-dev",
     streamName: "firepixel-prototype",
     clientId: "prototype:lab",
-    profile: HostProgramLive,
+    program: FirelineHostProgram,
   },
 )
 ```
@@ -267,11 +261,7 @@ const program = SubstrateHostBoot.withHost(
 This keeps operational complexity low: the host owns process lifetime and
 subscribers/operators, the Host Program Graph owns program wiring, and ordinary
 Effect Layers own adapter choices and test replacements. The client owns durable
-intent production. The current TypeScript implementation still names this option
-`profile`; that is a transitional implementation name for the first boolean
-subscriber controls. The next host-program slice should rename or wrap it around
-Host Program Graph terminology before broad lab work.
-This is tracked by the Host Program Graph requirements in
+intent production. This is tracked by the Host Program Graph requirements in
 `launchable-substrate-host.RUNTIME_COMPOSITION.1` and
 `launchable-substrate-host.RUNTIME_COMPOSITION.2`.
 
@@ -444,7 +434,6 @@ type SubstrateHostBootPlan =
   | {
       readonly _tag: "EmbeddedDevHost"
       readonly processId: string
-      readonly headers: Readonly<Record<string, string>>
       readonly durableStreams: {
         readonly host: string
         readonly port: number
@@ -454,7 +443,6 @@ type SubstrateHostBootPlan =
   | {
       readonly _tag: "AttachedHost"
       readonly processId: string
-      readonly headers: Readonly<Record<string, string>>
       readonly streamUrl: string
     }
 ```
@@ -468,19 +456,15 @@ options:
   embedded dev mode;
 - `SUBSTRATE_PROCESS_ID` is optional and advanced; generated process ids are the
   default;
-- `SUBSTRATE_AUTHORIZATION` or `SUBSTRATE_TOKEN` materializes stream headers.
-
-The Config-backed path should use Effect's `Config` module directly. Auth
-values should be decoded as `Redacted` values, with `SUBSTRATE_AUTHORIZATION`
-winning over `SUBSTRATE_TOKEN`; diagnostics should never unwrap or serialize
-the resulting secret header.
+Auth/header transport is deferred beyond the core launchable lab slice. When it
+returns, it should use Effect's `Config` module and `Redacted` values directly;
+diagnostics should never unwrap or serialize secret headers.
 
 The Host Program Graph is made of Effect layers and values supplied in process,
 not a global registry. It is analogous to a Flink job graph at the semantic
 level: the graph describes the executable stream/state programs the host runs,
-but it is not submitted through an HTTP control plane. The current TypeScript
-surface still uses `profile` as the option name; Host Program Graph is the
-vocabulary target for the next implementation wave.
+but it is not submitted through an HTTP control plane. The TypeScript host
+surface supports `program: HostProgramGraph`; there is no separate profile mode.
 
 ```ts
 interface HostProgramGraph<E = never, RIn = never> {
@@ -548,7 +532,7 @@ const hostPrograms = {
 
 SubstrateHostBoot.embeddedDev({
   streamName: "substrate-prototype",
-  profile: hostPrograms.prototype,
+  program: hostPrograms.prototype,
 })
 ```
 
@@ -558,23 +542,25 @@ Host Program Graph definitions from durable state.
 
 ### Host-Managed Subscriber Programs
 
-Slice 5 makes the timer and scheduled-work subscribers launchable under the
-host. The host owns the scoped subscriber programs; the substrate subscriber
-functions remain the authority for catch-up scan-and-resolve behavior.
+Timer, scheduled-work, projection-match, and operator programs are host-managed
+programs expressed through the Host Program Graph. The host owns the scoped
+program fibers; the substrate single-shot subscriber and operator functions
+remain the authority for catch-up scan-and-resolve behavior.
 
 This is not intended to be a naive polling loop. The durable-subscriber model
 is subscription/progress oriented:
 
-- active subscribers follow durable stream/state changes;
-- due-time subscribers also schedule a wake-up for the nearest known due time;
+- active programs follow durable stream/state changes;
+- due-time programs also schedule a wake-up for the nearest known due time;
 - restart safety comes from durable records, not process-local memory;
-- duplicate terminalization attempts remain harmless under completion
+- duplicate terminalization attempts remain harmless under completion and claim
   authority.
 
 Spec anchors:
 
 - `launchable-substrate-host.HOST_PROCESS.3`
-- `launchable-substrate-host.HOST_PROCESS.6`
+- `launchable-substrate-host.HOST_PROCESS.4`
+- `launchable-substrate-host.HOST_PROCESS.5`
 - `launchable-substrate-host.RUNTIME_COMPOSITION.1`
 - `launchable-substrate-host.RUNTIME_COMPOSITION.2`
 - `launchable-substrate-host.RUNTIME_COMPOSITION.3`
@@ -583,32 +569,11 @@ Spec anchors:
 - `launchable-substrate-host.NO_CONTROL_PLANE.1`
 - `launchable-substrate-host.NO_CONTROL_PLANE.3`
 
-The first host-managed subscriber program set covers only:
-
-- timer completions through `runTimerSubscriber`;
-- scheduled-work completions through `runScheduledWorkSubscriber`.
-
-Projection-match subscriber programs and claim-before-side-effect operator
-programs stay separate. They use the same Host Program Graph mechanism later,
-but they should not be pulled into the timer/scheduled-work loop slice just to
-claim broad host-process requirements.
-
-The subscriber runner configuration is a simple per-kind boolean in Slice 5:
-
-```ts
-interface SubstrateHostProfile {
-  readonly subscribers?: {
-    readonly timer?: boolean
-    readonly scheduledWork?: boolean
-  }
-}
-```
-
-If a subscriber is disabled or omitted from the current `profile` implementation
-shape, the host does not start its fiber. A future Host Program Graph slice may
-rename or wrap that option. Per-kind tuning should only be introduced if
-implementation genuinely needs it; until then the boolean keeps Slice 5 honest
-and avoids naming a polling-shaped knob.
+The host does not have a second subscriber configuration shape. To run timer or
+scheduled-work subscribers, include `HostPrograms.timerSubscriber()` or
+`HostPrograms.scheduledWorkSubscriber()` in the graph. Per-kind tuning should
+only be introduced if implementation genuinely needs it, and should live in
+explicit Layer constructors rather than a polling-shaped tuning knob.
 
 Each subscriber program is sequential for its own subscriber kind. A new wake-up
 does not start a second scan if the previous scan is still running. Wakes should
@@ -645,33 +610,15 @@ timer completions, pending scheduled-work completions, resolved terminal rows,
 blocked runs, and future subscriber progress or cursor records should be read
 from Durable Streams / Durable State projections.
 
-Host-local lifecycle state is only diagnostic. It can say what this process has
-configured and whether a scoped subscriber program is currently alive, but it is
-not subscriber progress authority and it must not replace durable cursor,
-retry, dead-letter, completion, or terminalization records.
+Host-local lifecycle state is only diagnostic. It can say which graph this
+process launched and whether future supervised fibers are alive, but it is not
+subscriber progress authority and it must not replace durable cursor, retry,
+dead-letter, completion, or terminalization records.
 
 Future network diagnostics, if a release need proves them necessary, can later
-combine both views:
-
-- durable projections for substrate facts and future subscriber progress rows;
-- ephemeral host process status for local liveness only.
-
-Slice 5 should not create HTTP routes. If it exposes an in-process diagnostic
-service, keep the shape intentionally narrow:
-
-```ts
-interface SubscriberProgramLiveness {
-  readonly kind: "timer" | "scheduled_work"
-  readonly enabled: boolean
-  readonly running: boolean
-  readonly lastErrorSummary?: string
-}
-```
-
-If liveness is exposed, it should be an in-process `Context.Tag` or
-`Effect.Service` consumed with `Effect.serviceOption(...)` by optional
-diagnostic layers. Subscriber programs may publish liveness when the service is
-present, but they must not require diagnostics to be wired in order to run.
+combine durable projections for substrate facts with ephemeral process status.
+The core launchable lab slice should not create HTTP routes or a host-local
+liveness service.
 
 Counts, cursor positions, retry/dead-letter state, and durable terminalization
 history should come from durable records/projections once the corresponding row
@@ -684,9 +631,9 @@ The host package should expose thin constructors that mirror Firepixel's best
 runtime API pattern:
 
 ```ts
-SubstrateHostBoot.attached({ streamUrl, processId, authorization, bearerToken, extraHeaders, profile })
-SubstrateHostBoot.attachedFromConfig({ profile })
-SubstrateHostBoot.embeddedDev({ streamName, durableStreamsPort, profile })
+SubstrateHostBoot.attached({ streamUrl, processId, program })
+SubstrateHostBoot.attachedFromConfig({ program })
+SubstrateHostBoot.embeddedDev({ streamName, durableStreamsPort, program })
 SubstrateHostBoot.bootPlanFromConfig
 SubstrateHostBoot.withHost(effect, options)
 ```
@@ -743,47 +690,28 @@ Graph:
 The substrate host runs the Host Program Graph. The graph owns agent semantics.
 The durable substrate remains generic.
 
-### Next Host Program Graph Slice
+### Host Program Graph Slice
 
-The next implementation slice should make the Host Program Graph an explicit
-host contract before broad lab UI work begins. Its purpose is not to introduce a
-framework registry; it is to give the existing host a typed in-process graph of
-runtime programs it can run.
+The Host Program Graph slice made the graph the explicit host runtime contract
+before broad lab UI work began. Its purpose was not to introduce a framework
+registry; it gave the existing host a typed in-process graph of runtime programs
+it can run.
 
-Minimum scope:
+Implemented scope:
 
-- introduce a `HostProgramGraph` or equivalent wrapper around today's
-  transitional `profile` option;
-- express runtime dependencies and host programs as ordinary Effect Layers
-  rather than as separate registry fields;
-- preserve compatibility with the existing timer and scheduled-work subscriber
-  booleans;
-- add Layer constructors for projection-match subscriber programs that can use
-  caller-owned event-plane definitions and evaluator wiring;
-- add Layer constructors for claim-before-side-effect operator programs that
-  consume substrate ready work or caller-owned event-plane projections;
-- keep graph discovery explicit through caller-supplied local maps;
-- expose no host mutation endpoints, no HTTP diagnostics listener, and no
+- `HostProgramGraph` is a named wrapper around an ordinary Effect `Layer`;
+- runtime dependencies and host programs compose through ordinary Effect Layers
+  rather than separate registry fields;
+- timer and scheduled-work subscriber programs run through `HostPrograms` Layer
+  constructors;
+- projection-match subscriber programs use caller-owned evaluator wiring;
+- claim-before-side-effect operator programs consume substrate ready work;
+- graph discovery is explicit through caller-supplied local maps;
+- the host exposes no mutation endpoints, no HTTP diagnostics listener, and no
   durable program registry.
 
-The slice should prove the runtime contract with host-level tests before the lab
-depends on it:
-
-- timer and scheduled-work programs still run through the graph;
-- a fake permission or required-action event plane resolves a `waitFor` through
-  a graph-supplied projection-match subscriber;
-- an operator program claims work before invoking its handler and terminalizes
-  through existing substrate claim/completion authority;
-- the same example program can be started through the substrate client while the host
-  executes only graph-supplied programs.
-
-This slice is the right place to claim
-`launchable-substrate-host.HOST_PROCESS.4`,
-`launchable-substrate-host.HOST_PROCESS.5`,
-`launchable-substrate-host.RUNTIME_COMPOSITION.2`, and
-`launchable-substrate-host.SERVER_RUNTIME_API.3` if the tests prove those
-behaviors. Scenario ACIDs should remain unclaimed until the corresponding
-lab/CLI example program entry actually exists.
+Scenario ACIDs should remain unclaimed until the corresponding lab/CLI example
+program entry actually exists.
 
 ## Lab UI
 
@@ -876,36 +804,17 @@ scenario runtime type. Each entry should be runnable from the command line and
 from the lab UI, with both paths using the same client package and program
 definitions.
 
-## Read-Only Host Diagnostics
+## Host Diagnostics
 
-The first host diagnostics surface is in-process, not HTTP. This keeps the
-host from becoming an operational side channel and preserves the durable stream
-as the only application command path. HTTP, Unix socket, or other networked
-diagnostics are deferred until an actual release need proves they are worth the
-extra surface area.
+Host diagnostics are deferred beyond the core launchable lab slice. This keeps
+the host from becoming an operational side channel and preserves the durable
+stream as the only application command path. HTTP, Unix socket, in-process
+status services, or other diagnostics surfaces should only be introduced when a
+release need proves they are worth the extra surface area.
 
-In-process diagnostics may expose:
-
-- health;
-- version;
-- process id;
-- boot mode;
-- stream URL or stream name;
-- active Host Program Graphs;
-- subscriber program liveness;
-- operator program liveness;
-- last non-secret error summary;
-- process metrics;
-- uptime.
-
-Diagnostics are read-only. They do not mutate durable state and do not start
-scenarios. Secret values and authorization headers are never returned through
-diagnostics.
-
-There is no default diagnostics port in v1 because there is no network
-diagnostics listener. If a future slice introduces routes, they must be
-read-only by construction; unknown methods must not append durable records or
-start scenario work.
+If a future slice introduces diagnostics, they must be read-only and must not
+expose endpoints that start work, resolve actions, or mutate substrate streams.
+Auth/secret diagnostics are deferred with auth/header transport.
 
 ## Relationship To Event Planes
 
@@ -993,18 +902,14 @@ semantics.
 3. Example program entries live under `packages/lab` for the first slice. They
    can be invoked by the lab UI and by a command-line entrypoint, but they are not
    exported from the production client root.
-4. Minimum host diagnostics are read-only health, version, process id, boot
-   mode, stream identity, active Host Program Graph names,
-   subscriber/operator program liveness, uptime, process metrics, and
-   non-secret error summaries. Progress and terminalization facts come from
-   durable projections, not process-local diagnostics.
+4. Host diagnostics are deferred beyond the core launchable lab slice. Progress
+   and terminalization facts come from durable projections, not process-local
+   diagnostics.
 5. Host Program Graph discovery uses explicit local maps supplied by the host
    application or lab. Config may select a known key from that map; there is no
    global registry, dynamic module import, or durable program catalog in the
    substrate.
-6. Host auth config resolves deterministically: `SUBSTRATE_AUTHORIZATION` wins
-   over `SUBSTRATE_TOKEN`; a bare token becomes `Authorization: Bearer <token>`;
-   diagnostics never expose the resulting header.
+6. Auth/header transport is deferred beyond the core launchable lab slice.
 7. Vite lab implementation uses React with vanilla CSS or CSS modules. No UI
    framework is introduced in the first slice.
 8. The example command shape is `pnpm --filter lab scenario <name>`, backed by

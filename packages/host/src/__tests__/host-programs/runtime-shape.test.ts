@@ -12,10 +12,9 @@ import {
 // HostProgramRuntime is exposed at the host root so callers writing
 // their own host-program helpers can name the Tag in their R type.
 // Its contract MUST stay narrow: streamUrl, contentType, processId,
-// streamIdentity only. It must NOT carry headers, the boot plan,
-// the SubstrateHostProfile, or any other host-internal field — that
-// would re-introduce the broad SubstrateHost surface the narrow Tag
-// was created to avoid.
+// streamIdentity only. It must NOT carry the boot plan or any
+// host-internal field — that would re-introduce the broad
+// SubstrateHost surface the narrow Tag was created to avoid.
 const ALLOWED_KEYS = new Set([
   "streamUrl",
   "contentType",

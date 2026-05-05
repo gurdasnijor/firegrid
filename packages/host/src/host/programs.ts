@@ -35,10 +35,8 @@ import {
 // into the surrounding scope and torn down by Effect finalization.
 // Helpers depend only on the narrow HostProgramRuntime service the
 // host injects at launch time — NOT on the broader SubstrateHost
-// service, NOT on the package-internal SubscriberLiveness Tag.
-// Liveness is a Slice 5 transitional concern that stays internal to
-// the boolean profile path; graph-driven runners run silently
-// against durable state.
+// service. Diagnostics/liveness are deferred hardening concerns and
+// are not part of this graph contract.
 
 const acquireDb = (cfg: HostProgramRuntimeService) =>
   Effect.acquireRelease(
@@ -62,7 +60,7 @@ type CollectionsDb = ReturnType<typeof openSubstrateDb>
 // long-lived StreamDB only for two host-local responsibilities —
 // subscription-edge wakes via subscribeChanges and next-deadline
 // observation via snapshotFromDb — and re-invokes the supplied
-// `scan` Effect on each wake. Coalescing semantics match Slice 5:
+// `scan` Effect on each wake. Coalescing semantics:
 // an in-flight scan plus concurrent wakes collapses into exactly
 // one follow-up scan. There is no fixed-cadence polling.
 const runScopedProgram = (input: {

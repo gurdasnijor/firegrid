@@ -15,7 +15,6 @@ export type BootMode = "embedded-dev" | "attached"
 export interface EmbeddedDevHostPlan {
   readonly _tag: "EmbeddedDevHost"
   readonly processId: string
-  readonly headers: Readonly<Record<string, string>>
   readonly durableStreams: {
     readonly host: string
     readonly port: number
@@ -26,7 +25,6 @@ export interface EmbeddedDevHostPlan {
 export interface AttachedHostPlan {
   readonly _tag: "AttachedHost"
   readonly processId: string
-  readonly headers: Readonly<Record<string, string>>
   readonly streamUrl: string
 }
 

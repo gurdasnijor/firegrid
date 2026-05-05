@@ -46,8 +46,17 @@ export const HostProgramGraph = {
   define: <E, RIn>(input: {
     readonly name: string
     readonly layer: Layer.Layer<never, E, RIn>
-  }): HostProgramGraph<E, RIn> => ({
-    name: input.name,
-    layer: input.layer,
-  }),
+  }): HostProgramGraph<E, RIn> => {
+    const name = input.name.trim()
+    if (name.length === 0) {
+      throw new Error("HostProgramGraph name must be non-empty")
+    }
+    return {
+      // Names are diagnostic labels, not registry identities. They are
+      // normalized for display, but uniqueness is intentionally not
+      // enforced here because no global graph registry exists.
+      name,
+      layer: input.layer,
+    }
+  },
 } as const

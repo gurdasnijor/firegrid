@@ -11,7 +11,6 @@ import {
   createSubstrateStream,
   seedPendingScheduledWork,
   seedPendingTimer,
-  snapshotCompletion,
   startTestServer,
   stopTestServer,
   waitForCompletionState,
@@ -33,9 +32,8 @@ afterAll(async () => {
 // launchable-substrate-host.SERVER_RUNTIME_API.3
 //
 // A graph composed from HostPrograms.timerSubscriber() resolves a
-// past-due timer through the same single-shot substrate primitive
-// the Slice 5 boolean uses. The transitional `profile.subscribers`
-// option is NOT supplied — the graph stands alone.
+// past-due timer through the same single-shot substrate primitive.
+// The graph is the only host-program mechanism.
 describe("HostProgramGraph — timer subscriber via graph", () => {
   it("a graph-driven timer subscriber resolves a past-due timer through the substrate fold", async () => {
     const streamUrl = await createSubstrateStream("graph-timer")
@@ -74,6 +72,29 @@ describe("HostProgramGraph — timer subscriber via graph", () => {
         ),
       ),
     )
+  })
+})
+
+// launchable-substrate-host.RUNTIME_COMPOSITION.3
+//
+// Graph names are diagnostic labels supplied in process. Empty labels
+// are rejected so future read-only diagnostics have useful display
+// values, but uniqueness is not enforced because there is no global
+// graph registry.
+describe("HostProgramGraph — diagnostic name validation", () => {
+  it("normalizes non-empty names and rejects empty graph labels", () => {
+    const graph = HostProgramGraph.define({
+      name: "  prototype  ",
+      layer: Layer.empty,
+    })
+    expect(graph.name).toBe("prototype")
+
+    expect(() =>
+      HostProgramGraph.define({
+        name: "   ",
+        layer: Layer.empty,
+      }),
+    ).toThrow(/non-empty/)
   })
 })
 
@@ -169,66 +190,6 @@ describe("HostProgramGraph — scheduled-work subscriber via graph", () => {
         }).pipe(
           Effect.provide(
             SubstrateHostBoot.attached({ streamUrl, program: Both }),
-          ),
-        ),
-      ),
-    )
-  })
-})
-
-// W2 precedence — when `program` is supplied the host launches the
-// program graph and IGNORES the transitional `profile` subscriber
-// booleans entirely. Test setup:
-//   - program: graph with ONLY scheduled-work runner
-//   - profile: { subscribers: { timer: true } }   (would normally resolve timer)
-// Expected: scheduled-work resolves; timer stays pending across a
-// 500ms window because the program path supersedes the profile
-// booleans.
-describe("HostProgramGraph — program supersedes profile booleans", () => {
-  it("when program is supplied, profile.subscribers booleans are ignored", async () => {
-    const streamUrl = await createSubstrateStream("graph-precedence")
-    const idTimer = "c-prec-timer"
-    const idSw = "c-prec-sw"
-    await seedPendingTimer(streamUrl, idTimer, Date.now() - 500)
-    await seedPendingScheduledWork(streamUrl, idSw, Date.now() - 500, {
-      v: "prec",
-    })
-
-    const ScheduledOnly = HostProgramGraph.define({
-      name: "scheduled-only",
-      layer: HostPrograms.scheduledWorkSubscriber(),
-    })
-
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          // Scheduled work resolves through the graph.
-          yield* Effect.tryPromise({
-            try: () =>
-              waitForCompletionState(
-                streamUrl,
-                idSw,
-                (c) => c?.state === "resolved",
-                3000,
-              ),
-            catch: (cause) => cause,
-          })
-
-          // Wait long enough that a profile-driven timer subscriber
-          // would have resolved if it were running.
-          yield* Effect.sleep("500 millis")
-          const stillPending = yield* Effect.tryPromise({
-            try: () => snapshotCompletion(streamUrl, idTimer),
-            catch: (cause) => cause,
-          })
-          expect(stillPending?.state).toBe("pending")
-        }).pipe(
-          Effect.provide(
-            SubstrateHostBoot.attached({
-              streamUrl,
-              program: ScheduledOnly,
-              profile: { subscribers: { timer: true } },
-            }),
           ),
         ),
       ),

@@ -13,30 +13,24 @@ import {
 } from "./boot-options.js"
 import type { HostProgramRuntime } from "./host-program-runtime.js"
 import {
-  _internalSubstrateHostLive,
   SubstrateHostLive,
 } from "./live.js"
 import type { HostProgramGraph } from "./program-graph.js"
-import type { SubstrateHostProfile } from "./profile.js"
 import { SubstrateHost } from "./service.js"
-import type { SubscriberLiveness } from "./subscribers/liveness.js"
 import { withHost, type WithHostOptions } from "./with-host.js"
 
 // launchable-substrate-host.HOST_CONFIGURATION.1
 // launchable-substrate-host.HOST_CONFIGURATION.2
 // launchable-substrate-host.HOST_CONFIGURATION.3
 // launchable-substrate-host.HOST_CONFIGURATION.4
-// launchable-substrate-host.HOST_CONFIGURATION.10
-// launchable-substrate-host.HOST_CONFIGURATION.11
 // launchable-substrate-host.PACKAGING.6
 //
 // Host constructors namespace: embeddedDev / attached for the
 // supported boot modes, attachedFromConfig and bootPlanFromConfig
 // for Effect Config decoding, and withHost for development/test
-// composition. Authorization > bearerToken precedence and bare-
-// token Bearer materialization are honored. Plan and option
-// helpers live in boot-options.ts so constructors.ts and
-// with-host.ts share the same derivation without a cyclic import.
+// composition. Plan and option helpers live in boot-options.ts so
+// constructors.ts and with-host.ts share the same derivation without
+// a cyclic import. Auth/header transport is deferred.
 
 export type {
   AttachedHostOptions,
@@ -70,7 +64,6 @@ export const SubstrateHostBoot = {
   // embedded-dev mode instead, matching the bootPlanFromConfig behaviour.
   attachedFromConfig: <E = never, GraphRIn = HostProgramRuntime>(
     opts: {
-      readonly profile?: SubstrateHostProfile
       readonly program?: HostProgramGraph<E, GraphRIn>
       readonly contentType?: string
     } = {},
@@ -99,34 +92,3 @@ export const SubstrateHostBoot = {
 } as const
 
 export type { WithHostOptions } from "./with-host.js"
-
-// Package-internal constructors that retain SubscriberLiveness in
-// the Layer's output type. NOT re-exported from the host root —
-// host subscriber tests import this through internal relative paths. External
-// consumers must use SubstrateHostBoot above, which narrows the
-// public surface to Layer<SubstrateHost>.
-export const _internalSubstrateHostBoot = {
-  attached: <E = never, GraphRIn = HostProgramRuntime>(
-    opts: AttachedHostOptions<E, GraphRIn>,
-  ): Layer.Layer<
-    SubstrateHost | SubscriberLiveness,
-    E,
-    Exclude<GraphRIn, HostProgramRuntime>
-  > =>
-    _internalSubstrateHostLive<E, GraphRIn>(
-      buildAttachedPlan(opts),
-      liveOptionsFrom(opts),
-    ),
-
-  embeddedDev: <E = never, GraphRIn = HostProgramRuntime>(
-    opts: EmbeddedDevHostOptions<E, GraphRIn> = {},
-  ): Layer.Layer<
-    SubstrateHost | SubscriberLiveness,
-    E,
-    Exclude<GraphRIn, HostProgramRuntime>
-  > =>
-    _internalSubstrateHostLive<E, GraphRIn>(
-      buildEmbeddedPlan(opts),
-      liveOptionsFrom(opts),
-    ),
-} as const

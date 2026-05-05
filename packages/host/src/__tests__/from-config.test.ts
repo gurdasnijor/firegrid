@@ -23,7 +23,6 @@ describe("launchable-substrate-host.HOST_CONFIGURATION.5 — missing stream URL 
       expect(plan.durableStreams.port).toBe(0)
       expect(plan.durableStreams.streamName).toBe("substrate")
       expect(plan.processId.startsWith("host:")).toBe(true)
-      expect(plan.headers.Authorization).toBeUndefined()
     }
   })
 
@@ -71,29 +70,5 @@ describe("launchable-substrate-host.HOST_CONFIGURATION.7 — explicit SUBSTRATE_
       SUBSTRATE_PROCESS_ID: "process-abc",
     })
     expect(plan.processId).toBe("process-abc")
-  })
-})
-
-// launchable-substrate-host.HOST_CONFIGURATION.10
-// launchable-substrate-host.HOST_CONFIGURATION.11
-// Authorization > bearer token via Effect Config inputs.
-describe("launchable-substrate-host.HOST_CONFIGURATION.10 — authorization config wins over bearer token via Effect Config", () => {
-  it("SUBSTRATE_AUTHORIZATION wins over SUBSTRATE_TOKEN", async () => {
-    const plan = await decode({
-      SUBSTRATE_STREAM_URL: "http://x.invalid/y",
-      SUBSTRATE_AUTHORIZATION: "AuthnSchemeA k",
-      SUBSTRATE_TOKEN: "tok-ignored",
-    })
-    expect(plan.headers.Authorization).toBe("AuthnSchemeA k")
-  })
-})
-
-describe("launchable-substrate-host.HOST_CONFIGURATION.11 — bare SUBSTRATE_TOKEN materializes as Authorization Bearer", () => {
-  it("only SUBSTRATE_TOKEN materializes as Authorization: Bearer <token>", async () => {
-    const plan = await decode({
-      SUBSTRATE_STREAM_URL: "http://x.invalid/y",
-      SUBSTRATE_TOKEN: "tok-only-x",
-    })
-    expect(plan.headers.Authorization).toBe("Bearer tok-only-x")
   })
 })
