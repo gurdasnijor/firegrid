@@ -63,6 +63,7 @@ components:
       3: Runtime profile modules are ordinary Effect layers and values supplied in process.
       4: Serialized config may select known local profile modules but does not create a mutable global runtime registry.
       5: Development helpers can compose client and host layers in one Effect program without making that the production process boundary.
+      5-note: The first withHost-style slice composes the existing host and client capabilities in one Effect scope and does not introduce network diagnostics, host mutation endpoints, a distinct writer API, or a separate runtime registry.
       6: withHost-style development helpers may provide the substrate client to the program they run.
       7: withHost-style development helpers do not create a distinct writer API from the standalone substrate client.
       8: Development profile discovery uses explicit caller-supplied local maps rather than dynamic module import.
@@ -104,6 +105,7 @@ components:
       4: The host package owns launchable process wiring.
       5: The lab package owns development inspection and scenario workbench UI.
       6: The host package exposes thin constructors for attached, attachedFromConfig, embeddedDev, bootPlanFromConfig, and withHost-style composition.
+      6-note: withHost-style composition belongs in packages/host and remains Effect-native; it is not a separate CLI package and not an HTTP control plane.
       7: The client package exposes an Effect-native root API.
       8: The host package exposes an Effect-native launch and composition API.
       9: A separate CLI or dev package is deferred until host process-launch concerns outgrow packages/host.

@@ -595,6 +595,25 @@ stream/runtime environment, while `SubstrateHost.withHost(...)` starts or
 attaches the host and provides a client connected to that same durable stream
 for the lifetime of the scope.
 
+The first `withHost` implementation slice should stay narrow:
+
+- compose the existing host and client capabilities in one Effect scope;
+- expose no host mutation endpoints and no network diagnostics listener;
+- provide the same `SubstrateClient` service shape as the standalone client;
+- avoid creating a runtime registry or loading profile modules dynamically;
+- keep process-signal handling out of scope unless the slice explicitly owns
+  signal trapping and tests it.
+
+That slice may claim `launchable-substrate-host.PACKAGING.6`,
+`launchable-substrate-host.RUNTIME_COMPOSITION.5`,
+`launchable-substrate-host.RUNTIME_COMPOSITION.6`, and
+`launchable-substrate-host.RUNTIME_COMPOSITION.7` when the helper is implemented
+and tested. It should not claim `launchable-substrate-host.HOST_PROCESS.7`
+unless process-signal handling is implemented in addition to Effect-scoped
+finalization, and it should not claim `launchable-substrate-host.HOST_PROCESS.6`
+or `launchable-substrate-host.HOST_DIAGNOSTICS.*` unless an in-process
+diagnostic service is intentionally added.
+
 ### Runtime Profile Boundary
 
 A Firepixel-like agent runtime should sit above the host as a profile:
