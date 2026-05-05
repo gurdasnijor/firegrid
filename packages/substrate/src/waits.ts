@@ -1,6 +1,6 @@
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
-import { Clock, Context, Effect, Layer } from "effect"
+import { Clock, Context, Data, Effect, Layer } from "effect"
 import type { CompletionKind, CompletionState, CompletionValue } from "./schema/rows.ts"
 import { createPendingCompletion } from "./state-machine.ts"
 import { rebuildProjection } from "./stream.ts"
@@ -75,16 +75,13 @@ export interface AwakeableGlobalInput {
   readonly name: string
 }
 
-export class WaitsStreamError extends Error {
-  readonly _tag = "WaitsStreamError"
-  constructor(readonly cause: unknown) {
-    super(`waits stream error: ${String(cause)}`)
-  }
-}
+export class WaitsStreamError extends Data.TaggedError("WaitsStreamError")<{
+  readonly cause: unknown
+}> {}
 
 export type WaitsError = WaitsStreamError
 
-// Effect.Service surface; instances are constructed via DurableWaitsLive(config).
+// Context.Tag service surface; instances are constructed via DurableWaitsLive(config).
 export class DurableWaits extends Context.Tag("Substrate/DurableWaits")<
   DurableWaits,
   {
@@ -129,7 +126,7 @@ export const DurableWaitsLive = (
       const append = (event: ChangeEvent) =>
         Effect.tryPromise({
           try: () => stream.append(JSON.stringify(event)),
-          catch: (cause) => new WaitsStreamError(cause),
+          catch: (cause) => new WaitsStreamError({ cause }),
         })
 
       // durable-waits-and-scheduling.AWAKEABLE_API.8 — idempotent creation.
@@ -142,7 +139,7 @@ export const DurableWaitsLive = (
           const snapshot = yield* Effect.tryPromise({
             try: () =>
               rebuildProjection({ url: config.streamUrl, contentType }),
-            catch: (cause) => new WaitsStreamError(cause),
+            catch: (cause) => new WaitsStreamError({ cause }),
           })
           return snapshot.completions.get(completionId)
         })

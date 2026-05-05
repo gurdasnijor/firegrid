@@ -3,7 +3,7 @@ import {
   type Projection,
   ProjectionReadError,
   type ProjectionWaitTimeout,
-  type WorkProducer,
+  type WorkProducerService,
   rebuildProjection,
   type ProjectionQuery,
   type RunValue,
@@ -92,7 +92,7 @@ export interface SnapshotConfig {
 // scoped Projection from ProjectionLive (stream/until), a snapshot
 // config used for rebuild-based one-shot reads, and a captured
 // `declareWork` callable from WorkProducer.
-export type DeclareWorkFn = WorkProducer["declareWork"]
+export type DeclareWorkFn = WorkProducerService["declareWork"]
 
 export const makeWorkFacet = (
   projection: Projection["Type"],

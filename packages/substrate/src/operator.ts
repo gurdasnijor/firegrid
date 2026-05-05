@@ -1,5 +1,5 @@
 import { DurableStream } from "@durable-streams/client"
-import { Effect, Either } from "effect"
+import { Data, Effect, Either } from "effect"
 import { attemptClaim } from "./internal-claim.ts"
 import {
   ClaimMissingCursorError,
@@ -62,12 +62,9 @@ export type ClaimOutcome<A, E> =
       readonly terminalState: RunState
     }
 
-export class RunNotFoundError extends Error {
-  readonly _tag = "RunNotFoundError"
-  constructor(readonly runId: string) {
-    super(`run ${runId} not found in retained projection`)
-  }
-}
+export class RunNotFoundError extends Data.TaggedError("RunNotFoundError")<{
+  readonly runId: string
+}> {}
 
 export type OperatorError =
   | ClaimStreamError
@@ -97,7 +94,7 @@ const readAuthoritativeRun = (
     Effect.map(readRetainedRunRecords(streamUrl, runId), (records) =>
       foldRunRecords(runId, records),
     ),
-    (cause) => new ClaimStreamError(cause),
+    (cause) => new ClaimStreamError({ cause }),
   )
 
 // claim-and-operator-authority.OPERATOR_INVOCATION.1, .2, .3, .4, .5, .9, .10, .11, .12, .13
@@ -138,7 +135,7 @@ export const processReadyWorkItem = <A, E>(
     // terminal if any exists; otherwise the most-recent non-terminal record.
     const preRun = yield* readAuthoritativeRun(args.streamUrl, args.item.runId)
     if (preRun === undefined) {
-      return yield* Effect.fail(new RunNotFoundError(args.item.runId))
+      return yield* Effect.fail(new RunNotFoundError({ runId: args.item.runId }))
     }
     if (preRun.state !== "blocked") {
       return {
@@ -157,7 +154,7 @@ export const processReadyWorkItem = <A, E>(
     // appending our terminal event.
     const postRun = yield* readAuthoritativeRun(args.streamUrl, args.item.runId)
     if (postRun === undefined) {
-      return yield* Effect.fail(new RunNotFoundError(args.item.runId))
+      return yield* Effect.fail(new RunNotFoundError({ runId: args.item.runId }))
     }
     if (postRun.state !== "blocked") {
       return {
@@ -192,7 +189,7 @@ export const processReadyWorkItem = <A, E>(
 
     yield* Effect.tryPromise({
       try: () => streamHandle.append(JSON.stringify(buildResult.right)),
-      catch: (cause) => new ClaimStreamError(cause),
+      catch: (cause) => new ClaimStreamError({ cause }),
     })
 
     if (Either.isRight(handlerResult)) {

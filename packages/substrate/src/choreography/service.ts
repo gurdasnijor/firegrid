@@ -1,6 +1,6 @@
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
-import { Context, Duration, Effect, Layer } from "effect"
+import { Context, Data, Duration, Effect, Layer } from "effect"
 import { readRetainedRunRecords } from "../retained-records.ts"
 import {
   blockRun,
@@ -52,15 +52,12 @@ import {
 
 // Module-local defect carrier. Not exported: hosts observe verification
 // failures via Cause.isDie, not by importing this class.
-class ChoreographyVerificationError extends Error {
-  readonly _tag = "ChoreographyVerificationError"
-  constructor(
-    readonly completionId: string,
-    readonly reason: string,
-  ) {
-    super(`choreography verification failed for ${completionId}: ${reason}`)
-  }
-}
+class ChoreographyVerificationError extends Data.TaggedError(
+  "ChoreographyVerificationError",
+)<{
+  readonly completionId: string
+  readonly reason: string
+}> {}
 
 export interface ChoreographyLiveConfig {
   readonly streamUrl: string
@@ -127,10 +124,10 @@ export const ChoreographyLive = (
       Effect.tryPromise({
         try: () => stream.append(JSON.stringify(event)),
         catch: (cause) =>
-          new ChoreographyVerificationError(
-            "block-row-append",
-            String(cause),
-          ),
+          new ChoreographyVerificationError({
+            completionId: "block-row-append",
+            reason: String(cause),
+          }),
       })
 
     // choreography-facade.SUSPENSION.1
@@ -164,28 +161,28 @@ export const ChoreographyLive = (
         const current = yield* authoritativeRun(ctx.workId).pipe(
           Effect.mapError(
             (cause) =>
-              new ChoreographyVerificationError(
+              new ChoreographyVerificationError({
                 completionId,
-                `retained run read failed: ${String(cause)}`,
-              ),
+                reason: `retained run read failed: ${String(cause)}`,
+              }),
           ),
         )
         if (current === undefined) {
           return yield* Effect.fail(
-            new ChoreographyVerificationError(
+            new ChoreographyVerificationError({
               completionId,
-              `current run ${ctx.workId} not found in retained records`,
-            ),
+              reason: `current run ${ctx.workId} not found in retained records`,
+            }),
           )
         }
         // Reject terminal runs explicitly so a completed/failed/cancelled
         // run is never re-blocked or reported as suspended.
         if (isTerminalRun(current.state)) {
           return yield* Effect.fail(
-            new ChoreographyVerificationError(
+            new ChoreographyVerificationError({
               completionId,
-              `current run ${ctx.workId} is terminal (${current.state}); refusing to block`,
-            ),
+              reason: `current run ${ctx.workId} is terminal (${current.state}); refusing to block`,
+            }),
           )
         }
         // choreography-facade.SUSPENSION.4
@@ -198,10 +195,10 @@ export const ChoreographyLive = (
           current.blockedOnCompletionId !== completionId
         ) {
           return yield* Effect.fail(
-            new ChoreographyVerificationError(
+            new ChoreographyVerificationError({
               completionId,
-              `current run ${ctx.workId} already blocked on ${current.blockedOnCompletionId}; refusing to re-point`,
-            ),
+              reason: `current run ${ctx.workId} already blocked on ${current.blockedOnCompletionId}; refusing to re-point`,
+            }),
           )
         }
         // Idempotent skip: already blocked on the same completion.
@@ -216,10 +213,10 @@ export const ChoreographyLive = (
             try: () =>
               blockRun(current, { blockedOnCompletionId: completionId }),
             catch: (cause) =>
-              new ChoreographyVerificationError(
+              new ChoreographyVerificationError({
                 completionId,
-                `blockRun build failed: ${String(cause)}`,
-              ),
+                reason: `blockRun build failed: ${String(cause)}`,
+              }),
           })
           yield* append(event)
         }
@@ -229,10 +226,10 @@ export const ChoreographyLive = (
         const verified = yield* authoritativeRun(ctx.workId).pipe(
           Effect.mapError(
             (cause) =>
-              new ChoreographyVerificationError(
+              new ChoreographyVerificationError({
                 completionId,
-                `post-write retained run read failed: ${String(cause)}`,
-              ),
+                reason: `post-write retained run read failed: ${String(cause)}`,
+              }),
           ),
         )
         if (
@@ -241,10 +238,10 @@ export const ChoreographyLive = (
           verified.blockedOnCompletionId !== completionId
         ) {
           return yield* Effect.fail(
-            new ChoreographyVerificationError(
+            new ChoreographyVerificationError({
               completionId,
-              `post-write verification failed: state=${verified?.state} blockedOn=${verified?.blockedOnCompletionId}`,
-            ),
+              reason: `post-write verification failed: state=${verified?.state} blockedOn=${verified?.blockedOnCompletionId}`,
+            }),
           )
         }
         // choreography-facade.SUSPENSION.2
@@ -340,10 +337,10 @@ export const ChoreographyLive = (
         // computed; importing it documents the equivalence.
         if (result.key !== workScopedAwakeableKey(ctx.workId, input.name)) {
           return yield* Effect.fail(
-            new ChoreographyVerificationError(
-              result.completionId,
-              "awakeable key shape unexpected",
-            ),
+            new ChoreographyVerificationError({
+              completionId: result.completionId,
+              reason: "awakeable key shape unexpected",
+            }),
           )
         }
         return yield* blockAndSuspend(result.completionId)

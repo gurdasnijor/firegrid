@@ -1,6 +1,6 @@
 import { stream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
-import { Effect, Either, Schema } from "effect"
+import { Data, Effect, Either, Schema } from "effect"
 import {
   ClaimAttemptRowType,
   ClaimAttemptValue,
@@ -14,12 +14,9 @@ import {
 // raw client. Used by the operator to derive claim authority and by stress
 // tests to prove once-only terminal authority over runs.
 
-export class RetainedReadError extends Error {
-  readonly _tag = "RetainedReadError"
-  constructor(readonly cause: unknown) {
-    super(`retained read error: ${String(cause)}`)
-  }
-}
+export class RetainedReadError extends Data.TaggedError("RetainedReadError")<{
+  readonly cause: unknown
+}> {}
 
 const decodeClaim = Schema.decodeUnknownEither(ClaimAttemptValue)
 const decodeRun = Schema.decodeUnknownEither(RunValue)
@@ -35,11 +32,11 @@ const readJsonItems = (
           live: false,
           offset: "-1",
         }),
-      catch: (cause) => new RetainedReadError(cause),
+      catch: (cause) => new RetainedReadError({ cause }),
     })
     return yield* Effect.tryPromise({
       try: () => session.json<ChangeEvent>(),
-      catch: (cause) => new RetainedReadError(cause),
+      catch: (cause) => new RetainedReadError({ cause }),
     })
   })
 
@@ -54,7 +51,7 @@ export const readRetainedClaimAttempts = (
       if (event.type !== ClaimAttemptRowType) continue
       const decoded = decodeClaim(event.value)
       if (Either.isLeft(decoded)) {
-        return yield* Effect.fail(new RetainedReadError(decoded.left))
+        return yield* Effect.fail(new RetainedReadError({ cause: decoded.left }))
       }
       if (decoded.right.workId !== workId) continue
       result.push(decoded.right)
@@ -73,7 +70,7 @@ export const readRetainedRunRecords = (
       if (event.type !== RunRowType) continue
       const decoded = decodeRun(event.value)
       if (Either.isLeft(decoded)) {
-        return yield* Effect.fail(new RetainedReadError(decoded.left))
+        return yield* Effect.fail(new RetainedReadError({ cause: decoded.left }))
       }
       if (decoded.right.runId !== runId) continue
       result.push(decoded.right)
