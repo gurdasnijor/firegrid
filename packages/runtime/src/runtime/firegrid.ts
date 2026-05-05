@@ -9,7 +9,7 @@ import {
   type SubscriberInput,
 } from "@firegrid/substrate/kernel"
 import type { CurrentWorkContext } from "@firegrid/substrate"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, type Scope } from "effect"
 import {
   minPendingDueAtMs,
   runScopedSubscriberProgram,
@@ -91,7 +91,11 @@ const handler = <
   run: (
     input: Operation.Input<Op>,
   ) => Effect.Effect<Operation.Output<Op>, Operation.Error<Op> | E, R>,
-): Layer.Layer<never, never, Exclude<R, CurrentWorkContext> | RuntimeContext> =>
+): Layer.Layer<
+  never,
+  never,
+  Exclude<Exclude<R, CurrentWorkContext>, Scope.Scope> | RuntimeContext
+> =>
   Layer.scopedDiscard(runOperationHandler({ op, run }))
 
 // firegrid-event-streams.RUNTIME_API.1

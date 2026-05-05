@@ -130,7 +130,11 @@ export const runOperationDispatchLoopWithAcquire = <
   cfg: RuntimeContextService,
   input: DispatchInput<Op, E, R>,
   acquire: Effect.Effect<SubstrateStreamDB, E2, Scope.Scope>,
-): Effect.Effect<void, E2, Exclude<R, CurrentWorkContext>> =>
+): Effect.Effect<
+  void,
+  E2,
+  Exclude<Exclude<R, CurrentWorkContext>, Scope.Scope>
+> =>
   Effect.scoped(
     Effect.gen(function* () {
       const db = yield* acquire
