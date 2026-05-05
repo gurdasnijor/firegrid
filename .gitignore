@@ -2,6 +2,7 @@ node_modules/
 .worktrees/
 dist/
 coverage/
+.jscpd-report/
 .turbo/
 .env
 .env.*
