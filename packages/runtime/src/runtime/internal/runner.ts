@@ -4,26 +4,35 @@ import {
   type CompletionValue,
   type ProjectionSnapshot,
 } from "@durable-agent-substrate/substrate"
-import { Cause, Clock, Duration, Effect } from "effect"
+import { Cause, Clock, Data, Duration, Effect } from "effect"
 import { RuntimeContext, type RuntimeContextService } from "../runtime-context.ts"
 
 // Private subscription/deadline-driven runner skeleton used by the
-// public `Firegrid.subscribers.{timer, scheduledWork}` Layers.
-// Necessary complexity: the substrate exposes single-shot scan
-// functions; until substrate gains an edge-driven runner natively,
-// the runtime owns the wake/loop scheduling. This module is NOT
-// part of the public API.
+// public `Firegrid.subscribers.{timer, scheduledWork}` Layers. The
+// substrate exposes single-shot scan effects; until substrate gains
+// an edge-driven runner natively, the runtime owns the wake/loop
+// scheduling. This module is NOT part of the public API.
+//
+// Error policy (honest, transitional):
+//   - openSubstrateDb / preload failures surface as a typed
+//     AcquireDbError on the loop fiber.
+//   - The caller-supplied scan's typed error channel is preserved
+//     and propagates to the loop fiber.
+// Both paths run inside Effect.forkScoped, so a failed subscriber
+// fiber dies loudly via Effect.logError (the runtime's default
+// logger) rather than silently exiting. There is no recovery /
+// retry / status surface yet; richer error semantics land with
+// Operation.handler.
 //
 // Coalescing semantics: an in-flight scan plus concurrent wakes
-// collapses into exactly one follow-up scan. There is no fixed-
+// collapse into exactly one follow-up scan. There is no fixed-
 // cadence polling.
-//
-// Errors: scan failures and acquireDb failures used to be silently
-// swallowed. They now surface through the typed error channel of
-// the returned Effect so the caller-supplied scan can decide
-// whether the runner should stop.
 
 type CollectionsDb = ReturnType<typeof openSubstrateDb>
+
+export class AcquireDbError extends Data.TaggedError("AcquireDbError")<{
+  readonly cause: unknown
+}> {}
 
 const acquireDb = (cfg: RuntimeContextService) =>
   Effect.acquireRelease(
@@ -36,7 +45,7 @@ const acquireDb = (cfg: RuntimeContextService) =>
         await db.preload()
         return db
       },
-      catch: (cause) => cause,
+      catch: (cause) => new AcquireDbError({ cause }),
     }),
     (db) => Effect.sync(() => db.close()),
   )
@@ -80,40 +89,36 @@ export const runScopedSubscriberProgram = <E>(
 const runLoop = <E>(
   cfg: RuntimeContextService,
   input: ScopedProgramInput<E>,
-): Effect.Effect<void, never, never> =>
+) =>
   Effect.scoped(
     Effect.gen(function* () {
       const latch = yield* Effect.makeLatch(false)
-
-      const db = yield* acquireDb(cfg).pipe(
-        Effect.catchAll(() => Effect.succeed(undefined)),
-      )
-      if (db === undefined) return
-
+      const db = yield* acquireDb(cfg)
       const unsubscribe = input.subscribe(db, () => latch.unsafeOpen())
       yield* Effect.addFinalizer(() => Effect.sync(() => unsubscribe()))
 
-      const loop: Effect.Effect<void, never, never> = Effect.gen(function* () {
-        while (true) {
-          const result = yield* Effect.either(input.scan)
-          if (result._tag === "Left") return
-          const snapshot = snapshotFromDb(db)
-          const nowMs = yield* Clock.currentTimeMillis
-          const nextDue = input.nextDeadlineMs(snapshot)
-          const wakeRace =
-            nextDue === undefined
-              ? latch.await
-              : Effect.race(
-                  latch.await,
-                  Effect.sleep(Duration.millis(Math.max(0, nextDue - nowMs))),
-                )
-          yield* wakeRace
-          yield* latch.close
-        }
+      const step = Effect.gen(function* () {
+        yield* input.scan
+        const snapshot = snapshotFromDb(db)
+        const nowMs = yield* Clock.currentTimeMillis
+        const nextDue = input.nextDeadlineMs(snapshot)
+        const wait =
+          nextDue === undefined
+            ? latch.await
+            : Effect.race(
+                latch.await,
+                Effect.sleep(Duration.millis(Math.max(0, nextDue - nowMs))),
+              )
+        yield* wait
+        yield* latch.close
       })
 
-      yield* Effect.catchAllCause(loop, (cause) =>
-        Cause.isInterruptedOnly(cause) ? Effect.void : Effect.void,
+      yield* Effect.forever(step).pipe(
+        Effect.tapErrorCause((cause) =>
+          Cause.isInterruptedOnly(cause)
+            ? Effect.void
+            : Effect.logError("firegrid subscriber loop failed", cause),
+        ),
       )
     }),
   )

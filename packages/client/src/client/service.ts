@@ -36,8 +36,9 @@ export class SubstrateClient extends Context.Tag(
 // launchable-substrate-host.PACKAGING.7
 // launchable-substrate-host.CLIENT_COMPATIBILITY.4
 // SubstrateClientLive composes its own dependencies internally so the
-// resulting layer has zero remaining requirements. The same client
-// capability surfaces in withHost-style helpers in later slices.
+// resulting layer has zero remaining requirements. The runtime
+// (@firegrid/runtime) does not depend on the client; this layer is
+// for client-side processes only.
 export const SubstrateClientLive = (
   cfg: SubstrateClientConfig,
 ): Layer.Layer<SubstrateClient> => {

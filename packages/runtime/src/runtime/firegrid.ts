@@ -1,6 +1,9 @@
 import {
   runScheduledWorkSubscriber,
   runTimerSubscriber,
+  type CompletionKind,
+  type SubscriberError,
+  type SubscriberInput,
 } from "@durable-agent-substrate/substrate"
 import { Effect, Layer } from "effect"
 import {
@@ -14,33 +17,44 @@ import { RuntimeContext } from "./runtime-context.ts"
 // firegrid-package-migration.RUNTIME_RENAME.5
 // firegrid-runtime-process.RUNTIME_PACKAGE.2
 //
-// `Firegrid` is the runtime helper namespace. The current public
-// surface is intentionally tiny: just `subscribers.timer` and
-// `subscribers.scheduledWork`, which wrap substrate's single-shot
-// subscriber Effects in subscription/deadline-driven runner Layers.
+// `Firegrid` is the runtime helper namespace.
 //
-// Operation messaging (Firegrid.handler), EventStream materializers,
-// and projection-match / claim-before-side-effect operator helpers
-// land with subsequent slices and replace the old graph-vocabulary
-// helpers entirely. The runner skeleton lives in
-// `runtime/internal/runner.ts` (private) so the public namespace
-// stays one screen of code.
+// CAVEAT: `Firegrid.subscribers.{timer, scheduledWork}` is
+// transitional low-level runtime infrastructure exposed only so
+// dev runtime processes can wire substrate's stock timer and
+// scheduled-work subscribers without re-implementing the wake/
+// coalesce loop. It is NOT the desired app/runtime API. Once
+// Operation.handler and EventStream materializers land, those
+// descriptor-driven Layers are the canonical app surface; the bare
+// `subscribers.*` helpers stay only as low-level building blocks
+// (or are dropped if they have no remaining caller).
 
-const timerSubscriberLayer: Layer.Layer<never, never, RuntimeContext> =
+interface DueTimeProfile<K extends CompletionKind> {
+  readonly kind: K
+  readonly deadlineField: string
+  readonly scan: (
+    input: SubscriberInput,
+  ) => Effect.Effect<unknown, SubscriberError>
+}
+
+const dueTimeSubscriberLayer = <K extends CompletionKind>(
+  profile: DueTimeProfile<K>,
+): Layer.Layer<never, never, RuntimeContext> =>
   Layer.scopedDiscard(
     Effect.gen(function* () {
       const cfg = yield* RuntimeContext
       yield* runScopedSubscriberProgram({
         subscribe: subscribeCompletions,
         nextDeadlineMs: (snapshot) =>
-          minPendingDueAtMs(snapshot.completions, (c) => {
-            if (c.kind !== "timer") return undefined
-            const data = c.data as { readonly dueAtMs?: unknown } | undefined
-            return data !== undefined && typeof data.dueAtMs === "number"
-              ? data.dueAtMs
-              : undefined
+          minPendingDueAtMs(snapshot.completions, (completion) => {
+            if (completion.kind !== profile.kind) return undefined
+            const data = completion.data as
+              | Record<string, unknown>
+              | undefined
+            const value = data?.[profile.deadlineField]
+            return typeof value === "number" ? value : undefined
           }),
-        scan: runTimerSubscriber({
+        scan: profile.scan({
           streamUrl: cfg.streamUrl,
           contentType: cfg.contentType,
         }),
@@ -48,34 +62,17 @@ const timerSubscriberLayer: Layer.Layer<never, never, RuntimeContext> =
     }),
   )
 
-const scheduledWorkSubscriberLayer: Layer.Layer<
-  never,
-  never,
-  RuntimeContext
-> = Layer.scopedDiscard(
-  Effect.gen(function* () {
-    const cfg = yield* RuntimeContext
-    yield* runScopedSubscriberProgram({
-      subscribe: subscribeCompletions,
-      nextDeadlineMs: (snapshot) =>
-        minPendingDueAtMs(snapshot.completions, (c) => {
-          if (c.kind !== "scheduled_work") return undefined
-          const data = c.data as { readonly whenMs?: unknown } | undefined
-          return data !== undefined && typeof data.whenMs === "number"
-            ? data.whenMs
-            : undefined
-        }),
-      scan: runScheduledWorkSubscriber({
-        streamUrl: cfg.streamUrl,
-        contentType: cfg.contentType,
-      }),
-    })
-  }),
-)
-
 export const Firegrid = {
   subscribers: {
-    timer: timerSubscriberLayer,
-    scheduledWork: scheduledWorkSubscriberLayer,
+    timer: dueTimeSubscriberLayer({
+      kind: "timer",
+      deadlineField: "dueAtMs",
+      scan: runTimerSubscriber,
+    }),
+    scheduledWork: dueTimeSubscriberLayer({
+      kind: "scheduled_work",
+      deadlineField: "whenMs",
+      scan: runScheduledWorkSubscriber,
+    }),
   },
 } as const

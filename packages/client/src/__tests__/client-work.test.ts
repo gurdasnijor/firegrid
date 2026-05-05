@@ -211,8 +211,7 @@ describe("launchable-substrate-host.CLIENT_SURFACE.9 — until composes stream w
 
 // launchable-substrate-host.CLIENT_COMPATIBILITY.4
 // The client capability resolved through the Tag is the same shape
-// regardless of how the layer is composed (here standalone; in a later
-// slice, withHost will compose the same shape).
+// regardless of how the layer is composed.
 describe("launchable-substrate-host.CLIENT_COMPATIBILITY.4 — client service exposed inside dev helpers is the same capability as the standalone client", () => {
   it("SubstrateClient service has work.declare and work.observe on the same shape", async () => {
     const url = await createSubstrateStream("client-shape")
