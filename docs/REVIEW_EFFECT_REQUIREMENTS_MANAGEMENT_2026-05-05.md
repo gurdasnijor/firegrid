@@ -156,28 +156,17 @@ actionable.
 
 ### 5. `Effect.provide` vs `Effect.provideService`
 
-Five `Effect.provide(...)` sites in production:
-
-- `runtime/bin/firegrid.ts:87, 138, 154` — boot-time runtime layer
-  and `NodeContext.layer` provision. Correct: full graphs.
-- `client/src/firegrid/operation-client.ts:212` — `withSubstrate`
-  helper provides `SubstrateClientLive(substrateCfg)` to each call
-  site. Per-call provisioning of a fresh `SubstrateClient` graph
-  inside `send` / `result` / `observe`. See finding 6 — this is the
-  layer-memoization concern.
-- `apps/lab/src/lab/LabEventStreamClient.ts:39, 48` — same
-  per-call-construction pattern with `EventStreamClientLive`.
-
-There are zero `Effect.provideService` calls in the codebase. That is
-fine: `provideService` is the right choice when you have only one
-service to inject and want to skip layer ceremony, but Firegrid's
-graphs always go through `*Live` Layers, so `Effect.provide` is the
-consistent surface. No mixed style to police here.
-
-`Stream.provideLayer` appears once at
-`firegrid/operation-client.ts:292` for the `observe` Stream — symmetric
-with `Effect.provide` and required because `Stream` is the carrier.
-Correct.
+Production `Effect.provide(...)` sites: `runtime/bin/firegrid.ts:87,
+138, 154` (boot-time runtime + `NodeContext.layer`),
+`client/src/firegrid/operation-client.ts:212` (`withSubstrate`
+helper, per-call), `apps/lab/src/lab/LabEventStreamClient.ts:39, 48`
+(per-call). Zero `Effect.provideService` calls. That is appropriate:
+`provideService` shines when injecting a single service, but
+Firegrid's graphs always route through `*Live` Layers, so
+`Effect.provide` is the consistent surface. `Stream.provideLayer`
+appears once at `firegrid/operation-client.ts:292` for the `observe`
+Stream — symmetric, required because `Stream` is the carrier. The
+two per-call sites are the layer-memoization concern in finding 6.
 
 ### 6. Layer memoization / per-call construction
 
@@ -218,37 +207,24 @@ the resolved context. Correct.
 
 `Firegrid.handler<Op, E, R>` (`runtime/firegrid.ts:81-91`) declares
 `run: (input) => Effect<Output, Error | E, R>` and returns
-`Layer<never, never, R | RuntimeContext>`. The `R` parameter
-correctly propagates: `runOperationHandler` (`operation-handler.ts:89-95`)
-yields `RuntimeContext` and forks `runOperationDispatchLoop`, which
-in turn passes `input.run(matched.input)` straight through (`:133`).
-Because `processRun`'s `Effect.gen` body is typed by inference, the
-caller's `R` flows out to the wrapping `Layer.scopedDiscard`, and
-TypeScript surfaces it correctly on the returned Layer.
+`Layer<never, never, R | RuntimeContext>`. `runOperationHandler`
+(`operation-handler.ts:89-95`) yields `RuntimeContext` and forks the
+dispatch loop, which passes `input.run(matched.input)` straight
+through (`:133`). Inference threads the caller's `R` out to the
+wrapping `Layer.scopedDiscard` and TypeScript surfaces it on the
+returned Layer. The same shape holds for `Firegrid.eventStream<S, E, R>`
+(`runtime/firegrid.ts:111-119`).
 
-The same shape holds for `Firegrid.eventStream<S, E, R>`
-(`runtime/firegrid.ts:111-119`); `runEventStreamMaterializer`
-(`event-stream-materializer.ts:72-82`) calls `input.materialize(event)`
-at `:179` without provision, and `R` propagates upward.
-
-Two notes on this threading:
-
-- The handler `R` is the place the `CurrentWorkContext` gap (finding 1)
-  hides: substrate's `Choreography` adds `CurrentWorkContext` to the
-  R channel of `sleep` / `awaitAwakeable` / `waitFor`. A handler that
-  uses any of those today returns
-  `Effect<never, never, Choreography | DurableWaits | CurrentWorkContext>`,
-  and `Firegrid.handler` faithfully widens the surface Layer's R to
-  include `CurrentWorkContext`. The runtime never satisfies that
-  requirement. The fix in finding 1 is to provide it inside the
-  handler invocation so the caller's `R` becomes
-  `Choreography | DurableWaits` only — i.e., `CurrentWorkContext`
-  becomes a runtime-internal concern, not part of the public
-  handler contract.
-- `eventStream` materializers have no parallel concern: events are
-  not authored by a "current run", so `CurrentWorkContext` is not
-  consumed downstream. The `R` channel there is purely the caller's
-  domain dependencies. Correct.
+Where this matters: the handler `R` is exactly where the gap from
+finding 1 hides. `Choreography.sleep` / `awaitAwakeable` / `waitFor`
+add `CurrentWorkContext` to their R channel, so a handler that uses
+them returns `Effect<…, …, Choreography | DurableWaits | CurrentWorkContext>`,
+and `Firegrid.handler` faithfully widens the Layer's R to include
+`CurrentWorkContext` — but the runtime never satisfies it. The
+finding-1 fix internalizes `CurrentWorkContext`: the caller's `R`
+becomes `Choreography | DurableWaits` only. `eventStream` has no
+parallel concern (events have no "current run"), so its `R` channel
+is purely caller-domain dependencies.
 
 ### 8. Layer composition (`merge` / `mergeAll` / `provide`)
 
