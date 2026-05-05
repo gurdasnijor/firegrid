@@ -1,8 +1,9 @@
-import type { Schema } from "effect"
+import { Schema } from "effect"
 import { isChangeEvent, type ChangeEvent } from "@durable-streams/state"
 import {
   EventStreamEnvelopeTag,
   EventStreamRowType,
+  EventStreamValue as EventStreamValueSchema,
   type EventStreamValue,
 } from "../schema/rows.ts"
 import { substrateState } from "../schema/state.ts"
@@ -51,9 +52,7 @@ export const makeEventStreamStateRow = (input: {
 export const isEventStreamEnvelope = (
   value: unknown,
 ): value is EventStreamEnvelope =>
-  typeof value === "object" &&
-  value !== null &&
-  (value as EventStreamEnvelope)._envelope === EVENT_STREAM_ENVELOPE_TAG
+  Schema.is(EventStreamValueSchema)(value)
 
 export const isEventStreamStateRow = (
   value: unknown,

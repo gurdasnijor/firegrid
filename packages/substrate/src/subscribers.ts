@@ -1,16 +1,23 @@
 import { DurableStream } from "@durable-streams/client"
 import type { StateEvent } from "@durable-streams/state"
-import { Clock, Data, Effect, Option } from "effect"
+import { Clock, Data, Effect, Option, type ParseResult } from "effect"
 import { appendChange } from "./descriptors/append.ts"
 import type { ProjectionSnapshot } from "./projection.ts"
-import type { CompletionKind, CompletionValue } from "./schema/rows.ts"
+import type { ProjectionMatchTrigger } from "./choreography/triggers.ts"
+import {
+  decodeCompletionData,
+  decodeProjectionMatchCompletionData,
+  ScheduledWorkCompletionData,
+  TimerCompletionData,
+  type CompletionKind,
+  type CompletionValue,
+} from "./schema/rows.ts"
 import {
   cancelCompletion,
   type IllegalCompletionTransition,
   resolveCompletion,
 } from "./schema/state-machine.ts"
 import { rebuildProjection } from "./stream.ts"
-import type { ProjectionMatchTrigger } from "./waits.ts"
 
 // durable-subscribers.SUBSCRIBER_SCOPE.5 — single-shot scan-and-resolve.
 // All three profiles share a stream-bound shape and return the list of
@@ -135,12 +142,18 @@ const buildOrSkip = <A>(
     ),
   )
 
+const completionDataError = (completion: CompletionValue, field: string) =>
+  (cause: ParseResult.ParseError) =>
+    new SubscriberDataError({
+      completionId: completion.completionId,
+      reason: `invalid ${field} completion data: ${cause.message}`,
+    })
+
 // Shared scan skeleton for due-time-driven subscribers (timer / scheduled_work).
 // The per-profile `decide` function inspects the completion at the current
 // clock reading and returns one of three decisions; the skeleton handles the
 // snapshot, filtering, sequential forEach, race-safe build, and append.
 type DueTimeDecision =
-  | { readonly kind: "data-error"; readonly reason: string }
   | { readonly kind: "skip" }
   | { readonly kind: "resolve"; readonly result: unknown }
 
@@ -149,7 +162,7 @@ interface DueTimeProfile<K extends "timer" | "scheduled_work"> {
   readonly decide: (
     completion: PendingOf<K>,
     nowMs: number,
-  ) => DueTimeDecision
+  ) => Effect.Effect<DueTimeDecision, SubscriberDataError>
 }
 
 const runDueTimeSubscriberFromSnapshot = <
@@ -191,16 +204,13 @@ const processDueTimeCandidate = <K extends "timer" | "scheduled_work">(
   stream: DurableStream,
   completion: PendingOf<K>,
   nowMs: number,
-  decide: (completion: PendingOf<K>, nowMs: number) => DueTimeDecision,
+  decide: (
+    completion: PendingOf<K>,
+    nowMs: number,
+  ) => Effect.Effect<DueTimeDecision, SubscriberDataError>,
 ): Effect.Effect<Option.Option<string>, SubscriberError> =>
   Effect.gen(function* () {
-    const decision = decide(completion, nowMs)
-    if (decision.kind === "data-error") {
-      return yield* new SubscriberDataError({
-        completionId: completion.completionId,
-        reason: decision.reason,
-      })
-    }
+    const decision = yield* decide(completion, nowMs)
     if (decision.kind === "skip") return Option.none()
     const eventOpt = yield* buildOrSkip(
       resolveCompletion(completion, { result: decision.result }),
@@ -214,36 +224,38 @@ const processDueTimeCandidate = <K extends "timer" | "scheduled_work">(
 // time + observed fire time.
 const timerProfile: DueTimeProfile<"timer"> = {
   kind: "timer",
-  decide: (completion, nowMs) => {
-    const data = completion.data as { readonly dueAtMs?: unknown } | undefined
-    if (data === undefined || typeof data.dueAtMs !== "number") {
-      return { kind: "data-error", reason: "missing or invalid dueAtMs" }
-    }
-    if (data.dueAtMs > nowMs) return { kind: "skip" }
-    return {
-      kind: "resolve",
-      result: { dueAtMs: data.dueAtMs, observedFireMs: nowMs },
-    }
-  },
+  decide: (completion, nowMs) =>
+    decodeCompletionData(
+      TimerCompletionData,
+      completionDataError(completion, "timer"),
+    )(completion.data).pipe(
+      Effect.map((data) => {
+        if (data.dueAtMs > nowMs) return { kind: "skip" as const }
+        return {
+          kind: "resolve" as const,
+          result: { dueAtMs: data.dueAtMs, observedFireMs: nowMs },
+        }
+      }),
+    ),
 }
 
 // durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.4 — preserve scheduled
 // time and opaque input.
 const scheduledWorkProfile: DueTimeProfile<"scheduled_work"> = {
   kind: "scheduled_work",
-  decide: (completion, nowMs) => {
-    const data = completion.data as
-      | { readonly whenMs?: unknown; readonly input?: unknown }
-      | undefined
-    if (data === undefined || typeof data.whenMs !== "number") {
-      return { kind: "data-error", reason: "missing or invalid whenMs" }
-    }
-    if (data.whenMs > nowMs) return { kind: "skip" }
-    return {
-      kind: "resolve",
-      result: { whenMs: data.whenMs, input: data.input },
-    }
-  },
+  decide: (completion, nowMs) =>
+    decodeCompletionData(
+      ScheduledWorkCompletionData,
+      completionDataError(completion, "scheduled_work"),
+    )(completion.data).pipe(
+      Effect.map((data) => {
+        if (data.whenMs > nowMs) return { kind: "skip" as const }
+        return {
+          kind: "resolve" as const,
+          result: { whenMs: data.whenMs, input: data.input },
+        }
+      }),
+    ),
 }
 
 // durable-subscribers.TIMER_SUBSCRIBER.1, .2, .3, .4, .5
@@ -344,33 +356,21 @@ const processProjectionMatchCandidate = (
   evaluate: ProjectionMatchEvaluator,
 ): Effect.Effect<Option.Option<ProjectionMatchOutcome>, SubscriberError> =>
   Effect.gen(function* () {
-    const data = completion.data as
-      | {
-          readonly trigger?: unknown
-          readonly timeoutMs?: unknown
-          readonly deadlineAtMs?: unknown
-        }
-      | undefined
-    if (data === undefined || data.trigger === undefined) {
-      return yield* new SubscriberDataError({
-        completionId: completion.completionId,
-        reason: "missing trigger",
-      })
-    }
-    const trigger = data.trigger as ProjectionMatchTrigger
+    const data = yield* decodeProjectionMatchCompletionData(
+      completion.data,
+      completionDataError(completion, "projection_match"),
+    )
+    const trigger = data.trigger
 
     // PROJECTION_MATCH_SUBSCRIBER.6 + .9 — timeout fires from the durable
     // deadline, not process-local elapsed time.
-    const deadlineAtMs =
-      typeof data.deadlineAtMs === "number" ? data.deadlineAtMs : undefined
+    const deadlineAtMs = data.deadlineAtMs
     if (deadlineAtMs !== undefined && nowMs >= deadlineAtMs) {
       const cancelOpt = yield* buildOrSkip(
         cancelCompletion(completion, {
           terminalReason: {
             kind: "timeout" as const,
-            ...(typeof data.timeoutMs === "number"
-              ? { timeoutMs: data.timeoutMs }
-              : {}),
+            ...(data.timeoutMs !== undefined ? { timeoutMs: data.timeoutMs } : {}),
             observedAtMs: nowMs,
           },
         }),

@@ -1,5 +1,6 @@
 import { DurableStream, type StreamResponse } from "@durable-streams/client"
 import {
+  decodeAtBoundary,
   eventStreamEnvelopeFromStateRow,
   isEventStreamEnvelope,
   type EventStream,
@@ -10,7 +11,6 @@ import {
   Effect,
   Option,
   type ParseResult,
-  Schema,
   type Scope,
   Stream,
 } from "effect"
@@ -129,17 +129,14 @@ const decodeEvent = <S extends EventStream.Any>(
   EventStream.Event<S>,
   EventStreamMaterializerDecodeError
 > =>
-  Schema.decodeUnknown(descriptor.event as Schema.Schema.AnyNoContext)(
-    raw,
-  ).pipe(
-    Effect.mapError(
-      (cause) =>
-        new EventStreamMaterializerDecodeError({
-          stream: descriptor.name,
-          cause,
-        }),
-    ),
-  ) as Effect.Effect<
+  decodeAtBoundary(
+    descriptor.event,
+    (cause) =>
+      new EventStreamMaterializerDecodeError({
+        stream: descriptor.name,
+        cause,
+      }),
+  )(raw) as Effect.Effect<
     EventStream.Event<S>,
     EventStreamMaterializerDecodeError
   >

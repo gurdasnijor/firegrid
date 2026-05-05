@@ -1,4 +1,8 @@
 import { Context, Data, Effect, Layer, Schema } from "effect"
+import {
+  ProjectionMatchTriggerSchema,
+  type ProjectionMatchTriggerValue,
+} from "../schema/rows.ts"
 
 // choreography-facade.TRIGGERS.1
 // choreography-facade.TRIGGERS.2
@@ -9,14 +13,8 @@ import { Context, Data, Effect, Layer, Schema } from "effect"
 // single decoder; the value carries serializable fields (label,
 // projectionKey, matcherId) and explicitly does NOT embed JavaScript
 // predicate functions or raw projection objects.
-export const ProjectionMatchTrigger = Schema.TaggedStruct("ProjectionMatch", {
-  label: Schema.String,
-  projectionKey: Schema.String,
-  matcherId: Schema.String,
-})
-export type ProjectionMatchTrigger = Schema.Schema.Type<
-  typeof ProjectionMatchTrigger
->
+export const ProjectionMatchTrigger = ProjectionMatchTriggerSchema
+export type ProjectionMatchTrigger = ProjectionMatchTriggerValue
 
 // choreography-facade.TRIGGERS.7
 // ChoreographyTrigger is the union of supported trigger variants. v1 has a

@@ -10,7 +10,6 @@ import {
 import {
   DurableWaits,
   workScopedAwakeableKey,
-  type ProjectionMatchTrigger as KernelProjectionMatchTrigger,
 } from "../waits.ts"
 import {
   CompletionId as toCompletionId,
@@ -271,20 +270,12 @@ export const ChoreographyLive = (
         const pmTrigger: ProjectionMatchTrigger = trigger
         yield* matchers.lookup(pmTrigger.matcherId)
 
-        // The kernel waits.waitFor expects the loose Phase-7 placeholder
-        // shape `{ kind: "projection_match", description: unknown }`. The
-        // typed choreography trigger is stored as `description` so it is
-        // serialized verbatim onto the durable.completion.data field.
-        const kernelTrigger: KernelProjectionMatchTrigger = {
-          kind: "projection_match",
-          description: pmTrigger,
-        }
         const timeoutMs =
           options?.timeout !== undefined
             ? Duration.toMillis(Duration.decode(options.timeout))
             : undefined
         const result = yield* waits.waitFor({
-          trigger: kernelTrigger,
+          trigger: pmTrigger,
           ...(timeoutMs !== undefined ? { timeoutMs } : {}),
         })
         return yield* blockAndSuspend(result.completionId)

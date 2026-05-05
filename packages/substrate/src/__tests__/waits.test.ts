@@ -34,6 +34,13 @@ async function createSubstrateStream(label: string): Promise<string> {
   return url
 }
 
+const projectionTrigger = (label: string) => ({
+  _tag: "ProjectionMatch" as const,
+  label,
+  projectionKey: `projection:${label}`,
+  matcherId: `matcher:${label}`,
+})
+
 const runInWaits = <A, E>(
   url: string,
   program: Effect.Effect<A, E, DurableWaits>,
@@ -87,7 +94,7 @@ describe("durable-waits-and-scheduling.WAIT_FOR", () => {
       Effect.gen(function* () {
         const waits = yield* DurableWaits
         return yield* waits.waitFor({
-          trigger: { kind: "projection_match", description: { collection: "users", id: "u-1" } },
+          trigger: projectionTrigger("users:u-1"),
           timeoutMs: 30_000,
         })
       }),
@@ -100,10 +107,9 @@ describe("durable-waits-and-scheduling.WAIT_FOR", () => {
     expect(completion?.kind).toBe("projection_match")
     expect(completion?.state).toBe("pending")
     const data = completion?.data as
-      | { trigger: { kind: string; description: unknown }; timeoutMs?: number }
+      | { trigger: ReturnType<typeof projectionTrigger>; timeoutMs?: number }
       | undefined
-    expect(data?.trigger.kind).toBe("projection_match")
-    expect(data?.trigger.description).toEqual({ collection: "users", id: "u-1" })
+    expect(data?.trigger).toEqual(projectionTrigger("users:u-1"))
     expect(data?.timeoutMs).toBe(30_000)
   })
 
@@ -114,7 +120,7 @@ describe("durable-waits-and-scheduling.WAIT_FOR", () => {
       Effect.gen(function* () {
         const waits = yield* DurableWaits
         return yield* waits.waitFor({
-          trigger: { kind: "projection_match", description: "anything" },
+          trigger: projectionTrigger("anything"),
         })
       }),
     )
@@ -330,7 +336,7 @@ describe("durable-waits-and-scheduling — create + resolve lifecycle through Co
       Effect.gen(function* () {
         const waits = yield* DurableWaits
         return yield* waits.waitFor({
-          trigger: { kind: "projection_match", description: "x" },
+          trigger: projectionTrigger("x"),
           timeoutMs: 100,
         })
       }),
@@ -380,7 +386,7 @@ describe("durable-waits-and-scheduling.PHASE_BOUNDARY (Slice 7)", () => {
       Effect.gen(function* () {
         const waits = yield* DurableWaits
         return yield* waits.waitFor({
-          trigger: { kind: "projection_match", description: 1 },
+          trigger: projectionTrigger("phase-boundary"),
         })
       }),
     )

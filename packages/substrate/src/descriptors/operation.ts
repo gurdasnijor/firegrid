@@ -1,4 +1,9 @@
 import { Brand, Schema } from "effect"
+import {
+  OperationEnvelopeSchema,
+  OperationEnvelopeTag,
+  type OperationEnvelopeValue,
+} from "../schema/rows.ts"
 
 // firegrid-operation-messaging.OPERATIONS.4
 // firegrid-operation-messaging.RUNTIME_HANDLERS.1
@@ -9,20 +14,13 @@ import { Brand, Schema } from "effect"
 // wraps the encoded input in this envelope. The constant is owned
 // here so the client (encode side) and the runtime handler (decode
 // side) cannot drift.
-export const OPERATION_ENVELOPE_TAG = "firegrid/operation@1" as const
-
-export interface OperationEnvelope {
-  readonly _envelope: typeof OPERATION_ENVELOPE_TAG
-  readonly operation: string
-  readonly payload: unknown
-}
+export const OPERATION_ENVELOPE_TAG = OperationEnvelopeTag
+export type OperationEnvelope = OperationEnvelopeValue
 
 export const isOperationEnvelope = (
   value: unknown,
 ): value is OperationEnvelope =>
-  typeof value === "object" &&
-  value !== null &&
-  (value as OperationEnvelope)._envelope === OPERATION_ENVELOPE_TAG
+  Schema.is(OperationEnvelopeSchema)(value)
 
 // firegrid-operation-messaging.OPERATIONS.1
 // firegrid-operation-messaging.OPERATIONS.2

@@ -11,3 +11,4 @@
 export * from "./operation.ts"
 export * from "./event-stream.ts"
 export * from "./append.ts"
+export * from "./codec.ts"

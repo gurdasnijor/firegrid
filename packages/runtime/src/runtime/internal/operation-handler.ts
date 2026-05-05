@@ -11,6 +11,8 @@ import {
   acquireSubstrateDb,
   appendChange,
   completeRunEffect,
+  decodeAtBoundary,
+  encodeAtBoundary,
   failRunEffect,
   isOperationEnvelope,
   snapshotFromDb,
@@ -24,7 +26,6 @@ import {
   Effect,
   Exit,
   Option,
-  Schema,
   Stream,
   type ParseResult,
   type Scope,
@@ -86,9 +87,9 @@ const matchStartedRun = <Op extends Operation.Any>(
   if (run.state !== "started") return Effect.succeed(undefined)
   if (!isOperationEnvelope(run.data)) return Effect.succeed(undefined)
   if (run.data.operation !== op.name) return Effect.succeed(undefined)
-  return Schema.decodeUnknown(op.input as Schema.Schema.AnyNoContext)(
-    run.data.payload,
-  ).pipe(Effect.map((input) => ({ run, input: input as Operation.Input<Op> })))
+  return decodeAtBoundary(op.input, (cause) => cause)(run.data.payload).pipe(
+    Effect.map((input) => ({ run, input: input as Operation.Input<Op> })),
+  )
 }
 
 const currentWorkContextForRun = (
@@ -163,8 +164,9 @@ export const runOperationDispatchLoopWithAcquire = <
           yield* Exit.match(exit, {
             onSuccess: (value) =>
               Effect.gen(function* () {
-                const encoded: unknown = yield* Schema.encodeUnknown(
-                  input.op.output as Schema.Schema.AnyNoContext,
+                const encoded: unknown = yield* encodeAtBoundary(
+                  input.op.output,
+                  (cause) => cause,
                 )(value).pipe(
                   Effect.catchTag("ParseError", (cause) =>
                     Effect.logError(
@@ -198,17 +200,14 @@ export const runOperationDispatchLoopWithAcquire = <
                   Cause.failureOption(cause),
                   () => cause,
                 )
-                // op.error is `Schema.Schema.All`, which Effect documents as
-                // including `Schema<never, ...>`-style branches. `encodeUnknown`
-                // is typed against `Schema.Schema.AnyNoContext` (the never-excluded
-                // alias), so we cast at the call boundary. ParseError
-                // captures both "schema cannot encode" and "no typed error
-                // declared" cases (the default Schema.Never rejects every
-                // payload), and we fall back to `Cause.pretty(cause)` so a
-                // failure event always lands.
-                const encodedError: unknown = yield* Schema.encodeUnknown(
-                  input.op.error as Schema.Schema.AnyNoContext,
-                )(errorPayload).pipe(
+                // ParseError captures both "schema cannot encode" and "no
+                // typed error declared" cases (the default Schema.Never
+                // rejects every payload), and we fall back to
+                // `Cause.pretty(cause)` so a failure event always lands.
+                const encodedError: unknown = yield* encodeAtBoundary(
+                  input.op.error,
+                  (cause) => cause,
+                )(errorPayload as Operation.Error<Op>).pipe(
                   Effect.catchTag("ParseError", () =>
                     Effect.succeed(Cause.pretty(cause)),
                   ),

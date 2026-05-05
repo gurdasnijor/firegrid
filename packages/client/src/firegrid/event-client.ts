@@ -1,5 +1,7 @@
 import {
   appendChange,
+  decodeAtBoundary,
+  encodeAtBoundary,
   eventStreamEnvelopeFromStateRow,
   makeEventStreamStateRow,
   type EventStream,
@@ -11,7 +13,6 @@ import {
   Effect,
   Layer,
   Option,
-  Schema,
   Stream,
   type ParseResult,
 } from "effect"
@@ -82,23 +83,21 @@ const encodeEvent = <S extends EventStream.Any>(
   stream: S,
   event: EventStream.Event<S>,
 ): Effect.Effect<EventStream.EncodedEvent<S>, EventStreamEncodeError> =>
-  Schema.encodeUnknown(stream.event as Schema.Schema.AnyNoContext)(event).pipe(
-    Effect.mapError(
-      (cause) =>
-        new EventStreamEncodeError({ stream: stream.name, cause }),
-    ),
-  ) as Effect.Effect<EventStream.EncodedEvent<S>, EventStreamEncodeError>
+  encodeAtBoundary(
+    stream.event,
+    (cause) =>
+      new EventStreamEncodeError({ stream: stream.name, cause }),
+  )(event) as Effect.Effect<EventStream.EncodedEvent<S>, EventStreamEncodeError>
 
 const decodeEvent = <S extends EventStream.Any>(
   stream: S,
   raw: unknown,
 ): Effect.Effect<EventStream.Event<S>, EventStreamDecodeError> =>
-  Schema.decodeUnknown(stream.event as Schema.Schema.AnyNoContext)(raw).pipe(
-    Effect.mapError(
-      (cause) =>
-        new EventStreamDecodeError({ stream: stream.name, cause }),
-    ),
-  ) as Effect.Effect<EventStream.Event<S>, EventStreamDecodeError>
+  decodeAtBoundary(
+    stream.event,
+    (cause) =>
+      new EventStreamDecodeError({ stream: stream.name, cause }),
+  )(raw) as Effect.Effect<EventStream.Event<S>, EventStreamDecodeError>
 
 const nextEventId = (): string =>
   `${Date.now()}:${Math.random().toString(36).slice(2)}`

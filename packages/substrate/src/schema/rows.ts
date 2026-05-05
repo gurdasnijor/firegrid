@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Effect, Either, Schema, type ParseResult } from "effect"
 
 // durable-records-and-projections.RECORDS.6
 // Foundational durable authority row families.
@@ -7,6 +7,7 @@ export const CompletionRowType = "durable.completion" as const
 export const ClaimAttemptRowType = "durable.claim.attempt" as const
 export const EventStreamRowType = "firegrid.event" as const
 export const EventStreamEnvelopeTag = "firegrid/event@1" as const
+export const OperationEnvelopeTag = "firegrid/operation@1" as const
 // durable-records-and-projections.RECORDS.8
 export const TraceRowType = "durable.trace" as const
 
@@ -64,6 +65,103 @@ export const CompletionState = Schema.Literal(
   "cancelled",
 )
 export type CompletionState = Schema.Schema.Type<typeof CompletionState>
+
+// choreography-facade.TRIGGERS.2
+// choreography-facade.TRIGGERS.3
+// choreography-facade.TRIGGERS.4
+export const ProjectionMatchTriggerSchema = Schema.TaggedStruct("ProjectionMatch", {
+  label: Schema.String,
+  projectionKey: Schema.String,
+  matcherId: Schema.String,
+})
+export type ProjectionMatchTriggerValue = Schema.Schema.Type<
+  typeof ProjectionMatchTriggerSchema
+>
+
+// durable-subscribers.TIMER_SUBSCRIBER.4
+// durable-waits-and-scheduling.WAIT_FOR.6
+// durable-waits-and-scheduling.WAIT_FOR.7
+// durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.4
+// Per-kind durable completion data codecs keep resolver data explicit at the
+// row-family boundary while preserving `CompletionValue.data` as Unknown for
+// durable wire compatibility.
+export const TimerCompletionData = Schema.Struct({
+  durationMs: Schema.optional(Schema.Number),
+  dueAtMs: Schema.Number,
+})
+export type TimerCompletionData = Schema.Schema.Type<
+  typeof TimerCompletionData
+>
+
+export const ScheduledWorkCompletionData = Schema.Struct({
+  whenMs: Schema.Number,
+  input: Schema.optional(Schema.Unknown),
+})
+export type ScheduledWorkCompletionData = Schema.Schema.Type<
+  typeof ScheduledWorkCompletionData
+>
+
+export const ProjectionMatchCompletionData = Schema.Struct({
+  trigger: ProjectionMatchTriggerSchema,
+  timeoutMs: Schema.optional(Schema.Number),
+  deadlineAtMs: Schema.optional(Schema.Number),
+})
+export type ProjectionMatchCompletionData = Schema.Schema.Type<
+  typeof ProjectionMatchCompletionData
+>
+
+const LegacyProjectionMatchCompletionData = Schema.Struct({
+  trigger: Schema.Struct({
+    kind: Schema.Literal("projection_match"),
+    description: ProjectionMatchTriggerSchema,
+  }),
+  timeoutMs: Schema.optional(Schema.Number),
+  deadlineAtMs: Schema.optional(Schema.Number),
+})
+
+export const decodeCompletionData =
+  <S extends Schema.Schema.AnyNoContext, E>(
+    schema: S,
+    mapError: (cause: ParseResult.ParseError) => E,
+  ) => {
+    const decode = Schema.decodeUnknown(schema)
+    return (value: unknown): Effect.Effect<Schema.Schema.Type<S>, E> =>
+      Effect.mapError(
+        decode(value),
+        mapError,
+      ) as Effect.Effect<Schema.Schema.Type<S>, E>
+  }
+
+export const decodeProjectionMatchCompletionData = <E>(
+  value: unknown,
+  mapError: (cause: ParseResult.ParseError) => E,
+): Effect.Effect<ProjectionMatchCompletionData, E> => {
+  const decoded = Schema.decodeUnknownEither(ProjectionMatchCompletionData)(
+    value,
+  )
+  if (Either.isRight(decoded)) return Effect.succeed(decoded.right)
+  return Schema.decodeUnknown(LegacyProjectionMatchCompletionData)(value).pipe(
+    Effect.map((legacy) => ({
+      trigger: legacy.trigger.description,
+      ...(legacy.timeoutMs !== undefined ? { timeoutMs: legacy.timeoutMs } : {}),
+      ...(legacy.deadlineAtMs !== undefined
+        ? { deadlineAtMs: legacy.deadlineAtMs }
+        : {}),
+    })),
+    Effect.mapError(mapError),
+  )
+}
+
+// firegrid-operation-messaging.OPERATIONS.4
+// firegrid-operation-messaging.RUNTIME_HANDLERS.1
+export const OperationEnvelopeSchema = Schema.Struct({
+  _envelope: Schema.Literal(OperationEnvelopeTag),
+  operation: Schema.String,
+  payload: Schema.Unknown,
+})
+export type OperationEnvelopeValue = Schema.Schema.Type<
+  typeof OperationEnvelopeSchema
+>
 
 // awakeables-and-runs.AWAKEABLE.1 — value shape only; transitions are Slice 2.
 // durable-records-and-projections.RECORDS.9 — pending completions may carry

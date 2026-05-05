@@ -4,9 +4,11 @@ import {
   EventStream,
   EVENT_STREAM_ENVELOPE_TAG,
   EVENT_STREAM_ROW_TYPE,
+  OPERATION_ENVELOPE_TAG,
   eventStreamEnvelopeFromStateRow,
   eventStreamStateKey,
   isEventStreamStateRow,
+  isOperationEnvelope,
   makeEventStreamStateRow,
   Operation,
   OperationHandle,
@@ -134,6 +136,22 @@ describe("OperationHandle — descriptor-bound handle", () => {
     consumeSameString(hs)
     // @ts-expect-error same operation name is not enough when schemas diverge
     consumeSameString(hn)
+  })
+})
+
+describe("firegrid-remediation-hardening.CODE_REUSE.6 — operation envelope schema guard", () => {
+  it("accepts the canonical operation envelope and rejects malformed envelope-like values", () => {
+    expect(isOperationEnvelope({
+      _envelope: OPERATION_ENVELOPE_TAG,
+      operation: "Echo",
+      payload: { msg: "hi" },
+    })).toBe(true)
+
+    expect(isOperationEnvelope({
+      _envelope: OPERATION_ENVELOPE_TAG,
+      payload: { msg: "hi" },
+    })).toBe(false)
+    expect(isOperationEnvelope(null)).toBe(false)
   })
 })
 
