@@ -1,0 +1,41 @@
+feature:
+  name: firegrid-operation-messaging
+  product: firegrid
+  description: Define typed operation messaging APIs for Firegrid clients and runtimes.
+
+components:
+  OPERATIONS:
+    requirements:
+      1: Operation contracts are browser-safe descriptor values containing name, input schema, and output schema.
+      2: Operation contracts contain no runtime handler implementation, runtime dependencies, Durable Streams URL, substrate writer, or mutable registration state.
+      3: Runtime handlers are installed separately from operation contracts through runtime-only Effect Layer constructors.
+      4: Operation contract modules are the preferred v1 sharing mechanism between clients and runtimes.
+
+  CLIENT_MESSAGING:
+    requirements:
+      1: The primitive client operation API is `send`, which durably appends an operation message and returns a handle.
+      2: The request-response convenience API is `call`, which is equivalent to send followed by result.
+      3: The client can await a previously returned handle through `result`.
+      4: The client can observe a previously returned handle through `observe`, which is Stream-first.
+      5: Client operation APIs are single-form data-first APIs in v1.
+      6: Expected SDK failures are tagged values in the typed error channel, not defects.
+
+  SCHEDULED_MESSAGES:
+    requirements:
+      1: Delayed operation messages are expressed as send options.
+      2: Absolute scheduled operation messages are expressed as send options.
+      3: Scheduled operation messages lower to existing scheduled-work primitives rather than introducing a second scheduler.
+
+  RUNTIME_HANDLERS:
+    requirements:
+      1: Runtime handlers receive decoded operation input.
+      2: Runtime handlers run with CurrentWorkContext available in the Effect environment.
+      3: Runtime handlers may use choreography primitives through server-side runtime dependencies.
+      4: Runtime handler Layers compose with ordinary Effect Layer APIs.
+
+constraints:
+  APP_BOUNDARY:
+    requirements:
+      1: The app-facing client root must not expose work declaration as the primary operation start API.
+      2: The app-facing client root must not expose run, claim, completion, terminalization, or row-builder vocabulary.
+      3: Browser/client code must not import runtime handler values.

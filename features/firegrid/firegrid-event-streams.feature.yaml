@@ -1,0 +1,32 @@
+feature:
+  name: firegrid-event-streams
+  product: firegrid
+  description: Define EventStream as the ergonomic Firegrid API for caller-owned event streams.
+
+components:
+  EVENT_STREAM_DEFINITION:
+    requirements:
+      1: EventStream is the client and runtime-facing term for caller-owned typed event streams.
+      2: EventStream definitions are descriptor values containing name and event schema.
+      3: EventStream definitions contain no client instance, runtime handler, Durable Streams URL, materializer, substrate writer, or mutable registry.
+      4: EventPlane may remain an internal substrate or migration term but is not the ergonomic app API name.
+
+  CLIENT_API:
+    requirements:
+      1: Clients emit EventStream rows with a verb-first API.
+      2: Clients observe EventStreams with an API that returns Stream directly.
+      3: Client EventStream APIs are Effect-native.
+      4: Browser EventStream APIs must not import runtime or substrate internals.
+
+  RUNTIME_API:
+    requirements:
+      1: Runtime EventStream materializers are installed through Layer constructors.
+      2: Runtime EventStream materializers are not side-effecting global registration calls.
+      3: Runtime EventStream materializers compose with ordinary Effect Layer APIs.
+
+constraints:
+  SCHEMA_OWNERSHIP:
+    requirements:
+      1: EventStream schemas are caller-owned and must not become substrate-native row families.
+      2: EventStream materialized views do not replace substrate claim or completion authority.
+      3: EventStream descriptors are safe for client and runtime imports.

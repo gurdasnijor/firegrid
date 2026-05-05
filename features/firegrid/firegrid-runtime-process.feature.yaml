@@ -1,0 +1,38 @@
+feature:
+  name: firegrid-runtime-process
+  product: firegrid
+  description: Define the Firegrid runtime process, command-line entrypoints, and environment injection model.
+
+components:
+  RUNTIME_PACKAGE:
+    requirements:
+      1: The runtime package target name is `@firegrid/runtime`.
+      2: The runtime package exposes server-side runtime boot and Layer composition APIs.
+      3: The runtime package does not import the app-facing client package.
+      4: Public withHost-style helpers that provide an app client are removed or deprecated.
+
+  BINARIES:
+    requirements:
+      1: The primary runtime binary is named `firegrid`.
+      2: The short runtime binary alias is named `fg`.
+      3: The binary supports attached mode through an explicit stream URL.
+      4: The binary supports embedded development mode.
+      5: The binary supports `firegrid dev -- <command...>` to run a child process with stream environment injected.
+
+  DEV_ENV_INJECTION:
+    requirements:
+      1: The dev process boots embedded Durable Streams.
+      2: The dev process creates the configured substrate stream.
+      3: The dev process resolves the actual stream URL, including OS-assigned port cases.
+      4: The dev process injects `SUBSTRATE_STREAM_URL` into the child process.
+      5: The dev process injects `VITE_SUBSTRATE_STREAM_URL` into the child process for browser tooling.
+      6: The dev process tears down embedded resources when the child process exits.
+
+constraints:
+  EFFECT_PLATFORM:
+    requirements:
+      1: The binary entrypoint is wrapper-thin and delegates execution to Effect runtime APIs.
+      2: The binary entrypoint uses NodeRuntime.runMain or the equivalent Effect Platform Node runtime entrypoint.
+      3: Child process execution uses Effect Platform Command rather than direct child_process orchestration unless a concrete gap is documented.
+      4: User-visible terminal output uses Effect Platform Terminal where possible.
+      5: Runtime and child-process lifetimes are scoped through Effect scopes.
