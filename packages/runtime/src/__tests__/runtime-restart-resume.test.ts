@@ -62,7 +62,7 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.5 — runtime restart r
   it("firegrid-remediation-hardening.TEST_GUARDRAILS.5, firegrid-runtime-process.RUNTIME_HOT_PATH.1 — timer subscriber resolves an in-flight durable wait after scope reconstruction", async () => {
     const streamUrl = freshStreamUrl("restart-timer")
     const completionId = "timer-restart"
-    const dueAtMs = Date.now() - 1_000
+    const dueAtMs = 0
 
     await Effect.runPromise(
       appendRaw(

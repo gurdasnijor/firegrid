@@ -1,5 +1,5 @@
 import { DurableStream } from "@durable-streams/client"
-import { Effect, Either } from "effect"
+import { Effect, Either, TestClock, TestContext } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as substrate from "../index.ts"
 import {
@@ -55,6 +55,17 @@ async function appendEvent(url: string, event: unknown): Promise<void> {
   await stream.append(JSON.stringify(event))
 }
 
+const runWithTestClock = <A, E>(
+  nowMs: number,
+  effect: Effect.Effect<A, E>,
+): Promise<A> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      yield* TestClock.setTime(nowMs)
+      return yield* effect
+    }).pipe(Effect.provide(TestContext.TestContext)),
+  )
+
 describe("durable-subscribers.SUBSCRIBER_SCOPE", () => {
   it("durable-subscribers.SUBSCRIBER_SCOPE.5 — subscribers are single-shot scan-and-resolve functions (no long-running watcher)", () => {
     expect(typeof runTimerSubscriber).toBe("function")
@@ -73,8 +84,9 @@ describe("durable-subscribers.TIMER_SUBSCRIBER", () => {
   it("durable-subscribers.TIMER_SUBSCRIBER.1 + .2 + .3 + .4 — eligible timer (dueAtMs <= nowMs) appends a resolved terminal carrying dueAtMs and observedFireMs", async () => {
     const url = await createSubstrateStream("timer-eligible")
     // Seed an already-due timer (dueAtMs in the past).
+    const nowMs = 10_000
     const completionId = "c-timer-1"
-    const dueAtMs = Date.now() - 1000
+    const dueAtMs = 9_000
     const event = createPendingCompletion({
       completionId,
       kind: "timer",
@@ -82,7 +94,10 @@ describe("durable-subscribers.TIMER_SUBSCRIBER", () => {
     })
     await appendEvent(url, event)
 
-    const result = await Effect.runPromise(runTimerSubscriber({ streamUrl: url }))
+    const result = await runWithTestClock(
+      nowMs,
+      runTimerSubscriber({ streamUrl: url }),
+    )
     expect(result.resolvedIds).toEqual([completionId])
 
     const snapshot = await rebuildProjection({ url })
@@ -90,20 +105,24 @@ describe("durable-subscribers.TIMER_SUBSCRIBER", () => {
     expect(completion?.state).toBe("resolved")
     const r = completion?.result as { dueAtMs: number; observedFireMs: number } | undefined
     expect(r?.dueAtMs).toBe(dueAtMs)
-    expect(r?.observedFireMs).toBeGreaterThanOrEqual(dueAtMs)
+    expect(r?.observedFireMs).toBe(nowMs)
   })
 
   it("durable-subscribers.TIMER_SUBSCRIBER.2 — timer with future dueAtMs is NOT eligible; subscriber leaves it pending", async () => {
     const url = await createSubstrateStream("timer-future")
+    const nowMs = 10_000
     const completionId = "c-timer-future"
-    const dueAtMs = Date.now() + 1_000_000
+    const dueAtMs = 11_000
     await appendEvent(url, createPendingCompletion({
       completionId,
       kind: "timer",
       data: { durationMs: 1_000_000, dueAtMs },
     }))
 
-    const result = await Effect.runPromise(runTimerSubscriber({ streamUrl: url }))
+    const result = await runWithTestClock(
+      nowMs,
+      runTimerSubscriber({ streamUrl: url }),
+    )
     expect(result.resolvedIds).toEqual([])
     const snapshot = await rebuildProjection({ url })
     expect(snapshot.completions.get(completionId)?.state).toBe("pending")
@@ -139,8 +158,9 @@ describe("durable-subscribers.TIMER_SUBSCRIBER", () => {
 describe("durable-subscribers.SCHEDULED_WORK_SUBSCRIBER", () => {
   it("durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.1 + .2 + .3 + .4 — eligible scheduled_work appends resolved terminal preserving whenMs + opaque input", async () => {
     const url = await createSubstrateStream("sw-eligible")
+    const nowMs = 10_000
     const completionId = "c-sw-1"
-    const whenMs = Date.now() - 500
+    const whenMs = 9_500
     const inputPayload = { task: "compaction", refs: [1, 2, 3] }
     await appendEvent(url, createPendingCompletion({
       completionId,
@@ -149,7 +169,10 @@ describe("durable-subscribers.SCHEDULED_WORK_SUBSCRIBER", () => {
       data: { whenMs, input: inputPayload },
     }))
 
-    const result = await Effect.runPromise(runScheduledWorkSubscriber({ streamUrl: url }))
+    const result = await runWithTestClock(
+      nowMs,
+      runScheduledWorkSubscriber({ streamUrl: url }),
+    )
     expect(result.resolvedIds).toEqual([completionId])
 
     const snapshot = await rebuildProjection({ url })
@@ -163,23 +186,31 @@ describe("durable-subscribers.SCHEDULED_WORK_SUBSCRIBER", () => {
 
   it("durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.2 — future whenMs is not eligible", async () => {
     const url = await createSubstrateStream("sw-future")
+    const nowMs = 10_000
     await appendEvent(url, createPendingCompletion({
       completionId: "c-sw-future",
       kind: "scheduled_work",
-      data: { whenMs: Date.now() + 1_000_000, input: null },
+      data: { whenMs: 11_000, input: null },
     }))
-    const result = await Effect.runPromise(runScheduledWorkSubscriber({ streamUrl: url }))
+    const result = await runWithTestClock(
+      nowMs,
+      runScheduledWorkSubscriber({ streamUrl: url }),
+    )
     expect(result.resolvedIds).toEqual([])
   })
 
   it("durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.5 — subscriber does NOT append prompt/session/agent/provider rows", async () => {
     const url = await createSubstrateStream("sw-no-side-rows")
+    const nowMs = 10_000
     await appendEvent(url, createPendingCompletion({
       completionId: "c-sw-side",
       kind: "scheduled_work",
-      data: { whenMs: Date.now() - 1, input: { x: 1 } },
+      data: { whenMs: 9_999, input: { x: 1 } },
     }))
-    await Effect.runPromise(runScheduledWorkSubscriber({ streamUrl: url }))
+    await runWithTestClock(
+      nowMs,
+      runScheduledWorkSubscriber({ streamUrl: url }),
+    )
     const snapshot = await rebuildProjection({ url })
     // Only the completion is touched; runs/claims stay empty; no extra rows.
     expect(snapshot.runs.size).toBe(0)
@@ -250,9 +281,10 @@ describe("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER", () => {
 
   it("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.6 + .9 — timeout fires from durable deadlineAtMs (not process-local elapsed time)", async () => {
     const url = await createSubstrateStream("pm-timeout")
+    const nowMs = 10_000
     const completionId = "c-pm-3"
     const timeoutMs = 1000
-    const deadlineAtMs = Date.now() - 10 // already past
+    const deadlineAtMs = 9_990 // already past
     await appendEvent(url, createPendingCompletion({
       completionId,
       kind: "projection_match",
@@ -263,7 +295,8 @@ describe("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER", () => {
       },
     }))
 
-    const result = await Effect.runPromise(
+    const result = await runWithTestClock(
+      nowMs,
       runProjectionMatchSubscriber({
         streamUrl: url,
         // Even if evaluator would say match, the timeout path fires first.
@@ -281,11 +314,12 @@ describe("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER", () => {
       | undefined
     expect(reason?.kind).toBe("timeout")
     expect(reason?.timeoutMs).toBe(timeoutMs)
-    expect(typeof reason?.observedAtMs).toBe("number")
+    expect(reason?.observedAtMs).toBe(nowMs)
   })
 
   it("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.9 — completion with timeoutMs but FUTURE deadlineAtMs is not eligible for timeout firing", async () => {
     const url = await createSubstrateStream("pm-timeout-future")
+    const nowMs = 10_000
     const completionId = "c-pm-future"
     await appendEvent(url, createPendingCompletion({
       completionId,
@@ -293,10 +327,11 @@ describe("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER", () => {
       data: {
         trigger: projectionTrigger("future-timeout"),
         timeoutMs: 60_000,
-        deadlineAtMs: Date.now() + 60_000,
+        deadlineAtMs: 70_000,
       },
     }))
-    const result = await Effect.runPromise(
+    const result = await runWithTestClock(
+      nowMs,
       runProjectionMatchSubscriber({ streamUrl: url, evaluate: matchEvaluator("no-match") }),
     )
     expect(result.cancelledIds).toEqual([])
@@ -330,7 +365,7 @@ describe("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER", () => {
       completionId: "c-pm-missing",
       kind: "projection_match",
       // No trigger in data — degenerate row.
-      data: { timeoutMs: 1, deadlineAtMs: Date.now() + 100_000 },
+      data: { timeoutMs: 1, deadlineAtMs: 110_000 },
     }))
     const result = await Effect.runPromise(
       Effect.either(
@@ -350,8 +385,9 @@ describe("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER", () => {
 describe("durable-waits-and-scheduling.WAIT_FOR.7 — waitFor stores deadlineAtMs alongside timeoutMs", () => {
   it("waitFor with timeoutMs computes and stores an absolute durable deadline at creation time", async () => {
     const url = await createSubstrateStream("waitfor-deadline")
-    const before = Date.now()
-    const result = await Effect.runPromise(
+    const nowMs = 12_345
+    const result = await runWithTestClock(
+      nowMs,
       Effect.gen(function* () {
         const waits = yield* DurableWaits
         return yield* waits.waitFor({
@@ -360,15 +396,13 @@ describe("durable-waits-and-scheduling.WAIT_FOR.7 — waitFor stores deadlineAtM
         })
       }).pipe(Effect.provide(DurableWaitsLive({ streamUrl: url }))),
     )
-    const after = Date.now()
     const snapshot = await rebuildProjection({ url })
     const completion = snapshot.completions.get(result.completionId)
     const data = completion?.data as
       | { timeoutMs: number; deadlineAtMs: number }
       | undefined
     expect(data?.timeoutMs).toBe(30_000)
-    expect(data?.deadlineAtMs).toBeGreaterThanOrEqual(before + 30_000)
-    expect(data?.deadlineAtMs).toBeLessThanOrEqual(after + 30_000)
+    expect(data?.deadlineAtMs).toBe(nowMs + 30_000)
   })
 
   it("waitFor without timeoutMs writes neither timeoutMs nor deadlineAtMs", async () => {
@@ -393,22 +427,29 @@ describe("durable-waits-and-scheduling.WAIT_FOR.7 — waitFor stores deadlineAtM
 describe("durable-subscribers.COMPLETION_AUTHORITY", () => {
   it("durable-subscribers.COMPLETION_AUTHORITY.1 + .2 — duplicate subscriber attempts (idempotent) do not rewrite the authoritative terminal", async () => {
     const url = await createSubstrateStream("auth-idempotent")
+    const nowMs = 10_000
     const completionId = "c-auth-1"
     await appendEvent(url, createPendingCompletion({
       completionId,
       kind: "timer",
-      data: { dueAtMs: Date.now() - 100 },
+      data: { dueAtMs: 9_900 },
     }))
 
     // First scan resolves.
-    const r1 = await Effect.runPromise(runTimerSubscriber({ streamUrl: url }))
+    const r1 = await runWithTestClock(
+      nowMs,
+      runTimerSubscriber({ streamUrl: url }),
+    )
     expect(r1.resolvedIds).toEqual([completionId])
     const firstResult = (await rebuildProjection({ url })).completions.get(completionId)?.result
     expect(firstResult).toBeDefined()
 
     // Second scan (architect #5b idempotency): completion is now terminal in
     // snapshot, so subscriber skips and does not append a duplicate evidence record.
-    const r2 = await Effect.runPromise(runTimerSubscriber({ streamUrl: url }))
+    const r2 = await runWithTestClock(
+      nowMs,
+      runTimerSubscriber({ streamUrl: url }),
+    )
     expect(r2.resolvedIds).toEqual([])
 
     // Authoritative result unchanged.
@@ -418,11 +459,12 @@ describe("durable-subscribers.COMPLETION_AUTHORITY", () => {
 
   it("durable-subscribers.COMPLETION_AUTHORITY.1 — subscriber appends a CANDIDATE terminal; if a terminal already exists from another writer, the snapshot-skip avoids duplicate append", async () => {
     const url = await createSubstrateStream("auth-already-resolved")
+    const nowMs = 10_000
     const completionId = "c-auth-2"
     await appendEvent(url, createPendingCompletion({
       completionId,
       kind: "timer",
-      data: { dueAtMs: Date.now() - 100 },
+      data: { dueAtMs: 9_900 },
     }))
 
     // Pre-resolve the completion via CompletionProducer (simulates another writer).
@@ -437,7 +479,10 @@ describe("durable-subscribers.COMPLETION_AUTHORITY", () => {
     )
 
     // Subscriber scans; sees terminal in snapshot; skips.
-    const r = await Effect.runPromise(runTimerSubscriber({ streamUrl: url }))
+    const r = await runWithTestClock(
+      nowMs,
+      runTimerSubscriber({ streamUrl: url }),
+    )
     expect(r.resolvedIds).toEqual([])
 
     const snapshot = await rebuildProjection({ url })
@@ -451,30 +496,37 @@ describe("durable-subscribers.COMPLETION_AUTHORITY", () => {
 describe("durable-subscribers.RESTART_SAFETY", () => {
   it("durable-subscribers.RESTART_SAFETY.1 + .4 — a fresh subscriber call rebuilds from durable state alone (no in-memory pending-work state)", async () => {
     const url = await createSubstrateStream("restart-fresh")
+    const nowMs = 10_000
     // Seed two due timers + one future timer.
     await appendEvent(url, createPendingCompletion({
       completionId: "due-1",
       kind: "timer",
-      data: { dueAtMs: Date.now() - 200 },
+      data: { dueAtMs: 9_800 },
     }))
     await appendEvent(url, createPendingCompletion({
       completionId: "due-2",
       kind: "timer",
-      data: { dueAtMs: Date.now() - 100 },
+      data: { dueAtMs: 9_900 },
     }))
     await appendEvent(url, createPendingCompletion({
       completionId: "future",
       kind: "timer",
-      data: { dueAtMs: Date.now() + 1_000_000 },
+      data: { dueAtMs: 1_010_000 },
     }))
 
     // Each Effect.runPromise is an independent runtime; the subscriber holds
     // no in-memory pending-work state across calls.
-    const r1 = await Effect.runPromise(runTimerSubscriber({ streamUrl: url }))
+    const r1 = await runWithTestClock(
+      nowMs,
+      runTimerSubscriber({ streamUrl: url }),
+    )
     expect(new Set(r1.resolvedIds)).toEqual(new Set(["due-1", "due-2"]))
 
     // Second fresh call: nothing eligible (the two are now terminal; future not yet due).
-    const r2 = await Effect.runPromise(runTimerSubscriber({ streamUrl: url }))
+    const r2 = await runWithTestClock(
+      nowMs,
+      runTimerSubscriber({ streamUrl: url }),
+    )
     expect(r2.resolvedIds).toEqual([])
 
     // Authority unchanged (RESTART_SAFETY.4 — assert via projection rebuild).
@@ -486,14 +538,18 @@ describe("durable-subscribers.RESTART_SAFETY", () => {
 
   it("durable-subscribers.RESTART_SAFETY.2 — conservatively rescanning is harmless under completion authority", async () => {
     const url = await createSubstrateStream("restart-rescan-harmless")
+    const nowMs = 10_000
     await appendEvent(url, createPendingCompletion({
       completionId: "rs-1",
       kind: "scheduled_work",
-      data: { whenMs: Date.now() - 50, input: { x: 1 } },
+      data: { whenMs: 9_950, input: { x: 1 } },
     }))
     // Run subscriber three times — all subsequent runs see terminal in snapshot and skip.
     for (let i = 0; i < 3; i++) {
-      await Effect.runPromise(runScheduledWorkSubscriber({ streamUrl: url }))
+      await runWithTestClock(
+        nowMs,
+        runScheduledWorkSubscriber({ streamUrl: url }),
+      )
     }
     const snapshot = await rebuildProjection({ url })
     expect(snapshot.completions.get("rs-1")?.state).toBe("resolved")

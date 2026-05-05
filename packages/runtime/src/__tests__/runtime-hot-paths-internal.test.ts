@@ -4,7 +4,16 @@ import {
   type CompletionValue,
 } from "@firegrid/substrate/kernel"
 import { Operation } from "@firegrid/substrate"
-import { Deferred, Effect, Fiber, Ref, Schema } from "effect"
+import {
+  Deferred,
+  Duration,
+  Effect,
+  Fiber,
+  Ref,
+  Schema,
+  TestClock,
+  TestContext,
+} from "effect"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
@@ -156,12 +165,12 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
           wake?.()
           yield* Deferred.succeed(releaseFirstScan, undefined)
           yield* Deferred.await(secondScanFinished)
-          yield* Effect.sleep("20 millis")
+          yield* TestClock.adjust(Duration.millis(20))
           const count = yield* Ref.get(scans)
           yield* Fiber.interrupt(fiber)
           return count
         }),
-      ),
+      ).pipe(Effect.provide(TestContext.TestContext)),
     )
 
     expect(observed).toBe(2)
