@@ -110,7 +110,7 @@ components:
 
   HOST_DIAGNOSTICS:
     requirements:
-      1: The minimum read-only diagnostics include health, version, process id, boot mode, stream identity, active profile names, subscriber loop status, operator loop status, last scan times, uptime, process metrics, and non-secret error summaries.
+      1: The minimum read-only diagnostics include health, version, process id, boot mode, stream identity, active profile names, subscriber program status, operator program status, last scan or wake times, uptime, process metrics, and non-secret error summaries.
       2: Host diagnostics do not start scenarios or mutate durable streams/state.
       3: The first host diagnostics surface is local HTTP on a configurable port.
       4: The default diagnostics port is 4438.

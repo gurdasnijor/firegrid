@@ -689,9 +689,9 @@ The host may expose read-only endpoints or IPC for local status:
 - boot mode;
 - stream URL or stream name;
 - active profiles;
-- subscriber loop status;
-- last scan times;
-- operator loop status;
+- subscriber program status;
+- last scan or wake times;
+- operator program status;
 - last non-secret error summary;
 - process metrics;
 - uptime.
@@ -770,7 +770,7 @@ The first slice should prove:
 4. a host boot plan with embedded-dev and attached modes, Effect Config
    decoding, generated process identity, and auth header materialization;
 5. a host dev process that starts or connects to `DurableStreamTestServer` and
-   runs configured host-managed timer + scheduled-work subscriber loops;
+   runs configured host-managed timer + scheduled-work subscriber programs;
 6. a tiny lab UI or terminal inspector that shows substrate snapshot and stream
    registry state;
 7. one sleep scenario that can be launched through the client and observed
@@ -792,7 +792,7 @@ semantics.
    invoked by the lab UI and by a command-line entrypoint, but they are not
    exported from the production client root.
 4. Minimum host diagnostics are read-only health, version, process id, boot
-   mode, stream identity, active profile names, subscriber/operator loop status,
+   mode, stream identity, active profile names, subscriber/operator program status,
    last scan times, uptime, process metrics, and non-secret error summaries.
 5. Profile discovery uses explicit local maps supplied by the host application
    or lab. Config may select a known key from that map; there is no global
