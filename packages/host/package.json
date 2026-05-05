@@ -12,6 +12,7 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "check": "pnpm run typecheck && pnpm run test",
     "dev:embedded": "tsx ./bin/dev-embedded.ts",
+    "dev:lab": "pnpm run dev:embedded",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

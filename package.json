@@ -3,18 +3,21 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.27.0",
   "scripts": {
-    "build": "pnpm -r run build",
-    "check": "pnpm run check:specs && pnpm run check:docs && pnpm run lint && pnpm run build && pnpm -r run check",
+    "build": "turbo run build",
+    "check": "pnpm run check:specs && pnpm run check:docs && pnpm run lint && turbo run build check",
     "check:specs": "ruby -e 'require \"yaml\"; ARGV.each { |f| YAML.load_file(f); puts \"ok #{File.basename(f)}\" }' features/*/*.feature.yaml",
     "check:docs": "find README.md docs features -type f \\( -name '*.md' -o -name '*.yaml' \\) -print0 | xargs -0 perl -ne 'print \"$ARGV:$.: trailing whitespace\\n\" if /[ \\t]$/; close ARGV if eof' && ! grep -R -n -E '<<<<<<<|>>>>>>>|=======' README.md docs features",
+    "dev:lab": "turbo run dev:lab",
     "effect:check": "effect-language-service check",
     "effect:diagnostics": "sh -c 'status=0; for f in packages/*/tsconfig.json; do echo \"== $f ==\"; effect-language-service diagnostics --project \"$f\" --format text || status=$?; done; exit \"$status\"'",
     "effect:patch": "effect-language-service patch",
     "effect:unpatch": "effect-language-service unpatch",
     "format": "eslint . --fix",
     "lint": "eslint .",
-    "test": "pnpm -r run test"
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
     "@durable-streams/server": "^0.3.1",
@@ -24,6 +27,7 @@
     "@stylistic/eslint-plugin": "^5.10.0",
     "eslint": "^10.3.0",
     "globals": "^17.6.0",
+    "turbo": "^2.5.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.2"
   }

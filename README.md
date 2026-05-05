@@ -27,3 +27,30 @@ pnpm check
 
 Implementation work should start from the Acai specs and include full Acai ACID
 references in test names or nearby comments.
+
+## Run the lab
+
+The browser lab inspects a Durable Streams endpoint. The repo wires both
+processes together through Turborepo so a single command starts everything:
+
+```sh
+pnpm dev:lab
+```
+
+This runs `turbo run dev:lab --parallel`, which fans out to:
+
+- `packages/host` `dev:embedded` — boots a no-write embedded
+  `DurableStreamTestServer` at `http://127.0.0.1:4437/substrate/lab`. No Host
+  Program Graph; no scenario runner; no client writes.
+- `packages/lab` `dev` — Vite dev server at `http://localhost:4439/` that
+  defaults to the URL above.
+
+Open `http://localhost:4439/` once both lines log ready; Ctrl-C tears both down.
+
+If you want each side in its own terminal for debugging, the split commands
+are still available:
+
+```sh
+pnpm --filter @durable-agent-substrate/host dev:embedded
+pnpm --filter @durable-agent-substrate/lab dev
+```
