@@ -1,0 +1,16 @@
+{
+  "metrics": {
+    "extendsErrorCount": 0,
+    "processEnvOutsideBinCount": 0,
+    "throwOutsideBinScriptCount": 2,
+    "forOfInPackageSourceCount": 11,
+    "anyNoContextCastCount": 1,
+    "nodeCryptoImportCount": 0,
+    "dataTaggedErrorDeclarationCount": 40,
+    "newDurableStreamSiteCount": 11,
+    "perCallLayerProvideSiteCount": 0,
+    "effectOrDieSiteCount": 4,
+    "effectRunPromiseInTestsCount": 210,
+    "vitestItImportInTestsCount": 46
+  }
+}

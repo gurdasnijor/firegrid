@@ -137,3 +137,27 @@ rules:
             readRetainedRunRecords(...).pipe(
               ...
             )
+
+  - id: firegrid-no-process-env-outside-bin
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      review-section: "configuration-review"
+      review-item: "Q5"
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.10
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: configuration-boundary
+    paths:
+      include:
+        - "**/packages/*/src/**/*.ts"
+        - "**/packages/*/src/**/*.tsx"
+        - "**/apps/*/src/**/*.ts"
+        - "**/apps/*/src/**/*.tsx"
+        - "**/semgrep-tests/**/*.ts"
+    message: |
+      process.env reads belong at the binary entry boundary (bin/) or in
+      tooling scripts (scripts/). In application code use Config.string /
+      Config.option / Config.redacted, or accept config as an explicit
+      parameter. The companion ESLint rule local/no-process-env-outside-bin
+      catches the same shape; this Semgrep rule is the structural backstop.
+    pattern: process.env.$ANY

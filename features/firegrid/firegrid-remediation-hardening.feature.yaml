@@ -72,6 +72,9 @@ components:
       7: ESLint and Semgrep quality gates fail on warnings or findings rather than carrying warning-only hygiene debt.
       8: Dependency-cruiser hygiene findings for deprecated dependencies, duplicate dependency declarations, and unexplained orphan modules fail CI.
       9: Dead-code detection is held at zero current findings rather than allowing a nonzero baseline.
+      10: New `class extends Error` declarations and `process.env` reads outside `bin/` and `scripts/` are blocked by static guards before they can land.
+      11: A tracked metric ratchet records per-pattern Effect-quality counts (extends-Error, throw-outside-bin, for-of-in-effect-module, AnyNoContext casts, node:crypto imports, Data.TaggedError declarations, direct DurableStream constructor sites, Effect.runPromise in tests, vitest-it imports in tests, Effect.orDie/die sites) and fails CI on any regression above the committed baseline.
+      12: Effect detector findings beyond the tracked metric ratchet are documented as a deferred external-tool gap until the detector becomes CI-stable, with the ratchet covering the patterns that have stable AST shapes today.
 
   TEST_GUARDRAILS:
     requirements:
