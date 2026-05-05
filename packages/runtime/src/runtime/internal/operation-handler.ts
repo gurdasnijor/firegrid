@@ -1,14 +1,24 @@
 import { DurableStream } from "@durable-streams/client"
 import {
+  acquireSubstrateDb,
   completeRun,
   failRun,
+  IllegalRunTransition,
   isOperationEnvelope,
-  Operation,
-  openSubstrateDb,
   snapshotFromDb,
+  type Operation,
   type RunValue,
+  type SubstrateStreamDB,
 } from "@durable-agent-substrate/substrate"
-import { Cause, Data, Effect, ParseResult, Schema } from "effect"
+import {
+  Cause,
+  Data,
+  Effect,
+  Schema,
+  Stream,
+  type ParseResult,
+  type Scope,
+} from "effect"
 import { RuntimeContext, type RuntimeContextService } from "../runtime-context.ts"
 
 // firegrid-operation-messaging.RUNTIME_HANDLERS.1
@@ -29,7 +39,7 @@ import { RuntimeContext, type RuntimeContextService } from "../runtime-context.t
 // processed. acquireDb / stream-append failures fail the fiber
 // loudly (same posture as the timer/scheduledWork subscribers).
 
-class AcquireDbError extends Data.TaggedError("AcquireDbError")<{
+export class AcquireDbError extends Data.TaggedError("AcquireDbError")<{
   readonly cause: unknown
 }> {}
 
@@ -38,25 +48,28 @@ class AppendEventError extends Data.TaggedError("AppendEventError")<{
 }> {}
 
 const acquireDb = (cfg: RuntimeContextService) =>
-  Effect.acquireRelease(
-    Effect.tryPromise({
-      try: async () => {
-        const db = openSubstrateDb({
-          url: cfg.streamUrl,
-          contentType: cfg.contentType,
-        })
-        await db.preload()
-        return db
-      },
-      catch: (cause) => new AcquireDbError({ cause }),
-    }),
-    (db) => Effect.sync(() => db.close()),
+  acquireSubstrateDb(
+    {
+      url: cfg.streamUrl,
+      contentType: cfg.contentType,
+    },
+    (cause) => new AcquireDbError({ cause }),
   )
 
 const appendEvent = (stream: DurableStream, event: unknown) =>
   Effect.tryPromise({
     try: () => stream.append(JSON.stringify(event)),
     catch: (cause) => new AppendEventError({ cause }),
+  })
+
+// firegrid-remediation-hardening.EFFECT_CONSISTENCY.4
+export const tryBuildRunEvent = <A>(build: () => A) =>
+  Effect.try({
+    try: build,
+    catch: (cause): IllegalRunTransition => {
+      if (cause instanceof IllegalRunTransition) return cause
+      throw cause
+    },
   })
 
 interface MatchedRun<Op extends Operation.Any> {
@@ -88,26 +101,32 @@ export const runOperationHandler = <Op extends Operation.Any, E, R>(
 ) =>
   Effect.gen(function* () {
     const cfg = yield* RuntimeContext
-    yield* Effect.forkScoped(runDispatchLoop(cfg, input))
+    yield* Effect.forkScoped(runOperationDispatchLoop(cfg, input))
   })
 
-const runDispatchLoop = <Op extends Operation.Any, E, R>(
+export const runOperationDispatchLoop = <Op extends Operation.Any, E, R>(
   cfg: RuntimeContextService,
   input: DispatchInput<Op, E, R>,
 ) =>
+  runOperationDispatchLoopWithAcquire(cfg, input, acquireDb(cfg))
+
+export const runOperationDispatchLoopWithAcquire = <
+  Op extends Operation.Any,
+  E,
+  R,
+  E2,
+>(
+  cfg: RuntimeContextService,
+  input: DispatchInput<Op, E, R>,
+  acquire: Effect.Effect<SubstrateStreamDB, E2, Scope.Scope>,
+) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const latch = yield* Effect.makeLatch(false)
-      const db = yield* acquireDb(cfg)
+      const db = yield* acquire
       const stream = new DurableStream({
         url: cfg.streamUrl,
         contentType: cfg.contentType,
       })
-
-      const sub = db.collections.runs.subscribeChanges(() =>
-        latch.unsafeOpen(),
-      )
-      yield* Effect.addFinalizer(() => Effect.sync(() => sub.unsubscribe()))
 
       const processRun = (run: RunValue) =>
         Effect.gen(function* () {
@@ -134,10 +153,9 @@ const runDispatchLoop = <Op extends Operation.Any, E, R>(
               ),
             )
             if (encoded === undefined) return
-            yield* Effect.try({
-              try: () => completeRun(matched.run, { result: encoded }),
-              catch: (cause) => cause,
-            }).pipe(
+            yield* tryBuildRunEvent(() =>
+              completeRun(matched.run, { result: encoded }),
+            ).pipe(
               Effect.flatMap((event) => appendEvent(stream, event)),
               Effect.catchAll((cause) =>
                 Effect.logError(
@@ -168,10 +186,9 @@ const runDispatchLoop = <Op extends Operation.Any, E, R>(
               Effect.succeed(Cause.pretty(cause)),
             ),
           )
-          yield* Effect.try({
-            try: () => failRun(matched.run, { error: encodedError }),
-            catch: (cause) => cause,
-          }).pipe(
+          yield* tryBuildRunEvent(() =>
+            failRun(matched.run, { error: encodedError }),
+          ).pipe(
             Effect.flatMap((event) => appendEvent(stream, event)),
             Effect.catchAll((appendCause) =>
               Effect.logError(
@@ -182,19 +199,35 @@ const runDispatchLoop = <Op extends Operation.Any, E, R>(
           )
         })
 
-      const step = Effect.gen(function* () {
-        const snapshot = snapshotFromDb(db)
-        for (const run of snapshot.runs.values()) {
-          if (run.state !== "started") continue
-          if (!isOperationEnvelope(run.data)) continue
-          if (run.data.operation !== input.op.name) continue
-          yield* processRun(run)
-        }
-        yield* latch.await
-        yield* latch.close
-      })
+      const wakes = Stream.asyncScoped<void>(
+        (emit) =>
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              const wake = () => {
+                void emit.single(undefined)
+              }
+              const sub = db.collections.runs.subscribeChanges(wake)
+              wake()
+              return () => sub.unsubscribe()
+            }),
+            (finalize) => Effect.sync(() => finalize()),
+          ),
+        { bufferSize: 1, strategy: "sliding" },
+      )
 
-      return yield* Effect.forever(step).pipe(
+      return yield* wakes.pipe(
+        Stream.mapEffect(() =>
+          Effect.gen(function* () {
+            const snapshot = snapshotFromDb(db)
+            for (const run of snapshot.runs.values()) {
+              if (run.state !== "started") continue
+              if (!isOperationEnvelope(run.data)) continue
+              if (run.data.operation !== input.op.name) continue
+              yield* processRun(run)
+            }
+          }),
+        ),
+        Stream.runDrain,
         Effect.tapErrorCause((cause) =>
           Cause.isInterruptedOnly(cause)
             ? Effect.void
