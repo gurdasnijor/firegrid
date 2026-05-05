@@ -10,6 +10,7 @@ import {
   type AttachedHostOptions,
   type EmbeddedDevHostOptions,
 } from "./boot-options.js"
+import type { HostProgramRuntime } from "./host-program-runtime.js"
 import { SubstrateHostLive } from "./live.js"
 import { SubstrateHost } from "./service.js"
 
@@ -41,29 +42,41 @@ import { SubstrateHost } from "./service.js"
 // when SUBSTRATE_STREAM_URL is missing). Attached mode requires
 // streamUrl on the options object — structurally enforced by
 // AttachedHostOptions.
-export type WithHostEmbeddedDevOptions = EmbeddedDevHostOptions & {
+export type WithHostEmbeddedDevOptions<
+  E = never,
+  GraphRIn = HostProgramRuntime,
+> = EmbeddedDevHostOptions<E, GraphRIn> & {
   readonly mode?: "embedded-dev"
   readonly clientId: string
 }
 
-export type WithHostAttachedOptions = AttachedHostOptions & {
+export type WithHostAttachedOptions<
+  E = never,
+  GraphRIn = HostProgramRuntime,
+> = AttachedHostOptions<E, GraphRIn> & {
   readonly mode: "attached"
   readonly clientId: string
 }
 
-export type WithHostOptions =
-  | WithHostEmbeddedDevOptions
-  | WithHostAttachedOptions
+export type WithHostOptions<E = never, GraphRIn = HostProgramRuntime> =
+  | WithHostEmbeddedDevOptions<E, GraphRIn>
+  | WithHostAttachedOptions<E, GraphRIn>
 
-const buildHostLayer = (
-  options: WithHostOptions,
-): Layer.Layer<SubstrateHost> =>
+const buildHostLayer = <E, GraphRIn>(
+  options: WithHostOptions<E, GraphRIn>,
+): Layer.Layer<SubstrateHost, E, Exclude<GraphRIn, HostProgramRuntime>> =>
   options.mode === "attached"
-    ? SubstrateHostLive(buildAttachedPlan(options), liveOptionsFrom(options))
-    : SubstrateHostLive(buildEmbeddedPlan(options), liveOptionsFrom(options))
+    ? SubstrateHostLive<E, GraphRIn>(
+        buildAttachedPlan(options),
+        liveOptionsFrom(options),
+      )
+    : SubstrateHostLive<E, GraphRIn>(
+        buildEmbeddedPlan(options),
+        liveOptionsFrom(options),
+      )
 
-const buildClientLayer = (
-  options: WithHostOptions,
+const buildClientLayer = <E, GraphRIn>(
+  options: WithHostOptions<E, GraphRIn>,
 ): Layer.Layer<SubstrateClient, never, SubstrateHost> =>
   Layer.unwrapEffect(
     Effect.map(SubstrateHost, (host) =>
@@ -83,10 +96,28 @@ const buildClientLayer = (
 // provides both Tags so the program can yield* either. There is no
 // extra writer surface and no network listener — the return value
 // is an Effect, not a server handle.
-export const withHost = <A, E, R>(
+//
+// `GraphE` / `GraphRIn` flow from the optional HostProgramGraph
+// `program` option through the host layer. Graph construction
+// failures surface as Exit failures in the returned Effect's error
+// channel; adapter / provider service requirements (the residual
+// after HostProgramRuntime is provided by the host) remain in the
+// returned Effect's RIn for the caller to satisfy.
+export const withHost = <
+  A,
+  E,
+  R,
+  GraphE = never,
+  GraphRIn = HostProgramRuntime,
+>(
   program: Effect.Effect<A, E, R>,
-  options: WithHostOptions,
-): Effect.Effect<A, E, Exclude<R, SubstrateClient | SubstrateHost>> => {
+  options: WithHostOptions<GraphE, GraphRIn>,
+): Effect.Effect<
+  A,
+  E | GraphE,
+  | Exclude<GraphRIn, HostProgramRuntime>
+  | Exclude<R, SubstrateClient | SubstrateHost>
+> => {
   const composed = Layer.provideMerge(
     buildClientLayer(options),
     buildHostLayer(options),

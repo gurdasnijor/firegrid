@@ -7,14 +7,19 @@
 //
 // The host root exports the launchable Effect-native API: boot
 // plans, constructors (including the development/test composition
-// helper SubstrateHostBoot.withHost), the Live layer, profile, and
-// the SubstrateHost Tag. Host-managed timer and scheduled-work
-// subscriber programs are wired through SubstrateHostLive and
-// gated by the profile. Network host diagnostics and the
-// process-runner / signal-handling concerns remain deferred to
-// later slices. Embedded Durable Streams dev-server ownership
-// lives in this package; no separate CLI/dev package is
-// introduced.
+// helper SubstrateHostBoot.withHost), the Live layer, the
+// SubstrateHost Tag, and the Host Program Graph contract —
+// HostProgramGraph plus HostPrograms Layer constructors and the
+// narrow HostProgramRuntime service Tag. Host-managed runtime
+// programs (timer / scheduled-work / projection-match subscribers
+// and claim-before-side-effect operators) are wired either through
+// the new `program: HostProgramGraph` option (graph path) or
+// through the transitional `profile.subscribers` booleans (Slice 5
+// boolean path); when both are supplied the graph path supersedes.
+// Network host diagnostics and the process-runner / signal-
+// handling concerns remain deferred to later slices. Embedded
+// Durable Streams dev-server ownership lives in this package; no
+// separate CLI/dev package is introduced.
 
 export {
   bootPlanFromConfig,
@@ -41,11 +46,25 @@ export {
 } from "./host/constructors.js"
 
 export {
+  HostProgramRuntime,
+  type HostProgramRuntimeService,
+} from "./host/host-program-runtime.js"
+
+export {
   SubstrateHostLive,
   type SubstrateHostLiveOptions,
 } from "./host/live.js"
 
 export { emptyProfile, type SubstrateHostProfile } from "./host/profile.js"
+
+export {
+  HostProgramGraph,
+} from "./host/program-graph.js"
+
+export {
+  HostPrograms,
+  type GraphProjectionMatchEvaluator,
+} from "./host/programs.js"
 
 export {
   SubstrateHost,

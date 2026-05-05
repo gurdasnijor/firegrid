@@ -4,7 +4,9 @@ import type {
   AttachedHostPlan,
   EmbeddedDevHostPlan,
 } from "../boot/plan.js"
+import type { HostProgramRuntime } from "./host-program-runtime.js"
 import type { SubstrateHostLiveOptions } from "./live.js"
+import type { HostProgramGraph } from "./program-graph.js"
 import type { SubstrateHostProfile } from "./profile.js"
 
 // launchable-substrate-host.HOST_CONFIGURATION.3
@@ -18,17 +20,24 @@ import type { SubstrateHostProfile } from "./profile.js"
 // derivation without creating a circular dependency between
 // constructors.ts and with-host.ts.
 
-export interface AttachedHostOptions {
+export interface AttachedHostOptions<
+  E = never,
+  GraphRIn = HostProgramRuntime,
+> {
   readonly streamUrl: string
   readonly processId?: string
   readonly authorization?: string
   readonly bearerToken?: string
   readonly extraHeaders?: Readonly<Record<string, string>>
   readonly profile?: SubstrateHostProfile
+  readonly program?: HostProgramGraph<E, GraphRIn>
   readonly contentType?: string
 }
 
-export interface EmbeddedDevHostOptions {
+export interface EmbeddedDevHostOptions<
+  E = never,
+  GraphRIn = HostProgramRuntime,
+> {
   readonly streamName?: string
   readonly durableStreamsHost?: string
   readonly durableStreamsPort?: number
@@ -37,11 +46,12 @@ export interface EmbeddedDevHostOptions {
   readonly bearerToken?: string
   readonly extraHeaders?: Readonly<Record<string, string>>
   readonly profile?: SubstrateHostProfile
+  readonly program?: HostProgramGraph<E, GraphRIn>
   readonly contentType?: string
 }
 
-export const buildAttachedPlan = (
-  opts: AttachedHostOptions,
+export const buildAttachedPlan = <E, GraphRIn>(
+  opts: AttachedHostOptions<E, GraphRIn>,
 ): AttachedHostPlan => ({
   _tag: "AttachedHost",
   processId: opts.processId ?? generateProcessId(),
@@ -57,8 +67,8 @@ export const buildAttachedPlan = (
   streamUrl: opts.streamUrl,
 })
 
-export const buildEmbeddedPlan = (
-  opts: EmbeddedDevHostOptions,
+export const buildEmbeddedPlan = <E, GraphRIn>(
+  opts: EmbeddedDevHostOptions<E, GraphRIn>,
 ): EmbeddedDevHostPlan => ({
   _tag: "EmbeddedDevHost",
   processId: opts.processId ?? generateProcessId(),
@@ -78,10 +88,12 @@ export const buildEmbeddedPlan = (
   },
 })
 
-export const liveOptionsFrom = (opts: {
+export const liveOptionsFrom = <E, GraphRIn>(opts: {
   readonly profile?: SubstrateHostProfile
+  readonly program?: HostProgramGraph<E, GraphRIn>
   readonly contentType?: string
-}): SubstrateHostLiveOptions => ({
+}): SubstrateHostLiveOptions<E, GraphRIn> => ({
   ...(opts.profile !== undefined ? { profile: opts.profile } : {}),
+  ...(opts.program !== undefined ? { program: opts.program } : {}),
   ...(opts.contentType !== undefined ? { contentType: opts.contentType } : {}),
 })

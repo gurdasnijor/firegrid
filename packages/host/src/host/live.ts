@@ -2,6 +2,8 @@ import { DurableStream } from "@durable-streams/client"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { Context, Effect, Layer } from "effect"
 import { bootModeOf, type SubstrateHostBootPlan } from "../boot/plan.js"
+import { HostProgramRuntime } from "./host-program-runtime.js"
+import type { HostProgramGraph } from "./program-graph.js"
 import { emptyProfile, type SubstrateHostProfile } from "./profile.js"
 import {
   SubstrateHost,
@@ -81,8 +83,31 @@ const ensureSubstrateStream = (streamUrl: string, contentType: string) =>
       new HostStartupError(`creating substrate stream ${streamUrl}`, cause),
   })
 
-export interface SubstrateHostLiveOptions {
+export interface SubstrateHostLiveOptions<E = never, GraphRIn = HostProgramRuntime> {
   readonly profile?: SubstrateHostProfile
+  // launchable-substrate-host.RUNTIME_COMPOSITION.1
+  // launchable-substrate-host.RUNTIME_COMPOSITION.2
+  // launchable-substrate-host.RUNTIME_COMPOSITION.3
+  // launchable-substrate-host.SERVER_RUNTIME_API.3
+  //
+  // When `program` is supplied the host launches the supplied
+  // HostProgramGraph and ignores the transitional `profile`
+  // subscriber booleans entirely (the host cannot inspect an opaque
+  // Layer composition to know which kinds it covers). When only
+  // `profile` is supplied, Slice 5 boolean wiring stays unchanged.
+  //
+  // The graph's `RIn` typically includes HostProgramRuntime (which
+  // the host injects at launch time). It may additionally include
+  // adapter / provider service Tags that the graph author closed
+  // over but did not pre-provide. Those extra requirements remain
+  // in the resulting host layer's `RIn` (computed as
+  // `Exclude<GraphRIn, HostProgramRuntime>`) for the caller to
+  // satisfy via Layer.provide before composing the host layer into
+  // their program. Graph construction `E` flows through to the host
+  // layer's typed error channel; startup defects from server /
+  // stream creation are kept separate via inline orDie at their
+  // call sites.
+  readonly program?: HostProgramGraph<E, GraphRIn>
   readonly contentType?: string
 }
 
@@ -93,10 +118,17 @@ const enabledKindsFrom = (profile: SubstrateHostProfile): ReadonlyArray<Subscrib
   return kinds
 }
 
-export const _internalSubstrateHostLive = (
+export const _internalSubstrateHostLive = <
+  E = never,
+  GraphRIn = HostProgramRuntime,
+>(
   plan: SubstrateHostBootPlan,
-  options: SubstrateHostLiveOptions = {},
-): Layer.Layer<SubstrateHost | SubscriberLiveness> => {
+  options: SubstrateHostLiveOptions<E, GraphRIn> = {},
+): Layer.Layer<
+  SubstrateHost | SubscriberLiveness,
+  E,
+  Exclude<GraphRIn, HostProgramRuntime>
+> => {
   const profile = options.profile ?? emptyProfile
   const contentType = options.contentType ?? "application/json"
   const bootMode = bootModeOf(plan)
@@ -105,13 +137,17 @@ export const _internalSubstrateHostLive = (
     Effect.gen(function* () {
       let streamIdentity: SubstrateHostStreamIdentity
       if (plan._tag === "EmbeddedDevHost") {
+        // Embedded server / stream creation failures remain host-
+        // startup defects — orDie at the call sites so they stay out
+        // of the layer's typed error channel. Graph construction E
+        // (below) is left to flow through.
         const server = yield* acquireEmbeddedServer(
           plan.durableStreams.host,
           plan.durableStreams.port,
-        )
+        ).pipe(Effect.orDie)
         const url = new URL(server.url)
         const streamUrl = `${server.url}/substrate/${plan.durableStreams.streamName}`
-        yield* ensureSubstrateStream(streamUrl, contentType)
+        yield* ensureSubstrateStream(streamUrl, contentType).pipe(Effect.orDie)
         streamIdentity = {
           streamUrl,
           streamName: plan.durableStreams.streamName,
@@ -132,54 +168,86 @@ export const _internalSubstrateHostLive = (
       }
 
       // Build the package-internal liveness state seeded from the
-      // profile-enabled kinds. When no kinds are enabled the
-      // liveness snapshot is empty.
-      const enabledKinds = enabledKindsFrom(profile)
+      // profile-enabled kinds. When `program` supersedes the profile
+      // booleans, no liveness entries are seeded — the
+      // SubscriberLiveness snapshot is empty by design (Q4: liveness
+      // is a transitional concern and not part of the public
+      // HostProgramGraph contract).
+      const enabledKinds =
+        options.program !== undefined ? [] : enabledKindsFrom(profile)
       const livenessInternal = yield* makeSubscriberLiveness(enabledKinds)
       const livenessPublic: SubscriberLivenessService = {
         snapshot: livenessInternal.snapshot,
       }
 
-      // Fork enabled subscriber runner programs into the surrounding
-      // layer scope. Each runner is forkScoped, so layer finalization
-      // interrupts and awaits cleanly. Runners never resolve through
-      // a control plane: terminalization stays inside the substrate-
-      // owned single-shot subscriber Effects.
-      if (profile.subscribers?.timer === true) {
-        yield* Effect.forkScoped(
-          runTimerSubscriberProgram({
-            streamUrl: streamIdentity.streamUrl,
-            contentType,
-            liveness: livenessInternal.handle("timer"),
-          }),
-        )
-      }
-      if (profile.subscribers?.scheduledWork === true) {
-        yield* Effect.forkScoped(
-          runScheduledWorkSubscriberProgram({
-            streamUrl: streamIdentity.streamUrl,
-            contentType,
-            liveness: livenessInternal.handle("scheduled_work"),
-          }),
-        )
+      if (options.program !== undefined) {
+        // Graph path: provide HostProgramRuntime into the program
+        // graph's runtime and build the layer inside the host scope.
+        // HostPrograms helpers fork their long-running runners via
+        // Layer.scopedDiscard / Effect.forkScoped, so Layer.build
+        // materializes them as fibers attached to this scope; layer
+        // finalization on scope close interrupts and awaits them.
+        // Graph construction `E` flows through to the host layer's
+        // typed error channel rather than being dieed.
+        const runtimeLayer = Layer.succeed(HostProgramRuntime, {
+          streamUrl: streamIdentity.streamUrl,
+          contentType,
+          processId: plan.processId,
+          streamIdentity,
+        })
+        const wired = options.program.layer.pipe(
+          Layer.provide(runtimeLayer),
+        ) as Layer.Layer<never, E, Exclude<GraphRIn, HostProgramRuntime>>
+        yield* Layer.build(wired)
+      } else {
+        // Profile (boolean) path — Slice 5 unchanged. Each runner is
+        // forkScoped, so layer finalization interrupts and awaits
+        // cleanly. Runners never resolve through a control plane:
+        // terminalization stays inside the substrate-owned
+        // single-shot subscriber Effects.
+        if (profile.subscribers?.timer === true) {
+          yield* Effect.forkScoped(
+            runTimerSubscriberProgram({
+              streamUrl: streamIdentity.streamUrl,
+              contentType,
+              liveness: livenessInternal.handle("timer"),
+            }),
+          )
+        }
+        if (profile.subscribers?.scheduledWork === true) {
+          yield* Effect.forkScoped(
+            runScheduledWorkSubscriberProgram({
+              streamUrl: streamIdentity.streamUrl,
+              contentType,
+              liveness: livenessInternal.handle("scheduled_work"),
+            }),
+          )
+        }
       }
 
       return Context.empty().pipe(
         Context.add(SubstrateHost, hostService),
         Context.add(SubscriberLiveness, livenessPublic),
       )
-    }).pipe(Effect.orDie),
+    }),
   )
 }
 
 // Public host layer — narrow output type. Internally the layer also
 // provides SubscriberLiveness, but that Tag is package-internal and
-// must not leak into external consumers' type signatures. Effect's
-// runtime accepts a Layer that produces more services than its type
-// advertises; the cast trims the public surface without changing
-// runtime behaviour.
-export const SubstrateHostLive = (
+// must not leak into external consumers' type signatures. Graph E /
+// R generics propagate through to the public Layer signature so
+// program failures surface in the host launch error channel and
+// adapter R requirements remain satisfiable via Layer.provide.
+export const SubstrateHostLive = <
+  E = never,
+  GraphRIn = HostProgramRuntime,
+>(
   plan: SubstrateHostBootPlan,
-  options: SubstrateHostLiveOptions = {},
-): Layer.Layer<SubstrateHost> =>
-  _internalSubstrateHostLive(plan, options) as Layer.Layer<SubstrateHost>
+  options: SubstrateHostLiveOptions<E, GraphRIn> = {},
+): Layer.Layer<SubstrateHost, E, Exclude<GraphRIn, HostProgramRuntime>> =>
+  _internalSubstrateHostLive(plan, options) as Layer.Layer<
+    SubstrateHost,
+    E,
+    Exclude<GraphRIn, HostProgramRuntime>
+  >

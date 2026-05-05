@@ -11,10 +11,12 @@ import {
   type AttachedHostOptions,
   type EmbeddedDevHostOptions,
 } from "./boot-options.js"
+import type { HostProgramRuntime } from "./host-program-runtime.js"
 import {
   _internalSubstrateHostLive,
   SubstrateHostLive,
 } from "./live.js"
+import type { HostProgramGraph } from "./program-graph.js"
 import type { SubstrateHostProfile } from "./profile.js"
 import { SubstrateHost } from "./service.js"
 import type { SubscriberLiveness } from "./subscribers/liveness.js"
@@ -44,27 +46,42 @@ export type {
 export const SubstrateHostBoot = {
   // launchable-substrate-host.HOST_CONFIGURATION.2
   // launchable-substrate-host.HOST_CONFIGURATION.6
-  attached: (opts: AttachedHostOptions): Layer.Layer<SubstrateHost> =>
-    SubstrateHostLive(buildAttachedPlan(opts), liveOptionsFrom(opts)),
+  attached: <E = never, GraphRIn = HostProgramRuntime>(
+    opts: AttachedHostOptions<E, GraphRIn>,
+  ): Layer.Layer<SubstrateHost, E, Exclude<GraphRIn, HostProgramRuntime>> =>
+    SubstrateHostLive<E, GraphRIn>(
+      buildAttachedPlan(opts),
+      liveOptionsFrom(opts),
+    ),
 
   // launchable-substrate-host.HOST_CONFIGURATION.1
   // launchable-substrate-host.HOST_CONFIGURATION.5
-  embeddedDev: (opts: EmbeddedDevHostOptions = {}): Layer.Layer<SubstrateHost> =>
-    SubstrateHostLive(buildEmbeddedPlan(opts), liveOptionsFrom(opts)),
+  embeddedDev: <E = never, GraphRIn = HostProgramRuntime>(
+    opts: EmbeddedDevHostOptions<E, GraphRIn> = {},
+  ): Layer.Layer<SubstrateHost, E, Exclude<GraphRIn, HostProgramRuntime>> =>
+    SubstrateHostLive<E, GraphRIn>(
+      buildEmbeddedPlan(opts),
+      liveOptionsFrom(opts),
+    ),
 
   // launchable-substrate-host.HOST_CONFIGURATION.4
   // attachedFromConfig builds an attached plan from Effect Config; if
   // `SUBSTRATE_STREAM_URL` is missing the underlying decoder selects
   // embedded-dev mode instead, matching the bootPlanFromConfig behaviour.
-  attachedFromConfig: (
+  attachedFromConfig: <E = never, GraphRIn = HostProgramRuntime>(
     opts: {
       readonly profile?: SubstrateHostProfile
+      readonly program?: HostProgramGraph<E, GraphRIn>
       readonly contentType?: string
     } = {},
-  ): Layer.Layer<SubstrateHost, ConfigError> =>
+  ): Layer.Layer<
+    SubstrateHost,
+    E | ConfigError,
+    Exclude<GraphRIn, HostProgramRuntime>
+  > =>
     Layer.unwrapEffect(
       Effect.map(bootPlanFromConfig, (plan: SubstrateHostBootPlan) =>
-        SubstrateHostLive(plan, liveOptionsFrom(opts)),
+        SubstrateHostLive<E, GraphRIn>(plan, liveOptionsFrom(opts)),
       ),
     ),
 
@@ -89,13 +106,27 @@ export type { WithHostOptions } from "./with-host.js"
 // consumers must use SubstrateHostBoot above, which narrows the
 // public surface to Layer<SubstrateHost>.
 export const _internalSubstrateHostBoot = {
-  attached: (
-    opts: AttachedHostOptions,
-  ): Layer.Layer<SubstrateHost | SubscriberLiveness> =>
-    _internalSubstrateHostLive(buildAttachedPlan(opts), liveOptionsFrom(opts)),
+  attached: <E = never, GraphRIn = HostProgramRuntime>(
+    opts: AttachedHostOptions<E, GraphRIn>,
+  ): Layer.Layer<
+    SubstrateHost | SubscriberLiveness,
+    E,
+    Exclude<GraphRIn, HostProgramRuntime>
+  > =>
+    _internalSubstrateHostLive<E, GraphRIn>(
+      buildAttachedPlan(opts),
+      liveOptionsFrom(opts),
+    ),
 
-  embeddedDev: (
-    opts: EmbeddedDevHostOptions = {},
-  ): Layer.Layer<SubstrateHost | SubscriberLiveness> =>
-    _internalSubstrateHostLive(buildEmbeddedPlan(opts), liveOptionsFrom(opts)),
+  embeddedDev: <E = never, GraphRIn = HostProgramRuntime>(
+    opts: EmbeddedDevHostOptions<E, GraphRIn> = {},
+  ): Layer.Layer<
+    SubstrateHost | SubscriberLiveness,
+    E,
+    Exclude<GraphRIn, HostProgramRuntime>
+  > =>
+    _internalSubstrateHostLive<E, GraphRIn>(
+      buildEmbeddedPlan(opts),
+      liveOptionsFrom(opts),
+    ),
 } as const
