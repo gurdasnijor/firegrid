@@ -87,21 +87,18 @@ Audit of `JSON.parse` / `JSON.stringify` in source (excluding `__tests__`): only
 
 ### 7. Schema.Class vs Schema.Struct
 
-Current Schema.Struct usage at `schema/rows.ts` (`RunValue`, `CompletionValue`, `ClaimAttemptValue`, `EventStreamValue`, `TraceValue`) and `schema/ready-work.ts` (`ReadyWorkItem`) is appropriate: these are pure data carriers consumed by Durable Streams' Standard Schema interop (`Schema.standardSchemaV1` at `schema/state.ts:15-18`), so promoting to `Schema.Class` would introduce class-instance overhead at every row read for no observable benefit. `ChoreographyTrigger` at `choreography/triggers.ts:25` uses `Schema.Union(ProjectionMatchTrigger)` over a `Schema.TaggedStruct` — the right choice for a discriminated union the runtime pattern-matches on. No changes recommended for this concept.
+Current `Schema.Struct` usage at `schema/rows.ts` (`RunValue`, `CompletionValue`, `ClaimAttemptValue`, `EventStreamValue`, `TraceValue`) and `schema/ready-work.ts` (`ReadyWorkItem`) is appropriate: pure data carriers consumed by Durable Streams' Standard Schema interop (`schema/state.ts:15-18`), so promoting to `Schema.Class` would introduce class-instance overhead at every row read for no benefit. `ChoreographyTrigger` at `choreography/triggers.ts:25` uses `Schema.Union(ProjectionMatchTrigger)` over a `Schema.TaggedStruct` — correct for a discriminated union. No changes recommended.
 
 ### 8. Branded types: `Brand.nominal` vs `Schema.brand`
 
-Four nominal brands in two files:
+Four nominal brands across two files:
 
-- `packages/substrate/src/descriptors/operation.ts:57-59` — `OperationHandleId`.
-- `packages/substrate/src/choreography/branded.ts:14-21` — `WorkId`, `CompletionId`, `OwnerId`.
+- `descriptors/operation.ts:57-59` — `OperationHandleId`.
+- `choreography/branded.ts:14-21` — `WorkId`, `CompletionId`, `OwnerId`.
 
-All use `Brand.nominal<T>()` for zero-runtime-cost nominal typing. The skill (§ "Branded Types") shows `Schema.String.pipe(Schema.brand("UserId"))` as the recommended form. Tradeoff:
+All use `Brand.nominal<T>()` (zero-runtime-cost, compile-time only, no validation; constructor is a type assertion — see `operation.ts:148`). Skill recommends `Schema.String.pipe(Schema.brand("WorkId"))`, which integrates with Schema decode/encode, supports refinement, and exports through JSON Schema.
 
-- **`Brand.nominal` (current):** purely compile-time; no validation. The brand constructor is a type assertion. Used at `operation.ts:148` (`OperationHandleId(id)`) without validation.
-- **`Schema.brand` (skill):** integrates with Schema decode/encode so a brand can be parsed from `unknown`, validated, and exported via JSON Schema; carries an optional refinement (`Schema.NonEmptyString.pipe(Schema.brand("WorkId"))`).
-
-For the choreography brands the schema-first form is strictly stronger — `WorkId` / `CompletionId` / `OwnerId` flow across the durable-streams wire (they are appended to `RunValue.runId`, `ClaimAttemptValue.workId`, etc.) and a `Schema.brand` definition would let `RunValue` reference `WorkIdSchema` directly instead of the current `runId: Schema.String`. For `OperationHandleId` the gain is smaller: the only producer is `OperationHandle.make` at the client, and the value never round-trips through a substrate row. Reasonable to keep `Brand.nominal` there. The choreography brands are the higher-leverage migration.
+For choreography brands the schema-first form is strictly stronger — `WorkId`/`CompletionId`/`OwnerId` flow across the wire (appended to `RunValue.runId`, `ClaimAttemptValue.workId`, etc.); `Schema.brand` lets `RunValue` reference `WorkIdSchema` directly instead of `Schema.String`. For `OperationHandleId` the gain is smaller — the only producer is `OperationHandle.make`, value never round-trips through a substrate row, so `Brand.nominal` is acceptable. Choreography brands are the higher-leverage migration.
 
 ## Out of scope
 
