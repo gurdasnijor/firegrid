@@ -65,9 +65,9 @@ Flink is useful prior art for the executable runtime seam. A Flink client turns
 an application into a job graph; the runtime then coordinates sources,
 operators, and sinks. The substrate equivalent is the Host Program Graph:
 runtime-owned event planes, subscriber programs, operator programs, evaluators,
-and adapters that a `SubstrateHost` runs against durable state. The graph is
-provided in process at host startup; it is not submitted through a host mutation
-endpoint or stored in a global/durable registry in v1.
+and adapter service layers that a `SubstrateHost` runs against durable state.
+The graph is provided in process at host startup; it is not submitted through a
+host mutation endpoint or stored in a global/durable registry in v1.
 
 ## Goals
 
@@ -203,7 +203,7 @@ vocabulary from the substrate:
   process identity by default, stream URL selection, embedded Durable Streams
   settings, and auth header materialization.
 - `OperatorsLive(processId)` is an Effect scoped layer that forks operator
-  fibers. Runtime provider/session/resource kernels are ordinary layers, so
+  fibers. Runtime adapters and live resources are ordinary layers, so
   process-local live handles stay outside durable state.
 
 The substrate should adopt the shape, not the domain names:
@@ -228,18 +228,18 @@ const FirelineHostProgram = defineHostProgramGraph({
   eventPlanes: [AcpEventPlane],
   subscribers: [PermissionMatcher],
   operators: [PromptOperator],
-  providers: [LocalProvider],
+  layer: Layer.mergeAll(
+    AcpEventPlaneLive,
+    LocalModelAdapterLive,
+    PermissionMatcherLive,
+    PromptOperatorLive,
+  ),
 })
 
 // Current implementation still passes the executable Effect layer through the
 // `profile` option. The next host-program slice should rename or wrap this
 // surface around Host Program Graph terminology.
-const HostProgramLive = Layer.mergeAll(
-  AcpEventPlaneLive,
-  LocalProviderLive,
-  PermissionMatcherLive,
-  PromptOperatorLive,
-)
+const HostProgramLive = FirelineHostProgram.layer
 
 const program = SubstrateHostBoot.withHost(
   Effect.gen(function* () {
@@ -256,11 +256,12 @@ const program = SubstrateHostBoot.withHost(
 ```
 
 This keeps operational complexity low: the host owns process lifetime and
-subscribers/operators, the Host Program Graph owns adapter/provider choices, and
-the client owns durable intent production. The current TypeScript implementation
-still names this option `profile`; that is a transitional implementation name
-for the first boolean subscriber controls. The next host-program slice should
-rename or wrap it around Host Program Graph terminology before broad lab work.
+subscribers/operators, the Host Program Graph owns program wiring, and ordinary
+Effect Layers own adapter choices and test replacements. The client owns durable
+intent production. The current TypeScript implementation still names this option
+`profile`; that is a transitional implementation name for the first boolean
+subscriber controls. The next host-program slice should rename or wrap it around
+Host Program Graph terminology before broad lab work.
 This is tracked by the Host Program Graph requirements in
 `launchable-substrate-host.RUNTIME_COMPOSITION.1` and
 `launchable-substrate-host.RUNTIME_COMPOSITION.2`.
@@ -458,6 +459,7 @@ vocabulary target for the next implementation wave.
 ```ts
 interface HostProgramGraph {
   readonly name: string
+  readonly layer: Layer.Layer<unknown>
   readonly subscribers?: {
     readonly timer?: boolean
     readonly scheduledWork?: boolean
@@ -468,9 +470,12 @@ interface HostProgramGraph {
 }
 ```
 
-Host Program Graph definitions can carry Effect layers and services in process.
-Serialized config only selects known local graph definitions in dev; it does not
-create a mutable runtime registry.
+Host Program Graph definitions carry ordinary Effect Layers and values supplied
+in process. The `layer` field is the dependency graph for adapters and runtime
+services. This follows Effect's layer model: services keep clean interfaces, and
+Layers construct and compose their dependencies. Serialized config only selects
+known local graph definitions in dev; it does not create a mutable runtime
+registry.
 
 Host Program Graph discovery in development is explicit:
 
@@ -532,6 +537,7 @@ The subscriber runner configuration is a simple per-kind boolean in Slice 5:
 ```ts
 interface HostProgramGraph {
   readonly name: string
+  readonly layer: Layer.Layer<unknown>
   readonly subscribers?: {
     readonly timer?: boolean
     readonly scheduledWork?: boolean
@@ -662,9 +668,8 @@ Graph:
 - define its event planes;
 - provide projection-match evaluators;
 - provide operator programs that consume ready work or event-plane projections;
-- provide adapter/provider/session/resource layers;
-- decide whether to launch local processes, remote agents, or fake test
-  providers.
+- provide adapter, session, and resource layers;
+- decide whether to use local processes, remote agents, or fake test adapters.
 
 The substrate host runs the Host Program Graph. The graph owns agent semantics.
 The durable substrate remains generic.
@@ -680,6 +685,8 @@ Minimum scope:
 
 - introduce a `HostProgramGraph` or equivalent wrapper around today's
   transitional `profile` option;
+- express runtime dependencies as ordinary Effect Layers on the graph rather
+  than as a separate provider registry;
 - preserve compatibility with the existing timer and scheduled-work subscriber
   booleans;
 - add projection-match subscriber entries that carry caller-owned event-plane
@@ -783,7 +790,7 @@ Fireline or Firepixel:
 4. Tool-call-shaped execution scenario
    - a caller-owned event plane records a tool execution request;
    - an operator program claims ready execution work;
-   - fake provider performs the side effect;
+   - fake adapter service performs the side effect;
    - terminal domain row is emitted;
    - lab proves claim-before-side-effect ordering.
 
