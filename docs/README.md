@@ -16,6 +16,7 @@ human-readable design source behind the Acai specs in
 | Client event planes and state producers, phase 11 | `docs/SDD_CLIENT_EVENT_PLANES_AND_STATE_PRODUCERS.md` | `features/durable-agent-substrate/client-event-plane-registration.feature.yaml` |
 | Choreography facade, phase 12 | `docs/SDD_CHOREOGRAPHY_FACADE.md` | `features/durable-agent-substrate/choreography-facade.feature.yaml` |
 | Launchable client, host, Host Program Graph, and lab, phase 13+ | `docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md` | `features/durable-agent-substrate/launchable-substrate-host.feature.yaml` |
+| Firegrid architecture and invocation boundary, draft | `docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md` | Pending |
 | Runtime integration lab and adapter validation | `docs/SDD_DURABLE_AGENT_RUNTIME_LAB.md` | `features/durable-agent-runtime-lab/*.feature.yaml` |
 
 ## Planning Docs
