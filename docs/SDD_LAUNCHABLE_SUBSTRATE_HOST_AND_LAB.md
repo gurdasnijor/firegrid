@@ -122,7 +122,8 @@ ownership stays with the row family owner:
 
 - substrate-owned rows (`durable.run`, `durable.completion`,
   `durable.claim.attempt`, and substrate trace rows if used) are defined once in
-  `@durable-agent-substrate/substrate`;
+  `@durable-agent-substrate/substrate` as Effect Schema values with inferred
+  TypeScript types;
 - client and host code import substrate-owned schemas, types, state helpers, and
   transition builders from the substrate package instead of redefining parallel
   row shapes;
@@ -184,6 +185,12 @@ different writer surface. (`withHost` is a function on the
 and `attachedFromConfig`; it is not a static method on the `SubstrateHost`
 Context.Tag class.)
 
+The implementation may use either `Context.Tag` plus explicit `Live` / test
+Layers or Effect's `Effect.Service` helper where it simplifies a service
+definition. The design requirement is not the specific helper; it is that
+services have stable interfaces, dependencies are supplied by Layers, and tests
+can substitute Layers without changing durable semantics.
+
 ## Firepixel Shape Review
 
 Firepixel has a useful shape to preserve while removing Firepixel-specific
@@ -225,12 +232,17 @@ process control surface:
 const FirelineHostProgram = HostProgramGraph.define({
   name: "fireline",
   layer: Layer.mergeAll(
-    EventPlane.layer(AcpEventPlane, acpPlaneConfig),
     HostPrograms.timerSubscriber(),
     HostPrograms.scheduledWorkSubscriber(),
     HostPrograms.projectionMatchSubscriber(permissionMatcher),
     HostPrograms.operator(promptOperator),
-    LocalModelAdapterLive,
+  ).pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        EventPlane.layer(AcpEventPlane, acpPlaneConfig),
+        LocalModelAdapterLive,
+      ),
+    ),
   ),
 })
 
@@ -279,7 +291,7 @@ The client should follow the Fireline client altitude:
 The canonical client surface is Effect-native:
 
 ```ts
-import { Effect } from "effect"
+import { Effect, Stream } from "effect"
 import { SubstrateClient, SubstrateClientLive } from "@durable-agent-substrate/client"
 
 const program = Effect.gen(function* () {
@@ -302,25 +314,34 @@ await Effect.runPromise(
 )
 ```
 
+`SubstrateClientLive(config)` is a parameterized Layer constructor, not a class
+instance. A future config-driven constructor should use Effect `Config` and
+`Layer.unwrapEffect` so production boot can decode the client layer from the
+same configuration source as the host.
+
 Non-Effect callers can use `Effect.runPromise(...)` at their own process edge. A
-separate Promise/AsyncIterable wrapper package is a later compatibility layer,
-not part of the first launchable substrate design.
+long-lived non-Effect caller such as the lab can use `ManagedRuntime` to build
+the client layer once and run many Effects through it. A separate
+Promise/AsyncIterable wrapper package is a later compatibility layer, not part
+of the first launchable substrate design.
 
 Read handles should make snapshot vs follow behavior explicit:
 
 ```ts
 await substrate.work.observe(workId).snapshot()
 
-for await (const state of substrate.work.observe(workId).stream()) {
-  // live updates
-}
+yield* substrate.work.observe(workId).stream().pipe(
+  Stream.runForEach((state) => Effect.log(state)),
+)
 
 await substrate.work.observe(workId).until((state) => state.state === "completed")
 ```
 
 `snapshot()` reads the current no-gap materialized view once and returns the
 selected state. It does not mutate durable state and is not a live
-subscription.
+subscription. `stream()` should return an Effect `Stream.Stream` as the primary
+Effect-native surface. Async iterables are compatibility bridges, not the root
+client contract.
 
 The exact method names can change, but the boundary should not:
 
@@ -447,6 +468,11 @@ options:
   default;
 - `SUBSTRATE_AUTHORIZATION` or `SUBSTRATE_TOKEN` materializes stream headers.
 
+The Config-backed path should use Effect's `Config` module directly. Auth
+values should be decoded as `Redacted` values, with `SUBSTRATE_AUTHORIZATION`
+winning over `SUBSTRATE_TOKEN`; diagnostics should never unwrap or serialize
+the resulting secret header.
+
 The Host Program Graph is made of Effect layers and values supplied in process,
 not a global registry. It is analogous to a Flink job graph at the semantic
 level: the graph describes the executable stream/state programs the host runs,
@@ -455,38 +481,47 @@ surface still uses `profile` as the option name; Host Program Graph is the
 vocabulary target for the next implementation wave.
 
 ```ts
-interface HostProgramGraph {
+interface HostProgramGraph<E = never, RIn = never> {
   readonly name: string
-  readonly layer: Layer.Layer<unknown>
+  readonly layer: Layer.Layer<never, E, RIn>
 }
 ```
 
 Host Program Graph definitions are named Effect Layer compositions. The `layer`
-field contains both the host programs and their adapter/runtime dependencies.
+is executable: it is launched for its scoped effects and should not expose
+durable-runtime dependencies through service method signatures. A graph handed
+to `SubstrateHostLive` should be fully wired with `RIn = never`; an incompletely
+wired graph can remain generic while tests or applications provide missing
+services.
+
 This follows Effect's layer model: services keep clean interfaces, and Layers
 construct and compose their dependencies. The substrate can provide helper
 constructors such as `HostPrograms.timerSubscriber()` or
-`HostPrograms.operator(...)`, but those helpers return Layers. They do not
-create a second registry beside Effect's dependency graph. Serialized config
-only selects known local graph definitions in dev; it does not create a mutable
-runtime registry.
+`HostPrograms.operator(...)`, but those helpers return Layers, usually via
+`Layer.scopedDiscard` for long-running scoped programs. They do not create a
+second registry beside Effect's dependency graph. Serialized config only selects
+known local graph definitions in dev; it does not create a mutable runtime
+registry.
 
 This means test and production wiring use the same mechanism:
 
 ```ts
+const RuntimePrograms = Layer.mergeAll(
+  HostPrograms.timerSubscriber(),
+  HostPrograms.scheduledWorkSubscriber(),
+  HostPrograms.operator(promptOperator),
+)
+
 const ProductionHostProgram = HostProgramGraph.define({
   name: "production",
-  layer: Layer.mergeAll(
-    HostPrograms.timerSubscriber(),
-    HostPrograms.scheduledWorkSubscriber(),
-    HostPrograms.operator(promptOperator),
-    RemoteModelAdapterLive,
+  layer: RuntimePrograms.pipe(
+    Layer.provide(RemoteModelAdapterLive),
   ),
 })
 
 const TestHostProgram = HostProgramGraph.define({
   name: "test",
-  layer: ProductionHostProgram.layer.pipe(
+  layer: RuntimePrograms.pipe(
     Layer.provide(FakeModelAdapterLive),
   ),
 })
@@ -495,7 +530,9 @@ const TestHostProgram = HostProgramGraph.define({
 The exact helper names can change during implementation, but the shape should
 remain ordinary Layer composition. Host programs should not expose their
 construction dependencies through service method signatures; those dependencies
-belong in the Layer graph.
+belong in the Layer graph. Use `Layer.mergeAll` for peer programs and
+`Layer.provide` when an adapter or service layer satisfies another layer's
+requirements.
 
 Host Program Graph discovery in development is explicit:
 
@@ -645,6 +682,10 @@ SubstrateHostBoot.bootPlanFromConfig
 SubstrateHostBoot.withHost(effect, options)
 ```
 
+`SubstrateHost` remains the host service identity. `SubstrateHostBoot` is a
+plain constructor namespace for Layer-producing helpers; `withHost` is not a
+static method on the `SubstrateHost` service tag.
+
 `withHost` is a development and test convenience that provides both the
 substrate client and the host layer to one Effect program. It should not blur
 the production process boundary: production apps normally run clients in app
@@ -660,6 +701,8 @@ for the lifetime of the scope.
 The first `withHost` implementation slice should stay narrow:
 
 - compose the existing host and client capabilities in one Effect scope;
+- use `Effect.scoped`, `Layer.scoped`, and `Scope` finalization for owned
+  resources;
 - expose no host mutation endpoints and no network diagnostics listener;
 - provide the same `SubstrateClient` service shape as the standalone client;
 - avoid creating a runtime registry or loading Host Program Graph definitions
