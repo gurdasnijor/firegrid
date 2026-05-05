@@ -156,7 +156,7 @@ appears once at `firegrid/operation-client.ts:292` for the `observe`
 Stream — symmetric, required because `Stream` is the carrier. The
 two per-call sites are the layer-memoization concern in finding 6.
 
-### 6. Layer memoization / per-call construction
+### 5. Layer memoization / per-call construction
 
 Two sites build a Layer per call rather than once:
 
@@ -177,7 +177,7 @@ Neither is a defect. The right fix lifts `withSubstrate` into a
 the runtime side where `RuntimeContext` is built once at
 `runtime/layer.ts:67` and threaded through.
 
-### 7. `R`-channel threading through `Firegrid.handler` / `eventStream`
+### 6. `R`-channel threading through `Firegrid.handler` / `eventStream`
 
 `Firegrid.handler<Op, E, R>` (`runtime/firegrid.ts:81-91`) declares
 `run: (input) => Effect<Output, Error | E, R>` and returns
@@ -200,7 +200,7 @@ becomes `Choreography | DurableWaits` only. `eventStream` has no
 parallel concern (events have no "current run"), so its `R` channel
 is purely caller-domain dependencies.
 
-### 8. Layer composition (`merge` / `mergeAll` / `provide`)
+### 7. Layer composition (`merge` / `mergeAll` / `provide`)
 
 `Layer.merge` is used twice:
 `producer.ts:211` and `event-plane/layer.ts:58`. Both are
@@ -217,7 +217,7 @@ spotted.
 `Layer.fresh` and `Layer.empty` are unused — there is no service in
 the repo whose memoization needs to be defeated. Correct default.
 
-### 9. Default services
+### 8. Default services
 
 The Firegrid repo does not use any `Effect.*.Default` layer (there
 are none — the `\.Default` test guard exists precisely to keep it
@@ -227,7 +227,7 @@ calls in subscriber and handler error paths; there is no
 `Effect.provide(TestClock.layer)` or similar override in production.
 Tests do override (e.g., `TestClock`), but tests are out of scope.
 
-### 10. Test layers
+### 9. Test layers
 
 Tests rely on inline `Effect.provide(Layer.mergeAll(...))` chains
 across a large surface (the testing review previously counted ~96
