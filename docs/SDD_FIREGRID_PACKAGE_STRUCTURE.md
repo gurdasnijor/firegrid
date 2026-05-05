@@ -728,6 +728,58 @@ Firegrid should first evaluate the detector categories against current source,
 triage false positives, and then either port high-confidence checks into local
 ESLint/Semgrep rules or run the detector as a non-blocking architecture report.
 
+Two local review documents capture the first pass over those detectors:
+
+- `docs/REVIEW_EFFECT_TS_DETECTOR_FINDINGS_2026-05-05.md`
+- `docs/REVIEW_EFFECT_CODE_STYLE_2026-05-05.md`
+
+Detector summary:
+
+| Input | Finding |
+| --- | --- |
+| Files analyzed | 68 production TypeScript files |
+| Definite detector findings | 277 |
+| Detector errors | 1 detector crash in `native-apis/rule-001-array-operations` |
+| Largest rule bucket | `errors/rule-002` with 83 findings |
+| Largest workspaces | `packages/substrate` 163, `packages/runtime` 48, `apps/lab` 37, `packages/client` 29 |
+
+Architecture implications:
+
+- The findings reinforce the durable-core hotspot list. The highest-count
+  files overlap with the Effect inventory hotspots: `event-plane/producer.ts`,
+  `subscribers.ts`, `schema/state-machine.ts`, `stream.ts`, `waits.ts`,
+  `operator.ts`, and runtime handler/materializer internals.
+- Async escape hatches in storage, stream, runtime, and lab paths are stronger
+  remediation candidates than broad conditional rewrites because they cross the
+  Effect boundary directly.
+- Direct `_tag` checks on `Option`, `Exit`, and domain unions are low-count and
+  high-signal; these can likely become a strict local rule after cleanup.
+- Imperative loop findings are bounded but touch hot paths. They should be
+  remediated only with focused behavior tests around state-machine folds,
+  retained-record reads, projection rebuilds, and runtime loops.
+- Schema-first boundary modeling is a design decision, not only style. Boundary
+  inputs/results in subscribers, waits, stream resolution, and operation state
+  should be evaluated for `Schema.Class` / `Schema.Union` conversion because
+  that would make raw JSON trust boundaries explicit.
+- Error modeling is a policy decision. The detector recommends
+  `Schema.TaggedError`, while recent remediation standardized many expected
+  in-process failures on `Data.TaggedError`. Before enforcing either direction,
+  decide whether each error family crosses durable storage, transport, or human
+  inspection boundaries. Wire-crossing errors should favor schema-backed
+  encoding; purely in-process defects may remain `Data.TaggedError` if that is
+  the documented policy.
+
+Operational guidance:
+
+- Keep detector output advisory until the detector crash is fixed and false
+  positives are filtered.
+- Prefer porting high-confidence categories into local strict rules after
+  cleanup: direct `_tag` access, async boundary escapes, selected imperative
+  loops, and maybe `new Map` / `new Set` in durable-core projection paths.
+- Do not strict-gate broad `Option`/ternary/style rewrites before remediation;
+  the reviews classify many of those as micro-syntax style debt rather than
+  architecture defects.
+
 Dependency-cruiser and ESLint are the current enforcement tools. If those tools
 change, the same properties must remain enforced by CI.
 
@@ -750,6 +802,8 @@ Migration steps:
 5. Add or tighten static guards for any new directory boundaries.
 6. Add the Effect artifact inventory and boundary report before promoting
    internal durable-core folders into separate workspace packages.
+7. Triage Effect detector findings into policy decisions, remediation slices,
+   and future local strict rules.
 
 ## Success Criteria
 
