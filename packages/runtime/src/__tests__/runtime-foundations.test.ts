@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import * as Substrate from "@durable-agent-substrate/substrate"
-import * as SubstrateKernel from "@durable-agent-substrate/substrate/kernel"
+import * as Substrate from "@firegrid/substrate"
+import * as SubstrateKernel from "@firegrid/substrate/kernel"
 import * as RuntimeSurface from "../index.ts"
 
 // firegrid-architecture-boundary.DEPENDENCY_GRAPH.2

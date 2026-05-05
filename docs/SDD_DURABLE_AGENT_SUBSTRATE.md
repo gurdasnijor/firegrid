@@ -79,7 +79,7 @@ The intended dependency direction is:
 
 ```text
 application runtime / agent runtime / Firepixel / Fireline adapter
-  -> durable-agent-substrate
+  -> firegrid
     -> Durable Streams
     -> Durable Streams State
 ```
@@ -1126,7 +1126,7 @@ For projection-triggered waits:
 Durable Streams State / StreamDB
   owns projection materialization and query/update mechanics
 
-durable-agent-substrate
+firegrid
   owns wait declaration, snapshot-first/follow-after-cursor use, completion
   resolution, and ready-work routing
 ```
@@ -1296,7 +1296,7 @@ future DurableStep service or equivalent
 
 ### 9.3 Acai Spec Direction
 
-The Acai specs under `features/durable-agent-substrate` are the executable
+The Acai specs under `features/firegrid` are the executable
 acceptance surface for this SDD. Current feature files:
 
 ```text

@@ -1,6 +1,6 @@
 feature:
   name: durable-records-and-projections
-  product: durable-agent-substrate
+  product: firegrid
   description: Define the minimal durable record and projection contract used before runtime adapters are introduced.
 
 components:

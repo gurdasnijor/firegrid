@@ -3,7 +3,7 @@ import {
   eventStreamEnvelopeFromStateRow,
   makeEventStreamStateRow,
   type EventStream,
-} from "@durable-agent-substrate/substrate/descriptors"
+} from "@firegrid/substrate/descriptors"
 import { DurableStream } from "@durable-streams/client"
 import {
   Context,
@@ -173,4 +173,4 @@ export const EventStreamClientLive = (
 
 export {
   EventStream,
-} from "@durable-agent-substrate/substrate/descriptors"
+} from "@firegrid/substrate/descriptors"

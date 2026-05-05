@@ -12,19 +12,16 @@ Other canonical SDDs:
 - [Choreography Facade](docs/SDD_CHOREOGRAPHY_FACADE.md)
 - [Launchable Substrate Host And Lab](docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md)
 
-Acai specs live under `features/firegrid/` (canonical) and
-`features/durable-agent-substrate/` (substrate kernel).
+Acai specs live under `features/firegrid/` for Firegrid package, runtime,
+client, substrate, and remediation requirements.
 
 ## Current State
 
-The repo is migrating to the Firegrid product / package vocabulary:
-`@firegrid/runtime` (server-side participant; was
-`@durable-agent-substrate/host`), `@firegrid/lab` (browser
-inspector), and the still-named substrate (`@durable-agent-substrate/substrate`)
-+ client (`@durable-agent-substrate/client`) packages. Operation
-messaging and EventStream descriptor APIs are the next slices.
+The repo uses Firegrid product and package vocabulary:
+`@firegrid/runtime` (server-side participant), `@firegrid/lab` (browser
+inspector app), `@firegrid/substrate`, and `@firegrid/client`.
 
-Run the baseline validation before editing:
+Run the canonical ready-for-review gate when preparing a PR:
 
 ```sh
 pnpm check

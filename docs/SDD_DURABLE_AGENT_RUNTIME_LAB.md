@@ -15,7 +15,7 @@ This SDD defines a separate validation surface:
 
 ```text
 durable-agent-runtime-lab
-  validates agent-runtime integration on top of durable-agent-substrate
+  validates agent-runtime integration on top of firegrid
 ```
 
 The runtime lab is not a new substrate layer. It is a consumer and validation
@@ -42,7 +42,7 @@ scenario runtime abstraction.
 
 ## Product Boundary
 
-`durable-agent-substrate` owns foundation invariants:
+`firegrid` owns foundation invariants:
 
 - durable run, completion, claim, and trace row families;
 - completion and claim authority;
@@ -142,7 +142,7 @@ runtime-owned materializers, not through host-local caches.
 
 ## Relationship To Acai Products
 
-Use `durable-agent-substrate` ACIDs for substrate-owned behavior and invariants.
+Use `firegrid` ACIDs for substrate-owned behavior and invariants.
 Use `durable-agent-runtime-lab` ACIDs for runtime validation behavior. When a
 runtime-lab feature discovers a missing substrate primitive, add or amend the
 substrate product spec before changing substrate code.

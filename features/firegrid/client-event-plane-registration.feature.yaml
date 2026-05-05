@@ -1,6 +1,6 @@
 feature:
   name: client-event-plane-registration
-  product: durable-agent-substrate
+  product: firegrid
   description: Allow higher layers to define typed durable event planes and state projections that participate in substrate observation without becoming substrate-native domain concepts.
 
 components:

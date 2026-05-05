@@ -32,13 +32,13 @@ describe("firegrid-event-streams.CLIENT_API.4 — Firegrid browser subpath is ph
     const combined = `${publicSubpath}\n${eventClient}`
 
     expect(combined).toContain(
-      "@durable-agent-substrate/substrate/descriptors",
+      "@firegrid/substrate/descriptors",
     )
     expect(combined).not.toContain("./operation-client")
     expect(combined).not.toContain("../client/service")
     expect(combined).not.toContain("SubstrateClientLive")
-    expect(combined).not.toContain("@durable-agent-substrate/substrate\"")
-    expect(combined).not.toContain("@durable-agent-substrate/substrate'")
+    expect(combined).not.toContain("@firegrid/substrate\"")
+    expect(combined).not.toContain("@firegrid/substrate'")
     expect(combined).not.toContain("node:crypto")
     expect(combined).not.toContain("client.work.declare")
   })
@@ -57,8 +57,6 @@ describe("firegrid-event-streams.CLIENT_API.4 — Firegrid browser subpath is ph
     expect(clientPackage.exports["./firegrid"]).toBe(
       "./src/firegrid/index.ts",
     )
-    expect(clientPackage.exports["./compat"]).toBe(
-      "./src/compat/index.ts",
-    )
+    expect(clientPackage.exports["./compat"]).toBeUndefined()
   })
 })

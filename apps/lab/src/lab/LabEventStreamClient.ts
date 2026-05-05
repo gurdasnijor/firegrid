@@ -3,7 +3,7 @@ import {
   EventStreamClientLive,
   type EventsError,
   type EmitError,
-} from "@durable-agent-substrate/client/firegrid"
+} from "@firegrid/client/firegrid"
 import { Effect, Stream } from "effect"
 import { LabEvents, type LabEvent } from "./lab-events.ts"
 

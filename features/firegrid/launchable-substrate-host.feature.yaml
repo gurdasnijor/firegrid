@@ -1,6 +1,6 @@
 feature:
   name: launchable-substrate-host
-  product: durable-agent-substrate
+  product: firegrid
   description: Define the launchable client, host process, and lab surfaces needed to run prototype durable agent runtimes without adding a host mutation control plane.
 
 components:

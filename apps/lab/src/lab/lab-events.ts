@@ -1,4 +1,4 @@
-import { EventStream } from "@durable-agent-substrate/client/firegrid"
+import { EventStream } from "@firegrid/client/firegrid"
 import { Schema } from "effect"
 
 // firegrid-event-streams.CLIENT_API.4

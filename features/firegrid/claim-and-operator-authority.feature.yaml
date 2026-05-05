@@ -1,6 +1,6 @@
 feature:
   name: claim-and-operator-authority
-  product: durable-agent-substrate
+  product: firegrid
   description: Define durable claim authority and handler invocation ordering after ready work is derived.
 
 components:

@@ -1,5 +1,5 @@
 {
-  "name": "@durable-agent-substrate/substrate",
+  "name": "@firegrid/substrate",
   "version": "0.0.0",
   "private": true,
   "type": "module",

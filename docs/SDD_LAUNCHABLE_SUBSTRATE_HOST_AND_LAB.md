@@ -15,10 +15,10 @@ against durable streams and materialized state.
 This SDD defines that next layer:
 
 ```text
-@durable-agent-substrate/client
+@firegrid/client
   durable intent producer + curated read client
 
-@durable-agent-substrate/host
+@firegrid/runtime
   launchable observer/operator process
 
 @firegrid/lab
@@ -111,11 +111,11 @@ through Host Program Graph evaluators.
 
 ```text
 applications / agent runtimes / lab
-  -> @durable-agent-substrate/client
+  -> @firegrid/client
       append durable intents
       read curated projections
 
-@durable-agent-substrate/host
+@firegrid/runtime
   observe durable streams/state
   run a Host Program Graph of subscribers and operator programs
   expose read-only diagnostics and lifecycle status
@@ -135,7 +135,7 @@ ownership stays with the row family owner:
 
 - substrate-owned rows (`durable.run`, `durable.completion`,
   `durable.claim.attempt`, and substrate trace rows if used) are defined once in
-  `@durable-agent-substrate/substrate` as Effect Schema values with inferred
+  `@firegrid/substrate` as Effect Schema values with inferred
   TypeScript types;
 - client and host code import substrate-owned schemas, types, state helpers, and
   transition builders from the substrate package instead of redefining parallel
@@ -144,9 +144,9 @@ ownership stays with the row family owner:
   owns that plane, using `EventPlane.define(...)` and the caller's
   `createStateSchema(...)` value;
 - host-local configuration, diagnostic status, and process-lifecycle types are
-  owned by `@durable-agent-substrate/host` because they are not durable
+  owned by `@firegrid/runtime` because they are not durable
   substrate row families;
-- client request/input types are owned by `@durable-agent-substrate/client`, but
+- client request/input types are owned by `@firegrid/client`, but
   when they lower into durable substrate rows they must use substrate-owned row
   schemas and producers.
 
@@ -171,14 +171,14 @@ The substrate should map those roles without copying Restate's central service
 ingress model:
 
 ```text
-@durable-agent-substrate/substrate
+@firegrid/substrate
   foundation library and Effect-native server-side primitives
   Choreography, Projection, Work, EventPlane, subscribers, operator helpers
 
-@durable-agent-substrate/client
+@firegrid/client
   Effect-native app-facing SDK for durable intents and curated reads
 
-@durable-agent-substrate/host
+@firegrid/runtime
   Effect-native launchable runtime process and withHost-style dev/test composition
 
 @firegrid/lab
@@ -293,7 +293,7 @@ The canonical client surface is Effect-native:
 
 ```ts
 import { Effect, Stream } from "effect"
-import { SubstrateClient, SubstrateClientLive } from "@durable-agent-substrate/client"
+import { SubstrateClient, SubstrateClientLive } from "@firegrid/client"
 
 const program = Effect.gen(function* () {
   const substrate = yield* SubstrateClient
@@ -757,7 +757,7 @@ call the same client APIs that an application or prototype runtime would call:
 
 ```text
 Lab button
-  -> @durable-agent-substrate/client
+  -> @firegrid/client
   -> append durable intent row
   -> host observes durable state
   -> subscribers/operators react
@@ -843,16 +843,16 @@ definitions.
 The lab app is internally split by execution surface:
 
 - `apps/lab/src` is the browser-side surface. It is bundled by Vite
-  and may import only `@durable-agent-substrate/client` and external
+  and may import only `@firegrid/client` and external
   packages. The repository ESLint configuration enforces that surface as
-  client-only — `@durable-agent-substrate/host` and
-  `@durable-agent-substrate/substrate` are not allowed there.
+  client-only — `@firegrid/runtime` and
+  `@firegrid/substrate` are not allowed there.
 - `apps/lab/runner` and `apps/lab/bin` are Node-only dev harness
-  paths. They may import `@durable-agent-substrate/host` to launch a
+  paths. They may import `@firegrid/runtime` to launch a
   Host Program Graph and orchestrate `SubstrateHostBoot.withHost` for
   the example programs. They are not bundled into the browser app and
   do not become a privileged writer surface — application and lab UI
-  writes still flow exclusively through `@durable-agent-substrate/client`.
+  writes still flow exclusively through `@firegrid/client`.
 
 Program kickoff Effects (the part each example program runs against
 `SubstrateClient`) live under `apps/lab/src/programs` so the same
@@ -950,8 +950,8 @@ lab app is dev tooling.
 Production exports should stay narrow and Effect-native first:
 
 ```text
-@durable-agent-substrate/client
-@durable-agent-substrate/host
+@firegrid/client
+@firegrid/runtime
 ```
 
 Optional operator/testing client subpaths can be added when real call sites need

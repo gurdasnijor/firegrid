@@ -1,6 +1,6 @@
 feature:
   name: ready-work-projection
-  product: durable-agent-substrate
+  product: firegrid
   description: "Define the first ready-work projection: resolved completions make blocked runs ready."
 
 components:

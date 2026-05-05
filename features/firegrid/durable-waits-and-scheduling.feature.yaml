@@ -1,6 +1,6 @@
 feature:
   name: durable-waits-and-scheduling
-  product: durable-agent-substrate
+  product: firegrid
   description: Define wait and scheduling APIs that lower to durable completions after core state, producer, ready-work, and operator authority are proven.
 
 components:

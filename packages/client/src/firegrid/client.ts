@@ -3,7 +3,7 @@ import type {
   EventStream,
   Operation,
   OperationHandle,
-} from "@durable-agent-substrate/substrate/descriptors"
+} from "@firegrid/substrate/descriptors"
 import type {
   EmitError,
   EventsError,

@@ -7,7 +7,7 @@ components:
   PUBLIC_SURFACES:
     requirements:
       1: The app-facing client root exports Firegrid operation, EventStream, client, error, and handle vocabulary only.
-      2: Legacy SubstrateClient, work declaration, low-level kernel rows, row builders, wire envelope constants, and raw stream helpers are exported only from explicit compatibility or kernel subpaths.
+      2: Legacy SubstrateClient and work declaration APIs are not exported from public package surfaces; low-level kernel rows, row builders, wire envelope constants, and raw stream helpers remain limited to explicit kernel or descriptor subpaths.
       3: FiregridClient has one Context Tag identity, one service shape, and one configuration shape across the root client and browser-safe client surfaces.
       4: Browser-safe client subpaths cannot type-check as a full operation-capable FiregridClient unless they provide every full client method.
       5: The substrate package root exports only curated descriptor, schema, facade, EventStream, and choreography surfaces; raw kernel modules live behind an explicit kernel subpath.
@@ -81,7 +81,7 @@ components:
 
   MIGRATION_BOUNDARIES:
     requirements:
-      1: Package renames to Firegrid names preserve temporary compatibility exports while new docs and tests prefer Firegrid vocabulary.
+      1: Package renames to Firegrid names remove legacy package/import paths while preserving durable wire compatibility.
       2: Kernel brand policy for run, work, completion, claim, and owner identifiers is either implemented consistently or documented as a deliberate boundary.
 
 constraints:

@@ -1,4 +1,4 @@
-// @durable-agent-substrate/client — Firegrid app-facing public root.
+// @firegrid/client — Firegrid app-facing public root.
 //
 // firegrid-remediation-hardening.PUBLIC_SURFACES.1
 // firegrid-remediation-hardening.PUBLIC_SURFACES.2
@@ -9,9 +9,6 @@
 // firegrid-architecture-boundary.SURFACE_AREA.3
 // firegrid-operation-messaging.APP_BOUNDARY.1
 // firegrid-operation-messaging.APP_BOUNDARY.2
-//
-// Legacy SubstrateClient/work APIs live at the explicit compatibility subpath
-// `@durable-agent-substrate/client/compat`.
 
 export {
   EventStream,
