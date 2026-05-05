@@ -1,392 +1,378 @@
-# Effect-TS Core Idioms Review — Firegrid (2026-05-05)
+# Effect-TS Core Idioms Review — Firegrid
 
-Scope: production code under `packages/{substrate,runtime,client}/src` and
-`apps/lab/src` after R0-R-STRICT-BASELINE / R0B. Focus is on the
-fundamental `Effect<A, E, R>` composition idioms (Effect.gen vs pipe,
-constructor selection, sequencing operators, `Effect.all`, `match` /
-`matchEffect`, `tap`, `suspend` / `lazy`, run-boundary placement, type
-signatures). Code-style and data-types neighbors are referenced but not
-re-litigated.
+Date: 2026-05-05
+Scope: production source under `packages/*/src` and `apps/*/src` post R0-R-STRICT-BASELINE
+Reference skill: `claude-skill-effect-ts/skills/effect-core` (and neighbors `code-style`,
+`data-types`, `error-management`)
+Scope exclusions: anything covered in `docs/REVIEW_EFFECT_CODE_STYLE_2026-05-05.md`
+(general formatting, Schema-first, Match-first, do-notation idioms). This review
+focuses on the *fundamental composition idioms* of the Effect type itself.
 
 ## Summary
 
-The post-R0B baseline is in good shape on Effect-core fundamentals.
-Constructor selection is consistent and at the I/O boundary. Run-
-boundary placement is disciplined: production
-`Effect.runPromise/runFork/runPromiseExit` calls are confined to the
-lab React boundary (`apps/lab/src/lab/LabEventStreamPanel.tsx`), the
-bin entry uses `NodeRuntime.runMain` (not `runPromise`), and
-`Effect.runSync` survives only inside the documented compat shim
-(`packages/substrate/src/state-machine.ts`). Composition is gen-dominant
-(58 production `Effect.gen` blocks; ~50 substantive Effect-pipe
-chains). `Effect.flatMap`/`map` are used exclusively for Effect
-sequencing; `Effect.andThen` is not used anywhere, and `Effect.all` is
-not used in production. Remaining gaps are small: a few single-yield
-gens that survived R0B, a load-bearing Either-ladder in operator.ts
-that should be documented, and one suspect `Effect.suspend` site.
+The Firegrid codebase shows a mature, conservative use of Effect's core
+composition surface. `Effect.gen` is the dominant idiom for sequential code
+(53 occurrences across production), `pipe` is reserved for short transformer
+chains following a generator block (71 `.pipe(` occurrences, of which the
+overwhelming majority are tail-position `.pipe(Effect.mapError(...))` or
+`.pipe(Effect.provide(...))` shapes), and the run-boundary discipline is
+honored: only three production `Effect.run*` sites exist, all in
+`apps/lab/src/lab/LabEventStreamPanel.tsx` (the React boundary), with
+`Effect.runSync` confined to the `state-machine.ts` compat shim
+(`packages/substrate/src/state-machine.ts:39-45`). The boundary is documented
+correctly per the R0 baseline.
+
+The most striking finding is what is *absent* rather than what is wrong:
+zero uses of `Effect.andThen`, zero uses of `Effect.all`, and zero uses of
+`Effect.match`/`Effect.matchEffect`. The codebase chooses `Effect.flatMap` +
+`Effect.gen` exclusively for sequencing and uses `if/return-yield* fail` in
+generators rather than match-style branches. The lone exception is the
+`Effect.matchCauseEffect` in `packages/substrate/src/choreography/tools.ts:169`,
+used correctly to discriminate suspension-by-interrupt from defects.
+
+A handful of localized concerns are documented below; none are blockers.
 
 ## Findings
 
-### 1. Effect.gen vs pipe consistency
+### 1. Effect.gen vs pipe — ratio is healthy; one flatten candidate remains
 
-The split tracks the guidance well — multi-step substrate logic uses
-`Effect.gen` (e.g. `packages/substrate/src/operator.ts:105`,
-`packages/substrate/src/internal-claim.ts:46`,
-`packages/substrate/src/choreography/service.ts:154`,
-`packages/runtime/src/runtime/internal/operation-handler.ts:114`),
-while single-transformation chains use pipe (e.g.
-`packages/substrate/src/retained-records.ts:93`,
-`packages/client/src/firegrid/event-client.ts:115`).
+Counts in production (excluding tests, including barrel files):
+53 `Effect.gen(...)`, 71 `.pipe(` invocations.
 
-**Single-yield gens that survived R0B.** A handful of one-yield gens
-remain that flatten cleanly to pipe:
+Single-yield `Effect.gen` candidates were enumerated programmatically;
+seven blocks contain exactly one `yield*`. Six are correctly shaped (they
+hold a non-trivial body around the yield):
 
-- `packages/substrate/src/waits.ts:136-143` — `findExisting` wraps one
-  `Effect.tryPromise` then reads `snap.completions.get(completionId)`.
-  Flattens to `Effect.tryPromise({...}).pipe(Effect.map(snap =>
-  snap.completions.get(completionId)))`.
-- `packages/substrate/src/producer.ts:131-140`, `:171-179`, `:182-190`,
-  `:193-201` — each producer method is a 3-yield gen (build event →
-  append → return literal). The literal-return argues for keeping
-  `Effect.gen`, but a strict pipe form
-  (`buildEvent.pipe(Effect.tap(append), Effect.as({...}))`) is also
-  legitimate. Judgement call.
-- `packages/substrate/src/choreography/tools.ts:207-219`, `:225-238`,
-  `:244-256`, `:262-270` — each `handle: input => Effect.gen(function*
-  () { const choreo = yield* Choreography; return yield*
-  wrapSuspending(cfg, opName, choreo.X(...)) })` is a single-yield-of-
-  context gen. Could be `Choreography.pipe(Effect.flatMap(choreo =>
-  wrapSuspending(...)))`, but the four call sites are structurally
-  identical and consistency wins; see Top 5 #5.
+- `packages/runtime/src/runtime/internal/operation-handler.ts:198` — the
+  one yield sits inside a `for (run of snapshot.runs.values())` loop, so
+  it dispatches once per matching run; flatten would lose the loop.
+- `packages/substrate/src/choreography/tools.ts:184` — yield happens
+  inside `Effect.matchCauseEffect.onFailure`'s gen, with bookkeeping
+  before/after.
+- `packages/substrate/src/waits.ts:136` — `findExisting` does a
+  `tryPromise` yield then a `.completions.get(...)` lookup; the gen
+  exists to thread the typed `WaitsStreamError` channel.
+- `packages/substrate/src/waits.ts:223` (scheduleWork) — single yield is
+  on append; randomUUID + struct construction live around it.
+- `packages/substrate/src/subscribers.ts:319` —
+  `runProjectionMatchSubscriberFromSnapshot` returns a derived shape from
+  a single scan call; flatten possible (see point below).
+- `apps/lab/src/lab/LabEventStreamClient.ts:45` — the gen yields
+  `EventStreamClient` and immediately returns the stream; flatten target.
 
-**Nested gens.** Several places nest gen inside gen (e.g.
-`packages/runtime/bin/firegrid.ts:73,80,93,111`,
-`packages/client/src/firegrid/operation-client.ts:209-212`). These
-scope an inner `Effect.provide` and are idiomatic.
+One genuine flatten candidate that was missed:
+`packages/client/src/firegrid/operation-client.ts:283-292` —
+`observe` wraps `Stream.unwrapScoped(Effect.gen(...))` where the gen
+yields `SubstrateClient` and returns a stream literal. This collapses to
+`Effect.map(SubstrateClient, (client) => ...)` and the outer
+`Stream.unwrapScoped` becomes `Stream.unwrap` (the only scoped resource
+— the client — is provided by the surrounding `Stream.provideLayer`).
 
-**Deep pipes converted to gen — none observed.** The longest pipes
-compose Stream operators (operation-handler dispatch, event-stream
-materializer) where gen doesn't apply.
+`apps/lab/src/lab/LabEventStreamClient.ts:36-39` and
+`packages/substrate/src/subscribers.ts:319-337` are similar shape: a
+service Tag yield then a derived shape return. They are slightly more
+load-bearing (the latter does flatMap-then-shape) but
+`Effect.map(Tag, fn)` is the canonical post-R0B form.
 
-### 2. Effect constructors at boundaries
+No `Effect.gen(this, function* () { ... })` form is used anywhere in
+production code. Class-method generators (e.g. inside Layer effects)
+consistently use the bare `Effect.gen(function* () { ... })`. Good.
 
-Constructor placement is correctly partitioned:
+Deep-nested pipe chains converted to gen: the only deep pipe chains
+that remain are tail `.pipe(Effect.X, Effect.Y, Effect.Z)` shapes
+attached to a preceding gen block (e.g. `runner.ts:160-165`,
+`runner.ts:169-185`, `stream-resolver.ts:75-77`). These are idiomatic —
+they read top-to-bottom and the linear shape matches the call graph.
 
-- `Effect.tryPromise` — used at every async I/O boundary (Durable
-  Streams `head`/`stream`/`json`, `rebuildProjection`, `appendChange`).
-  Examples: `packages/substrate/src/internal-claim.ts:50`,
-  `packages/substrate/src/retained-records.ts:29,38`,
-  `packages/substrate/src/event-plane/producer.ts:116`,
-  `packages/runtime/src/runtime/internal/event-stream-materializer.ts:96`,
-  `packages/runtime/src/runtime/internal/stream-resolver.ts:60,100`.
-- `Effect.promise` — only at finalizers where cancellation is
-  non-failing (`packages/runtime/src/runtime/internal/event-stream-materializer.ts:113`,
-  `packages/runtime/src/runtime/internal/stream-resolver.ts:75`). Correct
-  use: a cancel/stop call's error policy is "best-effort during teardown".
-- `Effect.sync` — used only for synchronous side-effects (subscribe
-  handlers, unsubscribe functions). All sites (e.g.
-  `packages/substrate/src/projection-service.ts:56,62`,
-  `packages/substrate/src/stream.ts:59`,
-  `packages/runtime/src/runtime/internal/wake-stream.ts:13`) are
-  legitimately impure operations. None are masquerading for
-  `Effect.succeed`.
-- `Effect.try` — exactly one site:
-  `packages/substrate/src/choreography/service.ts:207`. The `blockRun`
-  builder is itself an Effect; here the call wraps a defensive
-  re-throw against an expected non-Effect mistake. Worth flagging:
-  `blockRun` already returns `Effect<ChangeEvent, IllegalRunTransition>`
-  (see `packages/substrate/src/state-machine.ts` re-export). Wrapping it
-  in `Effect.try` discards the typed `IllegalRunTransition` channel and
-  re-types the failure as a `ChoreographyVerificationError` via
-  `catch:`. The intent is to remap any thrown defect, but `blockRun`
-  doesn't throw — it returns a failed `Effect`. This collapses to
-  `yield* blockRun(...).pipe(Effect.mapError(cause => new
-  ChoreographyVerificationError({ ... })))`. Worth verifying whether the
-  re-export shim in `state-machine.ts` (which DOES throw via
-  `runUnsafe` lines 39-45) is what's being defended against — if so,
-  swap to importing from `./schema/state-machine.ts` directly to get
-  the Effect-channel form.
-- `Effect.succeed` / `Effect.fail` — used cleanly to lift literal
-  results / typed errors into the channel. No misuse spotted.
-  `Effect.failCause` is used once
-  (`packages/substrate/src/choreography/tools.ts:180`) to re-raise a
-  non-interrupt cause inside a `matchCauseEffect`, which is the correct
-  primitive for that situation.
+### 2. Effect.succeed / fail / sync / try / tryPromise / promise — correct boundary placement
 
-### 3. andThen vs flatMap vs map
+`Effect.tryPromise` is used at every external Promise boundary
+(`@durable-streams/client`, `DurableStreamTestServer`, `rebuildProjection`).
+Each call site correctly maps the catch into a tagged error class.
+13 sites, all idiomatic.
 
-**`Effect.andThen` is not used anywhere in production.** All chaining is
-`Effect.flatMap` (with `Effect.map` for pure transforms). Strictly this
-is fine — `andThen` has slightly nicer ergonomics for the dual case
-where the next step is a value, an Effect, or a thunk-returning-Effect,
-but the codebase consistently uses `flatMap`/`map`/`succeed` and the
-result is unambiguous. No churn warranted unless a future case wants the
-union behavior.
+`Effect.promise` (the *defect-on-rejection* counterpart) appears twice:
+- `packages/runtime/src/runtime/internal/event-stream-materializer.ts:113`
+  (`response.cancel()` finalizer)
+- `packages/runtime/src/runtime/internal/stream-resolver.ts:75`
+  (`s.stop()` finalizer for the test server)
 
-`Effect.zipRight` appears at
-`packages/runtime/src/runtime/internal/runner.ts:163-164` (chaining two
-finalizer effects) and `apps/lab/src/lab/LabEventStreamPanel.tsx:58`
-(panel mount → stream follow). Both are appropriate uses where the left
-result is `void` and is genuinely discarded.
+Both are *finalizer* invocations inside `Effect.acquireRelease`, where
+the outer effect cannot meaningfully recover from a cancel/stop failure
+and surfacing them as defects is appropriate. Correct.
 
-`Effect.as` appears at
-`packages/substrate/src/schema/state-machine.ts:127` (validate-then-
-emit-event), `packages/substrate/src/facade/work.ts:168`
-(record-outcome shape), and
-`packages/runtime/src/runtime/internal/operation-handler.ts:128,142`
-(after a `.catchTag` returns a logged error, replace with `undefined`
-sentinel). All idiomatic.
+`Effect.try` appears once
+(`packages/substrate/src/choreography/service.ts:207`). This wraps the
+*compat-shim* `blockRun` from `packages/substrate/src/state-machine.ts`,
+which is the documented `Effect.runSync(Effect.either(...))` shim that
+throws on illegal transitions. Wrapping a throw-style API with
+`Effect.try` is correct — the surrounding choreography facade does not
+want the typed `IllegalRunTransition` to leak as a typed error in this
+path.
 
-`Effect.asVoid` is used appropriately at
-`packages/client/src/firegrid/event-client.ts:127` and
-`packages/runtime/src/runtime/internal/runner.ts:146`.
+`Effect.fail` and `Effect.succeed` are used inside generators
+(via `yield* Effect.fail(...)`) or short pipe tails — never as
+top-level constants the caller would need to `yield*`. Good.
 
-### 4. Effect.all variants
+### 3. andThen vs flatMap vs map — `andThen` is missing entirely
 
-**`Effect.all` is not used in production.** The codebase models its
-parallel/sequential work through `Stream` (with `Stream.runDrain` /
-`Stream.runForEach` / `Stream.mapEffect`) and through `Effect.forEach`
-(`packages/substrate/src/subscribers.ts:183`). For the workloads here
-that's the right shape — the candidates being processed are finite per
-wake but the wake source is a stream, so a Stream-based loop is
-correct and `Effect.all` would have nothing to combine.
+Production has zero uses of `Effect.andThen` and 27 uses of
+`Effect.flatMap` / `Effect.map(`. The data-first-friendly `andThen` —
+which collapses `flatMap` and `map` (and a constant-Effect overload)
+into one operator — is not part of the team's vocabulary.
 
-`Effect.forEach` at `subscribers.ts:183` runs sequentially (default
-concurrency), which is what scan ordering wants (one snapshot's pending
-candidates processed left-to-right with shared `Clock` and `stream`
-context). No concurrency option is needed.
+This is not a bug, but it is an idiomatic gap. Two cases stand out
+where `andThen` would tighten the code:
 
-If a future entry point wants a fan-out — e.g. multiple plane producers
-emitting in parallel, or a multi-stream materializer — `Effect.all([...
-], { concurrency: "unbounded" | N })` is the idiomatic pick.
+- `packages/client/src/firegrid/operation-client.ts:281` —
+  `send(op, input).pipe(Effect.flatMap((handle) => result(op, handle)))`.
+  `andThen((handle) => result(op, handle))` is identical at runtime
+  and matches the dual-friendly idiom.
+- `packages/runtime/src/runtime/internal/operation-handler.ts:147` and
+  `:178` — `completeRunEffect(...).pipe(Effect.flatMap((event) =>
+  appendEvent(stream, event)), Effect.catchAll(...))`. The flatMap here
+  is correct; `andThen` would also work and read more linearly.
 
-### 5. Effect.match vs matchEffect
+`Effect.map` is used correctly throughout — only when the
+transformation is a pure function from `A` to `B`. No misuses observed
+(e.g. no `Effect.map((a) => Effect.succeed(...))` patterns hiding
+flatMaps).
 
-Exactly one match-family site:
-`packages/substrate/src/choreography/tools.ts:169` —
-`Effect.matchCauseEffect({ onSuccess, onFailure })`. This is the right
-primitive: the operation is supposed to interrupt on success
-suspension; the only non-interrupt failure paths are defects to
-re-raise and translated `ChoreographySuspension` values. Using
-`matchCauseEffect` (vs `matchEffect`) is essential here because the
-defect/interrupt distinction lives in the `Cause`, not the typed error
-channel.
+### 4. Effect.all variants — zero uses in production
 
-The data-types review flagged `operator.ts` as a candidate for an
-`Effect.match*`-style refactor. Looking at the call sites:
+Production has no uses of `Effect.all` for parallel composition.
+Where multiple values must be assembled, the codebase uses sequential
+`yield*` inside `Effect.gen`. That is sequential by definition.
 
-- `packages/substrate/src/operator.ts:148` —
-  `const handlerResult = yield* Effect.either(args.handler(args.item))`,
-  followed by an `Either.isRight`/`Either.isLeft` pair at lines 168-171
-  to choose between `completeRun` and `failRun`. This collapses to
-  `Effect.matchEffect(args.handler(args.item), { onSuccess: result =>
-  completeRun(postRun, { result }), onFailure: error =>
-  failRun(postRun, { error }) })` — but the catch is that the post-
-  handler authoritative re-read at lines 153-164 happens BETWEEN the
-  handler running and the terminalization decision, so a direct
-  `matchEffect` swap doesn't fit. The Either-as-value pattern here is
-  load-bearing: the handler's exit-state has to survive the post-read.
-  No refactor recommended; document the constraint instead.
+For Firegrid's domain (single-stream durable producer/consumer with
+strict ordering on appends) this is *probably correct* — concurrent
+appends to the same DurableStream are not what most call sites want.
+The `Effect.forEach` calls in `packages/substrate/src/subscribers.ts:183-186`
+are sequential (no `{ concurrency: ... }`), which matches the comment
+"sequential forEach, race-safe build".
 
-- `packages/substrate/src/operator.ts:167-186` — building the terminal
-  event uses `Either.isRight(handlerResult)` to dispatch between
-  `completeRun` and `failRun`, then `Effect.either` of that build
-  followed by `Either.isLeft(buildResult)` to detect a race. The
-  Either-of-Either nesting is intentional (handler outcome × build
-  outcome are independent) but reads densely. A small win: the
-  `buildResult` arm could be `matchEffect`-ed by yielding straight
-  through and using `Effect.catchTag("IllegalRunTransition", ...)` to
-  funnel the race fallback. Tradeoff: the current shape keeps the
-  builder-rejected `from` value visible at the call site (line 175-179),
-  which `catchTag` would also expose — net wash.
+Flagged for awareness, not change:
+- `packages/runtime/src/runtime/internal/stream-resolver.ts:162-163` —
+  the embedded resolver yields `EmbeddedDurableStreams` then
+  `DurableStreamAdmin`. These are independent service Tags;
+  `Effect.all({ embedded: EmbeddedDurableStreams, admin: DurableStreamAdmin })`
+  is the canonical form. Today's two-yield gen is functionally
+  identical and arguably more readable, so this is purely stylistic.
 
-Plain TS branching that returns Effects (the if-ladders in
-`packages/client/src/firegrid/operation-client.ts:172-194` and
-`:244-271`) are not Effect.match candidates — they're branching on a
-plain TS discriminant before yielding; the right tool is `Match` from
-`@effect/Match`, which is the data-types/code-style review's domain.
+### 5. Effect.match / matchEffect — only matchCauseEffect, used correctly
 
-### 6. Effect.tap / tapErrorCause
+The data-types review noted that `operator.ts` could use
+`Effect.matchEffect` over an `Either.isLeft`/`Either.isRight` ladder.
+Confirmed: `packages/substrate/src/operator.ts:148-205` runs three
+`Either.is*` checks against `handlerResult` and `buildResult`. The
+ladder is three-way (success / failure / build-rejection-race), so a
+straight `Effect.matchEffect({ onFailure, onSuccess })` does not
+collapse the whole thing cleanly — the data-types review's
+recommendation (extract a helper for the build-rejection branch)
+stands as the right shape; cross-referenced here, not duplicated.
 
-Three production tap sites, all correctly used as side-effect-only
-observation points:
+The single matchCauseEffect site is
+`packages/substrate/src/choreography/tools.ts:169-198`, where
+`onSuccess` and `onFailure` discriminate "interrupt-only" (the expected
+suspension signal) from defects. This is the textbook use of
+`matchCauseEffect` and is correct.
 
+`Effect.match` (the no-effect version) is unused, which is consistent
+with the codebase: every error-channel branch needs to either fail
+again, succeed with a typed value, or run a logging effect — none of
+those collapse to a pure `match`.
+
+### 6. tap / tapError / tapErrorCause — used as side-effect-only as required
+
+The four tap-points all sit at observability boundaries:
+
+- `packages/runtime/src/runtime/internal/event-stream-materializer.ts:183`
+  — `tapErrorCause` for `logError`
+- `packages/runtime/src/runtime/internal/operation-handler.ts:209` —
+  `tapErrorCause` for `logError`
 - `packages/runtime/src/runtime/internal/runner.ts:155` —
-  `Effect.tap(() => Effect.sync(wake))`. Wakes the loop after sleep
-  completes; data flow continues unchanged.
-- `packages/runtime/src/runtime/internal/runner.ts:180`,
-  `event-stream-materializer.ts:183`, `operation-handler.ts:209` —
-  `Effect.tapErrorCause` paired with `Cause.isInterruptedOnly` to log
-  unexpected failures while letting interruption pass silently. This is
-  the canonical pattern for a long-running fiber that should die loudly
-  on real failure but quietly on shutdown. Three matching sites, three
-  correct uses.
+  `Effect.tap(() => Effect.sync(wake))` (deadline edge)
+- `packages/runtime/src/runtime/internal/runner.ts:180` —
+  `tapErrorCause` for `logError`
 
-No `Effect.tap` is being used to thread data (which would be the wrong
-operator — `flatMap` is for data-threading); discipline holds.
+All four use `tap*` strictly for fire-and-forget side effects (logging,
+poking the wake callback) without altering the success channel. None
+attempt data flow through the tap. Good.
 
 ### 7. Effect.suspend / Effect.lazy
 
-Two `Effect.suspend` sites, no `Effect.lazy`:
+Two uses of `Effect.suspend`:
 
-- `packages/substrate/src/projection-service.ts:49` — `snapshot:
-  query => Effect.suspend(() =>
-  query.evaluate(input.snapshotFromDb(input.db)))`. **Correct.** Each
-  `snapshot()` invocation must read the LIVE db (the `db` is held by
-  the closure for the layer's lifetime); without `suspend`, the
-  evaluated Effect would close over the snapshot taken at
-  service-build time. This is exactly what `suspend` is for.
+- `packages/substrate/src/projection-service.ts:49` — defers
+  `query.evaluate(snapshotFromDb(...))` so the snapshot is read at
+  *call time*, not at builder time. Correct (this is the canonical use
+  of `suspend` in a query-builder context).
+- `packages/substrate/src/event-plane/producer.ts:101` — defers a
+  synchronous validate against `collectionsByType` whose entries depend
+  on the at-call-time event. The explicit return type
+  `: Effect.Effect<void, RevalidateError>` inside the suspend callback
+  is good belt-and-braces against TS narrowing.
 
-- `packages/substrate/src/event-plane/producer.ts:101` — `revalidate
-  = (...) => Effect.suspend(() => { const def =
-  collectionsByType.get(event.type); ... })`. **Probably unnecessary.**
-  The body branches on `event.type`/`event.value` (immutable inputs)
-  and the `collectionsByType` lookup map is built at producer-construct
-  time. There is no time-varying state inside the closure, so the
-  suspend is preserving nothing — `Effect.gen(function* () { ... })`
-  with the same body would build the Effect on call without losing
-  anything. Worth flattening to a regular function returning the
-  appropriate Effect or a small `Effect.gen`. Low priority.
+There are no `Effect.lazy` uses (the API was deprecated in favor of
+`suspend`). No suspend that should be lazy or vice-versa observed.
 
-### 8. Run-boundary audit
+### 8. Effect.runSync / runFork / runPromise — boundary discipline holds
 
-All production `Effect.run*` sites land at the documented boundaries:
+All four production sites accounted for:
 
-- `apps/lab/src/lab/LabEventStreamPanel.tsx:54` (`Effect.runFork`),
-  `:82` (`Effect.runPromise(Fiber.interrupt(fiber))`), `:92`
-  (`Effect.runPromiseExit(emitLabEvent(...))`). Each is preceded by an
-  `eslint-disable-next-line no-restricted-syntax` comment explaining
-  the React-boundary rationale. Suppression is explicit, narrow, and
-  correctly scoped.
-- `packages/substrate/src/state-machine.ts:40` (`EffectRuntime.runSync`)
-  inside `runUnsafe`, the documented compat shim that re-exports
-  state-machine builders as throwing functions for legacy callers. The
-  file's intent is bridging only.
-- `packages/runtime/bin/firegrid.ts:154` uses
-  `NodeRuntime.runMain(program.pipe(Effect.provide(NodeContext.layer)))`,
-  not `Effect.runPromise`. This is the correct CLI-entry primitive
-  (handles SIGINT/SIGTERM cleanly via the platform layer).
+- `packages/substrate/src/state-machine.ts:39-45` — `runUnsafe` shim
+  bridging Effect-returning state-machine builders to the legacy
+  throw-on-illegal callsite contract. Documented as transitional.
+- `apps/lab/src/lab/LabEventStreamPanel.tsx:54` — `Effect.runFork` for
+  the follow fiber, with `eslint-disable-next-line no-restricted-syntax`
+  and comment "React effect boundary". Correct.
+- `apps/lab/src/lab/LabEventStreamPanel.tsx:82` — `Effect.runPromise` to
+  interrupt the follow fiber on cleanup. Correct.
+- `apps/lab/src/lab/LabEventStreamPanel.tsx:92` —
+  `Effect.runPromiseExit` to bridge `emitLabEvent` into a React click
+  handler. Correct.
 
-No production code outside those three locations runs Effects. The
-test suites use `Effect.runPromise`/`runPromiseExit` extensively, which
-is expected.
+The bin entry uses `NodeRuntime.runMain(...)` rather than
+`Effect.runPromise` (`packages/runtime/bin/firegrid.ts:154`), which is
+the platform-native entry — strictly preferable for a CLI process and
+consistent with the @effect/platform-node convention.
 
-### 9. `Effect.gen(this, function* () { ... })`
+`apps/lab/src/lab/RawStreamInspector.tsx` uses raw `async`/`await`
+rather than Effect at all (lines 42-72). This is acceptable per the
+file's docstring (it consumes the external `@durable-streams/client`
+directly without going through a Firegrid Effect surface), but the
+sibling `LabEventStreamPanel.tsx` *does* go through Effect for the same
+job. A future cleanup pass could bring the raw inspector to the same
+pattern; not blocking.
 
-Zero usages anywhere. The this-binding form is unnecessary outside of
-class-method contexts that capture `this`, and the codebase models
-services through `Context.Tag` + closure capture, never via class
-methods that need their own `this` inside the generator.
+### 9. Effect type signatures — `Effect.Effect<A>` shorthand vs explicit form
 
-### 10. Type signatures
+Effect's `Effect.Effect<A>` shorthand expands to `Effect<A, never, never>`.
+Both forms appear in the codebase:
 
-**`Effect.Effect<A>` (1-arg) usage.** ~125 production type annotations
-include `Effect.Effect<...>`. Of those, ~7 use the 1-arg shorthand
-`Effect.Effect<A>` (e.g.
-`packages/substrate/src/subscribers.ts:130`,
-`packages/substrate/src/choreography/tools.ts:170,176`,
-`packages/runtime/src/runtime/internal/wake-stream.ts:3,7`,
-`packages/runtime/src/runtime/internal/runner.ts:135,142`,
-`packages/runtime/src/runtime/internal/stream-resolver.ts:123`).
+- Shorthand `Effect.Effect<A>` (relying on default `never` params):
+  - `packages/substrate/src/subscribers.ts:130` — `Effect.Effect<Option.Option<A>>`
+  - `packages/runtime/src/runtime/internal/runner.ts:135, 142, 143` —
+    `Effect.Effect<void>` for finalizer slots
+  - `packages/runtime/src/runtime/internal/wake-stream.ts:3` —
+    `type WakeFinalizer = Effect.Effect<void>`
+  - `packages/runtime/src/runtime/internal/stream-resolver.ts:123` —
+    `Effect.Effect<ResolvedStream>` on the `RuntimeStreamResolverService`
+  - `packages/substrate/src/choreography/tools.ts:110, 170, 176` —
+    `Effect.Effect<CompletionId, never>` and similar
+- Explicit `Effect.Effect<A, E>` (R defaulted): the dominant form
 
-In every spotted case, the value really is `<A, never, never>` — these
-are subscriber outcomes, finalizers, and resolver Effects with no
-typed errors and no requirements. The 1-arg shorthand is the
-documented Effect convention; rewriting to `<A, never, never>` would
-add visual noise without information. Keep as-is.
+There is no inconsistency *within* a file, and the shorthand is only
+used at sites where R must be `never` for type-soundness reasons (Tag
+service-method slots, finalizer slots). This is the idiomatic split.
 
-**Inline cast at the schema boundary.** Multiple sites cast through
-`Effect.Effect<...>` after `Schema.decodeUnknown` /
-`Schema.encodeUnknown` (`operation-client.ts:151,166`,
-`event-client.ts:90,101`, `event-stream-materializer.ts:133-136`,
-`operation-handler.ts:77`). This is a known artifact of
-`Schema.Schema.AnyNoContext` carrying `R = unknown` — the cast is
-documented in `operation-client.ts:131-137` and is a sound, intentional
-bridge. Not a finding.
+A single anomaly: `packages/substrate/src/choreography/tools.ts:110` and
+`:170, :176` use the verbose `Effect.Effect<X, never>` (E explicit as
+never) where the shorthand `Effect.Effect<X>` would do. The author
+likely wanted the second-position `never` to read as documentation
+("this *cannot* fail"); leaving as-is is reasonable, but switching to
+shorthand would be one less inconsistency with `wake-stream.ts:3`.
+
+### 10. Cross-cutting: `validate.pipe(Effect.as(event))` micro-pattern
+
+`packages/substrate/src/schema/state-machine.ts:127` defines:
+
+```
+validatedChangeEvent = (validate, event) => validate.pipe(Effect.as(event))
+```
+
+This is a textbook `Effect.as` use — replacing a `Effect<void, E>`'s
+success with a constant `ChangeEvent`. The same pattern appears in
+`packages/substrate/src/descriptors/append.ts:17`
+(`appendChange` ends with `.pipe(Effect.asVoid)`). Both are correct and
+cleaner than `Effect.map(() => event)` / `Effect.map(() => undefined)`.
 
 ## Out of scope
 
-- **Schema decode/encode patterns**, `Match` for plain TS dispatch,
-  branded types, `Data.TaggedError` definitions — code-style and
-  data-types review territory.
-- **`if/else` ladders that return Effects** in `operation-client.ts`
-  (mapRunToState, decideTerminal): Match-vs-if is a `with-style`
-  concern, not Effect-core.
-- **Stream operator selection** (`mapEffect` vs `flatMap` vs
-  `filterMap`): Streams skill, not core.
-- **Layer composition / requirements management**: requirements-
-  management skill.
-- **Cause/Exit error handling depth** (`Cause.isInterruptedOnly`,
-  `Cause.failureOption`, `Cause.pretty`): error-management skill;
-  current uses look correct but a dedicated review would dig deeper
-  on `tapErrorCause` vs `tapDefect` etc.
-- **The compat shim itself** (`state-machine.ts` `runUnsafe` calling
-  `runSync` and rethrowing): listed in repo context as transitional,
-  not a finding.
+- General formatting, Schema-first, Match-first conversions: covered in
+  `docs/REVIEW_EFFECT_CODE_STYLE_2026-05-05.md`.
+- Tagged-error class shape, Cause-vs-Error distinction, Effect.either
+  usage in `operator.ts`: covered in the data-types and error-management
+  reviews. The `Either.isLeft`/`isRight` ladder in
+  `packages/substrate/src/operator.ts:148-205` is left to those reviews
+  per the brief.
+- `apps/lab/src/lab/RawStreamInspector.tsx` raw async/await: noted as a
+  *style* gap, not a core-Effect-idiom gap.
+- Stream APIs (`Stream.runDrain`, `Stream.unwrapScoped`,
+  `Stream.async{Scoped}`, `Stream.mapEffect`): all uses observed look
+  idiomatic at quick read; full Stream review is its own pass.
+- `@effect/platform` Command/Terminal usage in
+  `packages/runtime/bin/firegrid.ts`: the bin is well-formed but is
+  platform-specific and out of scope for a core-idioms pass.
 
-## Top 5 Idiomatic Improvements (ranked)
+## Top 5 idiomatic improvements
 
-1. **Flatten `findExisting` in `waits.ts:136-143`** to a pipe over
-   `Effect.tryPromise(...).pipe(Effect.map(snap => snap.completions.get(completionId)))`.
-   Smallest-payoff item but it's a textbook one-yield gen the R0B pass
-   missed and will keep slipping into review queues until it's fixed.
-2. **Resolve the `Effect.try(blockRun)` re-throw at
-   `choreography/service.ts:207`.** Either route to
-   `./schema/state-machine.ts` directly and use
-   `Effect.mapError(cause => new ChoreographyVerificationError({...}))`,
-   or document explicitly that the import is via
-   `../state-machine.ts` (the throwing shim) and the `Effect.try`
-   wrap is mandatory. Currently an architectural "why" is missing on
-   that single odd `Effect.try` call.
-3. **Drop `Effect.suspend` from `event-plane/producer.ts:101`** — the
-   closed-over state is immutable, so `suspend` adds nothing. Replacing
-   it with a plain `Effect.gen` body or pipe (or returning the Effect
-   directly) clarifies intent and removes a small distractor for future
-   readers wondering "why suspend here?".
-4. **Document the operator.ts Either-pattern as deliberate.** Add a
-   comment near `operator.ts:148` and `:167` explaining that
-   `Effect.either` here is load-bearing because the post-handler
-   authoritative re-read must run between the handler exit and
-   terminalization. Without that comment, future review passes will
-   keep proposing a `matchEffect` collapse that doesn't fit. (No code
-   change.)
-5. **Consider a single helper for choreography tool bindings** in
-   `choreography/tools.ts:207-270`. The four `handle: input =>
-   Effect.gen(function* () { const choreo = yield* Choreography;
-   return yield* wrapSuspending(cfg, opName, choreo.someCall(...)) })`
-   blocks are structurally identical except for the operation
-   name and the choreo call. A `bindSuspending(opName, callBuilder)`
-   helper would cut four near-duplicates to one. (Optional; current
-   form is readable.)
+1. **Flatten `observe` in `operation-client.ts`** —
+   `packages/client/src/firegrid/operation-client.ts:283-292` collapses
+   from `Stream.unwrapScoped(Effect.gen(...))` to
+   `Stream.unwrap(Effect.map(SubstrateClient, (client) => ...))`. One
+   yield, one immediate return: the canonical post-R0B flatten target
+   that the previous flatten pass missed.
+2. **Adopt `Effect.andThen` for two-step pipes** — most pressing at
+   `packages/client/src/firegrid/operation-client.ts:281`
+   (`send(...).pipe(Effect.flatMap((h) => result(op, h)))`) and the
+   `encode → append → asVoid` chain in
+   `packages/client/src/firegrid/event-client.ts:114-128`. `andThen`
+   accepts both the next-Effect-from-A function *and* a constant
+   Effect; either side reads more linearly. Currently zero adoption in
+   production — flagging as a deliberate-or-not call for the team.
+3. **Document the `state-machine.ts` shim deletion in the issue
+   tracker** — the `runUnsafe` helper in
+   `packages/substrate/src/state-machine.ts:39-45` is the one
+   transitional `Effect.runSync` site outside the React boundary. Each
+   of its eight `export function` wrappers is a candidate for
+   conversion to an Effect-returning surface (the schema layer already
+   exposes `*Effect` variants). A tracker issue + dated TODO comment
+   would let later code-style reviews drop the `runUnsafe` carve-out.
+4. **Bring `RawStreamInspector.tsx` to parity with `LabEventStreamPanel.tsx`**
+   — the sibling panel uses `Effect.runFork` + `Fiber.interrupt`; the
+   raw inspector at `apps/lab/src/lab/RawStreamInspector.tsx:42-72`
+   uses an ad-hoc `cancelled` boolean and try/catch. Bringing them to
+   the same shape removes the only non-Effect async path in the lab
+   app and aligns with the React-boundary suppression rationale.
+5. **Replace `Effect.Effect<X, never>` with shorthand
+   `Effect.Effect<X>`** at
+   `packages/substrate/src/choreography/tools.ts:110, 170, 176` for
+   consistency with `wake-stream.ts:3` and `runner.ts:135-143`.
+   Trivial; mentioned for the next sweep.
 
 ## What strict-baseline enforces vs gaps
 
-**Enforced (no follow-up needed):**
-- `Effect.runSync` / `runPromise` / `runFork` confined to documented
-  boundaries (verified above).
-- `try/catch` not used in production for Effect logic.
-- `JSON.parse` → Schema decode (verified separately by Schema review).
-- Effect.gen blocks contain `yield*` (no async/await mixing).
-- `Effect.tap*` used only for side effects.
+R0-R-STRICT-BASELINE locks in the run-boundary discipline (the four
+documented production sites are the *only* `Effect.run*` calls), and
+the post-R0B flatten pass appears to have been thorough — only the
+single `observe` candidate in `operation-client.ts` and the small
+single-yield gens in `LabEventStreamClient.ts` and
+`subscribers.ts:319` remain.
 
-**Not yet caught by automation (gaps):**
-- Single-yield `Effect.gen` collapse to pipe (R0B partial — a few cases
-  remain; a lint rule that flags `Effect.gen` blocks containing exactly
-  one `yield*` and one `return` would close this).
-- Speculative `Effect.suspend` over closed-over-immutable state — there
-  is no automated test for "suspend body has no time-varying free
-  variables", so case-by-case judgement is required. (Generally fine
-  to err on the side of `Effect.suspend`; the cost is one closure
-  allocation per call.)
-- Forbidden `Effect.try` over functions that already return Effects —
-  no rule today; could be a semgrep pattern `Effect.try({ try: () =>
-  $FN(...) })` flagged when `$FN` resolves to `Effect`-returning.
-- Use of the throwing `state-machine.ts` shim from non-shim production
-  code (rather than `./schema/state-machine.ts`) — would benefit from
-  an `eslint-plugin-import/no-restricted-paths` rule once the shim's
-  retirement is on the roadmap.
+What the baseline does not appear to enforce:
 
-Overall verdict: Effect-core idioms are solid post-R0B. The remaining
-items are minor style-consistency wins and one architectural question
-about the choreography re-throw — none change the runtime shape of any
-program.
+- **Preference for `Effect.andThen` over `Effect.flatMap`** for the
+  pipe-friendly two-arity case. The team may legitimately prefer
+  `flatMap` as the only binding operator and `andThen` as forbidden;
+  if so, a comment in the code-style doc would close the loop. If
+  not, an ESLint custom rule could nudge.
+- **Guard against `Effect.try({ try: () => effectReturningFn() })`**
+  — this codebase does not have the bug, but the only
+  `Effect.try` site (`choreography/service.ts:207`) wraps a
+  *compat-shim* function that does throw. A semgrep rule that flags
+  `Effect.try` whose `try` callback's return type is `Effect.Effect<...>`
+  would be cheap insurance against future drift if more compat shims
+  appear.
+- **Single-yield `Effect.gen` flatten** — the one remaining offender
+  is in client code (`operation-client.ts:283-292`); an ESLint pass
+  (the same one that drove R0B) re-run targeting `apps/`/
+  `packages/client/` would catch it.
+- **Single-Tag `Effect.gen` blocks that immediately return** — the
+  pattern `yield* Tag; return ...` is the post-R0B canonical
+  `Effect.map(Tag, fn)` flatten target. Two instances were found
+  (`operation-client.ts:285`, `LabEventStreamClient.ts:45`); a small
+  AST rule against this exact shape would add zero false positives.
+
+Overall posture: idiomatic, conservative, and disciplined at the
+boundaries. The remaining drift is small and well-bounded.
