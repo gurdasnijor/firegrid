@@ -2,7 +2,7 @@
 // firegrid-architecture-boundary.SURFACE_AREA.1
 //
 // Curated substrate root. Raw kernel modules are available only from
-// `@durable-agent-substrate/substrate/kernel`.
+// `@firegrid/substrate/kernel`.
 export {
   EventStream,
   Operation,

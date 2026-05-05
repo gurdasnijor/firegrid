@@ -1,6 +1,6 @@
 // Repository-level test support for embedded Durable Streams server
 // lifecycle. NOT a workspace package; NOT exported from any
-// `@durable-agent-substrate/*` public API. Tests in any package may
+// `@firegrid/*` public API. Tests in any package may
 // import this file by relative path (e.g.
 // `../../../test-support/durable-streams-server.ts`).
 //

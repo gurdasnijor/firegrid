@@ -1,7 +1,7 @@
 feature:
   name: firegrid-package-migration
   product: firegrid
-  description: Define the package, naming, and compatibility migration from durable-agent-substrate host/client vocabulary to Firegrid vocabulary.
+  description: Define the package, naming, and hard cutover from legacy durable-agent-substrate host/client vocabulary to Firegrid vocabulary.
 
 components:
   PACKAGE_NAMES:
@@ -21,9 +21,9 @@ components:
 
   COMPATIBILITY:
     requirements:
-      1: Compatibility exports may be kept temporarily during migration.
-      2: Compatibility exports must point toward the Firegrid names in docs and tests.
-      3: New public docs should prefer Firegrid names over durable-agent-substrate names.
+      1: Active package names, workspace dependencies, imports, and public test examples use Firegrid package names only.
+      2: Legacy durable-agent-substrate package names may appear only in clearly marked historical review or migration provenance.
+      3: New public docs must use Firegrid names instead of legacy durable-agent-substrate names.
       4: Migration must not reintroduce runtime-to-client package dependencies.
 
 constraints:

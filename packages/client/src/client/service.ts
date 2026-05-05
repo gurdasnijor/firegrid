@@ -4,7 +4,7 @@ import {
   ProjectionLive,
   SubstrateProducerLive,
   WorkProducer,
-} from "@durable-agent-substrate/substrate/kernel"
+} from "@firegrid/substrate/kernel"
 import { makeWorkFacet, type SubstrateClientWork } from "./work.ts"
 
 // launchable-substrate-host.CLIENT_SURFACE.1
@@ -23,7 +23,7 @@ export interface SubstrateClientConfig {
   readonly contentType?: string
 }
 
-export interface SubstrateClientService {
+interface SubstrateClientService {
   // launchable-substrate-host.CLIENT_SURFACE.3
   // launchable-substrate-host.CLIENT_SURFACE.6
   readonly work: SubstrateClientWork

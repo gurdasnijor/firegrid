@@ -1,6 +1,6 @@
 feature:
   name: durable-subscribers
-  product: durable-agent-substrate
+  product: firegrid
   description: Define substrate-owned durable subscriber programs that advance existing durable completions without introducing Fireline runtime, agent tool, or final choreography API concepts.
 
 components:

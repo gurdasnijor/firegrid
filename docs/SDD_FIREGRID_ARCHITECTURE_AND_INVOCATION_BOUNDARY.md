@@ -60,7 +60,7 @@ The current package names and APIs blur several concerns:
 2. `host` currently means boot layer, runtime participant, embedded dev server,
    host program runner, and local process helper.
 3. `client.work.declare(...)` exposes kernel vocabulary to application code.
-4. `packages/host` imports `@durable-agent-substrate/client` for `withHost`,
+4. `packages/host` imports `@firegrid/client` for `withHost`,
    creating a backwards dependency from server/runtime infrastructure to the
    app-facing client package.
 5. Dev convenience around the lab has drifted between fixed ports, Turbo
@@ -74,7 +74,7 @@ Preferred conceptual names:
 
 | Current Term | Target Term | Meaning |
 | --- | --- | --- |
-| durable-agent-substrate | Firegrid | Product/fabric name |
+| Firegrid | Firegrid | Product/fabric name |
 | substrate | Firegrid substrate | Durable kernel |
 | client | Firegrid client | App-facing operation messaging/read SDK |
 | host | Firegrid runtime | Server-side participant |
@@ -262,7 +262,7 @@ lab browser -> runtime
 lab browser -> substrate
 ```
 
-The current `packages/host` dependency on `@durable-agent-substrate/client` is a
+The current `packages/host` dependency on `@firegrid/client` is a
 design defect caused by `withHost` trying to provide an app client from the
 runtime package. That convenience should be demoted, moved to tests/dev tooling,
 or replaced by process-level environment injection.
@@ -843,15 +843,14 @@ Typed operation messaging slice:
 Naming migration:
 
 1. Rename docs from Host Program Graph to ordinary runtime Layer composition.
-2. Rename code in a focused compatibility slice:
+2. Rename code in a focused cutover slice:
    - `SubstrateHost` -> `FiregridRuntime`
    - `SubstrateHostBoot` -> `FiregridRuntimeBoot`
    - `HostPrograms` -> Firegrid runtime Layer constructors
    - `HostProgramRuntime` -> `RuntimeContext`
-3. Rename the package from `@durable-agent-substrate/host` to
-   `@firegrid/runtime`.
+3. Keep the runtime package named `@firegrid/runtime`.
 4. Expose runtime process binaries named `firegrid` and `fg`.
-5. Keep compatibility exports temporarily if needed.
+5. Remove compatibility exports from public package surfaces.
 
 ## Decisions
 

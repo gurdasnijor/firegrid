@@ -4,12 +4,12 @@ import {
   OperationHandle,
   OPERATION_ENVELOPE_TAG,
   type OperationEnvelope,
-} from "@durable-agent-substrate/substrate/descriptors"
+} from "@firegrid/substrate/descriptors"
 import {
   type ProjectionReadError,
   type ProjectionWaitTimeout,
   type RunValue,
-} from "@durable-agent-substrate/substrate/kernel"
+} from "@firegrid/substrate/kernel"
 import {
   Data,
   Effect,
@@ -52,7 +52,7 @@ import {
 
 // Substrate runs carry caller input on `data`. To dispatch by
 // Operation.name in runtime handlers, send wraps the encoded input
-// in the shared envelope owned by `@durable-agent-substrate/substrate`
+// in the shared envelope owned by `@firegrid/substrate`
 // (descriptors module) so the encode and decode sides cannot drift.
 const wrap = (operation: string, payload: unknown): OperationEnvelope => ({
   _envelope: OPERATION_ENVELOPE_TAG,

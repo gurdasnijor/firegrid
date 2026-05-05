@@ -1,6 +1,6 @@
 feature:
   name: ergonomic-facade
-  product: durable-agent-substrate
+  product: firegrid
   description: Define the first ergonomic Effect-native facade over the proven substrate kernel without freezing Fireline-specific concepts or low-level completion/claim machinery.
 
 components:

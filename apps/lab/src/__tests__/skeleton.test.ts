@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest"
 // firegrid-package-migration.PACKAGE_NAMES.4
 //
 // Boundary smoke: the lab consumes the same
-// @durable-agent-substrate/client an application would use, and
+// @firegrid/client an application would use, and
 // does NOT import the @firegrid/runtime package. Runtime →  lab and
 // lab → runtime are both architecture defects; the only contract
 // between the two is the stream URL injected by the runtime
@@ -20,8 +20,8 @@ const labPackageJsonPath = resolve(here, "..", "..", "package.json")
 const workspaceYamlPath = resolve(here, "..", "..", "..", "..", "pnpm-workspace.yaml")
 
 describe("firegrid-architecture-boundary.DEPENDENCY_GRAPH — lab app boundary is in place", () => {
-  it("workspace-links @durable-agent-substrate/client", async () => {
-    const client = await import("@durable-agent-substrate/client")
+  it("workspace-links @firegrid/client", async () => {
+    const client = await import("@firegrid/client")
     expect(client).toBeTypeOf("object")
   })
 

@@ -39,6 +39,16 @@ const effectDebtGuardrails = [
 ]
 
 const restrictedInternalPackage = (name, message) => ({ name, message })
+const legacyDurableAgentSubstrateImportPatterns = [
+  {
+    group: [
+      "@durable-agent-substrate/*",
+      "@durable-agent-substrate/*/*",
+    ],
+    message:
+      "firegrid-package-migration.COMPATIBILITY.1: active imports use Firegrid package names only.",
+  },
+]
 const tsOnly = (configs) =>
   configs.map((config) => ({
     ...config,
@@ -454,10 +464,11 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@durable-agent-substrate/types",
+              "@firegrid/types",
               "Do not introduce a shared types package unless the specs explicitly justify it.",
             ),
           ],
+          patterns: legacyDurableAgentSubstrateImportPatterns,
         },
       ],
       "no-restricted-syntax": [
@@ -515,8 +526,8 @@ export default tseslint.config(
         "warn",
         {
           packageNames: [
-            "@durable-agent-substrate/client",
-            "@durable-agent-substrate/substrate",
+            "@firegrid/client",
+            "@firegrid/substrate",
             "@firegrid/runtime",
           ],
         },
@@ -538,7 +549,7 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@durable-agent-substrate/client",
+              "@firegrid/client",
               "Substrate must not depend on the client package.",
             ),
             restrictedInternalPackage(
@@ -550,11 +561,12 @@ export default tseslint.config(
               "Substrate must not depend on the lab app.",
             ),
             restrictedInternalPackage(
-              "@durable-agent-substrate/types",
+              "@firegrid/types",
               "Substrate owns its durable schemas; do not introduce a shared types package.",
             ),
           ],
           patterns: [
+            ...legacyDurableAgentSubstrateImportPatterns,
             {
               group: [
                 "apps/*",
@@ -590,11 +602,12 @@ export default tseslint.config(
               "Client must not depend on the lab app.",
             ),
             restrictedInternalPackage(
-              "@durable-agent-substrate/types",
+              "@firegrid/types",
               "Client should reuse substrate-owned schemas directly.",
             ),
           ],
           patterns: [
+            ...legacyDurableAgentSubstrateImportPatterns,
             {
               group: [
                 "apps/*",
@@ -622,7 +635,7 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@durable-agent-substrate/substrate",
+              "@firegrid/substrate",
               "Lab UI must compose through the client package; substrate is the durable kernel.",
             ),
             restrictedInternalPackage(
@@ -630,11 +643,12 @@ export default tseslint.config(
               "Lab UI must not depend on the Firegrid runtime; the only contract is the stream URL injected by the runtime process.",
             ),
             restrictedInternalPackage(
-              "@durable-agent-substrate/types",
+              "@firegrid/types",
               "Lab UI must not depend on a shared types package.",
             ),
           ],
           patterns: [
+            ...legacyDurableAgentSubstrateImportPatterns,
             {
               group: [
                 "packages/*",
@@ -665,7 +679,7 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@durable-agent-substrate/client",
+              "@firegrid/client",
               "Runtime → client is an architecture defect; the runtime must not import the app-facing client package.",
             ),
             restrictedInternalPackage(
@@ -673,11 +687,12 @@ export default tseslint.config(
               "Runtime must not depend on the lab app.",
             ),
             restrictedInternalPackage(
-              "@durable-agent-substrate/types",
+              "@firegrid/types",
               "Runtime owns its lifecycle/config types only; do not introduce a shared types package.",
             ),
           ],
           patterns: [
+            ...legacyDurableAgentSubstrateImportPatterns,
             {
               group: [
                 "apps/*",
@@ -707,7 +722,7 @@ export default tseslint.config(
     // Two layers of enforcement:
     //   • `no-restricted-imports` bans named imports of every state-
     //     machine builder (and `DurableWaits`) from
-    //     `@durable-agent-substrate/substrate`.
+    //     `@firegrid/substrate`.
     //   • `no-restricted-syntax` bans default and namespace imports
     //     from the substrate root for this file. A namespace import
     //     would otherwise let the file reach the same banned builders
@@ -722,7 +737,7 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@durable-agent-substrate/client",
+              "@firegrid/client",
               "Runtime → client is an architecture defect.",
             ),
             restrictedInternalPackage(
@@ -730,11 +745,11 @@ export default tseslint.config(
               "Runtime must not depend on the lab app.",
             ),
             restrictedInternalPackage(
-              "@durable-agent-substrate/types",
+              "@firegrid/types",
               "Runtime owns its lifecycle/config types only.",
             ),
             {
-              name: "@durable-agent-substrate/substrate",
+              name: "@firegrid/substrate",
               importNames: [
                 "completeRun",
                 "failRun",
@@ -751,6 +766,7 @@ export default tseslint.config(
             },
           ],
           patterns: [
+            ...legacyDurableAgentSubstrateImportPatterns,
             {
               group: [
                 "apps/*",
@@ -773,15 +789,15 @@ export default tseslint.config(
         ...effectDebtGuardrails,
         {
           selector:
-            "ImportDeclaration[source.value='@durable-agent-substrate/substrate'] > ImportNamespaceSpecifier",
+            "ImportDeclaration[source.value='@firegrid/substrate'] > ImportNamespaceSpecifier",
           message:
-            "EventStream materializer must not use namespace imports from @durable-agent-substrate/substrate; namespace imports defeat the named-import authority guard. Import the specific names you need.",
+            "EventStream materializer must not use namespace imports from @firegrid/substrate; namespace imports defeat the named-import authority guard. Import the specific names you need.",
         },
         {
           selector:
-            "ImportDeclaration[source.value='@durable-agent-substrate/substrate'] > ImportDefaultSpecifier",
+            "ImportDeclaration[source.value='@firegrid/substrate'] > ImportDefaultSpecifier",
           message:
-            "EventStream materializer must not use a default import from @durable-agent-substrate/substrate.",
+            "EventStream materializer must not use a default import from @firegrid/substrate.",
         },
       ],
     },

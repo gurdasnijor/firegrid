@@ -4,7 +4,7 @@ import {
   type CompletionValue,
   type ProjectionSnapshot,
   type SubstrateStreamDB,
-} from "@durable-agent-substrate/substrate/kernel"
+} from "@firegrid/substrate/kernel"
 import {
   Cause,
   Clock,

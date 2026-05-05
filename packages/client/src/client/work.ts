@@ -7,7 +7,7 @@ import {
   rebuildProjection,
   type ProjectionQuery,
   type RunValue,
-} from "@durable-agent-substrate/substrate/kernel"
+} from "@firegrid/substrate/kernel"
 
 // launchable-substrate-host.CLIENT_SURFACE.1
 // launchable-substrate-host.CLIENT_SURFACE.3
@@ -29,13 +29,13 @@ import {
 // `RunValue` (or undefined when no run row exists yet for the id) — the
 // substrate's authoritative run shape, surfaced through the client root
 // for ergonomic consumption without re-exporting kernel modules.
-export type WorkObservation = RunValue | undefined
+type WorkObservation = RunValue | undefined
 
 // launchable-substrate-host.CLIENT_SURFACE.9
 // Snapshot / stream / until are explicit operations: snapshot is a
 // one-shot read; stream is a live subscription; until composes the
 // stream with a predicate.
-export interface SubstrateWorkHandle {
+interface SubstrateWorkHandle {
   readonly snapshot: () => Effect.Effect<WorkObservation, ProjectionReadError>
   readonly stream: () => Stream.Stream<WorkObservation, ProjectionReadError>
   readonly until: (
@@ -57,7 +57,7 @@ export interface DeclareWorkInput {
   readonly idempotencyKey?: string
 }
 
-export interface DeclareWorkResult {
+interface DeclareWorkResult {
   readonly workId: string
 }
 

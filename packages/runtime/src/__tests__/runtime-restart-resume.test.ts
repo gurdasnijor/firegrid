@@ -3,11 +3,11 @@ import {
   EventStream,
   makeEventStreamStateRow,
   type EventStreamStateRow,
-} from "@durable-agent-substrate/substrate/descriptors"
+} from "@firegrid/substrate/descriptors"
 import {
   createPendingCompletion,
   rebuildProjection,
-} from "@durable-agent-substrate/substrate/kernel"
+} from "@firegrid/substrate/kernel"
 import { Data, Deferred, Duration, Effect, Schedule, Schema } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {

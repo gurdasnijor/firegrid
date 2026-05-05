@@ -1,6 +1,6 @@
 feature:
   name: semantic-producer
-  product: durable-agent-substrate
+  product: firegrid
   description: Define semantic substrate producer operations, not a runtime launcher, adapter handle, higher-level application client, or raw stream append API.
 
 components:

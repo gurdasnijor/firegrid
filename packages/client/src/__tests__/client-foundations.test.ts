@@ -25,7 +25,7 @@ describe("firegrid-remediation-hardening.PUBLIC_SURFACES — client root exposes
     expect(new Set(Object.keys(ClientSurface))).toEqual(allowed)
   })
 
-  it("the @durable-agent-substrate/client root surface contains no banned identifier vocabulary", () => {
+  it("the @firegrid/client root surface contains no banned identifier vocabulary", () => {
     const banned = [
       // raw stream / DSS APIs
       "DurableStream",

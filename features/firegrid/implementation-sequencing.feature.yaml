@@ -1,6 +1,6 @@
 feature:
   name: implementation-sequencing
-  product: durable-agent-substrate
+  product: firegrid
   description: Define the execution order for building the durable substrate without duplicating feature ownership or testing Durable Streams itself.
 
 components:

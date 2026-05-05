@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest"
 // Source-level guard: the browser-side lab surface (every .ts and
 // .tsx file under apps/lab/src) must not contain a workspace
 // import of @firegrid/runtime or
-// @durable-agent-substrate/substrate. The ESLint boundary is the
+// @firegrid/substrate. The ESLint boundary is the
 // authoritative check; this test is a fast in-vitest backstop so
 // regressions surface even if the lint step is skipped.
 
@@ -53,14 +53,14 @@ import {
 } from "node:fs"
 
 describe("lab/src browser bundle — no runtime/substrate workspace imports", () => {
-  it("firegrid-architecture-boundary.DEPENDENCY_GRAPH.4 — no source file under apps/lab/src imports @firegrid/runtime or @durable-agent-substrate/substrate", () => {
+  it("firegrid-architecture-boundary.DEPENDENCY_GRAPH.4 — no source file under apps/lab/src imports @firegrid/runtime or @firegrid/substrate", () => {
     const banned = [
       '@firegrid/runtime"',
       "'@firegrid/runtime'",
       "@firegrid/runtime`",
-      '@durable-agent-substrate/substrate"',
-      "'@durable-agent-substrate/substrate'",
-      "@durable-agent-substrate/substrate`",
+      '@firegrid/substrate"',
+      "'@firegrid/substrate'",
+      "@firegrid/substrate`",
     ]
     const files = collectSourceFiles(srcRoot)
     expect(files.length).toBeGreaterThan(0)

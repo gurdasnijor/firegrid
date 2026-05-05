@@ -9,7 +9,7 @@ the current session.
 Repo path:
 
 ```sh
-/Users/gnijor/gurdasnijor/durable-agent-substrate
+/Users/gnijor/gurdasnijor/firegrid
 ```
 
 Remote:
@@ -18,9 +18,7 @@ Remote:
 github.com/gurdasnijor/firegrid
 ```
 
-The remote was renamed from `durable-agent-substrate`; Git may still print a
-repository-moved warning on push/pull. The local directory name is still
-`durable-agent-substrate`.
+The remote and local checkout now use the Firegrid repository name.
 
 Current main:
 
@@ -119,13 +117,9 @@ Runtime lab / integration validation specs:
 - `features/durable-agent-runtime-lab/fireline-firepixel-adapter-fit.feature.yaml`
 - `features/durable-agent-runtime-lab/runtime-stress-and-restart.feature.yaml`
 
-Legacy substrate kernel specs remain active:
+Substrate kernel specs are consolidated under Firegrid:
 
-- `features/durable-agent-substrate/*.feature.yaml`
-
-Do not move/rename old specs casually. The current guidance is to keep legacy
-specs stable for Acai traceability and use `features/firegrid/` for new Firegrid
-work.
+- `features/firegrid/*.feature.yaml`
 
 ## Package Map
 
@@ -138,16 +132,12 @@ Current workspace packages:
   runtime Layers.
 - `apps/lab` - `@firegrid/lab`; browser lab/inspector app.
 
-Naming is mid-migration:
+Naming is now on Firegrid package identities:
 
-- Runtime is already `@firegrid/runtime`.
+- Runtime is `@firegrid/runtime`.
 - Lab is `@firegrid/lab`.
-- Client and substrate still use old package names:
-  `@durable-agent-substrate/client` and
-  `@durable-agent-substrate/substrate`.
-
-The desired direction is Firegrid vocabulary, but package migration is a
-separate spec track. Do not do a broad rename without a focused migration plan.
+- Client is `@firegrid/client`.
+- Substrate is `@firegrid/substrate`.
 
 ## Architecture Boundaries
 
@@ -158,13 +148,13 @@ The most important boundary decisions:
 - Browser-safe client EventStream APIs live under:
 
   ```ts
-  @durable-agent-substrate/client/firegrid
+  @firegrid/client/firegrid
   ```
 
 - Browser-safe descriptor imports use:
 
   ```ts
-  @durable-agent-substrate/substrate/descriptors
+  @firegrid/substrate/descriptors
   ```
 
 - The substrate root barrel is not browser-safe; it pulls Node/server-oriented
@@ -240,7 +230,7 @@ Already landed:
 - `FiregridClient.events`
 - `Firegrid.handler`
 - `Firegrid.eventStream`
-- Browser-safe `@durable-agent-substrate/client/firegrid`
+- Browser-safe `@firegrid/client/firegrid`
 - Lab typed EventStream workbench
 - Runtime `firegrid` / `fg` bin in `packages/runtime`
 - Repo shortcut `pnpm dev:lab`
@@ -315,8 +305,8 @@ duplicate long local runs unless you need to reproduce/debug.
 Useful targeted checks:
 
 ```sh
-pnpm --filter @durable-agent-substrate/substrate test
-pnpm --filter @durable-agent-substrate/client test
+pnpm --filter @firegrid/substrate test
+pnpm --filter @firegrid/client test
 pnpm --filter @firegrid/runtime test
 pnpm --filter @firegrid/lab test
 pnpm --filter @firegrid/lab build:web
@@ -437,7 +427,7 @@ rg -n 'firegrid.event|EVENT_STREAM_ENVELOPE_TAG|makeEventStreamStateRow|isEventS
 Find browser-safety boundaries:
 
 ```sh
-rg -n 'client/firegrid|substrate/descriptors|SubstrateClientLive|@firegrid/runtime|@durable-agent-substrate/substrate' packages/client apps/lab eslint.config.js
+rg -n 'client/firegrid|substrate/descriptors|SubstrateClientLive|@firegrid/runtime|@firegrid/substrate' packages/client apps/lab eslint.config.js
 ```
 
 Find runtime process code:

@@ -3,7 +3,7 @@ import {
   eventStreamEnvelopeFromStateRow,
   isEventStreamEnvelope,
   type EventStream,
-} from "@durable-agent-substrate/substrate/descriptors"
+} from "@firegrid/substrate/descriptors"
 import { Cause, Data, Effect, Option, type ParseResult, Schema, type Scope, Stream } from "effect"
 import {
   RuntimeContext,
@@ -30,7 +30,7 @@ import {
 // Authority (SCHEMA_OWNERSHIP.2): the materializer never writes
 // substrate authority rows. ESLint enforces this at the file level
 // via a `no-restricted-imports.importNames` block on
-// `@durable-agent-substrate/substrate` covering the state-machine
+// `@firegrid/substrate` covering the state-machine
 // builders.
 //
 // Hot-path posture: a single long-lived `DurableStream.stream({ live:

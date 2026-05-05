@@ -118,12 +118,12 @@ describe("runtime-lab-inspector.NO_PRIVILEGED_LAB.2 — typed workbench does not
     const descriptor = readFileSync(resolve(labRoot, "lab-events.ts"), "utf8")
     const combined = `${clientHelper}\n${panel}\n${descriptor}`
 
-    expect(combined).toContain("@durable-agent-substrate/client/firegrid")
+    expect(combined).toContain("@firegrid/client/firegrid")
     expect(combined).toContain("EventStreamClientLive")
     expect(combined).not.toContain("@firegrid/runtime")
-    expect(combined).not.toContain("@durable-agent-substrate/substrate")
-    expect(combined).not.toContain("@durable-agent-substrate/client\"")
-    expect(combined).not.toContain("'@durable-agent-substrate/client'")
+    expect(combined).not.toContain("@firegrid/substrate")
+    expect(combined).not.toContain("@firegrid/client\"")
+    expect(combined).not.toContain("'@firegrid/client'")
     expect(combined).not.toContain("@durable-streams/client")
     expect(combined).not.toContain(".append(")
     expect(combined).not.toContain("work.declare")

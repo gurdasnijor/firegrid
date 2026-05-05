@@ -9,7 +9,7 @@ import {
   type Operation,
   type RunValue,
   type SubstrateStreamDB,
-} from "@durable-agent-substrate/substrate/kernel"
+} from "@firegrid/substrate/kernel"
 import {
   Cause,
   Data,

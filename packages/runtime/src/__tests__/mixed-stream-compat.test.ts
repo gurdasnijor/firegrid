@@ -5,11 +5,11 @@ import {
   Operation,
   OPERATION_ENVELOPE_TAG,
   type EventStreamStateRow,
-} from "@durable-agent-substrate/substrate/descriptors"
+} from "@firegrid/substrate/descriptors"
 import {
   rebuildProjection,
   startRun,
-} from "@durable-agent-substrate/substrate/kernel"
+} from "@firegrid/substrate/kernel"
 import {
   Data,
   Deferred,

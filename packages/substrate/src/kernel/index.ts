@@ -2,7 +2,7 @@
 // firegrid-remediation-hardening.PUBLIC_SURFACES.5
 //
 // Explicit kernel subpath for substrate internals. Public application-facing
-// roots should not import from here; runtime internals, compatibility adapters,
+// roots should not import from here; runtime internals, focused adapters,
 // and tests that need raw durable authority APIs may.
 
 export * from "../descriptors/index.ts"

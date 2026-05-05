@@ -1,6 +1,6 @@
 feature:
   name: effect-native-api
-  product: durable-agent-substrate
+  product: firegrid
   description: Define the substrate public API as Effect schemas, services, layers, and scoped operator programs rather than a framework registry.
 
 components:

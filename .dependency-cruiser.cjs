@@ -96,7 +96,7 @@ module.exports = {
       to: {
         path: "^packages/substrate/src/(state-machine|operator|operator-errors|producer|waits|subscribers|stream|projection|retained-records|internal-claim)\\.ts$",
       },
-      comment: "Use @durable-agent-substrate/substrate/kernel subpath, not deep imports.",
+      comment: "Use @firegrid/substrate/kernel subpath, not deep imports.",
     },
     {
       name: "no-orphans",

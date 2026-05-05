@@ -2,8 +2,8 @@ import {
   completeRunEffect,
   IllegalRunTransition,
   type CompletionValue,
-} from "@durable-agent-substrate/substrate/kernel"
-import { Operation } from "@durable-agent-substrate/substrate"
+} from "@firegrid/substrate/kernel"
+import { Operation } from "@firegrid/substrate"
 import { Deferred, Effect, Fiber, Ref, Schema } from "effect"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"

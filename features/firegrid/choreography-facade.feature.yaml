@@ -1,6 +1,6 @@
 feature:
   name: choreography-facade
-  product: durable-agent-substrate
+  product: firegrid
   description: Define the Effect-native choreography facade and agent tool bindings for durable sleep, projection waits, scheduled work, and externally resolved waits without expanding substrate authority concepts.
 
 components:

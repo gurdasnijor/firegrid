@@ -6,12 +6,12 @@ import {
   SubstrateProducerLive,
   WorkProducer,
   rebuildProjection,
-} from "@durable-agent-substrate/substrate/kernel"
+} from "@firegrid/substrate/kernel"
 import {
   SubstrateClient,
   SubstrateClientLive,
-  type DeclareWorkInput,
-} from "../compat/index.ts"
+} from "../client/service.ts"
+import type { DeclareWorkInput } from "../client/work.ts"
 import {
   createSubstrateStream,
   startTestServer,

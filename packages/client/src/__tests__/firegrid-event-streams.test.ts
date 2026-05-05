@@ -11,7 +11,7 @@ import {
   EVENT_STREAM_ROW_TYPE,
   isEventStreamEnvelope,
   isEventStreamStateRow,
-} from "@durable-agent-substrate/substrate/descriptors"
+} from "@firegrid/substrate/descriptors"
 import {
   createSubstrateStream,
   startTestServer,

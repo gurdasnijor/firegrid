@@ -13,7 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@durable-agent-substrate/client": "workspace:*",
+    "@firegrid/client": "workspace:*",
     "@durable-streams/client": "^0.2.3",
     "effect": "^3.18.0",
     "react": "^18.3.1",

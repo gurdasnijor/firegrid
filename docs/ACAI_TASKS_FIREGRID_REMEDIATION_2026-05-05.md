@@ -134,7 +134,7 @@ Substrate root should not export raw kernel internals as default public API.
 ACIDs:
 
 - `firegrid-remediation-hardening.PUBLIC_SURFACES.1`: The app-facing client root exports Firegrid operation, EventStream, client, error, and handle vocabulary only.
-- `firegrid-remediation-hardening.PUBLIC_SURFACES.2`: Legacy SubstrateClient, work declaration, low-level kernel rows, row builders, wire envelope constants, and raw stream helpers are exported only from explicit compatibility or kernel subpaths.
+- `firegrid-remediation-hardening.PUBLIC_SURFACES.2`: Legacy SubstrateClient and work declaration APIs are not exported from public package surfaces; low-level kernel rows, row builders, wire envelope constants, and raw stream helpers remain limited to explicit kernel or descriptor subpaths.
 - `firegrid-remediation-hardening.PUBLIC_SURFACES.3`: FiregridClient has one Context Tag identity, one service shape, and one configuration shape across the root client and browser-safe client surfaces.
 - `firegrid-remediation-hardening.PUBLIC_SURFACES.4`: Browser-safe client subpaths cannot type-check as a full operation-capable FiregridClient unless they provide every full client method.
 - `firegrid-remediation-hardening.PUBLIC_SURFACES.5`: The substrate package root exports only curated descriptor, schema, facade, EventStream, and choreography surfaces; raw kernel modules live behind an explicit kernel subpath.
@@ -286,14 +286,14 @@ Review findings: package migration, B6.
 
 ACIDs:
 
-- `firegrid-remediation-hardening.MIGRATION_BOUNDARIES.1`: Package renames to Firegrid names preserve temporary compatibility exports while new docs and tests prefer Firegrid vocabulary.
+- `firegrid-remediation-hardening.MIGRATION_BOUNDARIES.1`: Package renames to Firegrid names remove legacy package/import paths while preserving durable wire compatibility.
 - `firegrid-package-migration.PACKAGE_NAMES.1`: The substrate package target name is `@firegrid/substrate`.
 - `firegrid-package-migration.PACKAGE_NAMES.2`: The client package target name is `@firegrid/client`.
 - `firegrid-package-migration.PACKAGE_NAMES.3`: The runtime package target name is `@firegrid/runtime`.
 - `firegrid-package-migration.PACKAGE_NAMES.4`: The lab app workspace target name is `@firegrid/lab`.
-- `firegrid-package-migration.COMPATIBILITY.1`: Compatibility exports may be kept temporarily during migration.
-- `firegrid-package-migration.COMPATIBILITY.2`: Compatibility exports must point toward the Firegrid names in docs and tests.
-- `firegrid-package-migration.COMPATIBILITY.3`: New public docs should prefer Firegrid names over durable-agent-substrate names.
+- `firegrid-package-migration.COMPATIBILITY.1`: Active package names, workspace dependencies, imports, and public test examples use Firegrid package names only.
+- `firegrid-package-migration.COMPATIBILITY.2`: Legacy durable-agent-substrate package names may appear only in clearly marked historical review or migration provenance.
+- `firegrid-package-migration.COMPATIBILITY.3`: New public docs must use Firegrid names instead of legacy durable-agent-substrate names.
 - `firegrid-package-migration.COMPATIBILITY.4`: Migration must not reintroduce runtime-to-client package dependencies.
 
 Likely files:
@@ -306,7 +306,7 @@ Likely files:
 
 Acceptance checks:
 
-- Old imports work only through deliberate compatibility paths.
+- Old package imports are removed from active code and package exports.
 - New docs/tests use `@firegrid/client` and `@firegrid/substrate`.
 - Boundary tests prove runtime does not import client.
 

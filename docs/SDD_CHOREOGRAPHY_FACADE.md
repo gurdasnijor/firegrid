@@ -191,7 +191,7 @@ boundary.
 
 ```ts
 import { Duration, Effect } from "effect"
-import { Choreography } from "@durable-agent-substrate/substrate"
+import { Choreography } from "@firegrid/substrate"
 
 const program = Effect.gen(function* () {
   yield* Choreography.sleep(Duration.seconds(5))
