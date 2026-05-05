@@ -59,6 +59,7 @@ components:
       2: Pattern-based static checks identify repetitions of named structural shapes including durable-stream append wrappers, scoped substrate-database acquisition, retained-row reads, and authoritative-run lookups.
       3: Duplication tooling configuration excludes test fixtures and dist output and stays under repo root configuration files.
       4: Baseline duplication counts are tracked in the repository so the threshold can be ratcheted down by remediation slices rather than reset.
+      5: Duplication baselines are ratcheted to the lowest currently justified finding count, with zero findings preferred when structural duplication can be removed.
 
   STATIC_QUALITY:
     requirements:
@@ -68,6 +69,9 @@ components:
       4: Available @effect/eslint-plugin rules that fit this codebase's conventions are enabled with explicit per-package scope.
       5: General-purpose dependency hygiene rules are enforced by dependency-cruiser for unresolvable modules, undeclared package dependencies, deprecated dependencies, test-file imports, and duplicate dependency declarations.
       6: Structural Semgrep rules use stable package-source path scopes, shared ignores, machine-readable metadata, and regression fixtures that run in CI.
+      7: ESLint and Semgrep quality gates fail on warnings or findings rather than carrying warning-only hygiene debt.
+      8: Dependency-cruiser hygiene findings for deprecated dependencies, duplicate dependency declarations, and unexplained orphan modules fail CI.
+      9: Dead-code detection is held at zero current findings rather than allowing a nonzero baseline.
 
   TEST_GUARDRAILS:
     requirements:

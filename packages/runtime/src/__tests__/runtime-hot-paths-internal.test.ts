@@ -192,11 +192,12 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
 
 describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY — runtime source guardrails", () => {
   it("firegrid-remediation-hardening.EFFECT_CONSISTENCY.3, firegrid-runtime-process.RUNTIME_HOT_PATH.1 — runner and operation handler use scoped Stream pipelines instead of ad hoc latch loops", () => {
+    expect(executableSource("wake-stream.ts")).toContain("Stream.asyncScoped")
     for (const source of [
       executableSource("runner.ts"),
       executableSource("operation-handler.ts"),
     ]) {
-      expect(source).toContain("Stream.asyncScoped")
+      expect(source).toContain("wakeStream")
       expect(source).not.toContain("Effect.makeLatch")
       expect(source).not.toContain("Effect.forever")
       expect(source).not.toContain("Effect.race(")

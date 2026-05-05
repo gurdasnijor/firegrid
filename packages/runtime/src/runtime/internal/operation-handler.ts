@@ -20,6 +20,7 @@ import {
   type Scope,
 } from "effect"
 import { RuntimeContext, type RuntimeContextService } from "../runtime-context.ts"
+import { wakeStream } from "./wake-stream.ts"
 
 // firegrid-operation-messaging.RUNTIME_HANDLERS.1
 // firegrid-operation-messaging.RUNTIME_HANDLERS.4
@@ -184,20 +185,12 @@ export const runOperationDispatchLoopWithAcquire = <
           )
         })
 
-      const wakes = Stream.asyncScoped<void>(
-        (emit) =>
-          Effect.acquireRelease(
-            Effect.sync(() => {
-              const wake = () => {
-                void emit.single(undefined)
-              }
-              const sub = db.collections.runs.subscribeChanges(wake)
-              wake()
-              return () => sub.unsubscribe()
-            }),
-            (finalize) => Effect.sync(() => finalize()),
-          ),
-        { bufferSize: 1, strategy: "sliding" },
+      const wakes = wakeStream((wake) =>
+        Effect.sync(() => {
+          const sub = db.collections.runs.subscribeChanges(wake)
+          wake()
+          return Effect.sync(() => sub.unsubscribe())
+        }),
       )
 
       return yield* wakes.pipe(

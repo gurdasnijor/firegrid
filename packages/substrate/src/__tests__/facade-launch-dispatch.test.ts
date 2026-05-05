@@ -58,7 +58,9 @@ const kernelRunRecorder =
     Effect.gen(function* () {
       const snap = yield* Effect.tryPromise(() => rebuildProjection({ url: streamUrl }))
       const run = snap.runs.get(item.runId)
-      if (run === undefined) return yield* Effect.die(`run ${item.runId} not found`)
+      if (run === undefined) {
+        return yield* Effect.dieMessage(`run ${item.runId} not found`)
+      }
       const stream = new DurableStream({ url: streamUrl, contentType: "application/json" })
       const event = Exit.match(exit, {
         onSuccess: (result) => completeRun(run, { result }),

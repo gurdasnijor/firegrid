@@ -26,12 +26,15 @@ export const layer = <Name extends string, S extends StreamStateDefinition>(
   Context.Tag.Identifier<typeof plane.Producer> | Context.Tag.Identifier<typeof plane.Projection>,
   PlaneProjectionReadError
 > => {
+  const baseConfig = {
+    planeName: plane.name,
+    streamUrl: cfg.streamUrl,
+    ...(cfg.contentType !== undefined ? { contentType: cfg.contentType } : {}),
+  }
   const producerLayer = Layer.succeed(
     plane.Producer,
     makePlaneProducer({
-      planeName: plane.name,
-      streamUrl: cfg.streamUrl,
-      ...(cfg.contentType !== undefined ? { contentType: cfg.contentType } : {}),
+      ...baseConfig,
       collectionsByType: collectionsByType(plane.state),
     }),
   )
@@ -39,17 +42,13 @@ export const layer = <Name extends string, S extends StreamStateDefinition>(
     plane.Projection,
     Effect.map(
       acquirePlaneDb({
-        planeName: plane.name,
-        streamUrl: cfg.streamUrl,
-        ...(cfg.contentType !== undefined ? { contentType: cfg.contentType } : {}),
+        ...baseConfig,
         state: plane.state,
       }),
       (db) =>
         buildPlaneProjectionFromDb(
           {
-            planeName: plane.name,
-            streamUrl: cfg.streamUrl,
-            ...(cfg.contentType !== undefined ? { contentType: cfg.contentType } : {}),
+            ...baseConfig,
             state: plane.state,
           },
           db,

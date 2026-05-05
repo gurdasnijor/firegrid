@@ -1,3 +1,4 @@
+# firegrid-remediation-hardening.STATIC_QUALITY.7
 rules:
   - id: firegrid-tryPromise-stream-append
     languages: [typescript]

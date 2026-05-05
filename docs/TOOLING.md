@@ -74,7 +74,9 @@ Run the complete review gate:
 pnpm verify
 ```
 
-This is the canonical ready-for-review gate for agent work. cmux review-request payloads must include `pnpm verify: PASS` before asking for approval.
+This is the canonical ready-for-review gate for agent work. CI is the authoritative full-suite runner; cmux review-request payloads should report CI status and any targeted local checks used to debug concrete failures. Local agents should use targeted
+checks to debug concrete failures unless the coordinator explicitly asks for a
+full local `pnpm verify`.
 
 Run duplicate-token detection:
 
@@ -82,7 +84,7 @@ Run duplicate-token detection:
 pnpm run lint:dup
 ```
 
-This runs jscpd over `packages/*/src` and `apps/*/src` and compares the duplicated-line count against the tracked threshold in `.jscpd.json`. CI fails when a change introduces duplicated lines above that baseline.
+This runs jscpd over `packages/*/src` and `apps/*/src` and compares the duplicated-line count against the tracked threshold in `.jscpd.json`. The threshold is currently zero, so CI fails on any production-source token clone.
 
 Recompute the duplication baseline:
 
@@ -90,7 +92,7 @@ Recompute the duplication baseline:
 pnpm run lint:dup:baseline
 ```
 
-This is intended for remediation slices such as R4 after helper extractions reduce duplication. The script refuses to raise the threshold automatically; lowering the count is a ratchet, while accepting a higher count requires an explicit config edit.
+This is intended for remediation slices after helper extractions reduce duplication. The script refuses to raise the threshold automatically; accepting any nonzero count requires an explicit config edit and coordinator review.
 
 Run dead-code detection:
 
@@ -98,13 +100,13 @@ Run dead-code detection:
 pnpm run lint:dead
 ```
 
-This runs knip and compares the current unused-export, unused-file, unused-dependency, and unlisted-binary finding count against `.knip-baseline.json`. Recompute the baseline after intentional cleanup with:
+This runs knip and requires the current unused-export, unused-file, unused-dependency, and unlisted-binary finding count to remain zero. Recompute the tracked report after intentional cleanup with:
 
 ```sh
 pnpm run lint:dead:baseline
 ```
 
-The baseline script refuses to ratchet upward automatically. New knip findings should be fixed when they are real, or justified in the PR description when they are intentional tool or fixture shapes.
+The check script refuses any nonzero baseline or current finding count. New knip findings should be fixed when they are real, or explicitly reviewed as intentional tool or fixture shapes before adding an ignore.
 
 Run transitive dependency boundary checks:
 
@@ -134,7 +136,7 @@ Test the Semgrep ruleset fixtures:
 pnpm run lint:semgrep:test
 ```
 
-`pnpm verify` and CI run this fixture test before the production Semgrep scan so rule refinements cannot silently stop matching. Each rule should carry `metadata` with the review/source ACID, category, and canonical helper path. New rules should start at a visible non-blocking severity while false positives are triaged, then move to blocking severity only after the codebase is clean and the rule has regression fixtures.
+`pnpm verify` and CI run this fixture test before the production Semgrep scan so rule refinements cannot silently stop matching. Each rule should carry `metadata` with the review/source ACID, category, and canonical helper path. Production Semgrep runs with `--error`; new rules need fixtures and clean path scopes before entering the blocking scan.
 
 The Effect ESLint plugin currently ships only two rules in `@effect/eslint-plugin@0.3.2`: `dprint` and `no-import-from-barrel-package`. `dprint` conflicts with this repo's existing stylistic formatter stack, so only `@effect/no-import-from-barrel-package` is enabled. If the plugin adds or changes rules during an upgrade, audit the shipped rule list before enabling anything new.
 
@@ -144,7 +146,7 @@ To add a semgrep rule, add a focused rule to `.semgrep.yml`, prefer repo-root `.
 pnpm run lint:semgrep:test
 ```
 
-To add a dependency-cruiser rule, add it to `.dependency-cruiser.cjs`, keep the severity at `warn` while triaging existing debt, and promote to `error` once the rule is clean enough to gate CI.
+To add a dependency-cruiser rule, add it to `.dependency-cruiser.cjs` and keep CI strict once the rule lands. Temporary warning-only triage requires an explicit remediation note and a follow-up to promote the rule.
 
 To add a knip rule or exception, prefer making the code reachable or dropping unused exports first. Use `knip.json` ignores only for intentional tool fixtures, external binaries, or dependencies invoked through scripts that knip cannot statically infer.
 

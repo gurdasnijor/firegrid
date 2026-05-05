@@ -19,6 +19,12 @@ export const RunState = Schema.Literal(
 )
 export type RunState = Schema.Schema.Type<typeof RunState>
 
+const DurableTerminalFields = {
+  result: Schema.optional(Schema.Unknown),
+  error: Schema.optional(Schema.Unknown),
+  terminalReason: Schema.optional(Schema.Unknown),
+}
+
 // awakeables-and-runs.RUN.1 — value shape only; transition enforcement is Slice 2.
 // launchable-substrate-host.CLIENT_SURFACE.11
 // launchable-substrate-host.CLIENT_SURFACE.12
@@ -32,9 +38,7 @@ export const RunValue = Schema.Struct({
   state: RunState,
   blockedOnCompletionId: Schema.optional(Schema.String),
   data: Schema.optional(Schema.Unknown),
-  result: Schema.optional(Schema.Unknown),
-  error: Schema.optional(Schema.Unknown),
-  terminalReason: Schema.optional(Schema.Unknown),
+  ...DurableTerminalFields,
 })
 export type RunValue = Schema.Schema.Type<typeof RunValue>
 
@@ -72,9 +76,7 @@ export const CompletionValue = Schema.Struct({
   kind: CompletionKind,
   state: CompletionState,
   data: Schema.optional(Schema.Unknown),
-  result: Schema.optional(Schema.Unknown),
-  error: Schema.optional(Schema.Unknown),
-  terminalReason: Schema.optional(Schema.Unknown),
+  ...DurableTerminalFields,
 })
 export type CompletionValue = Schema.Schema.Type<typeof CompletionValue>
 
