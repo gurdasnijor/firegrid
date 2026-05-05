@@ -27,10 +27,11 @@
     "lint:deps": "depcruise --config .dependency-cruiser.cjs packages",
     "lint:dup": "node scripts/jscpd-check-baseline.mjs",
     "lint:dup:baseline": "node scripts/jscpd-update-baseline.mjs",
-    "lint:semgrep": "semgrep --config .semgrep.yml --exclude '**/__tests__/**' --exclude '**/*.test.ts' --exclude '**/*.test.tsx' packages/*/src",
+    "lint:semgrep": "semgrep --config .semgrep.yml .",
+    "lint:semgrep:test": "semgrep --test --config .semgrep.yml semgrep-tests/dup-detection.ts",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:semgrep && pnpm run test"
+    "verify": "pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:semgrep:test && pnpm run lint:semgrep && pnpm run test"
   },
   "devDependencies": {
     "@durable-streams/server": "^0.3.1",

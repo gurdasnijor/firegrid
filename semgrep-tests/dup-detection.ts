@@ -1,9 +1,14 @@
 import { DurableStream } from "@durable-streams/client"
-import { Effect } from "effect"
+import { Effect, pipe } from "effect"
 import { acquireSubstrateDb, openSubstrateDb } from "../packages/substrate/src/stream.ts"
 import { readRetainedRunRecords } from "../packages/substrate/src/retained-records.ts"
 
 const stream = new DurableStream({ url: "memory://test" })
+declare const appendChange: (
+  url: string,
+  contentType: string,
+  mapError: (cause: unknown) => Error,
+) => (event: unknown) => Effect.Effect<void, Error>
 
 // ruleid: firegrid-tryPromise-stream-append
 Effect.tryPromise({
@@ -12,11 +17,10 @@ Effect.tryPromise({
 })
 
 // ok: firegrid-tryPromise-stream-append
-const appendChange = (event: unknown) =>
-  Effect.tryPromise({
-    try: () => stream.append(JSON.stringify(event)),
-    catch: (cause) => new Error(String(cause)),
-  })
+appendChange("memory://test", "application/json", (cause) => new Error(String(cause)))({
+  type: "x",
+  value: {},
+})
 
 // ruleid: firegrid-acquire-db-shape
 Effect.acquireRelease(
@@ -32,15 +36,24 @@ Effect.acquireRelease(
 )
 
 // ok: firegrid-acquire-db-shape
+Effect.acquireRelease(
+  Effect.tryPromise({
+    try: async () => ({ cancel: () => undefined }),
+    catch: (cause) => new Error(String(cause)),
+  }),
+  (response) => Effect.sync(() => response.cancel()),
+)
+
+// ok: firegrid-acquire-db-shape
 acquireSubstrateDb({ url: "memory://test" }, (cause) => new Error(String(cause)))
 
 declare const readJsonItems: (url: string) => Effect.Effect<ReadonlyArray<{ type: string; value: unknown }>>
 declare const decodeRun: (value: unknown) => { readonly runId: string }
 
-// ruleid: firegrid-retained-fold-by-field
 Effect.gen(function* () {
   const items = yield* readJsonItems("memory://test")
   const result = []
+  // ruleid: firegrid-retained-fold-by-field
   for (const event of items) {
     if (event.type !== "run") continue
     const decoded = decodeRun(event.value)
@@ -48,6 +61,12 @@ Effect.gen(function* () {
     result.push(decoded)
   }
   return result
+})
+
+// ok: firegrid-retained-fold-by-field
+Effect.gen(function* () {
+  const values = [{ type: "run", value: { runId: "run-1" } }]
+  return values.filter((value) => value.type === "run")
 })
 
 // ruleid: firegrid-authoritative-run-call
@@ -61,3 +80,12 @@ Effect.gen(function* () {
   const records = yield* readRetainedRunRecords("memory://test", "run-3")
   return records
 })
+
+// ruleid: firegrid-authoritative-run-call
+const records = readRetainedRunRecords("memory://test", "run-4")
+
+// ruleid: firegrid-authoritative-run-call
+const mapped = pipe(readRetainedRunRecords("memory://test", "run-5"), Effect.map((items) => items))
+
+// ok: firegrid-authoritative-run-call
+const alreadyCentralized = { runId: "run-6" }

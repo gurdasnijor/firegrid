@@ -2,55 +2,58 @@ rules:
   - id: firegrid-tryPromise-stream-append
     languages: [typescript]
     severity: WARNING
+    metadata:
+      review-section: "3a"
+      review-item: "R4"
+      acid: firegrid-remediation-hardening.DUP_DETECTION.2
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      code-reuse: CODE_REUSE.1
+      canonical-helper: packages/substrate/src/stream.ts:appendChange
+      category: code-reuse
     paths:
       include:
-        - /packages/*/src/**/*.ts
-        - /packages/*/src/**/*.tsx
+        - "**/packages/*/src/**/*.ts"
+        - "**/packages/*/src/**/*.tsx"
+        - "**/apps/*/src/**/*.ts"
+        - "**/apps/*/src/**/*.tsx"
+        - "**/semgrep-tests/**/*.ts"
       exclude:
-        - "**/dist/**"
-        - "**/.turbo/**"
-        - "**/coverage/**"
-        - "**/*.test.ts"
-        - "**/*.test.tsx"
-        - "**/__tests__/**"
-        - "**/fixtures/**"
-        - "/semgrep-tests/**"
+        - "**/packages/substrate/src/stream.ts"
     message: |
-      Direct DurableStream.append + JSON.stringify + tryPromise wrapping.
       Use the shared `appendChange(streamUrl, contentType, mapErr)` helper
-      (review §3a, R4 / CODE_REUSE.1).
+      instead of inlining DurableStream.append + JSON.stringify + tryPromise.
+      See packages/substrate/src/stream.ts.
     patterns:
       - pattern: |
           Effect.tryPromise({
             try: () => $S.append(JSON.stringify($EV)),
             ...
           })
-      - pattern-not-inside: |
-          const appendChange = (...) => ...
-      - pattern-not-inside: |
-          function appendChange(...) {
-            ...
-          }
 
   - id: firegrid-acquire-db-shape
     languages: [typescript]
     severity: WARNING
+    metadata:
+      review-section: "lint-addendum"
+      review-item: "R1"
+      acid: firegrid-remediation-hardening.DUP_DETECTION.2
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      code-reuse: HOT_PATHS.2
+      canonical-helper: packages/substrate/src/stream.ts:acquireSubstrateDb
+      category: scoped-resource
     paths:
       include:
-        - /packages/*/src/**/*.ts
-        - /packages/*/src/**/*.tsx
+        - "**/packages/*/src/**/*.ts"
+        - "**/packages/*/src/**/*.tsx"
+        - "**/apps/*/src/**/*.ts"
+        - "**/apps/*/src/**/*.tsx"
+        - "**/semgrep-tests/**/*.ts"
       exclude:
-        - "**/dist/**"
-        - "**/.turbo/**"
-        - "**/coverage/**"
-        - "**/*.test.ts"
-        - "**/*.test.tsx"
-        - "**/__tests__/**"
-        - "**/fixtures/**"
-        - "/semgrep-tests/**"
+        - "**/packages/substrate/src/stream.ts"
     message: |
-      Manual scoped-DB acquire shape. Use `acquireSubstrateDb(opts, mapError)`
-      from packages/substrate/src/stream.ts (already centralized in R1).
+      Use `acquireSubstrateDb(opts, mapError)` for scoped substrate database
+      acquisition instead of hand-rolling acquireRelease + tryPromise + close.
+      See packages/substrate/src/stream.ts.
     patterns:
       - pattern: |
           Effect.acquireRelease(
@@ -59,67 +62,63 @@ rules:
             }),
             ($DB) => Effect.sync(() => $DB.close()),
           )
-      - pattern-not-inside: |
-          export const acquireSubstrateDb = (...) => ...
-      - pattern-not-inside: |
-          function acquireSubstrateDb(...) {
-            ...
-          }
 
   - id: firegrid-retained-fold-by-field
     languages: [typescript]
     severity: WARNING
+    metadata:
+      review-section: "retained-records"
+      review-item: "R4"
+      acid: firegrid-remediation-hardening.DUP_DETECTION.2
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      code-reuse: CODE_REUSE.7
+      canonical-helper: packages/substrate/src/retained-records.ts:readRetainedByField
+      category: code-reuse
     paths:
       include:
-        - /packages/*/src/**/*.ts
-        - /packages/*/src/**/*.tsx
-      exclude:
-        - "**/dist/**"
-        - "**/.turbo/**"
-        - "**/coverage/**"
-        - "**/*.test.ts"
-        - "**/*.test.tsx"
-        - "**/__tests__/**"
-        - "**/fixtures/**"
-        - "/semgrep-tests/**"
+        - "**/packages/*/src/**/*.ts"
+        - "**/packages/*/src/**/*.tsx"
+        - "**/apps/*/src/**/*.ts"
+        - "**/apps/*/src/**/*.tsx"
+        - "**/semgrep-tests/**/*.ts"
     message: |
-      Retained-row-by-field read shape. Use a parameterized
-      `readRetainedByField(rowType, schema, field)` helper (CODE_REUSE.7).
-    pattern: |
-      Effect.gen(function* () {
-        ...
-        const $ITEMS = yield* readJsonItems(...)
-        ...
-        for (const $EV of $ITEMS) {
-          if ($EV.type !== $ROW) continue
-          ...
-        }
-        ...
-      })
+      Use a parameterized retained-row-by-field helper instead of re-reading
+      JSON rows and hand-filtering by row type and field.
+      See packages/substrate/src/retained-records.ts.
+    patterns:
+      - pattern-inside: |
+          Effect.gen(function* () {
+            ...
+            const $ITEMS = yield* readJsonItems(...)
+            ...
+          })
+      - pattern: |
+          for (const $EV of $ITEMS) {
+            if ($EV.type !== $ROW) continue
+            $...BODY
+          }
 
   - id: firegrid-authoritative-run-call
     languages: [typescript]
     severity: WARNING
+    metadata:
+      review-section: "3d"
+      review-item: "R4"
+      acid: firegrid-remediation-hardening.DUP_DETECTION.2
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      code-reuse: CODE_REUSE.3
+      canonical-helper: packages/substrate/src/retained-records.ts:readAuthoritativeRun
+      category: code-reuse
     paths:
       include:
-        - /packages/*/src/**/*.ts
-        - /packages/*/src/**/*.tsx
-      exclude:
-        - "**/dist/**"
-        - "**/.turbo/**"
-        - "**/coverage/**"
-        - "**/*.test.ts"
-        - "**/*.test.tsx"
-        - "**/__tests__/**"
-        - "**/fixtures/**"
-        - "/semgrep-tests/**"
+        - "**/packages/*/src/**/*.ts"
+        - "**/packages/*/src/**/*.tsx"
+        - "**/apps/*/src/**/*.ts"
+        - "**/apps/*/src/**/*.tsx"
+        - "**/semgrep-tests/**/*.ts"
     message: |
-      Authoritative-run lookup. Centralize behind a shared helper
-      (review §3d, R4 / CODE_REUSE.3).
-    pattern-either:
-      - pattern: |
-          readRetainedRunRecords($URL, $WID).pipe(...)
-      - pattern: |
-          Effect.map(readRetainedRunRecords($URL, $WID), ...)
-      - pattern: |
-          yield* readRetainedRunRecords($URL, $WID)
+      Centralize authoritative-run lookup behind the shared helper instead of
+      calling readRetainedRunRecords directly.
+      See packages/substrate/src/retained-records.ts.
+    patterns:
+      - pattern: readRetainedRunRecords($...ARGS)
