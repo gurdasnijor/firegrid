@@ -471,6 +471,32 @@ create a second registry beside Effect's dependency graph. Serialized config
 only selects known local graph definitions in dev; it does not create a mutable
 runtime registry.
 
+This means test and production wiring use the same mechanism:
+
+```ts
+const ProductionHostProgram = HostProgramGraph.define({
+  name: "production",
+  layer: Layer.mergeAll(
+    HostPrograms.timerSubscriber(),
+    HostPrograms.scheduledWorkSubscriber(),
+    HostPrograms.operator(promptOperator),
+    RemoteModelAdapterLive,
+  ),
+})
+
+const TestHostProgram = HostProgramGraph.define({
+  name: "test",
+  layer: ProductionHostProgram.layer.pipe(
+    Layer.provide(FakeModelAdapterLive),
+  ),
+})
+```
+
+The exact helper names can change during implementation, but the shape should
+remain ordinary Layer composition. Host programs should not expose their
+construction dependencies through service method signatures; those dependencies
+belong in the Layer graph.
+
 Host Program Graph discovery in development is explicit:
 
 ```ts
