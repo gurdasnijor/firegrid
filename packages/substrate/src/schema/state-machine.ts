@@ -1,5 +1,5 @@
 import type { ChangeEvent } from "@durable-streams/state"
-import { Data, Effect } from "effect"
+import { Data, Effect, Match } from "effect"
 import {
   type CompletionKind,
   type CompletionState,
@@ -388,13 +388,15 @@ export function deriveBlockedRunOutcome(
   ) {
     return { kind: "noop" }
   }
-  switch (awaitedCompletion.state) {
-    case "rejected":
-      return { kind: "fail", error: awaitedCompletion.error }
-    case "cancelled":
-      return { kind: "cancel", terminalReason: awaitedCompletion.terminalReason }
-    case "resolved":
-    case "pending":
-      return { kind: "noop" }
-  }
+  return Match.value(awaitedCompletion).pipe(
+    Match.when({ state: "rejected" }, (completion) => ({
+      kind: "fail" as const,
+      error: completion.error,
+    })),
+    Match.when({ state: "cancelled" }, (completion) => ({
+      kind: "cancel" as const,
+      terminalReason: completion.terminalReason,
+    })),
+    Match.orElse(() => ({ kind: "noop" as const })),
+  )
 }
