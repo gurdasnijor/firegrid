@@ -1,9 +1,16 @@
+import { Effect, Either, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   ClaimAttemptRowType,
   CompletionRowType,
+  ProjectionMatchCompletionData,
+  ProjectionMatchTriggerSchema,
+  ScheduledWorkCompletionData,
+  TimerCompletionData,
   EventStreamRowType,
   RunRowType,
+  decodeCompletionData,
+  decodeProjectionMatchCompletionData,
   type RunValue,
 } from "../schema/rows.ts"
 import { substrateState } from "../schema/state.ts"
@@ -53,5 +60,64 @@ describe("effect-native-api.SCHEMA_FIRST", () => {
         value: { runId: "run-x", state: "not-a-real-state" } as unknown as RunValue,
       }),
     ).toThrow()
+  })
+})
+
+describe("Q3-SCHEMA-CODEC completion data schemas", () => {
+  const trigger = {
+    _tag: "ProjectionMatch" as const,
+    label: "permission-ready",
+    projectionKey: "permission:p-1",
+    matcherId: "permission-ready",
+  }
+
+  it("durable-waits-and-scheduling.WAIT_FOR.6 + .7 — projection-match completion data decodes trigger and durable deadline fields from the row codec", async () => {
+    const decoded = await Effect.runPromise(
+      decodeProjectionMatchCompletionData(
+        {
+          trigger,
+          timeoutMs: 250,
+          deadlineAtMs: 1_000,
+        },
+        (cause) => cause,
+      ),
+    )
+
+    expect(decoded.trigger).toEqual(trigger)
+    expect(decoded.timeoutMs).toBe(250)
+    expect(decoded.deadlineAtMs).toBe(1_000)
+    expect(Either.isRight(Schema.decodeUnknownEither(ProjectionMatchTriggerSchema)(trigger))).toBe(true)
+    expect(Either.isLeft(
+      Schema.decodeUnknownEither(ProjectionMatchCompletionData)({
+        trigger: { ...trigger, matcherId: () => true },
+      }),
+    )).toBe(true)
+  })
+
+  it("durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.4 — scheduled-work completion data preserves scheduled time and opaque input through the row codec", async () => {
+    const decoded = await Effect.runPromise(
+      decodeCompletionData(
+        ScheduledWorkCompletionData,
+        (cause) => cause,
+      )({
+        whenMs: 42,
+        input: { task: "compact", args: [1, 2] },
+      }),
+    )
+
+    expect(decoded.whenMs).toBe(42)
+    expect(decoded.input).toEqual({ task: "compact", args: [1, 2] })
+  })
+
+  it("durable-subscribers.TIMER_SUBSCRIBER.4 — timer completion data requires a durable dueAtMs", () => {
+    expect(Either.isRight(
+      Schema.decodeUnknownEither(TimerCompletionData)({
+        durationMs: 10,
+        dueAtMs: 20,
+      }),
+    )).toBe(true)
+    expect(Either.isLeft(
+      Schema.decodeUnknownEither(TimerCompletionData)({ durationMs: 10 }),
+    )).toBe(true)
   })
 })

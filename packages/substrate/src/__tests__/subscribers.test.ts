@@ -42,6 +42,13 @@ async function createSubstrateStream(label: string): Promise<string> {
   return url
 }
 
+const projectionTrigger = (label: string) => ({
+  _tag: "ProjectionMatch" as const,
+  label,
+  projectionKey: `projection:${label}`,
+  matcherId: `matcher:${label}`,
+})
+
 // Append a hand-built ChangeEvent (test-only fixture; PACKAGE_BOUNDARY.1).
 async function appendEvent(url: string, event: unknown): Promise<void> {
   const stream = new DurableStream({ url, contentType: "application/json" })
@@ -199,7 +206,7 @@ describe("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER", () => {
       completionId,
       kind: "projection_match",
       data: {
-        trigger: { kind: "projection_match", description: { collection: "users", id: "u-1" } },
+        trigger: projectionTrigger("users:u-1"),
       },
     }))
 
@@ -227,7 +234,7 @@ describe("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER", () => {
       completionId,
       kind: "projection_match",
       data: {
-        trigger: { kind: "projection_match", description: "anything" },
+        trigger: projectionTrigger("anything"),
       },
     }))
 
@@ -250,7 +257,7 @@ describe("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER", () => {
       completionId,
       kind: "projection_match",
       data: {
-        trigger: { kind: "projection_match", description: "x" },
+        trigger: projectionTrigger("timeout"),
         timeoutMs,
         deadlineAtMs,
       },
@@ -284,7 +291,7 @@ describe("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER", () => {
       completionId,
       kind: "projection_match",
       data: {
-        trigger: { kind: "projection_match", description: "x" },
+        trigger: projectionTrigger("future-timeout"),
         timeoutMs: 60_000,
         deadlineAtMs: Date.now() + 60_000,
       },
@@ -302,7 +309,7 @@ describe("durable-subscribers.PROJECTION_MATCH_SUBSCRIBER", () => {
     await appendEvent(url, createPendingCompletion({
       completionId: "c-pm-err",
       kind: "projection_match",
-      data: { trigger: { kind: "projection_match", description: 1 } },
+      data: { trigger: projectionTrigger("eval-error") },
     }))
     const failingEval: ProjectionMatchEvaluator = () =>
       Effect.fail({ code: "EVAL_BOOM" })
@@ -348,7 +355,7 @@ describe("durable-waits-and-scheduling.WAIT_FOR.7 — waitFor stores deadlineAtM
       Effect.gen(function* () {
         const waits = yield* DurableWaits
         return yield* waits.waitFor({
-          trigger: { kind: "projection_match", description: 1 },
+          trigger: projectionTrigger("deadline"),
           timeoutMs: 30_000,
         })
       }).pipe(Effect.provide(DurableWaitsLive({ streamUrl: url }))),
@@ -370,7 +377,7 @@ describe("durable-waits-and-scheduling.WAIT_FOR.7 — waitFor stores deadlineAtM
       Effect.gen(function* () {
         const waits = yield* DurableWaits
         return yield* waits.waitFor({
-          trigger: { kind: "projection_match", description: 1 },
+          trigger: projectionTrigger("no-deadline"),
         })
       }).pipe(Effect.provide(DurableWaitsLive({ streamUrl: url }))),
     )

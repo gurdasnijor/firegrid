@@ -172,7 +172,7 @@ describe("choreography-facade.TOOL_BINDINGS.3 — tool inputs are decoded with E
 // wait_for tool lowers to the same projection_match completion shape as
 // Choreography.waitFor.
 describe("choreography-facade.TOOL_BINDINGS.2 — wait_for tool lowers to the same projection_match durable shape as runtime Choreography.waitFor", () => {
-  it("wait_for tool writes a pending projection_match completion carrying the typed trigger description, blocks the run, and returns ChoreographySuspension", async () => {
+  it("wait_for tool writes a pending projection_match completion carrying the typed trigger, blocks the run, and returns ChoreographySuspension", async () => {
     const url = await createSubstrateStream("tools-wait-for")
     const runId = "run-tools-wait-1"
     await Effect.runPromise(declareRun(url, runId))
@@ -212,10 +212,9 @@ describe("choreography-facade.TOOL_BINDINGS.2 — wait_for tool lowers to the sa
     expect(completion?.kind).toBe("projection_match")
     expect(completion?.state).toBe("pending")
     const data = completion?.data as {
-      trigger: { kind: string; description: ChoreographyTrigger }
+      trigger: ChoreographyTrigger
     }
-    expect(data.trigger.kind).toBe("projection_match")
-    expect(data.trigger.description).toStrictEqual(trigger)
+    expect(data.trigger).toStrictEqual(trigger)
   })
 })
 

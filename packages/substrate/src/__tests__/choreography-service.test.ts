@@ -146,12 +146,11 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
     expect(completion?.kind).toBe("projection_match")
     expect(completion?.state).toBe("pending")
     const data = completion?.data as {
-      trigger: { kind: string; description: ChoreographyTrigger }
+      trigger: ChoreographyTrigger
       timeoutMs?: number
       deadlineAtMs?: number
     }
-    expect(data.trigger.kind).toBe("projection_match")
-    expect(data.trigger.description).toStrictEqual(trigger)
+    expect(data.trigger).toStrictEqual(trigger)
     expect(data.timeoutMs).toBe(10 * 60 * 1000)
     expect(typeof data.deadlineAtMs).toBe("number")
   })

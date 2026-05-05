@@ -3,6 +3,8 @@ import {
   Operation,
   OperationHandle,
   OPERATION_ENVELOPE_TAG,
+  decodeAtBoundary,
+  encodeAtBoundary,
   type OperationEnvelope,
 } from "@firegrid/substrate/descriptors"
 import {
@@ -14,7 +16,6 @@ import {
   Data,
   Effect,
   Layer,
-  Schema,
   Stream,
   type ParseResult,
 } from "effect"
@@ -126,44 +127,33 @@ export { EventStream, Operation, OperationHandle }
 // ────────────────────────────────────────────────────────────────
 // Live wiring (composes over SubstrateClient)
 
-// Descriptor schema slots are typed as `Schema.Schema.All`, which
-// admits `Schema<never, …>` branches and (in the public alias
-// surface) carries `R = unknown`. `Schema.decodeUnknown` /
-// `Schema.encodeUnknown` produce an Effect whose R matches the
-// schema's R; to keep our public methods at `R = never` we cast to
-// `Schema.Schema.AnyNoContext` (= `Schema<any, any, never>`). The
-// cast is sound in v1 because descriptors carry pure schemas
-// without context-using requirements; if a future descriptor needs
-// context, the surface widens openly rather than silently.
 const decodeOutput = <Op extends Operation.Any>(
   op: Op,
   raw: unknown,
 ): Effect.Effect<Operation.Output<Op>, OperationDecodeError> =>
-  Schema.decodeUnknown(op.output as Schema.Schema.AnyNoContext)(raw).pipe(
-    Effect.mapError(
-      (cause) =>
-        new OperationDecodeError({
-          operation: op.name,
-          field: "output",
-          cause,
-        }),
-    ),
-  ) as Effect.Effect<Operation.Output<Op>, OperationDecodeError>
+  decodeAtBoundary(
+    op.output,
+    (cause) =>
+      new OperationDecodeError({
+        operation: op.name,
+        field: "output",
+        cause,
+      }),
+  )(raw) as Effect.Effect<Operation.Output<Op>, OperationDecodeError>
 
 const decodeError = <Op extends Operation.Any>(
   op: Op,
   raw: unknown,
 ): Effect.Effect<Operation.Error<Op>, OperationDecodeError> =>
-  Schema.decodeUnknown(op.error as Schema.Schema.AnyNoContext)(raw).pipe(
-    Effect.mapError(
-      (cause) =>
-        new OperationDecodeError({
-          operation: op.name,
-          field: "error",
-          cause,
-        }),
-    ),
-  ) as Effect.Effect<Operation.Error<Op>, OperationDecodeError>
+  decodeAtBoundary(
+    op.error,
+    (cause) =>
+      new OperationDecodeError({
+        operation: op.name,
+        field: "error",
+        cause,
+      }),
+  )(raw) as Effect.Effect<Operation.Error<Op>, OperationDecodeError>
 
 const mapRunToState = <Op extends Operation.Any>(
   op: Op,
@@ -212,11 +202,11 @@ const buildFiregridClientService = (
     }).pipe(Effect.provide(SubstrateClientLive(substrateCfg)))
 
   const send: FiregridClientService["send"] = (op, input) =>
-    Schema.encodeUnknown(op.input as Schema.Schema.AnyNoContext)(input).pipe(
-      Effect.mapError(
-        (cause) =>
-          new OperationEncodeError({ operation: op.name, cause }),
-      ),
+    encodeAtBoundary(
+      op.input,
+      (cause) =>
+        new OperationEncodeError({ operation: op.name, cause }),
+    )(input).pipe(
       Effect.flatMap((encoded) =>
         withSubstrate((client) =>
           client.work

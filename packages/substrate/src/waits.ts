@@ -2,7 +2,15 @@ import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Clock, Context, Data, Effect, Layer } from "effect"
 import { appendChange } from "./descriptors/append.ts"
-import type { CompletionKind, CompletionState, CompletionValue } from "./schema/rows.ts"
+import type { ProjectionMatchTrigger } from "./choreography/triggers.ts"
+import type {
+  CompletionKind,
+  CompletionState,
+  CompletionValue,
+  ProjectionMatchCompletionData,
+  ScheduledWorkCompletionData,
+  TimerCompletionData,
+} from "./schema/rows.ts"
 import { createPendingCompletion } from "./state-machine.ts"
 import { rebuildProjection } from "./stream.ts"
 
@@ -42,13 +50,6 @@ export interface AwakeableResult {
   readonly key: string
   readonly kind: CompletionKind
   readonly state: CompletionState
-}
-
-// durable-waits-and-scheduling.WAIT_FOR.1, .2 — typed projection-match trigger payload.
-// effect-native-api.SCHEMA_FIRST.5 — trigger inputs compile to durable.completion variants.
-export interface ProjectionMatchTrigger {
-  readonly kind: "projection_match"
-  readonly description: unknown
 }
 
 export interface SleepInput {
@@ -174,10 +175,14 @@ export const DurableWaitsLive = (
             // tests can control time if needed.
             const nowMs = yield* Clock.currentTimeMillis
             const completionId = randomUUID()
+            const data: TimerCompletionData = {
+              durationMs: input.durationMs,
+              dueAtMs: nowMs + input.durationMs,
+            }
             const event = createPendingCompletion({
               completionId,
               kind: "timer",
-              data: { durationMs: input.durationMs, dueAtMs: nowMs + input.durationMs },
+              data,
             })
             yield* append(event)
             return {
@@ -196,11 +201,7 @@ export const DurableWaitsLive = (
             // from the durable row alone (durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.9).
             // Use Effect Clock so tests can control time.
             const nowMs = yield* Clock.currentTimeMillis
-            const data: {
-              trigger: ProjectionMatchTrigger
-              timeoutMs?: number
-              deadlineAtMs?: number
-            } = {
+            const data: ProjectionMatchCompletionData = {
               trigger: input.trigger,
               ...(input.timeoutMs !== undefined
                 ? { timeoutMs: input.timeoutMs, deadlineAtMs: nowMs + input.timeoutMs }
@@ -222,11 +223,15 @@ export const DurableWaitsLive = (
         scheduleWork: (input: ScheduleWorkInput) =>
           Effect.gen(function* () {
             const completionId = randomUUID()
+            const data: ScheduledWorkCompletionData = {
+              whenMs: input.whenMs,
+              input: input.input,
+            }
             const event = createPendingCompletion({
               completionId,
               kind: "scheduled_work",
               ...(input.workId !== undefined ? { workId: input.workId } : {}),
-              data: { whenMs: input.whenMs, input: input.input },
+              data,
             })
             yield* append(event)
             return {
