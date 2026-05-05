@@ -1,27 +1,27 @@
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Context, Duration, Effect, Layer } from "effect"
-import { readRetainedRunRecords } from "../retained-records.js"
+import { readRetainedRunRecords } from "../retained-records.ts"
 import {
   blockRun,
   foldRunRecords,
   isTerminalRun,
-} from "../state-machine.js"
+} from "../state-machine.ts"
 import {
   DurableWaits,
   workScopedAwakeableKey,
   type ProjectionMatchTrigger as KernelProjectionMatchTrigger,
-} from "../waits.js"
+} from "../waits.ts"
 import {
   CompletionId as toCompletionId,
   type CompletionId,
-} from "./branded.js"
-import { CurrentWorkContext } from "./context.js"
+} from "./branded.ts"
+import { CurrentWorkContext } from "./context.ts"
 import {
   TriggerMatchers,
   type ChoreographyTrigger,
   type ProjectionMatchTrigger,
-} from "./triggers.js"
+} from "./triggers.ts"
 
 // Choreography facade Effect-native runtime API.
 //

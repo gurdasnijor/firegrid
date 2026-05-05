@@ -1,5 +1,5 @@
 import { Data } from "effect"
-import type { CompletionId, WorkId } from "./branded.js"
+import type { CompletionId, WorkId } from "./branded.ts"
 
 // choreography-facade.ERRORS.1
 // choreography-facade.ERRORS.2

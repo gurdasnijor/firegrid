@@ -6,15 +6,15 @@ import {
   ProjectionLive,
   ProjectionWaitTimeout,
   type ProjectionQuery,
-} from "../facade/projection.js"
-import { createPendingCompletion, resolveCompletion } from "../state-machine.js"
-import type { CompletionValue } from "../rows.js"
+} from "../facade/projection.ts"
+import { createPendingCompletion, resolveCompletion } from "../state-machine.ts"
+import type { CompletionValue } from "../rows.ts"
 import {
   freshStreamUrl,
   publishToStream,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

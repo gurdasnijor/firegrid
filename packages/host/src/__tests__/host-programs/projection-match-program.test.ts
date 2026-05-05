@@ -4,14 +4,14 @@ import {
   HostProgramGraph,
   HostPrograms,
   SubstrateHostBoot,
-} from "../../index.js"
+} from "../../index.ts"
 import {
   createSubstrateStream,
   seedPendingProjectionMatch,
   startTestServer,
   stopTestServer,
   waitForCompletionState,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

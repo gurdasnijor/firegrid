@@ -1,5 +1,5 @@
 import type { Layer } from "effect"
-import type { HostProgramRuntime } from "./host-program-runtime.js"
+import type { HostProgramRuntime } from "./host-program-runtime.ts"
 
 // launchable-substrate-host.RUNTIME_COMPOSITION.1
 // launchable-substrate-host.RUNTIME_COMPOSITION.2

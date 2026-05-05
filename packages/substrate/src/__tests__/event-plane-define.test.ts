@@ -1,7 +1,7 @@
 import { createStateSchema } from "@durable-streams/state"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { EventPlane } from "../event-plane/index.js"
+import { EventPlane } from "../event-plane/index.ts"
 
 // client-event-plane-registration.EVENT_PLANE_DEFINITION.4
 // Substrate vocabulary deliberately excludes Fireline / Firepixel / ACP /

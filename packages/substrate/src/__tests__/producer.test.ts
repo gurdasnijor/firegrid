@@ -2,7 +2,7 @@ import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Effect, Either } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as substrate from "../index.js"
+import * as substrate from "../index.ts"
 import {
   CompletionNotFoundError,
   CompletionProducer,
@@ -10,10 +10,10 @@ import {
   ProducerStreamError,
   SubstrateProducerLive,
   WorkProducer,
-} from "../producer.js"
-import { substrateState } from "../state-schema.js"
-import { rebuildProjection } from "../stream.js"
-import { freshStreamUrl, startTestServer, stopTestServer } from "./helpers.js"
+} from "../producer.ts"
+import { substrateState } from "../state-schema.ts"
+import { rebuildProjection } from "../stream.ts"
+import { freshStreamUrl, startTestServer, stopTestServer } from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()
@@ -357,7 +357,7 @@ describe("Slice 3 boundaries (structural — semantic-producer + effect-native-a
     // ready-work derivation (Slice 4), wait APIs (Slice 7), operator/claim
     // surfaces (Slice 5/6) to the broader package — the constraint is about
     // what ships INSIDE the producer feature.
-    const producerMod = await import("../producer.js")
+    const producerMod = await import("../producer.ts")
     const producerNames = Object.keys(producerMod)
     for (const symbol of [
       "sleep",
@@ -408,7 +408,7 @@ describe("Slice 3 boundaries (structural — semantic-producer + effect-native-a
     // Scope: producer.ts module. Slice 7 legitimately adds DurableWaits to
     // the broader package; the constraint is that the producer feature
     // does not own those APIs.
-    const producerMod = await import("../producer.js")
+    const producerMod = await import("../producer.ts")
     const producerNames = Object.keys(producerMod)
     for (const symbol of [
       "sleep",

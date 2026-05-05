@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import type { CompletionValue, RunValue } from "../rows.js"
-import * as substrate from "../index.js"
+import type { CompletionValue, RunValue } from "../rows.ts"
+import * as substrate from "../index.ts"
 import {
   blockRun,
   cancelCompletion,
@@ -20,7 +20,7 @@ import {
   rejectCompletion,
   resolveCompletion,
   startRun,
-} from "../state-machine.js"
+} from "../state-machine.ts"
 
 const pendingValue = (
   e: ReturnType<typeof createPendingCompletion>,
@@ -174,7 +174,7 @@ describe("awakeables-and-runs.AWAKEABLE", () => {
     // Scope: this feature (state-machine.ts) does not ship a callable
     // awakeable API. Slice 7 legitimately adds DurableWaits to the broader
     // package; the deferral is per-feature, not package-wide.
-    const sm = await import("../state-machine.js")
+    const sm = await import("../state-machine.ts")
     const smNames = Object.keys(sm)
     for (const symbol of ["awakeable", "DurableWaits", "DurableAwakeables"]) {
       expect(smNames).not.toContain(symbol)
@@ -185,7 +185,7 @@ describe("awakeables-and-runs.AWAKEABLE", () => {
   })
 
   it("awakeables-and-runs.AWAKEABLE.8 — awakeable key construction is deferred from this feature (no key utility APIs in state-machine.ts)", async () => {
-    const sm = await import("../state-machine.js")
+    const sm = await import("../state-machine.ts")
     const smNames = Object.keys(sm)
     for (const symbol of ["workScopedAwakeableKey", "awakeableKey"]) {
       expect(smNames).not.toContain(symbol)
@@ -193,7 +193,7 @@ describe("awakeables-and-runs.AWAKEABLE", () => {
   })
 
   it("awakeables-and-runs.AWAKEABLE.9 — global awakeable namespace rules are deferred from this feature (no global key API in state-machine.ts)", async () => {
-    const sm = await import("../state-machine.js")
+    const sm = await import("../state-machine.ts")
     const smNames = Object.keys(sm)
     expect(smNames).not.toContain("globalAwakeableKey")
   })
@@ -466,7 +466,7 @@ describe("awakeables-and-runs constraints", () => {
     // Scope: state-machine.ts module. Slice 7 legitimately adds key helpers
     // from waits.ts because that slice now has a same-phase consumer
     // (DurableWaits.awakeable / awakeableGlobal).
-    const sm = await import("../state-machine.js")
+    const sm = await import("../state-machine.ts")
     const smNames = Object.keys(sm)
     for (const symbol of ["workScopedAwakeableKey", "globalAwakeableKey", "awakeableKey"]) {
       expect(smNames).not.toContain(symbol)
@@ -501,7 +501,7 @@ describe("awakeables-and-runs constraints", () => {
     // Scope: the state-machine module itself must not expose ready-work or
     // claim ownership symbols. Slice 4 legitimately adds deriveReadyWork to
     // the broader package surface from a different module (ready-work.ts).
-    const sm = await import("../state-machine.js")
+    const sm = await import("../state-machine.ts")
     const smNames = Object.keys(sm)
     for (const symbol of [
       "deriveReadyWork",

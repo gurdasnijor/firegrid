@@ -6,12 +6,12 @@ import {
   EventPlane,
   PlaneProjectionWaitTimeout,
   type PlaneProjectionQuery,
-} from "../event-plane/index.js"
+} from "../event-plane/index.ts"
 import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

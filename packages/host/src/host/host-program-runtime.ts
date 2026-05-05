@@ -1,5 +1,5 @@
 import { Context } from "effect"
-import type { SubstrateHostStreamIdentity } from "./service.js"
+import type { SubstrateHostStreamIdentity } from "./service.ts"
 
 // launchable-substrate-host.RUNTIME_COMPOSITION.1
 // launchable-substrate-host.RUNTIME_COMPOSITION.3

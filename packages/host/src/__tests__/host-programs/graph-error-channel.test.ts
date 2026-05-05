@@ -2,9 +2,9 @@ import { Cause, Context, Effect, Exit, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   HostProgramGraph,
-  HostProgramRuntime,
+  type HostProgramRuntime,
   SubstrateHostBoot,
-} from "../../index.js"
+} from "../../index.ts"
 
 // Graph construction E flows into the host launch error channel as
 // an Exit failure value, NOT as a defect (Cause.isDie). This guards
@@ -50,7 +50,7 @@ describe("HostProgramGraph — graph construction E surfaces as Exit failure", (
       expect(failureOption._tag).toBe("Some")
       if (failureOption._tag === "Some") {
         expect(failureOption.value).toBeInstanceOf(FakeGraphError)
-        expect((failureOption.value as FakeGraphError).reason).toBe(
+        expect((failureOption.value).reason).toBe(
           "intentional graph failure",
         )
       }

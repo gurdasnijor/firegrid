@@ -1,5 +1,5 @@
 import {
-  SubstrateClient,
+  type SubstrateClient,
   SubstrateClientLive,
 } from "@durable-agent-substrate/client"
 import { Effect, Layer } from "effect"
@@ -9,10 +9,10 @@ import {
   liveOptionsFrom,
   type AttachedHostOptions,
   type EmbeddedDevHostOptions,
-} from "./boot-options.js"
-import type { HostProgramRuntime } from "./host-program-runtime.js"
-import { SubstrateHostLive } from "./live.js"
-import { SubstrateHost } from "./service.js"
+} from "./boot-options.ts"
+import type { HostProgramRuntime } from "./host-program-runtime.ts"
+import { SubstrateHostLive } from "./live.ts"
+import { SubstrateHost } from "./service.ts"
 
 // launchable-substrate-host.PACKAGING.6
 // launchable-substrate-host.RUNTIME_COMPOSITION.5

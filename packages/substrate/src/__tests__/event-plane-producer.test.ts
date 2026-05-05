@@ -7,12 +7,12 @@ import {
   PlaneProducerError,
   PlaneProducerUnknownTypeError,
   PlaneProducerValidationError,
-} from "../event-plane/index.js"
+} from "../event-plane/index.ts"
 import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()
@@ -184,8 +184,8 @@ describe("client-event-plane-registration.PRODUCER_API.4 — typed Effect errors
     // Projection acquisition) so the stream-failure path is observable
     // without conflating with projection preload failure. makePlaneProducer
     // is package-internal but importable by tests.
-    const { makePlaneProducer } = await import("../event-plane/producer.js")
-    const { collectionsByType } = await import("../event-plane/define.js")
+    const { makePlaneProducer } = await import("../event-plane/producer.ts")
+    const { collectionsByType } = await import("../event-plane/define.ts")
     const plane = buildPlane()
     const producer = makePlaneProducer({
       planeName: plane.name,

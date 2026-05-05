@@ -9,7 +9,7 @@ import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "../../../../../test-support/durable-streams-server.js"
+} from "../../../../../test-support/durable-streams-server.ts"
 
 export { freshStreamUrl, startTestServer, stopTestServer }
 

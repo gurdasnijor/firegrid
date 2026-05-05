@@ -8,8 +8,8 @@ import {
   resolveCompletion as buildResolveCompletion,
   IllegalCompletionTransition,
   startRun,
-} from "./state-machine.js"
-import { rebuildProjection } from "./stream.js"
+} from "./state-machine.ts"
+import { rebuildProjection } from "./stream.ts"
 
 // effect-native-api.EFFECT_SERVICES.3
 // semantic-producer.PRODUCER_ROLE.7 — config is provided through the layer

@@ -3,8 +3,8 @@ import {
   snapshotFromDb,
   type ProjectionSnapshot,
   type SubstrateStreamDB,
-} from "../projection.js"
-import { openSubstrateDb } from "../stream.js"
+} from "../projection.ts"
+import { openSubstrateDb } from "../stream.ts"
 
 // ergonomic-facade.PROJECTION_API.1, .2, .3, .4, .5, .6
 // Effect-native projection facade. Snapshot + Stream + Until over a

@@ -12,15 +12,15 @@ import {
   type ChoreographySuspension,
   type ChoreographyTrigger,
   type TriggerMatcher,
-} from "../choreography/index.js"
-import { SubstrateProducerLive, WorkProducer } from "../producer.js"
-import { rebuildProjection } from "../stream.js"
-import { DurableWaitsLive } from "../waits.js"
+} from "../choreography/index.ts"
+import { SubstrateProducerLive, WorkProducer } from "../producer.ts"
+import { rebuildProjection } from "../stream.ts"
+import { DurableWaitsLive } from "../waits.ts"
 import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

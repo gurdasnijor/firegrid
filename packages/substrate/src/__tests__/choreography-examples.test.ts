@@ -12,20 +12,20 @@ import {
   triggerMatchersLayer,
   type ChoreographyTrigger,
   type TriggerMatcher,
-} from "../choreography/index.js"
-import { EventPlane } from "../event-plane/index.js"
-import { SubstrateProducerLive, WorkProducer } from "../producer.js"
-import { rebuildProjection } from "../stream.js"
+} from "../choreography/index.ts"
+import { EventPlane } from "../event-plane/index.ts"
+import { SubstrateProducerLive, WorkProducer } from "../producer.ts"
+import { rebuildProjection } from "../stream.ts"
 import {
   runProjectionMatchSubscriber,
   runScheduledWorkSubscriber,
-} from "../subscribers.js"
-import { DurableWaitsLive } from "../waits.js"
+} from "../subscribers.ts"
+import { DurableWaitsLive } from "../waits.ts"
 import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()
@@ -102,7 +102,7 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.1 — fake ACP-permission-sh
     // BEFORE blocking the run, mimicking an ACP adapter that observed
     // session/request_permission. This row is caller-owned vocabulary;
     // the substrate sees it as an opaque event-plane row.
-    yield_required_action_emit: {
+    {
       const program = Effect.gen(function* () {
         const producer = yield* plane.Producer
         yield* producer.emit(
@@ -185,7 +185,7 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.1 — fake ACP-permission-sh
     // gives the substrate snapshot; for the plane snapshot we read raw
     // plane rows via the plane projection layer). For test simplicity
     // we read the plane state through a fresh DurableStream session.
-    const evaluator: import("../subscribers.js").ProjectionMatchEvaluator = (
+    const evaluator: import("../subscribers.ts").ProjectionMatchEvaluator = (
       _substrateSnapshot,
       _trigger,
       _completion,

@@ -1,11 +1,11 @@
-import { generateProcessId } from "../boot/identity.js"
+import { generateProcessId } from "../boot/identity.ts"
 import type {
   AttachedHostPlan,
   EmbeddedDevHostPlan,
-} from "../boot/plan.js"
-import type { HostProgramRuntime } from "./host-program-runtime.js"
-import type { SubstrateHostLiveOptions } from "./live.js"
-import type { HostProgramGraph } from "./program-graph.js"
+} from "../boot/plan.ts"
+import type { HostProgramRuntime } from "./host-program-runtime.ts"
+import type { SubstrateHostLiveOptions } from "./live.ts"
+import type { HostProgramGraph } from "./program-graph.ts"
 
 // launchable-substrate-host.HOST_CONFIGURATION.3
 //

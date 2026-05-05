@@ -11,7 +11,7 @@ export {
   type ProjectionLiveConfig,
   type ProjectionQuery,
   type ProjectionService,
-} from "./projection.js"
+} from "./projection.ts"
 
 export {
   Work,
@@ -24,4 +24,4 @@ export {
   type Recorded,
   type WorkClaimLiveConfig,
   type WorkClaimService,
-} from "./work.js"
+} from "./work.ts"

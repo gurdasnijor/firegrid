@@ -4,8 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   readRetainedClaimAttempts,
   readRetainedRunRecords,
-} from "../retained-records.js"
-import type { CompletionValue, RunValue } from "../rows.js"
+} from "../retained-records.ts"
+import type { CompletionValue, RunValue } from "../rows.ts"
 import {
   blockRun,
   cancelRun,
@@ -14,14 +14,14 @@ import {
   failRun,
   resolveCompletion,
   startRun,
-} from "../state-machine.js"
-import { substrateState } from "../state-schema.js"
+} from "../state-machine.ts"
+import { substrateState } from "../state-schema.ts"
 import {
   freshStreamUrl,
   publishToStream,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

@@ -5,7 +5,7 @@ import {
   HostProgramRuntime,
   HostPrograms,
   SubstrateHostBoot,
-} from "../../index.js"
+} from "../../index.ts"
 
 // Graph extra-R (compile-time + runtime) — a graph that requires an
 // adapter / provider service Tag beyond HostProgramRuntime can be
@@ -121,7 +121,7 @@ describe("HostProgramGraph — extra adapter R can be wired before the host acce
         : never,
       never,
       FakeAdapter
-    > = layer as never
+    > = layer
     void _expected
 
     expect(typeof layer).toBe("object")

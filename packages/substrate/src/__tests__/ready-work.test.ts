@@ -2,22 +2,22 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import type {
   CompletionValue,
   RunValue,
-} from "../rows.js"
-import { FOLD_VERSION, type ProjectionSnapshot } from "../projection.js"
-import { deriveReadyWork } from "../ready-work.js"
+} from "../rows.ts"
+import { FOLD_VERSION, type ProjectionSnapshot } from "../projection.ts"
+import { deriveReadyWork } from "../ready-work.ts"
 import {
   blockRun,
   createPendingCompletion,
   resolveCompletion,
   startRun,
-} from "../state-machine.js"
-import { rebuildProjection } from "../stream.js"
+} from "../state-machine.ts"
+import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,
   publishToStream,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()
@@ -302,7 +302,7 @@ describe("ready-work-projection — integration: rebuildProjection + deriveReady
 describe("ready-work-projection.FIRST_PHASE_LIMITS", () => {
   it("ready-work-projection.FIRST_PHASE_LIMITS.4 — ready-work module owns derivation only (no completion/run state-machine, claim, or operator surface)", async () => {
     // Pure structural: ready-work.ts exports only the projection contract.
-    const mod = await import("../ready-work.js")
+    const mod = await import("../ready-work.ts")
     const exportNames = Object.keys(mod).sort()
     expect(exportNames).toEqual(["ReadyWorkItem", "deriveReadyWork"])
   })

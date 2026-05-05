@@ -5,13 +5,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   EventPlane,
   type PlaneProjectionQuery,
-} from "../event-plane/index.js"
-import { Work, WorkClaimLive } from "../facade/work.js"
+} from "../event-plane/index.ts"
+import { Work, WorkClaimLive } from "../facade/work.ts"
 import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

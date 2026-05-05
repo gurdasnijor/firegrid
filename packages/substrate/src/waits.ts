@@ -1,9 +1,9 @@
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Clock, Context, Effect, Layer } from "effect"
-import type { CompletionKind, CompletionState, CompletionValue } from "./rows.js"
-import { createPendingCompletion } from "./state-machine.js"
-import { rebuildProjection } from "./stream.js"
+import type { CompletionKind, CompletionState, CompletionValue } from "./rows.ts"
+import { createPendingCompletion } from "./state-machine.ts"
+import { rebuildProjection } from "./stream.ts"
 
 // durable-waits-and-scheduling.AWAKEABLE_API.6
 export function workScopedAwakeableKey(workId: string, name: string): string {

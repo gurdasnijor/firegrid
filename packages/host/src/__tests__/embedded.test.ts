@@ -1,7 +1,7 @@
 import { rebuildProjection } from "@durable-agent-substrate/substrate"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { SubstrateHost, SubstrateHostBoot } from "../index.js"
+import { SubstrateHost, SubstrateHostBoot } from "../index.ts"
 
 // launchable-substrate-host.HOST_PROCESS.1
 // launchable-substrate-host.HOST_PROCESS.8

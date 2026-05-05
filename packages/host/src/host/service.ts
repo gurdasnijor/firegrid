@@ -1,5 +1,5 @@
 import { Context } from "effect"
-import type { BootMode, SubstrateHostBootPlan } from "../boot/plan.js"
+import type { BootMode, SubstrateHostBootPlan } from "../boot/plan.ts"
 
 // launchable-substrate-host.HOST_PROCESS.1
 // launchable-substrate-host.PACKAGING.4

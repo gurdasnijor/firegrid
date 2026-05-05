@@ -5,8 +5,8 @@ import {
   HostPrograms,
   SubstrateHostBoot,
   type WithHostOptions,
-} from "../../index.js"
-import * as HostRoot from "../../index.js"
+} from "../../index.ts"
+import * as HostRoot from "../../index.ts"
 import {
   createSubstrateStream,
   seedPendingScheduledWork,
@@ -14,7 +14,7 @@ import {
   startTestServer,
   stopTestServer,
   waitForCompletionState,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

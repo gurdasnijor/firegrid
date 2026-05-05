@@ -3,8 +3,8 @@ import {
   snapshotFromDb,
   type ProjectionSnapshot,
   type SubstrateStreamDB,
-} from "./projection.js"
-import { substrateState } from "./state-schema.js"
+} from "./projection.ts"
+import { substrateState } from "./state-schema.ts"
 
 export interface OpenSubstrateDbOptions {
   readonly url: string

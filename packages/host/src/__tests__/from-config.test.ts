@@ -1,6 +1,6 @@
 import { ConfigProvider, Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { bootPlanFromConfig } from "../boot/from-config.js"
+import { bootPlanFromConfig } from "../boot/from-config.ts"
 
 const provideConfig = (
   entries: Readonly<Record<string, string>>,

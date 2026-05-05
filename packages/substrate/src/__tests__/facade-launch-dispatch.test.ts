@@ -13,15 +13,15 @@ import {
   Projection,
   ProjectionLive,
   type ProjectionQuery,
-} from "../facade/projection.js"
+} from "../facade/projection.ts"
 import {
   Work,
   WorkClaim,
   WorkClaimLive,
   type ClaimAttemptOutcome,
   type WorkClaimError,
-} from "../facade/work.js"
-import { deriveReadyWork, type ReadyWorkItem } from "../ready-work.js"
+} from "../facade/work.ts"
+import { deriveReadyWork, type ReadyWorkItem } from "../ready-work.ts"
 import {
   blockRun,
   completeRun,
@@ -29,15 +29,15 @@ import {
   failRun,
   resolveCompletion,
   startRun,
-} from "../state-machine.js"
-import type { CompletionValue, RunValue } from "../rows.js"
-import { rebuildProjection } from "../stream.js"
+} from "../state-machine.ts"
+import type { CompletionValue, RunValue } from "../rows.ts"
+import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,
   publishToStream,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()
@@ -176,7 +176,7 @@ describe("ergonomic-facade.CLAIMED_WORK_API.4 — handler failure produces Exit.
     expect(exits.length).toBe(1)
     expect(Exit.isFailure(exits[0]!)).toBe(true)
     if (Exit.isFailure(exits[0]!)) {
-      expect(Cause.failureOption(exits[0]!.cause)._tag).toBe("Some")
+      expect(Cause.failureOption(exits[0].cause)._tag).toBe("Some")
     }
 
     const finalSnap = await rebuildProjection({ url })

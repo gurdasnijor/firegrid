@@ -1,13 +1,13 @@
 import { DurableStream } from "@durable-streams/client"
 import { Clock, Effect, TestClock, TestContext } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { DurableWaits, DurableWaitsLive } from "../waits.js"
-import { rebuildProjection } from "../stream.js"
+import { DurableWaits, DurableWaitsLive } from "../waits.ts"
+import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

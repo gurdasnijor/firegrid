@@ -4,8 +4,8 @@ import type {
   StreamStateDefinition,
 } from "@durable-streams/state"
 import { Context } from "effect"
-import type { PlaneProducer } from "./producer.js"
-import type { PlaneProjection } from "./projection.js"
+import type { PlaneProducer } from "./producer.ts"
+import type { PlaneProjection } from "./projection.ts"
 
 // client-event-plane-registration.EVENT_PLANE_DEFINITION.1, .2, .3, .4
 // A typed value containing a stable plane name plus the caller-supplied

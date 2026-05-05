@@ -1,10 +1,10 @@
 import { DurableStream } from "@durable-streams/client"
 import { Effect } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as substrate from "../index.js"
-import { CompletionProducer, SubstrateProducerLive } from "../producer.js"
-import type { CompletionValue } from "../rows.js"
-import { rebuildProjection } from "../stream.js"
+import * as substrate from "../index.ts"
+import { CompletionProducer, SubstrateProducerLive } from "../producer.ts"
+import type { CompletionValue } from "../rows.ts"
+import { rebuildProjection } from "../stream.ts"
 import {
   DurableWaits,
   DurableWaitsLive,
@@ -14,12 +14,12 @@ import {
   type ScheduleWorkResult,
   type SleepResult,
   type WaitForResult,
-} from "../waits.js"
+} from "../waits.ts"
 import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()
@@ -346,9 +346,7 @@ describe("durable-waits-and-scheduling — create + resolve lifecycle through Co
       }).pipe(Effect.provide(SubstrateProducerLive({ streamUrl: url }))),
     )
     const snapshot = await rebuildProjection({ url })
-    const completion = snapshot.completions.get(r.completionId) as
-      | CompletionValue
-      | undefined
+    const completion = snapshot.completions.get(r.completionId)
     expect(completion?.state).toBe("cancelled")
     expect(completion?.terminalReason).toEqual({ kind: "timeout" })
   })
@@ -399,7 +397,7 @@ describe("durable-waits-and-scheduling.PHASE_BOUNDARY (Slice 7)", () => {
   })
 
   it("durable-waits-and-scheduling.PHASE_BOUNDARY.3 — Slice 7 waits module exposes no operator/claim/runtime/CLI/timer-resolver/projection-matcher symbols", async () => {
-    const waitsMod = await import("../waits.js")
+    const waitsMod = await import("../waits.ts")
     const names = Object.keys(waitsMod)
     for (const symbol of [
       "OperatorRunner",

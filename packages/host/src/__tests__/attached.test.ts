@@ -4,8 +4,8 @@ import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "../../../../test-support/durable-streams-server.js"
-import { SubstrateHost, SubstrateHostBoot } from "../index.js"
+} from "../../../../test-support/durable-streams-server.ts"
+import { SubstrateHost, SubstrateHostBoot } from "../index.ts"
 
 beforeAll(async () => {
   await startTestServer()

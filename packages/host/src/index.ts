@@ -22,9 +22,9 @@
 export {
   bootPlanFromConfig,
   type ConfigError,
-} from "./boot/from-config.js"
+} from "./boot/from-config.ts"
 
-export { generateProcessId } from "./boot/identity.js"
+export { generateProcessId } from "./boot/identity.ts"
 
 export {
   bootModeOf,
@@ -32,36 +32,36 @@ export {
   type BootMode,
   type EmbeddedDevHostPlan,
   type SubstrateHostBootPlan,
-} from "./boot/plan.js"
+} from "./boot/plan.ts"
 
 export {
   SubstrateHostBoot,
   type AttachedHostOptions,
   type EmbeddedDevHostOptions,
   type WithHostOptions,
-} from "./host/constructors.js"
+} from "./host/constructors.ts"
 
 export {
   HostProgramRuntime,
   type HostProgramRuntimeService,
-} from "./host/host-program-runtime.js"
+} from "./host/host-program-runtime.ts"
 
 export {
   SubstrateHostLive,
   type SubstrateHostLiveOptions,
-} from "./host/live.js"
+} from "./host/live.ts"
 
 export {
   HostProgramGraph,
-} from "./host/program-graph.js"
+} from "./host/program-graph.ts"
 
 export {
   HostPrograms,
   type GraphProjectionMatchEvaluator,
-} from "./host/programs.js"
+} from "./host/programs.ts"
 
 export {
   SubstrateHost,
   type SubstrateHostService,
   type SubstrateHostStreamIdentity,
-} from "./host/service.js"
+} from "./host/service.ts"

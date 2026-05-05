@@ -6,7 +6,7 @@ import {
   ClaimAttemptValue,
   RunRowType,
   RunValue,
-} from "./rows.js"
+} from "./rows.ts"
 
 // claim-and-operator-authority.CLAIM_AUTHORITY.7
 // claim-and-operator-authority.OPERATOR_INVOCATION.14

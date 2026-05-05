@@ -4,13 +4,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   firstValidClaim,
   processReadyWorkItem,
-} from "../operator.js"
-import { deriveReadyWork, type ReadyWorkItem } from "../ready-work.js"
+} from "../operator.ts"
+import { deriveReadyWork, type ReadyWorkItem } from "../ready-work.ts"
 import {
   readRetainedClaimAttempts,
   readRetainedRunRecords,
-} from "../retained-records.js"
-import type { CompletionValue, RunValue } from "../rows.js"
+} from "../retained-records.ts"
+import type { CompletionValue, RunValue } from "../rows.ts"
 import {
   blockRun,
   cancelRun,
@@ -20,15 +20,15 @@ import {
   foldRunRecords,
   resolveCompletion,
   startRun,
-} from "../state-machine.js"
-import { substrateState } from "../state-schema.js"
-import { rebuildProjection } from "../stream.js"
+} from "../state-machine.ts"
+import { substrateState } from "../state-schema.ts"
+import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,
   publishToStream,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

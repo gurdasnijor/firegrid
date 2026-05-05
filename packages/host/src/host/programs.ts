@@ -18,7 +18,7 @@ import { Cause, Clock, Duration, Effect, Layer } from "effect"
 import {
   HostProgramRuntime,
   type HostProgramRuntimeService,
-} from "./host-program-runtime.js"
+} from "./host-program-runtime.ts"
 
 // launchable-substrate-host.HOST_PROCESS.2
 // launchable-substrate-host.HOST_PROCESS.4
@@ -245,7 +245,7 @@ const projectionMatchSubscriber = <E, R>(input: {
             streamUrl: cfg.streamUrl,
             contentType: cfg.contentType,
             evaluate: substrateEvaluator,
-          }) as Effect.Effect<unknown, SubscriberError>,
+          }),
         }),
       )
     }),

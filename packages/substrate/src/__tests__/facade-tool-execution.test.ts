@@ -1,11 +1,11 @@
 import { Effect, Exit, Layer, Ref, Stream } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Work, WorkClaimLive } from "../facade/work.js"
+import { Work, WorkClaimLive } from "../facade/work.ts"
 import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 import { DurableStream } from "@durable-streams/client"
 
 beforeAll(async () => {
@@ -67,7 +67,7 @@ describe("ergonomic-facade.COMMON_USAGE_EXAMPLES.4 — tool execution via the Wo
       Ref.update(recordedRef, (a) => [
         ...a,
         Exit.match(exit, {
-          onSuccess: (out) => ({ id: i.invocationId, out: out as { outputFor: string } }),
+          onSuccess: (out) => ({ id: i.invocationId, out: out }),
           onFailure: () => ({ id: i.invocationId, out: "fail" as const }),
         }),
       ])

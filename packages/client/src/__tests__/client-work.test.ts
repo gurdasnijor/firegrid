@@ -11,12 +11,12 @@ import {
   SubstrateClient,
   SubstrateClientLive,
   type DeclareWorkInput,
-} from "../index.js"
+} from "../index.ts"
 import {
   createSubstrateStream,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

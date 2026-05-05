@@ -1,14 +1,14 @@
 import { DurableStream } from "@durable-streams/client"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { Context, Effect, Layer } from "effect"
-import { bootModeOf, type SubstrateHostBootPlan } from "../boot/plan.js"
-import { HostProgramRuntime } from "./host-program-runtime.js"
-import type { HostProgramGraph } from "./program-graph.js"
+import { bootModeOf, type SubstrateHostBootPlan } from "../boot/plan.ts"
+import { HostProgramRuntime } from "./host-program-runtime.ts"
+import type { HostProgramGraph } from "./program-graph.ts"
 import {
   SubstrateHost,
   type SubstrateHostService,
   type SubstrateHostStreamIdentity,
-} from "./service.js"
+} from "./service.ts"
 
 // launchable-substrate-host.HOST_PROCESS.1
 // launchable-substrate-host.HOST_PROCESS.3
@@ -143,7 +143,7 @@ export const SubstrateHostLive = <
         })
         const wired = options.program.layer.pipe(
           Layer.provide(runtimeLayer),
-        ) as Layer.Layer<never, E, Exclude<GraphRIn, HostProgramRuntime>>
+        )
         yield* Layer.build(wired)
       }
 

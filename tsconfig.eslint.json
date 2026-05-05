@@ -14,12 +14,7 @@
     "rewriteRelativeImportExtensions": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["node"],
-    "plugins": [
-      {
-        "name": "@effect/language-service"
-      }
-    ]
+    "types": ["node"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["packages/**/*.ts", "test-support/**/*.ts"]
 }

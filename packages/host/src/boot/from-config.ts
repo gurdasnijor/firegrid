@@ -1,6 +1,6 @@
 import { Config, Effect, Option } from "effect"
-import { generateProcessId } from "./identity.js"
-import type { SubstrateHostBootPlan } from "./plan.js"
+import { generateProcessId } from "./identity.ts"
+import type { SubstrateHostBootPlan } from "./plan.ts"
 
 // launchable-substrate-host.HOST_CONFIGURATION.4
 // launchable-substrate-host.HOST_CONFIGURATION.5

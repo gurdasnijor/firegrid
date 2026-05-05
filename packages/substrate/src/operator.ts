@@ -1,21 +1,21 @@
 import { DurableStream } from "@durable-streams/client"
 import { Effect, Either } from "effect"
-import { attemptClaim } from "./internal-claim.js"
+import { attemptClaim } from "./internal-claim.ts"
 import {
   ClaimMissingCursorError,
   ClaimStreamError,
   ClaimWinnerMissingError,
   firstValidClaim,
-} from "./operator-errors.js"
-import type { ClaimAttemptValue, RunState, RunValue } from "./rows.js"
-import type { ReadyWorkItem } from "./ready-work.js"
-import { readRetainedRunRecords } from "./retained-records.js"
+} from "./operator-errors.ts"
+import type { ClaimAttemptValue, RunState, RunValue } from "./rows.ts"
+import type { ReadyWorkItem } from "./ready-work.ts"
+import { readRetainedRunRecords } from "./retained-records.ts"
 import {
   completeRun,
   failRun,
   foldRunRecords,
   IllegalRunTransition,
-} from "./state-machine.js"
+} from "./state-machine.ts"
 
 // Re-export of the claim-fold function and error classes for callers that
 // imported them from operator.ts before the shared-helper extraction.
@@ -195,7 +195,7 @@ export const processReadyWorkItem = <A, E>(
         buildResult.left.from === undefined || buildResult.left.from === "blocked"
           ? // Defensive fallback if `from` is somehow not a terminal label.
             "completed"
-          : (buildResult.left.from as RunState)
+          : (buildResult.left.from)
       return {
         kind: "terminalization-lost" as const,
         runId: args.item.runId,
