@@ -1,10 +1,12 @@
 import {
-  createStreamDB,
   type StateSchema,
   type StreamDB,
   type StreamStateDefinition,
 } from "@durable-streams/state"
-import { Data, Duration, Effect, Stream } from "effect"
+import { Data } from "effect"
+import type { Duration, Effect, Scope, Stream } from "effect"
+import { buildProjectionCore } from "../projection-service.ts"
+import { acquireStreamDb } from "../stream.ts"
 
 // client-event-plane-registration.PROJECTION_API.1, .2, .3, .4
 // Per-plane Projection service. Mirrors the substrate Projection facade
@@ -85,24 +87,15 @@ type PlaneStreamDB<S extends StreamStateDefinition> = StreamDB<StateSchema<S>>
 
 const acquireDb = <S extends StreamStateDefinition>(
   args: MakePlaneProjectionArgs<S>,
-): Effect.Effect<PlaneStreamDB<S>, PlaneProjectionReadError, import("effect/Scope").Scope> =>
-  Effect.acquireRelease(
-    Effect.tryPromise({
-      try: async () => {
-        const db = createStreamDB({
-          streamOptions: {
-            url: args.streamUrl,
-            contentType: args.contentType ?? "application/json",
-          },
-          state: args.state,
-        })
-        await db.preload()
-        return db
-      },
-      catch: (cause) =>
-        new PlaneProjectionReadError({ planeName: args.planeName, cause }),
-    }),
-    (db) => Effect.sync(() => db.close()),
+): Effect.Effect<PlaneStreamDB<S>, PlaneProjectionReadError, Scope.Scope> =>
+  acquireStreamDb(
+    {
+      url: args.streamUrl,
+      ...(args.contentType !== undefined ? { contentType: args.contentType } : {}),
+      state: args.state,
+    },
+    (cause) =>
+      new PlaneProjectionReadError({ planeName: args.planeName, cause }),
   )
 
 const snapshotFromDb = <S extends StreamStateDefinition>(
@@ -131,63 +124,29 @@ export const buildPlaneProjectionFromDb = <S extends StreamStateDefinition>(
     ) => { unsubscribe: () => void }
   }>
 
-  const snapshot: PlaneProjection<S>["snapshot"] = (query) =>
-    Effect.suspend(() => query.evaluate(snapshotFromDb(db)))
-
-  const stream: PlaneProjection<S>["stream"] = (query) =>
-    Stream.asyncScoped((emit) =>
-      Effect.acquireRelease(
-        Effect.sync(() => {
-          const evaluateAndEmit = () => {
-            void emit.fromEffect(query.evaluate(snapshotFromDb(db)))
-          }
-          // Subscribe to all plane collections; first subscription
-          // requests includeInitialState so the snapshot is delivered
-          // exactly once before any subsequent change. No polling.
-          const subs = collectionList.map((c, i) =>
-            c.subscribeChanges(
-              evaluateAndEmit,
-              i === 0 ? { includeInitialState: true } : undefined,
-            ),
-          )
-          return subs
-        }),
-        (subs) => Effect.sync(() => subs.forEach((s) => s.unsubscribe())),
+  const core = buildProjectionCore<
+    PlaneStreamDB<S>,
+    PlaneSnapshot<S>,
+    PlaneProjectionReadError,
+    PlaneProjectionWaitTimeout
+  >({
+    db,
+    snapshotFromDb,
+    subscribe: (_db, evaluateAndEmit) =>
+      collectionList.map((c, i) =>
+        c.subscribeChanges(
+          evaluateAndEmit,
+          i === 0 ? { includeInitialState: true } : undefined,
+        ),
       ),
-    )
-
-  const until: PlaneProjection<S>["until"] = (query, predicate, options) => {
-    const findFirst = stream(query).pipe(
-      Stream.filter(predicate),
-      Stream.runHead,
-      Effect.flatMap((opt) =>
-        opt._tag === "Some"
-          ? Effect.succeed(opt.value)
-          : Effect.fail(
-              new PlaneProjectionWaitTimeout({
-                planeName: args.planeName,
-                label: query.label,
-                elapsed: Duration.zero,
-              }),
-            ),
-      ),
-    )
-    if (options?.timeout === undefined) return findFirst
-    const timeout = Duration.decode(options.timeout)
-    return findFirst.pipe(
-      Effect.timeoutFail({
-        duration: timeout,
-        onTimeout: () =>
-          new PlaneProjectionWaitTimeout({
-            planeName: args.planeName,
-            label: query.label,
-            elapsed: timeout,
-          }),
+    timeout: (label, elapsed) =>
+      new PlaneProjectionWaitTimeout({
+        planeName: args.planeName,
+        label,
+        elapsed,
       }),
-    )
-  }
-
-  return { snapshot, stream, until }
+  })
+  return core
 }
 
 // acquireDb is internal; layer.ts composes it with buildPlaneProjectionFromDb.

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { DurableStream } from "@durable-streams/client"
 import { Effect } from "effect"
+import { appendChange } from "./descriptors/append.ts"
 import {
   ClaimMissingCursorError,
   ClaimStreamError,
@@ -66,10 +67,7 @@ export const attemptClaim = (
       status: "attempted",
     }
     const claimEvent = substrateState.claimAttempts.insert({ value: claim })
-    yield* Effect.tryPromise({
-      try: () => stream.append(JSON.stringify(claimEvent)),
-      catch: (cause) => new ClaimStreamError({ cause }),
-    })
+    yield* appendChange(stream, claimEvent, (cause) => new ClaimStreamError({ cause }))
 
     const attempts = yield* Effect.mapError(
       readRetainedClaimAttempts(args.streamUrl, args.workId),

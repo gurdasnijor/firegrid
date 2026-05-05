@@ -1,5 +1,7 @@
 import { DurableStream } from "@durable-streams/client"
+import type { StateEvent } from "@durable-streams/state"
 import { Clock, Data, Effect, Option } from "effect"
+import { appendChange } from "./descriptors/append.ts"
 import type { ProjectionSnapshot } from "./projection.ts"
 import type { CompletionKind, CompletionValue } from "./schema/rows.ts"
 import {
@@ -115,11 +117,8 @@ const collectPending = <K extends CompletionKind>(
 ): ReadonlyArray<PendingOf<K>> =>
   Array.from(snapshot.completions.values()).filter(isPendingOf(kind))
 
-const appendEvent = (stream: DurableStream, event: unknown) =>
-  Effect.tryPromise({
-    try: () => stream.append(JSON.stringify(event)),
-    catch: (cause) => new SubscriberStreamError({ cause }),
-  })
+const appendEvent = (stream: DurableStream, event: StateEvent) =>
+  appendChange(stream, event, (cause) => new SubscriberStreamError({ cause }))
 
 // Defensive wrap: the declarative state-machine builders return
 // IllegalCompletionTransition through the Effect error channel. In a

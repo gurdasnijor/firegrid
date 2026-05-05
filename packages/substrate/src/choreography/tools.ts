@@ -1,6 +1,5 @@
 import { Cause, Effect, Schema } from "effect"
-import { readRetainedRunRecords } from "../retained-records.ts"
-import { foldRunRecords } from "../state-machine.ts"
+import { readAuthoritativeRun } from "../retained-records.ts"
 import { type DurableWaits } from "../waits.ts"
 import {
   CompletionId as toCompletionId,
@@ -105,20 +104,12 @@ export interface ChoreographyToolBindings {
   >
 }
 
-// Read authoritative run state via retained-run fold. Returns the folded
-// RunValue or undefined if the run has no records yet.
-const authoritativeRun = (cfg: ChoreographyToolsConfig, workId: string) =>
-  Effect.gen(function* () {
-    const records = yield* readRetainedRunRecords(cfg.streamUrl, workId)
-    return foldRunRecords(workId, records)
-  })
-
 const observeBlockedCompletion = (
   cfg: ChoreographyToolsConfig,
   workId: string,
 ): Effect.Effect<CompletionId, never> =>
   Effect.gen(function* () {
-    const run = yield* authoritativeRun(cfg, workId)
+    const run = yield* readAuthoritativeRun(cfg.streamUrl, workId)
     if (
       run === undefined ||
       run.state !== "blocked" ||
@@ -162,7 +153,9 @@ const wrapSuspending = <R>(
     // tool invocation. Missing, terminal, or already-blocked runs die
     // here so a later interrupt cannot be translated into a spurious
     // ChoreographySuspension.
-    const preCall = yield* authoritativeRun(cfg, workId).pipe(Effect.orDie)
+    const preCall = yield* readAuthoritativeRun(cfg.streamUrl, workId).pipe(
+      Effect.orDie,
+    )
     if (preCall === undefined) {
       return yield* Effect.die(
         new Error(

@@ -5,6 +5,7 @@ import type {
 } from "@durable-streams/state"
 import { DurableStream } from "@durable-streams/client"
 import { Data, Effect } from "effect"
+import { appendChange } from "../descriptors/append.ts"
 
 // client-event-plane-registration.PRODUCER_API.1, .2, .3, .4
 // PlaneProducer emits typed validated state-collection events. It does
@@ -160,11 +161,11 @@ export const makePlaneProducer = (args: MakePlaneProducerArgs): PlaneProducer =>
       Effect.gen(function* () {
         yield* revalidate(args.planeName, event, args.collectionsByType)
         const enriched = mergeMetadataIntoHeaders(event, metadata)
-        yield* Effect.tryPromise({
-          try: () => stream.append(JSON.stringify(enriched)),
-          catch: (cause) =>
-            new PlaneProducerError({ planeName: args.planeName, cause }),
-        })
+        yield* appendChange(
+          stream,
+          enriched,
+          (cause) => new PlaneProducerError({ planeName: args.planeName, cause }),
+        )
         return { appended: true as const }
       }),
   }

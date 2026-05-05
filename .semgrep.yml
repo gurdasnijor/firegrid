@@ -8,7 +8,7 @@ rules:
       acid: firegrid-remediation-hardening.DUP_DETECTION.2
       quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
       code-reuse: CODE_REUSE.1
-      canonical-helper: packages/substrate/src/stream.ts:appendChange
+      canonical-helper: packages/substrate/src/descriptors/append.ts:appendChange
       category: code-reuse
     paths:
       include:
@@ -18,11 +18,11 @@ rules:
         - "**/apps/*/src/**/*.tsx"
         - "**/semgrep-tests/**/*.ts"
       exclude:
-        - "**/packages/substrate/src/stream.ts"
+        - "**/packages/substrate/src/descriptors/append.ts"
     message: |
-      Use the shared `appendChange(streamUrl, contentType, mapErr)` helper
+      Use the shared `appendChange(stream, stateEvent, mapErr)` helper
       instead of inlining DurableStream.append + JSON.stringify + tryPromise.
-      See packages/substrate/src/stream.ts.
+      See packages/substrate/src/descriptors/append.ts.
     patterns:
       - pattern: |
           Effect.tryPromise({
@@ -97,6 +97,13 @@ rules:
             if ($EV.type !== $ROW) continue
             $...BODY
           }
+      - pattern-not-inside: |
+          const readRetainedByField = <A>(
+            ...
+          ): Effect.Effect<ReadonlyArray<A>, RetainedReadError> =>
+            Effect.gen(function* () {
+              ...
+            })
 
   - id: firegrid-authoritative-run-call
     languages: [typescript]
@@ -122,3 +129,10 @@ rules:
       See packages/substrate/src/retained-records.ts.
     patterns:
       - pattern: readRetainedRunRecords($...ARGS)
+      - pattern-not-inside: |
+          export const readAuthoritativeRun = (
+            ...
+          ): Effect.Effect<RunValue | undefined, RetainedReadError> =>
+            readRetainedRunRecords(...).pipe(
+              ...
+            )

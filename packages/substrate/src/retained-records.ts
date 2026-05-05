@@ -7,6 +7,7 @@ import {
   RunRowType,
   RunValue,
 } from "./schema/rows.ts"
+import { foldRunRecords } from "./schema/state-machine.ts"
 
 // claim-and-operator-authority.CLAIM_AUTHORITY.7
 // claim-and-operator-authority.OPERATOR_INVOCATION.14
@@ -21,7 +22,7 @@ export class RetainedReadError extends Data.TaggedError("RetainedReadError")<{
 const decodeClaim = Schema.decodeUnknownEither(ClaimAttemptValue)
 const decodeRun = Schema.decodeUnknownEither(RunValue)
 
-const readJsonItems = (
+export const readJsonItems = (
   streamUrl: string,
 ): Effect.Effect<ReadonlyArray<ChangeEvent>, RetainedReadError> =>
   Effect.gen(function* () {
@@ -40,40 +41,55 @@ const readJsonItems = (
     })
   })
 
-export const readRetainedClaimAttempts = (
+// firegrid-remediation-hardening.CODE_REUSE.7
+const readRetainedByField = <A>(
   streamUrl: string,
-  workId: string,
-): Effect.Effect<ReadonlyArray<ClaimAttemptValue>, RetainedReadError> =>
+  rowType: string,
+  decode: (value: unknown) => Either.Either<A, unknown>,
+  fieldMatches: (value: A) => boolean,
+): Effect.Effect<ReadonlyArray<A>, RetainedReadError> =>
   Effect.gen(function* () {
     const items = yield* readJsonItems(streamUrl)
-    const result: ClaimAttemptValue[] = []
+    const result: A[] = []
     for (const event of items) {
-      if (event.type !== ClaimAttemptRowType) continue
-      const decoded = decodeClaim(event.value)
+      if (event.type !== rowType) continue
+      const decoded = decode(event.value)
       if (Either.isLeft(decoded)) {
         return yield* Effect.fail(new RetainedReadError({ cause: decoded.left }))
       }
-      if (decoded.right.workId !== workId) continue
+      if (!fieldMatches(decoded.right)) continue
       result.push(decoded.right)
     }
     return result
   })
 
+export const readRetainedClaimAttempts = (
+  streamUrl: string,
+  workId: string,
+): Effect.Effect<ReadonlyArray<ClaimAttemptValue>, RetainedReadError> =>
+  readRetainedByField(
+    streamUrl,
+    ClaimAttemptRowType,
+    decodeClaim,
+    (claim) => claim.workId === workId,
+  )
+
 export const readRetainedRunRecords = (
   streamUrl: string,
   runId: string,
 ): Effect.Effect<ReadonlyArray<RunValue>, RetainedReadError> =>
-  Effect.gen(function* () {
-    const items = yield* readJsonItems(streamUrl)
-    const result: RunValue[] = []
-    for (const event of items) {
-      if (event.type !== RunRowType) continue
-      const decoded = decodeRun(event.value)
-      if (Either.isLeft(decoded)) {
-        return yield* Effect.fail(new RetainedReadError({ cause: decoded.left }))
-      }
-      if (decoded.right.runId !== runId) continue
-      result.push(decoded.right)
-    }
-    return result
-  })
+  readRetainedByField(
+    streamUrl,
+    RunRowType,
+    decodeRun,
+    (run) => run.runId === runId,
+  )
+
+// firegrid-remediation-hardening.CODE_REUSE.3
+export const readAuthoritativeRun = (
+  streamUrl: string,
+  runId: string,
+): Effect.Effect<RunValue | undefined, RetainedReadError> =>
+  readRetainedRunRecords(streamUrl, runId).pipe(
+    Effect.map((records) => foldRunRecords(runId, records)),
+  )

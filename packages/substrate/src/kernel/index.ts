@@ -10,6 +10,10 @@ export * from "../schema/index.ts"
 export * from "../projection.ts"
 export * from "../stream.ts"
 export * from "../state-machine.ts"
+export {
+  completeRun as completeRunEffect,
+  failRun as failRunEffect,
+} from "../schema/state-machine.ts"
 export * from "../producer.ts"
 export * from "../projection/ready-work.ts"
 export * from "../operator.ts"

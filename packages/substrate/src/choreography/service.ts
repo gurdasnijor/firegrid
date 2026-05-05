@@ -1,10 +1,10 @@
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Context, Data, Duration, Effect, Layer } from "effect"
-import { readRetainedRunRecords } from "../retained-records.ts"
+import { appendChange } from "../descriptors/append.ts"
+import { readAuthoritativeRun } from "../retained-records.ts"
 import {
   blockRun,
-  foldRunRecords,
   isTerminalRun,
 } from "../state-machine.ts"
 import {
@@ -121,14 +121,15 @@ export const ChoreographyLive = (
     const stream = new DurableStream({ url: cfg.streamUrl, contentType })
 
     const append = (event: ChangeEvent) =>
-      Effect.tryPromise({
-        try: () => stream.append(JSON.stringify(event)),
-        catch: (cause) =>
+      appendChange(
+        stream,
+        event,
+        (cause) =>
           new ChoreographyVerificationError({
             completionId: "block-row-append",
             reason: String(cause),
           }),
-      })
+      )
 
     // choreography-facade.SUSPENSION.1
     // choreography-facade.SUSPENSION.3
@@ -138,12 +139,6 @@ export const ChoreographyLive = (
     // authoritative fold under conflicting terminal records, so
     // choreography suspension uses the same authority operators use for
     // claims and terminalization.
-    const authoritativeRun = (workId: string) =>
-      Effect.gen(function* () {
-        const records = yield* readRetainedRunRecords(cfg.streamUrl, workId)
-        return foldRunRecords(workId, records)
-      })
-
     // Internal helper: block the current run on a completion, verify the
     // post-write state through the retained-run fold, then signal
     // suspension via Effect.interrupt. The runner downstream (Commit 3)
@@ -158,7 +153,7 @@ export const ChoreographyLive = (
     > =>
       Effect.gen(function* () {
         const ctx = yield* CurrentWorkContext
-        const current = yield* authoritativeRun(ctx.workId).pipe(
+        const current = yield* readAuthoritativeRun(cfg.streamUrl, ctx.workId).pipe(
           Effect.mapError(
             (cause) =>
               new ChoreographyVerificationError({
@@ -223,7 +218,7 @@ export const ChoreographyLive = (
         // choreography-facade.SUSPENSION.1
         // Verify the durable blocked-run state AFTER the write through the
         // authoritative retained-run fold.
-        const verified = yield* authoritativeRun(ctx.workId).pipe(
+        const verified = yield* readAuthoritativeRun(cfg.streamUrl, ctx.workId).pipe(
           Effect.mapError(
             (cause) =>
               new ChoreographyVerificationError({
