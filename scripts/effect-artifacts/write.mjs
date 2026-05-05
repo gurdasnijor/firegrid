@@ -3,7 +3,7 @@ import { dirname, join } from "node:path"
 import { repoRoot } from "./project.mjs"
 import { renderMarkdown } from "./report.mjs"
 
-export const outputPaths = {
+const outputPaths = {
   json: "docs/effect-artifact-inventory.json",
   markdown: "docs/effect-artifact-inventory.md",
 }
