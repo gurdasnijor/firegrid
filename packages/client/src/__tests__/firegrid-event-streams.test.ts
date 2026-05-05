@@ -3,13 +3,15 @@ import { Chunk, Duration, Effect, Schema, Stream } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   EventStream,
-  EVENT_STREAM_ENVELOPE_TAG,
-  EVENT_STREAM_ROW_TYPE,
   FiregridClient,
   FiregridClientLive,
-  isEventStreamStateRow,
-  isEventStreamEnvelope,
 } from "../index.ts"
+import {
+  EVENT_STREAM_ENVELOPE_TAG,
+  EVENT_STREAM_ROW_TYPE,
+  isEventStreamEnvelope,
+  isEventStreamStateRow,
+} from "@durable-agent-substrate/substrate/descriptors"
 import {
   createSubstrateStream,
   startTestServer,

@@ -4,7 +4,7 @@ import {
   type CompletionValue,
   type ProjectionSnapshot,
   type SubstrateStreamDB,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/kernel"
 import {
   Cause,
   Clock,

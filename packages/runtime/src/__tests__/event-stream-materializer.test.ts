@@ -3,7 +3,7 @@ import {
   EventStream,
   makeEventStreamStateRow,
   type EventStreamStateRow,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/descriptors"
 import { Data, Deferred, Duration, Effect, Exit, Layer, Ref, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { Firegrid, FiregridRuntime, FiregridRuntimeBoot } from "../index.ts"

@@ -2,7 +2,7 @@ import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Effect, Either } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as substrate from "../index.ts"
+import * as substrate from "../kernel/index.ts"
 import {
   CompletionNotFoundError,
   CompletionProducer,

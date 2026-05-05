@@ -6,12 +6,12 @@ import {
   SubstrateProducerLive,
   WorkProducer,
   rebuildProjection,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/kernel"
 import {
   SubstrateClient,
   SubstrateClientLive,
   type DeclareWorkInput,
-} from "../index.ts"
+} from "../compat/index.ts"
 import {
   createSubstrateStream,
   startTestServer,

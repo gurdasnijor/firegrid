@@ -16,9 +16,16 @@ const readClient = (path: string) =>
 // firegrid-architecture-boundary.SURFACE_AREA.3
 describe("firegrid-event-streams.CLIENT_API.4 — Firegrid browser subpath is physically isolated", () => {
   it("exports EventStream APIs from a module graph with no substrate root or operation-client import", () => {
-    expect(FiregridSurface.FiregridClientLive).toBeTypeOf("function")
+    expect(FiregridSurface.EventStreamClientLive).toBeTypeOf("function")
     expect(FiregridSurface.EventStream.define).toBeTypeOf("function")
-    expect(FiregridSurface.EVENT_STREAM_ENVELOPE_TAG).toBe("firegrid/event@1")
+    expect("FiregridClient" in FiregridSurface).toBe(false)
+    expect("FiregridClientLive" in FiregridSurface).toBe(false)
+    expect("EVENT_STREAM_ENVELOPE_TAG" in FiregridSurface).toBe(false)
+    expect("makeEventStreamStateRow" in FiregridSurface).toBe(false)
+    // @ts-expect-error firegrid-remediation-hardening.PUBLIC_SURFACES.4
+    void FiregridSurface.FiregridClient
+    // @ts-expect-error firegrid-remediation-hardening.PUBLIC_SURFACES.4
+    void FiregridSurface.FiregridClientLive
 
     const publicSubpath = readClient("firegrid/index.ts")
     const eventClient = readClient("firegrid/event-client.ts")
@@ -49,6 +56,9 @@ describe("firegrid-event-streams.CLIENT_API.4 — Firegrid browser subpath is ph
     )
     expect(clientPackage.exports["./firegrid"]).toBe(
       "./src/firegrid/index.ts",
+    )
+    expect(clientPackage.exports["./compat"]).toBe(
+      "./src/compat/index.ts",
     )
   })
 })

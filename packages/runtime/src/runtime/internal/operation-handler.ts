@@ -9,7 +9,7 @@ import {
   type Operation,
   type RunValue,
   type SubstrateStreamDB,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/kernel"
 import {
   Cause,
   Data,

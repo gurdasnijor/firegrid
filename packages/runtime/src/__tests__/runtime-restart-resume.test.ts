@@ -1,11 +1,13 @@
 import { DurableStream } from "@durable-streams/client"
 import {
-  createPendingCompletion,
   EventStream,
   makeEventStreamStateRow,
-  rebuildProjection,
   type EventStreamStateRow,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/descriptors"
+import {
+  createPendingCompletion,
+  rebuildProjection,
+} from "@durable-agent-substrate/substrate/kernel"
 import { Data, Deferred, Duration, Effect, Schedule, Schema } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {

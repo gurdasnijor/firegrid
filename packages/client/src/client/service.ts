@@ -4,7 +4,7 @@ import {
   ProjectionLive,
   SubstrateProducerLive,
   WorkProducer,
-} from "@durable-agent-substrate/substrate"
+} from "@durable-agent-substrate/substrate/kernel"
 import { makeWorkFacet, type SubstrateClientWork } from "./work.ts"
 
 // launchable-substrate-host.CLIENT_SURFACE.1

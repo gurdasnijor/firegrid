@@ -19,8 +19,8 @@ import styles from "./styles.module.css"
 // launchable-substrate-host.LAB_INSPECTOR.6
 // launchable-substrate-host.LAB_INSPECTOR.7
 //
-// Typed EventStream workbench. It writes through FiregridClient.emit
-// and follows decoded events through FiregridClient.events. Raw
+// Typed EventStream workbench. It writes through EventStreamClient.emit
+// and follows decoded events through EventStreamClient.events. Raw
 // Durable Streams inspection remains in RawStreamInspector.
 
 export interface LabEventStreamPanelProps {
@@ -108,7 +108,7 @@ export function LabEventStreamPanel({
       <div className={styles.panel}>
         <h3>Typed EventStream</h3>
         <p className={styles.note}>
-          Uses the app-facing Firegrid client. Events are decoded
+          Uses the app-facing EventStream client. Events are decoded
           through a lab-local EventStream descriptor before rendering.
         </p>
         <label className={styles.label}>
