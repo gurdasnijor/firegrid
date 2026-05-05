@@ -382,51 +382,177 @@ The important locked decision is that the shared typed event descriptor is an
 
 ## API Type Shape
 
-The public API should pin concrete operation and handle types. A sketch:
+The public API pins concrete operation, handle, and event-stream types. The
+descriptor is both a value-level contract and a type-level key: users write
+`Sleep` / `AcpEvents` once, and all input / output / handle / event types flow
+from the descriptor through Effect Schema. Schemas remain the source of truth;
+runtime handlers are checked against the contract; expected failures stay in
+the typed Effect channel.
+
+### Operation descriptor
 
 ```ts
-interface OperationDefinition<Name extends string, Input, Output, EncodedInput, EncodedOutput> {
+export interface OperationDefinition<
+  Name extends string,
+  Input,
+  Output,
+  EncodedInput = unknown,
+  EncodedOutput = unknown,
+  Error = never,
+> {
   readonly _tag: "OperationDefinition"
   readonly name: Name
   readonly input: Schema.Schema<Input, EncodedInput>
   readonly output: Schema.Schema<Output, EncodedOutput>
+  readonly error?: Schema.Schema<Error>
 }
 
-interface OperationHandle<Op extends OperationDefinition.Any> {
+export declare namespace Operation {
+  // Wildcard upper bound used in API generic parameters; concrete
+  // descriptor types remain branded by `Name`.
+  export type Any = OperationDefinition<string, any, any, any, any, any>
+
+  // Schema-derived type-level helpers. Prefer Effect Schema's
+  // `Schema.Type<S>` / `Schema.Encoded<S>` helpers when expanding
+  // these in implementation rather than re-deriving manually.
+  export type Input<Op extends Any> =
+    Op extends OperationDefinition<any, infer I, any, any, any, any> ? I : never
+  export type EncodedInput<Op extends Any> =
+    Op extends OperationDefinition<any, any, any, infer EI, any, any>
+      ? EI
+      : never
+  export type Output<Op extends Any> =
+    Op extends OperationDefinition<any, any, infer O, any, any, any> ? O : never
+  export type EncodedOutput<Op extends Any> =
+    Op extends OperationDefinition<any, any, any, any, infer EO, any>
+      ? EO
+      : never
+  export type Error<Op extends Any> =
+    Op extends OperationDefinition<any, any, any, any, any, infer E>
+      ? E
+      : never
+}
+```
+
+### Operation handle
+
+```ts
+// `OperationHandleId` should be a branded identifier (e.g.
+// `Brand.Branded<string, "OperationHandleId">` or a `Data.TaggedClass`),
+// not a plain string, so handle ids cannot be confused with arbitrary
+// strings at call sites.
+export type OperationHandleId = Brand.Branded<string, "OperationHandleId">
+
+export interface OperationHandle<Op extends Operation.Any> {
   readonly _tag: "OperationHandle"
   readonly id: OperationHandleId
   readonly operation: Op
 }
 ```
 
+`result(handle)` infers `Operation.Output<Op>` purely from the handle's
+preserved descriptor type — callers never re-declare the output shape.
+
+### FiregridClient methods
+
 Client methods are single-form data-first APIs in v1. They are not dual
 data-first/data-last APIs unless a concrete call site proves the extra surface
-is useful:
+is useful. Each method's input, output, and error channel are derived from the
+operation descriptor:
 
 ```ts
-send: <Op extends OperationDefinition.Any>(
+send: <Op extends Operation.Any>(
   operation: Op,
-  input: OperationDefinition.Input<Op>,
+  input: Operation.Input<Op>,
   options?: SendOptions,
 ) => Effect.Effect<OperationHandle<Op>, SendError, FiregridClient>
 
-call: <Op extends OperationDefinition.Any>(
+call: <Op extends Operation.Any>(
   operation: Op,
-  input: OperationDefinition.Input<Op>,
+  input: Operation.Input<Op>,
   options?: SendOptions,
-) => Effect.Effect<OperationDefinition.Output<Op>, SendError | ResultError, FiregridClient>
+) => Effect.Effect<
+  Operation.Output<Op>,
+  SendError | ResultError | Operation.Error<Op>,
+  FiregridClient
+>
 
-result: <Op extends OperationDefinition.Any>(
+result: <Op extends Operation.Any>(
   handle: OperationHandle<Op>,
-) => Effect.Effect<OperationDefinition.Output<Op>, ResultError, FiregridClient>
+) => Effect.Effect<
+  Operation.Output<Op>,
+  ResultError | Operation.Error<Op>,
+  FiregridClient
+>
 
-observe: <Op extends OperationDefinition.Any>(
+observe: <Op extends Operation.Any>(
   handle: OperationHandle<Op>,
 ) => Stream.Stream<OperationState<Op>, ObserveError, FiregridClient>
 ```
 
-Expected failures should use tagged error values in the typed error channel.
-Expected SDK failures must not be represented as defects.
+Expected failures use tagged error values in the typed error channel; expected
+SDK failures must not be represented as defects. Operation-defined errors flow
+into `Operation.Error<Op>` and are visible at the call site without manual
+restatement.
+
+### Runtime handler
+
+`Firegrid.handler(...)` takes the operation descriptor, type-checks the run
+function against it, and returns a Layer that the runtime composes:
+
+```ts
+Firegrid.handler: <Op extends Operation.Any, E, R>(
+  operation: Op,
+  run: (
+    input: Operation.Input<Op>,
+  ) => Effect.Effect<Operation.Output<Op>, E | Operation.Error<Op>, R>,
+) => Layer.Layer<never, never, RuntimeContext | R>
+```
+
+The handler's input and output are derived from the descriptor; the error
+channel admits both runtime failures (`E`) and operation-declared failures
+(`Operation.Error<Op>`). Runtime composition stays as ordinary
+`Layer.mergeAll` / `Layer.provide`.
+
+### EventStream descriptor
+
+EventStream mirrors the descriptor pattern:
+
+```ts
+export interface EventStreamDefinition<
+  Name extends string,
+  Event,
+  Encoded = unknown,
+> {
+  readonly _tag: "EventStreamDefinition"
+  readonly name: Name
+  readonly schema: Schema.Schema<Event, Encoded>
+}
+
+export declare namespace EventStream {
+  export type Any = EventStreamDefinition<string, any, any>
+  export type Event<S extends Any> =
+    S extends EventStreamDefinition<any, infer E, any> ? E : never
+  export type Encoded<S extends Any> =
+    S extends EventStreamDefinition<any, any, infer Enc> ? Enc : never
+}
+```
+
+Client API:
+
+```ts
+emit: <S extends EventStream.Any>(
+  stream: S,
+  event: EventStream.Event<S>,
+) => Effect.Effect<void, EmitError, FiregridClient>
+
+events: <S extends EventStream.Any>(
+  stream: S,
+) => Stream.Stream<EventStream.Event<S>, ObserveError, FiregridClient>
+```
+
+`EventStream.Event<S>` is the only event type users name; encoded types stay an
+implementation detail of the schema boundary.
 
 ## Effect Type Conventions
 
