@@ -1,15 +1,15 @@
 import { DurableStream } from "@durable-streams/client"
 import { Effect, Either } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as substrate from "../index.js"
+import * as substrate from "../index.ts"
 import {
   CompletionProducer,
   SubstrateProducerLive,
-} from "../producer.js"
-import type { CompletionValue } from "../rows.js"
-import { createPendingCompletion } from "../state-machine.js"
-import { substrateState } from "../state-schema.js"
-import { rebuildProjection } from "../stream.js"
+} from "../producer.ts"
+import type { CompletionValue } from "../rows.ts"
+import { createPendingCompletion } from "../state-machine.ts"
+import { substrateState } from "../state-schema.ts"
+import { rebuildProjection } from "../stream.ts"
 import {
   runProjectionMatchSubscriber,
   runScheduledWorkSubscriber,
@@ -18,16 +18,16 @@ import {
   SubscriberEvaluatorError,
   SubscriberStreamError,
   type ProjectionMatchEvaluator,
-} from "../subscribers.js"
+} from "../subscribers.ts"
 import {
   DurableWaits,
   DurableWaitsLive,
-} from "../waits.js"
+} from "../waits.ts"
 import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()
@@ -526,7 +526,7 @@ describe("durable-subscribers — error paths", () => {
 
 describe("durable-subscribers.API_FUTURE_PROOFING", () => {
   it("durable-subscribers.API_FUTURE_PROOFING.3 — subscriber implementation does not export Fireline-branded tool names as substrate primitives", async () => {
-    const subMod = await import("../subscribers.js")
+    const subMod = await import("../subscribers.ts")
     const names = Object.keys(subMod)
     for (const banned of [
       "sleep",

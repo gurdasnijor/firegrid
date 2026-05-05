@@ -1,12 +1,12 @@
 import type { StreamStateDefinition } from "@durable-streams/state"
 import { type Context, Effect, Layer } from "effect"
-import { collectionsByType, type EventPlaneDefinition } from "./define.js"
-import { makePlaneProducer } from "./producer.js"
+import { collectionsByType, type EventPlaneDefinition } from "./define.ts"
+import { makePlaneProducer } from "./producer.ts"
 import {
   acquirePlaneDb,
   buildPlaneProjectionFromDb,
   type PlaneProjectionReadError,
-} from "./projection.js"
+} from "./projection.ts"
 
 // client-event-plane-registration.EVENT_PLANE_DEFINITION.3
 // Wires the plane's Producer + Projection through one scoped Layer.

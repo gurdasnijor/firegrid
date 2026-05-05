@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import type { ProjectionSnapshot } from "./projection.js"
+import type { ProjectionSnapshot } from "./projection.ts"
 
 // ready-work-projection.READY_WORK_PROJECTION.7
 // Public projection-output contract; defined with Effect Schema per

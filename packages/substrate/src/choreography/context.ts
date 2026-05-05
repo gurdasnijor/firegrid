@@ -1,5 +1,5 @@
 import { Context, Layer } from "effect"
-import type { OwnerId, WorkId } from "./branded.js"
+import type { OwnerId, WorkId } from "./branded.ts"
 
 // choreography-facade.CURRENT_WORK_CONTEXT.1
 // choreography-facade.CURRENT_WORK_CONTEXT.2

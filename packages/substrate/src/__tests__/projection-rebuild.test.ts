@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { CompletionValue, RunValue } from "../rows.js"
-import { rebuildProjection } from "../stream.js"
+import { CompletionValue, RunValue } from "../rows.ts"
+import { rebuildProjection } from "../stream.ts"
 import {
   claimAttemptEvent,
   completionEvent,
@@ -10,7 +10,7 @@ import {
   runEvent,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 const decodeRun = Schema.decodeUnknownSync(RunValue)
 const decodeCompletion = Schema.decodeUnknownSync(CompletionValue)

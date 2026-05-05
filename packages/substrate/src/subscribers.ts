@@ -1,14 +1,14 @@
 import { DurableStream } from "@durable-streams/client"
 import { Clock, Data, Effect, Option } from "effect"
-import type { ProjectionSnapshot } from "./projection.js"
-import type { CompletionKind, CompletionValue } from "./rows.js"
+import type { ProjectionSnapshot } from "./projection.ts"
+import type { CompletionKind, CompletionValue } from "./rows.ts"
 import {
   cancelCompletion,
   IllegalCompletionTransition,
   resolveCompletion,
-} from "./state-machine.js"
-import { rebuildProjection } from "./stream.js"
-import type { ProjectionMatchTrigger } from "./waits.js"
+} from "./state-machine.ts"
+import { rebuildProjection } from "./stream.ts"
+import type { ProjectionMatchTrigger } from "./waits.ts"
 
 // durable-subscribers.SUBSCRIBER_SCOPE.5 — single-shot scan-and-resolve.
 // All three profiles share a stream-bound shape and return the list of

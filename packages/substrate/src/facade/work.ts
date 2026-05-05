@@ -1,5 +1,5 @@
 import { Context, Data, Effect, type Exit, Layer, Option, Stream } from "effect"
-import { attemptClaim } from "../internal-claim.js"
+import { attemptClaim } from "../internal-claim.ts"
 
 // ergonomic-facade.CLAIMED_WORK_API.1, .2, .3, .4, .5, .6, .7, .8, .9, .10
 // Effect-native claimed-work facade. A `Stream` of candidate work items

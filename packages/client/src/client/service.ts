@@ -5,7 +5,7 @@ import {
   SubstrateProducerLive,
   WorkProducer,
 } from "@durable-agent-substrate/substrate"
-import { makeWorkFacet, type SubstrateClientWork } from "./work.js"
+import { makeWorkFacet, type SubstrateClientWork } from "./work.ts"
 
 // launchable-substrate-host.CLIENT_SURFACE.1
 // launchable-substrate-host.CLIENT_SURFACE.2

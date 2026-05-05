@@ -12,7 +12,7 @@ import {
   HostProgramGraph,
   HostPrograms,
   SubstrateHostBoot,
-} from "../../index.js"
+} from "../../index.ts"
 import {
   appendEvent,
   createSubstrateStream,
@@ -20,7 +20,7 @@ import {
   startTestServer,
   stopTestServer,
   waitForRunState,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

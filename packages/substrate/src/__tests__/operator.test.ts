@@ -1,29 +1,29 @@
 import { DurableStream } from "@durable-streams/client"
 import { Effect, Either } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as substrate from "../index.js"
+import * as substrate from "../index.ts"
 import {
   ClaimMissingCursorError,
   ClaimStreamError,
   firstValidClaim,
   processReadyWorkItem,
-} from "../operator.js"
-import { deriveReadyWork } from "../ready-work.js"
-import type { ClaimAttemptValue, CompletionValue, RunValue } from "../rows.js"
+} from "../operator.ts"
+import { deriveReadyWork } from "../ready-work.ts"
+import type { ClaimAttemptValue, CompletionValue, RunValue } from "../rows.ts"
 import {
   blockRun,
   createPendingCompletion,
   resolveCompletion,
   startRun,
-} from "../state-machine.js"
-import { substrateState } from "../state-schema.js"
-import { rebuildProjection } from "../stream.js"
+} from "../state-machine.ts"
+import { substrateState } from "../state-schema.ts"
+import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,
   publishToStream,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()
@@ -489,7 +489,7 @@ describe("claim-and-operator-authority.PHASE_BOUNDARY (Slice 5)", () => {
   it("claim-and-operator-authority.PHASE_BOUNDARY.2 — this feature does not define run/completion state-machine transitions (operator imports them, owns nothing new)", async () => {
     // Structural: operator.ts imports state-machine builders; it does not
     // re-define legal-transition rules. Slice 2 still owns those.
-    const op = await import("../operator.js")
+    const op = await import("../operator.ts")
     const opNames = Object.keys(op)
     for (const symbol of [
       "isLegalRunTransition",

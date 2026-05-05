@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { CompletionKind } from "../rows.js"
-import { rebuildProjection } from "../stream.js"
+import { CompletionKind } from "../rows.ts"
+import { rebuildProjection } from "../stream.ts"
 import {
   claimAttemptEvent,
   completionEvent,
@@ -10,7 +10,7 @@ import {
   startTestServer,
   stopTestServer,
   traceEvent,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

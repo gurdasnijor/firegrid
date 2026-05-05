@@ -2,22 +2,22 @@ import { Effect, Layer } from "effect"
 import {
   bootPlanFromConfig,
   type ConfigError,
-} from "../boot/from-config.js"
-import type { SubstrateHostBootPlan } from "../boot/plan.js"
+} from "../boot/from-config.ts"
+import type { SubstrateHostBootPlan } from "../boot/plan.ts"
 import {
   buildAttachedPlan,
   buildEmbeddedPlan,
   liveOptionsFrom,
   type AttachedHostOptions,
   type EmbeddedDevHostOptions,
-} from "./boot-options.js"
-import type { HostProgramRuntime } from "./host-program-runtime.js"
+} from "./boot-options.ts"
+import type { HostProgramRuntime } from "./host-program-runtime.ts"
 import {
   SubstrateHostLive,
-} from "./live.js"
-import type { HostProgramGraph } from "./program-graph.js"
-import { type SubstrateHost } from "./service.js"
-import { withHost, type WithHostOptions } from "./with-host.js"
+} from "./live.ts"
+import type { HostProgramGraph } from "./program-graph.ts"
+import { type SubstrateHost } from "./service.ts"
+import { withHost, type WithHostOptions } from "./with-host.ts"
 
 // launchable-substrate-host.HOST_CONFIGURATION.1
 // launchable-substrate-host.HOST_CONFIGURATION.2
@@ -35,7 +35,7 @@ import { withHost, type WithHostOptions } from "./with-host.js"
 export type {
   AttachedHostOptions,
   EmbeddedDevHostOptions,
-} from "./boot-options.js"
+} from "./boot-options.ts"
 
 export const SubstrateHostBoot = {
   // launchable-substrate-host.HOST_CONFIGURATION.2
@@ -91,4 +91,4 @@ export const SubstrateHostBoot = {
   withHost,
 } as const
 
-export type { WithHostOptions } from "./with-host.js"
+export type { WithHostOptions } from "./with-host.ts"

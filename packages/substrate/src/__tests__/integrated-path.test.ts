@@ -2,24 +2,24 @@ import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Effect, Layer } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { processReadyWorkItem } from "../operator.js"
+import { processReadyWorkItem } from "../operator.ts"
 import {
   CompletionProducer,
   SubstrateProducerLive,
   WorkProducer,
-} from "../producer.js"
-import { deriveReadyWork } from "../ready-work.js"
-import { blockRun } from "../state-machine.js"
-import { rebuildProjection } from "../stream.js"
+} from "../producer.ts"
+import { deriveReadyWork } from "../ready-work.ts"
+import { blockRun } from "../state-machine.ts"
+import { rebuildProjection } from "../stream.ts"
 import {
   DurableWaits,
   DurableWaitsLive,
-} from "../waits.js"
+} from "../waits.ts"
 import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "./helpers.js"
+} from "./helpers.ts"
 
 beforeAll(async () => {
   await startTestServer()

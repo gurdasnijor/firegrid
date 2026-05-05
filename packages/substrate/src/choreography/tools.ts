@@ -1,23 +1,23 @@
 import { Cause, Effect, Schema } from "effect"
-import { readRetainedRunRecords } from "../retained-records.js"
-import { foldRunRecords } from "../state-machine.js"
-import { type DurableWaits } from "../waits.js"
+import { readRetainedRunRecords } from "../retained-records.ts"
+import { foldRunRecords } from "../state-machine.ts"
+import { type DurableWaits } from "../waits.ts"
 import {
   CompletionId as toCompletionId,
   WorkId as toWorkId,
   type CompletionId,
   type WorkId,
-} from "./branded.js"
-import { CurrentWorkContext } from "./context.js"
+} from "./branded.ts"
+import { CurrentWorkContext } from "./context.ts"
 import type {
   ChoreographyOperation,
   ChoreographySuspension,
-} from "./errors.js"
-import { Choreography, type ScheduleAtResult } from "./service.js"
+} from "./errors.ts"
+import { Choreography, type ScheduleAtResult } from "./service.ts"
 import {
   ChoreographyTrigger,
   type TriggerMatchers,
-} from "./triggers.js"
+} from "./triggers.ts"
 
 // choreography-facade.TOOL_BINDINGS.1
 // choreography-facade.TOOL_BINDINGS.2

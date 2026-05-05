@@ -4,7 +4,7 @@ import {
   HostProgramGraph,
   type HostProgramRuntime,
   SubstrateHostBoot,
-} from "../../index.js"
+} from "../../index.ts"
 
 // Graph construction E flows into the host launch error channel as
 // an Exit failure value, NOT as a defect (Cause.isDie). This guards

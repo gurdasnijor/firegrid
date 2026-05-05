@@ -5,7 +5,7 @@ import {
   HostProgramRuntime,
   SubstrateHostBoot,
   type HostProgramRuntimeService,
-} from "../../index.js"
+} from "../../index.ts"
 
 // HostProgramRuntime — public-but-narrow contract
 //

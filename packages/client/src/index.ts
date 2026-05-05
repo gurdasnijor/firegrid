@@ -15,7 +15,7 @@ export {
   SubstrateClientLive,
   type SubstrateClientConfig,
   type SubstrateClientService,
-} from "./client/service.js"
+} from "./client/service.ts"
 
 export type {
   DeclareWorkInput,
@@ -23,4 +23,4 @@ export type {
   SubstrateClientWork,
   SubstrateWorkHandle,
   WorkObservation,
-} from "./client/work.js"
+} from "./client/work.ts"

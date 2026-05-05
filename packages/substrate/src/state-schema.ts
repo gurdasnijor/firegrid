@@ -7,7 +7,7 @@ import {
   CompletionValue,
   RunRowType,
   RunValue,
-} from "./rows.js"
+} from "./rows.ts"
 
 // effect-native-api.SCHEMA_FIRST.3 — Standard Schema V1 exports are generated from Effect schemas for interop.
 const RunStandard = Schema.standardSchemaV1(RunValue)

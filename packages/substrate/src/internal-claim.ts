@@ -6,10 +6,10 @@ import {
   ClaimStreamError,
   ClaimWinnerMissingError,
   firstValidClaim,
-} from "./operator-errors.js"
-import { readRetainedClaimAttempts } from "./retained-records.js"
-import type { ClaimAttemptValue } from "./rows.js"
-import { substrateState } from "./state-schema.js"
+} from "./operator-errors.ts"
+import { readRetainedClaimAttempts } from "./retained-records.ts"
+import type { ClaimAttemptValue } from "./rows.ts"
+import { substrateState } from "./state-schema.ts"
 
 // Internal-only shared claim helper. Used by:
 //   - operator.processReadyWorkItem (kernel single-shot operator)

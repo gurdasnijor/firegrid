@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as HostSurface from "../index.js"
+import * as HostSurface from "../index.ts"
 import * as Substrate from "@durable-agent-substrate/substrate"
 
 // launchable-substrate-host.SCHEMA_OWNERSHIP.2

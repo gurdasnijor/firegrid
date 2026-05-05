@@ -44,13 +44,69 @@ const tsOnly = (configs) =>
     ...config,
     files: ["packages/**/*.ts", "test-support/**/*.ts"],
   }))
+const relativeJsSpecifierPattern = /^\.{1,2}\/.*\.js$/u
+const rewriteJsSpecifierToTs = (specifier) => specifier.replace(/\.js$/u, ".ts")
+
+const local = {
+  rules: {
+    "relative-ts-extensions": {
+      meta: {
+        type: "problem",
+        fixable: "code",
+        docs: {
+          description: "Require relative TypeScript source imports to use .ts extensions.",
+        },
+        schema: [],
+        messages: {
+          useTsExtension:
+            "Use a .ts extension for relative source imports; TypeScript rewrites these to .js during build.",
+        },
+      },
+      create(context) {
+        const report = (node) => {
+          if (node == null || typeof node.value !== "string" || !relativeJsSpecifierPattern.test(node.value)) {
+            return
+          }
+
+          context.report({
+            node,
+            messageId: "useTsExtension",
+            fix(fixer) {
+              const raw = context.sourceCode.getText(node)
+              const quote = raw[0] === "'" ? "'" : "\""
+              return fixer.replaceText(node, `${quote}${rewriteJsSpecifierToTs(node.value)}${quote}`)
+            },
+          })
+        }
+
+        return {
+          ImportDeclaration(node) {
+            report(node.source)
+          },
+          ExportAllDeclaration(node) {
+            report(node.source)
+          },
+          ExportNamedDeclaration(node) {
+            report(node.source)
+          },
+          ImportExpression(node) {
+            report(node.source)
+          },
+          TSImportType(node) {
+            report(node.argument)
+          },
+        }
+      },
+    },
+  },
+}
 
 export default tseslint.config(
   {
     ignores: [
       "node_modules/**",
       "coverage/**",
-      "dist/**",
+      "**/dist/**",
       ".worktrees/**",
     ],
   },
@@ -74,6 +130,7 @@ export default tseslint.config(
     plugins: {
       "@effect": effect,
       "@stylistic": stylistic,
+      local,
     },
     rules: {
       "@typescript-eslint/consistent-type-imports": [
@@ -104,6 +161,7 @@ export default tseslint.config(
         },
       ],
       "@typescript-eslint/no-base-to-string": "warn",
+      "local/relative-ts-extensions": "error",
       "no-restricted-imports": [
         "error",
         {

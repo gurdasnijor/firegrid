@@ -1,18 +1,18 @@
-export * from "./rows.js"
-export * from "./state-schema.js"
-export * from "./projection.js"
-export * from "./stream.js"
-export * from "./state-machine.js"
-export * from "./producer.js"
-export * from "./ready-work.js"
-export * from "./operator.js"
-export * from "./retained-records.js"
-export * from "./waits.js"
-export * from "./subscribers.js"
+export * from "./rows.ts"
+export * from "./state-schema.ts"
+export * from "./projection.ts"
+export * from "./stream.ts"
+export * from "./state-machine.ts"
+export * from "./producer.ts"
+export * from "./ready-work.ts"
+export * from "./operator.ts"
+export * from "./retained-records.ts"
+export * from "./waits.ts"
+export * from "./subscribers.ts"
 // ergonomic-facade — Phase 10 ergonomic Effect-native facade.
-export * from "./facade/index.js"
+export * from "./facade/index.ts"
 // client-event-plane-registration — Phase 11 client event planes / state producers.
-export * from "./event-plane/index.js"
+export * from "./event-plane/index.ts"
 // choreography-facade — Phase 12 choreography facade (foundation slice).
 //
 // `ProjectionMatchTrigger` collides with the Phase-7 placeholder interface
@@ -56,4 +56,4 @@ export {
   type TriggerMatchEvaluation,
   type TriggerMatcher,
   type TriggerMatchersService,
-} from "./choreography/index.js"
+} from "./choreography/index.ts"

@@ -5,7 +5,7 @@ import {
   HostProgramRuntime,
   HostPrograms,
   SubstrateHostBoot,
-} from "../../index.js"
+} from "../../index.ts"
 
 // Graph extra-R (compile-time + runtime) — a graph that requires an
 // adapter / provider service Tag beyond HostProgramRuntime can be

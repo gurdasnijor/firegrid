@@ -10,13 +10,13 @@ import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "../../../../test-support/durable-streams-server.js"
+} from "../../../../test-support/durable-streams-server.ts"
 import {
   SubstrateHost,
   SubstrateHostBoot,
   type WithHostOptions,
-} from "../index.js"
-import * as HostRoot from "../index.js"
+} from "../index.ts"
+import * as HostRoot from "../index.ts"
 
 beforeAll(async () => {
   await startTestServer()

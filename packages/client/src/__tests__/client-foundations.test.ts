@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as ClientSurface from "../index.js"
+import * as ClientSurface from "../index.ts"
 
 // launchable-substrate-host.CLIENT_SURFACE.7
 // The client root must not expose raw stream append, raw StreamDB
