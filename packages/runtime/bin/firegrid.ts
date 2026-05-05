@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 import { Command, Terminal, type CommandExecutor } from "@effect/platform"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
-import { Data, Effect } from "effect"
+import { Config, Data, Effect, Option } from "effect"
 import { FiregridRuntime, FiregridRuntimeBoot } from "../src/index.ts"
 
 class ChildExitError extends Data.TaggedError("ChildExitError")<{
@@ -69,13 +69,32 @@ const writeStdout = (line: string) =>
     terminal.display(`${line}\n`),
   )
 
+// firegrid-runtime-process.CONFIG_SURFACE.1
+// firegrid-runtime-process.CONFIG_SURFACE.4
+// launchable-substrate-host.HOST_CONFIGURATION.4
+// launchable-substrate-host.HOST_CONFIGURATION.6
+//
+// `DURABLE_STREAMS_URL` is read once at the binary process edge through
+// Effect Config: `Config.option(Config.string(...))` distinguishes
+// "unset" (None) from "set" (Some). An empty value is treated as
+// unset to preserve backwards-compatible boot semantics. Tests can
+// drive the boot-mode discriminator deterministically through
+// `ConfigProvider.fromMap` without touching `process.env`.
+const attachedStreamUrl = Effect.map(
+  Config.option(Config.string("DURABLE_STREAMS_URL")),
+  Option.flatMap((value) =>
+    value.length > 0 ? Option.some(value) : Option.none(),
+  ),
+)
+
 const runDefault = Effect.scoped(
   Effect.gen(function* () {
-    const attachedUrl = process.env["DURABLE_STREAMS_URL"]
-    const runtimeLayer =
-      attachedUrl !== undefined && attachedUrl.length > 0
-        ? FiregridRuntimeBoot.attached({ streamUrl: attachedUrl })
-        : FiregridRuntimeBoot.embeddedDev({ streamName: "firegrid" })
+    const attached = yield* attachedStreamUrl
+    const runtimeLayer = Option.match(attached, {
+      onNone: () =>
+        FiregridRuntimeBoot.embeddedDev({ streamName: "firegrid" }),
+      onSome: (streamUrl) => FiregridRuntimeBoot.attached({ streamUrl }),
+    })
 
     return yield* Effect.gen(function* () {
       const runtime = yield* FiregridRuntime

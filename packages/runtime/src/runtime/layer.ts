@@ -40,7 +40,7 @@ import {
 // fake resolver layer (see `runtime-foundations.test.ts`).
 
 const buildCoreRuntimeLayer = <E, GraphRIn>(
-  processId: string,
+  processIdOverride: string | undefined,
   contentType: string,
   runtime: Layer.Layer<never, E, GraphRIn> | undefined,
 ): Layer.Layer<
@@ -50,6 +50,8 @@ const buildCoreRuntimeLayer = <E, GraphRIn>(
 > =>
   Layer.unwrapScoped(
     Effect.gen(function* () {
+      const processId =
+        processIdOverride ?? (yield* generateProcessId)
       const resolver = yield* RuntimeStreamResolver
       const { bootMode, streamIdentity } = yield* resolver.resolve
 
@@ -83,11 +85,10 @@ const buildRuntimeCoreFromOptions = <E, GraphRIn>(
   },
 ) => {
   const contentType = opts.contentType ?? "application/json"
-  const processId = opts.processId ?? generateProcessId()
   return {
     contentType,
     core: buildCoreRuntimeLayer<E, GraphRIn>(
-      processId,
+      opts.processId,
       contentType,
       opts.runtime,
     ),

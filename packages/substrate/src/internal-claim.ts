@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto"
 import { DurableStream } from "@durable-streams/client"
 import { Effect } from "effect"
 import { appendChange } from "./descriptors/append.ts"
+import { IdGen, IdGenLive } from "./id-gen.ts"
 import {
   ClaimMissingCursorError,
   ClaimStreamError,
@@ -58,7 +58,8 @@ export const attemptClaim = (
     }
     const observedCursor: string = head.offset
 
-    const claimId = args.claimIdOverride ?? randomUUID()
+    const idGen = yield* IdGen
+    const claimId = args.claimIdOverride ?? (yield* idGen.nextId)
     const claim: ClaimAttemptValue = {
       claimId,
       workId: args.workId,
@@ -80,4 +81,4 @@ export const attemptClaim = (
       )
     }
     return { claimId, winner }
-  })
+  }).pipe(Effect.provide(IdGenLive))

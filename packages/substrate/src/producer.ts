@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto"
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Context, Data, Effect, Layer } from "effect"
 import { appendChange } from "./descriptors/append.ts"
+import { IdGen, IdGenLive, type IdGenService } from "./id-gen.ts"
 import {
   cancelCompletion as buildCancelCompletion,
   rejectCompletion as buildRejectCompletion,
@@ -114,7 +114,10 @@ const withIdempotencyHeader = (
   }
 }
 
-const buildWorkProducer = (config: SubstrateProducerConfig): WorkProducerService => {
+const buildWorkProducer = (
+  config: SubstrateProducerConfig,
+  idGen: IdGenService,
+): WorkProducerService => {
   const stream = new DurableStream({
     url: config.streamUrl,
     contentType: config.contentType ?? "application/json",
@@ -130,7 +133,7 @@ const buildWorkProducer = (config: SubstrateProducerConfig): WorkProducerService
     // travels as an event header, not on the run row value.
     declareWork: (input) =>
       Effect.gen(function* () {
-        const runId = input?.runId ?? randomUUID()
+        const runId = input?.runId ?? (yield* idGen.nextId)
         const event = yield* startRun({
           runId,
           ...(input?.data !== undefined ? { data: input.data } : {}),
@@ -204,14 +207,23 @@ const buildCompletionProducer = (
 
 // effect-native-api.EFFECT_SERVICES.3
 // semantic-producer.PACKAGE_BOUNDARY.2 — single-package wiring; one stream per live layer.
-// Returns a Layer with zero remaining requirements when given streamUrl.
+// firegrid-remediation-hardening.EFFECT_CONSISTENCY.5
+// IdGen is captured at layer-build time and `IdGenLive` is provided at
+// the producer's own root, so callers compose `SubstrateProducerLive`
+// at zero remaining requirements. Tests that need deterministic IDs
+// can either use the per-method override seams documented at each call
+// site or compose a different `IdGen` layer through the kernel
+// `@firegrid/substrate/id-gen` subpath.
 export const SubstrateProducerLive = (
   config: SubstrateProducerConfig,
 ): Layer.Layer<WorkProducer | CompletionProducer> =>
   Layer.merge(
-    Layer.succeed(WorkProducer, buildWorkProducer(config)),
+    Layer.effect(
+      WorkProducer,
+      Effect.map(IdGen, (idGen) => buildWorkProducer(config, idGen)),
+    ),
     Layer.succeed(CompletionProducer, buildCompletionProducer(config)),
-  )
+  ).pipe(Layer.provide(IdGenLive))
 
 // Re-export the Illegal* error classes from the state machine for callers
 // that catch state-machine guard rejections at the producer boundary.
