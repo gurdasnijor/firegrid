@@ -29,6 +29,10 @@ export type {
 // firegrid-event-streams.EVENT_STREAM_DEFINITION.* — descriptor surface.
 export {
   EventStream,
+  EventStreamAppendError,
+  EventStreamDecodeError,
+  EventStreamEncodeError,
+  EventStreamReadError,
   FiregridClient,
   FiregridClientLive,
   Operation,
@@ -37,6 +41,9 @@ export {
   OperationEncodeError,
   OperationHandle,
   OperationNotFound,
+  type EmitError,
+  type EventsError,
+  type FiregridClientConfig,
   type FiregridClientService,
   type ObserveError,
   type OperationState,
@@ -46,7 +53,10 @@ export {
 // Re-export shared-kernel descriptor envelope so client consumers
 // can import the wire constant without reaching into substrate.
 export {
+  EVENT_STREAM_ENVELOPE_TAG,
+  isEventStreamEnvelope,
   isOperationEnvelope,
   OPERATION_ENVELOPE_TAG,
+  type EventStreamEnvelope,
   type OperationEnvelope,
 } from "@durable-agent-substrate/substrate"

@@ -57,6 +57,7 @@ export const isOperationEnvelope = (
 export type OperationHandleId = string & Brand.Brand<"OperationHandleId">
 export const OperationHandleId =
   Brand.nominal<OperationHandleId>()
+declare const OperationHandleDescriptor: unique symbol
 
 export interface OperationDescriptor<
   Name extends string = string,
@@ -125,15 +126,16 @@ export namespace Operation {
 // firegrid-operation-messaging.CLIENT_MESSAGING.4
 //
 // OperationHandle is a typed durable handle returned by send and
-// consumed by result / observe. The discriminator field
-// `_operation: Op["name"]` preserves the descriptor binding through
-// the call site, so a handle for one operation is not assignable
-// to a handle for another.
+// consumed by result / observe. `_operation` keeps the operation name
+// visible at runtime; the unique-symbol phantom preserves the full
+// descriptor type at compile time, including same-name descriptors with
+// divergent schemas.
 
 export interface OperationHandle<Op extends Operation.Any> {
   readonly _tag: "OperationHandle"
   readonly id: OperationHandleId
   readonly _operation: Op["name"]
+  readonly [OperationHandleDescriptor]?: (op: Op) => Op
 }
 
 export const OperationHandle = {
@@ -144,6 +146,6 @@ export const OperationHandle = {
     Object.freeze({
       _tag: "OperationHandle" as const,
       id: OperationHandleId(id),
-      _operation: op.name as Op["name"],
+      _operation: op.name,
     }),
 } as const

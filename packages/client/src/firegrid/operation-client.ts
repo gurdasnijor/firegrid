@@ -1,24 +1,32 @@
 import {
+  EVENT_STREAM_ENVELOPE_TAG,
   EventStream,
-  isOperationEnvelope,
+  isEventStreamEnvelope,
   Operation,
   OperationHandle,
   OPERATION_ENVELOPE_TAG,
+  type EventStreamEnvelope,
   type OperationEnvelope,
   type ProjectionReadError,
   type ProjectionWaitTimeout,
   type RunValue,
 } from "@durable-agent-substrate/substrate"
+import { DurableStream } from "@durable-streams/client"
 import {
   Context,
   Data,
   Effect,
   Layer,
-  ParseResult,
+  Option,
   Schema,
   Stream,
+  type ParseResult,
 } from "effect"
-import { SubstrateClient } from "../client/service.ts"
+import {
+  SubstrateClient,
+  SubstrateClientLive,
+  type SubstrateClientConfig,
+} from "../client/service.ts"
 
 // firegrid-operation-messaging.CLIENT_MESSAGING.1
 // firegrid-operation-messaging.CLIENT_MESSAGING.2
@@ -26,6 +34,9 @@ import { SubstrateClient } from "../client/service.ts"
 // firegrid-operation-messaging.CLIENT_MESSAGING.4
 // firegrid-operation-messaging.CLIENT_MESSAGING.6
 // firegrid-operation-messaging.APP_BOUNDARY.3
+// firegrid-event-streams.CLIENT_API.1
+// firegrid-event-streams.CLIENT_API.2
+// firegrid-event-streams.CLIENT_API.3
 // firegrid-event-streams.CLIENT_API.4
 //
 // FiregridClient is the typed app-facing client. It is a thin facade
@@ -33,12 +44,6 @@ import { SubstrateClient } from "../client/service.ts"
 // result/observe map to client.work.observe. Operation
 // input/output/error pass through the descriptor's Schema, so the
 // caller sees domain types end-to-end.
-//
-// EventStream emit/events are intentionally NOT exposed yet — there
-// is no real lowering path in this slice. Once event-plane
-// materializers land, the methods join FiregridClient with real
-// implementations (no NotYetLowered placeholders on the public
-// surface).
 
 // Substrate runs carry caller input on `data`. To dispatch by
 // Operation.name in runtime handlers, send wraps the encoded input
@@ -48,6 +53,15 @@ const wrap = (operation: string, payload: unknown): OperationEnvelope => ({
   _envelope: OPERATION_ENVELOPE_TAG,
   operation,
   payload,
+})
+
+// EventStreams carry caller-owned events on ordinary durable stream
+// rows. The envelope lives with the descriptor so future runtime
+// materializers and client readers share the same wire shape.
+const wrapEvent = (stream: string, payload: unknown): EventStreamEnvelope => ({
+  _envelope: EVENT_STREAM_ENVELOPE_TAG,
+  stream,
+  event: payload,
 })
 
 // ────────────────────────────────────────────────────────────────
@@ -81,7 +95,36 @@ export class OperationNotFound extends Data.TaggedError(
   readonly handleId: string
 }> {}
 
+export class EventStreamEncodeError extends Data.TaggedError(
+  "firegrid/EventStreamEncodeError",
+)<{
+  readonly stream: string
+  readonly cause: ParseResult.ParseError
+}> {}
+
+export class EventStreamDecodeError extends Data.TaggedError(
+  "firegrid/EventStreamDecodeError",
+)<{
+  readonly stream: string
+  readonly cause: ParseResult.ParseError
+}> {}
+
+export class EventStreamAppendError extends Data.TaggedError(
+  "firegrid/EventStreamAppendError",
+)<{
+  readonly stream: string
+  readonly cause: unknown
+}> {}
+
+export class EventStreamReadError extends Data.TaggedError(
+  "firegrid/EventStreamReadError",
+)<{
+  readonly stream: string
+  readonly cause: unknown
+}> {}
+
 export type SendError = OperationEncodeError
+export type EmitError = EventStreamEncodeError | EventStreamAppendError
 
 export type ResultError =
   | OperationDecodeError
@@ -91,6 +134,7 @@ export type ResultError =
   | ProjectionReadError
 
 export type ObserveError = ProjectionReadError | OperationDecodeError
+export type EventsError = EventStreamReadError | EventStreamDecodeError
 
 // ────────────────────────────────────────────────────────────────
 // OperationState (narrow, grounded directly in substrate run states)
@@ -136,6 +180,15 @@ export interface FiregridClientService {
     op: Op,
     handle: OperationHandle<Op>,
   ) => Stream.Stream<OperationState<Op>, ObserveError>
+
+  readonly emit: <S extends EventStream.Any>(
+    stream: S,
+    event: EventStream.Event<S>,
+  ) => Effect.Effect<void, EmitError>
+
+  readonly events: <S extends EventStream.Any>(
+    stream: S,
+  ) => Stream.Stream<EventStream.Event<S>, EventsError>
 }
 
 export class FiregridClient extends Context.Tag("firegrid/FiregridClient")<
@@ -143,10 +196,8 @@ export class FiregridClient extends Context.Tag("firegrid/FiregridClient")<
   FiregridClientService
 >() {}
 
-// EventStream descriptor + type helpers are usable today; client
-// emit/events lower in a later slice. Re-export the descriptor
-// namespaces so app code can import a single client module for
-// both descriptor + client APIs.
+// Re-export descriptor namespaces so app code can import a single
+// client module for operation messaging and EventStream APIs.
 export { EventStream, Operation, OperationHandle }
 
 // ────────────────────────────────────────────────────────────────
@@ -191,6 +242,28 @@ const decodeError = <Op extends Operation.Any>(
     ),
   ) as Effect.Effect<Operation.Error<Op>, OperationDecodeError>
 
+const encodeEvent = <S extends EventStream.Any>(
+  stream: S,
+  event: EventStream.Event<S>,
+): Effect.Effect<EventStream.EncodedEvent<S>, EventStreamEncodeError> =>
+  Schema.encodeUnknown(stream.event as Schema.Schema.AnyNoContext)(event).pipe(
+    Effect.mapError(
+      (cause) =>
+        new EventStreamEncodeError({ stream: stream.name, cause }),
+    ),
+  ) as Effect.Effect<EventStream.EncodedEvent<S>, EventStreamEncodeError>
+
+const decodeEvent = <S extends EventStream.Any>(
+  stream: S,
+  raw: unknown,
+): Effect.Effect<EventStream.Event<S>, EventStreamDecodeError> =>
+  Schema.decodeUnknown(stream.event as Schema.Schema.AnyNoContext)(raw).pipe(
+    Effect.mapError(
+      (cause) =>
+        new EventStreamDecodeError({ stream: stream.name, cause }),
+    ),
+  ) as Effect.Effect<EventStream.Event<S>, EventStreamDecodeError>
+
 const mapRunToState = <Op extends Operation.Any>(
   op: Op,
   run: RunValue | undefined,
@@ -207,7 +280,7 @@ const mapRunToState = <Op extends Operation.Any>(
     return decodeError(op, run.error).pipe(
       Effect.map(
         (error) =>
-          ({ _tag: "Failed" as const, error }) as OperationState<Op>,
+          ({ _tag: "Failed" as const, error }),
       ),
     )
   }
@@ -219,9 +292,20 @@ const mapRunToState = <Op extends Operation.Any>(
   })
 }
 
-const buildService = (
-  client: typeof SubstrateClient.Service,
-): FiregridClientService => {
+const buildService = (cfg: SubstrateClientConfig): FiregridClientService => {
+  const durable = new DurableStream({
+    url: cfg.streamUrl,
+    contentType: cfg.contentType ?? "application/json",
+  })
+
+  const withSubstrate = <A, E>(
+    f: (client: typeof SubstrateClient.Service) => Effect.Effect<A, E>,
+  ): Effect.Effect<A, E> =>
+    Effect.gen(function* () {
+      const client = yield* SubstrateClient
+      return yield* f(client)
+    }).pipe(Effect.provide(SubstrateClientLive(cfg)))
+
   const send: FiregridClientService["send"] = (op, input) =>
     Schema.encodeUnknown(op.input as Schema.Schema.AnyNoContext)(input).pipe(
       Effect.mapError(
@@ -229,11 +313,13 @@ const buildService = (
           new OperationEncodeError({ operation: op.name, cause }),
       ),
       Effect.flatMap((encoded) =>
-        client.work
-          .declare({ input: wrap(op.name, encoded) })
-          .pipe(
-            Effect.map(({ workId }) => OperationHandle.make(op, workId)),
-          ),
+        withSubstrate((client) =>
+          client.work
+            .declare({ input: wrap(op.name, encoded) })
+            .pipe(
+              Effect.map(({ workId }) => OperationHandle.make(op, workId)),
+            ),
+        ),
       ),
     )
 
@@ -259,7 +345,7 @@ const buildService = (
       if (run.state === "failed") {
         return decodeError(op, run.error).pipe(
           Effect.flatMap((decoded) =>
-            Effect.fail<Operation.Error<Op>>(decoded as Operation.Error<Op>),
+            Effect.fail<Operation.Error<Op>>(decoded),
           ),
         )
       }
@@ -278,32 +364,82 @@ const buildService = (
       // rather than die so the public error channel stays clean.
       return Effect.fail(new OperationNotFound({ handleId: handle.id }))
     }
-    return client.work
-      .observe(handle.id)
-      .until(isTerminalRun)
-      .pipe(Effect.flatMap(decideTerminal))
+    return withSubstrate((client) =>
+      client.work
+        .observe(handle.id)
+        .until(isTerminalRun)
+        .pipe(Effect.flatMap(decideTerminal)),
+    )
   }
 
   const call: FiregridClientService["call"] = (op, input) =>
     send(op, input).pipe(Effect.flatMap((handle) => result(op, handle)))
 
   const observe: FiregridClientService["observe"] = (op, handle) =>
-    client.work
-      .observe(handle.id)
-      .stream()
-      .pipe(Stream.mapEffect((run) => mapRunToState(op, run)))
+    Stream.unwrapScoped(
+      Effect.gen(function* () {
+        const client = yield* SubstrateClient
+        return client.work
+          .observe(handle.id)
+          .stream()
+          .pipe(Stream.mapEffect((run) => mapRunToState(op, run)))
+      }),
+    ).pipe(Stream.provideLayer(SubstrateClientLive(cfg)))
 
-  return { send, result, call, observe }
+  const emit: FiregridClientService["emit"] = (stream, event) =>
+    encodeEvent(stream, event).pipe(
+      Effect.flatMap((encoded) => {
+        return Effect.tryPromise({
+          try: () =>
+            durable.append(JSON.stringify(wrapEvent(stream.name, encoded))),
+          catch: (cause) =>
+            new EventStreamAppendError({ stream: stream.name, cause }),
+        })
+      }),
+      Effect.asVoid,
+    )
+
+  const rawEvents = <S extends EventStream.Any>(
+    stream: S,
+  ): Stream.Stream<unknown, EventStreamReadError> =>
+    Stream.unwrapScoped(
+      Effect.acquireRelease(
+        Effect.tryPromise({
+          try: () =>
+            durable.stream<unknown>({
+              offset: "-1",
+              live: true,
+            }),
+          catch: (cause) =>
+            new EventStreamReadError({ stream: stream.name, cause }),
+        }),
+        (response) => Effect.sync(() => response.cancel()),
+      ).pipe(
+        Effect.map((response) =>
+          Stream.fromAsyncIterable(
+            response.jsonStream(),
+            (cause) =>
+              new EventStreamReadError({ stream: stream.name, cause }),
+          ),
+        ),
+      ),
+    )
+
+  const events: FiregridClientService["events"] = (stream) =>
+    rawEvents(stream).pipe(
+      Stream.filterMapEffect((envelope) => {
+        if (!isEventStreamEnvelope(envelope)) return Option.none()
+        if (envelope.stream !== stream.name) return Option.none()
+        return Option.some(decodeEvent(stream, envelope.event))
+      }),
+    )
+
+  return { send, result, call, observe, emit, events }
 }
 
-export const FiregridClientLive: Layer.Layer<
-  FiregridClient,
-  never,
-  SubstrateClient
-> = Layer.effect(
-  FiregridClient,
-  Effect.gen(function* () {
-    const client = yield* SubstrateClient
-    return buildService(client)
-  }),
-)
+export type FiregridClientConfig = SubstrateClientConfig
+
+export const FiregridClientLive = (
+  cfg: FiregridClientConfig,
+): Layer.Layer<FiregridClient> =>
+  Layer.succeed(FiregridClient, buildService(cfg))

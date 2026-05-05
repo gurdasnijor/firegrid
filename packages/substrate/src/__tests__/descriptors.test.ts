@@ -109,6 +109,26 @@ describe("OperationHandle — descriptor-bound handle", () => {
     // @ts-expect-error handle for B is not assignable to handle for A
     consumeA(hb)
   })
+
+  it("same-name handles preserve the full descriptor type, not only the name", () => {
+    const SameString = Operation.define({
+      name: "Same",
+      input: Schema.String,
+      output: Schema.String,
+    })
+    const SameNumber = Operation.define({
+      name: "Same",
+      input: Schema.Number,
+      output: Schema.Number,
+    })
+    const hs = OperationHandle.make(SameString, "same-string")
+    const hn = OperationHandle.make(SameNumber, "same-number")
+    const consumeSameString = (_h: OperationHandle<typeof SameString>) =>
+      undefined
+    consumeSameString(hs)
+    // @ts-expect-error same operation name is not enough when schemas diverge
+    consumeSameString(hn)
+  })
 })
 
 describe("EventStream.define — descriptor shape", () => {
