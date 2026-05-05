@@ -48,10 +48,12 @@ export const attemptClaim = (
 
     const head = yield* Effect.tryPromise({
       try: () => stream.head(),
-      catch: (cause) => new ClaimStreamError(cause),
+      catch: (cause) => new ClaimStreamError({ cause }),
     })
     if (head.offset === undefined) {
-      return yield* Effect.fail(new ClaimMissingCursorError(args.streamUrl))
+      return yield* Effect.fail(
+        new ClaimMissingCursorError({ streamUrl: args.streamUrl }),
+      )
     }
     const observedCursor: string = head.offset
 
@@ -66,16 +68,18 @@ export const attemptClaim = (
     const claimEvent = substrateState.claimAttempts.insert({ value: claim })
     yield* Effect.tryPromise({
       try: () => stream.append(JSON.stringify(claimEvent)),
-      catch: (cause) => new ClaimStreamError(cause),
+      catch: (cause) => new ClaimStreamError({ cause }),
     })
 
     const attempts = yield* Effect.mapError(
       readRetainedClaimAttempts(args.streamUrl, args.workId),
-      (cause) => new ClaimStreamError(cause),
+      (cause) => new ClaimStreamError({ cause }),
     )
     const winner = firstValidClaim(args.workId, attempts)
     if (winner === undefined) {
-      return yield* Effect.fail(new ClaimWinnerMissingError(args.workId))
+      return yield* Effect.fail(
+        new ClaimWinnerMissingError({ workId: args.workId }),
+      )
     }
     return { claimId, winner }
   })

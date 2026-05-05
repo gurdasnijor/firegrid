@@ -1,3 +1,4 @@
+import { Data } from "effect"
 import type { ClaimAttemptValue } from "./schema/rows.ts"
 
 // Error classes shared between operator.ts (kernel single-shot operator) and
@@ -5,29 +6,22 @@ import type { ClaimAttemptValue } from "./schema/rows.ts"
 // Extracted to break the would-be cycle introduced when operator.ts also
 // imports the shared claim helper.
 
-export class ClaimStreamError extends Error {
-  readonly _tag = "ClaimStreamError"
-  constructor(readonly cause: unknown) {
-    super(`claim stream error: ${String(cause)}`)
-  }
-}
+export class ClaimStreamError extends Data.TaggedError("ClaimStreamError")<{
+  readonly cause: unknown
+}> {}
 
 // claim-and-operator-authority.CLAIM_ATTEMPT.8
-export class ClaimMissingCursorError extends Error {
-  readonly _tag = "ClaimMissingCursorError"
-  constructor(readonly streamUrl: string) {
-    super(`claim attempt requires a stream cursor; HEAD ${streamUrl} returned no offset`)
-  }
-}
+export class ClaimMissingCursorError extends Data.TaggedError(
+  "ClaimMissingCursorError",
+)<{
+  readonly streamUrl: string
+}> {}
 
-export class ClaimWinnerMissingError extends Error {
-  readonly _tag = "ClaimWinnerMissingError"
-  constructor(readonly workId: string) {
-    super(
-      `internal: no claim attempts visible for workId ${workId} after appending — projection may be stale`,
-    )
-  }
-}
+export class ClaimWinnerMissingError extends Data.TaggedError(
+  "ClaimWinnerMissingError",
+)<{
+  readonly workId: string
+}> {}
 
 // claim-and-operator-authority.CLAIM_AUTHORITY.1, .2, .3, .6
 // First-valid-claim-by-stream-order fold scoped to one workId.
