@@ -1,4 +1,5 @@
 import { createStreamDB } from "@durable-streams/state"
+import { Effect, type Scope } from "effect"
 import {
   snapshotFromDb,
   type ProjectionSnapshot,
@@ -24,8 +25,30 @@ export function openSubstrateDb(options: OpenSubstrateDbOptions): SubstrateStrea
   })
 }
 
+// firegrid-remediation-hardening.HOT_PATHS.2
+// firegrid-runtime-process.RUNTIME_HOT_PATH.1
+// Shared scoped live-db acquisition for long-running projection readers.
+// The initial preload is the no-gap catch-up boundary; callers then read
+// snapshots from the live handle instead of rebuilding per wake.
+export const acquireSubstrateDb = <E>(
+  options: OpenSubstrateDbOptions,
+  mapError: (cause: unknown) => E,
+): Effect.Effect<SubstrateStreamDB, E, Scope.Scope> =>
+  Effect.acquireRelease(
+    Effect.tryPromise({
+      try: async () => {
+        const db = openSubstrateDb(options)
+        await db.preload()
+        return db
+      },
+      catch: mapError,
+    }),
+    (db) => Effect.sync(() => db.close()),
+  )
+
 // durable-records-and-projections.REBUILD.1
 // durable-records-and-projections.REBUILD.4
+// firegrid-remediation-hardening.HOT_PATHS.3
 // Snapshot-only rebuild API: opens the StreamDB, preloads to the no-gap
 // snapshot boundary, returns a typed snapshot, and closes internally.
 // SUBSTRATE_SCOPE.8 — projection storage lifecycle is not part of the

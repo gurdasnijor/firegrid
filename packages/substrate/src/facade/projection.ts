@@ -4,7 +4,7 @@ import {
   type ProjectionSnapshot,
   type SubstrateStreamDB,
 } from "../projection.ts"
-import { openSubstrateDb } from "../stream.ts"
+import { acquireSubstrateDb } from "../stream.ts"
 
 // ergonomic-facade.PROJECTION_API.1, .2, .3, .4, .5, .6
 // Effect-native projection facade. Snapshot + Stream + Until over a
@@ -65,19 +65,12 @@ export interface ProjectionLiveConfig {
 }
 
 const acquireDb = (cfg: ProjectionLiveConfig) =>
-  Effect.acquireRelease(
-    Effect.tryPromise({
-      try: async () => {
-        const db = openSubstrateDb({
-          url: cfg.streamUrl,
-          ...(cfg.contentType !== undefined ? { contentType: cfg.contentType } : {}),
-        })
-        await db.preload()
-        return db
-      },
-      catch: (cause) => new ProjectionReadError({ cause }),
-    }),
-    (db) => Effect.sync(() => db.close()),
+  acquireSubstrateDb(
+    {
+      url: cfg.streamUrl,
+      ...(cfg.contentType !== undefined ? { contentType: cfg.contentType } : {}),
+    },
+    (cause) => new ProjectionReadError({ cause }),
   )
 
 const buildService = (db: SubstrateStreamDB): ProjectionService => {

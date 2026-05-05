@@ -1,10 +1,20 @@
 import {
-  openSubstrateDb,
+  acquireSubstrateDb,
   snapshotFromDb,
   type CompletionValue,
   type ProjectionSnapshot,
+  type SubstrateStreamDB,
 } from "@durable-agent-substrate/substrate"
-import { Cause, Clock, Data, Duration, Effect } from "effect"
+import {
+  Cause,
+  Clock,
+  Data,
+  Duration,
+  Effect,
+  Fiber,
+  Stream,
+  type Scope,
+} from "effect"
 import { RuntimeContext, type RuntimeContextService } from "../runtime-context.ts"
 
 // firegrid-runtime-process.RUNTIME_HOT_PATH.1
@@ -40,26 +50,19 @@ import { RuntimeContext, type RuntimeContextService } from "../runtime-context.t
 // collapse into exactly one follow-up scan. There is no fixed-
 // cadence polling.
 
-type CollectionsDb = ReturnType<typeof openSubstrateDb>
+type CollectionsDb = SubstrateStreamDB
 
 export class AcquireDbError extends Data.TaggedError("AcquireDbError")<{
   readonly cause: unknown
 }> {}
 
 const acquireDb = (cfg: RuntimeContextService) =>
-  Effect.acquireRelease(
-    Effect.tryPromise({
-      try: async () => {
-        const db = openSubstrateDb({
-          url: cfg.streamUrl,
-          contentType: cfg.contentType,
-        })
-        await db.preload()
-        return db
-      },
-      catch: (cause) => new AcquireDbError({ cause }),
-    }),
-    (db) => Effect.sync(() => db.close()),
+  acquireSubstrateDb(
+    {
+      url: cfg.streamUrl,
+      contentType: cfg.contentType,
+    },
+    (cause) => new AcquireDbError({ cause }),
   )
 
 export const minPendingDueAtMs = (
@@ -99,37 +102,88 @@ export const runScopedSubscriberProgram = <E>(
 ) =>
   Effect.gen(function* () {
     const cfg = yield* RuntimeContext
-    yield* Effect.forkScoped(runLoop(cfg, input))
+    yield* Effect.forkScoped(runScopedSubscriberLoop(cfg, input))
   })
 
-const runLoop = <E>(
+export const runScopedSubscriberLoop = <E>(
   cfg: RuntimeContextService,
+  input: ScopedProgramInput<E>,
+) =>
+  runScopedSubscriberLoopWithAcquire(acquireDb(cfg), input)
+
+export const runScopedSubscriberLoopWithAcquire = <E, E2>(
+  acquire: Effect.Effect<CollectionsDb, E2, Scope.Scope>,
   input: ScopedProgramInput<E>,
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const latch = yield* Effect.makeLatch(false)
-      const db = yield* acquireDb(cfg)
-      const unsubscribe = input.subscribe(db, () => latch.unsafeOpen())
-      yield* Effect.addFinalizer(() => Effect.sync(() => unsubscribe()))
+      const db = yield* acquire
+      return yield* runScopedSubscriberLoopFromDb(db, input)
+    }),
+  )
 
-      const step = Effect.gen(function* () {
-        const snapshot = snapshotFromDb(db)
-        yield* input.scan(snapshot)
-        const nowMs = yield* Clock.currentTimeMillis
-        const nextDue = input.nextDeadlineMs(snapshot)
-        const wait =
-          nextDue === undefined
-            ? latch.await
-            : Effect.race(
-                latch.await,
-                Effect.sleep(Duration.millis(Math.max(0, nextDue - nowMs))),
-              )
-        yield* wait
-        yield* latch.close
-      })
+export const runScopedSubscriberLoopFromDb = <E>(
+  db: CollectionsDb,
+  input: ScopedProgramInput<E>,
+) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let scheduleDeadline: (
+        nextDue: number | undefined,
+        nowMs: number,
+      ) => Effect.Effect<void> = () => Effect.void
 
-      return yield* Effect.forever(step).pipe(
+      const wakes = Stream.asyncScoped<void>(
+        (emit) =>
+          Effect.acquireRelease(
+            Effect.gen(function* () {
+              let deadlineFiber:
+                | Fiber.RuntimeFiber<void, never>
+                | undefined
+              const clearDeadline = (): Effect.Effect<void> => {
+                if (deadlineFiber === undefined) return Effect.void
+                const fiber = deadlineFiber
+                deadlineFiber = undefined
+                return Fiber.interrupt(fiber).pipe(Effect.asVoid)
+              }
+              const wake = () => {
+                void emit.single(undefined)
+              }
+              scheduleDeadline = (nextDue, nowMs) => {
+                return Effect.gen(function* () {
+                  yield* clearDeadline()
+                  if (nextDue === undefined) return
+                  const delayMs = Math.max(0, nextDue - nowMs)
+                  deadlineFiber = yield* Effect.sleep(
+                    Duration.millis(delayMs),
+                  ).pipe(Effect.tap(() => Effect.sync(wake)), Effect.fork)
+                })
+              }
+              const unsubscribe = input.subscribe(db, wake)
+              wake()
+              return () => {
+                scheduleDeadline = () => Effect.void
+                return clearDeadline().pipe(
+                  Effect.zipRight(Effect.sync(unsubscribe)),
+                )
+              }
+            }),
+            (finalize) => finalize(),
+          ),
+        { bufferSize: 1, strategy: "sliding" },
+      )
+
+      return yield* wakes.pipe(
+        Stream.mapEffect(() =>
+          Effect.gen(function* () {
+            const snapshot = snapshotFromDb(db)
+            yield* input.scan(snapshot)
+            const nowMs = yield* Clock.currentTimeMillis
+            const nextDue = input.nextDeadlineMs(snapshot)
+            yield* scheduleDeadline(nextDue, nowMs)
+          }),
+        ),
+        Stream.runDrain,
         Effect.tapErrorCause((cause) =>
           Cause.isInterruptedOnly(cause)
             ? Effect.void
