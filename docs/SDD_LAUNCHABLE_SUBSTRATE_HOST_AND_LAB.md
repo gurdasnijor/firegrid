@@ -166,10 +166,13 @@ be added later for external client use, but they must be thin wrappers over the
 Effect-native client and must not attempt to expose runtime suspension until a
 real call site needs it.
 
-Likewise, `SubstrateHost.withHost(...)` may provide `SubstrateClient` to the
-program it runs, but that client is the same capability as the standalone
+Likewise, `SubstrateHostBoot.withHost(...)` may provide `SubstrateClient` to
+the program it runs, but that client is the same capability as the standalone
 client. `withHost` owns lifecycle composition in development; it is not a
-different writer surface.
+different writer surface. (`withHost` is a function on the
+`SubstrateHostBoot` constructor namespace alongside `attached`, `embeddedDev`,
+and `attachedFromConfig`; it is not a static method on the `SubstrateHost`
+Context.Tag class.)
 
 ## Firepixel Shape Review
 
@@ -197,9 +200,9 @@ The substrate should adopt the shape, not the domain names:
 
 ```text
 SubstrateClient.open/use/run
-SubstrateHost.attached / attachedFromConfig
-SubstrateHost.embeddedDev / bootPlanFromConfig
-SubstrateHost.withHost
+SubstrateHostBoot.attached / attachedFromConfig
+SubstrateHostBoot.embeddedDev / bootPlanFromConfig
+SubstrateHostBoot.withHost
 SubstrateHostLive(plan, profiles)
 ```
 
@@ -215,7 +218,7 @@ const RuntimeProfileLive = Layer.mergeAll(
   PromptOperatorLive,
 )
 
-const program = SubstrateHost.withHost(
+const program = SubstrateHostBoot.withHost(
   Effect.gen(function* () {
     const substrate = yield* SubstrateClient
     return yield* substrate.work.observe("run:demo").snapshot()
@@ -443,7 +446,7 @@ const profiles = {
   fakePermission: FakePermissionProfileLive,
 } as const
 
-SubstrateHost.embeddedDev({
+SubstrateHostBoot.embeddedDev({
   streamName: "substrate-prototype",
   profile: profiles.prototype,
 })
@@ -576,11 +579,11 @@ The host package should expose thin constructors that mirror Firepixel's best
 runtime API pattern:
 
 ```ts
-SubstrateHost.attached({ streamUrl, processId, headers, profile })
-SubstrateHost.attachedFromConfig({ profile })
-SubstrateHost.embeddedDev({ streamName, durableStreamsPort, profile })
-SubstrateHost.bootPlanFromConfig
-SubstrateHost.withHost(effect, options)
+SubstrateHostBoot.attached({ streamUrl, processId, authorization, bearerToken, extraHeaders, profile })
+SubstrateHostBoot.attachedFromConfig({ profile })
+SubstrateHostBoot.embeddedDev({ streamName, durableStreamsPort, profile })
+SubstrateHostBoot.bootPlanFromConfig
+SubstrateHostBoot.withHost(effect, options)
 ```
 
 `withHost` is a development and test convenience that provides both the
@@ -591,7 +594,7 @@ processes and hosts in worker/runtime processes.
 When `withHost` provides `SubstrateClient`, that client is the same capability
 exposed by the standalone Effect-native client package. The only difference is
 lifecycle ownership: standalone client programs attach to an existing
-stream/runtime environment, while `SubstrateHost.withHost(...)` starts or
+stream/runtime environment, while `SubstrateHostBoot.withHost(...)` starts or
 attaches the host and provides a client connected to that same durable stream
 for the lifetime of the scope.
 
