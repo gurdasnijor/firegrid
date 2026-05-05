@@ -35,3 +35,11 @@ constraints:
       2: Runtime composition uses ordinary Effect Layers rather than a Firegrid-specific graph DSL.
       3: Low-level kernel APIs live in substrate and are not re-exported from the app-facing client root.
       4: Standalone apps live under apps/* and do not expose package-style public exports unless a spec declares an importable surface.
+
+  EFFECT_ARTIFACT_GRAPH:
+    requirements:
+      1: Architecture review tooling inventories exported Effect artifacts by structural role, including service tags, Layers, Schemas, tagged errors, Effect-returning functions, service interfaces, plain types, constants, and pure helpers.
+      2: Effect-returning export inventory records the success, error, and requirement channels and resolves requirement-channel services to their declaration locations when possible.
+      3: Boundary reports identify exported Effect artifacts and requirement-channel services that cross package or durable-core layer boundaries.
+      4: Export reports distinguish declarations from re-exports so public package roots can be audited without hiding original ownership.
+      5: Effect artifact inventory is emitted as structured data so SDD boundary rules can be checked independently from report rendering.
