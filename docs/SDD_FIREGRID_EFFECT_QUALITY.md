@@ -38,6 +38,13 @@ Review inputs:
 - `docs/REVIEW_EFFECT_RUNTIME_2026-05-05.md`
 - `docs/REVIEW_EFFECT_OBSERVABILITY_2026-05-05.md`
 - `docs/REVIEW_EFFECT_TESTING_2026-05-05.md`
+- `docs/REVIEW_EFFECT_FULL_AUDIT_2026-05-05.md`
+- `docs/REVIEW_EFFECT_ERROR_MANAGEMENT_2026-05-05.md`
+- `docs/REVIEW_EFFECT_PATTERN_MATCHING_2026-05-05.md`
+- `docs/REVIEW_EFFECT_TRAITS_2026-05-05.md`
+- `docs/REVIEW_EFFECT_BATCHING_CACHING_2026-05-05.md`
+- `docs/REVIEW_EFFECT_STATE_MANAGEMENT_2026-05-05.md`
+- `docs/REVIEW_EFFECT_STREAMS_2026-05-05.md`
 
 External detector reference:
 
@@ -195,6 +202,77 @@ The detector should remain advisory until the crash is fixed and false
 positives are filtered. High-confidence detector categories can later be ported
 into local ESLint or Semgrep rules after the corresponding source cleanup lands.
 
+## Full Audit Findings
+
+The full Effect audit expands the detector surface from production definite
+findings to the whole repository, including tests, scripts, features, and
+potential findings.
+
+Headline numbers from that run:
+
+| Metric | Count |
+| --- | ---: |
+| Files analyzed | 118 |
+| Total detector findings | 4,023 |
+| Definite findings | 2,089 |
+| Potential findings | 1,934 |
+| Source definite findings | 296 |
+| Source potential findings | 661 |
+| Test definite findings | 1,793 |
+| Test potential findings | 1,273 |
+
+Top definite categories:
+
+| Category | Count |
+| --- | ---: |
+| async | 1,267 |
+| testing | 212 |
+| imperative | 129 |
+| errors | 126 |
+| conditionals | 122 |
+| native-apis | 80 |
+| code-style | 74 |
+| discriminated-unions | 60 |
+| schema | 19 |
+
+Source hotspots from the full audit overlap with the curated reviews:
+
+| File | Findings |
+| --- | ---: |
+| `packages/substrate/src/schema/state-machine.ts` | 58 |
+| `packages/client/src/firegrid/operation-client.ts` | 55 |
+| `packages/substrate/src/subscribers.ts` | 54 |
+| `packages/substrate/src/waits.ts` | 45 |
+| `packages/substrate/src/event-plane/producer.ts` | 45 |
+| `packages/client/src/firegrid/event-client.ts` | 40 |
+| `packages/runtime/src/runtime/internal/operation-handler.ts` | 37 |
+| `apps/lab/src/lab/RawStreamInspector.tsx` | 35 |
+| `packages/substrate/src/choreography/service.ts` | 34 |
+| `packages/substrate/src/producer.ts` | 31 |
+
+Interpretation:
+
+- The full audit reinforces the existing remediation order rather than
+  replacing it. The same hotspots recur: runtime dispatch, client operation
+  calls, subscribers, waits, event-plane producer, RawStreamInspector, and
+  schema/state-machine.
+- Test findings dominate absolute counts. Test modernization should be a
+  focused `@effect/vitest` migration plan, not a forced rewrite of every test
+  before correctness and resource fixes.
+- Some recommendations are policy decisions, especially blanket
+  `Data.TaggedError -> Schema.TaggedError`, blanket `interface ->
+  Schema.Class`, and plain-function bans. These should not become strict gates
+  until Firegrid decides which boundaries require schema-backed serialization
+  and which are intentionally internal TypeScript surfaces.
+- High-confidence findings already align with planned work: `AnyNoContext`
+  codec centralization, completion-data schemas, `Data.TaggedEnum` candidates,
+  ID/time/random services, RawStreamInspector rewrite, and durable-stream
+  construction services.
+
+The full-audit detector JSON remains at `/tmp/firegrid-detect.json`; it is not
+committed because it is a large local analysis artifact and includes potential
+findings across tests and generated-style guard fixtures.
+
 ## Error Modeling Policy
 
 Error modeling is a policy decision. The detector recommends
@@ -205,6 +283,24 @@ Before enforcing either direction, decide whether each error family crosses
 durable storage, transport, or human-inspection boundaries. Wire-crossing
 errors should favor schema-backed encoding. Purely in-process failures may
 remain `Data.TaggedError` if that is the documented policy.
+
+The error-management review recommends making `Data.TaggedError` the Firegrid
+default policy today. Its rationale is that Firegrid does not currently decode
+error objects from the wire: durable rows carry domain payloads, operation
+descriptors carry caller-owned error schemas separately, and no package has an
+error-as-Schema composition requirement. `Schema.TaggedError` should be
+reserved for future boundaries that need to serialize and decode error
+instances.
+
+Additional error-management findings:
+
+- convert the two operation-handler `catchAll` append-error recoveries to
+  `catchTag("AppendEventError", ...)`
+- extract a shared `logCauseUnlessInterrupted` helper for long-lived loop
+  finalizers
+- document the `Data.TaggedError` policy in the repo's code-style guidance
+- make `Effect.orDie` justification comments mechanically auditable if the
+  guardrail evolves beyond warning on the call itself
 
 ## Data-Type Findings
 
@@ -229,6 +325,30 @@ Highest-leverage data-type findings:
 These are cleanup slices, not package-boundary requirements. They should not
 block the package-structure SDD, except where hand-rolled unions are exported as
 public durable-core API.
+
+## Pattern-Matching Findings
+
+The pattern-matching review finds the repo is better than the raw detector
+counts imply: no production `else if` chains, no deeply nested ifs, and only two
+production switches. Remaining work is concentrated in high-leverage
+discriminator walks.
+
+Highest-leverage pattern-matching findings:
+
+- replace run-state ladders in `operation-client.ts` with a shared exhaustive
+  matcher
+- convert subscriber `DueTimeDecision` and `ProjectionMatchOutcome` branches to
+  `Match.tag` after those unions are schema/data-backed
+- replace direct `Exit` / `Option` `_tag` probes in operation-handler,
+  projection-service, and lab UI with `Exit.match`, `Option.match`, or
+  `Option.getOrElse`
+- replace the operator's repeated `Either.isLeft` / `Either.isRight` checks
+  with one `Either.matchEffect`
+- migrate the `deriveBlockedRunOutcome` switch to an exhaustive Match shape
+
+Pattern matching cleanup should generally follow the data-type and schema
+cleanup for the affected unions. Direct `_tag` probes and the operator
+`Either` cluster can land independently.
 
 ## Schema Findings
 
@@ -355,6 +475,49 @@ Actionable findings:
   scoped helper can centralize construction before the upstream client grows
   release semantics.
 
+## Batching And Caching Findings
+
+The batching/caching review finds no production `Effect.cached`, `Cache`,
+`Request`, or `RequestResolver` usage today. That is acceptable for runtime hot
+paths after R1, where long-running fibers hold a live substrate DB handle, but
+one-shot readers still pay repeated full-stream costs.
+
+Highest-leverage findings:
+
+- refactor choreography `wrapSuspending` to eliminate a duplicate
+  `readAuthoritativeRun` before considering caching primitives
+- consider per-fiber `Effect.cached` only for handler-internal retained reads,
+  never across operator pre/post authority checks
+- consider per-fiber `Effect.cached` over `rebuildProjection` at the
+  carry-forward one-shot sites after documenting freshness semantics
+- defer `RequestResolver` batching for `readAuthoritativeRun` until the
+  narrower per-fiber cache boundary is proven safe
+- do not use in-memory `Request` dedupe as a substitute for durable idempotency
+
+The safety rule is explicit: first-valid-terminal authority reads must observe
+fresh durable state. Caching may be used between authority reads, not across
+them.
+
+## Streams Findings
+
+The streams review finds Firegrid's Effect Stream surface small and disciplined:
+`wakeStream` uses an explicit sliding buffer for edge coalescing,
+`Stream.unwrapScoped` binds client stream sessions to consumer scope, and the
+existing transformation pipelines are short and intent-revealing.
+
+Actionable streams findings:
+
+- document or address the materializer `Stream.async` default buffer size,
+  because `void emit.single(item)` discards the backpressure signal
+- refactor `RawStreamInspector` through the typed Effect Stream bridge already
+  used by the lab event panel
+- later, add a lint rule for fan-out `Stream.async` calls without explicit
+  `bufferSize`
+- later, add a lint rule forbidding raw `for await` over durable-streams
+  sessions outside an explicit Effect bridge
+
+No `Channel`, `Stream.merge`, or custom `Sink` migration is warranted today.
+
 ## Stream Sink Findings
 
 The stream sink review found a small and mostly clean surface:
@@ -432,6 +595,45 @@ Highest-leverage testing findings:
 This belongs in the Effect-quality track because it changes how Effect programs
 are tested, not how runtime packages are named.
 
+## Traits Findings
+
+The traits review is confirmatory. Firegrid has no production custom
+`Equal`, `Hash`, `Equivalence`, or `Order` implementations, and that is the
+right posture for the current data shapes.
+
+Findings:
+
+- production equality checks are primitive string/state/undefined comparisons,
+  not object identity checks
+- native `Map` / `ReadonlyMap` usage is keyed by strings and backed by
+  `@tanstack/db` collection state
+- no production sort sites need Effect `Order`
+- no `HashMap` / `HashSet` migration is recommended
+- branded ID migration remains a schema-boundary topic, not a traits topic
+
+No remediation slice is needed for traits unless future package boundaries
+introduce structural comparisons over non-primitive domain objects.
+
+## State-Management Findings
+
+The state-management review is also confirmatory. Production source has no
+`Ref`, `SubscriptionRef`, `SynchronizedRef`, or `TRef` usage, and that is the
+right design for a durable kernel.
+
+Findings:
+
+- durable rows and state collections are the authoritative state
+- closure-local `let` bindings in runtime loops are scoped to one fiber and do
+  not need `Ref`
+- React UI state belongs to React state at the app boundary
+- test `Ref` usage is idiomatic for recorders and counters
+- no `Ref`-based processed-run registry should be introduced because it would
+  create restart-fragile in-memory authority
+
+No state-management remediation slice is needed. The existing
+`local/no-module-durable-cache` and host-authority registry guardrails remain
+the relevant protection.
+
 ## Remediation Order
 
 1. Provide `CurrentWorkContext` inside runtime operation dispatch.
@@ -446,12 +648,20 @@ are tested, not how runtime packages are named.
    helpers across durable-core folders.
 7. Convert exported hand-rolled discriminated unions to `Data.TaggedEnum` where
    they are part of the durable-core API.
-8. Add first-pass observability at claim and operation-dispatch boundaries.
-9. Adopt `@effect/vitest` on pure/time-sensitive tests before broad test
+8. Centralize descriptor codec casts and remove repeated `AnyNoContext` call
+   sites from client/runtime hot paths.
+9. Rewrite RawStreamInspector around a scoped stream boundary.
+10. Document or fix event-stream materializer backpressure buffering.
+11. Refactor duplicate choreography retained-run reads before adopting cache or
+    Request primitives.
+12. Replace direct `_tag` probes and the operator `Either` cluster with
+    Effect data-type matchers.
+13. Add first-pass observability at claim and operation-dispatch boundaries.
+14. Adopt `@effect/vitest` on pure/time-sensitive tests before broad test
    rewrites.
-10. Address direct `_tag` checks, async boundary escapes, selected imperative
-   loops, and schema boundary modeling as focused slices.
-11. Use detector-backed strict rules only after the corresponding source cleanup
+15. Address async boundary escapes, selected imperative loops, and schema
+   boundary modeling as focused slices.
+16. Use detector-backed strict rules only after the corresponding source cleanup
    lands.
 
 ## Future Strict Guards
@@ -468,6 +678,12 @@ Candidate strict gates after remediation:
   outside a documented ID/time/random service boundary
 - no `new DurableStream(...)` outside a scoped helper if the constructor becomes
   resource-bearing
+- no repeated `Schema.Schema.AnyNoContext` casts outside the descriptor codec
+  boundary
+- no `Effect.catchAll` where a narrower `catchTag` is available for a
+  single-error channel
+- no fan-out `Stream.async` without an explicit buffer/backpressure decision
+- no raw durable-streams async iteration outside an explicit Effect bridge
 
 Do not flip these gates before cleanup. They should first run as advisory
 reports or narrowly scoped local rules.
