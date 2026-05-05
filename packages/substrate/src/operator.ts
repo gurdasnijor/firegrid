@@ -14,8 +14,7 @@ import {
   completeRun,
   failRun,
   foldRunRecords,
-  IllegalRunTransition,
-} from "./state-machine.ts"
+} from "./schema/state-machine.ts"
 
 // Re-export of the claim-fold function and error classes for callers that
 // imported them from operator.ts before the shared-helper extraction.
@@ -86,19 +85,6 @@ export interface ProcessReadyWorkItemArgs<A, E> {
   // generates a unique claimId per attempt (CLAIM_ATTEMPT.7).
   readonly claimId?: string
 }
-
-// Slice 6 adapter: state-machine builders throw IllegalRunTransition
-// synchronously for direct callers (Slice 2 boundary). Inside the operator we
-// route that throw into a typed Effect error so a stale terminal race becomes
-// a `terminalization-lost` outcome instead of a defect (OPERATOR_INVOCATION.13).
-const tryRunBuild = <A>(build: () => A) =>
-  Effect.try({
-    try: build,
-    catch: (cause): IllegalRunTransition => {
-      if (cause instanceof IllegalRunTransition) return cause
-      throw cause
-    },
-  })
 
 // claim-and-operator-authority.OPERATOR_INVOCATION.15 — terminal race detection
 // uses retained run-row authority via raw stream read + first-valid-terminal fold,
@@ -185,8 +171,8 @@ export const processReadyWorkItem = <A, E>(
     // OPERATOR_INVOCATION.11 — terminalization via state-machine builders, defensively wrapped.
     const buildResult = yield* Effect.either(
       Either.isRight(handlerResult)
-        ? tryRunBuild(() => completeRun(postRun, { result: handlerResult.right }))
-        : tryRunBuild(() => failRun(postRun, { error: handlerResult.left })),
+        ? completeRun(postRun, { result: handlerResult.right })
+        : failRun(postRun, { error: handlerResult.left }),
     )
     if (Either.isLeft(buildResult)) {
       // OPERATOR_INVOCATION.13 — race we did not catch via re-read; treat the

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
+import { Effect, Either } from "effect"
 import type { CompletionValue, RunValue } from "../schema/rows.ts"
+import * as schemaStateMachine from "../schema/state-machine.ts"
 import * as substrate from "../index.ts"
 import {
   blockRun,
@@ -30,7 +32,77 @@ const runValueOf = (
   e: ReturnType<typeof startRun>,
 ): RunValue => e.value as RunValue
 
+const completionStates = [
+  undefined,
+  "pending",
+  "resolved",
+  "rejected",
+  "cancelled",
+] as const
+
+const runStates = [
+  undefined,
+  "started",
+  "blocked",
+  "completed",
+  "failed",
+  "cancelled",
+] as const
+
 describe("awakeables-and-runs.COMPLETION_TRANSITIONS", () => {
+  it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.1 + awakeables-and-runs.COMPLETION_TRANSITIONS.1/.2/.3/.4 — declarative completion machine proves legal and illegal transitions", () => {
+    const legal = new Set([
+      "absent->pending",
+      "pending->resolved",
+      "pending->rejected",
+      "pending->cancelled",
+    ])
+    for (const from of completionStates) {
+      for (const to of ["pending", "resolved", "rejected", "cancelled"] as const) {
+        const key = `${from ?? "absent"}->${to}`
+        expect(isLegalCompletionTransition(from, to)).toBe(legal.has(key))
+      }
+    }
+  })
+
+  it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.3 + effect-native-api.EFFECT_SERVICES.11 — completion builders fail as tagged Effect errors", () => {
+    const pending = pendingValue(createPendingCompletion({ completionId: "c-sm-3", kind: "timer" }))
+    const resolved = resolveCompletion(pending, { result: "ok" }).value as CompletionValue
+    const result = Effect.runSync(
+      Effect.either(
+        schemaStateMachine.resolveCompletion(resolved, { result: "again" }),
+      ),
+    )
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(IllegalCompletionTransition)
+      expect(result.left._tag).toBe("IllegalCompletionTransition")
+    }
+  })
+
+  it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2/.4 — schema-adjacent completion builder preserves durable row shape", () => {
+    const event = Effect.runSync(
+      schemaStateMachine.createPendingCompletion({
+        completionId: "c-shape",
+        workId: "run-shape",
+        kind: "timer",
+        data: { dueAtMs: 1 },
+      }),
+    )
+    expect(event).toEqual({
+      type: "durable.completion",
+      key: "c-shape",
+      value: {
+        completionId: "c-shape",
+        workId: "run-shape",
+        kind: "timer",
+        state: "pending",
+        data: { dueAtMs: 1 },
+      },
+      headers: { operation: "insert" },
+    })
+  })
+
   it("awakeables-and-runs.COMPLETION_TRANSITIONS.1 — absent may transition to pending", () => {
     expect(isLegalCompletionTransition(undefined, "pending")).toBe(true)
     const event = createPendingCompletion({ completionId: "c-1", kind: "timer" })
@@ -220,6 +292,63 @@ describe("awakeables-and-runs.AWAKEABLE", () => {
 })
 
 describe("awakeables-and-runs.RUN_TRANSITIONS", () => {
+  it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.1 + awakeables-and-runs.RUN_TRANSITIONS.1/.2/.3/.4/.5 — declarative run machine proves legal and illegal transitions", () => {
+    const legal = new Set([
+      "absent->started",
+      "started->blocked",
+      "started->completed",
+      "started->failed",
+      "started->cancelled",
+      "blocked->completed",
+      "blocked->failed",
+      "blocked->cancelled",
+    ])
+    for (const from of runStates) {
+      for (const to of [
+        "started",
+        "blocked",
+        "completed",
+        "failed",
+        "cancelled",
+      ] as const) {
+        const key = `${from ?? "absent"}->${to}`
+        expect(isLegalRunTransition(from, to)).toBe(legal.has(key))
+      }
+    }
+  })
+
+  it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.3 + effect-native-api.EFFECT_SERVICES.11 — run builders fail as tagged Effect errors", () => {
+    const started = runValueOf(startRun({ runId: "run-sm-3" }))
+    const completed = completeRun(started, { result: "ok" }).value as RunValue
+    const result = Effect.runSync(
+      Effect.either(schemaStateMachine.failRun(completed, { error: "again" })),
+    )
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      expect(result.left).toBeInstanceOf(IllegalRunTransition)
+      expect(result.left._tag).toBe("IllegalRunTransition")
+    }
+  })
+
+  it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2/.4 — schema-adjacent run builder preserves durable row shape", () => {
+    const event = Effect.runSync(
+      schemaStateMachine.startRun({
+        runId: "run-shape",
+        data: { input: true },
+      }),
+    )
+    expect(event).toEqual({
+      type: "durable.run",
+      key: "run-shape",
+      value: {
+        runId: "run-shape",
+        state: "started",
+        data: { input: true },
+      },
+      headers: { operation: "insert" },
+    })
+  })
+
   it("awakeables-and-runs.RUN_TRANSITIONS.1 — absent may transition to started", () => {
     expect(isLegalRunTransition(undefined, "started")).toBe(true)
     expect(isLegalRunTransition(undefined, "blocked")).toBe(false)

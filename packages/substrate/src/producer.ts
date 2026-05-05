@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto"
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
-import { Context, Effect, Layer } from "effect"
+import { Context, Data, Effect, Layer } from "effect"
 import {
   cancelCompletion as buildCancelCompletion,
   rejectCompletion as buildRejectCompletion,
   resolveCompletion as buildResolveCompletion,
   IllegalCompletionTransition,
   startRun,
-} from "./state-machine.ts"
+} from "./schema/state-machine.ts"
 import { rebuildProjection } from "./stream.ts"
 
 // effect-native-api.EFFECT_SERVICES.3
@@ -22,19 +22,15 @@ class SubstrateProducerConfig extends Context.Tag(
   { readonly streamUrl: string; readonly contentType?: string }
 >() {}
 
-export class ProducerStreamError extends Error {
-  readonly _tag = "ProducerStreamError"
-  constructor(readonly cause: unknown) {
-    super(`producer stream error: ${String(cause)}`)
-  }
-}
+export class ProducerStreamError extends Data.TaggedError("ProducerStreamError")<{
+  readonly cause: unknown
+}> {}
 
-export class CompletionNotFoundError extends Error {
-  readonly _tag = "CompletionNotFoundError"
-  constructor(readonly completionId: string) {
-    super(`completion ${completionId} not found in retained stream`)
-  }
-}
+export class CompletionNotFoundError extends Data.TaggedError(
+  "CompletionNotFoundError",
+)<{
+  readonly completionId: string
+}> {}
 
 // effect-native-api.EFFECT_SERVICES.1
 // semantic-producer.PRODUCER_ROLE.1, .2, .5
@@ -53,7 +49,7 @@ export class WorkProducer extends Effect.Service<WorkProducer>()(
       const append = (event: ChangeEvent) =>
         Effect.tryPromise({
           try: () => stream.append(JSON.stringify(event)),
-          catch: (cause) => new ProducerStreamError(cause),
+          catch: (cause) => new ProducerStreamError({ cause }),
         })
 
       // launchable-substrate-host.CLIENT_SURFACE.11
@@ -90,7 +86,7 @@ export class WorkProducer extends Effect.Service<WorkProducer>()(
         }) =>
           Effect.gen(function* () {
             const runId = input?.runId ?? randomUUID()
-            const event = startRun({
+            const event = yield* startRun({
               runId,
               ...(input?.data !== undefined ? { data: input.data } : {}),
             })
@@ -120,7 +116,7 @@ export class CompletionProducer extends Effect.Service<CompletionProducer>()(
       const append = (event: ChangeEvent) =>
         Effect.tryPromise({
           try: () => stream.append(JSON.stringify(event)),
-          catch: (cause) => new ProducerStreamError(cause),
+          catch: (cause) => new ProducerStreamError({ cause }),
         })
 
       // Terminalization needs the kind from the existing pending record.
@@ -130,27 +126,13 @@ export class CompletionProducer extends Effect.Service<CompletionProducer>()(
         Effect.gen(function* () {
           const snapshot = yield* Effect.tryPromise({
             try: () => rebuildProjection({ url: config.streamUrl }),
-            catch: (cause) => new ProducerStreamError(cause),
+            catch: (cause) => new ProducerStreamError({ cause }),
           })
           const current = snapshot.completions.get(completionId)
           if (current === undefined) {
-            return yield* Effect.fail(new CompletionNotFoundError(completionId))
+            return yield* Effect.fail(new CompletionNotFoundError({ completionId }))
           }
           return current
-        })
-
-      // effect-native-api.EFFECT_SERVICES.6
-      // State-machine builders throw IllegalCompletionTransition synchronously
-      // for direct callers (Slice 2 boundary). At the producer boundary that
-      // throw is wrapped into the Effect error channel so callers can recover
-      // via Effect.either / Effect.catchTag. Anything else surfaces as a defect.
-      const tryBuild = <A>(build: () => A) =>
-        Effect.try({
-          try: build,
-          catch: (cause): IllegalCompletionTransition => {
-            if (cause instanceof IllegalCompletionTransition) return cause
-            throw cause
-          },
         })
 
       return {
@@ -161,9 +143,9 @@ export class CompletionProducer extends Effect.Service<CompletionProducer>()(
         }) =>
           Effect.gen(function* () {
             const current = yield* loadCurrent(input.completionId)
-            const event = yield* tryBuild(() =>
-              buildResolveCompletion(current, { result: input.result }),
-            )
+            const event = yield* buildResolveCompletion(current, {
+              result: input.result,
+            })
             yield* append(event)
             return { completionId: input.completionId, state: "resolved" as const }
           }),
@@ -175,9 +157,9 @@ export class CompletionProducer extends Effect.Service<CompletionProducer>()(
         }) =>
           Effect.gen(function* () {
             const current = yield* loadCurrent(input.completionId)
-            const event = yield* tryBuild(() =>
-              buildRejectCompletion(current, { error: input.error }),
-            )
+            const event = yield* buildRejectCompletion(current, {
+              error: input.error,
+            })
             yield* append(event)
             return { completionId: input.completionId, state: "rejected" as const }
           }),
@@ -189,9 +171,9 @@ export class CompletionProducer extends Effect.Service<CompletionProducer>()(
         }) =>
           Effect.gen(function* () {
             const current = yield* loadCurrent(input.completionId)
-            const event = yield* tryBuild(() =>
-              buildCancelCompletion(current, { terminalReason: input.terminalReason }),
-            )
+            const event = yield* buildCancelCompletion(current, {
+              terminalReason: input.terminalReason,
+            })
             yield* append(event)
             return { completionId: input.completionId, state: "cancelled" as const }
           }),
