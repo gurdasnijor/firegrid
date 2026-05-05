@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-import { Command, CommandExecutor, Terminal } from "@effect/platform"
+import { Command, Terminal, type CommandExecutor } from "@effect/platform"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { Data, Effect } from "effect"
 import { FiregridRuntime, FiregridRuntimeBoot } from "../src/index.ts"

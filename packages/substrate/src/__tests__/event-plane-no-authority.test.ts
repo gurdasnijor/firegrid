@@ -1,6 +1,6 @@
 import { DurableStream } from "@durable-streams/client"
 import { createStateSchema } from "@durable-streams/state"
-import { Cause, Duration, Effect, Exit, Ref, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Ref, Schema, Stream } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   EventPlane,

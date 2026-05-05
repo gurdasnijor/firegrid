@@ -24,6 +24,7 @@ const countIssues = (report) =>
   }, 0)
 
 // firegrid-remediation-hardening.STATIC_QUALITY.1
+// firegrid-remediation-hardening.STATIC_QUALITY.9
 const report = runKnipJson()
 const current = countIssues(report)
 const baseline = JSON.parse(readFileSync(".knip-baseline.json", "utf8"))
@@ -34,9 +35,14 @@ if (typeof threshold !== "number") {
   process.exit(1)
 }
 
-if (current > threshold) {
-  error(`Dead-code regression: current=${current} > baseline=${threshold}.`)
+if (threshold !== 0) {
+  error(`Dead-code baseline must stay at zero; found baseline=${threshold}.`)
   process.exit(1)
 }
 
-log(`Dead-code baseline OK: current=${current}, baseline=${threshold}`)
+if (current !== 0) {
+  error(`Dead-code findings must stay at zero; current=${current}.`)
+  process.exit(1)
+}
+
+log(`Dead-code strict gate OK: current=${current}, baseline=${threshold}`)

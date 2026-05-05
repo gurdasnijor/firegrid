@@ -199,11 +199,9 @@ describe("durable-records-and-projections.REBUILD", () => {
     const url = freshStreamUrl("rebuild-4")
     await publishToStream(url, [runEvent.insert({ runId: "run-1", state: "started" })])
     const snapshot = await rebuildProjection({ url })
-    expect(snapshot).toMatchObject({
-      foldVersion: expect.any(Number),
-      runs: expect.any(Map),
-      completions: expect.any(Map),
-      claimAttempts: expect.any(Map),
-    })
+    expect(typeof snapshot.foldVersion).toBe("number")
+    expect(snapshot.runs).toBeInstanceOf(Map)
+    expect(snapshot.completions).toBeInstanceOf(Map)
+    expect(snapshot.claimAttempts).toBeInstanceOf(Map)
   })
 })

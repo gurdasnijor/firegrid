@@ -8,7 +8,6 @@ import {
 } from "../producer.ts"
 import type { CompletionValue } from "../schema/rows.ts"
 import { createPendingCompletion } from "../state-machine.ts"
-import { substrateState } from "../schema/state.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   runProjectionMatchSubscriber,

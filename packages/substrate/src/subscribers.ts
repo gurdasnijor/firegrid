@@ -159,13 +159,30 @@ const runDueTimeSubscriberFromSnapshot = <
   input: SubscriberInput,
   profile: DueTimeProfile<K>,
 ): Effect.Effect<ReadonlyArray<string>, SubscriberError> =>
+  scanPendingCompletions(snapshot, input, profile.kind, (ctx, completion) =>
+    processDueTimeCandidate(
+      ctx.stream,
+      completion,
+      ctx.nowMs,
+      profile.decide,
+    ),
+  )
+
+const scanPendingCompletions = <K extends CompletionKind, A>(
+  snapshot: ProjectionSnapshot,
+  input: SubscriberInput,
+  kind: K,
+  process: (
+    ctx: { readonly stream: DurableStream; readonly nowMs: number },
+    completion: PendingOf<K>,
+  ) => Effect.Effect<Option.Option<A>, SubscriberError>,
+): Effect.Effect<ReadonlyArray<A>, SubscriberError> =>
   Effect.gen(function* () {
     const stream = openStream(input)
     const nowMs = yield* Clock.currentTimeMillis
     const outcomes = yield* Effect.forEach(
-      collectPending(snapshot, profile.kind),
-      (completion) =>
-        processDueTimeCandidate(stream, completion, nowMs, profile.decide),
+      collectPending(snapshot, kind),
+      (completion) => process({ stream, nowMs }, completion),
     )
     return outcomes.flatMap(Option.toArray)
   })
@@ -300,20 +317,19 @@ export const runProjectionMatchSubscriberFromSnapshot = (
   input: ProjectionMatchSubscriberInput,
 ): Effect.Effect<ProjectionMatchSubscriberResult, SubscriberError> =>
   Effect.gen(function* () {
-    const stream = openStream(input)
-    const nowMs = yield* Clock.currentTimeMillis
-    const outcomes = yield* Effect.forEach(
-      collectPending(snapshot, "projection_match"),
-      (completion) =>
+    const flat = yield* scanPendingCompletions(
+      snapshot,
+      input,
+      "projection_match",
+      (ctx, completion) =>
         processProjectionMatchCandidate(
-          stream,
+          ctx.stream,
           snapshot,
           completion,
-          nowMs,
+          ctx.nowMs,
           input.evaluate,
         ),
     )
-    const flat = outcomes.flatMap(Option.toArray)
     return {
       resolvedIds: flat.flatMap((o) => (o.kind === "resolved" ? [o.id] : [])),
       cancelledIds: flat.flatMap((o) => (o.kind === "cancelled" ? [o.id] : [])),

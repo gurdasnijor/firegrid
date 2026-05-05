@@ -19,6 +19,7 @@ import { rebuildProjection } from "../stream.ts"
 import {
   runProjectionMatchSubscriber,
   runScheduledWorkSubscriber,
+  type ProjectionMatchEvaluator,
 } from "../subscribers.ts"
 import { DurableWaitsLive } from "../waits.ts"
 import {
@@ -185,7 +186,7 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.1 — fake ACP-permission-sh
     // gives the substrate snapshot; for the plane snapshot we read raw
     // plane rows via the plane projection layer). For test simplicity
     // we read the plane state through a fresh DurableStream session.
-    const evaluator: import("../subscribers.ts").ProjectionMatchEvaluator = (
+    const evaluator: ProjectionMatchEvaluator = (
       _substrateSnapshot,
       _trigger,
       _completion,

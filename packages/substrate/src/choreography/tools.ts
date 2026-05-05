@@ -115,10 +115,8 @@ const observeBlockedCompletion = (
       run.state !== "blocked" ||
       run.blockedOnCompletionId === undefined
     ) {
-      return yield* Effect.die(
-        new Error(
-          `tool harness: post-interrupt run ${workId} is not in blocked state (state=${run?.state})`,
-        ),
+      return yield* Effect.dieMessage(
+        `tool harness: post-interrupt run ${workId} is not in blocked state (state=${run?.state})`,
       )
     }
     return toCompletionId(run.blockedOnCompletionId)
@@ -157,27 +155,21 @@ const wrapSuspending = <R>(
       Effect.orDie,
     )
     if (preCall === undefined) {
-      return yield* Effect.die(
-        new Error(
-          `tool harness: ${operation} pre-call run ${workId} not found in retained records`,
-        ),
+      return yield* Effect.dieMessage(
+        `tool harness: ${operation} pre-call run ${workId} not found in retained records`,
       )
     }
     if (preCall.state !== "started") {
-      return yield* Effect.die(
-        new Error(
-          `tool harness: ${operation} pre-call run ${workId} is not in state="started" (state=${preCall.state}); refusing to translate any later interrupt into a suspension`,
-        ),
+      return yield* Effect.dieMessage(
+        `tool harness: ${operation} pre-call run ${workId} is not in state="started" (state=${preCall.state}); refusing to translate any later interrupt into a suspension`,
       )
     }
 
     return yield* call.pipe(
       Effect.matchCauseEffect({
         onSuccess: (): Effect.Effect<ChoreographySuspension> =>
-          Effect.die(
-            new Error(
-              `tool harness: ${operation} returned without suspending; expected interrupt`,
-            ),
+          Effect.dieMessage(
+            `tool harness: ${operation} returned without suspending; expected interrupt`,
           ),
         onFailure: (
           cause,

@@ -61,11 +61,7 @@ const buildCoreRuntimeLayer = <E, GraphRIn>(
       const serviceLayer = Layer.succeed(FiregridRuntime, runtimeService)
 
       if (runtime === undefined) {
-        return serviceLayer as Layer.Layer<
-          FiregridRuntime,
-          E,
-          Exclude<GraphRIn, RuntimeContext>
-        >
+        return serviceLayer
       }
 
       const runtimeContextLayer = Layer.succeed(RuntimeContext, {
@@ -78,6 +74,25 @@ const buildCoreRuntimeLayer = <E, GraphRIn>(
       return Layer.mergeAll(serviceLayer, wired)
     }),
   )
+
+const buildRuntimeCoreFromOptions = <E, GraphRIn>(
+  opts: {
+    readonly processId?: string
+    readonly runtime?: Layer.Layer<never, E, GraphRIn>
+    readonly contentType?: string
+  },
+) => {
+  const contentType = opts.contentType ?? "application/json"
+  const processId = opts.processId ?? generateProcessId()
+  return {
+    contentType,
+    core: buildCoreRuntimeLayer<E, GraphRIn>(
+      processId,
+      contentType,
+      opts.runtime,
+    ),
+  }
+}
 
 export interface AttachedRuntimeOptions<
   E = never,
@@ -105,13 +120,7 @@ export const FiregridRuntimeBoot = {
   attached: <E = never, GraphRIn = RuntimeContext>(
     opts: AttachedRuntimeOptions<E, GraphRIn>,
   ): Layer.Layer<FiregridRuntime, E, Exclude<GraphRIn, RuntimeContext>> => {
-    const contentType = opts.contentType ?? "application/json"
-    const processId = opts.processId ?? generateProcessId()
-    const core = buildCoreRuntimeLayer<E, GraphRIn>(
-      processId,
-      contentType,
-      opts.runtime,
-    )
+    const { core } = buildRuntimeCoreFromOptions(opts)
     // The internal `RuntimeStreamResolver` Tag is never part of
     // the caller's supplied GraphRIn, so eliminating it via
     // `Layer.provide` cleanly leaves only `Exclude<GraphRIn,
@@ -127,13 +136,7 @@ export const FiregridRuntimeBoot = {
   embeddedDev: <E = never, GraphRIn = RuntimeContext>(
     opts: EmbeddedDevRuntimeOptions<E, GraphRIn> = {},
   ): Layer.Layer<FiregridRuntime, E, Exclude<GraphRIn, RuntimeContext>> => {
-    const contentType = opts.contentType ?? "application/json"
-    const processId = opts.processId ?? generateProcessId()
-    const core = buildCoreRuntimeLayer<E, GraphRIn>(
-      processId,
-      contentType,
-      opts.runtime,
-    )
+    const { contentType, core } = buildRuntimeCoreFromOptions(opts)
     const resolver = embeddedResolverLayer({
       host: opts.durableStreamsHost ?? "127.0.0.1",
       port: opts.durableStreamsPort ?? 0,

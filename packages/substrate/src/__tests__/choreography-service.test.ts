@@ -4,7 +4,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   Choreography,
   ChoreographyLive,
-  CurrentWorkContext,
   OwnerId,
   WorkId,
   currentWorkContextLayer,

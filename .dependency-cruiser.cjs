@@ -26,8 +26,9 @@ module.exports = {
       },
     },
     {
+      // firegrid-remediation-hardening.STATIC_QUALITY.8
       name: "not-to-deprecated",
-      severity: "warn",
+      severity: "error",
       comment:
         "This module uses a deprecated npm package. Upgrade it or replace it.",
       from: {},
@@ -53,8 +54,9 @@ module.exports = {
       },
     },
     {
+      // firegrid-remediation-hardening.STATIC_QUALITY.8
       name: "no-duplicate-dep-types",
-      severity: "warn",
+      severity: "error",
       comment:
         "This module depends on an external package declared in more than one dependency bucket.",
       from: {},
@@ -99,8 +101,9 @@ module.exports = {
       comment: "Use @firegrid/substrate/kernel subpath, not deep imports.",
     },
     {
+      // firegrid-remediation-hardening.STATIC_QUALITY.8
       name: "no-orphans",
-      severity: "warn",
+      severity: "error",
       from: {
         orphan: true,
         pathNot: [

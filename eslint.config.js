@@ -402,6 +402,7 @@ export default tseslint.config(
     ],
   },
   js.configs.recommended,
+  // firegrid-remediation-hardening.STATIC_QUALITY.7
   ...tsOnly(tseslint.configs.recommendedTypeChecked),
   {
     files: ["**/*.js"],
@@ -803,7 +804,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/**/src/__tests__/**/*.ts", "packages/**/*.test.ts"],
+    files: [
+      "packages/**/src/__tests__/**/*.ts",
+      "apps/**/src/__tests__/**/*.ts",
+      "packages/**/*.test.ts",
+      "apps/**/*.test.ts",
+    ],
     rules: {
       "@typescript-eslint/no-unsafe-argument": "warn",
       "@typescript-eslint/no-unsafe-assignment": "warn",

@@ -16,6 +16,7 @@ import {
   type Scope,
 } from "effect"
 import { RuntimeContext, type RuntimeContextService } from "../runtime-context.ts"
+import { wakeStream } from "./wake-stream.ts"
 
 // firegrid-runtime-process.RUNTIME_HOT_PATH.1
 //
@@ -133,44 +134,36 @@ export const runScopedSubscriberLoopFromDb = <E>(
         nowMs: number,
       ) => Effect.Effect<void> = () => Effect.void
 
-      const wakes = Stream.asyncScoped<void>(
-        (emit) =>
-          Effect.acquireRelease(
-            Effect.gen(function* () {
-              let deadlineFiber:
-                | Fiber.RuntimeFiber<void, never>
-                | undefined
-              const clearDeadline = (): Effect.Effect<void> => {
-                if (deadlineFiber === undefined) return Effect.void
-                const fiber = deadlineFiber
-                deadlineFiber = undefined
-                return Fiber.interrupt(fiber).pipe(Effect.asVoid)
-              }
-              const wake = () => {
-                void emit.single(undefined)
-              }
-              scheduleDeadline = (nextDue, nowMs) => {
-                return Effect.gen(function* () {
-                  yield* clearDeadline()
-                  if (nextDue === undefined) return
-                  const delayMs = Math.max(0, nextDue - nowMs)
-                  deadlineFiber = yield* Effect.sleep(
-                    Duration.millis(delayMs),
-                  ).pipe(Effect.tap(() => Effect.sync(wake)), Effect.fork)
-                })
-              }
-              const unsubscribe = input.subscribe(db, wake)
-              wake()
-              return () => {
-                scheduleDeadline = () => Effect.void
-                return clearDeadline().pipe(
-                  Effect.zipRight(Effect.sync(unsubscribe)),
-                )
-              }
-            }),
-            (finalize) => finalize(),
-          ),
-        { bufferSize: 1, strategy: "sliding" },
+      const wakes = wakeStream((wake) =>
+        Effect.gen(function* () {
+          let deadlineFiber:
+            | Fiber.RuntimeFiber<void, never>
+            | undefined
+          const clearDeadline = (): Effect.Effect<void> => {
+            if (deadlineFiber === undefined) return Effect.void
+            const fiber = deadlineFiber
+            deadlineFiber = undefined
+            return Fiber.interrupt(fiber).pipe(Effect.asVoid)
+          }
+          scheduleDeadline = (nextDue, nowMs) => {
+            return Effect.gen(function* () {
+              yield* clearDeadline()
+              if (nextDue === undefined) return
+              const delayMs = Math.max(0, nextDue - nowMs)
+              deadlineFiber = yield* Effect.sleep(
+                Duration.millis(delayMs),
+              ).pipe(Effect.tap(() => Effect.sync(wake)), Effect.fork)
+            })
+          }
+          const unsubscribe = input.subscribe(db, wake)
+          wake()
+          return Effect.sync(() => {
+            scheduleDeadline = () => Effect.void
+          }).pipe(
+            Effect.zipRight(clearDeadline()),
+            Effect.zipRight(Effect.sync(unsubscribe)),
+          )
+        }),
       )
 
       return yield* wakes.pipe(
