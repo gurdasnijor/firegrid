@@ -532,30 +532,37 @@ That shape lets the first implementation reuse `runTimerSubscriber` and
 delivery subscriber can add durable cursor/progress records without changing the
 host/client boundary.
 
-The host should expose an in-process read-only status service for subscriber
-program state. HTTP diagnostics can read from that service later, but Slice 5
-does not create HTTP routes. Minimum subscriber status:
+Subscriber status should be projection-first. Durable state such as pending
+timer completions, pending scheduled-work completions, resolved terminal rows,
+blocked runs, and future subscriber progress or cursor records should be read
+from Durable Streams / Durable State projections.
+
+Host-local lifecycle state is only diagnostic. It can say what this process has
+configured and whether a scoped subscriber program is currently alive, but it is
+not subscriber progress authority and it must not replace durable cursor,
+retry, dead-letter, completion, or terminalization records.
+
+HTTP diagnostics can later combine both views:
+
+- durable projections for substrate facts and future subscriber progress rows;
+- ephemeral host process status for local liveness only.
+
+Slice 5 should not create HTTP routes. If it exposes an in-process diagnostic
+service, keep the shape intentionally narrow:
 
 ```ts
-interface SubscriberProgramStatus {
+interface SubscriberProgramLiveness {
   readonly kind: "timer" | "scheduled_work"
   readonly enabled: boolean
   readonly running: boolean
-  readonly wakeCount: number
-  readonly scanCount: number
-  readonly successCount: number
-  readonly failureCount: number
-  readonly lastWakeAtMs?: number
-  readonly lastScanStartedAtMs?: number
-  readonly lastScanFinishedAtMs?: number
-  readonly lastSuccessAtMs?: number
   readonly lastErrorSummary?: string
 }
 ```
 
-The status service is host-owned lifecycle state, not durable substrate state.
-It must not expose authorization headers or secret config values, and it must
-not provide mutation methods.
+Counts, cursor positions, retry/dead-letter state, and durable terminalization
+history should come from durable records/projections once the corresponding row
+families exist. For the timer/scheduled-work slice, the authoritative facts are
+already the `durable.completion` rows and their terminal folds.
 
 ### Host Composition API
 

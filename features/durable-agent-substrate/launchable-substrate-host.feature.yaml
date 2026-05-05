@@ -38,7 +38,7 @@ components:
       4: The host can run projection-match subscriber profiles supplied by the runtime.
       5: The host can run claim-before-side-effect operator profiles.
       6: The host exposes read-only lifecycle status for local tooling.
-      6-note: Before HTTP diagnostics land, subscriber program status may be exposed through an in-process read-only host service with enabled/running flags, wake-up timestamps, scan counts, terminalization counts, and a non-secret last error summary.
+      6-note: "Subscriber status is projection-first: durable completion state and any future subscriber progress or cursor records are materialized from durable streams/state. Host-local diagnostics may expose ephemeral process liveness such as configured/enabled/running, but must not become completion, cursor, retry, or progress authority."
       7: The host shuts down through Effect scopes and process-signal handling.
       8: The first host package owns embedded Durable Streams dev-server startup rather than requiring a separate CLI or dev package.
 
