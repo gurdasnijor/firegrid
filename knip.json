@@ -36,10 +36,9 @@
         "bin/**/*.ts"
       ]
     },
-    "packages/lab": {
+    "apps/lab": {
       "entry": [
-        "src/main.tsx",
-        "src/index.ts"
+        "src/main.tsx"
       ],
       "project": [
         "src/**/*.{ts,tsx}"

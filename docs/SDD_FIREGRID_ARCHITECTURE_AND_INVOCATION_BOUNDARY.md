@@ -628,7 +628,7 @@ Example shape:
 ```sh
 firegrid
 fg --stream-url https://streams.example.com/team/grid
-firegrid dev -- pnpm --filter @durable-agent-substrate/lab dev
+firegrid dev -- pnpm --filter @firegrid/lab dev
 ```
 
 `firegrid dev -- <command...>` should:

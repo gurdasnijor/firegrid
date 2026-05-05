@@ -10,7 +10,7 @@ components:
       2: The app-facing package is the Firegrid client and exposes operation messaging and read APIs.
       3: The server-side participant package is the Firegrid runtime and advances durable execution.
       4: The substrate package owns durable kernel records, transitions, folds, projections, and authority.
-      5: The lab package is an inspector and may later use the same app-facing client APIs as applications.
+      5: The lab is a standalone inspector app and may later use the same app-facing client APIs as applications.
 
   DEPENDENCY_GRAPH:
     requirements:
@@ -19,6 +19,7 @@ components:
       3: The substrate package must not depend on client, runtime, lab, or product-specific runtime packages.
       4: Browser lab code may depend on the client and Durable Streams client but must not import runtime or substrate packages.
       5: Runtime process tooling may launch child processes but must not provide app-client capabilities from the runtime package.
+      6: Reusable packages must not import workspace apps; standalone apps may depend downward on packages through public workspace package entrypoints.
 
   AUTHORITY:
     requirements:
@@ -33,3 +34,4 @@ constraints:
       1: Firegrid APIs should reduce public concept count rather than introduce parallel composition systems.
       2: Runtime composition uses ordinary Effect Layers rather than a Firegrid-specific graph DSL.
       3: Low-level kernel APIs live in substrate and are not re-exported from the app-facing client root.
+      4: Standalone apps live under apps/* and do not expose package-style public exports unless a spec declares an importable surface.

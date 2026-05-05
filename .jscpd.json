@@ -10,6 +10,7 @@
     "**/dist/**",
     "**/.turbo/**",
     "**/coverage/**",
+    "**/apps/*/dist/**",
     "**/fixtures/**",
     "**/*.test.ts",
     "**/*.test.tsx",

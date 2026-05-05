@@ -41,8 +41,12 @@ module.exports = {
       comment:
         "Production code must not import from test/spec files. Factor shared helpers into production or test utility modules instead.",
       from: {
-        path: "^packages/.*/src",
-        pathNot: ["\\.test\\.ts$", "\\.test\\.tsx$", "^packages/.*/src/__tests__/"],
+        path: "^(packages|apps)/.*/src",
+        pathNot: [
+          "\\.test\\.ts$",
+          "\\.test\\.tsx$",
+          "^(packages|apps)/.*/src/__tests__/",
+        ],
       },
       to: {
         path: "[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$",
@@ -74,8 +78,16 @@ module.exports = {
     {
       name: "lab-no-substrate-or-runtime",
       severity: "error",
-      from: { path: "^packages/lab/src" },
+      from: { path: "^apps/lab/src" },
       to: { path: "^packages/(substrate|runtime)/src" },
+    },
+    {
+      name: "packages-no-apps",
+      severity: "error",
+      from: { path: "^packages/.*/src" },
+      to: { path: "^apps/.*/src" },
+      comment:
+        "firegrid-architecture-boundary.DEPENDENCY_GRAPH.6: reusable packages must not import workspace apps.",
     },
     {
       name: "kernel-internals-stay-internal",
@@ -91,7 +103,13 @@ module.exports = {
       severity: "warn",
       from: {
         orphan: true,
-        pathNot: ["\\.test\\.ts$", "\\.test\\.tsx$", "vitest\\.config\\.ts$", "vite\\.config\\.ts$"],
+        pathNot: [
+          "\\.test\\.ts$",
+          "\\.test\\.tsx$",
+          "\\.d\\.ts$",
+          "vitest\\.config\\.ts$",
+          "vite\\.config\\.ts$",
+        ],
       },
       to: {},
     },
@@ -99,7 +117,7 @@ module.exports = {
   options: {
     tsConfig: { fileName: "tsconfig.eslint.json" },
     doNotFollow: { path: "node_modules" },
-    includeOnly: "^packages/.*/src",
+    includeOnly: "^(packages|apps)/.*/src",
     enhancedResolveOptions: { exportsFields: ["exports"] },
   },
 }

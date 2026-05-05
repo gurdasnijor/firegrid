@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs"
 import process from "node:process"
 
 // firegrid-remediation-hardening.DUP_DETECTION.4
-execSync("pnpm jscpd packages/*/src --reporters json --output .jscpd-report --threshold 100", {
+execSync("pnpm jscpd packages/*/src apps/*/src --reporters json --output .jscpd-report --threshold 100", {
   stdio: "inherit",
 })
 
