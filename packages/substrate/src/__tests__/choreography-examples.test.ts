@@ -133,7 +133,7 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.1 — fake ACP-permission-sh
     // interrupt resolves.
     const waitProgram = Effect.gen(function* () {
       const choreo = yield* Choreography
-      yield* choreo.waitFor(
+      return yield* choreo.waitFor(
         permissionResolvedTrigger(permissionId),
         { timeout: Duration.minutes(10) },
       )
@@ -337,7 +337,7 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.3 — tool-layer sleep examp
     // Runtime path: Choreography.sleep interrupts on success.
     const runtimeProgram = Effect.gen(function* () {
       const choreo = yield* Choreography
-      yield* choreo.sleep(Duration.millis(durationMs))
+      return yield* choreo.sleep(Duration.millis(durationMs))
     })
     const runtimeLayer = Layer.provideMerge(
       ChoreographyLive({ streamUrl: urlRuntime }),
@@ -458,7 +458,7 @@ describe("choreography-facade.BOUNDARY.1 — examples introduce no ACP/Fireline/
       Effect.gen(function* () {
         const choreo = yield* Choreography
         yield* choreo.scheduleAt({ at: Date.now() + 60_000, input: {} })
-        yield* choreo.sleep(Duration.millis(1))
+        return yield* choreo.sleep(Duration.millis(1))
       }).pipe(
         Effect.provide(
           Layer.provideMerge(
