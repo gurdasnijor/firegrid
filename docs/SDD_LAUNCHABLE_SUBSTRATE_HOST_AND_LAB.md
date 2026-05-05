@@ -453,6 +453,84 @@ Config may select a key from a caller-supplied local map, but the substrate does
 not dynamically import arbitrary modules, maintain a global registry, or fetch
 runtime profiles from durable state.
 
+### Host-Managed Subscriber Loops
+
+Slice 5 makes the timer and scheduled-work subscribers launchable under the
+host. The host owns the loop fibers; the substrate subscriber functions remain
+the authority for scan-and-resolve behavior.
+
+Spec anchors:
+
+- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.1`
+- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.2`
+- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.3`
+- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.4`
+- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.5`
+- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.6`
+- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.7`
+- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.8`
+- `launchable-substrate-host.HOST_SUBSCRIBER_LOOPS.9`
+
+The first host-managed loop profile covers only:
+
+- timer completions through `runTimerSubscriber`;
+- scheduled-work completions through `runScheduledWorkSubscriber`.
+
+Projection-match subscriber profiles and claim-before-side-effect operator
+profiles stay separate. They use the same host profile mechanism later, but
+they should not be pulled into the timer/scheduled-work loop slice just to
+claim broad host-process requirements.
+
+The loop configuration should be explicit and host-local:
+
+```ts
+interface HostSubscriberLoopConfig {
+  readonly scanIntervalMs?: number
+}
+
+interface SubstrateHostProfile {
+  readonly subscribers?: {
+    readonly timer?: boolean | HostSubscriberLoopConfig
+    readonly scheduledWork?: boolean | HostSubscriberLoopConfig
+    readonly projectionMatch?: ReadonlyArray<ProjectionMatchProfile>
+  }
+}
+```
+
+If a loop is disabled or omitted from the profile, the host does not start its
+fiber. If enabled with `true`, the host uses a conservative default interval.
+If enabled with an object, the host uses the supplied interval. The interval is
+not a durable fact and is not read from durable state.
+
+Each loop is sequential for its own subscriber kind. A new tick does not start a
+second scan if the previous scan is still running. This keeps timer and
+scheduled-work resolution easy to reason about and avoids turning the host into
+a second authority; the underlying state machine and subscribers still decide
+which completions can terminalize.
+
+The host should expose an in-process read-only status service for loop state.
+HTTP diagnostics can read from that service later, but Slice 5 does not create
+HTTP routes. Minimum loop status:
+
+```ts
+interface SubscriberLoopStatus {
+  readonly kind: "timer" | "scheduled_work"
+  readonly enabled: boolean
+  readonly running: boolean
+  readonly scanCount: number
+  readonly successCount: number
+  readonly failureCount: number
+  readonly lastStartedAtMs?: number
+  readonly lastFinishedAtMs?: number
+  readonly lastSuccessAtMs?: number
+  readonly lastErrorSummary?: string
+}
+```
+
+The status service is host-owned lifecycle state, not durable substrate state.
+It must not expose authorization headers or secret config values, and it must
+not provide mutation methods.
+
 ### Host Composition API
 
 The host package should expose thin constructors that mirror Firepixel's best
@@ -666,7 +744,7 @@ The first slice should prove:
 4. a host boot plan with embedded-dev and attached modes, Effect Config
    decoding, generated process identity, and auth header materialization;
 5. a host dev process that starts or connects to `DurableStreamTestServer` and
-   runs timer + scheduled-work subscribers;
+   runs configured host-managed timer + scheduled-work subscriber loops;
 6. a tiny lab UI or terminal inspector that shows substrate snapshot and stream
    registry state;
 7. one sleep scenario that can be launched through the client and observed

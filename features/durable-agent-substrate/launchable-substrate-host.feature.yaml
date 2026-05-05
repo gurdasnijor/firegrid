@@ -40,6 +40,18 @@ components:
       7: The host shuts down through Effect scopes and process-signal handling.
       8: The first host package owns embedded Durable Streams dev-server startup rather than requiring a separate CLI or dev package.
 
+  HOST_SUBSCRIBER_LOOPS:
+    requirements:
+      1: Timer and scheduled-work subscriber loops are host-managed scoped fibers enabled by the runtime profile.
+      2: Host subscriber loops call the existing substrate subscriber functions rather than reimplementing completion transition logic.
+      3: Each host subscriber loop scans the resolved host substrate stream using the host stream URL and content type.
+      4: Subscriber loop intervals are explicit host configuration with a conservative default.
+      5: A subscriber loop does not overlap scans for the same subscriber kind; the next scan waits for the current scan to finish.
+      6: Subscriber scan failures are captured in read-only host loop status and do not become a separate durable authority.
+      7: Subscriber loop status includes whether the loop is enabled and running, last scan start and finish times, scan counts, success counts, failure counts, and the last non-secret error summary.
+      8: Disabling a subscriber loop in the runtime profile means the host does not start that loop fiber.
+      9: Host subscriber loops do not introduce host mutation endpoints, raw append APIs, or new substrate-native row families.
+
   HOST_CONFIGURATION:
     requirements:
       1: The host supports an embedded-dev boot plan that starts a local Durable Streams server.
