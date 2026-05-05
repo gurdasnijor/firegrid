@@ -131,3 +131,23 @@ describe("runtime-lab-inspector.NO_PRIVILEGED_LAB.2 — typed workbench does not
     expect(clientHelper).toContain("client.events(LabEvents")
   })
 })
+
+describe("launchable-substrate-host.LAB_INSPECTOR.2, launchable-substrate-host.LAB_INSPECTOR.4, launchable-substrate-host.LAB_INSPECTOR.7 — raw inspector live follow lifecycle", () => {
+  it("bridges raw Durable Streams follow through a scoped Effect Stream and cancels on React teardown", () => {
+    const inspector = readFileSync(
+      resolve(labRoot, "RawStreamInspector.tsx"),
+      "utf8",
+    )
+
+    expect(inspector).toContain("Effect.runFork")
+    expect(inspector).toContain("Fiber.interrupt")
+    expect(inspector).toContain("Effect.acquireRelease")
+    expect(inspector).toContain("response.cancel()")
+    expect(inspector).toContain("Stream.asyncScoped")
+    expect(inspector).toContain("subscribeJson")
+    expect(inspector).toContain('strategy: "suspend"')
+    expect(inspector).not.toContain("for await")
+    expect(inspector).not.toContain(".jsonStream(")
+    expect(inspector).not.toContain("cancelled")
+  })
+})
