@@ -60,32 +60,30 @@ The codebase correctly distinguishes layer-config interfaces (out of scope) from
 
 ### 4. Envelope helpers and row builders: `descriptors/` vs `schema/`
 
-The original review §3g/§5 said envelope helpers and row builders should live under `schema/` because they are Schema-tied wire-shape concerns, not descriptor-side caller types. The current layout drifts from that:
+Original review §3g/§5 said envelope helpers and row builders belong under `schema/` because they are Schema-tied wire-shape concerns, not descriptor-side caller types. Current layout drifts:
 
-- `packages/substrate/src/descriptors/event-stream.ts:32-49` — `makeEventStreamEnvelope`, `makeEventStreamStateRow` (closes over `substrateState.eventStreams.insert`, which is a row schema concern).
-- `packages/substrate/src/descriptors/event-stream.ts:51-80` — `isEventStreamEnvelope`, `isEventStreamStateRow`, `eventStreamEnvelopeFromStateRow` (envelope predicates).
-- `packages/substrate/src/descriptors/operation.ts:20-25` — `isOperationEnvelope`.
-- `packages/substrate/src/descriptors/append.ts:9-17` — `appendChange` (uses raw `JSON.stringify` over a `StateEvent`).
+- `descriptors/event-stream.ts:32-49` — `makeEventStreamEnvelope`, `makeEventStreamStateRow` (closes over `substrateState.eventStreams.insert`, a row-schema concern).
+- `descriptors/event-stream.ts:51-80` — `isEventStreamEnvelope`, `isEventStreamStateRow`, `eventStreamEnvelopeFromStateRow`.
+- `descriptors/operation.ts:20-25` — `isOperationEnvelope`.
+- `descriptors/append.ts:9-17` — `appendChange` (raw `JSON.stringify` over a `StateEvent`).
 
-The descriptor module's stated job is the caller-owned descriptor type plus its `Schema.Schema.All` slots; envelope tag values are already imported from `schema/rows.ts` (`EventStreamEnvelopeTag`, `EventStreamRowType` at `event-stream.ts:1-8`), so the dependency arrow already flows the right direction — only the helpers need to move. Concrete suggestion: move the envelope predicates and row builders into `schema/event-stream.ts` (new file) or `schema/rows.ts`, leaving `descriptors/event-stream.ts` to hold only `EventStreamDescriptor`, `EventStream.define`, `EventStream.Any`, `EventStream.Event`. Same shape for `descriptors/operation.ts` — keep the descriptor type, move `isOperationEnvelope` next to a future `OperationEnvelopeSchema` (see finding §5).
+The descriptor module's stated job is the caller-owned descriptor plus its `Schema.Schema.All` slots; envelope tag values are already imported from `schema/rows.ts` (`event-stream.ts:1-8`), so the dependency direction is already right — only the helpers need to move. Suggestion: move envelope predicates and row builders into `schema/event-stream.ts` (new file) or `schema/rows.ts`, leaving `descriptors/event-stream.ts` with `EventStreamDescriptor`, `EventStream.define`, `EventStream.Any`, `EventStream.Event` only. Same for `descriptors/operation.ts` — keep the descriptor type, move `isOperationEnvelope` next to a future `OperationEnvelope` Schema (see §5).
 
 ### 5. Hand-rolled type guards vs `Schema.is`
 
-Three guards are written by hand:
+Three hand-rolled guards:
 
-- `packages/substrate/src/descriptors/operation.ts:20-25` — `isOperationEnvelope` (object/null check, then literal-tag comparison).
-- `packages/substrate/src/descriptors/event-stream.ts:51-56` — `isEventStreamEnvelope` (same shape).
-- `packages/substrate/src/descriptors/event-stream.ts:58-75` — `isEventStreamStateRow` (delegates to `isChangeEvent`, then composite check).
+- `descriptors/operation.ts:20-25` — `isOperationEnvelope` (object/null check + literal-tag comparison).
+- `descriptors/event-stream.ts:51-56` — `isEventStreamEnvelope` (same shape).
+- `descriptors/event-stream.ts:58-75` — `isEventStreamStateRow` (delegates to `isChangeEvent`, then composite check).
 
-The skill (§3 and §1.4 of the "Don't" list) explicitly recommends `Schema.is(Schema)` over hand-rolled guards. There is no `OperationEnvelope` Schema in the codebase — the type is currently a TS-only `interface` at `operation.ts:14-18` even though its `_envelope: typeof OPERATION_ENVELOPE_TAG` discriminant and `operation: string` / `payload: unknown` fields are exactly a `Schema.Struct`. Promoting it to a Schema would (a) replace the hand-rolled guard with `Schema.is(OperationEnvelope)`, (b) make the wire envelope a first-class Schema decoded at the runtime boundary (currently the runtime calls `isOperationEnvelope(run.data)` at `operation-handler.ts:75, 202` and only then decodes the inner payload), and (c) catch malformed envelopes (e.g. missing `operation` field) at decode time rather than slicing-by-shape. `EventStreamValue` already exists at `schema/rows.ts:103-107` so its `Schema.is` is one rename away; `isEventStreamStateRow` would be replaced by `Schema.is(substrateState.eventStreams.changeEvent)` (or the local equivalent).
+Skill §3 and the "Don't" list explicitly prefer `Schema.is(Schema)` over hand-rolled guards. There is no `OperationEnvelope` Schema — the type is a TS-only `interface` at `operation.ts:14-18`, despite its `_envelope: typeof OPERATION_ENVELOPE_TAG` discriminant + `operation: string` + `payload: unknown` fields being exactly a `Schema.Struct`. Promoting it would (a) replace the guard with `Schema.is(OperationEnvelope)`, (b) make the runtime decode the envelope at the boundary (currently `isOperationEnvelope(run.data)` runs at `operation-handler.ts:75, 202` then payload decode happens separately), (c) catch malformed envelopes at decode time. `EventStreamValue` already exists at `schema/rows.ts:103-107` so its `Schema.is` is one rename away; `isEventStreamStateRow` would become `Schema.is(substrateState.eventStreams.changeEvent)`.
 
 ### 6. JSON parsing outside test fixtures
 
-Audit of `JSON.parse` / `JSON.stringify` in source (excluding `__tests__`):
+Audit of `JSON.parse` / `JSON.stringify` in source (excluding `__tests__`): only `descriptors/append.ts:15` (`JSON.stringify(change)`), which is correct — durable-streams expects a serialized payload and `change` is a typed `StateEvent`. No `JSON.parse` in source; test fixtures using it are intentional and excluded.
 
-- `packages/substrate/src/descriptors/append.ts:15` — `JSON.stringify(change)` is the only occurrence and is correct; the durable-streams client expects a serialized payload, and `change` is already a typed `StateEvent`. No `JSON.parse` exists in source. Test fixtures using `JSON.parse` (skeleton.test.ts, package-name-cutover.test.ts) are intentional and excluded.
-
-The skill recommends `Schema.parseJson` for JSON-string inputs; that surface only applies if the substrate ever decoded a JSON string into a domain value, which it does not — Durable Streams returns parsed objects via `subscribeJson` and `response.jsonStream()`. No finding here beyond confirmation that the boundary is correctly placed.
+`Schema.parseJson` would only apply if substrate decoded JSON-string inputs into domain values, which it doesn't — Durable Streams returns parsed objects via `subscribeJson` / `response.jsonStream()`. No finding; boundary is correctly placed.
 
 ### 7. Schema.Class vs Schema.Struct
 
