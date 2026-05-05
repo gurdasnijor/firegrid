@@ -12,11 +12,12 @@ human-readable design source behind the Acai specs in
 
 | Area | SDD | Feature Spec |
 | --- | --- | --- |
-| Core durable substrate, phases 1-8 | `docs/SDD_DURABLE_AGENT_SUBSTRATE.md` | `features/firegrid/{durable-records-and-projections,awakeables-and-runs,effect-native-api,semantic-producer,ready-work-projection,claim-and-operator-authority,durable-waits-and-scheduling,implementation-sequencing}.feature.yaml` |
+| Core durable state, phases 1-8 | `docs/SDD_DURABLE_AGENT_SUBSTRATE.md` | `features/firegrid/{durable-records-and-projections,awakeables-and-runs,effect-native-api,semantic-producer,ready-work-projection,claim-and-operator-authority,durable-waits-and-scheduling,implementation-sequencing}.feature.yaml` |
 | Client event planes and state producers, phase 11 | `docs/SDD_CLIENT_EVENT_PLANES_AND_STATE_PRODUCERS.md` | `features/firegrid/client-event-plane-registration.feature.yaml` |
 | Choreography facade, phase 12 | `docs/SDD_CHOREOGRAPHY_FACADE.md` | `features/firegrid/choreography-facade.feature.yaml` |
 | Launchable client, host, Host Program Graph, and lab, phase 13+ | `docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md` | `features/firegrid/launchable-substrate-host.feature.yaml` |
 | Firegrid architecture and operation messaging boundary, draft | `docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md` | `features/firegrid/*.feature.yaml` |
+| Firegrid package structure, draft | `docs/SDD_FIREGRID_PACKAGE_STRUCTURE.md` | `features/firegrid/*.feature.yaml` |
 | Runtime integration lab and adapter validation | `docs/SDD_DURABLE_AGENT_RUNTIME_LAB.md` | `features/durable-agent-runtime-lab/*.feature.yaml` |
 
 ## Planning Docs

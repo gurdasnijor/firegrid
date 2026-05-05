@@ -127,7 +127,33 @@ This uses ts-morph to inventory exported declarations under `packages/*/src` and
 - `docs/effect-artifact-inventory.json` — structured data for independent SDD checks
 - `docs/effect-artifact-inventory.md` — human-readable summary for architecture review
 
-The first inventory slice covers exported service tags, Layers, Schemas, tagged errors, Effect-returning exports, service interfaces paired with tags, plain types, constants, and pure helpers. For `Effect.Effect<A, E, R>` exports it records `A`, `E`, `R`, flattened requirement-channel entries, and resolved requirement declarations when the service is visible in package/app source. Each artifact also carries richer type evidence: generic type parameters, call parameters, return or declared type text, class/interface heritage and members, variable binding shape, declaration-file imports, and the export binding that exposed the artifact. The Effect documentation index at `https://effect.website/llms.txt` points to additional API families that future slices may classify explicitly, including Runtime, Stream/Sink, Queue/PubSub/Deferred, Schedule, Ref, Config, Metrics/Tracing, and Platform services.
+The inventory covers exported service tags, Layers, Schemas, tagged errors, Effect-returning exports, service interfaces paired with tags, plain types, constants, and pure helpers. It records package workspace, physical source area, inferred architecture layer, re-export binding, declaration-file imports, and richer type evidence such as generic type parameters, call parameters, return or declared type text, class/interface heritage and members, and variable binding shape. For `Effect.Effect<A, E, R>` and `Layer.Layer<ROut, E, RIn>` exports it uses ts-morph type APIs where possible to record channel text, flattened requirement entries, and resolved requirement declarations. The markdown report includes export-pressure tables and durable-core same-package import layer crossings to guide package-structure work.
+
+The current report is on-demand rather than part of `pnpm verify` because it is an architecture evidence artifact and can churn with harmless export movement. Use it before package-boundary or durable-core restructuring slices.
+
+Regenerate dependency-graph evidence:
+
+```sh
+pnpm run graph
+```
+
+This uses dependency-cruiser to refresh the overview SVGs, the collapsed
+workspace Mermaid graph, and focused package-internal Mermaid graphs. Graph
+generation excludes tests and build outputs so the diagrams show production
+architecture rather than test reachability.
+
+Focused graph targets:
+
+```sh
+pnpm run graph:client:mermaid
+pnpm run graph:runtime:mermaid
+pnpm run graph:substrate:mermaid
+```
+
+These write `docs/dependency-graph-client.mmd`,
+`docs/dependency-graph-runtime.mmd`, and
+`docs/dependency-graph-substrate.mmd`. Use them when reviewing package-shape
+work; `pnpm run lint:deps` remains the strict CI dependency-boundary check.
 
 Run structural duplication-shape checks:
 

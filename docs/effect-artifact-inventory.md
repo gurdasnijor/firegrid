@@ -12,89 +12,241 @@ ACIDs:
 
 ## Summary
 
-- Total exported artifacts: 747
-- Effect-returning artifacts: 58
-- Re-exports: 445
-- Boundary crossings: 0
+- Total exported artifacts: 763
+- Effect-returning artifacts: 50
+- Layer artifacts: 35
+- Re-exports: 461
+- Boundary crossings: 18
+- Forbidden durable-core layer crossings: 0
+- File import boundary crossings: 4
+- File import forbidden durable-core layer crossings: 4
 
 | Role | Count |
 | --- | --- |
 | service-tag | 34 |
-| layer | 37 |
-| schema | 119 |
+| layer | 35 |
+| schema | 80 |
 | tagged-error | 91 |
-| effect-returning | 56 |
+| effect-returning | 50 |
 | service-interface | 32 |
-| plain-type | 221 |
+| plain-type | 282 |
 | constant | 2 |
-| pure-helper | 59 |
-| unknown | 96 |
+| pure-helper | 109 |
+| unknown | 48 |
+
+## Workspace Export Pressure
+
+| Workspace | Count |
+| --- | --- |
+| packages/substrate | 635 |
+| packages/client | 83 |
+| packages/runtime | 37 |
+| apps/lab | 8 |
+
+## Architecture Layer Export Pressure
+
+| Architecture Layer | Count |
+| --- | --- |
+| state-machine | 202 |
+| protocol | 178 |
+| choreography | 120 |
+| projection | 68 |
+| client-public | 61 |
+| facade | 40 |
+| runtime-core | 36 |
+| state-store | 32 |
+| event-plane | 11 |
+| app | 8 |
+| client-work-internal | 6 |
+| runtime-boot | 1 |
+
+## Physical Area Export Pressure
+
+| Physical Area | Count |
+| --- | --- |
+| packages/substrate:schema | 135 |
+| packages/substrate:choreography | 120 |
+| packages/substrate:descriptors | 109 |
+| packages/substrate:facade | 68 |
+| packages/client:firegrid | 61 |
+| packages/substrate:event-plane | 50 |
+| packages/runtime:runtime | 36 |
+| packages/substrate:subscribers | 34 |
+| packages/substrate:waits | 34 |
+| packages/substrate:producer | 20 |
+| packages/substrate:state-machine | 18 |
+| packages/substrate:stream | 16 |
+| packages/substrate:operator-errors | 12 |
+| packages/substrate:operator | 10 |
+| packages/substrate:projection | 10 |
+| packages/substrate:retained-records | 10 |
+| apps/lab:lab | 8 |
+| packages/client:client | 6 |
+| packages/substrate:internal-claim | 4 |
+| packages/runtime:boot | 1 |
+| packages/substrate:projection-service | 1 |
+
+## Hotspots
+
+| Workspace / Physical Area / Architecture Layer | Exports | Effect | Layer | Re-exports | Unknown | Forbidden Layer Crossings |
+| --- | --- | --- | --- | --- | --- | --- |
+| packages/substrate / choreography / choreography | 120 | 0 | 9 | 80 | 3 | 0 |
+| packages/substrate / descriptors / protocol | 103 | 0 | 0 | 78 | 15 | 0 |
+| packages/substrate / schema / protocol | 75 | 0 | 0 | 50 | 18 | 0 |
+| packages/client / firegrid / client-public | 61 | 0 | 4 | 38 | 0 | 0 |
+| packages/substrate / schema / state-machine | 51 | 11 | 0 | 29 | 6 | 0 |
+| packages/substrate / facade / facade | 40 | 0 | 4 | 30 | 4 | 0 |
+| packages/runtime / runtime / runtime-core | 36 | 6 | 8 | 10 | 0 | 0 |
+| packages/substrate / subscribers / state-machine | 34 | 12 | 0 | 17 | 0 | 0 |
+| packages/substrate / waits / state-machine | 34 | 0 | 2 | 17 | 0 | 0 |
+| packages/substrate / facade / projection | 28 | 0 | 4 | 21 | 0 | 0 |
+| packages/substrate / event-plane / projection | 20 | 1 | 0 | 12 | 0 | 0 |
+| packages/substrate / producer / state-machine | 20 | 0 | 2 | 10 | 0 | 0 |
+| packages/substrate / event-plane / state-machine | 19 | 0 | 0 | 12 | 0 | 0 |
+| packages/substrate / state-machine / state-machine | 18 | 0 | 0 | 9 | 0 | 0 |
+| packages/substrate / stream / state-store | 16 | 4 | 0 | 8 | 0 | 1 |
+| packages/substrate / operator-errors / state-machine | 12 | 0 | 0 | 8 | 0 | 0 |
+| packages/substrate / event-plane / event-plane | 11 | 0 | 1 | 5 | 2 | 2 |
+| packages/substrate / operator / state-machine | 10 | 2 | 0 | 5 | 0 | 0 |
+| packages/substrate / projection / projection | 10 | 0 | 0 | 5 | 0 | 0 |
+| packages/substrate / retained-records / state-store | 10 | 8 | 0 | 5 | 0 | 1 |
+| packages/substrate / schema / projection | 9 | 0 | 0 | 6 | 0 | 0 |
+| apps/lab / lab / app | 8 | 1 | 0 | 0 | 0 | 0 |
+| packages/client / client / client-work-internal | 6 | 0 | 1 | 0 | 0 | 0 |
+| packages/substrate / descriptors / state-store | 6 | 3 | 0 | 4 | 0 | 0 |
+| packages/substrate / internal-claim / state-machine | 4 | 2 | 0 | 2 | 0 | 0 |
+| packages/runtime / boot / runtime-boot | 1 | 0 | 0 | 0 | 0 | 0 |
+| packages/substrate / projection-service / projection | 1 | 0 | 0 | 0 | 0 | 0 |
 
 ## Boundary Crossings
 
-No package-boundary crossings detected.
+| Export | Role | Declaration | Exported From | Crossing |
+| --- | --- | --- | --- | --- |
+| Firegrid | layer | packages/runtime/src/runtime/firegrid.ts | packages/runtime/src/index.ts | requirement-crosses-workspace: packages/runtime -> packages/substrate (Operation.Output<Op>) |
+| Firegrid | layer | packages/runtime/src/runtime/firegrid.ts | packages/runtime/src/runtime/firegrid.ts | requirement-crosses-workspace: packages/runtime -> packages/substrate (Operation.Output<Op>) |
+| EventStream | schema | packages/substrate/src/descriptors/event-stream.ts | packages/client/src/firegrid/event-client.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| EventStream | schema | packages/substrate/src/descriptors/event-stream.ts | packages/client/src/firegrid/event-client.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| EventStream | schema | packages/substrate/src/descriptors/event-stream.ts | packages/client/src/firegrid/index.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| EventStream | schema | packages/substrate/src/descriptors/event-stream.ts | packages/client/src/firegrid/index.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| EventStream | schema | packages/substrate/src/descriptors/event-stream.ts | packages/client/src/firegrid/operation-client.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| EventStream | schema | packages/substrate/src/descriptors/event-stream.ts | packages/client/src/firegrid/operation-client.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| Operation | schema | packages/substrate/src/descriptors/operation.ts | packages/client/src/firegrid/operation-client.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| Operation | schema | packages/substrate/src/descriptors/operation.ts | packages/client/src/firegrid/operation-client.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| EventStream | schema | packages/substrate/src/descriptors/event-stream.ts | packages/client/src/index.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| EventStream | schema | packages/substrate/src/descriptors/event-stream.ts | packages/client/src/index.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| Operation | schema | packages/substrate/src/descriptors/operation.ts | packages/client/src/index.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| Operation | schema | packages/substrate/src/descriptors/operation.ts | packages/client/src/index.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| OperationHandle | plain-type | packages/substrate/src/descriptors/operation.ts | packages/client/src/firegrid/operation-client.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| OperationHandle | plain-type | packages/substrate/src/descriptors/operation.ts | packages/client/src/index.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| OperationHandle | unknown | packages/substrate/src/descriptors/operation.ts | packages/client/src/firegrid/operation-client.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+| OperationHandle | unknown | packages/substrate/src/descriptors/operation.ts | packages/client/src/index.ts | re-export-crosses-workspace: packages/substrate -> packages/client |
+
+## Durable-Core Layer Crossings
+
+No forbidden durable-core layer crossings detected.
+
+## Durable-Core Import Layer Crossings
+
+| File | Kind | Layer Edge | Import | Target |
+| --- | --- | --- | --- | --- |
+| packages/substrate/src/retained-records.ts | import-crosses-forbidden-layer | state-store -> state-machine | ./schema/state-machine.ts | packages/substrate/src/schema/state-machine.ts |
+| packages/substrate/src/stream.ts | import-crosses-forbidden-layer | state-store -> projection | ./projection.ts | packages/substrate/src/projection.ts |
+| packages/substrate/src/event-plane/define.ts | import-crosses-forbidden-layer | event-plane -> state-machine | ./producer.ts | packages/substrate/src/event-plane/producer.ts |
+| packages/substrate/src/event-plane/layer.ts | import-crosses-forbidden-layer | event-plane -> state-machine | ./producer.ts | packages/substrate/src/event-plane/producer.ts |
 
 ## Effect-Returning Exports
 
 | Export | Declaration | Type Parameters | Parameters | Success | Error | Requirement |
 | --- | --- | --- | --- | --- | --- | --- |
-| Firegrid | packages/runtime/src/runtime/firegrid.ts |  |  | Operation.Output<Op> | Operation.Error<Op> \| E | R |
-| Firegrid | packages/runtime/src/runtime/firegrid.ts |  |  | Operation.Output<Op> | Operation.Error<Op> \| E | R |
-| emitLabEvent | apps/lab/src/lab/LabEventStreamClient.ts |  | cfg: LabEventStreamClientConfig, event: EventStream.Event<any> | void | EmitError | never |
-| runOperationDispatchLoopWithAcquire | packages/runtime/src/runtime/internal/operation-handler.ts | Op extends Operation.Any, E, R, E2 | cfg: RuntimeContextService, input: DispatchInput<Op, E, R>, acquire: Effect.Effect<SubstrateStreamDB, E2, Scope.Scope> | SubstrateStreamDB | E2 | Scope.Scope |
-| runScopedSubscriberLoopWithAcquire | packages/runtime/src/runtime/internal/runner.ts | E, E2 | acquire: Effect.Effect<SubstrateStreamDB, E2, Scope.Scope>, input: ScopedProgramInput<E> | CollectionsDb | E2 | Scope.Scope |
-| wakeStream | packages/runtime/src/runtime/internal/wake-stream.ts |  | subscribe: (wake: () => void) => Effect.Effect<WakeFinalizer> | WakeFinalizer | unknown | never |
-| TriggerMatcher | packages/substrate/src/choreography/triggers.ts |  |  | TriggerMatchEvaluation | unknown | never |
-| TriggerMatcher | packages/substrate/src/choreography/triggers.ts |  |  | TriggerMatchEvaluation | unknown | never |
+| emitLabEvent | apps/lab/src/lab/LabEventStreamClient.ts |  | cfg: LabEventStreamClientConfig, event: { readonly id: string; readonly message: string; readonly count: number; readonly createdAt: string; } | void | EmitError | never |
+| runEventStreamMaterializer | packages/runtime/src/runtime/internal/event-stream-materializer.ts | S extends EventStream.Any, E, R | input: EventStreamMaterializerInput<S, E, R> | void | never | RuntimeContext \| Scope.Scope \| Exclude<R, Scope.Scope> |
+| runOperationDispatchLoopWithAcquire | packages/runtime/src/runtime/internal/operation-handler.ts | Op extends Operation.Any, E, R, E2 | cfg: RuntimeContextService, input: DispatchInput<Op, E, R>, acquire: Effect.Effect<SubstrateStreamDB, E2, Scope.Scope> | void | E2 | Exclude<R, Scope.Scope> |
+| runOperationHandler | packages/runtime/src/runtime/internal/operation-handler.ts | Op extends Operation.Any, E, R | input: DispatchInput<Op, E, R> | void | never | RuntimeContext \| Scope.Scope \| Exclude<R, Scope.Scope> |
+| runScopedSubscriberLoopFromDb | packages/runtime/src/runtime/internal/runner.ts | E | db: SubstrateStreamDB, input: ScopedProgramInput<E> | void | E | never |
+| runScopedSubscriberLoopWithAcquire | packages/runtime/src/runtime/internal/runner.ts | E, E2 | acquire: Effect.Effect<SubstrateStreamDB, E2, Scope.Scope>, input: ScopedProgramInput<E> | void | E \| E2 | never |
+| runScopedSubscriberProgram | packages/runtime/src/runtime/internal/runner.ts | E | input: ScopedProgramInput<E> | void | never | RuntimeContext \| Scope.Scope |
 | appendChange | packages/substrate/src/descriptors/append.ts | E | target: JsonAppendTarget, change: StateEvent, mapError: (cause: unknown) => E | void | E | never |
 | appendChange | packages/substrate/src/descriptors/append.ts | E | target: JsonAppendTarget, change: StateEvent, mapError: (cause: unknown) => E | void | E | never |
 | acquirePlaneDb | packages/substrate/src/event-plane/projection.ts | S extends StreamStateDefinition | args: MakePlaneProjectionArgs<S> | PlaneStreamDB<S> | PlaneProjectionReadError | Scope.Scope |
-| Work | packages/substrate/src/facade/work.ts |  |  | B | E2 | R2 |
-| Work | packages/substrate/src/facade/work.ts |  |  | B | E2 | R2 |
-| TriggerMatcher | packages/substrate/src/choreography/triggers.ts |  |  | TriggerMatchEvaluation | unknown | never |
-| Work | packages/substrate/src/facade/work.ts |  |  | B | E2 | R2 |
 | attemptClaim | packages/substrate/src/internal-claim.ts |  | args: AttemptClaimArgs | AttemptClaimOutcome | AttemptClaimError | never |
 | acquireStreamDb | packages/substrate/src/stream.ts | S extends StreamStateDefinition, E | options: OpenStreamDbOptions<S>, mapError: (cause: unknown) => E | GenericStreamDB<S> | E | Scope.Scope |
 | acquireSubstrateDb | packages/substrate/src/stream.ts | E | options: OpenSubstrateDbOptions, mapError: (cause: unknown) => E | SubstrateStreamDB | E | Scope.Scope |
 | appendChange | packages/substrate/src/descriptors/append.ts | E | target: JsonAppendTarget, change: StateEvent, mapError: (cause: unknown) => E | void | E | never |
 | attemptClaim | packages/substrate/src/internal-claim.ts |  | args: AttemptClaimArgs | AttemptClaimOutcome | AttemptClaimError | never |
-| completeRunEffect | packages/substrate/src/schema/state-machine.ts |  | current: Schema.Schema.Type<any>, args: { readonly result: unknown; } | ChangeEvent | IllegalRunTransition | never |
-| failRunEffect | packages/substrate/src/schema/state-machine.ts |  | current: Schema.Schema.Type<any>, args: { readonly error: unknown; } | ChangeEvent | IllegalRunTransition | never |
+| completeRunEffect | packages/substrate/src/schema/state-machine.ts |  | current: { readonly terminalReason?: unknown; readonly error?: unknown; readonly result?: unknown; readonly runId: string; readonly state: "completed" \| "failed" \| "started" \| "blocked" \| "cancelled"; readonly blockedOnCompletionId?: string \| undefined; readonly data?: unknown; }, args: { readonly result: unknown; } | ChangeEvent | IllegalRunTransition | never |
+| failRunEffect | packages/substrate/src/schema/state-machine.ts |  | current: { readonly terminalReason?: unknown; readonly error?: unknown; readonly result?: unknown; readonly runId: string; readonly state: "completed" \| "failed" \| "started" \| "blocked" \| "cancelled"; readonly blockedOnCompletionId?: string \| undefined; readonly data?: unknown; }, args: { readonly error: unknown; } | ChangeEvent | IllegalRunTransition | never |
 | processReadyWorkItem | packages/substrate/src/operator.ts | A, E | args: ProcessReadyWorkItemArgs<A, E> | ClaimOutcome<A, E> | OperatorError | never |
-| ProjectionMatchEvaluator | packages/substrate/src/subscribers.ts |  |  | ProjectionMatchEvaluation | unknown | never |
-| readAuthoritativeRun | packages/substrate/src/retained-records.ts |  | streamUrl: string, runId: string | RunValue \| undefined | RetainedReadError | never |
-| readJsonItems | packages/substrate/src/retained-records.ts |  | streamUrl: string | ReadonlyArray<ChangeEvent> | RetainedReadError | never |
-| readRetainedClaimAttempts | packages/substrate/src/retained-records.ts |  | streamUrl: string, workId: string | ReadonlyArray<ClaimAttemptValue> | RetainedReadError | never |
-| readRetainedRunRecords | packages/substrate/src/retained-records.ts |  | streamUrl: string, runId: string | ReadonlyArray<RunValue> | RetainedReadError | never |
+| readAuthoritativeRun | packages/substrate/src/retained-records.ts |  | streamUrl: string, runId: string | { readonly terminalReason?: unknown; readonly error?: unknown; readonly result?: unknown; readonly runId: string; readonly state: "completed" \| "failed" \| "started" \| "blocked" \| "cancelled"; readonly blockedOnCompletionId?: string \| undefined; readonly data?: unknown; } \| undefined | RetainedReadError | never |
+| readJsonItems | packages/substrate/src/retained-records.ts |  | streamUrl: string | readonly ChangeEvent[] | RetainedReadError | never |
+| readRetainedClaimAttempts | packages/substrate/src/retained-records.ts |  | streamUrl: string, workId: string | readonly { readonly workId: string; readonly claimId: string; readonly ownerId: string; readonly observedCursor: string; readonly status: "attempted"; }[] | RetainedReadError | never |
+| readRetainedRunRecords | packages/substrate/src/retained-records.ts |  | streamUrl: string, runId: string | readonly { readonly terminalReason?: unknown; readonly error?: unknown; readonly result?: unknown; readonly runId: string; readonly state: "completed" \| "failed" \| "started" \| "blocked" \| "cancelled"; readonly blockedOnCompletionId?: string \| undefined; readonly data?: unknown; }[] | RetainedReadError | never |
 | runProjectionMatchSubscriber | packages/substrate/src/subscribers.ts |  | input: ProjectionMatchSubscriberInput | ProjectionMatchSubscriberResult | SubscriberError | never |
 | runProjectionMatchSubscriberFromSnapshot | packages/substrate/src/subscribers.ts |  | snapshot: ProjectionSnapshot, input: ProjectionMatchSubscriberInput | ProjectionMatchSubscriberResult | SubscriberError | never |
 | runScheduledWorkSubscriber | packages/substrate/src/subscribers.ts |  | input: SubscriberInput | ScheduledWorkSubscriberResult | SubscriberError | never |
 | runScheduledWorkSubscriberFromSnapshot | packages/substrate/src/subscribers.ts |  | snapshot: ProjectionSnapshot, input: SubscriberInput | ScheduledWorkSubscriberResult | SubscriberError | never |
 | runTimerSubscriber | packages/substrate/src/subscribers.ts |  | input: SubscriberInput | TimerSubscriberResult | SubscriberError | never |
 | runTimerSubscriberFromSnapshot | packages/substrate/src/subscribers.ts |  | snapshot: ProjectionSnapshot, input: SubscriberInput | TimerSubscriberResult | SubscriberError | never |
-| Work | packages/substrate/src/facade/work.ts |  |  | B | E2 | R2 |
 | processReadyWorkItem | packages/substrate/src/operator.ts | A, E | args: ProcessReadyWorkItemArgs<A, E> | ClaimOutcome<A, E> | OperatorError | never |
-| readAuthoritativeRun | packages/substrate/src/retained-records.ts |  | streamUrl: string, runId: string | RunValue \| undefined | RetainedReadError | never |
-| readJsonItems | packages/substrate/src/retained-records.ts |  | streamUrl: string | ReadonlyArray<ChangeEvent> | RetainedReadError | never |
-| readRetainedClaimAttempts | packages/substrate/src/retained-records.ts |  | streamUrl: string, workId: string | ReadonlyArray<ClaimAttemptValue> | RetainedReadError | never |
-| readRetainedRunRecords | packages/substrate/src/retained-records.ts |  | streamUrl: string, runId: string | ReadonlyArray<RunValue> | RetainedReadError | never |
-| blockRun | packages/substrate/src/schema/state-machine.ts |  | current: Schema.Schema.Type<any>, args: { readonly blockedOnCompletionId: string; } | ChangeEvent | IllegalRunTransition | never |
-| cancelCompletion | packages/substrate/src/schema/state-machine.ts |  | current: Schema.Schema.Type<any>, args: { readonly terminalReason: unknown; } | ChangeEvent | IllegalCompletionTransition | never |
-| cancelRun | packages/substrate/src/schema/state-machine.ts |  | current: Schema.Schema.Type<any>, args: { readonly terminalReason: unknown; } | ChangeEvent | IllegalRunTransition | never |
-| completeRun | packages/substrate/src/schema/state-machine.ts |  | current: Schema.Schema.Type<any>, args: { readonly result: unknown; } | ChangeEvent | IllegalRunTransition | never |
+| readAuthoritativeRun | packages/substrate/src/retained-records.ts |  | streamUrl: string, runId: string | { readonly terminalReason?: unknown; readonly error?: unknown; readonly result?: unknown; readonly runId: string; readonly state: "completed" \| "failed" \| "started" \| "blocked" \| "cancelled"; readonly blockedOnCompletionId?: string \| undefined; readonly data?: unknown; } \| undefined | RetainedReadError | never |
+| readJsonItems | packages/substrate/src/retained-records.ts |  | streamUrl: string | readonly ChangeEvent[] | RetainedReadError | never |
+| readRetainedClaimAttempts | packages/substrate/src/retained-records.ts |  | streamUrl: string, workId: string | readonly { readonly workId: string; readonly claimId: string; readonly ownerId: string; readonly observedCursor: string; readonly status: "attempted"; }[] | RetainedReadError | never |
+| readRetainedRunRecords | packages/substrate/src/retained-records.ts |  | streamUrl: string, runId: string | readonly { readonly terminalReason?: unknown; readonly error?: unknown; readonly result?: unknown; readonly runId: string; readonly state: "completed" \| "failed" \| "started" \| "blocked" \| "cancelled"; readonly blockedOnCompletionId?: string \| undefined; readonly data?: unknown; }[] | RetainedReadError | never |
+| blockRun | packages/substrate/src/schema/state-machine.ts |  | current: { readonly terminalReason?: unknown; readonly error?: unknown; readonly result?: unknown; readonly runId: string; readonly state: "completed" \| "failed" \| "started" \| "blocked" \| "cancelled"; readonly blockedOnCompletionId?: string \| undefined; readonly data?: unknown; }, args: { readonly blockedOnCompletionId: string; } | ChangeEvent | IllegalRunTransition | never |
+| cancelCompletion | packages/substrate/src/schema/state-machine.ts |  | current: { readonly terminalReason?: unknown; readonly error?: unknown; readonly workId?: string \| undefined; readonly completionId: string; readonly result?: unknown; readonly state: "cancelled" \| "resolved" \| "rejected" \| "pending"; readonly data?: unknown; readonly kind: "timer" \| "projection_match" \| "child_run" \| "fan_in" \| "externally_resolved_awakeable" \| "scheduled_work"; }, args: { readonly terminalReason: unknown; } | ChangeEvent | IllegalCompletionTransition | never |
+| cancelRun | packages/substrate/src/schema/state-machine.ts |  | current: { readonly terminalReason?: unknown; readonly error?: unknown; readonly result?: unknown; readonly runId: string; readonly state: "completed" \| "failed" \| "started" \| "blocked" \| "cancelled"; readonly blockedOnCompletionId?: string \| undefined; readonly data?: unknown; }, args: { readonly terminalReason: unknown; } | ChangeEvent | IllegalRunTransition | never |
+| completeRun | packages/substrate/src/schema/state-machine.ts |  | current: { readonly terminalReason?: unknown; readonly error?: unknown; readonly result?: unknown; readonly runId: string; readonly state: "completed" \| "failed" \| "started" \| "blocked" \| "cancelled"; readonly blockedOnCompletionId?: string \| undefined; readonly data?: unknown; }, args: { readonly result: unknown; } | ChangeEvent | IllegalRunTransition | never |
 | createPendingCompletion | packages/substrate/src/schema/state-machine.ts |  | input: CreatePendingCompletionInput | ChangeEvent | IllegalCompletionTransition | never |
-| failRun | packages/substrate/src/schema/state-machine.ts |  | current: Schema.Schema.Type<any>, args: { readonly error: unknown; } | ChangeEvent | IllegalRunTransition | never |
-| rejectCompletion | packages/substrate/src/schema/state-machine.ts |  | current: Schema.Schema.Type<any>, args: { readonly error: unknown; } | ChangeEvent | IllegalCompletionTransition | never |
-| resolveCompletion | packages/substrate/src/schema/state-machine.ts |  | current: Schema.Schema.Type<any>, args: { readonly result: unknown; } | ChangeEvent | IllegalCompletionTransition | never |
+| failRun | packages/substrate/src/schema/state-machine.ts |  | current: { readonly terminalReason?: unknown; readonly error?: unknown; readonly result?: unknown; readonly runId: string; readonly state: "completed" \| "failed" \| "started" \| "blocked" \| "cancelled"; readonly blockedOnCompletionId?: string \| undefined; readonly data?: unknown; }, args: { readonly error: unknown; } | ChangeEvent | IllegalRunTransition | never |
+| rejectCompletion | packages/substrate/src/schema/state-machine.ts |  | current: { readonly terminalReason?: unknown; readonly error?: unknown; readonly workId?: string \| undefined; readonly completionId: string; readonly result?: unknown; readonly state: "cancelled" \| "resolved" \| "rejected" \| "pending"; readonly data?: unknown; readonly kind: "timer" \| "projection_match" \| "child_run" \| "fan_in" \| "externally_resolved_awakeable" \| "scheduled_work"; }, args: { readonly error: unknown; } | ChangeEvent | IllegalCompletionTransition | never |
+| resolveCompletion | packages/substrate/src/schema/state-machine.ts |  | current: { readonly terminalReason?: unknown; readonly error?: unknown; readonly workId?: string \| undefined; readonly completionId: string; readonly result?: unknown; readonly state: "cancelled" \| "resolved" \| "rejected" \| "pending"; readonly data?: unknown; readonly kind: "timer" \| "projection_match" \| "child_run" \| "fan_in" \| "externally_resolved_awakeable" \| "scheduled_work"; }, args: { readonly result: unknown; } | ChangeEvent | IllegalCompletionTransition | never |
 | startRun | packages/substrate/src/schema/state-machine.ts |  | input: { readonly runId: string; readonly data?: unknown; } | ChangeEvent | IllegalRunTransition | never |
 | acquireStreamDb | packages/substrate/src/stream.ts | S extends StreamStateDefinition, E | options: OpenStreamDbOptions<S>, mapError: (cause: unknown) => E | GenericStreamDB<S> | E | Scope.Scope |
 | acquireSubstrateDb | packages/substrate/src/stream.ts | E | options: OpenSubstrateDbOptions, mapError: (cause: unknown) => E | SubstrateStreamDB | E | Scope.Scope |
-| ProjectionMatchEvaluator | packages/substrate/src/subscribers.ts |  |  | ProjectionMatchEvaluation | unknown | never |
 | runProjectionMatchSubscriber | packages/substrate/src/subscribers.ts |  | input: ProjectionMatchSubscriberInput | ProjectionMatchSubscriberResult | SubscriberError | never |
 | runProjectionMatchSubscriberFromSnapshot | packages/substrate/src/subscribers.ts |  | snapshot: ProjectionSnapshot, input: ProjectionMatchSubscriberInput | ProjectionMatchSubscriberResult | SubscriberError | never |
 | runScheduledWorkSubscriber | packages/substrate/src/subscribers.ts |  | input: SubscriberInput | ScheduledWorkSubscriberResult | SubscriberError | never |
 | runScheduledWorkSubscriberFromSnapshot | packages/substrate/src/subscribers.ts |  | snapshot: ProjectionSnapshot, input: SubscriberInput | ScheduledWorkSubscriberResult | SubscriberError | never |
 | runTimerSubscriber | packages/substrate/src/subscribers.ts |  | input: SubscriberInput | TimerSubscriberResult | SubscriberError | never |
 | runTimerSubscriberFromSnapshot | packages/substrate/src/subscribers.ts |  | snapshot: ProjectionSnapshot, input: SubscriberInput | TimerSubscriberResult | SubscriberError | never |
+
+## Layer Exports
+
+| Export | Declaration | Provides | Error | Requirement | Extraction |
+| --- | --- | --- | --- | --- | --- |
+| SubstrateClientLive | packages/client/src/client/service.ts | SubstrateClient | never | never | type-api |
+| EventStreamClientLive | packages/client/src/firegrid/event-client.ts | EventStreamClient | never | never | type-api |
+| EventStreamClientLive | packages/client/src/firegrid/event-client.ts | EventStreamClient | never | never | type-api |
+| FiregridClientLive | packages/client/src/firegrid/operation-client.ts | FiregridClient | never | never | type-api |
+| FiregridClientLive | packages/client/src/firegrid/operation-client.ts | FiregridClient | never | never | type-api |
+| Firegrid | packages/runtime/src/runtime/firegrid.ts | Operation.Output<Op> | Operation.Error<Op> \| E | R | type-text |
+| FiregridRuntimeBoot | packages/runtime/src/runtime/layer.ts | unknown | unknown | unknown | unresolved |
+| Firegrid | packages/runtime/src/runtime/firegrid.ts | Operation.Output<Op> | Operation.Error<Op> \| E | R | type-text |
+| attachedResolverLayer | packages/runtime/src/runtime/internal/stream-resolver.ts | RuntimeStreamResolver | never | never | type-api |
+| DurableStreamAdminLive | packages/runtime/src/runtime/internal/stream-resolver.ts | DurableStreamAdmin | never | never | type-api |
+| EmbeddedDurableStreamsLive | packages/runtime/src/runtime/internal/stream-resolver.ts | EmbeddedDurableStreams | never | never | type-api |
+| embeddedResolverLayer | packages/runtime/src/runtime/internal/stream-resolver.ts | RuntimeStreamResolver | never | EmbeddedDurableStreams \| DurableStreamAdmin | type-api |
+| FiregridRuntimeBoot | packages/runtime/src/runtime/layer.ts | unknown | unknown | unknown | unresolved |
+| currentWorkContextLayer | packages/substrate/src/choreography/context.ts | CurrentWorkContext | never | never | type-api |
+| ChoreographyLive | packages/substrate/src/choreography/service.ts | Choreography | never | never | type-api |
+| currentWorkContextLayer | packages/substrate/src/choreography/context.ts | CurrentWorkContext | never | never | type-api |
+| triggerMatchersLayer | packages/substrate/src/choreography/triggers.ts | TriggerMatchers | never | never | type-api |
+| ChoreographyLive | packages/substrate/src/choreography/service.ts | Choreography | never | never | type-api |
+| triggerMatchersLayer | packages/substrate/src/choreography/triggers.ts | TriggerMatchers | never | never | type-api |
+| layer | packages/substrate/src/event-plane/layer.ts | `event-plane/${Name}/Producer` \| `event-plane/${Name}/Projection` | PlaneProjectionReadError | never | type-api |
+| ProjectionLive | packages/substrate/src/facade/projection.ts | Projection | ProjectionReadError | never | type-api |
+| WorkClaimLive | packages/substrate/src/facade/work.ts | WorkClaim | never | never | type-api |
+| ProjectionLive | packages/substrate/src/facade/projection.ts | Projection | ProjectionReadError | never | type-api |
+| WorkClaimLive | packages/substrate/src/facade/work.ts | WorkClaim | never | never | type-api |
+| ChoreographyLive | packages/substrate/src/choreography/service.ts | Choreography | never | never | type-api |
+| currentWorkContextLayer | packages/substrate/src/choreography/context.ts | CurrentWorkContext | never | never | type-api |
+| ProjectionLive | packages/substrate/src/facade/projection.ts | Projection | ProjectionReadError | never | type-api |
+| triggerMatchersLayer | packages/substrate/src/choreography/triggers.ts | TriggerMatchers | never | never | type-api |
+| WorkClaimLive | packages/substrate/src/facade/work.ts | WorkClaim | never | never | type-api |
+| DurableWaitsLive | packages/substrate/src/waits.ts | DurableWaits | never | never | type-api |
+| ProjectionLive | packages/substrate/src/facade/projection.ts | Projection | ProjectionReadError | never | type-api |
+| SubstrateProducerLive | packages/substrate/src/producer.ts | WorkProducer \| CompletionProducer | never | never | type-api |
+| WorkClaimLive | packages/substrate/src/facade/work.ts | WorkClaim | never | never | type-api |
+| SubstrateProducerLive | packages/substrate/src/producer.ts | WorkProducer \| CompletionProducer | never | never | type-api |
+| DurableWaitsLive | packages/substrate/src/waits.ts | DurableWaits | never | never | type-api |
 
 Full structured inventory: `docs/effect-artifact-inventory.json`.

@@ -7,6 +7,56 @@ const table = (headers, rows) => {
   ].join("\n")
 }
 
+const sortedRows = (record) =>
+  Object.entries(record)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([name, count]) => [name, count])
+
+const exportPressureRows = (inventory) => {
+  const groups = new Map()
+  for (const artifact of inventory.artifacts) {
+    const key = [
+      artifact.declarationLocation.workspace ?? "unknown",
+      artifact.declarationLocation.physicalArea ?? "root",
+      artifact.declarationLocation.architectureLayer ?? "unknown",
+    ].join(" / ")
+    const group = groups.get(key) ?? {
+      total: 0,
+      effect: 0,
+      layer: 0,
+      reExports: 0,
+      unknown: 0,
+      crossings: 0,
+    }
+    group.total += 1
+    if (artifact.effect !== null) group.effect += 1
+    if (artifact.layer !== null) group.layer += 1
+    if (artifact.isReExport) group.reExports += 1
+    if (artifact.role === "unknown") group.unknown += 1
+    groups.set(key, group)
+  }
+  for (const crossing of inventory.fileBoundaryCrossings ?? []) {
+    const key = [
+      crossing.source?.workspace ?? "packages/substrate",
+      crossing.source?.physicalArea ?? "root",
+      crossing.source?.architectureLayer ?? crossing.from ?? "unknown",
+    ].join(" / ")
+    const group = groups.get(key)
+    if (group !== undefined) group.crossings += 1
+  }
+  return [...groups.entries()]
+    .sort((left, right) => right[1].total - left[1].total || left[0].localeCompare(right[0]))
+    .map(([area, group]) => [
+      area,
+      group.total,
+      group.effect,
+      group.layer,
+      group.reExports,
+      group.unknown,
+      group.crossings,
+    ])
+}
+
 export const renderMarkdown = (inventory) => {
   const roleRows = Object.entries(inventory.summary.byRole).map(([role, count]) => [
     role,
@@ -27,6 +77,29 @@ export const renderMarkdown = (inventory) => {
         )
         .join("; "),
     ])
+  const forbiddenLayerRows = inventory.artifacts
+    .flatMap((artifact) =>
+      artifact.boundaryCrossings
+        .filter((crossing) => crossing.kind.endsWith("forbidden-layer"))
+        .map((crossing) => [
+          artifact.exportName,
+          artifact.role,
+          artifact.declarationLocation.path,
+          crossing.kind,
+          `${crossing.from} -> ${crossing.to}`,
+          crossing.moduleSpecifier ?? crossing.requirement ?? "",
+        ]),
+    )
+    .slice(0, 120)
+  const fileLayerRows = (inventory.fileBoundaryCrossings ?? [])
+    .filter((crossing) => crossing.kind.endsWith("forbidden-layer"))
+    .map((crossing) => [
+      crossing.file,
+      crossing.kind,
+      `${crossing.from} -> ${crossing.to}`,
+      crossing.moduleSpecifier ?? "",
+      crossing.target ?? "",
+    ])
   const effectRows = inventory.artifacts
     .filter((artifact) => artifact.effect !== null)
     .slice(0, 80)
@@ -41,6 +114,17 @@ export const renderMarkdown = (inventory) => {
       artifact.effect.error,
       artifact.effect.requirement,
     ])
+  const layerRows = inventory.artifacts
+    .filter((artifact) => artifact.layer !== null)
+    .slice(0, 80)
+    .map((artifact) => [
+      artifact.exportName,
+      artifact.declarationLocation.path,
+      artifact.layer.provides,
+      artifact.layer.error,
+      artifact.layer.requirement,
+      artifact.layer.extraction,
+    ])
 
   return `# Effect Artifact Inventory
 
@@ -54,18 +138,50 @@ ${inventory.acids.map((acid) => `- \`${acid}\``).join("\n")}
 
 - Total exported artifacts: ${inventory.summary.totalArtifacts}
 - Effect-returning artifacts: ${inventory.summary.effectReturning}
+- Layer artifacts: ${inventory.summary.layerArtifacts}
 - Re-exports: ${inventory.summary.reExports}
 - Boundary crossings: ${inventory.summary.boundaryCrossings}
+- Forbidden durable-core layer crossings: ${inventory.summary.forbiddenLayerCrossings}
+- File import boundary crossings: ${inventory.summary.fileBoundaryCrossings}
+- File import forbidden durable-core layer crossings: ${inventory.summary.fileForbiddenLayerCrossings}
 
 ${table(["Role", "Count"], roleRows)}
+
+## Workspace Export Pressure
+
+${table(["Workspace", "Count"], sortedRows(inventory.summary.byWorkspace))}
+
+## Architecture Layer Export Pressure
+
+${table(["Architecture Layer", "Count"], sortedRows(inventory.summary.byArchitectureLayer))}
+
+## Physical Area Export Pressure
+
+${table(["Physical Area", "Count"], sortedRows(inventory.summary.byPhysicalArea))}
+
+## Hotspots
+
+${table(["Workspace / Physical Area / Architecture Layer", "Exports", "Effect", "Layer", "Re-exports", "Unknown", "Forbidden Layer Crossings"], exportPressureRows(inventory).slice(0, 40))}
 
 ## Boundary Crossings
 
 ${crossingRows.length === 0 ? "No package-boundary crossings detected." : table(["Export", "Role", "Declaration", "Exported From", "Crossing"], crossingRows)}
 
+## Durable-Core Layer Crossings
+
+${forbiddenLayerRows.length === 0 ? "No forbidden durable-core layer crossings detected." : table(["Export", "Role", "Declaration", "Kind", "Layer Edge", "Via"], forbiddenLayerRows)}
+
+## Durable-Core Import Layer Crossings
+
+${fileLayerRows.length === 0 ? "No forbidden durable-core import layer crossings detected." : table(["File", "Kind", "Layer Edge", "Import", "Target"], fileLayerRows)}
+
 ## Effect-Returning Exports
 
 ${effectRows.length === 0 ? "No exported Effect-returning artifacts detected." : table(["Export", "Declaration", "Type Parameters", "Parameters", "Success", "Error", "Requirement"], effectRows)}
+
+## Layer Exports
+
+${layerRows.length === 0 ? "No exported Layer artifacts detected." : table(["Export", "Declaration", "Provides", "Error", "Requirement", "Extraction"], layerRows)}
 
 Full structured inventory: \`docs/effect-artifact-inventory.json\`.
 `

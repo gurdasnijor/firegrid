@@ -1,11 +1,18 @@
-import { Node, SyntaxKind } from "ts-morph"
-import { toRepoPath } from "./project.mjs"
+import { Node, SyntaxKind, TypeFormatFlags } from "ts-morph"
+import {
+  architectureLayerOf,
+  sourceIdentityOf,
+  toRepoPath,
+  workspaceOf,
+} from "./project.mjs"
 
 export const locationOf = (node) => {
   const sourceFile = node.getSourceFile()
+  const path = toRepoPath(sourceFile.getFilePath())
   return {
-    path: toRepoPath(sourceFile.getFilePath()),
+    path,
     line: sourceFile.getLineAndColumnAtPos(node.getStart()).line,
+    ...sourceIdentityOf(path),
   }
 }
 
@@ -48,10 +55,178 @@ export const effectChannelsFromType = (typeText) => {
   return { success, error, requirement }
 }
 
+const typeTextOf = (type, node) =>
+  type.getText(
+    node,
+    TypeFormatFlags.NoTruncation |
+      TypeFormatFlags.UseFullyQualifiedType |
+      TypeFormatFlags.WriteArrayAsGenericType,
+  )
+
+const callableReturnTypeOf = (node) => {
+  if (Node.isFunctionDeclaration(node)) return { type: node.getReturnType(), direct: true }
+  if (Node.isVariableDeclaration(node)) {
+    const initializer =
+      node.getInitializerIfKind(SyntaxKind.ArrowFunction) ??
+      node.getInitializerIfKind(SyntaxKind.FunctionExpression)
+    if (initializer !== undefined) return { type: initializer.getReturnType(), direct: true }
+    const callSignature = node.getType().getCallSignatures()[0]
+    if (callSignature !== undefined) {
+      return { type: callSignature.getReturnType(), direct: true }
+    }
+    return { type: node.getType(), direct: false }
+  }
+  return { type: node.getType(), direct: false }
+}
+
+const genericChannelsFromType = (type, node, marker, defaults) => {
+  const text = typeTextOf(type, node)
+  if (!text.includes(marker)) return null
+  const args = type.getTypeArguments()
+  if (args.length > 0) {
+    return {
+      channels: defaults.map((defaultValue, index) => args[index]?.getText(node) ?? defaultValue),
+      channelTypes: defaults.map((_, index) => args[index] ?? null),
+      source: "type-api",
+      text,
+    }
+  }
+  const parsed = effectChannelsFromType(text)
+  if (parsed !== null) {
+    return {
+      channels: [parsed.success, parsed.error, parsed.requirement],
+      channelTypes: [null, null, null],
+      source: "type-text",
+      text,
+    }
+  }
+  return {
+    channels: defaults,
+    channelTypes: defaults.map(() => null),
+    source: "unresolved",
+    text,
+  }
+}
+
+export const effectChannelsOf = (node) => {
+  const target = callableReturnTypeOf(node)
+  if (!target.direct) return null
+  const targetType = target.type
+  const channels = genericChannelsFromType(targetType, node, "Effect.Effect<", [
+    "unknown",
+    "unknown",
+    "never",
+  ])
+  if (channels === null) return null
+  const [success, error, requirement] = channels.channels
+  return {
+    success,
+    error,
+    requirement,
+    requirementType: channels.channelTypes[2],
+    extraction: channels.source,
+  }
+}
+
+const layerChannelsFrom = (type, node) => {
+  const channels = genericChannelsFromType(type, node, "Layer.Layer<", [
+    "unknown",
+    "unknown",
+    "unknown",
+  ])
+  if (channels === null) return null
+  const [provides, error, requirement] = channels.channels
+  return {
+    provides,
+    error,
+    requirement,
+    providesType: channels.channelTypes[0],
+    requirementType: channels.channelTypes[2],
+    extraction: channels.source,
+  }
+}
+
+export const layerChannelsOf = (node) => {
+  const target = callableReturnTypeOf(node)
+  const direct = layerChannelsFrom(target.type, node)
+  if (direct !== null) return direct
+  const methods = node
+    .getType()
+    .getProperties()
+    .flatMap((property) =>
+      property
+        .getDeclarations()
+        .flatMap((declaration) =>
+          declaration
+            .getType()
+            .getCallSignatures()
+            .map((signature) => layerChannelsFrom(signature.getReturnType(), node))
+            .filter(Boolean)
+            .map((channels) => ({
+              property: property.getName(),
+              ...channels,
+            })),
+        ),
+    )
+  return methods.length === 0
+    ? null
+    : {
+        provides: methods.map((method) => `${method.property}: ${method.provides}`).join("; "),
+        error: methods.map((method) => `${method.property}: ${method.error}`).join("; "),
+        requirement: methods
+          .map((method) => `${method.property}: ${method.requirement}`)
+          .join("; "),
+        providesType: null,
+        requirementType: null,
+        extraction: "property-call-signatures",
+        methods,
+      }
+}
+
 export const flattenRequirements = (requirementText) =>
   topLevelSplit(requirementText.replaceAll("\n", " "), ["|", "&"])
     .map((part) => part.trim())
     .filter((part) => part !== "" && part !== "never" && part !== "unknown")
+
+const flattenRequirementTypes = (type) => {
+  if (type === null || type === undefined) return []
+  const union = type.getUnionTypes()
+  if (union.length > 0) return union.flatMap(flattenRequirementTypes)
+  const intersection = type.getIntersectionTypes()
+  if (intersection.length > 0) return intersection.flatMap(flattenRequirementTypes)
+  const text = type.getText()
+  if (text === "never" || text === "unknown") return []
+  return [type]
+}
+
+export const requirementEntriesOf = (requirementText, requirementType, declarationIndex) => {
+  const typeEntries = flattenRequirementTypes(requirementType).map((type) => {
+    const declaration = [
+      type.getSymbol(),
+      type.getAliasSymbol(),
+      ...type.getProperties().map((property) => property),
+    ]
+      .filter(Boolean)
+      .flatMap((symbol) => symbol.getDeclarations())
+      .map((declaration) => locationOf(declaration))
+      .find((location) => workspaceOf(location.path) !== null)
+    return {
+      text: type.getText(undefined, TypeFormatFlags.NoTruncation),
+      declaration: declaration ?? null,
+      resolution: declaration === undefined ? "unresolved-type" : "type-symbol",
+    }
+  })
+  if (typeEntries.length > 0) return typeEntries
+  return flattenRequirements(requirementText).map((requirement) => {
+    const names = [...requirement.matchAll(/[A-Za-z_$][\w$]*/g)].map((match) => match[0])
+    const declaration = names.map((name) => declarationIndex.get(name)).find(Boolean)
+    return {
+      text: requirement,
+      declaration: declaration ?? null,
+      resolution: declaration === undefined ? "unresolved-text" : "name-index",
+    }
+  })
+}
 
 export const declarationName = (node) => {
   if (Node.isVariableDeclaration(node)) return node.getName()
@@ -86,6 +261,9 @@ export const declarationTypeText = (node) => {
   if (Node.isTypeAliasDeclaration(node)) return node.getType().getText(node)
   return node.getType().getText(node)
 }
+
+export const schemaSyntaxText = (node) =>
+  Node.isTypeAliasDeclaration(node) ? (node.getTypeNode()?.getText() ?? "") : ""
 
 const typeParametersOf = (node) => {
   if (
@@ -183,6 +361,18 @@ const bindingOf = (node) => {
 export const importsOf = (sourceFile) =>
   sourceFile.getImportDeclarations().map((declaration) => ({
     moduleSpecifier: declaration.getModuleSpecifierValue(),
+    resolvedLocation:
+      declaration.getModuleSpecifierSourceFile() === undefined
+        ? null
+        : {
+            path: toRepoPath(declaration.getModuleSpecifierSourceFileOrThrow().getFilePath()),
+            workspace: workspaceOf(
+              toRepoPath(declaration.getModuleSpecifierSourceFileOrThrow().getFilePath()),
+            ),
+            architectureLayer: architectureLayerOf(
+              toRepoPath(declaration.getModuleSpecifierSourceFileOrThrow().getFilePath()),
+            ),
+          },
     defaultImport: declaration.getDefaultImport()?.getText() ?? null,
     namespaceImport: declaration.getNamespaceImport()?.getText() ?? null,
     namedImports: declaration.getNamedImports().map((namedImport) => ({
