@@ -35,16 +35,9 @@ export {
 } from "./facade/index.ts"
 
 // choreography-facade — Phase 12 choreography facade (foundation slice).
-//
-// `ProjectionMatchTrigger` collides with the Phase-7 placeholder interface
-// in `./waits.js`. The two have different shapes (the placeholder is the
-// loose data field stored on `durable.completion` rows; the choreography
-// schema is the typed Effect Schema for runtime/tool input). Keep the
-// placeholder as the root `ProjectionMatchTrigger` to avoid silently
-// changing root meaning, and re-export the choreography schema under the
-// distinct root name `ChoreographyProjectionMatchTrigger`. Subpath consumers
-// can still import `ProjectionMatchTrigger` directly from
-// `./choreography/index.js`.
+// firegrid-remediation-hardening.STATIC_QUALITY.1
+// The typed choreography `ProjectionMatchTrigger` is the canonical root
+// export; the older placeholder stays behind kernel/internal subpaths.
 export {
   AwakeableToolInput,
   Choreography,
@@ -56,7 +49,7 @@ export {
   CurrentWorkContext,
   MissingTriggerMatcherError,
   OwnerId,
-  ProjectionMatchTrigger as ChoreographyProjectionMatchTrigger,
+  ProjectionMatchTrigger,
   ScheduleMeToolInput,
   SleepToolInput,
   TriggerMatchers,

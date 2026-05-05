@@ -1,0 +1,61 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/*.mjs"
+      ]
+    },
+    "packages/substrate": {
+      "entry": [
+        "src/index.ts",
+        "src/kernel/index.ts",
+        "src/descriptors/index.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "packages/client": {
+      "entry": [
+        "src/index.ts",
+        "src/firegrid/index.ts",
+        "src/compat/index.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "packages/runtime": {
+      "entry": [
+        "src/index.ts",
+        "bin/*.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "bin/**/*.ts"
+      ]
+    },
+    "packages/lab": {
+      "entry": [
+        "src/main.tsx",
+        "src/index.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}"
+      ]
+    }
+  },
+  "ignore": [
+    "**/__tests__/**",
+    "semgrep-tests/**"
+  ],
+  "ignoreDependencies": [
+    "jscpd"
+  ],
+  "ignoreBinaries": [
+    "dot",
+    "ruby",
+    "semgrep"
+  ]
+}

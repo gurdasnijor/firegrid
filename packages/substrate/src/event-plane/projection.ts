@@ -69,7 +69,7 @@ export interface PlaneProjection<S extends StreamStateDefinition> {
   ) => Effect.Effect<A, PlaneProjectionWaitTimeout | PlaneProjectionReadError | E, R>
 }
 
-export interface MakePlaneProjectionArgs<S extends StreamStateDefinition> {
+interface MakePlaneProjectionArgs<S extends StreamStateDefinition> {
   readonly planeName: string
   readonly streamUrl: string
   readonly contentType?: string
@@ -81,7 +81,7 @@ export interface MakePlaneProjectionArgs<S extends StreamStateDefinition> {
 // inference picks `StateSchema<S>` as TDef. So the DB type is
 // StreamDB<StateSchema<S>>, NOT StreamDB<S>. We expose this alias once so
 // callers don't have to repeat the wrapping.
-export type PlaneStreamDB<S extends StreamStateDefinition> = StreamDB<StateSchema<S>>
+type PlaneStreamDB<S extends StreamStateDefinition> = StreamDB<StateSchema<S>>
 
 const acquireDb = <S extends StreamStateDefinition>(
   args: MakePlaneProjectionArgs<S>,

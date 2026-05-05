@@ -83,7 +83,7 @@ const observationQuery = (workId: string): ProjectionQuery<WorkObservation> => (
 // Subscriptions (stream / until) keep using the long-lived Projection
 // facade since those flows already follow no-gap snapshot-then-changes
 // semantics through subscribeChanges with includeInitialState.
-export interface SnapshotConfig {
+interface SnapshotConfig {
   readonly streamUrl: string
   readonly contentType?: string
 }
@@ -92,7 +92,7 @@ export interface SnapshotConfig {
 // scoped Projection from ProjectionLive (stream/until), a snapshot
 // config used for rebuild-based one-shot reads, and a captured
 // `declareWork` callable from WorkProducer.
-export type DeclareWorkFn = WorkProducerService["declareWork"]
+type DeclareWorkFn = WorkProducerService["declareWork"]
 
 export const makeWorkFacet = (
   projection: Projection["Type"],

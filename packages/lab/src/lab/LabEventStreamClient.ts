@@ -19,7 +19,7 @@ import { LabEvents, type LabEvent } from "./lab-events.ts"
 // controls exercise the same app-facing Firegrid client APIs an
 // application would use.
 
-export interface LabEventStreamClientConfig {
+interface LabEventStreamClientConfig {
   readonly streamUrl: string
 }
 

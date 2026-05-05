@@ -193,7 +193,7 @@ const mapRunToState = <Op extends Operation.Any>(
   })
 }
 
-export const buildFiregridClientService = (
+const buildFiregridClientService = (
   cfg: FiregridClientConfig,
 ): FiregridClientService => {
   const eventStreams = buildEventStreamService(cfg)

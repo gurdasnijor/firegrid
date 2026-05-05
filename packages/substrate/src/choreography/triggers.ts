@@ -22,7 +22,7 @@ export type ProjectionMatchTrigger = Schema.Schema.Type<
 // ChoreographyTrigger is the union of supported trigger variants. v1 has a
 // single variant; adding a future variant widens this type and forces
 // explicit handling in `dispatchTrigger` (TS will require the new case).
-export const ChoreographyTrigger = ProjectionMatchTrigger
+export const ChoreographyTrigger = Schema.Union(ProjectionMatchTrigger)
 export type ChoreographyTrigger = Schema.Schema.Type<typeof ChoreographyTrigger>
 
 // choreography-facade.TRIGGERS.5

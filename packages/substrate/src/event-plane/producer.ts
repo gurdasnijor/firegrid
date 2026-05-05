@@ -145,7 +145,7 @@ const revalidate = (
     return Effect.void
   })
 
-export interface MakePlaneProducerArgs {
+interface MakePlaneProducerArgs {
   readonly planeName: string
   readonly streamUrl: string
   readonly contentType?: string

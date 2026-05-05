@@ -23,7 +23,7 @@ import styles from "./styles.module.css"
 // and follows decoded events through EventStreamClient.events. Raw
 // Durable Streams inspection remains in RawStreamInspector.
 
-export interface LabEventStreamPanelProps {
+interface LabEventStreamPanelProps {
   readonly streamUrl: string
 }
 

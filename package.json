@@ -22,11 +22,15 @@
     "graph:check": "depcruise packages",
     "graph:mermaid": "depcruise packages --output-type mermaid --collapse '^packages/[^/]+/src/[^/]+' > docs/dependency-graph.mmd",
     "lint": "eslint .",
+    "lint:dead": "node scripts/knip-check-baseline.mjs",
+    "lint:dead:baseline": "node scripts/knip-update-baseline.mjs",
+    "lint:deps": "depcruise --config .dependency-cruiser.cjs packages",
     "lint:dup": "node scripts/jscpd-check-baseline.mjs",
     "lint:dup:baseline": "node scripts/jscpd-update-baseline.mjs",
     "lint:semgrep": "semgrep --config .semgrep.yml --exclude '**/__tests__/**' --exclude '**/*.test.ts' --exclude '**/*.test.tsx' packages/*/src",
     "test": "turbo run test",
-    "typecheck": "turbo run typecheck"
+    "typecheck": "turbo run typecheck",
+    "verify": "pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:semgrep && pnpm run test"
   },
   "devDependencies": {
     "@durable-streams/server": "^0.3.1",
@@ -38,6 +42,7 @@
     "eslint": "^10.3.0",
     "globals": "^17.6.0",
     "jscpd": "^4.0.9",
+    "knip": "^6.11.0",
     "turbo": "^2.5.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.2"

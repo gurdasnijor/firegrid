@@ -104,7 +104,7 @@ export const runOperationHandler = <Op extends Operation.Any, E, R>(
     yield* Effect.forkScoped(runOperationDispatchLoop(cfg, input))
   })
 
-export const runOperationDispatchLoop = <Op extends Operation.Any, E, R>(
+const runOperationDispatchLoop = <Op extends Operation.Any, E, R>(
   cfg: RuntimeContextService,
   input: DispatchInput<Op, E, R>,
 ) =>
