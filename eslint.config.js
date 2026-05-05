@@ -42,7 +42,11 @@ const restrictedInternalPackage = (name, message) => ({ name, message })
 const tsOnly = (configs) =>
   configs.map((config) => ({
     ...config,
-    files: ["packages/**/*.ts", "test-support/**/*.ts"],
+    files: [
+      "packages/**/*.ts",
+      "packages/**/*.tsx",
+      "test-support/**/*.ts",
+    ],
   }))
 const relativeJsSpecifierPattern = /^\.{1,2}\/.*\.js$/u
 const rewriteJsSpecifierToTs = (specifier) => specifier.replace(/\.js$/u, ".ts")
@@ -394,9 +398,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/**/*.ts", "test-support/**/*.ts"],
+    files: [
+      "packages/**/*.ts",
+      "packages/**/*.tsx",
+      "test-support/**/*.ts",
+    ],
     languageOptions: {
-      globals: globals.node,
+      globals: { ...globals.node, ...globals.browser },
       parserOptions: {
         project: "./tsconfig.eslint.json",
         tsconfigRootDir: import.meta.dirname,
@@ -535,7 +543,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/lab/src/**/*.ts"],
+    files: ["packages/lab/src/**/*.ts", "packages/lab/src/**/*.tsx"],
     rules: {
       "no-restricted-imports": [
         "error",
