@@ -11,6 +11,7 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "check": "pnpm run typecheck && pnpm run test",
+    "dev:embedded": "tsx ./bin/dev-embedded.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "tsx": "^4.20.4",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   }

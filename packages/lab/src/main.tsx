@@ -7,41 +7,35 @@ import { App } from "./lab/App.tsx"
 //
 // Browser entrypoint. Vite + React + vanilla CSS modules — no UI
 // framework dependency. Connects to a Durable Streams endpoint
-// supplied via a `?streamUrl=...` query parameter or the
-// VITE_SUBSTRATE_STREAM_URL env var. The lab is read-only this
-// slice; there is no default that points at an embedded host
-// process the lab itself owns.
+// resolved in this order:
+//
+//   1. `?streamUrl=...` query parameter
+//   2. `VITE_SUBSTRATE_STREAM_URL` env var
+//   3. Default: http://127.0.0.1:4437/substrate/lab
+//
+// The default matches the host package's read-only embedded
+// attach point: `pnpm --filter @durable-agent-substrate/host
+// dev:embedded` boots a DurableStreamTestServer on port 4437 with
+// stream name "lab" and no Host Program Graph. The lab does not
+// import the host package; the only contract between the two is
+// the stream URL.
+
+const DEFAULT_DEV_STREAM_URL = "http://127.0.0.1:4437/substrate/lab"
 
 const params = new URLSearchParams(window.location.search)
 const queryStreamUrl = params.get("streamUrl") ?? undefined
 const envStreamUrl = (import.meta as unknown as { env?: Record<string, string> })
   .env?.["VITE_SUBSTRATE_STREAM_URL"]
 
-const streamUrl = queryStreamUrl ?? envStreamUrl
+const streamUrl = queryStreamUrl ?? envStreamUrl ?? DEFAULT_DEV_STREAM_URL
 
 const root = document.getElementById("root")
 if (root === null) {
   throw new Error("lab: missing #root element")
 }
 
-if (streamUrl === undefined || streamUrl.length === 0) {
-  createRoot(root).render(
-    <React.StrictMode>
-      <main style={{ padding: "16px", fontFamily: "monospace" }}>
-        <h1>Durable Agent Substrate Lab</h1>
-        <p>
-          No stream URL configured. Provide{" "}
-          <code>?streamUrl=&lt;durable-streams-url&gt;</code> in the
-          query string, or set <code>VITE_SUBSTRATE_STREAM_URL</code>{" "}
-          when running the dev server.
-        </p>
-      </main>
-    </React.StrictMode>,
-  )
-} else {
-  createRoot(root).render(
-    <React.StrictMode>
-      <App streamUrl={streamUrl} />
-    </React.StrictMode>,
-  )
-}
+createRoot(root).render(
+  <React.StrictMode>
+    <App streamUrl={streamUrl} />
+  </React.StrictMode>,
+)

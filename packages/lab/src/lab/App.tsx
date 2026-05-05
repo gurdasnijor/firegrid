@@ -55,6 +55,16 @@ export function App({ streamUrl }: AppProps) {
           add example-program controls that go through the
           substrate client.
         </p>
+        <p className={styles.note}>
+          Default attach point is{" "}
+          <code>http://127.0.0.1:4437/substrate/lab</code>, served
+          by{" "}
+          <code>
+            pnpm --filter @durable-agent-substrate/host dev:embedded
+          </code>
+          . Override via <code>?streamUrl=...</code> or{" "}
+          <code>VITE_SUBSTRATE_STREAM_URL</code>.
+        </p>
         <RawStreamInspector streamUrl={streamUrl} />
       </main>
     </div>
