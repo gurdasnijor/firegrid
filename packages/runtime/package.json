@@ -1,5 +1,5 @@
 {
-  "name": "@durable-agent-substrate/host",
+  "name": "@firegrid/runtime",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,20 +8,24 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "bin": {
+    "firegrid": "./bin/firegrid.ts",
+    "fg": "./bin/firegrid.ts"
+  },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "check": "pnpm run typecheck && pnpm run test",
-    "dev:embedded": "tsx ./bin/dev-embedded.ts",
-    "dev:lab": "pnpm run dev:embedded",
+    "firegrid": "tsx ./bin/firegrid.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "@durable-agent-substrate/client": "workspace:*",
     "@durable-agent-substrate/substrate": "workspace:*",
     "@durable-streams/client": "^0.2.3",
     "@durable-streams/server": "^0.3.1",
     "@durable-streams/state": "^0.2.5",
+    "@effect/platform": "^0.96.0",
+    "@effect/platform-node": "^0.106.0",
     "effect": "^3.18.0"
   },
   "devDependencies": {

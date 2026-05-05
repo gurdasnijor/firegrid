@@ -9,7 +9,7 @@
     "check": "pnpm run check:specs && pnpm run check:docs && pnpm run lint && turbo run build check",
     "check:specs": "ruby -e 'require \"yaml\"; ARGV.each { |f| YAML.load_file(f); puts \"ok #{File.basename(f)}\" }' features/*/*.feature.yaml",
     "check:docs": "find README.md docs features -type f \\( -name '*.md' -o -name '*.yaml' \\) -print0 | xargs -0 perl -ne 'print \"$ARGV:$.: trailing whitespace\\n\" if /[ \\t]$/; close ARGV if eof' && ! grep -R -n -E '<<<<<<<|>>>>>>>|=======' README.md docs features",
-    "dev:lab": "turbo run dev:lab",
+    "dev:lab": "pnpm --filter @firegrid/runtime exec firegrid dev -- pnpm --filter @firegrid/lab dev",
     "effect:check": "effect-language-service check",
     "effect:diagnostics": "sh -c 'status=0; for f in packages/*/tsconfig.json; do echo \"== $f ==\"; effect-language-service diagnostics --project \"$f\" --format text || status=$?; done; exit \"$status\"'",
     "effect:patch": "effect-language-service patch",

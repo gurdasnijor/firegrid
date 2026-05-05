@@ -2,40 +2,73 @@ import React from "react"
 import { createRoot } from "react-dom/client"
 import { App } from "./lab/App.tsx"
 
-// durable-agent-runtime-lab.runtime-lab-inspector.PACKAGING.1
-// durable-agent-runtime-lab.runtime-lab-inspector.PACKAGING.2
+// firegrid-architecture-boundary.DEPENDENCY_GRAPH.4
+// firegrid-runtime-process.DEV_ENV_INJECTION.5
 //
 // Browser entrypoint. Vite + React + vanilla CSS modules — no UI
 // framework dependency. Connects to a Durable Streams endpoint
 // resolved in this order:
 //
 //   1. `?streamUrl=...` query parameter
-//   2. `VITE_SUBSTRATE_STREAM_URL` env var
-//   3. Default: http://127.0.0.1:4437/substrate/lab
+//   2. `VITE_DURABLE_STREAMS_URL` env var (canonical Firegrid env;
+//      injected by `firegrid dev -- pnpm --filter @firegrid/lab dev`)
 //
-// The default matches the host package's read-only embedded
-// attach point: `pnpm --filter @durable-agent-substrate/host
-// dev:embedded` boots a DurableStreamTestServer on port 4437 with
-// stream name "lab" and no Host Program Graph. The lab does not
-// import the host package; the only contract between the two is
-// the stream URL.
-
-const DEFAULT_DEV_STREAM_URL = "http://127.0.0.1:4437/substrate/lab"
+// There is no fixed-port default. If neither source is present the
+// lab renders an empty-state pointing at the canonical workflow.
+// The lab does not import the runtime or substrate packages; the
+// only contract with a running runtime is the stream URL.
 
 const params = new URLSearchParams(window.location.search)
 const queryStreamUrl = params.get("streamUrl") ?? undefined
-const envStreamUrl = (import.meta as unknown as { env?: Record<string, string> })
-  .env?.["VITE_SUBSTRATE_STREAM_URL"]
+const envStreamUrl = (
+  import.meta as unknown as { env?: Record<string, string> }
+).env?.["VITE_DURABLE_STREAMS_URL"]
 
-const streamUrl = queryStreamUrl ?? envStreamUrl ?? DEFAULT_DEV_STREAM_URL
+const streamUrl = queryStreamUrl ?? envStreamUrl
 
 const root = document.getElementById("root")
 if (root === null) {
   throw new Error("lab: missing #root element")
 }
 
-createRoot(root).render(
-  <React.StrictMode>
-    <App streamUrl={streamUrl} />
-  </React.StrictMode>,
-)
+if (streamUrl === undefined || streamUrl.length === 0) {
+  createRoot(root).render(
+    <React.StrictMode>
+      <main
+        style={{
+          padding: "16px",
+          fontFamily: "ui-monospace, monospace",
+          maxWidth: "640px",
+        }}
+      >
+        <h1>Firegrid Lab</h1>
+        <p>
+          No Durable Streams URL configured. Boot the Firegrid
+          runtime with the lab as a child and re-open this page:
+        </p>
+        <pre
+          style={{
+            background: "#1e293b",
+            color: "#e2e8f0",
+            padding: "12px",
+            borderRadius: "6px",
+            overflowX: "auto",
+          }}
+        >
+          firegrid dev -- pnpm --filter @firegrid/lab dev
+        </pre>
+        <p>
+          Or override directly: pass <code>?streamUrl=...</code> in
+          the query string, or set{" "}
+          <code>VITE_DURABLE_STREAMS_URL</code> when starting Vite.
+        </p>
+      </main>
+    </React.StrictMode>,
+  )
+} else {
+  createRoot(root).render(
+    <React.StrictMode>
+      <App streamUrl={streamUrl} />
+    </React.StrictMode>,
+  )
+}

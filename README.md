@@ -1,23 +1,28 @@
-# Durable Agent Substrate
+# Firegrid
 
 Canonical design source:
 
+- [Firegrid Architecture and Operation Messaging Boundary](docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md)
 - [Durable Agent Substrate SDD](docs/SDD_DURABLE_AGENT_SUBSTRATE.md)
 - [Docs map](docs/README.md)
 
-Current canonical SDDs:
+Other canonical SDDs:
 
 - [Client Event Planes And State Producers](docs/SDD_CLIENT_EVENT_PLANES_AND_STATE_PRODUCERS.md)
 - [Choreography Facade](docs/SDD_CHOREOGRAPHY_FACADE.md)
 - [Launchable Substrate Host And Lab](docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md)
 
-Acai specs live under `features/durable-agent-substrate/` and are the stable
-acceptance criteria for implementation.
+Acai specs live under `features/firegrid/` (canonical) and
+`features/durable-agent-substrate/` (substrate kernel).
 
 ## Current State
 
-This repo is implementing the substrate in spec-driven slices. The launchable
-host/client/lab work is currently in phase 13.
+The repo is migrating to the Firegrid product / package vocabulary:
+`@firegrid/runtime` (server-side participant; was
+`@durable-agent-substrate/host`), `@firegrid/lab` (browser
+inspector), and the still-named substrate (`@durable-agent-substrate/substrate`)
++ client (`@durable-agent-substrate/client`) packages. Operation
+messaging and EventStream descriptor APIs are the next slices.
 
 Run the baseline validation before editing:
 
@@ -25,32 +30,39 @@ Run the baseline validation before editing:
 pnpm check
 ```
 
-Implementation work should start from the Acai specs and include full Acai ACID
-references in test names or nearby comments.
+Implementation work starts from the Acai specs and includes full
+Acai ACID references in test names or nearby comments.
 
 ## Run the lab
 
-The browser lab inspects a Durable Streams endpoint. The repo wires both
-processes together through Turborepo so a single command starts everything:
+The lab is a read-only Durable Streams inspector. The Firegrid
+runtime binary launches an embedded Durable Streams server, injects
+the resolved URL into a child process, and forwards stdio:
+
+```sh
+firegrid dev -- pnpm --filter @firegrid/lab dev
+```
+
+That spawns Vite with `VITE_DURABLE_STREAMS_URL` set; open the
+printed Vite URL and the lab attaches with no manual wiring.
+Ctrl-C tears down both the embedded Durable Streams server and the
+child via the same Effect scope.
+
+The repo also exposes a thin pnpm shortcut wrapping the same
+command:
 
 ```sh
 pnpm dev:lab
 ```
 
-This runs `turbo run dev:lab --parallel`, which fans out to:
-
-- `packages/host` `dev:embedded` — boots a no-write embedded
-  `DurableStreamTestServer` at `http://127.0.0.1:4437/substrate/lab`. No Host
-  Program Graph; no scenario runner; no client writes.
-- `packages/lab` `dev` — Vite dev server at `http://localhost:4439/` that
-  defaults to the URL above.
-
-Open `http://localhost:4439/` once both lines log ready; Ctrl-C tears both down.
-
-If you want each side in its own terminal for debugging, the split commands
-are still available:
+For attached mode against an existing Durable Streams endpoint,
+either set `DURABLE_STREAMS_URL` in the env and run `firegrid` (no
+subcommand), or call the runtime constructors directly:
 
 ```sh
-pnpm --filter @durable-agent-substrate/host dev:embedded
-pnpm --filter @durable-agent-substrate/lab dev
+firegrid                                                    # attached or embedded based on env
+DURABLE_STREAMS_URL=https://… firegrid                      # attached
 ```
+
+The lab can be pointed elsewhere via `?streamUrl=...` in the
+browser URL or by setting `VITE_DURABLE_STREAMS_URL` directly.

@@ -3,13 +3,12 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
-// launchable-substrate-host.NO_CONTROL_PLANE.4
-// launchable-substrate-host.NO_CONTROL_PLANE.5
-// launchable-substrate-host.LAB_INSPECTOR.6
+// firegrid-architecture-boundary.DEPENDENCY_GRAPH.4
+// firegrid-architecture-boundary.PACKAGE_BOUNDARIES.5
 //
 // Source-level guard: the browser-side lab surface (every .ts and
 // .tsx file under packages/lab/src) must not contain a workspace
-// import of @durable-agent-substrate/host or
+// import of @firegrid/runtime or
 // @durable-agent-substrate/substrate. The ESLint boundary is the
 // authoritative check; this test is a fast in-vitest backstop so
 // regressions surface even if the lint step is skipped.
@@ -53,12 +52,12 @@ import {
   statSync as statSyncSafe,
 } from "node:fs"
 
-describe("lab/src browser bundle — no host/substrate workspace imports", () => {
-  it("no source file under packages/lab/src imports @durable-agent-substrate/host or /substrate", () => {
+describe("lab/src browser bundle — no runtime/substrate workspace imports", () => {
+  it("no source file under packages/lab/src imports @firegrid/runtime or @durable-agent-substrate/substrate", () => {
     const banned = [
-      '@durable-agent-substrate/host"',
-      "'@durable-agent-substrate/host'",
-      "@durable-agent-substrate/host`",
+      '@firegrid/runtime"',
+      "'@firegrid/runtime'",
+      "@firegrid/runtime`",
       '@durable-agent-substrate/substrate"',
       "'@durable-agent-substrate/substrate'",
       "@durable-agent-substrate/substrate`",

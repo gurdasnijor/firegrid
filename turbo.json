@@ -16,10 +16,6 @@
     "check": {
       "dependsOn": ["build"],
       "outputs": []
-    },
-    "dev:lab": {
-      "cache": false,
-      "persistent": true
     }
   }
 }

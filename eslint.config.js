@@ -484,7 +484,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/{client,host}/src/**/*.ts"],
+    files: ["packages/{client,runtime}/src/**/*.ts"],
     ignores: ["packages/**/src/__tests__/**/*.ts", "packages/**/*.test.ts"],
     rules: {
       "local/no-hidden-control-plane": "error",
@@ -502,11 +502,11 @@ export default tseslint.config(
               "Substrate must not depend on the client package.",
             ),
             restrictedInternalPackage(
-              "@durable-agent-substrate/host",
-              "Substrate must not depend on the host package.",
+              "@firegrid/runtime",
+              "Substrate must not depend on the runtime package.",
             ),
             restrictedInternalPackage(
-              "@durable-agent-substrate/lab",
+              "@firegrid/lab",
               "Substrate must not depend on lab code.",
             ),
             restrictedInternalPackage(
@@ -526,12 +526,12 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@durable-agent-substrate/host",
-              "Client must expose curated application handles, not depend on host lifecycle code.",
+              "@firegrid/runtime",
+              "Client must not depend on the runtime package; runtime → client is an architecture defect and the reverse direction must not exist either.",
             ),
             restrictedInternalPackage(
-              "@durable-agent-substrate/lab",
-              "Client must not depend on lab scenarios.",
+              "@firegrid/lab",
+              "Client must not depend on lab code.",
             ),
             restrictedInternalPackage(
               "@durable-agent-substrate/types",
@@ -551,15 +551,15 @@ export default tseslint.config(
           paths: [
             restrictedInternalPackage(
               "@durable-agent-substrate/substrate",
-              "Lab scenarios should compose through the public client package.",
+              "Lab UI must compose through the client package; substrate is the durable kernel.",
             ),
             restrictedInternalPackage(
-              "@durable-agent-substrate/host",
-              "Lab scenarios should not become a host control plane.",
+              "@firegrid/runtime",
+              "Lab UI must not depend on the Firegrid runtime; the only contract is the stream URL injected by the runtime process.",
             ),
             restrictedInternalPackage(
               "@durable-agent-substrate/types",
-              "Lab scenarios should not depend on a shared types package.",
+              "Lab UI must not depend on a shared types package.",
             ),
           ],
         },
@@ -567,8 +567,11 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/host/src/**/*.ts"],
-    ignores: ["packages/host/src/__tests__/**/*.ts", "packages/**/*.test.ts"],
+    files: ["packages/runtime/src/**/*.ts"],
+    ignores: [
+      "packages/runtime/src/__tests__/**/*.ts",
+      "packages/**/*.test.ts",
+    ],
     rules: {
       "local/no-host-authority-registry": "warn",
       "no-restricted-imports": [
@@ -576,12 +579,16 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@durable-agent-substrate/lab",
-              "Host lifecycle code must not depend on lab scenarios.",
+              "@durable-agent-substrate/client",
+              "Runtime → client is an architecture defect; the runtime must not import the app-facing client package.",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/lab",
+              "Runtime must not depend on lab code.",
             ),
             restrictedInternalPackage(
               "@durable-agent-substrate/types",
-              "Host owns lifecycle/config/profile types only; do not introduce a shared types package.",
+              "Runtime owns its lifecycle/config types only; do not introduce a shared types package.",
             ),
           ],
         },
