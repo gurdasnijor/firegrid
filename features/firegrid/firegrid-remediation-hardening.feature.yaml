@@ -51,6 +51,14 @@ components:
       4: Projection read APIs reuse one parameterized projection implementation rather than parallel facade-specific implementations.
       5: EventPlane internals are migrated or deprecated in favor of EventStream vocabulary without changing the caller-owned stream semantics.
       6: Operation and EventStream envelope helpers live in the canonical schema or descriptor boundary selected by the architecture.
+      7: Retained-row-by-field reads share one parameterized helper rather than per-row-family clones.
+
+  DUP_DETECTION:
+    requirements:
+      1: Token-based duplication detection runs in CI over packages/*/src and fails on regressions above a tracked baseline.
+      2: Pattern-based static checks identify repetitions of named structural shapes including durable-stream append wrappers, scoped substrate-database acquisition, retained-row reads, and authoritative-run lookups.
+      3: Duplication tooling configuration excludes test fixtures and dist output and stays under repo root configuration files.
+      4: Baseline duplication counts are tracked in the repository so the threshold can be ratcheted down by remediation slices rather than reset.
 
   TEST_GUARDRAILS:
     requirements:

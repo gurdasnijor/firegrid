@@ -22,6 +22,9 @@
     "graph:check": "depcruise packages",
     "graph:mermaid": "depcruise packages --output-type mermaid --collapse '^packages/[^/]+/src/[^/]+' > docs/dependency-graph.mmd",
     "lint": "eslint .",
+    "lint:dup": "node scripts/jscpd-check-baseline.mjs",
+    "lint:dup:baseline": "node scripts/jscpd-update-baseline.mjs",
+    "lint:semgrep": "semgrep --config .semgrep.yml --exclude '**/__tests__/**' --exclude '**/*.test.ts' --exclude '**/*.test.tsx' packages/*/src",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck"
   },
@@ -34,6 +37,7 @@
     "dependency-cruiser": "^17.4.0",
     "eslint": "^10.3.0",
     "globals": "^17.6.0",
+    "jscpd": "^4.0.9",
     "turbo": "^2.5.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.2"

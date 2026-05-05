@@ -1,0 +1,125 @@
+rules:
+  - id: firegrid-tryPromise-stream-append
+    languages: [typescript]
+    severity: WARNING
+    paths:
+      include:
+        - /packages/*/src/**/*.ts
+        - /packages/*/src/**/*.tsx
+      exclude:
+        - "**/dist/**"
+        - "**/.turbo/**"
+        - "**/coverage/**"
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+        - "**/fixtures/**"
+        - "/semgrep-tests/**"
+    message: |
+      Direct DurableStream.append + JSON.stringify + tryPromise wrapping.
+      Use the shared `appendChange(streamUrl, contentType, mapErr)` helper
+      (review §3a, R4 / CODE_REUSE.1).
+    patterns:
+      - pattern: |
+          Effect.tryPromise({
+            try: () => $S.append(JSON.stringify($EV)),
+            ...
+          })
+      - pattern-not-inside: |
+          const appendChange = (...) => ...
+      - pattern-not-inside: |
+          function appendChange(...) {
+            ...
+          }
+
+  - id: firegrid-acquire-db-shape
+    languages: [typescript]
+    severity: WARNING
+    paths:
+      include:
+        - /packages/*/src/**/*.ts
+        - /packages/*/src/**/*.tsx
+      exclude:
+        - "**/dist/**"
+        - "**/.turbo/**"
+        - "**/coverage/**"
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+        - "**/fixtures/**"
+        - "/semgrep-tests/**"
+    message: |
+      Manual scoped-DB acquire shape. Use `acquireSubstrateDb(opts, mapError)`
+      from packages/substrate/src/stream.ts (already centralized in R1).
+    patterns:
+      - pattern: |
+          Effect.acquireRelease(
+            Effect.tryPromise({
+              ...
+            }),
+            ($DB) => Effect.sync(() => $DB.close()),
+          )
+      - pattern-not-inside: |
+          export const acquireSubstrateDb = (...) => ...
+      - pattern-not-inside: |
+          function acquireSubstrateDb(...) {
+            ...
+          }
+
+  - id: firegrid-retained-fold-by-field
+    languages: [typescript]
+    severity: WARNING
+    paths:
+      include:
+        - /packages/*/src/**/*.ts
+        - /packages/*/src/**/*.tsx
+      exclude:
+        - "**/dist/**"
+        - "**/.turbo/**"
+        - "**/coverage/**"
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+        - "**/fixtures/**"
+        - "/semgrep-tests/**"
+    message: |
+      Retained-row-by-field read shape. Use a parameterized
+      `readRetainedByField(rowType, schema, field)` helper (CODE_REUSE.7).
+    pattern: |
+      Effect.gen(function* () {
+        ...
+        const $ITEMS = yield* readJsonItems(...)
+        ...
+        for (const $EV of $ITEMS) {
+          if ($EV.type !== $ROW) continue
+          ...
+        }
+        ...
+      })
+
+  - id: firegrid-authoritative-run-call
+    languages: [typescript]
+    severity: WARNING
+    paths:
+      include:
+        - /packages/*/src/**/*.ts
+        - /packages/*/src/**/*.tsx
+      exclude:
+        - "**/dist/**"
+        - "**/.turbo/**"
+        - "**/coverage/**"
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+        - "**/fixtures/**"
+        - "/semgrep-tests/**"
+    message: |
+      Authoritative-run lookup. Centralize behind a shared helper
+      (review §3d, R4 / CODE_REUSE.3).
+    pattern-either:
+      - pattern: |
+          readRetainedRunRecords($URL, $WID).pipe(...)
+      - pattern: |
+          Effect.map(readRetainedRunRecords($URL, $WID), ...)
+      - pattern: |
+          yield* readRetainedRunRecords($URL, $WID)
