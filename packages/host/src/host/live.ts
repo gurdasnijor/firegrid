@@ -143,7 +143,7 @@ export const SubstrateHostLive = <
         })
         const wired = options.program.layer.pipe(
           Layer.provide(runtimeLayer),
-        ) as Layer.Layer<never, E, Exclude<GraphRIn, HostProgramRuntime>>
+        )
         yield* Layer.build(wired)
       }
 

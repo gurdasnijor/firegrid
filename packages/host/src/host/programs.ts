@@ -245,7 +245,7 @@ const projectionMatchSubscriber = <E, R>(input: {
             streamUrl: cfg.streamUrl,
             contentType: cfg.contentType,
             evaluate: substrateEvaluator,
-          }) as Effect.Effect<unknown, SubscriberError>,
+          }),
         }),
       )
     }),

@@ -176,7 +176,7 @@ describe("ergonomic-facade.CLAIMED_WORK_API.4 — handler failure produces Exit.
     expect(exits.length).toBe(1)
     expect(Exit.isFailure(exits[0]!)).toBe(true)
     if (Exit.isFailure(exits[0]!)) {
-      expect(Cause.failureOption(exits[0]!.cause)._tag).toBe("Some")
+      expect(Cause.failureOption(exits[0].cause)._tag).toBe("Some")
     }
 
     const finalSnap = await rebuildProjection({ url })

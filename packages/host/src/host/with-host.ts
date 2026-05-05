@@ -1,5 +1,5 @@
 import {
-  SubstrateClient,
+  type SubstrateClient,
   SubstrateClientLive,
 } from "@durable-agent-substrate/client"
 import { Effect, Layer } from "effect"

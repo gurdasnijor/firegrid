@@ -102,7 +102,7 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.1 — fake ACP-permission-sh
     // BEFORE blocking the run, mimicking an ACP adapter that observed
     // session/request_permission. This row is caller-owned vocabulary;
     // the substrate sees it as an opaque event-plane row.
-    yield_required_action_emit: {
+    {
       const program = Effect.gen(function* () {
         const producer = yield* plane.Producer
         yield* producer.emit(

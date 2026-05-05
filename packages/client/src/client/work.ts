@@ -1,9 +1,9 @@
-import { Duration, Effect, Stream } from "effect"
+import { type Duration, Effect, type Stream } from "effect"
 import {
-  Projection,
+  type Projection,
   ProjectionReadError,
-  ProjectionWaitTimeout,
-  WorkProducer,
+  type ProjectionWaitTimeout,
+  type WorkProducer,
   rebuildProjection,
   type ProjectionQuery,
   type RunValue,
@@ -127,7 +127,7 @@ export const makeWorkFacet = (
             : {}),
         }),
       catch: (cause) =>
-        new ProjectionReadError({ cause }) as ProjectionReadError,
+        new ProjectionReadError({ cause }),
     }).pipe(Effect.map((snap) => snap.runs.get(workId)))
 
   const observe: SubstrateClientWork["observe"] = (workId) => {

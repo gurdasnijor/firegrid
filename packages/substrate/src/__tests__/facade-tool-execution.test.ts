@@ -67,7 +67,7 @@ describe("ergonomic-facade.COMMON_USAGE_EXAMPLES.4 — tool execution via the Wo
       Ref.update(recordedRef, (a) => [
         ...a,
         Exit.match(exit, {
-          onSuccess: (out) => ({ id: i.invocationId, out: out as { outputFor: string } }),
+          onSuccess: (out) => ({ id: i.invocationId, out: out }),
           onFailure: () => ({ id: i.invocationId, out: "fail" as const }),
         }),
       ])

@@ -1,7 +1,7 @@
 import { Cause, Effect, Schema } from "effect"
 import { readRetainedRunRecords } from "../retained-records.js"
 import { foldRunRecords } from "../state-machine.js"
-import { DurableWaits } from "../waits.js"
+import { type DurableWaits } from "../waits.js"
 import {
   CompletionId as toCompletionId,
   WorkId as toWorkId,
@@ -16,7 +16,7 @@ import type {
 import { Choreography, type ScheduleAtResult } from "./service.js"
 import {
   ChoreographyTrigger,
-  TriggerMatchers,
+  type TriggerMatchers,
 } from "./triggers.js"
 
 // choreography-facade.TOOL_BINDINGS.1

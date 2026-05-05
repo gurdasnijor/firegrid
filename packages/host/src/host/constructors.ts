@@ -16,7 +16,7 @@ import {
   SubstrateHostLive,
 } from "./live.js"
 import type { HostProgramGraph } from "./program-graph.js"
-import { SubstrateHost } from "./service.js"
+import { type SubstrateHost } from "./service.js"
 import { withHost, type WithHostOptions } from "./with-host.js"
 
 // launchable-substrate-host.HOST_CONFIGURATION.1

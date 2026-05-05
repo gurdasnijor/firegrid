@@ -1,11 +1,11 @@
 import type { StreamStateDefinition } from "@durable-streams/state"
-import { Context, Effect, Layer } from "effect"
+import { type Context, Effect, Layer } from "effect"
 import { collectionsByType, type EventPlaneDefinition } from "./define.js"
 import { makePlaneProducer } from "./producer.js"
 import {
   acquirePlaneDb,
   buildPlaneProjectionFromDb,
-  PlaneProjectionReadError,
+  type PlaneProjectionReadError,
 } from "./projection.js"
 
 // client-event-plane-registration.EVENT_PLANE_DEFINITION.3
@@ -56,8 +56,5 @@ export const layer = <Name extends string, S extends StreamStateDefinition>(
         ),
     ),
   )
-  return Layer.merge(producerLayer, projectionLayer) as Layer.Layer<
-    Context.Tag.Identifier<typeof plane.Producer> | Context.Tag.Identifier<typeof plane.Projection>,
-    PlaneProjectionReadError
-  >
+  return Layer.merge(producerLayer, projectionLayer)
 }

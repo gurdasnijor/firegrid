@@ -195,7 +195,7 @@ export const processReadyWorkItem = <A, E>(
         buildResult.left.from === undefined || buildResult.left.from === "blocked"
           ? // Defensive fallback if `from` is somehow not a terminal label.
             "completed"
-          : (buildResult.left.from as RunState)
+          : (buildResult.left.from)
       return {
         kind: "terminalization-lost" as const,
         runId: args.item.runId,

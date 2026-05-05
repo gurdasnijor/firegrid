@@ -346,9 +346,7 @@ describe("durable-waits-and-scheduling — create + resolve lifecycle through Co
       }).pipe(Effect.provide(SubstrateProducerLive({ streamUrl: url }))),
     )
     const snapshot = await rebuildProjection({ url })
-    const completion = snapshot.completions.get(r.completionId) as
-      | CompletionValue
-      | undefined
+    const completion = snapshot.completions.get(r.completionId)
     expect(completion?.state).toBe("cancelled")
     expect(completion?.terminalReason).toEqual({ kind: "timeout" })
   })
