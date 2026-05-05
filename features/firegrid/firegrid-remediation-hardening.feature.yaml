@@ -1,0 +1,76 @@
+feature:
+  name: firegrid-remediation-hardening
+  product: firegrid
+  description: Convert the Firegrid repo review findings into enforceable architecture, correctness, maintenance, and test guardrails.
+
+components:
+  PUBLIC_SURFACES:
+    requirements:
+      1: The app-facing client root exports Firegrid operation, EventStream, client, error, and handle vocabulary only.
+      2: Legacy SubstrateClient, work declaration, low-level kernel rows, row builders, wire envelope constants, and raw stream helpers are exported only from explicit compatibility or kernel subpaths.
+      3: FiregridClient has one Context Tag identity, one service shape, and one configuration shape across the root client and browser-safe client surfaces.
+      4: Browser-safe client subpaths cannot type-check as a full operation-capable FiregridClient unless they provide every full client method.
+      5: The substrate package root exports only curated descriptor, schema, facade, EventStream, and choreography surfaces; raw kernel modules live behind an explicit kernel subpath.
+
+  STATE_MACHINE_CORRECTNESS:
+    requirements:
+      1: Durable completion and durable run transition legality is defined by declarative state machine definitions rather than scattered conditional checks.
+      2: State-machine transition builders preserve the existing durable row shapes and first-valid-terminal-wins rebuild semantics.
+      3: Expected illegal completion and run transitions are recoverable typed failures at service boundaries rather than uncaught synchronous exceptions.
+      4: State-machine row builders live in a canonical schema or schema-adjacent module and are not exposed as app-facing APIs.
+      5: Run and completion first-valid-terminal-wins folds share one generic implementation.
+
+  EFFECT_CONSISTENCY:
+    requirements:
+      1: Each package uses one primary Effect service construction convention for its own public services.
+      2: Public expected errors use Effect-compatible tagged data errors.
+      3: Runtime subscriber and handler loops are expressed as scoped Streams rather than ad hoc latch, forever, race, or unmanaged callback loops.
+      4: Expected errors preserve typed error tags and do not collapse to unknown through catch-all Effect.try wrappers.
+      5: Kernel ID generation is injectable or Effect-service-backed and avoids direct Node-only crypto imports in portable kernel paths.
+      6: Defect paths use explicit die messages or typed defects rather than generic Error construction.
+
+  HOT_PATHS:
+    requirements:
+      1: Long-running runtime, subscriber, and handler paths have tests proving they do not rebuild whole-stream projections on every wake while a live stream database is held.
+      2: Reusable scoped database acquisition is centralized for runtime and substrate projection readers.
+      3: One-shot snapshot APIs that intentionally rebuild projections document their cost and remain separate from long-running hot paths.
+
+  ARCHITECTURE_BOUNDARIES:
+    requirements:
+      1: Agent tool dispatch harnesses and runtime-specific tool schemas do not live in the substrate kernel package.
+      2: Choreography primitives declare durable waits without owning unrelated runtime tool dispatch responsibilities.
+      3: Choreography block-row authority is owned by the runtime or operator path specified by the substrate architecture, not by duplicated ad hoc writers.
+      4: Operator claim, perform, and record phases are factored so internal arbitration outcomes do not become the public operation surface.
+      5: Runtime, client, lab, and substrate package import boundaries are enforced by tests or static guards.
+
+  CODE_REUSE:
+    requirements:
+      1: Durable Streams append-with-json-and-error-mapping logic is centralized behind a shared helper.
+      2: State-machine builder invocation and error mapping are centralized or eliminated by Effect-returning builders.
+      3: Authoritative run lookup is centralized behind a shared helper.
+      4: Projection read APIs reuse one parameterized projection implementation rather than parallel facade-specific implementations.
+      5: EventPlane internals are migrated or deprecated in favor of EventStream vocabulary without changing the caller-owned stream semantics.
+      6: Operation and EventStream envelope helpers live in the canonical schema or descriptor boundary selected by the architecture.
+
+  TEST_GUARDRAILS:
+    requirements:
+      1: Client and substrate public export surfaces have allowlist or strict banned-vocabulary tests.
+      2: Runtime process binaries have behavioral tests for argument parsing, environment injection, child process exit propagation, and scope teardown.
+      3: Runtime runner and operation handler internals have tests for due-time selection, subscription coalescing, database acquisition failures, scope teardown, and error propagation.
+      4: EventStream client and runtime materializer tests cover malformed Firegrid event rows and schema decode failures.
+      5: Restart tests prove runtime-owned materializers and in-flight waits can resume from durable rows after scope reconstruction.
+      6: Multi-runtime tests prove claim and terminalization authority produce one durable terminal outcome for competing handlers.
+      7: Lab React surfaces have behavioral tests for live session cancellation and user-facing typed EventStream workbench flows.
+
+  MIGRATION_BOUNDARIES:
+    requirements:
+      1: Package renames to Firegrid names preserve temporary compatibility exports while new docs and tests prefer Firegrid vocabulary.
+      2: Kernel brand policy for run, work, completion, claim, and owner identifiers is either implemented consistently or documented as a deliberate boundary.
+
+constraints:
+  REMEDIATION_PROCESS:
+    requirements:
+      1: Review remediation PRs list the review finding IDs they address and the full ACIDs they satisfy.
+      2: No new product feature work depends on an unresolved remediation finding without an explicit deferral note.
+      3: Remediation work preserves durable wire compatibility unless a spec explicitly changes the wire format.
+      4: Acai specs are updated before remediation changes that create or change public behavior.
