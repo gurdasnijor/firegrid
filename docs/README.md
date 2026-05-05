@@ -18,6 +18,7 @@ human-readable design source behind the Acai specs in
 | Launchable client, host, Host Program Graph, and lab, phase 13+ | `docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md` | `features/firegrid/launchable-substrate-host.feature.yaml` |
 | Firegrid architecture and operation messaging boundary, draft | `docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md` | `features/firegrid/*.feature.yaml` |
 | Firegrid package structure, draft | `docs/SDD_FIREGRID_PACKAGE_STRUCTURE.md` | `features/firegrid/*.feature.yaml` |
+| Firegrid Effect quality, draft | `docs/SDD_FIREGRID_EFFECT_QUALITY.md` | `features/firegrid/*.feature.yaml` |
 | Runtime integration lab and adapter validation | `docs/SDD_DURABLE_AGENT_RUNTIME_LAB.md` | `features/durable-agent-runtime-lab/*.feature.yaml` |
 
 ## Planning Docs
