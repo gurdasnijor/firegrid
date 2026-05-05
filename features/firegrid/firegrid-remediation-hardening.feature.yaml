@@ -67,6 +67,7 @@ components:
       3: A single repo-level verification script runs lint, typecheck, dead-code detection, duplication detection, and pattern-shape checks together, and is the canonical "ready for review" gate for agent work.
       4: Available @effect/eslint-plugin rules that fit this codebase's conventions are enabled with explicit per-package scope.
       5: General-purpose dependency hygiene rules are enforced by dependency-cruiser for unresolvable modules, undeclared package dependencies, deprecated dependencies, test-file imports, and duplicate dependency declarations.
+      6: Structural Semgrep rules use stable package-source path scopes, shared ignores, machine-readable metadata, and regression fixtures that run in CI.
 
   TEST_GUARDRAILS:
     requirements:

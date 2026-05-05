@@ -1,0 +1,8 @@
+**/dist/**
+**/.turbo/**
+**/coverage/**
+**/*.test.ts
+**/*.test.tsx
+**/__tests__/**
+**/fixtures/**
+semgrep-tests/**

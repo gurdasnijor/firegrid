@@ -126,14 +126,22 @@ Semgrep is installed outside npm because the npm packages are not maintained. Lo
 pipx install semgrep
 ```
 
-The CI workflow uses the same `pipx install semgrep` path before running the root `.semgrep.yml` rules. The current rules flag repeated shapes for durable-stream append wrappers, scoped substrate-database acquisition, retained-row reads, and authoritative-run lookups.
+The CI workflow uses the same `pipx install semgrep` path before running the root `.semgrep.yml` rules. The current rules flag repeated shapes for durable-stream append wrappers, scoped substrate-database acquisition, retained-row reads, and authoritative-run lookups. Rule paths include `packages/*/src` and `apps/*/src`; shared generated-file, fixture, test, and build-output exclusions live in `.semgrepignore`.
+
+Test the Semgrep ruleset fixtures:
+
+```sh
+pnpm run lint:semgrep:test
+```
+
+`pnpm verify` and CI run this fixture test before the production Semgrep scan so rule refinements cannot silently stop matching. Each rule should carry `metadata` with the review/source ACID, category, and canonical helper path. New rules should start at a visible non-blocking severity while false positives are triaged, then move to blocking severity only after the codebase is clean and the rule has regression fixtures.
 
 The Effect ESLint plugin currently ships only two rules in `@effect/eslint-plugin@0.3.2`: `dprint` and `no-import-from-barrel-package`. `dprint` conflicts with this repo's existing stylistic formatter stack, so only `@effect/no-import-from-barrel-package` is enabled. If the plugin adds or changes rules during an upgrade, audit the shipped rule list before enabling anything new.
 
-To add a semgrep rule, add a focused rule to `.semgrep.yml`, include path filters or exclusions if the rule needs narrower scope, and add a matching fixture in `semgrep-tests/` with `ruleid` and `ok` comments. Verify it with:
+To add a semgrep rule, add a focused rule to `.semgrep.yml`, prefer repo-root `.semgrepignore` for shared excludes, use per-rule path exclusions only for canonical helper homes, and add a matching fixture in `semgrep-tests/` with `ruleid` and `ok` comments. Verify it with:
 
 ```sh
-semgrep --test --config .semgrep.yml semgrep-tests/dup-detection.ts
+pnpm run lint:semgrep:test
 ```
 
 To add a dependency-cruiser rule, add it to `.dependency-cruiser.cjs`, keep the severity at `warn` while triaging existing debt, and promote to `error` once the rule is clean enough to gate CI.

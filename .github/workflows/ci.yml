@@ -59,6 +59,9 @@ jobs:
       - name: Check transitive dependency boundaries
         run: pnpm run lint:deps
 
+      - name: Test structural duplication rules
+        run: pnpm run lint:semgrep:test
+
       - name: Check structural duplication shapes
         run: pnpm run lint:semgrep
 
