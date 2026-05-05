@@ -1,4 +1,9 @@
 import { DurableStream } from "@durable-streams/client"
+import {
+  EVENT_STREAM_ENVELOPE_TAG,
+  EVENT_STREAM_ROW_TYPE,
+  isEventStreamStateRow,
+} from "@durable-agent-substrate/client/firegrid"
 import { readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -39,11 +44,36 @@ describe("runtime-lab-inspector.WRITE_BOUNDARY.1 + firegrid-event-streams.CLIENT
 
     await Effect.runPromise(emitLabEvent(cfg, first))
     await Effect.runPromise(emitLabEvent(cfg, second))
+    const durable = new DurableStream({
+      url: streamUrl,
+      contentType: "application/json",
+    })
+    const response = await durable.stream<unknown>({
+      offset: "-1",
+      live: false,
+    })
+    const retained = await response.json<unknown>()
 
     const collected = await Effect.runPromise(
       labEvents(cfg).pipe(Stream.take(2), Stream.runCollect),
     )
 
+    const row = retained[0]
+    expect(isEventStreamStateRow(row)).toBe(true)
+    if (!isEventStreamStateRow(row)) {
+      throw new Error("expected typed lab EventStream state row")
+    }
+    expect(row.key.startsWith("firegrid.lab.events:")).toBe(true)
+    expect(row).toEqual({
+      type: EVENT_STREAM_ROW_TYPE,
+      key: row.key,
+      value: {
+        _envelope: EVENT_STREAM_ENVELOPE_TAG,
+        stream: "firegrid.lab.events",
+        event: first,
+      },
+      headers: { operation: "insert" },
+    })
     expect(Chunk.toReadonlyArray(collected)).toEqual([first, second])
   })
 })

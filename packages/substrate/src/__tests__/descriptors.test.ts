@@ -42,12 +42,12 @@ describe("Operation.define — descriptor shape", () => {
   })
 
   it("error defaults to Schema.Never so Operation.Error<Op> is never by default", () => {
-    const Op = Operation.define({
+    const _Op = Operation.define({
       name: "X",
       input: Schema.String,
       output: Schema.String,
     })
-    type _ErrShouldBeNever = Operation.Error<typeof Op>
+    type _ErrShouldBeNever = Operation.Error<typeof _Op>
     const _check: _ErrShouldBeNever extends never ? true : false = true
     expect(_check).toBe(true)
   })
@@ -142,6 +142,7 @@ describe("EventStream.define — descriptor shape", () => {
     const Logs = EventStream.define({
       name: "Logs",
       event: Schema.Struct({
+        id: Schema.String,
         level: Schema.Literal("info", "warn", "error"),
         message: Schema.String,
       }),
@@ -177,25 +178,38 @@ describe("EventStream State Protocol helpers", () => {
 })
 
 describe("EventStream type helpers — inference is descriptor-driven", () => {
-  const Hits = EventStream.define({
+  const _Hits = EventStream.define({
     name: "Hits",
-    event: Schema.Struct({ url: Schema.String, count: Schema.Number }),
+    event: Schema.Struct({
+      id: Schema.String,
+      url: Schema.String,
+      count: Schema.Number,
+    }),
   })
 
   it("EventStream.Event infers from descriptor", () => {
-    const e: EventStream.Event<typeof Hits> = { url: "/x", count: 1 }
+    const e: EventStream.Event<typeof _Hits> = {
+      id: "hit-1",
+      url: "/x",
+      count: 1,
+    }
     expect(e.count).toBe(1)
   })
 
   it("EventStream.Event rejects mismatched payloads at the type level", () => {
-    // @ts-expect-error count must be number
-    const _bad: EventStream.Event<typeof Hits> = { url: "/x", count: "1" }
+    const _bad: EventStream.Event<typeof _Hits> = {
+      id: "hit-1",
+      url: "/x",
+      // @ts-expect-error count must be number
+      count: "1",
+    }
     void _bad
   })
 
   it("EventStream.EncodedEvent matches the schema's encoded shape", () => {
-    const encoded: EventStream.EncodedEvent<typeof Hits> = {
+    const encoded: EventStream.EncodedEvent<typeof _Hits> = {
       url: "/x",
+      id: "hit-1",
       count: 1,
     }
     expect(encoded.count).toBe(1)
@@ -205,29 +219,37 @@ describe("EventStream type helpers — inference is descriptor-driven", () => {
     // Encoded form is a string; decoded form is a number. The
     // type helpers must surface the two distinct types so callers
     // can encode for the wire and decode at the boundary.
-    const Counts = EventStream.define({
+    const _Counts = EventStream.define({
       name: "Counts",
       event: Schema.Struct({
+        id: Schema.String,
         kind: Schema.Literal("count"),
         n: Schema.NumberFromString,
       }),
     })
-    const decoded: EventStream.Event<typeof Counts> = { kind: "count", n: 7 }
-    const encoded: EventStream.EncodedEvent<typeof Counts> = {
+    const decoded: EventStream.Event<typeof _Counts> = {
+      id: "count-1",
+      kind: "count",
+      n: 7,
+    }
+    const encoded: EventStream.EncodedEvent<typeof _Counts> = {
+      id: "count-1",
       kind: "count",
       n: "7",
     }
     expect(decoded.n).toBe(7)
     expect(encoded.n).toBe("7")
 
-    const _badEncoded: EventStream.EncodedEvent<typeof Counts> = {
+    const _badEncoded: EventStream.EncodedEvent<typeof _Counts> = {
+      id: "count-1",
       kind: "count",
       // @ts-expect-error encoded `n` must be a string
       n: 7,
     }
     void _badEncoded
 
-    const _badDecoded: EventStream.Event<typeof Counts> = {
+    const _badDecoded: EventStream.Event<typeof _Counts> = {
+      id: "count-1",
       kind: "count",
       // @ts-expect-error decoded `n` must be a number
       n: "7",
@@ -240,7 +262,7 @@ describe("Operation type helpers — encoded surfaces are derived from schemas",
   it("Operation.EncodedInput / EncodedOutput / EncodedError diverge under transforming schemas", () => {
     // Decoded `Date`; encoded ISO string. NumberFromString is the
     // standard transforming pair.
-    const TimedEcho = Operation.define({
+    const _TimedEcho = Operation.define({
       name: "TimedEcho",
       input: Schema.Struct({ ms: Schema.NumberFromString }),
       output: Schema.Struct({ ms: Schema.NumberFromString }),
@@ -250,15 +272,15 @@ describe("Operation type helpers — encoded surfaces are derived from schemas",
       }),
     })
 
-    const dInput: Operation.Input<typeof TimedEcho> = { ms: 5 }
-    const eInput: Operation.EncodedInput<typeof TimedEcho> = { ms: "5" }
-    const dOutput: Operation.Output<typeof TimedEcho> = { ms: 10 }
-    const eOutput: Operation.EncodedOutput<typeof TimedEcho> = { ms: "10" }
-    const dError: Operation.Error<typeof TimedEcho> = {
+    const dInput: Operation.Input<typeof _TimedEcho> = { ms: 5 }
+    const eInput: Operation.EncodedInput<typeof _TimedEcho> = { ms: "5" }
+    const dOutput: Operation.Output<typeof _TimedEcho> = { ms: 10 }
+    const eOutput: Operation.EncodedOutput<typeof _TimedEcho> = { ms: "10" }
+    const dError: Operation.Error<typeof _TimedEcho> = {
       _tag: "Late",
       afterMs: 50,
     }
-    const eError: Operation.EncodedError<typeof TimedEcho> = {
+    const eError: Operation.EncodedError<typeof _TimedEcho> = {
       _tag: "Late",
       afterMs: "50",
     }
@@ -269,7 +291,7 @@ describe("Operation type helpers — encoded surfaces are derived from schemas",
     expect(dError.afterMs).toBe(50)
     expect(eError.afterMs).toBe("50")
 
-    const _badEncodedInput: Operation.EncodedInput<typeof TimedEcho> = {
+    const _badEncodedInput: Operation.EncodedInput<typeof _TimedEcho> = {
       // @ts-expect-error encoded `ms` must be a string
       ms: 5,
     }

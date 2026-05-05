@@ -1,12 +1,7 @@
 import {
-  EVENT_STREAM_ENVELOPE_TAG,
-  EventStream,
-  isEventStreamEnvelope,
-  Operation,
-  OperationHandle,
-  OPERATION_ENVELOPE_TAG,
-  type EventStreamEnvelope,
-  type OperationEnvelope,
+  eventStreamEnvelopeFromStateRow,
+  makeEventStreamStateRow,
+  type EventStream,
 } from "@durable-agent-substrate/substrate/descriptors"
 import { DurableStream } from "@durable-streams/client"
 import {
@@ -82,12 +77,6 @@ export class FiregridClient extends Context.Tag("firegrid/FiregridClient")<
   FiregridClientService
 >() {}
 
-const wrapEvent = (stream: string, payload: unknown): EventStreamEnvelope => ({
-  _envelope: EVENT_STREAM_ENVELOPE_TAG,
-  stream,
-  event: payload,
-})
-
 const encodeEvent = <S extends EventStream.Any>(
   stream: S,
   event: EventStream.Event<S>,
@@ -110,6 +99,9 @@ const decodeEvent = <S extends EventStream.Any>(
     ),
   ) as Effect.Effect<EventStream.Event<S>, EventStreamDecodeError>
 
+const nextEventId = (): string =>
+  `${Date.now()}:${Math.random().toString(36).slice(2)}`
+
 export const buildEventStreamService = (
   cfg: FiregridClientConfig,
 ): FiregridClientService => {
@@ -123,7 +115,15 @@ export const buildEventStreamService = (
       Effect.flatMap((encoded) =>
         Effect.tryPromise({
           try: () =>
-            durable.append(JSON.stringify(wrapEvent(stream.name, encoded))),
+            durable.append(
+              JSON.stringify(
+                makeEventStreamStateRow({
+                  stream: stream.name,
+                  eventId: nextEventId(),
+                  event: encoded,
+                }),
+              ),
+            ),
           catch: (cause) =>
             new EventStreamAppendError({ stream: stream.name, cause }),
         }),
@@ -159,8 +159,9 @@ export const buildEventStreamService = (
 
   const events: FiregridClientService["events"] = (stream) =>
     rawEvents(stream).pipe(
-      Stream.filterMapEffect((envelope) => {
-        if (!isEventStreamEnvelope(envelope)) return Option.none()
+      Stream.filterMapEffect((row) => {
+        const envelope = eventStreamEnvelopeFromStateRow(row)
+        if (envelope === undefined) return Option.none()
         if (envelope.stream !== stream.name) return Option.none()
         return Option.some(decodeEvent(stream, envelope.event))
       }),
@@ -176,11 +177,18 @@ export const FiregridClientLive = (
 
 export {
   EVENT_STREAM_ENVELOPE_TAG,
+  EVENT_STREAM_ROW_TYPE,
+  eventStreamEnvelopeFromStateRow,
+  eventStreamStateKey,
   EventStream,
+  isEventStreamStateRow,
   isEventStreamEnvelope,
+  makeEventStreamEnvelope,
+  makeEventStreamStateRow,
   Operation,
   OperationHandle,
   OPERATION_ENVELOPE_TAG,
   type EventStreamEnvelope,
+  type EventStreamStateRow,
   type OperationEnvelope,
-}
+} from "@durable-agent-substrate/substrate/descriptors"
