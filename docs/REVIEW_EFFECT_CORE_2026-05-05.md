@@ -29,54 +29,44 @@ that should be documented, and one suspect `Effect.suspend` site.
 
 ### 1. Effect.gen vs pipe consistency
 
-Counts (production, excludes `__tests__`): 58 `Effect.gen(function*` vs
-roughly 50 substantive `Effect`-pipe sequences. The split tracks the
-guidance well — multi-step substrate logic uses `Effect.gen` (e.g.
-`packages/substrate/src/operator.ts:105`,
+The split tracks the guidance well — multi-step substrate logic uses
+`Effect.gen` (e.g. `packages/substrate/src/operator.ts:105`,
 `packages/substrate/src/internal-claim.ts:46`,
 `packages/substrate/src/choreography/service.ts:154`,
-`packages/runtime/src/runtime/internal/operation-handler.ts:114`), while
-single-transformation chains use pipe (e.g.
+`packages/runtime/src/runtime/internal/operation-handler.ts:114`),
+while single-transformation chains use pipe (e.g.
 `packages/substrate/src/retained-records.ts:93`,
 `packages/client/src/firegrid/event-client.ts:115`).
 
-**Single-yield gens that survived R0B.** A handful of one-statement gens
-remain that flatten cleanly to pipe and would carry a sharper "this is a
-trivial transformation" signal. The clearest cases:
+**Single-yield gens that survived R0B.** A handful of one-yield gens
+remain that flatten cleanly to pipe:
 
-- `packages/substrate/src/waits.ts:136-143` — `findExisting` is a
-  one-yield wrapper around `Effect.tryPromise` followed by `.completions
-  .get(completionId)`. Reads as
-  `Effect.tryPromise({ ... }).pipe(Effect.map(snap => snap.completions.get(completionId)))`.
+- `packages/substrate/src/waits.ts:136-143` — `findExisting` wraps one
+  `Effect.tryPromise` then reads `snap.completions.get(completionId)`.
+  Flattens to `Effect.tryPromise({...}).pipe(Effect.map(snap =>
+  snap.completions.get(completionId)))`.
 - `packages/substrate/src/producer.ts:131-140`, `:171-179`, `:182-190`,
-  `:193-201` — each producer method is a 3-yield gen
-  (build event → append → return literal). The trailing `return { ... }`
-  argues for keeping `Effect.gen` here, but if you want strict
-  consistency the body could be `startRun(...).pipe(Effect.tap(append),
-  Effect.as({ runId, state: "started" as const }))` (similar shape for
-  resolve/reject/cancel).
+  `:193-201` — each producer method is a 3-yield gen (build event →
+  append → return literal). The literal-return argues for keeping
+  `Effect.gen`, but a strict pipe form
+  (`buildEvent.pipe(Effect.tap(append), Effect.as({...}))`) is also
+  legitimate. Judgement call.
 - `packages/substrate/src/choreography/tools.ts:207-219`, `:225-238`,
-  `:244-256`, `:262-270` — each `handle: (input) => Effect.gen(function*
-  () { const choreo = yield* Choreography; return yield* wrapSuspending(
-  ...) })` pattern is a single-yield-of-context gen wrapping one call.
-  Unlike `Effect.gen` over multi-yield logic these gain little. They
-  could be expressed as
-  `Choreography.pipe(Effect.flatMap(choreo => wrapSuspending(...)))` —
-  but the gen form is more readable when the call-site already mentions
-  `Choreography` by tag, and consistency across all four bindings
-  matters; flag as judgement-call rather than required.
+  `:244-256`, `:262-270` — each `handle: input => Effect.gen(function*
+  () { const choreo = yield* Choreography; return yield*
+  wrapSuspending(cfg, opName, choreo.X(...)) })` is a single-yield-of-
+  context gen. Could be `Choreography.pipe(Effect.flatMap(choreo =>
+  wrapSuspending(...)))`, but the four call sites are structurally
+  identical and consistency wins; see Top 5 #5.
 
-**Nested gens.** Several places nest one Effect.gen inside another (e.g.
+**Nested gens.** Several places nest gen inside gen (e.g.
 `packages/runtime/bin/firegrid.ts:73,80,93,111`,
 `packages/client/src/firegrid/operation-client.ts:209-212`). These
-nested gens cleanly scope `Effect.provide` against an inner sub-program
-and are idiomatic; no change recommended.
+scope an inner `Effect.provide` and are idiomatic.
 
-**Deep pipes converted to gen — none observed.** No production pipe
-chain crosses the readability threshold that argues for `Effect.gen`
-flattening; the longest pipes (operator-handler error funnel,
-event-stream materializer Stream.pipe) compose Stream operators where
-gen does not apply.
+**Deep pipes converted to gen — none observed.** The longest pipes
+compose Stream operators (operation-handler dispatch, event-stream
+materializer) where gen doesn't apply.
 
 ### 2. Effect constructors at boundaries
 

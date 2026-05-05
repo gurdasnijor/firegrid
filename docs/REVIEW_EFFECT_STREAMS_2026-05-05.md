@@ -97,23 +97,23 @@ Cross-reference resource-management §"Stream cancellation". Streams-side observ
 
 **Enforced today:**
 
-- `local/no-fixed-polling` (eslint.config.js:244, 498) — protects the `wakeStream`-vs-`setInterval` distinction. Indirectly streams-relevant.
-- `eslint(no-restricted-imports)` blocks substrate state-machine builders from materializer (`event-stream-materializer.ts` file scope) — keeps the materializer read-only.
-- `Effect.tapErrorCause(Cause.isInterruptedOnly ? Effect.void : logError)` is present at all three drain sites; this is a code-pattern enforced by review, not by lint.
+- `local/no-fixed-polling` — protects `wakeStream`-vs-`setInterval`. Indirectly streams-relevant.
+- `no-restricted-imports` blocks state-machine builders from materializer — keeps materializer read-only.
+- `Effect.tapErrorCause(Cause.isInterruptedOnly ? Effect.void : logError)` present at all three drain sites — convention, not lint.
 
 **Gaps strict-baseline could add:**
 
-- Lint rule: `Stream.async` / `Stream.asyncScoped` must specify `bufferSize` when the producer can emit ≥2 items between consumer pulls. Closes F5.
-- Lint rule: `for await` over a value typed as `AsyncIterable` from `@durable-streams/client` is forbidden outside an explicit Effect bridge. Closes F8 (RawStreamInspector).
-- Lint rule: `Stream.fromAsyncIterable` requires a typed error mapper (no `() => unknown`). Already true today by usage convention; codify.
-- AST rule: `Stream.asyncScoped` callback must return `Effect.acquireRelease(...)` (or a value that has been built that way). Today this is convention; making it structural would prevent regressions where someone writes `Stream.asyncScoped` but forgets the bracket pattern, getting a leak.
+- `Stream.async`/`asyncScoped` must specify `bufferSize` when producer can emit ≥2 items between consumer pulls (F5).
+- `for await` over `AsyncIterable` from `@durable-streams/client` forbidden outside an Effect bridge (F8).
+- `Stream.fromAsyncIterable` requires a typed error mapper (already convention).
+- `Stream.asyncScoped` callback must return `Effect.acquireRelease(...)` shape — prevents regressions where someone forgets the bracket pattern.
 
-**Gaps strict-baseline cannot directly enforce** (require human review or design discipline):
+**Gaps strict-baseline cannot enforce** (judgment calls):
 
-- Choice of `Stream.async` vs `Stream.asyncScoped` based on whether the subscription is a real resource. F1 documents the right call at each site, but it is a judgment, not a syntactic invariant.
-- Choice of `Stream.merge` vs internal-fiber multiplexing (F6) — design-level, not lint-level.
-- Backpressure budget per Stream (F5) — requires understanding the relative throughput of producer and consumer, which is a runtime property, not static.
+- `Stream.async` vs `Stream.asyncScoped` choice depends on whether the subscription is a real resource (F1).
+- `Stream.merge` vs internal-fiber multiplexing (F6) — design-level.
+- Per-stream backpressure budget (F5) — runtime property, not static.
 
-## Closing note
+## Closing
 
-Firegrid's stream surface is small and disciplined. Every constructor choice (`async` vs `asyncScoped` vs `unwrapScoped` vs `fromAsyncIterable`) is correct for the resource shape it wraps; every transformation pipeline is short, intent-revealing, and uses the right primitive (`filterMapEffect` not `filter` + `mapEffect` + `filter`); the one explicit backpressure site (`wakeStream`) uses the canonical `bufferSize: 1, strategy: "sliding"` for edge-coalescing. The single substantive streams-side improvement is the materializer buffer-size question; everything else is either out of scope (React/lab, covered elsewhere) or forward-looking (metrics, claim-arbitration parallelism). Post-R-STRICT-BASELINE, this dimension of the codebase is in good shape.
+Firegrid's stream surface is small and disciplined. Constructor choices match resource shapes; transformation pipelines are short and use the right primitive (`filterMapEffect` not `filter` + `mapEffect` + `filter`); the one explicit backpressure site uses canonical `bufferSize: 1, strategy: "sliding"` for edge-coalescing. The single substantive streams-side improvement is the materializer buffer-size question; everything else is out of scope (React/lab, covered elsewhere) or forward-looking. Post-R-STRICT-BASELINE this dimension is in good shape.
