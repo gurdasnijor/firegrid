@@ -779,6 +779,95 @@ host this case — adding it there would have bumped Effect-quality baselines
 that the dispatch forbids. Any dedicated runtime-package coverage is deferred
 to a separate quality / test-strategy slice.
 
+### Scenario 6: Handler Failure Terminalization
+
+Purpose: prove that a typed app handler failure is durably terminalized as a
+failed run and remains inspectable through the same projection surface.
+
+Input:
+
+1. A schema-valid operation-started row for a `FailingOperation` operation.
+2. An app-owned runtime Layer that installs a handler returning the operation's
+   typed error schema.
+
+Expected result:
+
+1. Runtime decodes the operation input through the operation descriptor schema.
+2. Handler failure is encoded through the operation error schema.
+3. Runtime appends a failed terminal run row.
+4. Rebuilt projection shows the run failed with the typed scenario error.
+
+Manual CLI input flow:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+export DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid
+durable-stream create firegrid --json
+
+pnpm --silent --filter @firegrid/scenarios run failing-operation \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+```
+
+Start the app-owned receiver runtime in another terminal:
+
+```sh
+DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid \
+  pnpm --filter @firegrid/scenarios run failing-operation-receiver
+```
+
+Then inspect:
+
+```sh
+pnpm --silent --filter @firegrid/scenarios run inspect -- \
+  --stream-url "$DURABLE_STREAMS_URL"
+```
+
+The inspection report should show `run-failing-operation-cli-1` as `failed`
+with:
+
+```json
+{
+  "_tag": "ScenarioFailure",
+  "requestId": "request-failing-operation-cli-1",
+  "reason": "scenario handler failed intentionally"
+}
+```
+
+Relevant ACIDs:
+
+- `firegrid-runtime-process.SCENARIOS.1`
+- `firegrid-runtime-process.SCENARIOS.2`
+- `firegrid-runtime-process.SCENARIOS.12`
+- `firegrid-runtime-process.RUNTIME_RUN_API.1`
+- `firegrid-runtime-process.RUNTIME_RUN_API.2`
+- `firegrid-runtime-process.RUNTIME_RUN_API.3`
+- `firegrid-runtime-process.RUNTIME_RUN_API.5`
+- `firegrid-runtime-process.RUNTIME_RUN_API.6`
+- `firegrid-runtime-process.RUNTIME_RUN_API.8`
+- `firegrid-runtime-process.RUNTIME_RUN_API.9`
+- `firegrid-operation-messaging.OPERATIONS.1`
+- `firegrid-operation-messaging.OPERATIONS.2`
+- `firegrid-operation-messaging.OPERATIONS.4`
+- `firegrid-operation-messaging.RUNTIME_HANDLERS.1`
+- `firegrid-operation-messaging.RUNTIME_HANDLERS.3`
+- `firegrid-operation-messaging.RUNTIME_HANDLERS.4`
+
+### Deferred Edge: Projection-Match Timeout Receiver
+
+Projection-match timeout/cancellation is already expressible at the substrate
+subscriber level: a pending `projection_match` completion with `deadlineAtMs`
+in the past is cancelled with a timeout terminal reason by the projection-match
+subscriber. The missing receiver-side capability is run resumption from a
+cancelled completion. Current ready-work derivation only derives runnable work
+from resolved completions; rejected/cancelled completions intentionally do not
+produce a ready-work item. As a result, a timed-out `waitFor` completion can be
+cancelled durably, but the blocked operation run will not yet resume to a
+terminal run through the runtime ready-work operator. A follow-up slice should
+decide whether timeout resumes should fail/cancel the blocked run, then extend
+the ready-work/operator path and add the receiver scenario.
+
 ## Implementation Shape
 
 The work is not to build fixture infrastructure. The work is to add scenario

@@ -8,6 +8,8 @@
     "claim-before-side-effect-receiver": "tsx claim-before-side-effect-receiver.ts",
     "echo": "tsx echo.ts",
     "echo-receiver": "tsx echo-receiver.ts",
+    "failing-operation": "tsx failing-operation.ts",
+    "failing-operation-receiver": "tsx failing-operation-receiver.ts",
     "sleep": "tsx sleep.ts",
     "sleep-receiver": "tsx sleep-receiver.ts",
     "sleep-receiver:self-test": "tsx sleep-receiver.ts --self-test",
