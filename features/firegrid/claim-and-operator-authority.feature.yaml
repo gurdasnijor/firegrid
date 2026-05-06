@@ -51,6 +51,8 @@ components:
       13: If terminalization loses to a concurrent terminal state, the operator returns a terminalization-lost outcome instead of surfacing a defect.
       14: Slice 6 reads retained run rows in append order when proving once-only terminal authority.
       15: Slice 6 operator terminal race detection uses retained run-row authority rather than materialized latest run state.
+      16: The Firegrid runtime is a canonical operator caller alongside the substrate single-shot operator; it consumes derived ready work through `processReadyWorkItem` and supplies `RuntimeContext.processId` as the claim owner.
+      17: The runtime operator loop forwards typed handler success and failure values into `processReadyWorkItem` so substrate state-machine builders own the terminal-event authorship; runtime never appends `completeRun` / `failRun` directly for ready-work resumes.
 
 constraints:
   PHASE_BOUNDARY:

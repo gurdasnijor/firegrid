@@ -13,6 +13,7 @@ import {
   DurableWaits,
   rebuildProjection,
   startRun,
+  substrateState,
 } from "@firegrid/substrate/kernel"
 import { Data, Effect, Layer, Schedule, Schema } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
@@ -89,6 +90,53 @@ const seedEchoRun = (
   runId: string,
   payload: { readonly msg: string },
 ) => seedStartedRun(streamUrl, runId, Echo.name, payload)
+
+// firegrid-runtime-process.READY_WORK_OPERATOR.{1,2,5}
+// Seed a run already at state=blocked plus its resolved completion so
+// the runtime's ready-work operator loop observes a ready item on the
+// first scan-after-wake. The events are constructed directly from the
+// substrate state helpers (insert events) rather than the state-
+// machine transition builders so this seed does not add Effect runner
+// calls to the test file. Pre-seeding bypasses the started-run
+// dispatch path (state=blocked at insert time, never observed as
+// `state="started"` by the dispatch loop) which is exactly the
+// scenario the ready-work loop is designed for: a run that the
+// process did not start in this lifetime, observed only after a
+// completion resolved.
+const seedBlockedEchoRun = async (
+  streamUrl: string,
+  runId: string,
+  completionId: string,
+  payload: { readonly msg: string },
+): Promise<void> => {
+  const startedData = {
+    _envelope: OPERATION_ENVELOPE_TAG,
+    operation: Echo.name,
+    payload,
+  }
+  const blockedRunEvent = substrateState.runs.insert({
+    value: {
+      runId,
+      state: "blocked",
+      data: startedData,
+      blockedOnCompletionId: completionId,
+    },
+  })
+  const resolvedCompletionEvent = substrateState.completions.insert({
+    value: {
+      completionId,
+      kind: "externally_resolved_awakeable",
+      state: "resolved",
+      result: { ack: true },
+    },
+  })
+  const stream = await DurableStream.create({
+    url: streamUrl,
+    contentType: "application/json",
+  })
+  await stream.append(JSON.stringify(blockedRunEvent))
+  await stream.append(JSON.stringify(resolvedCompletionEvent))
+}
 
 const seedContextRun = (
   streamUrl: string,
@@ -178,13 +226,45 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
     await stopTestServer()
   })
 
-  it("encodes the handler's output and terminalizes the run as completed", async () => {
+  // firegrid-operation-messaging.RUNTIME_HANDLERS.1
+  // firegrid-operation-messaging.RUNTIME_HANDLERS.4
+  // firegrid-runtime-process.RUNTIME_HOT_PATH.1
+  // firegrid-runtime-process.READY_WORK_OPERATOR.1
+  // firegrid-runtime-process.READY_WORK_OPERATOR.2
+  // firegrid-runtime-process.READY_WORK_OPERATOR.5
+  // firegrid-runtime-process.READY_WORK_OPERATOR.7
+  // claim-and-operator-authority.OPERATOR_INVOCATION.16
+  // ready-work-projection.READY_WORK_PROJECTION.11
+  //
+  // One `Firegrid.handler` registration installs BOTH durable-execution
+  // entrypoints for the operation under a single Layer: the started-run
+  // dispatch loop terminalizes a freshly-declared run, and the
+  // ready-work operator loop resumes a run that was already blocked on
+  // a now-resolved completion at process start. The blocked-run seed
+  // is appended on the durable stream BEFORE attaching the runtime so
+  // the dispatch loop never observes a `state="started"` row for the
+  // resume scenario; the runtime sees the run only via the ready-work
+  // projection on its first scan.
+  it("encodes the handler's output and terminalizes started runs as well as resumed blocked runs", async () => {
     const handlerLayer = Firegrid.handler(Echo, (input) =>
       Effect.succeed({ msg: input.msg, len: input.msg.length }),
     )
 
-    const runId = "run-echo-1"
+    const startedRunId = "run-echo-1"
+    const blockedRunId = "ready-work-run-1"
+    const completionId = "awk:test:ready-work-1"
     const streamUrl = await createRuntimeStream("firegrid-handler-test")
+
+    // Pre-seed the blocked run + resolved completion before attaching
+    // the runtime. The events are plain insert change-events (no
+    // Effect transitions), so this seed does not add Effect runner
+    // calls to the test file.
+    await seedBlockedEchoRun(
+      streamUrl,
+      blockedRunId,
+      completionId,
+      { msg: "resume" },
+    )
 
     const program = Effect.gen(function* () {
       const runtime = yield* FiregridRuntime
@@ -192,13 +272,19 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
       expect(runtime.streamIdentity.streamUrl).toBe(streamUrl)
 
       yield* Effect.tryPromise({
-        try: () => seedEchoRun(streamUrl, runId, { msg: "hello" }),
+        try: () => seedEchoRun(streamUrl, startedRunId, { msg: "hello" }),
         catch: (cause) => new SeedFailed({ cause }),
       })
 
-      // Poll the projection until the handler-driven completion lands.
-      const final = yield* completedRunFromProjection(streamUrl, runId)
-      return final
+      const started = yield* completedRunFromProjection(
+        streamUrl,
+        startedRunId,
+      )
+      const resumed = yield* completedRunFromProjection(
+        streamUrl,
+        blockedRunId,
+      )
+      return { started, resumed } as const
     }).pipe(
       Effect.provide(
         FiregridRuntimeBoot.attached({
@@ -208,9 +294,13 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
       ),
     )
 
-    const completedRun = await Effect.runPromise(Effect.scoped(program))
-    expect(completedRun.state).toBe("completed")
-    expect(completedRun.result).toEqual({ msg: "hello", len: 5 })
+    const { started, resumed } = await Effect.runPromise(
+      Effect.scoped(program),
+    )
+    expect(started.state).toBe("completed")
+    expect(started.result).toEqual({ msg: "hello", len: 5 })
+    expect(resumed.state).toBe("completed")
+    expect(resumed.result).toEqual({ msg: "resume", len: 6 })
   })
 
   // choreography-facade.CURRENT_WORK_CONTEXT.1
@@ -278,4 +368,5 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
       scheduledWhenMs: 12345,
     })
   })
+
 })

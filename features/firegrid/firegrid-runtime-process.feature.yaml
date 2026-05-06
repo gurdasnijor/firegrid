@@ -34,6 +34,16 @@ components:
       9: The runtime `run(...)` Effect is a long-running process Effect that normally exits only through interruption or typed failure.
       10: Runtime tests assert positive API behavior by executing Effects or checking TypeScript contracts rather than by grepping source strings; source-grep tests are reserved for explicitly tagged negative architectural constraints.
 
+  READY_WORK_OPERATOR:
+    requirements:
+      1: The runtime owns a scoped operator loop that watches the substrate `ReadyWorkProjection` and resumes blocked runs whose pending completion has resolved.
+      2: The runtime ready-work operator loop reuses substrate `processReadyWorkItem` for claim arbitration and terminal-event authorship rather than reimplementing claim or terminal logic in runtime.
+      3: The runtime ready-work operator loop attributes claim ownership through `RuntimeContext.processId`.
+      4: The runtime ready-work operator loop is edge-driven from durable run and completion changes and does not run on a fixed polling cadence.
+      5: The runtime invokes the same typed `Operation` handler registered with `Firegrid.handler` on resume; choreography primitives are idempotent because their durable completion lookups short-circuit when the keyed completion already resolved.
+      6: Non-success outcomes from `processReadyWorkItem` (`claim-lost`, `already-terminal`, `terminalization-lost`) are logged at debug and the loop continues without re-attempting the same item in the same scan.
+      7: The runtime `Firegrid.handler` Layer installs both the started-run dispatch loop and the ready-work operator loop under a single scope so handler registration is the single durable-execution entrypoint for an operation.
+
   BINARIES:
     requirements:
       1: The primary runtime binary is named `firegrid`.

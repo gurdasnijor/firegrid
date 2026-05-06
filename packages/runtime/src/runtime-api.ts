@@ -1,26 +1,49 @@
 import {
+  decodeAtBoundary,
+  deriveReadyWork,
+  encodeAtBoundary,
+  isOperationEnvelope,
+  processReadyWorkItem,
   runProjectionMatchSubscriberFromSnapshot,
   runScheduledWorkSubscriberFromSnapshot,
   runTimerSubscriberFromSnapshot,
+  snapshotFromDb,
+  type ClaimOutcome,
   type CompletionKind,
   type EventStream,
   type Operation,
   type ProjectionSnapshot,
   type ProjectionMatchEvaluator,
+  type ReadyWorkItem,
+  type RunValue,
   type SubscriberError,
   type SubscriberInput,
 } from "@firegrid/substrate/kernel"
-import type { CurrentWorkContext } from "@firegrid/substrate"
-import { Effect, Layer, type Scope } from "effect"
+/* eslint-disable @effect/no-import-from-barrel-package -- choreography-facade.CURRENT_WORK_CONTEXT.1: CurrentWorkContext is intentionally exported from the curated substrate root. */
+import {
+  OwnerId,
+  WorkId,
+  currentWorkContextLayer,
+  type CurrentWorkContext,
+} from "@firegrid/substrate"
+/* eslint-enable @effect/no-import-from-barrel-package */
+import { Cause, Effect, Layer, Stream, type ParseResult, type Scope } from "effect"
+import {
+  acquireSubstrateDb,
+} from "@firegrid/substrate/kernel"
 import {
   minPendingDueAtMs,
   runScopedSubscriberProgram,
   subscribeCompletions,
   subscribeCompletionsAndEventStreams,
 } from "./internal/runner.ts"
-import { runOperationHandler } from "./internal/operation-handler.ts"
+import {
+  AcquireDbError,
+  runOperationHandler,
+} from "./internal/operation-handler.ts"
 import { runEventStreamMaterializer } from "./internal/event-stream-materializer.ts"
-import { RuntimeContext } from "./context.ts"
+import { wakeStream } from "./internal/wake-stream.ts"
+import { RuntimeContext, type RuntimeContextService } from "./context.ts"
 
 // firegrid-architecture-boundary.SURFACE_AREA.2
 // firegrid-package-migration.RUNTIME_RENAME.5
@@ -131,17 +154,240 @@ const projectionMatchSubscriberLayer = (
       }),
   })
 
+// firegrid-runtime-process.READY_WORK_OPERATOR.1
+// firegrid-runtime-process.READY_WORK_OPERATOR.2
+// firegrid-runtime-process.READY_WORK_OPERATOR.3
+// firegrid-runtime-process.READY_WORK_OPERATOR.4
+// firegrid-runtime-process.READY_WORK_OPERATOR.5
+// firegrid-runtime-process.READY_WORK_OPERATOR.6
+// claim-and-operator-authority.OPERATOR_INVOCATION.16
+// claim-and-operator-authority.OPERATOR_INVOCATION.17
+// ready-work-projection.READY_WORK_PROJECTION.11
+//
+// Ready-work operator loop helpers — inlined here (rather than a
+// separate exported module) so the runtime continues to publish a
+// single Effect-returning seam through `Firegrid.handler` instead of a
+// new top-level effect-returning export.
+const decodeBlockedEnvelope = <Op extends Operation.Any>(
+  op: Op,
+  run: RunValue,
+): Effect.Effect<Operation.Input<Op> | undefined, ParseResult.ParseError> => {
+  if (run.state !== "blocked") return Effect.succeed(undefined)
+  if (!isOperationEnvelope(run.data)) return Effect.succeed(undefined)
+  if (run.data.operation !== op.name) return Effect.succeed(undefined)
+  return decodeAtBoundary(op.input, (cause) => cause)(run.data.payload).pipe(
+    Effect.map((value) => value as Operation.Input<Op>),
+  )
+}
+
+// firegrid-runtime-process.READY_WORK_OPERATOR.6
+const logReadyWorkOutcome = <A, E>(
+  opName: string,
+  outcome: ClaimOutcome<A, E>,
+): Effect.Effect<void> => {
+  if (outcome.kind === "completed" || outcome.kind === "failed") {
+    return Effect.void
+  }
+  if (outcome.kind === "claim-lost") {
+    return Effect.logDebug(
+      `firegrid ready-work ${opName}: claim lost for run ${outcome.runId} (winner ${outcome.winner.ownerId}/${outcome.winner.claimId})`,
+    )
+  }
+  if (outcome.kind === "already-terminal") {
+    return Effect.logDebug(
+      `firegrid ready-work ${opName}: run ${outcome.runId} already ${outcome.runState}`,
+    )
+  }
+  return Effect.logDebug(
+    `firegrid ready-work ${opName}: terminalization lost for run ${outcome.runId} (observed ${outcome.terminalState})`,
+  )
+}
+
+const buildReadyWorkHandler = <Op extends Operation.Any, E, R>(
+  cfg: RuntimeContextService,
+  op: Op,
+  decodedInput: Operation.Input<Op>,
+  runValue: RunValue,
+  run: (
+    input: Operation.Input<Op>,
+  ) => Effect.Effect<Operation.Output<Op>, Operation.Error<Op> | E, R>,
+): ((
+  item: ReadyWorkItem,
+) => Effect.Effect<unknown, unknown, Exclude<R, CurrentWorkContext>>) =>
+  (_item) =>
+    run(decodedInput).pipe(
+      Effect.provide(
+        currentWorkContextLayer({
+          workId: WorkId(runValue.runId),
+          ownerId: OwnerId(cfg.processId),
+        }),
+      ),
+      Effect.flatMap((output) =>
+        encodeAtBoundary(op.output, (cause) => cause)(output).pipe(
+          Effect.catchTag("ParseError", (cause) =>
+            Effect.logError(
+              `firegrid ready-work ${op.name}: output encode failed for run ${runValue.runId}`,
+              cause,
+            ).pipe(
+              Effect.flatMap(() =>
+                Effect.fail(
+                  `output-encode-failed: ${Cause.pretty(Cause.fail(cause))}`,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      Effect.catchAll((error) =>
+        encodeAtBoundary(
+          op.error,
+          (cause) => cause,
+        )(error as Operation.Error<Op>).pipe(
+          Effect.catchTag("ParseError", () =>
+            Effect.succeed(`handler-error: ${String(error)}`),
+          ),
+          Effect.flatMap((encoded) => Effect.fail<unknown>(encoded)),
+        ),
+      ),
+    ) as Effect.Effect<unknown, unknown, Exclude<R, CurrentWorkContext>>
+
+type ReadyWorkHandler<Op extends Operation.Any, E, R> = (
+  input: Operation.Input<Op>,
+) => Effect.Effect<Operation.Output<Op>, Operation.Error<Op> | E, R>
+
+const runReadyWorkOperator = <Op extends Operation.Any, E, R>(
+  op: Op,
+  handlerRun: ReadyWorkHandler<Op, E, R>,
+) =>
+  Effect.gen(function* () {
+    const cfg = yield* RuntimeContext
+    const acquire = acquireSubstrateDb(
+      { url: cfg.streamUrl, contentType: cfg.contentType },
+      (cause) => new AcquireDbError({ cause }),
+    )
+    yield* Effect.forkScoped(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const db = yield* acquire
+
+          const wakes = wakeStream((wake) =>
+            Effect.sync(() => {
+              const runsSub = db.collections.runs.subscribeChanges(wake)
+              const completionsSub = db.collections.completions.subscribeChanges(
+                wake,
+              )
+              wake()
+              return Effect.sync(() => {
+                runsSub.unsubscribe()
+                completionsSub.unsubscribe()
+              })
+            }),
+          )
+
+          const matchableItems = (snapshot: ProjectionSnapshot) => {
+            const projection = deriveReadyWork(snapshot)
+            const items: Array<{
+              readonly item: ReadyWorkItem
+              readonly runValue: RunValue
+            }> = []
+            projection.readyWork.forEach((item) => {
+              const runValue = snapshot.runs.get(item.runId)
+              if (runValue === undefined) return
+              if (!isOperationEnvelope(runValue.data)) return
+              if (runValue.data.operation !== op.name) return
+              items.push({ item, runValue })
+            })
+            return items
+          }
+
+          const dispatchItem = (item: ReadyWorkItem, runValue: RunValue) =>
+            Effect.gen(function* () {
+              const decoded = yield* decodeBlockedEnvelope(
+                op,
+                runValue,
+              ).pipe(
+                Effect.catchTag("ParseError", (cause) =>
+                  Effect.logError(
+                    `firegrid ready-work ${op.name}: input decode failed for run ${runValue.runId}`,
+                    cause,
+                  ).pipe(Effect.as(undefined)),
+                ),
+              )
+              if (decoded === undefined) return
+              const outcome = yield* processReadyWorkItem({
+                streamUrl: cfg.streamUrl,
+                ...(cfg.contentType !== undefined
+                  ? { contentType: cfg.contentType }
+                  : {}),
+                ownerId: cfg.processId,
+                item,
+                handler: buildReadyWorkHandler(
+                  cfg,
+                  op,
+                  decoded,
+                  runValue,
+                  handlerRun,
+                ),
+              }).pipe(
+                Effect.catchAll((cause) =>
+                  Effect.logError(
+                    `firegrid ready-work ${op.name}: processReadyWorkItem failed for run ${runValue.runId}`,
+                    cause,
+                  ).pipe(
+                    Effect.as<ClaimOutcome<unknown, unknown> | undefined>(
+                      undefined,
+                    ),
+                  ),
+                ),
+              )
+              if (outcome === undefined) return
+              yield* logReadyWorkOutcome(op.name, outcome)
+            })
+
+          return yield* wakes.pipe(
+            Stream.mapEffect(() =>
+              Effect.forEach(
+                matchableItems(snapshotFromDb(db)),
+                ({ item, runValue }) => dispatchItem(item, runValue),
+                { discard: true },
+              ),
+            ),
+            Stream.runDrain,
+            Effect.tapErrorCause((cause) =>
+              Cause.isInterruptedOnly(cause)
+                ? Effect.void
+                : Effect.logError(
+                    `firegrid ready-work ${op.name}: operator loop failed`,
+                    cause,
+                  ),
+            ),
+          )
+        }),
+      ),
+    )
+  })
+
 // firegrid-operation-messaging.RUNTIME_HANDLERS.1
 // firegrid-operation-messaging.RUNTIME_HANDLERS.2
 // firegrid-operation-messaging.RUNTIME_HANDLERS.3
 // firegrid-operation-messaging.RUNTIME_HANDLERS.4
+// firegrid-runtime-process.READY_WORK_OPERATOR.7
 //
 // Firegrid.handler installs a typed runtime handler for the given
-// Operation. The returned Layer dispatches matching started runs
-// (envelope + operation name) to `run` with the message-scoped
-// CurrentWorkContext already provided, encodes the success/failure
-// outcome via the descriptor's schemas, and durably appends a
-// completeRun / failRun event so client `result(handle)` resolves.
+// Operation. The returned Layer installs two scoped fibers under one
+// scope:
+//
+//   - the started-run dispatch loop (operation-handler) advances
+//     freshly-declared runs whose envelope matches `op.name`.
+//   - the ready-work operator loop resumes blocked runs whose pending
+//     completion has resolved, claiming ownership through the
+//     substrate authority before re-invoking the same handler.
+//
+// On resume, choreography primitives (`Choreography.sleep`,
+// `awaitAwakeable`, `waitFor`) are idempotent: their durable
+// completion lookups short-circuit when the keyed completion already
+// resolved, so the handler body progresses past its previous
+// suspension point.
 const handler = <
   Op extends Operation.Any,
   E = never,
@@ -156,7 +402,12 @@ const handler = <
   never,
   Exclude<Exclude<R, CurrentWorkContext>, Scope.Scope> | RuntimeContext
 > =>
-  Layer.scopedDiscard(runOperationHandler({ op, run }))
+  Layer.scopedDiscard(
+    Effect.gen(function* () {
+      yield* runOperationHandler({ op, run })
+      yield* runReadyWorkOperator(op, run)
+    }),
+  )
 
 // firegrid-event-streams.RUNTIME_API.1
 // firegrid-event-streams.RUNTIME_API.2
