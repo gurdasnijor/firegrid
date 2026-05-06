@@ -1,5 +1,5 @@
 import { DurableStream } from "@durable-streams/client"
-import { Cause, Duration, Effect, Exit, Layer, Option, Tracer } from "effect"
+import { Cause, Duration, Effect, Exit, Layer, Option, Schema, Tracer } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   RunWait,
@@ -243,7 +243,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
     expect(completions[0]?.state).toBe("pending")
   })
 
-  it("choreography-facade.CHOREOGRAPHY_API.9 + durable-waits-and-scheduling.WAIT_FOR.8 — waitFor resumes on the same resolved projection-match completion without creating a duplicate", async () => {
+  it("run-wait-primitives.RUN_WAIT_API.8 + run-wait-primitives.RUN_WAIT_API.9 + choreography-facade.CHOREOGRAPHY_API.9 + durable-waits-and-scheduling.WAIT_FOR.8 + durable-waits-and-scheduling.WAIT_FOR.9 — waitFor returns the decoded resolved projection-match matchedValue without creating a duplicate", async () => {
     const url = await createSubstrateStream("wait-wait-idempotent-resolved")
     const runId = "run-wait-resolved-1"
     await declareRun(url, runId).pipe(Effect.runPromise)
@@ -276,10 +276,17 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
       Effect.runPromise,
     )
 
-    const resumed = await Effect.gen(function* () {
+    const observed = await Effect.gen(function* () {
       const wait = yield* RunWait
-      yield* wait.for(trigger)
-      return "resumed" as const
+      const resumed = yield* wait.for(trigger, {
+        resultSchema: Schema.Struct({ decision: Schema.String }),
+      })
+      const decodeFailure = yield* Effect.exit(
+        wait.for(trigger, {
+          resultSchema: Schema.Struct({ decision: Schema.Number }),
+        }),
+      )
+      return { decodeFailure, resumed } as const
     }).pipe(
       Effect.provide(
         Layer.provideMerge(
@@ -294,7 +301,11 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
       ),
       Effect.runPromise,
     )
-    expect(resumed).toBe("resumed")
+    expect(observed.resumed).toEqual({ decision: "allow" })
+    expect(Exit.isFailure(observed.decodeFailure)).toBe(true)
+    if (Exit.isFailure(observed.decodeFailure)) {
+      expect(Cause.isDie(observed.decodeFailure.cause)).toBe(true)
+    }
 
     const completions = await projectionMatchCompletions(url)
     expect(completions).toHaveLength(1)

@@ -2,6 +2,7 @@ import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Context, Data, Duration, Effect, Either, Layer, Schema } from "effect"
 import { appendChange } from "../../protocol/descriptors/append.ts"
+import { decodeAtBoundary } from "../../protocol/descriptors/codec.ts"
 import {
   readAuthoritativeRun,
   readJsonItems,
@@ -98,6 +99,20 @@ export interface RunWaitUntilResult {
   readonly whenMs: number
 }
 
+interface RunWaitForOptions {
+  readonly timeout?: Duration.DurationInput
+}
+
+interface RunWaitForResultOptions<
+  ResultSchema extends Schema.Schema.All,
+> extends RunWaitForOptions {
+  readonly resultSchema: ResultSchema
+}
+
+type RunWaitForImplementationOptions = RunWaitForOptions & {
+  readonly resultSchema?: Schema.Schema.All
+}
+
 // run-wait-primitives.RUN_WAIT_API.1
 export interface RunWaitService {
   // run-wait-primitives.RUN_WAIT_API.3
@@ -105,10 +120,20 @@ export interface RunWaitService {
     duration: Duration.DurationInput,
   ) => Effect.Effect<void, never, CurrentWorkContext>
   // run-wait-primitives.RUN_WAIT_API.2
-  readonly for: (
-    trigger: ProjectionMatchTrigger,
-    options?: { readonly timeout?: Duration.DurationInput },
-  ) => Effect.Effect<void, never, CurrentWorkContext | TriggerMatchers>
+  readonly for: {
+    (
+      trigger: ProjectionMatchTrigger,
+      options?: RunWaitForOptions,
+    ): Effect.Effect<void, never, CurrentWorkContext | TriggerMatchers>
+    <ResultSchema extends Schema.Schema.All>(
+      trigger: ProjectionMatchTrigger,
+      options: RunWaitForResultOptions<ResultSchema>,
+    ): Effect.Effect<
+      Schema.Schema.Type<ResultSchema>,
+      never,
+      CurrentWorkContext | TriggerMatchers
+    >
+  }
   // run-wait-primitives.RUN_WAIT_API.4
   readonly until: (
     when: Date | number,
@@ -318,9 +343,54 @@ export const RunWaitLive = (
           ),
       )(completion.data)
 
+    const matchedValueFromResult = (
+      completion: CompletionValue,
+    ): Effect.Effect<unknown, RunWaitVerificationError> => {
+      const result = completion.result
+      if (typeof result !== "object" || result === null) {
+        return Effect.fail(
+          verificationError(
+            completion.completionId,
+            "projection-match completion result is missing matchedValue",
+          ),
+        )
+      }
+      if (!("matchedValue" in result)) {
+        return Effect.fail(
+          verificationError(
+            completion.completionId,
+            "projection-match completion result is missing matchedValue",
+          ),
+        )
+      }
+      return Effect.succeed(result.matchedValue)
+    }
+
+    const decodeWaitForResult = <ResultSchema extends Schema.Schema.All>(
+      completion: CompletionValue,
+      resultSchema: ResultSchema,
+    ): Effect.Effect<
+      Schema.Schema.Type<ResultSchema>,
+      RunWaitVerificationError
+    > =>
+      matchedValueFromResult(completion).pipe(
+        Effect.flatMap((matchedValue) =>
+          // run-wait-primitives.RUN_WAIT_API.9
+          // durable-waits-and-scheduling.WAIT_FOR.9
+          decodeAtBoundary(
+            resultSchema,
+            (cause) =>
+              verificationError(
+                completion.completionId,
+                `projection-match result decode failed: ${String(cause)}`,
+              ),
+          )(matchedValue),
+        ),
+      )
+
     type ExistingWaitDecision =
       | { readonly kind: "create" }
-      | { readonly kind: "resume" }
+      | { readonly kind: "resume"; readonly completion: CompletionValue }
       | { readonly kind: "suspend"; readonly completionId: string }
 
     const resolveExistingBlockedCompletion = (input: {
@@ -362,7 +432,12 @@ export const RunWaitLive = (
         }
 
         yield* input.validate(ctx, completion)
-        if (completion.state === "resolved") return { kind: "resume" as const }
+        if (completion.state === "resolved") {
+          return {
+            kind: "resume" as const,
+            completion,
+          }
+        }
         if (completion.state === "pending") {
           return { kind: "suspend" as const, completionId }
         }
@@ -431,8 +506,15 @@ export const RunWaitLive = (
         Effect.orDie,
       )
 
-    const forTrigger: RunWaitService["for"] = (trigger, options) =>
-      Effect.gen(function* () {
+    const forTriggerImplementation = (
+      trigger: ProjectionMatchTrigger,
+      options?: RunWaitForImplementationOptions,
+    ): Effect.Effect<unknown, never, CurrentWorkContext | TriggerMatchers> => {
+      const program: Effect.Effect<
+        unknown,
+        unknown,
+        CurrentWorkContext | TriggerMatchers
+      > = Effect.gen(function* () {
         const matchers = yield* TriggerMatchers
         // choreography-facade.TRIGGERS.5
         // choreography-facade.TRIGGERS.8
@@ -450,7 +532,13 @@ export const RunWaitLive = (
         const existing = yield* resolveExistingWaitFor(pmTrigger)
         if (existing.kind === "resume") {
           // choreography-facade.CHOREOGRAPHY_API.9
-          return undefined
+          // run-wait-primitives.RUN_WAIT_API.8
+          if (options?.resultSchema === undefined) return undefined
+          const decoded: unknown = yield* decodeWaitForResult(
+            existing.completion,
+            options.resultSchema,
+          )
+          return decoded
         }
         if (existing.kind === "suspend") {
           // choreography-facade.CHOREOGRAPHY_API.10
@@ -461,10 +549,13 @@ export const RunWaitLive = (
           ...(timeoutMs !== undefined ? { timeoutMs } : {}),
         })
         return yield* blockAndSuspend(result.completionId)
-      }).pipe(
+      })
+      return program.pipe(
         Effect.withSpan("substrate.run-wait.wait_for"),
         Effect.orDie,
       )
+    }
+    const forTrigger = forTriggerImplementation as RunWaitService["for"]
 
     const until: RunWaitService["until"] = (when, input = {}) =>
       Effect.gen(function* () {
