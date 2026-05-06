@@ -109,27 +109,27 @@ LT-02 is successful when a reviewer can use the Flamecast UI to:
 4. refresh the browser and replay the same session state from durable data;
 5. stop and restart the local runtime process, then complete another turn.
 
-## Blocking Findings From Chassis Attempt
+## Chassis Implementation Guidance
 
-Status on 2026-05-06: do not continue agent-authored `apps/flamecast` chassis
-work until the planning lane chooses the Firegrid surface that owns app
-timeline reads.
+Status on 2026-05-06: LT-02 can proceed on existing public Firegrid surfaces.
+The prior chassis attempt misread several ergonomic gaps as substrate blockers.
 
 The attempted implementation could create a local runtime shape with
 `Firegrid.composeRuntime`, `Firegrid.handler`, an app-owned Operation
-descriptor, and an app-owned EventPlane descriptor. It stopped because the
-remaining LT-02 proof needs a browser-safe durable read path for
-runtime-authored app timeline state.
+descriptor, and an app-owned EventPlane descriptor. The next attempt should
+continue with a separate Node runtime process, not a Vite plugin.
 
-Chosen unblock: use the EventPlane timeline path first. The local runtime
-writes Flamecast session index, timeline, follow-up/control, and provider
-state rows through app-owned EventPlane producers. The UI reads those rows
-through browser-safe `@firegrid/client` projection/query handles.
+Use one of these existing public paths:
 
-Runtime-side EventStream append remains a later optional lane. It should not
-block LT-02 because EventPlane projections are the better fit for session
-indexes, timeline state, follow-up routing, permission state, delivery state,
-presence-derived views, and later ownership-transfer/handoff views.
+1. EventStream timeline: the app's Node runtime imports `@firegrid/client` and
+   appends timeline events with `client.emit(SessionEvents, ...)`; browser code
+   reads the timeline with `client.events(SessionEvents)`.
+2. EventPlane timeline and index: the runtime writes Flamecast session index,
+   timeline, follow-up/control, and provider-state rows through app-owned
+   EventPlane producers; browser code reads app-owned projections through the
+   approved `@firegrid/substrate/event-plane` subpath. A thinner
+   `@firegrid/client` projection facade is useful ergonomics, but not a gate
+   for LT-02.
 
 Related ACIDs:
 
@@ -141,23 +141,22 @@ Related ACIDs:
 - `firegrid-client-projection-api.BROWSER_SAFE_FACADE.2`
 - `firegrid-client-projection-api.RECONNECT_SEMANTICS.1`
 - `firegrid-platform-invariants.LOCALITY.4`
+- `firegrid-platform-invariants.LOCALITY.5`
 - `firegrid-platform-invariants.AUTHORITY.4`
 - `flamecast-product-contract.LOWERING.3`
 
 Follow-up message submission is feasible as app-owned operations or control
-rows, but the UI cannot list sessions or reconstruct detail after refresh from
-operation handles alone. LT-02 therefore needs a durable app-owned session
-index and timeline read surface before app chassis work should proceed. That
-surface is now planned as the `@firegrid/client` projection/query API over
-app-owned EventPlane descriptors.
+rows. The UI should not rely on operation handles alone for list/detail
+refresh; it should read a durable app-owned session index and timeline via the
+EventStream or EventPlane path above.
 
 Development topology also surfaced a secondary packaging issue: a Vite-hosted
 runtime plugin importing `@firegrid/runtime` hit dist/export resolution before
-Firegrid packages were built. That is not the core substrate blocker; use a
-separate Node runtime process or an explicit build-before-dev path once the
-timeline surface decision is made.
+Firegrid packages were built. This is a topology mistake, not a substrate gap:
+run the local runtime as a separate Node process per
+`firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.1`.
 
-Do not work around these blockers with a Flamecast-only RPC facade, direct
+Do not work around the chassis with a Flamecast-only RPC facade, direct
 `@firegrid/substrate/kernel` imports, raw `durable.run` rows, in-memory session
 state, synthetic terminal state, or a demo-only smoke script.
 
