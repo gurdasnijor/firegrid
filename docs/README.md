@@ -23,7 +23,7 @@ Read these first.
 | Client EventStream and state-producer surface | `docs/SDD_CLIENT_EVENT_PLANES_AND_STATE_PRODUCERS.md` | `client-event-plane-registration`, `firegrid-event-streams` |
 | Choreography facade: Sleep/WaitFor/ScheduleMe and projection-match triggers | `docs/SDD_CHOREOGRAPHY_FACADE.md` | `choreography-facade`, `ergonomic-facade` |
 | Runtime integration lab and adapter validation | `docs/SDD_DURABLE_AGENT_RUNTIME_LAB.md` | `features/durable-agent-runtime-lab/*.feature.yaml` |
-| Runtime-first CLI validation strategy (next-wave validation seam) | `docs/SDD_FIREGRID_RUNTIME_CLI_VALIDATION.md` | `firegrid-operation-messaging`, `firegrid-runtime-process`, `launchable-substrate-host`, `durable-waits-and-scheduling` |
+| Runtime CLI scenario validation (next-wave dispatch plan F1A–F1E) | `docs/SDD_FIREGRID_RUNTIME_CLI_VALIDATION.md` | `firegrid-operation-messaging`, `firegrid-runtime-process`, `launchable-substrate-host`, `durable-waits-and-scheduling`, `firegrid-event-streams` |
 | Tooling, verification, and architecture reporting commands | `docs/TOOLING.md` | n/a |
 
 ## Historical / Background
@@ -107,27 +107,54 @@ layout on `main` is:
 
 ## Next Feature Wave
 
-W4 completed the substrate boundary cleanup. The next wave returns to net-new
-feature work. Planned slices, in priority order:
+W4 completed the substrate boundary cleanup. The next wave is **runtime-first
+scenario validation**, not new SDK ergonomics or new infrastructure. The
+controlling document is `docs/SDD_FIREGRID_RUNTIME_CLI_VALIDATION.md`, which
+explicitly names what is *not* missing — fixture infrastructure, schema
+types, the Durable Streams CLI, runtime Layers, and projection machinery all
+exist — and what *is* missing: a small set of concrete scenarios that exercise
+those pieces end-to-end against an attached Firegrid runtime, with rows
+written through the Durable Streams CLI.
 
-1. **Operation Messaging V1** — complete the typed operation message API.
+Dispatch order (from the SDD):
+
+1. **F1A — Echo operation.** Smallest operation-message path: schema-valid
+   operation-started row → runtime handler → terminal run row → projection
+   shows completion.
    Anchor ACIDs:
-   `firegrid-operation-messaging.{CLIENT_MESSAGING.1-.6, SCHEDULED_MESSAGES.1-.3, RUNTIME_HANDLERS.1-.4}`.
-2. **First Lab scenario loop** — get the lab inspector exercising a real
-   end-to-end flow.
+   `firegrid-operation-messaging.{OPERATIONS.1-.4, RUNTIME_HANDLERS.1-.4}`.
+2. **F1B — waitFor projection-match.** Durable suspension via a caller-owned
+   EventStream and a projection-match completion.
    Anchor ACIDs:
-   `launchable-substrate-host.{LAB_INSPECTOR.1-.9, SCENARIOS.1-.2}`.
-3. **Projection-match / event-plane scenario** — durable trigger over an
-   EventStream feeding a projection.
+   `durable-waits-and-scheduling.WAIT_FOR.{1,6,7}`,
+   `durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.{1,4}`,
+   `firegrid-event-streams.SCHEMA_OWNERSHIP.3`,
+   `launchable-substrate-host.SCENARIOS.3`.
+3. **F1C — scheduleAt / scheduled work.** Scheduled-work completion lowering
+   without a second scheduler.
    Anchor ACIDs:
-   `launchable-substrate-host.SCENARIOS.3`,
-   `launchable-substrate-host.CLIENT_SURFACE.14-.15`,
-   `durable-waits-and-scheduling.WAIT_FOR.*`.
-4. **Claim-before-side-effect operator scenario** — exercise operator
-   authority through a realistic handler.
+   `firegrid-operation-messaging.SCHEDULED_MESSAGES.{1-3}`,
+   `durable-waits-and-scheduling.SCHEDULE_WORK.{1,6}`,
+   `durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.{1,4}`,
+   `launchable-substrate-host.SCENARIOS.2`.
+4. **F1D — projection surface / read-model inspection.** Read-only lab and
+   read-model APIs prove progress without raw row reading.
    Anchor ACIDs:
-   `launchable-substrate-host.SCENARIOS.4`,
-   `claim-and-operator-authority.*`.
+   `launchable-substrate-host.LAB_INSPECTOR.{1,2,4,7}`,
+   `launchable-substrate-host.NO_CONTROL_PLANE.{4,5}`.
+5. **F1E — claim-before-side-effect.** Once-only side-effect under competing
+   workers.
+   Anchor ACIDs:
+   `claim-and-operator-authority.{CLAIM_BEFORE_INVOKE.1, CLAIM_AUTHORITY.1, TERMINAL_AUTHORITY.1}`,
+   `launchable-substrate-host.SCENARIOS.4`.
+
+F1A and F1B are the critical path — they prove the runtime handler path and
+durable suspension before any further `@firegrid/client` work resumes.
+
+Explicit non-goals for the wave (from the SDD): no new client ergonomics, no
+fixture generator or Firegrid CLI wrapper, no `firegrid dev -- ...` /
+embedded dev-server launchers, no HTTP command endpoints, no
+product-specific durable row families, no shared `test-support` folders.
 
 The Acai spec process (`.agents/skills/acai/SKILL.md`) governs all of these.
 Each slice ends with full ACID references in code, tests, and PR/review
