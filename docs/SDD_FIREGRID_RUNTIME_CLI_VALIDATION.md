@@ -50,7 +50,7 @@ durable-streams-server dev
 
 export STREAM_URL=http://localhost:4437/v1/stream
 durable-stream create firegrid --json
-pnpm --filter @firegrid/scenarios run <scenario> \
+pnpm --silent --filter @firegrid/scenarios run <scenario> \
   | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
 durable-stream read firegrid
 ```
@@ -109,7 +109,7 @@ durable-streams-server dev
 export STREAM_URL=http://localhost:4437/v1/stream
 durable-stream create firegrid --json
 
-pnpm --filter @firegrid/scenarios run echo \
+pnpm --silent --filter @firegrid/scenarios run echo \
   | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
 
 durable-stream read firegrid
@@ -180,8 +180,44 @@ Relevant ACIDs:
 - `durable-waits-and-scheduling.WAIT_FOR.7`
 - `durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.1`
 - `durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.4`
+- `firegrid-event-streams.EVENT_STREAM_DEFINITION.2`
+- `firegrid-event-streams.EVENT_STREAM_DEFINITION.3`
+- `firegrid-event-streams.CLIENT_API.5`
 - `firegrid-event-streams.SCHEMA_OWNERSHIP.3`
+- `firegrid-runtime-process.SCENARIOS.1`
+- `firegrid-runtime-process.SCENARIOS.2`
+- `firegrid-runtime-process.SCENARIOS.3`
 - `launchable-substrate-host.SCENARIOS.3`
+
+Manual CLI input flow:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+durable-stream create firegrid --json
+
+pnpm --silent --filter @firegrid/scenarios run wait-for \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+
+durable-stream read firegrid
+```
+
+The waitFor emitter derives the operation row from `Operation.define`, the
+operation input schema, `ProjectionMatchTriggerSchema`,
+`OperationEnvelopeSchema`, `RunValue`, and `startRun`. It derives the matching
+caller-owned event row from `EventStream.define`, the EventStream event schema,
+and `makeEventStreamStateRow`. For the default input it writes these JSON lines
+to stdout:
+
+```json
+{"type":"durable.run","key":"run-wait-for-cli-1","value":{"runId":"run-wait-for-cli-1","state":"started","data":{"_envelope":"firegrid/operation@1","operation":"WaitForPermission","payload":{"permissionId":"permission-cli-1","trigger":{"_tag":"ProjectionMatch","label":"permission-approved:permission-cli-1","projectionKey":"PermissionEvents:permission:permission-cli-1","matcherId":"scenario.permission.approved"}}}},"headers":{"operation":"insert"}}
+{"type":"firegrid.event","key":"PermissionEvents:event-permission-approved-cli-1","value":{"_envelope":"firegrid/event@1","stream":"PermissionEvents","event":{"permissionId":"permission-cli-1","status":"approved","actor":"scenario"}},"headers":{"operation":"insert"}}
+```
+
+These rows prove only the CLI-write input side. The runtime receiver side still
+requires a runtime graph that installs a `WaitForPermission` handler and a
+projection-match subscriber/evaluator for `scenario.permission.approved`.
 
 ### Scenario 3: scheduleAt / Scheduled Work
 

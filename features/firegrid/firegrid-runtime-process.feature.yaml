@@ -16,6 +16,7 @@ components:
     requirements:
       1: CLI validation scenario inputs are TypeScript emitters outside package source that derive durable rows from Effect Schema and protocol builders, write JSON rows to stdout, and do not import the app-facing client package.
       2: Runtime graph loading for operation-handler validation is separate from scenario row emission and must not be implemented as hard-coded scenario Layers in the `firegrid` binary.
+      3: Projection-match CLI scenario emitters include both the operation-started row and the caller-owned EventStream row needed to exercise the future subscriber path from the durable stream boundary.
 
   BINARIES:
     requirements:

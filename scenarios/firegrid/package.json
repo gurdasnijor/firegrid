@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "echo": "tsx echo.ts"
+    "echo": "tsx echo.ts",
+    "wait-for": "tsx wait-for.ts"
   },
   "dependencies": {
     "@firegrid/substrate": "workspace:*",
