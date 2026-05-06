@@ -29,6 +29,7 @@ components:
       4: Projection rows are non-authoritative for substrate ownership unless mapped through the Work pipeline claim boundary.
       5: Projection-match evaluators may read caller-owned PlaneProjection state to resolve RunWait projection-match completions, while completion authority and ready-work authority remain substrate-owned.
       6: Firepixel-style permission validation that uses EventPlane must prove a stateful projection read by stable row key or materialized state, not merely repeat an EventStream one-shot event scan with different names.
+      7: Caller-owned EventPlane row changes can wake runtime projection-match evaluators so pending projection-match completions may resolve from PlaneProjection state without polling or raw app-side stream readers.
 
   ACP_AGENT_PROFILE:
     requirements:

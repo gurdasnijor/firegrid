@@ -117,10 +117,12 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
     expect(due).toBe(25)
   })
 
-  it("firegrid-remediation-hardening.EFFECT_CONSISTENCY.3, firegrid-remediation-hardening.HOT_PATHS.1 — subscriber wakes coalesce without latch/forever/race loops and unsubscribe on scope teardown", async () => {
+  it("firegrid-remediation-hardening.EFFECT_CONSISTENCY.3, firegrid-remediation-hardening.HOT_PATHS.1, firegrid-runtime-process.RUNTIME_HOT_PATH.4 — subscriber wakes coalesce without latch/forever/race loops and unsubscribe on scope teardown", async () => {
     const db = fakeDb()
     let wake: (() => void) | undefined
+    let rawWake: (() => void) | undefined
     let unsubscribed = false
+    let rawUnsubscribed = false
     ;(db as {
       collections: {
         completions: FakeCollection<CompletionValue>
@@ -151,6 +153,16 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
                   }
                 }).collections.completions.subscribeChanges(onEdge)
                   .unsubscribe,
+              subscribeEdges: (onEdge) =>
+                Effect.acquireRelease(
+                  Effect.sync(() => {
+                    rawWake = onEdge
+                    return () => {
+                      rawUnsubscribed = true
+                    }
+                  }),
+                  (unsubscribe) => Effect.sync(unsubscribe),
+                ),
               nextDeadlineMs: () => undefined,
               scan: () =>
                 Effect.gen(function* () {
@@ -169,6 +181,7 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
 
           yield* Deferred.await(firstScanStarted)
           wake?.()
+          rawWake?.()
           wake?.()
           yield* Deferred.succeed(releaseFirstScan, undefined)
           yield* Deferred.await(secondScanFinished)
@@ -182,6 +195,7 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
 
     expect(observed).toBe(2)
     expect(unsubscribed).toBe(true)
+    expect(rawUnsubscribed).toBe(true)
   })
 
   it("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runner deadline stream wakes the subscriber when the next due time arrives", async () => {
