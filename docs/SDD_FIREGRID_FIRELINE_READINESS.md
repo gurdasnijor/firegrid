@@ -228,18 +228,69 @@ This uses the already-shipped resolved-completion resume path. It avoids the
 more invasive cancelled-completion ready-work question until we have Fireline's
 actual UX semantics in hand.
 
+### Prerequisite: `RunWait.for` result surface
+
+FW1 ships `RunWait.for(trigger)` returning `void` on resume. That is sufficient
+for Pathway 1 (happy path) where the only fact the handler needs is "the wait
+completed". Pathway 2 needs more: the handler must read the *value* the
+projection-match subscriber put in the resolved completion so it can map a
+rejection / denial / failure signal into a typed operation error.
+
+The substrate already records this value durably. The projection-match
+subscriber writes the resolved completion as
+`result: { matchedValue: <evaluator output> }`
+(see `packages/substrate/src/execution/subscribers.ts`). What is missing is
+the API to surface `matchedValue` to the resumed handler.
+
+The agreed shape:
+
+```ts
+RunWait.for<T = void, E = void>(
+  trigger: ProjectionMatchTrigger,
+  options?: {
+    readonly timeout?: Duration.DurationInput
+    readonly resultSchema?: Schema.Schema<T, E>
+  },
+): Effect.Effect<T, never, CurrentWorkContext | TriggerMatchers>
+```
+
+Without `resultSchema` the resume returns `void` (Pathway 1 unchanged).
+With `resultSchema` the resume reads `completion.result.matchedValue` and
+decodes it; the handler receives the typed value
+(`run-wait-primitives.RUN_WAIT_API.8`). Decode failures surface as
+choreography-internal defects (`run-wait-primitives.RUN_WAIT_API.9`); they do
+not silently swallow the resume or corrupt durable state.
+
+The result-shape contract is codified in
+`durable-waits-and-scheduling.WAIT_FOR.9` so the durable record stays a stable
+reference across handler resume, inspectors, and replays.
+
+This is a small additive capability slice. It must land before FW3 (Pathway 2
+implementation); FW3 should remain draft/red until this capability is on
+`main`.
+
 ### Proposed Spec Additions
 
 - `firegrid-runtime-process.SCENARIOS.14`: Fireline-shaped rejection receiver
   validation resumes a typed handler from a resolved projection-match
   completion carrying app-level rejection data and terminalizes the run as a
   typed operation failure chosen by the app handler.
+- `run-wait-primitives.RUN_WAIT_API.8` / `.9`: `RunWait.for` accepts an
+  optional `resultSchema` and surfaces the decoded `matchedValue` on resume;
+  decode failures are defects.
+- `durable-waits-and-scheduling.WAIT_FOR.9`: the resolved projection-match
+  completion's `result.matchedValue` is the canonical record of what satisfied
+  the wait.
 
 ### Implementation Surface
 
 Expected files:
 
 - `features/firegrid/firegrid-runtime-process.feature.yaml`
+- `features/firegrid/run-wait-primitives.feature.yaml`
+- `features/firegrid/durable-waits-and-scheduling.feature.yaml`
+- `packages/substrate/src/coordination/run-wait/service.ts`
+- `packages/substrate/src/__tests__/choreography-service.test.ts`
 - `scenarios/firegrid/fireline-rejection.ts`
 - `scenarios/firegrid/fireline-rejection-receiver.ts`
 - `scenarios/firegrid/fireline-rejection-receiver.test.ts`
@@ -251,6 +302,9 @@ Expected files:
 - Uses the same app-owned `run(...)` shape as Pathway 1.
 - Uses schema-derived input rows through `scenario.ts`.
 - Uses projection-match resolution, not timeout/cancellation.
+- `RunWait.for(trigger, { resultSchema })` returns the decoded `matchedValue`.
+- Without `resultSchema`, `RunWait.for` still returns `void` (Pathway 1 happy
+  path remains unchanged — no regression for existing receivers).
 - Handler maps the rejection signal to its operation error schema.
 - Projection inspection proves the run failed with the app-chosen typed error.
 
