@@ -39,3 +39,4 @@ constraints:
       2: Event plane registration does not force all domain events through a substrate-owned enum or universal event envelope.
       3: The first implementation proves one non-substrate domain event plane with tests, but does not implement ACP itself.
       4: The API remains small enough that Fireline and Firepixel can define separate planes without depending on each other's row vocabulary.
+      5: Firegrid scenario validation may define app-like EventStream descriptors, but Firegrid substrate rows remain product-neutral and do not adopt higher-layer vocabulary as native row families.
