@@ -1,0 +1,96 @@
+feature:
+  name: firegrid-agent-runtime-substrate
+  product: firegrid
+  description: Define the product-neutral Firegrid profile for long-lived agent-runtime-style operation flows over existing operation, event, event-plane, wait, and runtime primitives.
+
+components:
+  PROFILE_SCOPE:
+    requirements:
+      1: The agent-runtime substrate profile composes existing Firegrid operation messaging, EventStream, EventPlane, RunWait, runtime composition, ready-work, claim, and terminalization primitives rather than defining new foundational row families.
+      2: This profile is an integration contract for long-lived runtime-style flows and does not replace the lower-level specs that own operation descriptors, durable wait lowering, EventPlane projection, runtime process execution, ready-work derivation, claim authority, or terminal state machines.
+      3: Product-owned operation input schemas, event schemas, EventPlane row schemas, control-row schemas, and runtime adapter Layers remain outside this profile and are supplied by consuming applications.
+      4: The profile's examples and conformance smokes use product-neutral descriptors and row names.
+
+  LONG_LIVED_PENDING:
+    requirements:
+      1: A sent operation may remain publicly observable as `Pending` while its runtime handler is blocked on one or more durable waits.
+      2: "`Pending` is an operation lifecycle state and does not imply any product-specific blocked reason."
+      3: Detailed waiting, blocked, control, or progress causes are exposed through app-owned EventStream events or EventPlane projections rather than through new Firegrid operation-state variants.
+      4: A long-lived pending operation remains addressable by its existing operation handle across handler suspension and resume cycles.
+      5: Client observation of a pending operation does not require access to runtime handler code, runtime process state, raw durable rows, claim records, completion records, or kernel modules.
+
+  DURABLE_WAIT_CYCLES:
+    requirements:
+      1: A runtime handler may emit app-owned durable rows before suspending through a Firegrid durable wait primitive.
+      2: A runtime handler may suspend and resume through multiple durable wait cycles before reaching a terminal operation state.
+      3: Each suspension commits the durable wait state before the runtime treats the handler as suspended.
+      4: Each resume is driven by durable completion or projection state and then re-enters the same typed operation handler path.
+      5: Re-entering a handler after a completed wait must not re-author the already satisfied wait or duplicate prior app-owned rows whose emission was already durably acknowledged.
+      6: Runtime handler logic may emit additional app-owned rows between resumed wait cycles without bypassing EventStream or EventPlane schema validation.
+      7: Wait/resume cycles preserve Firegrid's existing ready-work derivation, claim-before-invoke, and first-valid-terminal authority.
+
+  APP_OWNED_CONTROL_ROWS:
+    requirements:
+      1: V1 control intents such as stop, interrupt, steer, or continue are represented as app-owned EventPlane rows or EventStream events when a consuming application needs them.
+      2: Runtime handlers observe control intents through durable projection or event observation before changing handler behavior.
+      3: A control intent only affects operation terminal state when app-owned handler logic returns a typed value or fails with a typed error in response to that durable intent.
+      4: A control row is not Firegrid completion, claim, terminal, or ownership authority unless an app-owned projection/wait explicitly maps it into existing Firegrid wait mechanics.
+      5: Duplicate or conflicting control rows are resolved by the consuming application's declared keyspace and projection policy.
+      6: This profile does not introduce a new public `client.cancel` or equivalent operation-control API.
+
+  TYPED_TERMINALIZATION:
+    requirements:
+      1: Runtime handler success terminalizes the operation by returning a value that conforms to the operation output schema.
+      2: Runtime handler expected failure terminalizes the operation by failing in the Effect error channel with a value that conforms to the operation error schema.
+      3: Runtime handlers do not directly append operation terminal rows through app-facing APIs.
+      4: Firegrid runtime and substrate authority own durable terminal row authorship after handler success or expected failure.
+      5: Competing terminal attempts for the same operation retain first-valid-terminal-wins behavior from the existing run and completion state-machine specs.
+      6: Terminal operation observation through `result` or `observe` returns the typed output or typed error selected by durable terminal authority.
+
+  RECONNECT_REPLAY:
+    requirements:
+      1: A client that reconnects with an existing operation handle can observe the latest durable operation state before receiving later live updates.
+      2: A client that reconnects to app-owned EventStream history can replay retained events before following live events.
+      3: A client or runtime projection reader that reconnects to app-owned EventPlane state can use snapshot-first then subscribe-after-snapshot semantics when the underlying projection surface provides a no-gap boundary.
+      4: If retained history needed for reconnect or replay is unavailable, the reader surfaces a typed retention-gap or unavailable-history failure rather than silently starting later.
+      5: Terminal operation state, completed app-owned events, and already materialized projection rows resolve from durable state even when they were written before the reconnecting observer subscribed.
+      6: Reconnect and replay behavior does not depend on in-memory promises, runtime process identity, live handler closures, or open network connections surviving.
+
+  RUNTIME_LOCALITY:
+    requirements:
+      1: "`@firegrid/client` is the browser-safe and edge-safe application package for sending operation messages, observing operation handles, emitting caller-owned EventStream events, and reading supported caller-owned event/history surfaces."
+      2: "`@firegrid/client` does not expose runtime handler registration, runtime process configuration, RunWait services, claim APIs, terminalization APIs, raw durable row builders, raw stream writers, or kernel imports."
+      3: "`@firegrid/runtime` is the Node-tier package for running app-owned runtime graphs, handler Layers, subscriber Layers, EventPlane Layers, RunWait Layers, and app-owned adapter Layers."
+      4: "Runtime graphs are composed explicitly through `Firegrid.composeRuntime` and started through `run({ connection, runtime })`."
+      5: Runtime composition does not install handlers, subscribers, adapters, control-row logic, or app-owned layers implicitly.
+      6: App-owned long-lived resources provided to a runtime graph share the runtime Effect scope and are finalized when that runtime scope is interrupted or fails.
+      7: Browser or edge code does not import `@firegrid/runtime`, runtime handler values, `@firegrid/substrate/kernel`, or raw Durable Streams State collections.
+
+  MINIMAL_SMOKE:
+    requirements:
+      1: A conforming smoke defines a product-neutral operation descriptor, EventStream descriptor, EventPlane descriptor, and typed runtime handler using public Firegrid package surfaces.
+      2: The smoke sends one operation, observes it as `Pending`, emits an app-owned row from the handler, suspends through `RunWait`, resumes from an app-owned projection match, emits a second app-owned row, suspends and resumes a second time, and terminalizes through handler return or expected failure.
+      3: The smoke proves reconnect by observing operation state and app-owned event history after at least one durable row was written before the observer subscribed.
+      4: The smoke proves a v1 control intent by appending an app-owned control row and having the handler react through normal durable observation rather than through a Firegrid-owned control API.
+      5: The smoke consumes packed public Firegrid packages and does not import workspace, sibling, kernel, scenario-private, or runtime-internal paths.
+      6: The smoke uses `Firegrid.composeRuntime` and `run({ connection, runtime })` for runtime execution.
+
+constraints:
+  INTEGRATION_PROFILE:
+    requirements:
+      1: This profile does not redefine operation descriptor shape, EventStream descriptor shape, EventPlane definition shape, RunWait lowering, ready-work projection, claim authority, runtime process boot, or terminal state-machine rules.
+      2: When a requirement overlaps a lower-level spec, the lower-level spec remains the authority for primitive behavior and this profile constrains only their combined use in long-lived runtime-style flows.
+      3: New implementation work for this profile must cite the specific lower-level ACIDs it composes when proving behavior.
+
+  PRODUCT_BOUNDARY:
+    requirements:
+      1: Firegrid core packages do not define product-domain lifecycle, routing, execution, credential, environment, resource, or user-interface vocabulary for consuming applications.
+      2: Firegrid core packages do not define product-owned request, progress, decision, ability, resource, control, delivery, or transcript schemas.
+      3: Firegrid core packages do not own external service authentication, customer delivery signing, credential storage, endpoint routing policy, model selection policy, or application billing policy.
+      4: Product-specific adapters and transports compose as app-owned Layers and do not become Firegrid runtime services.
+
+  API_BOUNDARY:
+    requirements:
+      1: This profile does not add a new operation cancellation API to `@firegrid/client`.
+      2: This profile does not expose raw Durable Streams State envelopes, raw StreamDB collections, raw stream URLs, row-builder helpers, kernel modules, or terminalization helpers through app-facing APIs.
+      3: This profile does not add a workflow engine, mailbox abstraction, runtime module loader, app-module discovery mechanism, dev launcher, host command bus, or hidden control plane.
