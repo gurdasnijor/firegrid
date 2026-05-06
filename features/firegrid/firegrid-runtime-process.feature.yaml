@@ -15,8 +15,20 @@ components:
   SCENARIOS:
     requirements:
       1: CLI validation scenario inputs are TypeScript emitters outside package source that derive durable rows from Effect Schema and protocol builders, write JSON rows to stdout, and do not import the app-facing client package.
-      2: Runtime graph loading for operation-handler validation is separate from scenario row emission and must not be implemented as hard-coded scenario Layers in the `firegrid` binary.
+      2: Runtime graph execution for operation-handler validation is separate from scenario row emission and must not be implemented as hard-coded scenario Layers in the `firegrid` binary.
       3: Projection-match CLI scenario emitters include both the operation-started row and the caller-owned EventStream row needed to exercise the future subscriber path from the durable stream boundary.
+
+  RUNTIME_RUN_API:
+    requirements:
+      1: Application runtime graphs are started from app-owned TypeScript entrypoints through a typed Firegrid `run(...)` API rather than through Firegrid-owned dynamic module discovery.
+      2: The runtime `run(...)` API accepts one composed Effect Layer runtime graph with shape `Layer.Layer<never, E, RuntimeContext | R>`.
+      3: The runtime `run(...)` API provides Firegrid runtime process context and attached Durable Streams execution while preserving any unprovided app requirements in the returned Effect type.
+      4: The runtime package does not expose or require `FIREGRID_RUNTIME_MODULE`-style dynamic app-module loading for normal runtime graph execution.
+      5: The runtime `run(...)` API does not import or provide the app-facing client package.
+      6: Stock subscribers and operator loops are not installed implicitly by `run(...)`; callers compose explicit Layers so process behavior is readable from the app entrypoint.
+      7: Runtime startup failures are fail-fast typed failures from `run(...)`, not silent hangs or hidden binary exits.
+      8: Durable Streams attachment options are supplied through a connection object rather than as loose top-level runtime options.
+      9: The runtime `run(...)` Effect is a long-running process Effect that normally exits only through interruption or typed failure.
 
   BINARIES:
     requirements:

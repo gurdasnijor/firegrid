@@ -24,6 +24,7 @@ Read these first.
 | Choreography facade: Sleep/WaitFor/ScheduleMe and projection-match triggers | `docs/SDD_CHOREOGRAPHY_FACADE.md` | `choreography-facade`, `ergonomic-facade` |
 | Runtime integration lab and adapter validation | `docs/SDD_DURABLE_AGENT_RUNTIME_LAB.md` | `features/durable-agent-runtime-lab/*.feature.yaml` |
 | Runtime CLI scenario validation (next-wave dispatch plan F1A–F1E) | `docs/SDD_FIREGRID_RUNTIME_CLI_VALIDATION.md` | `firegrid-operation-messaging`, `firegrid-runtime-process`, `launchable-substrate-host`, `durable-waits-and-scheduling`, `firegrid-event-streams` |
+| Typed runtime `run(...)` entrypoint for app-owned runtime graphs | `docs/SDD_FIREGRID_TYPED_RUNTIME_RUN_API.md` | `firegrid-runtime-process`, `firegrid-operation-messaging`, `durable-subscribers`, `claim-and-operator-authority` |
 | Tooling, verification, and architecture reporting commands | `docs/TOOLING.md` | n/a |
 
 ## Historical / Background

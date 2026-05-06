@@ -66,10 +66,11 @@ Firegrid does not wrap the Durable Streams CLI. Firegrid does not start the
 Durable Streams server. Firegrid does not spawn child dev processes.
 
 Scenario emitters prove the CLI-write input side. Terminalizing operation
-scenarios still requires a runtime process with the relevant handler graph
-supplied through intentional runtime graph-loading or host wiring. The current
-default `firegrid` binary attaches to the stream without hard-coded
-scenario-specific handler Layers.
+scenarios still requires an app-owned runtime process with the relevant handler
+graph supplied through the typed `run(...)` API described in
+`docs/SDD_FIREGRID_TYPED_RUNTIME_RUN_API.md`. The default `firegrid` binary
+attaches to the stream without hard-coded scenario-specific handler Layers and
+must not discover app graphs through dynamic module-loading flags.
 
 ## What Is Missing
 
@@ -309,8 +310,8 @@ Each scenario should include:
    row shape for manual execution.
 2. A test that constructs or decodes the same row through existing Effect Schema
    and protocol builders.
-3. A runtime-side scenario Layer when the scenario needs a handler/subscriber
-   graph.
+3. A typed app-owned runtime `run(...)` entrypoint when the scenario needs a
+   handler/subscriber graph.
 4. Assertions over read models/projections, not over incidental raw row ordering
    unless row ordering is the behavior under test.
 
