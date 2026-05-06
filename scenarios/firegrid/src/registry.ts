@@ -2,6 +2,7 @@ import { claimBeforeSideEffectScenario } from "./emitters/claim-before-side-effe
 import { echoScenario } from "./emitters/echo.ts"
 import { failingOperationScenario } from "./emitters/failing-operation.ts"
 import { firelineShapedScenario } from "./emitters/fireline-shaped.ts"
+import { firelineRejectionScenario } from "./emitters/fireline-rejection.ts"
 import { scheduledWorkScenario } from "./emitters/scheduled-work.ts"
 import { sleepScenario } from "./emitters/sleep.ts"
 import { waitForScenario } from "./emitters/wait-for.ts"
@@ -9,6 +10,7 @@ import { claimBeforeSideEffectReceiverScenario } from "./receivers/claim-before-
 import { echoReceiverScenario } from "./receivers/echo-receiver.ts"
 import { failingOperationReceiverScenario } from "./receivers/failing-operation-receiver.ts"
 import { firelineShapedReceiverScenario } from "./receivers/fireline-shaped-receiver.ts"
+import { firelineRejectionReceiverScenario } from "./receivers/fireline-rejection-receiver.ts"
 import { scheduledWorkReceiverScenario } from "./receivers/scheduled-work-receiver.ts"
 import { sleepReceiverScenario } from "./receivers/sleep-receiver.ts"
 import { waitForReceiverScenario } from "./receivers/wait-for-receiver.ts"
@@ -19,6 +21,7 @@ const scenarios = [
   echoScenario,
   failingOperationScenario,
   firelineShapedScenario,
+  firelineRejectionScenario,
   scheduledWorkScenario,
   sleepScenario,
   waitForScenario,
@@ -26,6 +29,7 @@ const scenarios = [
   echoReceiverScenario,
   failingOperationReceiverScenario,
   firelineShapedReceiverScenario,
+  firelineRejectionReceiverScenario,
   scheduledWorkReceiverScenario,
   sleepReceiverScenario,
   waitForReceiverScenario,
