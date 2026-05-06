@@ -63,8 +63,8 @@ describe("firegrid-package-migration.PACKAGE_NAMES — active package names are 
 
     expect(clientPackage.exports?.["./compat"]).toBeUndefined()
     expect(clientPackage.exports?.["."]).toBe("./src/index.ts")
-    expect(clientPackage.exports?.["./firegrid"]).toBe(
-      "./src/firegrid/index.ts",
+    expect(clientPackage.exports?.["./event-streams"]).toBe(
+      "./src/event-streams-public.ts",
     )
   })
 

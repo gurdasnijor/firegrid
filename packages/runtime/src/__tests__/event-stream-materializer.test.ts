@@ -31,7 +31,7 @@ class AppendFailed extends Data.TaggedError("AppendFailed")<{
 }> {}
 
 const here = dirname(fileURLToPath(import.meta.url))
-const internalRuntimeRoot = resolve(here, "..", "runtime", "internal")
+const internalRuntimeRoot = resolve(here, "..", "internal")
 
 const Hits = EventStream.define({
   name: "Hits",

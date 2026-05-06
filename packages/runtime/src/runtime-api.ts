@@ -17,7 +17,7 @@ import {
 } from "./internal/runner.ts"
 import { runOperationHandler } from "./internal/operation-handler.ts"
 import { runEventStreamMaterializer } from "./internal/event-stream-materializer.ts"
-import { RuntimeContext } from "./runtime-context.ts"
+import { RuntimeContext } from "./context.ts"
 
 // firegrid-architecture-boundary.SURFACE_AREA.2
 // firegrid-package-migration.RUNTIME_RENAME.5

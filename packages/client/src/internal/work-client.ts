@@ -5,7 +5,7 @@ import {
   SubstrateProducerLive,
   WorkProducer,
 } from "@firegrid/substrate/kernel"
-import { makeWorkFacet, type SubstrateClientWork } from "./work.ts"
+import { makeWorkFacet, type SubstrateClientWork } from "./work-facet.ts"
 
 // launchable-substrate-host.CLIENT_SURFACE.1
 // launchable-substrate-host.CLIENT_SURFACE.2

@@ -3,7 +3,7 @@ import {
   EventStreamClientLive,
   type EventsError,
   type EmitError,
-} from "@firegrid/client/firegrid"
+} from "@firegrid/client/event-streams"
 import { Effect, Stream } from "effect"
 import { LabEvents, type LabEvent } from "./lab-events.ts"
 

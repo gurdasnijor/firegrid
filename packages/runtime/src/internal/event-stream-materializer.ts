@@ -17,7 +17,7 @@ import {
 import {
   RuntimeContext,
   type RuntimeContextService,
-} from "../runtime-context.ts"
+} from "../context.ts"
 
 // firegrid-event-streams.RUNTIME_API.1
 // firegrid-event-streams.RUNTIME_API.2

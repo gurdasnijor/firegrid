@@ -7,7 +7,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./firegrid": "./src/firegrid/index.ts"
+    "./event-streams": "./src/event-streams-public.ts"
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",

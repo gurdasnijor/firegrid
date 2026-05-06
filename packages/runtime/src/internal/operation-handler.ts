@@ -30,7 +30,7 @@ import {
   type ParseResult,
   type Scope,
 } from "effect"
-import { RuntimeContext, type RuntimeContextService } from "../runtime-context.ts"
+import { RuntimeContext, type RuntimeContextService } from "../context.ts"
 import { wakeStream } from "./wake-stream.ts"
 
 // firegrid-operation-messaging.RUNTIME_HANDLERS.1

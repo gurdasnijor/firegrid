@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { generateProcessId } from "../boot/identity.ts"
+import { generateProcessId } from "../internal/identity.ts"
 
 // firegrid-runtime-process.RUNTIME_PACKAGE.2
 // firegrid-runtime-process.CONFIG_SURFACE.4

@@ -15,7 +15,7 @@ import {
   Stream,
   type Scope,
 } from "effect"
-import { RuntimeContext, type RuntimeContextService } from "../runtime-context.ts"
+import { RuntimeContext, type RuntimeContextService } from "../context.ts"
 
 // firegrid-runtime-process.RUNTIME_HOT_PATH.1
 //

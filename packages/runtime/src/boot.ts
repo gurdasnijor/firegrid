@@ -1,10 +1,10 @@
 import { Effect, Layer } from "effect"
-import { generateProcessId } from "../boot/identity.ts"
+import { generateProcessId } from "./internal/identity.ts"
 import {
   attachedResolverLayer,
   RuntimeStreamResolver,
 } from "./internal/stream-resolver.ts"
-import { RuntimeContext } from "./runtime-context.ts"
+import { RuntimeContext } from "./context.ts"
 import {
   FiregridRuntime,
   type FiregridRuntimeService,

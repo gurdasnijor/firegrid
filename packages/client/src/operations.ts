@@ -25,16 +25,16 @@ import {
   SubstrateClientLive,
   type SubstrateClientConfig,
   type SubstrateClientService,
-} from "../client/service.ts"
+} from "./internal/work-client.ts"
 import {
   buildEventStreamService,
-} from "./event-client.ts"
+} from "./event-streams.ts"
 import {
   FiregridClient,
   type FiregridClientConfig,
   type FiregridClientService,
   type OperationState,
-} from "./client.ts"
+} from "./service.ts"
 
 // firegrid-operation-messaging.CLIENT_MESSAGING.1
 // firegrid-operation-messaging.CLIENT_MESSAGING.2
@@ -109,8 +109,8 @@ export {
   EventStreamDecodeError,
   EventStreamEncodeError,
   EventStreamReadError,
-} from "./event-client.ts"
-export type { EmitError, EventsError } from "./event-client.ts"
+} from "./event-streams.ts"
+export type { EmitError, EventsError } from "./event-streams.ts"
 
 // ────────────────────────────────────────────────────────────────
 const isTerminalRun = (run: RunValue | undefined): boolean =>
@@ -309,4 +309,4 @@ export type {
   FiregridClientConfig,
   FiregridClientService,
   OperationState,
-} from "./client.ts"
+} from "./service.ts"

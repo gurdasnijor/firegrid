@@ -22,11 +22,11 @@ import {
   minPendingDueAtMs,
   runScopedSubscriberLoopWithAcquire,
   runScopedSubscriberLoopFromDb,
-} from "../runtime/internal/runner.ts"
+} from "../internal/runner.ts"
 import {
   AcquireDbError as HandlerAcquireDbError,
   runOperationDispatchLoopWithAcquire,
-} from "../runtime/internal/operation-handler.ts"
+} from "../internal/operation-handler.ts"
 
 type FakeSubscription = { readonly unsubscribe: () => void }
 type FakeCollection<T> = {
@@ -51,7 +51,7 @@ const fakeDb = () =>
 
 const runtimeSource = (relative: string) =>
   readFileSync(
-    fileURLToPath(new URL(`../runtime/internal/${relative}`, import.meta.url)),
+    fileURLToPath(new URL(`../internal/${relative}`, import.meta.url)),
     "utf8",
   )
 
