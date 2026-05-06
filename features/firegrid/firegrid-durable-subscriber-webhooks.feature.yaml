@@ -1,0 +1,94 @@
+feature:
+  name: firegrid-durable-subscriber-webhooks
+  product: firegrid
+  description: Product-neutral durable delivery channels and subscriber runtime that reuse caller-owned EventPlane rows, claims, completion rows, dead-letter rows, and `RunWait` mechanics for inbound and outbound delivery without owning webhook signing, callback URL minting, callback tokens, customer payload schemas, or product fanout policy.
+
+components:
+  CHANNEL_DESCRIPTOR:
+    requirements:
+      1: A delivery channel descriptor binds caller-owned schemas for delivery, completion, conflict, and dead-letter rows to product-neutral channel mechanics without introducing product row family names into Firegrid.
+      2: A delivery channel descriptor declares stable derivation hooks for delivery key, completion key, and ordering scope; key derivation is caller-supplied and key types are branded so transport idempotency keys, delivery keys, and product operation keys cannot be silently interchanged.
+      3: A delivery channel descriptor carries schema identifiers and version markers so projections and rebuilds can detect schema migrations.
+      4: A delivery channel descriptor declares the dedupe retention window and the explicit behavior for duplicates that arrive after the window expires.
+      5: Channel descriptors do not define HTTP routes, signing rules, callback URL formats, callback tokens, provider taxonomies, or product event names.
+
+  DELIVERY_PRODUCER:
+    requirements:
+      1: Delivery append validates the caller-owned delivery schema before durable append.
+      2: Delivery append records producer identity, idempotency key, correlation id, causation id, and optional trace metadata as caller-owned envelope fields.
+      3: Duplicate same-payload append returns a stable duplicate or original-accepted result without creating a second logical delivery.
+      4: Duplicate different-payload append returns a typed conflict result and preserves conflict evidence as a durable row.
+      5: Invalid delivery payload, append unavailability, and conflict cases are typed expected Effect errors rather than success variants.
+
+  DELIVERY_PROJECTION:
+    requirements:
+      1: The delivery projection rebuilds delivery, claim, completion, retry, terminal failure, dead-letter, conflict, and cursor-acknowledgement rows from retained durable records and declares the ordering and retention assumptions used by the rebuild.
+      2: The delivery projection uses first-valid-terminal-wins for completion, terminal failure, cancellation, and dead-letter rows; later identical terminals are duplicate evidence and later conflicting terminals are conflict evidence.
+      3: Projection rebuilds are deterministic over retained rows; two rebuilds over the same retained set choose the same terminal.
+      4: The projection exposes source cursor and projection cursor where available so subscribers and waits can distinguish projection lag from log truth.
+
+  SUBSCRIBER_RUNTIME:
+    requirements:
+      1: A durable subscriber reaches the live boundary by replaying retained delivery, claim, completion, retry, terminal-failure, conflict, dead-letter, and cursor-acknowledgement rows before executing any external side effect.
+      2: Subscriber replay performs no external side effects; subscriber action is gated by both live-boundary arrival and successful claim observation.
+      3: Subscriber claim records carry delivery key, ordering scope, claim id, owner or subscriber id, attempt number, lease expiry or heartbeat evidence, monotonic fencing token when the side-effect target supports one, source cursor, and claimed timestamp.
+      4: Subscriber handler outcomes are typed expected Effect results; success returns a completion value, retryable failure uses a retryable expected error, terminal failure uses a terminal expected error, and conflict uses a conflict expected error.
+      5: Retry and backoff policy is caller-supplied as an Effect `Schedule`; retry exhaustion appends a durable terminal-failure or dead-letter row.
+      6: Subscriber cursor acknowledgement is a durable row scoped by channel or source-stream identity and subscriber identity; cursor acknowledgement is not semantic completion.
+      7: Retention gaps surface through an explicit policy hook with options including fail-closed, reset-to-earliest with explicit gap row, and reset-to-latest with explicit missed-history row; the default is fail-closed and silent reset is not acceptable.
+      8: Subscriber lag is queryable as durable state covering source cursor, acknowledged cursor, projection cursor, pending delivery count, oldest pending delivery timestamp, and retry or dead-letter counts where available.
+      9: Subscriber attempts propagate correlation, causation, producer, subscriber, and trace metadata; trace metadata is correlation only and is not used for authorization, terminalization, or retry classification.
+
+  WAIT_INTEGRATION:
+    requirements:
+      1: A handler may suspend on a delivery completion row through a `RunWait` projection-match recipe over the caller-owned completion projection.
+      2: A wait resolves from snapshot when the completion row existed at or before the snapshot cursor.
+      3: A wait subscribes after the snapshot cursor when the completion row is not yet present, using a shared cursor boundary so completion rows at or before the snapshot are observed or fail with a typed read or projection error.
+      4: Race outcomes for completion, cancellation, terminal failure, and timeout follow first-valid-terminal-wins; later conflicting terminals preserve conflict evidence without changing the winning terminal.
+      5: Public `client.observe(handle)` continues to expose operation lifecycle only; product-shaped delivery or wait causes are observed through caller-owned EventPlane projections and EventStream entries.
+
+  DELIVERY_SEMANTICS:
+    requirements:
+      1: Firegrid mechanics provide durable at-least-once execution narrowed by claim and lease; exactly-once external delivery requires app-owned idempotency keys or target-side fencing.
+      2: Append acknowledgement carries enough cursor information to resume reading after the accepted record; append acknowledgement is not domain completion.
+      3: Ordering scope serializes deliveries within the same scope and runs different scopes concurrently; head-of-line blocking inside an ordering scope is intentional and dead-lettering a delivery unblocks the scope unless an app-owned fold marks repair required.
+      4: Durable appends do not block on subscriber throughput; backlog is durable lag visible through projection state and is not represented as in-process queue or memory pressure.
+      5: Producer and subscriber identities are opaque to Firegrid and are preserved on accepted delivery, claim, completion, retry, terminal-failure, conflict, dead-letter, and cursor-acknowledgement rows; identity authentication is owned by the caller.
+      6: Conflict and dead-letter rows are durable, replayable, queryable facts, not log-only; dead-letter repair is app-owned projection logic and Firegrid does not need a built-in repair row family.
+
+constraints:
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `firegrid-platform-invariants.BOUNDARY.1`, `firegrid-platform-invariants.BOUNDARY.2`, and `firegrid-platform-invariants.BOUNDARY.4` for product-vocabulary freeze; channel descriptor names, row names, and helper names do not adopt product webhook, provider, capability, callback-event, session, or permission vocabulary.
+      2: This spec is bound by `firegrid-platform-invariants.AUTHORITY.1`, `firegrid-platform-invariants.AUTHORITY.2`, `firegrid-platform-invariants.AUTHORITY.3`, `firegrid-platform-invariants.AUTHORITY.4`, `firegrid-platform-invariants.AUTHORITY.5`, and `firegrid-platform-invariants.AUTHORITY.6` for terminalization, external write authority, and deterministic Pending observation before external delivery row writes.
+      3: This spec is bound by `firegrid-platform-invariants.SECURITY.1`, `firegrid-platform-invariants.SECURITY.2`, `firegrid-platform-invariants.SECURITY.4`, `firegrid-platform-invariants.SECURITY.5`, and `firegrid-platform-invariants.SECURITY.6` for the prohibitions on credential storage, Standard Webhooks signing, callback URL minting, callback token issuance, secret-bearing trace metadata, and exactly-once external side-effect claims.
+      4: This spec is bound by `firegrid-platform-invariants.LOCALITY.1`, `firegrid-platform-invariants.LOCALITY.2`, and `firegrid-platform-invariants.LOCALITY.5` for the split-tier requirement that subscriber runtime helpers live in `@firegrid/runtime` and browser entrypoints stay free of runtime imports and kernel paths.
+      5: This spec is bound by `firegrid-platform-invariants.ENFORCEMENT.1`, `firegrid-platform-invariants.ENFORCEMENT.2`, and `firegrid-platform-invariants.ENFORCEMENT.3` for citation discipline.
+
+  DEPENDS_ON:
+    requirements:
+      1: "`run-wait-primitives.*` and `durable-waits-and-scheduling.*` govern the wait primitives used by `WAIT_INTEGRATION`; this spec does not redefine wait shape or trigger semantics."
+      2: "`client-event-plane-registration.*` governs caller-owned EventPlane definition, producer, and projection mechanics; this spec layers channel descriptor mechanics over those rather than introducing parallel EventPlane plumbing."
+      3: "`durable-records-and-projections.*` governs durable record rebuild and source-of-truth invariants; this spec depends on those rather than redefining canonical durable row family rules."
+      4: "`firegrid-projection-query.QUERY_HANDLES.*`, `firegrid-projection-query.CURSOR_AND_REPLAY.*`, and `firegrid-projection-query.EXPECTED_ERRORS.*` govern read facade semantics for delivery projection observation; this spec depends on those rather than introducing a parallel read facade."
+      5: "`firegrid-runtime-presence.*` governs runtime presence record shape, lifecycle, query, consistency posture, and ingress selection; durable subscribers and callback registration code that need a public ingress URL select endpoints from runtime presence projections rather than embedding host or transport credentials."
+      6: "`firegrid-observability.SUBSTRATE_SPANS.*` and `firegrid-observability.NON_AUTHORITY.*` govern subscriber span emission and the rule that observability metadata is not authority; this spec depends on those rather than redefining span policy."
+      7: "`flamecast-product-contract.CALLBACKS.*` and `flamecast-product-contract.LOWERING.4` govern Flamecast-side webhook signing, callback tokens, and provider callback semantics that lower onto these mechanics; this spec carries Flamecast callbacks as caller-owned delivery rows, not as Firegrid-native row families."
+
+  PACKAGE_PLACEMENT:
+    requirements:
+      1: "`DurableChannel` descriptor and branded delivery and completion key helpers belong on a curated `@firegrid/substrate` public surface; product schemas remain caller-supplied."
+      2: "Idempotent delivery producer and channel projection helpers belong on `@firegrid/substrate/event-plane`; they remain schema-driven and do not embed HTTP, provider, or webhook semantics."
+      3: "Subscriber runtime helpers compose through `Firegrid.composeRuntime` and live on `@firegrid/runtime`; they do not appear in browser-safe `@firegrid/client` exports."
+      4: "`@firegrid/client` does not gain webhook-specific or callback-specific APIs; client observation of delivery state uses caller-owned EventPlane projection handles and EventStream entries through the existing public client surface."
+      5: An optional outbound HTTP delivery helper, if added later, lives as a clearly anti-scope adapter on `@firegrid/runtime`; it accepts an already-authorized request descriptor and a caller-supplied outcome classifier and does not perform signing, URL minting, credential lookup, or product fanout.
+
+  NON_SCOPE:
+    requirements:
+      1: This spec does not define webhook signing or signature verification; Standard Webhooks signing remains a product responsibility per `firegrid-platform-invariants.SECURITY.2`.
+      2: This spec does not define callback URL minting, callback token issuance, callback rotation, or `callbackEvents` filtering.
+      3: This spec does not define product event taxonomies, provider compatibility checks, tenant authorization, or BYOK or OAuth credential policy.
+      4: This spec does not define HTTP route names, request or response contracts for product APIs, or browser webhook UI.
+      5: This spec does not define a reusable product adapter package; it ships product-neutral helpers and example shapes only.
+      6: This spec does not define exactly-once external delivery; exactly-once external side effects require app-owned idempotency or target-side fencing per `DELIVERY_SEMANTICS.1`.
+      7: This spec does not define repair flow row families; repair logic is app-owned projection behavior per `DELIVERY_SEMANTICS.6`.
