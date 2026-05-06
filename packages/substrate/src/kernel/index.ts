@@ -7,18 +7,18 @@
 
 export * from "../descriptors/index.ts"
 export * from "../schema/index.ts"
-export * from "../projection.ts"
-export * from "../stream.ts"
+export * from "../read-models/projection.ts"
+export * from "../state-store/stream.ts"
 export * from "../state-machine.ts"
 export {
   completeRun as completeRunEffect,
   failRun as failRunEffect,
 } from "../schema/state-machine.ts"
 export * from "../write-api/producer.ts"
-export * from "../projection/ready-work.ts"
+export * from "../read-models/ready-work.ts"
 export * from "../execution/operator.ts"
 export * from "../execution/operator-errors.ts"
-export * from "../retained-records.ts"
+export * from "../state-store/retained-records.ts"
 export * from "../execution/waits.ts"
 export * from "../execution/subscribers.ts"
 export * from "../id-gen.ts"

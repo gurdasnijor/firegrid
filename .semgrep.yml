@@ -40,7 +40,7 @@ rules:
       acid: firegrid-remediation-hardening.DUP_DETECTION.2
       quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
       code-reuse: HOT_PATHS.2
-      canonical-helper: packages/substrate/src/stream.ts:acquireSubstrateDb
+      canonical-helper: packages/substrate/src/state-store/stream.ts:acquireSubstrateDb
       category: scoped-resource
     paths:
       include:
@@ -50,11 +50,11 @@ rules:
         - "**/apps/*/src/**/*.tsx"
         - "**/semgrep-tests/**/*.ts"
       exclude:
-        - "**/packages/substrate/src/stream.ts"
+        - "**/packages/substrate/src/state-store/stream.ts"
     message: |
       Use `acquireSubstrateDb(opts, mapError)` for scoped substrate database
       acquisition instead of hand-rolling acquireRelease + tryPromise + close.
-      See packages/substrate/src/stream.ts.
+      See packages/substrate/src/state-store/stream.ts.
     patterns:
       - pattern: |
           Effect.acquireRelease(
@@ -73,7 +73,7 @@ rules:
       acid: firegrid-remediation-hardening.DUP_DETECTION.2
       quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
       code-reuse: CODE_REUSE.7
-      canonical-helper: packages/substrate/src/retained-records.ts:readRetainedByField
+      canonical-helper: packages/substrate/src/state-store/retained-records.ts:readRetainedByField
       category: code-reuse
     paths:
       include:
@@ -85,7 +85,7 @@ rules:
     message: |
       Use a parameterized retained-row-by-field helper instead of re-reading
       JSON rows and hand-filtering by row type and field.
-      See packages/substrate/src/retained-records.ts.
+      See packages/substrate/src/state-store/retained-records.ts.
     patterns:
       - pattern-inside: |
           Effect.gen(function* () {
@@ -115,7 +115,7 @@ rules:
       acid: firegrid-remediation-hardening.DUP_DETECTION.2
       quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
       code-reuse: CODE_REUSE.3
-      canonical-helper: packages/substrate/src/retained-records.ts:readAuthoritativeRun
+      canonical-helper: packages/substrate/src/state-store/retained-records.ts:readAuthoritativeRun
       category: code-reuse
     paths:
       include:
@@ -127,7 +127,7 @@ rules:
     message: |
       Centralize authoritative-run lookup behind the shared helper instead of
       calling readRetainedRunRecords directly.
-      See packages/substrate/src/retained-records.ts.
+      See packages/substrate/src/state-store/retained-records.ts.
     patterns:
       - pattern: readRetainedRunRecords($...ARGS)
       - pattern-not-inside: |
