@@ -1,0 +1,79 @@
+feature:
+  name: firegrid-observability
+  product: firegrid
+  description: Define product-neutral tracing, correlation metadata, and Effect observability for Firegrid durable execution paths.
+
+components:
+  OPERATION_OBSERVABILITY:
+    requirements:
+      1: Operation `send` records an Effect-observable span around durable operation message append and handle creation.
+      2: Operation `result` records an Effect-observable span around awaiting terminal operation state for a previously returned handle.
+      3: Operation `observe` records an Effect-observable span around durable operation state observation and stream subscription setup for a previously returned handle.
+      4: Operation observability correlates send, result, and observe spans through stable operation and run identifiers when those identifiers are available.
+      5: Operation API observability reports typed SDK failures as span error information without converting typed errors into defects.
+
+  RUNTIME_HANDLER_OBSERVABILITY:
+    requirements:
+      1: Runtime handler dispatch records an Effect-observable span around decoded handler execution for each durable run attempt.
+      2: Runtime handler spans include correlation to the triggering operation message, run id, runtime process id, and handler descriptor identity when those values are available.
+      3: Runtime handler spans distinguish initial dispatch from resume dispatch without introducing workflow, provider, session, prompt, tool, or adapter vocabulary.
+      4: Runtime handler spans close after the handler reaches a durable suspension, terminal success, terminal failure, interruption, or defect boundary.
+      5: Runtime handler observability records decode, startup, interruption, and handler failure outcomes in the Effect span/error channel.
+
+  EVENT_OBSERVABILITY:
+    requirements:
+      1: EventPlane producer `emit` records an Effect-observable span around validation and durable append of caller-owned EventPlane rows.
+      2: EventPlane projection observation records an Effect-observable span around snapshot, live-follow, and projection evaluation work.
+      3: EventStream client and runtime append records an Effect-observable span around validation and durable append of caller-owned EventStream rows.
+      4: EventStream materialization records an Effect-observable span around projection/materialized-view update work.
+      5: EventPlane and EventStream observability correlates rows through descriptor identity, row key or subject, durable cursor, causation metadata, and correlation metadata when present.
+      6: EventPlane and EventStream spans do not inspect, classify, or name caller-owned payload semantics.
+
+  RUN_WAIT_OBSERVABILITY:
+    requirements:
+      1: RunWait suspension records an Effect-observable span around authoring the durable completion or scheduled-work intent that blocks the current run.
+      2: RunWait resume records an Effect-observable span around reading resolved completion state and returning the decoded wait result to the handler.
+      3: RunWait observability correlates suspend and resume spans through run id, completion id, completion kind, trigger identity, and ready-work item identity when available.
+      4: RunWait observability records timeout, cancellation, rejection, decode failure, and missing-completion outcomes in the Effect span/error channel.
+      5: RunWait observability does not expose raw completion CRUD or raw Durable Streams append helpers as app-facing tracing requirements.
+
+  SUBSCRIBER_OBSERVABILITY:
+    requirements:
+      1: Each durable subscriber attempt records an Effect-observable span around eligibility evaluation and candidate terminal record append.
+      2: Subscriber retry attempts carry stable attempt metadata that can correlate retries for the same completion, selector, subscriber, and runtime process.
+      3: Subscriber terminalization records an Effect-observable span around candidate terminal append and first-terminal-wins observation.
+      4: Subscriber spans distinguish resolved, rejected, cancelled, duplicate, claim-lost, conflict, dead-letter, unsupported, no-gap, and retry-scheduled outcomes when those outcomes are produced by the subscriber.
+      5: Subscriber observability survives process restart by deriving correlation from durable rows, cursor/progress records, and attempt metadata rather than process-local counters alone.
+
+  TRACE_CONTEXT_PROPAGATION:
+    requirements:
+      1: Firegrid can carry product-neutral trace context through durable operation metadata and caller-owned EventPlane or EventStream row metadata.
+      2: Firegrid preserves trace context supplied by app-owned producers without requiring Firegrid to understand caller-owned row payload schemas.
+      3: Runtime handler execution, EventPlane emit/projection, EventStream append/materialization, RunWait suspend/resume, and subscriber attempts can continue a propagated trace context when present.
+      4: Trace context propagation uses metadata fields that are distinct from caller-owned payload values and durable authority fields.
+      5: Missing trace context never prevents durable append, projection, wait, subscriber, handler, result, or observe behavior from proceeding.
+
+  STABLE_SPAN_ATTRIBUTES:
+    requirements:
+      1: Firegrid-defined spans use stable substrate attribute keys for operation descriptor identity, operation message id, handle id, run id, and runtime process id.
+      2: Firegrid-defined spans use stable substrate attribute keys for EventPlane descriptor identity, EventStream descriptor identity, row family, row key or subject, durable cursor, and schema identity when available.
+      3: Firegrid-defined spans use stable substrate attribute keys for completion id, completion kind, trigger identity, ready-work item identity, subscriber identity, attempt id, retry count, and terminal status when available.
+      4: Firegrid-defined span attributes use bounded primitive values and must not require serializing caller-owned payloads, secrets, credentials, authorization tokens, or provider resource contents.
+      5: Attribute key names are product-neutral and do not include Flamecast, Fireline, Firepixel, ACP, MCP, provider, session, prompt, permission, sandbox, or tool-specific vocabulary.
+
+  TERMINAL_ERROR_CORRELATION:
+    requirements:
+      1: Operation terminal success and typed failure records are correlated with the operation send span, runtime handler span, and result/observe spans when identifiers are available.
+      2: Run terminalization records are correlated with the handler attempt, ready-work processing, subscriber terminalization, and completion state that caused the terminal outcome when those identifiers are available.
+      3: Error observability records typed error tags, defect boundaries, decode failures, durable conflict outcomes, no-gap observation failures, and first-terminal-wins losses without replacing durable terminal records as authority.
+      4: Terminal/error correlation remains valid after replay, projection rebuild, runtime restart, or subscriber rescan because correlation is derived from durable identifiers and propagated metadata.
+      5: Terminal/error observability distinguishes durable terminal status from local process interruption or observer cancellation.
+
+constraints:
+  PRODUCT_BOUNDARY:
+    requirements:
+      1: Firegrid observability does not define product-specific span names, provider telemetry policy, vendor exporter configuration, trace backend setup, sampling policy, or dashboard conventions.
+      2: Firegrid observability does not define tenant identity, auth identity, organization membership, provider credentials, BYOK, OAuth, signing tokens, or access-control semantics.
+      3: Firegrid observability metadata must not require secret-bearing trace attributes, secret-bearing baggage values, serialized credentials, raw resource contents, or authorization headers.
+      4: Firegrid observability does not make caller-owned row payload schemas part of Firegrid's stable telemetry contract.
+      5: Firegrid observability requirements do not create new durable authority for operation terminalization, completion terminalization, claim ownership, ready-work derivation, EventPlane projection state, or EventStream materialization.
