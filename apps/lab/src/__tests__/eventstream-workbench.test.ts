@@ -7,8 +7,9 @@ const here = dirname(fileURLToPath(import.meta.url))
 const labRoot = resolve(here, "..", "lab")
 
 describe("runtime-lab-inspector.WRITE_BOUNDARY.1 + firegrid-event-streams.CLIENT_API.1-.3 — typed lab EventStream workbench uses the Firegrid client", () => {
-  it("typed EventStream workbench imports client APIs only and does not raw-write or declare work", () => {
-    const clientHelper = readFileSync(
+  it("firegrid-client-api.LAB_COMPATIBILITY.4 — typed EventStream workbench UI depends on a lab-local client seam", () => {
+    const seam = readFileSync(resolve(labRoot, "LabClient.ts"), "utf8")
+    const currentAdapter = readFileSync(
       resolve(labRoot, "LabEventStreamClient.ts"),
       "utf8",
     )
@@ -17,19 +18,28 @@ describe("runtime-lab-inspector.WRITE_BOUNDARY.1 + firegrid-event-streams.CLIENT
       "utf8",
     )
     const descriptor = readFileSync(resolve(labRoot, "lab-events.ts"), "utf8")
-    const combined = `${clientHelper}\n${panel}\n${descriptor}`
+    const combined = `${seam}\n${currentAdapter}\n${panel}\n${descriptor}`
 
-    expect(combined).toContain("@firegrid/client/event-streams")
-    expect(combined).toContain("EventStreamClientLive")
+    expect(panel).toContain("./LabClient.ts")
+    expect(panel).not.toContain("./LabEventStreamClient.ts")
+    expect(seam).toContain("createLabEventStreamClient")
+    expect(currentAdapter).toContain("@firegrid/client/event-streams")
+    expect(currentAdapter).toContain("EventStreamClientLive")
     expect(combined).not.toContain("@firegrid/runtime")
     expect(combined).not.toContain("@firegrid/substrate")
+    expect(combined).not.toContain("@firegrid/substrate/kernel")
     expect(combined).not.toContain("@firegrid/client\"")
     expect(combined).not.toContain("'@firegrid/client'")
     expect(combined).not.toContain("@durable-streams/client")
+    expect(combined).not.toContain("new DurableStream")
     expect(combined).not.toContain(".append(")
+    expect(combined).not.toContain(".write(")
     expect(combined).not.toContain("work.declare")
-    expect(clientHelper).toContain("client.emit(LabEvents")
-    expect(clientHelper).toContain("client.events(LabEvents")
+    expect(combined).not.toContain("processReadyWorkItem")
+    expect(combined).not.toContain("claimRun")
+    expect(combined).not.toContain("terminalize")
+    expect(currentAdapter).toContain("client.emit(LabEvents")
+    expect(currentAdapter).toContain("client.events(LabEvents")
   })
 })
 
