@@ -9,7 +9,7 @@ components:
       1: An operation may remain in `Pending` lifecycle state for the full duration of a runtime-style session, including handler startup, app-owned row emission, projection-match wait, scheduled work, replay or recovery, and waiting for app-owned control rows.
       2: The public `Pending` state covers all non-terminal operation phases from the client point of view; product-specific blocked-on-X distinctions are observed through caller-owned EventPlane and EventStream rows, not by widening the public lifecycle vocabulary.
       3: Pending duration is bounded only by app-owned policy and durable substrate health; Firegrid does not impose a default operation timeout that aborts long-lived runtime work.
-      4: Public `client.observe`, `client.result`, `client.events`, and `client.observe` lifecycle handles continue to function across multi-hour or multi-restart runtime sessions.
+      4: Public `client.send`, `client.observe`, `client.result`, and `client.events` lifecycle handles continue to function across multi-hour or multi-restart runtime sessions.
 
   MULTI_WAIT_RESUME:
     requirements:
