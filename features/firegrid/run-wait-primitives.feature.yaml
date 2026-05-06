@@ -26,3 +26,5 @@ constraints:
       1: The `RunWait` API does not introduce Fireline, Firepixel, ACP, MCP, session, prompt, permission, provider, sandbox, tool-call, or schedule_me as substrate-native row families.
       2: The `RunWait` API does not expose raw completion CRUD, raw run transition builders, raw append helpers, retained fold readers, or `processReadyWorkItem` as the normal app-handler path.
       3: The `RunWait` API does not import or depend on the app-facing `@firegrid/client` package.
+      4: "App code that composes `RunWait.layer({ streamUrl })` does not need to import `@firegrid/substrate/kernel`, `ChoreographyLive`, `DurableWaitsLive`, or any other lower-level Firegrid Layer to make `RunWait` work; `RunWait.layer({ streamUrl })` provides every Layer dependency `RunWait` needs."
+      5: "`RunWait` is the app-facing surface, not a thin synonym: documentation, examples, and tests aimed at app authors do not teach `Choreography`, `ChoreographyLive`, `DurableWaits`, or `DurableWaitsLive` as the way to use durable wait primitives. Internal `RunWait` implementations may delegate to existing substrate services."
