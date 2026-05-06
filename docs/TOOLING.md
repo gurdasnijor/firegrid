@@ -116,6 +116,35 @@ pnpm run lint:deps
 
 This runs dependency-cruiser with `.dependency-cruiser.cjs`. Unlike direct import lint rules, dependency-cruiser can flag transitive boundary violations, cycles, and orphan modules across the substrate, runtime, client packages and the lab app. It also gates general dependency hygiene for unresolvable imports, undeclared npm dependencies, deprecated package usage, production imports from test files, and duplicate dependency declarations.
 
+## Architecture Reporting
+
+Architecture reports are review evidence, not the ready-for-review gate. They
+answer "what does the package and Effect surface look like right now?" before a
+package-structure or boundary cleanup. They do not prove runtime behavior,
+durable transition correctness, or Semgrep/ESLint policy compliance. Use
+`pnpm verify` and GitHub CI for those gates.
+
+Spec anchors:
+
+- `firegrid-remediation-hardening.STATIC_QUALITY.3`
+- `firegrid-architecture-boundary.EFFECT_ARTIFACT_GRAPH.1`
+- `firegrid-architecture-boundary.EFFECT_ARTIFACT_GRAPH.3`
+- `firegrid-architecture-boundary.EFFECT_ARTIFACT_GRAPH.5`
+- `firegrid-architecture-boundary.DEPENDENCY_GRAPH.6`
+
+Regenerate the full report set:
+
+```sh
+pnpm run arch:reports
+```
+
+This lightweight alias runs `pnpm run arch:effect-artifacts` followed by
+`pnpm run graph`. Use it before reviewing package-boundary changes,
+durable-core reshaping, public export movement, or SDD updates that cite
+current architecture evidence. Commit regenerated report files only when the
+slice intentionally changes architecture evidence; otherwise use the command as
+a local inspection tool.
+
 Generate Effect artifact architecture evidence:
 
 ```sh
@@ -129,7 +158,25 @@ This uses ts-morph to inventory exported declarations under `packages/*/src` and
 
 The inventory covers exported service tags, Layers, Schemas, tagged errors, Effect-returning exports, service interfaces paired with tags, plain types, constants, and pure helpers. It records package workspace, physical source area, inferred architecture layer, re-export binding, declaration-file imports, and richer type evidence such as generic type parameters, call parameters, return or declared type text, class/interface heritage and members, and variable binding shape. For `Effect.Effect<A, E, R>` and `Layer.Layer<ROut, E, RIn>` exports it uses ts-morph type APIs where possible to record channel text, flattened requirement entries, and resolved requirement declarations. The markdown report includes export-pressure tables and durable-core same-package import layer crossings to guide package-structure work.
 
-The current report is on-demand rather than part of `pnpm verify` because it is an architecture evidence artifact and can churn with harmless export movement. Use it before package-boundary or durable-core restructuring slices.
+The JSON output is the authoritative machine-readable inventory for
+`firegrid-architecture-boundary.EFFECT_ARTIFACT_GRAPH.5`. The markdown output is
+rendered from the same data for humans. Use the JSON when writing independent
+checks or rule reports; use the markdown when reviewing export pressure,
+workspace re-exports, Effect requirement-channel crossings, and durable-core
+layer crossings.
+
+The current report is on-demand rather than part of `pnpm verify` because it is
+an architecture evidence artifact and can churn with harmless export movement.
+It does not decide whether a boundary is acceptable; it shows the exports,
+requirements, and crossings reviewers need to compare against the package SDD.
+
+Effect artifact rule reports:
+
+- Current `main` emits inventory evidence only through
+  `pnpm run arch:effect-artifacts`.
+- Static enforcement and baseline/rule ratchets are owned by the Q5 static
+  quality work. When those rule-report commands are present on `main`, list them
+  here with their generated output paths and whether they are CI gates.
 
 Regenerate dependency-graph evidence:
 
@@ -141,6 +188,16 @@ This uses dependency-cruiser to refresh the overview SVGs, the collapsed
 workspace Mermaid graph, and focused package-internal Mermaid graphs. Graph
 generation excludes tests and build outputs so the diagrams show production
 architecture rather than test reachability.
+
+Outputs:
+
+- `docs/dependency-graph.svg` — broad production workspace graph.
+- `docs/dependency-graph-modules.svg` — module-collapsed production graph.
+- `docs/dependency-graph-archi.svg` — dependency-cruiser architecture view.
+- `docs/dependency-graph.mmd` — collapsed Mermaid graph for quick text review.
+- `docs/dependency-graph-client.mmd` — client package internals.
+- `docs/dependency-graph-runtime.mmd` — runtime package internals.
+- `docs/dependency-graph-substrate.mmd` — substrate package internals.
 
 Focused graph targets:
 
@@ -154,6 +211,23 @@ These write `docs/dependency-graph-client.mmd`,
 `docs/dependency-graph-runtime.mmd`, and
 `docs/dependency-graph-substrate.mmd`. Use them when reviewing package-shape
 work; `pnpm run lint:deps` remains the strict CI dependency-boundary check.
+The graph commands show import reachability and direction, including the
+`firegrid-architecture-boundary.DEPENDENCY_GRAPH.6` app-vs-package boundary. They
+do not distinguish public workspace package entrypoints from direct internal
+subpath imports; use dependency-cruiser rules, package exports, and source
+guards for that stricter interpretation.
+
+Command map:
+
+| Task | Command | Writes | Gate? |
+| --- | --- | --- | --- |
+| Ready-for-review static/test gate | `pnpm verify` | none | Yes, CI authoritative |
+| Strict dependency boundary check | `pnpm run lint:deps` | none | Yes |
+| Full architecture evidence refresh | `pnpm run arch:reports` | effect artifact reports and dependency graphs | No |
+| Effect artifact inventory only | `pnpm run arch:effect-artifacts` | `docs/effect-artifact-inventory.{json,md}` | No |
+| All dependency graphs | `pnpm run graph` | `docs/dependency-graph*` | No |
+| Focused package Mermaid graph | `pnpm run graph:<package>:mermaid` | one focused `.mmd` file | No |
+| Raw dependency-cruiser scan | `pnpm run graph:check` | none | No; prefer `lint:deps` for CI policy |
 
 Run structural duplication-shape checks:
 

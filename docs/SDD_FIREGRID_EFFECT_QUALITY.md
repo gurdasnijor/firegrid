@@ -90,7 +90,9 @@ The current inventory also records:
 - same-package durable-core import layer crossings
 
 The report is on-demand rather than part of `pnpm verify`; it is an
-architecture evidence artifact and can churn with harmless export movement.
+architecture evidence artifact and can churn with harmless export movement. See
+`docs/TOOLING.md` for the architecture reporting command map and output
+ownership notes.
 
 ## Current Inventory Findings
 
