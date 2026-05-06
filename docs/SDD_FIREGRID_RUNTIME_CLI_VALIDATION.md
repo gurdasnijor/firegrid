@@ -386,7 +386,8 @@ Purpose: prove once-only side-effect behavior under competing runtime workers.
 
 Input:
 
-1. A schema-valid started run for a side-effect-shaped operation.
+1. Schema-valid run and completion rows that derive one ready-work item for a
+   side-effect-shaped operation.
 2. Two runtime/operator participants competing for the same work.
 
 Expected result:
@@ -398,10 +399,45 @@ Expected result:
 
 Relevant ACIDs:
 
+- `firegrid-runtime-process.SCENARIOS.1`
+- `firegrid-runtime-process.SCENARIOS.6`
 - `claim-and-operator-authority.CLAIM_BEFORE_INVOKE.1`
 - `claim-and-operator-authority.CLAIM_AUTHORITY.1`
 - `claim-and-operator-authority.TERMINAL_AUTHORITY.1`
 - `launchable-substrate-host.SCENARIOS.4`
+
+Manual CLI input flow:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+durable-stream create firegrid --json
+
+pnpm --silent --filter @firegrid/scenarios run claim-before-side-effect \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+
+durable-stream read firegrid
+```
+
+The claim-before-side-effect emitter derives a `ChargeCard` operation row from
+`Operation.define`, the operation input schema, `OperationEnvelopeSchema`,
+`RunValue`, and `startRun`. It then derives a pending completion, a blocked run,
+and a resolved completion through `createPendingCompletion`, `blockRun`, and
+`resolveCompletion`. For the default input it writes these JSON lines to
+stdout:
+
+```json
+{"type":"durable.run","key":"run-claim-side-effect-cli-1","value":{"runId":"run-claim-side-effect-cli-1","state":"started","data":{"_envelope":"firegrid/operation@1","operation":"ChargeCard","payload":{"sideEffectId":"side-effect-charge-cli-1","target":"card-token-cli-1","amountCents":4200}}},"headers":{"operation":"insert"}}
+{"type":"durable.completion","key":"completion-claim-side-effect-cli-1","value":{"completionId":"completion-claim-side-effect-cli-1","workId":"run-claim-side-effect-cli-1","kind":"externally_resolved_awakeable","state":"pending","data":{"source":"scenario","reason":"ready-for-claim-before-side-effect"}},"headers":{"operation":"insert"}}
+{"type":"durable.run","key":"run-claim-side-effect-cli-1","value":{"runId":"run-claim-side-effect-cli-1","state":"blocked","data":{"_envelope":"firegrid/operation@1","operation":"ChargeCard","payload":{"sideEffectId":"side-effect-charge-cli-1","target":"card-token-cli-1","amountCents":4200}},"blockedOnCompletionId":"completion-claim-side-effect-cli-1"},"headers":{"operation":"upsert"}}
+{"type":"durable.completion","key":"completion-claim-side-effect-cli-1","value":{"completionId":"completion-claim-side-effect-cli-1","workId":"run-claim-side-effect-cli-1","kind":"externally_resolved_awakeable","state":"resolved","data":{"source":"scenario","reason":"ready-for-claim-before-side-effect"},"result":{"sideEffectId":"side-effect-charge-cli-1","target":"card-token-cli-1","amountCents":4200}},"headers":{"operation":"upsert"}}
+```
+
+These rows prove only the CLI-write input side. The runtime receiver side still
+requires two app-owned operator participants to derive the ready work, append
+competing `durable.claim.attempt` rows, invoke the side-effect handler only from
+the winning claim, and terminalize the run once.
 
 ## Implementation Shape
 

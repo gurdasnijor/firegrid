@@ -26,6 +26,14 @@ components:
       7: Slice 6 reads retained claim-attempt rows in append order for claim winner decisions.
       8: Same-owner duplicate attempts do not authorize a second handler invocation.
 
+  CLAIM_BEFORE_INVOKE:
+    requirements:
+      1: Side-effect handlers are invoked only after the runtime or operator participant observes its durable claim attempt as the winning claim.
+
+  TERMINAL_AUTHORITY:
+    requirements:
+      1: Only the winning claim owner may terminalize claimed work; losing participants leave the durable run terminal state unchanged.
+
   OPERATOR_INVOCATION:
     requirements:
       1: An operator program consumes derived ready work and does not author ready state as truth.

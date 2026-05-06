@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "claim-before-side-effect": "tsx claim-before-side-effect.ts",
     "echo": "tsx echo.ts",
     "scheduled-work": "tsx scheduled-work.ts",
     "inspect": "tsx inspect.ts",
