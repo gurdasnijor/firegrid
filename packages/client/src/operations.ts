@@ -6,6 +6,10 @@ import {
   OPERATION_ENVELOPE_TAG,
   decodeAtBoundary,
   encodeAtBoundary,
+  FiregridSpanAttribute,
+  FiregridSpanName,
+  firegridErrorTag,
+  firegridSpanAttributes,
   type OperationEnvelope,
 } from "@firegrid/substrate/descriptors"
 import { IdGen, IdGenLive } from "@firegrid/substrate/id-gen"
@@ -268,6 +272,23 @@ const buildFiregridClientService = (
           ),
         ),
       ),
+      Effect.tap((handle) =>
+        Effect.annotateCurrentSpan({
+          [FiregridSpanAttribute.operationHandleId]: handle.id,
+          [FiregridSpanAttribute.runId]: handle.id,
+        }),
+      ),
+      Effect.tapError((error) =>
+        Effect.annotateCurrentSpan({
+          [FiregridSpanAttribute.errorTag]: firegridErrorTag(error),
+        }),
+      ),
+      Effect.withSpan(FiregridSpanName.clientOperationSend, {
+        kind: "client",
+        attributes: firegridSpanAttributes({
+          [FiregridSpanAttribute.operationDescriptor]: op.name,
+        }),
+      }),
     )
 
   const result: FiregridClientService["result"] = <Op extends Operation.Any>(
@@ -284,36 +305,80 @@ const buildFiregridClientService = (
       ResultError | Operation.Error<Op>
     > => {
       if (run === undefined) {
-        return Effect.fail(new OperationNotFound({ handleId: handle.id }))
+        return Effect.annotateCurrentSpan({
+          [FiregridSpanAttribute.status]: "not_found",
+        }).pipe(
+          Effect.zipRight(
+            Effect.fail(new OperationNotFound({ handleId: handle.id })),
+          ),
+        )
       }
       if (run.state === "completed") {
-        return decodeOutput(op, run.result)
+        return decodeOutput(op, run.result).pipe(
+          Effect.tap(() =>
+            Effect.annotateCurrentSpan({
+              [FiregridSpanAttribute.status]: "completed",
+            }),
+          ),
+        )
       }
       if (run.state === "failed") {
         return decodeError(op, run.error).pipe(
+          Effect.tap(() =>
+            Effect.annotateCurrentSpan({
+              [FiregridSpanAttribute.status]: "failed",
+            }),
+          ),
           Effect.flatMap((decoded) =>
             Effect.fail<Operation.Error<Op>>(decoded),
           ),
         )
       }
       if (run.state === "cancelled") {
-        return Effect.fail(
-          new OperationCancelled({
-            handleId: handle.id,
-            ...(run.terminalReason !== undefined
-              ? { terminalReason: run.terminalReason }
-              : {}),
-          }),
+        return Effect.annotateCurrentSpan({
+          [FiregridSpanAttribute.status]: "cancelled",
+        }).pipe(
+          Effect.zipRight(
+            Effect.fail(
+              new OperationCancelled({
+                handleId: handle.id,
+                ...(run.terminalReason !== undefined
+                  ? { terminalReason: run.terminalReason }
+                  : {}),
+              }),
+            ),
+          ),
         )
       }
       // until(isTerminalRun) excludes started/blocked; this branch
       // is structurally unreachable. Surface as OperationNotFound
       // rather than die so the public error channel stays clean.
-      return Effect.fail(new OperationNotFound({ handleId: handle.id }))
+      return Effect.annotateCurrentSpan({
+        [FiregridSpanAttribute.status]: run.state,
+      }).pipe(
+        Effect.zipRight(
+          Effect.fail(new OperationNotFound({ handleId: handle.id })),
+        ),
+      )
     }
     return projection
       .until(runQuery(handle.id), isTerminalRun)
-      .pipe(Effect.flatMap(decideTerminal))
+      .pipe(
+        Effect.flatMap(decideTerminal),
+        Effect.tapError((error) =>
+          Effect.annotateCurrentSpan({
+            [FiregridSpanAttribute.errorTag]: firegridErrorTag(error),
+          }),
+        ),
+        Effect.withSpan(FiregridSpanName.clientOperationResult, {
+          kind: "client",
+          attributes: firegridSpanAttributes({
+            [FiregridSpanAttribute.operationDescriptor]: op.name,
+            [FiregridSpanAttribute.operationHandleId]: handle.id,
+            [FiregridSpanAttribute.runId]: handle.id,
+          }),
+        }),
+      )
   }
 
   const call: FiregridClientService["call"] = (op, input) =>
@@ -322,7 +387,30 @@ const buildFiregridClientService = (
   const observe: FiregridClientService["observe"] = (op, handle) =>
     projection
       .stream(runQuery(handle.id))
-      .pipe(Stream.mapEffect((run) => mapRunToState(op, run)))
+      .pipe(
+        Stream.mapEffect((run) =>
+          mapRunToState(op, run).pipe(
+            Effect.tap((state) =>
+              Effect.annotateCurrentSpan({
+                [FiregridSpanAttribute.status]: state._tag,
+              }),
+            ),
+            Effect.tapError((error) =>
+              Effect.annotateCurrentSpan({
+                [FiregridSpanAttribute.errorTag]: firegridErrorTag(error),
+              }),
+            ),
+          ),
+        ),
+        Stream.withSpan(FiregridSpanName.clientOperationObserve, {
+          kind: "client",
+          attributes: firegridSpanAttributes({
+            [FiregridSpanAttribute.operationDescriptor]: op.name,
+            [FiregridSpanAttribute.operationHandleId]: handle.id,
+            [FiregridSpanAttribute.runId]: handle.id,
+          }),
+        }),
+      )
 
   return { ...eventStreams, send, result, call, observe }
 }
