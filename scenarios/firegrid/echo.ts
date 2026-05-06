@@ -11,7 +11,7 @@ import {
 import { Effect, Schema } from "effect"
 import { fileURLToPath } from "node:url"
 
-const EchoOperation = Operation.define({
+export const EchoOperation = Operation.define({
   name: "Echo",
   input: Schema.Struct({
     message: Schema.String,

@@ -139,6 +139,49 @@ append a terminal `durable.run` upsert whose value includes:
 }
 ```
 
+Manual receiver-side flow:
+
+Terminal 1:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+export DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid
+durable-stream create firegrid --json
+
+pnpm --silent --filter @firegrid/scenarios run echo \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+```
+
+Terminal 2:
+
+```sh
+export DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid
+pnpm --filter @firegrid/scenarios run echo-receiver -- \
+  --stream-url "$DURABLE_STREAMS_URL"
+```
+
+Terminal 1:
+
+```sh
+pnpm --silent --filter @firegrid/scenarios run inspect -- \
+  --stream-url "$DURABLE_STREAMS_URL"
+```
+
+The Echo receiver is an app-owned TypeScript entrypoint under
+`scenarios/firegrid/`. It imports the same `EchoOperation` descriptor as the
+emitter, installs `Firegrid.handler(EchoOperation, ...)`, and starts the graph
+with `run({ connection, runtime })`. The receiver process is long-running; stop
+it after the inspection report shows `run-echo-cli-1` as `completed` with:
+
+```json
+{
+  "message": "hello firegrid",
+  "length": 14
+}
+```
+
 Relevant ACIDs:
 
 - `firegrid-operation-messaging.OPERATIONS.1`
@@ -149,8 +192,19 @@ Relevant ACIDs:
 - `firegrid-operation-messaging.RUNTIME_HANDLERS.2`
 - `firegrid-operation-messaging.RUNTIME_HANDLERS.3`
 - `firegrid-operation-messaging.RUNTIME_HANDLERS.4`
+- `firegrid-runtime-process.RUNTIME_RUN_API.1`
+- `firegrid-runtime-process.RUNTIME_RUN_API.2`
+- `firegrid-runtime-process.RUNTIME_RUN_API.3`
+- `firegrid-runtime-process.RUNTIME_RUN_API.4`
+- `firegrid-runtime-process.RUNTIME_RUN_API.5`
+- `firegrid-runtime-process.RUNTIME_RUN_API.6`
+- `firegrid-runtime-process.RUNTIME_RUN_API.7`
+- `firegrid-runtime-process.RUNTIME_RUN_API.8`
+- `firegrid-runtime-process.RUNTIME_RUN_API.9`
+- `firegrid-runtime-process.READY_WORK_OPERATOR.7`
 - `firegrid-runtime-process.SCENARIOS.1`
 - `firegrid-runtime-process.SCENARIOS.2`
+- `firegrid-runtime-process.SCENARIOS.7`
 
 ### Scenario 2: waitFor Projection Match
 
