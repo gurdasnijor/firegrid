@@ -1,5 +1,13 @@
+import { readFileSync } from "node:fs"
+import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as ClientSurface from "../index.ts"
+
+const here = dirname(fileURLToPath(import.meta.url))
+const clientRoot = resolve(here, "..")
+const readClient = (path: string) =>
+  readFileSync(resolve(clientRoot, path), "utf8")
 
 // firegrid-remediation-hardening.PUBLIC_SURFACES.1
 // firegrid-remediation-hardening.PUBLIC_SURFACES.2
@@ -104,5 +112,26 @@ describe("launchable-substrate-host.CLIENT_SURFACE.13 — v1 client root does no
     const surface = Object.keys(ClientSurface)
     const offenders = banned.filter((b) => surface.includes(b))
     expect(offenders).toEqual([])
+  })
+})
+
+describe("firegrid-client-api.AUTHORITY_BOUNDARY.1, .2, .4, .5 — client source stays outside runtime and kernel authority", () => {
+  it("the production client root does not import runtime, kernel, work producer, or internal work facade modules", () => {
+    const root = readClient("index.ts")
+    const operations = readClient("operations.ts")
+    const service = readClient("service.ts")
+    const eventStreams = readClient("event-streams.ts")
+    const combined = `${root}\n${operations}\n${service}\n${eventStreams}`
+
+    expect(combined).not.toContain("@firegrid/runtime")
+    expect(combined).not.toContain("@firegrid/substrate/kernel")
+    expect(combined).not.toContain("SubstrateClient")
+    expect(combined).not.toContain("WorkProducer")
+    expect(combined).not.toContain("SubstrateProducer")
+    expect(combined).not.toContain("RunWait")
+    expect(combined).not.toContain("Choreography")
+    expect(combined).not.toContain("DurableWaitsLive")
+    expect(combined).not.toContain("./internal/work-client")
+    expect(combined).not.toContain("./internal/work-facet")
   })
 })

@@ -80,6 +80,14 @@ export class EventStreamClient extends Context.Tag("firegrid/EventStreamClient")
   EventStreamClientService
 >() {}
 
+export const buildDurableStreamTransport = (
+  cfg: EventStreamClientConfig,
+): DurableStream =>
+  new DurableStream({
+    url: cfg.streamUrl,
+    contentType: cfg.contentType ?? "application/json",
+  })
+
 const encodeEvent = <S extends EventStream.Any>(
   stream: S,
   event: EventStream.Event<S>,
@@ -109,10 +117,7 @@ export const buildEventStreamService = (
   cfg: EventStreamClientConfig,
   idGen: IdGenService,
 ): EventStreamClientService => {
-  const durable = new DurableStream({
-    url: cfg.streamUrl,
-    contentType: cfg.contentType ?? "application/json",
-  })
+  const durable = buildDurableStreamTransport(cfg)
 
   const emit: EventStreamClientService["emit"] = (stream, event) =>
     Effect.gen(function* () {
