@@ -247,7 +247,38 @@ Relevant ACIDs:
 - `durable-waits-and-scheduling.SCHEDULE_WORK.6`
 - `durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.1`
 - `durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.4`
+- `firegrid-runtime-process.SCENARIOS.1`
+- `firegrid-runtime-process.SCENARIOS.2`
+- `firegrid-runtime-process.SCENARIOS.4`
 - `launchable-substrate-host.SCENARIOS.2`
+
+Manual CLI input flow:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+durable-stream create firegrid --json
+
+pnpm --silent --filter @firegrid/scenarios run scheduled-work \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+
+durable-stream read firegrid
+```
+
+The scheduled-work emitter derives the pending completion row from
+`ScheduledWorkCompletionData` and `createPendingCompletion`. It writes a
+substrate-generic `scheduled_work` completion because scenario emission proves
+the durable stream input side; a higher-level app may map `scheduleAt` onto the
+same row shape. For the default input it writes this JSON line to stdout:
+
+```json
+{"type":"durable.completion","key":"completion-scheduled-work-cli-1","value":{"completionId":"completion-scheduled-work-cli-1","workId":"run-scheduled-work-cli-1","kind":"scheduled_work","state":"pending","data":{"whenMs":1893456000000,"input":{"reminderId":"reminder-cli-1","message":"follow up from scheduled work"}}},"headers":{"operation":"insert"}}
+```
+
+This row proves only the CLI-write input side. The runtime receiver side still
+requires a runtime graph that installs the scheduled-work subscriber and any
+ready-work or operator loop needed by the application scenario.
 
 ### Scenario 4: Projection Surface / Read Model Inspection
 
