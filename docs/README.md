@@ -25,6 +25,7 @@ Read these first.
 | Runtime integration lab and adapter validation | `docs/SDD_DURABLE_AGENT_RUNTIME_LAB.md` | `features/durable-agent-runtime-lab/*.feature.yaml` |
 | Runtime CLI scenario validation (next-wave dispatch plan F1A–F1E) | `docs/SDD_FIREGRID_RUNTIME_CLI_VALIDATION.md` | `firegrid-operation-messaging`, `firegrid-runtime-process`, `launchable-substrate-host`, `durable-waits-and-scheduling`, `firegrid-event-streams` |
 | Typed runtime `run(...)` entrypoint for app-owned runtime graphs | `docs/SDD_FIREGRID_TYPED_RUNTIME_RUN_API.md` | `firegrid-runtime-process`, `firegrid-operation-messaging`, `durable-subscribers`, `claim-and-operator-authority` |
+| Runtime composition ergonomics for explicit app-owned Effect Layer graphs | `docs/SDD_FIREGRID_RUNTIME_COMPOSITION_ERGONOMICS.md` | `firegrid-runtime-process` |
 | Tooling, verification, and architecture reporting commands | `docs/TOOLING.md` | n/a |
 
 ## Historical / Background

@@ -50,6 +50,15 @@ components:
       10: Runtime tests assert positive API behavior by executing Effects or checking TypeScript contracts rather than by grepping source strings; source-grep tests are reserved for explicitly tagged negative architectural constraints.
       11: App-owned adapter resources provided as Layers to a runtime graph share the `run(...)` Effect scope, so interrupting the runtime finalizes those resources without Firegrid-specific process launchers.
 
+  RUNTIME_COMPOSITION:
+    requirements:
+      1: Runtime composition helpers reduce repetitive app-owned Layer wiring while still returning ordinary Effect Layers accepted by `run({ connection, runtime })`.
+      2: Runtime composition helpers require callers to list handlers, stock subscribers, EventPlane layers, RunWait layers, trigger matcher layers, and app adapter layers explicitly rather than installing subscribers or providers implicitly.
+      3: Runtime composition helpers do not import, expose, or require `@firegrid/client`, `@firegrid/substrate/kernel`, Choreography, or `DurableWaitsLive`.
+      4: Runtime composition helpers remain product-neutral and do not encode Fireline, Firepixel, ACP, MCP, tool, provider, permission, session, or transport semantics.
+      5: Runtime composition helpers preserve app-owned adapter Layer lifetimes in the same `run(...)` Effect scope and preserve unprovided app requirements in the composed Layer type.
+      6: Runtime composition helpers organize multiple `Firegrid.handler(...)` Layers, explicit stock subscriber Layers, `EventPlane.layer(...)` values, `RunWait.layer(...)`, `triggerMatchersLayer(...)`, and app adapter Layers without creating a Firegrid-specific graph DSL, runtime module loader, or hidden Durable Streams launcher.
+
   READY_WORK_OPERATOR:
     requirements:
       1: The runtime owns a scoped operator loop that watches the substrate `ReadyWorkProjection` and resumes blocked runs whose pending completion has resolved.
