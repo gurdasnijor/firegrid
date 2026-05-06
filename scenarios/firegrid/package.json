@@ -14,7 +14,9 @@
     "inspect": "tsx inspect.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --allowImportingTsExtensions --skipLibCheck *.ts",
-    "wait-for": "tsx wait-for.ts"
+    "wait-for": "tsx wait-for.ts",
+    "wait-for-receiver": "tsx wait-for-receiver.ts",
+    "wait-for-receiver:self-test": "tsx wait-for-receiver.ts --self-test"
   },
   "dependencies": {
     "@effect/platform-node": "^0.106.0",
