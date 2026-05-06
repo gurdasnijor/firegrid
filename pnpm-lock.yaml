@@ -180,6 +180,12 @@ importers:
 
   scenarios/firegrid:
     dependencies:
+      '@effect/platform-node':
+        specifier: ^0.106.0
+        version: 0.106.0(@effect/cluster@0.58.2(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@firegrid/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@firegrid/substrate':
         specifier: workspace:*
         version: link:../../packages/substrate
@@ -187,12 +193,21 @@ importers:
         specifier: ^3.18.0
         version: 3.21.2
     devDependencies:
+      '@durable-streams/client':
+        specifier: ^0.2.3
+        version: 0.2.3
+      '@durable-streams/server':
+        specifier: ^0.3.1
+        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17
       tsx:
         specifier: ^4.20.4
         version: 4.21.0
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)
 
 packages:
 

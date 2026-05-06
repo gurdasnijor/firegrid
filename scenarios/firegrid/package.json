@@ -6,17 +6,24 @@
   "scripts": {
     "claim-before-side-effect": "tsx claim-before-side-effect.ts",
     "echo": "tsx echo.ts",
+    "echo-receiver": "tsx echo-receiver.ts",
     "scheduled-work": "tsx scheduled-work.ts",
     "inspect": "tsx inspect.ts",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --allowImportingTsExtensions --skipLibCheck *.ts",
     "wait-for": "tsx wait-for.ts"
   },
   "dependencies": {
+    "@effect/platform-node": "^0.106.0",
+    "@firegrid/runtime": "workspace:*",
     "@firegrid/substrate": "workspace:*",
     "effect": "^3.18.0"
   },
   "devDependencies": {
+    "@durable-streams/client": "^0.2.3",
+    "@durable-streams/server": "^0.3.1",
     "@types/node": "^22.10.0",
-    "tsx": "^4.20.4"
+    "tsx": "^4.20.4",
+    "vitest": "^3.2.0"
   }
 }
