@@ -94,18 +94,29 @@ describe("firegrid-package-migration.PACKAGE_NAMES — active package names are 
 // firegrid-package-migration.PACKAGE_DISTRIBUTION.2
 // firegrid-package-migration.PACKAGE_DISTRIBUTION.3
 // firegrid-package-migration.PACKAGE_DISTRIBUTION.5
+// firegrid-package-migration.PACKAGE_DISTRIBUTION.6
+// firegrid-package-migration.PACKAGE_DISTRIBUTION.7
 describe("firegrid-package-migration.PACKAGE_DISTRIBUTION — client package artifacts are external-consumer shaped", () => {
-  it("publishes built client and substrate artifact entrypoints instead of source-only workspace paths", () => {
+  it("publishes built client, runtime, and substrate artifact entrypoints instead of source-only workspace paths", () => {
     const clientPackage = readJson("packages/client/package.json")
+    const runtimePackage = readJson("packages/runtime/package.json")
     const substratePackage = readJson("packages/substrate/package.json")
 
     expect(clientPackage.private).toBeUndefined()
+    expect(runtimePackage.private).toBeUndefined()
     expect(substratePackage.private).toBeUndefined()
     expect(clientPackage.main).toBe("./dist/index.js")
     expect(clientPackage.types).toBe("./dist/index.d.ts")
+    expect(runtimePackage.main).toBe("./dist/index.js")
+    expect(runtimePackage.types).toBe("./dist/index.d.ts")
     expect(substratePackage.main).toBe("./dist/index.js")
     expect(substratePackage.types).toBe("./dist/index.d.ts")
     expect(clientPackage.files).toEqual(["dist", "README.md"])
+    expect(runtimePackage.files).toEqual(["dist", "README.md"])
+    expect(runtimePackage.bin).toEqual({
+      firegrid: "./dist/bin/firegrid.js",
+      fg: "./dist/bin/firegrid.js",
+    })
     expect(substratePackage.files).toEqual(["dist"])
   })
 })

@@ -78,6 +78,21 @@ Anchor requirements:
 - `firegrid-package-migration.PACKAGE_DISTRIBUTION.4`
 - `firegrid-package-migration.PACKAGE_DISTRIBUTION.5`
 
+`@firegrid/runtime` follows the same package-consumption contract. Its package
+artifact exposes the public runtime root from built `dist` JavaScript and
+declaration files, plus a built `firegrid` binary wrapper. Runtime external
+consumption is validated by packing runtime and required substrate artifacts
+into a temporary project and type-checking public root usage such as `run`,
+`Firegrid.handler`, `Firegrid.composeRuntime`, and explicit subscriber/provider
+Layer composition. The smoke must not create a runtime-to-client package edge
+or treat substrate kernel imports as app-facing.
+
+Additional runtime package anchors:
+
+- `firegrid-package-migration.PACKAGE_DISTRIBUTION.6`
+- `firegrid-package-migration.PACKAGE_DISTRIBUTION.7`
+- `firegrid-package-migration.PACKAGE_DISTRIBUTION.8`
+
 Operation and EventStream descriptors are shared contract values. They contain
 stable names and Effect Schema contracts, not runtime handlers or registration
 side effects:

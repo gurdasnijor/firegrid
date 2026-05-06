@@ -3,6 +3,12 @@ import { defineConfig } from "vitest/config"
 
 const sourceAlias = [
   {
+    find: "@firegrid/runtime",
+    replacement: fileURLToPath(
+      new URL("../../packages/runtime/src/index.ts", import.meta.url),
+    ),
+  },
+  {
     find: "@firegrid/substrate/descriptors",
     replacement: fileURLToPath(
       new URL("../../packages/substrate/src/descriptors/index.ts", import.meta.url),

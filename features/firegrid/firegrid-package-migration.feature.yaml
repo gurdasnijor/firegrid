@@ -33,6 +33,9 @@ components:
       3: The `@firegrid/client` package artifact includes the root client surface and browser-safe `event-streams` subpath while preserving the client authority boundary.
       4: External package consumption is proven in CI by packing local artifacts and type-checking a temporary consumer project without publishing to npm.
       5: The `@firegrid/substrate` package artifact supports the public subpaths needed by `@firegrid/client` without broadening the curated root or making kernel imports app-facing.
+      6: The `@firegrid/runtime` package artifact is consumable from an external project without `workspace:*` dependencies or monorepo path assumptions.
+      7: The `@firegrid/runtime` package artifact includes the public runtime root and executable binary while preserving runtime-to-client and kernel authority boundaries.
+      8: External runtime package consumption is proven in CI by packing runtime and required substrate artifacts and type-checking a temporary consumer project without publishing to npm.
 
 constraints:
   REPO_BOUNDARY:
