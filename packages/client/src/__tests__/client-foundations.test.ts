@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
@@ -6,8 +6,92 @@ import * as ClientSurface from "../index.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const clientRoot = resolve(here, "..")
+const packageRoot = resolve(clientRoot, "..")
 const readClient = (path: string) =>
   readFileSync(resolve(clientRoot, path), "utf8")
+
+const importSpecifiers = (source: string): ReadonlyArray<string> =>
+  Array.from(
+    source.matchAll(
+      /(?:import|export)\s+(?:type\s+)?(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']/g,
+    ),
+    (match) => match[1]!,
+  )
+
+const namedSpecifiersFor = (
+  source: string,
+  moduleName: string,
+): ReadonlyArray<string> =>
+  Array.from(
+    source.matchAll(
+      new RegExp(
+        String.raw`(?:import|export)\s+(?:type\s+)?\{([\s\S]*?)\}\s+from\s+["']${moduleName.replaceAll("/", String.raw`\/`)}["']`,
+        "g",
+      ),
+    ),
+    (match) =>
+      match[1]!
+        .split(",")
+        .map((part) => part.trim().replace(/^type\s+/, "").split(/\s+as\s+/u)[0]!)
+        .filter((part) => part.length > 0),
+  ).flat()
+
+const resolveLocalImport = (fromFile: string, specifier: string): string => {
+  const base = resolve(dirname(fromFile), specifier)
+  if (specifier.endsWith(".ts")) return base
+  return `${base}.ts`
+}
+
+const collectLocalGraph = (entry: string): Map<string, string> => {
+  const visited = new Map<string, string>()
+  const pending = [resolve(clientRoot, entry)]
+
+  while (pending.length > 0) {
+    const file = pending.pop()!
+    if (visited.has(file)) continue
+    const source = readFileSync(file, "utf8")
+    visited.set(file, source)
+
+    for (const specifier of importSpecifiers(source)) {
+      if (!specifier.startsWith(".")) continue
+      const next = resolveLocalImport(file, specifier)
+      if (!existsSync(next)) {
+        throw new Error(`Could not resolve ${specifier} from ${file}`)
+      }
+      pending.push(next)
+    }
+  }
+
+  return visited
+}
+
+const relativeFiles = (graph: Map<string, string>): ReadonlyArray<string> =>
+  Array.from(graph.keys(), (file) => file.slice(clientRoot.length + 1)).sort()
+
+const forbiddenExternalModules = [
+  "@firegrid/runtime",
+  "@firegrid/substrate/kernel",
+  "@firegrid/lab",
+  "node:",
+  "fs",
+  "path",
+  "url",
+  "crypto",
+] as const
+
+const forbiddenSubstrateRootImports = [
+  "RunWait",
+  "Choreography",
+  "DurableWaitsLive",
+  "WorkProducer",
+  "SubstrateProducerLive",
+  "WorkClaim",
+  "WorkClaimLive",
+  "CompletionProducer",
+  "CompletionId",
+  "CurrentWorkContext",
+  "currentWorkContextLayer",
+] as const
 
 // firegrid-remediation-hardening.PUBLIC_SURFACES.1
 // firegrid-remediation-hardening.PUBLIC_SURFACES.2
@@ -133,5 +217,81 @@ describe("firegrid-client-api.AUTHORITY_BOUNDARY.1, .2, .4, .5 — client source
     expect(combined).not.toContain("DurableWaitsLive")
     expect(combined).not.toContain("./internal/work-client")
     expect(combined).not.toContain("./internal/work-facet")
+  })
+})
+
+describe("firegrid-client-api.AUTHORITY_BOUNDARY.5 — client production entrypoints stay browser-safe", () => {
+  it("firegrid-client-api.AUTHORITY_BOUNDARY.1 — root graph imports no runtime, kernel, Node, or authority modules", () => {
+    const graph = collectLocalGraph("index.ts")
+    expect(relativeFiles(graph)).toEqual([
+      "event-streams.ts",
+      "index.ts",
+      "operations.ts",
+      "service.ts",
+    ])
+
+    for (const [file, source] of graph) {
+      const specifiers = importSpecifiers(source)
+      const offenders = forbiddenExternalModules.filter((forbidden) =>
+        specifiers.some((specifier) =>
+          forbidden.endsWith(":")
+            ? specifier.startsWith(forbidden)
+            : specifier === forbidden,
+        ),
+      )
+      expect(
+        offenders,
+        `${file} imported forbidden modules: ${offenders.join(", ")}`,
+      ).toEqual([])
+
+      const substrateRootImports = namedSpecifiersFor(
+        source,
+        "@firegrid/substrate",
+      )
+      const authorityImports = forbiddenSubstrateRootImports.filter((name) =>
+        substrateRootImports.includes(name),
+      )
+      expect(
+        authorityImports,
+        `${file} imported client-forbidden substrate authority: ${authorityImports.join(", ")}`,
+      ).toEqual([])
+    }
+  })
+
+  it("firegrid-event-streams.CLIENT_API.4 — event-stream subpath graph cannot reach operations or substrate root", () => {
+    const graph = collectLocalGraph("event-streams-public.ts")
+    expect(relativeFiles(graph)).toEqual([
+      "event-streams-public.ts",
+      "event-streams.ts",
+    ])
+
+    const packageJson = JSON.parse(
+      readFileSync(resolve(packageRoot, "package.json"), "utf8"),
+    ) as { readonly exports: Record<string, string> }
+    expect(packageJson.exports).toEqual({
+      ".": "./src/index.ts",
+      "./event-streams": "./src/event-streams-public.ts",
+    })
+
+    for (const [file, source] of graph) {
+      const specifiers = importSpecifiers(source)
+      expect(
+        specifiers.filter((specifier) => specifier === "@firegrid/substrate"),
+        `${file} imported substrate root from browser-safe EventStream subpath`,
+      ).toEqual([])
+      expect(
+        specifiers.filter((specifier) => specifier === "./operations.ts"),
+        `${file} imported the operation client from browser-safe EventStream subpath`,
+      ).toEqual([])
+      expect(
+        specifiers.filter((specifier) =>
+          forbiddenExternalModules.some((forbidden) =>
+            forbidden.endsWith(":")
+              ? specifier.startsWith(forbidden)
+              : specifier === forbidden,
+          ),
+        ),
+      ).toEqual([])
+    }
   })
 })
