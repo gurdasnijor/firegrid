@@ -19,6 +19,10 @@ class AppDependency extends Context.Tag(
   "firegrid/test/AppDependency",
 )<AppDependency, { readonly value: string }>() {}
 
+class AppAdapter extends Context.Tag(
+  "firegrid/test/AppAdapter",
+)<AppAdapter, { readonly value: string }>() {}
+
 // firegrid-architecture-boundary.DEPENDENCY_GRAPH.2
 // firegrid-architecture-boundary.DEPENDENCY_GRAPH.3
 // firegrid-architecture-boundary.SURFACE_AREA.1
@@ -54,7 +58,7 @@ describe("firegrid-architecture-boundary.SURFACE_AREA — runtime root exposes a
     }
   })
 
-  it("Firegrid namespace exposes subscribers.{timer, scheduledWork, projectionMatch} (transitional), handler, and eventStream", () => {
+  it("Firegrid namespace exposes subscribers.{timer, scheduledWork, projectionMatch} (transitional), handler, eventStream, and composeRuntime", () => {
     expect(RuntimeSurface.Firegrid.subscribers.timer).toBeDefined()
     expect(RuntimeSurface.Firegrid.subscribers.scheduledWork).toBeDefined()
     expect(typeof RuntimeSurface.Firegrid.subscribers.projectionMatch).toBe(
@@ -62,6 +66,7 @@ describe("firegrid-architecture-boundary.SURFACE_AREA — runtime root exposes a
     )
     expect(typeof RuntimeSurface.Firegrid.handler).toBe("function")
     expect(typeof RuntimeSurface.Firegrid.eventStream).toBe("function")
+    expect(typeof RuntimeSurface.Firegrid.composeRuntime).toBe("function")
     const subscriberKeys = Object.keys(
       RuntimeSurface.Firegrid.subscribers,
     )
@@ -69,17 +74,17 @@ describe("firegrid-architecture-boundary.SURFACE_AREA — runtime root exposes a
       new Set(["timer", "scheduledWork", "projectionMatch"]),
     )
     expect(new Set(Object.keys(RuntimeSurface.Firegrid))).toEqual(
-      new Set(["subscribers", "handler", "eventStream"]),
+      new Set(["subscribers", "handler", "eventStream", "composeRuntime"]),
     )
     expect("run" in RuntimeSurface.Firegrid).toBe(false)
   })
 })
 
 describe("firegrid-runtime-process.RUNTIME_RUN_API — typed app-owned runtime entrypoint", () => {
-  it("firegrid-runtime-process.RUNTIME_RUN_API.1 + firegrid-runtime-process.RUNTIME_RUN_API.2 + firegrid-runtime-process.RUNTIME_RUN_API.3 + firegrid-runtime-process.RUNTIME_RUN_API.8 + firegrid-runtime-process.RUNTIME_RUN_API.9 installs the supplied Layer, provides RuntimeContext, preserves app requirements, and finalizes on interruption", async () => {
+  it("firegrid-runtime-process.RUNTIME_RUN_API.1 + firegrid-runtime-process.RUNTIME_RUN_API.2 + firegrid-runtime-process.RUNTIME_RUN_API.3 + firegrid-runtime-process.RUNTIME_RUN_API.8 + firegrid-runtime-process.RUNTIME_RUN_API.9 + firegrid-runtime-process.RUNTIME_COMPOSITION.1 + firegrid-runtime-process.RUNTIME_COMPOSITION.2 + firegrid-runtime-process.RUNTIME_COMPOSITION.5 installs the supplied Layer, composes explicit providers, preserves app requirements, and finalizes on interruption", async () => {
     const observed = await Effect.gen(function* () {
       const installed = yield* Deferred.make<{
-        readonly appValue: string
+        readonly adapterValue: string
         readonly context: RuntimeContextService
       }>()
       const finalized = yield* Deferred.make<void>()
@@ -87,22 +92,40 @@ describe("firegrid-runtime-process.RUNTIME_RUN_API — typed app-owned runtime e
       const runtime = Layer.scopedDiscard(
         Effect.gen(function* () {
           const context = yield* RuntimeSurface.RuntimeContext
-          const app = yield* AppDependency
+          const adapter = yield* AppAdapter
           yield* Deferred.succeed(installed, {
-            appValue: app.value,
+            adapterValue: adapter.value,
             context,
           })
-          yield* Effect.addFinalizer(() =>
-            Deferred.succeed(finalized, undefined).pipe(Effect.asVoid),
-          )
         }),
       )
+
+      const adapterLayer = Layer.scoped(
+        AppAdapter,
+        Effect.acquireRelease(
+          Effect.map(AppDependency, (app) => ({ value: app.value })),
+          () =>
+            Deferred.succeed(finalized, undefined).pipe(Effect.asVoid),
+        ),
+      )
+
+      const composedRuntime = RuntimeSurface.Firegrid.composeRuntime({
+        handlers: [runtime],
+        provide: [adapterLayer],
+      })
+
+      const typedRuntime: Layer.Layer<
+        never,
+        never,
+        RuntimeSurface.RuntimeContext | AppDependency
+      > = composedRuntime
+      expect(typedRuntime).toBe(composedRuntime)
 
       const program = RuntimeSurface.run({
         connection: {
           streamUrl: "http://127.0.0.1:4437/v1/stream/firegrid",
         },
-        runtime,
+        runtime: composedRuntime,
       })
 
       const typed: Effect.Effect<never, unknown, AppDependency> = program
@@ -121,7 +144,7 @@ describe("firegrid-runtime-process.RUNTIME_RUN_API — typed app-owned runtime e
       Effect.runPromise,
     )
 
-    expect(observed.appValue).toBe("from-app")
+    expect(observed.adapterValue).toBe("from-app")
     expect(observed.context.streamUrl).toBe(
       "http://127.0.0.1:4437/v1/stream/firegrid",
     )
@@ -131,12 +154,12 @@ describe("firegrid-runtime-process.RUNTIME_RUN_API — typed app-owned runtime e
     expect(observed.context.processId).toMatch(/^firegrid:/)
   })
 
-  it("firegrid-runtime-process.RUNTIME_RUN_API.6 keeps runtime defaults explicit on the public surface", () => {
+  it("firegrid-runtime-process.RUNTIME_RUN_API.6 + firegrid-runtime-process.RUNTIME_COMPOSITION.2 keeps runtime defaults explicit on the public surface", () => {
     expect("defaults" in RuntimeSurface.Firegrid).toBe(false)
     expect("run" in RuntimeSurface.Firegrid).toBe(false)
   })
 
-  it("firegrid-runtime-process.RUNTIME_RUN_API.4 + firegrid-runtime-process.RUNTIME_RUN_API.5 + firegrid-runtime-process.RUNTIME_RUN_API.10 — architectural constraint keeps the binary graph-free", () => {
+  it("firegrid-runtime-process.RUNTIME_RUN_API.4 + firegrid-runtime-process.RUNTIME_RUN_API.5 + firegrid-runtime-process.RUNTIME_RUN_API.10 + firegrid-runtime-process.RUNTIME_COMPOSITION.3 + firegrid-runtime-process.RUNTIME_COMPOSITION.6 — architectural constraint keeps the binary graph-free", () => {
     // firegrid-runtime-process.RUNTIME_RUN_API.10
     // Architectural-constraint source check: attached-mode behavior is
     // covered in attached.test.ts; this grep is retained only to assert
@@ -149,6 +172,9 @@ describe("firegrid-runtime-process.RUNTIME_RUN_API — typed app-owned runtime e
     expect(source).not.toContain("DurableStream.create")
     expect(source).not.toContain("child_process")
     expect(source).not.toContain("firegrid dev")
+    expect(source).not.toContain("@firegrid/substrate/kernel")
+    expect(source).not.toContain("Choreography")
+    expect(source).not.toContain("DurableWaitsLive")
   })
 })
 

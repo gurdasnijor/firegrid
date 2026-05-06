@@ -77,7 +77,7 @@ describe("firegrid-event-streams.RUNTIME_API — Firegrid.eventStream public sur
   it("Firegrid.eventStream is a function and lives next to handler / subscribers", () => {
     expect(typeof Firegrid.eventStream).toBe("function")
     expect(new Set(Object.keys(Firegrid))).toEqual(
-      new Set(["subscribers", "handler", "eventStream"]),
+      new Set(["subscribers", "handler", "eventStream", "composeRuntime"]),
     )
   })
 
