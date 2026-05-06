@@ -117,6 +117,6 @@ describe("firegrid-package-migration.PACKAGE_DISTRIBUTION — client package art
       firegrid: "./dist/bin/firegrid.js",
       fg: "./dist/bin/firegrid.js",
     })
-    expect(substratePackage.files).toEqual(["dist"])
+    expect(substratePackage.files).toEqual(["dist", "README.md"])
   })
 })
