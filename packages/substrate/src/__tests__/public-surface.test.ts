@@ -75,7 +75,7 @@ describe("firegrid-remediation-hardening.PUBLIC_SURFACES — substrate root is c
     }
   })
 
-  it("run-wait-primitives.RUN_WAIT_API.1, run-wait-primitives.BOUNDARY.2, run-wait-primitives.BOUNDARY.3 — RunWait exposes only app-facing primitive methods and a Layer constructor", () => {
+  it("run-wait-primitives.RUN_WAIT_API.1, run-wait-primitives.BOUNDARY.2, run-wait-primitives.BOUNDARY.3, run-wait-primitives.BOUNDARY.5 — RunWait exposes only app-facing primitive methods and a Layer constructor", () => {
     expect(typeof SubstrateRoot.RunWait.layer).toBe("function")
     const methodNames = Object.keys(
       SubstrateRoot.RunWait.of({

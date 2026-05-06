@@ -4,10 +4,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   RunWait,
   OwnerId,
-  ProjectionMatchTrigger,
   WorkId,
   currentWorkContextLayer,
   triggerMatchersLayer,
+  type ProjectionMatchTrigger,
   type TriggerMatcher,
 } from "../index.ts"
 import {
@@ -474,13 +474,14 @@ describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt creates a schedu
 
 // run-wait-primitives.RUN_WAIT_API.4
 // run-wait-primitives.RUN_WAIT_API.6
+// run-wait-primitives.BOUNDARY.4
 // RunWait.until is fire-and-forget and pulls only DurableWaits at layer
 // construction time;
 // it does NOT depend on CurrentWorkContext or TriggerMatchers. A host
 // configuring scheduleAt-only usage should not need to install fake
 // context/matcher layers.
 describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt runs without CurrentWorkContext and without TriggerMatchers", () => {
-  it("RunWait.layer alone is sufficient to run RunWait.until; no CurrentWorkContext / TriggerMatchers layers are required", async () => {
+  it("run-wait-primitives.BOUNDARY.4 — RunWait.layer alone is sufficient to run RunWait.until; no CurrentWorkContext / TriggerMatchers layers are required", async () => {
     const url = await createSubstrateStream("wait-schedule-no-ctx")
     const at = Date.now() + 60_000
 
