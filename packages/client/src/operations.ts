@@ -1,4 +1,5 @@
 import {
+  appendChange,
   EventStream,
   Operation,
   OperationHandle,
@@ -8,11 +9,17 @@ import {
   type OperationEnvelope,
 } from "@firegrid/substrate/descriptors"
 import { IdGen, IdGenLive } from "@firegrid/substrate/id-gen"
+/* eslint-disable @effect/no-import-from-barrel-package -- Projection is public only from the curated substrate root; kernel imports stay banned. */
 import {
+  Projection,
+  ProjectionLive,
   type ProjectionReadError,
   type ProjectionWaitTimeout,
-  type RunValue,
-} from "@firegrid/substrate/kernel"
+  type ProjectionQuery,
+} from "@firegrid/substrate"
+/* eslint-enable @effect/no-import-from-barrel-package */
+import type { DurableStream } from "@durable-streams/client"
+import type { StateEvent } from "@durable-streams/state"
 import {
   Data,
   Effect,
@@ -21,12 +28,7 @@ import {
   type ParseResult,
 } from "effect"
 import {
-  SubstrateClient,
-  SubstrateClientLive,
-  type SubstrateClientConfig,
-  type SubstrateClientService,
-} from "./internal/work-client.ts"
-import {
+  buildDurableStreamTransport,
   buildEventStreamService,
 } from "./event-streams.ts"
 import {
@@ -47,11 +49,20 @@ import {
 // firegrid-event-streams.CLIENT_API.3
 // firegrid-event-streams.CLIENT_API.4
 //
-// FiregridClient is the typed app-facing client. It is a thin facade
-// over SubstrateClient: send maps to client.work.declare,
-// result/observe map to client.work.observe. Operation
-// input/output/error pass through the descriptor's Schema, so the
-// caller sees domain types end-to-end.
+// firegrid-client-api.CLIENT_SURFACE.1
+// firegrid-client-api.CLIENT_SURFACE.2
+// firegrid-client-api.CLIENT_SURFACE.3
+// firegrid-client-api.CLIENT_SURFACE.4
+// firegrid-client-api.CLIENT_SURFACE.5
+// firegrid-client-api.AUTHORITY_BOUNDARY.1
+// firegrid-client-api.AUTHORITY_BOUNDARY.2
+// firegrid-client-api.AUTHORITY_BOUNDARY.3
+//
+// FiregridClient is the typed app-facing client. It appends operation
+// intent and observes durable outcomes; runtime participants and
+// substrate authority own handler execution, claims, completions, and
+// terminal authorship. Operation input/output/error pass through the
+// descriptor's Schema so the caller sees domain types end-to-end.
 
 // Substrate runs carry caller input on `data`. To dispatch by
 // Operation.name in runtime handlers, send wraps the encoded input
@@ -94,7 +105,22 @@ export class OperationNotFound extends Data.TaggedError(
   readonly handleId: string
 }> {}
 
-export type SendError = OperationEncodeError
+export interface OperationAppendError {
+  readonly _tag: "firegrid/OperationAppendError"
+  readonly operation: string
+  readonly cause: unknown
+}
+
+const operationAppendError = (
+  operation: string,
+  cause: unknown,
+): OperationAppendError => ({
+  _tag: "firegrid/OperationAppendError",
+  operation,
+  cause,
+})
+
+export type SendError = OperationEncodeError | OperationAppendError
 
 export type ResultError =
   | OperationDecodeError
@@ -113,7 +139,39 @@ export {
 export type { EmitError, EventsError } from "./event-streams.ts"
 
 // ────────────────────────────────────────────────────────────────
-const isTerminalRun = (run: RunValue | undefined): boolean =>
+type OperationRun = {
+  readonly runId: string
+  readonly state: "started" | "blocked" | "completed" | "failed" | "cancelled"
+  readonly result?: unknown
+  readonly error?: unknown
+  readonly terminalReason?: unknown
+}
+
+const runQuery = (
+  handleId: string,
+): ProjectionQuery<OperationRun | undefined> => ({
+  label: `firegrid.client.operation:${handleId}`,
+  evaluate: (snap) =>
+    Effect.succeed(snap.runs.get(handleId)),
+})
+
+const startedRunChange = (
+  runId: string,
+  data: OperationEnvelope,
+): StateEvent => ({
+  type: "durable.run",
+  key: runId,
+  value: {
+    runId,
+    state: "started",
+    data,
+  },
+  headers: {
+    operation: "insert",
+  },
+})
+
+const isTerminalRun = (run: OperationRun | undefined): boolean =>
   run !== undefined &&
   (run.state === "completed" ||
     run.state === "failed" ||
@@ -127,7 +185,7 @@ const isTerminalRun = (run: RunValue | undefined): boolean =>
 export { EventStream, Operation, OperationHandle }
 
 // ────────────────────────────────────────────────────────────────
-// Live wiring (composes over SubstrateClient)
+// Live wiring
 
 const decodeOutput = <Op extends Operation.Any>(
   op: Op,
@@ -159,7 +217,7 @@ const decodeError = <Op extends Operation.Any>(
 
 const mapRunToState = <Op extends Operation.Any>(
   op: Op,
-  run: RunValue | undefined,
+  run: OperationRun | undefined,
 ): Effect.Effect<OperationState<Op>, OperationDecodeError> => {
   if (run === undefined || run.state === "started" || run.state === "blocked") {
     return Effect.succeed({ _tag: "Pending" } as const)
@@ -185,14 +243,10 @@ const mapRunToState = <Op extends Operation.Any>(
   })
 }
 
-// firegrid-remediation-hardening.EFFECT_CONSISTENCY.1
-// FiregridClientService is built against an already-resolved
-// `SubstrateClient` service rather than rebuilding `SubstrateClientLive`
-// per call. That preserves Layer memoization: one StreamDB / projection
-// pair lives for the lifetime of the FiregridClient layer instead of
-// being acquired and released on every send/result/call/observe.
 const buildFiregridClientService = (
-  client: SubstrateClientService,
+  projection: Projection["Type"],
+  durable: DurableStream,
+  idGen: IdGen["Type"],
   eventStreams: ReturnType<typeof buildEventStreamService>,
 ): FiregridClientService => {
   const send: FiregridClientService["send"] = (op, input) =>
@@ -202,11 +256,17 @@ const buildFiregridClientService = (
         new OperationEncodeError({ operation: op.name, cause }),
     )(input).pipe(
       Effect.flatMap((encoded) =>
-        client.work
-          .declare({ input: wrap(op.name, encoded) })
-          .pipe(
-            Effect.map(({ workId }) => OperationHandle.make(op, workId)),
+        idGen.nextId.pipe(
+          Effect.flatMap((handleId) =>
+            appendChange(
+              durable,
+              startedRunChange(handleId, wrap(op.name, encoded)),
+              (cause) => operationAppendError(op.name, cause),
+            ).pipe(
+              Effect.as(OperationHandle.make(op, handleId)),
+            ),
           ),
+        ),
       ),
     )
 
@@ -218,7 +278,7 @@ const buildFiregridClientService = (
     ResultError | Operation.Error<Op>
   > => {
     const decideTerminal = (
-      run: RunValue | undefined,
+      run: OperationRun | undefined,
     ): Effect.Effect<
       Operation.Output<Op>,
       ResultError | Operation.Error<Op>
@@ -251,9 +311,8 @@ const buildFiregridClientService = (
       // rather than die so the public error channel stays clean.
       return Effect.fail(new OperationNotFound({ handleId: handle.id }))
     }
-    return client.work
-      .observe(handle.id)
-      .until(isTerminalRun)
+    return projection
+      .until(runQuery(handle.id), isTerminalRun)
       .pipe(Effect.flatMap(decideTerminal))
   }
 
@@ -261,42 +320,41 @@ const buildFiregridClientService = (
     send(op, input).pipe(Effect.flatMap((handle) => result(op, handle)))
 
   const observe: FiregridClientService["observe"] = (op, handle) =>
-    client.work
-      .observe(handle.id)
-      .stream()
+    projection
+      .stream(runQuery(handle.id))
       .pipe(Stream.mapEffect((run) => mapRunToState(op, run)))
 
   return { ...eventStreams, send, result, call, observe }
 }
 
+// firegrid-client-api.STREAM_CONFIGURATION.1
+// firegrid-client-api.STREAM_CONFIGURATION.2
+// firegrid-client-api.STREAM_CONFIGURATION.3
 // firegrid-remediation-hardening.EFFECT_CONSISTENCY.1
 // firegrid-remediation-hardening.EFFECT_CONSISTENCY.5
-// `FiregridClientLive` composes `SubstrateClientLive` once: substrate
-// producer + projection are acquired once for the layer's scope rather
-// than rebuilt per call. The kernel `IdGen` seam is satisfied here by
-// providing `IdGenLive` once at the client root, so the EventStream
-// surface and substrate writers share the same identity layer.
+// FiregridClientLive receives transport configuration explicitly and
+// installs a scoped Projection once for result/observe flows. The root
+// client has no runtime process identity, handler graph, subscriber
+// graph, claim owner, or wait-primitive configuration.
 export const FiregridClientLive = (
   cfg: FiregridClientConfig,
-): Layer.Layer<FiregridClient> => {
-  const substrateCfg: SubstrateClientConfig = {
-    streamUrl: cfg.streamUrl,
-    clientId: cfg.clientId ?? "firegrid-client",
-    ...(cfg.contentType !== undefined ? { contentType: cfg.contentType } : {}),
-  }
-
+): Layer.Layer<FiregridClient, ProjectionReadError> => {
   const inner = Layer.effect(
     FiregridClient,
     Effect.gen(function* () {
-      const client = yield* SubstrateClient
+      const projection = yield* Projection
       const idGen = yield* IdGen
+      const durable = buildDurableStreamTransport(cfg)
       const eventStreams = buildEventStreamService(cfg, idGen)
-      return buildFiregridClientService(client, eventStreams)
+      return buildFiregridClientService(projection, durable, idGen, eventStreams)
     }),
   )
 
   return inner.pipe(
-    Layer.provide(SubstrateClientLive(substrateCfg)),
+    Layer.provide(ProjectionLive({
+      streamUrl: cfg.streamUrl,
+      ...(cfg.contentType !== undefined ? { contentType: cfg.contentType } : {}),
+    })),
     Layer.provide(IdGenLive),
   )
 }

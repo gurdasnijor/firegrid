@@ -32,6 +32,7 @@ env:
 #   typecheck         — pnpm --recursive typecheck
 #   effect-diagnostics — effect-language-service diagnostics
 #   tests             — pnpm --recursive tests
+#   package-consumption — pack Firegrid public packages and type-check external consumers
 #
 # Non-gating job:
 #   architecture-reports — runs `pnpm run arch:reports` on PRs and uploads
@@ -143,6 +144,24 @@ jobs:
       # runners).
       - name: Test packages
         run: pnpm --recursive --if-present run test
+
+  package-consumption:
+    name: Package consumption
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm + Node + install
+        uses: ./.github/actions/setup
+
+      - name: Pack and type-check external client consumer
+        run: pnpm run test:pack:client
+
+      - name: Pack and type-check external runtime consumer
+        run: pnpm run test:pack:runtime
 
   architecture-reports:
     name: Architecture reports (evidence)

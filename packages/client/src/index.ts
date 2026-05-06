@@ -30,6 +30,7 @@ export {
   type FiregridClientService,
   type ObserveError,
   type OperationState,
+  type OperationAppendError,
   type ResultError,
   type SendError,
 } from "./operations.ts"

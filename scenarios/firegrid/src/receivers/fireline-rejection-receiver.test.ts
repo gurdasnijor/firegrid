@@ -6,7 +6,7 @@ import {
 
 describe("FW3 Fireline-shaped rejection receiver scenario", () => {
   it(
-    "firegrid-runtime-process.SCENARIOS.14, firegrid-runtime-process.SCENARIOS.16, client-event-plane-registration.BOUNDARY.5, run-wait-primitives.RUN_WAIT_API.1, run-wait-primitives.RUN_WAIT_API.2, run-wait-primitives.RUN_WAIT_API.6, run-wait-primitives.BOUNDARY.4, run-wait-primitives.BOUNDARY.5 — app-owned RunWait receiver maps resolved rejection to typed failed run",
+    "firegrid-runtime-process.SCENARIOS.14, firegrid-runtime-process.SCENARIOS.16, firegrid-runtime-process.RUNTIME_COMPOSITION.1, firegrid-runtime-process.RUNTIME_COMPOSITION.2, firegrid-runtime-process.RUNTIME_COMPOSITION.6, client-event-plane-registration.BOUNDARY.5, run-wait-primitives.RUN_WAIT_API.1, run-wait-primitives.RUN_WAIT_API.2, run-wait-primitives.RUN_WAIT_API.6, run-wait-primitives.BOUNDARY.4, run-wait-primitives.BOUNDARY.5 — app-owned RunWait receiver composes explicit helper inputs and maps resolved rejection to typed failed run",
     async () => {
       const result = await Effect.runPromise(selfTestFirelineRejectionReceiver())
       const run = result.failed.runs.find((item) =>

@@ -19,8 +19,7 @@
     "packages/client": {
       "entry": [
         "src/index.ts",
-        "src/firegrid/index.ts",
-        "src/compat/index.ts"
+        "src/event-streams-public.ts"
       ],
       "project": [
         "src/**/*.ts"

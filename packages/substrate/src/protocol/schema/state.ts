@@ -1,5 +1,9 @@
 import { Schema } from "effect"
-import { createStateSchema } from "@durable-streams/state"
+import {
+  createStateSchema,
+  type CollectionDefinition,
+  type StateSchema,
+} from "@durable-streams/state"
 import {
   ClaimAttemptRowType,
   ClaimAttemptValue,
@@ -17,29 +21,43 @@ const CompletionStandard = Schema.standardSchemaV1(CompletionValue)
 const ClaimAttemptStandard = Schema.standardSchemaV1(ClaimAttemptValue)
 const EventStreamStandard = Schema.standardSchemaV1(EventStreamValue)
 
+type SubstrateCollections = {
+  readonly runs: CollectionDefinition<Schema.Schema.Type<typeof RunValue>>
+  readonly completions: CollectionDefinition<
+    Schema.Schema.Type<typeof CompletionValue>
+  >
+  readonly claimAttempts: CollectionDefinition<
+    Schema.Schema.Type<typeof ClaimAttemptValue>
+  >
+  readonly eventStreams: CollectionDefinition<
+    Schema.Schema.Type<typeof EventStreamValue>
+  >
+}
+
 // durable-records-and-projections.SUBSTRATE_SCOPE.6
 // durable-records-and-projections.SUBSTRATE_SCOPE.7
 // Canonical substrate state schema. Row type and primary key are declared once here
 // and reused by tests, producers, and the StreamDB-backed projection.
-export const substrateState = createStateSchema({
-  runs: {
-    type: RunRowType,
-    primaryKey: "runId",
-    schema: RunStandard,
-  },
-  completions: {
-    type: CompletionRowType,
-    primaryKey: "completionId",
-    schema: CompletionStandard,
-  },
-  claimAttempts: {
-    type: ClaimAttemptRowType,
-    primaryKey: "claimId",
-    schema: ClaimAttemptStandard,
-  },
-  eventStreams: {
-    type: EventStreamRowType,
-    primaryKey: "id",
-    schema: EventStreamStandard,
-  },
-})
+export const substrateState: StateSchema<SubstrateCollections> =
+  createStateSchema({
+    runs: {
+      type: RunRowType,
+      primaryKey: "runId",
+      schema: RunStandard,
+    },
+    completions: {
+      type: CompletionRowType,
+      primaryKey: "completionId",
+      schema: CompletionStandard,
+    },
+    claimAttempts: {
+      type: ClaimAttemptRowType,
+      primaryKey: "claimId",
+      schema: ClaimAttemptStandard,
+    },
+    eventStreams: {
+      type: EventStreamRowType,
+      primaryKey: "id",
+      schema: EventStreamStandard,
+    },
+  })

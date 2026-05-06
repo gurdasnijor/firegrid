@@ -39,6 +39,8 @@
     "lint:effect-rules:baseline": "node scripts/effect-artifacts-rules-baseline.mjs",
     "lint:semgrep": "semgrep --error --config .semgrep.yml .",
     "lint:semgrep:test": "semgrep --test --config .semgrep.yml semgrep-tests/dup-detection.ts",
+    "test:pack:client": "node scripts/pack-client-consumption-smoke.mjs",
+    "test:pack:runtime": "node scripts/pack-runtime-consumption-smoke.mjs",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:effect-quality && pnpm run lint:effect-rules && pnpm run lint:semgrep:test && pnpm run lint:semgrep && pnpm run test"

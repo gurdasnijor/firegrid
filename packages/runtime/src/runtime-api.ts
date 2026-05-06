@@ -44,6 +44,7 @@ import {
 import { runEventStreamMaterializer } from "./internal/event-stream-materializer.ts"
 import { wakeStream } from "./internal/wake-stream.ts"
 import { RuntimeContext, type RuntimeContextService } from "./context.ts"
+import { composeRuntime } from "./composition.ts"
 
 // firegrid-architecture-boundary.SURFACE_AREA.2
 // firegrid-package-migration.RUNTIME_RENAME.5
@@ -458,4 +459,5 @@ export const Firegrid = {
   },
   handler,
   eventStream,
+  composeRuntime,
 } as const

@@ -1,9 +1,7 @@
 import { Effect, Fiber, Stream } from "effect"
 import { useEffect, useMemo, useState } from "react"
-import {
-  emitLabEvent,
-  labEvents,
-} from "./LabEventStreamClient.ts"
+import { createLabClient } from "./LabClient.ts"
+import { LabTypedInputForm } from "./LabTypedInputForm.tsx"
 import { makeLabEvent, type LabEvent } from "./lab-events.ts"
 import styles from "./styles.module.css"
 
@@ -18,6 +16,7 @@ import styles from "./styles.module.css"
 // launchable-substrate-host.LAB_INSPECTOR.2
 // launchable-substrate-host.LAB_INSPECTOR.6
 // launchable-substrate-host.LAB_INSPECTOR.7
+// firegrid-client-api.LAB_COMPATIBILITY.4
 //
 // Typed EventStream workbench. It writes through EventStreamClient.emit
 // and follows decoded events through EventStreamClient.events. Raw
@@ -41,7 +40,10 @@ export function LabEventStreamPanel({
   const [emitStatus, setEmitStatus] = useState<string | undefined>()
   const [error, setError] = useState<string | undefined>()
   const [events, setEvents] = useState<ReadonlyArray<LabEvent>>([])
-  const cfg = useMemo(() => ({ streamUrl }), [streamUrl])
+  const labClient = useMemo(
+    () => createLabClient({ streamUrl }),
+    [streamUrl],
+  )
 
   useEffect(() => {
     setEvents([])
@@ -56,7 +58,7 @@ export function LabEventStreamPanel({
         setPhase("live")
       }).pipe(
         Effect.zipRight(
-          labEvents(cfg).pipe(
+          labClient.typedEvents.events().pipe(
             Stream.runForEach((event) =>
               Effect.sync(() => {
                 setEvents((prev) => {
@@ -81,7 +83,7 @@ export function LabEventStreamPanel({
       // eslint-disable-next-line no-restricted-syntax
       void Effect.runPromise(Fiber.interrupt(fiber))
     }
-  }, [cfg])
+  }, [labClient])
 
   const onEmit = () => {
     const event = makeLabEvent({ message, count })
@@ -89,7 +91,9 @@ export function LabEventStreamPanel({
     // React event-handler boundary: bridge the Effect-native client
     // call into the browser click handler.
     // eslint-disable-next-line no-restricted-syntax
-    void Effect.runPromiseExit(emitLabEvent(cfg, event)).then((exit) => {
+    void Effect.runPromiseExit(
+      labClient.typedEvents.emit(event),
+    ).then((exit) => {
       if (exit._tag === "Success") {
         setEmitStatus(`emitted ${event.id}`)
         setCount((value) => value + 1)
@@ -111,33 +115,14 @@ export function LabEventStreamPanel({
           Uses the app-facing EventStream client. Events are decoded
           through a lab-local EventStream descriptor before rendering.
         </p>
-        <label className={styles.label}>
-          Message
-          <input
-            className={styles.input}
-            value={message}
-            onChange={(event) => setMessage(event.currentTarget.value)}
-          />
-        </label>
-        <label className={styles.label}>
-          Count
-          <input
-            className={styles.input}
-            type="number"
-            value={count}
-            onChange={(event) =>
-              setCount(Number.parseInt(event.currentTarget.value, 10) || 0)
-            }
-          />
-        </label>
-        <button
-          className={styles.button}
-          type="button"
-          onClick={onEmit}
-          disabled={message.trim().length === 0}
-        >
-          Emit typed event
-        </button>
+        <LabTypedInputForm
+          message={message}
+          count={count}
+          submitLabel="Emit typed event"
+          onMessageChange={setMessage}
+          onCountChange={setCount}
+          onSubmit={onEmit}
+        />
         {emitStatus !== undefined ? (
           <div className={styles.note}>{emitStatus}</div>
         ) : null}

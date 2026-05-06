@@ -3,15 +3,9 @@ import { defineConfig } from "vitest/config"
 
 const sourceAlias = [
   {
-    find: "@firegrid/client/event-streams",
+    find: "@firegrid/runtime",
     replacement: fileURLToPath(
-      new URL("../../packages/client/src/event-streams-public.ts", import.meta.url),
-    ),
-  },
-  {
-    find: "@firegrid/client",
-    replacement: fileURLToPath(
-      new URL("../../packages/client/src/index.ts", import.meta.url),
+      new URL("../../packages/runtime/src/index.ts", import.meta.url),
     ),
   },
   {
@@ -21,9 +15,21 @@ const sourceAlias = [
     ),
   },
   {
+    find: "@firegrid/substrate/event-plane",
+    replacement: fileURLToPath(
+      new URL("../../packages/substrate/src/event-plane/index.ts", import.meta.url),
+    ),
+  },
+  {
     find: "@firegrid/substrate/id-gen",
     replacement: fileURLToPath(
       new URL("../../packages/substrate/src/id-gen.ts", import.meta.url),
+    ),
+  },
+  {
+    find: "@firegrid/substrate/kernel",
+    replacement: fileURLToPath(
+      new URL("../../packages/substrate/src/kernel/index.ts", import.meta.url),
     ),
   },
   {
@@ -32,7 +38,7 @@ const sourceAlias = [
       new URL("../../packages/substrate/src/index.ts", import.meta.url),
     ),
   },
-] as const
+]
 
 export default defineConfig({
   resolve: {

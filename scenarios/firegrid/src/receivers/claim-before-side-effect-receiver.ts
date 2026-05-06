@@ -17,6 +17,9 @@ const buildHandlerLayer = (
   participantId: string,
   invocations: Ref.Ref<ReadonlyArray<InvocationRecord>>,
 ) =>
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.1
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.2
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.6
   // firegrid-runtime-process.READY_WORK_OPERATOR.5
   // firegrid-runtime-process.READY_WORK_OPERATOR.7
   // claim-and-operator-authority.CLAIM_BEFORE_INVOKE.1
@@ -24,15 +27,24 @@ const buildHandlerLayer = (
   // the receiver can prove that exactly one participant won the claim
   // and ran the side-effect; substrate's processReadyWorkItem
   // guarantees only the winner reaches this body.
-  Firegrid.handler(ChargeCardOperation, (input) =>
-    Effect.gen(function* () {
-      yield* Ref.update(invocations, (xs) => [
-        ...xs,
-        { participantId, sideEffectId: input.sideEffectId },
-      ])
-      return { sideEffectId: input.sideEffectId, status: "charged" as const }
-    }),
-  )
+  Firegrid.composeRuntime({
+    subscribers: [],
+    handlers: [
+      Firegrid.handler(ChargeCardOperation, (input) =>
+        Effect.gen(function* () {
+          yield* Ref.update(invocations, (xs) => [
+            ...xs,
+            { participantId, sideEffectId: input.sideEffectId },
+          ])
+          return {
+            sideEffectId: input.sideEffectId,
+            status: "charged" as const,
+          }
+        }),
+      ),
+    ],
+    provide: [],
+  })
 
 const isTerminal = (state: string): boolean =>
   state === "completed" || state === "failed" || state === "cancelled"
