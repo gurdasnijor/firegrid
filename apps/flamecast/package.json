@@ -1,0 +1,34 @@
+{
+  "name": "@firegrid/flamecast",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "build:firegrid": "pnpm --filter @firegrid/substrate build && pnpm --filter @firegrid/client build && pnpm --filter @firegrid/runtime build",
+    "check": "pnpm run build:firegrid && pnpm run typecheck && pnpm run test && pnpm run build",
+    "dev": "vite --host 127.0.0.1",
+    "runtime": "pnpm run build:firegrid && tsx --tsconfig tsconfig.json src/runtime/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@durable-streams/client": "^0.2.3",
+    "@durable-streams/server": "^0.3.1",
+    "@firegrid/client": "workspace:*",
+    "@firegrid/runtime": "workspace:*",
+    "effect": "^3.18.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.20.4",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.5",
+    "vitest": "^3.2.0"
+  }
+}
