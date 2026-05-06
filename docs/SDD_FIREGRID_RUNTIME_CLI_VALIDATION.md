@@ -334,6 +334,55 @@ This row proves only the CLI-write input side. The runtime receiver side still
 requires a runtime graph that installs the scheduled-work subscriber and any
 ready-work or operator loop needed by the application scenario.
 
+Receiver-side validation uses a separate app-owned runtime entrypoint rather
+than hard-coding scenario behavior in the Firegrid binary. The receiver seed
+rows reuse the scheduled-work completion emitter and add the matching blocked
+operation run needed by the existing ready-work projection:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+export DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid
+durable-stream create firegrid --json
+
+export WHEN_MS=$(node -e 'console.log(Date.now() + 3000)')
+
+pnpm --silent --filter @firegrid/scenarios run scheduled-work-receiver -- \
+  --seed-rows --when-ms "$WHEN_MS" \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+
+pnpm --silent --filter @firegrid/scenarios run inspect -- \
+  --stream-url "$DURABLE_STREAMS_URL"
+```
+
+Start the app-owned receiver runtime in another terminal:
+
+```sh
+DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid \
+  pnpm --filter @firegrid/scenarios run scheduled-work-receiver
+```
+
+Inspection before `WHEN_MS` should show `completion-scheduled-work-cli-1` as
+`pending` and `run-scheduled-work-cli-1` as `blocked`. Inspection after
+`WHEN_MS` should show the scheduled-work completion as `resolved` with
+`{ whenMs, input }`, and the same run as `completed` with the
+`ScheduledReminder` handler result. The receiver runtime composes
+`Firegrid.subscribers.scheduledWork` with `Firegrid.handler(...)` through
+`run({ connection, runtime })`; it does not import `@firegrid/client`, load an
+app graph dynamically, or start a Durable Streams dev server.
+
+Focused automated validation is available through:
+
+```sh
+pnpm --filter @firegrid/scenarios run scheduled-work-receiver:self-test
+```
+
+That check starts a package-local Durable Streams test server, seeds the same
+receiver rows, verifies the completion remains pending before the due time, and
+then verifies completion resolution plus ready-work terminalization through the
+same inspection projection.
+
 ### Scenario 4: Projection Surface / Read Model Inspection
 
 Purpose: prove that users can inspect scenario progress through read models
