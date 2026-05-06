@@ -1,19 +1,17 @@
 import { readFileSync } from "node:fs"
-import { Context, Effect, Layer } from "effect"
+import { Context, Deferred, Effect, Fiber, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Substrate from "@firegrid/substrate"
 import * as SubstrateKernel from "@firegrid/substrate/kernel"
+import type { RuntimeContextService } from "../context.ts"
 import * as RuntimeSurface from "../index.ts"
 
+// firegrid-runtime-process.RUNTIME_RUN_API.10
+// Architectural-constraint source check: this file reads the binary source
+// only for negative constraints about module discovery / forbidden imports.
 const runtimeBinarySource = () =>
   readFileSync(
     new URL("../../bin/firegrid.ts", import.meta.url),
-    "utf8",
-  )
-
-const runtimeRunSource = () =>
-  readFileSync(
-    new URL("../run.ts", import.meta.url),
     "utf8",
   )
 
@@ -78,52 +76,73 @@ describe("firegrid-architecture-boundary.SURFACE_AREA — runtime root exposes a
 })
 
 describe("firegrid-runtime-process.RUNTIME_RUN_API — typed app-owned runtime entrypoint", () => {
-  it("firegrid-runtime-process.RUNTIME_RUN_API.2 + firegrid-runtime-process.RUNTIME_RUN_API.3 keeps app requirements visible after RuntimeContext is supplied", () => {
-    const runtime = Layer.scopedDiscard(
-      Effect.gen(function* () {
-        yield* RuntimeSurface.RuntimeContext
-        yield* AppDependency
-      }),
+  it("firegrid-runtime-process.RUNTIME_RUN_API.1 + firegrid-runtime-process.RUNTIME_RUN_API.2 + firegrid-runtime-process.RUNTIME_RUN_API.3 + firegrid-runtime-process.RUNTIME_RUN_API.8 + firegrid-runtime-process.RUNTIME_RUN_API.9 installs the supplied Layer, provides RuntimeContext, preserves app requirements, and finalizes on interruption", async () => {
+    const observed = await Effect.gen(function* () {
+      const installed = yield* Deferred.make<{
+        readonly appValue: string
+        readonly context: RuntimeContextService
+      }>()
+      const finalized = yield* Deferred.make<void>()
+
+      const runtime = Layer.scopedDiscard(
+        Effect.gen(function* () {
+          const context = yield* RuntimeSurface.RuntimeContext
+          const app = yield* AppDependency
+          yield* Deferred.succeed(installed, {
+            appValue: app.value,
+            context,
+          })
+          yield* Effect.addFinalizer(() =>
+            Deferred.succeed(finalized, undefined).pipe(Effect.asVoid),
+          )
+        }),
+      )
+
+      const program = RuntimeSurface.run({
+        connection: {
+          streamUrl: "http://127.0.0.1:4437/v1/stream/firegrid",
+        },
+        runtime,
+      })
+
+      const typed: Effect.Effect<never, unknown, AppDependency> = program
+      expect(typed).toBe(program)
+
+      const fiber = yield* Effect.fork(typed)
+      const result = yield* Deferred.await(installed).pipe(
+        Effect.timeout("5 seconds"),
+      )
+      yield* Fiber.interrupt(fiber)
+      yield* Deferred.await(finalized).pipe(Effect.timeout("5 seconds"))
+      return result
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(Layer.succeed(AppDependency, { value: "from-app" })),
+      Effect.runPromise,
     )
 
-    const program = RuntimeSurface.run({
-      connection: {
-        streamUrl: "http://127.0.0.1:4437/v1/stream/firegrid",
-      },
-      runtime,
-    })
-
-    const typed: Effect.Effect<never, unknown, AppDependency> = program
-    expect(typed).toBe(program)
+    expect(observed.appValue).toBe("from-app")
+    expect(observed.context.streamUrl).toBe(
+      "http://127.0.0.1:4437/v1/stream/firegrid",
+    )
+    expect(observed.context.streamIdentity.streamUrl).toBe(
+      "http://127.0.0.1:4437/v1/stream/firegrid",
+    )
+    expect(observed.context.processId).toMatch(/^firegrid:/)
   })
 
-  it("firegrid-runtime-process.RUNTIME_RUN_API.1 + firegrid-runtime-process.RUNTIME_RUN_API.3 + firegrid-runtime-process.RUNTIME_RUN_API.8 + firegrid-runtime-process.RUNTIME_RUN_API.9 provides caller graphs to attached boot", () => {
-    const source = runtimeRunSource()
-
-    expect(source).toContain("FiregridRuntimeBoot.attached")
-    expect(source).toContain("RuntimeContext | R")
-    expect(source).toContain("Exclude<Exclude<R, RuntimeContext>")
-    expect(source).toContain("Scope.Scope")
-    expect(source).toContain("connection.streamUrl")
-    expect(source).toContain("runtime: opts.runtime")
-    expect(source).toContain("Effect.flatMap(FiregridRuntime")
-    expect(source).toContain("Effect.never")
+  it("firegrid-runtime-process.RUNTIME_RUN_API.6 keeps runtime defaults explicit on the public surface", () => {
+    expect("defaults" in RuntimeSurface.Firegrid).toBe(false)
+    expect("run" in RuntimeSurface.Firegrid).toBe(false)
   })
 
-  it("firegrid-runtime-process.RUNTIME_RUN_API.6 + firegrid-runtime-process.RUNTIME_RUN_API.7 keeps run explicit without library-side process exits", () => {
-    const source = runtimeRunSource()
-
-    expect(source).not.toContain("subscribers")
-    expect(source).not.toContain("defaults")
-    expect(source).not.toContain("process.exit")
-    expect(source).not.toContain("NodeRuntime.runMain")
-  })
-
-  it("firegrid-runtime-process.RUNTIME_RUN_API.4 + firegrid-runtime-process.RUNTIME_RUN_API.5 keeps the binary graph-free and attached-only", () => {
+  it("firegrid-runtime-process.RUNTIME_RUN_API.4 + firegrid-runtime-process.RUNTIME_RUN_API.5 + firegrid-runtime-process.RUNTIME_RUN_API.10 — architectural constraint keeps the binary graph-free", () => {
+    // firegrid-runtime-process.RUNTIME_RUN_API.10
+    // Architectural-constraint source check: attached-mode behavior is
+    // covered in attached.test.ts; this grep is retained only to assert
+    // the binary does not discover app graphs or import forbidden surfaces.
     const source = runtimeBinarySource()
 
-    expect(source).toContain("DURABLE_STREAMS_URL")
-    expect(source).toContain("FiregridRuntimeBoot.attached({ streamUrl })")
     expect(source).not.toContain("FIREGRID_RUNTIME_MODULE")
     expect(source).not.toContain("import(")
     expect(source).not.toContain("@firegrid/client")

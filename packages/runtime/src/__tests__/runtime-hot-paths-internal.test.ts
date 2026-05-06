@@ -51,15 +51,14 @@ const fakeDb = () =>
     close: () => undefined,
   }) as never
 
+// firegrid-runtime-process.RUNTIME_RUN_API.10
+// Architectural-constraint source helper: behavior tests in this file
+// exercise coalescing, deadlines, teardown, and typed failures directly.
+// Remaining source reads are reserved for negative constraints against
+// reintroducing known unmanaged loop / whole-projection rebuild shapes.
 const runtimeSource = (relative: string) =>
   readFileSync(
     fileURLToPath(new URL(`../internal/${relative}`, import.meta.url)),
-    "utf8",
-  )
-
-const runtimeApiSource = () =>
-  readFileSync(
-    fileURLToPath(new URL("../runtime-api.ts", import.meta.url)),
     "utf8",
   )
 
@@ -311,22 +310,6 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
     expect(due).toBe(25)
   })
 
-  it("firegrid-runtime-process.RUNTIME_PACKAGE.5, firegrid-runtime-process.RUNTIME_HOT_PATH.2, firegrid-runtime-process.RUNTIME_HOT_PATH.3 — runtime API wires projection-match scan, edge subscription, and deadline wakes", () => {
-    const source = runtimeApiSource()
-
-    expect(source).toContain(
-      "runProjectionMatchSubscriberFromSnapshot",
-    )
-    expect(source).toContain(
-      "subscribeCompletionsAndEventStreams",
-    )
-    expect(source).toContain(
-      "projectionMatch: projectionMatchSubscriberLayer",
-    )
-    expect(source).toContain("\"projection_match\"")
-    expect(source).toContain("\"deadlineAtMs\"")
-  })
-
   it("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runner deadline stream cancels a stale pending deadline after an edge wake recomputes no due time", async () => {
     const db = fakeDb()
     let wake: (() => void) | undefined
@@ -406,17 +389,16 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
 })
 
 describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY — runtime source guardrails", () => {
-  it("firegrid-remediation-hardening.EFFECT_CONSISTENCY.3, firegrid-runtime-process.RUNTIME_HOT_PATH.1 — runner and operation handler use scoped Stream pipelines instead of ad hoc latch loops", () => {
-    expect(executableSource("wake-stream.ts")).toContain("Stream.asyncScoped")
+  it("firegrid-runtime-process.RUNTIME_RUN_API.10, firegrid-remediation-hardening.EFFECT_CONSISTENCY.3, firegrid-runtime-process.RUNTIME_HOT_PATH.1 — architectural constraint forbids ad hoc latch loops and whole-projection rebuilds", () => {
+    // firegrid-runtime-process.RUNTIME_RUN_API.10
+    // Architectural-constraint source check: the behavior tests above
+    // exercise the subscriber loop; this grep is retained only to block
+    // known negative patterns that are cheap one-off architectural guards.
     const runnerSource = executableSource("runner.ts")
-    expect(runnerSource).toContain("Stream.fromQueue")
-    expect(runnerSource).toContain("deadlineWakeStream")
-    expect(runnerSource).toContain("Effect.forkScoped")
     expect(runnerSource).not.toContain("deadlineFiber")
     expect(runnerSource).not.toContain("Fiber.interrupt")
 
     const operationHandlerSource = executableSource("operation-handler.ts")
-    expect(operationHandlerSource).toContain("wakeStream")
     for (const source of [runnerSource, operationHandlerSource]) {
       expect(source).not.toContain("Effect.makeLatch")
       expect(source).not.toContain("Effect.forever")
@@ -440,6 +422,10 @@ describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY — runtime source g
       expect(failure?._tag).toBe("IllegalRunTransition")
     }
 
+    // firegrid-runtime-process.RUNTIME_RUN_API.10
+    // Architectural-constraint source check: the positive builder behavior
+    // is asserted above via completeRunEffect; this negative grep prevents
+    // reintroducing the prior untyped catch-all error mapping shape.
     expect(runtimeSource("operation-handler.ts")).not.toContain(
       "catch: (cause) => cause",
     )
