@@ -251,12 +251,14 @@ const buildReadyWorkHandler = <Op extends Operation.Any, E, R>(
       ),
     ) as Effect.Effect<unknown, unknown, Exclude<R, CurrentWorkContext>>
 
-const runReadyWorkOperator = <Op extends Operation.Any, E, R>(input: {
-  readonly op: Op
-  readonly run: (
-    input: Operation.Input<Op>,
-  ) => Effect.Effect<Operation.Output<Op>, Operation.Error<Op> | E, R>
-}) =>
+type ReadyWorkHandler<Op extends Operation.Any, E, R> = (
+  input: Operation.Input<Op>,
+) => Effect.Effect<Operation.Output<Op>, Operation.Error<Op> | E, R>
+
+const runReadyWorkOperator = <Op extends Operation.Any, E, R>(
+  op: Op,
+  handlerRun: ReadyWorkHandler<Op, E, R>,
+) =>
   Effect.gen(function* () {
     const cfg = yield* RuntimeContext
     const acquire = acquireSubstrateDb(
@@ -292,7 +294,7 @@ const runReadyWorkOperator = <Op extends Operation.Any, E, R>(input: {
               const runValue = snapshot.runs.get(item.runId)
               if (runValue === undefined) return
               if (!isOperationEnvelope(runValue.data)) return
-              if (runValue.data.operation !== input.op.name) return
+              if (runValue.data.operation !== op.name) return
               items.push({ item, runValue })
             })
             return items
@@ -301,12 +303,12 @@ const runReadyWorkOperator = <Op extends Operation.Any, E, R>(input: {
           const dispatchItem = (item: ReadyWorkItem, runValue: RunValue) =>
             Effect.gen(function* () {
               const decoded = yield* decodeBlockedEnvelope(
-                input.op,
+                op,
                 runValue,
               ).pipe(
                 Effect.catchTag("ParseError", (cause) =>
                   Effect.logError(
-                    `firegrid ready-work ${input.op.name}: input decode failed for run ${runValue.runId}`,
+                    `firegrid ready-work ${op.name}: input decode failed for run ${runValue.runId}`,
                     cause,
                   ).pipe(Effect.as(undefined)),
                 ),
@@ -321,15 +323,15 @@ const runReadyWorkOperator = <Op extends Operation.Any, E, R>(input: {
                 item,
                 handler: buildReadyWorkHandler(
                   cfg,
-                  input.op,
+                  op,
                   decoded,
                   runValue,
-                  input.run,
+                  handlerRun,
                 ),
               }).pipe(
                 Effect.catchAll((cause) =>
                   Effect.logError(
-                    `firegrid ready-work ${input.op.name}: processReadyWorkItem failed for run ${runValue.runId}`,
+                    `firegrid ready-work ${op.name}: processReadyWorkItem failed for run ${runValue.runId}`,
                     cause,
                   ).pipe(
                     Effect.as<ClaimOutcome<unknown, unknown> | undefined>(
@@ -339,7 +341,7 @@ const runReadyWorkOperator = <Op extends Operation.Any, E, R>(input: {
                 ),
               )
               if (outcome === undefined) return
-              yield* logReadyWorkOutcome(input.op.name, outcome)
+              yield* logReadyWorkOutcome(op.name, outcome)
             })
 
           return yield* wakes.pipe(
@@ -355,7 +357,7 @@ const runReadyWorkOperator = <Op extends Operation.Any, E, R>(input: {
               Cause.isInterruptedOnly(cause)
                 ? Effect.void
                 : Effect.logError(
-                    `firegrid ready-work ${input.op.name}: operator loop failed`,
+                    `firegrid ready-work ${op.name}: operator loop failed`,
                     cause,
                   ),
             ),
@@ -403,7 +405,7 @@ const handler = <
   Layer.scopedDiscard(
     Effect.gen(function* () {
       yield* runOperationHandler({ op, run })
-      yield* runReadyWorkOperator({ op, run })
+      yield* runReadyWorkOperator(op, run)
     }),
   )
 
