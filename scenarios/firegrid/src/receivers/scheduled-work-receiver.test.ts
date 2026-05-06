@@ -4,7 +4,7 @@ import { Effect } from "effect"
 
 describe("F3C scheduled-work receiver scenario", () => {
   it(
-    "firegrid-runtime-process.SCENARIOS.8, durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.1, durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.4, firegrid-runtime-process.READY_WORK_OPERATOR.1 — app-owned run resolves scheduled work after due time and terminalizes ready work",
+    "firegrid-runtime-process.SCENARIOS.8, firegrid-runtime-process.RUNTIME_COMPOSITION.1, firegrid-runtime-process.RUNTIME_COMPOSITION.2, firegrid-runtime-process.RUNTIME_COMPOSITION.6, durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.1, durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.4, firegrid-runtime-process.READY_WORK_OPERATOR.1 — app-owned run composes explicit helper inputs, resolves scheduled work after due time, and terminalizes ready work",
     async () => {
       const result = await Effect.runPromise(selfTestScheduledWorkReceiver())
 

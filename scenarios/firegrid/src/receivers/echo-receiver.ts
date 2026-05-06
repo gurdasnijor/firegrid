@@ -46,17 +46,27 @@ const EchoAdapterLive = (
 const echoReceiverRuntime = (
   events?: EchoAdapterLayerEvents,
 ) =>
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.1
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.2
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.5
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.6
   // firegrid-runtime-process.RUNTIME_RUN_API.11
-  Firegrid.handler(EchoOperation, (input) =>
-    Effect.gen(function* () {
-      const adapter = yield* EchoAdapter
-      const length = yield* adapter.measure(input.message)
-      return {
-        message: input.message,
-        length,
-      }
-    }),
-  ).pipe(Layer.provide(EchoAdapterLive(events)))
+  Firegrid.composeRuntime({
+    subscribers: [],
+    handlers: [
+      Firegrid.handler(EchoOperation, (input) =>
+        Effect.gen(function* () {
+          const adapter = yield* EchoAdapter
+          const length = yield* adapter.measure(input.message)
+          return {
+            message: input.message,
+            length,
+          }
+        }),
+      ),
+    ],
+    provide: [EchoAdapterLive(events)],
+  })
 
 const runEchoReceiver = (streamUrl: string) =>
   // firegrid-runtime-process.SCENARIOS.7
