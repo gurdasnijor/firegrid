@@ -169,6 +169,14 @@ Use EventPlane from `@firegrid/substrate/event-plane` inside runtime layers when
 the domain needs primary-keyed state, materialized projections, or
 projection-match evaluation. EventPlane is not the browser client surface.
 
+For projection read decision guidance, see:
+
+- [Browser EventPlane projection reads](../../docs/patterns/browser-eventplane-projection.md)
+  for the current approved `@firegrid/substrate/event-plane` projection path.
+- [EventStream folded as list](../../docs/patterns/eventstream-folded-as-list.md)
+  for when `client.events(...)` is enough and when a product should graduate to
+  EventPlane-backed list/detail state.
+
 ## Focused Smoke Checks
 
 The focused package checks are:

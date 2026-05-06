@@ -34,6 +34,15 @@ that missing layer.
 This SDD explains the design intent behind the Acai spec. The feature file is
 the authoritative acceptance criteria.
 
+Current pattern docs:
+
+- [Browser EventPlane projection reads](../patterns/browser-eventplane-projection.md)
+  documents the approved `@firegrid/substrate/event-plane` read path available
+  before the projection-query facade exists.
+- [EventStream folded as list](../patterns/eventstream-folded-as-list.md)
+  documents when `EventStream` plus `client.events(...)` is enough and when
+  product code should use EventPlane-backed current state.
+
 ## Problem Statement
 
 Product UIs and runtime adapters need to observe durable state, not just
