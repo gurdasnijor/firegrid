@@ -493,6 +493,51 @@ requires two app-owned operator participants to derive the ready work, append
 competing `durable.claim.attempt` rows, invoke the side-effect handler only from
 the winning claim, and terminalize the run once.
 
+#### Receiver-side runtime flow
+
+After the four input rows are on the stream, attach two app-owned operator
+participants through the typed `@firegrid/runtime` `run({connection, runtime})`
+API and let substrate's `processReadyWorkItem` arbitrate. The receiver lives at
+`scenarios/firegrid/claim-before-side-effect-receiver.ts`; it forks two
+participants in one Effect program, polls the projection until the run is
+terminal, then prints a JSON report to stdout and exits non-zero on assertion
+failure.
+
+```sh
+pnpm --silent --filter @firegrid/scenarios run claim-before-side-effect-receiver \
+  --stream-url "$STREAM_URL/firegrid"
+```
+
+Expected behavior:
+
+1. Each participant attaches with its own auto-generated `processId` via the
+   attached boot Layer.
+2. Both observe the same ready-work item for `run-claim-side-effect-cli-1` on
+   their first scan after attach.
+3. Both call `processReadyWorkItem`, which writes a `durable.claim.attempt` row
+   per participant and arbitrates first-valid-terminal-wins.
+4. Only the winning claim owner's handler runs the side-effect (the receiver's
+   handler closures tag invocations with `participantId` for evidence).
+5. The substrate authors the terminal `durable.run` upsert; the runtime never
+   calls `completeRun` / `failRun` directly for ready-work resumes.
+6. The losing participant logs `claim-lost` at debug and continues without a
+   second handler invocation.
+
+The receiver asserts:
+
+- Exactly **one** handler invocation across both participants.
+- The terminal run reaches `state: "completed"` with the encoded
+  `{ sideEffectId, status: "charged" }` result.
+
+Automated coverage for the competing-participants invariant lives in
+`scenarios/firegrid/claim-before-side-effect-receiver.test.ts`, which spins up
+its own `DurableStreamTestServer`, seeds the F1E rows directly, forks two
+participants through `run({ connection, runtime })`, and asserts both invariants
+above. The packaged `@firegrid/runtime` test suite intentionally does **not**
+host this case — adding it there would have bumped Effect-quality baselines
+that the dispatch forbids. Any dedicated runtime-package coverage is deferred
+to a separate quality / test-strategy slice.
+
 ## Implementation Shape
 
 The work is not to build fixture infrastructure. The work is to add scenario
