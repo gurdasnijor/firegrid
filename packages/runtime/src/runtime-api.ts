@@ -84,6 +84,7 @@ const pendingDeadlineAt = (
 
 const subscriberLayer = (input: {
   readonly subscribe: typeof subscribeCompletions
+  readonly subscribeRawJsonRows?: boolean
   readonly nextDeadlineMs: (snapshot: ProjectionSnapshot) => number | undefined
   readonly scan: (
     snapshot: ProjectionSnapshot,
@@ -99,6 +100,9 @@ const subscriberLayer = (input: {
       }
       yield* runScopedSubscriberProgram({
         subscribe: input.subscribe,
+        ...(input.subscribeRawJsonRows === true
+          ? { subscribeRawJsonRows: true }
+          : {}),
         nextDeadlineMs: input.nextDeadlineMs,
         scan: (snapshot) => input.scan(snapshot, subscriberInput),
       })
@@ -139,6 +143,7 @@ const projectionMatchSubscriberLayer = (
 ): Layer.Layer<never, never, RuntimeContext> =>
   subscriberLayer({
     subscribe: subscribeCompletionsAndEventStreams,
+    subscribeRawJsonRows: true,
     nextDeadlineMs: (snapshot) =>
       minPendingDueAtMs(snapshot.completions, (completion) =>
         pendingDeadlineAt(

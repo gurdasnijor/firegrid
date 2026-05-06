@@ -1,4 +1,5 @@
 import { DurableStream } from "@durable-streams/client"
+import { createStateSchema } from "@durable-streams/state"
 import {
   CompletionId,
   CurrentWorkContext,
@@ -13,18 +14,23 @@ import {
   OPERATION_ENVELOPE_TAG,
 } from "@firegrid/substrate/descriptors"
 import {
+  EventPlane,
+  type PlaneProjectionQuery,
+} from "@firegrid/substrate/event-plane"
+import {
   rebuildProjection,
   startRun,
   substrateState,
+  type ProjectionMatchEvaluation,
 } from "@firegrid/substrate/kernel"
-import { Data, Effect, Layer, Schedule, Schema } from "effect"
+import { Data, Deferred, Effect, Fiber, Layer, Schedule, Schema } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
 } from "./helpers.ts"
-import { Firegrid, FiregridRuntime, FiregridRuntimeBoot } from "../index.ts"
+import { Firegrid, FiregridRuntime, FiregridRuntimeBoot, run } from "../index.ts"
 
 class SeedFailed extends Data.TaggedError("SeedFailed")<{
   readonly cause: unknown
@@ -77,6 +83,40 @@ const WaitForPermission = Operation.define({
     matchedPermissionId: Schema.String,
     status: Schema.Literal("approved"),
   }),
+})
+
+const PermissionRow = Schema.Struct({
+  permissionId: Schema.String,
+  status: Schema.Literal("pending", "approved"),
+})
+type PermissionRow = Schema.Schema.Type<typeof PermissionRow>
+
+const buildPermissionPlane = () => {
+  const state = createStateSchema({
+    permissions: {
+      type: "runtime.permission.row",
+      primaryKey: "permissionId",
+      schema: Schema.standardSchemaV1(PermissionRow),
+    },
+  })
+  return EventPlane.define({ name: "runtime.permission", state })
+}
+
+const permissionByIdQuery = (
+  plane: ReturnType<typeof buildPermissionPlane>,
+  permissionId: string,
+): PlaneProjectionQuery<
+  typeof plane.state,
+  PermissionRow | undefined,
+  never,
+  never
+> => ({
+  label: "permissionById",
+  authority: "observational",
+  evaluate: (snapshot) =>
+    Effect.succeed(snapshot.permissions?.get(permissionId) as
+      | PermissionRow
+      | undefined),
 })
 
 const seedStartedRun = async (
@@ -191,6 +231,45 @@ const seedBlockedWaitForRun = async (
   })
   await stream.append(JSON.stringify(blockedRunEvent))
   await stream.append(JSON.stringify(resolvedCompletionEvent))
+}
+
+const seedPendingWaitForRun = async (
+  streamUrl: string,
+  runId: string,
+  completionId: string,
+  payload: {
+    readonly permissionId: string
+    readonly trigger: ProjectionMatchTrigger
+  },
+): Promise<void> => {
+  const startedData = {
+    _envelope: OPERATION_ENVELOPE_TAG,
+    operation: WaitForPermission.name,
+    payload,
+  }
+  const blockedRunEvent = substrateState.runs.insert({
+    value: {
+      runId,
+      state: "blocked",
+      data: startedData,
+      blockedOnCompletionId: completionId,
+    },
+  })
+  const pendingCompletionEvent = substrateState.completions.insert({
+    value: {
+      completionId,
+      workId: runId,
+      kind: "projection_match",
+      state: "pending",
+      data: { trigger: payload.trigger },
+    },
+  })
+  const stream = await DurableStream.create({
+    url: streamUrl,
+    contentType: "application/json",
+  })
+  await stream.append(JSON.stringify(blockedRunEvent))
+  await stream.append(JSON.stringify(pendingCompletionEvent))
 }
 
 const seedContextRun = (
@@ -330,58 +409,211 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
   // run-wait-primitives.RUN_WAIT_API.8
   // choreography-facade.CHOREOGRAPHY_API.9
   // durable-waits-and-scheduling.WAIT_FOR.8
-  it("ready-work resume re-enters waitFor with the resolved projection-match result and terminalizes the run", async () => {
-    const streamUrl = await createRuntimeStream(
-      "firegrid-handler-waitfor-resume-test",
-    )
-    const runId = "ready-work-waitfor-run-1"
-    const completionId = "completion-waitfor-resolved-1"
-    const trigger: ProjectionMatchTrigger = {
-      _tag: "ProjectionMatch",
-      label: "permission-approved:permission-runtime-1",
-      projectionKey: "PermissionEvents:permission:permission-runtime-1",
-      matcherId: "scenario.permission.approved",
-    }
-    await seedBlockedWaitForRun(streamUrl, runId, completionId, {
-      permissionId: "permission-runtime-1",
-      trigger,
-    })
-
-    const handlerLayer = Firegrid.handler(WaitForPermission, (input) =>
-      Effect.gen(function* () {
-        const wait = yield* RunWait
-        const result = yield* wait.for(input.trigger, {
-          resultSchema: Schema.Struct({ permissionId: Schema.String }),
-        })
-        return {
-          permissionId: input.permissionId,
-          matchedPermissionId: result.permissionId,
-          status: "approved" as const,
+  // client-event-plane-registration.PROJECTION_API.7
+  // firegrid-runtime-process.RUNTIME_HOT_PATH.4
+  it("ready-work resume re-enters waitFor with resolved projection-match data, including after an EventPlane row wakes the pending completion", async () => {
+    const exit = await Effect.gen(function* () {
+        const streamUrl = yield* Effect.promise(() =>
+          createRuntimeStream("firegrid-handler-waitfor-resume-test"),
+        )
+        const runId = "ready-work-waitfor-run-1"
+        const completionId = "completion-waitfor-resolved-1"
+        const trigger: ProjectionMatchTrigger = {
+          _tag: "ProjectionMatch",
+          label: "permission-approved:permission-runtime-1",
+          projectionKey: "PermissionEvents:permission:permission-runtime-1",
+          matcherId: "scenario.permission.approved",
         }
-      }),
-    ).pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          RunWait.layer({ streamUrl }),
-          triggerMatchersLayer({
-            "scenario.permission.approved": permissionMatcher,
+        yield* Effect.promise(() =>
+          seedBlockedWaitForRun(streamUrl, runId, completionId, {
+            permissionId: "permission-runtime-1",
+            trigger,
           }),
-        ),
-      ),
-    )
+        )
 
-    const completed = await Effect.gen(function* () {
-      return yield* completedRunFromProjection(streamUrl, runId)
-    }).pipe(
-      Effect.provide(
-        FiregridRuntimeBoot.attached({
+        const handlerLayer = Firegrid.handler(WaitForPermission, (input) =>
+          Effect.gen(function* () {
+            const wait = yield* RunWait
+            const result = yield* wait.for(input.trigger, {
+              resultSchema: Schema.Struct({ permissionId: Schema.String }),
+            })
+            return {
+              permissionId: input.permissionId,
+              matchedPermissionId: result.permissionId,
+              status: "approved" as const,
+            }
+          }),
+        ).pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              RunWait.layer({ streamUrl }),
+              triggerMatchersLayer({
+                "scenario.permission.approved": permissionMatcher,
+              }),
+            ),
+          ),
+        )
+
+        const completed = yield* completedRunFromProjection(
           streamUrl,
-          runtime: handlerLayer,
-        }),
-      ),
-      Effect.scoped,
-      Effect.runPromise,
-    )
+          runId,
+        ).pipe(
+          Effect.provide(
+            FiregridRuntimeBoot.attached({
+              streamUrl,
+              runtime: handlerLayer,
+            }),
+          ),
+          Effect.scoped,
+        )
+
+        const projectionMatchCompletions = Array.from(
+          (yield* Effect.promise(() => rebuildProjection({ url: streamUrl })))
+            .completions
+            .values(),
+        ).filter((completion) => completion.kind === "projection_match")
+
+        const plane = buildPermissionPlane()
+        const pendingStreamUrl = yield* Effect.promise(() =>
+          createRuntimeStream("firegrid-handler-waitfor-eventplane-wake-test"),
+        )
+        const pendingRunId = "ready-work-waitfor-eventplane-run-1"
+        const pendingCompletionId = "completion-waitfor-eventplane-pending-1"
+        const pendingPermissionId = "permission-eventplane-runtime-1"
+        const pendingTrigger: ProjectionMatchTrigger = {
+          _tag: "ProjectionMatch",
+          label: `permission-approved:${pendingPermissionId}`,
+          projectionKey: `runtime.permission:${pendingPermissionId}`,
+          matcherId: "scenario.permission.eventplane.approved",
+        }
+        yield* Effect.promise(() =>
+          seedPendingWaitForRun(
+            pendingStreamUrl,
+            pendingRunId,
+            pendingCompletionId,
+            {
+              permissionId: pendingPermissionId,
+              trigger: pendingTrigger,
+            },
+          ),
+        )
+
+        const firstNoMatch = yield* Deferred.make<void>()
+        const eventPlaneProjectionMatch = Layer.unwrapEffect(
+          Effect.gen(function* () {
+            const projection = yield* plane.Projection
+            return Firegrid.subscribers.projectionMatch({
+              evaluate: (_snapshot, trigger) => {
+                if (
+                  trigger.matcherId !==
+                    "scenario.permission.eventplane.approved"
+                ) {
+                  return Effect.succeed<ProjectionMatchEvaluation>({
+                    kind: "no-match",
+                  })
+                }
+                const permissionId = trigger.projectionKey.slice(
+                  "runtime.permission:".length,
+                )
+                return projection
+                  .snapshot(permissionByIdQuery(plane, permissionId))
+                  .pipe(
+                    Effect.flatMap((row): Effect.Effect<
+                      ProjectionMatchEvaluation,
+                      unknown
+                    > => {
+                      if (row?.status !== "approved") {
+                        return Deferred.succeed(firstNoMatch, undefined).pipe(
+                          Effect.as({ kind: "no-match" as const }),
+                        )
+                      }
+                      return Effect.succeed({
+                        kind: "match" as const,
+                        value: { permissionId: row.permissionId },
+                      })
+                    }),
+                  )
+              },
+            })
+          }),
+        )
+        const pendingHandlerLayer = Layer.mergeAll(
+          // client-event-plane-registration.PROJECTION_API.7
+          // firegrid-runtime-process.RUNTIME_HOT_PATH.4
+          eventPlaneProjectionMatch,
+          Firegrid.handler(WaitForPermission, (input) =>
+            Effect.gen(function* () {
+              const wait = yield* RunWait
+              const result = yield* wait.for(input.trigger, {
+                resultSchema: Schema.Struct({ permissionId: Schema.String }),
+              })
+              return {
+                permissionId: input.permissionId,
+                matchedPermissionId: result.permissionId,
+                status: "approved" as const,
+              }
+            }),
+          ),
+        ).pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              EventPlane.layer(plane, { streamUrl: pendingStreamUrl }),
+              RunWait.layer({ streamUrl: pendingStreamUrl }),
+              triggerMatchersLayer({
+                "scenario.permission.eventplane.approved": permissionMatcher,
+              }),
+            ),
+          ),
+        )
+
+        const completedAfterEventPlaneWake = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const fiber = yield* Effect.forkScoped(
+              run({
+                connection: { streamUrl: pendingStreamUrl },
+                runtime: pendingHandlerLayer,
+              }),
+            )
+            yield* Deferred.await(firstNoMatch).pipe(
+              Effect.timeout("5 seconds"),
+            )
+            yield* Effect.gen(function* () {
+              const producer = yield* plane.Producer
+              yield* producer.emit(
+                plane.state.permissions.insert({
+                  value: {
+                    permissionId: pendingPermissionId,
+                    status: "approved",
+                  },
+                }),
+              )
+            }).pipe(
+              Effect.provide(
+                EventPlane.layer(plane, { streamUrl: pendingStreamUrl }),
+              ),
+            )
+            const terminal = yield* completedRunFromProjection(
+              pendingStreamUrl,
+              pendingRunId,
+            )
+            yield* Fiber.interrupt(fiber)
+            return terminal
+          }),
+        )
+
+        return {
+          completed,
+          completedAfterEventPlaneWake,
+          projectionMatchCompletions,
+        } as const
+    }).pipe(Effect.runPromiseExit)
+    expect(exit._tag).toBe("Success")
+    if (exit._tag !== "Success") return
+    const {
+      completed,
+      completedAfterEventPlaneWake,
+      projectionMatchCompletions,
+    } = exit.value
 
     expect(completed.state).toBe("completed")
     expect(completed.result).toEqual({
@@ -389,12 +621,16 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
       matchedPermissionId: "permission-runtime-1:result",
       status: "approved",
     })
-
-    const projectionMatchCompletions = Array.from(
-      (await rebuildProjection({ url: streamUrl })).completions.values(),
-    ).filter((completion) => completion.kind === "projection_match")
     expect(projectionMatchCompletions).toHaveLength(1)
-    expect(projectionMatchCompletions[0]?.completionId).toBe(completionId)
+    expect(projectionMatchCompletions[0]?.completionId).toBe(
+      "completion-waitfor-resolved-1",
+    )
+    expect(completedAfterEventPlaneWake.state).toBe("completed")
+    expect(completedAfterEventPlaneWake.result).toEqual({
+      permissionId: "permission-eventplane-runtime-1",
+      matchedPermissionId: "permission-eventplane-runtime-1",
+      status: "approved",
+    })
   })
 
   // choreography-facade.CURRENT_WORK_CONTEXT.1

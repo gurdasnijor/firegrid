@@ -1,4 +1,8 @@
 import {
+  stream as openDurableStream,
+  type StreamResponse,
+} from "@durable-streams/client"
+import {
   acquireSubstrateDb,
   snapshotFromDb,
   type CompletionValue,
@@ -108,6 +112,49 @@ export const subscribeCompletionsAndEventStreams = (
   }
 }
 
+const acquireRawStreamSession = (
+  cfg: RuntimeContextService,
+): Effect.Effect<StreamResponse<unknown>, AcquireDbError, Scope.Scope> =>
+  Effect.acquireRelease(
+    Effect.tryPromise({
+      try: () =>
+        openDurableStream<unknown>({
+          url: cfg.streamUrl,
+          offset: "-1",
+          live: true,
+          json: true,
+        }),
+      catch: (cause) => new AcquireDbError({ cause }),
+    }),
+    (response) => Effect.sync(() => response.cancel()),
+  )
+
+// client-event-plane-registration.PROJECTION_API.7
+// firegrid-runtime-process.RUNTIME_HOT_PATH.4
+//
+// EventPlane row families are caller-owned DSS collections, not
+// collections in substrateState. They are therefore invisible to the
+// live SubstrateStreamDB collection subscriptions above. Projection-
+// match evaluators may still read EventPlane projection services, so
+// the runtime subscribes to the shared durable stream only as an edge
+// source: any retained JSON row wakes the same coalesced queue, and
+// the scan still reads the existing live substrate snapshot.
+const subscribeRawJsonRows = (
+  cfg: RuntimeContextService,
+  onEdge: () => void,
+): Effect.Effect<void, AcquireDbError, Scope.Scope> =>
+  Effect.gen(function* () {
+    const response = yield* acquireRawStreamSession(cfg)
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        response.subscribeJson<unknown>(async (batch) => {
+          if (batch.items.length > 0) onEdge()
+        }),
+      ),
+      (unsubscribe) => Effect.sync(() => unsubscribe()),
+    )
+  })
+
 const deadlineWakeStream = (
   schedules: Queue.Dequeue<DeadlineSchedule>,
 ): Stream.Stream<void> =>
@@ -124,6 +171,10 @@ const deadlineWakeStream = (
 
 interface ScopedProgramInput<E> {
   readonly subscribe: (db: CollectionsDb, onEdge: () => void) => () => void
+  readonly subscribeRawJsonRows?: boolean
+  readonly subscribeEdges?: (
+    onEdge: () => void,
+  ) => Effect.Effect<void, unknown, Scope.Scope>
   readonly nextDeadlineMs: (snapshot: ProjectionSnapshot) => number | undefined
   // The scan reads from the live-db snapshot supplied each wake. It
   // must NOT call `rebuildProjection()` itself; the runtime holds the
@@ -137,7 +188,14 @@ export const runScopedSubscriberProgram = <E>(
 ) =>
   Effect.gen(function* () {
     const cfg = yield* RuntimeContext
-    yield* Effect.forkScoped(runScopedSubscriberLoop(cfg, input))
+    const inputWithRuntimeEdges: ScopedProgramInput<E> =
+      input.subscribeRawJsonRows === true
+        ? {
+          ...input,
+          subscribeEdges: (onEdge) => subscribeRawJsonRows(cfg, onEdge),
+        }
+        : input
+    yield* Effect.forkScoped(runScopedSubscriberLoop(cfg, inputWithRuntimeEdges))
   })
 
 const runScopedSubscriberLoop = <E>(
@@ -187,6 +245,9 @@ export const runScopedSubscriberLoopFromDb = <E>(
         Effect.sync(() => input.subscribe(db, wake)),
         (unsubscribe) => Effect.sync(unsubscribe),
       )
+      if (input.subscribeEdges !== undefined) {
+        yield* input.subscribeEdges(wake)
+      }
       wake()
       // firegrid-remediation-hardening.EFFECT_CONSISTENCY.3
       // Subscription and deadline edges both mean "re-read the live

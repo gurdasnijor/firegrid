@@ -137,6 +137,9 @@ importers:
       '@durable-streams/server':
         specifier: ^0.3.1
         version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
+      '@durable-streams/state':
+        specifier: ^0.2.5
+        version: 0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17
