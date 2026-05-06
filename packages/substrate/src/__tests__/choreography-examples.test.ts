@@ -14,14 +14,14 @@ import {
   type TriggerMatcher,
 } from "../choreography/index.ts"
 import { EventPlane } from "../event-plane/index.ts"
-import { SubstrateProducerLive, WorkProducer } from "../producer.ts"
+import { SubstrateProducerLive, WorkProducer } from "../write-api/producer.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   runProjectionMatchSubscriber,
   runScheduledWorkSubscriber,
   type ProjectionMatchEvaluator,
-} from "../subscribers.ts"
-import { DurableWaitsLive } from "../waits.ts"
+} from "../execution/subscribers.ts"
+import { DurableWaitsLive } from "../execution/waits.ts"
 import {
   freshStreamUrl,
   startTestServer,

@@ -7,7 +7,7 @@ import {
   ClaimStreamError,
   firstValidClaim,
   processReadyWorkItem,
-} from "../operator.ts"
+} from "../execution/operator.ts"
 import { deriveReadyWork } from "../projection/ready-work.ts"
 import type { ClaimAttemptValue, CompletionValue, RunValue } from "../schema/rows.ts"
 import {
@@ -489,7 +489,7 @@ describe("claim-and-operator-authority.PHASE_BOUNDARY (Slice 5)", () => {
   it("claim-and-operator-authority.PHASE_BOUNDARY.2 — this feature does not define run/completion state-machine transitions (operator imports them, owns nothing new)", async () => {
     // Structural: operator.ts imports state-machine builders; it does not
     // re-define legal-transition rules. Slice 2 still owns those.
-    const op = await import("../operator.ts")
+    const op = await import("../execution/operator.ts")
     const opNames = Object.keys(op)
     for (const symbol of [
       "isLegalRunTransition",

@@ -5,7 +5,7 @@ import * as substrate from "../index.ts"
 import {
   CompletionProducer,
   SubstrateProducerLive,
-} from "../producer.ts"
+} from "../write-api/producer.ts"
 import type { CompletionValue } from "../schema/rows.ts"
 import { createPendingCompletion } from "./state-machine-sync.ts"
 import { rebuildProjection } from "../stream.ts"
@@ -17,11 +17,11 @@ import {
   SubscriberEvaluatorError,
   SubscriberStreamError,
   type ProjectionMatchEvaluator,
-} from "../subscribers.ts"
+} from "../execution/subscribers.ts"
 import {
   DurableWaits,
   DurableWaitsLive,
-} from "../waits.ts"
+} from "../execution/waits.ts"
 import {
   freshStreamUrl,
   startTestServer,
@@ -588,7 +588,7 @@ describe("durable-subscribers — error paths", () => {
 
 describe("durable-subscribers.API_FUTURE_PROOFING", () => {
   it("durable-subscribers.API_FUTURE_PROOFING.3 — subscriber implementation does not export Fireline-branded tool names as substrate primitives", async () => {
-    const subMod = await import("../subscribers.ts")
+    const subMod = await import("../execution/subscribers.ts")
     const names = Object.keys(subMod)
     for (const banned of [
       "sleep",

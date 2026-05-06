@@ -1,9 +1,9 @@
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Clock, Context, Data, Effect, Layer } from "effect"
-import { appendChange } from "./descriptors/append.ts"
-import { IdGen, IdGenLive } from "./id-gen.ts"
-import type { ProjectionMatchTrigger } from "./choreography/triggers.ts"
+import { appendChange } from "../descriptors/append.ts"
+import { IdGen, IdGenLive } from "../id-gen.ts"
+import type { ProjectionMatchTrigger } from "../choreography/triggers.ts"
 import type {
   CompletionKind,
   CompletionState,
@@ -11,12 +11,12 @@ import type {
   ProjectionMatchCompletionData,
   ScheduledWorkCompletionData,
   TimerCompletionData,
-} from "./schema/rows.ts"
+} from "../schema/rows.ts"
 import {
   createPendingCompletion,
   type CreatePendingCompletionInput,
-} from "./schema/state-machine.ts"
-import { rebuildProjection } from "./stream.ts"
+} from "../schema/state-machine.ts"
+import { rebuildProjection } from "../stream.ts"
 
 // durable-waits-and-scheduling.AWAKEABLE_API.6
 export function workScopedAwakeableKey(workId: string, name: string): string {

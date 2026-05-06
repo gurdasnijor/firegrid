@@ -10,7 +10,7 @@ import {
   ProducerStreamError,
   SubstrateProducerLive,
   WorkProducer,
-} from "../producer.ts"
+} from "../write-api/producer.ts"
 import { substrateState } from "../schema/state.ts"
 import { rebuildProjection } from "../stream.ts"
 import { freshStreamUrl, startTestServer, stopTestServer } from "./helpers.ts"
@@ -374,7 +374,7 @@ describe("Slice 3 boundaries (structural — semantic-producer + effect-native-a
     // ready-work derivation (Slice 4), wait APIs (Slice 7), operator/claim
     // surfaces (Slice 5/6) to the broader package — the constraint is about
     // what ships INSIDE the producer feature.
-    const producerMod = await import("../producer.ts")
+    const producerMod = await import("../write-api/producer.ts")
     const producerNames = Object.keys(producerMod)
     for (const symbol of [
       "sleep",
@@ -425,7 +425,7 @@ describe("Slice 3 boundaries (structural — semantic-producer + effect-native-a
     // Scope: producer.ts module. Slice 7 legitimately adds DurableWaits to
     // the broader package; the constraint is that the producer feature
     // does not own those APIs.
-    const producerMod = await import("../producer.ts")
+    const producerMod = await import("../write-api/producer.ts")
     const producerNames = Object.keys(producerMod)
     for (const symbol of [
       "sleep",
