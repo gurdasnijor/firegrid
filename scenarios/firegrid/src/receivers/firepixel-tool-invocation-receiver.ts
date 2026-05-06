@@ -3,7 +3,7 @@ import {
   EventPlane,
   type PlaneProjectionQuery,
 } from "@firegrid/substrate/event-plane"
-import { Effect, Fiber, Layer } from "effect"
+import { Effect, Fiber } from "effect"
 import { defineReceiverScenario } from "../definition.ts"
 import {
   appendRows,
@@ -46,42 +46,49 @@ const isPresent = <A>(value: A | undefined): value is A =>
   value !== undefined
 
 const toolInvocationRuntime = (streamUrl: string) =>
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.1
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.2
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.6
   // firegrid-runtime-process.SCENARIOS.21
   // client-event-plane-registration.FIREPIXEL_PROFILE.4
   // client-event-plane-registration.PRODUCER_API.5
   // client-event-plane-registration.PROJECTION_API.1
   // client-event-plane-registration.BOUNDARY.6
-  Firegrid.handler(FirepixelToolInvocationOperation, (input) =>
-    Effect.gen(function* () {
-      const producer = yield* FirepixelToolInvocationPlane.Producer
-      const projection = yield* FirepixelToolInvocationPlane.Projection
-      yield* producer.emit(
-        FirepixelToolInvocationPlane.state.toolRequests.insert({
-          value: {
-            invocationId: input.invocationId,
-            promptId: input.promptId,
-            toolName: input.toolName,
-            arguments: input.arguments,
-            state: "requested",
-          },
+  Firegrid.composeRuntime({
+    subscribers: [],
+    handlers: [
+      Firegrid.handler(FirepixelToolInvocationOperation, (input) =>
+        Effect.gen(function* () {
+          const producer = yield* FirepixelToolInvocationPlane.Producer
+          const projection = yield* FirepixelToolInvocationPlane.Projection
+          yield* producer.emit(
+            FirepixelToolInvocationPlane.state.toolRequests.insert({
+              value: {
+                invocationId: input.invocationId,
+                promptId: input.promptId,
+                toolName: input.toolName,
+                arguments: input.arguments,
+                state: "requested",
+              },
+            }),
+            {
+              idempotencyKey: input.invocationId,
+              correlationId: input.promptId,
+              causationId: input.invocationId,
+            },
+          )
+          return yield* projection.until(
+            toolResultByInvocationId(input.invocationId),
+            isPresent,
+            { timeout: "5 seconds" },
+          )
         }),
-        {
-          idempotencyKey: input.invocationId,
-          correlationId: input.promptId,
-          causationId: input.invocationId,
-        },
-      )
-      return yield* projection.until(
-        toolResultByInvocationId(input.invocationId),
-        isPresent,
-        { timeout: "5 seconds" },
-      )
-    }),
-  ).pipe(
-    Layer.provide(
+      ),
+    ],
+    provide: [
       EventPlane.layer(FirepixelToolInvocationPlane, { streamUrl }),
-    ),
-  )
+    ],
+  })
 
 const runFirepixelToolInvocationReceiver = (streamUrl: string) =>
   // firegrid-runtime-process.SCENARIOS.21

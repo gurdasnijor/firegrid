@@ -11,15 +11,23 @@ import {
   withScenarioTestServer,
 } from "../runner.ts"
 
-const FailingOperationReceiverRuntime = Firegrid.handler(
-  FailingOperation,
-  (input) =>
-    Effect.fail({
-      _tag: "ScenarioFailure" as const,
-      requestId: input.requestId,
-      reason: input.reason,
-    }),
-)
+const FailingOperationReceiverRuntime =
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.1
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.2
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.6
+  Firegrid.composeRuntime({
+    subscribers: [],
+    handlers: [
+      Firegrid.handler(FailingOperation, (input) =>
+        Effect.fail({
+          _tag: "ScenarioFailure" as const,
+          requestId: input.requestId,
+          reason: input.reason,
+        }),
+      ),
+    ],
+    provide: [],
+  })
 
 const runFailingOperationReceiver = (streamUrl: string) =>
   // firegrid-runtime-process.SCENARIOS.12

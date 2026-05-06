@@ -6,7 +6,7 @@ import {
   type TriggerMatcher,
 } from "@firegrid/substrate"
 import { EventPlane, type PlaneProjectionQuery } from "@firegrid/substrate/event-plane"
-import { Effect, Fiber, Layer, Schedule } from "effect"
+import { Effect, Fiber, Schedule } from "effect"
 import { defineReceiverScenario } from "../definition.ts"
 import {
   appendRows,
@@ -110,73 +110,77 @@ const permissionDecisionForTrigger = (
 }
 
 const firepixelPromptRuntime = (streamUrl: string) =>
-  Layer.mergeAll(
-    // firegrid-runtime-process.SCENARIOS.20
-    // client-event-plane-registration.PROJECTION_API.6
-    Firegrid.subscribers.projectionMatch({
-      evaluate: (_snapshot, trigger) =>
-        permissionDecisionForTrigger(streamUrl, trigger),
-    }),
-    // firegrid-runtime-process.SCENARIOS.20
-    // client-event-plane-registration.PRODUCER_API.6
-    // client-event-plane-registration.FIREPIXEL_PROFILE.1
-    // client-event-plane-registration.FIREPIXEL_PROFILE.2
-    Firegrid.handler(FirepixelPromptOperation, (input) =>
-      Effect.gen(function* () {
-        const producer = yield* FirepixelPlane.Producer
-        const wait = yield* RunWait
-        yield* producer.emit(
-          FirepixelPlane.state.promptChunks.insert({
-            value: {
-              chunkId: input.chunkId,
-              promptId: input.promptId,
-              text: input.text,
-              sequence: input.sequence,
-            },
-          }),
-          {
-            idempotencyKey: input.chunkId,
-            correlationId: input.promptId,
-          },
-        )
-        yield* producer.emit(
-          FirepixelPlane.state.permissionRequests.insert({
-            value: {
-              permissionId: input.permissionId,
-              promptId: input.promptId,
-              reason: "prompt-chunk emission requires permission",
-              state: "requested",
-            },
-          }),
-          {
-            idempotencyKey: input.permissionId,
-            correlationId: input.promptId,
-            causationId: input.chunkId,
-          },
-        )
-        const decision = yield* wait.for(input.permissionTrigger, {
-          resultSchema: FirepixelPermissionDecision,
-        })
-        return {
-          promptId: input.promptId,
-          chunkId: input.chunkId,
-          permissionId: input.permissionId,
-          decision: decision.decision,
-          emitted: true,
-        }
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.1
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.2
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.6
+  Firegrid.composeRuntime({
+    subscribers: [
+      // firegrid-runtime-process.SCENARIOS.20
+      // client-event-plane-registration.PROJECTION_API.6
+      Firegrid.subscribers.projectionMatch({
+        evaluate: (_snapshot, trigger) =>
+          permissionDecisionForTrigger(streamUrl, trigger),
       }),
-    ),
-  ).pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        EventPlane.layer(FirepixelPlane, { streamUrl }),
-        RunWait.layer({ streamUrl }),
-        triggerMatchersLayer({
-          "scenario.firepixel.permission.allowed": firepixelPermissionMatcher,
+    ],
+    handlers: [
+      // firegrid-runtime-process.SCENARIOS.20
+      // client-event-plane-registration.PRODUCER_API.6
+      // client-event-plane-registration.FIREPIXEL_PROFILE.1
+      // client-event-plane-registration.FIREPIXEL_PROFILE.2
+      Firegrid.handler(FirepixelPromptOperation, (input) =>
+        Effect.gen(function* () {
+          const producer = yield* FirepixelPlane.Producer
+          const wait = yield* RunWait
+          yield* producer.emit(
+            FirepixelPlane.state.promptChunks.insert({
+              value: {
+                chunkId: input.chunkId,
+                promptId: input.promptId,
+                text: input.text,
+                sequence: input.sequence,
+              },
+            }),
+            {
+              idempotencyKey: input.chunkId,
+              correlationId: input.promptId,
+            },
+          )
+          yield* producer.emit(
+            FirepixelPlane.state.permissionRequests.insert({
+              value: {
+                permissionId: input.permissionId,
+                promptId: input.promptId,
+                reason: "prompt-chunk emission requires permission",
+                state: "requested",
+              },
+            }),
+            {
+              idempotencyKey: input.permissionId,
+              correlationId: input.promptId,
+              causationId: input.chunkId,
+            },
+          )
+          const decision = yield* wait.for(input.permissionTrigger, {
+            resultSchema: FirepixelPermissionDecision,
+          })
+          return {
+            promptId: input.promptId,
+            chunkId: input.chunkId,
+            permissionId: input.permissionId,
+            decision: decision.decision,
+            emitted: true,
+          }
         }),
       ),
-    ),
-  )
+    ],
+    provide: [
+      EventPlane.layer(FirepixelPlane, { streamUrl }),
+      RunWait.layer({ streamUrl }),
+      triggerMatchersLayer({
+        "scenario.firepixel.permission.allowed": firepixelPermissionMatcher,
+      }),
+    ],
+  })
 
 const runFirepixelPromptChunkReceiver = (streamUrl: string) =>
   // firegrid-runtime-process.SCENARIOS.20

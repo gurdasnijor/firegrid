@@ -5,7 +5,7 @@ import {
 } from "./firepixel-prompt-chunk-receiver.ts"
 
 describe("FP2 Firepixel prompt chunk EventPlane receiver scenario", () => {
-  it("client-event-plane-registration.PRODUCER_API.6, client-event-plane-registration.PROJECTION_API.6, firegrid-runtime-process.SCENARIOS.20 — handler emits prompt and permission rows before RunWait resumes from EventPlane projection state", async () => {
+  it("client-event-plane-registration.PRODUCER_API.6, client-event-plane-registration.PROJECTION_API.6, firegrid-runtime-process.SCENARIOS.20, firegrid-runtime-process.RUNTIME_COMPOSITION.1, firegrid-runtime-process.RUNTIME_COMPOSITION.2, firegrid-runtime-process.RUNTIME_COMPOSITION.6 — handler composes explicit helper inputs and emits prompt and permission rows before RunWait resumes from EventPlane projection state", async () => {
     const result = await Effect.runPromise(
       selfTestFirepixelPromptChunkReceiver(),
     )
