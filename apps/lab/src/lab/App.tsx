@@ -1,4 +1,5 @@
 import { LabEventStreamPanel } from "./LabEventStreamPanel.tsx"
+import { LabOperationPanel } from "./LabOperationPanel.tsx"
 import { RawStreamInspector } from "./RawStreamInspector.tsx"
 import styles from "./styles.module.css"
 
@@ -59,9 +60,9 @@ export function App({ streamUrl, streamUrlSource }: AppProps) {
           <h2>Typed Workbench</h2>
         </div>
         <p className={styles.note}>
-          Emit and observe caller-owned EventStream rows through
-          the app-local LabClient seam backed by the production
-          Firegrid EventStream client.
+          Send typed operation intents and emit caller-owned
+          EventStream rows through the app-local LabClient seam backed
+          by the production Firegrid client.
         </p>
         <div className={styles.boundaryList} aria-label="Typed client boundary">
           <span>uses LabClient seam</span>
@@ -77,6 +78,7 @@ export function App({ streamUrl, streamUrlSource }: AppProps) {
           . Override via <code>?streamUrl=...</code> or{" "}
           <code>VITE_DURABLE_STREAMS_URL</code> directly.
         </p>
+        <LabOperationPanel streamUrl={streamUrl} />
         <LabEventStreamPanel streamUrl={streamUrl} />
       </main>
       <main
