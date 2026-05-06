@@ -478,12 +478,17 @@ describe("choreography-facade.BOUNDARY.1 — examples introduce no ACP/Fireline/
     )
 
     const snap = await rebuildProjection({ url })
-    // Substrate ProjectionSnapshot exposes exactly three collections:
-    // runs, completions, claimAttempts. There is no "permissions",
+    // Substrate ProjectionSnapshot exposes substrate authority collections plus
+    // the caller-owned EventStream row family. There is no "permissions",
     // "sessions", "prompts", "spawns", "schedule_me", or other Firepixel
     // row family on the substrate snapshot.
     const snapKeys = Object.keys(snap).filter((k) => k !== "foldVersion").sort()
-    expect(snapKeys).toEqual(["claimAttempts", "completions", "runs"])
+    expect(snapKeys).toEqual([
+      "claimAttempts",
+      "completions",
+      "eventStreams",
+      "runs",
+    ])
 
     // The plane row we emitted exists on the raw stream but is invisible
     // to the substrate's authoritative projection.

@@ -48,9 +48,25 @@ interface DeadlineSubscriberProfile<K extends CompletionKind> {
   ) => Effect.Effect<unknown, SubscriberError>
 }
 
-const deadlineSubscriberLayer = <K extends CompletionKind>(
-  profile: DeadlineSubscriberProfile<K>,
-): Layer.Layer<never, never, RuntimeContext> =>
+const pendingDeadlineAt = (
+  completion: { readonly kind: CompletionKind; readonly data?: unknown },
+  kind: CompletionKind,
+  deadlineField: string,
+): number | undefined => {
+  if (completion.kind !== kind) return undefined
+  const data = completion.data as Record<string, unknown> | undefined
+  const value = data?.[deadlineField]
+  return typeof value === "number" ? value : undefined
+}
+
+const subscriberLayer = (input: {
+  readonly subscribe: typeof subscribeCompletions
+  readonly nextDeadlineMs: (snapshot: ProjectionSnapshot) => number | undefined
+  readonly scan: (
+    snapshot: ProjectionSnapshot,
+    input: SubscriberInput,
+  ) => Effect.Effect<unknown, SubscriberError>
+}): Layer.Layer<never, never, RuntimeContext> =>
   Layer.scopedDiscard(
     Effect.gen(function* () {
       const cfg = yield* RuntimeContext
@@ -59,20 +75,29 @@ const deadlineSubscriberLayer = <K extends CompletionKind>(
         contentType: cfg.contentType,
       }
       yield* runScopedSubscriberProgram({
-        subscribe: subscribeCompletions,
-        nextDeadlineMs: (snapshot) =>
-          minPendingDueAtMs(snapshot.completions, (completion) => {
-            if (completion.kind !== profile.kind) return undefined
-            const data = completion.data as
-              | Record<string, unknown>
-              | undefined
-            const value = data?.[profile.deadlineField]
-            return typeof value === "number" ? value : undefined
-          }),
-        scan: (snapshot) => profile.scan(snapshot, subscriberInput),
+        subscribe: input.subscribe,
+        nextDeadlineMs: input.nextDeadlineMs,
+        scan: (snapshot) => input.scan(snapshot, subscriberInput),
       })
     }),
   )
+
+const deadlineSubscriberLayer = <K extends CompletionKind>(
+  profile: DeadlineSubscriberProfile<K>,
+): Layer.Layer<never, never, RuntimeContext> =>
+  subscriberLayer({
+    subscribe: subscribeCompletions,
+    nextDeadlineMs: (snapshot) =>
+      minPendingDueAtMs(snapshot.completions, (completion) =>
+        pendingDeadlineAt(
+          completion,
+          profile.kind,
+          profile.deadlineField,
+        ),
+      ),
+    scan: (snapshot, subscriberInput) =>
+      profile.scan(snapshot, subscriberInput),
+  })
 
 interface ProjectionMatchSubscriberOptions {
   readonly evaluate: ProjectionMatchEvaluator
@@ -89,32 +114,22 @@ interface ProjectionMatchSubscriberOptions {
 const projectionMatchSubscriberLayer = (
   options: ProjectionMatchSubscriberOptions,
 ): Layer.Layer<never, never, RuntimeContext> =>
-  Layer.scopedDiscard(
-    Effect.gen(function* () {
-      const cfg = yield* RuntimeContext
-      const subscriberInput: SubscriberInput = {
-        streamUrl: cfg.streamUrl,
-        contentType: cfg.contentType,
-      }
-      yield* runScopedSubscriberProgram({
-        subscribe: subscribeCompletionsAndEventStreams,
-        nextDeadlineMs: (snapshot) =>
-          minPendingDueAtMs(snapshot.completions, (completion) => {
-            if (completion.kind !== "projection_match") return undefined
-            const data = completion.data as
-              | Record<string, unknown>
-              | undefined
-            const value = data?.deadlineAtMs
-            return typeof value === "number" ? value : undefined
-          }),
-        scan: (snapshot) =>
-          runProjectionMatchSubscriberFromSnapshot(snapshot, {
-            ...subscriberInput,
-            evaluate: options.evaluate,
-          }),
-      })
-    }),
-  )
+  subscriberLayer({
+    subscribe: subscribeCompletionsAndEventStreams,
+    nextDeadlineMs: (snapshot) =>
+      minPendingDueAtMs(snapshot.completions, (completion) =>
+        pendingDeadlineAt(
+          completion,
+          "projection_match",
+          "deadlineAtMs",
+        ),
+      ),
+    scan: (snapshot, subscriberInput) =>
+      runProjectionMatchSubscriberFromSnapshot(snapshot, {
+        ...subscriberInput,
+        evaluate: options.evaluate,
+      }),
+  })
 
 // firegrid-operation-messaging.RUNTIME_HANDLERS.1
 // firegrid-operation-messaging.RUNTIME_HANDLERS.2
