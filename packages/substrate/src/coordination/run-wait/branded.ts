@@ -3,8 +3,8 @@ import { Brand } from "effect"
 // choreography-facade.CURRENT_WORK_CONTEXT.2
 // choreography-facade.CURRENT_WORK_CONTEXT.3
 // Brands are zero-runtime-cost and prevent accidental cross-id swapping at
-// the choreography boundary. They are introduced only on new
-// choreography-facing surface; kernel runId/completionId/ownerId strings are
+// the run-wait boundary. They are introduced only on new
+// run-wait-facing surface; kernel runId/completionId/ownerId strings are
 // not retrofitted.
 //
 // choreography-facade.CURRENT_WORK_CONTEXT.5

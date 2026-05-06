@@ -17,11 +17,11 @@ Read these first.
 | Area | SDD | Primary Acai Specs |
 | --- | --- | --- |
 | Firegrid product/runtime/client/lab boundary; operation messaging model | `docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md` | `firegrid-architecture-boundary`, `firegrid-operation-messaging`, `firegrid-event-streams`, `firegrid-runtime-process`, `firegrid-package-migration` |
-| Substrate package structure: `protocol/`, `state-store/`, `read-models/`, `write-api/`, `execution/`, choreography/facade boundary | `docs/SDD_FIREGRID_PACKAGE_STRUCTURE.md` | `firegrid-architecture-boundary`, `firegrid-remediation-hardening` |
+| Substrate package structure: `protocol/`, `state-store/`, `read-models/`, `write-api/`, `execution/`, RunWait/facade boundary | `docs/SDD_FIREGRID_PACKAGE_STRUCTURE.md` | `firegrid-architecture-boundary`, `firegrid-remediation-hardening` |
 | Effect-quality evidence and remediation ordering for the substrate | `docs/SDD_FIREGRID_EFFECT_QUALITY.md` | `firegrid-architecture-boundary` (`EFFECT_ARTIFACT_GRAPH.*`), `firegrid-remediation-hardening` |
 | Core durable substrate: rows, projections, claim authority, terminalization | `docs/SDD_DURABLE_AGENT_SUBSTRATE.md` | `durable-records-and-projections`, `awakeables-and-runs`, `effect-native-api`, `semantic-producer`, `ready-work-projection`, `claim-and-operator-authority`, `durable-waits-and-scheduling`, `implementation-sequencing` |
 | Client EventStream and state-producer surface | `docs/SDD_CLIENT_EVENT_PLANES_AND_STATE_PRODUCERS.md` | `client-event-plane-registration`, `firegrid-event-streams` |
-| Choreography facade: Sleep/WaitFor/ScheduleMe and projection-match triggers | `docs/SDD_CHOREOGRAPHY_FACADE.md` | `choreography-facade`, `ergonomic-facade` |
+| RunWait primitives: sleep, wait-for, scheduled intent, and projection-match triggers | `docs/SDD_CHOREOGRAPHY_FACADE.md` | `run-wait-primitives`, `choreography-facade`, `ergonomic-facade` |
 | Runtime integration lab and adapter validation | `docs/SDD_DURABLE_AGENT_RUNTIME_LAB.md` | `features/durable-agent-runtime-lab/*.feature.yaml` |
 | Runtime CLI scenario validation (next-wave dispatch plan F1A–F1E) | `docs/SDD_FIREGRID_RUNTIME_CLI_VALIDATION.md` | `firegrid-operation-messaging`, `firegrid-runtime-process`, `launchable-substrate-host`, `durable-waits-and-scheduling`, `firegrid-event-streams` |
 | Typed runtime `run(...)` entrypoint for app-owned runtime graphs | `docs/SDD_FIREGRID_TYPED_RUNTIME_RUN_API.md` | `firegrid-runtime-process`, `firegrid-operation-messaging`, `durable-subscribers`, `claim-and-operator-authority` |
@@ -98,10 +98,8 @@ layout on `main` is:
 - `packages/substrate/src/write-api/producer.ts` — substrate producer service.
 - `packages/substrate/src/execution/{operator,operator-errors,waits,subscribers,claims}.ts`
   — durable execution primitives.
-- `packages/substrate/src/coordination/` — choreography facade and projection/
-  work-claim public services. **Pending W4D merge.** Until W4D lands these
-  live under `packages/substrate/src/{facade,choreography}/` and are re-exported
-  through the same root identifiers.
+- `packages/substrate/src/coordination/` — RunWait primitives plus projection/
+  work-claim public services.
 - `packages/substrate/src/kernel/index.ts` — explicit kernel subpath barrel.
 - `packages/substrate/src/{schema,descriptors,state-machine,projection,projection-service,retained-records,stream}.ts` and `packages/substrate/src/projection/ready-work.ts`
   — compatibility re-export shims preserved for previously exposed paths.

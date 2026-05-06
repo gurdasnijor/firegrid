@@ -2,13 +2,7 @@
 import { DurableStream } from "@durable-streams/client"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { Firegrid, run } from "@firegrid/runtime"
-import {
-  OPERATION_ENVELOPE_TAG,
-  OperationEnvelopeSchema,
-  RunValue,
-  substrateState,
-} from "@firegrid/substrate/kernel"
-import { Data, Effect, Fiber, Layer, Schedule, Schema } from "effect"
+import { Data, Effect, Fiber, Layer, Schedule } from "effect"
 import { parseArgs } from "node:util"
 import { fileURLToPath } from "node:url"
 import {
@@ -16,6 +10,10 @@ import {
   makeScheduledWorkScenarioRows,
 } from "./scheduled-work.ts"
 import { inspectScenarioStream, type ScenarioInspection } from "./inspect.ts"
+import {
+  blockRunScenarioRow,
+  makeOperationStartedRunRow,
+} from "./scenario.ts"
 
 const DEFAULT_RUN_ID = "run-scheduled-work-cli-1"
 const DEFAULT_COMPLETION_ID = "completion-scheduled-work-cli-1"
@@ -36,25 +34,6 @@ class ScenarioNotReady extends Data.TaggedError("ScenarioNotReady")<{
   readonly reason: string
 }> {}
 
-const scheduledReminderPayload = (input: {
-  readonly reminderId: string
-  readonly message: string
-}) =>
-  Schema.encodeSync(ScheduledReminderOperation.input)({
-    reminderId: input.reminderId,
-    message: input.message,
-  })
-
-const scheduledReminderEnvelope = (input: {
-  readonly reminderId: string
-  readonly message: string
-}) =>
-  Schema.encodeSync(OperationEnvelopeSchema)({
-    _envelope: OPERATION_ENVELOPE_TAG,
-    operation: ScheduledReminderOperation.name,
-    payload: scheduledReminderPayload(input),
-  })
-
 export const makeScheduledWorkReceiverSeedRows = (input: {
   readonly completionId?: string
   readonly workId?: string
@@ -71,15 +50,17 @@ export const makeScheduledWorkReceiverSeedRows = (input: {
   // firegrid-runtime-process.SCENARIOS.8
   // firegrid-runtime-process.READY_WORK_OPERATOR.1
   // firegrid-runtime-process.READY_WORK_OPERATOR.7
-  const blockedRun = Schema.encodeSync(RunValue)({
+  const startedRun = makeOperationStartedRunRow({
     runId: workId,
-    state: "blocked",
-    data: scheduledReminderEnvelope({ reminderId, message }),
+    operation: ScheduledReminderOperation,
+    input: { reminderId, message },
+  })
+  const blockedRun = blockRunScenarioRow(startedRun, {
     blockedOnCompletionId: completionId,
   })
 
   return [
-    substrateState.runs.insert({ value: blockedRun }),
+    blockedRun,
     ...makeScheduledWorkScenarioRows({
       completionId,
       workId,
@@ -127,6 +108,7 @@ const scheduledWorkReceiverRuntime = Layer.mergeAll(
 )
 
 export const runScheduledWorkReceiver = (streamUrl: string) =>
+  // firegrid-runtime-process.SCENARIOS.16
   // firegrid-runtime-process.RUNTIME_RUN_API.1
   // firegrid-runtime-process.RUNTIME_RUN_API.2
   // firegrid-runtime-process.RUNTIME_RUN_API.3

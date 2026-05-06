@@ -2,11 +2,7 @@
 import { DurableStream } from "@durable-streams/client"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { Firegrid, run } from "@firegrid/runtime"
-import {
-  Choreography,
-  ChoreographyLive,
-} from "@firegrid/substrate"
-import { DurableWaitsLive } from "@firegrid/substrate/kernel"
+import { RunWait } from "@firegrid/substrate"
 import { Data, Effect, Fiber, Layer, Schedule } from "effect"
 import { parseArgs } from "node:util"
 import { fileURLToPath } from "node:url"
@@ -48,8 +44,8 @@ const sleepReceiverRuntime = (streamUrl: string) =>
     // firegrid-runtime-process.READY_WORK_OPERATOR.7
     Firegrid.handler(SleepOperation, (input) =>
       Effect.gen(function* () {
-        const choreo = yield* Choreography
-        yield* choreo.sleep(input.durationMs)
+        const wait = yield* RunWait
+        yield* wait.sleep(input.durationMs)
         return {
           durationMs: input.durationMs,
           label: input.label,
@@ -59,14 +55,12 @@ const sleepReceiverRuntime = (streamUrl: string) =>
     ),
   ).pipe(
     Layer.provide(
-      Layer.mergeAll(
-        ChoreographyLive({ streamUrl }),
-        DurableWaitsLive({ streamUrl }),
-      ),
+      RunWait.layer({ streamUrl }),
     ),
   )
 
 export const runSleepReceiver = (streamUrl: string) =>
+  // firegrid-runtime-process.SCENARIOS.16
   // firegrid-runtime-process.RUNTIME_RUN_API.1
   // firegrid-runtime-process.RUNTIME_RUN_API.2
   // firegrid-runtime-process.RUNTIME_RUN_API.3

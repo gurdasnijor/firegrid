@@ -2,9 +2,8 @@
 // firegrid-architecture-boundary.SURFACE_AREA.1
 //
 // Curated substrate root. Raw kernel modules are available only from
-// `@firegrid/substrate/kernel`. Server-side coordination (projection
-// + work-claim + choreography) lives under `./coordination/`; the
-// names re-exported here are unchanged.
+// `@firegrid/substrate/kernel`. Server-side coordination (projection,
+// work-claim, and RunWait) lives under `./coordination/`.
 export {
   EventStream,
   Operation,
@@ -17,12 +16,7 @@ export {
 } from "./descriptors/index.ts"
 
 export {
-  AwakeableToolInput,
-  Choreography,
-  ChoreographyLive,
-  ChoreographyTimeout,
-  ChoreographyTools,
-  ChoreographyTrigger,
+  RunWait,
   CompletionId,
   CurrentWorkContext,
   MissingTriggerMatcherError,
@@ -32,10 +26,7 @@ export {
   ProjectionLive,
   ProjectionReadError,
   ProjectionWaitTimeout,
-  ScheduleMeToolInput,
-  SleepToolInput,
   TriggerMatchers,
-  WaitForToolInput,
   Work,
   WorkClaim,
   WorkClaimError,
@@ -44,13 +35,9 @@ export {
   currentWorkContextLayer,
   dispatchTrigger,
   triggerMatchersLayer,
-  type ChoreographyLiveConfig,
-  type ChoreographyOperation,
-  type ChoreographyService,
-  type ChoreographySuspension,
-  type ChoreographyToolBinding,
-  type ChoreographyToolBindings,
-  type ChoreographyToolsConfig,
+  type RunWaitLayerConfig,
+  type RunWaitService,
+  type RunWaitUntilResult,
   type ClaimAttemptOutcome,
   type Claimed,
   type CurrentWorkContextValue,
@@ -59,7 +46,6 @@ export {
   type ProjectionQuery,
   type ProjectionService,
   type Recorded,
-  type ScheduleAtResult,
   type TriggerMatchEvaluation,
   type TriggerMatcher,
   type TriggerMatchersService,

@@ -77,7 +77,7 @@ export interface ProcessReadyWorkItemArgs<A, E, R = never> {
   readonly contentType?: string
   readonly ownerId: string
   readonly item: ReadyWorkItem
-  // The handler may carry a non-never `R` channel (e.g. choreography
+  // The handler may carry a non-never `R` channel (e.g. run-wait
   // services, durable waits) so runtime callers can resume blocked
   // runs with the same dependency-graph the original handler used.
   // Substrate-internal callers continue to default to `R = never`.

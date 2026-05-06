@@ -5,10 +5,10 @@
 // Server-side coordination surface for the Firegrid substrate.
 //
 // This folder unifies the previously split `facade/` (projection +
-// work-claim) and `choreography/` (durable workflow primitives) into
+// work-claim) and `run-wait/` (durable workflow primitives) into
 // a single responsibility-named home. Runtime authors and other
 // server-side participants compose the substrate's read snapshots,
-// claim authority, and durable choreography from this surface; raw
+// claim authority, and durable run-wait from this surface; raw
 // kernel modules stay behind the explicit `@firegrid/substrate/kernel`
 // subpath.
 
@@ -35,4 +35,4 @@ export {
   type WorkClaimService,
 } from "./work.ts"
 
-export * from "./choreography/index.ts"
+export * from "./run-wait/index.ts"

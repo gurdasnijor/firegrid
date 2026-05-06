@@ -3,16 +3,16 @@ import { createStateSchema } from "@durable-streams/state"
 import { Duration, Effect, Layer, Schema, TestClock, TestContext } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
-  ChoreographyLive,
-  ChoreographyTools,
-  Choreography,
+  RunWaitLive,
+  RunWaitTools,
+  RunWait,
   OwnerId,
   WorkId,
   currentWorkContextLayer,
   triggerMatchersLayer,
-  type ChoreographyTrigger,
+  type RunWaitTrigger,
   type TriggerMatcher,
-} from "../coordination/choreography/index.ts"
+} from "../coordination/run-wait/index.ts"
 import { EventPlane } from "../event-plane/index.ts"
 import { SubstrateProducerLive, WorkProducer } from "../write-api/producer.ts"
 import { rebuildProjection } from "../stream.ts"
@@ -80,7 +80,7 @@ const buildRequiredActionPlane = () => {
 // Helper: build a projection-match trigger pointing at the plane.
 const permissionResolvedTrigger = (
   permissionId: string,
-): ChoreographyTrigger => ({
+): RunWaitTrigger => ({
   _tag: "ProjectionMatch",
   label: `permission-resolved:${permissionId}`,
   projectionKey: `example.required_action.permission:${permissionId}`,
@@ -90,7 +90,7 @@ const permissionResolvedTrigger = (
 // choreography-facade.COMMON_USAGE_EXAMPLES.1
 // choreography-facade.COMMON_USAGE_EXAMPLES.4
 describe("choreography-facade.COMMON_USAGE_EXAMPLES.1 — fake ACP-permission-shaped event-plane example using waitFor", () => {
-  it("Firepixel-shaped permission flow: emit requested → Choreography.waitFor blocks the run → emit resolved → projection-match subscriber resolves the completion → run is now ready-derivable", async () => {
+  it("Firepixel-shaped permission flow: emit requested → RunWait.for blocks the run → emit resolved → projection-match subscriber resolves the completion → run is now ready-derivable", async () => {
     const url = await createSubstrateStream("examples-acp-permission")
     const runId = "run-permission-1"
     const permissionId = "perm-7"
@@ -128,19 +128,19 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.1 — fake ACP-permission-sh
     const presenceMatcher: TriggerMatcher = () =>
       Effect.succeed({ kind: "no-match" } as const)
 
-    // Run Choreography.waitFor; it will interrupt after the durable
+    // Run RunWait.for; it will interrupt after the durable
     // completion + blocked run are committed. We capture the
     // completionId by reading the run's blockedOnCompletionId after the
     // interrupt resolves.
     const waitProgram = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.waitFor(
+      const wait = yield* RunWait
+      return yield* wait.for(
         permissionResolvedTrigger(permissionId),
         { timeout: Duration.minutes(10) },
       )
     })
-    const choreoLayer = Layer.provideMerge(
-      ChoreographyLive({ streamUrl: url }),
+    const waitLayer = Layer.provideMerge(
+      RunWaitLive({ streamUrl: url }),
       Layer.mergeAll(
         DurableWaitsLive({ streamUrl: url }),
         triggerMatchersLayer({
@@ -153,7 +153,7 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.1 — fake ACP-permission-sh
       ),
     )
     await Effect.runPromiseExit(
-      waitProgram.pipe(Effect.provide(choreoLayer)),
+      waitProgram.pipe(Effect.provide(waitLayer)),
     )
 
     const blockedSnap = await rebuildProjection({ url })
@@ -248,7 +248,7 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.1 — fake ACP-permission-sh
 
 // =====================================================================
 // COMMON_USAGE_EXAMPLES.2 + COMMON_USAGE_EXAMPLES.4
-// Delayed Firepixel-shaped self-prompt via Choreography.scheduleAt and
+// Delayed Firepixel-shaped self-prompt via RunWait.until and
 // the substrate scheduled-work subscriber. The substrate resolves "time
 // reached"; live promptability is a runtime concern and is not modelled
 // here (per docs/SDD_CHOREOGRAPHY_FACADE.md).
@@ -271,12 +271,12 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.2 — delayed scheduled-work
     const whenMs = Date.now() - 1000
 
     const program = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.scheduleAt({ at: whenMs, input: followUpInput })
+      const wait = yield* RunWait
+      return yield* wait.until(whenMs, followUpInput)
     })
 
     const minimalLayer = Layer.provideMerge(
-      ChoreographyLive({ streamUrl: url }),
+      RunWaitLive({ streamUrl: url }),
       DurableWaitsLive({ streamUrl: url }),
     )
 
@@ -321,11 +321,11 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.2 — delayed scheduled-work
 // Tool-layer sleep proves identical durable lowering to the runtime API.
 // Two sleep paths against two streams must produce indistinguishable
 // durable.completion + durable.run shapes; the only difference is the
-// presentation (interrupt vs ChoreographySuspension value).
+// presentation (interrupt vs RunWaitSuspension value).
 // =====================================================================
 
 describe("choreography-facade.COMMON_USAGE_EXAMPLES.3 — tool-layer sleep example proving identical durable lowering to the runtime API", () => {
-  it("running Choreography.sleep and ChoreographyTools.sleep with the same durationMs against two parallel streams produces structurally identical timer completion + blocked run shapes", async () => {
+  it("running RunWait.sleep and RunWaitTools.sleep with the same durationMs against two parallel streams produces structurally identical timer completion + blocked run shapes", async () => {
     const urlRuntime = await createSubstrateStream("examples-sleep-runtime")
     const urlTool = await createSubstrateStream("examples-sleep-tool")
     const runRuntimeId = "run-sleep-runtime-1"
@@ -335,13 +335,13 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.3 — tool-layer sleep examp
 
     const durationMs = 1500
 
-    // Runtime path: Choreography.sleep interrupts on success.
+    // Runtime path: RunWait.sleep interrupts on success.
     const runtimeProgram = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.sleep(Duration.millis(durationMs))
+      const wait = yield* RunWait
+      return yield* wait.sleep(Duration.millis(durationMs))
     })
     const runtimeLayer = Layer.provideMerge(
-      ChoreographyLive({ streamUrl: urlRuntime }),
+      RunWaitLive({ streamUrl: urlRuntime }),
       Layer.mergeAll(
         DurableWaitsLive({ streamUrl: urlRuntime }),
         triggerMatchersLayer({}),
@@ -360,13 +360,13 @@ describe("choreography-facade.COMMON_USAGE_EXAMPLES.3 — tool-layer sleep examp
       ),
     )
 
-    // Tool path: ChoreographyTools.sleep returns a ChoreographySuspension.
-    const tools = ChoreographyTools.make({ streamUrl: urlTool })
+    // Tool path: RunWaitTools.sleep returns a RunWaitSuspension.
+    const tools = RunWaitTools.make({ streamUrl: urlTool })
     const toolInput = Schema.decodeUnknownSync(tools.sleep.inputSchema)({
       durationMs,
     })
     const toolLayer = Layer.provideMerge(
-      ChoreographyLive({ streamUrl: urlTool }),
+      RunWaitLive({ streamUrl: urlTool }),
       Layer.mergeAll(
         DurableWaitsLive({ streamUrl: urlTool }),
         triggerMatchersLayer({}),
@@ -457,13 +457,13 @@ describe("choreography-facade.BOUNDARY.1 — examples introduce no ACP/Fireline/
     // Run a runtime sleep and a scheduleAt to populate substrate state.
     await Effect.runPromiseExit(
       Effect.gen(function* () {
-        const choreo = yield* Choreography
-        yield* choreo.scheduleAt({ at: Date.now() + 60_000, input: {} })
-        return yield* choreo.sleep(Duration.millis(1))
+        const wait = yield* RunWait
+        yield* wait.until(Date.now() + 60_000, {})
+        return yield* wait.sleep(Duration.millis(1))
       }).pipe(
         Effect.provide(
           Layer.provideMerge(
-            ChoreographyLive({ streamUrl: url }),
+            RunWaitLive({ streamUrl: url }),
             Layer.mergeAll(
               DurableWaitsLive({ streamUrl: url }),
               triggerMatchersLayer({}),

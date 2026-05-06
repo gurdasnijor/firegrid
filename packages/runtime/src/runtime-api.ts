@@ -133,7 +133,7 @@ interface ProjectionMatchSubscriberOptions {
 // Low-level runtime wiring for substrate's projection-match subscriber.
 // The evaluator stays explicit rather than using TriggerMatchers because the
 // substrate scan receives the full ProjectionSnapshot; TriggerMatchers lookups
-// are trigger-only and are consumed by Choreography when creating waits.
+// are trigger-only and are consumed by RunWait when creating waits.
 const projectionMatchSubscriberLayer = (
   options: ProjectionMatchSubscriberOptions,
 ): Layer.Layer<never, never, RuntimeContext> =>
@@ -383,8 +383,8 @@ const runReadyWorkOperator = <Op extends Operation.Any, E, R>(
 //     completion has resolved, claiming ownership through the
 //     substrate authority before re-invoking the same handler.
 //
-// On resume, choreography primitives (`Choreography.sleep`,
-// `awaitAwakeable`, `waitFor`) are idempotent: their durable
+// On resume, RunWait primitives (`sleep`, `awakeable`, `for`) are idempotent:
+// their durable
 // completion lookups short-circuit when the keyed completion already
 // resolved, so the handler body progresses past its previous
 // suspension point.

@@ -1,21 +1,18 @@
 import { DurableStream } from "@durable-streams/client"
 import {
-  Choreography,
-  ChoreographyLive,
-  ChoreographyTrigger,
   CompletionId,
   CurrentWorkContext,
+  ProjectionMatchTrigger,
+  RunWait,
   triggerMatchersLayer,
-  type ChoreographyService,
   type TriggerMatcher,
+  type RunWaitService,
 } from "@firegrid/substrate"
 import {
   Operation,
   OPERATION_ENVELOPE_TAG,
 } from "@firegrid/substrate/descriptors"
 import {
-  DurableWaits,
-  DurableWaitsLive,
   rebuildProjection,
   startRun,
   substrateState,
@@ -73,7 +70,7 @@ const WaitForPermission = Operation.define({
   name: "WaitForPermission",
   input: Schema.Struct({
     permissionId: Schema.String,
-    trigger: ChoreographyTrigger,
+    trigger: ProjectionMatchTrigger,
   }),
   output: Schema.Struct({
     permissionId: Schema.String,
@@ -161,7 +158,7 @@ const seedBlockedWaitForRun = async (
   completionId: string,
   payload: {
     readonly permissionId: string
-    readonly trigger: ChoreographyTrigger
+    readonly trigger: ProjectionMatchTrigger
   },
 ): Promise<void> => {
   const startedData = {
@@ -210,51 +207,16 @@ const createRuntimeStream = async (name: string): Promise<string> => {
   return streamUrl
 }
 
-const fakeChoreographyLayer = Layer.succeed(Choreography, {
+const fakeRunWaitLayer = Layer.succeed(RunWait, {
   sleep: () => Effect.interrupt,
-  waitFor: () => Effect.interrupt,
-  scheduleAt: (input) =>
+  for: () => Effect.interrupt,
+  until: (when) =>
     Effect.succeed({
       completionId: CompletionId("completion-from-server-dependency"),
-      whenMs: typeof input.at === "number" ? input.at : input.at.getTime(),
+      whenMs: typeof when === "number" ? when : when.getTime(),
     }),
-  awaitAwakeable: () => Effect.interrupt,
-} satisfies ChoreographyService)
-
-const fakeDurableWaitsLayer = Layer.succeed(DurableWaits, {
-  sleep: () =>
-    Effect.succeed({
-      completionId: "unused-sleep",
-      kind: "timer",
-      state: "pending",
-    }),
-  waitFor: () =>
-    Effect.succeed({
-      completionId: "unused-wait-for",
-      kind: "projection_match",
-      state: "pending",
-    }),
-  scheduleWork: () =>
-    Effect.succeed({
-      completionId: "unused-scheduled-work",
-      kind: "scheduled_work",
-      state: "pending",
-    }),
-  awakeable: () =>
-    Effect.succeed({
-      completionId: "unused-awakeable",
-      key: "unused",
-      kind: "externally_resolved_awakeable",
-      state: "pending",
-    }),
-  awakeableGlobal: () =>
-    Effect.succeed({
-      completionId: "unused-global-awakeable",
-      key: "unused",
-      kind: "externally_resolved_awakeable",
-      state: "pending",
-    }),
-})
+  awakeable: () => Effect.interrupt,
+} satisfies RunWaitService)
 
 const permissionMatcher: TriggerMatcher = () =>
   Effect.succeed({ kind: "match", value: { status: "approved" } })
@@ -372,7 +334,7 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
     )
     const runId = "ready-work-waitfor-run-1"
     const completionId = "completion-waitfor-resolved-1"
-    const trigger: ChoreographyTrigger = {
+    const trigger: ProjectionMatchTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-approved:permission-runtime-1",
       projectionKey: "PermissionEvents:permission:permission-runtime-1",
@@ -385,8 +347,8 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
 
     const handlerLayer = Firegrid.handler(WaitForPermission, (input) =>
       Effect.gen(function* () {
-        const choreo = yield* Choreography
-        yield* choreo.waitFor(input.trigger)
+        const wait = yield* RunWait
+        yield* wait.for(input.trigger)
         return {
           permissionId: input.permissionId,
           status: "approved" as const,
@@ -395,8 +357,7 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
     ).pipe(
       Layer.provide(
         Layer.mergeAll(
-          ChoreographyLive({ streamUrl }),
-          DurableWaitsLive({ streamUrl }),
+          RunWait.layer({ streamUrl }),
           triggerMatchersLayer({
             "scenario.permission.approved": permissionMatcher,
           }),
@@ -441,10 +402,9 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
     const handlerLayer = Firegrid.handler(ContextEcho, (input) =>
       Effect.gen(function* () {
         const ctx = yield* CurrentWorkContext
-        const choreography = yield* Choreography
-        const scheduled = yield* choreography.scheduleAt({
-          at: input.whenMs,
-          input: { workId: ctx.workId },
+        const wait = yield* RunWait
+        const scheduled = yield* wait.until(input.whenMs, {
+          workId: ctx.workId,
         })
         return {
           workId: ctx.workId,
@@ -455,7 +415,7 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
       }),
     ).pipe(
       Layer.provide(
-        Layer.mergeAll(fakeChoreographyLayer, fakeDurableWaitsLayer),
+        fakeRunWaitLayer,
       ),
     )
 

@@ -366,7 +366,7 @@ These deviations are deliberate and documented:
 
 - `Data.TaggedError` is the firegrid policy. `Schema.TaggedError` is reserved for the moment a future descriptor needs error-decoding from a wire envelope. See `docs/REVIEW_EFFECT_ERROR_MANAGEMENT_2026-05-05.md` §1. The metric ratchet caps the count at the current baseline.
 - `Effect.runPromise` is permitted in `__tests__/` while the `@effect/vitest` migration is in flight. The metric ratchet caps the count.
-- `Effect.orDie` / `Layer.orDie` / `Effect.die` is permitted at the choreography facade documented in `packages/substrate/src/choreography/service.ts` and at runtime fork-point logging boundaries. The metric ratchet caps the count; future tightening with a `local/orDie-needs-justification` rule is tracked in the static-enforcement proposal.
+- `Effect.orDie` / `Layer.orDie` / `Effect.die` is permitted at the RunWait facade documented in `packages/substrate/src/coordination/run-wait/service.ts` and at runtime fork-point logging boundaries. The metric ratchet caps the count; future tightening with a `local/orDie-needs-justification` rule is tracked in the static-enforcement proposal.
 - `Effect.runFork` / `Effect.runPromise` / `Effect.runPromiseExit` in `apps/lab/src/lab/LabEventStreamPanel.tsx` is the documented React boundary; the file carries explicit `eslint-disable-next-line no-restricted-syntax` suppressions.
 
 This tooling exists because the original manual review missed near-duplicates in `packages/substrate/src/retained-records.ts` and similar repeated static-quality issues. Manual review windows are too narrow to serve as the only guardrail.

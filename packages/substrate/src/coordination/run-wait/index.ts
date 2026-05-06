@@ -1,7 +1,7 @@
-// Curated re-export of the choreography facade foundation slice.
+// Curated re-export of the run-wait facade foundation slice.
 // choreography-facade — first commit covers branded ids, CurrentWorkContext,
 // trigger schema + matcher service, and the public error/suspension types.
-// Choreography service, tool bindings, and examples land in later commits.
+// RunWait service, tool bindings, and examples land in later commits.
 export { CompletionId, OwnerId, WorkId } from "./branded.ts"
 
 export {
@@ -11,7 +11,7 @@ export {
 } from "./context.ts"
 
 export {
-  ChoreographyTrigger,
+  RunWaitTrigger,
   MissingTriggerMatcherError,
   ProjectionMatchTrigger,
   TriggerMatchers,
@@ -23,26 +23,26 @@ export {
 } from "./triggers.ts"
 
 export {
-  ChoreographyTimeout,
-  type ChoreographyOperation,
-  type ChoreographySuspension,
+  RunWaitTimeout,
+  type RunWaitOperation,
+  type RunWaitSuspension,
 } from "./errors.ts"
 
 export {
-  Choreography,
-  ChoreographyLive,
-  type ChoreographyLiveConfig,
-  type ChoreographyService,
-  type ScheduleAtResult,
+  RunWait,
+  RunWaitLive,
+  type RunWaitLayerConfig,
+  type RunWaitService,
+  type RunWaitUntilResult,
 } from "./service.ts"
 
 export {
   AwakeableToolInput,
-  ChoreographyTools,
+  RunWaitTools,
   ScheduleMeToolInput,
   SleepToolInput,
   WaitForToolInput,
-  type ChoreographyToolBinding,
-  type ChoreographyToolBindings,
-  type ChoreographyToolsConfig,
+  type RunWaitToolBinding,
+  type RunWaitToolBindings,
+  type RunWaitToolsConfig,
 } from "./tools.ts"
