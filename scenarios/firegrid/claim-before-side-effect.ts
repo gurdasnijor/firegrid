@@ -15,7 +15,10 @@ import {
 import { Effect, Schema } from "effect"
 import { fileURLToPath } from "node:url"
 
-const SideEffectInput = Schema.Struct({
+// firegrid-runtime-process.SCENARIOS.6
+// SideEffectInput is exported so receiver-side scenarios can reuse the
+// same schema-derived descriptor without redefining a parallel one.
+export const SideEffectInput = Schema.Struct({
   sideEffectId: Schema.String,
   target: Schema.String,
   amountCents: Schema.Number,
@@ -26,7 +29,7 @@ const SideEffectReadySignal = Schema.Struct({
   reason: Schema.String,
 })
 
-const ChargeCardOperation = Operation.define({
+export const ChargeCardOperation = Operation.define({
   name: "ChargeCard",
   input: SideEffectInput,
   output: Schema.Struct({
