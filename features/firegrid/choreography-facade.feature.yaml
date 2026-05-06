@@ -22,6 +22,9 @@ components:
       6: The runtime API does not expose raw completion CRUD, raw run transition builders, raw append helpers, retained fold readers, or processReadyWorkItem as the normal path.
       7: scheduleAt is the substrate-facing scheduled-work name; profile-specific names such as schedule_me are tool aliases above the substrate API.
       8: v1 awaitAwakeable lowers to work-scoped awakeable keys derived from CurrentWorkContext.workId and a caller-supplied name; global awakeables remain on DurableWaits.
+      9: Re-invoking waitFor for the current run already blocked on a resolved projection-match completion with the same trigger resumes the handler without authoring a duplicate completion.
+      10: Re-invoking waitFor for the current run already blocked on a pending projection-match completion with the same trigger re-suspends without authoring a duplicate completion.
+      11: Re-invoking waitFor for the current run already blocked on a missing, non-projection-match, or trigger-mismatched completion fails as an explicit choreography defect.
 
   TRIGGERS:
     requirements:

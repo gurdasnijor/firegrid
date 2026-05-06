@@ -140,7 +140,7 @@ const observeBlockedCompletion = (
 const wrapSuspending = <R>(
   cfg: ChoreographyToolsConfig,
   operation: ChoreographyOperation,
-  call: Effect.Effect<never, never, R>,
+  call: Effect.Effect<unknown, never, R>,
 ): Effect.Effect<ChoreographySuspension, never, R | CurrentWorkContext> =>
   Effect.gen(function* () {
     const ctx = yield* CurrentWorkContext
