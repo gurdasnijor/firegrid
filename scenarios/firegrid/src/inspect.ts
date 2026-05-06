@@ -9,8 +9,6 @@ import {
   type RunValue,
 } from "@firegrid/substrate/kernel"
 import { Schema } from "effect"
-import { parseArgs } from "node:util"
-import { fileURLToPath } from "node:url"
 
 interface RunInspection {
   readonly runId: string
@@ -148,36 +146,4 @@ export const inspectScenarioStream = async (
   // launchable-substrate-host.NO_CONTROL_PLANE.5
   const snapshot = await rebuildProjection({ url: streamUrl })
   return inspectSnapshot(streamUrl, snapshot)
-}
-
-const streamUrlFromArgs = (): string | undefined => {
-  const { values } = parseArgs({
-    options: {
-      "stream-url": { type: "string" },
-    },
-    strict: true,
-    allowPositionals: false,
-  })
-  return values["stream-url"] ?? process.env.DURABLE_STREAMS_URL
-}
-
-const main = async () => {
-  const streamUrl = streamUrlFromArgs()
-  if (streamUrl === undefined || streamUrl.length === 0) {
-    process.stderr.write(
-      "Usage: pnpm --filter @firegrid/scenarios run inspect -- --stream-url <durable-stream-url>\n",
-    )
-    process.exitCode = 1
-    return
-  }
-
-  const inspection = await inspectScenarioStream(streamUrl)
-  process.stdout.write(`${JSON.stringify(inspection, null, 2)}\n`)
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  void main().catch((error: unknown) => {
-    console.error(error)
-    process.exitCode = 1
-  })
 }

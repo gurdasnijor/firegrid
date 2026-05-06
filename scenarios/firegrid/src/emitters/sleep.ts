@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+import { defineEmitScenario } from "../definition.ts"
 import {
   Operation,
 } from "@firegrid/substrate/descriptors"
@@ -6,10 +6,8 @@ import {
   defineScenarioRows,
   makeOperationStartedRunRow,
   scenarioRowsFromIterable,
-  writeScenarioRowsToNdjson,
-} from "./scenario.ts"
+} from "../scenario.ts"
 import { Schema } from "effect"
-import { fileURLToPath } from "node:url"
 
 export const SleepOperation = Operation.define({
   name: "Sleep",
@@ -24,7 +22,7 @@ export const SleepOperation = Operation.define({
   }),
 })
 
-export const DEFAULT_SLEEP_RUN_ID = "run-sleep-cli-1"
+const DEFAULT_SLEEP_RUN_ID = "run-sleep-cli-1"
 export const DEFAULT_SLEEP_DURATION_MS = 500
 export const DEFAULT_SLEEP_LABEL = "timer-cli-1"
 
@@ -55,17 +53,13 @@ export const makeSleepScenarioRows = (input: {
   ] as const
 }
 
-export const sleepScenario = defineScenarioRows({
+const sleepScenarioRows = defineScenarioRows({
   name: "sleep",
   rows: () => scenarioRowsFromIterable(makeSleepScenarioRows()),
 })
 
-export const writeSleepScenarioRows = (
-  write?: (chunk: string) => void,
-) => {
-  writeScenarioRowsToNdjson(sleepScenario, write)
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  writeSleepScenarioRows()
-}
+export const sleepScenario = defineEmitScenario({
+  kind: "emit",
+  name: "sleep",
+  rows: sleepScenarioRows,
+})

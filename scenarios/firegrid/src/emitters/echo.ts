@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+import { defineEmitScenario } from "../definition.ts"
 import {
   Operation,
 } from "@firegrid/substrate/descriptors"
@@ -6,10 +6,8 @@ import {
   defineScenarioRows,
   makeOperationStartedRunRow,
   scenarioRowsFromIterable,
-  writeScenarioRowsToNdjson,
-} from "./scenario.ts"
+} from "../scenario.ts"
 import { Schema } from "effect"
-import { fileURLToPath } from "node:url"
 
 export const EchoOperation = Operation.define({
   name: "Echo",
@@ -45,17 +43,13 @@ export const makeEchoScenarioRows = (input: {
   ] as const
 }
 
-export const echoScenario = defineScenarioRows({
+const echoScenarioRows = defineScenarioRows({
   name: "echo",
   rows: () => scenarioRowsFromIterable(makeEchoScenarioRows()),
 })
 
-export const writeEchoScenarioRows = (
-  write?: (chunk: string) => void,
-) => {
-  writeScenarioRowsToNdjson(echoScenario, write)
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  writeEchoScenarioRows()
-}
+export const echoScenario = defineEmitScenario({
+  kind: "emit",
+  name: "echo",
+  rows: echoScenarioRows,
+})
