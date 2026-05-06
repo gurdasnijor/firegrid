@@ -85,9 +85,15 @@ components:
       3: Host Program Graph definitions are named ordinary Effect Layer compositions supplied in process.
       4: Serialized config may select known local Host Program Graph definitions but does not create a mutable global runtime registry.
       5: Development helpers can compose client and host layers in one Effect program without making that the production process boundary.
-      5-note: The first withHost-style slice composes the existing host and client capabilities in one Effect scope and does not introduce network diagnostics, host mutation endpoints, a distinct writer API, or a separate runtime registry.
-      6: withHost-style development helpers may provide the substrate client to the program they run.
-      7: withHost-style development helpers do not create a distinct writer API from the standalone substrate client.
+      5-note: Such test/dev helpers must remain test-scoped and must not become a public runtime API. The original `withHost`-style public helper has been removed (`firegrid-runtime-process.RUNTIME_PACKAGE.4`).
+      6:
+        requirement: withHost-style development helpers may provide the substrate client to the program they run.
+        deprecated: true
+      6-note: Public `withHost` is removed. Test helpers may locally compose client and host layers but must not be exported from `@firegrid/runtime` as an app-client provider (`firegrid-runtime-process.RUNTIME_PACKAGE.4`).
+      7:
+        requirement: withHost-style development helpers do not create a distinct writer API from the standalone substrate client.
+        deprecated: true
+      7-note: Subsumed by the removal of public `withHost` (`firegrid-runtime-process.RUNTIME_PACKAGE.4`).
       8: Development Host Program Graph discovery uses explicit caller-supplied local maps rather than dynamic module import.
       9: Host Program Graph definitions are not fetched from durable state.
 

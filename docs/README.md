@@ -1,50 +1,134 @@
 # Firegrid Docs
 
-This directory separates canonical design documents from review and execution
-artifacts.
+This directory holds Firegrid's design documents, review evidence, generated
+architecture artifacts, and ongoing planning notes. Use this index to tell
+which file is authoritative for the current shape of the system, which is
+historical context, and which is execution evidence.
+
+The Acai feature files in `features/firegrid/` are the formal contract behind
+these docs. Code references stable ACIDs from those features; SDDs explain the
+intent and trade-offs.
 
 ## Canonical Design Docs
 
-These documents describe intended durable-substrate behavior and are the main
-human-readable design source behind the Acai specs in
-`features/firegrid/` and the runtime-validation specs in
-`features/durable-agent-runtime-lab/`.
+These describe Firegrid as it is now and as the next slice will extend it.
+Read these first.
 
-| Area | SDD | Feature Spec |
+| Area | SDD | Primary Acai Specs |
 | --- | --- | --- |
-| Core durable state, phases 1-8 | `docs/SDD_DURABLE_AGENT_SUBSTRATE.md` | `features/firegrid/{durable-records-and-projections,awakeables-and-runs,effect-native-api,semantic-producer,ready-work-projection,claim-and-operator-authority,durable-waits-and-scheduling,implementation-sequencing}.feature.yaml` |
-| Client event planes and state producers, phase 11 | `docs/SDD_CLIENT_EVENT_PLANES_AND_STATE_PRODUCERS.md` | `features/firegrid/client-event-plane-registration.feature.yaml` |
-| Choreography facade, phase 12 | `docs/SDD_CHOREOGRAPHY_FACADE.md` | `features/firegrid/choreography-facade.feature.yaml` |
-| Launchable client, host, Host Program Graph, and lab, phase 13+ | `docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md` | `features/firegrid/launchable-substrate-host.feature.yaml` |
-| Firegrid architecture and operation messaging boundary, draft | `docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md` | `features/firegrid/*.feature.yaml` |
-| Firegrid package structure, draft | `docs/SDD_FIREGRID_PACKAGE_STRUCTURE.md` | `features/firegrid/*.feature.yaml` |
-| Firegrid Effect quality, draft | `docs/SDD_FIREGRID_EFFECT_QUALITY.md` | `features/firegrid/*.feature.yaml` |
+| Firegrid product/runtime/client/lab boundary; operation messaging model | `docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md` | `firegrid-architecture-boundary`, `firegrid-operation-messaging`, `firegrid-event-streams`, `firegrid-runtime-process`, `firegrid-package-migration` |
+| Substrate package structure: `protocol/`, `state-store/`, `read-models/`, `write-api/`, `execution/`, choreography/facade boundary | `docs/SDD_FIREGRID_PACKAGE_STRUCTURE.md` | `firegrid-architecture-boundary`, `firegrid-remediation-hardening` |
+| Effect-quality evidence and remediation ordering for the substrate | `docs/SDD_FIREGRID_EFFECT_QUALITY.md` | `firegrid-architecture-boundary` (`EFFECT_ARTIFACT_GRAPH.*`), `firegrid-remediation-hardening` |
+| Core durable substrate: rows, projections, claim authority, terminalization | `docs/SDD_DURABLE_AGENT_SUBSTRATE.md` | `durable-records-and-projections`, `awakeables-and-runs`, `effect-native-api`, `semantic-producer`, `ready-work-projection`, `claim-and-operator-authority`, `durable-waits-and-scheduling`, `implementation-sequencing` |
+| Client EventStream and state-producer surface | `docs/SDD_CLIENT_EVENT_PLANES_AND_STATE_PRODUCERS.md` | `client-event-plane-registration`, `firegrid-event-streams` |
+| Choreography facade: Sleep/WaitFor/ScheduleMe and projection-match triggers | `docs/SDD_CHOREOGRAPHY_FACADE.md` | `choreography-facade`, `ergonomic-facade` |
 | Runtime integration lab and adapter validation | `docs/SDD_DURABLE_AGENT_RUNTIME_LAB.md` | `features/durable-agent-runtime-lab/*.feature.yaml` |
+| Runtime-first CLI validation strategy (next-wave validation seam) | `docs/SDD_FIREGRID_RUNTIME_CLI_VALIDATION.md` | `firegrid-operation-messaging`, `firegrid-runtime-process`, `launchable-substrate-host`, `durable-waits-and-scheduling` |
+| Tooling, verification, and architecture reporting commands | `docs/TOOLING.md` | n/a |
 
-## Planning Docs
+## Historical / Background
 
-`docs/SDD_NEXT_LAYER_REVIEW_SEQUENCE.md` is a historical planning document for
-the next-layer SDD review order. Treat it as execution planning, not as a newer
-canonical replacement for the SDDs above.
+These docs are useful context but are not canonical for current decisions. If
+they conflict with a doc in the table above, the canonical doc wins.
 
-## Review Artifacts
+- `docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md` — original launchable-host
+  proposal. Predates the attached-only runtime decision. The
+  `SubstrateHost`/`SubstrateHostBoot`/`embeddedDev`/`withHost` vocabulary it
+  uses is superseded by
+  `docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md`. Treat its
+  inspector/lab UI narrative as proposal-level input; treat its boundary,
+  process, and dev-server text as historical.
+- `docs/SDD_NEXT_LAYER_REVIEW_SEQUENCE.md` — execution planning for the
+  next-layer SDD review order. Useful for orientation; not a replacement for
+  any canonical SDD.
+- `docs/HANDOFF_LEAD_ARCHITECT_FIREGRID_2026-05-05.md` — onboarding handoff
+  snapshot for the lead architect role.
+- `docs/ACAI_TASKS_FIREGRID_REMEDIATION_2026-05-05.md` — remediation task list
+  snapshot.
+- `docs/PROPOSAL_STATIC_ENFORCEMENT_2026-05-05.md` — proposal feeding the
+  Effect quality and remediation slices.
 
-Review packets and architecture audits should be treated as execution artifacts.
-They can inform SDD/spec changes, but they are not canonical until the relevant
-decision is folded into an SDD and Acai feature file.
+## Review Evidence
 
-Current local review artifact:
+Review packets, audit reports, and detector findings are execution artifacts.
+They can inform an SDD or spec change, but they are not canonical until folded
+into one of the docs above.
 
-- `docs/REVIEW_DURABLE_AGENT_SUBSTRATE_PHASES_1_13.md`
+- `docs/REVIEW_FIREGRID_2026-05-05.md`
+- `docs/REVIEW_FIREGRID_INVOCATION_BOUNDARY_2026-05-06.md`
+- `docs/REVIEW_EFFECT_*.md` (per-topic Effect detector / style / runtime / etc.
+  reviews dated 2026-05-05)
+
+## Generated Architecture Artifacts
+
+Regenerated by `pnpm run graph` and `pnpm run arch:reports`. Do not edit by
+hand; treat as evidence for SDD claims.
+
+- Dependency graphs: `docs/dependency-graph.{mmd,svg}`,
+  `docs/dependency-graph-modules.svg`, `docs/dependency-graph-archi.svg`,
+  `docs/dependency-graph-{client,runtime,substrate}.mmd`
+- Effect artifact inventory: `docs/effect-artifact-inventory.{md,json}`
+
+See `docs/TOOLING.md` for which command produces which artifact and when to
+run graph-only versus the full bundle.
 
 ## How To Read The Current State
 
-1. Start with the relevant SDD in the canonical table.
-2. Check the matching Acai feature file for stable ACIDs.
+1. Start with the relevant canonical SDD in the table above.
+2. Open the matching Acai feature file under `features/firegrid/` and read the
+   stable ACIDs.
 3. Search package code and tests for full ACID references.
-4. Treat unreferenced review notes as pending review input, not accepted design.
+4. Treat unreferenced review notes and historical SDDs as input, not as
+   accepted design.
 
-The launchable-host work is currently moving from host boot/subscriber
-composition toward the Host Program Graph contract. That slice should happen
-before a broad lab UI because the lab needs to exercise the same runtime path
-that a Firepixel-like consuming runtime would use.
+## Current Source Layout (post-W4)
+
+The substrate package has been reorganized into named concern directories.
+`docs/SDD_FIREGRID_PACKAGE_STRUCTURE.md` documents the rationale; the current
+layout on `main` is:
+
+- `packages/substrate/src/protocol/{schema,descriptors}/`,
+  `packages/substrate/src/protocol/state-machine.ts` — wire schemas,
+  descriptors, codecs, transition builders.
+- `packages/substrate/src/state-store/{stream,retained-records}.ts` — durable
+  stream acquisition and retained replay helpers.
+- `packages/substrate/src/read-models/{projection,projection-service,ready-work}.ts`
+  — projections and read-model derivations.
+- `packages/substrate/src/write-api/producer.ts` — substrate producer service.
+- `packages/substrate/src/execution/{operator,operator-errors,waits,subscribers,claims}.ts`
+  — durable execution primitives.
+- `packages/substrate/src/coordination/` — choreography facade and projection/
+  work-claim public services. **Pending W4D merge.** Until W4D lands these
+  live under `packages/substrate/src/{facade,choreography}/` and are re-exported
+  through the same root identifiers.
+- `packages/substrate/src/kernel/index.ts` — explicit kernel subpath barrel.
+- `packages/substrate/src/{schema,descriptors,state-machine,projection,projection-service,retained-records,stream}.ts` and `packages/substrate/src/projection/ready-work.ts`
+  — compatibility re-export shims preserved for previously exposed paths.
+
+## Next Feature Wave
+
+W4 completed the substrate boundary cleanup. The next wave returns to net-new
+feature work. Planned slices, in priority order:
+
+1. **Operation Messaging V1** — complete the typed operation message API.
+   Anchor ACIDs:
+   `firegrid-operation-messaging.{CLIENT_MESSAGING.1-.6, SCHEDULED_MESSAGES.1-.3, RUNTIME_HANDLERS.1-.4}`.
+2. **First Lab scenario loop** — get the lab inspector exercising a real
+   end-to-end flow.
+   Anchor ACIDs:
+   `launchable-substrate-host.{LAB_INSPECTOR.1-.9, SCENARIOS.1-.2}`.
+3. **Projection-match / event-plane scenario** — durable trigger over an
+   EventStream feeding a projection.
+   Anchor ACIDs:
+   `launchable-substrate-host.SCENARIOS.3`,
+   `launchable-substrate-host.CLIENT_SURFACE.14-.15`,
+   `durable-waits-and-scheduling.WAIT_FOR.*`.
+4. **Claim-before-side-effect operator scenario** — exercise operator
+   authority through a realistic handler.
+   Anchor ACIDs:
+   `launchable-substrate-host.SCENARIOS.4`,
+   `claim-and-operator-authority.*`.
+
+The Acai spec process (`.agents/skills/acai/SKILL.md`) governs all of these.
+Each slice ends with full ACID references in code, tests, and PR/review
+notes.

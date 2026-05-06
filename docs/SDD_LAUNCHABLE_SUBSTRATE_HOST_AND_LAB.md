@@ -1,6 +1,35 @@
 # Launchable Substrate Host And Lab SDD
 
-Status: proposal
+Status: Historical / partially superseded.
+
+This SDD is the original proposal for a launchable host plus a lab inspector.
+Its lab-inspector and scenario narrative still informs the next feature wave
+(see the planned `LAB_INSPECTOR.*` and `SCENARIOS.*` slices in
+`features/firegrid/launchable-substrate-host.feature.yaml`). Its **boundary,
+process model, and dev-server text is superseded** by
+`docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md`.
+
+Specifically, the following vocabulary in this document is historical and no
+longer authoritative:
+
+- `SubstrateHost` / `SubstrateHostBoot` / `SubstrateHostLive` — replaced by
+  `FiregridRuntime` / `FiregridRuntimeBoot`
+  (`firegrid-package-migration.RENAMES.*`).
+- `embeddedDev`, `bootPlanFromConfig`, and any
+  Firegrid-owned Durable Streams dev-server lifecycle — Firegrid is
+  attached-only; local development runs `durable-streams-server dev`
+  externally
+  (`firegrid-runtime-process.BINARIES.7-.8`,
+  `firegrid-runtime-process.DEV_ENV_INJECTION.*` deprecated).
+- `withHost`-as-public-API and `SubstrateClient` provided by the host —
+  removed; the runtime package does not provide an app client
+  (`firegrid-architecture-boundary` constraints; see
+  `firegrid-runtime-process.RUNTIME_PACKAGE.4`).
+
+When this document and the canonical architecture/boundary SDD disagree, the
+canonical SDD wins. Body text below is preserved for context and for the
+inspector/scenario narrative; do not treat it as the current API contract.
+
 Created: 2026-05-04
 Owner: Durable Agent Substrate
 

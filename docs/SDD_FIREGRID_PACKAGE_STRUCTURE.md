@@ -1,6 +1,14 @@
 # SDD: Firegrid Package Structure
 
-Status: Draft
+Status: Active. The substrate-internal restructuring this SDD proposes has
+landed on `main` through the W4 wave (W4A protocol/schema, W4B
+state-store/read-models, W4C write-api/execution, W4D choreography/facade —
+W4D may still be pending; check `git log` against
+`packages/substrate/src/coordination/`). The "Current State" section below
+reflects the on-main layout and may diverge from the original "Target Internal
+Shape" target table further down — the on-main layout is the source of truth
+when the two disagree.
+
 Product: Firegrid
 Related: Firegrid package migration, architecture boundary, repo hygiene
 
@@ -16,6 +24,59 @@ boundaries from it. The immediate target is not to split the durable core into
 multiple workspace packages. The immediate target is to make the current package
 structure communicate the real concepts clearly enough that future package
 splits, if needed, are mechanical rather than speculative.
+
+## Current State (post-W4)
+
+The substrate package has been reorganized along the lines described below.
+On `main` today:
+
+```txt
+packages/substrate/src/
+  protocol/
+    schema/              durable row + state schemas (W4A)
+    descriptors/         operation, event-stream, append, codec descriptors (W4A)
+    state-machine.ts     transition builders (W4A)
+  state-store/
+    stream.ts            Durable Streams / StreamDB acquisition + rebuild (W4B)
+    retained-records.ts  retained-row replay helpers (W4B)
+  read-models/
+    projection.ts        snapshot model (W4B)
+    projection-service.ts
+    ready-work.ts        derived ready-work projection (W4B)
+  write-api/
+    producer.ts          substrate producer service (W4C)
+  execution/
+    operator.ts          operator coordinator (W4C)
+    operator-errors.ts
+    waits.ts             durable wait helpers (W4C)
+    subscribers.ts       subscriber programs (W4C)
+    claims.ts            durable claim helper (W4C)
+  coordination/          public projection + work-claim + choreography facade
+                         (W4D — still pending if absent from main)
+  kernel/index.ts        explicit kernel-internal subpath barrel
+  schema/{index,ready-work}.ts                  compat shims
+  descriptors/index.ts                          compat shim
+  state-machine.ts                              compat shim
+  stream.ts, retained-records.ts                compat shims (re-export state-store/)
+  projection.ts, projection-service.ts,
+  projection/ready-work.ts                      compat shims (re-export read-models/)
+  index.ts               curated public root (descriptor + facade vocabulary)
+  id-gen.ts, event-plane/                       unchanged
+```
+
+Compatibility re-export shims are intentionally preserved for previously
+exposed paths so existing application code does not break. New consumer code
+should prefer the canonical concern-named paths.
+
+The `state-machine/` directory the original SDD targets did not materialize;
+transition builders were placed under `protocol/state-machine.ts` (since they
+are protocol-typed transition vocabulary), and execution helpers
+(`producer`, `operator`, `waits`, `subscribers`, `claims`, `operator-errors`)
+were split between `write-api/` and `execution/` to mirror writer-facing
+versus runtime-facing roles. The Domain Model and Writes-vs-Imports sections
+below remain accurate at the conceptual level; the "Target Internal Shape"
+table further down is preserved for historical context but the on-main
+layout is the binding shape.
 
 ## Background
 
@@ -570,8 +631,11 @@ Migration steps:
    from the client package.
 2. Rename responsibility-less runtime files and split runtime helpers by role.
 3. Decide whether `packages/runtime/bin` should move to `apps/firegrid-cli`.
-4. Normalize the durable-core aggregate into protocol, state-store, projection,
-   state-machine, choreography, and kernel folders.
+4. Normalize the durable-core aggregate into protocol, state-store, projection
+   (`read-models/`), write-api / execution (substrate's chosen split for
+   state-machine concerns), choreography (`coordination/`), and kernel folders.
+   **Done in W4 (W4A/B/C, with W4D for `coordination/`).** See "Current State"
+   above for the on-main layout.
 5. Add or tighten static guards for any new directory boundaries.
 6. Use the Effect-quality SDD evidence before promoting internal durable-core
    folders into separate workspace packages.
