@@ -56,6 +56,21 @@ const assertNoWorkspaceDependencies = (manifest) => {
   }
 }
 
+const assertExternalConsumerSource = (source) => {
+  const forbiddenTokens = [
+    "durable.run",
+    "@firegrid/substrate/kernel",
+    "Choreography",
+    "DurableWaitsLive",
+  ]
+  const offenders = forbiddenTokens.filter((token) => source.includes(token))
+  if (offenders.length > 0) {
+    throw new Error(
+      `Runtime pack smoke external consumer uses forbidden tokens: ${offenders.join(", ")}`,
+    )
+  }
+}
+
 try {
   mkdirSync(packDir)
   mkdirSync(consumerDir)
@@ -120,8 +135,8 @@ try {
       {
         compilerOptions: {
           target: "ES2022",
-          module: "ESNext",
-          moduleResolution: "Bundler",
+          module: "NodeNext",
+          moduleResolution: "NodeNext",
           lib: ["ES2022"],
           strict: true,
           skipLibCheck: true,
@@ -134,9 +149,7 @@ try {
     )}\n`,
   )
 
-  writeFileSync(
-    join(consumerDir, "index.ts"),
-    `import { createStateSchema } from "@durable-streams/state"
+  const consumerSource = `import { createStateSchema } from "@durable-streams/state"
 import {
   Firegrid,
   run,
@@ -251,8 +264,9 @@ const program: Effect.Effect<never, unknown, Scope.Scope> = run(options)
 // firegrid-package-migration.PACKAGE_DISTRIBUTION.7
 // firegrid-package-migration.PACKAGE_DISTRIBUTION.8
 void program
-`,
-  )
+`
+  assertExternalConsumerSource(consumerSource)
+  writeFileSync(join(consumerDir, "index.ts"), consumerSource)
 
   run("pnpm", ["install", "--lockfile=false"], consumerDir)
   run("pnpm", ["exec", "tsc", "--noEmit", "-p", "tsconfig.json"], consumerDir)
