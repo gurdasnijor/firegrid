@@ -1,8 +1,39 @@
 # SDD: Client Event Planes And State Producers
 
-Status: proposal
+Status: proposal-era background; current API decisions are superseded by
+`features/firegrid/client-event-plane-registration.feature.yaml`,
+`docs/SDD_FIREGRID_FIREPIXEL_FOUNDATION.md`, and
+`docs/REVIEW_FIREGRID_FOUNDATION_READINESS_2026-05-06.md`.
 Created: 2026-05-04
 Owner: Durable Agent Substrate
+
+## Superseded Decision Note
+
+The open questions at the end of this proposal have current-wave answers on
+`main`:
+
+- EventPlane is exposed through `@firegrid/substrate/event-plane` for app-owned
+  runtime entrypoints (`client-event-plane-registration.EVENT_PLANE_DEFINITION.5`,
+  `client-event-plane-registration.BOUNDARY.6`).
+- `EventPlane.define({ name, state })` owns caller-defined Durable Streams
+  State collections and Effect Schema validation for the plane
+  (`client-event-plane-registration.EVENT_PLANE_DEFINITION.1-.3`).
+- `EventPlane.layer(plane, { streamUrl })` is the current v1 physical binding;
+  multiple streams can be considered later without blocking the foundation.
+- `PlaneProducer.emit(...)` preserves caller-supplied idempotency,
+  correlation, and causation metadata and is a durable sequencing boundary
+  before `RunWait` suspension (`client-event-plane-registration.PRODUCER_API.2`,
+  `client-event-plane-registration.PRODUCER_API.6`).
+- Projection helpers are currently explicit app/scenario code over typed
+  `PlaneProjection` services. Generated helpers remain future ergonomics, not
+  foundation readiness work (`client-event-plane-registration.PROJECTION_API.1`,
+  `client-event-plane-registration.PROJECTION_API.6`).
+- EventPlane row changes can wake runtime projection-match evaluation
+  (`client-event-plane-registration.PROJECTION_API.7`,
+  `firegrid-runtime-process.RUNTIME_HOT_PATH.4`).
+
+Keep this document as design background, not as the source of truth for new
+client API or Firepixel foundation tasks.
 
 ## Problem
 
