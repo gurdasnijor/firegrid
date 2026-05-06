@@ -39,8 +39,9 @@ Durable Streams CLI or Firegrid read models inspect the result
 
 The CLI writes JSON. Firegrid owns how that JSON is interpreted through Effect
 Schema decoding and protocol/read-model code. Scenario input rows are emitted
-by TypeScript files under `scenarios/firegrid/`; those files import the real
-Effect Schema descriptors and protocol builders and write JSON rows to stdout.
+by TypeScript files under `scenarios/firegrid/src/emitters/`; those files
+import the real Effect Schema descriptors and protocol builders and write JSON
+rows to stdout through the shared scenario runner.
 They are not checked-in JSON fixtures and are not runtime support surfaces.
 
 Input-side emitters use a small emit-only scenario contract. Each emitter
@@ -50,6 +51,12 @@ stdout. The contract is intentionally one-dimensional: it does not read streams,
 inspect projections, run runtime graphs, start servers, or act as an app client.
 Receiver files remain separate app-owned `run({ connection, runtime })`
 entrypoints, and `inspect` remains a read-only projection tool.
+
+`firegrid-runtime-process.SCENARIOS.15` keeps scenario execution behind one
+typed registry and CLI runner. Scenario modules define emit-only row streams,
+receiver runtime entrypoints, seed rows, and self-test expectations; the runner
+owns NDJSON writing, stream URL / environment parsing, receiver dispatch, and
+Durable Streams self-test lifecycle.
 
 The expected local shell shape is:
 
@@ -745,7 +752,7 @@ the winning claim, and terminalize the run once.
 After the four input rows are on the stream, attach two app-owned operator
 participants through the typed `@firegrid/runtime` `run({connection, runtime})`
 API and let substrate's `processReadyWorkItem` arbitrate. The receiver lives at
-`scenarios/firegrid/claim-before-side-effect-receiver.ts`; it forks two
+`scenarios/firegrid/src/receivers/claim-before-side-effect-receiver.ts`; it forks two
 participants in one Effect program, polls the projection until the run is
 terminal, then prints a JSON report to stdout and exits non-zero on assertion
 failure.
@@ -777,7 +784,7 @@ The receiver asserts:
   `{ sideEffectId, status: "charged" }` result.
 
 Automated coverage for the competing-participants invariant lives in
-`scenarios/firegrid/claim-before-side-effect-receiver.test.ts`, which spins up
+`scenarios/firegrid/src/receivers/claim-before-side-effect-receiver.test.ts`, which spins up
 its own `DurableStreamTestServer`, seeds the F1E rows directly, forks two
 participants through `run({ connection, runtime })`, and asserts both invariants
 above. The packaged `@firegrid/runtime` test suite intentionally does **not**

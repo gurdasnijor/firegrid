@@ -1,18 +1,8 @@
-#!/usr/bin/env tsx
 import { Firegrid, run } from "@firegrid/runtime"
-import {
-  Cause,
-  Console,
-  Duration,
-  Effect,
-  Fiber,
-  Ref,
-  Schedule,
-} from "effect"
-import { parseArgs } from "node:util"
-import { fileURLToPath } from "node:url"
-import { ChargeCardOperation } from "./claim-before-side-effect.ts"
-import { inspectScenarioStream, type ScenarioInspection } from "./inspect.ts"
+import { Console, Duration, Effect, Fiber, Ref, Schedule } from "effect"
+import { defineReceiverScenario } from "../definition.ts"
+import { ChargeCardOperation } from "../emitters/claim-before-side-effect.ts"
+import { inspectScenarioStream, type ScenarioInspection } from "../inspect.ts"
 
 const PARTICIPANT_COUNT = 2
 const POLL_TIMEOUT_MS = 30_000
@@ -78,28 +68,10 @@ const pollUntilTerminal = (
     }),
   )
 
-const main = Effect.gen(function* () {
-  const { values } = parseArgs({
-    options: {
-      "stream-url": { type: "string" },
-      "run-id": { type: "string" },
-    },
-    strict: true,
-    allowPositionals: false,
-  })
-  const streamUrl =
-    values["stream-url"] ??
-    process.env["DURABLE_STREAMS_URL"] ??
-    process.env["FIREGRID_STREAM_URL"]
-  if (streamUrl === undefined || streamUrl.length === 0) {
-    yield* Console.error(
-      "Usage: pnpm --silent --filter @firegrid/scenarios run claim-before-side-effect-receiver -- --stream-url <durable-stream-url>",
-    )
-    return yield* Effect.fail(new Error("missing stream URL"))
-  }
-
-  const targetRunId = values["run-id"]
-
+const runClaimBeforeSideEffectReceiver = (
+  streamUrl: string,
+  targetRunId?: string,
+) => Effect.gen(function* () {
   const invocations = yield* Ref.make<ReadonlyArray<InvocationRecord>>([])
 
   // firegrid-runtime-process.RUNTIME_RUN_API.1
@@ -172,11 +144,10 @@ const main = Effect.gen(function* () {
       new Error(`terminal-state: ${result.terminal.state}`),
     )
   }
-})
+}).pipe(Effect.scoped)
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await Effect.runPromise(Effect.scoped(main)).catch((cause) => {
-    process.stderr.write(`${Cause.pretty(Cause.die(cause))}\n`)
-    process.exitCode = 1
-  })
-}
+export const claimBeforeSideEffectReceiverScenario = defineReceiverScenario({
+  kind: "receiver",
+  name: "claim-before-side-effect-receiver",
+  run: runClaimBeforeSideEffectReceiver,
+})

@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+import { defineEmitScenario } from "../definition.ts"
 import {
   Operation,
 } from "@firegrid/substrate/descriptors"
@@ -6,10 +6,8 @@ import {
   defineScenarioRows,
   makeOperationStartedRunRow,
   scenarioRowsFromIterable,
-  writeScenarioRowsToNdjson,
-} from "./scenario.ts"
+} from "../scenario.ts"
 import { Schema } from "effect"
-import { fileURLToPath } from "node:url"
 
 export const FailingOperation = Operation.define({
   name: "FailingOperation",
@@ -28,9 +26,9 @@ export const FailingOperation = Operation.define({
   }),
 })
 
-export const DEFAULT_FAILING_RUN_ID = "run-failing-operation-cli-1"
-export const DEFAULT_FAILING_REQUEST_ID = "request-failing-operation-cli-1"
-export const DEFAULT_FAILING_REASON = "scenario handler failed intentionally"
+const DEFAULT_FAILING_RUN_ID = "run-failing-operation-cli-1"
+const DEFAULT_FAILING_REQUEST_ID = "request-failing-operation-cli-1"
+const DEFAULT_FAILING_REASON = "scenario handler failed intentionally"
 
 export const makeFailingOperationScenarioRows = (input: {
   readonly runId?: string
@@ -56,17 +54,13 @@ export const makeFailingOperationScenarioRows = (input: {
   ] as const
 }
 
-export const failingOperationScenario = defineScenarioRows({
+const failingOperationScenarioRows = defineScenarioRows({
   name: "failing-operation",
   rows: () => scenarioRowsFromIterable(makeFailingOperationScenarioRows()),
 })
 
-export const writeFailingOperationScenarioRows = (
-  write?: (chunk: string) => void,
-) => {
-  writeScenarioRowsToNdjson(failingOperationScenario, write)
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  writeFailingOperationScenarioRows()
-}
+export const failingOperationScenario = defineEmitScenario({
+  kind: "emit",
+  name: "failing-operation",
+  rows: failingOperationScenarioRows,
+})

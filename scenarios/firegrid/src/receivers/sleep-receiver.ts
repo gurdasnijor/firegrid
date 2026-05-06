@@ -1,31 +1,19 @@
-#!/usr/bin/env tsx
-import { DurableStream } from "@durable-streams/client"
-import { DurableStreamTestServer } from "@durable-streams/server"
 import { Firegrid, run } from "@firegrid/runtime"
 import { RunWait } from "@firegrid/substrate"
 import { Data, Effect, Fiber, Layer, Schedule } from "effect"
-import { parseArgs } from "node:util"
-import { fileURLToPath } from "node:url"
+import { defineReceiverScenario } from "../definition.ts"
+import type { ScenarioInspection } from "../inspect.ts"
 import {
-  inspectScenarioStream,
-  type ScenarioInspection,
-} from "./inspect.ts"
+  appendRows,
+  inspect,
+  withScenarioTestServer,
+} from "../runner.ts"
 import {
   DEFAULT_SLEEP_DURATION_MS,
   DEFAULT_SLEEP_LABEL,
   SleepOperation,
   makeSleepScenarioRows,
-} from "./sleep.ts"
-
-class ScenarioInspectionFailed extends Data.TaggedError(
-  "ScenarioInspectionFailed",
-)<{
-  readonly cause: unknown
-}> {}
-
-class ScenarioSeedFailed extends Data.TaggedError("ScenarioSeedFailed")<{
-  readonly cause: unknown
-}> {}
+} from "../emitters/sleep.ts"
 
 class ScenarioNotReady extends Data.TaggedError("ScenarioNotReady")<{
   readonly reason: string
@@ -42,6 +30,8 @@ const sleepReceiverRuntime = (streamUrl: string) =>
     // firegrid-runtime-process.READY_WORK_OPERATOR.1
     // firegrid-runtime-process.READY_WORK_OPERATOR.5
     // firegrid-runtime-process.READY_WORK_OPERATOR.7
+    // run-wait-primitives.RUN_WAIT_API.3
+    // run-wait-primitives.RUN_WAIT_API.6
     Firegrid.handler(SleepOperation, (input) =>
       Effect.gen(function* () {
         const wait = yield* RunWait
@@ -55,11 +45,13 @@ const sleepReceiverRuntime = (streamUrl: string) =>
     ),
   ).pipe(
     Layer.provide(
+      // run-wait-primitives.BOUNDARY.4
+      // run-wait-primitives.BOUNDARY.5
       RunWait.layer({ streamUrl }),
     ),
   )
 
-export const runSleepReceiver = (streamUrl: string) =>
+const runSleepReceiver = (streamUrl: string) =>
   // firegrid-runtime-process.SCENARIOS.16
   // firegrid-runtime-process.RUNTIME_RUN_API.1
   // firegrid-runtime-process.RUNTIME_RUN_API.2
@@ -71,44 +63,6 @@ export const runSleepReceiver = (streamUrl: string) =>
   run({
     connection: { streamUrl },
     runtime: sleepReceiverRuntime(streamUrl),
-  })
-
-const appendRows = (
-  streamUrl: string,
-  rows: ReadonlyArray<unknown>,
-): Effect.Effect<void, ScenarioSeedFailed> =>
-  Effect.tryPromise({
-    try: async () => {
-      const stream = new DurableStream({
-        url: streamUrl,
-        contentType: "application/json",
-      })
-      for (const row of rows) {
-        await stream.append(JSON.stringify(row))
-      }
-    },
-    catch: (cause) => new ScenarioSeedFailed({ cause }),
-  })
-
-const createScenarioStream = (
-  streamUrl: string,
-): Effect.Effect<void, ScenarioSeedFailed> =>
-  Effect.tryPromise({
-    try: async () => {
-      await DurableStream.create({
-        url: streamUrl,
-        contentType: "application/json",
-      })
-    },
-    catch: (cause) => new ScenarioSeedFailed({ cause }),
-  })
-
-const inspect = (
-  streamUrl: string,
-): Effect.Effect<ScenarioInspection, ScenarioInspectionFailed> =>
-  Effect.tryPromise({
-    try: () => inspectScenarioStream(streamUrl),
-    catch: (cause) => new ScenarioInspectionFailed({ cause }),
   })
 
 const pendingBeforeDue = (
@@ -195,87 +149,41 @@ const waitForCompletedScenario = (input: {
   )
 
 export const selfTestSleepReceiver = () =>
-  Effect.gen(function* () {
-    const server = yield* Effect.tryPromise({
-      try: async () => {
-        const instance = new DurableStreamTestServer({ port: 0 })
-        await instance.start()
-        return instance
-      },
-      catch: (cause) => new ScenarioSeedFailed({ cause }),
-    })
-    yield* Effect.addFinalizer(() =>
-      Effect.promise(() => server.stop()).pipe(Effect.orDie),
-    )
+  withScenarioTestServer(({ streamUrl }) =>
+    Effect.gen(function* () {
+      const runId = `run-sleep-receiver-${crypto.randomUUID()}`
+      const durationMs = 2_000
+      const label = `timer-${crypto.randomUUID()}`
 
-    const runId = `run-sleep-receiver-${crypto.randomUUID()}`
-    const durationMs = 2_000
-    const label = `timer-${crypto.randomUUID()}`
-    const streamUrl = `${server.url}/scenarios/sleep-receiver-${crypto.randomUUID()}`
+      const fiber = yield* Effect.forkScoped(runSleepReceiver(streamUrl))
+      yield* appendRows(
+        streamUrl,
+        makeSleepScenarioRows({ runId, durationMs, label }),
+      )
 
-    yield* createScenarioStream(streamUrl)
-    const fiber = yield* Effect.forkScoped(runSleepReceiver(streamUrl))
-    yield* appendRows(
-      streamUrl,
-      makeSleepScenarioRows({ runId, durationMs, label }),
-    )
+      const beforeDue = yield* waitForBlockedScenario({
+        streamUrl,
+        runId,
+      })
+      const completed = yield* waitForCompletedScenario({
+        streamUrl,
+        runId,
+        durationMs,
+        label,
+      })
+      yield* Fiber.interrupt(fiber)
 
-    const beforeDue = yield* waitForBlockedScenario({
-      streamUrl,
-      runId,
-    })
-    const completed = yield* waitForCompletedScenario({
-      streamUrl,
-      runId,
-      durationMs,
-      label,
-    })
-    yield* Fiber.interrupt(fiber)
+      return {
+        streamUrl,
+        beforeDue,
+        completed,
+      } as const
+    }),
+  )
 
-    return {
-      streamUrl,
-      beforeDue,
-      completed,
-    } as const
-  }).pipe(Effect.scoped)
-
-const main = async () => {
-  const { values } = parseArgs({
-    options: {
-      "self-test": { type: "boolean", default: false },
-      "stream-url": { type: "string" },
-    },
-    strict: true,
-    allowPositionals: false,
-  })
-
-  if (values["self-test"]) {
-    const result = await Effect.runPromise(selfTestSleepReceiver())
-    process.stdout.write(`${JSON.stringify(result.completed, null, 2)}\n`)
-    process.exit(0)
-    return
-  }
-
-  const streamUrl = values["stream-url"] ?? process.env.DURABLE_STREAMS_URL
-  if (streamUrl === undefined || streamUrl.length === 0) {
-    process.stderr.write(
-      "Usage: pnpm --filter @firegrid/scenarios run sleep-receiver -- --stream-url <durable-stream-url>\n",
-    )
-    process.exitCode = 1
-    return
-  }
-
-  await Effect.runPromise(runSleepReceiver(streamUrl))
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  void main().catch((error: unknown) => {
-    console.error(error)
-    process.exitCode = 1
-  })
-}
-
-export {
-  DEFAULT_SLEEP_DURATION_MS,
-  DEFAULT_SLEEP_LABEL,
-}
+export const sleepReceiverScenario = defineReceiverScenario({
+  kind: "receiver",
+  name: "sleep-receiver",
+  run: runSleepReceiver,
+  selfTest: selfTestSleepReceiver,
+})

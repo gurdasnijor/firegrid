@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+import { defineEmitScenario } from "../definition.ts"
 import {
   Operation,
 } from "@firegrid/substrate/descriptors"
@@ -9,15 +9,13 @@ import {
   makePendingCompletionScenarioRow,
   resolveCompletionScenarioRow,
   scenarioRowsFromIterable,
-  writeScenarioRowsToNdjson,
-} from "./scenario.ts"
+} from "../scenario.ts"
 import { Schema } from "effect"
-import { fileURLToPath } from "node:url"
 
 // firegrid-runtime-process.SCENARIOS.6
 // SideEffectInput is exported so receiver-side scenarios can reuse the
 // same schema-derived descriptor without redefining a parallel one.
-export const SideEffectInput = Schema.Struct({
+const SideEffectInput = Schema.Struct({
   sideEffectId: Schema.String,
   target: Schema.String,
   amountCents: Schema.Number,
@@ -92,17 +90,13 @@ export const makeClaimBeforeSideEffectScenarioRows = (input: {
   ] as const
 }
 
-export const claimBeforeSideEffectScenario = defineScenarioRows({
+const claimBeforeSideEffectScenarioRows = defineScenarioRows({
   name: "claim-before-side-effect",
   rows: () => scenarioRowsFromIterable(makeClaimBeforeSideEffectScenarioRows()),
 })
 
-export const writeClaimBeforeSideEffectScenarioRows = (
-  write?: (chunk: string) => void,
-) => {
-  writeScenarioRowsToNdjson(claimBeforeSideEffectScenario, write)
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  writeClaimBeforeSideEffectScenarioRows()
-}
+export const claimBeforeSideEffectScenario = defineEmitScenario({
+  kind: "emit",
+  name: "claim-before-side-effect",
+  rows: claimBeforeSideEffectScenarioRows,
+})

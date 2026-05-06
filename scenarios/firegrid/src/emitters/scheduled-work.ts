@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+import { defineEmitScenario } from "../definition.ts"
 import {
   Operation,
 } from "@firegrid/substrate/descriptors"
@@ -6,15 +6,13 @@ import {
   ScheduledWorkCompletionData,
 } from "@firegrid/substrate/kernel"
 import { Schema } from "effect"
-import { fileURLToPath } from "node:url"
 import {
   defineScenarioRows,
   makePendingCompletionScenarioRow,
   scenarioRowsFromIterable,
-  writeScenarioRowsToNdjson,
-} from "./scenario.ts"
+} from "../scenario.ts"
 
-export const ScheduledReminderInput = Schema.Struct({
+const ScheduledReminderInput = Schema.Struct({
   reminderId: Schema.String,
   message: Schema.String,
 })
@@ -74,17 +72,13 @@ export const makeScheduledWorkScenarioRows = (input: {
   ] as const
 }
 
-export const scheduledWorkScenario = defineScenarioRows({
+const scheduledWorkScenarioRows = defineScenarioRows({
   name: "scheduled-work",
   rows: () => scenarioRowsFromIterable(makeScheduledWorkScenarioRows()),
 })
 
-export const writeScheduledWorkScenarioRows = (
-  write?: (chunk: string) => void,
-) => {
-  writeScenarioRowsToNdjson(scheduledWorkScenario, write)
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  writeScheduledWorkScenarioRows()
-}
+export const scheduledWorkScenario = defineEmitScenario({
+  kind: "emit",
+  name: "scheduled-work",
+  rows: scheduledWorkScenarioRows,
+})

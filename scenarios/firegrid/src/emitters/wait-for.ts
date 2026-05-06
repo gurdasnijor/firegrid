@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+import { defineEmitScenario } from "../definition.ts"
 import {
   EventStream,
   Operation,
@@ -7,14 +7,12 @@ import {
   ProjectionMatchTriggerSchema,
 } from "@firegrid/substrate/kernel"
 import { Schema } from "effect"
-import { fileURLToPath } from "node:url"
 import {
   defineScenarioRows,
   makeEventStreamScenarioRow,
   makeOperationStartedRunRow,
   scenarioRowsFromIterable,
-  writeScenarioRowsToNdjson,
-} from "./scenario.ts"
+} from "../scenario.ts"
 
 export const PermissionEvents = EventStream.define({
   name: "PermissionEvents",
@@ -37,11 +35,11 @@ export const WaitForPermissionOperation = Operation.define({
   }),
 })
 
-export const DEFAULT_WAIT_FOR_RUN_ID = "run-wait-for-cli-1"
-export const DEFAULT_WAIT_FOR_EVENT_ID = "event-permission-approved-cli-1"
-export const DEFAULT_PERMISSION_ID = "permission-cli-1"
+const DEFAULT_WAIT_FOR_RUN_ID = "run-wait-for-cli-1"
+const DEFAULT_WAIT_FOR_EVENT_ID = "event-permission-approved-cli-1"
+const DEFAULT_PERMISSION_ID = "permission-cli-1"
 
-export const permissionApprovedTrigger = (permissionId: string) =>
+const permissionApprovedTrigger = (permissionId: string) =>
   Schema.encodeSync(ProjectionMatchTriggerSchema)({
     _tag: "ProjectionMatch",
     label: `permission-approved:${permissionId}`,
@@ -89,17 +87,13 @@ export const makeWaitForScenarioRows = (input: {
   ] as const
 }
 
-export const waitForScenario = defineScenarioRows({
+const waitForScenarioRows = defineScenarioRows({
   name: "wait-for",
   rows: () => scenarioRowsFromIterable(makeWaitForScenarioRows()),
 })
 
-export const writeWaitForScenarioRows = (
-  write?: (chunk: string) => void,
-) => {
-  writeScenarioRowsToNdjson(waitForScenario, write)
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  writeWaitForScenarioRows()
-}
+export const waitForScenario = defineEmitScenario({
+  kind: "emit",
+  name: "wait-for",
+  rows: waitForScenarioRows,
+})

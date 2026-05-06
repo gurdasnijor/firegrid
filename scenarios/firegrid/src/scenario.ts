@@ -19,7 +19,7 @@ import { Effect, Schema, Stream } from "effect"
 type ScenarioRow = ChangeEvent<unknown>
 type ScenarioRowStream = Stream.Stream<ScenarioRow, never, never>
 
-interface ScenarioRowsDefinition {
+export interface ScenarioRowsDefinition {
   readonly name: string
   readonly rows: () => ScenarioRowStream
 }
@@ -135,19 +135,3 @@ export const resolveCompletionScenarioRow = (
       input,
     ),
   )
-
-export const writeScenarioRowsToNdjson = (
-  scenario: ScenarioRowsDefinition,
-  write: (chunk: string) => void = (chunk) => {
-    process.stdout.write(chunk)
-  },
-): void => {
-  // firegrid-runtime-process.SCENARIOS.10
-  Effect.runSync(
-    Stream.runForEach(scenario.rows(), (row) =>
-      Effect.sync(() => {
-        write(`${JSON.stringify(row)}\n`)
-      })
-    ),
-  )
-}
