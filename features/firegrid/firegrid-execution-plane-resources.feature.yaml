@@ -1,0 +1,77 @@
+feature:
+  name: firegrid-execution-plane-resources
+  product: firegrid
+  description: Product-neutral durable resource identity, opaque secret references, materialization-status facts, and runtime materializer subscriber mechanics that let local-to-remote execution-plane handoff replay deterministically without Firegrid storing secret material, provider credentials, or sandbox lifecycle policy.
+
+components:
+  RESOURCE_IDENTITY:
+    requirements:
+      1: A resource identity record carries a caller-owned resource id, an app-defined version or revision, an integrity checksum or content hash, and a stable materialization-status field; payload bytes for the resource itself are not stored in Firegrid records.
+      2: Resource identity records are caller-owned EventPlane rows; row family names are caller-owned and do not adopt product vocabulary such as agent bundle, skill, MCP, sandbox, workspace, or provider artifact as Firegrid-native row families.
+      3: A resource identity record is reproducible across topology hosts when the underlying durable rows are present and the app retains the materialization recipe; Firegrid does not embed materialization recipes as substrate primitives.
+      4: Resource identity records may be queried through `firegrid-projection-query.QUERY_HANDLES.*` and follow the typed expected error and cursor semantics of that read facade.
+
+  SECRET_REFERENCES:
+    requirements:
+      1: A secret-reference row carries an opaque caller-owned reference identifier and audit metadata such as producer identity, correlation id, causation id, and timestamps; raw secret material is not stored as a Firegrid row field.
+      2: Secret-reference values that may contain secret-shaped material are wrapped in `Effect.Redacted`, redacted, or rejected before becoming durable substrate metadata, projection state, or span attributes.
+      3: A secret-reference row carries the caller-owned resolution recipe identity but does not carry resolution credentials, rotation tokens, or provider identity; resolution is performed by app-owned runtime layers, not by Firegrid substrate.
+      4: Secret-reference rows may be queried for presence and audit through caller-owned EventPlane projections; query results never expose redacted or raw secret material.
+
+  MATERIALIZATION_FACTS:
+    requirements:
+      1: Materialization-status facts are durable rows that record whether a resource has been requested, is in progress, has succeeded with a recorded checksum, has failed, or has been retired; later valid terminals follow first-valid-terminal-wins per `firegrid-platform-invariants.SECURITY.6` and `firegrid-durable-subscriber-webhooks.DELIVERY_PROJECTION.2`.
+      2: Materialization-status facts identify the resource id, target host or topology, attempt number, and source cursor when known; identity carriers are caller-owned and opaque to Firegrid.
+      3: Materialization-status projection rebuilds deterministically from retained durable rows; two rebuilds over the same retained set choose the same status terminal.
+      4: Replay of materialization-status facts performs no live materialization side effect; live materialization happens only after a runtime materializer subscriber claims the work and reaches the live boundary.
+
+  MATERIALIZER_SUBSCRIBER:
+    requirements:
+      1: Runtime materialization is performed by a durable subscriber composed through `Firegrid.composeRuntime` that follows the durable-subscriber pattern of replay-to-live-boundary, claim-before-side-effect, typed handler outcomes, retry per app-supplied Effect `Schedule`, and durable terminal append per `firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.*`.
+      2: A materializer subscriber appends materialization-status facts through caller-owned producers; it does not author terminal run rows for the operation that requested the materialization.
+      3: A materializer subscriber that fails handler invocation surfaces a typed expected Effect error and follows the dead-letter and retention-gap policy of `firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.5` and `firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.7`.
+      4: A handler that depends on a materialized resource may suspend on the corresponding materialization-status terminal through a `RunWait` projection-match recipe over the caller-owned status projection per `firegrid-durable-subscriber-webhooks.WAIT_INTEGRATION.*`.
+
+  LOCAL_TO_REMOTE_HANDOFF:
+    requirements:
+      1: Local-to-remote handoff replay reads durable resource identity, secret-reference, and materialization-status rows before any new-host external side effect is permitted.
+      2: A new host materializes the execution plane only after projection rebuild reaches the live boundary and after lease/fence/epoch evidence from `firegrid-runtime-ownership-transfer.LEASE_FENCE_EPOCH.*` shows the prior owner has released, drained, or become stale.
+      3: A new host that fails materialization records a durable materialization-status failure and does not perform the externally visible side effect that depended on the missing resource.
+      4: Resource and secret-reference rows survive same-topology host shift and cross-topology export or import; cross-topology import does not implicitly carry resolution credentials and remains app-owned per `firegrid-platform-invariants.SECURITY.1`.
+      5: Client observation through `client.observe(handle)` and projection-query handles continues across handoff per `firegrid-runtime-ownership-transfer.CLIENT_CONTINUITY.*`; consumers do not require knowledge of which host materialized a resource.
+
+constraints:
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `firegrid-platform-invariants.SECURITY.1`, `firegrid-platform-invariants.SECURITY.2`, and `firegrid-platform-invariants.SECURITY.4` for the prohibitions on storing or transporting provider credentials, BYOK secrets, OAuth tokens, callback signing keys, callback tokens, and any secret-shaped value in durable rows or span attributes.
+      2: This spec is bound by `firegrid-platform-invariants.SECURITY.6` for at-least-once delivery posture; materialization is at-least-once and exactly-once external materialization requires app-owned idempotency or target-side fencing.
+      3: This spec is bound by `firegrid-platform-invariants.BOUNDARY.1` and `firegrid-platform-invariants.BOUNDARY.4` so that resource and secret-reference row family names, descriptor names, and helper names do not adopt product registry vocabulary or product artifact taxonomy.
+      4: This spec is bound by `firegrid-platform-invariants.AUTHORITY.1`, `firegrid-platform-invariants.AUTHORITY.2`, `firegrid-platform-invariants.AUTHORITY.3`, and `firegrid-platform-invariants.AUTHORITY.4` so that materialization status writes go through public app-owned producers, never raw `durable.run` envelopes, and operation terminalization for the requesting work remains the handler authority path.
+      5: This spec is bound by `firegrid-platform-invariants.LOCALITY.1`, `firegrid-platform-invariants.LOCALITY.2`, and `firegrid-platform-invariants.LOCALITY.5` for split-tier package locality; runtime materializer Layers live in `@firegrid/runtime` and browser-safe resource read helpers do not pull runtime or kernel imports.
+      6: This spec is bound by `firegrid-platform-invariants.ENFORCEMENT.1`, `firegrid-platform-invariants.ENFORCEMENT.2`, and `firegrid-platform-invariants.ENFORCEMENT.3` for citation discipline.
+
+  DEPENDS_ON:
+    requirements:
+      1: "`firegrid-projection-query.QUERY_HANDLES.*`, `firegrid-projection-query.CURSOR_AND_REPLAY.*`, and `firegrid-projection-query.EXPECTED_ERRORS.*` govern the read facade for resource and materialization-status projections."
+      2: "`client-event-plane-registration.*` and `durable-records-and-projections.*` govern caller-owned EventPlane definition, producer, and projection rebuild semantics; resource identity and materialization-status rows use those primitives rather than introducing parallel mechanics."
+      3: "`firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.*` and `firegrid-durable-subscriber-webhooks.WAIT_INTEGRATION.*` govern the durable-subscriber pattern and `RunWait` integration used by materializer subscribers and dependent handlers."
+      4: "`firegrid-runtime-ownership-transfer.LEASE_FENCE_EPOCH.*`, `firegrid-runtime-ownership-transfer.TRANSFER_PRECONDITIONS.*`, and `firegrid-runtime-ownership-transfer.CLIENT_CONTINUITY.*` govern handoff mechanics; `LOCAL_TO_REMOTE_HANDOFF` consumes those preconditions rather than restating them."
+      5: "`firegrid-runtime-process.*` governs runtime composition through `Firegrid.composeRuntime` and `run({ connection, runtime })`; materializer subscribers compose through that surface."
+      6: "`firegrid-observability.SUBSTRATE_SPANS.*` and `firegrid-observability.NON_AUTHORITY.*` govern subscriber span emission and the rule that observability is not authority; this spec depends on those rather than redefining span policy."
+      7: "`flamecast-product-contract.IDENTITY_AUTH.*` and `flamecast-product-contract.LOWERING.8` govern Flamecast-side resource and secret semantics that lower onto these mechanics; resource bundles, MCP and skill payloads, and BYOK and OAuth credentials remain Flamecast-owned."
+
+  PACKAGE_PLACEMENT:
+    requirements:
+      1: Resource identity, secret-reference, and materialization-status descriptor types live on a curated `@firegrid/substrate` public surface accessible to both producer and consumer code.
+      2: Materializer subscriber Layers live on `@firegrid/runtime` and compose through `Firegrid.composeRuntime`; they do not appear in browser-safe `@firegrid/client` exports.
+      3: Browser-safe resource read helpers, when added, live on `@firegrid/client` and use the projection-query read facade exclusively; they do not gain raw resource write authority, secret resolution, or runtime composition surface.
+      4: Materialization recipes are defined entirely in caller-owned application code; Firegrid does not host a materialization recipe registry.
+
+  NON_SCOPE:
+    requirements:
+      1: This spec does not define secret storage, secret rotation, secret resolution, BYOK or OAuth credential policy, WorkOS identity integration, or provider auth policy; those remain product responsibilities per `firegrid-platform-invariants.SECURITY.1`.
+      2: This spec does not define sandbox lifecycle, sandbox image build or deploy mechanics, or provider runtime supervision for ComputeSDK, Daytona, Modal, Sprites, Firebox, or Cloudflare Containers.
+      3: This spec does not define product artifact taxonomies such as agent bundles, skill bundles, MCP servers, workspace contents, or provider catalogs.
+      4: This spec does not define exactly-once external materialization; exactly-once external side effects require app-owned idempotency or target-side fencing per `firegrid-platform-invariants.SECURITY.6`.
+      5: This spec does not define DNS, TLS, signed URL minting, or external load-balancer policy for resource resolution endpoints.
+      6: This spec does not define billing, retention budgets, or compliance-driven retention policy for resource or secret-reference rows.

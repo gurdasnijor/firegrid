@@ -1,0 +1,88 @@
+feature:
+  name: firegrid-runtime-ownership-transfer
+  product: firegrid
+  description: Product-neutral durable lease, fence, and epoch records, transfer preconditions, projection-rebuild proof, materialization order, app-owned reattach classification, duplicate-side-effect prevention, and client continuity for same-topology runtime ownership shift and cross-topology export or import without claiming live process migration.
+
+components:
+  LEASE_FENCE_EPOCH:
+    requirements:
+      1: Runtime ownership is recorded as durable lease, heartbeat, fence-token, and epoch rows; lease rows carry runtime id, host id, claimed scope, lease expiry or heartbeat-evidence rule, monotonic fence token, and epoch boundary.
+      2: A monotonic fence token assigned to a new owner is strictly greater than any fence token assigned to a prior owner over the same scope; later side effects that rely on fence-token comparison can detect stale ownership without consulting live process state.
+      3: An epoch boundary is a durable fact appended when ownership transfers; downstream projections, claims, and waits may filter rows by epoch to ignore evidence from prior owners after a transfer.
+      4: Lease and heartbeat rows are caller-owned EventPlane rows produced through public producers; ownership facts are not authored as raw `durable.run` envelopes.
+
+  TRANSFER_PRECONDITIONS:
+    requirements:
+      1: A new owner may perform externally visible side effects in a transferred scope only after at least one of release, drain, or stale-owner evidence has been recorded for the prior owner; no precondition allows skipping all three.
+      2: Release evidence is a durable row appended by the prior owner indicating voluntary handoff; drain evidence is a durable row indicating that all in-flight side effects in the scope have terminated; stale-owner evidence is a durable row appended after lease expiry or heartbeat staleness exceeding the documented threshold.
+      3: A new owner appends a fence and claim row referencing the prior owner's last known fence token and epoch; the claim is rejected if the durable lease projection shows a still-live and not-stale prior owner without release or drain.
+      4: A new owner reaches projection live-boundary over the transferred scope per `firegrid-projection-query.CURSOR_AND_REPLAY.2` before performing externally visible side effects; replay does not author live side effects.
+      5: A new owner materializes execution-plane resources required for the transferred scope per `firegrid-execution-plane-resources.LOCAL_TO_REMOTE_HANDOFF.*` before performing externally visible side effects.
+
+  REATTACH_PROFILES:
+    requirements:
+      1: Each transferable scope carries a caller-supplied reattach profile classification; the canonical neutral profile values are `no_reattach`, `reprovision_from_history`, `load_via_protocol`, and `supervised_live_process`.
+      2: Reattach profile classification is product-owned content stored in caller-owned rows; Firegrid does not own provider, sandbox, browser, or session reattach semantics for any specific profile value.
+      3: A scope classified `no_reattach` is not transferable to a new owner under this lane; transfer attempts surface a typed expected refusal rather than partial side effects.
+      4: A scope classified `reprovision_from_history` is reattached by replaying durable history and materializing required resources before live side effects; provider lifecycle for reprovisioning is product-owned.
+      5: A scope classified `load_via_protocol` is reattached by reading durable identity and invoking a product-owned protocol-level reattach action; the reattach action is not part of Firegrid substrate.
+      6: A scope classified `supervised_live_process` is reattached only when the product can prove a supervised live handle survived the transfer; absent that proof the scope is treated as `reprovision_from_history` or refused per its declared fallback.
+
+  DUPLICATE_SIDE_EFFECT_PREVENTION:
+    requirements:
+      1: Old and new owners do not perform the same externally visible side effect in a transferred scope; first-valid-terminal-wins folds at the app-owned EventPlane row family ensure that only one ownership-tagged terminal is treated as authoritative.
+      2: At-least-once execution remains the substrate guarantee per `firegrid-platform-invariants.SECURITY.6`; exactly-once external delivery in a transferred scope requires app-owned idempotency keys or target-side fencing using the durable fence token from `LEASE_FENCE_EPOCH.2`.
+      3: A side effect appended after a stale-owner has been recorded is treated as duplicate evidence and is folded into conflict or audit projections; it does not change the winning terminal.
+      4: A side effect by a new owner that races a still-pending side effect by a stale prior owner is reconciled by first-valid-terminal-wins ordering using the fence token and epoch boundary from `LEASE_FENCE_EPOCH.*`.
+
+  CLIENT_CONTINUITY:
+    requirements:
+      1: Existing operation handles continue resolving terminal state through `client.observe(handle)` and `client.result(handle)` across ownership transfer; clients are not required to switch handles when ownership changes.
+      2: Caller-owned EventStream and projection-query consumption continues across ownership transfer using the existing replay and live-tail mechanics from `firegrid-projection-query.QUERY_HANDLES.*` and `firegrid-projection-query.CURSOR_AND_REPLAY.*`.
+      3: Public `client.observe(handle)` continues to expose only operation lifecycle; ownership-shift cause is observed through caller-owned EventPlane rows and EventStream entries, not by widening the public lifecycle vocabulary.
+      4: A client that observes the operation across transfer reads the same terminal value when the work terminalizes; no Firegrid client API is asked to fence by host or runtime id.
+
+  TOPOLOGY_SCOPE:
+    requirements:
+      1: Same-topology ownership shift moves the scope between two runtime hosts that share the same durable substrate topology; durable history is in place at the new host and replay is over already-retained rows.
+      2: Cross-topology export or import is treated as a separate workflow; cross-topology import does not implicitly carry resolution credentials, callback tokens, or provider auth and remains app-owned per `firegrid-platform-invariants.SECURITY.1` and `flamecast-product-contract.IDENTITY_AUTH.*`.
+      3: Cross-topology import requires explicit retention or rebuild of durable resource identity, secret-reference, and materialization-status rows from `firegrid-execution-plane-resources.*` before live side effects on the new topology.
+      4: Lease, fence, and epoch rows are scoped to a topology identity; cross-topology import begins a fresh lease and epoch on the destination topology rather than reusing rows from the source topology.
+
+constraints:
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `firegrid-platform-invariants.AUTHORITY.1`, `firegrid-platform-invariants.AUTHORITY.2`, `firegrid-platform-invariants.AUTHORITY.3`, and `firegrid-platform-invariants.AUTHORITY.4` so that lease, fence, epoch, claim, release, drain, stale-owner, and reattach rows are appended through public producers, never as raw `durable.run` envelopes, and operation terminalization remains the handler authority path.
+      2: This spec is bound by `firegrid-platform-invariants.SECURITY.3` so that ownership transfer does not become a host mesh, command bus, leader-election system, private endpoint registry, or credential directory.
+      3: This spec is bound by `firegrid-platform-invariants.SECURITY.6` for at-least-once external delivery posture; ownership transfer narrows duplicate side effects but does not provide exactly-once external semantics.
+      4: This spec is bound by `firegrid-platform-invariants.BOUNDARY.1` and `firegrid-platform-invariants.BOUNDARY.4` so that reattach profile values, scope identity rows, and topology identity fields do not adopt product session, provider, or sandbox vocabulary as Firegrid-native fields.
+      5: This spec is bound by `firegrid-platform-invariants.LOCALITY.1`, `firegrid-platform-invariants.LOCALITY.2`, and `firegrid-platform-invariants.LOCALITY.5` so that lease publisher and fence-token issuer Layers live on `@firegrid/runtime` and browser-safe ownership read helpers do not pull runtime or kernel imports.
+      6: This spec is bound by `firegrid-platform-invariants.ENFORCEMENT.1`, `firegrid-platform-invariants.ENFORCEMENT.2`, and `firegrid-platform-invariants.ENFORCEMENT.3` for citation discipline.
+
+  DEPENDS_ON:
+    requirements:
+      1: "`firegrid-projection-query.QUERY_HANDLES.*` and `firegrid-projection-query.CURSOR_AND_REPLAY.*` govern the read facade for lease, fence, epoch, and claim projections used by transfer preconditions."
+      2: "`client-event-plane-registration.*` and `durable-records-and-projections.*` govern caller-owned EventPlane definition and projection rebuild semantics; lease and ownership rows use those primitives rather than introducing parallel mechanics."
+      3: "`firegrid-runtime-presence.DESCRIPTOR.*`, `firegrid-runtime-presence.LIFECYCLE.*`, `firegrid-runtime-presence.QUERY.*`, and `firegrid-runtime-presence.CONSISTENCY.*` provide advisory discovery state used to find candidate new owners; presence is advisory and does not provide ownership fencing per `firegrid-runtime-presence.CONSISTENCY.1`."
+      4: "`firegrid-execution-plane-resources.LOCAL_TO_REMOTE_HANDOFF.*` governs the resource and materialization preconditions a new owner must satisfy before live side effects."
+      5: "`firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.*`, `firegrid-durable-subscriber-webhooks.WAIT_INTEGRATION.*`, and `firegrid-durable-subscriber-webhooks.DELIVERY_SEMANTICS.*` govern claim-before-side-effect, replay-no-side-effects, first-valid-terminal-wins, and at-least-once delivery used by transfer mechanics."
+      6: "`firegrid-runtime-process.*` governs runtime composition through `Firegrid.composeRuntime` and `run({ connection, runtime })`; lease publisher and ownership-related subscriber Layers compose through that surface."
+      7: "`firegrid-observability.SUBSTRATE_SPANS.*` and `firegrid-observability.NON_AUTHORITY.*` govern span emission for transfer events and the rule that observability is not authority."
+      8: "`flamecast-product-contract.LOWERING.7` and `flamecast-product-contract.IDENTITY_AUTH.*` govern Flamecast-side provider reattach behavior, sandbox lifecycle, and credential injection that lower onto these mechanics; provider-specific reattach remains Flamecast-owned."
+
+  PACKAGE_PLACEMENT:
+    requirements:
+      1: Lease, fence, epoch, claim, release, drain, stale-owner, and reattach descriptor types live on a curated `@firegrid/substrate` public surface accessible to producer and consumer code.
+      2: Lease publisher, heartbeat, fence-token issuer, and ownership subscriber Layers live on `@firegrid/runtime` and compose through `Firegrid.composeRuntime`.
+      3: Browser-safe ownership read helpers live on `@firegrid/client` and use the projection-query read facade exclusively; they do not gain claim, release, drain, or reattach authoring authority.
+      4: Reattach action implementations live in caller-owned product code; Firegrid does not host a reattach action registry or provider-specific reattach driver.
+
+  NON_SCOPE:
+    requirements:
+      1: This spec does not claim live process migration of provider runtimes, sandboxes, or browser sessions; live migration is not a Firegrid responsibility and is not implied by any reattach profile.
+      2: This spec does not define provider lifecycle, sandbox image build or deploy, ComputeSDK, Daytona, Modal, Sprites, Firebox, Cloudflare Containers, or other provider-specific reattach actions.
+      3: This spec does not define DNS, TLS, load balancer cutover, or external traffic-steering policy for runtime hosts.
+      4: This spec does not define exactly-once external side effects across transfer; exactly-once requires app-owned idempotency or target-side fencing per `DUPLICATE_SIDE_EFFECT_PREVENTION.2`.
+      5: This spec does not define a public `client.cancel` API or a runtime kill switch; cancellation across transfer remains the app-owned control row pattern from `firegrid-agent-runtime-substrate.APP_OWNED_CONTROL_ROWS.*`.
+      6: This spec does not define billing, retention budgets, or compliance retention policy for ownership or transfer rows.
+      7: This spec does not define cross-tenant or cross-org transfer policy; tenant authorization remains Flamecast-owned per `flamecast-product-contract.IDENTITY_AUTH.*`.
