@@ -10,7 +10,7 @@ import {
   triggerMatchersLayer,
   type ChoreographyTrigger,
   type TriggerMatcher,
-} from "../choreography/index.ts"
+} from "../coordination/choreography/index.ts"
 import { SubstrateProducerLive, WorkProducer } from "../write-api/producer.ts"
 import { rebuildProjection } from "../stream.ts"
 import { DurableWaitsLive } from "../execution/waits.ts"

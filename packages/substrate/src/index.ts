@@ -2,7 +2,9 @@
 // firegrid-architecture-boundary.SURFACE_AREA.1
 //
 // Curated substrate root. Raw kernel modules are available only from
-// `@firegrid/substrate/kernel`.
+// `@firegrid/substrate/kernel`. Server-side coordination (projection
+// + work-claim + choreography) lives under `./coordination/`; the
+// names re-exported here are unchanged.
 export {
   EventStream,
   Operation,
@@ -15,30 +17,6 @@ export {
 } from "./descriptors/index.ts"
 
 export {
-  Projection,
-  ProjectionLive,
-  ProjectionReadError,
-  ProjectionWaitTimeout,
-  Work,
-  WorkClaim,
-  WorkClaimError,
-  WorkClaimLive,
-  type ClaimAttemptOutcome,
-  type Claimed,
-  type Performed,
-  type ProjectionLiveConfig,
-  type ProjectionQuery,
-  type ProjectionService,
-  type Recorded,
-  type WorkClaimLiveConfig,
-  type WorkClaimService,
-} from "./facade/index.ts"
-
-// choreography-facade — Phase 12 choreography facade (foundation slice).
-// firegrid-remediation-hardening.STATIC_QUALITY.1
-// The typed choreography `ProjectionMatchTrigger` is the canonical root
-// export; the older placeholder stays behind kernel/internal subpaths.
-export {
   AwakeableToolInput,
   Choreography,
   ChoreographyLive,
@@ -50,10 +28,18 @@ export {
   MissingTriggerMatcherError,
   OwnerId,
   ProjectionMatchTrigger,
+  Projection,
+  ProjectionLive,
+  ProjectionReadError,
+  ProjectionWaitTimeout,
   ScheduleMeToolInput,
   SleepToolInput,
   TriggerMatchers,
   WaitForToolInput,
+  Work,
+  WorkClaim,
+  WorkClaimError,
+  WorkClaimLive,
   WorkId,
   currentWorkContextLayer,
   dispatchTrigger,
@@ -65,9 +51,18 @@ export {
   type ChoreographyToolBinding,
   type ChoreographyToolBindings,
   type ChoreographyToolsConfig,
+  type ClaimAttemptOutcome,
+  type Claimed,
   type CurrentWorkContextValue,
+  type Performed,
+  type ProjectionLiveConfig,
+  type ProjectionQuery,
+  type ProjectionService,
+  type Recorded,
   type ScheduleAtResult,
   type TriggerMatchEvaluation,
   type TriggerMatcher,
   type TriggerMatchersService,
-} from "./choreography/index.ts"
+  type WorkClaimLiveConfig,
+  type WorkClaimService,
+} from "./coordination/index.ts"

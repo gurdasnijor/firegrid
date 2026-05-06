@@ -6,7 +6,7 @@ import {
   EventPlane,
   type PlaneProjectionQuery,
 } from "../event-plane/index.ts"
-import { Work, WorkClaimLive } from "../facade/work.ts"
+import { Work, WorkClaimLive } from "../coordination/work.ts"
 import {
   freshStreamUrl,
   startTestServer,

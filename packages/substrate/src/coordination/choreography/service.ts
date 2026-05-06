@@ -1,16 +1,16 @@
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Context, Data, Duration, Effect, Layer } from "effect"
-import { appendChange } from "../protocol/descriptors/append.ts"
-import { readAuthoritativeRun } from "../retained-records.ts"
+import { appendChange } from "../../protocol/descriptors/append.ts"
+import { readAuthoritativeRun } from "../../state-store/retained-records.ts"
 import {
   blockRun,
   isTerminalRun,
-} from "../protocol/state-machine.ts"
+} from "../../protocol/state-machine.ts"
 import {
   DurableWaits,
   workScopedAwakeableKey,
-} from "../execution/waits.ts"
+} from "../../execution/waits.ts"
 import {
   CompletionId as toCompletionId,
   type CompletionId,

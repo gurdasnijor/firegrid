@@ -1,6 +1,6 @@
 import { Effect, Exit, Layer, Ref, Stream } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { Work, WorkClaimLive } from "../facade/work.ts"
+import { Work, WorkClaimLive } from "../coordination/work.ts"
 import {
   freshStreamUrl,
   startTestServer,

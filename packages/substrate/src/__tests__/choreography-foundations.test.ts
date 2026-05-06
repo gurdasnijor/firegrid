@@ -1,6 +1,6 @@
 import { Effect, Either, Layer, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as ChoreographySurface from "../choreography/index.ts"
+import * as ChoreographySurface from "../coordination/choreography/index.ts"
 import {
   ChoreographyTimeout,
   ChoreographyTrigger,
@@ -18,7 +18,7 @@ import {
   type ChoreographySuspension,
   type CurrentWorkContextValue,
   type TriggerMatcher,
-} from "../choreography/index.ts"
+} from "../coordination/choreography/index.ts"
 
 // choreography-facade.CURRENT_WORK_CONTEXT.2
 // choreography-facade.CURRENT_WORK_CONTEXT.3

@@ -13,14 +13,14 @@ import {
   Projection,
   ProjectionLive,
   type ProjectionQuery,
-} from "../facade/projection.ts"
+} from "../coordination/projection.ts"
 import {
   Work,
   WorkClaim,
   WorkClaimLive,
   type ClaimAttemptOutcome,
   type WorkClaimError,
-} from "../facade/work.ts"
+} from "../coordination/work.ts"
 import { deriveReadyWork } from "../projection/ready-work.ts"
 import type { ReadyWorkItem } from "../schema/ready-work.ts"
 import {

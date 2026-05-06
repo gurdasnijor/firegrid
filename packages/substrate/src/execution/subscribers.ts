@@ -2,7 +2,7 @@ import { DurableStream } from "@durable-streams/client"
 import type { StateEvent } from "@durable-streams/state"
 import { Clock, Data, Effect, Option, type ParseResult } from "effect"
 import type { ProjectionSnapshot } from "../projection.ts"
-import type { ProjectionMatchTrigger } from "../choreography/triggers.ts"
+import type { ProjectionMatchTrigger } from "../coordination/choreography/triggers.ts"
 import { appendChange } from "../protocol/descriptors/append.ts"
 import {
   decodeCompletionData,
