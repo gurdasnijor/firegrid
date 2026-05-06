@@ -99,6 +99,10 @@ const readAuthoritativeRun = (
 // claim-and-operator-authority.CLAIM_AUTHORITY.7 — operator reads retained claim attempts
 // in append order to derive the winner (no longer depends on snapshot iteration).
 // Single-shot operator for one ReadyWorkItem.
+// firegrid-remediation-hardening.EFFECT_CONSISTENCY.5
+// Identity comes through the kernel `IdGen` service via `attemptClaim`,
+// which provides `IdGenLive` internally. Tests inject a deterministic
+// claim id through the per-call `claimId` override.
 export const processReadyWorkItem = <A, E>(
   args: ProcessReadyWorkItemArgs<A, E>,
 ): Effect.Effect<ClaimOutcome<A, E>, OperatorError> =>

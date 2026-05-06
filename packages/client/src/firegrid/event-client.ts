@@ -6,6 +6,7 @@ import {
   makeEventStreamStateRow,
   type EventStream,
 } from "@firegrid/substrate/descriptors"
+import { IdGen, IdGenLive, type IdGenService } from "@firegrid/substrate/id-gen"
 import { DurableStream } from "@durable-streams/client"
 import {
   Context,
@@ -99,11 +100,14 @@ const decodeEvent = <S extends EventStream.Any>(
       new EventStreamDecodeError({ stream: stream.name, cause }),
   )(raw) as Effect.Effect<EventStream.Event<S>, EventStreamDecodeError>
 
-const nextEventId = (): string =>
-  `${Date.now()}:${Math.random().toString(36).slice(2)}`
-
+// firegrid-remediation-hardening.EFFECT_CONSISTENCY.5
+// Event ids come through `IdGen` rather than `Date.now()` /
+// `Math.random()` so the browser-safe client honours the same
+// injectable identity seam as the substrate kernel. `IdGenLive`
+// uses `globalThis.crypto.randomUUID` and is browser-safe.
 export const buildEventStreamService = (
   cfg: EventStreamClientConfig,
+  idGen: IdGenService,
 ): EventStreamClientService => {
   const durable = new DurableStream({
     url: cfg.streamUrl,
@@ -111,20 +115,19 @@ export const buildEventStreamService = (
   })
 
   const emit: EventStreamClientService["emit"] = (stream, event) =>
-    encodeEvent(stream, event).pipe(
-      Effect.flatMap((encoded) =>
-        appendChange(
-          durable,
-          makeEventStreamStateRow({
-            stream: stream.name,
-            eventId: nextEventId(),
-            event: encoded,
-          }),
-          (cause) => new EventStreamAppendError({ stream: stream.name, cause }),
-        ),
-      ),
-      Effect.asVoid,
-    )
+    Effect.gen(function* () {
+      const encoded = yield* encodeEvent(stream, event)
+      const eventId = yield* idGen.nextId
+      yield* appendChange(
+        durable,
+        makeEventStreamStateRow({
+          stream: stream.name,
+          eventId,
+          event: encoded,
+        }),
+        (cause) => new EventStreamAppendError({ stream: stream.name, cause }),
+      )
+    })
 
   const rawEvents = <S extends EventStream.Any>(
     stream: S,
@@ -168,7 +171,10 @@ export const buildEventStreamService = (
 export const EventStreamClientLive = (
   cfg: EventStreamClientConfig,
 ): Layer.Layer<EventStreamClient> =>
-  Layer.succeed(EventStreamClient, buildEventStreamService(cfg))
+  Layer.effect(
+    EventStreamClient,
+    Effect.map(IdGen, (idGen) => buildEventStreamService(cfg, idGen)),
+  ).pipe(Layer.provide(IdGenLive))
 
 export {
   EventStream,

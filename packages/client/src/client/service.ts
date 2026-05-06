@@ -23,7 +23,7 @@ export interface SubstrateClientConfig {
   readonly contentType?: string
 }
 
-interface SubstrateClientService {
+export interface SubstrateClientService {
   // launchable-substrate-host.CLIENT_SURFACE.3
   // launchable-substrate-host.CLIENT_SURFACE.6
   readonly work: SubstrateClientWork

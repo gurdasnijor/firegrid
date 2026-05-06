@@ -2,6 +2,7 @@ import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Clock, Context, Data, Effect, Layer } from "effect"
 import { appendChange } from "./descriptors/append.ts"
+import { IdGen, IdGenLive } from "./id-gen.ts"
 import type { ProjectionMatchTrigger } from "./choreography/triggers.ts"
 import type {
   CompletionKind,
@@ -120,8 +121,6 @@ export class DurableWaits extends Context.Tag("Substrate/DurableWaits")<
   }
 >() {}
 
-import { randomUUID } from "node:crypto"
-
 export interface DurableWaitsConfig {
   readonly streamUrl: string
   readonly contentType?: string
@@ -130,6 +129,9 @@ export interface DurableWaitsConfig {
 // effect-native-api.EFFECT_SERVICES.3 — config baked into the live layer factory.
 // durable-waits-and-scheduling.PHASE_BOUNDARY.4 — APIs create completions only;
 // they do NOT block runs or create continuations internally.
+// firegrid-remediation-hardening.EFFECT_CONSISTENCY.5 — completion IDs come
+// through the IdGen service rather than a direct node:crypto import, so the
+// kernel stays portable and tests can inject deterministic IDs via a layer.
 export const DurableWaitsLive = (
   config: DurableWaitsConfig,
 ): Layer.Layer<DurableWaits> =>
@@ -138,6 +140,7 @@ export const DurableWaitsLive = (
     Effect.gen(function* () {
       const contentType = config.contentType ?? "application/json"
       const stream = new DurableStream({ url: config.streamUrl, contentType })
+      const idGen = yield* IdGen
 
       const append = (event: ChangeEvent) =>
         appendChange(stream, event, (cause) => new WaitsStreamError({ cause }))
@@ -191,7 +194,7 @@ export const DurableWaitsLive = (
             // are data fields. We capture dueAtMs durably from Effect Clock so
             // tests can control time if needed.
             const nowMs = yield* Clock.currentTimeMillis
-            const completionId = randomUUID()
+            const completionId = yield* idGen.nextId
             const data: TimerCompletionData = {
               durationMs: input.durationMs,
               dueAtMs: nowMs + input.durationMs,
@@ -211,7 +214,7 @@ export const DurableWaitsLive = (
 
         waitFor: (input: WaitForInput) =>
           Effect.gen(function* () {
-            const completionId = randomUUID()
+            const completionId = yield* idGen.nextId
             // durable-waits-and-scheduling.WAIT_FOR.7 — convert the timeout
             // DURATION to an absolute durable deadline at creation so the
             // projection-match subscriber can evaluate timeout eligibility
@@ -239,7 +242,7 @@ export const DurableWaitsLive = (
 
         scheduleWork: (input: ScheduleWorkInput) =>
           Effect.gen(function* () {
-            const completionId = randomUUID()
+            const completionId = yield* idGen.nextId
             const data: ScheduledWorkCompletionData = {
               whenMs: input.whenMs,
               input: input.input,
@@ -271,4 +274,4 @@ export const DurableWaitsLive = (
           ),
       }
     }),
-  )
+  ).pipe(Layer.provide(IdGenLive))

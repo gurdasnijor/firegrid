@@ -79,7 +79,11 @@ describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY.1 + effect-native-ap
     expect(text).not.toContain(".Default")
     expect(text).toContain('Context.Tag("Substrate/WorkProducer")')
     expect(text).toContain("Substrate/CompletionProducer")
-    expect(text).toContain("Layer.succeed(WorkProducer")
+    // firegrid-remediation-hardening.EFFECT_CONSISTENCY.5 — WorkProducer
+    // captures `IdGen` at layer-build time, so the live constructor is
+    // `Layer.effect` rather than `Layer.succeed`. CompletionProducer
+    // remains a value-only `Layer.succeed`.
+    expect(text).toContain("Layer.effect(\n      WorkProducer")
     expect(text).toContain("Layer.succeed(CompletionProducer")
   })
 

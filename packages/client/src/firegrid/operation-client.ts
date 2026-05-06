@@ -7,6 +7,7 @@ import {
   encodeAtBoundary,
   type OperationEnvelope,
 } from "@firegrid/substrate/descriptors"
+import { IdGen, IdGenLive } from "@firegrid/substrate/id-gen"
 import {
   type ProjectionReadError,
   type ProjectionWaitTimeout,
@@ -23,6 +24,7 @@ import {
   SubstrateClient,
   SubstrateClientLive,
   type SubstrateClientConfig,
+  type SubstrateClientService,
 } from "../client/service.ts"
 import {
   buildEventStreamService,
@@ -183,24 +185,16 @@ const mapRunToState = <Op extends Operation.Any>(
   })
 }
 
+// firegrid-remediation-hardening.EFFECT_CONSISTENCY.1
+// FiregridClientService is built against an already-resolved
+// `SubstrateClient` service rather than rebuilding `SubstrateClientLive`
+// per call. That preserves Layer memoization: one StreamDB / projection
+// pair lives for the lifetime of the FiregridClient layer instead of
+// being acquired and released on every send/result/call/observe.
 const buildFiregridClientService = (
-  cfg: FiregridClientConfig,
+  client: SubstrateClientService,
+  eventStreams: ReturnType<typeof buildEventStreamService>,
 ): FiregridClientService => {
-  const eventStreams = buildEventStreamService(cfg)
-  const substrateCfg: SubstrateClientConfig = {
-    streamUrl: cfg.streamUrl,
-    clientId: cfg.clientId ?? "firegrid-client",
-    ...(cfg.contentType !== undefined ? { contentType: cfg.contentType } : {}),
-  }
-
-  const withSubstrate = <A, E>(
-    f: (client: typeof SubstrateClient.Service) => Effect.Effect<A, E>,
-  ): Effect.Effect<A, E> =>
-    Effect.gen(function* () {
-      const client = yield* SubstrateClient
-      return yield* f(client)
-    }).pipe(Effect.provide(SubstrateClientLive(substrateCfg)))
-
   const send: FiregridClientService["send"] = (op, input) =>
     encodeAtBoundary(
       op.input,
@@ -208,13 +202,11 @@ const buildFiregridClientService = (
         new OperationEncodeError({ operation: op.name, cause }),
     )(input).pipe(
       Effect.flatMap((encoded) =>
-        withSubstrate((client) =>
-          client.work
-            .declare({ input: wrap(op.name, encoded) })
-            .pipe(
-              Effect.map(({ workId }) => OperationHandle.make(op, workId)),
-            ),
-        ),
+        client.work
+          .declare({ input: wrap(op.name, encoded) })
+          .pipe(
+            Effect.map(({ workId }) => OperationHandle.make(op, workId)),
+          ),
       ),
     )
 
@@ -259,35 +251,55 @@ const buildFiregridClientService = (
       // rather than die so the public error channel stays clean.
       return Effect.fail(new OperationNotFound({ handleId: handle.id }))
     }
-    return withSubstrate((client) =>
-      client.work
-        .observe(handle.id)
-        .until(isTerminalRun)
-        .pipe(Effect.flatMap(decideTerminal)),
-    )
+    return client.work
+      .observe(handle.id)
+      .until(isTerminalRun)
+      .pipe(Effect.flatMap(decideTerminal))
   }
 
   const call: FiregridClientService["call"] = (op, input) =>
     send(op, input).pipe(Effect.flatMap((handle) => result(op, handle)))
 
   const observe: FiregridClientService["observe"] = (op, handle) =>
-    Stream.unwrapScoped(
-      Effect.gen(function* () {
-        const client = yield* SubstrateClient
-        return client.work
-          .observe(handle.id)
-          .stream()
-          .pipe(Stream.mapEffect((run) => mapRunToState(op, run)))
-      }),
-    ).pipe(Stream.provideLayer(SubstrateClientLive(substrateCfg)))
+    client.work
+      .observe(handle.id)
+      .stream()
+      .pipe(Stream.mapEffect((run) => mapRunToState(op, run)))
 
   return { ...eventStreams, send, result, call, observe }
 }
 
+// firegrid-remediation-hardening.EFFECT_CONSISTENCY.1
+// firegrid-remediation-hardening.EFFECT_CONSISTENCY.5
+// `FiregridClientLive` composes `SubstrateClientLive` once: substrate
+// producer + projection are acquired once for the layer's scope rather
+// than rebuilt per call. The kernel `IdGen` seam is satisfied here by
+// providing `IdGenLive` once at the client root, so the EventStream
+// surface and substrate writers share the same identity layer.
 export const FiregridClientLive = (
   cfg: FiregridClientConfig,
-): Layer.Layer<FiregridClient> =>
-  Layer.succeed(FiregridClient, buildFiregridClientService(cfg))
+): Layer.Layer<FiregridClient> => {
+  const substrateCfg: SubstrateClientConfig = {
+    streamUrl: cfg.streamUrl,
+    clientId: cfg.clientId ?? "firegrid-client",
+    ...(cfg.contentType !== undefined ? { contentType: cfg.contentType } : {}),
+  }
+
+  const inner = Layer.effect(
+    FiregridClient,
+    Effect.gen(function* () {
+      const client = yield* SubstrateClient
+      const idGen = yield* IdGen
+      const eventStreams = buildEventStreamService(cfg, idGen)
+      return buildFiregridClientService(client, eventStreams)
+    }),
+  )
+
+  return inner.pipe(
+    Layer.provide(SubstrateClientLive(substrateCfg)),
+    Layer.provide(IdGenLive),
+  )
+}
 
 export {
   FiregridClient,

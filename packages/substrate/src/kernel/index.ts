@@ -21,6 +21,7 @@ export * from "../operator-errors.ts"
 export * from "../retained-records.ts"
 export * from "../waits.ts"
 export * from "../subscribers.ts"
+export * from "../id-gen.ts"
 export * from "../facade/index.ts"
 export * from "../event-plane/index.ts"
 export {

@@ -1,4 +1,5 @@
 import { Context, Data, Effect, type Exit, Layer, Option, Stream } from "effect"
+import { IdGen, IdGenLive } from "../id-gen.ts"
 import { attemptClaim } from "../internal-claim.ts"
 
 // ergonomic-facade.CLAIMED_WORK_API.1, .2, .3, .4, .5, .6, .7, .8, .9, .10
@@ -62,12 +63,16 @@ export interface WorkClaimLiveConfig {
 
 // Live implementation routes through the shared internal claim helper used
 // by the kernel's `processReadyWorkItem`. One implementation, two callers.
+// firegrid-remediation-hardening.EFFECT_CONSISTENCY.5
+// IdGen is captured at layer-build time so the WorkClaim service surface
+// keeps `R = never` for callers; tests inject deterministic IDs by
+// composing a different IdGen layer at the substrate root.
 export const WorkClaimLive = (
   cfg: WorkClaimLiveConfig,
 ): Layer.Layer<WorkClaim> =>
-  Layer.succeed(
+  Layer.effect(
     WorkClaim,
-    {
+    Effect.map(IdGen, (idGen) => ({
       attempt: (input) =>
         attemptClaim({
           streamUrl: cfg.streamUrl,
@@ -75,6 +80,7 @@ export const WorkClaimLive = (
           workId: input.workId,
           ownerId: input.ownerId,
         }).pipe(
+          Effect.provideService(IdGen, idGen),
           Effect.map(({ claimId, winner }): ClaimAttemptOutcome =>
             winner.claimId === claimId
               ? { kind: "won", claimId }
@@ -88,8 +94,8 @@ export const WorkClaimLive = (
             (cause) => new WorkClaimError({ workId: input.workId, cause }),
           ),
         ),
-    },
-  )
+    })),
+  ).pipe(Layer.provide(IdGenLive))
 
 // ergonomic-facade.CLAIMED_WORK_API.3, .5, .8, .10
 // Stream operator: for each candidate, attempt the durable claim and
