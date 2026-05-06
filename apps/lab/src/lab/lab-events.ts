@@ -1,4 +1,6 @@
-import { EventStream } from "@firegrid/client/event-streams"
+/* eslint-disable @effect/no-import-from-barrel-package -- firegrid-client-api.LAB_COMPATIBILITY.1: lab descriptors use the same production @firegrid/client root as application code. */
+import { EventStream } from "@firegrid/client"
+/* eslint-enable @effect/no-import-from-barrel-package */
 import { Schema } from "effect"
 
 // firegrid-event-streams.CLIENT_API.4
