@@ -19,6 +19,8 @@ should cite ACIDs once feature specs exist rather than restating requirements.
 - `GUARDRAILS.md`: review-time hard rules and enforcement notes.
 - `litmus/LT-01-local-to-remote-shift.md`: local-to-remote agent shift
   scenario.
+- `litmus/LT-02-local-runtime-session-loop.md`: Flamecast UI to local
+  `@firegrid/runtime` session loop scenario.
 - `litmus/harness.md`: validation harness expectations.
 
 ## Spec Authority

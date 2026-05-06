@@ -76,7 +76,8 @@ The build path is intentionally staged:
 1. Ratify platform invariants.
 2. Ratify Flamecast product contract and lowering boundaries.
 3. Ratify Firegrid projection/query and agent-runtime substrate profiles.
-4. Prove a minimal replatform smoke with packed Firegrid packages.
+4. Prove a product-shaped local runtime session loop with the Flamecast UI as
+   the control surface and a local `@firegrid/runtime` process as executor.
 5. Add durable subscriber/webhook, observability, presence, and resource lanes.
 6. Prove local-to-remote shift with a deterministic test agent.
 7. Incrementally replace Flamecast infrastructure only after each replacement

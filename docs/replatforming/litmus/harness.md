@@ -32,7 +32,8 @@ The harness must:
 
 ## First Smoke
 
-Minimum flow:
+The substrate-only minimum flow is still useful for package-consumption and
+runtime mechanics:
 
 ```text
 client sends operation
@@ -47,3 +48,27 @@ client.events/projection query replays durable history
 
 The smoke should not use provider credentials, WorkOS, real browser automation,
 real customer webhooks, sandbox lifecycle, or product cleanup paths.
+
+## First Product-Shaped Litmus
+
+The higher-value Flamecast proof is `LT-02-local-runtime-session-loop.md`.
+It should keep the Flamecast web UI as the control surface while a local
+Flamecast runtime process uses `@firegrid/runtime` to execute work through the
+same durable topology.
+
+Minimum flow:
+
+```text
+user starts session from Flamecast UI
+Flamecast API lowers session work to app-owned Firegrid descriptors
+local runtime composed with Firegrid.composeRuntime observes or claims work
+runtime emits normalized Flamecast events
+UI reads timeline through durable replay/live-tail
+user sends follow-up from UI
+runtime consumes durable follow-up/control row
+handler terminalizes the next turn through return or typed Effect.fail
+browser refresh replays the same session state
+```
+
+This proof should not bypass Flamecast's product API with a direct test client
+unless the bypass is explicitly limited to harness setup.
