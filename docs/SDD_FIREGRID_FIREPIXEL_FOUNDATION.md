@@ -299,6 +299,33 @@ ACIDs:
 - `client-event-plane-registration.FIREPIXEL_PROFILE.4`
 - `firegrid-runtime-process.SCENARIOS.21`
 
+### FP6: Runtime Composition Ergonomics RFC
+
+Specify a first-class app-owned runtime composition helper that reduces
+repeated `Layer.mergeAll` / `Layer.provide` boilerplate without hiding the
+runtime graph.
+
+Acceptance:
+
+- The SDD describes a helper that returns an ordinary Effect Layer accepted by
+  `run({ connection, runtime })`.
+- Handlers, stock subscribers, `EventPlane.layer(...)`, `RunWait.layer(...)`,
+  `triggerMatchersLayer(...)`, and app adapter Layers remain explicit inputs.
+- The helper does not install subscribers implicitly.
+- The helper does not import `@firegrid/client`, `@firegrid/substrate/kernel`,
+  Choreography, or `DurableWaitsLive`.
+- The helper does not encode Firepixel, Fireline, ACP, MCP, tool, provider,
+  permission, session, or transport semantics.
+
+ACIDs:
+
+- `firegrid-runtime-process.RUNTIME_COMPOSITION.1`
+- `firegrid-runtime-process.RUNTIME_COMPOSITION.2`
+- `firegrid-runtime-process.RUNTIME_COMPOSITION.3`
+- `firegrid-runtime-process.RUNTIME_COMPOSITION.4`
+- `firegrid-runtime-process.RUNTIME_COMPOSITION.5`
+- `firegrid-runtime-process.RUNTIME_COMPOSITION.6`
+
 ## Non-Goals
 
 - Do not implement Firepixel packages in the Firegrid repo.
@@ -316,6 +343,8 @@ ACIDs:
 2. FP2: emit-then-wait Firepixel path using EventPlane projection reads.
 3. FP3: adapter Scope/lifecycle contract.
 4. FP4: tool invocation path.
+5. FP6: runtime composition ergonomics SDD/RFC for the next implementation
+   wave after the foundation proof.
 
 FP2 is the first real evidence that Firegrid can underlie a Firepixel-style
 runtime. It intentionally supersedes a prompt-chunk-only proof because emit-only
