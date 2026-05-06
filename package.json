@@ -17,6 +17,7 @@
     "effect:unpatch": "effect-language-service unpatch",
     "format": "eslint . --fix",
     "arch:effect-artifacts": "node scripts/effect-artifacts.mjs",
+    "arch:reports": "pnpm run arch:effect-artifacts && pnpm run graph",
     "graph": "pnpm run graph:overview && pnpm run graph:modules && pnpm run graph:archi && pnpm run graph:mermaid && pnpm run graph:client:mermaid && pnpm run graph:runtime:mermaid && pnpm run graph:substrate:mermaid",
     "graph:overview": "depcruise --exclude '(^|/)(__tests__|dist|build|coverage)(/|$)' packages apps --output-type ddot | dot -T svg > docs/dependency-graph.svg",
     "graph:modules": "depcruise --exclude '(^|/)(__tests__|dist|build|coverage)(/|$)' packages apps --output-type dot --collapse '^(packages|apps)/[^/]+/src/[^/]+' | dot -T svg > docs/dependency-graph-modules.svg",
