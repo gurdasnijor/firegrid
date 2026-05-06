@@ -109,10 +109,62 @@ LT-02 is successful when a reviewer can use the Flamecast UI to:
 4. refresh the browser and replay the same session state from durable data;
 5. stop and restart the local runtime process, then complete another turn.
 
+## Blocking Findings From Chassis Attempt
+
+Status on 2026-05-06: do not continue agent-authored `apps/flamecast` chassis
+work until the planning lane chooses the Firegrid surface that owns app
+timeline reads.
+
+The attempted implementation could create a local runtime shape with
+`Firegrid.composeRuntime`, `Firegrid.handler`, an app-owned Operation
+descriptor, and an app-owned EventPlane descriptor. It stopped because the
+remaining LT-02 proof needs a browser-safe durable read path for
+runtime-authored app timeline state.
+
+Two viable paths remain:
+
+1. EventPlane timeline: the local runtime writes Flamecast timeline/session
+   rows through app-owned EventPlane producers, and the UI reads those rows
+   through the browser-safe projection/query surface. This depends on the
+   `@firegrid/client` projection/query API being implemented for app-owned
+   projections.
+2. EventStream timeline: the UI reads timeline entries through
+   `@firegrid/client.events`, and Firegrid adds a public runtime-side
+   app-owned EventStream append primitive. That primitive must not create a
+   `@firegrid/runtime` to `@firegrid/client` package edge and must not expose
+   raw Durable Streams writers.
+
+Related ACIDs:
+
+- `firegrid-agent-runtime-substrate.MULTI_WAIT_RESUME.2`
+- `firegrid-agent-runtime-substrate.RECONNECT_REPLAY.5`
+- `firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.1`
+- `firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.2`
+- `firegrid-client-projection-api.BROWSER_SAFE_FACADE.1`
+- `firegrid-client-projection-api.BROWSER_SAFE_FACADE.2`
+- `firegrid-client-projection-api.RECONNECT_SEMANTICS.1`
+- `firegrid-platform-invariants.LOCALITY.4`
+- `firegrid-platform-invariants.AUTHORITY.4`
+- `flamecast-product-contract.LOWERING.3`
+
+Follow-up message submission is feasible as app-owned operations or control
+rows, but the UI cannot list sessions or reconstruct detail after refresh from
+operation handles alone. LT-02 therefore needs a durable app-owned session
+index and timeline read surface before app chassis work should proceed.
+
+Development topology also surfaced a secondary packaging issue: a Vite-hosted
+runtime plugin importing `@firegrid/runtime` hit dist/export resolution before
+Firegrid packages were built. That is not the core substrate blocker; use a
+separate Node runtime process or an explicit build-before-dev path once the
+timeline surface decision is made.
+
+Do not work around these blockers with a Flamecast-only RPC facade, direct
+`@firegrid/substrate/kernel` imports, raw `durable.run` rows, in-memory session
+state, synthetic terminal state, or a demo-only smoke script.
+
 ## Non-Goals
 
 LT-02 does not prove full local-to-remote host shift; LT-01 covers that. It does
 not require live process migration, real provider credentials, WorkOS changes,
 customer webhook delivery, Standard Webhooks signing, provider callback tokens,
 or sandbox lifecycle replacement.
-
