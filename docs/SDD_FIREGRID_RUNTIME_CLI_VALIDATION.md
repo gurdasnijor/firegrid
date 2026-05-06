@@ -358,6 +358,90 @@ operation and EventStream rows as the CLI emitter while the app-owned receiver
 runtime is running, and verifies projection-match completion resolution plus
 ready-work terminalization through the same inspection projection.
 
+### Scenario 2B: Fireline-Shaped Happy Path
+
+Purpose: prove that a Fireline-like app can own operation descriptors,
+EventStream descriptors, projection-match evaluation, and typed handler code
+while Firegrid stays product-neutral and supplies only durable runtime
+machinery.
+
+Input:
+
+1. A schema-valid operation-started row for an app-owned
+   `FirelineShapedHappyPath` operation.
+2. A schema-valid app-owned `FirelineApprovalEvents` EventStream row.
+3. An app-owned runtime Layer with explicit projection-match subscriber and
+   handler Layers.
+
+Expected result:
+
+1. Runtime attaches through `run({ connection, runtime })`.
+2. The handler uses `RunWait.for(trigger)` rather than `Choreography` or raw
+   substrate kernel APIs.
+3. Projection-match subscriber resolves the durable completion from the
+   app-owned EventStream row.
+4. Ready-work resumes the handler and terminalizes the run as completed.
+5. Inspection shows the run completed and `readyWork` empty.
+
+Manual CLI input flow:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+export DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid
+durable-stream create firegrid --json
+
+pnpm --silent --filter @firegrid/scenarios run fireline-shaped \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+```
+
+Start the app-owned receiver runtime in another terminal:
+
+```sh
+pnpm --filter @firegrid/scenarios run fireline-shaped-receiver -- \
+  --stream-url "$DURABLE_STREAMS_URL"
+```
+
+Then inspect:
+
+```sh
+pnpm --silent --filter @firegrid/scenarios run inspect -- \
+  --stream-url "$DURABLE_STREAMS_URL"
+```
+
+The inspection report should show `run-fireline-shaped-happy-path-cli-1` as
+`completed`, one `projection_match` completion as `resolved`, the app-owned
+`FirelineApprovalEvents` EventStream row, and `readyWork` count `0`.
+
+This scenario intentionally uses the intended FW1 `RunWait` API. Until FW1
+lands, the scenario is expected to fail typecheck at the missing
+`@firegrid/substrate` `RunWait` export rather than working around the boundary
+with `Choreography` or `@firegrid/substrate/kernel`.
+
+Relevant ACIDs:
+
+- `firegrid-runtime-process.SCENARIOS.1`
+- `firegrid-runtime-process.SCENARIOS.10`
+- `firegrid-runtime-process.SCENARIOS.13`
+- `client-event-plane-registration.BOUNDARY.5`
+- `run-wait-primitives.RUN_WAIT_API.1`
+- `run-wait-primitives.RUN_WAIT_API.2`
+- `run-wait-primitives.RUN_WAIT_API.6`
+- `run-wait-primitives.VOCABULARY.1`
+- `firegrid-runtime-process.RUNTIME_RUN_API.1`
+- `firegrid-runtime-process.RUNTIME_RUN_API.2`
+- `firegrid-runtime-process.RUNTIME_RUN_API.3`
+- `firegrid-runtime-process.RUNTIME_RUN_API.5`
+- `firegrid-runtime-process.RUNTIME_RUN_API.6`
+- `firegrid-runtime-process.RUNTIME_RUN_API.8`
+- `firegrid-runtime-process.RUNTIME_RUN_API.9`
+- `firegrid-runtime-process.READY_WORK_OPERATOR.1`
+- `firegrid-runtime-process.READY_WORK_OPERATOR.5`
+- `firegrid-runtime-process.READY_WORK_OPERATOR.7`
+- `durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.1`
+- `durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.4`
+
 ### Scenario 3: scheduleAt / Scheduled Work
 
 Purpose: prove scheduled operation or scheduled work behavior without adding a
