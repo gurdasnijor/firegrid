@@ -46,17 +46,29 @@ describe("firegrid-event-streams.CLIENT_API.4 — Firegrid browser subpath is ph
   it("publishes descriptor and Firegrid browser-safe subpaths", () => {
     const substratePackage = JSON.parse(
       readFileSync(resolve(repoRoot, "packages/substrate/package.json"), "utf8"),
-    ) as { readonly exports: Record<string, string> }
+    ) as {
+      readonly exports: Record<
+        string,
+        { readonly types: string; readonly default: string }
+      >
+    }
     const clientPackage = JSON.parse(
       readFileSync(resolve(repoRoot, "packages/client/package.json"), "utf8"),
-    ) as { readonly exports: Record<string, string> }
+    ) as {
+      readonly exports: Record<
+        string,
+        { readonly types: string; readonly default: string }
+      >
+    }
 
-    expect(substratePackage.exports["./descriptors"]).toBe(
-      "./src/descriptors/index.ts",
-    )
-    expect(clientPackage.exports["./event-streams"]).toBe(
-      "./src/event-streams-public.ts",
-    )
+    expect(substratePackage.exports["./descriptors"]).toEqual({
+      types: "./dist/descriptors/index.d.ts",
+      default: "./dist/descriptors/index.js",
+    })
+    expect(clientPackage.exports["./event-streams"]).toEqual({
+      types: "./dist/event-streams-public.d.ts",
+      default: "./dist/event-streams-public.js",
+    })
     expect(clientPackage.exports["./firegrid"]).toBeUndefined()
     expect(clientPackage.exports["./compat"]).toBeUndefined()
   })

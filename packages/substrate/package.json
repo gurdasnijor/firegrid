@@ -1,16 +1,36 @@
 {
   "name": "@firegrid/substrate",
   "version": "0.0.0",
-  "private": true,
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./descriptors": "./src/descriptors/index.ts",
-    "./event-plane": "./src/event-plane/index.ts",
-    "./id-gen": "./src/id-gen.ts",
-    "./kernel": "./src/kernel/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./descriptors": {
+      "types": "./dist/descriptors/index.d.ts",
+      "default": "./dist/descriptors/index.js"
+    },
+    "./event-plane": {
+      "types": "./dist/event-plane/index.d.ts",
+      "default": "./dist/event-plane/index.js"
+    },
+    "./id-gen": {
+      "types": "./dist/id-gen.d.ts",
+      "default": "./dist/id-gen.js"
+    },
+    "./kernel": {
+      "types": "./dist/kernel/index.d.ts",
+      "default": "./dist/kernel/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",

@@ -58,14 +58,21 @@ describe("firegrid-package-migration.PACKAGE_NAMES — active package names are 
 
   it("does not publish legacy client compatibility exports", () => {
     const clientPackage = readJson("packages/client/package.json") as {
-      readonly exports?: Record<string, string>
+      readonly exports?: Record<
+        string,
+        { readonly types: string; readonly default: string }
+      >
     }
 
     expect(clientPackage.exports?.["./compat"]).toBeUndefined()
-    expect(clientPackage.exports?.["."]).toBe("./src/index.ts")
-    expect(clientPackage.exports?.["./event-streams"]).toBe(
-      "./src/event-streams-public.ts",
-    )
+    expect(clientPackage.exports?.["."]).toEqual({
+      types: "./dist/index.d.ts",
+      default: "./dist/index.js",
+    })
+    expect(clientPackage.exports?.["./event-streams"]).toEqual({
+      types: "./dist/event-streams-public.d.ts",
+      default: "./dist/event-streams-public.js",
+    })
   })
 
   it("keeps legacy package imports out of active code and package manifests", () => {
@@ -80,5 +87,25 @@ describe("firegrid-package-migration.PACKAGE_NAMES — active package names are 
     expect(offenders.map((path) => path.replace(`${repoRoot}/`, ""))).toEqual(
       [],
     )
+  })
+})
+
+// firegrid-package-migration.PACKAGE_DISTRIBUTION.1
+// firegrid-package-migration.PACKAGE_DISTRIBUTION.2
+// firegrid-package-migration.PACKAGE_DISTRIBUTION.3
+// firegrid-package-migration.PACKAGE_DISTRIBUTION.5
+describe("firegrid-package-migration.PACKAGE_DISTRIBUTION — client package artifacts are external-consumer shaped", () => {
+  it("publishes built client and substrate artifact entrypoints instead of source-only workspace paths", () => {
+    const clientPackage = readJson("packages/client/package.json")
+    const substratePackage = readJson("packages/substrate/package.json")
+
+    expect(clientPackage.private).toBeUndefined()
+    expect(substratePackage.private).toBeUndefined()
+    expect(clientPackage.main).toBe("./dist/index.js")
+    expect(clientPackage.types).toBe("./dist/index.d.ts")
+    expect(substratePackage.main).toBe("./dist/index.js")
+    expect(substratePackage.types).toBe("./dist/index.d.ts")
+    expect(clientPackage.files).toEqual(["dist", "README.md"])
+    expect(substratePackage.files).toEqual(["dist"])
   })
 })

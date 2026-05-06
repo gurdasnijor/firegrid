@@ -51,6 +51,33 @@ This corresponds to:
 - `firegrid-client-api.CLIENT_SURFACE.4`
 - `firegrid-client-api.CLIENT_SURFACE.5`
 
+## Package Consumption
+
+`@firegrid/client` must be consumable by applications outside the Firegrid
+monorepo as an ordinary package artifact. Package manifests therefore point
+public `main`, `types`, and `exports` entries at built `dist` JavaScript and
+declaration files, not workspace source `.ts` files. The package can depend on
+`@firegrid/substrate` for public descriptor/projection types, but the packed
+artifact must not require a `workspace:*` resolver or a Firegrid repo checkout.
+Workspace TypeScript projects and test runners may map workspace package
+imports back to source files so clean-checkout lint, type-check, and test jobs
+do not require prebuilt `dist` artifacts. Those source mappings are local
+development configuration; the package artifacts themselves expose built
+`types` and `default` export targets.
+
+External consumption is validated without publishing: CI packs the local
+`@firegrid/substrate` and `@firegrid/client` artifacts, installs them into a
+temporary project, and type-checks imports from `@firegrid/client` and
+`@firegrid/client/event-streams`.
+
+Anchor requirements:
+
+- `firegrid-package-migration.PACKAGE_DISTRIBUTION.1`
+- `firegrid-package-migration.PACKAGE_DISTRIBUTION.2`
+- `firegrid-package-migration.PACKAGE_DISTRIBUTION.3`
+- `firegrid-package-migration.PACKAGE_DISTRIBUTION.4`
+- `firegrid-package-migration.PACKAGE_DISTRIBUTION.5`
+
 Operation and EventStream descriptors are shared contract values. They contain
 stable names and Effect Schema contracts, not runtime handlers or registration
 side effects:

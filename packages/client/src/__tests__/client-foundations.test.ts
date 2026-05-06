@@ -292,10 +292,21 @@ describe("firegrid-client-api.AUTHORITY_BOUNDARY.5 — client production entrypo
 
     const packageJson = JSON.parse(
       readFileSync(resolve(packageRoot, "package.json"), "utf8"),
-    ) as { readonly exports: Record<string, string> }
+    ) as {
+      readonly exports: Record<
+        string,
+        { readonly types: string; readonly default: string }
+      >
+    }
     expect(packageJson.exports).toEqual({
-      ".": "./src/index.ts",
-      "./event-streams": "./src/event-streams-public.ts",
+      ".": {
+        types: "./dist/index.d.ts",
+        default: "./dist/index.js",
+      },
+      "./event-streams": {
+        types: "./dist/event-streams-public.d.ts",
+        default: "./dist/event-streams-public.js",
+      },
     })
 
     for (const [file, source] of graph) {

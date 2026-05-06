@@ -3,6 +3,15 @@
     "allowImportingTsExtensions": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@firegrid/substrate": ["../../packages/substrate/src/index.ts"],
+      "@firegrid/substrate/descriptors": ["../../packages/substrate/src/descriptors/index.ts"],
+      "@firegrid/substrate/event-plane": ["../../packages/substrate/src/event-plane/index.ts"],
+      "@firegrid/substrate/id-gen": ["../../packages/substrate/src/id-gen.ts"],
+      "@firegrid/substrate/kernel": ["../../packages/substrate/src/kernel/index.ts"],
+      "@firegrid/substrate/*": ["../../packages/substrate/src/*"]
+    },
     "skipLibCheck": true,
     "target": "ES2022"
   },
