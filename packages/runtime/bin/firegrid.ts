@@ -23,6 +23,8 @@ class UsageError extends Data.TaggedError("firegrid/UsageError")<{
 // firegrid-runtime-process.CONFIG_SURFACE.1
 // firegrid-runtime-process.CONFIG_SURFACE.3
 // firegrid-runtime-process.CONFIG_SURFACE.6
+// firegrid-runtime-process.RUNTIME_RUN_API.4
+// firegrid-runtime-process.RUNTIME_RUN_API.5
 //
 // `firegrid` is attached-only. It never launches Durable Streams and
 // never spawns child dev processes. Local development should run a

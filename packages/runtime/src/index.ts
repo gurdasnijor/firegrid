@@ -19,9 +19,11 @@
 // Tiny public surface:
 //   FiregridRuntimeBoot.attached                 -> single Layer
 //                                                   constructor
+//   run({ connection, runtime })                 -> app-owned typed
+//                                                   runtime process Effect
 //   FiregridRuntime, RuntimeContext              -> Tags
-//   Firegrid.subscribers.{timer, scheduledWork}  -> runtime helper
-//                                                   Layers
+//   Firegrid.subscribers.{timer, scheduledWork,
+//     projectionMatch}                           -> runtime helper Layers
 //
 // There is no public FiregridRuntimeLive factory, no
 // FiregridRuntimeBootPlan / AttachedRuntimePlan / EmbeddedDevRuntimePlan
@@ -31,6 +33,12 @@
 //
 // The runtime package does NOT depend on the app-facing client
 // package: `runtime → client` is an architecture defect.
+
+export {
+  run,
+  type FiregridRunOptions,
+  type FiregridRuntimeConnection,
+} from "./run.ts"
 
 export {
   FiregridRuntimeBoot,
