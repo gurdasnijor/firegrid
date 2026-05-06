@@ -187,6 +187,9 @@ importers:
         specifier: ^3.18.0
         version: 3.21.2
     devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
       tsx:
         specifier: ^4.20.4
         version: 4.21.0

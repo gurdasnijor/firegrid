@@ -18,6 +18,7 @@ components:
       2: Runtime graph execution for operation-handler validation is separate from scenario row emission and must not be implemented as hard-coded scenario Layers in the `firegrid` binary.
       3: Projection-match CLI scenario emitters include both the operation-started row and the caller-owned EventStream row needed to exercise the future subscriber path from the durable stream boundary.
       4: "Scheduled-work CLI scenario emitters include a pending `durable.completion` row with `kind: scheduled_work` and schema-encoded scheduled input needed to exercise the future scheduled-work subscriber path from the durable stream boundary."
+      5: CLI validation scenario inspection rebuilds existing Firegrid projections from an explicit stream URL and reports scenario progress without adding runtime execution support or privileged writer APIs.
 
   RUNTIME_RUN_API:
     requirements:

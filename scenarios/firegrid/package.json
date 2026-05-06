@@ -6,6 +6,8 @@
   "scripts": {
     "echo": "tsx echo.ts",
     "scheduled-work": "tsx scheduled-work.ts",
+    "inspect": "tsx inspect.ts",
+    "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --allowImportingTsExtensions --skipLibCheck *.ts",
     "wait-for": "tsx wait-for.ts"
   },
   "dependencies": {
@@ -13,6 +15,7 @@
     "effect": "^3.18.0"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "tsx": "^4.20.4"
   }
 }
