@@ -129,12 +129,15 @@ The focused package checks are:
 pnpm --filter @firegrid/client run typecheck
 pnpm --filter @firegrid/client run test -- firegrid-operations
 pnpm --filter @firegrid/client run test -- firegrid-event-streams
+pnpm run test:pack:client
 ```
 
 `firegrid-operations` covers operation `send`, `result`, `observe`, descriptor
 decode, and authority-boundary guards. `firegrid-event-streams` covers
-EventStream `emit` and `events`. CI remains the authority for the complete repo
-matrix.
+EventStream `emit` and `events`. `test:pack:client` packs `@firegrid/substrate`
+and `@firegrid/client`, installs those local tarballs into a temporary external
+consumer project, and type-checks the public root plus browser-safe
+`event-streams` subpath. CI remains the authority for the complete repo matrix.
 
 The examples above are intentionally client-only. They demonstrate the
 production `FiregridClient` root and EventStream surface, while handler

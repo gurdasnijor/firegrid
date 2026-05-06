@@ -26,6 +26,14 @@ components:
       3: New public docs must use Firegrid names instead of legacy durable-agent-substrate names.
       4: Migration must not reintroduce runtime-to-client package dependencies.
 
+  PACKAGE_DISTRIBUTION:
+    requirements:
+      1: Public Firegrid package artifacts expose built JavaScript and declaration files instead of workspace-only TypeScript source entrypoints.
+      2: The `@firegrid/client` package artifact is consumable from an external project without `workspace:*` dependencies or monorepo path assumptions.
+      3: The `@firegrid/client` package artifact includes the root client surface and browser-safe `event-streams` subpath while preserving the client authority boundary.
+      4: External package consumption is proven in CI by packing local artifacts and type-checking a temporary consumer project without publishing to npm.
+      5: The `@firegrid/substrate` package artifact supports the public subpaths needed by `@firegrid/client` without broadening the curated root or making kernel imports app-facing.
+
 constraints:
   REPO_BOUNDARY:
     requirements:

@@ -110,11 +110,17 @@ describe("client-event-plane-registration.EVENT_PLANE_DEFINITION.5 — EventPlan
   it("exports EventPlane through @firegrid/substrate/event-plane without bloating the curated root", () => {
     const packageJson = JSON.parse(
       readFileSync(join(import.meta.dirname, "../../package.json"), "utf8"),
-    ) as { readonly exports?: Record<string, string> }
+    ) as {
+      readonly exports?: Record<
+        string,
+        { readonly types: string; readonly default: string }
+      >
+    }
 
-    expect(packageJson.exports?.["./event-plane"]).toBe(
-      "./src/event-plane/index.ts",
-    )
+    expect(packageJson.exports?.["./event-plane"]).toEqual({
+      types: "./dist/event-plane/index.d.ts",
+      default: "./dist/event-plane/index.js",
+    })
     expect("EventPlane" in SubstrateRoot).toBe(false)
     expect(typeof EventPlanePublic.EventPlane.define).toBe("function")
     expect(typeof EventPlanePublic.EventPlane.layer).toBe("function")

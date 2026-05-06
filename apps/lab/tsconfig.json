@@ -3,6 +3,16 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@firegrid/client": ["../../packages/client/src/index.ts"],
+      "@firegrid/client/event-streams": ["../../packages/client/src/event-streams-public.ts"],
+      "@firegrid/client/*": ["../../packages/client/src/*"],
+      "@firegrid/substrate": ["../../packages/substrate/src/index.ts"],
+      "@firegrid/substrate/descriptors": ["../../packages/substrate/src/descriptors/index.ts"],
+      "@firegrid/substrate/id-gen": ["../../packages/substrate/src/id-gen.ts"],
+      "@firegrid/substrate/*": ["../../packages/substrate/src/*"]
+    },
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "strict": true,
