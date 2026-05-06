@@ -38,6 +38,11 @@ const FORBIDDEN_WORKSPACE_PAIRS = [
   { from: "packages/client", to: "apps/lab" },
 ]
 
+const EFFECT_RETURNING_COMPAT_REEXPORT_PATHS = new Set([
+  "packages/substrate/src/retained-records.ts",
+  "packages/substrate/src/stream.ts",
+])
+
 // firegrid-architecture-boundary.EFFECT_ARTIFACT_GRAPH.3
 const checkForbiddenWorkspacePairs = (inventory) => {
   const violations = []
@@ -91,6 +96,12 @@ export const computeRuleMetrics = (inventory) => {
       crossWorkspaceReExports += 1
     }
     if (artifact.role === "effect-returning") {
+      if (
+        artifact.isReExport &&
+        EFFECT_RETURNING_COMPAT_REEXPORT_PATHS.has(artifact.exportLocation?.path)
+      ) {
+        continue
+      }
       const ws = exportWs ?? "(unknown)"
       effectReturningPerWorkspace[ws] =
         (effectReturningPerWorkspace[ws] ?? 0) + 1

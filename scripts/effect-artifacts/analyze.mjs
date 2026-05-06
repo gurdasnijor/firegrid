@@ -39,7 +39,9 @@ const classify = ({ node, typeText, initText, tags, effectChannels, layerChannel
   if (
     typeText.includes("Schema.") ||
     initText.includes("Schema.") ||
-    initText.includes("TaggedStruct")
+    initText.includes("TaggedStruct") ||
+    initText.includes("createStateSchema(") ||
+    /\b[A-Za-z_$][\w$]*Schema\b/u.test(initText)
   ) {
     return "schema"
   }
