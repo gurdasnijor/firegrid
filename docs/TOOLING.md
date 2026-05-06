@@ -78,6 +78,24 @@ This is the canonical ready-for-review gate for agent work. CI is the authoritat
 checks to debug concrete failures unless the coordinator explicitly asks for a
 full local `pnpm verify`.
 
+### CI workflow shape
+
+The repo's CI workflow at `.github/workflows/ci.yml` runs five gating jobs in
+parallel — `Lint`, `Semgrep`, `Typecheck`, `Effect diagnostics`, `Tests` —
+plus one non-gating evidence job, `Architecture reports`, which uploads
+regenerated dependency graphs and the Effect artifact inventory as workflow
+artifacts on every pull request.
+
+Each job's setup boilerplate (checkout + pnpm setup + node setup + install)
+lives in the shared composite action at `.github/actions/setup`. Bumping the
+pnpm or Node version touches one file rather than every job.
+
+CI wall-clock equals the slowest single job (typically `Tests` or `Typecheck`)
+rather than the serial sum. The pnpm content-addressed store cache, keyed on
+`pnpm-lock.yaml` via `actions/setup-node@v6 with cache: pnpm`, is shared
+across jobs in the same workflow run, so the second-and-later jobs install
+from a warm cache.
+
 Run duplicate-token detection:
 
 ```sh
@@ -144,6 +162,15 @@ durable-core reshaping, public export movement, or SDD updates that cite
 current architecture evidence. Commit regenerated report files only when the
 slice intentionally changes architecture evidence; otherwise use the command as
 a local inspection tool.
+
+CI uploads the same evidence as a workflow artifact on every pull request via
+the non-gating `architecture-reports` job in `.github/workflows/ci.yml`.
+Reviewers can download the artifact bundle (`architecture-reports`) from the
+GitHub Actions run page and inspect the regenerated inventory and graph files
+without rerunning the commands locally. The job is `continue-on-error: true`
+so an evidence-regen failure on a structurally sound PR does not block merges;
+gating remains with the five strict jobs (`Lint`, `Semgrep`, `Typecheck`,
+`Effect diagnostics`, `Tests`).
 
 Generate Effect artifact architecture evidence:
 

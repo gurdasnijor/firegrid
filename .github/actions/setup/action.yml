@@ -1,0 +1,25 @@
+name: "Setup pnpm + Node + install"
+description: >-
+  Repeated setup boilerplate shared across the parallel CI jobs in
+  `.github/workflows/ci.yml`. Extracted to keep the per-job step lists
+  focused on the gate-specific commands and to make pnpm/node version
+  bumps a one-file edit. Pure boilerplate consolidation; no behavior
+  change.
+runs:
+  using: composite
+  steps:
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v6
+      with:
+        version: 10.27.0
+        run_install: false
+
+    - name: Set up Node
+      uses: actions/setup-node@v6
+      with:
+        node-version: 22
+        cache: pnpm
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
