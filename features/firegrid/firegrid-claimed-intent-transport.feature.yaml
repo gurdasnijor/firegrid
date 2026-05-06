@@ -6,7 +6,8 @@ feature:
 components:
   INTENT_DESCRIPTOR:
     requirements:
-      1: An intent descriptor binds a caller-owned intent payload schema, a caller-owned terminal result schema, and a caller-owned terminal error schema to product-neutral intent mechanics; descriptor names, payload field names, and terminal field names use Firegrid generic mechanic vocabulary and do not adopt prompt, mailbox, session, ACP, MCP, WebSocket, or product transport taxonomy.
+      1: An intent descriptor binds a caller-owned intent payload schema, a caller-owned terminal result schema, and a caller-owned terminal error schema to product-neutral intent mechanics; Firegrid-provided descriptor fields, helper names, and row mechanics use generic vocabulary and do not adopt prompt, mailbox, session, ACP, MCP, WebSocket, or product transport taxonomy.
+      1-note: Caller-owned payload, result, and error schemas may contain product vocabulary because they remain app-owned content and are not Firegrid-native row families or exported Firegrid types.
       2: An intent descriptor declares stable derivation hooks for intent identity key, idempotency key, and dispatch ordering scope; key types are branded so transport idempotency keys, intent identity keys, and product-domain keys cannot be silently interchanged.
       3: Intent descriptors carry schema identifiers and version markers so projection rebuilds and migrations can detect schema drift.
       4: Intent descriptors do not embed transport credentials, callback URLs, callback tokens, prompt text formats, or provider conversation identifiers as descriptor fields.
@@ -58,7 +59,7 @@ components:
 constraints:
   INVARIANTS:
     requirements:
-      1: This spec is bound by `firegrid-platform-invariants.BOUNDARY.1`, `firegrid-platform-invariants.BOUNDARY.2`, `firegrid-platform-invariants.BOUNDARY.4`, and `firegrid-platform-invariants.BOUNDARY.5` so that intent descriptor names, payload field names, terminal field names, and helper names do not adopt prompt, mailbox, session, ACP, MCP, WebSocket, or product transport taxonomy.
+      1: This spec is bound by `firegrid-platform-invariants.BOUNDARY.1`, `firegrid-platform-invariants.BOUNDARY.2`, `firegrid-platform-invariants.BOUNDARY.4`, and `firegrid-platform-invariants.BOUNDARY.5` so that Firegrid-provided intent descriptor fields, row mechanics, and helper names do not adopt prompt, mailbox, session, ACP, MCP, WebSocket, or product transport taxonomy.
       2: This spec is bound by `firegrid-platform-invariants.AUTHORITY.1`, `firegrid-platform-invariants.AUTHORITY.2`, `firegrid-platform-invariants.AUTHORITY.3`, `firegrid-platform-invariants.AUTHORITY.4`, `firegrid-platform-invariants.AUTHORITY.5`, `firegrid-platform-invariants.AUTHORITY.6`, and `firegrid-platform-invariants.AUTHORITY.7` so that intent claims and terminals are appended through public producers, terminalization remains the handler authority path, deterministic Pending observation precedes external dispatch result writes, and browser code does not gain claim or terminal authority.
       3: This spec is bound by `firegrid-platform-invariants.SECURITY.1` and `firegrid-platform-invariants.SECURITY.2` for the prohibitions on storing or transporting credentials, callback tokens, signing keys, and product transport credentials through intent descriptors or rows.
       4: This spec is bound by `firegrid-platform-invariants.SECURITY.6` for at-least-once dispatch posture; claim narrows duplicate dispatch but exactly-once external delivery requires app-owned idempotency or target-side fencing.
