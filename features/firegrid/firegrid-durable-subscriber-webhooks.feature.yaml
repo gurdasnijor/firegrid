@@ -1,0 +1,118 @@
+feature:
+  name: firegrid-durable-subscriber-webhooks
+  product: firegrid
+  description: Define product-neutral Firegrid affordances for durable subscriber-style delivery channels (the mechanics that durable webhook ingest and dispatch require) without owning provider, signing, callback URL, or product event semantics.
+
+components:
+  CHANNEL_DESCRIPTOR:
+    requirements:
+      1: A durable channel descriptor names an app-owned delivery channel and binds caller-owned schemas for delivery, completion, conflict, and dead-letter records.
+      2: A channel descriptor declares stable derivation hooks for a delivery key, a completion key, and an ordering scope over caller-owned record fields.
+      3: A channel descriptor does not introduce substrate-native row families for delivery, completion, conflict, or dead-letter rows; those rows are appended through caller-owned EventPlane row families.
+      4: Channel descriptors are browser-safe values and contain no client instance, runtime handler, Durable Streams URL, materializer, or substrate writer.
+      5: A channel descriptor remains independent of HTTP, providers, sessions, permissions, capabilities, callbackEvents, and product event taxonomy.
+
+  SELECTORS:
+    requirements:
+      1: A subscriber declares an explicit caller-owned selector or projection query over durable rows before any side effect is performed.
+      2: Selectors are deterministic over retained durable rows; the same retained input produces the same selection on rebuild.
+      3: Selector misses are observable skip outcomes, not subscriber errors, and do not append terminal completion or dead-letter rows.
+
+  COMPLETION_KEYS:
+    requirements:
+      1: Every subscriber side effect that can complete once is identified by a stable completion key derived from caller-owned record fields through the channel descriptor's completion-key hook.
+      2: Completion keys are caller-owned strings or branded values; Firegrid does not define session, prompt, tool, permission, capability, or provider concepts as completion-key inputs.
+      3: Two delivery records with the same completion key represent the same logical work item for terminal/conflict purposes.
+
+  SUBSCRIBER_REPLAY:
+    requirements:
+      1: A subscriber replays retained delivery, claim, completion, conflict, and dead-letter rows and reaches a documented live boundary before executing any external side effect.
+      2: Subscriber replay performs no external side effects, including outbound HTTP, callback dispatch, queue publishes, and any caller-supplied transport call.
+      3: Retention gaps encountered during replay surface as explicit typed errors and do not produce a partially-populated subscriber state.
+      4: A restarting subscriber rebuilds its eligible-work view from durable state without depending on a process-local pending-work queue, in-memory promise, or wall-clock-only cursor.
+
+  SUBSCRIBER_CLAIM:
+    requirements:
+      1: When duplicate execution of a subscriber side effect would be externally visible, the subscriber appends and observes a winning durable claim before executing the side effect.
+      2: Subscriber claim records carry the work key, claim id, subscriber identity, observed source cursor, and attempt number.
+      3: A subscriber executes only after observing its own claim attempt as the winning claim under the existing first-valid-claim-wins authority rule.
+      4: Losing claim attempts must not execute the subscriber side effect and must not append delivery completion, terminal failure, or dead-letter rows for the contested work key.
+
+  SUBSCRIBER_OUTCOMES:
+    requirements:
+      1: Subscriber handler outcomes distinguish completed, failed-retryable, failed-terminal, conflict, skipped, and dead-letter; transport return values are inputs to outcome classification, not outcomes themselves.
+      2: A completed outcome appends a durable completion record carrying channel name, delivery key, completion key, subscriber id, claim id when claims exist, source cursor, attempt number, and a caller-owned result payload.
+      3: A failed-retryable outcome appends a durable retryable-failure record and does not resolve waits keyed on the completion key.
+      4: A failed-terminal outcome appends a durable terminal-failure record that participates in first-valid-terminal-wins for the completion key.
+      5: A conflict outcome appends a durable conflict record without rewriting the authoritative terminal for the completion key.
+      6: A skipped outcome (selector miss or post-claim ineligibility) appends no delivery completion, terminal-failure, or dead-letter row, and is observable through the projection only.
+      7: Outcome classification is performed by a caller-supplied classifier; Firegrid does not mandate an HTTP-specific or transport-specific classifier in the core descriptor.
+
+  RETRY_POLICY:
+    requirements:
+      1: Retry policy values (max attempts, backoff schedule, retry budget, deadline) are caller-supplied per subscriber and are not Firegrid-native row families.
+      2: Retry attempts append durable evidence including subscriber id, delivery key, attempt number, source cursor, and outcome class.
+      3: Retry exhaustion appends either a durable terminal-failure or a durable dead-letter record according to caller policy and does not let retries silently expire.
+      4: Retry timing decisions follow durable scheduling primitives and absolute deadlines; process-local timers and wall-clock decisions are not retry authority.
+      5: A subscriber must not append a completion record on a retry that has already been superseded by a winning durable terminal for the same completion key.
+
+  COMPLETION_AUTHORITY:
+    requirements:
+      1: Delivery completion authority is the first valid terminal record (completed, terminal-failure, cancelled, or dead-lettered) for the completion key in durable stream order.
+      2: Subscribers append candidate terminal records; the authoritative outcome is determined by the first-valid-terminal fold, not by subscriber return values, projection latest-state, or transport responses.
+      3: A live HTTP 2xx, callback return, queue ack, or resolved JS promise is not durable completion authority and must not be substituted for a durable completion record.
+      4: Duplicate identical terminals are preserved as duplicate evidence; later conflicting terminals are preserved as conflict evidence; neither rewrites the authoritative terminal.
+
+  CONFLICT:
+    requirements:
+      1: Conflict records are appended for duplicate delivery keys with different payloads, terminal races for the same completion key with disagreeing results, and ownership violations detected against winning claims.
+      2: Conflict records carry channel name, delivery key, completion key, subscriber id when applicable, source cursor, conflicting record references, and conflict class.
+      3: A conflict record never rewrites the authoritative first-valid terminal for a completion key.
+      4: Conflict evidence is queryable as durable rows and is not log-only.
+
+  DEAD_LETTER:
+    requirements:
+      1: Dead-letter records are typed durable rows that include channel name, delivery key, completion key, subscriber id, source cursor, attempts, and error class.
+      2: Dead-letter presence for a completion key suppresses duplicate subscriber side effects for that key until a caller-owned repair record appears.
+      3: Dead-letter rows participate in first-valid-terminal-wins as terminal evidence for the completion key.
+      4: Replay of historical dead letters does not re-execute the failed side effect.
+
+  CONFORMANCE_TESTS:
+    requirements:
+      1: A conformance test asserts the subscriber reaches the live boundary before any side effect is executed.
+      2: A conformance test asserts replay does not execute side effects.
+      3: A conformance test asserts a claim-loser does not execute the side effect or append delivery terminals for the contested key.
+      4: A conformance test asserts retryable failure retries according to the caller-supplied policy and that retry exhaustion records a durable terminal-failure or dead-letter row.
+      5: A conformance test asserts terminal races follow first-valid-terminal-wins and preserve later conflict evidence.
+      6: A conformance test asserts dead-letter presence suppresses duplicate side effects for the same completion key until a caller-owned repair record appears.
+      7: A conformance test deterministically observes the blocked-pending state of a wait keyed on completion key before appending the row that resolves it, and verifies the subscriber wakes through caller-owned EventPlane collections rather than racing handler sleeps against row visibility polls.
+
+constraints:
+  ANTI_SCOPE:
+    description: Firegrid durable subscriber/webhook mechanics must not absorb product, transport, or auth semantics.
+    requirements:
+      1: This feature does not implement Standard Webhooks signing or signature verification in Firegrid core packages.
+      2: This feature does not mint, persist, or rotate callback URLs or callback tokens; URL minting and token storage remain product-owned.
+      3: This feature does not define `callbackEvents` filtering, provider callback schema, normalized provider event taxonomy, or session/permission/tool/capability/sandbox/MCP/browser vocabulary in Firegrid core APIs.
+      4: This feature does not introduce Flamecast, Fireline, Firepixel, or provider-named row families, completion kinds, descriptor names, or example identifiers in Firegrid core packages.
+      5: Treating an HTTP 2xx response, callback return, queue ack, or resolved JS promise as durable completion is forbidden; durable completion requires a caller-owned completion record appended through the channel descriptor.
+      6: Acknowledging a delivery to an external sender before the chosen durable side effect or intentional no-op decision is accepted is forbidden.
+      7: Process-local queues, promises, timeouts, and cursors are not authority for delivery, completion, claim, retry, or dead-letter state.
+      8: Subscriber side effects must not execute during replay.
+      9: Caller-owned credentials, BYOK secrets, tenant identities, and provider tokens must not be stored on Firegrid delivery, claim, completion, conflict, or dead-letter records.
+      10: Selecting a public ingress endpoint for an externally addressable subscriber is deferred to the runtime presence feature lane and is not defined here.
+
+  PACKAGE_BOUNDARY:
+    description: Surface placement keeps Firegrid product-neutral and browser-safe where required.
+    requirements:
+      1: Channel descriptors, key/ordering helpers, projection fold helpers, and conformance helpers live under `@firegrid/substrate` and remain browser-safe.
+      2: Subscriber runtime helpers (replay-to-live, claim-before-side-effect, retry mechanics, durable evidence append) live under `@firegrid/runtime` and compose through `Firegrid.composeRuntime`.
+      3: "`@firegrid/client` does not gain webhook-specific methods."
+      4: No subscriber API exposes raw kernel imports, raw Durable Streams handles, raw `durable.completion` CRUD, or `processReadyWorkItem` as the normal app-handler path.
+
+  TEST_BOUNDARY:
+    description: Tests prove substrate-owned subscriber behavior, not transport plumbing.
+    requirements:
+      1: Conformance tests use real Durable Streams and Durable Streams State (or documented in-memory equivalents) and assert substrate-owned record, projection, claim, terminal, retry, and dead-letter semantics.
+      2: Conformance tests do not assert HTTP, signing, callback URL, callbackEvents, or provider semantics; transport-specific assertions live in optional adapter packages.
+      3: Test-only helpers remain package-local and do not become product harness APIs.
