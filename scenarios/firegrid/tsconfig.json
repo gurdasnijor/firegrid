@@ -5,6 +5,8 @@
     "moduleResolution": "NodeNext",
     "baseUrl": ".",
     "paths": {
+      "@firegrid/runtime": ["../../packages/runtime/src/index.ts"],
+      "@firegrid/runtime/*": ["../../packages/runtime/src/*"],
       "@firegrid/substrate": ["../../packages/substrate/src/index.ts"],
       "@firegrid/substrate/descriptors": ["../../packages/substrate/src/descriptors/index.ts"],
       "@firegrid/substrate/event-plane": ["../../packages/substrate/src/event-plane/index.ts"],

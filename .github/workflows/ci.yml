@@ -32,7 +32,7 @@ env:
 #   typecheck         — pnpm --recursive typecheck
 #   effect-diagnostics — effect-language-service diagnostics
 #   tests             — pnpm --recursive tests
-#   package-consumption — pack @firegrid/client and type-check an external consumer
+#   package-consumption — pack Firegrid public packages and type-check external consumers
 #
 # Non-gating job:
 #   architecture-reports — runs `pnpm run arch:reports` on PRs and uploads
@@ -159,6 +159,9 @@ jobs:
 
       - name: Pack and type-check external client consumer
         run: pnpm run test:pack:client
+
+      - name: Pack and type-check external runtime consumer
+        run: pnpm run test:pack:runtime
 
   architecture-reports:
     name: Architecture reports (evidence)
