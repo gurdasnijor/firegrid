@@ -34,6 +34,7 @@ components:
       18: Firepixel-foundation scenario validation composes a caller-owned EventPlane, a `Firegrid.handler`, `RunWait`, stock subscribers, and read-only inspection to prove that app handlers can emit typed domain rows and terminalize durable operations without raw stream writers or Firegrid-native product row families.
       19: Firepixel-style permission scenario validation proves a handler-emitted permission-request row, an externally emitted permission-resolution row, projection-match resume through `RunWait.for(..., { resultSchema })`, and terminal operation state through the shared scenario runner.
       20: Firepixel-foundation scenario validation proves the emit-then-wait ordering path by appending caller-owned EventPlane rows from inside a handler before the handler suspends through `RunWait`, then resolving the wait from EventPlane projection state and terminalizing through the normal ready-work operator.
+      21: Firepixel-style tool invocation scenario validation composes caller-owned EventPlane request/result rows with an app-owned runtime handler and proves terminal operation state without Firegrid-native tool rows, transports, credentials, or adapter semantics.
 
   RUNTIME_RUN_API:
     requirements:
