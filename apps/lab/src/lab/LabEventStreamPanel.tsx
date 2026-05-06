@@ -1,6 +1,7 @@
 import { Effect, Fiber, Stream } from "effect"
 import { useEffect, useMemo, useState } from "react"
 import { createLabClient } from "./LabClient.ts"
+import { LabTypedInputForm } from "./LabTypedInputForm.tsx"
 import { makeLabEvent, type LabEvent } from "./lab-events.ts"
 import styles from "./styles.module.css"
 
@@ -114,33 +115,14 @@ export function LabEventStreamPanel({
           Uses the app-facing EventStream client. Events are decoded
           through a lab-local EventStream descriptor before rendering.
         </p>
-        <label className={styles.label}>
-          Message
-          <input
-            className={styles.input}
-            value={message}
-            onChange={(event) => setMessage(event.currentTarget.value)}
-          />
-        </label>
-        <label className={styles.label}>
-          Count
-          <input
-            className={styles.input}
-            type="number"
-            value={count}
-            onChange={(event) =>
-              setCount(Number.parseInt(event.currentTarget.value, 10) || 0)
-            }
-          />
-        </label>
-        <button
-          className={styles.button}
-          type="button"
-          onClick={onEmit}
-          disabled={message.trim().length === 0}
-        >
-          Emit typed event
-        </button>
+        <LabTypedInputForm
+          message={message}
+          count={count}
+          submitLabel="Emit typed event"
+          onMessageChange={setMessage}
+          onCountChange={setCount}
+          onSubmit={onEmit}
+        />
         {emitStatus !== undefined ? (
           <div className={styles.note}>{emitStatus}</div>
         ) : null}

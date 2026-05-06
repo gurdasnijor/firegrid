@@ -7,32 +7,41 @@ const here = dirname(fileURLToPath(import.meta.url))
 const labRoot = resolve(here, "..", "lab")
 
 describe("runtime-lab-inspector.WRITE_BOUNDARY.1 + firegrid-event-streams.CLIENT_API.1-.3 — typed lab EventStream workbench uses the Firegrid client", () => {
-  it("firegrid-client-api.LAB_COMPATIBILITY.4 — typed EventStream workbench UI depends on a lab-local client seam", () => {
+  it("firegrid-client-api.LAB_COMPATIBILITY.1 and .4 — typed workbench UI depends on a lab-local client seam", () => {
     const seam = readFileSync(resolve(labRoot, "LabClient.ts"), "utf8")
-    const panel = readFileSync(
+    const eventPanel = readFileSync(
       resolve(labRoot, "LabEventStreamPanel.tsx"),
+      "utf8",
+    )
+    const operationPanel = readFileSync(
+      resolve(labRoot, "LabOperationPanel.tsx"),
       "utf8",
     )
     const app = readFileSync(resolve(labRoot, "App.tsx"), "utf8")
     const descriptor = readFileSync(resolve(labRoot, "lab-events.ts"), "utf8")
-    const combined = `${seam}\n${panel}\n${app}\n${descriptor}`
-    const reactComponents = `${panel}\n${app}`
+    const combined = `${seam}\n${eventPanel}\n${operationPanel}\n${app}\n${descriptor}`
+    const reactComponents = `${eventPanel}\n${operationPanel}\n${app}`
 
     expect(app).toContain("Production client readiness surface")
     expect(app).toContain("stream source:")
     expect(app).toContain("uses LabClient seam")
     expect(app).toContain("Read-only raw stream inspector")
     expect(app).toContain("not a client")
+    expect(app).toContain("<LabOperationPanel streamUrl={streamUrl} />")
     expect(app).toContain("<LabEventStreamPanel streamUrl={streamUrl} />")
     expect(app).toContain("<RawStreamInspector streamUrl={streamUrl} />")
-    expect(panel).toContain("./LabClient.ts")
-    expect(panel).not.toContain("@firegrid/client")
-    expect(panel).not.toContain("./LabEventStreamClient.ts")
+    expect(eventPanel).toContain("./LabClient.ts")
+    expect(operationPanel).toContain("./LabClient.ts")
+    expect(reactComponents).not.toContain("@firegrid/client")
+    expect(reactComponents).not.toContain("./LabEventStreamClient.ts")
     expect(seam).toContain("@firegrid/client")
     expect(seam).toContain("FiregridClientLive")
     expect(seam).toContain("yield* FiregridClient")
     expect(seam).toContain("client.emit(LabEvents")
     expect(seam).toContain("client.events(LabEvents")
+    expect(seam).toContain("Operation.define")
+    expect(seam).toContain("client.send(LabEchoOperation")
+    expect(seam).toContain(".observe(LabEchoOperation")
     expect(seam).not.toContain("@firegrid/client/event-streams")
     expect(descriptor).toContain("@firegrid/client")
     expect(reactComponents).not.toContain("@firegrid/client")
@@ -47,10 +56,8 @@ describe("runtime-lab-inspector.WRITE_BOUNDARY.1 + firegrid-event-streams.CLIENT
     expect(combined).not.toContain("processReadyWorkItem")
     expect(combined).not.toContain("claimRun")
     expect(combined).not.toContain("terminalize")
-    expect(combined).not.toContain("client.send")
     expect(combined).not.toContain("client.call")
     expect(combined).not.toContain("client.result")
-    expect(combined).not.toContain("client.observe")
   })
 })
 
