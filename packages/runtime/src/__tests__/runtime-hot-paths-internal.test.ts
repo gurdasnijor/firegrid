@@ -177,6 +177,97 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
     expect(unsubscribed).toBe(true)
   })
 
+  it("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runner deadline stream wakes the subscriber when the next due time arrives", async () => {
+    const db = fakeDb()
+    let scans = 0
+
+    const observed = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const secondScanFinished = yield* Deferred.make<void>()
+
+          const fiber = yield* Effect.fork(
+            runScopedSubscriberLoopFromDb(db, {
+              subscribe: () => () => undefined,
+              nextDeadlineMs: () =>
+                scans === 1 ? Date.now() + 20 : undefined,
+              scan: () =>
+                Effect.gen(function* () {
+                  scans += 1
+                  if (scans === 2) {
+                    yield* Deferred.succeed(secondScanFinished, undefined)
+                  }
+                }),
+            }),
+          )
+
+          yield* Deferred.await(secondScanFinished)
+          yield* Effect.sleep("40 millis")
+          yield* Fiber.interrupt(fiber)
+          return scans
+        }),
+      ),
+    )
+
+    expect(observed).toBe(2)
+  })
+
+  it("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runner deadline stream cancels a stale pending deadline after an edge wake recomputes no due time", async () => {
+    const db = fakeDb()
+    let wake: (() => void) | undefined
+    let scans = 0
+    ;(db as {
+      collections: {
+        completions: FakeCollection<CompletionValue>
+      }
+    }).collections.completions.subscribeChanges = (cb) => {
+      wake = cb
+      return { unsubscribe: () => undefined }
+    }
+
+    const observed = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const firstScanFinished = yield* Deferred.make<void>()
+          const secondScanFinished = yield* Deferred.make<void>()
+
+          const fiber = yield* Effect.fork(
+            runScopedSubscriberLoopFromDb(db, {
+              subscribe: (database, onEdge) =>
+                (database as {
+                  collections: {
+                    completions: FakeCollection<CompletionValue>
+                  }
+                }).collections.completions.subscribeChanges(onEdge)
+                  .unsubscribe,
+              nextDeadlineMs: () =>
+                scans === 1 ? Date.now() + 80 : undefined,
+              scan: () =>
+                Effect.gen(function* () {
+                  scans += 1
+                  if (scans === 1) {
+                    yield* Deferred.succeed(firstScanFinished, undefined)
+                  }
+                  if (scans === 2) {
+                    yield* Deferred.succeed(secondScanFinished, undefined)
+                  }
+                }),
+            }),
+          )
+
+          yield* Deferred.await(firstScanFinished)
+          wake?.()
+          yield* Deferred.await(secondScanFinished)
+          yield* Effect.sleep("120 millis")
+          yield* Fiber.interrupt(fiber)
+          return scans
+        }),
+      ),
+    )
+
+    expect(observed).toBe(2)
+  })
+
   it("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runner database acquisition failures stay tagged", async () => {
     const exit = await Effect.runPromiseExit(
       runScopedSubscriberLoopWithAcquire(
@@ -202,11 +293,16 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
 describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY — runtime source guardrails", () => {
   it("firegrid-remediation-hardening.EFFECT_CONSISTENCY.3, firegrid-runtime-process.RUNTIME_HOT_PATH.1 — runner and operation handler use scoped Stream pipelines instead of ad hoc latch loops", () => {
     expect(executableSource("wake-stream.ts")).toContain("Stream.asyncScoped")
-    for (const source of [
-      executableSource("runner.ts"),
-      executableSource("operation-handler.ts"),
-    ]) {
-      expect(source).toContain("wakeStream")
+    const runnerSource = executableSource("runner.ts")
+    expect(runnerSource).toContain("Stream.fromQueue")
+    expect(runnerSource).toContain("deadlineWakeStream")
+    expect(runnerSource).toContain("Effect.forkScoped")
+    expect(runnerSource).not.toContain("deadlineFiber")
+    expect(runnerSource).not.toContain("Fiber.interrupt")
+
+    const operationHandlerSource = executableSource("operation-handler.ts")
+    expect(operationHandlerSource).toContain("wakeStream")
+    for (const source of [runnerSource, operationHandlerSource]) {
       expect(source).not.toContain("Effect.makeLatch")
       expect(source).not.toContain("Effect.forever")
       expect(source).not.toContain("Effect.race(")
