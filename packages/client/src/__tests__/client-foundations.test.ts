@@ -10,6 +10,15 @@ const packageRoot = resolve(clientRoot, "..")
 const readClient = (path: string) =>
   readFileSync(resolve(clientRoot, path), "utf8")
 
+const readPackageFile = (path: string) =>
+  readFileSync(resolve(packageRoot, path), "utf8")
+
+const codeBlocks = (markdown: string): ReadonlyArray<string> =>
+  Array.from(
+    markdown.matchAll(/```(?:\w+)?\n([\s\S]*?)```/g),
+    (match) => match[1]!,
+  )
+
 const importSpecifiers = (source: string): ReadonlyArray<string> =>
   Array.from(
     source.matchAll(
@@ -91,6 +100,22 @@ const forbiddenSubstrateRootImports = [
   "CompletionId",
   "CurrentWorkContext",
   "currentWorkContextLayer",
+] as const
+
+const forbiddenExampleFragments = [
+  "@firegrid/runtime",
+  "@firegrid/substrate/kernel",
+  "RunWait",
+  "Choreography",
+  "DurableWaitsLive",
+  "WorkProducer",
+  "SubstrateClient",
+  "claim",
+  "completion",
+  "terminal",
+  "DurableStream",
+  "dev-server",
+  "dev server",
 ] as const
 
 // firegrid-remediation-hardening.PUBLIC_SURFACES.1
@@ -293,5 +318,31 @@ describe("firegrid-client-api.AUTHORITY_BOUNDARY.5 — client production entrypo
         ),
       ).toEqual([])
     }
+  })
+})
+
+describe("firegrid-client-api.DOCUMENTATION.2 — client README examples stay aligned with the public client surface", () => {
+  it("README snippets demonstrate send/call/result/observe and emit/events without runtime or durable-authority paths", () => {
+    const readme = readPackageFile("README.md")
+    const snippets = codeBlocks(readme).join("\n")
+
+    for (const required of [
+      "FiregridClientLive",
+      "Operation.define",
+      "EventStream.define",
+      "client.send",
+      "client.observe",
+      "client.result",
+      "client.call",
+      "client.emit",
+      "client.events",
+    ]) {
+      expect(snippets).toContain(required)
+    }
+
+    const offenders = forbiddenExampleFragments.filter((fragment) =>
+      snippets.includes(fragment),
+    )
+    expect(offenders).toEqual([])
   })
 })
