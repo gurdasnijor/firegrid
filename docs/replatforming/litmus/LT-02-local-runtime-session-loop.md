@@ -121,18 +121,15 @@ descriptor, and an app-owned EventPlane descriptor. It stopped because the
 remaining LT-02 proof needs a browser-safe durable read path for
 runtime-authored app timeline state.
 
-Two viable paths remain:
+Chosen unblock: use the EventPlane timeline path first. The local runtime
+writes Flamecast session index, timeline, follow-up/control, and provider
+state rows through app-owned EventPlane producers. The UI reads those rows
+through browser-safe `@firegrid/client` projection/query handles.
 
-1. EventPlane timeline: the local runtime writes Flamecast timeline/session
-   rows through app-owned EventPlane producers, and the UI reads those rows
-   through the browser-safe projection/query surface. This depends on the
-   `@firegrid/client` projection/query API being implemented for app-owned
-   projections.
-2. EventStream timeline: the UI reads timeline entries through
-   `@firegrid/client.events`, and Firegrid adds a public runtime-side
-   app-owned EventStream append primitive. That primitive must not create a
-   `@firegrid/runtime` to `@firegrid/client` package edge and must not expose
-   raw Durable Streams writers.
+Runtime-side EventStream append remains a later optional lane. It should not
+block LT-02 because EventPlane projections are the better fit for session
+indexes, timeline state, follow-up routing, permission state, delivery state,
+presence-derived views, and later ownership-transfer/handoff views.
 
 Related ACIDs:
 
@@ -150,7 +147,9 @@ Related ACIDs:
 Follow-up message submission is feasible as app-owned operations or control
 rows, but the UI cannot list sessions or reconstruct detail after refresh from
 operation handles alone. LT-02 therefore needs a durable app-owned session
-index and timeline read surface before app chassis work should proceed.
+index and timeline read surface before app chassis work should proceed. That
+surface is now planned as the `@firegrid/client` projection/query API over
+app-owned EventPlane descriptors.
 
 Development topology also surfaced a secondary packaging issue: a Vite-hosted
 runtime plugin importing `@firegrid/runtime` hit dist/export resolution before

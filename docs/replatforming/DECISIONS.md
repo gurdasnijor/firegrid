@@ -23,6 +23,7 @@ below cites the Acai requirements that currently enforce it.
 | D-14 | Prompt transport is app-owned durable intent over Firegrid mechanics; Firegrid may provide claimed-intent helpers but no prompt/mailbox product API. | `firegrid-claimed-intent-transport.INTENT_DESCRIPTOR.1`, `firegrid-claimed-intent-transport.NON_SCOPE.1`, `flamecast-product-contract.LOWERING.9` |
 | D-15 | Runtime locality is split: `@firegrid/runtime` is Node-tier; `@firegrid/client` is browser/edge-safe. | `firegrid-platform-invariants.LOCALITY.1`, `firegrid-platform-invariants.LOCALITY.2`, `firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.1` |
 | D-16 | LT-02 is the first product-shaped proof: Flamecast UI starts a session and a local Node runtime executes through Firegrid. | `firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.1`, `firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.2`, `firegrid-client-projection-api.BROWSER_SAFE_FACADE.1`, `flamecast-product-contract.LOWERING.2` |
+| D-17 | LT-02 unblocks through the EventPlane timeline path first: runtime writes Flamecast session index/timeline/control rows through app-owned EventPlane producers, and the UI reads them through browser-safe `@firegrid/client` projection/query handles. Runtime-side EventStream append remains a later optional lane. | `firegrid-client-projection-api.BROWSER_SAFE_FACADE.1`, `firegrid-client-projection-api.BROWSER_SAFE_FACADE.2`, `firegrid-client-projection-api.RECONNECT_SEMANTICS.1`, `firegrid-agent-runtime-substrate.MULTI_WAIT_RESUME.2`, `firegrid-platform-invariants.AUTHORITY.4` |
 
 ## Decision Use
 
