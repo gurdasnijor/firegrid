@@ -18,6 +18,10 @@ describe("lab attach: env-name contract with the firegrid runtime", () => {
   it("apps/lab/src/main.tsx reads VITE_DURABLE_STREAMS_URL and has no fixed-port default", () => {
     const main = readFileSync(resolve(here, "..", "main.tsx"), "utf8")
     expect(main).toContain('"VITE_DURABLE_STREAMS_URL"')
+    expect(main).toContain("streamUrlSource")
+    expect(main).toContain('"query"')
+    expect(main).toContain('"vite-env"')
+    expect(main).toContain("streamUrlSource={streamUrlSource}")
     // No fixed-port default constant — the legacy
     // http://127.0.0.1:4437/substrate/lab fallback is gone.
     expect(main).not.toContain("127.0.0.1:4437")

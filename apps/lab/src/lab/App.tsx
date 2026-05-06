@@ -11,6 +11,7 @@ import styles from "./styles.module.css"
 // durable-agent-runtime-lab.runtime-lab-inspector.NO_PRIVILEGED_LAB.2
 // firegrid-architecture-boundary.DEPENDENCY_GRAPH.4
 // firegrid-runtime-process.DEV_ENV_INJECTION.7
+// firegrid-client-api.LAB_COMPATIBILITY.5
 //
 // Lab shell with a typed EventStream workbench and a separate raw
 // diagnostic inspector.
@@ -18,30 +19,55 @@ import styles from "./styles.module.css"
 // The entire surface is reachable through the external Durable
 // Streams URL. Typed writes go through the app-facing Firegrid
 // client; raw Durable Streams access stays read-only and diagnostic.
-// The lab imports neither @firegrid/runtime nor @durable-agent-
-// substrate/substrate; the only contract with a running runtime is
-// the stream URL.
+// The lab imports neither the runtime package nor the substrate
+// package; the only contract with a running runtime is the stream URL.
 
 interface AppProps {
   readonly streamUrl: string
+  readonly streamUrlSource: "query" | "vite-env" | undefined
 }
 
-export function App({ streamUrl }: AppProps) {
+const streamSourceLabel = (source: AppProps["streamUrlSource"]): string =>
+  source === "query" ? "query override" : "Vite environment"
+
+export function App({ streamUrl, streamUrlSource }: AppProps) {
+  const sourceLabel = streamSourceLabel(streamUrlSource)
+
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
-        <span className={styles.headerTitle}>Firegrid Lab</span>
-        <span className={styles.headerStreamUrl}>{streamUrl}</span>
+        <div>
+          <span className={styles.headerTitle}>Firegrid Lab</span>
+          <span className={styles.headerSubtitle}>
+            Production client readiness surface
+          </span>
+        </div>
+        <div className={styles.headerConnection}>
+          <span className={styles.statusPill}>attached stream</span>
+          <span className={styles.headerStreamSource}>
+            stream source: {sourceLabel}
+          </span>
+          <span className={styles.headerStreamUrl}>{streamUrl}</span>
+        </div>
       </header>
       <main
         className={styles.scenarioRegion}
         aria-label="Typed EventStream workbench"
       >
-        <h2>Typed Workbench</h2>
+        <div className={styles.sectionHeading}>
+          <span className={styles.sectionEyebrow}>App-facing client</span>
+          <h2>Typed Workbench</h2>
+        </div>
         <p className={styles.note}>
           Emit and observe caller-owned EventStream rows through
-          the app-facing Firegrid client.
+          the app-local LabClient seam backed by the production
+          Firegrid EventStream client.
         </p>
+        <div className={styles.boundaryList} aria-label="Typed client boundary">
+          <span>uses LabClient seam</span>
+          <span>external stream URL only</span>
+          <span>no runtime authority</span>
+        </div>
         <p className={styles.note}>
           Canonical workflow: run Durable Streams separately and
           start the lab with an explicit stream URL:{" "}
@@ -57,10 +83,14 @@ export function App({ streamUrl }: AppProps) {
         className={styles.diagnosticRegion}
         aria-label="Raw diagnostics"
       >
-        <h2>Diagnostics</h2>
+        <div className={styles.sectionHeading}>
+          <span className={styles.sectionEyebrow}>Read-only diagnostics</span>
+          <h2>Raw Stream Inspector</h2>
+        </div>
         <p className={styles.note}>
           Read-only raw stream inspector. This panel is deliberately
-          separate from typed EventStream controls.
+          separate from typed EventStream controls and is not a client
+          write API.
         </p>
         <RawStreamInspector streamUrl={streamUrl} />
       </main>

@@ -234,12 +234,18 @@ seam may adapt to the current production client subpaths while C2 lands, but
 runtime, substrate, kernel, raw writer, work, claim, and terminal authority do
 not leak into React components.
 
+The lab shell also makes that boundary visible: typed workbench controls are
+shown as app-facing client usage, raw stream inspection is labeled read-only
+diagnostic, and the active stream URL is displayed as externally supplied
+configuration rather than as a Firegrid-owned launcher or default.
+
 Anchor requirements:
 
 - `firegrid-client-api.LAB_COMPATIBILITY.1`
 - `firegrid-client-api.LAB_COMPATIBILITY.2`
 - `firegrid-client-api.LAB_COMPATIBILITY.3`
 - `firegrid-client-api.LAB_COMPATIBILITY.4`
+- `firegrid-client-api.LAB_COMPATIBILITY.5`
 - `launchable-substrate-host.LAB_INSPECTOR.7`
 - `launchable-substrate-host.NO_CONTROL_PLANE.4`
 - `launchable-substrate-host.NO_CONTROL_PLANE.5`
