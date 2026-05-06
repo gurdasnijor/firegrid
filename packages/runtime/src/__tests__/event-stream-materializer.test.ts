@@ -196,19 +196,17 @@ describe("firegrid-event-streams.RUNTIME_API.3 — Scope-bound materializer fibe
 })
 
 describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY.3 — materializer stream bridge guardrail", () => {
-  it("firegrid-event-streams.RUNTIME_API.1, firegrid-event-streams.RUNTIME_API.3, firegrid-remediation-hardening.EFFECT_CONSISTENCY.3 — uses the typed subscribeJson StreamResponse bridge", () => {
+  it("firegrid-runtime-process.RUNTIME_RUN_API.10, firegrid-event-streams.RUNTIME_API.1, firegrid-event-streams.RUNTIME_API.3, firegrid-remediation-hardening.EFFECT_CONSISTENCY.3 — architectural constraint forbids known-unmanaged materializer bridge shapes", () => {
+    // firegrid-runtime-process.RUNTIME_RUN_API.10
+    // Architectural-constraint source check: the positive materializer
+    // behavior above exercises decoding and scoped teardown; this source
+    // grep is retained only for one-off negative constraints that prevent
+    // reintroducing the previously reviewed unmanaged bridge patterns.
     const source = readFileSync(
       resolve(internalRuntimeRoot, "event-stream-materializer.ts"),
       "utf8",
     )
 
-    expect(source).toContain("type StreamResponse")
-    expect(source).toContain("StreamResponse<unknown>")
-    expect(source).toContain("Stream.asyncScoped<unknown>")
-    expect(source).toContain('strategy: "suspend"')
-    expect(source).toContain("await emit.single(item)")
-    expect(source).toContain("Effect.acquireRelease")
-    expect(source).toContain("subscribeJson")
     expect(source).not.toContain("as unknown as")
     expect(source).not.toContain("Stream.async<unknown, EventStreamSessionError>")
     expect(source).not.toContain("void emit.single(item)")
