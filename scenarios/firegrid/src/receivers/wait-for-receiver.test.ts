@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { selfTestWaitForReceiver } from "./wait-for-receiver.ts"
 
 describe("F3B waitFor projection-match receiver scenario", () => {
-  it("firegrid-runtime-process.SCENARIOS.9, durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.1, durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.4, durable-waits-and-scheduling.WAIT_FOR.1, durable-waits-and-scheduling.WAIT_FOR.8, firegrid-runtime-process.READY_WORK_OPERATOR.5 — app-owned run resolves projection-match wait and terminalizes ready work", async () => {
+  it("firegrid-runtime-process.SCENARIOS.9, firegrid-runtime-process.RUNTIME_COMPOSITION.1, firegrid-runtime-process.RUNTIME_COMPOSITION.2, firegrid-runtime-process.RUNTIME_COMPOSITION.6, durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.1, durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.4, durable-waits-and-scheduling.WAIT_FOR.1, durable-waits-and-scheduling.WAIT_FOR.8, firegrid-runtime-process.READY_WORK_OPERATOR.5 — app-owned run composes explicit helper inputs, resolves projection-match wait, and terminalizes ready work", async () => {
     const result = await Effect.runPromise(selfTestWaitForReceiver())
     const run = result.completed.runs.find((item) =>
       item.operation === "WaitForPermission"

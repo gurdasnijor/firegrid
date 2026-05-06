@@ -5,7 +5,7 @@ import {
   type ProjectionMatchTrigger,
   type TriggerMatcher,
 } from "@firegrid/substrate"
-import { Data, Effect, Fiber, Layer, Schedule } from "effect"
+import { Data, Effect, Fiber, Schedule } from "effect"
 import { defineReceiverScenario } from "../definition.ts"
 import {
   inspectSnapshot,
@@ -73,49 +73,53 @@ const permissionApprovedEvaluator = (
 }
 
 const waitForReceiverRuntime = (streamUrl: string) =>
-  Layer.mergeAll(
-    // firegrid-runtime-process.SCENARIOS.9
-    // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.1
-    // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.2
-    // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.3
-    // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.4
-    // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.7
-    Firegrid.subscribers.projectionMatch({
-      evaluate: (snapshot, trigger) =>
-        Effect.succeed(
-          permissionApprovedEvaluator(
-            inspectSnapshot(streamUrl, snapshot),
-            trigger,
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.1
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.2
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.6
+  Firegrid.composeRuntime({
+    subscribers: [
+      // firegrid-runtime-process.SCENARIOS.9
+      // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.1
+      // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.2
+      // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.3
+      // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.4
+      // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.7
+      Firegrid.subscribers.projectionMatch({
+        evaluate: (snapshot, trigger) =>
+          Effect.succeed(
+            permissionApprovedEvaluator(
+              inspectSnapshot(streamUrl, snapshot),
+              trigger,
+            ),
           ),
-        ),
-    }),
-    // firegrid-runtime-process.READY_WORK_OPERATOR.1
-    // firegrid-runtime-process.READY_WORK_OPERATOR.5
-    // firegrid-runtime-process.READY_WORK_OPERATOR.7
-    // run-wait-primitives.RUN_WAIT_API.2
-    // run-wait-primitives.RUN_WAIT_API.6
-    Firegrid.handler(WaitForPermissionOperation, (input) =>
-      Effect.gen(function* () {
-        const wait = yield* RunWait
-        yield* wait.for(input.trigger)
-        return {
-          permissionId: input.permissionId,
-          status: "approved" as const,
-        }
       }),
-    ),
-  ).pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        // run-wait-primitives.BOUNDARY.4
-        // run-wait-primitives.BOUNDARY.5
-        RunWait.layer({ streamUrl }),
-        triggerMatchersLayer({
-          "scenario.permission.approved": permissionMatcher,
+    ],
+    handlers: [
+      // firegrid-runtime-process.READY_WORK_OPERATOR.1
+      // firegrid-runtime-process.READY_WORK_OPERATOR.5
+      // firegrid-runtime-process.READY_WORK_OPERATOR.7
+      // run-wait-primitives.RUN_WAIT_API.2
+      // run-wait-primitives.RUN_WAIT_API.6
+      Firegrid.handler(WaitForPermissionOperation, (input) =>
+        Effect.gen(function* () {
+          const wait = yield* RunWait
+          yield* wait.for(input.trigger)
+          return {
+            permissionId: input.permissionId,
+            status: "approved" as const,
+          }
         }),
       ),
-    ),
-  )
+    ],
+    provide: [
+      // run-wait-primitives.BOUNDARY.4
+      // run-wait-primitives.BOUNDARY.5
+      RunWait.layer({ streamUrl }),
+      triggerMatchersLayer({
+        "scenario.permission.approved": permissionMatcher,
+      }),
+    ],
+  })
 
 const runWaitForReceiver = (streamUrl: string) =>
   // firegrid-runtime-process.SCENARIOS.16
