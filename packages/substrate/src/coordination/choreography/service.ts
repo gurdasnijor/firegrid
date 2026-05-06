@@ -9,8 +9,11 @@ import {
 import {
   CompletionRowType,
   CompletionValue,
+  decodeCompletionData,
   decodeProjectionMatchCompletionData,
   type ProjectionMatchCompletionData,
+  TimerCompletionData,
+  type TimerCompletionData as TimerCompletionDataValue,
 } from "../../protocol/schema/rows.ts"
 import {
   blockRun,
@@ -25,7 +28,10 @@ import {
   CompletionId as toCompletionId,
   type CompletionId,
 } from "./branded.ts"
-import { CurrentWorkContext } from "./context.ts"
+import {
+  CurrentWorkContext,
+  type CurrentWorkContextValue,
+} from "./context.ts"
 import {
   TriggerMatchers,
   type ChoreographyTrigger,
@@ -108,7 +114,7 @@ export interface ChoreographyService {
   // choreography-facade.CHOREOGRAPHY_API.2
   readonly sleep: (
     duration: Duration.DurationInput,
-  ) => Effect.Effect<never, never, DurableWaits | CurrentWorkContext>
+  ) => Effect.Effect<void, never, DurableWaits | CurrentWorkContext>
   // choreography-facade.CHOREOGRAPHY_API.3
   readonly waitFor: (
     trigger: ChoreographyTrigger,
@@ -312,27 +318,50 @@ export const ChoreographyLive = (
           ),
       )
 
-    const resolveExistingWaitFor = (
-      trigger: ProjectionMatchTrigger,
+    const decodeTimerData = (
+      completion: CompletionValue,
     ): Effect.Effect<
+      TimerCompletionDataValue,
+      ChoreographyVerificationError
+    > =>
+      decodeCompletionData(
+        TimerCompletionData,
+        (cause) =>
+          verificationError(
+            completion.completionId,
+            `timer completion data decode failed: ${String(cause)}`,
+          ),
+      )(completion.data)
+
+    type ExistingWaitDecision =
       | { readonly kind: "create" }
       | { readonly kind: "resume" }
-      | { readonly kind: "suspend"; readonly completionId: string },
+      | { readonly kind: "suspend"; readonly completionId: string }
+
+    const resolveExistingBlockedCompletion = (input: {
+      readonly operation: string
+      readonly expectedKind: CompletionValue["kind"]
+      readonly validate: (
+        ctx: CurrentWorkContextValue,
+        completion: CompletionValue,
+      ) => Effect.Effect<void, ChoreographyVerificationError>
+    }): Effect.Effect<
+      ExistingWaitDecision,
       ChoreographyVerificationError,
       CurrentWorkContext
     > =>
       Effect.gen(function* () {
-        const { ctx, current } = yield* readCurrentRun("wait-for-resume")
-        if (current?.state !== "blocked") {
-          return { kind: "create" as const }
-        }
+        const { ctx, current } = yield* readCurrentRun(input.operation)
+        if (current?.state !== "blocked") return { kind: "create" as const }
+
         const completionId = current.blockedOnCompletionId
         if (completionId === undefined) {
           return yield* verificationError(
-            "wait-for-resume",
+            input.operation,
             `current run ${ctx.workId} is blocked without blockedOnCompletionId`,
           )
         }
+
         const completion = yield* readAuthoritativeCompletion(completionId)
         if (completion === undefined) {
           return yield* verificationError(
@@ -340,26 +369,16 @@ export const ChoreographyLive = (
             `current run ${ctx.workId} is blocked on missing completion`,
           )
         }
-        if (completion.kind !== "projection_match") {
+        if (completion.kind !== input.expectedKind) {
           return yield* verificationError(
             completionId,
-            `current run ${ctx.workId} is blocked on ${completion.kind}, not projection_match`,
+            `current run ${ctx.workId} is blocked on ${completion.kind}, not ${input.expectedKind}`,
           )
         }
-        const data = yield* decodeProjectionMatchData(completion)
-        // durable-waits-and-scheduling.WAIT_FOR.8
-        if (!sameProjectionMatchTrigger(data.trigger, trigger)) {
-          return yield* verificationError(
-            completionId,
-            `current run ${ctx.workId} is blocked on a different projection-match trigger`,
-          )
-        }
-        if (completion.state === "resolved") {
-          // choreography-facade.CHOREOGRAPHY_API.9
-          return { kind: "resume" as const }
-        }
+
+        yield* input.validate(ctx, completion)
+        if (completion.state === "resolved") return { kind: "resume" as const }
         if (completion.state === "pending") {
-          // choreography-facade.CHOREOGRAPHY_API.10
           return { kind: "suspend" as const, completionId }
         }
         return yield* verificationError(
@@ -368,10 +387,57 @@ export const ChoreographyLive = (
         )
       })
 
+    const resolveExistingSleep = (
+      durationMs: number,
+    ) =>
+      resolveExistingBlockedCompletion({
+        operation: "sleep-resume",
+        expectedKind: "timer",
+        validate: (ctx, completion) =>
+          Effect.gen(function* () {
+            const data = yield* decodeTimerData(completion)
+            // durable-waits-and-scheduling.SLEEP.6
+            if (data.durationMs !== durationMs) {
+              return yield* verificationError(
+                completion.completionId,
+                `current run ${ctx.workId} is blocked on a different timer duration`,
+              )
+            }
+          }),
+      })
+
+    const resolveExistingWaitFor = (
+      trigger: ProjectionMatchTrigger,
+    ) =>
+      resolveExistingBlockedCompletion({
+        operation: "wait-for-resume",
+        expectedKind: "projection_match",
+        validate: (ctx, completion) =>
+          Effect.gen(function* () {
+            const data = yield* decodeProjectionMatchData(completion)
+            // durable-waits-and-scheduling.WAIT_FOR.8
+            if (!sameProjectionMatchTrigger(data.trigger, trigger)) {
+              return yield* verificationError(
+                completion.completionId,
+                `current run ${ctx.workId} is blocked on a different projection-match trigger`,
+              )
+            }
+          }),
+      })
+
     const sleep: ChoreographyService["sleep"] = (duration) =>
       Effect.gen(function* () {
         const waits = yield* DurableWaits
         const durationMs = Duration.toMillis(Duration.decode(duration))
+        const existing = yield* resolveExistingSleep(durationMs)
+        if (existing.kind === "resume") {
+          // choreography-facade.CHOREOGRAPHY_API.12
+          return undefined
+        }
+        if (existing.kind === "suspend") {
+          // choreography-facade.CHOREOGRAPHY_API.13
+          return yield* blockAndSuspend(existing.completionId)
+        }
         const result = yield* waits.sleep({ durationMs })
         return yield* blockAndSuspend(result.completionId)
       }).pipe(
@@ -400,9 +466,11 @@ export const ChoreographyLive = (
             : undefined
         const existing = yield* resolveExistingWaitFor(pmTrigger)
         if (existing.kind === "resume") {
+          // choreography-facade.CHOREOGRAPHY_API.9
           return undefined
         }
         if (existing.kind === "suspend") {
+          // choreography-facade.CHOREOGRAPHY_API.10
           return yield* blockAndSuspend(existing.completionId)
         }
         const result = yield* waits.waitFor({

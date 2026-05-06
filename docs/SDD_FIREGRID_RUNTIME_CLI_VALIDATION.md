@@ -453,7 +453,123 @@ receiver rows, verifies the completion remains pending before the due time, and
 then verifies completion resolution plus ready-work terminalization through the
 same inspection projection.
 
-### Scenario 4: Projection Surface / Read Model Inspection
+### Scenario 4: Sleep / Timer Choreography
+
+Purpose: prove pure durable timer suspension through `Choreography.sleep`,
+separate from scheduled-work and projection-match waits.
+
+Input:
+
+1. A schema-valid operation-started row for an operation whose handler calls
+   `Choreography.sleep`.
+2. A runtime Layer with the operation handler and timer subscriber.
+
+Expected result:
+
+1. The operation blocks on a timer-shaped durable completion.
+2. Timer subscriber resolves the completion only after the durable due time.
+3. Ready-work resumes the blocked run through the same operation handler.
+4. Rebuilt projection proves the run terminalized and no ready work remains.
+
+Relevant ACIDs:
+
+- `durable-waits-and-scheduling.SLEEP.1`
+- `durable-waits-and-scheduling.SLEEP.2`
+- `durable-waits-and-scheduling.SLEEP.6`
+- `durable-subscribers.TIMER_SUBSCRIBER.1`
+- `durable-subscribers.TIMER_SUBSCRIBER.2`
+- `durable-subscribers.TIMER_SUBSCRIBER.3`
+- `durable-subscribers.TIMER_SUBSCRIBER.4`
+- `firegrid-runtime-process.RUNTIME_RUN_API.1`
+- `firegrid-runtime-process.RUNTIME_RUN_API.6`
+- `firegrid-runtime-process.READY_WORK_OPERATOR.1`
+- `firegrid-runtime-process.READY_WORK_OPERATOR.5`
+- `firegrid-runtime-process.SCENARIOS.1`
+- `firegrid-runtime-process.SCENARIOS.11`
+
+Manual CLI input flow:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+durable-stream create firegrid --json
+
+pnpm --silent --filter @firegrid/scenarios run sleep \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+
+durable-stream read firegrid
+```
+
+The sleep emitter derives an operation-started row from `Operation.define`, the
+operation input schema, `OperationEnvelopeSchema`, `RunValue`, and `startRun`.
+It is emit-only: it writes rows to stdout and does not create streams, wrap the
+Durable Streams CLI, or run a receiver process. For the default input it writes
+this JSON line to stdout:
+
+```json
+{"type":"durable.run","key":"run-sleep-cli-1","value":{"runId":"run-sleep-cli-1","state":"started","data":{"_envelope":"firegrid/operation@1","operation":"Sleep","payload":{"durationMs":500,"label":"timer-cli-1"}}},"headers":{"operation":"insert"}}
+```
+
+Receiver-side validation uses a separate app-owned runtime entrypoint. The
+receiver runtime composes `Firegrid.subscribers.timer` with
+`Firegrid.handler(SleepOperation, ...)` through `run({ connection, runtime })`;
+the handler calls `Choreography.sleep(input.durationMs)` and returns only after
+the timer completion resolves and ready-work re-enters the handler. It does not
+import `@firegrid/client`, load an app graph dynamically, start a Durable
+Streams dev server, or include a row writer/mini-runner.
+
+Manual receiver-side flow:
+
+Terminal 1:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+export DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid
+durable-stream create firegrid --json
+```
+
+Terminal 2:
+
+```sh
+export DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid
+pnpm --filter @firegrid/scenarios run sleep-receiver -- \
+  --stream-url "$DURABLE_STREAMS_URL"
+```
+
+Terminal 1:
+
+```sh
+pnpm --silent --filter @firegrid/scenarios run sleep \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+```
+
+Terminal 1:
+
+```sh
+pnpm --silent --filter @firegrid/scenarios run inspect -- \
+  --stream-url "$DURABLE_STREAMS_URL"
+```
+
+Inspection should first show `run-sleep-cli-1` as `blocked` on a pending
+`timer` completion. After the due time, it should show the timer completion as
+`resolved`, the same run as `completed`, and `readyWork` as empty.
+
+Focused automated validation is available through:
+
+```sh
+pnpm --filter @firegrid/scenarios run sleep-receiver:self-test
+```
+
+That check starts a package-local Durable Streams test server, writes the same
+operation row as the CLI emitter while the app-owned receiver runtime is
+running, observes the pending timer before its due time, and verifies timer
+resolution plus ready-work terminalization through the same inspection
+projection.
+
+### Scenario 5: Projection Surface / Read Model Inspection
 
 Purpose: prove that users can inspect scenario progress through read models
 rather than by understanding every raw durable row.
@@ -543,6 +659,11 @@ subscriber resolution, the same report should expose the resolved completion and
 any derived ready work from the existing read-model rules. The command does not
 start subscribers, install runtime graphs, or mutate rows.
 
+For sleep/timer streams, the report should expose the `Sleep` run's blocked
+state and pending `timer` completion before the durable due time, then the
+resolved timer completion and completed run after the app-owned receiver
+runtime processes ready work.
+
 Relevant ACIDs:
 
 - `launchable-substrate-host.LAB_INSPECTOR.1`
@@ -553,7 +674,7 @@ Relevant ACIDs:
 - `launchable-substrate-host.NO_CONTROL_PLANE.5`
 - `firegrid-runtime-process.SCENARIOS.5`
 
-### Scenario 5: Claim-Before-Side-Effect
+### Scenario 6: Claim-Before-Side-Effect
 
 Purpose: prove once-only side-effect behavior under competing runtime workers.
 
