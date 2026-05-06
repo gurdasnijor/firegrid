@@ -74,6 +74,7 @@ const WaitForPermission = Operation.define({
   }),
   output: Schema.Struct({
     permissionId: Schema.String,
+    matchedPermissionId: Schema.String,
     status: Schema.Literal("approved"),
   }),
 })
@@ -181,7 +182,7 @@ const seedBlockedWaitForRun = async (
       kind: "projection_match",
       state: "resolved",
       data: { trigger: payload.trigger },
-      result: { matchedValue: { permissionId: payload.permissionId } },
+      result: { matchedValue: { permissionId: `${payload.permissionId}:result` } },
     },
   })
   const stream = await DurableStream.create({
@@ -326,9 +327,10 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
   })
 
   // firegrid-runtime-process.READY_WORK_OPERATOR.5
+  // run-wait-primitives.RUN_WAIT_API.8
   // choreography-facade.CHOREOGRAPHY_API.9
   // durable-waits-and-scheduling.WAIT_FOR.8
-  it("ready-work resume re-enters waitFor and terminalizes when the blocked projection-match completion is already resolved", async () => {
+  it("ready-work resume re-enters waitFor with the resolved projection-match result and terminalizes the run", async () => {
     const streamUrl = await createRuntimeStream(
       "firegrid-handler-waitfor-resume-test",
     )
@@ -348,9 +350,12 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
     const handlerLayer = Firegrid.handler(WaitForPermission, (input) =>
       Effect.gen(function* () {
         const wait = yield* RunWait
-        yield* wait.for(input.trigger)
+        const result = yield* wait.for(input.trigger, {
+          resultSchema: Schema.Struct({ permissionId: Schema.String }),
+        })
         return {
           permissionId: input.permissionId,
+          matchedPermissionId: result.permissionId,
           status: "approved" as const,
         }
       }),
@@ -381,6 +386,7 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
     expect(completed.state).toBe("completed")
     expect(completed.result).toEqual({
       permissionId: "permission-runtime-1",
+      matchedPermissionId: "permission-runtime-1:result",
       status: "approved",
     })
 
