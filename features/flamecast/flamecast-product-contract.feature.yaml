@@ -1,0 +1,84 @@
+feature:
+  name: flamecast-product-contract
+  product: flamecast
+  description: Boundary anchor for the Flamecast Agents API product contract; encodes which session, provider, capability, callback, identity, and webhook concerns belong to Flamecast and how they lower onto Firegrid primitives without redefining Flamecast implementation.
+
+components:
+  AGENTSPEC:
+    requirements:
+      1: "`AgentSpec` covering `provider`, `model`, `instructions`, `capabilities`, `contributors`, `providerOptions`, `providerAuth`, and `metadata` is owned by Flamecast and lives in product packages."
+      2: Provider identifiers and the `AgentProviderRef` union including `think`, `anthropic-managed`, `cursor`, `devin`, `factory-droid`, `openhands`, and `jules` belong to Flamecast.
+      3: Provider metadata covering model selection, caller-instruction support, native capability set, accepted contributors, event-detail level, steering and cancellation support, and permission support is owned by Flamecast.
+      4: "`POST /providers/:id/check` compatibility-check semantics including `CompatibilityError` and pre-execution validation are owned by Flamecast."
+      5: Capability resolution order — prefer native, then approved contributor, then external callback bridge, then fail before session creation — is owned by Flamecast.
+
+  SESSIONS_API:
+    requirements:
+      1: The Flamecast Sessions HTTP API surface (`POST /sessions`, `GET /sessions`, `GET /sessions/:id`, `POST /sessions/:id/events`, `GET /sessions/:id/events`, `POST /sessions/:id/cancel`, `DELETE /sessions/:id`) is product-owned and is hosted by Flamecast, not by Firegrid.
+      2: Session lifecycle including create, run, steer, cancel, complete, and error meanings is product-owned.
+      3: "`SessionCreate` payload shape covering `agent`, `input`, `callbackUrl`, `callbackEvents`, `permissions`, and `metadata` is owned by Flamecast."
+      4: "`permissions.mode` values (`auto`, `callback`, `client`) and permission policy are owned by Flamecast."
+      5: Steering input, user messages, and permission decisions written through `POST /sessions/:id/events` are part of the Flamecast write path, not a Firegrid primitive.
+
+  PROVIDER_API:
+    requirements:
+      1: The Flamecast Provider HTTP API (`GET /manifest`, `POST /sessions`, `GET /sessions/:id`, `POST /sessions/:id/events`, `POST /sessions/:id/cancel`) is product-owned; Firegrid does not host this surface.
+      2: "Provider event callback contract (`POST /provider-events/:sessionId` with `Authorization: Bearer fc_evt_...`, monotonic `sequence`, structured `event`) is owned by Flamecast."
+      3: Provider idempotency on caller-supplied `sessionId`, monotonic sequence assignment, and steering or permission response handling are Provider API contracts owned by Flamecast.
+
+  EVENTS:
+    requirements:
+      1: The normalized session event union covering `user_message`, `assistant_message`, `thinking`, `tool_call`, `tool_result`, `step_finish`, `turn_started`, `turn_complete`, `warning`, and `error` is owned by Flamecast as the canonical event schema.
+      2: Flamecast carries the normalized event union as `EventStream.event` schema content when persisting through Firegrid; Firegrid does not adopt this union as a Firegrid-native row family.
+      3: Event detail level varies by provider; Flamecast surfaces availability through provider metadata, and Firegrid does not impose minimum event coverage.
+      4: Tool-level events such as `tool_call` and `tool_result` carry product semantics including `capability`, `toolName`, `toolUseId`, and tool input/output shapes; those semantics are Flamecast-owned.
+
+  CALLBACKS:
+    requirements:
+      1: Outbound webhook delivery through `callbackUrl`, the `callbackEvents` filter (`session.done`, `session.error`, `permission.required`), and Standard Webhooks signing or verification are owned by Flamecast.
+      2: Callback tokens such as `fc_evt_*`, callback URL minting, and callback rotation policy are owned by Flamecast.
+      3: "`permission.required` callback payload shape including `sessionId`, `sequence`, `callId`, `capability`, and `input` is owned by Flamecast."
+      4: Customer-facing webhook authentication, retry policy beyond what Firegrid durable subscribers provide, and external delivery success criteria are owned by Flamecast.
+
+  IDENTITY_AUTH:
+    requirements:
+      1: WorkOS, API keys, BYOK, providerAuth credentials, tenant policy, OAuth flows, and customer authentication policy are owned by Flamecast.
+      2: Provider credential storage, rotation, and injection — including ComputeSDK, Daytona, Modal, Sprites, Firebox, and Cloudflare Containers sandbox credentials — are owned by Flamecast.
+      3: Org and tenant isolation, billing, archive and delete policy, and admin or debug authorization belong to Flamecast.
+      4: Session metadata containing tenant or auth identity is product-owned content placed inside Flamecast-defined schemas; Firegrid carries it as opaque payload bytes governed by the Flamecast schema.
+
+  LOWERING:
+    requirements:
+      1: When a Flamecast concept needs durable mechanics, it lowers onto Firegrid primitives per the launch contract in `docs/replatforming/OWNERSHIP.md`; the lowering direction is one-way from Flamecast concept to Firegrid primitive and never the reverse.
+      2: Flamecast `SessionCreate` input lowers onto an app-owned `Operation.define` input schema; session lifecycle lowers onto operation state, result, and error.
+      3: Flamecast normalized events lower onto an app-owned `EventStream.define` event schema content.
+      4: Flamecast provider callback events lower onto app-owned EventPlane rows or durable-subscriber rows; Flamecast retains payload, signing, authentication, and `callbackEvents` filtering.
+      5: Flamecast capability requests, capability results, permission required, and permission resolved lower onto app-owned EventPlane rows combined with `RunWait` and public Pending observation; Flamecast retains capability taxonomy and permission policy.
+      6: Flamecast provider compatibility failures from `POST /providers/:id/check` lower onto typed operation errors that surface before runtime side effects.
+      7: Flamecast provider adapter execution lowers onto a runtime handler composed via `Firegrid.composeRuntime`; Flamecast retains the adapter implementation and credentials.
+      8: Flamecast resources and secrets lower onto opaque resource references and secret references with product-owned runtime layers; Firegrid never sees raw secret material.
+      9: Flamecast prompt transport, scheduled self-prompt, and provider-tool dispatch lower onto Firegrid claimed-intent and scheduling-tool-binding mechanics; Flamecast retains prompt schema, promptability policy, and provider-tool transport.
+
+constraints:
+  INVARIANTS:
+    requirements:
+      1: Where this spec specifies Flamecast ownership, Firegrid spec text and code do not redefine the same surface as Firegrid-native, per `firegrid-platform-invariants.BOUNDARY.1` and `firegrid-platform-invariants.BOUNDARY.2`.
+      2: Where this spec mentions secrets, credentials, callback tokens, or signing keys, Firegrid-side handling follows `firegrid-platform-invariants.SECURITY.1`, `firegrid-platform-invariants.SECURITY.2`, and `firegrid-platform-invariants.SECURITY.4`.
+      3: Where this spec lowers a Flamecast concept onto a Firegrid primitive, the lowering honors `firegrid-platform-invariants.AUTHORITY.1`, `firegrid-platform-invariants.AUTHORITY.4`, and `firegrid-platform-invariants.AUTHORITY.5` for terminalization and external write authority.
+      4: Where this spec mentions browser, edge, or Worker code paths, the corresponding Firegrid-side imports follow `firegrid-platform-invariants.LOCALITY.1` and `firegrid-platform-invariants.LOCALITY.2`.
+      5: Where this spec mentions delivery retries or callback fanout, Firegrid-side mechanics honor `firegrid-platform-invariants.SECURITY.6` and do not claim exactly-once external side effects.
+
+  NON_SCOPE:
+    requirements:
+      1: This spec does not encode Flamecast implementation behavior, error code text, payload schemas, HTTP route handlers, or SDK ergonomics.
+      2: This spec does not encode provider lifecycle such as startup, shutdown, restart, or reattach, sandbox image build or deploy mechanics, billing, UI, or product navigation.
+      3: This spec does not define provider catalogs, model availability, capability lists, tool registries, contributor lists, or cost models.
+      4: This spec does not pin Flamecast versions, release channels, deployment topology, or service-level objectives.
+      5: This spec does not define benchmark methodology, provider comparison surfaces, or developer GTM behavior.
+
+  REPO_LOCATION:
+    requirements:
+      1: This spec lives at `features/flamecast/flamecast-product-contract.feature.yaml` in the `gurdasnijor/firegrid` repository as the Flamecast-side boundary anchor while the `flamecast-agents` repository has no Acai infrastructure on its current foundation branch.
+      2: When `flamecast-agents` adopts Acai, this spec may be migrated to that repository with stable ACIDs preserved.
+      3: Migration of this spec does not renumber ACIDs; deprecation uses the Acai `deprecated` flag.
+      4: While this spec lives in the Firegrid repository, Firegrid lane specs cite these ACIDs as the Flamecast-side authority for ownership questions.

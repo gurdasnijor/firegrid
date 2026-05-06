@@ -1,0 +1,73 @@
+feature:
+  name: firegrid-platform-invariants
+  product: firegrid
+  description: Cross-cutting boundary, locality, authority, security, and package-discipline invariants that every downstream Firegrid lane spec cites and enforces.
+
+components:
+  BOUNDARY:
+    requirements:
+      1: Firegrid packages do not introduce product-vocabulary row families, descriptors, exported types, or runtime services for AgentSpec, ProviderManifest, CapabilitySpec, providerAuth, providerOptions, sessions, prompts, turns, permissions, capabilities, tools, sandboxes, callbackEvents, WorkOS, OAuth, BYOK, MCP, ACP, Standard Webhooks, agent registries, provider registries, or product SDK semantics.
+      2: Product-domain failures such as provider unavailable, capability unsupported, permission denied, sandbox failed, prompt unsupported, model unavailable, or tenant policy violation are not Firegrid-native error variants; they belong on app-owned operation error schemas.
+      3: Product semantics may appear in Firegrid spec text only as labeled non-scope examples, evidence references, or boundary anti-scope notes, never as Firegrid-native vocabulary.
+      4: Product registries such as agent registry, provider registry, capability registry, tool registry, or sandbox registry do not appear as Firegrid public services or runtime APIs.
+      5: Generic mechanic vocabulary including operation, event, plane, projection, wait, claim, subscriber, completion, runtime, presence, resource, materialization, intent, cursor, descriptor, and topology remains Firegrid-native and is not constrained by this boundary.
+
+  LOCALITY:
+    requirements:
+      1: "`@firegrid/runtime` is Node-tier; browser, edge, and Cloudflare Worker code does not import `@firegrid/runtime`."
+      2: "`@firegrid/client` is browser- and edge-safe; the browser bundle does not depend on Node-only modules through any import path reachable from `@firegrid/client` exports."
+      3: "There is no `@firegrid/client` to `@firegrid/runtime` package edge."
+      4: "There is no `@firegrid/runtime` to `@firegrid/client` package edge."
+      5: "`@firegrid/substrate` exposes only the curated root and approved subpaths `./descriptors`, `./event-plane`, and `./id-gen` to application and downstream package code; `@firegrid/substrate/kernel` is not an application-facing import."
+      6: Public scheduling, wait, projection, subscriber, runtime, and event-plane composition primitives are reachable through public package roots; applications do not need dist-internal or internal-subpath imports to compose runtime work.
+
+  AUTHORITY:
+    requirements:
+      1: Operation terminalization happens through the runtime authority path; handler return value via `Effect.succeed` and typed handler failure via `Effect.fail` matching the operation error schema are the only legitimate terminal paths.
+      2: "Application, downstream, lab, smoke, and example code does not synthesize terminal run state through `_tag: \"Completed\"`, `_tag: \"Failed\"`, `setTimeout`-based completion, mocked `client.result`, or equivalent terminal-shape construction outside the runtime handler return path."
+      3: Application, downstream, lab, and smoke code does not append `durable.run` envelope shapes directly; substrate authority owns those rows.
+      4: External decisions, callback results, tool results, and resource materialization outcomes are written through public app-owned EventPlane producers, not through raw Durable Streams State writers.
+      5: External decisions or results that wake a `RunWait`-suspended handler are appended only after the test or smoke deterministically observes blocked-pending state; acceptable observation channels are public `client.observe(handle)` filtered to `Pending`, `projection.until` over an app-owned EventPlane row, or equivalent polling that confirms the handler reached the suspension point.
+      6: "`Effect.sleep` between handler emit and `RunWait.for` is not an acceptable substitute for a deterministic blocked-pending observation."
+      7: Browser, edge, lab, downstream, and example code does not expose claim authority, completion authority, terminal authority, RunWait authoring, subscriber registration, runtime handler registration, pending-completion creation, or `client.work.declare` as application APIs.
+
+  SECURITY:
+    requirements:
+      1: Firegrid packages do not store, transport, or accept provider credentials, tenant authentication policy, BYOK secrets, OAuth tokens, callback signing keys, or callback tokens.
+      2: Standard Webhooks signing helpers, callback URL minting, callback token issuance, callback rotation, and customer webhook fanout policy belong to product packages and are not Firegrid responsibilities.
+      3: Runtime presence is advisory discovery state; it is not used as a command bus, leader election, private host mesh, internal endpoint registry, host-to-host transport channel, or credential directory.
+      4: Trace metadata, span attributes, and observability records do not contain secrets, BYOK material, callback tokens, customer payloads, or tenant policy; values that may contain secret material are redacted, rejected, or wrapped in `Effect.Redacted` before becoming durable metadata or span attributes.
+      5: Correctness, terminalization, and authorization do not depend on trace metadata; missing trace metadata does not change durable behavior, claim eligibility, completion authority, or wait wake-up.
+      6: Firegrid mechanics do not claim exactly-once external side effects; subscriber and intent dispatcher mechanics expose at-least-once delivery with first-terminal-wins folds, and exactly-once external delivery requires app-owned idempotency keys or target-side fencing.
+
+  PACKAGE_DISCIPLINE:
+    requirements:
+      1: Cross-repo and downstream package-consumption smokes pin a 40-character Firegrid SHA constant.
+      2: After checkout, the smoke asserts `git rev-parse HEAD` equals the pinned SHA before any install, build, or test step.
+      3: The pinned SHA is reachable from the `gurdasnijor/firegrid` `origin/main` branch.
+      4: Cross-repo smokes consume packed Firegrid artifacts via `file:<absolute-tmp-path>` specs; `workspace:`, `link:`, `../firegrid/...` sibling-path resolution, committed tarballs, and registry-version specifiers for `@firegrid/*` do not appear in smoke consumer manifests.
+      5: Smokes assert no `workspace:` survivors across all four manifest dependency sections (`dependencies`, `devDependencies`, `peerDependencies`, `optionalDependencies`).
+      6: Smoke source is scanned for forbidden tokens before write or after typecheck; the canonical forbidden-token set covers `@firegrid/substrate/kernel`, `Choreography`, `ChoreographyLive`, `DurableWaitsLive`, `WorkProducer`, `SubstrateProducer`, `processReadyWorkItem`, `attemptClaim`, `completeRun`, `failRun`, `blockRun`, `resolveCompletion`, `createPendingCompletion`, `startRun`, `client.work.declare`, `FIREGRID_RUNTIME_MODULE`, `firegrid dev`, and direct `durable.run` envelope authoring.
+      7: Built `dist/` artifacts are not committed; public package manifests use dist-only `exports`, `main`, `types`, and `files` entries produced by build, and `files` includes the package README so consumers see public documentation in the packed tarball.
+      8: Cross-repo smokes use `Firegrid.composeRuntime` for runtime composition, public `client.send` / `client.result` / `client.observe` / `client.emit` / `client.events` for application interaction, and public app-owned EventPlane and EventStream descriptors for app state.
+
+  ENFORCEMENT:
+    requirements:
+      1: Each downstream Firegrid lane spec includes a `constraints.INVARIANTS` block citing the relevant `firegrid-platform-invariants.*` ACIDs by full identifier.
+      2: Lane specs cite invariants by ACID rather than restating invariant text verbatim.
+      3: When a lane discovers a missing invariant, the lane spec references a proposed addition to this spec rather than encoding the missing rule as a lane-local constraint.
+      4: Replatforming prose under `docs/replatforming/` cites these invariants by ACID once each lane spec lands; prose does not duplicate invariant text as a parallel source of truth.
+
+constraints:
+  NON_SCOPE:
+    requirements:
+      1: This spec does not define operation send, result, observe, or call APIs; those remain owned by `firegrid-client-api` and `firegrid-operation-messaging`.
+      2: This spec does not define EventPlane, EventStream, RunWait, projection-query, durable-subscriber, or runtime-presence behavior; those remain owned by their respective lane specs.
+      3: This spec does not define product behavior for Flamecast, Fireline, Firepixel, or other downstream consumers; product behavior remains owned by their respective product specs.
+      4: This spec does not constrain npm publication, release-channel policy, or registry version selection; package publication is a separate spec lane when needed.
+      5: This spec does not define provider-specific reattach profiles, sandbox lifecycle, credential policy, or browser UI; those remain product concerns.
+
+  TERMINOLOGY:
+    requirements:
+      1: The product-vocabulary list in `BOUNDARY.1` is illustrative and not exhaustive; reviewers may reject other product-flavored vocabulary that creates equivalent boundary risk.
+      2: When generic mechanic vocabulary collides with a product term, the product term moves to the product spec; Firegrid keeps the generic word.
