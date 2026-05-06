@@ -8,6 +8,8 @@
     "echo": "tsx echo.ts",
     "echo-receiver": "tsx echo-receiver.ts",
     "scheduled-work": "tsx scheduled-work.ts",
+    "scheduled-work-receiver": "tsx scheduled-work-receiver.ts",
+    "scheduled-work-receiver:self-test": "tsx scheduled-work-receiver.ts --self-test",
     "inspect": "tsx inspect.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --allowImportingTsExtensions --skipLibCheck *.ts",

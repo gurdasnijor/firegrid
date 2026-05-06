@@ -1,14 +1,27 @@
 #!/usr/bin/env tsx
 import {
+  Operation,
+} from "@firegrid/substrate/descriptors"
+import {
   createPendingCompletion,
   ScheduledWorkCompletionData,
 } from "@firegrid/substrate/kernel"
 import { Effect, Schema } from "effect"
 import { fileURLToPath } from "node:url"
 
-const ScheduledReminderInput = Schema.Struct({
+export const ScheduledReminderInput = Schema.Struct({
   reminderId: Schema.String,
   message: Schema.String,
+})
+
+export const ScheduledReminderOperation = Operation.define({
+  name: "ScheduledReminder",
+  input: ScheduledReminderInput,
+  output: Schema.Struct({
+    reminderId: Schema.String,
+    message: Schema.String,
+    delivered: Schema.Boolean,
+  }),
 })
 
 const DEFAULT_COMPLETION_ID = "completion-scheduled-work-cli-1"

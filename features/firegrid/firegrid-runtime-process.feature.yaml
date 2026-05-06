@@ -21,6 +21,7 @@ components:
       5: CLI validation scenario inspection rebuilds existing Firegrid projections from an explicit stream URL and reports scenario progress without adding runtime execution support or privileged writer APIs.
       6: Claim-before-side-effect CLI scenario emitters include the durable run and completion rows needed to derive one ready-work item for future competing operator participants.
       7: Echo receiver CLI scenarios run an app-owned typed runtime graph through `run({ connection, runtime })`, install the Echo handler with `Firegrid.handler`, and verify terminal state through the existing scenario inspection path.
+      8: Scheduled-work receiver validation uses an app-owned runtime entrypoint that composes the scheduled-work subscriber with a typed operation handler and verifies due-time completion resolution plus ready-work terminalization through projection inspection.
 
   RUNTIME_RUN_API:
     requirements:
