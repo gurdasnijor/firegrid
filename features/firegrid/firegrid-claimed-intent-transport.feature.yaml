@@ -1,0 +1,96 @@
+feature:
+  name: firegrid-claimed-intent-transport
+  product: firegrid
+  description: Product-neutral durable intent rows, idempotency, snapshot-first claim eligibility, claim-before-dispatch, first-terminal-wins terminalization, observation handles, runtime-presence integration, and observability hooks that let prompt transport, scheduled self-prompt, external callback intent, and other app-owned dispatch flows reuse Firegrid mechanics without introducing prompt, mailbox, ACP, MCP, WebSocket, or product transport vocabulary into Firegrid core.
+
+components:
+  INTENT_DESCRIPTOR:
+    requirements:
+      1: An intent descriptor binds a caller-owned intent payload schema, a caller-owned terminal result schema, and a caller-owned terminal error schema to product-neutral intent mechanics; descriptor names, payload field names, and terminal field names use Firegrid generic mechanic vocabulary and do not adopt prompt, mailbox, session, ACP, MCP, WebSocket, or product transport taxonomy.
+      2: An intent descriptor declares stable derivation hooks for intent identity key, idempotency key, and dispatch ordering scope; key types are branded so transport idempotency keys, intent identity keys, and product-domain keys cannot be silently interchanged.
+      3: Intent descriptors carry schema identifiers and version markers so projection rebuilds and migrations can detect schema drift.
+      4: Intent descriptors do not embed transport credentials, callback URLs, callback tokens, prompt text formats, or provider conversation identifiers as descriptor fields.
+
+  IDEMPOTENCY:
+    requirements:
+      1: Intent append validates the caller-owned payload schema and records a stable idempotency key before durable append.
+      2: Duplicate same-payload append returns a stable duplicate or original-accepted result without creating a second logical intent.
+      3: Duplicate different-payload append under the same idempotency key returns a typed conflict result and preserves conflict evidence as a durable row; the original intent remains the authoritative one.
+      4: Idempotency key dedupe scope, retention window, and behavior for duplicates that arrive after the window expires are declared per descriptor and remain caller-owned policy decisions.
+
+  SNAPSHOT_FIRST_CLAIM:
+    requirements:
+      1: A claim eligibility decision evaluates a snapshot of the caller-owned intent projection at a specific cursor and proceeds only if the snapshot indicates the intent is unclaimed and not yet terminalized.
+      2: Live races between concurrent claim attempts are resolved by snapshot-then-live observation using a shared cursor boundary per `firegrid-projection-query.CURSOR_AND_REPLAY.*`; an attempt that observes a winning prior claim at or before the snapshot cursor declines without performing a side effect.
+      3: Snapshot eligibility checks are deterministic over retained durable rows; two evaluations over the same retained set choose the same eligible-intents subset.
+
+  CLAIM_BEFORE_DISPATCH:
+    requirements:
+      1: A dispatcher appends a durable claim row carrying owner id, attempt id, epoch boundary, fence token when the dispatch target supports one, source cursor, and claimed timestamp before performing the dispatch side effect.
+      2: A dispatcher proves replay-to-live-boundary over the caller-owned intent projection per `firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.1` and `firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.2` before performing the dispatch side effect; replay performs no side effects.
+      3: A dispatcher whose claim is not the winning claim observes the winning claim and declines without performing the dispatch side effect.
+      4: A dispatcher whose claim is winning records dispatch attempts, retries, and terminal outcomes through caller-owned EventPlane producers; raw `durable.run` envelope authoring is not used.
+
+  FIRST_TERMINAL_WINS:
+    requirements:
+      1: Intent terminal rows for success, failure, cancellation, and dead-letter follow first-valid-terminal-wins per `firegrid-platform-invariants.SECURITY.6` and `firegrid-durable-subscriber-webhooks.DELIVERY_PROJECTION.2`; later identical terminals are duplicate evidence and later conflicting terminals are conflict evidence.
+      2: Terminal observation through `RunWait` projection-match recipes resolves from snapshot when the terminal existed at or before the snapshot cursor and from live tail when the terminal arrives after.
+      3: Cancellation of an intent is a caller-owned terminal row; Firegrid does not provide a built-in client-side cancellation API and v1 cancellation follows the app-owned control row pattern from `firegrid-agent-runtime-substrate.APP_OWNED_CONTROL_ROWS.*`.
+
+  OBSERVATION_HANDLES:
+    requirements:
+      1: Client-side observation of intent state is a read-only projection-query handle over the caller-owned intent and terminal row families using `firegrid-projection-query.QUERY_HANDLES.*` and `firegrid-projection-query.AUTHORITY_BOUNDARY.*`; observation handles do not expose claim authoring, terminal authoring, or raw StreamDB collection authority.
+      2: Observation handles surface typed expected read failures from `firegrid-projection-query.EXPECTED_ERRORS.*`; product-domain dispatch failures remain in caller-owned terminal rows and do not become Firegrid projection-query error variants.
+      3: Public `client.observe(handle)` for the operation that owns an intent continues to expose only operation lifecycle; intent-specific dispatch reasons are observed through caller-owned projections and are not pushed into the public lifecycle vocabulary.
+
+  PRESENCE_INTEGRATION:
+    requirements:
+      1: Eligible dispatcher selection uses `firegrid-runtime-presence.QUERY.*` to find runtime hosts that have advertised the relevant capability with adequate readiness and freshness; selection is read-only against the presence projection per `firegrid-runtime-presence.INGRESS_SELECTION.2`.
+      2: Presence is advisory per `firegrid-runtime-presence.CONSISTENCY.1`; a selected dispatcher that becomes unreachable after selection does not produce a Firegrid error and the intent remains eligible for a new claim under the snapshot-first claim mechanics.
+      3: Cross-topology dispatch is handled per `firegrid-runtime-ownership-transfer.TOPOLOGY_SCOPE.*`; cross-topology import does not implicitly carry credentials or callback tokens for the intent.
+
+  OBSERVABILITY_HOOKS:
+    requirements:
+      1: Intent append, claim, dispatch, side effect, and terminalization participate in observability spans through `firegrid-observability.SUBSTRATE_SPANS.*` and carry stable substrate attributes from `firegrid-observability.ATTRIBUTES.*`.
+      2: Trace metadata in intent rows follows `firegrid-observability.TRACE_METADATA.*` and remains correlation-only; correctness, claim eligibility, terminalization, and authorization do not depend on trace metadata per `firegrid-observability.NON_AUTHORITY.*`.
+      3: Span attributes for intents do not encode product vocabulary such as prompt, session, provider, mailbox, ACP, MCP, or WebSocket per `firegrid-observability.ATTRIBUTES.3`.
+
+constraints:
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `firegrid-platform-invariants.BOUNDARY.1`, `firegrid-platform-invariants.BOUNDARY.2`, `firegrid-platform-invariants.BOUNDARY.4`, and `firegrid-platform-invariants.BOUNDARY.5` so that intent descriptor names, payload field names, terminal field names, and helper names do not adopt prompt, mailbox, session, ACP, MCP, WebSocket, or product transport taxonomy.
+      2: This spec is bound by `firegrid-platform-invariants.AUTHORITY.1`, `firegrid-platform-invariants.AUTHORITY.2`, `firegrid-platform-invariants.AUTHORITY.3`, `firegrid-platform-invariants.AUTHORITY.4`, `firegrid-platform-invariants.AUTHORITY.5`, `firegrid-platform-invariants.AUTHORITY.6`, and `firegrid-platform-invariants.AUTHORITY.7` so that intent claims and terminals are appended through public producers, terminalization remains the handler authority path, deterministic Pending observation precedes external dispatch result writes, and browser code does not gain claim or terminal authority.
+      3: This spec is bound by `firegrid-platform-invariants.SECURITY.1` and `firegrid-platform-invariants.SECURITY.2` for the prohibitions on storing or transporting credentials, callback tokens, signing keys, and product transport credentials through intent descriptors or rows.
+      4: This spec is bound by `firegrid-platform-invariants.SECURITY.6` for at-least-once dispatch posture; claim narrows duplicate dispatch but exactly-once external delivery requires app-owned idempotency or target-side fencing.
+      5: This spec is bound by `firegrid-platform-invariants.LOCALITY.1`, `firegrid-platform-invariants.LOCALITY.2`, and `firegrid-platform-invariants.LOCALITY.5` for split-tier package locality; dispatcher Layers live on `@firegrid/runtime` and browser-safe intent observation lives on `@firegrid/client`.
+      6: This spec is bound by `firegrid-platform-invariants.ENFORCEMENT.1`, `firegrid-platform-invariants.ENFORCEMENT.2`, and `firegrid-platform-invariants.ENFORCEMENT.3` for citation discipline.
+
+  DEPENDS_ON:
+    requirements:
+      1: "`run-wait-primitives.*` and `durable-waits-and-scheduling.*` govern the wait primitives used by terminal observation."
+      2: "`client-event-plane-registration.*` and `durable-records-and-projections.*` govern caller-owned EventPlane definition and projection rebuild semantics; intent and terminal rows use those primitives rather than introducing parallel mechanics."
+      3: "`firegrid-projection-query.QUERY_HANDLES.*`, `firegrid-projection-query.CURSOR_AND_REPLAY.*`, `firegrid-projection-query.EXPECTED_ERRORS.*`, and `firegrid-projection-query.AUTHORITY_BOUNDARY.*` govern the read facade for intent observation and snapshot-first claim eligibility."
+      4: "`firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.*`, `firegrid-durable-subscriber-webhooks.WAIT_INTEGRATION.*`, and `firegrid-durable-subscriber-webhooks.DELIVERY_SEMANTICS.*` govern claim-before-side-effect, replay-no-side-effects, first-valid-terminal-wins, and at-least-once delivery used by claimed-intent dispatch."
+      5: "`firegrid-runtime-presence.QUERY.*`, `firegrid-runtime-presence.CONSISTENCY.*`, and `firegrid-runtime-presence.INGRESS_SELECTION.*` govern dispatcher selection."
+      6: "`firegrid-runtime-ownership-transfer.LEASE_FENCE_EPOCH.*` and `firegrid-runtime-ownership-transfer.TOPOLOGY_SCOPE.*` govern host-shift-safe and cross-topology intent dispatch."
+      7: "`firegrid-runtime-process.*` governs runtime composition through `Firegrid.composeRuntime`; dispatcher Layers compose through that surface."
+      8: "`firegrid-observability.SUBSTRATE_SPANS.*`, `firegrid-observability.ATTRIBUTES.*`, `firegrid-observability.TRACE_METADATA.*`, and `firegrid-observability.NON_AUTHORITY.*` govern span emission and trace metadata semantics."
+      9: "`firegrid-agent-runtime-substrate.LONG_LIVED_OPERATION.*` and `firegrid-agent-runtime-substrate.APP_OWNED_CONTROL_ROWS.*` govern the long-lived operation profile and app-owned cancellation pattern that intent transport relies on."
+      10: "`flamecast-product-contract.LOWERING.9` governs Flamecast-side prompt transport, scheduled self-prompt, and provider-tool dispatch that lower onto these mechanics; prompt schemas and provider transport remain Flamecast-owned."
+
+  PACKAGE_PLACEMENT:
+    requirements:
+      1: Intent descriptor types and branded key helpers live on a curated `@firegrid/substrate` public surface accessible to producer, dispatcher, and observation code.
+      2: Idempotent intent producer and projection helpers live on `@firegrid/substrate/event-plane`; they remain schema-driven and do not embed prompt, ACP, MCP, or transport semantics.
+      3: Dispatcher Layers compose through `Firegrid.composeRuntime` and live on `@firegrid/runtime`; they do not appear in browser-safe `@firegrid/client` exports.
+      4: Browser-safe intent observation lives on `@firegrid/client` and uses the projection-query read facade exclusively; no PromptRequestRow type, mailbox API, ACP transport, WebSocket URL, or browser-authored claim or terminal row is exposed.
+
+  NON_SCOPE:
+    requirements:
+      1: This spec does not define prompt text, prompt formats, prompt-as-tool conversion, or chat message schemas; prompt content remains product-owned.
+      2: This spec does not define mailbox abstractions; intent transport is a durable row pattern over existing primitives, not a new mailbox primitive.
+      3: This spec does not define ACP, MCP prompt API, vendor SDK, or WebSocket transport for intent delivery.
+      4: This spec does not define provider catalogs, agent registries, capability registries, or tool registries.
+      5: This spec does not define exactly-once external dispatch; exactly-once requires app-owned idempotency or target-side fencing per `firegrid-platform-invariants.SECURITY.6`.
+      6: This spec does not define a public `client.cancel` API; cancellation remains the app-owned control row pattern.
+      7: This spec does not introduce PromptRequestRow, AgentInbox, MailboxOperation, or any product-vocabulary row family as Firegrid-native.
