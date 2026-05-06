@@ -1,7 +1,7 @@
 import { DurableStream } from "@durable-streams/client"
 import { Effect } from "effect"
-import { appendChange } from "../descriptors/append.ts"
 import { IdGen, IdGenLive } from "../id-gen.ts"
+import { appendChange } from "../protocol/descriptors/append.ts"
 import {
   ClaimMissingCursorError,
   ClaimStreamError,
@@ -9,8 +9,8 @@ import {
   firstValidClaim,
 } from "./operator-errors.ts"
 import { readRetainedClaimAttempts } from "../retained-records.ts"
-import type { ClaimAttemptValue } from "../schema/rows.ts"
-import { substrateState } from "../schema/state.ts"
+import type { ClaimAttemptValue } from "../protocol/schema/rows.ts"
+import { substrateState } from "../protocol/schema/state.ts"
 
 // Internal-only shared claim helper. Used by:
 //   - operator.processReadyWorkItem (kernel single-shot operator)

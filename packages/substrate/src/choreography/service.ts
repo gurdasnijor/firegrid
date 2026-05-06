@@ -1,12 +1,12 @@
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Context, Data, Duration, Effect, Layer } from "effect"
-import { appendChange } from "../descriptors/append.ts"
+import { appendChange } from "../protocol/descriptors/append.ts"
 import { readAuthoritativeRun } from "../retained-records.ts"
 import {
   blockRun,
   isTerminalRun,
-} from "../schema/state-machine.ts"
+} from "../protocol/state-machine.ts"
 import {
   DurableWaits,
   workScopedAwakeableKey,

@@ -6,8 +6,8 @@ import {
   type CompletionValue,
   type RunState,
   type RunValue,
-} from "./rows.ts"
-import { substrateState } from "./state.ts"
+} from "./schema/rows.ts"
+import { substrateState } from "./schema/state.ts"
 
 type CompletionMachineState = CompletionState | "absent"
 type RunMachineState = RunState | "absent"

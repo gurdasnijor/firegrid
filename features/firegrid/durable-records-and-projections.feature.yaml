@@ -49,4 +49,5 @@ constraints:
 
   SCHEMA_LAYOUT:
     requirements:
-      1: The substrate's foundational durable row schemas, the durable-streams state schema, and the ready-work projection-output contract live under a canonical `schema/` module within the substrate package; greenfield drops of these definitions do not retain compatibility re-export shims at the prior root paths.
+      1: The substrate's foundational durable row schemas and durable-streams state schema live under a canonical `protocol/schema/` module within the substrate package, with compatibility re-export shims only for previously exposed schema paths.
+      2: Browser-safe protocol descriptors, descriptor codecs, EventStream wire helpers, and operation wire helpers live under a canonical `protocol/descriptors/` module within the substrate package, with compatibility re-export shims only for previously exposed descriptor paths.

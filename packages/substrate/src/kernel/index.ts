@@ -5,15 +5,20 @@
 // roots should not import from here; runtime internals, focused adapters,
 // and tests that need raw durable authority APIs may.
 
-export * from "../descriptors/index.ts"
-export * from "../schema/index.ts"
+export * from "../protocol/descriptors/operation.ts"
+export * from "../protocol/descriptors/event-stream.ts"
+export * from "../protocol/descriptors/append.ts"
+export * from "../protocol/descriptors/codec.ts"
+export * from "../protocol/schema/rows.ts"
+export * from "../protocol/schema/state.ts"
+export * from "../schema/ready-work.ts"
 export * from "../read-models/projection.ts"
 export * from "../state-store/stream.ts"
-export * from "../state-machine.ts"
+export * from "../protocol/state-machine.ts"
 export {
   completeRun as completeRunEffect,
   failRun as failRunEffect,
-} from "../schema/state-machine.ts"
+} from "../protocol/state-machine.ts"
 export * from "../write-api/producer.ts"
 export * from "../read-models/ready-work.ts"
 export * from "../execution/operator.ts"

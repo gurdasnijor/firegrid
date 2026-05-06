@@ -9,7 +9,7 @@ rules:
       acid: firegrid-remediation-hardening.DUP_DETECTION.2
       quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
       code-reuse: CODE_REUSE.1
-      canonical-helper: packages/substrate/src/descriptors/append.ts:appendChange
+      canonical-helper: packages/substrate/src/protocol/descriptors/append.ts:appendChange
       category: code-reuse
     paths:
       include:
@@ -19,11 +19,11 @@ rules:
         - "**/apps/*/src/**/*.tsx"
         - "**/semgrep-tests/**/*.ts"
       exclude:
-        - "**/packages/substrate/src/descriptors/append.ts"
+        - "**/packages/substrate/src/protocol/descriptors/append.ts"
     message: |
       Use the shared `appendChange(stream, stateEvent, mapErr)` helper
       instead of inlining DurableStream.append + JSON.stringify + tryPromise.
-      See packages/substrate/src/descriptors/append.ts.
+      See packages/substrate/src/protocol/descriptors/append.ts.
     patterns:
       - pattern: |
           Effect.tryPromise({

@@ -5,7 +5,7 @@ import type {
 } from "@durable-streams/state"
 import { DurableStream } from "@durable-streams/client"
 import { Data, Effect, Option } from "effect"
-import { appendChange } from "../descriptors/append.ts"
+import { appendChange } from "../protocol/descriptors/append.ts"
 
 // client-event-plane-registration.PRODUCER_API.1, .2, .3, .4
 // PlaneProducer emits typed validated state-collection events. It does

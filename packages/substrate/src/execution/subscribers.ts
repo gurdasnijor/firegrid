@@ -1,9 +1,9 @@
 import { DurableStream } from "@durable-streams/client"
 import type { StateEvent } from "@durable-streams/state"
 import { Clock, Data, Effect, Option, type ParseResult } from "effect"
-import { appendChange } from "../descriptors/append.ts"
 import type { ProjectionSnapshot } from "../projection.ts"
 import type { ProjectionMatchTrigger } from "../choreography/triggers.ts"
+import { appendChange } from "../protocol/descriptors/append.ts"
 import {
   decodeCompletionData,
   decodeProjectionMatchCompletionData,
@@ -11,12 +11,12 @@ import {
   TimerCompletionData,
   type CompletionKind,
   type CompletionValue,
-} from "../schema/rows.ts"
+} from "../protocol/schema/rows.ts"
 import {
   cancelCompletion,
   type IllegalCompletionTransition,
   resolveCompletion,
-} from "../schema/state-machine.ts"
+} from "../protocol/state-machine.ts"
 import { rebuildProjection } from "../stream.ts"
 
 // durable-subscribers.SUBSCRIBER_SCOPE.5 — single-shot scan-and-resolve.

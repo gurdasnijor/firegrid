@@ -6,8 +6,8 @@ import {
   ClaimAttemptValue,
   RunRowType,
   RunValue,
-} from "../schema/rows.ts"
-import { foldRunRecords } from "../schema/state-machine.ts"
+} from "../protocol/schema/rows.ts"
+import { foldRunRecords } from "../protocol/state-machine.ts"
 
 // claim-and-operator-authority.CLAIM_AUTHORITY.7
 // claim-and-operator-authority.OPERATOR_INVOCATION.14

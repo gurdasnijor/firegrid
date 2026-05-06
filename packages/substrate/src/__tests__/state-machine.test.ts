@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { Effect, Either } from "effect"
-import type { CompletionValue, RunValue } from "../schema/rows.ts"
-import * as schemaStateMachine from "../schema/state-machine.ts"
+import type { CompletionValue, RunValue } from "../protocol/schema/rows.ts"
+import * as compatStateMachine from "../state-machine.ts"
+import * as protocolStateMachine from "../protocol/state-machine.ts"
 import * as substrate from "../index.ts"
 import {
   blockRun,
@@ -52,6 +53,16 @@ const runStates = [
 ] as const
 
 describe("awakeables-and-runs.COMPLETION_TRANSITIONS", () => {
+  it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.4 — protocol state-machine is canonical while state-machine.ts remains a compatibility re-export", () => {
+    expect(compatStateMachine.createPendingCompletion).toBe(
+      protocolStateMachine.createPendingCompletion,
+    )
+    expect(compatStateMachine.completeRun).toBe(protocolStateMachine.completeRun)
+    expect(compatStateMachine.foldRunRecords).toBe(
+      protocolStateMachine.foldRunRecords,
+    )
+  })
+
   it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.1 + awakeables-and-runs.COMPLETION_TRANSITIONS.1/.2/.3/.4 — declarative completion machine proves legal and illegal transitions", () => {
     expect(completionTransitionMachine).toEqual({
       absent: ["pending"],
@@ -79,7 +90,7 @@ describe("awakeables-and-runs.COMPLETION_TRANSITIONS", () => {
     const resolved = resolveCompletion(pending, { result: "ok" }).value as CompletionValue
     const result = Effect.runSync(
       Effect.either(
-        schemaStateMachine.resolveCompletion(resolved, { result: "again" }),
+        protocolStateMachine.resolveCompletion(resolved, { result: "again" }),
       ),
     )
     expect(Either.isLeft(result)).toBe(true)
@@ -89,9 +100,9 @@ describe("awakeables-and-runs.COMPLETION_TRANSITIONS", () => {
     }
   })
 
-  it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2/.4 — schema-adjacent completion builder preserves durable row shape", () => {
+  it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2/.4 — protocol completion builder preserves durable row shape", () => {
     const event = Effect.runSync(
-      schemaStateMachine.createPendingCompletion({
+      protocolStateMachine.createPendingCompletion({
         completionId: "c-shape",
         workId: "run-shape",
         kind: "timer",
@@ -338,7 +349,7 @@ describe("awakeables-and-runs.RUN_TRANSITIONS", () => {
     const started = runValueOf(startRun({ runId: "run-sm-3" }))
     const completed = completeRun(started, { result: "ok" }).value as RunValue
     const result = Effect.runSync(
-      Effect.either(schemaStateMachine.failRun(completed, { error: "again" })),
+      Effect.either(protocolStateMachine.failRun(completed, { error: "again" })),
     )
     expect(Either.isLeft(result)).toBe(true)
     if (Either.isLeft(result)) {
@@ -347,9 +358,9 @@ describe("awakeables-and-runs.RUN_TRANSITIONS", () => {
     }
   })
 
-  it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2/.4 — schema-adjacent run builder preserves durable row shape", () => {
+  it("firegrid-remediation-hardening.STATE_MACHINE_CORRECTNESS.2/.4 — protocol run builder preserves durable row shape", () => {
     const event = Effect.runSync(
-      schemaStateMachine.startRun({
+      protocolStateMachine.startRun({
         runId: "run-shape",
         data: { input: true },
       }),

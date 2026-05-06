@@ -2,6 +2,6 @@
 // firegrid-remediation-hardening.CODE_REUSE.2
 //
 // Compatibility module only. The canonical Effect-returning state-machine
-// builders live in the schema-adjacent module below; this file intentionally
-// contains no synchronous throwing wrappers.
-export * from "./schema/state-machine.ts"
+// builders live in protocol; this file intentionally contains no synchronous
+// throwing wrappers.
+export * from "./protocol/state-machine.ts"

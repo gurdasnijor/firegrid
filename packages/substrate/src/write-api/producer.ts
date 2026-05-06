@@ -1,8 +1,8 @@
 import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Context, Data, Effect, Layer } from "effect"
-import { appendChange } from "../descriptors/append.ts"
 import { IdGen, IdGenLive, type IdGenService } from "../id-gen.ts"
+import { appendChange } from "../protocol/descriptors/append.ts"
 import {
   cancelCompletion as buildCancelCompletion,
   rejectCompletion as buildRejectCompletion,
@@ -10,7 +10,7 @@ import {
   IllegalCompletionTransition,
   type IllegalRunTransition,
   startRun,
-} from "../schema/state-machine.ts"
+} from "../protocol/state-machine.ts"
 import { rebuildProjection } from "../stream.ts"
 
 export class ProducerStreamError extends Data.TaggedError("ProducerStreamError")<{

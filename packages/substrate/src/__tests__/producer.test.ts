@@ -11,7 +11,7 @@ import {
   SubstrateProducerLive,
   WorkProducer,
 } from "../write-api/producer.ts"
-import { substrateState } from "../schema/state.ts"
+import { substrateState } from "../protocol/schema/state.ts"
 import { rebuildProjection } from "../stream.ts"
 import { freshStreamUrl, startTestServer, stopTestServer } from "./helpers.ts"
 
