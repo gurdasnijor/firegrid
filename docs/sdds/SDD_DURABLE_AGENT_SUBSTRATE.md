@@ -107,6 +107,12 @@ follow live stream changes, claim eligible work, and invoke handlers, but the
 public contract is "run this durable operator under a scope", not "poll a
 queue".
 
+Each public substrate capability should be an Effect service with one or more
+Layers. Handler code should express live requirements in the Effect `R`
+channel; operator/runtime composition is responsible for discharging those
+requirements through provided Layers. The substrate should not hide live
+dependencies in a mutable context object or global registry.
+
 ## 4. Normative Substrate Semantics
 
 This section defines the substrate contract. Runtime-specific examples belong
@@ -207,6 +213,25 @@ and idempotency.
 Awakeable = externally resolved durable promise
 DurableCompletion = internal row/state machine
 ```
+
+In Effect terms, a public wait such as `DurableWaits.waitFor(...)` or
+`DurableWaits.awakeable(...)` is `Deferred`-shaped, but backed by durable rows
+and projection state instead of process memory. That implies three required
+cases:
+
+- if the matching durable fact exists before the wait registers, the wait
+  resolves from a snapshot;
+- if the matching fact does not exist yet, the wait records durable intent and
+  follows after the same cursor boundary;
+- if more than one matching fact exists, the configured first-valid-terminal or
+  trigger policy chooses one deterministically and preserves later evidence.
+
+Handler interruption must also be explicit. V1 should model application-level
+cancel through durable completion/control rows and typed handler failure, not
+through an unrecorded in-memory `Effect.interrupt`. If the operator fiber is
+interrupted by process shutdown, the durable run must remain rebuildable and
+must not be silently terminalized unless a profile explicitly records that
+terminal decision.
 
 The first row-family name should be neutral:
 
@@ -387,6 +412,29 @@ stores, raw stream appends, or raw projection mutation. Optional schemas are not
 decorative metadata. They are the contract for input decoding, output encoding,
 row validation, and projection typing.
 
+Effect type story:
+
+```ts
+type Handler<I, O, E, R> = (input: I) => Effect.Effect<O, E, R>
+```
+
+A handler's `R` channel contains live application requirements such as
+providers, tools, resource stores, and product services. The durable runner adds
+substrate requirements such as stores, projections, clocks, id generation, and
+claim operators. Layers supplied at the runtime boundary discharge both sets of
+requirements. A launched worker program should normally be reduced to
+`Effect.Effect<void, DurableWorkerError | E, never>` after application and
+substrate Layers are provided.
+
+This makes the public contract reviewable:
+
+```text
+handler owns product dependencies in R
+runner owns substrate dependencies in R
+Layer wiring discharges R at the edge
+terminal result/failure remains in the Effect success/error channel
+```
+
 ### 5.1 Schema-First Contracts
 
 The substrate should define all core rows and projections with Effect Schema.
@@ -424,8 +472,7 @@ DurableTraceRow
 `DurableTraceRow` payloads should stay deliberately boring:
 
 ```ts
-export const DurableTraceRow = Schema.Struct({
-  type: Schema.Literal("durable.trace"),
+export const DurableTraceRow = Schema.TaggedStruct("durable.trace", {
   traceId: DurableId,
   kind: Schema.String,
   workId: Schema.optional(DurableId),
@@ -441,7 +488,49 @@ carry live handles, raw credentials, provider objects, or authority decisions.
 Effect Schema is the internal contract:
 
 ```ts
-export const DurableCompletionRow = Schema.Struct({
+export const DurableCompletionPendingRow = Schema.TaggedStruct(
+  "durable.completion.pending",
+  {
+    completionId: DurableId,
+    key: Schema.String
+  }
+)
+
+export const DurableCompletionResolvedRow = Schema.TaggedStruct(
+  "durable.completion.resolved",
+  {
+    completionId: DurableId,
+    key: Schema.String,
+    result: Schema.Unknown
+  }
+)
+
+export const DurableCompletionRejectedRow = Schema.TaggedStruct(
+  "durable.completion.rejected",
+  {
+    completionId: DurableId,
+    key: Schema.String,
+    error: Schema.Unknown
+  }
+)
+
+export const DurableCompletionCancelledRow = Schema.TaggedStruct(
+  "durable.completion.cancelled",
+  {
+    completionId: DurableId,
+    key: Schema.String,
+    reason: Schema.optional(Schema.String)
+  }
+)
+
+export const DurableCompletionRow = Schema.Union(
+  DurableCompletionPendingRow,
+  DurableCompletionResolvedRow,
+  DurableCompletionRejectedRow,
+  DurableCompletionCancelledRow
+)
+
+export const LegacyDurableCompletionRow = Schema.Struct({
   type: Schema.Literal("durable.completion"),
   completionId: DurableId,
   key: Schema.String,
@@ -465,6 +554,31 @@ Core schemas must remain dependency-free so they can be converted to Standard
 Schema V1. Domain-specific runtimes can define their own schemas and pass them
 to substrate worker/projection APIs, but those domain schemas should not be
 imported by the substrate package.
+
+Expected substrate errors should use Effect/Schema tagged error classes where
+possible, not ad hoc `_tag` objects. The exact constructor syntax should follow
+the repo's pinned Effect version, but the intended shape is:
+
+```ts
+export class DurableReadGap extends Schema.TaggedError<DurableReadGap>()(
+  "DurableReadGap",
+  {
+    cursor: Schema.String,
+    projection: Schema.String
+  }
+) {}
+
+export class DurableDecodeError extends Schema.TaggedError<DurableDecodeError>()(
+  "DurableDecodeError",
+  {
+    rowType: Schema.String,
+    reason: Schema.String
+  }
+) {}
+```
+
+This keeps expected substrate failures in the Effect error channel, compatible
+with `Effect.catchTag` / `Effect.catchTags`, and distinct from defects.
 
 ### 5.2 Effect Services
 
@@ -559,6 +673,11 @@ The service interfaces are small and stable. Their `Default`/live layers can
 depend on Durable Streams, Durable Streams State, clocks, id generation, and
 projection internals without leaking those dependencies into the service method
 signatures.
+
+Each public capability listed here should have a named service and a live Layer.
+`descriptor.layer(config)` style helpers are acceptable only as sugar over an
+ordinary `Layer.effect` or scoped Layer. The underlying composition model should
+remain the standard Effect service/layer model.
 
 `DurableWorkRunner.runTyped(...)` returns a scoped operator program. In
 production it is typically long-running: catch up from the durable stream,
@@ -683,7 +802,9 @@ handler Effect fails with expected error
   -> runner appends exactly one failed terminal row for the winning claim
 
 handler fiber is interrupted
-  -> runner appends or causes exactly one cancelled/failed terminal row according to profile
+  -> process interruption alone does not imply product failure
+  -> runner either leaves durable state rebuildable for retry/resume
+     OR records exactly one cancelled/failed terminal row according to profile
 ```
 
 Handlers return values or fail in the Effect error channel. They do not
@@ -709,6 +830,24 @@ Durable side-effect memoization is deferred. A future `DurableStep` service or
 equivalent API may record and replay completed side-effect results, but V1 is
 focused on extracting the durable coordination loop separately from higher
 runtime replay mechanics.
+
+### 5.4.1 Read Failure Channel
+
+Replay, projection, and follow failures should have a typed expected error
+channel. The names may change, but the categories should be explicit:
+
+```text
+ReadFailure =
+  ReplayGap
+  DecodeFailure
+  MissingStream
+  ConnectionLost
+  UnsupportedNoGapBoundary
+```
+
+These failures are not product-domain failures. They describe substrate read
+visibility and recovery problems. They should not be collapsed into generic
+exceptions or silently converted to partial best-effort state.
 
 ### 5.5 Work Declaration API
 
@@ -858,6 +997,16 @@ Do not export these from the normal public surface:
 If raw record access becomes necessary for diagnostics or migration, put it
 behind an explicitly advanced/internal export path and keep application runtime
 code off that path.
+
+Boundary enforcement should be mechanical:
+
+- `package.json` exports expose only curated public paths;
+- browser/client exports do not import runtime or operator packages;
+- application-facing packages do not export raw envelope builders or kernel
+  handles;
+- lint/architecture tests grep for forbidden raw authority imports and internal
+  paths;
+- package-consumption smokes import only the curated public surfaces.
 
 ## 6. Choreography Mapping
 
