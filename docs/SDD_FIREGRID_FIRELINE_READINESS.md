@@ -20,21 +20,26 @@ Fireline sees a working path. The top-line goal is to prove this shape:
 ```ts
 import { NodeRuntime } from "@effect/platform-node"
 import { Firegrid, run } from "@firegrid/runtime"
-import { RunWait } from "@firegrid/substrate"
-import { Effect, Layer } from "effect"
+import { RunWait, triggerMatchersLayer } from "@firegrid/substrate"
+import { Effect } from "effect"
 
-const runtime = Layer.mergeAll(
-  Firegrid.subscribers.projectionMatch({ evaluate }),
-  Firegrid.subscribers.timer,
-  Firegrid.subscribers.scheduledWork,
-  Firegrid.handler(FirelineShapedOperation, (input) =>
-    Effect.gen(function* () {
-      const wait = yield* RunWait
-      yield* wait.for(approvalTrigger(input.requestId))
-      return { requestId: input.requestId, approved: true }
-    }),
-  ),
-).pipe(Layer.provide(RunWait.layer({ streamUrl })))
+const runtime = Firegrid.composeRuntime({
+  subscribers: [
+    Firegrid.subscribers.projectionMatch({ evaluate }),
+    Firegrid.subscribers.timer,
+    Firegrid.subscribers.scheduledWork,
+  ],
+  handlers: [
+    Firegrid.handler(FirelineShapedOperation, (input) =>
+      Effect.gen(function* () {
+        const wait = yield* RunWait
+        yield* wait.for(approvalTrigger(input.requestId))
+        return { requestId: input.requestId, approved: true }
+      }),
+    ),
+  ],
+  provide: [RunWait.layer({ streamUrl }), triggerMatchersLayer(matchers)],
+})
 
 NodeRuntime.runMain(run({ connection: { streamUrl }, runtime }))
 ```
@@ -63,8 +68,9 @@ The repo now proves these generic Firegrid paths:
 8. app-owned runtime receivers through `run(...)`,
 9. read-only scenario inspection.
 
-The happy-path ingredients for a Fireline-shaped validation already exist. The
-missing work is a scenario that composes them into one app-shaped workflow.
+The happy-path ingredients and receiver scenario for Fireline-shaped validation
+already exist. Current follow-up work proves the same scenario can use the
+runtime composition helper without weakening the explicit runtime graph.
 
 ## Current Runtime Boundary
 
@@ -74,6 +80,9 @@ missing work is a scenario that composes them into one app-shaped workflow.
   ready-work resume for that operation.
 - `Firegrid.subscribers.timer`, `Firegrid.subscribers.scheduledWork`, and
   `Firegrid.subscribers.projectionMatch({ evaluate })` are explicit Layers.
+- `Firegrid.composeRuntime({ handlers, subscribers, provide })` is the
+  preferred helper for readable app-owned runtime graphs when it can keep those
+  handler, subscriber, and provider lists explicit.
 - `run(...)` does not install implicit defaults.
 - Runtime does not import `@firegrid/client`.
 - Runtime does not discover app graphs through dynamic module loading.
@@ -109,6 +118,22 @@ The lower-level kernel service can remain `DurableWaits` for now:
 - `inspect.ts` is a read-only projection inspector.
 - Scenario validation may use app-like descriptor names, but Firegrid substrate
   rows remain product-neutral.
+
+## Composition Helper Proof
+
+The Fireline happy-path receiver uses `Firegrid.composeRuntime(...)` in
+`scenarios/firegrid/src/receivers/fireline-shaped-receiver.ts`. That proof is
+intentionally narrow:
+
+- `subscribers` lists the projection-match subscriber explicitly;
+- `handlers` lists the Fireline-shaped operation handler explicitly;
+- `provide` lists `RunWait.layer({ streamUrl })` and
+  `triggerMatchersLayer(...)` explicitly;
+- no Fireline product rows, implicit subscribers, kernel imports, Choreography,
+  or `DurableWaitsLive` are introduced.
+
+The helper reduces `Layer.mergeAll(...).pipe(Layer.provide(...))` boilerplate
+without changing the scenario's durable semantics.
 
 ## Non-Goals
 

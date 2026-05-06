@@ -127,6 +127,12 @@ The focused smoke command is:
 pnpm --filter @firegrid/scenarios run fireline-shaped-receiver:self-test
 ```
 
+Implementation note: the happy-path receiver is the first Fireline scenario
+using `Firegrid.composeRuntime(...)`. It still lists the projection-match
+subscriber, Firegrid handler, `RunWait.layer(...)`, and
+`triggerMatchersLayer(...)` explicitly; the helper only removes Layer wiring
+boilerplate.
+
 ## FW3 Rejection Path
 
 Available after PR #69.

@@ -5,7 +5,7 @@ import {
   triggerMatchersLayer,
   type TriggerMatcher,
 } from "@firegrid/substrate"
-import { Effect, Fiber, Layer, Schedule } from "effect"
+import { Effect, Fiber, Schedule } from "effect"
 import { defineReceiverScenario } from "../definition.ts"
 import {
   inspectSnapshot,
@@ -73,49 +73,53 @@ const firelineApprovalEvaluator = (
 }
 
 const firelineShapedReceiverRuntime = (streamUrl: string) =>
-  Layer.mergeAll(
-    // firegrid-runtime-process.SCENARIOS.13
-    // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.1
-    // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.4
-    Firegrid.subscribers.projectionMatch({
-      evaluate: (snapshot, trigger) =>
-        Effect.succeed(
-          firelineApprovalEvaluator(
-            inspectSnapshot(streamUrl, snapshot),
-            trigger,
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.1
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.2
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.6
+  Firegrid.composeRuntime({
+    subscribers: [
+      // firegrid-runtime-process.SCENARIOS.13
+      // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.1
+      // durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.4
+      Firegrid.subscribers.projectionMatch({
+        evaluate: (snapshot, trigger) =>
+          Effect.succeed(
+            firelineApprovalEvaluator(
+              inspectSnapshot(streamUrl, snapshot),
+              trigger,
+            ),
           ),
-        ),
-    }),
-    // firegrid-runtime-process.SCENARIOS.13
-    // firegrid-runtime-process.SCENARIOS.16
-    // run-wait-primitives.RUN_WAIT_API.1
-    // run-wait-primitives.RUN_WAIT_API.2
-    // run-wait-primitives.BOUNDARY.4
-    // run-wait-primitives.BOUNDARY.5
-    // run-wait-primitives.VOCABULARY.1
-    Firegrid.handler(FirelineShapedOperation, (input) =>
-      Effect.gen(function* () {
-        const wait = yield* RunWait
-        yield* wait.for(input.trigger)
-        return {
-          requestId: input.requestId,
-          approved: true,
-        }
       }),
-    ),
-  ).pipe(
-    // run-wait-primitives.RUN_WAIT_API.6
-    // run-wait-primitives.BOUNDARY.4
-    // run-wait-primitives.BOUNDARY.5
-    Layer.provide(
-      Layer.mergeAll(
-        RunWait.layer({ streamUrl }),
-        triggerMatchersLayer({
-          "scenario.fireline.approved": firelineApprovalMatcher,
+    ],
+    handlers: [
+      // firegrid-runtime-process.SCENARIOS.13
+      // firegrid-runtime-process.SCENARIOS.16
+      // run-wait-primitives.RUN_WAIT_API.1
+      // run-wait-primitives.RUN_WAIT_API.2
+      // run-wait-primitives.BOUNDARY.4
+      // run-wait-primitives.BOUNDARY.5
+      // run-wait-primitives.VOCABULARY.1
+      Firegrid.handler(FirelineShapedOperation, (input) =>
+        Effect.gen(function* () {
+          const wait = yield* RunWait
+          yield* wait.for(input.trigger)
+          return {
+            requestId: input.requestId,
+            approved: true,
+          }
         }),
       ),
-    ),
-  )
+    ],
+    provide: [
+      // run-wait-primitives.RUN_WAIT_API.6
+      // run-wait-primitives.BOUNDARY.4
+      // run-wait-primitives.BOUNDARY.5
+      RunWait.layer({ streamUrl }),
+      triggerMatchersLayer({
+        "scenario.fireline.approved": firelineApprovalMatcher,
+      }),
+    ],
+  })
 
 const runFirelineShapedReceiver = (streamUrl: string) =>
   // firegrid-runtime-process.RUNTIME_RUN_API.1
