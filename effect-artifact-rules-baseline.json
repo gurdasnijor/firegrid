@@ -1,0 +1,13 @@
+{
+  "budgets": {
+    "unknownRoleCount": 10,
+    "crossWorkspaceReExportCount": 16,
+    "boundaryCrossingCount": 18,
+    "forbiddenLayerCrossingCount": 0,
+    "effectReturningPerWorkspace": {
+      "apps/lab": 1,
+      "packages/runtime": 6,
+      "packages/substrate": 73
+    }
+  }
+}

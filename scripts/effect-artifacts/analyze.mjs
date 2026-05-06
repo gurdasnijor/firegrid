@@ -57,6 +57,22 @@ const classify = ({ node, typeText, initText, tags, effectChannels, layerChannel
     ) {
       return "constant"
     }
+    // firegrid-architecture-boundary.EFFECT_ARTIFACT_GRAPH.1
+    // Tighter classification for variable initializers we previously
+    // dropped to "unknown". The patterns below cover the recurring
+    // firegrid shapes: `as const` literals, brand factories, namespace-
+    // style object literals.
+    const trimmed = initText.trim()
+    if (/\bas\s+const\b/.test(trimmed)) return "constant"
+    if (
+      trimmed.startsWith("Brand.nominal") ||
+      trimmed.startsWith("Brand.refined")
+    ) {
+      return "pure-helper"
+    }
+    if (trimmed.startsWith("{")) {
+      return /=>|\bfunction\b/.test(trimmed) ? "pure-helper" : "constant"
+    }
     return "unknown"
   }
   if (Node.isFunctionDeclaration(node)) return "pure-helper"

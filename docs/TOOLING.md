@@ -263,4 +263,83 @@ To add a dependency-cruiser rule, add it to `.dependency-cruiser.cjs` and keep C
 
 To add a knip rule or exception, prefer making the code reachable or dropping unused exports first. Use `knip.json` ignores only for intentional tool fixtures, external binaries, or dependencies invoked through scripts that knip cannot statically infer.
 
+Run the Effect-quality metric ratchet:
+
+```sh
+pnpm run lint:effect-quality
+```
+
+This runs `scripts/effect-quality-metrics-check.mjs`, which counts per-pattern Effect-quality findings across `packages/*/src` and `apps/*/src` using the same ts-morph project the artifact inventory walks (one project crawl per CI invocation, AST-precise so comments and string literals don't trigger false positives), and compares the result to `effect-quality-metrics-baseline.json`. CI fails on any metric increase. Decreases recompute via:
+
+```sh
+pnpm run lint:effect-quality:baseline
+```
+
+The baseline script refuses to ratchet upward automatically. A regression must either be fixed or — for genuinely intentional shapes — handled by relocating the code into an explicitly allowlisted path (currently `packages/*/bin/`, `scripts/`, `__tests__/`, and `*.test.ts` files where applicable).
+
+Strict-zero gates layered alongside the metric ratchet:
+
+- `local/no-extends-error` ESLint rule errors on `class … extends Error` declarations in package source. Current count is 0 after R7's `Data.TaggedError` migration.
+- `local/no-process-env-outside-bin` ESLint rule errors on `process.env[…]` reads outside `bin/` and `scripts/`. Current count is 0.
+- `firegrid-no-process-env-outside-bin` Semgrep rule complements the ESLint guard with a structural pattern.
+
+Tracked metrics in the ratchet baseline:
+
+- `extendsErrorCount` — `class … extends Error` declarations in package source. Strict-zero target; redundantly enforced by the ESLint rule above.
+- `processEnvOutsideBinCount` — `process.env[…]` reads outside `bin/` and `scripts/`. Strict-zero target; redundantly enforced by the ESLint and Semgrep rules above.
+- `throwOutsideBinScriptCount` — `throw` statements in package source outside `bin/` and `scripts/`. Ratcheted; reduce via per-site refactor to typed Effect failures.
+- `forOfInPackageSourceCount` — `for…of` and `for await` loops in package source. Ratcheted; convert to `Array.forEach` / `Effect.forEach` / `Stream` per the code-style review.
+- `anyNoContextCastCount` — `as Schema.Schema.AnyNoContext` casts. Ratcheted; centralize behind a single helper at the descriptor or schema boundary (Q3 owns).
+- `nodeCryptoImportCount` — `import … from "node:crypto"` in package source. Ratcheted; replace with an injectable IdGen service (Q4 owns).
+- `dataTaggedErrorDeclarationCount` — `class … extends Data.TaggedError(...)` declarations. Ratcheted at the current count to lock in shape (no `extends Error` regressions sneaking in alongside legitimate tagged-error additions). New tagged-error classes are part of normal feature work; the documented happy path for adding one is to land the class and then re-run `pnpm run lint:effect-quality:baseline` in the same PR with an ACID reference for the new error in the commit message. The ratchet is a structural ceiling that never auto-raises, not a feature freeze on tagged errors.
+- `newDurableStreamSiteCount` — `new DurableStream(...)` constructor sites in package source. Ratcheted; migrate to a future `acquireDurableStream` helper.
+- `perCallLayerProvideSiteCount` — `Effect.provide(*Live(cfg))` invocations inside per-call helpers (`withSubstrate`, etc.). Ratcheted; hoist live layer construction (Q4 owns).
+- `effectOrDieSiteCount` — `Effect.orDie`, `Layer.orDie`, `Effect.die`, `Effect.dieMessage`. Ratcheted; documented as a policy exception.
+- `effectRunPromiseInTestsCount` — `Effect.runPromise`, `runSync`, `runFork`, `runPromiseExit` calls in `__tests__/`. Ratcheted; migrate via `@effect/vitest`.
+- `vitestItImportInTestsCount` — `import { it/describe/expect } from "vitest"` in `__tests__/`. Ratcheted; migrate via `@effect/vitest`.
+
+The metric ratchet is intentionally conservative. A future Effect-detector ratchet (see "Effect-detector ratchet — deferred" below) would cover broader pattern families once the external detector is CI-stable.
+
+## Effect-artifact rule layer
+
+Run the inventory-driven rule layer:
+
+```sh
+pnpm run lint:effect-rules
+```
+
+`scripts/effect-artifacts-rules-check.mjs` regenerates the artifact inventory via `analyzeProject` and runs the rule set in `scripts/effect-artifacts/rules.mjs` against the committed baseline at `effect-artifact-rules-baseline.json`. CI fails on any rule violation or budget regression. Recompute via:
+
+```sh
+pnpm run lint:effect-rules:baseline
+```
+
+Rules implemented in this layer:
+
+- **Workspace-pair forbidden edges** — re-exports or imports across forbidden workspace pairs (`runtime → client`, `client → runtime`, `lab → substrate`, `lab → runtime`, `runtime → lab`, `substrate → client/runtime/lab`, `client → lab`). Strict-zero target; current count is 0. Every artifact whose `exportLocation.workspace ≠ declarationLocation.workspace` is checked against the forbidden pair list.
+- **Unknown-role exports budget** — count of `summary.byRole.unknown` artifacts. Ratcheted; reduce by extending `scripts/effect-artifacts/types.mjs` classification or by removing unused exports.
+- **Cross-workspace re-export budget** — count of artifacts whose export workspace differs from their declaration workspace. Ratcheted; covers public-surface re-exports across packages and apps.
+- **Boundary-crossing budget** — count of `summary.boundaryCrossings`. Ratcheted; the existing inventory tracks architecture-layer crossings.
+- **Forbidden-layer-crossing budget** — count of `summary.forbiddenLayerCrossings`. Strict-zero target.
+- **Effect-returning exports per workspace budget** — `effect-returning` role count per workspace. Ratcheted; prevents unintended growth of the Effect-returning surface area without a corresponding spec amendment.
+
+Rules deferred (require ts-morph evidence not currently emitted by the inventory; tracked in `docs/PROPOSAL_STATIC_ENFORCEMENT_2026-05-05.md`):
+
+- Service-tag namespace hygiene (tag string casing convention, namespace separator presence)
+- Explicit-return-type visibility for exported Effect-returning functions
+- Public-surface allowlist driven by the inventory itself (existing `client-foundations.test.ts` and `public-surface.test.ts` allowlist tests remain authoritative for now)
+
+## Effect-detector ratchet — deferred
+
+The `claude-skill-effect-ts` detector reports ~4,023 findings across the repo (see `docs/REVIEW_EFFECT_FULL_AUDIT_2026-05-05.md`). The detector currently runs through the local `claude-skill-effect-ts` plugin cache and uses `bun`; it is not yet CI-stable. The metric ratchet above covers the highest-confidence patterns from that detector's output. When the detector becomes CI-installable, replace or augment the metric ratchet with a per-rule baseline against `firegrid-detect.json` and document the upgrade boundary here.
+
+## Policy exceptions
+
+These deviations are deliberate and documented:
+
+- `Data.TaggedError` is the firegrid policy. `Schema.TaggedError` is reserved for the moment a future descriptor needs error-decoding from a wire envelope. See `docs/REVIEW_EFFECT_ERROR_MANAGEMENT_2026-05-05.md` §1. The metric ratchet caps the count at the current baseline.
+- `Effect.runPromise` is permitted in `__tests__/` while the `@effect/vitest` migration is in flight. The metric ratchet caps the count.
+- `Effect.orDie` / `Layer.orDie` / `Effect.die` is permitted at the choreography facade documented in `packages/substrate/src/choreography/service.ts` and at runtime fork-point logging boundaries. The metric ratchet caps the count; future tightening with a `local/orDie-needs-justification` rule is tracked in the static-enforcement proposal.
+- `Effect.runFork` / `Effect.runPromise` / `Effect.runPromiseExit` in `apps/lab/src/lab/LabEventStreamPanel.tsx` is the documented React boundary; the file carries explicit `eslint-disable-next-line no-restricted-syntax` suppressions.
+
 This tooling exists because the original manual review missed near-duplicates in `packages/substrate/src/retained-records.ts` and similar repeated static-quality issues. Manual review windows are too narrow to serve as the only guardrail.

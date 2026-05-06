@@ -72,6 +72,9 @@ const pollingAllowComment = "durable-lint-allow-polling"
 const timerAllowComment = "durable-lint-allow-timer"
 const cacheAllowComment = "durable-lint-allow-cache"
 const controlPlaneAllowComment = "durable-lint-allow-control-plane"
+// firegrid-remediation-hardening.STATIC_QUALITY.10
+const extendsErrorAllowComment = "effect-quality-allow-extends-error"
+const processEnvAllowComment = "effect-quality-allow-process-env"
 
 const getStaticPropertyName = (node) => {
   if (node?.type !== "MemberExpression" || node.computed) {
@@ -389,6 +392,69 @@ const local = {
         }
       },
     },
+    // firegrid-remediation-hardening.STATIC_QUALITY.10
+    // firegrid-remediation-hardening.EFFECT_CONSISTENCY.2
+    "no-extends-error": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Disallow class extends Error declarations in package source; use Data.TaggedError.",
+        },
+        schema: [],
+        messages: {
+          noExtendsError:
+            "Use Data.TaggedError(\"...\")<...>{} instead of class extends Error. Domain errors must be tagged for catchTag/Match.tag/Schema.is to work. The repo policy keeps Data.TaggedError; growth of class extends Error is blocked here.",
+        },
+      },
+      create(context) {
+        const isErrorSuper = (node) =>
+          node?.type === "Identifier" && node.name === "Error"
+        const visit = (node) => {
+          if (
+            node?.superClass != null &&
+            isErrorSuper(node.superClass) &&
+            !hasNearbyAllowComment(context, node, [extendsErrorAllowComment])
+          ) {
+            context.report({ node, messageId: "noExtendsError" })
+          }
+        }
+        return {
+          ClassDeclaration: visit,
+          ClassExpression: visit,
+        }
+      },
+    },
+    // firegrid-remediation-hardening.STATIC_QUALITY.10
+    "no-process-env-outside-bin": {
+      meta: {
+        type: "problem",
+        docs: {
+          description:
+            "Disallow process.env reads outside bin/ and scripts/; use @effect/platform Config or boundary-injected configuration.",
+        },
+        schema: [],
+        messages: {
+          noProcessEnv:
+            "process.env reads belong at the binary entry boundary (bin/) or in tooling scripts (scripts/). In application code use Config.string / Config.option / Config.redacted, or accept config as an explicit parameter.",
+        },
+      },
+      create(context) {
+        return {
+          MemberExpression(node) {
+            if (
+              node.object?.type === "Identifier" &&
+              node.object.name === "process" &&
+              node.property?.type === "Identifier" &&
+              node.property.name === "env" &&
+              !hasNearbyAllowComment(context, node, [processEnvAllowComment])
+            ) {
+              context.report({ node, messageId: "noProcessEnv" })
+            }
+          },
+        }
+      },
+    },
   },
 }
 
@@ -533,6 +599,11 @@ export default tseslint.config(
           ],
         },
       ],
+      // firegrid-remediation-hardening.STATIC_QUALITY.10
+      // firegrid-remediation-hardening.EFFECT_CONSISTENCY.2
+      "local/no-extends-error": "error",
+      // firegrid-remediation-hardening.STATIC_QUALITY.10
+      "local/no-process-env-outside-bin": "error",
     },
   },
   {

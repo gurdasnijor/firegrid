@@ -89,3 +89,19 @@ const mapped = pipe(readRetainedRunRecords("memory://test", "run-5"), Effect.map
 
 // ok: firegrid-authoritative-run-call
 const alreadyCentralized = { runId: "run-6" }
+// firegrid-remediation-hardening.STATIC_QUALITY.10 — semgrep test fixture
+// for `firegrid-no-process-env-outside-bin`.
+
+// ruleid: firegrid-no-process-env-outside-bin
+const url = process.env.DURABLE_STREAMS_URL
+
+// ruleid: firegrid-no-process-env-outside-bin
+const port = process.env.PORT ?? "3000"
+
+// ok: firegrid-no-process-env-outside-bin
+declare const cfg: { readonly streamUrl: string }
+const ok1 = cfg.streamUrl
+
+// ok: firegrid-no-process-env-outside-bin
+declare const env: Record<string, string>
+const ok2 = env.SOME_VAR
