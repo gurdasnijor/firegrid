@@ -289,10 +289,18 @@ Acceptance:
 - Firegrid does not interpret tool names, transports, credentials, ACP, MCP, or
   provider semantics.
 
+Scenario commands:
+
+```sh
+pnpm --filter @firegrid/scenarios run firepixel-tool-invocation
+pnpm --filter @firegrid/scenarios run firepixel-tool-invocation-receiver -- --stream-url "$DURABLE_STREAMS_URL"
+pnpm --filter @firegrid/scenarios run firepixel-tool-invocation-receiver:self-test
+```
+
 ACIDs:
 
 - `client-event-plane-registration.FIREPIXEL_PROFILE.4`
-- likely a future additive `firegrid-runtime-process.SCENARIOS.21`
+- `firegrid-runtime-process.SCENARIOS.21`
 
 ## Non-Goals
 

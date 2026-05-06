@@ -1,6 +1,7 @@
 import { claimBeforeSideEffectScenario } from "./emitters/claim-before-side-effect.ts"
 import { echoScenario } from "./emitters/echo.ts"
 import { failingOperationScenario } from "./emitters/failing-operation.ts"
+import { firepixelToolInvocationScenario } from "./emitters/firepixel-tool-invocation.ts"
 import { firelineShapedScenario } from "./emitters/fireline-shaped.ts"
 import { firelineRejectionScenario } from "./emitters/fireline-rejection.ts"
 import { scheduledWorkScenario } from "./emitters/scheduled-work.ts"
@@ -9,6 +10,7 @@ import { waitForScenario } from "./emitters/wait-for.ts"
 import { claimBeforeSideEffectReceiverScenario } from "./receivers/claim-before-side-effect-receiver.ts"
 import { echoReceiverScenario } from "./receivers/echo-receiver.ts"
 import { failingOperationReceiverScenario } from "./receivers/failing-operation-receiver.ts"
+import { firepixelToolInvocationReceiverScenario } from "./receivers/firepixel-tool-invocation-receiver.ts"
 import { firelineShapedReceiverScenario } from "./receivers/fireline-shaped-receiver.ts"
 import { firelineRejectionReceiverScenario } from "./receivers/fireline-rejection-receiver.ts"
 import { scheduledWorkReceiverScenario } from "./receivers/scheduled-work-receiver.ts"
@@ -20,6 +22,7 @@ const scenarios = [
   claimBeforeSideEffectScenario,
   echoScenario,
   failingOperationScenario,
+  firepixelToolInvocationScenario,
   firelineShapedScenario,
   firelineRejectionScenario,
   scheduledWorkScenario,
@@ -28,6 +31,7 @@ const scenarios = [
   claimBeforeSideEffectReceiverScenario,
   echoReceiverScenario,
   failingOperationReceiverScenario,
+  firepixelToolInvocationReceiverScenario,
   firelineShapedReceiverScenario,
   firelineRejectionReceiverScenario,
   scheduledWorkReceiverScenario,
