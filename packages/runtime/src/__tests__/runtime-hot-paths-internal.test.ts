@@ -57,6 +57,12 @@ const runtimeSource = (relative: string) =>
     "utf8",
   )
 
+const runtimeApiSource = () =>
+  readFileSync(
+    fileURLToPath(new URL("../runtime-api.ts", import.meta.url)),
+    "utf8",
+  )
+
 const executableSource = (relative: string) =>
   runtimeSource(relative)
     .replaceAll(/\/\*[\s\S]*?\*\//g, "")
@@ -303,6 +309,22 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
     })
 
     expect(due).toBe(25)
+  })
+
+  it("firegrid-runtime-process.RUNTIME_PACKAGE.5, firegrid-runtime-process.RUNTIME_HOT_PATH.2, firegrid-runtime-process.RUNTIME_HOT_PATH.3 — runtime API wires projection-match scan, edge subscription, and deadline wakes", () => {
+    const source = runtimeApiSource()
+
+    expect(source).toContain(
+      "runProjectionMatchSubscriberFromSnapshot",
+    )
+    expect(source).toContain(
+      "subscribeCompletionsAndEventStreams",
+    )
+    expect(source).toContain(
+      "projectionMatch: projectionMatchSubscriberLayer",
+    )
+    expect(source).toContain("\"projection_match\"")
+    expect(source).toContain("\"deadlineAtMs\"")
   })
 
   it("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runner deadline stream cancels a stale pending deadline after an edge wake recomputes no due time", async () => {
