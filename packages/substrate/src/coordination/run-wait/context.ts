@@ -6,7 +6,7 @@ import type { OwnerId, WorkId } from "./branded.ts"
 // choreography-facade.CURRENT_WORK_CONTEXT.4
 // choreography-facade.CURRENT_WORK_CONTEXT.5
 // The hosting runtime supplies a CurrentWorkContext per durable invocation.
-// Choreography operations read identity from this service rather than
+// RunWait operations read identity from this service rather than
 // requiring callers to thread workId/ownerId/correlation/causation manually,
 // and they never accept completion ids, claim ids, stream URLs, raw run
 // rows, or Durable Streams State envelopes through the public API.

@@ -24,7 +24,7 @@ components:
       8: Scheduled-work receiver validation uses an app-owned runtime entrypoint that composes the scheduled-work subscriber with a typed operation handler and verifies due-time completion resolution plus ready-work terminalization through projection inspection.
       9: WaitFor projection-match receiver validation uses an app-owned runtime entrypoint that composes the projection-match subscriber with a typed operation handler and verifies caller-owned EventStream matching plus ready-work terminalization through projection inspection.
       10: Input-side CLI scenario emitters expose an emit-only declarative row stream contract whose rows are schema-derived durable ChangeEvents and whose shared writer is responsible for NDJSON stdout formatting.
-      11: Sleep/timer receiver validation uses an app-owned runtime entrypoint that composes the timer subscriber with a typed operation handler and verifies Choreography.sleep timer resolution plus ready-work terminalization through projection inspection.
+      11: Sleep/timer receiver validation uses an app-owned runtime entrypoint that composes the timer subscriber with a typed operation handler and verifies RunWait.sleep timer resolution plus ready-work terminalization through projection inspection.
       12: Handler-failure receiver validation uses an app-owned runtime entrypoint with a typed operation error schema and verifies failed terminal run state through projection inspection.
       13: Fireline-shaped happy-path receiver validation composes app-owned operation descriptors, EventStream descriptors, projection-match evaluation, stock subscribers, `RunWait`, and typed handlers through `run(...)` without Firegrid-owned product row families.
       14: Fireline-shaped rejection receiver validation resumes a typed handler from a resolved projection-match completion carrying app-level rejection data and terminalizes the run as a typed operation failure chosen by the app handler.
@@ -50,7 +50,7 @@ components:
       2: The runtime ready-work operator loop reuses substrate `processReadyWorkItem` for claim arbitration and terminal-event authorship rather than reimplementing claim or terminal logic in runtime.
       3: The runtime ready-work operator loop attributes claim ownership through `RuntimeContext.processId`.
       4: The runtime ready-work operator loop is edge-driven from durable run and completion changes and does not run on a fixed polling cadence.
-      5: The runtime invokes the same typed `Operation` handler registered with `Firegrid.handler` on resume; choreography primitives are idempotent because their durable completion lookups short-circuit when the keyed completion already resolved.
+      5: The runtime invokes the same typed `Operation` handler registered with `Firegrid.handler` on resume; RunWait primitives are idempotent because their durable completion lookups short-circuit when the keyed completion already resolved.
       6: Non-success outcomes from `processReadyWorkItem` (`claim-lost`, `already-terminal`, `terminalization-lost`) are logged at debug and the loop continues without re-attempting the same item in the same scan.
       7: The runtime `Firegrid.handler` Layer installs both the started-run dispatch loop and the ready-work operator loop under a single scope so handler registration is the single durable-execution entrypoint for an operation.
 

@@ -5,7 +5,7 @@ import type { CompletionId, WorkId } from "./branded.ts"
 // choreography-facade.ERRORS.2
 // choreography-facade.ERRORS.3
 // choreography-facade.ERRORS.4
-// ChoreographyTimeout is the only v1 recoverable tagged choreography error.
+// RunWaitTimeout is the only v1 recoverable tagged run-wait error.
 // It carries a branded CompletionId and the absolute durable deadlineAtMs
 // that was committed when the wait was created.
 //
@@ -13,8 +13,8 @@ import type { CompletionId, WorkId } from "./branded.ts"
 // host-runtime resume from a timed-out or cancelled suspended wait. v1 does
 // not implement general continuation replay, so the type is exposed for
 // host-runtime use without a v1-internal raise path.
-export class ChoreographyTimeout extends Data.TaggedError(
-  "substrate/ChoreographyTimeout",
+export class RunWaitTimeout extends Data.TaggedError(
+  "substrate/RunWaitTimeout",
 )<{
   readonly completionId: CompletionId
   readonly deadlineAtMs: number
@@ -28,13 +28,13 @@ export class ChoreographyTimeout extends Data.TaggedError(
 // value.
 //
 // choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt does NOT block the
-// current run, so it never produces a ChoreographySuspension; it is
+// current run, so it never produces a RunWaitSuspension; it is
 // intentionally absent from this union.
-export type ChoreographyOperation = "sleep" | "wait_for" | "awakeable"
+export type RunWaitOperation = "sleep" | "wait_for" | "awakeable"
 
-export interface ChoreographySuspension {
+export interface RunWaitSuspension {
   readonly suspended: true
-  readonly operation: ChoreographyOperation
+  readonly operation: RunWaitOperation
   readonly workId: WorkId
   readonly completionId: CompletionId
 }

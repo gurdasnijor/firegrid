@@ -1,9 +1,9 @@
 import { Effect, Either, Layer, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as ChoreographySurface from "../coordination/choreography/index.ts"
+import * as RunWaitSurface from "../coordination/run-wait/index.ts"
 import {
-  ChoreographyTimeout,
-  ChoreographyTrigger,
+  RunWaitTimeout,
+  RunWaitTrigger,
   CompletionId,
   CurrentWorkContext,
   MissingTriggerMatcherError,
@@ -14,16 +14,16 @@ import {
   currentWorkContextLayer,
   dispatchTrigger,
   triggerMatchersLayer,
-  type ChoreographyOperation,
-  type ChoreographySuspension,
+  type RunWaitOperation,
+  type RunWaitSuspension,
   type CurrentWorkContextValue,
   type TriggerMatcher,
-} from "../coordination/choreography/index.ts"
+} from "../coordination/run-wait/index.ts"
 
 // choreography-facade.CURRENT_WORK_CONTEXT.2
 // choreography-facade.CURRENT_WORK_CONTEXT.3
 // Brands have no runtime cost and prevent accidental swapping at the
-// choreography boundary. The constructor narrows a string into the branded
+// run-wait boundary. The constructor narrows a string into the branded
 // type without changing the value.
 describe("choreography-facade.CURRENT_WORK_CONTEXT.3 — branded WorkId/CompletionId/OwnerId are nominal over string", () => {
   it("WorkId/CompletionId/OwnerId narrow strings to nominal brands without changing runtime value", () => {
@@ -61,7 +61,7 @@ describe("choreography-facade.CURRENT_WORK_CONTEXT.5 — workId is the durable.r
 
 // choreography-facade.CURRENT_WORK_CONTEXT.1
 // choreography-facade.CURRENT_WORK_CONTEXT.2
-// Choreography operations read identity from CurrentWorkContext. The tag is
+// RunWait operations read identity from CurrentWorkContext. The tag is
 // resolved through ordinary Layer/provide composition; no global state.
 describe("choreography-facade.CURRENT_WORK_CONTEXT.1 — Effect-provided CurrentWorkContext", () => {
   it("CurrentWorkContext is resolved via Layer-provided value and exposes branded ids plus optional metadata", async () => {
@@ -134,15 +134,15 @@ describe("choreography-facade.TRIGGERS.4 — trigger schema rejects function pre
 // Round-tripping through encode/decode preserves the discriminator and the
 // data fields so a tool wire payload and a runtime call decode identically.
 describe("choreography-facade.TRIGGERS.2 — runtime API and tool bindings share one trigger schema", () => {
-  it("encode then decode of a ChoreographyTrigger value is structurally identical", () => {
+  it("encode then decode of a RunWaitTrigger value is structurally identical", () => {
     const value = {
       _tag: "ProjectionMatch" as const,
       label: "session-terminal:req-1",
       projectionKey: "plane.session.byRequestId:req-1",
       matcherId: "fixture.session.terminal",
     }
-    const encoded = Schema.encodeSync(ChoreographyTrigger)(value)
-    const decoded = Schema.decodeUnknownSync(ChoreographyTrigger)(encoded)
+    const encoded = Schema.encodeSync(RunWaitTrigger)(value)
+    const decoded = Schema.decodeUnknownSync(RunWaitTrigger)(encoded)
     expect(decoded).toStrictEqual(value)
   })
 })
@@ -245,52 +245,52 @@ describe("choreography-facade.TRIGGERS.8 — missing matcher fails as an explici
 // choreography-facade.ERRORS.1
 // choreography-facade.ERRORS.2
 // choreography-facade.ERRORS.4
-// ChoreographyTimeout is the only v1 recoverable tagged choreography error.
+// RunWaitTimeout is the only v1 recoverable tagged run-wait error.
 // It carries a branded CompletionId and the absolute durable deadlineAtMs.
-describe("choreography-facade.ERRORS.1 — ChoreographyTimeout is the only v1 recoverable tagged choreography error", () => {
-  it("ChoreographyTimeout is a tagged Data error carrying CompletionId and deadlineAtMs", () => {
-    const err = new ChoreographyTimeout({
+describe("choreography-facade.ERRORS.1 — RunWaitTimeout is the only v1 recoverable tagged run-wait error", () => {
+  it("RunWaitTimeout is a tagged Data error carrying CompletionId and deadlineAtMs", () => {
+    const err = new RunWaitTimeout({
       completionId: CompletionId("cmp-1"),
       deadlineAtMs: 1_700_000_000_000,
     })
-    expect(err._tag).toBe("substrate/ChoreographyTimeout")
+    expect(err._tag).toBe("substrate/RunWaitTimeout")
     expect(err.completionId).toBe("cmp-1")
     expect(err.deadlineAtMs).toBe(1_700_000_000_000)
   })
 })
 
 // choreography-facade.ERRORS.3
-// The v1 facade does not raise ChoreographyTimeout; the type is reserved
+// The v1 facade does not raise RunWaitTimeout; the type is reserved
 // for host-runtime resume from a timed-out or cancelled suspended wait.
 // This test pins the v1 surface: the foundation module exports the type
 // but the foundation module exposes no API that raises it.
-describe("choreography-facade.ERRORS.3 — ChoreographyTimeout is reserved for host-runtime resume; v1 does not raise it from foundations", () => {
+describe("choreography-facade.ERRORS.3 — RunWaitTimeout is reserved for host-runtime resume; v1 does not raise it from foundations", () => {
   it("the foundation module exposes the type without an internal raise path", () => {
     // The type is exported and constructible.
-    const err = new ChoreographyTimeout({
+    const err = new RunWaitTimeout({
       completionId: CompletionId("cmp-2"),
       deadlineAtMs: 0,
     })
-    expect(err).toBeInstanceOf(ChoreographyTimeout)
+    expect(err).toBeInstanceOf(RunWaitTimeout)
     // The foundation export surface contains no function whose name implies
     // a v1 timeout-raising path. This pins the boundary against future
     // accidental drift in this slice.
-    const names = Object.keys(ChoreographySurface)
+    const names = Object.keys(RunWaitSurface)
     const offenders = names.filter((n) =>
       /timeout|raise|resume|continuation|replay/i.test(n) &&
-      n !== "ChoreographyTimeout",
+      n !== "RunWaitTimeout",
     )
     expect(offenders).toEqual([])
   })
 })
 
 // choreography-facade.SUSPENSION.7
-// ChoreographySuspension contains suspended=true, operation, branded
+// RunWaitSuspension contains suspended=true, operation, branded
 // workId, and branded completionId. The foundation slice ships only the
 // type; producers of the value land in later commits.
-describe("choreography-facade.SUSPENSION.7 — ChoreographySuspension shape", () => {
-  it("a ChoreographySuspension value carries suspended=true, operation, branded workId, and branded completionId", () => {
-    const v: ChoreographySuspension = {
+describe("choreography-facade.SUSPENSION.7 — RunWaitSuspension shape", () => {
+  it("a RunWaitSuspension value carries suspended=true, operation, branded workId, and branded completionId", () => {
+    const v: RunWaitSuspension = {
       suspended: true,
       operation: "sleep",
       workId: WorkId("run-z"),
@@ -305,22 +305,22 @@ describe("choreography-facade.SUSPENSION.7 — ChoreographySuspension shape", ()
 
 // choreography-facade.CHOREOGRAPHY_API.4
 // scheduleAt creates scheduled_work intent and does NOT block the current
-// run, so it cannot produce a ChoreographySuspension. The
-// ChoreographyOperation union must reject "schedule_at".
-describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt is non-blocking; schedule_at is not a ChoreographySuspension operation", () => {
-  it("ChoreographyOperation does not include \"schedule_at\"", () => {
-    const allowed: ReadonlyArray<ChoreographyOperation> = [
+// run, so it cannot produce a RunWaitSuspension. The
+// RunWaitOperation union must reject "schedule_at".
+describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt is non-blocking; schedule_at is not a RunWaitSuspension operation", () => {
+  it("RunWaitOperation does not include \"schedule_at\"", () => {
+    const allowed: ReadonlyArray<RunWaitOperation> = [
       "sleep",
       "wait_for",
       "awakeable",
     ]
-    expect(allowed).not.toContain("schedule_at" as ChoreographyOperation)
-    // Type-level: assigning "schedule_at" to ChoreographyOperation is a
+    expect(allowed).not.toContain("schedule_at" as RunWaitOperation)
+    // Type-level: assigning "schedule_at" to RunWaitOperation is a
     // compile error. The expect-error directive on the next line documents
     // the constraint and will fail typecheck if "schedule_at" ever
     // re-enters the union.
-    // @ts-expect-error "schedule_at" is not a valid ChoreographyOperation
-    const _bad: ChoreographyOperation = "schedule_at"
+    // @ts-expect-error "schedule_at" is not a valid RunWaitOperation
+    const _bad: RunWaitOperation = "schedule_at"
     void _bad
   })
 })
@@ -329,7 +329,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt is non-blocking;
 // choreography-facade.BOUNDARY.3
 // The foundation export surface introduces no DurableChannel,
 // CompletionChannel, workflow SDK, global registry, or broad error
-// taxonomy beyond ChoreographyTimeout.
+// taxonomy beyond RunWaitTimeout.
 describe("choreography-facade.BOUNDARY.3 — no DurableChannel/CompletionChannel/workflow SDK/global registry/broad error taxonomy", () => {
   it("foundation exports do not include any banned vocabulary", () => {
     const banned = [
@@ -352,7 +352,7 @@ describe("choreography-facade.BOUNDARY.3 — no DurableChannel/CompletionChannel
       "ForkSession",
       "ForkWork",
     ]
-    const found = banned.filter((b) => b in ChoreographySurface)
+    const found = banned.filter((b) => b in RunWaitSurface)
     expect(found).toEqual([])
   })
 })
@@ -361,7 +361,7 @@ describe("choreography-facade.BOUNDARY.3 — no DurableChannel/CompletionChannel
 // Smoke test that current-work-context composes with other layers without
 // needing a special framework. This proves CURRENT_WORK_CONTEXT.1 end-to-
 // end against ordinary Layer.merge.
-describe("choreography-facade.CURRENT_WORK_CONTEXT.1 — composes with other choreography layers via ordinary Layer composition", () => {
+describe("choreography-facade.CURRENT_WORK_CONTEXT.1 — composes with other run-wait layers via ordinary Layer composition", () => {
   it("CurrentWorkContext and TriggerMatchers can be merged and consumed in one program", async () => {
     const program = Effect.gen(function* () {
       const ctx = yield* CurrentWorkContext

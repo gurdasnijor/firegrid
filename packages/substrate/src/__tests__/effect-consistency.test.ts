@@ -63,7 +63,7 @@ describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY.2 + effect-native-ap
       "execution/operator.ts",
       "retained-records.ts",
       "execution/waits.ts",
-      "coordination/choreography/service.ts",
+      "coordination/run-wait/service.ts",
     ]) {
       const text = source(file)
       expect(text).not.toMatch(/class \w+ extends Error/)

@@ -3,13 +3,11 @@ import { DurableStream } from "@durable-streams/client"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { Firegrid, run } from "@firegrid/runtime"
 import {
-  Choreography,
-  ChoreographyLive,
+  RunWait,
   triggerMatchersLayer,
   type ProjectionMatchTrigger,
   type TriggerMatcher,
 } from "@firegrid/substrate"
-import { DurableWaitsLive } from "@firegrid/substrate/kernel"
 import { Data, Effect, Fiber, Layer, Schedule } from "effect"
 import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
@@ -106,8 +104,8 @@ const waitForReceiverRuntime = (streamUrl: string) =>
     // firegrid-runtime-process.READY_WORK_OPERATOR.7
     Firegrid.handler(WaitForPermissionOperation, (input) =>
       Effect.gen(function* () {
-        const choreo = yield* Choreography
-        yield* choreo.waitFor(input.trigger)
+        const wait = yield* RunWait
+        yield* wait.for(input.trigger)
         return {
           permissionId: input.permissionId,
           status: "approved" as const,
@@ -117,8 +115,7 @@ const waitForReceiverRuntime = (streamUrl: string) =>
   ).pipe(
     Layer.provide(
       Layer.mergeAll(
-        ChoreographyLive({ streamUrl }),
-        DurableWaitsLive({ streamUrl }),
+        RunWait.layer({ streamUrl }),
         triggerMatchersLayer({
           "scenario.permission.approved": permissionMatcher,
         }),

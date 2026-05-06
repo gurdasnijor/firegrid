@@ -17,14 +17,8 @@ import * as StateStoreStream from "../state-store/stream.ts"
 // firegrid-remediation-hardening.TEST_GUARDRAILS.1
 // firegrid-architecture-boundary.SURFACE_AREA.1
 describe("firegrid-remediation-hardening.PUBLIC_SURFACES — substrate root is curated", () => {
-  it("exports only descriptor, facade, EventStream, and choreography vocabulary from the root", () => {
+  it("exports only descriptor, facade, EventStream, and run-wait vocabulary from the root", () => {
     const allowed = new Set([
-      "AwakeableToolInput",
-      "Choreography",
-      "ChoreographyLive",
-      "ChoreographyTimeout",
-      "ChoreographyTools",
-      "ChoreographyTrigger",
       "CompletionId",
       "CurrentWorkContext",
       "EventStream",
@@ -37,10 +31,8 @@ describe("firegrid-remediation-hardening.PUBLIC_SURFACES — substrate root is c
       "ProjectionLive",
       "ProjectionReadError",
       "ProjectionWaitTimeout",
-      "ScheduleMeToolInput",
-      "SleepToolInput",
+      "RunWait",
       "TriggerMatchers",
-      "WaitForToolInput",
       "Work",
       "WorkClaim",
       "WorkClaimError",

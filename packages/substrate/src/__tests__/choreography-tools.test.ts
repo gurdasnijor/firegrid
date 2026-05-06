@@ -2,16 +2,16 @@ import { DurableStream } from "@durable-streams/client"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
-  ChoreographyLive,
-  ChoreographyTools,
+  RunWaitLive,
+  RunWaitTools,
   OwnerId,
   WorkId,
   currentWorkContextLayer,
   triggerMatchersLayer,
-  type ChoreographySuspension,
-  type ChoreographyTrigger,
+  type RunWaitSuspension,
+  type RunWaitTrigger,
   type TriggerMatcher,
-} from "../coordination/choreography/index.ts"
+} from "../coordination/run-wait/index.ts"
 import { SubstrateProducerLive, WorkProducer } from "../write-api/producer.ts"
 import { rebuildProjection } from "../stream.ts"
 import { DurableWaitsLive } from "../execution/waits.ts"
@@ -50,7 +50,7 @@ const fullLayer = (
   ctx: { workId: string; ownerId: string },
 ) =>
   Layer.provideMerge(
-    ChoreographyLive({ streamUrl }),
+    RunWaitLive({ streamUrl }),
     Layer.mergeAll(
       DurableWaitsLive({ streamUrl }),
       triggerMatchersLayer(matchers),
@@ -65,8 +65,8 @@ const fullLayer = (
 // The neutral binding harness exposes a tool name, an Effect Schema input
 // schema, and an Effect handler. Every tool conforms to this shape.
 describe("choreography-facade.TOOL_BINDINGS.7 — every neutral binding exposes name, inputSchema, and handle", () => {
-  it("ChoreographyTools.make returns sleep, wait_for, schedule_me, and awaitable bindings each shaped { name, inputSchema, handle }", () => {
-    const tools = ChoreographyTools.make({ streamUrl: "stub" })
+  it("RunWaitTools.make returns sleep, wait_for, schedule_me, and awaitable bindings each shaped { name, inputSchema, handle }", () => {
+    const tools = RunWaitTools.make({ streamUrl: "stub" })
     const entries = Object.entries(tools) as ReadonlyArray<
       [keyof typeof tools, (typeof tools)[keyof typeof tools]]
     >
@@ -82,34 +82,34 @@ describe("choreography-facade.TOOL_BINDINGS.7 — every neutral binding exposes 
 })
 
 // choreography-facade.TOOL_BINDINGS.1
-// ChoreographyTools.make exposes sleep, wait_for, schedule_me, and
+// RunWaitTools.make exposes sleep, wait_for, schedule_me, and
 // awaitable bindings; these tool names are NOT new substrate-native row
 // families.
-describe("choreography-facade.TOOL_BINDINGS.1 — ChoreographyTools exposes sleep / wait_for / schedule_me / awaitable", () => {
+describe("choreography-facade.TOOL_BINDINGS.1 — RunWaitTools exposes sleep / wait_for / schedule_me / awaitable", () => {
   it("the four expected tool names are present and no extras", () => {
-    const tools = ChoreographyTools.make({ streamUrl: "stub" })
+    const tools = RunWaitTools.make({ streamUrl: "stub" })
     const keys = Object.keys(tools).sort()
     expect(keys).toEqual(["awaitable", "schedule_me", "sleep", "wait_for"])
   })
 })
 
 // choreography-facade.TOOL_BINDINGS.2
-// Agent tool bindings call the SAME choreography lowering used by runtime
+// Agent tool bindings call the SAME run-wait lowering used by runtime
 // APIs. The sleep tool produces the same durable shape (timer completion +
-// blocked run) as Choreography.sleep.
-describe("choreography-facade.TOOL_BINDINGS.2 — sleep tool lowers to the same durable shape as runtime Choreography.sleep", () => {
-  it("invoking the sleep tool decodes durationMs, blocks the run on a timer completion, and returns ChoreographySuspension { suspended:true, operation:'sleep', workId, completionId }", async () => {
+// blocked run) as RunWait.sleep.
+describe("choreography-facade.TOOL_BINDINGS.2 — sleep tool lowers to the same durable shape as runtime RunWait.sleep", () => {
+  it("invoking the sleep tool decodes durationMs, blocks the run on a timer completion, and returns RunWaitSuspension { suspended:true, operation:'sleep', workId, completionId }", async () => {
     const url = await createSubstrateStream("tools-sleep")
     const runId = "run-tools-sleep-1"
     await Effect.runPromise(declareRun(url, runId))
 
-    const tools = ChoreographyTools.make({ streamUrl: url })
+    const tools = RunWaitTools.make({ streamUrl: url })
     // Decode raw JSON-shaped input through the schema (TOOL_BINDINGS.3).
     const input = Schema.decodeUnknownSync(tools.sleep.inputSchema)({
       durationMs: 1500,
     })
 
-    const susp: ChoreographySuspension = await Effect.runPromise(
+    const susp: RunWaitSuspension = await Effect.runPromise(
       tools.sleep.handle(input).pipe(
         Effect.provide(
           fullLayer(url, {}, { workId: runId, ownerId: "owner-tools-sleep" }),
@@ -139,10 +139,10 @@ describe("choreography-facade.TOOL_BINDINGS.2 — sleep tool lowers to the same 
 // hand-written parallel decoders. Decoding a malformed wait_for payload
 // fails at the schema boundary.
 describe("choreography-facade.TOOL_BINDINGS.3 — tool inputs are decoded with Effect Schema-derived schemas", () => {
-  it("wait_for tool input decodes a typed ChoreographyTrigger and rejects malformed payloads at the schema boundary", () => {
-    const tools = ChoreographyTools.make({ streamUrl: "stub" })
+  it("wait_for tool input decodes a typed RunWaitTrigger and rejects malformed payloads at the schema boundary", () => {
+    const tools = RunWaitTools.make({ streamUrl: "stub" })
 
-    // Valid payload decodes to the typed ChoreographyTrigger.
+    // Valid payload decodes to the typed RunWaitTrigger.
     const decoded = Schema.decodeUnknownSync(tools.wait_for.inputSchema)({
       trigger: {
         _tag: "ProjectionMatch",
@@ -170,15 +170,15 @@ describe("choreography-facade.TOOL_BINDINGS.3 — tool inputs are decoded with E
 
 // choreography-facade.TOOL_BINDINGS.2
 // wait_for tool lowers to the same projection_match completion shape as
-// Choreography.waitFor.
-describe("choreography-facade.TOOL_BINDINGS.2 — wait_for tool lowers to the same projection_match durable shape as runtime Choreography.waitFor", () => {
-  it("wait_for tool writes a pending projection_match completion carrying the typed trigger, blocks the run, and returns ChoreographySuspension", async () => {
+// RunWait.for.
+describe("choreography-facade.TOOL_BINDINGS.2 — wait_for tool lowers to the same projection_match durable shape as runtime RunWait.for", () => {
+  it("wait_for tool writes a pending projection_match completion carrying the typed trigger, blocks the run, and returns RunWaitSuspension", async () => {
     const url = await createSubstrateStream("tools-wait-for")
     const runId = "run-tools-wait-1"
     await Effect.runPromise(declareRun(url, runId))
 
-    const tools = ChoreographyTools.make({ streamUrl: url })
-    const trigger: ChoreographyTrigger = {
+    const tools = RunWaitTools.make({ streamUrl: url })
+    const trigger: RunWaitTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-1",
       projectionKey: "plane.permission.byId:p-1",
@@ -212,7 +212,7 @@ describe("choreography-facade.TOOL_BINDINGS.2 — wait_for tool lowers to the sa
     expect(completion?.kind).toBe("projection_match")
     expect(completion?.state).toBe("pending")
     const data = completion?.data as {
-      trigger: ChoreographyTrigger
+      trigger: RunWaitTrigger
     }
     expect(data.trigger).toStrictEqual(trigger)
   })
@@ -221,14 +221,14 @@ describe("choreography-facade.TOOL_BINDINGS.2 — wait_for tool lowers to the sa
 // choreography-facade.TOOL_BINDINGS.5
 // schedule_me lowers to substrate scheduleAt (not a substrate-native
 // schedule_me row family). It does NOT block the current run and returns
-// the substrate ScheduleAtResult; it does NOT return ChoreographySuspension.
+// the substrate ScheduleAtResult; it does NOT return RunWaitSuspension.
 describe("choreography-facade.TOOL_BINDINGS.5 — schedule_me lowers to the substrate scheduleAt operation and does not block the current run", () => {
-  it("schedule_me writes a pending scheduled_work completion via Choreography.scheduleAt; current run remains state=started; result is ScheduleAtResult, not ChoreographySuspension", async () => {
+  it("schedule_me writes a pending scheduled_work completion via RunWait.until; current run remains state=started; result is ScheduleAtResult, not RunWaitSuspension", async () => {
     const url = await createSubstrateStream("tools-schedule-me")
     const runId = "run-tools-sched-1"
     await Effect.runPromise(declareRun(url, runId))
 
-    const tools = ChoreographyTools.make({ streamUrl: url })
+    const tools = RunWaitTools.make({ streamUrl: url })
     const atMs = Date.now() + 60_000
     const input = Schema.decodeUnknownSync(tools.schedule_me.inputSchema)({
       atMs,
@@ -248,7 +248,7 @@ describe("choreography-facade.TOOL_BINDINGS.5 — schedule_me lowers to the subs
 
     expect(result.whenMs).toBe(atMs)
     expect(typeof result.completionId).toBe("string")
-    // Result shape is NOT a ChoreographySuspension: `suspended` is absent.
+    // Result shape is NOT a RunWaitSuspension: `suspended` is absent.
     expect((result as unknown as { suspended?: unknown }).suspended).toBeUndefined()
 
     const snap = await rebuildProjection({ url })
@@ -265,9 +265,9 @@ describe("choreography-facade.TOOL_BINDINGS.5 — schedule_me lowers to the subs
 // schedule_me must run without CurrentWorkContext or TriggerMatchers in
 // scope, mirroring the runtime CHOREOGRAPHY_API.4 boundary.
 describe("choreography-facade.TOOL_BINDINGS.5 — schedule_me runs without CurrentWorkContext and without TriggerMatchers", () => {
-  it("schedule_me handle composes with ChoreographyLive + DurableWaitsLive only; no CurrentWorkContext / TriggerMatchers layers required", async () => {
+  it("schedule_me handle composes with RunWaitLive + DurableWaitsLive only; no CurrentWorkContext / TriggerMatchers layers required", async () => {
     const url = await createSubstrateStream("tools-schedule-me-no-ctx")
-    const tools = ChoreographyTools.make({ streamUrl: url })
+    const tools = RunWaitTools.make({ streamUrl: url })
     const atMs = Date.now() + 30_000
     const input = Schema.decodeUnknownSync(tools.schedule_me.inputSchema)({
       atMs,
@@ -275,7 +275,7 @@ describe("choreography-facade.TOOL_BINDINGS.5 — schedule_me runs without Curre
     })
 
     const minimalLayer = Layer.provideMerge(
-      ChoreographyLive({ streamUrl: url }),
+      RunWaitLive({ streamUrl: url }),
       DurableWaitsLive({ streamUrl: url }),
     )
 
@@ -292,14 +292,14 @@ describe("choreography-facade.TOOL_BINDINGS.5 — schedule_me runs without Curre
 
 // choreography-facade.TOOL_BINDINGS.2
 // awaitable tool lowers to the same work-scoped externally-resolved
-// awakeable shape as runtime Choreography.awaitAwakeable.
-describe("choreography-facade.TOOL_BINDINGS.2 — awaitable tool lowers to the same work-scoped awakeable shape as runtime Choreography.awaitAwakeable", () => {
-  it("awaitable tool blocks the run on awk:work:<runId>:<name> and returns ChoreographySuspension", async () => {
+// awakeable shape as runtime RunWait.awakeable.
+describe("choreography-facade.TOOL_BINDINGS.2 — awaitable tool lowers to the same work-scoped awakeable shape as runtime RunWait.awakeable", () => {
+  it("awaitable tool blocks the run on awk:work:<runId>:<name> and returns RunWaitSuspension", async () => {
     const url = await createSubstrateStream("tools-awaitable")
     const runId = "run-tools-awk-1"
     await Effect.runPromise(declareRun(url, runId))
 
-    const tools = ChoreographyTools.make({ streamUrl: url })
+    const tools = RunWaitTools.make({ streamUrl: url })
     const input = Schema.decodeUnknownSync(tools.awaitable.inputSchema)({
       name: "approval",
     })
@@ -327,17 +327,17 @@ describe("choreography-facade.TOOL_BINDINGS.2 — awaitable tool lowers to the s
 
 // choreography-facade.SUSPENSION.4
 // wrapSuspending must NOT translate an interrupt into a successful
-// ChoreographySuspension when the run was already blocked before the
+// RunWaitSuspension when the run was already blocked before the
 // tool call. The pre-call retained-fold guard rejects non-"started"
 // runs as defects so the harness only reports a suspension that this
 // invocation actually drove (started → blocked transition).
-describe("choreography-facade.SUSPENSION.4 — wrapSuspending refuses pre-existing blocked state and does not translate a later interrupt into a successful ChoreographySuspension", () => {
+describe("choreography-facade.SUSPENSION.4 — wrapSuspending refuses pre-existing blocked state and does not translate a later interrupt into a successful RunWaitSuspension", () => {
   it("a second sleep tool invocation under the same CurrentWorkContext fails as a defect when the run is already blocked from an earlier sleep tool call", async () => {
     const url = await createSubstrateStream("tools-pre-blocked")
     const runId = "run-tools-pre-blocked-1"
     await Effect.runPromise(declareRun(url, runId))
 
-    const tools = ChoreographyTools.make({ streamUrl: url })
+    const tools = RunWaitTools.make({ streamUrl: url })
     const input = Schema.decodeUnknownSync(tools.sleep.inputSchema)({
       durationMs: 1,
     })
@@ -358,8 +358,8 @@ describe("choreography-facade.SUSPENSION.4 — wrapSuspending refuses pre-existi
     expect(midSnap.runs.get(runId)?.state).toBe("blocked")
 
     // Second invocation under the SAME CurrentWorkContext. The pre-call
-    // guard observes state="blocked" and dies BEFORE the choreography
-    // call would have run; no new ChoreographySuspension is returned.
+    // guard observes state="blocked" and dies BEFORE the run-wait
+    // call would have run; no new RunWaitSuspension is returned.
     const exit = await Effect.runPromiseExit(
       tools.sleep.handle(input).pipe(Effect.provide(layer)),
     )
@@ -382,15 +382,15 @@ describe("choreography-facade.SUSPENSION.4 — wrapSuspending refuses pre-existi
 // choreography-facade.SUSPENSION.6
 // choreography-facade.SUSPENSION.7
 // Tool-binding presentation maps a verified suspension to a neutral
-// ChoreographySuspension carrying suspended=true, operation, branded
+// RunWaitSuspension carrying suspended=true, operation, branded
 // workId, and branded completionId.
-describe("choreography-facade.SUSPENSION.6 — suspending tools return a neutral ChoreographySuspension carrying suspended=true + operation + branded workId + branded completionId", () => {
-  it("the sleep tool's handle resolves with a value matching the ChoreographySuspension shape and does not surface an interrupt to the caller", async () => {
+describe("choreography-facade.SUSPENSION.6 — suspending tools return a neutral RunWaitSuspension carrying suspended=true + operation + branded workId + branded completionId", () => {
+  it("the sleep tool's handle resolves with a value matching the RunWaitSuspension shape and does not surface an interrupt to the caller", async () => {
     const url = await createSubstrateStream("tools-suspension-shape")
     const runId = "run-tools-shape-1"
     await Effect.runPromise(declareRun(url, runId))
 
-    const tools = ChoreographyTools.make({ streamUrl: url })
+    const tools = RunWaitTools.make({ streamUrl: url })
     const input = Schema.decodeUnknownSync(tools.sleep.inputSchema)({
       durationMs: 1,
     })
@@ -422,7 +422,7 @@ describe("choreography-facade.SUSPENSION.6 — suspending tools return a neutral
 // the public surface; surface them and look for banned vocabulary.
 describe("choreography-facade.TOOL_BINDINGS.4 — tool inputs and outputs do not expose raw completions, runs, claims, stream URLs, or DSS envelopes", () => {
   it("input schema fields contain no banned identifier names", () => {
-    const tools = ChoreographyTools.make({ streamUrl: "stub" })
+    const tools = RunWaitTools.make({ streamUrl: "stub" })
     const banned = /completionId|claimId|runId|streamUrl|envelope|claimAttempt|projection|cursor/i
     // Decode a representative minimal value for each tool and inspect
     // the resulting object's keys at depth 1.
@@ -478,8 +478,8 @@ describe("choreography-facade.TOOL_BINDINGS.4 — tool inputs and outputs do not
 // result. The harness must NOT include adapter-specific descriptor fields
 // (e.g. JSON-Schema, OpenAI/Anthropic/MCP-specific metadata).
 describe("choreography-facade.TOOL_BINDINGS.6 — substrate exposes only a neutral { name, inputSchema, handle } binding; descriptor and wire-result shapes remain adapter-owned", () => {
-  it("ChoreographyToolBinding properties contain only name, inputSchema, and handle — no jsonSchema/description/parameters/output adapter fields", () => {
-    const tools = ChoreographyTools.make({ streamUrl: "stub" })
+  it("RunWaitToolBinding properties contain only name, inputSchema, and handle — no jsonSchema/description/parameters/output adapter fields", () => {
+    const tools = RunWaitTools.make({ streamUrl: "stub" })
     const bindings = Object.values(tools) as ReadonlyArray<
       (typeof tools)[keyof typeof tools]
     >
@@ -492,7 +492,7 @@ describe("choreography-facade.TOOL_BINDINGS.6 — substrate exposes only a neutr
 
 // choreography-facade.CurrentWorkContext indirection — pin that the tool
 // handle for suspending operations correctly forwards CurrentWorkContext
-// to the underlying choreography service. Two tool invocations under
+// to the underlying run-wait service. Two tool invocations under
 // different CurrentWorkContext layers each block the matching run.
 describe("choreography-facade.CURRENT_WORK_CONTEXT.1 — tool handles read workId from CurrentWorkContext just like the runtime API", () => {
   it("two sleep-tool invocations under different CurrentWorkContext layers each block their matching run", async () => {
@@ -502,7 +502,7 @@ describe("choreography-facade.CURRENT_WORK_CONTEXT.1 — tool handles read workI
     await Effect.runPromise(declareRun(url, runA))
     await Effect.runPromise(declareRun(url, runB))
 
-    const tools = ChoreographyTools.make({ streamUrl: url })
+    const tools = RunWaitTools.make({ streamUrl: url })
     const input = Schema.decodeUnknownSync(tools.sleep.inputSchema)({
       durationMs: 1,
     })

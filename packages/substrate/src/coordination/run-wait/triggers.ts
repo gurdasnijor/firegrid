@@ -17,11 +17,11 @@ export const ProjectionMatchTrigger = ProjectionMatchTriggerSchema
 export type ProjectionMatchTrigger = ProjectionMatchTriggerValue
 
 // choreography-facade.TRIGGERS.7
-// ChoreographyTrigger is the union of supported trigger variants. v1 has a
+// RunWaitTrigger is the union of supported trigger variants. v1 has a
 // single variant; adding a future variant widens this type and forces
 // explicit handling in `dispatchTrigger` (TS will require the new case).
-export const ChoreographyTrigger = Schema.Union(ProjectionMatchTrigger)
-export type ChoreographyTrigger = Schema.Schema.Type<typeof ChoreographyTrigger>
+export const RunWaitTrigger = Schema.Union(ProjectionMatchTrigger)
+export type RunWaitTrigger = Schema.Schema.Type<typeof RunWaitTrigger>
 
 // choreography-facade.TRIGGERS.5
 // Matchers are arbitrary Effect programs supplied by the host runtime.
@@ -74,10 +74,10 @@ export const triggerMatchersLayer = (
 
 // choreography-facade.TRIGGERS.7
 // Exhaustive dispatch helper over the trigger union. Adding a new variant
-// expands `ChoreographyTrigger`'s `_tag` and forces a new case here at
+// expands `RunWaitTrigger`'s `_tag` and forces a new case here at
 // compile time.
 export const dispatchTrigger = <A>(
-  trigger: ChoreographyTrigger,
+  trigger: RunWaitTrigger,
   cases: { readonly ProjectionMatch: (t: ProjectionMatchTrigger) => A },
 ): A => {
   switch (trigger._tag) {

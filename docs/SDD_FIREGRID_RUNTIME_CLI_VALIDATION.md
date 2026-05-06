@@ -453,15 +453,15 @@ receiver rows, verifies the completion remains pending before the due time, and
 then verifies completion resolution plus ready-work terminalization through the
 same inspection projection.
 
-### Scenario 4: Sleep / Timer Choreography
+### Scenario 4: Sleep / Timer RunWait
 
-Purpose: prove pure durable timer suspension through `Choreography.sleep`,
+Purpose: prove pure durable timer suspension through `RunWait.sleep`,
 separate from scheduled-work and projection-match waits.
 
 Input:
 
 1. A schema-valid operation-started row for an operation whose handler calls
-   `Choreography.sleep`.
+   `RunWait.sleep`.
 2. A runtime Layer with the operation handler and timer subscriber.
 
 Expected result:
@@ -486,6 +486,9 @@ Relevant ACIDs:
 - `firegrid-runtime-process.READY_WORK_OPERATOR.5`
 - `firegrid-runtime-process.SCENARIOS.1`
 - `firegrid-runtime-process.SCENARIOS.11`
+- `run-wait-primitives.RUN_WAIT_API.3`
+- `run-wait-primitives.RUN_WAIT_API.6`
+- `run-wait-primitives.RUN_WAIT_API.7`
 
 Manual CLI input flow:
 
@@ -514,10 +517,13 @@ this JSON line to stdout:
 Receiver-side validation uses a separate app-owned runtime entrypoint. The
 receiver runtime composes `Firegrid.subscribers.timer` with
 `Firegrid.handler(SleepOperation, ...)` through `run({ connection, runtime })`;
-the handler calls `Choreography.sleep(input.durationMs)` and returns only after
-the timer completion resolves and ready-work re-enters the handler. It does not
-import `@firegrid/client`, load an app graph dynamically, start a Durable
-Streams dev server, or include a row writer/mini-runner.
+the handler obtains `RunWait` from the Effect environment and calls
+`RunWait.sleep(input.durationMs)`. `RunWait.layer({ streamUrl })` supplies the
+production durable-wait machinery without app code importing
+`@firegrid/substrate/kernel`. The handler returns only after the timer
+completion resolves and ready-work re-enters the handler. It does not import
+`@firegrid/client`, load an app graph dynamically, start a Durable Streams dev
+server, or include a row writer/mini-runner.
 
 Manual receiver-side flow:
 

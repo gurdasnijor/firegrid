@@ -1,7 +1,7 @@
 feature:
   name: run-wait-primitives
   product: firegrid
-  description: Define the app-facing durable wait primitive surface used inside typed Firegrid runtime handlers without teaching choreography or orchestration as Firegrid concepts.
+  description: Define the app-facing durable wait primitive surface used inside typed Firegrid runtime handlers without teaching higher-level workflow vocabulary as Firegrid concepts.
 
 components:
   RUN_WAIT_API:
@@ -16,9 +16,9 @@ components:
 
   VOCABULARY:
     requirements:
-      1: Firegrid exposes durable wait primitives; higher layers such as Fireline or Firepixel own whether their product model is called choreography, orchestration, workflow, or another term.
-      2: Firegrid app-facing examples do not teach `Choreography` or `ChoreographyLive` as the preferred durable wait primitive API.
-      3: Firegrid may keep compatibility exports for existing choreography-named APIs while new app-facing examples use `RunWait`.
+      1: Firegrid exposes durable wait primitives; higher layers such as Fireline or Firepixel own their workflow and orchestration vocabulary.
+      2: Firegrid app-facing examples teach `RunWait` as the durable wait primitive API.
+      3: The curated substrate root does not export choreography-named service or Layer constructors for app-facing durable wait primitives.
 
 constraints:
   BOUNDARY:

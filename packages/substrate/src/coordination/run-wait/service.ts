@@ -22,6 +22,7 @@ import {
 } from "../../protocol/state-machine.ts"
 import {
   DurableWaits,
+  DurableWaitsLive,
   workScopedAwakeableKey,
 } from "../../execution/waits.ts"
 import {
@@ -32,13 +33,9 @@ import {
   CurrentWorkContext,
   type CurrentWorkContextValue,
 } from "./context.ts"
-import {
-  TriggerMatchers,
-  type ChoreographyTrigger,
-  type ProjectionMatchTrigger,
-} from "./triggers.ts"
+import { TriggerMatchers, type ProjectionMatchTrigger } from "./triggers.ts"
 
-// Choreography facade Effect-native runtime API.
+// RunWait facade Effect-native runtime API.
 //
 // choreography-facade.CHOREOGRAPHY_API.1
 // choreography-facade.CHOREOGRAPHY_API.2
@@ -59,7 +56,7 @@ import {
 //
 // choreography-facade.ERRORS.1
 // choreography-facade.ERRORS.4
-// ChoreographyTimeout is the only v1 tagged choreography error and the v1
+// RunWaitTimeout is the only v1 tagged run-wait error and the v1
 // facade does not raise it. Internal failures (stream writes, retained
 // reads, run-block mistakes, missing matcher configuration) are defects,
 // not typed errors. Public method signatures therefore expose an empty
@@ -67,8 +64,8 @@ import {
 
 // Module-local defect carrier. Not exported: hosts observe verification
 // failures via Cause.isDie, not by importing this class.
-class ChoreographyVerificationError extends Data.TaggedError(
-  "ChoreographyVerificationError",
+class RunWaitVerificationError extends Data.TaggedError(
+  "RunWaitVerificationError",
 )<{
   readonly completionId: string
   readonly reason: string
@@ -88,67 +85,55 @@ const sameProjectionMatchTrigger = (
 const verificationError = (
   completionId: string,
   reason: string,
-): ChoreographyVerificationError =>
-  new ChoreographyVerificationError({ completionId, reason })
+): RunWaitVerificationError =>
+  new RunWaitVerificationError({ completionId, reason })
 
-export interface ChoreographyLiveConfig {
+export interface RunWaitLayerConfig {
   readonly streamUrl: string
   readonly contentType?: string
 }
 
-export interface ScheduleAtResult {
+export interface RunWaitUntilResult {
   readonly completionId: CompletionId
   readonly whenMs: number
 }
 
-// Service method signatures preserve their dependency requirements in the
-// returned Effect's R channel. ChoreographyLive itself is constructed
-// without those dependencies, so a host can build a Choreography service
-// from streamUrl alone and supply CurrentWorkContext / TriggerMatchers
-// only at the call sites that need them.
-//
-// scheduleAt is intentionally narrower: it depends on DurableWaits only.
-// A host running scheduleAt does NOT need CurrentWorkContext or
-// TriggerMatchers in scope.
-export interface ChoreographyService {
-  // choreography-facade.CHOREOGRAPHY_API.2
+// run-wait-primitives.RUN_WAIT_API.1
+export interface RunWaitService {
+  // run-wait-primitives.RUN_WAIT_API.3
   readonly sleep: (
     duration: Duration.DurationInput,
-  ) => Effect.Effect<void, never, DurableWaits | CurrentWorkContext>
-  // choreography-facade.CHOREOGRAPHY_API.3
-  readonly waitFor: (
-    trigger: ChoreographyTrigger,
+  ) => Effect.Effect<void, never, CurrentWorkContext>
+  // run-wait-primitives.RUN_WAIT_API.2
+  readonly for: (
+    trigger: ProjectionMatchTrigger,
     options?: { readonly timeout?: Duration.DurationInput },
-  ) => Effect.Effect<
-    void,
-    never,
-    DurableWaits | CurrentWorkContext | TriggerMatchers
-  >
-  // choreography-facade.CHOREOGRAPHY_API.4
-  readonly scheduleAt: (input: {
-    readonly at: Date | number
-    readonly input: unknown
-  }) => Effect.Effect<ScheduleAtResult, never, DurableWaits>
-  // choreography-facade.CHOREOGRAPHY_API.5
-  // choreography-facade.CHOREOGRAPHY_API.8
-  readonly awaitAwakeable: (input: {
-    readonly name: string
-  }) => Effect.Effect<never, never, DurableWaits | CurrentWorkContext>
+  ) => Effect.Effect<void, never, CurrentWorkContext | TriggerMatchers>
+  // run-wait-primitives.RUN_WAIT_API.4
+  readonly until: (
+    when: Date | number,
+    input?: unknown,
+  ) => Effect.Effect<RunWaitUntilResult>
+  // run-wait-primitives.RUN_WAIT_API.5
+  readonly awakeable: (
+    name: string,
+  ) => Effect.Effect<never, never, CurrentWorkContext>
 }
 
-export class Choreography extends Context.Tag("substrate/Choreography")<
-  Choreography,
-  ChoreographyService
->() {}
+export class RunWait extends Context.Tag("substrate/RunWait")<
+  RunWait,
+  RunWaitService
+>() {
+  static layer = (config: RunWaitLayerConfig): Layer.Layer<RunWait> =>
+    Layer.provide(RunWaitLive(config), DurableWaitsLive(config))
+}
 
-// Live implementation. ChoreographyLive depends only on its config; no
-// Effect services are required at layer construction. Each method yields
-// the dependencies it actually needs from the surrounding Effect's R
-// channel.
-export const ChoreographyLive = (
-  cfg: ChoreographyLiveConfig,
-): Layer.Layer<Choreography> =>
-  Layer.sync(Choreography, () => {
+// run-wait-primitives.RUN_WAIT_API.6
+export const RunWaitLive = (
+  cfg: RunWaitLayerConfig,
+): Layer.Layer<RunWait, never, DurableWaits> =>
+  Layer.effect(RunWait, Effect.gen(function* () {
+    const waits = yield* DurableWaits
     const contentType = cfg.contentType ?? "application/json"
     const stream = new DurableStream({ url: cfg.streamUrl, contentType })
 
@@ -180,7 +165,7 @@ export const ChoreographyLive = (
     // retained-run fold (readRetainedRunRecords + foldRunRecords). The
     // StreamDB latest-state read used elsewhere can disagree with the
     // authoritative fold under conflicting terminal records, so
-    // choreography suspension uses the same authority operators use for
+    // run-wait suspension uses the same authority operators use for
     // claims and terminalization.
     // Internal helper: block the current run on a completion, verify the
     // post-write state through the retained-run fold, then signal
@@ -191,7 +176,7 @@ export const ChoreographyLive = (
       completionId: string,
     ): Effect.Effect<
       never,
-      ChoreographyVerificationError,
+      RunWaitVerificationError,
       CurrentWorkContext
     > =>
       Effect.gen(function* () {
@@ -274,7 +259,7 @@ export const ChoreographyLive = (
 
     const readAuthoritativeCompletion = (
       completionId: string,
-    ): Effect.Effect<CompletionValue | undefined, ChoreographyVerificationError> =>
+    ): Effect.Effect<CompletionValue | undefined, RunWaitVerificationError> =>
       Effect.gen(function* () {
         const items = yield* readJsonItems(cfg.streamUrl).pipe(
           Effect.mapError(
@@ -307,7 +292,7 @@ export const ChoreographyLive = (
       completion: CompletionValue,
     ): Effect.Effect<
       ProjectionMatchCompletionData,
-      ChoreographyVerificationError
+      RunWaitVerificationError
     > =>
       decodeProjectionMatchCompletionData(
         completion.data,
@@ -322,7 +307,7 @@ export const ChoreographyLive = (
       completion: CompletionValue,
     ): Effect.Effect<
       TimerCompletionDataValue,
-      ChoreographyVerificationError
+      RunWaitVerificationError
     > =>
       decodeCompletionData(
         TimerCompletionData,
@@ -344,10 +329,10 @@ export const ChoreographyLive = (
       readonly validate: (
         ctx: CurrentWorkContextValue,
         completion: CompletionValue,
-      ) => Effect.Effect<void, ChoreographyVerificationError>
+      ) => Effect.Effect<void, RunWaitVerificationError>
     }): Effect.Effect<
       ExistingWaitDecision,
-      ChoreographyVerificationError,
+      RunWaitVerificationError,
       CurrentWorkContext
     > =>
       Effect.gen(function* () {
@@ -425,9 +410,8 @@ export const ChoreographyLive = (
           }),
       })
 
-    const sleep: ChoreographyService["sleep"] = (duration) =>
+    const sleep: RunWaitService["sleep"] = (duration) =>
       Effect.gen(function* () {
-        const waits = yield* DurableWaits
         const durationMs = Duration.toMillis(Duration.decode(duration))
         const existing = yield* resolveExistingSleep(durationMs)
         if (existing.kind === "resume") {
@@ -442,14 +426,13 @@ export const ChoreographyLive = (
         return yield* blockAndSuspend(result.completionId)
       }).pipe(
         // choreography-facade.INSTRUMENTATION.1
-        Effect.withSpan("substrate.choreography.sleep"),
+        Effect.withSpan("substrate.run-wait.sleep"),
         // choreography-facade.ERRORS.4 — internal failures are defects.
         Effect.orDie,
       )
 
-    const waitFor: ChoreographyService["waitFor"] = (trigger, options) =>
+    const forTrigger: RunWaitService["for"] = (trigger, options) =>
       Effect.gen(function* () {
-        const waits = yield* DurableWaits
         const matchers = yield* TriggerMatchers
         // choreography-facade.TRIGGERS.5
         // choreography-facade.TRIGGERS.8
@@ -479,18 +462,17 @@ export const ChoreographyLive = (
         })
         return yield* blockAndSuspend(result.completionId)
       }).pipe(
-        Effect.withSpan("substrate.choreography.wait_for"),
+        Effect.withSpan("substrate.run-wait.wait_for"),
         Effect.orDie,
       )
 
-    const scheduleAt: ChoreographyService["scheduleAt"] = (input) =>
+    const until: RunWaitService["until"] = (when, input = {}) =>
       Effect.gen(function* () {
-        const waits = yield* DurableWaits
         const whenMs =
-          typeof input.at === "number" ? input.at : input.at.getTime()
+          typeof when === "number" ? when : when.getTime()
         const result = yield* waits.scheduleWork({
           whenMs,
-          input: input.input,
+          input,
         })
         // choreography-facade.CHOREOGRAPHY_API.4
         // scheduleAt is fire-and-forget for the calling run. We do NOT
@@ -502,13 +484,12 @@ export const ChoreographyLive = (
           whenMs,
         }
       }).pipe(
-        Effect.withSpan("substrate.choreography.schedule_at"),
+        Effect.withSpan("substrate.run-wait.schedule_at"),
         Effect.orDie,
       )
 
-    const awaitAwakeable: ChoreographyService["awaitAwakeable"] = (input) =>
+    const awakeable: RunWaitService["awakeable"] = (name) =>
       Effect.gen(function* () {
-        const waits = yield* DurableWaits
         const ctx = yield* CurrentWorkContext
         // choreography-facade.CHOREOGRAPHY_API.8
         // v1 awaitAwakeable is work-scoped only; the workId comes from
@@ -516,11 +497,11 @@ export const ChoreographyLive = (
         // DurableWaits.awakeableGlobal and are not re-exposed here.
         const result = yield* waits.awakeable({
           workId: ctx.workId,
-          name: input.name,
+          name,
         })
         // Sanity: workScopedAwakeableKey gives the same key DurableWaits
         // computed; importing it documents the equivalence.
-        if (result.key !== workScopedAwakeableKey(ctx.workId, input.name)) {
+        if (result.key !== workScopedAwakeableKey(ctx.workId, name)) {
           return yield* verificationError(
             result.completionId,
             "awakeable key shape unexpected",
@@ -528,9 +509,9 @@ export const ChoreographyLive = (
         }
         return yield* blockAndSuspend(result.completionId)
       }).pipe(
-        Effect.withSpan("substrate.choreography.awakeable"),
+        Effect.withSpan("substrate.run-wait.awakeable"),
         Effect.orDie,
       )
 
-    return { sleep, waitFor, scheduleAt, awaitAwakeable }
-  })
+    return { sleep, for: forTrigger, until, awakeable }
+  }))

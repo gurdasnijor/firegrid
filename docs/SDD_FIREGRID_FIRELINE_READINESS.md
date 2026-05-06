@@ -42,11 +42,10 @@ evaluator logic, and product vocabulary. Firegrid should own durable execution,
 runtime attachment, durable wait/schedule primitives, subscribers, ready-work
 claiming, and terminal authorship.
 
-The proposed public service is `RunWait`. The current repo calls the nearest
-service `Choreography`, but that name is too high-level for the Firegrid layer.
-Choreography and orchestration are product or framework choices that Fireline,
-Firepixel, or another higher layer may make on top of Firegrid. Firegrid should
-teach durable wait primitives, not a workflow philosophy.
+The public service is `RunWait`. Higher-level workflow vocabulary is a product
+or framework choice that Fireline, Firepixel, or another higher layer may make
+on top of Firegrid. Firegrid teaches durable wait primitives, not a workflow
+philosophy.
 
 ## What Already Works
 
@@ -77,24 +76,9 @@ missing work is a scenario that composes them into one app-shaped workflow.
 - Runtime does not import `@firegrid/client`.
 - Runtime does not discover app graphs through dynamic module loading.
 
-## Public Primitive Boundary To Resolve
+## Public Primitive Boundary
 
-Effect conventionally uses a service tag plus a `Live` Layer constructor for
-the production implementation. In the current repo:
-
-- `Choreography` is the service tag.
-- `ChoreographyLive` is the production Layer for the service.
-- `DurableWaitsLive` is the production Layer for the lower-level durable waits
-  service.
-
-The `Live` suffix is ordinary Effect vocabulary. The issue is the concept and
-the export boundary. `Choreography` implies a higher-level workflow model, and
-`DurableWaitsLive` is only available through `@firegrid/substrate/kernel`.
-Because the current service methods require durable waits, examples that import
-`DurableWaitsLive` from `kernel` teach app code to depend on a lower-level
-boundary.
-
-Pathway 1 should not hide this. It should introduce the app-facing boundary:
+The app-facing boundary is:
 
 ```ts
 import { RunWait } from "@firegrid/substrate"
@@ -114,10 +98,6 @@ The lower-level kernel service can remain `DurableWaits` for now:
 - `DurableWaits` authors durable completion rows.
 - `RunWait` is what a running operation uses to suspend and resume through
   durable wait primitives.
-
-The existing `Choreography` / `ChoreographyLive` surface should be treated as
-current vocabulary to retire or alias away, not the concept Firegrid teaches to
-Fireline.
 
 ## Current Scenario Boundary
 

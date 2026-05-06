@@ -2,15 +2,15 @@ import { DurableStream } from "@durable-streams/client"
 import { Cause, Duration, Effect, Exit, Layer, Option, Tracer } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
-  Choreography,
-  ChoreographyLive,
+  RunWait,
+  RunWaitLive,
   OwnerId,
   WorkId,
   currentWorkContextLayer,
   triggerMatchersLayer,
-  type ChoreographyTrigger,
+  type RunWaitTrigger,
   type TriggerMatcher,
-} from "../coordination/choreography/index.ts"
+} from "../coordination/run-wait/index.ts"
 import {
   CompletionProducer,
   SubstrateProducerLive,
@@ -44,7 +44,7 @@ async function createSubstrateStream(label: string): Promise<string> {
 
 const buildLayer = (streamUrl: string, matchers: Record<string, TriggerMatcher>) =>
   Layer.provideMerge(
-    ChoreographyLive({ streamUrl }),
+    RunWaitLive({ streamUrl }),
     Layer.mergeAll(
       DurableWaitsLive({ streamUrl }),
       triggerMatchersLayer(matchers),
@@ -69,14 +69,14 @@ const runWaitFor = (
   streamUrl: string,
   runId: string,
   ownerId: string,
-  trigger: ChoreographyTrigger,
+  trigger: RunWaitTrigger,
   matchers: Record<string, TriggerMatcher> = {
     [trigger.matcherId]: matcherAccept,
   },
 ) =>
   Effect.gen(function* () {
-    const choreo = yield* Choreography
-    return yield* choreo.waitFor(trigger, { timeout: Duration.minutes(10) })
+    const wait = yield* RunWait
+    return yield* wait.for(trigger, { timeout: Duration.minutes(10) })
   }).pipe(
     Effect.provide(
       Layer.provideMerge(
@@ -101,13 +101,13 @@ const projectionMatchCompletions = async (streamUrl: string) => {
 // choreography-facade.SUSPENSION.2
 describe("choreography-facade.CHOREOGRAPHY_API.2 — sleep creates a timer completion and blocks the current run before signalling suspension", () => {
   it("sleep writes pending timer completion + run.blocked, verifies, then interrupts", async () => {
-    const url = await createSubstrateStream("choreo-sleep")
+    const url = await createSubstrateStream("wait-sleep")
     const runId = "run-sleep-1"
     await Effect.runPromise(declareRun(url, runId))
 
     const program = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.sleep(Duration.seconds(5))
+      const wait = yield* RunWait
+      return yield* wait.sleep(Duration.seconds(5))
     })
 
     const exit = await Effect.runPromiseExit(
@@ -146,11 +146,11 @@ describe("choreography-facade.CHOREOGRAPHY_API.2 — sleep creates a timer compl
 // choreography-facade.TRIGGERS.5
 describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projection-match completion and blocks the current run", () => {
   it("waitFor writes a pending projection_match completion carrying the typed trigger payload, blocks the run, then interrupts", async () => {
-    const url = await createSubstrateStream("choreo-wait-for")
+    const url = await createSubstrateStream("wait-wait-for")
     const runId = "run-wait-1"
     await Effect.runPromise(declareRun(url, runId))
 
-    const trigger: ChoreographyTrigger = {
+    const trigger: RunWaitTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-1",
       projectionKey: "plane.permission.byId:p-1",
@@ -158,8 +158,8 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
     }
 
     const program = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.waitFor(trigger, { timeout: Duration.minutes(10) })
+      const wait = yield* RunWait
+      return yield* wait.for(trigger, { timeout: Duration.minutes(10) })
     })
 
     const exit = await Effect.runPromiseExit(
@@ -190,7 +190,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
     expect(completion?.kind).toBe("projection_match")
     expect(completion?.state).toBe("pending")
     const data = completion?.data as {
-      trigger: ChoreographyTrigger
+      trigger: RunWaitTrigger
       timeoutMs?: number
       deadlineAtMs?: number
     }
@@ -200,11 +200,11 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
   })
 
   it("choreography-facade.CHOREOGRAPHY_API.10 — waitFor re-suspends on the same pending projection-match completion without creating a duplicate", async () => {
-    const url = await createSubstrateStream("choreo-wait-idempotent-pending")
+    const url = await createSubstrateStream("wait-wait-idempotent-pending")
     const runId = "run-wait-pending-1"
     await declareRun(url, runId).pipe(Effect.runPromise)
 
-    const trigger: ChoreographyTrigger = {
+    const trigger: RunWaitTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-pending",
       projectionKey: "plane.permission.byId:p-pending",
@@ -245,11 +245,11 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
   })
 
   it("choreography-facade.CHOREOGRAPHY_API.9 + durable-waits-and-scheduling.WAIT_FOR.8 — waitFor resumes on the same resolved projection-match completion without creating a duplicate", async () => {
-    const url = await createSubstrateStream("choreo-wait-idempotent-resolved")
+    const url = await createSubstrateStream("wait-wait-idempotent-resolved")
     const runId = "run-wait-resolved-1"
     await declareRun(url, runId).pipe(Effect.runPromise)
 
-    const trigger: ChoreographyTrigger = {
+    const trigger: RunWaitTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-resolved",
       projectionKey: "plane.permission.byId:p-resolved",
@@ -278,8 +278,8 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
     )
 
     const resumed = await Effect.gen(function* () {
-      const choreo = yield* Choreography
-      yield* choreo.waitFor(trigger)
+      const wait = yield* RunWait
+      yield* wait.for(trigger)
       return "resumed" as const
     }).pipe(
       Effect.provide(
@@ -304,17 +304,17 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
   })
 
   it("choreography-facade.CHOREOGRAPHY_API.11 — waitFor defects on a trigger-mismatched blocked completion without creating a duplicate", async () => {
-    const url = await createSubstrateStream("choreo-wait-idempotent-mismatch")
+    const url = await createSubstrateStream("wait-wait-idempotent-mismatch")
     const runId = "run-wait-mismatch-1"
     await declareRun(url, runId).pipe(Effect.runPromise)
 
-    const firstTrigger: ChoreographyTrigger = {
+    const firstTrigger: RunWaitTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-original",
       projectionKey: "plane.permission.byId:p-original",
       matcherId: "fixture.permission.resolved",
     }
-    const secondTrigger: ChoreographyTrigger = {
+    const secondTrigger: RunWaitTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-other",
       projectionKey: "plane.permission.byId:p-other",
@@ -346,7 +346,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
   })
 
   it("choreography-facade.CHOREOGRAPHY_API.11 — waitFor defects when the current run is blocked on a missing completion", async () => {
-    const url = await createSubstrateStream("choreo-wait-idempotent-missing")
+    const url = await createSubstrateStream("wait-wait-idempotent-missing")
     const runId = "run-wait-missing-completion-1"
     await declareRun(url, runId).pipe(Effect.runPromise)
 
@@ -359,7 +359,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
       }).pipe(Effect.runSync),
     )
 
-    const trigger: ChoreographyTrigger = {
+    const trigger: RunWaitTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-missing",
       projectionKey: "plane.permission.byId:p-missing",
@@ -383,11 +383,11 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
 // choreography-facade.TRIGGERS.8
 describe("choreography-facade.TRIGGERS.8 — waitFor with an unknown matcherId fails fast as a defect before any durable row is written", () => {
   it("missing matcher dies before completion creation; no projection_match completion appears in the durable stream", async () => {
-    const url = await createSubstrateStream("choreo-wait-missing")
+    const url = await createSubstrateStream("wait-wait-missing")
     const runId = "run-wait-missing-1"
     await Effect.runPromise(declareRun(url, runId))
 
-    const trigger: ChoreographyTrigger = {
+    const trigger: RunWaitTrigger = {
       _tag: "ProjectionMatch",
       label: "session-terminal:req-1",
       projectionKey: "plane.session.byRequestId:req-1",
@@ -395,8 +395,8 @@ describe("choreography-facade.TRIGGERS.8 — waitFor with an unknown matcherId f
     }
 
     const program = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.waitFor(trigger)
+      const wait = yield* RunWait
+      return yield* wait.for(trigger)
     })
 
     const exit = await Effect.runPromiseExit(
@@ -431,17 +431,14 @@ describe("choreography-facade.TRIGGERS.8 — waitFor with an unknown matcherId f
 // choreography-facade.CHOREOGRAPHY_API.4
 describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt creates a scheduled_work completion and does not block the current run", () => {
   it("scheduleAt returns a result with completionId and whenMs; current run remains in state=started; no run row is blocked", async () => {
-    const url = await createSubstrateStream("choreo-schedule-at")
+    const url = await createSubstrateStream("wait-schedule-at")
     const runId = "run-schedule-1"
     await Effect.runPromise(declareRun(url, runId))
 
     const at = new Date("2026-06-01T00:00:00.000Z")
     const program = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.scheduleAt({
-        at,
-        input: { reason: "follow-up" },
-      })
+      const wait = yield* RunWait
+      return yield* wait.until(at, { reason: "follow-up" })
     })
 
     const result = await Effect.runPromise(
@@ -480,20 +477,20 @@ describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt creates a schedu
 // configuring scheduleAt-only usage should not need to install fake
 // context/matcher layers.
 describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt runs without CurrentWorkContext and without TriggerMatchers", () => {
-  it("ChoreographyLive + DurableWaitsLive alone is sufficient to run scheduleAt; no CurrentWorkContext / TriggerMatchers layers are required", async () => {
-    const url = await createSubstrateStream("choreo-schedule-no-ctx")
+  it("RunWaitLive + DurableWaitsLive alone is sufficient to run scheduleAt; no CurrentWorkContext / TriggerMatchers layers are required", async () => {
+    const url = await createSubstrateStream("wait-schedule-no-ctx")
     const at = Date.now() + 60_000
 
     const program = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.scheduleAt({ at, input: { kind: "noop" } })
+      const wait = yield* RunWait
+      return yield* wait.until(at, { kind: "noop" })
     })
 
-    // Intentionally minimal layer composition: only ChoreographyLive +
+    // Intentionally minimal layer composition: only RunWaitLive +
     // DurableWaitsLive. This program would not typecheck or run if
     // scheduleAt required CurrentWorkContext or TriggerMatchers.
     const minimalLayer = Layer.provideMerge(
-      ChoreographyLive({ streamUrl: url }),
+      RunWaitLive({ streamUrl: url }),
       DurableWaitsLive({ streamUrl: url }),
     )
 
@@ -514,13 +511,13 @@ describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt runs without Cur
 // this case explicitly via Effect.die before appending a new block row.
 describe("choreography-facade.SUSPENSION.4 — a run already blocked on a different completion is not re-pointed and not reported as suspended", () => {
   it("calling sleep with a different duration under the same CurrentWorkContext leaves the run blocked on the first completion and dies on the second call", async () => {
-    const url = await createSubstrateStream("choreo-double-block")
+    const url = await createSubstrateStream("wait-double-block")
     const runId = "run-double-block-1"
     await Effect.runPromise(declareRun(url, runId))
 
     const sleepFor = (durationMs: number) => Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.sleep(Duration.millis(durationMs))
+      const wait = yield* RunWait
+      return yield* wait.sleep(Duration.millis(durationMs))
     })
 
     const ctxLayer = currentWorkContextLayer({
@@ -573,13 +570,13 @@ describe("choreography-facade.SUSPENSION.4 — a run already blocked on a differ
 // choreography-facade.CHOREOGRAPHY_API.8
 describe("choreography-facade.CHOREOGRAPHY_API.5 — awaitAwakeable creates a work-scoped externally-resolved completion and blocks the current run", () => {
   it("awaitAwakeable derives the awakeable key from CurrentWorkContext.workId, blocks the run, then interrupts", async () => {
-    const url = await createSubstrateStream("choreo-awakeable")
+    const url = await createSubstrateStream("wait-awakeable")
     const runId = "run-awk-1"
     await Effect.runPromise(declareRun(url, runId))
 
     const program = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.awaitAwakeable({ name: "approval" })
+      const wait = yield* RunWait
+      return yield* wait.awakeable("approval")
     })
 
     const exit = await Effect.runPromiseExit(
@@ -620,13 +617,13 @@ describe("choreography-facade.CHOREOGRAPHY_API.5 — awaitAwakeable creates a wo
 // consistent durable state, not a partial one.
 describe("choreography-facade.SUSPENSION.1 — durable completion + blocked run committed before interrupt", () => {
   it("post-interrupt rebuild observes both the pending completion and the matching blocked-on linkage", async () => {
-    const url = await createSubstrateStream("choreo-susp-order")
+    const url = await createSubstrateStream("wait-susp-order")
     const runId = "run-susp-1"
     await Effect.runPromise(declareRun(url, runId))
 
     const program = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.sleep(Duration.millis(250))
+      const wait = yield* RunWait
+      return yield* wait.sleep(Duration.millis(250))
     })
 
     await Effect.runPromiseExit(
@@ -654,12 +651,12 @@ describe("choreography-facade.SUSPENSION.1 — durable completion + blocked run 
 })
 
 // choreography-facade.INSTRUMENTATION.1
-// Choreography operations create Effect-native instrumentation boundaries.
+// RunWait operations create Effect-native instrumentation boundaries.
 // A host-provided Tracer observes span starts named after each operation;
 // the substrate does not need its own tracing infrastructure.
-describe("choreography-facade.INSTRUMENTATION.1 — choreography operations emit Effect-native spans named substrate.choreography.<op>", () => {
-  it("a host Tracer observes substrate.choreography.schedule_at when scheduleAt runs", async () => {
-    const url = await createSubstrateStream("choreo-trace")
+describe("choreography-facade.INSTRUMENTATION.1 — run-wait operations emit Effect-native spans named substrate.run-wait.<op>", () => {
+  it("a host Tracer observes substrate.run-wait.schedule_at when scheduleAt runs", async () => {
+    const url = await createSubstrateStream("wait-trace")
     const runId = "run-trace-1"
     await Effect.runPromise(declareRun(url, runId))
 
@@ -689,8 +686,8 @@ describe("choreography-facade.INSTRUMENTATION.1 — choreography operations emit
     })
 
     const program = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      yield* choreo.scheduleAt({ at: Date.now() + 1000, input: {} })
+      const wait = yield* RunWait
+      yield* wait.until(Date.now() + 1000, {})
     }).pipe(Effect.withTracer(recordingTracer))
 
     await Effect.runPromise(
@@ -707,25 +704,25 @@ describe("choreography-facade.INSTRUMENTATION.1 — choreography operations emit
       ),
     )
 
-    expect(observed).toContain("substrate.choreography.schedule_at")
+    expect(observed).toContain("substrate.run-wait.schedule_at")
   })
 })
 
 // choreography-facade.INSTRUMENTATION.3
 // choreography-facade.INSTRUMENTATION.4
-// The first choreography facade does not require durable.trace rows for
+// The first run-wait facade does not require durable.trace rows for
 // correctness or ordinary API use. Operations succeed without any tracer
 // providing observability, and no durable.trace row is appended.
 describe("choreography-facade.INSTRUMENTATION.3 — operations work without durable.trace rows; none are appended", () => {
   it("running sleep + scheduleAt against a stream produces no durable.trace rows", async () => {
-    const url = await createSubstrateStream("choreo-no-trace")
+    const url = await createSubstrateStream("wait-no-trace")
     const runId = "run-no-trace-1"
     await Effect.runPromise(declareRun(url, runId))
 
     const program = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      yield* choreo.scheduleAt({ at: Date.now() + 1000, input: {} })
-      return yield* choreo.sleep(Duration.millis(10))
+      const wait = yield* RunWait
+      yield* wait.until(Date.now() + 1000, {})
+      return yield* wait.sleep(Duration.millis(10))
     })
 
     await Effect.runPromiseExit(
@@ -756,16 +753,16 @@ describe("choreography-facade.INSTRUMENTATION.3 — operations work without dura
 
 // choreography-facade.CURRENT_WORK_CONTEXT.4
 // Public callers do not pass completion ids, claim ids, stream URLs, raw
-// run rows, or DSS envelopes. The Choreography service surface is the
+// run rows, or DSS envelopes. The RunWait service surface is the
 // proof: every method input is either a Duration, a typed trigger, a
 // schedule descriptor, or a name string.
-describe("choreography-facade.CURRENT_WORK_CONTEXT.4 — choreography callers never pass internal substrate identifiers", () => {
-  it("Choreography service method inputs do not include completionId/claimId/streamUrl/runRow/dssEnvelope-shaped fields", () => {
+describe("choreography-facade.CURRENT_WORK_CONTEXT.4 — run-wait callers never pass internal substrate identifiers", () => {
+  it("RunWait service method inputs do not include completionId/claimId/streamUrl/runRow/dssEnvelope-shaped fields", () => {
     // Inspect each method's input type structurally to pin the public
     // surface against accidental expansion. Sleep takes only a Duration;
     // no other operations accept ad-hoc inputs.
 
-    const waitForInput: ChoreographyTrigger = {
+    const waitForInput: RunWaitTrigger = {
       _tag: "ProjectionMatch",
       label: "x",
       projectionKey: "k",
@@ -792,30 +789,30 @@ describe("choreography-facade.CURRENT_WORK_CONTEXT.4 — choreography callers ne
 })
 
 // choreography-facade.CURRENT_WORK_CONTEXT.1
-// Smoke test that Choreography reads identity from CurrentWorkContext.
+// Smoke test that RunWait reads identity from CurrentWorkContext.
 // Two different workIds in two invocations block their respective runs;
-// we never thread a workId through the Choreography call site.
-describe("choreography-facade.CURRENT_WORK_CONTEXT.1 — Choreography reads workId from CurrentWorkContext, not from arguments", () => {
+// we never thread a workId through the RunWait call site.
+describe("choreography-facade.CURRENT_WORK_CONTEXT.1 — RunWait reads workId from CurrentWorkContext, not from arguments", () => {
   it("two invocations under different CurrentWorkContext layers block the matching runs without any caller-supplied workId argument", async () => {
-    const url = await createSubstrateStream("choreo-ctx")
+    const url = await createSubstrateStream("wait-ctx")
     const runA = "run-ctx-A"
     const runB = "run-ctx-B"
     await Effect.runPromise(declareRun(url, runA))
     await Effect.runPromise(declareRun(url, runB))
 
     const program = Effect.gen(function* () {
-      const choreo = yield* Choreography
-      return yield* choreo.sleep(Duration.millis(100))
+      const wait = yield* RunWait
+      return yield* wait.sleep(Duration.millis(100))
     })
 
-    const choreoLayer = buildLayer(url, {})
+    const waitLayer = buildLayer(url, {})
 
     const runUnder = (workId: string, ownerId: string) =>
       Effect.runPromiseExit(
         program.pipe(
           Effect.provide(
             Layer.provideMerge(
-              choreoLayer,
+              waitLayer,
               currentWorkContextLayer({
                 workId: WorkId(workId),
                 ownerId: OwnerId(ownerId),

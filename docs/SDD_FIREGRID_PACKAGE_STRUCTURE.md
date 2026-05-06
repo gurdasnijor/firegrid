@@ -2,7 +2,8 @@
 
 Status: Active. The substrate-internal restructuring this SDD proposes has
 landed on `main` through the W4 wave (W4A protocol/schema, W4B
-state-store/read-models, W4C write-api/execution, W4D choreography/facade —
+state-store/read-models, W4C write-api/execution, W4D coordination/facade,
+and FW1 RunWait —
 W4D may still be pending; check `git log` against
 `packages/substrate/src/coordination/`). The "Current State" section below
 reflects the on-main layout and may diverge from the original "Target Internal
@@ -51,8 +52,7 @@ packages/substrate/src/
     waits.ts             durable wait helpers (W4C)
     subscribers.ts       subscriber programs (W4C)
     claims.ts            durable claim helper (W4C)
-  coordination/          public projection + work-claim + choreography facade
-                         (W4D — still pending if absent from main)
+  coordination/          public projection + work-claim + RunWait primitives
   kernel/index.ts        explicit kernel-internal subpath barrel
   schema/{index,ready-work}.ts                  compat shims
   descriptors/index.ts                          compat shim
@@ -226,7 +226,7 @@ Current root-level files mix:
 - projections
 - execution event writers
 - waits and subscribers
-- choreography facade
+- RunWait primitives
 
 That makes it harder to answer a basic review question: is this change about
 wire compatibility, state-store mechanics, projection behavior, or state-machine legality?
@@ -259,7 +259,7 @@ The current `packages/substrate/src` files classify roughly as follows:
 | `subscribers.ts` | State-machine subscriber helpers | `state-machine/subscribers.ts` | Advances durable completions from stream snapshots. |
 | `event-plane/*` | Legacy event-plane compatibility | retire or split into protocol/state-store/projection | This should not remain a top-level durable-core concept if EventStream is canonical. |
 | `facade/work.ts` | Public work-claim API | `state-machine/work-claim.ts` or higher-level workflow API | Crosses claim and workflow concerns; should not stay under generic `facade`. |
-| `choreography/*` | Higher-level workflow facade | `choreography/*` or future package | This is a separate high-level API over durable execution, not protocol/state-store/projection. |
+| `run-wait/*` | Durable wait primitive surface | `coordination/run-wait/*` | App-facing wait primitives over durable execution, not protocol/state-store/projection. |
 | `kernel/index.ts` | Compatibility/export boundary | `kernel/index.ts` | Keep only as an explicit escape hatch, and shrink over time. |
 
 What belongs in the durable-core aggregate:
@@ -273,7 +273,7 @@ What is questionable inside the durable-core aggregate:
 
 - generic facade folders that hide the actual capability
 - legacy EventPlane modules now superseded by EventStream vocabulary
-- high-level choreography APIs if they grow into their own workflow-facing
+- high-level workflow APIs if they grow into their own workflow-facing
   package
 - compatibility barrels that make internal imports easy again
 
@@ -358,7 +358,7 @@ materializers.ts -> internal/event-stream-materializer.ts
 Current graph highlights:
 
 ```txt
-index.ts -> choreography
+index.ts -> run-wait
 index.ts -> descriptors
 index.ts -> facade
 
@@ -394,7 +394,7 @@ protocol/descriptors  -> protocol/schema
 state-store           -> protocol/schema
 projection            -> state-store + protocol/schema
 state-machine         -> protocol + state-store + projection as needed
-choreography          -> state-machine + projection + protocol
+run-wait              -> state-machine + projection + protocol
 
 kernel                -> explicit compatibility subpaths only
 ```
@@ -529,7 +529,8 @@ packages/substrate/src/
     waits.ts
     subscribers.ts
     claims.ts
-  choreography/
+  coordination/
+    run-wait/
   kernel/
 ```
 
@@ -633,7 +634,7 @@ Migration steps:
 3. Decide whether `packages/runtime/bin` should move to `apps/firegrid-cli`.
 4. Normalize the durable-core aggregate into protocol, state-store, projection
    (`read-models/`), write-api / execution (substrate's chosen split for
-   state-machine concerns), choreography (`coordination/`), and kernel folders.
+   state-machine concerns), RunWait (`coordination/`), and kernel folders.
    **Done in W4 (W4A/B/C, with W4D for `coordination/`).** See "Current State"
    above for the on-main layout.
 5. Add or tighten static guards for any new directory boundaries.
