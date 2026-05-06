@@ -236,6 +236,267 @@ const sendWithTrace = client.send(operation, input).pipe(
 The point is the layering: spans wrap existing Effects, static attributes go
 into `withSpan` options, and dynamic attributes annotate the active span.
 
+## Replatforming Readiness Target
+
+The smallest useful capability for LT-02 is connected trace context across the
+local session loop:
+
+```txt
+Flamecast UI send
+  -> Firegrid client operation send
+  -> Firegrid runtime handler
+  -> app-owned EventPlane/EventStream append
+  -> Firegrid EventStream replay/live follow
+  -> Flamecast UI observation
+```
+
+This is enough to debug whether a product-shaped request reached the durable
+operation boundary, whether the local runtime picked it up, whether the handler
+wrote the app-owned event facts, and whether the UI replay/follow path observed
+those facts. Subscriber and RunWait spans can land after this first path, but
+their metadata policy should be compatible from the start.
+
+The first implementation slice should therefore prioritize:
+
+1. W3C trace metadata helpers for durable operation and app-owned row metadata.
+2. `Effect.withSpan` boundaries around client `send`, `result`, and `observe`.
+3. Runtime handler spans that continue propagated trace context.
+4. EventPlane/EventStream append and read/materialization spans.
+5. Span links for later suspend/resume and subscriber attempt/terminalization
+   correlation.
+
+## W3C Trace Metadata Policy
+
+Firegrid should standardize these optional metadata keys where a durable
+operation envelope or app-owned row metadata slot already exists:
+
+- `traceparent`
+- `tracestate`
+- `baggage`
+- `correlationId`
+- `causationId`
+
+`traceparent`, `tracestate`, and `baggage` should follow W3C Trace Context and
+Baggage syntax. Firegrid core should treat them as opaque strings carried
+through durable metadata and span propagation helpers. It should not hand-roll
+vendor parsers, sampling policy, exporters, or backend wiring.
+
+Trace metadata is never auth metadata:
+
+- do not derive tenant, org, user, runtime authority, claim ownership, or
+  terminal authority from trace metadata;
+- do not accept trace metadata as proof that a caller may read, write, resume,
+  or terminalize durable state;
+- do not place API keys, OAuth tokens, signing secrets, provider credentials,
+  raw authorization headers, resource contents, or customer payloads in span
+  attributes, `baggage`, `traceparent`, `tracestate`, or row metadata;
+- use `Redacted` for possibly secret-bearing values until code deliberately
+  converts them into a bounded public identifier.
+
+Host applications supply adapters and exporters. Firegrid core packages should
+use Effect tracing APIs directly and avoid a direct `@effect/opentelemetry`
+dependency. Product runtimes may provide `@effect/opentelemetry` Layers,
+exporters, propagators, and resource attributes at the host edge.
+
+## Canonical Effect Tracing Examples
+
+These sketches show the intended instrumentation shape. Names and attribute
+constants should be ratified by the future feature spec before implementation.
+
+Client operation send:
+
+```ts
+const send = client.send(operation, input).pipe(
+  Effect.tap((handle) =>
+    Effect.annotateCurrentSpan({
+      [FiregridTraceAttribute.operationHandleId]: handle.id,
+      [FiregridTraceAttribute.runId]: handle.runId,
+    }),
+  ),
+  Effect.withSpan("firegrid.client.operation.send", {
+    kind: "client",
+    attributes: {
+      [FiregridTraceAttribute.operationDescriptor]: operation.name,
+      "firegrid.trace.correlation_id": metadata.correlationId,
+    },
+  }),
+)
+```
+
+Client result and observe:
+
+```ts
+const result = client.result(handle).pipe(
+  Effect.tap((terminal) =>
+    Effect.annotateCurrentSpan({
+      [FiregridTraceAttribute.status]: terminal._tag,
+    }),
+  ),
+  Effect.withSpan("firegrid.client.operation.result", {
+    kind: "client",
+    attributes: {
+      [FiregridTraceAttribute.operationHandleId]: handle.id,
+    },
+  }),
+)
+
+const observed = client.observe(handle).pipe(
+  Stream.tap((state) =>
+    Effect.annotateCurrentSpan({
+      [FiregridTraceAttribute.status]: state._tag,
+    }),
+  ),
+  Stream.withSpan("firegrid.client.operation.observe", {
+    attributes: {
+      [FiregridTraceAttribute.operationHandleId]: handle.id,
+    },
+  }),
+)
+```
+
+Runtime handler execution:
+
+```ts
+const runHandler = decodedInput.pipe(
+  Effect.flatMap((input) => handler(input)),
+  Effect.withSpan("firegrid.runtime.handler", {
+    kind: "server",
+    attributes: {
+      [FiregridTraceAttribute.operationDescriptor]: operation.name,
+      [FiregridTraceAttribute.runId]: runId,
+      [FiregridTraceAttribute.runtimeId]: runtimeId,
+    },
+  }),
+)
+```
+
+EventPlane emit and projection read:
+
+```ts
+const emitRow = producer.emit(row).pipe(
+  Effect.tap((append) =>
+    Effect.annotateCurrentSpan({
+      [FiregridTraceAttribute.cursor]: append.cursor,
+    }),
+  ),
+  Effect.withSpan("firegrid.event_plane.emit", {
+    kind: "producer",
+    attributes: {
+      [FiregridTraceAttribute.planeDescriptor]: plane.name,
+      [FiregridTraceAttribute.rowFamily]: row.family,
+      [FiregridTraceAttribute.rowKey]: row.key,
+    },
+  }),
+)
+
+const projectionRead = projection.get(rowKey).pipe(
+  Effect.withSpan("firegrid.event_plane.projection.read", {
+    attributes: {
+      [FiregridTraceAttribute.planeDescriptor]: plane.name,
+      [FiregridTraceAttribute.rowKey]: rowKey,
+      [FiregridTraceAttribute.cursor]: cursor,
+    },
+  }),
+)
+```
+
+EventStream emit, read, and materializer:
+
+```ts
+const emitEvent = eventStream.emit(stream, event).pipe(
+  Effect.tap((append) =>
+    Effect.annotateCurrentSpan({
+      [FiregridTraceAttribute.cursor]: append.cursor,
+    }),
+  ),
+  Effect.withSpan("firegrid.event_stream.emit", {
+    kind: "producer",
+    attributes: {
+      [FiregridTraceAttribute.streamDescriptor]: stream.name,
+      [FiregridTraceAttribute.eventType]: event.type,
+    },
+  }),
+)
+
+const readEvents = eventStream.events(stream).pipe(
+  Stream.withSpan("firegrid.event_stream.read", {
+    attributes: {
+      [FiregridTraceAttribute.streamDescriptor]: stream.name,
+      "firegrid.read.mode": "replay_then_follow",
+    },
+  }),
+)
+
+const materialize = materializer.apply(row).pipe(
+  Effect.withSpan("firegrid.event_stream.materialize", {
+    attributes: {
+      [FiregridTraceAttribute.streamDescriptor]: row.stream,
+      [FiregridTraceAttribute.cursor]: row.cursor,
+    },
+  }),
+)
+```
+
+RunWait suspend and resume should use attributes plus links when the resume is
+not a direct child of the suspend span:
+
+```ts
+const suspend = wait.authorPendingCompletion(trigger).pipe(
+  Effect.withSpan("firegrid.run_wait.suspend", {
+    attributes: {
+      "firegrid.completion.id": completionId,
+      "firegrid.wait.trigger_type": trigger.type,
+      [FiregridTraceAttribute.runId]: runId,
+    },
+  }),
+)
+
+const resume = wait.readResolvedCompletion(completionId).pipe(
+  Effect.withSpan("firegrid.run_wait.resume", {
+    links: suspendSpanContext ? [{ spanContext: suspendSpanContext }] : [],
+    attributes: {
+      "firegrid.completion.id": completionId,
+      [FiregridTraceAttribute.runId]: runId,
+    },
+  }),
+)
+```
+
+The exact span-link object shape depends on the pinned Effect tracing version.
+The durable contract is that a resume can link to the recorded suspend context
+from row metadata when parent/child span relationship is not available after
+restart, replay, or a different runtime process.
+
+Subscriber attempt and terminalization:
+
+```ts
+const attempt = subscriber.evaluate(item).pipe(
+  Effect.withSpan("firegrid.subscriber.attempt", {
+    kind: "consumer",
+    attributes: {
+      [FiregridTraceAttribute.subscriberId]: subscriberId,
+      [FiregridTraceAttribute.attempt]: attemptNumber,
+      "firegrid.completion.id": item.completionId,
+    },
+  }),
+)
+
+const terminalize = subscriber.appendTerminal(candidate).pipe(
+  Effect.withSpan("firegrid.subscriber.terminalize", {
+    kind: "producer",
+    links: attemptSpanContext ? [{ spanContext: attemptSpanContext }] : [],
+    attributes: {
+      [FiregridTraceAttribute.subscriberId]: subscriberId,
+      [FiregridTraceAttribute.attempt]: attemptNumber,
+      [FiregridTraceAttribute.status]: candidate.status,
+    },
+  }),
+)
+```
+
+Attempt and terminalization spans do not acknowledge work. The durable terminal
+row and first-terminal-wins fold remain authoritative.
+
 ## Span Names and Attributes
 
 Use stable substrate span names. Product code can nest business spans above
