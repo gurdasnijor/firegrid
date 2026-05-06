@@ -1,4 +1,3 @@
-import { DurableStream } from "@durable-streams/client"
 import { DurableStreamTestServer } from "@durable-streams/server"
 
 let server: DurableStreamTestServer | undefined
@@ -21,10 +20,4 @@ export async function stopTestServer(): Promise<void> {
 export function freshStreamUrl(label: string): string {
   if (!server) throw new Error("call startTestServer() in beforeAll first")
   return `${server.url}/substrate/${label}-${crypto.randomUUID()}`
-}
-
-export async function createSubstrateStream(label: string): Promise<string> {
-  const url = freshStreamUrl(label)
-  await DurableStream.create({ url, contentType: "application/json" })
-  return url
 }

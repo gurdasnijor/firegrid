@@ -15,7 +15,12 @@ import {
   startRun,
 } from "@firegrid/substrate/kernel"
 import { Data, Effect, Layer, Schedule, Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import {
+  freshStreamUrl,
+  startTestServer,
+  stopTestServer,
+} from "./helpers.ts"
 import { Firegrid, FiregridRuntime, FiregridRuntimeBoot } from "../index.ts"
 
 class SeedFailed extends Data.TaggedError("SeedFailed")<{
@@ -33,7 +38,7 @@ class RunNotYetCompleted extends Data.TaggedError(
 // firegrid-runtime-process.RUNTIME_HOT_PATH.1
 //
 // End-to-end smoke for `Firegrid.handler`: provide the handler
-// Layer to FiregridRuntimeBoot.embeddedDev, manually seed a
+// Layer to FiregridRuntimeBoot.attached, manually seed a
 // "started" run carrying a Firegrid operation envelope, and assert
 // the run terminalizes with the encoded handler output. The seed
 // uses substrate primitives directly because exercising the typed
@@ -90,6 +95,15 @@ const seedContextRun = (
   runId: string,
   payload: { readonly whenMs: number },
 ) => seedStartedRun(streamUrl, runId, ContextEcho.name, payload)
+
+const createRuntimeStream = async (name: string): Promise<string> => {
+  const streamUrl = freshStreamUrl(name)
+  await DurableStream.create({
+    url: streamUrl,
+    contentType: "application/json",
+  })
+  return streamUrl
+}
 
 const fakeChoreographyLayer = Layer.succeed(Choreography, {
   sleep: () => Effect.interrupt,
@@ -156,16 +170,26 @@ const completedRunFromProjection = (streamUrl: string, runId: string) =>
   )
 
 describe("Firegrid.handler — typed dispatch over started runs", () => {
+  beforeAll(async () => {
+    await startTestServer()
+  })
+
+  afterAll(async () => {
+    await stopTestServer()
+  })
+
   it("encodes the handler's output and terminalizes the run as completed", async () => {
     const handlerLayer = Firegrid.handler(Echo, (input) =>
       Effect.succeed({ msg: input.msg, len: input.msg.length }),
     )
 
     const runId = "run-echo-1"
+    const streamUrl = await createRuntimeStream("firegrid-handler-test")
 
     const program = Effect.gen(function* () {
       const runtime = yield* FiregridRuntime
-      const streamUrl = runtime.streamIdentity.streamUrl
+      expect(runtime.bootMode).toBe("attached")
+      expect(runtime.streamIdentity.streamUrl).toBe(streamUrl)
 
       yield* Effect.tryPromise({
         try: () => seedEchoRun(streamUrl, runId, { msg: "hello" }),
@@ -177,8 +201,8 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
       return final
     }).pipe(
       Effect.provide(
-        FiregridRuntimeBoot.embeddedDev({
-          streamName: "firegrid-handler-test",
+        FiregridRuntimeBoot.attached({
+          streamUrl,
           runtime: handlerLayer,
         }),
       ),
@@ -220,10 +244,14 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
 
     const runId = "run-context-1"
     const processId = "runtime-owner-context-test"
+    const streamUrl = await createRuntimeStream(
+      "firegrid-handler-context-test",
+    )
 
     const program = Effect.gen(function* () {
       const runtime = yield* FiregridRuntime
-      const streamUrl = runtime.streamIdentity.streamUrl
+      expect(runtime.bootMode).toBe("attached")
+      expect(runtime.streamIdentity.streamUrl).toBe(streamUrl)
 
       yield* Effect.tryPromise({
         try: () => seedContextRun(streamUrl, runId, { whenMs: 12345 }),
@@ -233,9 +261,9 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
       return yield* completedRunFromProjection(streamUrl, runId)
     }).pipe(
       Effect.provide(
-        FiregridRuntimeBoot.embeddedDev({
+        FiregridRuntimeBoot.attached({
           processId,
-          streamName: "firegrid-handler-context-test",
+          streamUrl,
           runtime: handlerLayer,
         }),
       ),

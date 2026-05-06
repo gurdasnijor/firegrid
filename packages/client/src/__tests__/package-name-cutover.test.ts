@@ -73,7 +73,6 @@ describe("firegrid-package-migration.PACKAGE_NAMES — active package names are 
     const offenders = activeTextFiles([
       "apps",
       "packages",
-      "test-support",
     ]).filter((path) =>
       readFileSync(path, "utf8").includes(legacyNamespace),
     )

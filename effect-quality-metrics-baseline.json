@@ -6,11 +6,11 @@
     "forOfInPackageSourceCount": 11,
     "anyNoContextCastCount": 1,
     "nodeCryptoImportCount": 0,
-    "dataTaggedErrorDeclarationCount": 40,
+    "dataTaggedErrorDeclarationCount": 39,
     "newDurableStreamSiteCount": 11,
     "perCallLayerProvideSiteCount": 0,
     "effectOrDieSiteCount": 4,
-    "effectRunPromiseInTestsCount": 210,
-    "vitestItImportInTestsCount": 46
+    "effectRunPromiseInTestsCount": 204,
+    "vitestItImportInTestsCount": 45
   }
 }

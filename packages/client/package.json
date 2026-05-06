@@ -22,6 +22,7 @@
     "effect": "^3.18.0"
   },
   "devDependencies": {
+    "@durable-streams/server": "^0.3.1",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"

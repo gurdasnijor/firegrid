@@ -20,7 +20,12 @@ import {
   Schedule,
   Schema,
 } from "effect"
-import { describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import {
+  freshStreamUrl,
+  startTestServer,
+  stopTestServer,
+} from "./helpers.ts"
 import { Firegrid, FiregridRuntime, FiregridRuntimeBoot } from "../index.ts"
 
 // firegrid-event-streams.SCHEMA_OWNERSHIP.2
@@ -75,8 +80,27 @@ const appendRaw = (
     catch: (cause) => new SeedFailed({ cause }),
   })
 
+const createRuntimeStream = async (name: string): Promise<string> => {
+  const streamUrl = freshStreamUrl(name)
+  await DurableStream.create({
+    url: streamUrl,
+    contentType: "application/json",
+  })
+  return streamUrl
+}
+
 describe("Firegrid same-stream coexistence — EventStream State Protocol rows do not break substrate consumers", () => {
+  beforeAll(async () => {
+    await startTestServer()
+  })
+
+  afterAll(async () => {
+    await stopTestServer()
+  })
+
   it("firegrid-event-streams.SCHEMA_OWNERSHIP.2, firegrid-event-streams.SCHEMA_OWNERSHIP.3 — handler terminalizes and rebuildProjection folds after firegrid.event rows exist", async () => {
+    const streamUrl = await createRuntimeStream("firegrid-mixed-compat")
+
     const program = Effect.gen(function* () {
       const observed = yield* Ref.make<
         ReadonlyArray<EventStream.Event<typeof Hits>>
@@ -107,7 +131,8 @@ describe("Firegrid same-stream coexistence — EventStream State Protocol rows d
       return yield* Effect.scoped(
         Effect.gen(function* () {
           const runtime = yield* FiregridRuntime
-          const streamUrl = runtime.streamIdentity.streamUrl
+          expect(runtime.bootMode).toBe("attached")
+          expect(runtime.streamIdentity.streamUrl).toBe(streamUrl)
 
           // Interleave EventStream State Protocol rows around an
           // operation envelope. The substrate consumers must tolerate
@@ -189,8 +214,8 @@ describe("Firegrid same-stream coexistence — EventStream State Protocol rows d
           return undefined
         }).pipe(
           Effect.provide(
-            FiregridRuntimeBoot.embeddedDev({
-              streamName: "firegrid-mixed-compat",
+            FiregridRuntimeBoot.attached({
+              streamUrl,
               runtime: runtimeLayer,
             }),
           ),

@@ -8,9 +8,6 @@ importers:
 
   .:
     devDependencies:
-      '@durable-streams/server':
-        specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
       '@effect/eslint-plugin':
         specifier: ^0.3.2
         version: 0.3.2
@@ -106,6 +103,9 @@ importers:
         specifier: ^3.18.0
         version: 3.21.2
     devDependencies:
+      '@durable-streams/server':
+        specifier: ^0.3.1
+        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17
@@ -121,9 +121,6 @@ importers:
       '@durable-streams/client':
         specifier: ^0.2.3
         version: 0.2.3
-      '@durable-streams/server':
-        specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
       '@effect/platform':
         specifier: ^0.96.0
         version: 0.96.1(effect@3.21.2)
@@ -137,6 +134,9 @@ importers:
         specifier: ^3.18.0
         version: 3.21.2
     devDependencies:
+      '@durable-streams/server':
+        specifier: ^0.3.1
+        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17

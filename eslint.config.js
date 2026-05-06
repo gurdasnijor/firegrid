@@ -57,7 +57,6 @@ const tsOnly = (configs) =>
       "packages/**/*.tsx",
       "apps/**/*.ts",
       "apps/**/*.tsx",
-      "test-support/**/*.ts",
     ],
   }))
 const relativeJsSpecifierPattern = /^\.{1,2}\/.*\.js$/u
@@ -482,7 +481,6 @@ export default tseslint.config(
       "packages/**/*.tsx",
       "apps/**/*.ts",
       "apps/**/*.tsx",
-      "test-support/**/*.ts",
     ],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },

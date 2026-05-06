@@ -8,7 +8,12 @@ import { readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { Data, Deferred, Duration, Effect, Exit, Layer, Ref, Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import {
+  freshStreamUrl,
+  startTestServer,
+  stopTestServer,
+} from "./helpers.ts"
 import { Firegrid, FiregridRuntime, FiregridRuntimeBoot } from "../index.ts"
 
 // firegrid-event-streams.RUNTIME_API.1
@@ -51,6 +56,23 @@ const appendRowRaw = (
     catch: (cause) => new AppendFailed({ cause }),
   })
 
+const createRuntimeStream = async (name: string): Promise<string> => {
+  const streamUrl = freshStreamUrl(name)
+  await DurableStream.create({
+    url: streamUrl,
+    contentType: "application/json",
+  })
+  return streamUrl
+}
+
+beforeAll(async () => {
+  await startTestServer()
+})
+
+afterAll(async () => {
+  await stopTestServer()
+})
+
 describe("firegrid-event-streams.RUNTIME_API — Firegrid.eventStream public surface", () => {
   it("Firegrid.eventStream is a function and lives next to handler / subscribers", () => {
     expect(typeof Firegrid.eventStream).toBe("function")
@@ -67,6 +89,10 @@ describe("firegrid-event-streams.RUNTIME_API — Firegrid.eventStream public sur
 
 describe("firegrid-event-streams.RUNTIME_API.1, .3 — materializer dispatches matching envelopes in order, decoded via descriptor.event", () => {
   it("decodes EventStream envelopes whose `stream` matches the descriptor and skips non-matching/malformed records", async () => {
+    const streamUrl = await createRuntimeStream(
+      "firegrid-eventstream-dispatch",
+    )
+
     const program = Effect.gen(function* () {
       const observed = yield* Ref.make<ReadonlyArray<EventStream.Event<typeof Hits>>>([])
       const targetCount = 2
@@ -87,7 +113,8 @@ describe("firegrid-event-streams.RUNTIME_API.1, .3 — materializer dispatches m
       const events = yield* Effect.scoped(
         Effect.gen(function* () {
           const runtime = yield* FiregridRuntime
-          const streamUrl = runtime.streamIdentity.streamUrl
+          expect(runtime.bootMode).toBe("attached")
+          expect(runtime.streamIdentity.streamUrl).toBe(streamUrl)
 
           const matchingA: EventStreamStateRow = makeEventStreamStateRow({
             stream: Hits.name,
@@ -121,8 +148,8 @@ describe("firegrid-event-streams.RUNTIME_API.1, .3 — materializer dispatches m
           return yield* Ref.get(observed)
         }).pipe(
           Effect.provide(
-            FiregridRuntimeBoot.embeddedDev({
-              streamName: "firegrid-eventstream-dispatch",
+            FiregridRuntimeBoot.attached({
+              streamUrl,
               runtime: layer,
             }),
           ),
@@ -142,6 +169,10 @@ describe("firegrid-event-streams.RUNTIME_API.1, .3 — materializer dispatches m
 
 describe("firegrid-event-streams.RUNTIME_API.3 — Scope-bound materializer fiber tears down with the providing Layer's scope", () => {
   it("interrupts the materializer fiber on scope exit without leaking work", async () => {
+    const streamUrl = await createRuntimeStream(
+      "firegrid-eventstream-scope",
+    )
+
     const exit = await Effect.runPromiseExit(
       Effect.scoped(
         Effect.gen(function* () {
@@ -152,8 +183,8 @@ describe("firegrid-event-streams.RUNTIME_API.3 — Scope-bound materializer fibe
           yield* Effect.void
         }).pipe(
           Effect.provide(
-            FiregridRuntimeBoot.embeddedDev({
-              streamName: "firegrid-eventstream-scope",
+            FiregridRuntimeBoot.attached({
+              streamUrl,
               runtime: Firegrid.eventStream(Hits, () => Effect.void),
             }),
           ),

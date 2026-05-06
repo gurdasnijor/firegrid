@@ -10,7 +10,7 @@ import styles from "./styles.module.css"
 // durable-agent-runtime-lab.runtime-lab-inspector.NO_PRIVILEGED_LAB.1
 // durable-agent-runtime-lab.runtime-lab-inspector.NO_PRIVILEGED_LAB.2
 // firegrid-architecture-boundary.DEPENDENCY_GRAPH.4
-// firegrid-runtime-process.DEV_ENV_INJECTION.5
+// firegrid-runtime-process.DEV_ENV_INJECTION.7
 //
 // Lab shell with a typed EventStream workbench and a separate raw
 // diagnostic inspector.
@@ -43,14 +43,12 @@ export function App({ streamUrl }: AppProps) {
           the app-facing Firegrid client.
         </p>
         <p className={styles.note}>
-          Canonical workflow: boot the Firegrid runtime with the lab
-          as a child:{" "}
+          Canonical workflow: run Durable Streams separately and
+          start the lab with an explicit stream URL:{" "}
           <code>
-            firegrid dev -- pnpm --filter @firegrid/lab dev
+            VITE_DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid pnpm dev:lab
           </code>
-          . The runtime injects <code>VITE_DURABLE_STREAMS_URL</code>
-          {" "}so the browser attaches with no manual wiring. Override
-          via <code>?streamUrl=...</code> or{" "}
+          . Override via <code>?streamUrl=...</code> or{" "}
           <code>VITE_DURABLE_STREAMS_URL</code> directly.
         </p>
         <LabEventStreamPanel streamUrl={streamUrl} />

@@ -4,16 +4,13 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
 // firegrid-architecture-boundary.DEPENDENCY_GRAPH.4
-// firegrid-runtime-process.DEV_ENV_INJECTION.5
+// firegrid-runtime-process.DEV_ENV_INJECTION.7
 //
 // The lab does not own a fixed-port default. It reads
-// VITE_DURABLE_STREAMS_URL (canonical Firegrid env var, injected by
-// `firegrid dev -- <child>`) or a `?streamUrl=` query override, and
-// otherwise renders an empty-state pointing at the canonical
-// workflow. This test pins the env-name contract on both sides:
-// the lab reads `VITE_DURABLE_STREAMS_URL`, and the firegrid bin
-// injects the same name into spawned child processes. Either side
-// drifting fails this test loudly.
+// VITE_DURABLE_STREAMS_URL from the Vite process or a `?streamUrl=`
+// query override, and otherwise renders an empty-state pointing at
+// the attached workflow. The runtime binary is attached-only and does
+// not inject browser env into spawned child processes.
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -27,7 +24,7 @@ describe("lab attach: env-name contract with the firegrid runtime", () => {
     expect(main).not.toContain("VITE_SUBSTRATE_STREAM_URL")
   })
 
-  it("packages/runtime/bin/firegrid.ts injects VITE_DURABLE_STREAMS_URL into the child env", () => {
+  it("packages/runtime/bin/firegrid.ts is attached-only and has no dev-server child launcher", () => {
     const bin = readFileSync(
       resolve(
         here,
@@ -42,10 +39,11 @@ describe("lab attach: env-name contract with the firegrid runtime", () => {
       ),
       "utf8",
     )
-    expect(bin).toContain("VITE_DURABLE_STREAMS_URL")
     expect(bin).toContain("DURABLE_STREAMS_URL")
-    // Old SUBSTRATE_STREAM_URL env names must not survive the
-    // cutover.
+    expect(bin).toContain("firegrid has no dev-server launcher subcommands")
+    expect(bin).not.toContain("VITE_DURABLE_STREAMS_URL")
+    expect(bin).not.toContain("Command.make")
+    expect(bin).not.toContain("embeddedDev")
     expect(bin).not.toContain("SUBSTRATE_STREAM_URL")
   })
 })

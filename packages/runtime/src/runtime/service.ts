@@ -9,7 +9,7 @@ import { Context } from "effect"
 // boot plan itself is intentionally NOT reified on this Tag;
 // runtime process configuration lives at the binary process edge.
 
-export type BootMode = "embedded-dev" | "attached"
+export type BootMode = "attached"
 
 export interface FiregridRuntimeStreamIdentity {
   readonly streamUrl: string

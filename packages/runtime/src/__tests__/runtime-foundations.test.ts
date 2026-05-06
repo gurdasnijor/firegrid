@@ -14,8 +14,8 @@ import * as RuntimeSurface from "../index.ts"
 // firegrid-runtime-process.CONFIG_SURFACE.2
 //
 // Foundations for the @firegrid/runtime public root surface. The
-// public surface is intentionally tiny: a single Layer constructor
-// pair, the runtime + runtime-context Tags, and the small Firegrid
+// public surface is intentionally tiny: a single attached Layer
+// constructor, the runtime + runtime-context Tags, and the small Firegrid
 // runtime helper namespace.
 
 describe("firegrid-architecture-boundary.SURFACE_AREA — runtime root exposes a tiny Firegrid surface", () => {
@@ -24,14 +24,11 @@ describe("firegrid-architecture-boundary.SURFACE_AREA — runtime root exposes a
     expect(typeof RuntimeSurface.RuntimeContext).toBe("function")
   })
 
-  it("FiregridRuntimeBoot.{embeddedDev, attached} are the only construction entry points", () => {
-    expect(typeof RuntimeSurface.FiregridRuntimeBoot.embeddedDev).toBe(
-      "function",
-    )
+  it("FiregridRuntimeBoot.attached is the only construction entry point", () => {
     expect(typeof RuntimeSurface.FiregridRuntimeBoot.attached).toBe(
       "function",
     )
-    const allowed = new Set(["attached", "embeddedDev"])
+    const allowed = new Set(["attached"])
     for (const key of Object.keys(RuntimeSurface.FiregridRuntimeBoot)) {
       expect(allowed.has(key)).toBe(true)
     }

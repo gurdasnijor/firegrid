@@ -3,18 +3,17 @@ import { createRoot } from "react-dom/client"
 import { App } from "./lab/App.tsx"
 
 // firegrid-architecture-boundary.DEPENDENCY_GRAPH.4
-// firegrid-runtime-process.DEV_ENV_INJECTION.5
+// firegrid-runtime-process.DEV_ENV_INJECTION.7
 //
 // Browser entrypoint. Vite + React + vanilla CSS modules — no UI
 // framework dependency. Connects to a Durable Streams endpoint
 // resolved in this order:
 //
 //   1. `?streamUrl=...` query parameter
-//   2. `VITE_DURABLE_STREAMS_URL` env var (canonical Firegrid env;
-//      injected by `firegrid dev -- pnpm --filter @firegrid/lab dev`)
+//   2. `VITE_DURABLE_STREAMS_URL` env var owned by the Vite process
 //
 // There is no fixed-port default. If neither source is present the
-// lab renders an empty-state pointing at the canonical workflow.
+// lab renders an empty-state pointing at the attached workflow.
 // The lab does not import the runtime or substrate packages; the
 // only contract with a running runtime is the stream URL.
 
@@ -43,8 +42,8 @@ if (streamUrl === undefined || streamUrl.length === 0) {
       >
         <h1>Firegrid Lab</h1>
         <p>
-          No Durable Streams URL configured. Boot the Firegrid
-          runtime with the lab as a child and re-open this page:
+          No Durable Streams URL configured. Run Durable Streams
+          separately and start Vite with the stream URL:
         </p>
         <pre
           style={{
@@ -55,7 +54,7 @@ if (streamUrl === undefined || streamUrl.length === 0) {
             overflowX: "auto",
           }}
         >
-          firegrid dev -- pnpm --filter @firegrid/lab dev
+          VITE_DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid pnpm dev:lab
         </pre>
         <p>
           Or override directly: pass <code>?streamUrl=...</code> in

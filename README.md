@@ -32,32 +32,25 @@ Acai ACID references in test names or nearby comments.
 
 ## Run the lab
 
-The lab is a read-only Durable Streams inspector. From the repo root,
-run:
+The lab is a read-only Durable Streams inspector. Run Durable Streams
+outside Firegrid, create the stream you want to inspect, then point the
+lab at that stream:
 
 ```sh
-pnpm dev:lab
+durable-streams-server dev
+VITE_DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid pnpm dev:lab
 ```
 
-That uses the local `@firegrid/runtime` package to launch an embedded
-Durable Streams server, injects the resolved URL into Vite as
-`VITE_DURABLE_STREAMS_URL`, and forwards stdio. Open the printed Vite
-URL and the lab attaches with no manual wiring. Ctrl-C tears down both
-the embedded Durable Streams server and the child via the same Effect
-scope.
-
-The equivalent package-script form is:
+The package script only starts Vite:
 
 ```sh
-pnpm --filter @firegrid/runtime run firegrid dev -- pnpm --filter @firegrid/lab dev
+pnpm --filter @firegrid/lab dev
 ```
 
-For attached mode against an existing Durable Streams endpoint,
-set `DURABLE_STREAMS_URL` in the env and run the runtime script with
-no subcommand, or call the runtime constructors directly:
+Run the Firegrid runtime against an existing Durable Streams endpoint
+by setting `DURABLE_STREAMS_URL`:
 
 ```sh
-pnpm --filter @firegrid/runtime run firegrid
 DURABLE_STREAMS_URL=https://… pnpm --filter @firegrid/runtime run firegrid
 ```
 

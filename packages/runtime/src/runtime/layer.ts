@@ -2,9 +2,6 @@ import { Effect, Layer } from "effect"
 import { generateProcessId } from "../boot/identity.ts"
 import {
   attachedResolverLayer,
-  DurableStreamAdminLive,
-  embeddedResolverLayer,
-  EmbeddedDurableStreamsLive,
   RuntimeStreamResolver,
 } from "./internal/stream-resolver.ts"
 import { RuntimeContext } from "./runtime-context.ts"
@@ -23,21 +20,16 @@ import {
 // firegrid-runtime-process.CONFIG_SURFACE.3
 //
 // Single public construction surface for the Firegrid runtime:
-// `FiregridRuntimeBoot.{attached, embeddedDev}`. Both take explicit
-// values and return Effect Layers. There is no boot-plan-from-env
-// helper, no FiregridRuntimeBootPlan public type, no
-// FiregridRuntimeLive public factory — those would only reify
-// ceremony around process configuration that belongs at the binary
-// process edge (bin/firegrid.ts).
+// `FiregridRuntimeBoot.attached`. It takes explicit values and
+// returns an Effect Layer. There is no boot-plan-from-env helper, no
+// FiregridRuntimeBootPlan public type, no FiregridRuntimeLive public
+// factory, and no Firegrid-owned Durable Streams dev server launcher.
 //
-// Internally, attached and embedded-dev are not bespoke runtime
-// implementations. They are different live providers of the same
-// internal `RuntimeStreamResolver` Tag (see
-// `internal/stream-resolver.ts`); the core layer here resolves the
-// stream identity through that Tag, builds the `FiregridRuntime`
-// service, and provides `RuntimeContext` to the optional
-// caller-supplied runtime program. Tests can drive the core via a
-// fake resolver layer (see `runtime-foundations.test.ts`).
+// Internally, the core layer resolves stream identity through the
+// internal `RuntimeStreamResolver` Tag, builds the `FiregridRuntime`
+// service, and provides `RuntimeContext` to the optional caller-supplied
+// runtime program. Tests can drive the core via a fake resolver layer
+// (see `runtime-foundations.test.ts`).
 
 const buildCoreRuntimeLayer = <E, GraphRIn>(
   processIdOverride: string | undefined,
@@ -105,18 +97,6 @@ export interface AttachedRuntimeOptions<
   readonly contentType?: string
 }
 
-export interface EmbeddedDevRuntimeOptions<
-  E = never,
-  GraphRIn = RuntimeContext,
-> {
-  readonly streamName?: string
-  readonly durableStreamsHost?: string
-  readonly durableStreamsPort?: number
-  readonly processId?: string
-  readonly runtime?: Layer.Layer<never, E, GraphRIn>
-  readonly contentType?: string
-}
-
 export const FiregridRuntimeBoot = {
   attached: <E = never, GraphRIn = RuntimeContext>(
     opts: AttachedRuntimeOptions<E, GraphRIn>,
@@ -131,26 +111,6 @@ export const FiregridRuntimeBoot = {
     return Layer.provide(
       core,
       attachedResolverLayer(opts.streamUrl),
-    ) as Layer.Layer<FiregridRuntime, E, Exclude<GraphRIn, RuntimeContext>>
-  },
-
-  embeddedDev: <E = never, GraphRIn = RuntimeContext>(
-    opts: EmbeddedDevRuntimeOptions<E, GraphRIn> = {},
-  ): Layer.Layer<FiregridRuntime, E, Exclude<GraphRIn, RuntimeContext>> => {
-    const { contentType, core } = buildRuntimeCoreFromOptions(opts)
-    const resolver = embeddedResolverLayer({
-      host: opts.durableStreamsHost ?? "127.0.0.1",
-      port: opts.durableStreamsPort ?? 0,
-      streamName: opts.streamName ?? "substrate",
-      contentType,
-    })
-    const infra = Layer.mergeAll(
-      EmbeddedDurableStreamsLive,
-      DurableStreamAdminLive,
-    )
-    return Layer.provide(
-      core,
-      Layer.provide(resolver, infra),
     ) as Layer.Layer<FiregridRuntime, E, Exclude<GraphRIn, RuntimeContext>>
   },
 } as const

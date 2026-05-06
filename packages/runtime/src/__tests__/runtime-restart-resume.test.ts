@@ -14,7 +14,7 @@ import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "../../../../test-support/durable-streams-server.ts"
+} from "./helpers.ts"
 import { Firegrid, FiregridRuntimeBoot } from "../index.ts"
 
 class AppendFailed extends Data.TaggedError("AppendFailed")<{

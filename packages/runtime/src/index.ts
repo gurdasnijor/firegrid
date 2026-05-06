@@ -17,8 +17,8 @@
 // firegrid-runtime-process.CONFIG_SURFACE.2
 //
 // Tiny public surface:
-//   FiregridRuntimeBoot.{attached, embeddedDev}  -> single Layer
-//                                                   constructor pair
+//   FiregridRuntimeBoot.attached                 -> single Layer
+//                                                   constructor
 //   FiregridRuntime, RuntimeContext              -> Tags
 //   Firegrid.subscribers.{timer, scheduledWork}  -> runtime helper
 //                                                   Layers
@@ -35,7 +35,6 @@
 export {
   FiregridRuntimeBoot,
   type AttachedRuntimeOptions,
-  type EmbeddedDevRuntimeOptions,
 } from "./runtime/layer.ts"
 
 export { Firegrid } from "./runtime/firegrid.ts"

@@ -4,7 +4,7 @@ import {
   freshStreamUrl,
   startTestServer,
   stopTestServer,
-} from "../../../../test-support/durable-streams-server.ts"
+} from "./helpers.ts"
 import { FiregridRuntime, FiregridRuntimeBoot } from "../index.ts"
 
 beforeAll(async () => {
@@ -20,8 +20,8 @@ afterAll(async () => {
 // firegrid-runtime-process.BINARIES.6
 //
 // Attached mode joins an existing Durable Streams endpoint (the
-// test uses the repo-level test-support server as a stand-in for
-// any already-running endpoint) and does NOT start or own a remote
+// test uses a package-local integration server as a stand-in for any
+// already-running endpoint) and does NOT start or own a remote
 // process. Attached-mode env at the binary boundary is
 // DURABLE_STREAMS_URL; the library API takes the URL as an
 // explicit value.
