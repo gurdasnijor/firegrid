@@ -21,6 +21,7 @@ Read these first.
 | Effect-quality evidence and remediation ordering for the substrate | `docs/SDD_FIREGRID_EFFECT_QUALITY.md` | `firegrid-architecture-boundary` (`EFFECT_ARTIFACT_GRAPH.*`), `firegrid-remediation-hardening` |
 | Core durable substrate: rows, projections, claim authority, terminalization | `docs/SDD_DURABLE_AGENT_SUBSTRATE.md` | `durable-records-and-projections`, `awakeables-and-runs`, `effect-native-api`, `semantic-producer`, `ready-work-projection`, `claim-and-operator-authority`, `durable-waits-and-scheduling`, `implementation-sequencing` |
 | Client EventStream and state-producer surface | `docs/SDD_CLIENT_EVENT_PLANES_AND_STATE_PRODUCERS.md` | `client-event-plane-registration`, `firegrid-event-streams` |
+| Firepixel foundation: public EventPlane boundary for app-owned stateful row families | `docs/SDD_FIREGRID_FIREPIXEL_FOUNDATION.md` | `client-event-plane-registration`, `firegrid-runtime-process`, `run-wait-primitives` |
 | RunWait primitives: sleep, wait-for, scheduled intent, and projection-match triggers | `docs/SDD_CHOREOGRAPHY_FACADE.md` | `run-wait-primitives`, `choreography-facade`, `ergonomic-facade` |
 | Runtime integration lab and adapter validation | `docs/SDD_DURABLE_AGENT_RUNTIME_LAB.md` | `features/durable-agent-runtime-lab/*.feature.yaml` |
 | Runtime CLI scenario validation (next-wave dispatch plan F1A–F1E) | `docs/SDD_FIREGRID_RUNTIME_CLI_VALIDATION.md` | `firegrid-operation-messaging`, `firegrid-runtime-process`, `launchable-substrate-host`, `durable-waits-and-scheduling`, `firegrid-event-streams` |

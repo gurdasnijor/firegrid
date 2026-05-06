@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./descriptors": "./src/descriptors/index.ts",
+    "./event-plane": "./src/event-plane/index.ts",
     "./id-gen": "./src/id-gen.ts",
     "./kernel": "./src/kernel/index.ts"
   },

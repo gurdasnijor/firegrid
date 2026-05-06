@@ -10,6 +10,7 @@ components:
       2: Event plane declarations use Effect Schema as the TypeScript/runtime-validation source of truth and Standard Schema only for interop with Durable Streams State.
       3: Event plane declarations may be provided through Effect Layers or imported module values and do not require a mutable global registry.
       4: The substrate does not include Fireline, Firepixel, ACP, MCP, Claude, Codex, provider, sandbox, prompt, session, or tool-call words in its native row families.
+      5: EventPlane is available through a documented non-kernel substrate import path so app-owned runtime entrypoints can compose plane Producer and Projection services without importing `@firegrid/substrate/kernel` or raw Durable Streams APIs.
 
   PRODUCER_API:
     requirements:
@@ -40,3 +41,4 @@ constraints:
       3: The first implementation proves one non-substrate domain event plane with tests, but does not implement ACP itself.
       4: The API remains small enough that Fireline and Firepixel can define separate planes without depending on each other's row vocabulary.
       5: Firegrid scenario validation may define app-like EventStream descriptors, but Firegrid substrate rows remain product-neutral and do not adopt higher-layer vocabulary as native row families.
+      6: EventPlane is the preferred Firegrid surface for stateful higher-layer row families with projections; EventStream remains the lighter surface for descriptor-scoped event emission and replay when no caller-owned state schema is needed.
