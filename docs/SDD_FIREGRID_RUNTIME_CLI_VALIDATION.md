@@ -1,172 +1,95 @@
-# SDD: Firegrid Runtime CLI Validation
+# SDD: Firegrid Runtime CLI Scenario Validation
 
 Status: Draft
 Product: Firegrid
-Related: `firegrid-operation-messaging`, `firegrid-runtime-process`, `launchable-substrate-host`, `durable-waits-and-scheduling`
+Related: `firegrid-operation-messaging`, `firegrid-runtime-process`, `launchable-substrate-host`, `durable-waits-and-scheduling`, `firegrid-event-streams`
 
 ## Summary
 
-Before investing more in the app-facing client, Firegrid should prove runtime
-behavior at the durable stream boundary.
+Firegrid already has most of the machinery needed for runtime validation:
 
-The near-term validation path is:
+1. Durable Streams has a CLI for creating, writing, reading, and following JSON
+   streams.
+2. Firegrid has Effect Schema types and protocol builders for durable rows,
+   operation envelopes, EventStream envelopes, runs, completions, and
+   projections.
+3. Firegrid runtime can attach to an existing stream and run handler/subscriber
+   Layers.
+4. Firegrid has projection/read-model code that can rebuild or observe durable
+   state.
+
+The missing piece is a small set of concrete scenarios that prove these pieces
+work together from the durable stream boundary.
+
+This SDD does not propose a new client API, fixture generator, CLI wrapper,
+embedded dev server, or runtime control plane. It defines scenario validation:
+write schema-valid rows with the Durable Streams CLI, run the Firegrid runtime,
+and inspect the resulting durable state.
+
+## Validation Boundary
+
+The scenario boundary is the durable stream itself:
 
 ```txt
-Durable Streams CLI creates/writes a JSON stream
-Firegrid runtime attaches to that existing stream
-runtime handlers/subscribers advance durable rows
-Durable Streams CLI reads the resulting stream
+Durable Streams CLI writes schema-valid Firegrid rows
+Firegrid runtime attaches to the existing stream
+runtime handlers/subscribers advance durable state
+Durable Streams CLI or Firegrid read models inspect the result
 ```
 
-This keeps the next feature wave focused on runtime semantics rather than SDK
-ergonomics. The Firegrid client remains useful later, but it is not required to
-prove that the runtime can consume durable operation rows and append the correct
-execution facts.
+The CLI writes JSON. Firegrid owns how that JSON is interpreted through Effect
+Schema decoding and protocol/read-model code.
 
-## External CLI Boundary
-
-The Durable Streams CLI is the external tool for local stream setup and raw row
-inspection. It can create JSON streams, write JSON values, and follow streams
-from an existing Durable Streams server.
-
-The expected local shape is:
+The expected local shell shape is:
 
 ```sh
 durable-streams-server dev
 
 export STREAM_URL=http://localhost:4437/v1/stream
 durable-stream create firegrid --json
-durable-stream write firegrid '<canonical Firegrid row JSON>' --json
+durable-stream write firegrid '<schema-valid scenario row JSON>' --json
 durable-stream read firegrid
 ```
 
-The Firegrid runtime attaches to the concrete stream URL:
+The Firegrid runtime attaches to the same stream:
 
 ```sh
 DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid \
   pnpm --filter @firegrid/runtime run firegrid
 ```
 
-Firegrid does not wrap or replace this CLI. Firegrid also does not restart a
-Durable Streams server or spawn child processes.
+Firegrid does not wrap the Durable Streams CLI. Firegrid does not start the
+Durable Streams server. Firegrid does not spawn child dev processes.
 
-## What We Are Building
+## What Is Missing
 
-### 1. Runtime Scenario Entrypoints
+The repo is not missing row schemas, protocol decoders, runtime Layers, or
+projection machinery. It is missing scenario-level validation that answers:
 
-Add a small runtime-side scenario process or package-local example that installs
-known operation handlers through normal `@firegrid/runtime` Layer APIs.
+1. Which exact rows should a developer write to exercise runtime behavior?
+2. Which runtime Layer should be running for that scenario?
+3. Which projection/read-model result proves success?
+4. Which scenario is the next one to run after the basic Echo path?
 
-The first scenario should be intentionally boring:
+## Scenario Set
 
-```txt
-Operation: Echo
-Input:  { message: string }
-Output: { message: string, length: number }
-```
+### Scenario 1: Echo Operation
 
-It should prove:
+Purpose: prove the smallest operation-message path.
 
-1. The runtime attaches to an existing stream URL.
-2. The runtime handler receives decoded operation input.
-3. The handler runs with `CurrentWorkContext`.
-4. The handler appends the terminal run result through existing substrate
-   authority.
+Input:
 
-This scenario is runtime code, not client code. It must not import
-`@firegrid/client`.
+1. A schema-valid operation-started row for an `Echo` operation.
+2. A runtime Layer that installs an `Echo` handler.
 
-### 2. Schema-Owned CLI Row Examples
+Expected result:
 
-Raw CLI use still needs valid Firegrid row JSON, but that does not require a new
-developer command or fixture subsystem. The repo already owns Effect Schema
-definitions and protocol builders for durable rows and operation envelopes.
+1. Runtime decodes the operation input through the operation descriptor schema.
+2. Handler receives `CurrentWorkContext`.
+3. Runtime appends the terminal run result.
+4. Rebuilt projection shows the run completed with `{ message, length }`.
 
-The validation plan should use those existing schemas directly:
-
-1. Runtime tests construct rows through existing protocol builders and validate
-   them with Effect Schema encode/decode APIs.
-2. Human-facing docs show the resulting minimal JSON shape for the Echo
-   scenario.
-3. Any example JSON checked into docs must be covered by a decode test against
-   the same Effect Schema the runtime uses.
-
-The manual CLI workflow remains simple:
-
-```sh
-durable-stream write firegrid '<schema-validated Echo operation row JSON>' --json
-```
-
-The important implementation rule is that decoding happens at the runtime
-boundary through Effect Schema, not through ad hoc shape checks or a separate
-developer API.
-
-### 3. Runtime CLI-Equivalent Integration Tests
-
-Add tests that exercise the same path programmatically:
-
-1. Start a real Durable Streams test server inside the relevant package test.
-2. Create a JSON stream.
-3. Append a schema-validated operation-started row built from existing protocol
-   builders.
-4. Start the runtime with the scenario handler Layer.
-5. Read/rebuild until the operation run terminalizes.
-6. Assert the terminal row result.
-
-These tests must not use `@firegrid/client`. They should target runtime behavior
-at the stream boundary.
-
-### 4. Scheduled Operation Row Validation
-
-Once the basic operation path is green, add delayed and absolute scheduled
-operation row examples that lower to existing scheduled-work primitives.
-
-This proves `firegrid-operation-messaging.SCHEDULED_MESSAGES.1-.3` without
-adding a second scheduler or requiring the client SDK.
-
-### 5. Read-Only Lab Observation
-
-The lab may observe the stream and projected result after the runtime advances
-the row. It should not start the operation in this wave.
-
-Lab involvement is limited to proving that attached, read-only observation can
-inspect the same stream that the CLI and runtime use.
-
-## Non-Goals
-
-1. Do not prioritize `@firegrid/client` `send`, `call`, `result`, or `observe`
-   ergonomics in this wave.
-2. Do not add a Firegrid wrapper around the Durable Streams CLI.
-3. Do not reintroduce `firegrid dev -- ...`, embedded dev-server launchers, or
-   child process environment injection.
-4. Do not add HTTP command endpoints or a mutable runtime control plane.
-5. Do not create product-specific durable row families for Fireline, Firepixel,
-   ACP, MCP, sessions, prompts, tools, models, or transports.
-6. Do not create shared `test-support` folders.
-
-## Acceptance Criteria
-
-The wave is done when a developer can:
-
-1. Start Durable Streams externally.
-2. Create a JSON stream with the Durable Streams CLI.
-3. Write a schema-validated Firegrid operation row with the Durable Streams CLI.
-4. Run a Firegrid runtime scenario against the existing stream.
-5. Read the stream or rebuild projections and see the operation terminalized
-   with the expected result.
-
-The CI test equivalent must prove the same behavior without using the Firegrid
-client package.
-
-## Implementation Slices
-
-### F1A Runtime Scenario Entrypoint
-
-Owns:
-
-- A minimal runtime scenario entrypoint or example process.
-- Echo operation descriptor and handler Layer.
-- Runtime docs for attached execution against an existing stream.
+This scenario proves the runtime handler path without using `@firegrid/client`.
 
 Relevant ACIDs:
 
@@ -178,59 +101,56 @@ Relevant ACIDs:
 - `firegrid-operation-messaging.RUNTIME_HANDLERS.2`
 - `firegrid-operation-messaging.RUNTIME_HANDLERS.3`
 - `firegrid-operation-messaging.RUNTIME_HANDLERS.4`
-- `firegrid-runtime-process.BINARIES.3`
-- `firegrid-runtime-process.BINARIES.7`
-- `firegrid-runtime-process.BINARIES.8`
 
-### F1B Schema-Decoded CLI Row Examples
+### Scenario 2: waitFor Projection Match
 
-Owns:
+Purpose: prove durable suspension through a caller-owned EventStream and a
+projection-match completion.
 
-- Minimal Echo operation row JSON examples for `durable-stream write`.
-- Tests proving those examples decode through the existing Effect Schema /
-  protocol boundary.
-- Runtime boundary code cleanup if any operation-row path still relies on ad
-  hoc checks instead of schema decoding.
+Input:
 
-Relevant ACIDs:
+1. A schema-valid operation-started row for an operation whose handler calls
+   `waitFor`.
+2. A schema-valid EventStream row that should satisfy the projection predicate.
+3. A runtime Layer with the operation handler and projection-match subscriber.
 
-- `durable-records-and-projections.SCHEMA_LAYOUT.1`
-- `durable-records-and-projections.SCHEMA_LAYOUT.2`
-- `durable-records-and-projections.SUBSTRATE_SCOPE.6`
-- `durable-records-and-projections.SUBSTRATE_SCOPE.7`
-- `firegrid-operation-messaging.OPERATIONS.1`
-- `firegrid-operation-messaging.OPERATIONS.2`
-- `firegrid-operation-messaging.OPERATIONS.4`
-- `firegrid-operation-messaging.APP_BOUNDARY.1`
-- `firegrid-operation-messaging.APP_BOUNDARY.2`
+Expected result:
 
-### F1C Runtime CLI-Equivalent Integration
-
-Owns:
-
-- End-to-end runtime tests that append schema-decoded rows directly to a real
-  Durable Streams stream.
-- Assertions over terminalized run state/result.
-- No dependency on `@firegrid/client`.
+1. The operation blocks on a durable completion.
+2. The EventStream row is not treated as a substrate-native row family.
+3. Projection-match subscriber resolves the completion when the predicate
+   becomes true.
+4. Runtime resumes or terminalizes the run according to existing run/completion
+   rules.
+5. Rebuilt projection proves the run no longer remains stuck in blocked state.
 
 Relevant ACIDs:
 
-- `firegrid-operation-messaging.RUNTIME_HANDLERS.1`
-- `firegrid-operation-messaging.RUNTIME_HANDLERS.2`
-- `firegrid-operation-messaging.RUNTIME_HANDLERS.3`
-- `firegrid-operation-messaging.RUNTIME_HANDLERS.4`
-- `claim-and-operator-authority.CLAIM_BEFORE_INVOKE.1`
-- `claim-and-operator-authority.TERMINAL_AUTHORITY.1`
-- `awakeables-and-runs.RUN_TRANSITIONS.1`
-- `awakeables-and-runs.RUN_TRANSITIONS.7`
+- `durable-waits-and-scheduling.WAIT_FOR.1`
+- `durable-waits-and-scheduling.WAIT_FOR.6`
+- `durable-waits-and-scheduling.WAIT_FOR.7`
+- `durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.1`
+- `durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.4`
+- `firegrid-event-streams.SCHEMA_OWNERSHIP.3`
+- `launchable-substrate-host.SCENARIOS.3`
 
-### F1D Scheduled Operation Row Examples
+### Scenario 3: scheduleAt / Scheduled Work
 
-Owns:
+Purpose: prove scheduled operation or scheduled work behavior without adding a
+second scheduler.
 
-- Delayed and absolute scheduled operation row examples.
-- Runtime/subscriber proof that scheduled operation messages lower to existing
-  scheduled-work primitives.
+Input:
+
+1. A schema-valid row that creates scheduled work or an operation lowering to
+   scheduled work.
+2. Runtime scheduled-work subscriber Layer.
+
+Expected result:
+
+1. The row lowers to the existing scheduled-work completion semantics.
+2. Nothing resolves before the due time.
+3. Runtime/subscriber resolves the completion after the due time.
+4. Rebuilt projection shows ready/completed state according to existing rules.
 
 Relevant ACIDs:
 
@@ -241,14 +161,25 @@ Relevant ACIDs:
 - `durable-waits-and-scheduling.SCHEDULE_WORK.6`
 - `durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.1`
 - `durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.4`
+- `launchable-substrate-host.SCENARIOS.2`
 
-### F1E Read-Only Lab Observation
+### Scenario 4: Projection Surface / Read Model Inspection
 
-Owns:
+Purpose: prove that users can inspect scenario progress through read models
+rather than by understanding every raw durable row.
 
-- Lab docs or small UI polish showing how to point the lab at the same attached
-  stream.
-- No operation-starting controls in this wave.
+Input:
+
+1. Any of the earlier scenario streams.
+2. Firegrid read-model/projection APIs.
+3. Optional lab read-only view pointed at the same stream.
+
+Expected result:
+
+1. Rebuild/read-model APIs expose run/completion/projection state needed to
+   understand scenario progress.
+2. Lab remains read-only in this wave.
+3. No privileged host/runtime writer API is introduced for scenario execution.
 
 Relevant ACIDs:
 
@@ -259,12 +190,76 @@ Relevant ACIDs:
 - `launchable-substrate-host.NO_CONTROL_PLANE.4`
 - `launchable-substrate-host.NO_CONTROL_PLANE.5`
 
-## Handoff Notes
+### Scenario 5: Claim-Before-Side-Effect
 
-The first dispatch should be F1A + F1B in parallel after W4D lands. F1C should
-start once F1A exposes the runtime scenario Layer and F1B proves the example
-JSON decodes through the existing Effect Schema boundary. F1D and F1E can
-follow after the basic Echo path is working.
+Purpose: prove once-only side-effect behavior under competing runtime workers.
 
-The client SDK should stay out of the critical path until the runtime and
-durable-row behavior is proven with the external CLI.
+Input:
+
+1. A schema-valid started run for a side-effect-shaped operation.
+2. Two runtime/operator participants competing for the same work.
+
+Expected result:
+
+1. Competing claim attempts are recorded.
+2. Only the first valid claim wins.
+3. Only the winning owner terminalizes the run.
+4. Rebuilt projection proves a single terminal outcome.
+
+Relevant ACIDs:
+
+- `claim-and-operator-authority.CLAIM_BEFORE_INVOKE.1`
+- `claim-and-operator-authority.CLAIM_AUTHORITY.1`
+- `claim-and-operator-authority.TERMINAL_AUTHORITY.1`
+- `launchable-substrate-host.SCENARIOS.4`
+
+## Implementation Shape
+
+The work is not to build fixture infrastructure. The work is to add scenario
+validation around existing APIs.
+
+Each scenario should include:
+
+1. A short Markdown section with the Durable Streams CLI commands and the JSON
+   row shape for manual execution.
+2. A test that constructs or decodes the same row through existing Effect Schema
+   and protocol builders.
+3. A runtime-side scenario Layer when the scenario needs a handler/subscriber
+   graph.
+4. Assertions over read models/projections, not over incidental raw row ordering
+   unless row ordering is the behavior under test.
+
+If a scenario needs helper code, keep it package-local and scenario-specific.
+Do not create a shared `test-support` folder and do not create a new Firegrid
+CLI wrapper.
+
+## Non-Goals
+
+1. Do not prioritize app-facing client ergonomics in this wave.
+2. Do not build a fixture generator or a Firegrid CLI wrapper.
+3. Do not reintroduce `firegrid dev -- ...`, embedded dev-server launchers, or
+   child process environment injection.
+4. Do not add HTTP command endpoints or a mutable runtime control plane.
+5. Do not create product-specific durable row families for Fireline, Firepixel,
+   ACP, MCP, sessions, prompts, tools, models, or transports.
+6. Do not create shared `test-support` folders.
+
+## Acceptance Criteria
+
+The wave is done when a developer can run at least the Echo and waitFor
+scenarios from the Durable Streams CLI against an attached Firegrid runtime and
+can verify the result through Firegrid read models or the read-only lab.
+
+CI should include programmatic equivalents for each scenario using the same
+schema/protocol boundary as the documented JSON examples.
+
+## Dispatch Order
+
+1. F1A: Echo operation scenario validation.
+2. F1B: waitFor projection-match scenario validation.
+3. F1C: scheduled work / scheduleAt scenario validation.
+4. F1D: projection surface and read-only lab observation.
+5. F1E: claim-before-side-effect scenario validation.
+
+The first two scenarios are the critical path. They prove runtime handling and
+durable suspension before client SDK work resumes.
