@@ -1,5 +1,8 @@
 import { Effect } from "effect"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import * as EventPlanePublic from "../event-plane/index.ts"
 import * as SubstrateRoot from "../index.ts"
 import * as SubstrateKernel from "../kernel/index.ts"
 import * as ProjectionCompat from "../projection.ts"
@@ -99,6 +102,47 @@ describe("firegrid-remediation-hardening.PUBLIC_SURFACES — substrate root is c
       "streamUrl",
     ]) {
       expect(methodNames).not.toContain(forbidden)
+    }
+  })
+})
+
+describe("client-event-plane-registration.EVENT_PLANE_DEFINITION.5 — EventPlane public subpath", () => {
+  it("exports EventPlane through @firegrid/substrate/event-plane without bloating the curated root", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(import.meta.dirname, "../../package.json"), "utf8"),
+    ) as { readonly exports?: Record<string, string> }
+
+    expect(packageJson.exports?.["./event-plane"]).toBe(
+      "./src/event-plane/index.ts",
+    )
+    expect("EventPlane" in SubstrateRoot).toBe(false)
+    expect(typeof EventPlanePublic.EventPlane.define).toBe("function")
+    expect(typeof EventPlanePublic.EventPlane.layer).toBe("function")
+  })
+
+  it("client-event-plane-registration.BOUNDARY.6 — EventPlane exposes stateful plane services while EventStream remains the root lightweight descriptor surface", () => {
+    const eventPlaneSymbols = Object.keys(EventPlanePublic)
+    expect(eventPlaneSymbols).toEqual(
+      expect.arrayContaining([
+        "EventPlane",
+        "PlaneProducerError",
+        "PlaneProducerUnknownTypeError",
+        "PlaneProducerValidationError",
+        "PlaneProjectionReadError",
+        "PlaneProjectionWaitTimeout",
+      ]),
+    )
+    expect(SubstrateRoot.EventStream).toBeDefined()
+    for (const forbidden of [
+      "DurableStream",
+      "appendChange",
+      "acquirePlaneDb",
+      "buildPlaneProjectionFromDb",
+      "collectionsByType",
+      "makePlaneProducer",
+      "substrateState",
+    ]) {
+      expect(eventPlaneSymbols).not.toContain(forbidden)
     }
   })
 })
