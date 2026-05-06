@@ -13,6 +13,8 @@ components:
       5: "`RunWait.awakeable(name)` waits for a work-scoped externally resolved durable completion without exposing raw completion ids to app handlers."
       6: "`RunWait.layer({ streamUrl })` provides the production Layer for app-owned runtime entrypoints without requiring app code to import `@firegrid/substrate/kernel`."
       7: The `RunWait` service methods preserve Firegrid's existing durable row shapes, completion kinds, ready-work derivation, and claim-and-operator terminal authority.
+      8: "`RunWait.for(trigger, options?)` accepts an optional `resultSchema` Effect Schema in `options`; on resume from a resolved projection-match completion the matched value is read from the completion's `result.matchedValue` field, decoded through `resultSchema`, and returned to the handler. Without `resultSchema` the resume returns `void` so happy-path callers stay ergonomic."
+      9: "Decode failures during `RunWait.for` resume (for example, a `resultSchema` parse error against the durable `matchedValue`) surface as choreography-internal defects; they do not silently swallow the resume, do not re-author a duplicate completion, and do not corrupt the run's terminal state."
 
   VOCABULARY:
     requirements:
