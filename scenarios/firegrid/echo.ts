@@ -3,12 +3,12 @@ import {
   Operation,
 } from "@firegrid/substrate/descriptors"
 import {
-  OPERATION_ENVELOPE_TAG,
-  OperationEnvelopeSchema,
-  RunValue,
-  startRun,
-} from "@firegrid/substrate/kernel"
-import { Effect, Schema } from "effect"
+  defineScenarioRows,
+  makeOperationStartedRunRow,
+  scenarioRowsFromIterable,
+  writeScenarioRowsToNdjson,
+} from "./scenario.ts"
+import { Schema } from "effect"
 import { fileURLToPath } from "node:url"
 
 export const EchoOperation = Operation.define({
@@ -36,34 +36,24 @@ export const makeEchoScenarioRows = (input: {
   // firegrid-operation-messaging.OPERATIONS.1
   // firegrid-operation-messaging.OPERATIONS.2
   // firegrid-operation-messaging.OPERATIONS.4
-  const encodedInput = Schema.encodeSync(EchoOperation.input)({ message })
-  const operationEnvelope = Schema.encodeSync(OperationEnvelopeSchema)({
-    _envelope: OPERATION_ENVELOPE_TAG,
-    operation: EchoOperation.name,
-    payload: encodedInput,
-  })
-  const runValue = Schema.encodeSync(RunValue)({
-    runId,
-    state: "started",
-    data: operationEnvelope,
-  })
-
   return [
-    Effect.runSync(startRun({
-      runId: runValue.runId,
-      data: runValue.data,
-    })),
+    makeOperationStartedRunRow({
+      runId,
+      operation: EchoOperation,
+      input: { message },
+    }),
   ] as const
 }
 
+export const echoScenario = defineScenarioRows({
+  name: "echo",
+  rows: () => scenarioRowsFromIterable(makeEchoScenarioRows()),
+})
+
 export const writeEchoScenarioRows = (
-  write: (chunk: string) => void = (chunk) => {
-    process.stdout.write(chunk)
-  },
+  write?: (chunk: string) => void,
 ) => {
-  for (const row of makeEchoScenarioRows()) {
-    write(`${JSON.stringify(row)}\n`)
-  }
+  writeScenarioRowsToNdjson(echoScenario, write)
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

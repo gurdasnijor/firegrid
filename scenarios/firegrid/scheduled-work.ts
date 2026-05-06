@@ -3,11 +3,16 @@ import {
   Operation,
 } from "@firegrid/substrate/descriptors"
 import {
-  createPendingCompletion,
   ScheduledWorkCompletionData,
 } from "@firegrid/substrate/kernel"
-import { Effect, Schema } from "effect"
+import { Schema } from "effect"
 import { fileURLToPath } from "node:url"
+import {
+  defineScenarioRows,
+  makePendingCompletionScenarioRow,
+  scenarioRowsFromIterable,
+  writeScenarioRowsToNdjson,
+} from "./scenario.ts"
 
 export const ScheduledReminderInput = Schema.Struct({
   reminderId: Schema.String,
@@ -60,23 +65,24 @@ export const makeScheduledWorkScenarioRows = (input: {
   })
 
   return [
-    Effect.runSync(createPendingCompletion({
+    makePendingCompletionScenarioRow({
       completionId,
       workId,
       kind: "scheduled_work",
       data,
-    })),
+    }),
   ] as const
 }
 
+export const scheduledWorkScenario = defineScenarioRows({
+  name: "scheduled-work",
+  rows: () => scenarioRowsFromIterable(makeScheduledWorkScenarioRows()),
+})
+
 export const writeScheduledWorkScenarioRows = (
-  write: (chunk: string) => void = (chunk) => {
-    process.stdout.write(chunk)
-  },
+  write?: (chunk: string) => void,
 ) => {
-  for (const row of makeScheduledWorkScenarioRows()) {
-    write(`${JSON.stringify(row)}\n`)
-  }
+  writeScenarioRowsToNdjson(scheduledWorkScenario, write)
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
