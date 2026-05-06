@@ -17,7 +17,7 @@ components:
       1: Durable completion and durable run transition legality is defined by declarative state machine definitions rather than scattered conditional checks.
       2: State-machine transition builders preserve the existing durable row shapes and first-valid-terminal-wins rebuild semantics.
       3: Expected illegal completion and run transitions are recoverable typed failures at service boundaries rather than uncaught synchronous exceptions.
-      4: State-machine row builders live in a canonical schema or schema-adjacent module and are not exposed as app-facing APIs.
+      4: State-machine row builders live in a canonical protocol module and are not exposed as app-facing APIs.
       5: Run and completion first-valid-terminal-wins folds share one generic implementation.
 
   EFFECT_CONSISTENCY:

@@ -1,20 +1,20 @@
 import { DurableStream } from "@durable-streams/client"
 import { Data, Effect, Either } from "effect"
-import { appendChange } from "../descriptors/append.ts"
 import { attemptClaim } from "./claims.ts"
+import { appendChange } from "../protocol/descriptors/append.ts"
 import {
   ClaimMissingCursorError,
   ClaimStreamError,
   ClaimWinnerMissingError,
   firstValidClaim,
 } from "./operator-errors.ts"
-import type { ClaimAttemptValue, RunState, RunValue } from "../schema/rows.ts"
+import type { ClaimAttemptValue, RunState, RunValue } from "../protocol/schema/rows.ts"
 import type { ReadyWorkItem } from "../schema/ready-work.ts"
 import { readAuthoritativeRun as readAuthoritativeRunRaw } from "../retained-records.ts"
 import {
   completeRun,
   failRun,
-} from "../schema/state-machine.ts"
+} from "../protocol/state-machine.ts"
 
 // Re-export of the claim-fold function and error classes for callers that
 // imported them from operator.ts before the shared-helper extraction.

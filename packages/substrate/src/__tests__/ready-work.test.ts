@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import type {
   CompletionValue,
   RunValue,
-} from "../schema/rows.ts"
+} from "../protocol/schema/rows.ts"
 import { FOLD_VERSION, type ProjectionSnapshot } from "../projection.ts"
 import { deriveReadyWork } from "../projection/ready-work.ts"
 import {

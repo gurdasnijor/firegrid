@@ -1,5 +1,10 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import * as compatDescriptors from "../descriptors/index.ts"
+import { appendChange as protocolAppendChange } from "../protocol/descriptors/append.ts"
+import { decodeAtBoundary as protocolDecodeAtBoundary } from "../protocol/descriptors/codec.ts"
+import { EventStream as ProtocolEventStream } from "../protocol/descriptors/event-stream.ts"
+import { Operation as ProtocolOperation } from "../protocol/descriptors/operation.ts"
 import {
   EventStream,
   EVENT_STREAM_ENVELOPE_TAG,
@@ -29,6 +34,15 @@ import {
 // behavior, since descriptors carry no runtime semantics.
 
 describe("Operation.define — descriptor shape", () => {
+  it("durable-records-and-projections.SCHEMA_LAYOUT.2 — protocol descriptors are canonical while descriptors/index.ts remains a compatibility re-export", () => {
+    expect(compatDescriptors.Operation).toBe(ProtocolOperation)
+    expect(compatDescriptors.EventStream).toBe(ProtocolEventStream)
+    expect(compatDescriptors.decodeAtBoundary).toBe(
+      protocolDecodeAtBoundary,
+    )
+    expect(compatDescriptors.appendChange).toBe(protocolAppendChange)
+  })
+
   it("returns a frozen descriptor with name + schemas + _tag", () => {
     const Sleep = Operation.define({
       name: "Sleep",

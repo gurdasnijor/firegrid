@@ -2,7 +2,7 @@ import { Context, Data, Effect, Layer, Schema } from "effect"
 import {
   ProjectionMatchTriggerSchema,
   type ProjectionMatchTriggerValue,
-} from "../schema/rows.ts"
+} from "../protocol/schema/rows.ts"
 
 // choreography-facade.TRIGGERS.1
 // choreography-facade.TRIGGERS.2

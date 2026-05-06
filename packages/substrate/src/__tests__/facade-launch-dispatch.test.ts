@@ -31,7 +31,7 @@ import {
   resolveCompletion,
   startRun,
 } from "./state-machine-sync.ts"
-import type { CompletionValue, RunValue } from "../schema/rows.ts"
+import type { CompletionValue, RunValue } from "../protocol/schema/rows.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,

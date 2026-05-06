@@ -1,14 +1,12 @@
 // firegrid-architecture-boundary.SURFACE_AREA.1
 // firegrid-operation-messaging.OPERATIONS.4
 // firegrid-event-streams.SCHEMA_OWNERSHIP.3
+// durable-records-and-projections.SCHEMA_LAYOUT.2
 //
-// Shared-kernel descriptor namespaces. These modules depend only on
-// schema/descriptor libraries and @durable-streams/state Event Helpers;
-// they are safe to import from both clients and runtimes. They do not
-// touch substrate internals; a future extraction to @firegrid/core is
-// mechanical.
+// Compatibility descriptor barrel. Canonical protocol descriptors and codecs
+// live under protocol/descriptors.
 
-export * from "./operation.ts"
-export * from "./event-stream.ts"
-export * from "./append.ts"
-export * from "./codec.ts"
+export * from "../protocol/descriptors/operation.ts"
+export * from "../protocol/descriptors/event-stream.ts"
+export * from "../protocol/descriptors/append.ts"
+export * from "../protocol/descriptors/codec.ts"

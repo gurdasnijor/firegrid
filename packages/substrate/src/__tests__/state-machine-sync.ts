@@ -3,7 +3,7 @@ import { Effect, Either } from "effect"
 import type {
   CompletionValue,
   RunValue,
-} from "../schema/rows.ts"
+} from "../protocol/schema/rows.ts"
 import {
   blockRun as blockRunEffect,
   cancelCompletion as cancelCompletionEffect,
@@ -15,7 +15,7 @@ import {
   resolveCompletion as resolveCompletionEffect,
   startRun as startRunEffect,
   type CreatePendingCompletionInput,
-} from "../schema/state-machine.ts"
+} from "../protocol/state-machine.ts"
 
 export {
   completionTransitionMachine,
@@ -30,7 +30,7 @@ export {
   isTerminalRun,
   runTransitionMachine,
   type CreatePendingCompletionInput,
-} from "../schema/state-machine.ts"
+} from "../protocol/state-machine.ts"
 
 const runSyncAtTestBoundary = <A, E extends Error>(
   effect: Effect.Effect<A, E>,

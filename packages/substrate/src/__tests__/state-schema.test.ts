@@ -1,5 +1,6 @@
 import { Effect, Either, Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import * as compatSchema from "../schema/index.ts"
 import {
   ClaimAttemptRowType,
   CompletionRowType,
@@ -12,10 +13,20 @@ import {
   decodeCompletionData,
   decodeProjectionMatchCompletionData,
   type RunValue,
-} from "../schema/rows.ts"
-import { substrateState } from "../schema/state.ts"
+} from "../protocol/schema/rows.ts"
+import * as protocolRows from "../protocol/schema/rows.ts"
+import {
+  substrateState,
+  substrateState as protocolSubstrateState,
+} from "../protocol/schema/state.ts"
 
 describe("durable-records-and-projections.SUBSTRATE_SCOPE", () => {
+  it("durable-records-and-projections.SCHEMA_LAYOUT.1 — protocol schemas are canonical while schema/index.ts remains a compatibility re-export", () => {
+    expect(compatSchema.RunValue).toBe(protocolRows.RunValue)
+    expect(compatSchema.CompletionValue).toBe(protocolRows.CompletionValue)
+    expect(compatSchema.substrateState).toBe(protocolSubstrateState)
+  })
+
   it("durable-records-and-projections.SUBSTRATE_SCOPE.6 — canonical substrate state schema declares row type and primary key per family", () => {
     expect(substrateState.runs.type).toBe(RunRowType)
     expect(substrateState.runs.primaryKey).toBe("runId")

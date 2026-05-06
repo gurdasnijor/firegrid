@@ -9,14 +9,14 @@ import {
   processReadyWorkItem,
 } from "../execution/operator.ts"
 import { deriveReadyWork } from "../projection/ready-work.ts"
-import type { ClaimAttemptValue, CompletionValue, RunValue } from "../schema/rows.ts"
+import type { ClaimAttemptValue, CompletionValue, RunValue } from "../protocol/schema/rows.ts"
 import {
   blockRun,
   createPendingCompletion,
   resolveCompletion,
   startRun,
 } from "./state-machine-sync.ts"
-import { substrateState } from "../schema/state.ts"
+import { substrateState } from "../protocol/schema/state.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,

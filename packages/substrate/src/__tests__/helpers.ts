@@ -6,9 +6,9 @@ import type {
   CompletionValue,
   RunValue,
   TraceValue,
-} from "../schema/rows.ts"
-import { TraceRowType } from "../schema/rows.ts"
-import { substrateState } from "../schema/state.ts"
+} from "../protocol/schema/rows.ts"
+import { TraceRowType } from "../protocol/schema/rows.ts"
+import { substrateState } from "../protocol/schema/state.ts"
 
 let server: DurableStreamTestServer | undefined
 let counter = 0
