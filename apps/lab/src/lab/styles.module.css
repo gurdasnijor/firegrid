@@ -192,6 +192,13 @@
   cursor: not-allowed;
 }
 
+.actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .input {
   width: 100%;
   box-sizing: border-box;

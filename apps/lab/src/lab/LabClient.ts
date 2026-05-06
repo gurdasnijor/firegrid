@@ -24,6 +24,12 @@ interface LabClient {
     readonly sendEcho: (
       input: LabEchoOperationInput,
     ) => Effect.Effect<LabOperationHandle, unknown>
+    readonly callEcho: (
+      input: LabEchoOperationInput,
+    ) => Effect.Effect<LabOperationOutput, unknown>
+    readonly resultEcho: (
+      handle: LabOperationHandle,
+    ) => Effect.Effect<LabOperationOutput, unknown>
     readonly observeEcho: (
       handle: LabOperationHandle,
     ) => Stream.Stream<LabOperationState, unknown>
@@ -40,11 +46,16 @@ export interface LabOperationHandle {
   readonly operation: string
 }
 
+export interface LabOperationOutput {
+  readonly echoed: string
+  readonly total: number
+}
+
 export type LabOperationState =
   | { readonly _tag: "Pending" }
   | {
       readonly _tag: "Completed"
-      readonly output: { readonly echoed: string; readonly total: number }
+      readonly output: LabOperationOutput
     }
   | {
       readonly _tag: "Failed"
@@ -119,6 +130,27 @@ const sendEchoOperation = (
     return toLabOperationHandle(handle)
   }).pipe(Effect.provide(layerFor(cfg)))
 
+const callEchoOperation = (
+  cfg: LabClientConfig,
+  input: LabEchoOperationInput,
+): Effect.Effect<LabOperationOutput, unknown> =>
+  Effect.gen(function* () {
+    const client = yield* FiregridClient
+    return yield* client.call(LabEchoOperation, input)
+  }).pipe(Effect.provide(layerFor(cfg)))
+
+const resultEchoOperation = (
+  cfg: LabClientConfig,
+  handle: LabOperationHandle,
+): Effect.Effect<LabOperationOutput, unknown> =>
+  Effect.gen(function* () {
+    const client = yield* FiregridClient
+    return yield* client.result(
+      LabEchoOperation,
+      fromLabOperationHandle(handle),
+    )
+  }).pipe(Effect.provide(layerFor(cfg)))
+
 const observeEchoOperation = (
   cfg: LabClientConfig,
   handle: LabOperationHandle,
@@ -135,6 +167,7 @@ const observeEchoOperation = (
 // firegrid-client-api.LAB_COMPATIBILITY.1
 // firegrid-client-api.CLIENT_SURFACE.1
 // firegrid-client-api.CLIENT_SURFACE.2
+// firegrid-client-api.CLIENT_SURFACE.4
 // firegrid-client-api.LAB_COMPATIBILITY.3
 // firegrid-client-api.LAB_COMPATIBILITY.4
 // firegrid-client-api.AUTHORITY_BOUNDARY.1
@@ -154,6 +187,8 @@ export const createLabClient = (cfg: LabClientConfig): LabClient => ({
   },
   operations: {
     sendEcho: (input) => sendEchoOperation(cfg, input),
+    callEcho: (input) => callEchoOperation(cfg, input),
+    resultEcho: (handle) => resultEchoOperation(cfg, handle),
     observeEcho: (handle) => observeEchoOperation(cfg, handle),
   },
 })
