@@ -24,6 +24,8 @@
 //   FiregridRuntime, RuntimeContext              -> Tags
 //   Firegrid.subscribers.{timer, scheduledWork,
 //     projectionMatch}                           -> runtime helper Layers
+//   Firegrid.composeRuntime                      -> explicit Layer
+//                                                   composition helper
 //
 // There is no public FiregridRuntimeLive factory, no
 // FiregridRuntimeBootPlan / AttachedRuntimePlan / EmbeddedDevRuntimePlan
@@ -46,6 +48,12 @@ export {
 } from "./boot.ts"
 
 export { Firegrid } from "./runtime-api.ts"
+export type {
+  FiregridRuntimeComposition,
+  FiregridRuntimeCompositionOptions,
+  FiregridRuntimeLayer,
+  FiregridRuntimeProviderLayer,
+} from "./composition.ts"
 
 export {
   RuntimeContext,

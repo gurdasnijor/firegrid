@@ -1,6 +1,6 @@
 # SDD: Firegrid Runtime Composition Ergonomics
 
-Status: RFC
+Status: Accepted
 Product: Firegrid
 Related:
 - `firegrid-runtime-process`
@@ -16,12 +16,10 @@ The remaining ergonomics problem is not capability. It is repeated
 `Layer.mergeAll(...).pipe(Layer.provide(...))` boilerplate that makes app-owned
 runtime graphs harder to scan.
 
-Firegrid should provide a first-class composition helper that reduces that
+Firegrid provides a first-class composition helper that reduces that
 boilerplate while preserving the important boundary: apps still own the runtime
 entrypoint, list the handlers and subscribers they want, provide their app
 adapters explicitly, and pass one ordinary Effect Layer to `run(...)`.
-
-This RFC is docs/spec only. It does not implement the helper.
 
 ## Current Shape
 
@@ -64,9 +62,9 @@ is that the boilerplate repeats across app-owned entrypoints and can obscure
 the runtime graph's domain-relevant parts: operation handlers, subscriber loops,
 EventPlane services, wait primitives, trigger matching, and adapter resources.
 
-## Proposed Helper Contract
+## Helper Contract
 
-The helper should be a small runtime Layer composer. A possible public shape is:
+`Firegrid.composeRuntime(...)` is a small runtime Layer composer:
 
 ```ts
 const runtime = Firegrid.composeRuntime({
@@ -93,9 +91,6 @@ yield* run({
   runtime,
 })
 ```
-
-The exact exported name is an implementation detail for a later slice. The
-contract is the important part:
 
 - The helper returns an ordinary `Layer.Layer<never, E, RuntimeContext | R>`
   shape accepted by `run({ connection, runtime })`.
@@ -192,9 +187,9 @@ The helper must not install all stock subscribers by default. If an app needs
 projection matching, timers, or scheduled work, the app lists those subscriber
 Layers.
 
-## Next Implementation Acceptance
+## Implementation Acceptance
 
-A later implementation slice should prove:
+The implementation must prove:
 
 - app code can compose multiple `Firegrid.handler(...)` Layers through the
   helper;

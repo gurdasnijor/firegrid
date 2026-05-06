@@ -299,9 +299,9 @@ ACIDs:
 - `client-event-plane-registration.FIREPIXEL_PROFILE.4`
 - `firegrid-runtime-process.SCENARIOS.21`
 
-### FP6: Runtime Composition Ergonomics RFC
+### FP6: Runtime Composition Ergonomics
 
-Specify a first-class app-owned runtime composition helper that reduces
+Specify and implement a first-class app-owned runtime composition helper that reduces
 repeated `Layer.mergeAll` / `Layer.provide` boilerplate without hiding the
 runtime graph.
 
@@ -343,8 +343,8 @@ ACIDs:
 2. FP2: emit-then-wait Firepixel path using EventPlane projection reads.
 3. FP3: adapter Scope/lifecycle contract.
 4. FP4: tool invocation path.
-5. FP6: runtime composition ergonomics SDD/RFC for the next implementation
-   wave after the foundation proof.
+5. FP6: runtime composition ergonomics helper for the next implementation wave
+   after the foundation proof.
 
 FP2 is the first real evidence that Firegrid can underlie a Firepixel-style
 runtime. It intentionally supersedes a prompt-chunk-only proof because emit-only
