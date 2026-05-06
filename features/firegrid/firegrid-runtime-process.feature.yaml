@@ -25,6 +25,7 @@ components:
       9: WaitFor projection-match receiver validation uses an app-owned runtime entrypoint that composes the projection-match subscriber with a typed operation handler and verifies caller-owned EventStream matching plus ready-work terminalization through projection inspection.
       10: Input-side CLI scenario emitters expose an emit-only declarative row stream contract whose rows are schema-derived durable ChangeEvents and whose shared writer is responsible for NDJSON stdout formatting.
       11: Sleep/timer receiver validation uses an app-owned runtime entrypoint that composes the timer subscriber with a typed operation handler and verifies Choreography.sleep timer resolution plus ready-work terminalization through projection inspection.
+      12: Handler-failure receiver validation uses an app-owned runtime entrypoint with a typed operation error schema and verifies failed terminal run state through projection inspection.
 
   RUNTIME_RUN_API:
     requirements:
