@@ -1,5 +1,11 @@
 # Firegrid Remediation Acai Tasks - 2026-05-05
 
+Status: historical remediation queue. For new Fireline / Firepixel wave
+dispatches, use `docs/ACAI_TASKS_FIREGRID_CURRENT_WAVE_2026-05-06.md`.
+The priority order below records the 2026-05-05 review cleanup plan and remains
+useful provenance for ACIDs and review findings, but it is not the active task
+queue unless the coordinator explicitly re-dispatches one of these items.
+
 Source review:
 
 ```text
