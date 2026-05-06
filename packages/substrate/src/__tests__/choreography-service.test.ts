@@ -3,14 +3,13 @@ import { Cause, Duration, Effect, Exit, Layer, Option, Tracer } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   RunWait,
-  RunWaitLive,
   OwnerId,
+  ProjectionMatchTrigger,
   WorkId,
   currentWorkContextLayer,
   triggerMatchersLayer,
-  type RunWaitTrigger,
   type TriggerMatcher,
-} from "../coordination/run-wait/index.ts"
+} from "../index.ts"
 import {
   CompletionProducer,
   SubstrateProducerLive,
@@ -18,7 +17,6 @@ import {
 } from "../write-api/producer.ts"
 import { blockRun } from "../protocol/state-machine.ts"
 import { rebuildProjection } from "../stream.ts"
-import { DurableWaitsLive } from "../execution/waits.ts"
 import {
   freshStreamUrl,
   startTestServer,
@@ -43,12 +41,9 @@ async function createSubstrateStream(label: string): Promise<string> {
 }
 
 const buildLayer = (streamUrl: string, matchers: Record<string, TriggerMatcher>) =>
-  Layer.provideMerge(
-    RunWaitLive({ streamUrl }),
-    Layer.mergeAll(
-      DurableWaitsLive({ streamUrl }),
-      triggerMatchersLayer(matchers),
-    ),
+  Layer.mergeAll(
+    RunWait.layer({ streamUrl }),
+    triggerMatchersLayer(matchers),
   )
 
 const declareRun = (streamUrl: string, runId: string) =>
@@ -69,7 +64,7 @@ const runWaitFor = (
   streamUrl: string,
   runId: string,
   ownerId: string,
-  trigger: RunWaitTrigger,
+  trigger: ProjectionMatchTrigger,
   matchers: Record<string, TriggerMatcher> = {
     [trigger.matcherId]: matcherAccept,
   },
@@ -96,7 +91,9 @@ const projectionMatchCompletions = async (streamUrl: string) => {
   )
 }
 
-// choreography-facade.CHOREOGRAPHY_API.2
+// run-wait-primitives.RUN_WAIT_API.3
+// run-wait-primitives.RUN_WAIT_API.6
+// run-wait-primitives.RUN_WAIT_API.7
 // choreography-facade.SUSPENSION.1
 // choreography-facade.SUSPENSION.2
 describe("choreography-facade.CHOREOGRAPHY_API.2 — sleep creates a timer completion and blocks the current run before signalling suspension", () => {
@@ -142,7 +139,9 @@ describe("choreography-facade.CHOREOGRAPHY_API.2 — sleep creates a timer compl
   })
 })
 
-// choreography-facade.CHOREOGRAPHY_API.3
+// run-wait-primitives.RUN_WAIT_API.2
+// run-wait-primitives.RUN_WAIT_API.6
+// run-wait-primitives.RUN_WAIT_API.7
 // choreography-facade.TRIGGERS.5
 describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projection-match completion and blocks the current run", () => {
   it("waitFor writes a pending projection_match completion carrying the typed trigger payload, blocks the run, then interrupts", async () => {
@@ -150,7 +149,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
     const runId = "run-wait-1"
     await Effect.runPromise(declareRun(url, runId))
 
-    const trigger: RunWaitTrigger = {
+    const trigger: ProjectionMatchTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-1",
       projectionKey: "plane.permission.byId:p-1",
@@ -190,7 +189,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
     expect(completion?.kind).toBe("projection_match")
     expect(completion?.state).toBe("pending")
     const data = completion?.data as {
-      trigger: RunWaitTrigger
+      trigger: ProjectionMatchTrigger
       timeoutMs?: number
       deadlineAtMs?: number
     }
@@ -204,7 +203,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
     const runId = "run-wait-pending-1"
     await declareRun(url, runId).pipe(Effect.runPromise)
 
-    const trigger: RunWaitTrigger = {
+    const trigger: ProjectionMatchTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-pending",
       projectionKey: "plane.permission.byId:p-pending",
@@ -249,7 +248,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
     const runId = "run-wait-resolved-1"
     await declareRun(url, runId).pipe(Effect.runPromise)
 
-    const trigger: RunWaitTrigger = {
+    const trigger: ProjectionMatchTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-resolved",
       projectionKey: "plane.permission.byId:p-resolved",
@@ -308,13 +307,13 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
     const runId = "run-wait-mismatch-1"
     await declareRun(url, runId).pipe(Effect.runPromise)
 
-    const firstTrigger: RunWaitTrigger = {
+    const firstTrigger: ProjectionMatchTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-original",
       projectionKey: "plane.permission.byId:p-original",
       matcherId: "fixture.permission.resolved",
     }
-    const secondTrigger: RunWaitTrigger = {
+    const secondTrigger: ProjectionMatchTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-other",
       projectionKey: "plane.permission.byId:p-other",
@@ -359,7 +358,7 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
       }).pipe(Effect.runSync),
     )
 
-    const trigger: RunWaitTrigger = {
+    const trigger: ProjectionMatchTrigger = {
       _tag: "ProjectionMatch",
       label: "permission-resolved:p-missing",
       projectionKey: "plane.permission.byId:p-missing",
@@ -387,7 +386,7 @@ describe("choreography-facade.TRIGGERS.8 — waitFor with an unknown matcherId f
     const runId = "run-wait-missing-1"
     await Effect.runPromise(declareRun(url, runId))
 
-    const trigger: RunWaitTrigger = {
+    const trigger: ProjectionMatchTrigger = {
       _tag: "ProjectionMatch",
       label: "session-terminal:req-1",
       projectionKey: "plane.session.byRequestId:req-1",
@@ -428,7 +427,9 @@ describe("choreography-facade.TRIGGERS.8 — waitFor with an unknown matcherId f
   })
 })
 
-// choreography-facade.CHOREOGRAPHY_API.4
+// run-wait-primitives.RUN_WAIT_API.4
+// run-wait-primitives.RUN_WAIT_API.6
+// run-wait-primitives.RUN_WAIT_API.7
 describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt creates a scheduled_work completion and does not block the current run", () => {
   it("scheduleAt returns a result with completionId and whenMs; current run remains in state=started; no run row is blocked", async () => {
     const url = await createSubstrateStream("wait-schedule-at")
@@ -471,13 +472,15 @@ describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt creates a schedu
   })
 })
 
-// choreography-facade.CHOREOGRAPHY_API.4
-// scheduleAt is fire-and-forget and pulls only DurableWaits at call time;
+// run-wait-primitives.RUN_WAIT_API.4
+// run-wait-primitives.RUN_WAIT_API.6
+// RunWait.until is fire-and-forget and pulls only DurableWaits at layer
+// construction time;
 // it does NOT depend on CurrentWorkContext or TriggerMatchers. A host
 // configuring scheduleAt-only usage should not need to install fake
 // context/matcher layers.
 describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt runs without CurrentWorkContext and without TriggerMatchers", () => {
-  it("RunWaitLive + DurableWaitsLive alone is sufficient to run scheduleAt; no CurrentWorkContext / TriggerMatchers layers are required", async () => {
+  it("RunWait.layer alone is sufficient to run RunWait.until; no CurrentWorkContext / TriggerMatchers layers are required", async () => {
     const url = await createSubstrateStream("wait-schedule-no-ctx")
     const at = Date.now() + 60_000
 
@@ -486,13 +489,10 @@ describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt runs without Cur
       return yield* wait.until(at, { kind: "noop" })
     })
 
-    // Intentionally minimal layer composition: only RunWaitLive +
-    // DurableWaitsLive. This program would not typecheck or run if
-    // scheduleAt required CurrentWorkContext or TriggerMatchers.
-    const minimalLayer = Layer.provideMerge(
-      RunWaitLive({ streamUrl: url }),
-      DurableWaitsLive({ streamUrl: url }),
-    )
+    // Intentionally minimal app-facing layer composition. This program
+    // would not typecheck or run if until required CurrentWorkContext or
+    // TriggerMatchers.
+    const minimalLayer = RunWait.layer({ streamUrl: url })
 
     const result = await Effect.runPromise(
       program.pipe(Effect.provide(minimalLayer)),
@@ -566,7 +566,9 @@ describe("choreography-facade.SUSPENSION.4 — a run already blocked on a differ
   })
 })
 
-// choreography-facade.CHOREOGRAPHY_API.5
+// run-wait-primitives.RUN_WAIT_API.5
+// run-wait-primitives.RUN_WAIT_API.6
+// run-wait-primitives.RUN_WAIT_API.7
 // choreography-facade.CHOREOGRAPHY_API.8
 describe("choreography-facade.CHOREOGRAPHY_API.5 — awaitAwakeable creates a work-scoped externally-resolved completion and blocks the current run", () => {
   it("awaitAwakeable derives the awakeable key from CurrentWorkContext.workId, blocks the run, then interrupts", async () => {
@@ -762,7 +764,7 @@ describe("choreography-facade.CURRENT_WORK_CONTEXT.4 — run-wait callers never 
     // surface against accidental expansion. Sleep takes only a Duration;
     // no other operations accept ad-hoc inputs.
 
-    const waitForInput: RunWaitTrigger = {
+    const waitForInput: ProjectionMatchTrigger = {
       _tag: "ProjectionMatch",
       label: "x",
       projectionKey: "k",
