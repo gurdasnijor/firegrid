@@ -62,6 +62,34 @@ DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid \
   pnpm --filter @firegrid/runtime run firegrid
 ```
 
+When a scenario needs the real executable to process rows, the binary can load
+one caller-supplied runtime graph module at the process edge:
+
+```sh
+DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid \
+FIREGRID_RUNTIME_MODULE=./path/to/runtime-graph.ts \
+  pnpm --filter @firegrid/runtime run firegrid
+```
+
+The graph module contract is intentionally small. It must export either a named
+`runtime` export or a default export whose value is an Effect `Layer` compatible
+with `FiregridRuntimeBoot.attached({ streamUrl, runtime })`. The module is
+responsible for composing any app-specific dependencies into that Layer; the
+binary provides only the runtime process context and the attached stream URL.
+Relative module paths are resolved from the current working directory of the
+`firegrid` process.
+
+Example shape:
+
+```ts
+import { Effect } from "effect"
+import { Firegrid } from "@firegrid/runtime"
+
+export const runtime = Firegrid.handler(MyOperation, (input) =>
+  Effect.succeed({ ok: true }),
+)
+```
+
 Firegrid does not wrap the Durable Streams CLI. Firegrid does not start the
 Durable Streams server. Firegrid does not spawn child dev processes.
 

@@ -1,7 +1,20 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as Substrate from "@firegrid/substrate"
 import * as SubstrateKernel from "@firegrid/substrate/kernel"
 import * as RuntimeSurface from "../index.ts"
+
+const runtimeBinarySource = () =>
+  readFileSync(
+    new URL("../../bin/firegrid.ts", import.meta.url),
+    "utf8",
+  )
+
+const runtimeGraphLoaderSource = () =>
+  readFileSync(
+    new URL("../../bin/runtime-graph-loader.ts", import.meta.url),
+    "utf8",
+  )
 
 // firegrid-architecture-boundary.DEPENDENCY_GRAPH.2
 // firegrid-architecture-boundary.DEPENDENCY_GRAPH.3
@@ -69,6 +82,9 @@ describe("firegrid-runtime-process.CONFIG_SURFACE — no boot-plan-from-env / bo
       "AttachedRuntimePlan",
       "EmbeddedDevRuntimePlan",
       "bootModeOf",
+      "loadRuntimeGraph",
+      "RuntimeGraphLoadError",
+      "RuntimeGraphExportError",
     ]
     const surface = Object.keys(RuntimeSurface)
     const offenders = banned.filter((b) => surface.includes(b))
@@ -79,6 +95,35 @@ describe("firegrid-runtime-process.CONFIG_SURFACE — no boot-plan-from-env / bo
     expect(
       "bootPlanFromConfig" in RuntimeSurface.FiregridRuntimeBoot,
     ).toBe(false)
+  })
+})
+
+describe("firegrid-runtime-process.RUNTIME_GRAPH — runtime graph loading stays at the binary edge", () => {
+  it("loads an optional runtime Layer module through attached binary configuration only", () => {
+    const source = runtimeBinarySource()
+
+    expect(source).toContain("FIREGRID_RUNTIME_MODULE")
+    expect(source).toContain("loadRuntimeGraph")
+    expect(source).toContain("FiregridRuntimeBoot.attached")
+    expect(source).toContain(
+      "FiregridRuntimeBoot.attached({ streamUrl, runtime })",
+    )
+    expect(source).not.toContain("@firegrid/client")
+    expect(source).not.toContain("DurableStream.create")
+    expect(source).not.toContain("child_process")
+    expect(source).not.toContain("firegrid dev")
+  })
+
+  it("documents the named/default Layer export contract and typed failures", () => {
+    const source = runtimeGraphLoaderSource()
+
+    expect(source).toContain("module.runtime ?? module.default")
+    expect(source).toContain("Layer.isLayer(candidate)")
+    expect(source).toContain("RuntimeGraphLoadError")
+    expect(source).toContain("RuntimeGraphExportError")
+    expect(source).toContain(
+      "pathToFileURL(resolve(process.cwd(), specifier))",
+    )
   })
 })
 

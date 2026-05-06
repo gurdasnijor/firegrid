@@ -33,6 +33,14 @@ components:
       7: The binary does not start, stop, or supervise a Durable Streams server.
       8: The binary rejects launcher subcommands and runs only as an attached runtime process.
 
+  RUNTIME_GRAPH:
+    requirements:
+      1: The runtime binary can load an optional caller-supplied runtime graph module from process-edge configuration and provide it to attached runtime boot.
+      2: The runtime graph module contract is explicit: a default export or named `runtime` export must be an Effect Layer that composes with `RuntimeContext`.
+      3: Runtime graph module loading is available only at the binary process edge and does not add boot-plan-from-env, attachedFromConfig, scenario emitter, fixture, or client APIs to the runtime package root.
+      4: Missing, unloadable, or contract-invalid runtime graph modules fail with typed usage or configuration errors before the binary idles.
+      5: Runtime graph loading preserves attached-only execution: the binary still does not start Durable Streams, supervise child processes, or import `@firegrid/client`.
+
   DEV_ENV_INJECTION:
     requirements:
       1:
