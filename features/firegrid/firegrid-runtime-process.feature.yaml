@@ -30,6 +30,7 @@ components:
       7: Runtime startup failures are fail-fast typed failures from `run(...)`, not silent hangs or hidden binary exits.
       8: Durable Streams attachment options are supplied through a connection object rather than as loose top-level runtime options.
       9: The runtime `run(...)` Effect is a long-running process Effect that normally exits only through interruption or typed failure.
+      10: Runtime tests assert positive API behavior by executing Effects or checking TypeScript contracts rather than by grepping source strings; source-grep tests are reserved for explicitly tagged negative architectural constraints.
 
   BINARIES:
     requirements:

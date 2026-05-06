@@ -194,3 +194,65 @@ README-level example plus focused tests proving:
    modules.
 5. Stock runtime defaults are composed explicitly by the app entrypoint rather
    than installed implicitly by `run(...)`.
+
+## Follow-Up Backlog
+
+### F2D: Runtime Source-Grep Test Cleanup
+
+Priority: high-value cleanup, not a merge blocker for the first `run(...)`
+slice.
+
+Problem: several runtime tests assert positive behavior by reading TypeScript
+source as strings and checking for substrings. Current examples are in
+`packages/runtime/src/__tests__/runtime-foundations.test.ts`, with related
+source-grep guards in runtime hot-path and materializer tests. Assertions such
+as `expect(source).toContain("FiregridRuntimeBoot.attached")` or
+`expect(source).toContain("Exclude<Exclude<R, RuntimeContext>")` are fragile:
+they fail on harmless refactors, can pass because a string appears in comments
+or unrelated code, and do not exercise the runtime behavior they claim to
+protect.
+
+Distinction to preserve: source assertions are still acceptable for negative
+architectural constraints, such as proving a binary does not import dynamic
+module-loading helpers or a package does not import `@firegrid/client`. Those
+checks express what code must not contain. The cleanup targets positive
+behavior assertions that should execute the API or verify TypeScript contracts.
+
+Scope:
+
+1. Audit all tests under `packages/runtime/src/__tests__/` for
+   `readFileSync(...source...)` plus `toContain` / `not.toContain` style
+   assertions.
+2. Classify every assertion as positive behavior or negative architectural
+   constraint.
+3. Replace positive behavior assertions with behavior tests using Effect tools
+   such as `Effect.fork`, `Ref`, `TestClock`, and `Effect.exit` where they fit.
+   For `run(...)`, the replacement tests should prove that the supplied Layer
+   is installed, `RuntimeContext` is provided, interruption shuts down scoped
+   runtime work, and app requirements remain visible in the returned type.
+4. Keep the type-level assertion that checks the returned Effect type, because
+   that verifies the actual API contract.
+5. For negative constraints, prefer ESLint or dependency-cruiser rules when the
+   pattern is general. Keep a tightly scoped source-grep test only when it is a
+   one-off architectural assertion, and tag it with a comment explaining why
+   source inspection is the right tool.
+6. Document the runtime test convention in a short runtime package README or
+   `TESTING.md`: behavior over source transcript; source assertions only for
+   explicit negative architectural constraints.
+
+Non-goals:
+
+1. Do not expand runtime coverage beyond the behavior the existing source-grep
+   tests were attempting to prove.
+2. Do not introduce a shared test-helper package or `test-support` folder.
+3. Do not change the `run(...)` API as part of this cleanup. If behavior tests
+   reveal an API gap, file a separate item.
+
+Acceptance:
+
+1. No runtime test file uses `readFileSync` for positive behavior assertions.
+2. Any remaining runtime test `readFileSync` assertion is explicitly tagged as
+   an architectural-constraint check with a comment explaining why source grep
+   is appropriate.
+3. Previous positive behavioral intent is covered by tests that would catch a
+   real runtime regression rather than a rename.
