@@ -17,6 +17,7 @@ Read these first.
 | Area | SDD | Primary Acai Specs |
 | --- | --- | --- |
 | Firegrid product/runtime/client/lab boundary; operation messaging model | `docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md` | `firegrid-architecture-boundary`, `firegrid-operation-messaging`, `firegrid-event-streams`, `firegrid-runtime-process`, `firegrid-package-migration` |
+| App-facing `@firegrid/client` role, stream configuration, EventStream/EventPlane split, and authority limits | `docs/SDD_FIREGRID_CLIENT_API.md` | `firegrid-client-api`, `firegrid-event-streams`, `client-event-plane-registration` |
 | Substrate package structure: `protocol/`, `state-store/`, `read-models/`, `write-api/`, `execution/`, RunWait/facade boundary | `docs/SDD_FIREGRID_PACKAGE_STRUCTURE.md` | `firegrid-architecture-boundary`, `firegrid-remediation-hardening` |
 | Effect-quality evidence and remediation ordering for the substrate | `docs/SDD_FIREGRID_EFFECT_QUALITY.md` | `firegrid-architecture-boundary` (`EFFECT_ARTIFACT_GRAPH.*`), `firegrid-remediation-hardening` |
 | Core durable substrate: rows, projections, claim authority, terminalization | `docs/SDD_DURABLE_AGENT_SUBSTRATE.md` | `durable-records-and-projections`, `awakeables-and-runs`, `effect-native-api`, `semantic-producer`, `ready-work-projection`, `claim-and-operator-authority`, `durable-waits-and-scheduling`, `implementation-sequencing` |

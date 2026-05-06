@@ -1,0 +1,47 @@
+feature:
+  name: firegrid-client-api
+  product: firegrid
+  description: Define the app-facing @firegrid/client API role for browser and application code.
+
+components:
+  CLIENT_SURFACE:
+    requirements:
+      1: "@firegrid/client is the app-facing SDK for sending typed operation messages, observing operation handles, emitting caller-owned EventStream rows, and observing caller-owned EventStreams."
+      2: Client APIs use Effect for one-shot actions and Stream for live observation so application code can compose client work with ordinary Effect programs.
+      3: Operation descriptors and EventStream descriptors are browser-safe contract values containing caller-owned schemas and stable names, not handler implementations or runtime registrations.
+      4: The client package may expose request-response convenience APIs only as typed composition over durable message send plus handle/result observation.
+      5: Client APIs expose typed expected failures in the Effect error channel for encode, append, read, decode, not-found, cancellation, and result failures.
+
+  STREAM_CONFIGURATION:
+    requirements:
+      1: Client construction receives stream connection configuration explicitly from application or lab environment, including stream URL and optional content type, rather than discovering or starting Durable Streams servers.
+      2: Browser-facing client entrypoints do not read process environment directly; bundler or application code passes stream configuration at the boundary.
+      3: Client configuration contains durable transport connection options only and does not include runtime process identity, claim owner identity, handler graph, subscriber graph, or RunWait configuration.
+
+  EVENT_INTEROP:
+    requirements:
+      1: EventStream is the lightweight client-facing API for append-only caller-owned events that do not require a caller-owned materialized state schema.
+      2: EventPlane is the stateful runtime/substrate-facing API for caller-owned row families with primary keys, projections, and projection-match evaluation.
+      3: Browser/app clients may append or observe EventStream events through @firegrid/client without importing EventPlane producer/projection services.
+      4: EventPlane row production for Firepixel-style prompt, permission, tool, runtime, and observation state is performed inside app-owned runtime Layers through @firegrid/substrate/event-plane, not through browser client authority.
+      5: Client-emitted EventStream rows and runtime-emitted EventPlane rows remain caller-owned domain state and do not become Firegrid-native substrate row families.
+
+  AUTHORITY_BOUNDARY:
+    requirements:
+      1: "@firegrid/client does not expose substrate kernel imports, durable row builders, WorkProducer, claim APIs, terminalization APIs, completion resolution APIs, RunWait, or runtime handler registration APIs as the app-facing surface."
+      2: Clients do not claim work, execute operation handlers, resolve or reject completions, author terminal run state, run subscribers, or own ready-work operator loops.
+      3: Client operation sends append durable intent only; runtime participants and substrate authority own handler execution, claims, completions, and terminal state.
+      4: The client package does not start, stop, supervise, or configure Firegrid runtime processes or Durable Streams dev-server launchers.
+      5: Client browser-safe subpaths do not import @firegrid/runtime, @firegrid/substrate/kernel, Node-only runtime modules, or lab-only modules.
+
+  LAB_COMPATIBILITY:
+    requirements:
+      1: The lab uses @firegrid/client production APIs for typed app-like sends, EventStream emission, and EventStream observation instead of lab-only writer APIs.
+      2: The lab may use raw Durable Streams read-only diagnostic panels when explicitly separated from scenario controls, but those diagnostics are not promoted as client write APIs.
+      3: Lab browser bundles must remain compatible with the same public client entrypoints available to application code.
+
+constraints:
+  DOCUMENTATION:
+    requirements:
+      1: The client API SDD documents what @firegrid/client can do, what it cannot do, and how EventStream, EventPlane, runtime, substrate, and lab responsibilities differ.
+      2: Client API examples avoid @firegrid/substrate/kernel, @firegrid/runtime handler registration, RunWait, Choreography, DurableWaitsLive, raw Durable Streams writers, and dev-server launcher APIs.
