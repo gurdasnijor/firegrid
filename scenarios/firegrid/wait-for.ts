@@ -1,18 +1,20 @@
 #!/usr/bin/env tsx
 import {
   EventStream,
-  makeEventStreamStateRow,
   Operation,
 } from "@firegrid/substrate/descriptors"
 import {
-  OPERATION_ENVELOPE_TAG,
-  OperationEnvelopeSchema,
   ProjectionMatchTriggerSchema,
-  RunValue,
-  startRun,
 } from "@firegrid/substrate/kernel"
-import { Effect, Schema } from "effect"
+import { Schema } from "effect"
 import { fileURLToPath } from "node:url"
+import {
+  defineScenarioRows,
+  makeEventStreamScenarioRow,
+  makeOperationStartedRunRow,
+  scenarioRowsFromIterable,
+  writeScenarioRowsToNdjson,
+} from "./scenario.ts"
 
 export const PermissionEvents = EventStream.define({
   name: "PermissionEvents",
@@ -66,47 +68,36 @@ export const makeWaitForScenarioRows = (input: {
   // firegrid-event-streams.EVENT_STREAM_DEFINITION.3
   // firegrid-event-streams.CLIENT_API.5
   // firegrid-event-streams.SCHEMA_OWNERSHIP.3
-  const encodedInput = Schema.encodeSync(WaitForPermissionOperation.input)({
-    permissionId,
-    trigger,
-  })
-  const operationEnvelope = Schema.encodeSync(OperationEnvelopeSchema)({
-    _envelope: OPERATION_ENVELOPE_TAG,
-    operation: WaitForPermissionOperation.name,
-    payload: encodedInput,
-  })
-  const runValue = Schema.encodeSync(RunValue)({
-    runId,
-    state: "started",
-    data: operationEnvelope,
-  })
-  const encodedEvent = Schema.encodeSync(PermissionEvents.event)({
-    permissionId,
-    status: "approved",
-    actor: "scenario",
-  })
-
   return [
-    Effect.runSync(startRun({
-      runId: runValue.runId,
-      data: runValue.data,
-    })),
-    makeEventStreamStateRow({
-      stream: PermissionEvents.name,
+    makeOperationStartedRunRow({
+      runId,
+      operation: WaitForPermissionOperation,
+      input: {
+        permissionId,
+        trigger,
+      },
+    }),
+    makeEventStreamScenarioRow({
+      stream: PermissionEvents,
       eventId,
-      event: encodedEvent,
+      event: {
+        permissionId,
+        status: "approved",
+        actor: "scenario",
+      },
     }),
   ] as const
 }
 
+export const waitForScenario = defineScenarioRows({
+  name: "wait-for",
+  rows: () => scenarioRowsFromIterable(makeWaitForScenarioRows()),
+})
+
 export const writeWaitForScenarioRows = (
-  write: (chunk: string) => void = (chunk) => {
-    process.stdout.write(chunk)
-  },
+  write?: (chunk: string) => void,
 ) => {
-  for (const row of makeWaitForScenarioRows()) {
-    write(`${JSON.stringify(row)}\n`)
-  }
+  writeScenarioRowsToNdjson(waitForScenario, write)
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

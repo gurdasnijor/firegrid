@@ -43,6 +43,14 @@ by TypeScript files under `scenarios/firegrid/`; those files import the real
 Effect Schema descriptors and protocol builders and write JSON rows to stdout.
 They are not checked-in JSON fixtures and are not runtime support surfaces.
 
+Input-side emitters use a small emit-only scenario contract. Each emitter
+declares descriptors/schemas and composes a declarative stream of substrate
+ChangeEvent rows; the shared writer owns newline-delimited JSON formatting for
+stdout. The contract is intentionally one-dimensional: it does not read streams,
+inspect projections, run runtime graphs, start servers, or act as an app client.
+Receiver files remain separate app-owned `run({ connection, runtime })`
+entrypoints, and `inspect` remains a read-only projection tool.
+
 The expected local shell shape is:
 
 ```sh
@@ -205,6 +213,7 @@ Relevant ACIDs:
 - `firegrid-runtime-process.SCENARIOS.1`
 - `firegrid-runtime-process.SCENARIOS.2`
 - `firegrid-runtime-process.SCENARIOS.7`
+- `firegrid-runtime-process.SCENARIOS.10`
 
 ### Scenario 2: waitFor Projection Match
 
@@ -242,6 +251,7 @@ Relevant ACIDs:
 - `firegrid-runtime-process.SCENARIOS.1`
 - `firegrid-runtime-process.SCENARIOS.2`
 - `firegrid-runtime-process.SCENARIOS.3`
+- `firegrid-runtime-process.SCENARIOS.10`
 - `launchable-substrate-host.SCENARIOS.3`
 
 Manual CLI input flow:
@@ -363,6 +373,7 @@ Relevant ACIDs:
 - `firegrid-runtime-process.SCENARIOS.1`
 - `firegrid-runtime-process.SCENARIOS.2`
 - `firegrid-runtime-process.SCENARIOS.4`
+- `firegrid-runtime-process.SCENARIOS.10`
 - `launchable-substrate-host.SCENARIOS.2`
 
 Manual CLI input flow:
@@ -563,6 +574,7 @@ Relevant ACIDs:
 
 - `firegrid-runtime-process.SCENARIOS.1`
 - `firegrid-runtime-process.SCENARIOS.6`
+- `firegrid-runtime-process.SCENARIOS.10`
 - `claim-and-operator-authority.CLAIM_BEFORE_INVOKE.1`
 - `claim-and-operator-authority.CLAIM_AUTHORITY.1`
 - `claim-and-operator-authority.TERMINAL_AUTHORITY.1`
@@ -663,6 +675,8 @@ Each scenario should include:
    unless row ordering is the behavior under test.
 
 If a scenario needs helper code, keep it package-local and scenario-specific.
+Input-side emitters should use the shared emit-only row contract rather than
+hand-rolling stdout loops or JSON row formatting in each scenario file.
 Do not create a shared `test-support` folder and do not create a new Firegrid
 CLI wrapper.
 

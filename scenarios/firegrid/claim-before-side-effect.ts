@@ -3,16 +3,15 @@ import {
   Operation,
 } from "@firegrid/substrate/descriptors"
 import {
-  blockRun,
-  CompletionValue,
-  createPendingCompletion,
-  OPERATION_ENVELOPE_TAG,
-  OperationEnvelopeSchema,
-  resolveCompletion,
-  RunValue,
-  startRun,
-} from "@firegrid/substrate/kernel"
-import { Effect, Schema } from "effect"
+  blockRunScenarioRow,
+  defineScenarioRows,
+  makeOperationStartedRunRow,
+  makePendingCompletionScenarioRow,
+  resolveCompletionScenarioRow,
+  scenarioRowsFromIterable,
+  writeScenarioRowsToNdjson,
+} from "./scenario.ts"
+import { Schema } from "effect"
 import { fileURLToPath } from "node:url"
 
 // firegrid-runtime-process.SCENARIOS.6
@@ -68,50 +67,40 @@ export const makeClaimBeforeSideEffectScenarioRows = (input: {
     target,
     amountCents,
   })
-  const operationEnvelope = Schema.encodeSync(OperationEnvelopeSchema)({
-    _envelope: OPERATION_ENVELOPE_TAG,
-    operation: ChargeCardOperation.name,
-    payload: Schema.encodeSync(ChargeCardOperation.input)(sideEffectInput),
-  })
-  const runValue = Schema.encodeSync(RunValue)({
-    runId,
-    state: "started",
-    data: operationEnvelope,
-  })
   const readySignal = Schema.encodeSync(SideEffectReadySignal)({
     source: "scenario",
     reason: "ready-for-claim-before-side-effect",
   })
 
-  const started = Effect.runSync(startRun({
-    runId: runValue.runId,
-    data: runValue.data,
-  }))
-  const pending = Effect.runSync(createPendingCompletion({
+  const started = makeOperationStartedRunRow({
+    runId,
+    operation: ChargeCardOperation,
+    input: sideEffectInput,
+  })
+  const pending = makePendingCompletionScenarioRow({
     completionId,
     workId: runId,
     kind: "externally_resolved_awakeable",
     data: readySignal,
-  }))
-  const startedRun = Schema.decodeUnknownSync(RunValue)(started.value)
-  const pendingCompletion = Schema.decodeUnknownSync(CompletionValue)(pending.value)
+  })
 
   return [
     started,
     pending,
-    Effect.runSync(blockRun(startedRun, { blockedOnCompletionId: completionId })),
-    Effect.runSync(resolveCompletion(pendingCompletion, { result: sideEffectInput })),
+    blockRunScenarioRow(started, { blockedOnCompletionId: completionId }),
+    resolveCompletionScenarioRow(pending, { result: sideEffectInput }),
   ] as const
 }
 
+export const claimBeforeSideEffectScenario = defineScenarioRows({
+  name: "claim-before-side-effect",
+  rows: () => scenarioRowsFromIterable(makeClaimBeforeSideEffectScenarioRows()),
+})
+
 export const writeClaimBeforeSideEffectScenarioRows = (
-  write: (chunk: string) => void = (chunk) => {
-    process.stdout.write(chunk)
-  },
+  write?: (chunk: string) => void,
 ) => {
-  for (const row of makeClaimBeforeSideEffectScenarioRows()) {
-    write(`${JSON.stringify(row)}\n`)
-  }
+  writeScenarioRowsToNdjson(claimBeforeSideEffectScenario, write)
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
