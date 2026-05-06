@@ -14,17 +14,17 @@ export {
   completeRun as completeRunEffect,
   failRun as failRunEffect,
 } from "../schema/state-machine.ts"
-export * from "../producer.ts"
+export * from "../write-api/producer.ts"
 export * from "../projection/ready-work.ts"
-export * from "../operator.ts"
-export * from "../operator-errors.ts"
+export * from "../execution/operator.ts"
+export * from "../execution/operator-errors.ts"
 export * from "../retained-records.ts"
-export * from "../waits.ts"
-export * from "../subscribers.ts"
+export * from "../execution/waits.ts"
+export * from "../execution/subscribers.ts"
 export * from "../id-gen.ts"
 export * from "../facade/index.ts"
 export * from "../event-plane/index.ts"
 export {
   attemptClaim,
   type AttemptClaimArgs,
-} from "../internal-claim.ts"
+} from "../execution/claims.ts"

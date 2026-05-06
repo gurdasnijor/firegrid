@@ -10,7 +10,7 @@ import {
 import {
   DurableWaits,
   workScopedAwakeableKey,
-} from "../waits.ts"
+} from "../execution/waits.ts"
 import {
   CompletionId as toCompletionId,
   type CompletionId,

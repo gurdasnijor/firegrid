@@ -2,7 +2,7 @@ import { DurableStream } from "@durable-streams/client"
 import { Effect } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as substrate from "../kernel/index.ts"
-import { CompletionProducer, SubstrateProducerLive } from "../producer.ts"
+import { CompletionProducer, SubstrateProducerLive } from "../write-api/producer.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   DurableWaits,
@@ -13,7 +13,7 @@ import {
   type ScheduleWorkResult,
   type SleepResult,
   type WaitForResult,
-} from "../waits.ts"
+} from "../execution/waits.ts"
 import {
   freshStreamUrl,
   startTestServer,
@@ -402,7 +402,7 @@ describe("durable-waits-and-scheduling.PHASE_BOUNDARY (Slice 7)", () => {
   })
 
   it("durable-waits-and-scheduling.PHASE_BOUNDARY.3 — Slice 7 waits module exposes no operator/claim/runtime/CLI/timer-resolver/projection-matcher symbols", async () => {
-    const waitsMod = await import("../waits.ts")
+    const waitsMod = await import("../execution/waits.ts")
     const names = Object.keys(waitsMod)
     for (const symbol of [
       "OperatorRunner",

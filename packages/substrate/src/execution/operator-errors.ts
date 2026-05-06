@@ -1,8 +1,8 @@
 import { Data } from "effect"
-import type { ClaimAttemptValue } from "./schema/rows.ts"
+import type { ClaimAttemptValue } from "../schema/rows.ts"
 
 // Error classes shared between operator.ts (kernel single-shot operator) and
-// internal-claim.ts (shared claim helper used by facade/work.WorkClaimLive).
+// claims.ts (shared claim helper used by facade/work.WorkClaimLive).
 // Extracted to break the would-be cycle introduced when operator.ts also
 // imports the shared claim helper.
 

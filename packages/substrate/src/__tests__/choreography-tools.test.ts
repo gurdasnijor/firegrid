@@ -12,9 +12,9 @@ import {
   type ChoreographyTrigger,
   type TriggerMatcher,
 } from "../choreography/index.ts"
-import { SubstrateProducerLive, WorkProducer } from "../producer.ts"
+import { SubstrateProducerLive, WorkProducer } from "../write-api/producer.ts"
 import { rebuildProjection } from "../stream.ts"
-import { DurableWaitsLive } from "../waits.ts"
+import { DurableWaitsLive } from "../execution/waits.ts"
 import {
   freshStreamUrl,
   startTestServer,

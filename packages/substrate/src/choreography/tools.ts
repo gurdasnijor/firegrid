@@ -1,6 +1,6 @@
 import { Cause, Effect, Schema } from "effect"
 import { readAuthoritativeRun } from "../retained-records.ts"
-import { type DurableWaits } from "../waits.ts"
+import { type DurableWaits } from "../execution/waits.ts"
 import {
   CompletionId as toCompletionId,
   WorkId as toWorkId,

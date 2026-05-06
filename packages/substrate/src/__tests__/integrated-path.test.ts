@@ -2,19 +2,19 @@ import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Effect, Layer } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { processReadyWorkItem } from "../operator.ts"
+import { processReadyWorkItem } from "../execution/operator.ts"
 import {
   CompletionProducer,
   SubstrateProducerLive,
   WorkProducer,
-} from "../producer.ts"
+} from "../write-api/producer.ts"
 import { deriveReadyWork } from "../projection/ready-work.ts"
 import { blockRun } from "./state-machine-sync.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   DurableWaits,
   DurableWaitsLive,
-} from "../waits.ts"
+} from "../execution/waits.ts"
 import {
   freshStreamUrl,
   startTestServer,

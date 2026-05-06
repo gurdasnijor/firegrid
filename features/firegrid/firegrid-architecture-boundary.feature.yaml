@@ -35,6 +35,7 @@ constraints:
       2: Runtime composition uses ordinary Effect Layers rather than a Firegrid-specific graph DSL.
       3: Low-level kernel APIs live in substrate and are not re-exported from the app-facing client root.
       4: Standalone apps live under apps/* and do not expose package-style public exports unless a spec declares an importable surface.
+      5: Substrate execution-service modules live under semantic write-api or execution boundaries rather than root-level substrate files.
 
   EFFECT_ARTIFACT_GRAPH:
     requirements:

@@ -6,15 +6,15 @@ import {
   ClaimMissingCursorError,
   ClaimStreamError,
   ClaimWinnerMissingError,
-} from "../operator-errors.ts"
-import { RunNotFoundError } from "../operator.ts"
+} from "../execution/operator-errors.ts"
+import { RunNotFoundError } from "../execution/operator.ts"
 import {
   CompletionProducer,
   SubstrateProducerLive,
   WorkProducer,
-} from "../producer.ts"
+} from "../write-api/producer.ts"
 import { RetainedReadError } from "../retained-records.ts"
-import { WaitsStreamError } from "../waits.ts"
+import { WaitsStreamError } from "../execution/waits.ts"
 
 const source = (relative: string) =>
   readFileSync(fileURLToPath(new URL(`../${relative}`, import.meta.url)), "utf8")
@@ -59,10 +59,10 @@ describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY.2 + effect-native-ap
 
   it("effect-native-api.EFFECT_SERVICES.11 — public expected error classes do not hand-roll _tag by extending Error", () => {
     for (const file of [
-      "operator-errors.ts",
-      "operator.ts",
+      "execution/operator-errors.ts",
+      "execution/operator.ts",
       "retained-records.ts",
-      "waits.ts",
+      "execution/waits.ts",
       "choreography/service.ts",
     ]) {
       const text = source(file)
@@ -74,7 +74,7 @@ describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY.2 + effect-native-ap
 
 describe("firegrid-remediation-hardening.EFFECT_CONSISTENCY.1 + effect-native-api.EFFECT_SERVICES.12 — substrate service convention", () => {
   it("firegrid-remediation-hardening.EFFECT_CONSISTENCY.1 — producer services use Context.Tag plus explicit live layer construction", () => {
-    const text = source("producer.ts")
+    const text = source("write-api/producer.ts")
     expect(text).not.toContain("Effect.Service")
     expect(text).not.toContain(".Default")
     expect(text).toContain('Context.Tag("Substrate/WorkProducer")')

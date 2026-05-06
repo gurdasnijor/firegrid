@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   firstValidClaim,
   processReadyWorkItem,
-} from "../operator.ts"
+} from "../execution/operator.ts"
 import { deriveReadyWork } from "../projection/ready-work.ts"
 import type { ReadyWorkItem } from "../schema/ready-work.ts"
 import {

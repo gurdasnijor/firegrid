@@ -1,7 +1,7 @@
 import { DurableStream } from "@durable-streams/client"
 import { Clock, Effect, TestClock, TestContext } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { DurableWaits, DurableWaitsLive } from "../waits.ts"
+import { DurableWaits, DurableWaitsLive } from "../execution/waits.ts"
 import { rebuildProjection } from "../stream.ts"
 import {
   freshStreamUrl,
