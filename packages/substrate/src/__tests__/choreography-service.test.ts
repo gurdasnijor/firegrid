@@ -513,14 +513,14 @@ describe("choreography-facade.CHOREOGRAPHY_API.4 — scheduleAt runs without Cur
 // and must NOT report a successful suspension. The block helper rejects
 // this case explicitly via Effect.die before appending a new block row.
 describe("choreography-facade.SUSPENSION.4 — a run already blocked on a different completion is not re-pointed and not reported as suspended", () => {
-  it("calling sleep twice under the same CurrentWorkContext leaves the run blocked on the first completion and dies on the second call", async () => {
+  it("calling sleep with a different duration under the same CurrentWorkContext leaves the run blocked on the first completion and dies on the second call", async () => {
     const url = await createSubstrateStream("choreo-double-block")
     const runId = "run-double-block-1"
     await Effect.runPromise(declareRun(url, runId))
 
-    const program = Effect.gen(function* () {
+    const sleepFor = (durationMs: number) => Effect.gen(function* () {
       const choreo = yield* Choreography
-      return yield* choreo.sleep(Duration.millis(500))
+      return yield* choreo.sleep(Duration.millis(durationMs))
     })
 
     const ctxLayer = currentWorkContextLayer({
@@ -531,7 +531,7 @@ describe("choreography-facade.SUSPENSION.4 — a run already blocked on a differ
 
     // First sleep: succeeds (suspended via interrupt).
     const firstExit = await Effect.runPromiseExit(
-      program.pipe(Effect.provide(layer)),
+      sleepFor(500).pipe(Effect.provide(layer)),
     )
     expect(Exit.isFailure(firstExit)).toBe(true)
     if (Exit.isFailure(firstExit)) {
@@ -542,12 +542,12 @@ describe("choreography-facade.SUSPENSION.4 — a run already blocked on a differ
     const firstCompletionId = midSnap.runs.get(runId)?.blockedOnCompletionId
     expect(firstCompletionId).toBeDefined()
 
-    // Second sleep under the SAME CurrentWorkContext: should die because
-    // the run is already blocked on the first completion. The new timer
-    // completion may be created (waits.sleep runs first), but the block
-    // attempt is refused before any new block row is appended.
+    // Second sleep under the SAME CurrentWorkContext with a different
+    // requested duration: choreography-facade.CHOREOGRAPHY_API.14. The
+    // run is already blocked on the first timer, so the call defects
+    // before any new timer completion or block row is appended.
     const secondExit = await Effect.runPromiseExit(
-      program.pipe(Effect.provide(layer)),
+      sleepFor(750).pipe(Effect.provide(layer)),
     )
     expect(Exit.isFailure(secondExit)).toBe(true)
     if (Exit.isFailure(secondExit)) {
@@ -561,6 +561,11 @@ describe("choreography-facade.SUSPENSION.4 — a run already blocked on a differ
     expect(finalRun?.state).toBe("blocked")
     // The run is still blocked on the FIRST completion, never re-pointed.
     expect(finalRun?.blockedOnCompletionId).toBe(firstCompletionId)
+    expect(
+      Array.from(finalSnap.completions.values()).filter((completion) =>
+        completion.kind === "timer",
+      ),
+    ).toHaveLength(1)
   })
 })
 

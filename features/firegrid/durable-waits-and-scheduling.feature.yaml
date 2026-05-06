@@ -11,6 +11,7 @@ components:
       3: Timer firing does not resume a live JS callback as authority.
       4: Optional trace rows may record scheduled, fired, or cancelled timer observability.
       5: Slice 7 `sleep` creates the pending timer completion only; timer resolver execution is a later integration concern.
+      6: Timer sleep resume compares an existing blocked completion to the requested sleep by the canonical Effect Schema timer duration field.
 
   WAIT_FOR:
     requirements:

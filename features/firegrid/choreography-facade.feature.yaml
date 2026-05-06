@@ -25,6 +25,9 @@ components:
       9: Re-invoking waitFor for the current run already blocked on a resolved projection-match completion with the same trigger resumes the handler without authoring a duplicate completion.
       10: Re-invoking waitFor for the current run already blocked on a pending projection-match completion with the same trigger re-suspends without authoring a duplicate completion.
       11: Re-invoking waitFor for the current run already blocked on a missing, non-projection-match, or trigger-mismatched completion fails as an explicit choreography defect.
+      12: Re-invoking sleep for the current run already blocked on a resolved timer completion with the same requested duration resumes the handler without authoring a duplicate completion.
+      13: Re-invoking sleep for the current run already blocked on a pending timer completion with the same requested duration re-suspends without authoring a duplicate completion.
+      14: Re-invoking sleep for the current run already blocked on a missing, non-timer, duration-mismatched, or non-resolved terminal completion fails as an explicit choreography defect.
 
   TRIGGERS:
     requirements:
