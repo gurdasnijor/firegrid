@@ -1,0 +1,61 @@
+feature:
+  name: firegrid-projection-query
+  product: firegrid
+  description: Define product-neutral descriptor-scoped read/query handles for caller-owned projected state and events.
+
+components:
+  QUERY_HANDLES:
+    requirements:
+      1: Projection query handles are constructed from caller-owned EventPlane or EventStream descriptors plus explicit stream connection configuration, not from raw StreamDB collections, raw Durable Streams State schemas, or mutable global registries.
+      2: Projection query handles expose `snapshot`, `stream`, `until`, and `events` as read-oriented Effect and Stream APIs over descriptor-owned state.
+      3: "`snapshot` returns a typed decoded view of the descriptor-owned projection plus an opaque cursor representing the durable no-gap boundary reached by that read."
+      4: "`stream` follows descriptor-owned projection rows after an explicit cursor and emits typed decoded changes in accepted stream order."
+      5: "`until` evaluates a caller-supplied predicate against the current snapshot first, then follows live descriptor-owned changes from the snapshot cursor until the predicate matches, the caller cancels, or a typed timeout/error is produced."
+      6: "`events` replays descriptor-owned EventStream entries from an explicit cursor and then live-tails the same stream without changing APIs at the replay/live boundary."
+      7: Snapshot reads may perform preload work before returning, but preload completion is represented by the returned snapshot cursor rather than by exposing lower-level StreamDB or Durable Streams State handles.
+
+  CURSOR_AND_REPLAY:
+    requirements:
+      1: Query cursors are opaque typed values owned by the projection query API and are not raw offsets, stream URLs, Durable Streams State envelopes, or application-defined strings.
+      2: "A snapshot cursor is sufficient to start a no-gap follow: changes accepted after the snapshot boundary are observable through `stream` or `until` without requiring callers to re-read the snapshot."
+      3: Replay-then-live-tail APIs preserve accepted stream ordering and do not drop or duplicate descriptor-owned entries across the retained replay and live observation boundary.
+      4: Cursor validation distinguishes malformed cursor, retention gap, missing stream, and closed stream conditions as separate expected failures.
+      5: An up-to-date stream observation is represented as an empty live wait or a typed up-to-date state, not as an error and not by returning partial historical state.
+
+  EXPECTED_ERRORS:
+    requirements:
+      1: Projection query APIs expose typed expected failures in the Effect error channel for decode failure, malformed cursor, retention gap, missing stream, closed stream, transport read failure, and timeout.
+      2: Decode failures identify the descriptor, row family or event type, key when available, and cursor boundary when available, without exposing raw Durable Streams State envelopes as the public error payload.
+      3: Retention-gap failures identify the requested cursor boundary and the earliest available boundary when the substrate can report it.
+      4: "`until` timeout is a typed expected outcome that includes the predicate label or descriptor scope supplied by the caller; timeout does not imply terminal run, claim, or completion state."
+      5: Provider, adapter, sandbox, model, prompt, ACP, MCP, and product compatibility failures are not Firegrid projection query errors unless a higher-layer product maps them onto product-owned descriptor schemas.
+
+  AUTHORITY_BOUNDARY:
+    requirements:
+      1: Projection query handles are read-only and do not append, update, delete, claim, complete, fail, cancel, or resolve durable records.
+      2: Projection query APIs do not expose raw StreamDB collections, Durable Streams State envelopes, raw ChangeEvent values, kernel imports, or Durable Streams writer handles.
+      3: Projection query APIs do not expose terminal run authority, claim authority, completion resolution authority, WorkProducer, pending-completion creation, subscriber registration, runtime handler registration, or RunWait authoring APIs.
+      4: Browser-safe projection query entrypoints do not import `@firegrid/runtime`, `@firegrid/substrate/kernel`, Node-only runtime modules, or lab-only launcher modules.
+      5: Product-supplied auth headers or transport options configure read access to the backing stream only and do not grant runtime, kernel, claim, completion, or terminal authority.
+      6: Projection rows observed through query handles are application-owned observations unless another product-neutral Firegrid spec maps them through public wait, claim, completion, or runtime APIs.
+
+  PRODUCT_NEUTRALITY:
+    requirements:
+      1: Firegrid projection query descriptors are product-neutral and do not add Fireline, Firepixel, Flamecast, ACP, MCP, provider, sandbox, prompt, session, tool, or model vocabulary to Firegrid-native row families.
+      2: Higher-layer products own descriptor payload schemas, compatibility policy, authorization policy, provider selection, and domain-specific row family names.
+      3: Firegrid owns query handle shape, cursor semantics, replay/live-tail mechanics, browser-safe package boundaries, and typed substrate read errors.
+      4: EventPlane declaration, producer, and projection definition semantics remain owned by `client-event-plane-registration`; this feature defines only the reusable public read/query facade over descriptor-owned state.
+      5: Durable record, rebuild, projection-source-of-truth, and foundational no-gap invariants remain owned by `durable-records-and-projections`; this feature depends on those invariants rather than redefining canonical durable row families.
+
+constraints:
+  PACKAGE_SURFACE:
+    requirements:
+      1: A projection query implementation may be exposed through existing curated public package surfaces or a new approved subpath, but application and browser usage must not require `@firegrid/substrate/kernel`.
+      2: Runtime-tier helpers may compose projection query handles inside handlers or subscribers, but they must not make `@firegrid/runtime` a dependency of browser-safe client entrypoints.
+      3: Public package manifests keep descriptor values, query handle factories, typed cursor values, and expected error types consumable without private source imports or dist-internal paths.
+
+  NON_SCOPE:
+    requirements:
+      1: This feature does not define EventPlane producer APIs, EventStream append APIs, runtime subscriber APIs, RunWait authoring APIs, claim APIs, completion APIs, or durable record schemas.
+      2: This feature does not define product projection families for Flamecast sessions, Firepixel prompts, Fireline tasks, providers, sandboxes, tools, or models.
+      3: This feature does not require a browser client to write EventPlane rows or to evaluate projection-match completions locally.
