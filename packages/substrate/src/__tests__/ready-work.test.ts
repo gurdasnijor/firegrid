@@ -35,6 +35,7 @@ const snapshotOf = (
   runs: new Map(runs.map((r) => [r.runId, r])),
   completions: new Map(completions.map((c) => [c.completionId, c])),
   claimAttempts: new Map(),
+  eventStreams: new Map(),
 })
 
 describe("ready-work-projection.SOURCE_PROJECTIONS", () => {

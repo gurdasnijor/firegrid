@@ -1,10 +1,12 @@
 import {
+  runProjectionMatchSubscriberFromSnapshot,
   runScheduledWorkSubscriberFromSnapshot,
   runTimerSubscriberFromSnapshot,
   type CompletionKind,
   type EventStream,
   type Operation,
   type ProjectionSnapshot,
+  type ProjectionMatchEvaluator,
   type SubscriberError,
   type SubscriberInput,
 } from "@firegrid/substrate/kernel"
@@ -14,6 +16,7 @@ import {
   minPendingDueAtMs,
   runScopedSubscriberProgram,
   subscribeCompletions,
+  subscribeCompletionsAndEventStreams,
 } from "./internal/runner.ts"
 import { runOperationHandler } from "./internal/operation-handler.ts"
 import { runEventStreamMaterializer } from "./internal/event-stream-materializer.ts"
@@ -67,6 +70,48 @@ const deadlineSubscriberLayer = <K extends CompletionKind>(
             return typeof value === "number" ? value : undefined
           }),
         scan: (snapshot) => profile.scan(snapshot, subscriberInput),
+      })
+    }),
+  )
+
+interface ProjectionMatchSubscriberOptions {
+  readonly evaluate: ProjectionMatchEvaluator
+}
+
+// firegrid-runtime-process.RUNTIME_PACKAGE.5
+// firegrid-runtime-process.RUNTIME_HOT_PATH.2
+// firegrid-runtime-process.RUNTIME_HOT_PATH.3
+//
+// Low-level runtime wiring for substrate's projection-match subscriber.
+// The evaluator stays explicit rather than using TriggerMatchers because the
+// substrate scan receives the full ProjectionSnapshot; TriggerMatchers lookups
+// are trigger-only and are consumed by Choreography when creating waits.
+const projectionMatchSubscriberLayer = (
+  options: ProjectionMatchSubscriberOptions,
+): Layer.Layer<never, never, RuntimeContext> =>
+  Layer.scopedDiscard(
+    Effect.gen(function* () {
+      const cfg = yield* RuntimeContext
+      const subscriberInput: SubscriberInput = {
+        streamUrl: cfg.streamUrl,
+        contentType: cfg.contentType,
+      }
+      yield* runScopedSubscriberProgram({
+        subscribe: subscribeCompletionsAndEventStreams,
+        nextDeadlineMs: (snapshot) =>
+          minPendingDueAtMs(snapshot.completions, (completion) => {
+            if (completion.kind !== "projection_match") return undefined
+            const data = completion.data as
+              | Record<string, unknown>
+              | undefined
+            const value = data?.deadlineAtMs
+            return typeof value === "number" ? value : undefined
+          }),
+        scan: (snapshot) =>
+          runProjectionMatchSubscriberFromSnapshot(snapshot, {
+            ...subscriberInput,
+            evaluate: options.evaluate,
+          }),
       })
     }),
   )
@@ -138,6 +183,7 @@ export const Firegrid = {
       deadlineField: "whenMs",
       scan: runScheduledWorkSubscriberFromSnapshot,
     }),
+    projectionMatch: projectionMatchSubscriberLayer,
   },
   handler,
   eventStream,

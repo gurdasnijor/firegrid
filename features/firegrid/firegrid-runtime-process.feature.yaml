@@ -10,6 +10,7 @@ components:
       2: The runtime package exposes server-side runtime boot and Layer composition APIs.
       3: The runtime package does not import the app-facing client package.
       4: Public withHost-style helpers that provide an app client are removed or deprecated.
+      5: The runtime helper namespace exposes a low-level projection-match subscriber Layer for attaching existing substrate projection-match completions to runtime execution.
 
   SCENARIOS:
     requirements:
@@ -78,3 +79,5 @@ constraints:
   RUNTIME_HOT_PATH:
     requirements:
       1: Long-running runtime subscriber and handler loops use a single scoped live `SubstrateStreamDB` after the initial no-gap catch-up and must not call `rebuildProjection` or `db.preload` on every wake while a live handle is held; one-shot snapshot APIs and tests may still rebuild.
+      2: The runtime projection-match subscriber reuses the shared scoped subscriber runner and the substrate snapshot-input projection-match scan rather than rebuilding projections on each wake.
+      3: The runtime projection-match subscriber wakes from both durable completion changes and caller-owned EventStream changes, while preserving durable deadline wake behavior for projection-match timeouts.

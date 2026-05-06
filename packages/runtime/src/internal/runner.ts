@@ -92,6 +92,22 @@ export const subscribeCompletions = (
   return () => sub.unsubscribe()
 }
 
+// firegrid-runtime-process.RUNTIME_HOT_PATH.3
+// Projection-match subscribers must wake when either the pending completion set
+// changes or caller-owned EventStream state changes. The latter can satisfy a
+// projection matcher even when no completion row changed.
+export const subscribeCompletionsAndEventStreams = (
+  db: CollectionsDb,
+  onEdge: () => void,
+): (() => void) => {
+  const completions = db.collections.completions.subscribeChanges(onEdge)
+  const eventStreams = db.collections.eventStreams.subscribeChanges(onEdge)
+  return () => {
+    completions.unsubscribe()
+    eventStreams.unsubscribe()
+  }
+}
+
 const deadlineWakeStream = (
   schedules: Queue.Dequeue<DeadlineSchedule>,
 ): Stream.Stream<void> =>

@@ -20,6 +20,7 @@ import { describe, expect, it } from "vitest"
 import {
   AcquireDbError as RunnerAcquireDbError,
   minPendingDueAtMs,
+  subscribeCompletionsAndEventStreams,
   runScopedSubscriberLoopWithAcquire,
   runScopedSubscriberLoopFromDb,
 } from "../internal/runner.ts"
@@ -45,6 +46,7 @@ const fakeDb = () =>
       runs: fakeCollection(),
       completions: fakeCollection<CompletionValue>(),
       claimAttempts: fakeCollection(),
+      eventStreams: fakeCollection(),
     },
     close: () => undefined,
   }) as never
@@ -210,6 +212,97 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runtime runner in
     )
 
     expect(observed).toBe(2)
+  })
+
+  it("firegrid-runtime-process.RUNTIME_HOT_PATH.3 — projection-match subscription wakes on completion and EventStream edges and unsubscribes both", () => {
+    const db = fakeDb()
+    const callbacks: Array<() => void> = []
+    const unsubscribed: string[] = []
+    ;(db as {
+      collections: {
+        completions: FakeCollection<CompletionValue>
+        eventStreams: FakeCollection<unknown>
+      }
+    }).collections.completions.subscribeChanges = (cb) => {
+      callbacks.push(cb)
+      return { unsubscribe: () => unsubscribed.push("completions") }
+    }
+    ;(db as {
+      collections: {
+        completions: FakeCollection<CompletionValue>
+        eventStreams: FakeCollection<unknown>
+      }
+    }).collections.eventStreams.subscribeChanges = (cb) => {
+      callbacks.push(cb)
+      return { unsubscribe: () => unsubscribed.push("eventStreams") }
+    }
+
+    let wakes = 0
+    const unsubscribe = subscribeCompletionsAndEventStreams(db, () => {
+      wakes += 1
+    })
+    expect(callbacks).toHaveLength(2)
+    callbacks[0]?.()
+    callbacks[1]?.()
+    expect(wakes).toBe(2)
+
+    unsubscribe()
+    expect(new Set(unsubscribed)).toEqual(
+      new Set(["completions", "eventStreams"]),
+    )
+  })
+
+  it("firegrid-runtime-process.RUNTIME_HOT_PATH.3 — projection-match deadlines can reuse minPendingDueAtMs", () => {
+    const completions = new Map<string, CompletionValue>([
+      [
+        "other-kind",
+        {
+          completionId: "other-kind",
+          kind: "timer",
+          state: "pending",
+          data: { deadlineAtMs: 1 },
+        },
+      ],
+      [
+        "terminal",
+        {
+          completionId: "terminal",
+          kind: "projection_match",
+          state: "cancelled",
+          data: { deadlineAtMs: 5 },
+        },
+      ],
+      [
+        "later",
+        {
+          completionId: "later",
+          kind: "projection_match",
+          state: "pending",
+          data: { deadlineAtMs: 50 },
+        },
+      ],
+      [
+        "earlier",
+        {
+          completionId: "earlier",
+          kind: "projection_match",
+          state: "pending",
+          data: { deadlineAtMs: 25 },
+        },
+      ],
+    ])
+
+    const due = minPendingDueAtMs(completions, (completion) => {
+      if (completion.kind !== "projection_match") return undefined
+      const data = completion.data as
+        | { readonly deadlineAtMs?: unknown }
+        | undefined
+      return typeof data?.deadlineAtMs === "number"
+        ? data.deadlineAtMs
+        : undefined
+    })
+
+    expect(due).toBe(25)
   })
 
   it("firegrid-remediation-hardening.TEST_GUARDRAILS.3 — runner deadline stream cancels a stale pending deadline after an edge wake recomputes no due time", async () => {

@@ -2,6 +2,7 @@ import type { StreamDB } from "@durable-streams/state"
 import type {
   ClaimAttemptValue,
   CompletionValue,
+  EventStreamValue,
   RunValue,
 } from "../protocol/schema/rows.ts"
 import type { substrateState } from "../protocol/schema/state.ts"
@@ -22,6 +23,7 @@ export interface ProjectionSnapshot {
   // Evidence-level: each accepted attempt keyed by claimId.
   // Winner derivation is owned by claim-and-operator-authority (Slice 5/6).
   readonly claimAttempts: ReadonlyMap<string, ClaimAttemptValue>
+  readonly eventStreams: ReadonlyMap<string, EventStreamValue>
 }
 
 export type SubstrateStreamDB = StreamDB<typeof substrateState>
@@ -32,5 +34,6 @@ export function snapshotFromDb(db: SubstrateStreamDB): ProjectionSnapshot {
     runs: new Map(db.collections.runs.state),
     completions: new Map(db.collections.completions.state),
     claimAttempts: new Map(db.collections.claimAttempts.state),
+    eventStreams: new Map(db.collections.eventStreams.state),
   }
 }
