@@ -19,7 +19,7 @@ describe("runtime-lab-inspector.WRITE_BOUNDARY.1 + firegrid-event-streams.CLIENT
     const descriptor = readFileSync(resolve(labRoot, "lab-events.ts"), "utf8")
     const combined = `${clientHelper}\n${panel}\n${descriptor}`
 
-    expect(combined).toContain("@firegrid/client/firegrid")
+    expect(combined).toContain("@firegrid/client/event-streams")
     expect(combined).toContain("EventStreamClientLive")
     expect(combined).not.toContain("@firegrid/runtime")
     expect(combined).not.toContain("@firegrid/substrate")

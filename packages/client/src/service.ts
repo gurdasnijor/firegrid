@@ -1,11 +1,11 @@
 import { Context, type Effect, type Stream } from "effect"
 import type { Operation, OperationHandle } from "@firegrid/substrate/descriptors"
-import type { EventStreamClientService } from "./event-client.ts"
+import type { EventStreamClientService } from "./event-streams.ts"
 import type {
   ObserveError,
   ResultError,
   SendError,
-} from "./operation-client.ts"
+} from "./operations.ts"
 
 export interface FiregridClientConfig {
   readonly streamUrl: string

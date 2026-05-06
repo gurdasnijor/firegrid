@@ -32,4 +32,4 @@ export {
   type OperationState,
   type ResultError,
   type SendError,
-} from "./firegrid/operation-client.ts"
+} from "./operations.ts"

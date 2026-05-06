@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as FiregridSurface from "../firegrid/index.ts"
+import * as FiregridSurface from "../event-streams-public.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const clientRoot = resolve(here, "..")
@@ -27,15 +27,15 @@ describe("firegrid-event-streams.CLIENT_API.4 — Firegrid browser subpath is ph
     // @ts-expect-error firegrid-remediation-hardening.PUBLIC_SURFACES.4
     void FiregridSurface.FiregridClientLive
 
-    const publicSubpath = readClient("firegrid/index.ts")
-    const eventClient = readClient("firegrid/event-client.ts")
-    const combined = `${publicSubpath}\n${eventClient}`
+    const publicSubpath = readClient("event-streams-public.ts")
+    const eventStreams = readClient("event-streams.ts")
+    const combined = `${publicSubpath}\n${eventStreams}`
 
     expect(combined).toContain(
       "@firegrid/substrate/descriptors",
     )
-    expect(combined).not.toContain("./operation-client")
-    expect(combined).not.toContain("../client/service")
+    expect(combined).not.toContain("./operations")
+    expect(combined).not.toContain("./internal/work-client")
     expect(combined).not.toContain("SubstrateClientLive")
     expect(combined).not.toContain("@firegrid/substrate\"")
     expect(combined).not.toContain("@firegrid/substrate'")
@@ -54,9 +54,10 @@ describe("firegrid-event-streams.CLIENT_API.4 — Firegrid browser subpath is ph
     expect(substratePackage.exports["./descriptors"]).toBe(
       "./src/descriptors/index.ts",
     )
-    expect(clientPackage.exports["./firegrid"]).toBe(
-      "./src/firegrid/index.ts",
+    expect(clientPackage.exports["./event-streams"]).toBe(
+      "./src/event-streams-public.ts",
     )
+    expect(clientPackage.exports["./firegrid"]).toBeUndefined()
     expect(clientPackage.exports["./compat"]).toBeUndefined()
   })
 })

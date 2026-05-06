@@ -10,4 +10,4 @@ export {
   type EventStreamClientConfig,
   type EventStreamClientService,
   type EventsError,
-} from "./event-client.ts"
+} from "./event-streams.ts"

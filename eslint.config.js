@@ -799,7 +799,7 @@ export default tseslint.config(
     //     via member access (e.g. `Substrate.completeRun`); blocking
     //     the import shape itself closes that hole.
     files: [
-      "packages/runtime/src/runtime/internal/event-stream-materializer.ts",
+      "packages/runtime/src/internal/event-stream-materializer.ts",
     ],
     rules: {
       "no-restricted-imports": [

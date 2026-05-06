@@ -10,8 +10,8 @@ import {
 import {
   SubstrateClient,
   SubstrateClientLive,
-} from "../client/service.ts"
-import type { DeclareWorkInput } from "../client/work.ts"
+} from "../internal/work-client.ts"
+import type { DeclareWorkInput } from "../internal/work-facet.ts"
 import {
   createSubstrateStream,
   startTestServer,
