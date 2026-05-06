@@ -21,6 +21,7 @@ components:
       5: If a resolver cannot prove a no-gap snapshot/follow boundary, it fails with a typed unsupported/no-gap error.
       6: A timeout, when supplied, is recorded as durable completion data and later resolves through durable completion terminal rules rather than an in-memory timer callback.
       7: A timeout duration is converted to an absolute durable deadline when the projection-match completion is created.
+      8: "Projection-match wait resume compares an existing blocked completion to the requested wait by the canonical Effect Schema trigger fields: tag, label, projection key, and matcher id."
 
   SCHEDULE_WORK:
     requirements:

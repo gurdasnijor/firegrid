@@ -11,7 +11,12 @@ import {
   type ChoreographyTrigger,
   type TriggerMatcher,
 } from "../coordination/choreography/index.ts"
-import { SubstrateProducerLive, WorkProducer } from "../write-api/producer.ts"
+import {
+  CompletionProducer,
+  SubstrateProducerLive,
+  WorkProducer,
+} from "../write-api/producer.ts"
+import { blockRun } from "../protocol/state-machine.ts"
 import { rebuildProjection } from "../stream.ts"
 import { DurableWaitsLive } from "../execution/waits.ts"
 import {
@@ -51,6 +56,45 @@ const declareRun = (streamUrl: string, runId: string) =>
     const wp = yield* WorkProducer
     return yield* wp.declareWork({ runId })
   }).pipe(Effect.provide(SubstrateProducerLive({ streamUrl })))
+
+const appendRaw = async (streamUrl: string, row: unknown): Promise<void> => {
+  const stream = await DurableStream.create({
+    url: streamUrl,
+    contentType: "application/json",
+  })
+  await stream.append(JSON.stringify(row))
+}
+
+const runWaitFor = (
+  streamUrl: string,
+  runId: string,
+  ownerId: string,
+  trigger: ChoreographyTrigger,
+  matchers: Record<string, TriggerMatcher> = {
+    [trigger.matcherId]: matcherAccept,
+  },
+) =>
+  Effect.gen(function* () {
+    const choreo = yield* Choreography
+    return yield* choreo.waitFor(trigger, { timeout: Duration.minutes(10) })
+  }).pipe(
+    Effect.provide(
+      Layer.provideMerge(
+        buildLayer(streamUrl, matchers),
+        currentWorkContextLayer({
+          workId: WorkId(runId),
+          ownerId: OwnerId(ownerId),
+        }),
+      ),
+    ),
+  )
+
+const projectionMatchCompletions = async (streamUrl: string) => {
+  const snapshot = await rebuildProjection({ url: streamUrl })
+  return Array.from(snapshot.completions.values()).filter(
+    (completion) => completion.kind === "projection_match",
+  )
+}
 
 // choreography-facade.CHOREOGRAPHY_API.2
 // choreography-facade.SUSPENSION.1
@@ -153,6 +197,186 @@ describe("choreography-facade.CHOREOGRAPHY_API.3 — waitFor creates a projectio
     expect(data.trigger).toStrictEqual(trigger)
     expect(data.timeoutMs).toBe(10 * 60 * 1000)
     expect(typeof data.deadlineAtMs).toBe("number")
+  })
+
+  it("choreography-facade.CHOREOGRAPHY_API.10 — waitFor re-suspends on the same pending projection-match completion without creating a duplicate", async () => {
+    const url = await createSubstrateStream("choreo-wait-idempotent-pending")
+    const runId = "run-wait-pending-1"
+    await declareRun(url, runId).pipe(Effect.runPromise)
+
+    const trigger: ChoreographyTrigger = {
+      _tag: "ProjectionMatch",
+      label: "permission-resolved:p-pending",
+      projectionKey: "plane.permission.byId:p-pending",
+      matcherId: "fixture.permission.resolved",
+    }
+
+    const first = await runWaitFor(
+      url,
+      runId,
+      "owner-wait-pending",
+      trigger,
+    ).pipe(Effect.runPromiseExit)
+    expect(Exit.isFailure(first)).toBe(true)
+    if (Exit.isFailure(first)) {
+      expect(Cause.isInterruptedOnly(first.cause)).toBe(true)
+    }
+
+    const blocked = await rebuildProjection({ url })
+    const blockedCompletionId =
+      blocked.runs.get(runId)?.blockedOnCompletionId
+    expect(blockedCompletionId).toBeDefined()
+
+    const second = await runWaitFor(
+      url,
+      runId,
+      "owner-wait-pending",
+      trigger,
+    ).pipe(Effect.runPromiseExit)
+    expect(Exit.isFailure(second)).toBe(true)
+    if (Exit.isFailure(second)) {
+      expect(Cause.isInterruptedOnly(second.cause)).toBe(true)
+    }
+
+    const completions = await projectionMatchCompletions(url)
+    expect(completions).toHaveLength(1)
+    expect(completions[0]?.completionId).toBe(blockedCompletionId)
+    expect(completions[0]?.state).toBe("pending")
+  })
+
+  it("choreography-facade.CHOREOGRAPHY_API.9 + durable-waits-and-scheduling.WAIT_FOR.8 — waitFor resumes on the same resolved projection-match completion without creating a duplicate", async () => {
+    const url = await createSubstrateStream("choreo-wait-idempotent-resolved")
+    const runId = "run-wait-resolved-1"
+    await declareRun(url, runId).pipe(Effect.runPromise)
+
+    const trigger: ChoreographyTrigger = {
+      _tag: "ProjectionMatch",
+      label: "permission-resolved:p-resolved",
+      projectionKey: "plane.permission.byId:p-resolved",
+      matcherId: "fixture.permission.resolved",
+    }
+
+    await runWaitFor(
+      url,
+      runId,
+      "owner-wait-resolved",
+      trigger,
+    ).pipe(Effect.runPromiseExit)
+    const blocked = await rebuildProjection({ url })
+    const completionId = blocked.runs.get(runId)?.blockedOnCompletionId
+    expect(completionId).toBeDefined()
+
+    await Effect.gen(function* () {
+      const completions = yield* CompletionProducer
+      yield* completions.resolveCompletion({
+        completionId: completionId!,
+        result: { matchedValue: { decision: "allow" } },
+      })
+    }).pipe(
+      Effect.provide(SubstrateProducerLive({ streamUrl: url })),
+      Effect.runPromise,
+    )
+
+    const resumed = await Effect.gen(function* () {
+      const choreo = yield* Choreography
+      yield* choreo.waitFor(trigger)
+      return "resumed" as const
+    }).pipe(
+      Effect.provide(
+        Layer.provideMerge(
+          buildLayer(url, {
+            "fixture.permission.resolved": matcherAccept,
+          }),
+          currentWorkContextLayer({
+            workId: WorkId(runId),
+            ownerId: OwnerId("owner-wait-resolved"),
+          }),
+        ),
+      ),
+      Effect.runPromise,
+    )
+    expect(resumed).toBe("resumed")
+
+    const completions = await projectionMatchCompletions(url)
+    expect(completions).toHaveLength(1)
+    expect(completions[0]?.completionId).toBe(completionId)
+    expect(completions[0]?.state).toBe("resolved")
+  })
+
+  it("choreography-facade.CHOREOGRAPHY_API.11 — waitFor defects on a trigger-mismatched blocked completion without creating a duplicate", async () => {
+    const url = await createSubstrateStream("choreo-wait-idempotent-mismatch")
+    const runId = "run-wait-mismatch-1"
+    await declareRun(url, runId).pipe(Effect.runPromise)
+
+    const firstTrigger: ChoreographyTrigger = {
+      _tag: "ProjectionMatch",
+      label: "permission-resolved:p-original",
+      projectionKey: "plane.permission.byId:p-original",
+      matcherId: "fixture.permission.resolved",
+    }
+    const secondTrigger: ChoreographyTrigger = {
+      _tag: "ProjectionMatch",
+      label: "permission-resolved:p-other",
+      projectionKey: "plane.permission.byId:p-other",
+      matcherId: "fixture.permission.other",
+    }
+
+    await runWaitFor(
+      url,
+      runId,
+      "owner-wait-mismatch",
+      firstTrigger,
+    ).pipe(Effect.runPromiseExit)
+
+    const exit = await runWaitFor(
+      url,
+      runId,
+      "owner-wait-mismatch",
+      secondTrigger,
+      {
+        "fixture.permission.resolved": matcherAccept,
+        "fixture.permission.other": matcherAccept,
+      },
+    ).pipe(Effect.runPromiseExit)
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.isDie(exit.cause)).toBe(true)
+    }
+    expect(await projectionMatchCompletions(url)).toHaveLength(1)
+  })
+
+  it("choreography-facade.CHOREOGRAPHY_API.11 — waitFor defects when the current run is blocked on a missing completion", async () => {
+    const url = await createSubstrateStream("choreo-wait-idempotent-missing")
+    const runId = "run-wait-missing-completion-1"
+    await declareRun(url, runId).pipe(Effect.runPromise)
+
+    const started = (await rebuildProjection({ url })).runs.get(runId)
+    expect(started).toBeDefined()
+    await appendRaw(
+      url,
+      blockRun(started!, {
+        blockedOnCompletionId: "missing-projection-match-completion",
+      }).pipe(Effect.runSync),
+    )
+
+    const trigger: ChoreographyTrigger = {
+      _tag: "ProjectionMatch",
+      label: "permission-resolved:p-missing",
+      projectionKey: "plane.permission.byId:p-missing",
+      matcherId: "fixture.permission.resolved",
+    }
+
+    const exit = await runWaitFor(
+      url,
+      runId,
+      "owner-wait-missing-completion",
+      trigger,
+    ).pipe(Effect.runPromiseExit)
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.isDie(exit.cause)).toBe(true)
+    }
+    expect(await projectionMatchCompletions(url)).toHaveLength(0)
   })
 })
 

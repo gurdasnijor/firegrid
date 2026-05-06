@@ -1,9 +1,13 @@
 import { DurableStream } from "@durable-streams/client"
 import {
   Choreography,
+  ChoreographyLive,
+  ChoreographyTrigger,
   CompletionId,
   CurrentWorkContext,
+  triggerMatchersLayer,
   type ChoreographyService,
+  type TriggerMatcher,
 } from "@firegrid/substrate"
 import {
   Operation,
@@ -11,6 +15,7 @@ import {
 } from "@firegrid/substrate/descriptors"
 import {
   DurableWaits,
+  DurableWaitsLive,
   rebuildProjection,
   startRun,
   substrateState,
@@ -61,6 +66,18 @@ const ContextEcho = Operation.define({
     ownerId: Schema.String,
     scheduledCompletionId: Schema.String,
     scheduledWhenMs: Schema.Number,
+  }),
+})
+
+const WaitForPermission = Operation.define({
+  name: "WaitForPermission",
+  input: Schema.Struct({
+    permissionId: Schema.String,
+    trigger: ChoreographyTrigger,
+  }),
+  output: Schema.Struct({
+    permissionId: Schema.String,
+    status: Schema.Literal("approved"),
   }),
 })
 
@@ -138,6 +155,46 @@ const seedBlockedEchoRun = async (
   await stream.append(JSON.stringify(resolvedCompletionEvent))
 }
 
+const seedBlockedWaitForRun = async (
+  streamUrl: string,
+  runId: string,
+  completionId: string,
+  payload: {
+    readonly permissionId: string
+    readonly trigger: ChoreographyTrigger
+  },
+): Promise<void> => {
+  const startedData = {
+    _envelope: OPERATION_ENVELOPE_TAG,
+    operation: WaitForPermission.name,
+    payload,
+  }
+  const blockedRunEvent = substrateState.runs.insert({
+    value: {
+      runId,
+      state: "blocked",
+      data: startedData,
+      blockedOnCompletionId: completionId,
+    },
+  })
+  const resolvedCompletionEvent = substrateState.completions.insert({
+    value: {
+      completionId,
+      workId: runId,
+      kind: "projection_match",
+      state: "resolved",
+      data: { trigger: payload.trigger },
+      result: { matchedValue: { permissionId: payload.permissionId } },
+    },
+  })
+  const stream = await DurableStream.create({
+    url: streamUrl,
+    contentType: "application/json",
+  })
+  await stream.append(JSON.stringify(blockedRunEvent))
+  await stream.append(JSON.stringify(resolvedCompletionEvent))
+}
+
 const seedContextRun = (
   streamUrl: string,
   runId: string,
@@ -198,6 +255,9 @@ const fakeDurableWaitsLayer = Layer.succeed(DurableWaits, {
       state: "pending",
     }),
 })
+
+const permissionMatcher: TriggerMatcher = () =>
+  Effect.succeed({ kind: "match", value: { status: "approved" } })
 
 const completedRunFromProjection = (streamUrl: string, runId: string) =>
   Effect.tryPromise({
@@ -301,6 +361,73 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
     expect(started.result).toEqual({ msg: "hello", len: 5 })
     expect(resumed.state).toBe("completed")
     expect(resumed.result).toEqual({ msg: "resume", len: 6 })
+  })
+
+  // firegrid-runtime-process.READY_WORK_OPERATOR.5
+  // choreography-facade.CHOREOGRAPHY_API.9
+  // durable-waits-and-scheduling.WAIT_FOR.8
+  it("ready-work resume re-enters waitFor and terminalizes when the blocked projection-match completion is already resolved", async () => {
+    const streamUrl = await createRuntimeStream(
+      "firegrid-handler-waitfor-resume-test",
+    )
+    const runId = "ready-work-waitfor-run-1"
+    const completionId = "completion-waitfor-resolved-1"
+    const trigger: ChoreographyTrigger = {
+      _tag: "ProjectionMatch",
+      label: "permission-approved:permission-runtime-1",
+      projectionKey: "PermissionEvents:permission:permission-runtime-1",
+      matcherId: "scenario.permission.approved",
+    }
+    await seedBlockedWaitForRun(streamUrl, runId, completionId, {
+      permissionId: "permission-runtime-1",
+      trigger,
+    })
+
+    const handlerLayer = Firegrid.handler(WaitForPermission, (input) =>
+      Effect.gen(function* () {
+        const choreo = yield* Choreography
+        yield* choreo.waitFor(input.trigger)
+        return {
+          permissionId: input.permissionId,
+          status: "approved" as const,
+        }
+      }),
+    ).pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          ChoreographyLive({ streamUrl }),
+          DurableWaitsLive({ streamUrl }),
+          triggerMatchersLayer({
+            "scenario.permission.approved": permissionMatcher,
+          }),
+        ),
+      ),
+    )
+
+    const completed = await Effect.gen(function* () {
+      return yield* completedRunFromProjection(streamUrl, runId)
+    }).pipe(
+      Effect.provide(
+        FiregridRuntimeBoot.attached({
+          streamUrl,
+          runtime: handlerLayer,
+        }),
+      ),
+      Effect.scoped,
+      Effect.runPromise,
+    )
+
+    expect(completed.state).toBe("completed")
+    expect(completed.result).toEqual({
+      permissionId: "permission-runtime-1",
+      status: "approved",
+    })
+
+    const projectionMatchCompletions = Array.from(
+      (await rebuildProjection({ url: streamUrl })).completions.values(),
+    ).filter((completion) => completion.kind === "projection_match")
+    expect(projectionMatchCompletions).toHaveLength(1)
+    expect(projectionMatchCompletions[0]?.completionId).toBe(completionId)
   })
 
   // choreography-facade.CURRENT_WORK_CONTEXT.1
