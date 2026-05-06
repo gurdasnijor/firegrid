@@ -17,9 +17,12 @@ components:
       1: "`@firegrid/runtime` is Node-tier; browser, edge, and Cloudflare Worker code does not import `@firegrid/runtime`."
       2: "`@firegrid/client` is browser- and edge-safe; the browser bundle does not depend on Node-only modules through any import path reachable from `@firegrid/client` exports."
       3: "There is no `@firegrid/client` to `@firegrid/runtime` package edge."
+      3-note: "`LOCALITY.3` and `LOCALITY.4` prohibit manifest-level dependency edges between the two packages, not application-level imports. An application may depend on and import both `@firegrid/client` and `@firegrid/runtime` from a single Node-tier entrypoint, provided each package is declared in the application's own dependency manifest. Browser bundles still satisfy `LOCALITY.1` and `LOCALITY.2` because the browser bundle excludes the Node-only entrypoint at build time."
       4: "There is no `@firegrid/runtime` to `@firegrid/client` package edge."
       5: "`@firegrid/substrate` exposes only the curated root and approved subpaths `./descriptors`, `./event-plane`, and `./id-gen` to application and downstream package code; `@firegrid/substrate/kernel` is not an application-facing import."
       6: Public scheduling, wait, projection, subscriber, runtime, and event-plane composition primitives are reachable through public package roots; applications do not need dist-internal or internal-subpath imports to compose runtime work.
+      7: "`@firegrid/substrate/event-plane` is browser- and edge-safe and is the documented browser-side surface for app-owned EventPlane projection reads; browser code may import `EventPlane.define`, `EventPlane.layer`, the `PlaneProducer` Tag, the `PlaneProjection` Tag, and related types directly from this subpath without violating `LOCALITY.1`, `LOCALITY.2`, or `LOCALITY.3`."
+      7-note: "An ergonomic browser-facing facade over the same mechanics is in scope for `firegrid-client-projection-api` once that lane lands. The presence of an open client-projection-api lane does not gate browser EventPlane consumption today; `LOCALITY.7` authorizes the subpath import in advance of any such facade shipping."
 
   AUTHORITY:
     requirements:
