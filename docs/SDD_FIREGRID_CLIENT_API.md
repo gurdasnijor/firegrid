@@ -281,6 +281,38 @@ needs a capability that is missing from `@firegrid/client`, that should become
 a production client API or a read-only diagnostic path, not a lab-only writer
 surface.
 
+## Client Package Runbook
+
+The package-level client runbook lives at `packages/client/README.md`. It is
+the concise smoke path for app code that wants to:
+
+- construct `FiregridClientLive` from an explicit stream URL;
+- define browser-safe `Operation` and `EventStream` descriptors;
+- call `send`, `result`, `call`, and `observe`;
+- call `emit` and `events`;
+- verify the package with focused client tests.
+
+The runbook intentionally does not include runtime handler registration,
+RunWait, claim or terminal APIs, raw Durable Streams writes, lab-only paths, or
+Durable Streams dev-server launchers. It points readers back to this SDD for
+the authority boundary and to runtime/scenario documentation for handler-side
+execution.
+
+Anchor requirements:
+
+- `firegrid-client-api.CLIENT_SURFACE.1`
+- `firegrid-client-api.CLIENT_SURFACE.2`
+- `firegrid-client-api.CLIENT_SURFACE.4`
+- `firegrid-client-api.EVENT_INTEROP.1`
+- `firegrid-client-api.EVENT_INTEROP.3`
+- `firegrid-client-api.AUTHORITY_BOUNDARY.1`
+- `firegrid-client-api.AUTHORITY_BOUNDARY.2`
+- `firegrid-client-api.AUTHORITY_BOUNDARY.3`
+- `firegrid-client-api.AUTHORITY_BOUNDARY.4`
+- `firegrid-client-api.AUTHORITY_BOUNDARY.5`
+- `firegrid-client-api.DOCUMENTATION.1`
+- `firegrid-client-api.DOCUMENTATION.2`
+
 ## Non-Goals
 
 - No runtime graph loading through the client.
