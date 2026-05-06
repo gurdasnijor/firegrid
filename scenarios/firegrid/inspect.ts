@@ -176,5 +176,8 @@ const main = async () => {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  await main()
+  void main().catch((error: unknown) => {
+    console.error(error)
+    process.exitCode = 1
+  })
 }

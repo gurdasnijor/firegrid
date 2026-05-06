@@ -25,6 +25,7 @@ import {
   Data,
   Effect,
   Exit,
+  Fiber,
   Option,
   Stream,
   type ParseResult,
@@ -156,10 +157,12 @@ export const runOperationDispatchLoopWithAcquire = <
           )
           if (matched === undefined) return
 
-          const exit = yield* input.run(matched.input).pipe(
-            Effect.provide(currentWorkContextForRun(cfg, matched.run)),
-            Effect.exit,
+          const handlerFiber = yield* Effect.fork(
+            input.run(matched.input).pipe(
+              Effect.provide(currentWorkContextForRun(cfg, matched.run)),
+            ),
           )
+          const exit = yield* Fiber.await(handlerFiber)
 
           yield* Exit.match(exit, {
             onSuccess: (value) =>

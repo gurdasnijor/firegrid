@@ -14,7 +14,7 @@ import {
 import { Effect, Schema } from "effect"
 import { fileURLToPath } from "node:url"
 
-const PermissionEvents = EventStream.define({
+export const PermissionEvents = EventStream.define({
   name: "PermissionEvents",
   event: Schema.Struct({
     permissionId: Schema.String,
@@ -23,7 +23,7 @@ const PermissionEvents = EventStream.define({
   }),
 })
 
-const WaitForPermissionOperation = Operation.define({
+export const WaitForPermissionOperation = Operation.define({
   name: "WaitForPermission",
   input: Schema.Struct({
     permissionId: Schema.String,
@@ -35,11 +35,11 @@ const WaitForPermissionOperation = Operation.define({
   }),
 })
 
-const DEFAULT_RUN_ID = "run-wait-for-cli-1"
-const DEFAULT_EVENT_ID = "event-permission-approved-cli-1"
-const DEFAULT_PERMISSION_ID = "permission-cli-1"
+export const DEFAULT_WAIT_FOR_RUN_ID = "run-wait-for-cli-1"
+export const DEFAULT_WAIT_FOR_EVENT_ID = "event-permission-approved-cli-1"
+export const DEFAULT_PERMISSION_ID = "permission-cli-1"
 
-const permissionApprovedTrigger = (permissionId: string) =>
+export const permissionApprovedTrigger = (permissionId: string) =>
   Schema.encodeSync(ProjectionMatchTriggerSchema)({
     _tag: "ProjectionMatch",
     label: `permission-approved:${permissionId}`,
@@ -52,8 +52,8 @@ export const makeWaitForScenarioRows = (input: {
   readonly eventId?: string
   readonly permissionId?: string
 } = {}) => {
-  const runId = input.runId ?? DEFAULT_RUN_ID
-  const eventId = input.eventId ?? DEFAULT_EVENT_ID
+  const runId = input.runId ?? DEFAULT_WAIT_FOR_RUN_ID
+  const eventId = input.eventId ?? DEFAULT_WAIT_FOR_EVENT_ID
   const permissionId = input.permissionId ?? DEFAULT_PERMISSION_ID
   const trigger = permissionApprovedTrigger(permissionId)
 

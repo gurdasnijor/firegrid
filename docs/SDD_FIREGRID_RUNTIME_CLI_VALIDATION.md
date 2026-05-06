@@ -274,6 +274,65 @@ These rows prove only the CLI-write input side. The runtime receiver side still
 requires a runtime graph that installs a `WaitForPermission` handler and a
 projection-match subscriber/evaluator for `scenario.permission.approved`.
 
+Receiver-side validation uses a separate app-owned runtime entrypoint rather
+than hard-coding scenario behavior in the Firegrid binary. The receiver runtime
+composes `Firegrid.subscribers.projectionMatch(...)` with
+`Firegrid.handler(WaitForPermissionOperation, ...)` through
+`run({ connection, runtime })`; it does not import `@firegrid/client`, load an
+app graph dynamically, or start a Durable Streams dev server.
+
+Manual receiver-side flow:
+
+Terminal 1:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+export DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid
+durable-stream create firegrid --json
+```
+
+Terminal 2:
+
+```sh
+export DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid
+pnpm --filter @firegrid/scenarios run wait-for-receiver -- \
+  --stream-url "$DURABLE_STREAMS_URL"
+```
+
+Terminal 1:
+
+```sh
+pnpm --silent --filter @firegrid/scenarios run wait-for \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+```
+
+Terminal 1:
+
+```sh
+pnpm --silent --filter @firegrid/scenarios run inspect -- \
+  --stream-url "$DURABLE_STREAMS_URL"
+```
+
+Inspection should show `run-wait-for-cli-1` as `completed`, one
+`projection_match` completion as `resolved`, and the caller-owned
+`PermissionEvents` EventStream row. The receiver evaluator matches
+`scenario.permission.approved` by the trigger's canonical projection key
+(`PermissionEvents:permission:<permissionId>`) and the approved EventStream
+record.
+
+Focused automated validation is available through:
+
+```sh
+pnpm --filter @firegrid/scenarios run wait-for-receiver:self-test
+```
+
+That check starts a package-local Durable Streams test server, writes the same
+operation and EventStream rows as the CLI emitter while the app-owned receiver
+runtime is running, and verifies projection-match completion resolution plus
+ready-work terminalization through the same inspection projection.
+
 ### Scenario 3: scheduleAt / Scheduled Work
 
 Purpose: prove scheduled operation or scheduled work behavior without adding a
