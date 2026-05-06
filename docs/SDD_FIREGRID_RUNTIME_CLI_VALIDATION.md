@@ -38,7 +38,10 @@ Durable Streams CLI or Firegrid read models inspect the result
 ```
 
 The CLI writes JSON. Firegrid owns how that JSON is interpreted through Effect
-Schema decoding and protocol/read-model code.
+Schema decoding and protocol/read-model code. Scenario input rows are emitted
+by TypeScript files under `scenarios/firegrid/`; those files import the real
+Effect Schema descriptors and protocol builders and write JSON rows to stdout.
+They are not checked-in JSON fixtures and are not runtime support surfaces.
 
 The expected local shell shape is:
 
@@ -47,7 +50,8 @@ durable-streams-server dev
 
 export STREAM_URL=http://localhost:4437/v1/stream
 durable-stream create firegrid --json
-durable-stream write firegrid '<schema-valid scenario row JSON>' --json
+pnpm --filter @firegrid/scenarios run <scenario> \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
 durable-stream read firegrid
 ```
 
@@ -60,6 +64,12 @@ DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid \
 
 Firegrid does not wrap the Durable Streams CLI. Firegrid does not start the
 Durable Streams server. Firegrid does not spawn child dev processes.
+
+Scenario emitters prove the CLI-write input side. Terminalizing operation
+scenarios still requires a runtime process with the relevant handler graph
+supplied through intentional runtime graph-loading or host wiring. The current
+default `firegrid` binary attaches to the stream without hard-coded
+scenario-specific handler Layers.
 
 ## What Is Missing
 
@@ -91,6 +101,43 @@ Expected result:
 
 This scenario proves the runtime handler path without using `@firegrid/client`.
 
+Manual CLI input flow:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+durable-stream create firegrid --json
+
+pnpm --filter @firegrid/scenarios run echo \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+
+durable-stream read firegrid
+```
+
+The Echo emitter derives the row from `Operation.define`, the operation input
+schema, `OperationEnvelopeSchema`, `RunValue`, and the existing `startRun`
+protocol builder. For the default Echo input it writes this single JSON line to
+stdout:
+
+```json
+{"type":"durable.run","key":"run-echo-cli-1","value":{"runId":"run-echo-cli-1","state":"started","data":{"_envelope":"firegrid/operation@1","operation":"Echo","payload":{"message":"hello firegrid"}}},"headers":{"operation":"insert"}}
+```
+
+Once a runtime with the Echo handler graph is attached, the runtime should
+append a terminal `durable.run` upsert whose value includes:
+
+```json
+{
+  "runId": "run-echo-cli-1",
+  "state": "completed",
+  "result": {
+    "message": "hello firegrid",
+    "length": 14
+  }
+}
+```
+
 Relevant ACIDs:
 
 - `firegrid-operation-messaging.OPERATIONS.1`
@@ -101,6 +148,8 @@ Relevant ACIDs:
 - `firegrid-operation-messaging.RUNTIME_HANDLERS.2`
 - `firegrid-operation-messaging.RUNTIME_HANDLERS.3`
 - `firegrid-operation-messaging.RUNTIME_HANDLERS.4`
+- `firegrid-runtime-process.SCENARIOS.1`
+- `firegrid-runtime-process.SCENARIOS.2`
 
 ### Scenario 2: waitFor Projection Match
 

@@ -1,0 +1,16 @@
+{
+  "name": "@firegrid/scenarios",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "echo": "tsx echo.ts"
+  },
+  "dependencies": {
+    "@firegrid/substrate": "workspace:*",
+    "effect": "^3.18.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.4"
+  }
+}
