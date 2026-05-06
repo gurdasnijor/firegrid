@@ -13,15 +13,74 @@ concurrency:
 permissions:
   contents: read
 
-jobs:
-  checks:
-    name: Checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+env:
+  CI: true
+  TURBO_TELEMETRY_DISABLED: 1
 
-    env:
-      CI: true
-      TURBO_TELEMETRY_DISABLED: 1
+# CI-PERF-PARALLELIZATION:
+# Five independent jobs run in parallel; each performs its own checkout +
+# pnpm install. The `actions/setup-node@v6 with cache: pnpm` step shares the
+# pnpm content-addressed store across jobs in the same workflow run via the
+# repo-scoped cache keyed on `pnpm-lock.yaml`, so the second-and-later jobs
+# hit a warm pnpm store and install in seconds.
+#
+# Job split:
+#   lint              — eslint + dead-code + dup + dep-cruiser + effect-quality + effect-rules
+#   semgrep           — semgrep --test fixtures + production semgrep scan
+#   typecheck         — pnpm --recursive typecheck (already package-parallel via --workspace-concurrency=4)
+#   effect-diagnostics — effect-language-service diagnostics
+#   tests             — pnpm --recursive tests (per-package vitest processes have isolated test servers)
+#
+# Existing gates preserved 1:1; no behavior change. CI wall-clock drops from
+# the slowest serial sum to the slowest parallel job.
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.27.0
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Check dead-code baseline
+        run: pnpm run lint:dead
+
+      - name: Check duplicate-token baseline
+        run: pnpm run lint:dup
+
+      - name: Check transitive dependency boundaries
+        run: pnpm run lint:deps
+
+      - name: Check Effect-quality metric ratchet
+        run: pnpm run lint:effect-quality
+
+      - name: Check Effect-artifact rule budgets
+        run: pnpm run lint:effect-rules
+
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Check out repository
@@ -44,26 +103,8 @@ jobs:
 
       # Semgrep's npm packages are unmaintained; install the maintained CLI
       # with pipx, matching docs/TOOLING.md.
-      - name: Install semgrep CLI
+      - name: Install Semgrep CLI
         run: pipx install semgrep
-
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Check dead-code baseline
-        run: pnpm run lint:dead
-
-      - name: Check duplicate-token baseline
-        run: pnpm run lint:dup
-
-      - name: Check transitive dependency boundaries
-        run: pnpm run lint:deps
-
-      - name: Check Effect-quality metric ratchet
-        run: pnpm run lint:effect-quality
-
-      - name: Check Effect-artifact rule budgets
-        run: pnpm run lint:effect-rules
 
       - name: Test structural duplication rules
         run: pnpm run lint:semgrep:test
@@ -71,11 +112,88 @@ jobs:
       - name: Check structural duplication shapes
         run: pnpm run lint:semgrep
 
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.27.0
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Typecheck packages
         run: pnpm --recursive --if-present --workspace-concurrency=4 run typecheck
+
+  effect-diagnostics:
+    name: Effect diagnostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.27.0
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Effect diagnostics
         run: pnpm effect:diagnostics
 
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.27.0
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Each workspace's tests use an isolated per-process durable-streams
+      # test server (see packages/{client,runtime,substrate}/src/__tests__/
+      # helpers.ts). Removing the prior --workspace-concurrency=1 lets the
+      # four package vitest invocations run in parallel; pnpm defaults to
+      # `os.availableParallelism()` (4 on GitHub-hosted runners).
       - name: Test packages
-        run: pnpm --recursive --if-present --workspace-concurrency=1 run test
+        run: pnpm --recursive --if-present run test
