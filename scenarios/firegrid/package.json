@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "echo": "tsx echo.ts",
+    "scheduled-work": "tsx scheduled-work.ts",
     "wait-for": "tsx wait-for.ts"
   },
   "dependencies": {
