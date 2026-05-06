@@ -1,0 +1,73 @@
+feature:
+  name: firegrid-client-projection-api
+  product: firegrid
+  description: Browser- and edge-safe public client surface for descriptor-scoped projection-query consumption that lets product UIs replace REST polling, raw WebSocket replay, cursor merge, and projection-rebuild logic with snapshot-then-live-tail observation while preserving authority boundaries and deferring framework adapters until a second product call site proves shape.
+
+components:
+  BROWSER_SAFE_FACADE:
+    requirements:
+      1: Browser, edge, and Cloudflare Worker code observes durable projection state through descriptor-scoped projection-query handles imported from `@firegrid/client` only; the browser bundle does not pull `@firegrid/runtime`, `@firegrid/substrate/kernel`, or Node-only modules through any reachable import path.
+      2: Public client projection-query handles expose `snapshot`, `stream`, `until`, and `events` semantics that delegate to `firegrid-projection-query.QUERY_HANDLES.*`, `firegrid-projection-query.CURSOR_AND_REPLAY.*`, and `firegrid-projection-query.EXPECTED_ERRORS.*` rather than redefining cursor or read-error semantics.
+      3: Browser callers obtain a projection-query handle through an Effect service or `Layer` composed at app shell time; transport, header, and connection configuration is provided through Layers and the returned handle is configured (`R = never`) for ordinary callers.
+      4: Public client projection-query handles are read-only and do not append, claim, complete, fail, cancel, or resolve durable records per `firegrid-projection-query.AUTHORITY_BOUNDARY.*`.
+
+  SUBPATH_DISCIPLINE:
+    requirements:
+      1: Public client projection-query exports live on the curated `@firegrid/client` root or on an approved subpath such as a `./projection-query` subpath; introducing the surface does not require dist-internal or `./internal/...` imports per `firegrid-platform-invariants.LOCALITY.6`.
+      2: Public package manifest entries for the projection-query surface keep descriptor values, query handle factories, typed cursor values, and expected error types consumable from packed Firegrid artifacts; `dist/` artifacts are not committed and the consumer package smoke from `firegrid-platform-invariants.PACKAGE_DISCIPLINE.*` continues to pass.
+      3: Browser-safe entrypoints continue to satisfy the locality rules of `firegrid-platform-invariants.LOCALITY.1`, `firegrid-platform-invariants.LOCALITY.2`, `firegrid-platform-invariants.LOCALITY.3`, and `firegrid-platform-invariants.LOCALITY.5`; the projection-query surface does not introduce a `@firegrid/client` to `@firegrid/runtime` package edge.
+
+  AUTH_HEADER_HOOKS:
+    requirements:
+      1: Product code supplies caller-owned transport headers, auth headers, and connection options through a configured Layer; configuration values are application data and are not interpreted by Firegrid as authority.
+      2: Auth header values that may contain secret material are wrapped in `Effect.Redacted`, redacted, or rejected before becoming durable substrate metadata or span attributes per `firegrid-platform-invariants.SECURITY.4`.
+      3: Auth header configuration grants read access to the backing stream only and does not grant runtime, kernel, claim, completion, or terminal authority per `firegrid-projection-query.AUTHORITY_BOUNDARY.5`.
+      4: Public client projection-query handles do not embed product authentication policy, tenant identity, or callback token policy; those remain product responsibilities.
+
+  FRAMEWORK_ADAPTER_DEFERRAL:
+    requirements:
+      1: This feature does not ship React, TanStack DB, Vercel AI SDK, or other framework-specific helpers; framework adapters are downstream wrappers that consume the Effect-native projection-query handle.
+      2: A framework adapter is added only after a second real product call site demonstrates the wrapper shape and after a separate Acai feature spec captures the adapter ACIDs; Firegrid does not pre-emptively encode framework opinions.
+      3: Framework adapter packages live downstream and are not published under `@firegrid/*`; reusable framework wrappers are not Firegrid responsibilities until a future spec lane explicitly authorizes them.
+
+  RECONNECT_SEMANTICS:
+    requirements:
+      1: A browser projection-query handle resumes consumption after transport loss by using the snapshot cursor or last delivered cursor as the follow boundary; replay-then-live-tail mechanics from `firegrid-projection-query.CURSOR_AND_REPLAY.2` and `firegrid-projection-query.CURSOR_AND_REPLAY.3` apply unchanged.
+      2: A reconnect that lands inside the retained replay window proceeds without gaps; a reconnect that lands outside the retained window surfaces a typed `firegrid-projection-query.EXPECTED_ERRORS.3` retention-gap error rather than silent partial state.
+      3: A reconnect does not duplicate or drop entries across the replay-to-live boundary; consumers that ignore unknown event types remain conformant per `firegrid-observability.TRACE_METADATA.3`.
+      4: A reconnect does not require browser code to re-author the snapshot; resume from cursor is sufficient.
+
+constraints:
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `firegrid-platform-invariants.LOCALITY.1`, `firegrid-platform-invariants.LOCALITY.2`, `firegrid-platform-invariants.LOCALITY.3`, `firegrid-platform-invariants.LOCALITY.5`, and `firegrid-platform-invariants.LOCALITY.6` so that the public client projection-query surface stays browser- and edge-safe, does not pull runtime or kernel imports, does not introduce a `@firegrid/client` to `@firegrid/runtime` edge, and remains reachable from public package roots without dist-internal paths.
+      2: This spec is bound by `firegrid-platform-invariants.AUTHORITY.7` so that browser code does not gain claim authority, completion authority, terminal authority, RunWait authoring, subscriber registration, runtime handler registration, pending-completion creation, or `client.work.declare` through the projection-query surface.
+      3: This spec is bound by `firegrid-platform-invariants.SECURITY.1`, `firegrid-platform-invariants.SECURITY.2`, and `firegrid-platform-invariants.SECURITY.4` for the prohibitions on storing or transporting credentials, signing keys, and callback tokens through client transport configuration and the requirement that secret-shaped values are redacted, rejected, or wrapped in `Effect.Redacted` before becoming durable metadata or span attributes.
+      4: This spec is bound by `firegrid-platform-invariants.BOUNDARY.1` so that descriptor names, query handle factory names, and exposed type names do not adopt product session, prompt, provider, capability, sandbox, mailbox, ACP, MCP, or product transport vocabulary.
+      5: This spec is bound by `firegrid-platform-invariants.PACKAGE_DISCIPLINE.7` and `firegrid-platform-invariants.PACKAGE_DISCIPLINE.8` so that the projection-query surface ships from packed dist-only `exports`, packed artifacts continue to install through `file:` specs in cross-repo smokes, and consumer-side imports use `Firegrid.composeRuntime` and public client APIs.
+      6: This spec is bound by `firegrid-platform-invariants.ENFORCEMENT.1`, `firegrid-platform-invariants.ENFORCEMENT.2`, and `firegrid-platform-invariants.ENFORCEMENT.3` for citation discipline.
+
+  DEPENDS_ON:
+    requirements:
+      1: "`firegrid-projection-query.QUERY_HANDLES.*`, `firegrid-projection-query.CURSOR_AND_REPLAY.*`, `firegrid-projection-query.EXPECTED_ERRORS.*`, `firegrid-projection-query.AUTHORITY_BOUNDARY.*`, and `firegrid-projection-query.PRODUCT_NEUTRALITY.*` govern the underlying read facade; this spec is the browser-facing public packaging of those mechanics rather than a parallel implementation."
+      2: "`firegrid-client-api.*` governs the broader browser and client authority boundary; this spec extends the public surface only within that boundary."
+      3: "`client-event-plane-registration.*` and `durable-records-and-projections.*` govern caller-owned EventPlane definition and projection rebuild semantics; client projection-query handles read those projections without redefining them."
+      4: "`firegrid-event-streams.*` governs caller-owned EventStream append and read semantics; client projection-query `events` reads use those mechanics."
+      5: "`firegrid-observability.TRACE_METADATA.*` and `firegrid-observability.NON_AUTHORITY.*` govern trace propagation through metadata and the rule that observability is not authority."
+      6: "`firegrid-agent-runtime-substrate.RECONNECT_REPLAY.*` governs runtime-style reconnect expectations; this spec is the browser packaging that satisfies those expectations on the client tier."
+      7: "`flamecast-product-contract.SESSIONS_API.*` and `flamecast-product-contract.LOWERING.3` govern Flamecast-side session timeline, transcript, and event consumption that lower onto this client surface; product UIs and SDK ergonomics remain Flamecast-owned."
+
+  PACKAGE_PLACEMENT:
+    requirements:
+      1: Browser-safe projection-query handles live on the `@firegrid/client` curated root or an approved subpath such as `./projection-query`; package manifest `exports` reflect the chosen placement and the consumer package smoke continues to pass with no `@firegrid/runtime` or kernel imports observed.
+      2: Service tag, configuration types, and branded cursor types live on `@firegrid/client` or on a curated `@firegrid/substrate` public surface accessible to client code; runtime composition surfaces remain on `@firegrid/runtime`.
+      3: Adapter packages targeting React, TanStack DB, Vercel AI SDK, or other frameworks live downstream and are not published under `@firegrid/*` until a separate spec lane authorizes them.
+
+  NON_SCOPE:
+    requirements:
+      1: This spec does not define React hooks, TanStack DB collections, Vercel AI SDK transport adapters, or other framework-specific public APIs.
+      2: This spec does not define raw StreamDB collections, raw Durable Streams State envelopes, or kernel imports as part of any browser-safe public surface.
+      3: This spec does not define runtime composition, runtime handler registration, subscriber registration, RunWait authoring, claim authoring, or terminal authoring as part of the browser-safe public surface.
+      4: This spec does not define product authentication policy, tenant identity propagation, or callback token policy; those remain product responsibilities.
+      5: This spec does not define a separate publication channel; the surface ships through the existing `@firegrid/client` package per `firegrid-platform-invariants.PACKAGE_DISCIPLINE.*`.
+      6: This spec does not define billing, telemetry export, or analytics ingestion through projection-query handles; observability remains governed by `firegrid-observability.*`.

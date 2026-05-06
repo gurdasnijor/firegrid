@@ -1,0 +1,77 @@
+feature:
+  name: firegrid-scheduling-tool-bindings
+  product: firegrid
+  description: Product-neutral neutral tool-binding shape, durable descriptor publication, identical durable lowering between runtime API calls and tool-binding calls, current-work-context for suspending bindings, and agent-readable observation recipes that let agent runtimes mount Firegrid sleep, wait, scheduled work, and awakeable primitives without baking provider tool transports, MCP, prompt text, permission policy, or sandbox execution into Firegrid core.
+
+components:
+  NEUTRAL_TOOL_BINDING_SHAPE:
+    requirements:
+      1: A scheduling tool binding declares a stable name, an Effect Schema input, an Effect Schema neutral result or suspension output, and a handler reference; Firegrid-provided binding descriptor fields, default mechanic names, and suspension result variants use generic vocabulary and do not adopt MCP, OpenAI, Anthropic, ACP, Flamecast, provider, sandbox, prompt, permission, or product tool taxonomy.
+      1-note: Caller-owned binding aliases and input or result schemas may contain product vocabulary because they remain app-owned adapter content and are not Firegrid-native row families or exported Firegrid types.
+      2: Tool binding suspension output values describe substrate suspension causes only, such as scheduled wake or projection-match wait; product-shaped suspension reasons such as permission required, capability unsupported, or model unavailable are not Firegrid suspension result variants.
+      3: Tool binding handler outcomes are typed expected Effect results; success returns a typed neutral result, retryable failure uses a retryable typed expected error, and terminal failure uses a terminal typed expected error.
+      4: Tool binding signatures do not include credentials, callback tokens, signing keys, sandbox handles, or provider session tokens; auth and credentials remain caller-owned per `firegrid-platform-invariants.SECURITY.1`.
+
+  IDENTICAL_DURABLE_LOWERING:
+    requirements:
+      1: A scheduling tool binding call and the corresponding direct runtime API call write the same durable run, completion, claim, scheduled-work, and event-plane rows; agent runtimes do not gain a private durable shape by going through a tool binding rather than a runtime API.
+      2: A scheduling tool binding does not produce additional substrate authority that bypasses the runtime authority path; terminalization of any operation that uses a tool binding remains handler return or `Effect.fail` per `firegrid-platform-invariants.AUTHORITY.1` and `firegrid-platform-invariants.AUTHORITY.2`.
+      3: Tool binding calls participate in observability spans through `firegrid-observability.SUBSTRATE_SPANS.*` using the same span names and attribute schema as the underlying runtime API call.
+      4: A scheduling tool binding that lowers onto an existing wait, claim, or completion primitive depends on `run-wait-primitives.*`, `durable-waits-and-scheduling.*`, `awakeables-and-runs.*`, and `claim-and-operator-authority.*` rather than redefining wait or claim semantics.
+
+  DURABLE_DESCRIPTOR_PUBLICATION:
+    requirements:
+      1: A mounted scheduling tool binding is described by a durable descriptor row containing source, topology identity, stable binding name, schema reference or hash, handler key, ordering policy summary, credential and transport reference identifiers, runtime id, and timestamps; this row is a caller-owned EventPlane row, not a Firegrid-native row family.
+      2: Descriptor publication and validation occur before the binding is attached to the agent runtime; descriptors that fail schema or handler validation produce a typed expected refusal rather than partial attachment.
+      3: Descriptors are revocable through caller-owned EventPlane rows; revocation does not retroactively rewrite already-completed durable run rows but prevents future durable lowering through the revoked binding.
+      4: Visible tool descriptors are frozen before agent session initialization unless an explicit caller-owned topology or session event rewrites them; agent-side surfaces do not silently see a different binding set than the durable descriptor projection.
+
+  CURRENT_WORK_CONTEXT:
+    requirements:
+      1: A tool binding that may suspend durably acquires a current-work-context or equivalent durable identity that survives process restart, fiber interruption, and runtime ownership transfer; non-suspending tool bindings may run with a minimal layer that does not carry durable identity.
+      2: Current-work-context for a tool binding carries operation descriptor, run id, runtime id, and the durable identifiers needed to resume the suspended fiber or hand the work to a new owner per `firegrid-runtime-ownership-transfer.LEASE_FENCE_EPOCH.*`.
+      3: A tool binding that completes without suspension does not require current-work-context to be persisted beyond its synchronous execution boundary; substrate authority budgets for suspended and non-suspending bindings are accounted separately so that minimal bindings do not pay the durable-identity cost.
+
+  AGENT_OBSERVATION_RECIPE:
+    requirements:
+      1: Agent code observes scheduling tool binding state through caller-owned EventPlane projections and EventStream entries using `firegrid-projection-query.QUERY_HANDLES.*` and the existing public client surface; agent code does not gain raw run-row, claim-row, or completion-row access through tool-binding observation.
+      2: Tool binding suspension is observable through public `client.observe(handle)` lifecycle and through caller-owned projection rows; product-shaped suspension cause remains in caller-owned rows rather than widening the public lifecycle vocabulary per `firegrid-agent-runtime-substrate.LONG_LIVED_OPERATION.2`.
+      3: Tool binding completion observation through caller-owned EventStream replay follows replay-then-live-tail mechanics from `firegrid-projection-query.CURSOR_AND_REPLAY.*` and surfaces typed expected errors from `firegrid-projection-query.EXPECTED_ERRORS.*`.
+      4: Agent runtimes that need to expose Firegrid scheduling primitives as MCP, ACP, OpenAI, Anthropic, or other product tool transports perform that conversion outside Firegrid packages; Firegrid does not host conversion adapters for those wire protocols.
+
+constraints:
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `firegrid-platform-invariants.BOUNDARY.1`, `firegrid-platform-invariants.BOUNDARY.2`, `firegrid-platform-invariants.BOUNDARY.4`, and `firegrid-platform-invariants.BOUNDARY.5` so that Firegrid-provided scheduling tool binding descriptor fields, default mechanic names, suspension result variants, and descriptor row mechanics do not adopt MCP, OpenAI, Anthropic, ACP, Flamecast, provider, sandbox, prompt, permission, or product tool taxonomy.
+      2: This spec is bound by `firegrid-platform-invariants.AUTHORITY.1`, `firegrid-platform-invariants.AUTHORITY.2`, `firegrid-platform-invariants.AUTHORITY.3`, and `firegrid-platform-invariants.AUTHORITY.7` so that tool binding execution does not introduce a parallel authority path and does not expose claim, completion, terminal, RunWait authoring, subscriber registration, or runtime handler registration to agent code.
+      3: This spec is bound by `firegrid-platform-invariants.SECURITY.1` and `firegrid-platform-invariants.SECURITY.2` for the prohibitions on storing or transporting credentials, callback tokens, signing keys, and provider session tokens through tool binding signatures or descriptors.
+      4: This spec is bound by `firegrid-platform-invariants.LOCALITY.1`, `firegrid-platform-invariants.LOCALITY.2`, `firegrid-platform-invariants.LOCALITY.5`, and `firegrid-platform-invariants.LOCALITY.6` so that runtime-side tool binding mount and execution Layers live on `@firegrid/runtime` and do not introduce dist-internal imports.
+      5: This spec is bound by `firegrid-platform-invariants.ENFORCEMENT.1`, `firegrid-platform-invariants.ENFORCEMENT.2`, and `firegrid-platform-invariants.ENFORCEMENT.3` for citation discipline.
+
+  DEPENDS_ON:
+    requirements:
+      1: "`run-wait-primitives.*` and `durable-waits-and-scheduling.*` govern wait and scheduled-work primitives that scheduling tool bindings lower onto."
+      2: "`awakeables-and-runs.*` and `claim-and-operator-authority.*` govern awakeable, run, and claim authoring; tool bindings depend on those rather than introducing parallel run or claim semantics."
+      3: "`client-event-plane-registration.*` and `durable-records-and-projections.*` govern caller-owned EventPlane definition and projection rebuild semantics; descriptor publication and observation rows use those primitives."
+      4: "`firegrid-projection-query.QUERY_HANDLES.*`, `firegrid-projection-query.CURSOR_AND_REPLAY.*`, and `firegrid-projection-query.EXPECTED_ERRORS.*` govern the read facade used by agent observation recipes."
+      5: "`firegrid-runtime-process.*` governs runtime composition and `Firegrid.composeRuntime`; tool binding mount Layers compose through that surface."
+      6: "`firegrid-runtime-ownership-transfer.LEASE_FENCE_EPOCH.*` governs durable identity for suspended tool bindings under runtime ownership transfer."
+      7: "`firegrid-observability.SUBSTRATE_SPANS.*`, `firegrid-observability.ATTRIBUTES.*`, and `firegrid-observability.NON_AUTHORITY.*` govern span emission for tool binding execution."
+      8: "`firegrid-agent-runtime-substrate.LONG_LIVED_OPERATION.*` and `firegrid-agent-runtime-substrate.MULTI_WAIT_RESUME.*` govern the long-lived operation profile within which tool bindings execute."
+      9: "`flamecast-product-contract.AGENTSPEC.*`, `flamecast-product-contract.PROVIDER_API.*`, and `flamecast-product-contract.LOWERING.9` govern Flamecast-side provider tool transports, AgentSpec capability semantics, and prompt-tool dispatch that lower onto these mechanics; product tool transports remain Flamecast-owned."
+
+  PACKAGE_PLACEMENT:
+    requirements:
+      1: Neutral tool binding descriptor types and handler signature types live on a curated `@firegrid/substrate` public surface accessible to runtime, server, and (read-only) browser code.
+      2: Tool binding mount and execution Layers live on `@firegrid/runtime` and compose through `Firegrid.composeRuntime`; they do not appear in browser-safe `@firegrid/client` exports.
+      3: Browser-safe tool binding descriptor read helpers, when added, live on `@firegrid/client` and use the projection-query read facade exclusively.
+      4: Agent-side adapter packages that convert tool bindings to MCP, ACP, OpenAI, Anthropic, or vendor wire protocols live downstream and are not published under `@firegrid/*`.
+
+  NON_SCOPE:
+    requirements:
+      1: This spec does not define MCP, ACP, OpenAI, Anthropic, Flamecast, or other product tool schemas, transports, or wire protocol conversions.
+      2: This spec does not define provider tool taxonomies, sandbox execution, or browser tool surfaces.
+      3: This spec does not define permission policy or permission gating; permission decisions remain product-owned and live in caller-owned rows.
+      4: This spec does not define prompt text, prompt schemas, or prompt-as-tool dispatch; prompt transport lives in `firegrid-claimed-intent-transport.*`.
+      5: This spec does not define exactly-once external delivery for tool side effects; exactly-once requires app-owned idempotency or target-side fencing per `firegrid-platform-invariants.SECURITY.6`.
+      6: This spec does not define a generic agent-mountable adapter package; agent runtimes own their wire-protocol conversion code outside Firegrid packages.
