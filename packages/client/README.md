@@ -136,6 +136,11 @@ decode, and authority-boundary guards. `firegrid-event-streams` covers
 EventStream `emit` and `events`. CI remains the authority for the complete repo
 matrix.
 
+The examples above are intentionally client-only. They demonstrate the
+production `FiregridClient` root and EventStream surface, while handler
+installation, waiting primitives, durable authority, raw stream diagnostics, and
+runtime startup stay in their own packages and runbooks.
+
 ## Do Not Import
 
 Client application code should not import:
