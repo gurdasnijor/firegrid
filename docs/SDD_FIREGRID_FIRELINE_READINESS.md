@@ -4,6 +4,8 @@ Status: Draft
 Product: Firegrid
 Related: `firegrid-runtime-process`, `durable-waits-and-scheduling`, `ready-work-projection`, `choreography-facade`, `claim-and-operator-authority`
 
+Manual testing: `docs/FIRELINE_SCENARIO_TESTING_RUNBOOK.md`
+
 ## Summary
 
 Firegrid is ready to validate the Fireline integration model at the happy-path
@@ -367,6 +369,12 @@ Likely future ACIDs:
 5. Use the results to decide whether Fireline's first integration needs
    timeout resume immediately or can defer it.
 6. Only then implement timeout/cancellation resume semantics.
+
+The manual smoke commands and expected pass/fail signals for Pathway 1 and
+Pathway 2 live in `docs/FIRELINE_SCENARIO_TESTING_RUNBOOK.md`
+(`firegrid-runtime-process.SCENARIOS.17`). That runbook intentionally assumes
+Durable Streams is started outside Firegrid and that all scenario commands route
+through the FW0 runner architecture.
 
 For PR reviewers: when reviewing FW0, FW1, or any Fireline-shaped scenario
 PR, treat `firegrid-runtime-process.SCENARIOS.15` /`.16` and

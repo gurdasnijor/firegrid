@@ -30,6 +30,7 @@ components:
       14: Fireline-shaped rejection receiver validation resumes a typed handler from a resolved projection-match completion carrying app-level rejection data and terminalizes the run as a typed operation failure chosen by the app handler.
       15: "The scenarios package exposes a scenario runner architecture: scenario files are declarative typed definitions registered through a shared registry; a shared runner provides one stream-url handling rule, one NDJSON output convention, one self-test invocation pattern, and one inspection invocation pattern across all scenarios. File-layout reorganizations that do not deliver the registry, runner, and shared invocation rules do not satisfy this requirement."
       16: Scenario receivers and app-owned runtime entrypoints that compose typed Firegrid handlers do not import from `@firegrid/substrate/kernel`; durable wait, schedule, and awakeable primitives reach app handler code only through the `RunWait` service surface (run-wait-primitives.RUN_WAIT_API).
+      17: Fireline-style scenario validation is documented as a runner-owned manual flow covering external Durable Streams setup, scenario row emission, app-owned receiver execution, read-only inspection, and expected happy-path/rejection pass-fail signals without adding runtime/substrate capability or Firegrid-owned dev-server launchers.
 
   RUNTIME_RUN_API:
     requirements:
