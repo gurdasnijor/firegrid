@@ -62,6 +62,19 @@ const assertExternalConsumerSource = (source) => {
     "@firegrid/substrate/kernel",
     "Choreography",
     "DurableWaitsLive",
+    "WorkProducer",
+    "SubstrateProducer",
+    "processReadyWorkItem",
+    "attemptClaim",
+    "completeRun",
+    "failRun",
+    "blockRun",
+    "resolveCompletion",
+    "createPendingCompletion",
+    "startRun",
+    "client.work.declare",
+    "FIREGRID_RUNTIME_MODULE",
+    "firegrid dev",
   ]
   const offenders = forbiddenTokens.filter((token) => source.includes(token))
   if (offenders.length > 0) {
