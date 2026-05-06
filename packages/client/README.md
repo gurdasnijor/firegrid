@@ -1,15 +1,61 @@
 # @firegrid/client
 
-`@firegrid/client` is the app-facing Firegrid SDK. It lets browser and
-application code send typed operation messages, observe operation handles, emit
-caller-owned EventStream rows, and observe caller-owned EventStreams.
+`@firegrid/client` is the app-facing Firegrid SDK for browser and application
+code. It sends typed operation messages, observes operation handles, waits for
+typed operation results, emits caller-owned EventStream rows, and observes
+caller-owned EventStreams.
 
-The client does not install handlers, claim work, resolve completions, author
-terminal run state, run subscribers, start runtime processes, or launch Durable
-Streams servers. Runtime handlers and subscribers live in `@firegrid/runtime`;
-durable authority stays in substrate internals.
+In the broader Firegrid architecture, the client sits at the edge:
 
-## Configure
+```txt
+application code
+  -> @firegrid/client
+  -> Firegrid operation and EventStream descriptors
+  -> runtime handlers and substrate-backed durable state
+```
+
+The client does not install handlers, claim work, resolve waits, author
+terminal run state, run subscribers, start runtime processes, or launch stream
+servers. Runtime handlers and subscribers live in `@firegrid/runtime`; durable
+coordination primitives live behind the curated `@firegrid/substrate` public
+surface.
+
+## Public Surface
+
+Import the main SDK from the package root:
+
+```ts
+import {
+  EventStream,
+  FiregridClient,
+  FiregridClientLive,
+  Operation,
+  type FiregridClientConfig,
+  type OperationState,
+} from "@firegrid/client"
+```
+
+The root export provides:
+
+- `FiregridClient`, the Effect service tag for the app-facing client.
+- `FiregridClientLive(config)`, a Layer that wires the client to a stream URL.
+- `Operation` and `EventStream`, descriptor builders re-exported for app code.
+- `OperationHandle` and typed operation state/error types.
+- client service methods: `send`, `result`, `call`, `observe`, `emit`, and
+  `events`.
+
+The browser-safe EventStream-only subpath is available when an application only
+needs EventStream APIs:
+
+```ts
+import {
+  EventStream,
+  EventStreamClient,
+  EventStreamClientLive,
+} from "@firegrid/client/event-streams"
+```
+
+## Configuration
 
 Application shell code passes transport configuration explicitly:
 
@@ -33,13 +79,13 @@ Operation and EventStream descriptors are schema-only contract values:
 import { EventStream, Operation } from "@firegrid/client"
 import { Schema } from "effect"
 
-const ApproveTool = Operation.define({
-  name: "app.approveTool",
+const ReviewDocument = Operation.define({
+  name: "app.document.review",
   input: Schema.Struct({
-    requestId: Schema.String,
+    documentId: Schema.String,
   }),
   output: Schema.Struct({
-    approved: Schema.Boolean,
+    reviewed: Schema.Boolean,
   }),
   error: Schema.Struct({
     code: Schema.String,
@@ -51,7 +97,7 @@ const UiEvents = EventStream.define({
   name: "app.ui.events",
   event: Schema.Struct({
     type: Schema.String,
-    requestId: Schema.String,
+    documentId: Schema.String,
   }),
 })
 ```
@@ -70,32 +116,34 @@ import { Effect, Fiber, Stream } from "effect"
 const program = Effect.gen(function* () {
   const client = yield* FiregridClient
 
-  const handle = yield* client.send(ApproveTool, {
-    requestId: "req-123",
+  const handle = yield* client.send(ReviewDocument, {
+    documentId: "doc-123",
   })
 
-  const stateFiber = yield* client.observe(ApproveTool, handle).pipe(
+  const stateFiber = yield* client.observe(ReviewDocument, handle).pipe(
     Stream.runForEach((state) => Effect.log(state)),
     Effect.fork,
   )
 
-  const output = yield* client.result(ApproveTool, handle)
+  const output = yield* client.result(ReviewDocument, handle)
   yield* Fiber.interrupt(stateFiber)
   return output
 })
 ```
 
-`result` resolves only after a runtime participant has handled the operation and
-substrate has materialized a terminal run state. The client does not execute the
-handler or author that terminal state.
+`observe` emits `Pending`, `Completed`, `Failed`, or `Cancelled` states. The
+public `Pending` state intentionally covers non-terminal work from the client
+point of view. `result` resolves only after a runtime participant has handled
+the operation and Firegrid has materialized a terminal run state. The client
+does not execute the handler or author that terminal state.
 
 ## Request-Response Convenience
 
 `call` is request-response sugar over `send` plus `result`:
 
 ```ts
-const output = yield* client.call(ApproveTool, {
-  requestId: "req-123",
+const output = yield* client.call(ReviewDocument, {
+  documentId: "doc-123",
 })
 ```
 
@@ -108,8 +156,8 @@ Use EventStream for lightweight caller-owned append-only events:
 
 ```ts
 yield* client.emit(UiEvents, {
-  type: "permission.clicked",
-  requestId: "req-123",
+  type: "document.opened",
+  documentId: "doc-123",
 })
 
 yield* client.events(UiEvents).pipe(
@@ -117,8 +165,8 @@ yield* client.events(UiEvents).pipe(
 )
 ```
 
-Use EventPlane from `@firegrid/substrate/event-plane` inside runtime layers
-when the domain needs primary-keyed state, materialized projections, or
+Use EventPlane from `@firegrid/substrate/event-plane` inside runtime layers when
+the domain needs primary-keyed state, materialized projections, or
 projection-match evaluation. EventPlane is not the browser client surface.
 
 ## Focused Smoke Checks
@@ -144,14 +192,19 @@ production `FiregridClient` root and EventStream surface, while handler
 installation, waiting primitives, durable authority, raw stream diagnostics, and
 runtime startup stay in their own packages and runbooks.
 
-## Do Not Import
+## Boundaries
 
-Client application code should not import:
+Client application code should stay on the public client surface. It should not
+import or depend on:
 
 - `@firegrid/runtime`;
-- `@firegrid/substrate/kernel`;
+- substrate kernel or control-plane internals;
 - runtime handler registration APIs;
 - RunWait or choreography services;
 - claim, completion, or terminal-authority helpers;
 - raw Durable Streams writers as the normal app API;
 - lab-only paths or dev-server launchers.
+
+If a client feature appears to need one of those surfaces, treat that as a
+missing public API or spec gap rather than reaching through the package
+boundary.
