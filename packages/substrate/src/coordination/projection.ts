@@ -4,9 +4,9 @@ import {
   snapshotFromDb,
   type ProjectionSnapshot,
   type SubstrateStreamDB,
-} from "../projection.ts"
-import { buildProjectionCore } from "../projection-service.ts"
-import { acquireSubstrateDb } from "../stream.ts"
+} from "../read-models/projection.ts"
+import { buildProjectionCore } from "../read-models/projection-service.ts"
+import { acquireSubstrateDb } from "../state-store/stream.ts"
 
 // ergonomic-facade.PROJECTION_API.1, .2, .3, .4, .5, .6
 // Effect-native projection facade. Snapshot + Stream + Until over a

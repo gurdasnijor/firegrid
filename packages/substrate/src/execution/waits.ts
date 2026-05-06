@@ -2,7 +2,7 @@ import { DurableStream } from "@durable-streams/client"
 import type { ChangeEvent } from "@durable-streams/state"
 import { Clock, Context, Data, Effect, Layer } from "effect"
 import { IdGen, IdGenLive } from "../id-gen.ts"
-import type { ProjectionMatchTrigger } from "../choreography/triggers.ts"
+import type { ProjectionMatchTrigger } from "../coordination/choreography/triggers.ts"
 import { appendChange } from "../protocol/descriptors/append.ts"
 import type {
   CompletionKind,

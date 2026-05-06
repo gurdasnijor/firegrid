@@ -6,7 +6,7 @@ import {
   ProjectionLive,
   ProjectionWaitTimeout,
   type ProjectionQuery,
-} from "../facade/projection.ts"
+} from "../coordination/projection.ts"
 import { createPendingCompletion, resolveCompletion } from "./state-machine-sync.ts"
 import type { CompletionValue } from "../protocol/schema/rows.ts"
 import {
