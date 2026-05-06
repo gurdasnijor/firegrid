@@ -31,6 +31,9 @@ components:
       15: "The scenarios package exposes a scenario runner architecture: scenario files are declarative typed definitions registered through a shared registry; a shared runner provides one stream-url handling rule, one NDJSON output convention, one self-test invocation pattern, and one inspection invocation pattern across all scenarios. File-layout reorganizations that do not deliver the registry, runner, and shared invocation rules do not satisfy this requirement."
       16: Scenario receivers and app-owned runtime entrypoints that compose typed Firegrid handlers do not import from `@firegrid/substrate/kernel`; durable wait, schedule, and awakeable primitives reach app handler code only through the `RunWait` service surface (run-wait-primitives.RUN_WAIT_API).
       17: Fireline-style scenario validation is documented as a runner-owned manual flow covering external Durable Streams setup, scenario row emission, app-owned receiver execution, read-only inspection, and expected happy-path/rejection pass-fail signals without adding runtime/substrate capability or Firegrid-owned dev-server launchers.
+      18: Firepixel-foundation scenario validation composes a caller-owned EventPlane, a `Firegrid.handler`, `RunWait`, stock subscribers, and read-only inspection to prove that app handlers can emit typed domain rows and terminalize durable operations without raw stream writers or Firegrid-native product row families.
+      19: Firepixel-style permission scenario validation proves a handler-emitted permission-request row, an externally emitted permission-resolution row, projection-match resume through `RunWait.for(..., { resultSchema })`, and terminal operation state through the shared scenario runner.
+      20: Firepixel-foundation scenario validation proves the emit-then-wait ordering path by appending caller-owned EventPlane rows from inside a handler before the handler suspends through `RunWait`, then resolving the wait from EventPlane projection state and terminalizing through the normal ready-work operator.
 
   RUNTIME_RUN_API:
     requirements:
@@ -44,6 +47,7 @@ components:
       8: Durable Streams attachment options are supplied through a connection object rather than as loose top-level runtime options.
       9: The runtime `run(...)` Effect is a long-running process Effect that normally exits only through interruption or typed failure.
       10: Runtime tests assert positive API behavior by executing Effects or checking TypeScript contracts rather than by grepping source strings; source-grep tests are reserved for explicitly tagged negative architectural constraints.
+      11: App-owned adapter resources provided as Layers to a runtime graph share the `run(...)` Effect scope, so interrupting the runtime finalizes those resources without Firegrid-specific process launchers.
 
   READY_WORK_OPERATOR:
     requirements:
@@ -102,6 +106,7 @@ constraints:
       3: Child process execution uses Effect Platform Command rather than direct child_process orchestration unless a concrete gap is documented.
       4: User-visible terminal output uses Effect Platform Terminal where possible.
       5: Runtime and child-process lifetimes are scoped through Effect scopes.
+      6: App-owned long-lived resources such as provider clients, ACP/MCP transports, subprocess supervisors, and sandbox adapters are modeled as scoped app Layers that compose with the runtime graph rather than as Firegrid-owned launcher services.
 
   CONFIG_SURFACE:
     requirements:

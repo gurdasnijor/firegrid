@@ -18,6 +18,8 @@ components:
       2: Producers preserve stable idempotency keys and causation/correlation metadata supplied by the higher layer.
       3: Producers do not bypass Durable Streams State schema validation for projection-owned rows.
       4: Producer failures are represented as typed Effect errors, not thrown defects or boolean status values.
+      5: A PlaneProducer can be provided to a Firegrid runtime graph and used inside a `Firegrid.handler` body to emit caller-owned domain rows before, between, or after RunWait suspension points without reaching for raw stream writers.
+      6: "A completed `PlaneProducer.emit(...)` call is a durable sequencing boundary for the handler: if a handler emits a row and then suspends through `RunWait`, the emitted row has already been appended to the shared durable stream before the wait is authored or resumed."
 
   PROJECTION_API:
     requirements:
@@ -25,6 +27,8 @@ components:
       2: Projection queries expose snapshot, stream, and until semantics without exposing raw StreamDB collections or Durable Streams State envelopes.
       3: Projection query definitions specify whether a row is observational, eligibility-producing, or terminal-domain state.
       4: Projection rows are non-authoritative for substrate ownership unless mapped through the Work pipeline claim boundary.
+      5: Projection-match evaluators may read caller-owned PlaneProjection state to resolve RunWait projection-match completions, while completion authority and ready-work authority remain substrate-owned.
+      6: Firepixel-style permission validation that uses EventPlane must prove a stateful projection read by stable row key or materialized state, not merely repeat an EventStream one-shot event scan with different names.
 
   ACP_AGENT_PROFILE:
     requirements:
@@ -32,6 +36,14 @@ components:
       2: ACP observation projections can drive runtime waits or work eligibility only through Projection or Work facade APIs.
       3: A materialized ACP observation row is not a hidden substitute for a substrate durable completion, durable trigger, or durable ownership decision.
       4: ACP permission handling can map an observed permission-request event into a domain permission row, then use Projection until or an awaitable only at the higher-layer policy boundary.
+
+  FIREPIXEL_PROFILE:
+    requirements:
+      1: Firepixel-style prompt, chunk, permission, tool, runtime, and observation row families are modeled as caller-owned EventPlane collections rather than Firegrid-native substrate row families.
+      2: Firepixel-style runtime handlers may emit prompt chunk or permission-request rows through a provided PlaneProducer while Firegrid remains responsible only for operation dispatch, RunWait suspension, claim arbitration, and terminal run authorship.
+      3: "Firepixel-style permission approval flows are represented as EventPlane rows plus RunWait projection-match completions: the permission row is app-owned state, and the completion row is substrate-owned wait authority."
+      4: Firepixel-style tool invocation rows are app-owned EventPlane rows; Firegrid does not interpret tool names, transports, credentials, or ACP/MCP protocol semantics as substrate-native concepts.
+      5: Firepixel-style adapter processes, model/provider clients, ACP/MCP transports, and sandbox supervisors remain app-owned resources that compose through Effect Layers rather than becoming Firegrid runtime services.
 
 constraints:
   BOUNDARY:
