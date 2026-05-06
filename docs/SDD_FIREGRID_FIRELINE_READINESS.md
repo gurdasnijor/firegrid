@@ -315,11 +315,31 @@ Likely future ACIDs:
 
 ## Sequencing
 
-1. Land Pathway 1 first. This is the Fireline happy-path smoke test.
-2. Land Pathway 2 next if we want a negative path before moving into Fireline.
-3. Use the results to decide whether Fireline's first integration needs timeout
-   resume immediately or can defer it.
-4. Only then implement timeout/cancellation resume semantics.
+1. Land the scenario runner architecture first. This is FW0: not a layout-only
+   move but a registry plus shared CLI/runner that defines scenarios as
+   declarative typed values
+   (`firegrid-runtime-process.SCENARIOS.15`). File-layout reorganizations of
+   the scenarios package that do not deliver this contract do not satisfy
+   FW0.
+2. Land the `RunWait` primitive boundary in parallel or next (FW1). The
+   acceptance bar is `run-wait-primitives.RUN_WAIT_API` plus
+   `run-wait-primitives.BOUNDARY.4` and `.5`: app code only imports `RunWait`,
+   never `@firegrid/substrate/kernel` / `ChoreographyLive` / `DurableWaitsLive`,
+   and the documentation/examples surface stops teaching `Choreography` as
+   the wait API.
+3. Land Pathway 1 (Fireline happy path) on top of FW0 + FW1.
+4. Land Pathway 2 (Fireline rejection path) next if we want a negative path
+   before moving into Fireline.
+5. Use the results to decide whether Fireline's first integration needs
+   timeout resume immediately or can defer it.
+6. Only then implement timeout/cancellation resume semantics.
+
+For PR reviewers: when reviewing FW0, FW1, or any Fireline-shaped scenario
+PR, treat `firegrid-runtime-process.SCENARIOS.15` /`.16` and
+`run-wait-primitives.BOUNDARY.4`/`.5` as the binding bars. A PR that moves
+files without delivering the scenario runner contract, or that smuggles
+`@firegrid/substrate/kernel` imports into app receivers, fails those ACIDs
+even if its own commit message says "mechanical move" or "thin alias".
 
 ## Dispatch Notes
 
