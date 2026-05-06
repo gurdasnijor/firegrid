@@ -24,7 +24,7 @@ import {
   resolveCompletion,
   runTransitionMachine,
   startRun,
-} from "../state-machine.ts"
+} from "./state-machine-sync.ts"
 
 const pendingValue = (
   e: ReturnType<typeof createPendingCompletion>,

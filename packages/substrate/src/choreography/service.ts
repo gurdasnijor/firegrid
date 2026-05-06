@@ -6,7 +6,7 @@ import { readAuthoritativeRun } from "../retained-records.ts"
 import {
   blockRun,
   isTerminalRun,
-} from "../state-machine.ts"
+} from "../schema/state-machine.ts"
 import {
   DurableWaits,
   workScopedAwakeableKey,
@@ -203,15 +203,16 @@ export const ChoreographyLive = (
           )
         ) {
           // current is "started" — append the durable.run blocked row.
-          const event = yield* Effect.try({
-            try: () =>
-              blockRun(current, { blockedOnCompletionId: completionId }),
-            catch: (cause) =>
+          const event = yield* blockRun(current, {
+            blockedOnCompletionId: completionId,
+          }).pipe(
+            Effect.mapError((cause) =>
               new ChoreographyVerificationError({
                 completionId,
                 reason: `blockRun build failed: ${String(cause)}`,
               }),
-          })
+            ),
+          )
           yield* append(event)
         }
         // choreography-facade.SUSPENSION.1

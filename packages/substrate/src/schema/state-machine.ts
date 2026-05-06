@@ -369,7 +369,7 @@ export function foldRunRecords(
   )
 }
 
-export type DerivedRunOutcome =
+type DerivedRunOutcome =
   | { readonly kind: "noop" }
   | { readonly kind: "fail"; readonly error: unknown }
   | { readonly kind: "cancel"; readonly terminalReason: unknown }

@@ -14,7 +14,7 @@ import {
   failRun,
   resolveCompletion,
   startRun,
-} from "../state-machine.ts"
+} from "./state-machine-sync.ts"
 import { substrateState } from "../schema/state.ts"
 import {
   freshStreamUrl,

@@ -127,7 +127,7 @@ describe("Firegrid same-stream coexistence — EventStream State Protocol rows d
             eventId: "noise",
             event: { unrelated: true },
           })
-          const startedRunEvent = startRun({
+          const startedRunEvent = yield* startRun({
             runId,
             data: {
               _envelope: OPERATION_ENVELOPE_TAG,

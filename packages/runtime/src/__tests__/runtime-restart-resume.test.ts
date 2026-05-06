@@ -67,11 +67,11 @@ describe("firegrid-remediation-hardening.TEST_GUARDRAILS.5 — runtime restart r
     await Effect.runPromise(
       appendRaw(
         streamUrl,
-        createPendingCompletion({
+        Effect.runSync(createPendingCompletion({
           completionId,
           kind: "timer",
           data: { durationMs: 1, dueAtMs },
-        }),
+        })),
       ),
     )
 
