@@ -4,6 +4,8 @@ Status: Draft
 Product: Firegrid
 Related: `firegrid-operation-messaging`, `firegrid-runtime-process`, `launchable-substrate-host`, `durable-waits-and-scheduling`, `firegrid-event-streams`
 
+Fireline smoke runbook: `docs/FIRELINE_SCENARIO_TESTING_RUNBOOK.md`
+
 ## Summary
 
 Firegrid already has most of the machinery needed for runtime validation:
@@ -25,6 +27,12 @@ This SDD does not propose a new client API, fixture generator, CLI wrapper,
 embedded dev server, or runtime control plane. It defines scenario validation:
 write schema-valid rows with the Durable Streams CLI, run the Firegrid runtime,
 and inspect the resulting durable state.
+
+The Fireline-shaped happy-path and rejection scenario smoke commands are
+documented separately in `docs/FIRELINE_SCENARIO_TESTING_RUNBOOK.md`
+(`firegrid-runtime-process.SCENARIOS.17`) so the forward-compatible commands
+can reference PR #67/#69 without making the base CLI validation SDD depend on
+unmerged scenario files.
 
 ## Validation Boundary
 
