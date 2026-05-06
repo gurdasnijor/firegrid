@@ -76,34 +76,30 @@ It should prove:
 This scenario is runtime code, not client code. It must not import
 `@firegrid/client`.
 
-### 2. Canonical CLI Fixture Generator
+### 2. Schema-Owned CLI Row Examples
 
-Raw CLI use still needs canonical Firegrid row JSON. We should not ask humans
-or agents to hand-type internal row envelopes.
+Raw CLI use still needs valid Firegrid row JSON, but that does not require a new
+developer command or fixture subsystem. The repo already owns Effect Schema
+definitions and protocol builders for durable rows and operation envelopes.
 
-Add a small fixture generator that prints canonical JSON rows to stdout, for
-example:
+The validation plan should use those existing schemas directly:
+
+1. Runtime tests construct rows through existing protocol builders and validate
+   them with Effect Schema encode/decode APIs.
+2. Human-facing docs show the resulting minimal JSON shape for the Echo
+   scenario.
+3. Any example JSON checked into docs must be covered by a decode test against
+   the same Effect Schema the runtime uses.
+
+The manual CLI workflow remains simple:
 
 ```sh
-pnpm firegrid:fixture operation-started \
-  --operation Echo \
-  --run-id run-echo-1 \
-  --input '{"message":"hello"}'
+durable-stream write firegrid '<schema-validated Echo operation row JSON>' --json
 ```
 
-The output can be piped into the Durable Streams CLI:
-
-```sh
-pnpm firegrid:fixture operation-started \
-  --operation Echo \
-  --run-id run-echo-1 \
-  --input '{"message":"hello"}' |
-  durable-stream write firegrid --json
-```
-
-The generator should call Firegrid/substrate protocol builders rather than
-duplicating row shapes. It is a developer fixture boundary, not a public client
-API.
+The important implementation rule is that decoding happens at the runtime
+boundary through Effect Schema, not through ad hoc shape checks or a separate
+developer API.
 
 ### 3. Runtime CLI-Equivalent Integration Tests
 
@@ -111,8 +107,8 @@ Add tests that exercise the same path programmatically:
 
 1. Start a real Durable Streams test server inside the relevant package test.
 2. Create a JSON stream.
-3. Append the canonical operation-started row that the fixture generator would
-   print.
+3. Append a schema-validated operation-started row built from existing protocol
+   builders.
 4. Start the runtime with the scenario handler Layer.
 5. Read/rebuild until the operation run terminalizes.
 6. Assert the terminal row result.
@@ -123,7 +119,7 @@ at the stream boundary.
 ### 4. Scheduled Operation Row Validation
 
 Once the basic operation path is green, add delayed and absolute scheduled
-operation fixtures that lower to existing scheduled-work primitives.
+operation row examples that lower to existing scheduled-work primitives.
 
 This proves `firegrid-operation-messaging.SCHEDULED_MESSAGES.1-.3` without
 adding a second scheduler or requiring the client SDK.
@@ -154,10 +150,9 @@ The wave is done when a developer can:
 
 1. Start Durable Streams externally.
 2. Create a JSON stream with the Durable Streams CLI.
-3. Generate a canonical Firegrid operation row with a Firegrid fixture command.
-4. Write that row with the Durable Streams CLI.
-5. Run a Firegrid runtime scenario against the existing stream.
-6. Read the stream or rebuild projections and see the operation terminalized
+3. Write a schema-validated Firegrid operation row with the Durable Streams CLI.
+4. Run a Firegrid runtime scenario against the existing stream.
+5. Read the stream or rebuild projections and see the operation terminalized
    with the expected result.
 
 The CI test equivalent must prove the same behavior without using the Firegrid
@@ -187,15 +182,15 @@ Relevant ACIDs:
 - `firegrid-runtime-process.BINARIES.7`
 - `firegrid-runtime-process.BINARIES.8`
 
-### F1B CLI Fixture Generator
+### F1B Schema-Decoded CLI Row Examples
 
 Owns:
 
-- A developer fixture command that emits canonical Firegrid row JSON.
-- Fixture docs showing `durable-stream create`, `durable-stream write`, and
-  `durable-stream read`.
-- Guardrails proving fixture generation uses protocol builders rather than
-  copied row literals.
+- Minimal Echo operation row JSON examples for `durable-stream write`.
+- Tests proving those examples decode through the existing Effect Schema /
+  protocol boundary.
+- Runtime boundary code cleanup if any operation-row path still relies on ad
+  hoc checks instead of schema decoding.
 
 Relevant ACIDs:
 
@@ -203,7 +198,9 @@ Relevant ACIDs:
 - `durable-records-and-projections.SCHEMA_LAYOUT.2`
 - `durable-records-and-projections.SUBSTRATE_SCOPE.6`
 - `durable-records-and-projections.SUBSTRATE_SCOPE.7`
-- `firegrid-operation-messaging.CLIENT_MESSAGING.1`
+- `firegrid-operation-messaging.OPERATIONS.1`
+- `firegrid-operation-messaging.OPERATIONS.2`
+- `firegrid-operation-messaging.OPERATIONS.4`
 - `firegrid-operation-messaging.APP_BOUNDARY.1`
 - `firegrid-operation-messaging.APP_BOUNDARY.2`
 
@@ -211,8 +208,8 @@ Relevant ACIDs:
 
 Owns:
 
-- End-to-end runtime tests that append fixture-equivalent rows directly to a
-  real Durable Streams stream.
+- End-to-end runtime tests that append schema-decoded rows directly to a real
+  Durable Streams stream.
 - Assertions over terminalized run state/result.
 - No dependency on `@firegrid/client`.
 
@@ -227,11 +224,11 @@ Relevant ACIDs:
 - `awakeables-and-runs.RUN_TRANSITIONS.1`
 - `awakeables-and-runs.RUN_TRANSITIONS.7`
 
-### F1D Scheduled Operation Fixtures
+### F1D Scheduled Operation Row Examples
 
 Owns:
 
-- Delayed and absolute scheduled operation fixture rows.
+- Delayed and absolute scheduled operation row examples.
 - Runtime/subscriber proof that scheduled operation messages lower to existing
   scheduled-work primitives.
 
@@ -265,9 +262,9 @@ Relevant ACIDs:
 ## Handoff Notes
 
 The first dispatch should be F1A + F1B in parallel after W4D lands. F1C should
-start once F1A exposes the runtime scenario Layer and F1B exposes the canonical
-fixture row generator. F1D and F1E can follow after the basic Echo path is
-working.
+start once F1A exposes the runtime scenario Layer and F1B proves the example
+JSON decodes through the existing Effect Schema boundary. F1D and F1E can
+follow after the basic Echo path is working.
 
 The client SDK should stay out of the critical path until the runtime and
 durable-row behavior is proven with the external CLI.
