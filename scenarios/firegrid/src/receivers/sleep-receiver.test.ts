@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { selfTestSleepReceiver } from "./sleep-receiver.ts"
 
 describe("S2 sleep/timer receiver scenario", () => {
-  it("firegrid-runtime-process.SCENARIOS.11, durable-subscribers.TIMER_SUBSCRIBER.1, durable-subscribers.TIMER_SUBSCRIBER.4, durable-waits-and-scheduling.SLEEP.6, run-wait-primitives.RUN_WAIT_API.3, run-wait-primitives.RUN_WAIT_API.6, firegrid-runtime-process.READY_WORK_OPERATOR.5 — app-owned run resolves RunWait.sleep through timer completion and terminalizes ready work", async () => {
+  it("firegrid-runtime-process.SCENARIOS.11, firegrid-runtime-process.RUNTIME_COMPOSITION.1, firegrid-runtime-process.RUNTIME_COMPOSITION.2, firegrid-runtime-process.RUNTIME_COMPOSITION.6, durable-subscribers.TIMER_SUBSCRIBER.1, durable-subscribers.TIMER_SUBSCRIBER.4, durable-waits-and-scheduling.SLEEP.6, run-wait-primitives.RUN_WAIT_API.3, run-wait-primitives.RUN_WAIT_API.6, firegrid-runtime-process.READY_WORK_OPERATOR.5 — app-owned run composes explicit helper inputs, resolves RunWait.sleep through timer completion, and terminalizes ready work", async () => {
     const result = await Effect.runPromise(selfTestSleepReceiver())
     const run = result.completed.runs.find((item) =>
       item.operation === "Sleep"

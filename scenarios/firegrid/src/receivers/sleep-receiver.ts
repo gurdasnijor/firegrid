@@ -1,6 +1,6 @@
 import { Firegrid, run } from "@firegrid/runtime"
 import { RunWait } from "@firegrid/substrate"
-import { Data, Effect, Fiber, Layer, Schedule } from "effect"
+import { Data, Effect, Fiber, Schedule } from "effect"
 import { defineReceiverScenario } from "../definition.ts"
 import type { ScenarioInspection } from "../inspect.ts"
 import {
@@ -20,36 +20,42 @@ class ScenarioNotReady extends Data.TaggedError("ScenarioNotReady")<{
 }> {}
 
 const sleepReceiverRuntime = (streamUrl: string) =>
-  Layer.mergeAll(
-    // firegrid-runtime-process.SCENARIOS.11
-    // durable-subscribers.TIMER_SUBSCRIBER.1
-    // durable-subscribers.TIMER_SUBSCRIBER.2
-    // durable-subscribers.TIMER_SUBSCRIBER.3
-    // durable-subscribers.TIMER_SUBSCRIBER.4
-    Firegrid.subscribers.timer,
-    // firegrid-runtime-process.READY_WORK_OPERATOR.1
-    // firegrid-runtime-process.READY_WORK_OPERATOR.5
-    // firegrid-runtime-process.READY_WORK_OPERATOR.7
-    // run-wait-primitives.RUN_WAIT_API.3
-    // run-wait-primitives.RUN_WAIT_API.6
-    Firegrid.handler(SleepOperation, (input) =>
-      Effect.gen(function* () {
-        const wait = yield* RunWait
-        yield* wait.sleep(input.durationMs)
-        return {
-          durationMs: input.durationMs,
-          label: input.label,
-          slept: true,
-        }
-      }),
-    ),
-  ).pipe(
-    Layer.provide(
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.1
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.2
+  // firegrid-runtime-process.RUNTIME_COMPOSITION.6
+  Firegrid.composeRuntime({
+    subscribers: [
+      // firegrid-runtime-process.SCENARIOS.11
+      // durable-subscribers.TIMER_SUBSCRIBER.1
+      // durable-subscribers.TIMER_SUBSCRIBER.2
+      // durable-subscribers.TIMER_SUBSCRIBER.3
+      // durable-subscribers.TIMER_SUBSCRIBER.4
+      Firegrid.subscribers.timer,
+    ],
+    handlers: [
+      // firegrid-runtime-process.READY_WORK_OPERATOR.1
+      // firegrid-runtime-process.READY_WORK_OPERATOR.5
+      // firegrid-runtime-process.READY_WORK_OPERATOR.7
+      // run-wait-primitives.RUN_WAIT_API.3
+      // run-wait-primitives.RUN_WAIT_API.6
+      Firegrid.handler(SleepOperation, (input) =>
+        Effect.gen(function* () {
+          const wait = yield* RunWait
+          yield* wait.sleep(input.durationMs)
+          return {
+            durationMs: input.durationMs,
+            label: input.label,
+            slept: true,
+          }
+        }),
+      ),
+    ],
+    provide: [
       // run-wait-primitives.BOUNDARY.4
       // run-wait-primitives.BOUNDARY.5
       RunWait.layer({ streamUrl }),
-    ),
-  )
+    ],
+  })
 
 const runSleepReceiver = (streamUrl: string) =>
   // firegrid-runtime-process.SCENARIOS.16
