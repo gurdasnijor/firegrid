@@ -1,0 +1,28 @@
+feature:
+  name: run-wait-primitives
+  product: firegrid
+  description: Define the app-facing durable wait primitive surface used inside typed Firegrid runtime handlers without teaching choreography or orchestration as Firegrid concepts.
+
+components:
+  RUN_WAIT_API:
+    requirements:
+      1: "`RunWait` is the curated app-facing service for durable wait primitives available inside a running Firegrid operation handler."
+      2: "`RunWait.for(trigger)` waits for a projection-match trigger and suspends the current durable run through Firegrid-owned completion and ready-work machinery."
+      3: "`RunWait.sleep(duration)` waits for a durable timer and suspends the current durable run through Firegrid-owned completion and ready-work machinery."
+      4: "`RunWait.until(when)` records scheduled work intent without exposing raw completion rows or Durable Streams append calls to app handlers."
+      5: "`RunWait.awakeable(name)` waits for a work-scoped externally resolved durable completion without exposing raw completion ids to app handlers."
+      6: "`RunWait.layer({ streamUrl })` provides the production Layer for app-owned runtime entrypoints without requiring app code to import `@firegrid/substrate/kernel`."
+      7: The `RunWait` service methods preserve Firegrid's existing durable row shapes, completion kinds, ready-work derivation, and claim-and-operator terminal authority.
+
+  VOCABULARY:
+    requirements:
+      1: Firegrid exposes durable wait primitives; higher layers such as Fireline or Firepixel own whether their product model is called choreography, orchestration, workflow, or another term.
+      2: Firegrid app-facing examples do not teach `Choreography` or `ChoreographyLive` as the preferred durable wait primitive API.
+      3: Firegrid may keep compatibility exports for existing choreography-named APIs while new app-facing examples use `RunWait`.
+
+constraints:
+  BOUNDARY:
+    requirements:
+      1: The `RunWait` API does not introduce Fireline, Firepixel, ACP, MCP, session, prompt, permission, provider, sandbox, tool-call, or schedule_me as substrate-native row families.
+      2: The `RunWait` API does not expose raw completion CRUD, raw run transition builders, raw append helpers, retained fold readers, or `processReadyWorkItem` as the normal app-handler path.
+      3: The `RunWait` API does not import or depend on the app-facing `@firegrid/client` package.

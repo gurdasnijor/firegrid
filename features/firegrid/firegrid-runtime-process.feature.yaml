@@ -26,6 +26,8 @@ components:
       10: Input-side CLI scenario emitters expose an emit-only declarative row stream contract whose rows are schema-derived durable ChangeEvents and whose shared writer is responsible for NDJSON stdout formatting.
       11: Sleep/timer receiver validation uses an app-owned runtime entrypoint that composes the timer subscriber with a typed operation handler and verifies Choreography.sleep timer resolution plus ready-work terminalization through projection inspection.
       12: Handler-failure receiver validation uses an app-owned runtime entrypoint with a typed operation error schema and verifies failed terminal run state through projection inspection.
+      13: Fireline-shaped happy-path receiver validation composes app-owned operation descriptors, EventStream descriptors, projection-match evaluation, stock subscribers, `RunWait`, and typed handlers through `run(...)` without Firegrid-owned product row families.
+      14: Fireline-shaped rejection receiver validation resumes a typed handler from a resolved projection-match completion carrying app-level rejection data and terminalizes the run as a typed operation failure chosen by the app handler.
 
   RUNTIME_RUN_API:
     requirements:
