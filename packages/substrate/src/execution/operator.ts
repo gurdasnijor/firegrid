@@ -72,12 +72,16 @@ export type OperatorError =
   | RunNotFoundError
   | ClaimWinnerMissingError
 
-export interface ProcessReadyWorkItemArgs<A, E> {
+export interface ProcessReadyWorkItemArgs<A, E, R = never> {
   readonly streamUrl: string
   readonly contentType?: string
   readonly ownerId: string
   readonly item: ReadyWorkItem
-  readonly handler: (input: ReadyWorkItem) => Effect.Effect<A, E>
+  // The handler may carry a non-never `R` channel (e.g. choreography
+  // services, durable waits) so runtime callers can resume blocked
+  // runs with the same dependency-graph the original handler used.
+  // Substrate-internal callers continue to default to `R = never`.
+  readonly handler: (input: ReadyWorkItem) => Effect.Effect<A, E, R>
   // Test/internal-only override; production callers omit this and the operator
   // generates a unique claimId per attempt (CLAIM_ATTEMPT.7).
   readonly claimId?: string
@@ -103,9 +107,9 @@ const readAuthoritativeRun = (
 // Identity comes through the kernel `IdGen` service via `attemptClaim`,
 // which provides `IdGenLive` internally. Tests inject a deterministic
 // claim id through the per-call `claimId` override.
-export const processReadyWorkItem = <A, E>(
-  args: ProcessReadyWorkItemArgs<A, E>,
-): Effect.Effect<ClaimOutcome<A, E>, OperatorError> =>
+export const processReadyWorkItem = <A, E, R = never>(
+  args: ProcessReadyWorkItemArgs<A, E, R>,
+): Effect.Effect<ClaimOutcome<A, E>, OperatorError, R> =>
   Effect.gen(function* () {
     const contentType = args.contentType ?? "application/json"
     const streamHandle = new DurableStream({ url: args.streamUrl, contentType })

@@ -22,6 +22,7 @@ components:
       8: Ready-work projection items are keyed by `runId`.
       9: Ready-work derivation is exposed as a pure function over rebuilt projection state.
       10: Ready-work projection carries the source projection `foldVersion`.
+      11: The Firegrid runtime is the canonical edge-driven consumer of `deriveReadyWork`; it watches durable run and completion changes and dispatches each ready-work item through substrate's claim-and-operator authority rather than reimplementing the projection.
 
 constraints:
   FIRST_PHASE_LIMITS:
