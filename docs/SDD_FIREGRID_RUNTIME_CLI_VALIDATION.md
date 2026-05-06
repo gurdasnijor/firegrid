@@ -298,6 +298,78 @@ Expected result:
 2. Lab remains read-only in this wave.
 3. No privileged host/runtime writer API is introduced for scenario execution.
 
+Manual inspection flow:
+
+```sh
+durable-streams-server dev
+
+export STREAM_URL=http://localhost:4437/v1/stream
+export DURABLE_STREAMS_URL=http://localhost:4437/v1/stream/firegrid
+durable-stream create firegrid --json
+
+pnpm --silent --filter @firegrid/scenarios run echo \
+  | while IFS= read -r row; do durable-stream write firegrid "$row" --json; done
+
+pnpm --silent --filter @firegrid/scenarios run inspect -- \
+  --stream-url "$DURABLE_STREAMS_URL"
+```
+
+The inspection command is read-only. It calls Firegrid substrate projection APIs
+against the explicit stream URL and prints a compact JSON report containing:
+
+```json
+{
+  "foldVersion": 1,
+  "counts": {
+    "runs": 1,
+    "completions": 0,
+    "claimAttempts": 0,
+    "eventStreams": 0,
+    "readyWork": 0
+  },
+  "runs": [
+    {
+      "runId": "run-echo-cli-1",
+      "state": "started",
+      "operation": "Echo"
+    }
+  ]
+}
+```
+
+If a runtime graph later terminalizes Echo, the same inspection command should
+show the `run-echo-cli-1` state as `completed` and include the terminal result.
+For waitFor streams, it should show the `WaitForPermission` run plus the
+caller-owned `PermissionEvents` EventStream row:
+
+```json
+{
+  "runs": [
+    {
+      "runId": "run-wait-for-cli-1",
+      "operation": "WaitForPermission"
+    }
+  ],
+  "eventStreams": [
+    {
+      "key": "PermissionEvents:event-permission-approved-cli-1",
+      "stream": "PermissionEvents",
+      "event": {
+        "permissionId": "permission-cli-1",
+        "status": "approved",
+        "actor": "scenario"
+      }
+    }
+  ]
+}
+```
+
+For scheduled-work streams, the report should expose the relevant
+`scheduled_work` completion state and `whenMs` field before resolution; after
+subscriber resolution, the same report should expose the resolved completion and
+any derived ready work from the existing read-model rules. The command does not
+start subscribers, install runtime graphs, or mutate rows.
+
 Relevant ACIDs:
 
 - `launchable-substrate-host.LAB_INSPECTOR.1`
@@ -306,6 +378,7 @@ Relevant ACIDs:
 - `launchable-substrate-host.LAB_INSPECTOR.7`
 - `launchable-substrate-host.NO_CONTROL_PLANE.4`
 - `launchable-substrate-host.NO_CONTROL_PLANE.5`
+- `firegrid-runtime-process.SCENARIOS.5`
 
 ### Scenario 5: Claim-Before-Side-Effect
 
