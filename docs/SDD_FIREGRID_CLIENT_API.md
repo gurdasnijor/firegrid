@@ -93,6 +93,36 @@ Additional runtime package anchors:
 - `firegrid-package-migration.PACKAGE_DISTRIBUTION.7`
 - `firegrid-package-migration.PACKAGE_DISTRIBUTION.8`
 
+Current package-consumption coverage proves:
+
+- `@firegrid/substrate`, `@firegrid/client`, and `@firegrid/runtime` pack
+  built `dist` JavaScript and declaration artifacts rather than workspace-only
+  source entrypoints;
+- workspace TypeScript source resolution remains a development-only mapping so
+  repository lint, type-check, and tests can run before packages are built;
+- the client external pack smoke installs packed client and substrate tarballs
+  into a temporary consumer and type-checks public root plus
+  `@firegrid/client/event-streams` imports;
+- the runtime external pack smoke installs packed runtime and substrate
+  tarballs into a temporary NodeNext consumer and type-checks `run`,
+  `Firegrid.handler`, `Firegrid.composeRuntime`, explicit subscriber/provider
+  Layers, `RunWait`, and the EventPlane public subpath;
+- the runtime smoke asserts the packed `@firegrid/runtime` manifest exposes the
+  built `firegrid` binary artifact;
+- package-consumption smokes preserve the no client-to-runtime and
+  runtime-to-client package edge: client smokes do not install runtime, and
+  runtime smokes do not install client;
+- runtime consumer source is guarded against substrate kernel/control-plane
+  leaks and low-level durable-authority shortcuts such as direct `durable.run`,
+  `WorkProducer`, claim helpers, terminal mutation helpers, completion
+  resolution helpers, `client.work.declare`, `FIREGRID_RUNTIME_MODULE`, and
+  Firegrid dev launcher usage.
+
+These smokes intentionally do not publish packages to npm, assert registry
+availability, or turn local tarballs into a release channel. They prove that the
+current package artifacts are externally consumable while publication remains a
+separate distribution decision.
+
 Operation and EventStream descriptors are shared contract values. They contain
 stable names and Effect Schema contracts, not runtime handlers or registration
 side effects:
