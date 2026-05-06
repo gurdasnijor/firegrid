@@ -229,11 +229,17 @@ The lab may keep raw Durable Streams diagnostic panels when they are visually
 and structurally separated from scenario controls. Those panels are inspection
 tools, not client write APIs and not examples for app code.
 
+Lab UI components route typed controls through an app-local client seam. That
+seam may adapt to the current production client subpaths while C2 lands, but
+runtime, substrate, kernel, raw writer, work, claim, and terminal authority do
+not leak into React components.
+
 Anchor requirements:
 
 - `firegrid-client-api.LAB_COMPATIBILITY.1`
 - `firegrid-client-api.LAB_COMPATIBILITY.2`
 - `firegrid-client-api.LAB_COMPATIBILITY.3`
+- `firegrid-client-api.LAB_COMPATIBILITY.4`
 - `launchable-substrate-host.LAB_INSPECTOR.7`
 - `launchable-substrate-host.NO_CONTROL_PLANE.4`
 - `launchable-substrate-host.NO_CONTROL_PLANE.5`

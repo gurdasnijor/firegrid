@@ -23,13 +23,18 @@ interface LabEventStreamClientConfig {
   readonly streamUrl: string
 }
 
+export interface LabEventStreamClient {
+  readonly emit: (event: LabEvent) => Effect.Effect<void, EmitError>
+  readonly events: () => Stream.Stream<LabEvent, EventsError>
+}
+
 const layerFor = (cfg: LabEventStreamClientConfig) =>
   EventStreamClientLive({
     streamUrl: cfg.streamUrl,
     clientId: "firegrid-lab",
   })
 
-export const emitLabEvent = (
+const emitLabEvent = (
   cfg: LabEventStreamClientConfig,
   event: LabEvent,
 ): Effect.Effect<void, EmitError> =>
@@ -38,7 +43,7 @@ export const emitLabEvent = (
     yield* client.emit(LabEvents, event)
   }).pipe(Effect.provide(layerFor(cfg)))
 
-export const labEvents = (
+const labEvents = (
   cfg: LabEventStreamClientConfig,
 ): Stream.Stream<LabEvent, EventsError> =>
   Stream.unwrap(
@@ -47,3 +52,15 @@ export const labEvents = (
       return client.events(LabEvents)
     }).pipe(Effect.provide(layerFor(cfg))),
   )
+
+// firegrid-client-api.LAB_COMPATIBILITY.1
+// firegrid-client-api.LAB_COMPATIBILITY.4
+// firegrid-event-streams.CLIENT_API.1
+// firegrid-event-streams.CLIENT_API.2
+// firegrid-event-streams.CLIENT_API.3
+export const createLabEventStreamClient = (
+  cfg: LabEventStreamClientConfig,
+): LabEventStreamClient => ({
+  emit: (event) => emitLabEvent(cfg, event),
+  events: () => labEvents(cfg),
+})

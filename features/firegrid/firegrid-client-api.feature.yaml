@@ -39,6 +39,7 @@ components:
       1: The lab uses @firegrid/client production APIs for typed app-like sends, EventStream emission, and EventStream observation instead of lab-only writer APIs.
       2: The lab may use raw Durable Streams read-only diagnostic panels when explicitly separated from scenario controls, but those diagnostics are not promoted as client write APIs.
       3: Lab browser bundles must remain compatible with the same public client entrypoints available to application code.
+      4: Lab UI components use an app-local client seam for typed workbench actions so production @firegrid/client API migrations do not expose runtime, substrate, kernel, raw Durable Streams writer, work, claim, or terminal authority to the UI.
 
 constraints:
   DOCUMENTATION:
