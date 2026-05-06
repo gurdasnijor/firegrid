@@ -1,0 +1,71 @@
+feature:
+  name: firegrid-runtime-presence
+  product: firegrid
+  description: Product-neutral runtime presence records, lifecycle, query selection, advisory consistency posture, and ingress endpoint discovery for durable subscribers, callback registration, and remote handoff without becoming a host mesh, command bus, internal endpoint registry, or credential directory.
+
+components:
+  DESCRIPTOR:
+    requirements:
+      1: Runtime hosts publish a durable presence descriptor carrying runtime id, host id, node id, provider kind, topology identity, advertised public ingress endpoints by capability, readiness status and evidence, created and updated timestamps, heartbeat timestamp, and optional public metadata tags.
+      2: Presence descriptor field set is product-neutral; runtime id, host id, node id, provider kind, topology, ingress, readiness, timestamps, and tags do not adopt product session, prompt, capability, or provider taxonomy as Firegrid-native fields.
+      3: Caller-supplied public metadata tags are opaque to Firegrid and are not used for authority decisions; presence consumers may filter on tags but Firegrid does not interpret them.
+
+  LIFECYCLE:
+    requirements:
+      1: Startup, heartbeat, readiness update, and retirement are durable facts that rebuild into the current presence projection.
+      2: Heartbeat freshness is exposed through the presence projection so query consumers can filter on freshness without reading raw row history.
+      3: A retired runtime is reflected in the presence projection as terminated; subsequent appends from the same runtime identity do not retroactively revive a retired presence.
+      4: Lifecycle row appends and reads use caller-owned EventPlane mechanics where appropriate; runtime presence does not introduce a parallel substrate authority for lifecycle facts.
+
+  QUERY:
+    requirements:
+      1: Presence queries select runtime presence records by capability, readiness, freshness, topology identity, and caller-supplied app-owned tag filters.
+      2: Query results are decoded typed records and do not expose raw Durable Streams State envelopes, raw kernel rows, or substrate-internal cursor formats.
+      3: Query results identify the cursor boundary used for follow so live tail can resume without gap; live tail of presence changes follows the same replay-then-live posture as `firegrid-projection-query.QUERY_HANDLES.*`.
+      4: Empty match sets and stale-only match sets are typed query outcomes, not exceptions; consumers decide how to respond to empty or stale-only results.
+
+  CONSISTENCY:
+    requirements:
+      1: Runtime presence is advisory, eventually consistent discovery state; it is not used as leader election, authoritative live routing, exclusive ownership, or fencing.
+      2: A selected presence endpoint may become unreachable after selection; consumers rely on durable retry, re-registration, or alternative selection rather than treating presence as a live-routing guarantee.
+      3: Two consumers may observe slightly different freshness snapshots; conflict between presence-snapshot views does not produce a Firegrid error and is not subject to projection conflict mechanics.
+
+  INGRESS_SELECTION:
+    requirements:
+      1: Durable subscribers, external callback registration code, and remote-handoff coordination select public ingress endpoints from runtime presence query results when an external system needs a concrete URL before delivering facts into the durable substrate.
+      2: Ingress selection is read-only against the presence projection; selection does not author claim, completion, or terminal authority over the selected runtime.
+      3: Selected endpoints are public ingress only; presence does not expose private host transport, internal-only addresses, command channels, or host-to-host orchestration paths.
+      4: Product code retains route auth, callback signing, callback token minting, tenant authorization, and registration policy; presence supplies the discoverable endpoint and freshness.
+
+constraints:
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `firegrid-platform-invariants.SECURITY.3` for the rule that runtime presence is advisory and is not used as a command bus, leader election, private host mesh, internal endpoint registry, host-to-host transport channel, or credential directory.
+      2: This spec is bound by `firegrid-platform-invariants.SECURITY.1` for the rule that Firegrid packages do not store or transport provider credentials, tenant authentication policy, BYOK secrets, OAuth tokens, callback signing keys, or callback tokens through presence records or any other surface.
+      3: This spec is bound by `firegrid-platform-invariants.BOUNDARY.1` and `firegrid-platform-invariants.BOUNDARY.4` so that presence schemas and query helpers do not adopt product registry vocabulary or provider taxonomy as Firegrid-native fields.
+      4: This spec is bound by `firegrid-platform-invariants.LOCALITY.1`, `firegrid-platform-invariants.LOCALITY.2`, and `firegrid-platform-invariants.LOCALITY.5` so that presence publication helpers live on `@firegrid/runtime` and browser-safe presence read helpers do not pull runtime or kernel imports.
+      5: This spec is bound by `firegrid-platform-invariants.ENFORCEMENT.1`, `firegrid-platform-invariants.ENFORCEMENT.2`, and `firegrid-platform-invariants.ENFORCEMENT.3` for citation discipline.
+
+  DEPENDS_ON:
+    requirements:
+      1: "`firegrid-projection-query.QUERY_HANDLES.*`, `firegrid-projection-query.CURSOR_AND_REPLAY.*`, and `firegrid-projection-query.EXPECTED_ERRORS.*` govern the read facade for presence projections; this spec depends on those rather than introducing a parallel read facade."
+      2: "`client-event-plane-registration.*` and `durable-records-and-projections.*` govern caller-owned EventPlane definition and projection rebuild semantics; this spec depends on those rather than introducing parallel mechanics."
+      3: "`firegrid-runtime-process.*` governs runtime composition and `run({ connection, runtime })` entry; presence publisher and heartbeat Layers are composed through `Firegrid.composeRuntime` and depend on existing runtime composition."
+      4: "`firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.*` and `firegrid-durable-subscriber-webhooks.WAIT_INTEGRATION.*` consume presence query results when a durable subscriber needs a public ingress URL; this spec exposes the discovery surface and the subscriber spec consumes it."
+      5: "`flamecast-product-contract.CALLBACKS.*` and `flamecast-product-contract.IDENTITY_AUTH.*` govern Flamecast-side route auth, callback signing, callback token issuance, and tenant authorization; presence carries the discoverable endpoint while the product owns auth and registration."
+
+  PACKAGE_PLACEMENT:
+    requirements:
+      1: Presence descriptor types and presence projection schemas live on a curated `@firegrid/substrate` public surface accessible to both publisher and reader.
+      2: Presence publisher, heartbeat, readiness-update, and retirement Layers live on `@firegrid/runtime` and compose through `Firegrid.composeRuntime`.
+      3: Browser-safe presence read helpers live on `@firegrid/client` and do not pull `@firegrid/runtime`, `@firegrid/substrate/kernel`, or Node-only modules.
+      4: Presence query is a read facade and does not expose append, claim, completion, or terminal authority through any package surface.
+
+  NON_SCOPE:
+    requirements:
+      1: This spec does not define DNS, TLS, or external load-balancer policy for advertised ingress endpoints.
+      2: This spec does not define callback URL minting, callback token issuance, callback rotation, or product registration policy; those remain product concerns per `firegrid-platform-invariants.SECURITY.2`.
+      3: This spec does not define leader election, exclusive ownership, fencing, or authoritative live routing; ownership and fencing live in the runtime ownership transfer lane spec when authored.
+      4: This spec does not define host-to-host command transport, internal endpoint registry, private mesh routing, or secret distribution.
+      5: This spec does not define provider catalogs, agent registries, capability registries, or tool registries; product registries are product-owned.
+      6: This spec does not define a separate browser presence write API; presence writes happen through the runtime publisher Layer, not through browser code.
