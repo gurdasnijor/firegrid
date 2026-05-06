@@ -172,7 +172,10 @@ It may:
 4. Run durable subscriber programs: timer, scheduled-work, projection-match,
    materializer, operator, and future runtime-specific programs.
 5. Append execution facts through substrate authority.
-6. Own embedded Durable Streams only in local development mode.
+6. Run in attached-only mode against an externally-running Durable Streams
+   server. Local development uses `durable-streams-server dev` started outside
+   Firegrid; the runtime does not own a Durable Streams dev-server lifecycle
+   (`firegrid-runtime-process.BINARIES.7-.8`).
 
 It must not:
 
@@ -202,12 +205,16 @@ It must not:
 2. Require app clients to construct kernel row shapes.
 3. Depend on client, runtime, lab, or product-specific packages.
 
-Substrate-owned durable row schemas, the durable-streams state schema, and the
-ready-work projection-output contract live under a single canonical `schema/`
-module inside the substrate package so the kernel's authoritative type
-definitions are easy to discover at one location. Greenfield drops of these
-definitions do not retain compatibility re-export shims at the prior root paths
-(`durable-records-and-projections.SCHEMA_LAYOUT.1`).
+Substrate-owned durable row schemas and the durable-streams state schema live
+under a canonical `protocol/schema/` module inside the substrate package, with
+compatibility re-export shims preserved for previously exposed schema paths
+(`durable-records-and-projections.SCHEMA_LAYOUT.1`). Browser-safe protocol
+descriptors and codecs live under `protocol/descriptors/` with the same
+compatibility-shim policy
+(`durable-records-and-projections.SCHEMA_LAYOUT.2`). The ready-work
+projection-output contract continues to live under `schema/ready-work.ts`
+until a future projection/read-model cleanup gives it a dedicated home; it is
+unrelated to the durable wire row family schemas.
 
 ### Lab Constraints
 
