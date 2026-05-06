@@ -4,6 +4,7 @@ import { failingOperationScenario } from "./emitters/failing-operation.ts"
 import { firepixelToolInvocationScenario } from "./emitters/firepixel-tool-invocation.ts"
 import { firelineShapedScenario } from "./emitters/fireline-shaped.ts"
 import { firelineRejectionScenario } from "./emitters/fireline-rejection.ts"
+import { firepixelPromptChunkScenario } from "./emitters/firepixel-prompt-chunk.ts"
 import { scheduledWorkScenario } from "./emitters/scheduled-work.ts"
 import { sleepScenario } from "./emitters/sleep.ts"
 import { waitForScenario } from "./emitters/wait-for.ts"
@@ -13,6 +14,7 @@ import { failingOperationReceiverScenario } from "./receivers/failing-operation-
 import { firepixelToolInvocationReceiverScenario } from "./receivers/firepixel-tool-invocation-receiver.ts"
 import { firelineShapedReceiverScenario } from "./receivers/fireline-shaped-receiver.ts"
 import { firelineRejectionReceiverScenario } from "./receivers/fireline-rejection-receiver.ts"
+import { firepixelPromptChunkReceiverScenario } from "./receivers/firepixel-prompt-chunk-receiver.ts"
 import { scheduledWorkReceiverScenario } from "./receivers/scheduled-work-receiver.ts"
 import { sleepReceiverScenario } from "./receivers/sleep-receiver.ts"
 import { waitForReceiverScenario } from "./receivers/wait-for-receiver.ts"
@@ -25,6 +27,7 @@ const scenarios = [
   firepixelToolInvocationScenario,
   firelineShapedScenario,
   firelineRejectionScenario,
+  firepixelPromptChunkScenario,
   scheduledWorkScenario,
   sleepScenario,
   waitForScenario,
@@ -34,6 +37,7 @@ const scenarios = [
   firepixelToolInvocationReceiverScenario,
   firelineShapedReceiverScenario,
   firelineRejectionReceiverScenario,
+  firepixelPromptChunkReceiverScenario,
   scheduledWorkReceiverScenario,
   sleepReceiverScenario,
   waitForReceiverScenario,

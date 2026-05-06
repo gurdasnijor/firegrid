@@ -241,15 +241,12 @@ Acceptance:
 
 ACIDs:
 
-- `client-event-plane-registration.PRODUCER_API.5`
 - `client-event-plane-registration.PRODUCER_API.6`
-- `client-event-plane-registration.PROJECTION_API.5`
 - `client-event-plane-registration.PROJECTION_API.6`
 - `client-event-plane-registration.FIREPIXEL_PROFILE.1`
 - `client-event-plane-registration.FIREPIXEL_PROFILE.2`
 - `client-event-plane-registration.FIREPIXEL_PROFILE.3`
-- `firegrid-runtime-process.SCENARIOS.18`
-- `firegrid-runtime-process.SCENARIOS.19`
+- `firegrid-runtime-process.SCENARIOS.20`
 - `run-wait-primitives.RUN_WAIT_API.8`
 - `durable-waits-and-scheduling.WAIT_FOR.9`
 
