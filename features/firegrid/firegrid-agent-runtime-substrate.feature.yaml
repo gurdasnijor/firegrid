@@ -1,0 +1,68 @@
+feature:
+  name: firegrid-agent-runtime-substrate
+  product: firegrid
+  description: Long-lived runtime profile that composes existing Firegrid primitives — operations, EventStreams, EventPlane rows, RunWait, projection-match subscribers, runtime composition — into a substrate suitable for hosting product-owned agent-runtime work without introducing product vocabulary.
+
+components:
+  LONG_LIVED_OPERATION:
+    requirements:
+      1: An operation may remain in `Pending` lifecycle state for the full duration of a runtime-style session, including handler startup, app-owned row emission, projection-match wait, scheduled work, replay or recovery, and waiting for app-owned control rows.
+      2: The public `Pending` state covers all non-terminal operation phases from the client point of view; product-specific blocked-on-X distinctions are observed through caller-owned EventPlane and EventStream rows, not by widening the public lifecycle vocabulary.
+      3: Pending duration is bounded only by app-owned policy and durable substrate health; Firegrid does not impose a default operation timeout that aborts long-lived runtime work.
+      4: Public `client.observe`, `client.result`, `client.events`, and `client.observe` lifecycle handles continue to function across multi-hour or multi-restart runtime sessions.
+
+  MULTI_WAIT_RESUME:
+    requirements:
+      1: A single runtime handler may perform more than one durable wait and resume cycle before terminalizing through handler return value or `Effect.fail`.
+      2: Between waits, the handler may emit additional caller-owned EventPlane producer rows, append to caller-owned EventStream entries, and read app-owned projections.
+      3: Resume from a durable wait reads completion or projection state authored by the substrate; the handler does not synthesize wake state, race a local timeout against the wait, or skip the wait via process-local memory.
+      4: Wait and resume cycles do not consume substrate authority budget that prevents terminalization; terminal status remains reachable through handler return or `Effect.fail` after any number of durable handshakes.
+      5: Re-entrant handler bodies authored as `Effect.gen` blocks read each resumed wait result through the substrate result channel rather than carrying it on a closure-captured variable that would not survive process restart.
+
+  APP_OWNED_CONTROL_ROWS:
+    requirements:
+      1: V1 cancel, steer, interrupt, and continue semantics for runtime-style operations are modeled as caller-owned EventPlane control rows; Firegrid does not provide a `client.cancel` API in v1.
+      2: Control rows are authored through public app-owned producers and observed through public app-owned projections; they do not bypass the runtime authority path or write directly to durable run state.
+      3: Handlers may race control-row observation against other waits at safe durable points and terminalize through typed handler return or `Effect.fail` mapped onto an operation error variant.
+      4: A future ergonomic helper that lowers user-facing cancellation must produce the same durable control-row pattern; it must not introduce kernel, control-plane, or terminal authority into application or browser code.
+
+  RECONNECT_REPLAY:
+    requirements:
+      1: After client-side disconnect, tab close, or transport failure, a client may rejoin runtime-style work by reading the durable operation lifecycle plus caller-owned EventStream replay and app-owned projection snapshot.
+      2: Terminal operation state is resolvable from durable snapshot before any live-tail follow.
+      3: Caller-owned EventStream and app-owned projection replay catches up before live tail without dropping or duplicating accepted entries; replay-then-live-tail mechanics live in `firegrid-projection-query.QUERY_HANDLES.*` and `firegrid-projection-query.CURSOR_AND_REPLAY.*`.
+      4: Replay gaps surface as typed expected read failures from `firegrid-projection-query.EXPECTED_ERRORS.*` rather than silent partial state or best-effort approximations.
+      5: Product UIs reconstruct runtime-visible state from decoded caller-owned rows and replayed events; they do not depend on private or process-local runtime memory to render correct state after reconnect.
+
+  TOPOLOGY_PROFILE:
+    requirements:
+      1: The agent-runtime substrate profile assumes a split-tier deployment where browser, edge, and Cloudflare Worker code consumes `@firegrid/client` while runtime handlers and subscribers run in a Node-tier process and consume `@firegrid/runtime`.
+      2: Runtime composition uses `Firegrid.composeRuntime` with explicit `handlers`, `subscribers`, and `provide` Layer arrays; runtime entry uses public `run({ connection, runtime })`.
+      3: Provider adapters, provider credentials, and provider-side process supervision live below the product runtime layer and do not appear inside Firegrid packages, runtime composition, or app-owned EventPlane row family names.
+      4: Edge-hosted `@firegrid/runtime`, dynamic runtime module loading via environment-driven module specifiers, and dev-launcher resurrection patterns remain anti-scope.
+
+constraints:
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `firegrid-platform-invariants.BOUNDARY.1`, `firegrid-platform-invariants.BOUNDARY.2`, `firegrid-platform-invariants.BOUNDARY.4`, and `firegrid-platform-invariants.BOUNDARY.5` for product-vocabulary freeze and Firegrid-native mechanic vocabulary preservation.
+      2: This spec is bound by `firegrid-platform-invariants.LOCALITY.1`, `firegrid-platform-invariants.LOCALITY.2`, `firegrid-platform-invariants.LOCALITY.3`, `firegrid-platform-invariants.LOCALITY.4`, and `firegrid-platform-invariants.LOCALITY.5` for split-tier package locality.
+      3: This spec is bound by `firegrid-platform-invariants.AUTHORITY.1`, `firegrid-platform-invariants.AUTHORITY.2`, `firegrid-platform-invariants.AUTHORITY.3`, `firegrid-platform-invariants.AUTHORITY.4`, `firegrid-platform-invariants.AUTHORITY.5`, `firegrid-platform-invariants.AUTHORITY.6`, and `firegrid-platform-invariants.AUTHORITY.7` for terminalization, external write authority, deterministic Pending observation, and the prohibition on `Effect.sleep` between handler emit and `RunWait.for`.
+      4: This spec is bound by `firegrid-platform-invariants.ENFORCEMENT.1`, `firegrid-platform-invariants.ENFORCEMENT.2`, and `firegrid-platform-invariants.ENFORCEMENT.3` for citation discipline; missing invariants are escalated back to `firegrid-platform-invariants` rather than encoded here.
+
+  DEPENDS_ON:
+    requirements:
+      1: "`firegrid-projection-query.QUERY_HANDLES.*`, `firegrid-projection-query.CURSOR_AND_REPLAY.*`, and `firegrid-projection-query.EXPECTED_ERRORS.*` govern reconnect and replay query semantics; this spec depends on those mechanics rather than redefining them."
+      2: "`firegrid-client-api.*` governs operation send, result, observe, call, emit, and events public client APIs; this spec does not redefine those public APIs."
+      3: "`client-event-plane-registration.*` governs caller-owned EventPlane definition, producer, and projection mechanics; this spec depends on those rather than introducing parallel EventPlane mechanisms."
+      4: "`run-wait-primitives.*` and `durable-waits-and-scheduling.*` govern durable wait semantics; this spec depends on those rather than introducing parallel wait primitives."
+      5: "`firegrid-runtime-process.*` governs runtime composition and `run({ connection, runtime })` entry; this spec depends on those rather than redefining runtime composition."
+      6: "`flamecast-product-contract.LOWERING.*` names which Flamecast concepts lower onto these substrate primitives; this spec does not encode Flamecast vocabulary."
+
+  NON_SCOPE:
+    requirements:
+      1: This spec does not define new operation lifecycle states beyond the existing public set, including no public `Blocked`, `WaitingFor`, `Suspended`, or product-shaped state variants; product-specific phase semantics live in caller-owned rows.
+      2: This spec does not define a public `client.cancel` API, a runtime cancellation primitive, or a runtime kill switch; v1 cancellation is the app-owned control row pattern.
+      3: This spec does not define provider adapter execution, provider credentials, provider lifecycle (startup, shutdown, restart, reattach), or sandbox lifecycle.
+      4: This spec does not define edge-hosted runtime, browser-side handler execution, dynamic runtime module loading, or dev-launcher behavior.
+      5: This spec does not define chat protocol, AI-SDK transport adapter, TanStack DB or React framework adapter, or message, turn, prompt, or tool-call public vocabulary.
+      6: This spec does not define ownership transfer, runtime presence, execution-plane resources, durable subscriber webhooks, scheduling tool bindings, or claimed-intent transport; those live in their own lane specs.

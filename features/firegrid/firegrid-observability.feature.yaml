@@ -1,0 +1,75 @@
+feature:
+  name: firegrid-observability
+  product: firegrid
+  description: Product-neutral observability layer that connects Effect tracing across Firegrid client, runtime, EventStream, EventPlane, RunWait, projection-match, durable-subscriber, and terminalization edges using stable substrate span names and attributes without owning product telemetry policy.
+
+components:
+  TRACE_METADATA:
+    requirements:
+      1: Optional trace-context metadata may be carried through caller-owned row metadata, operation envelope metadata, and EventStream and EventPlane envelope metadata using W3C Trace Context shapes.
+      2: Standardized optional metadata keys cover correlation id, causation id, producer id, runtime id, subscriber id, operation or handle id, descriptor name, row or event key, stream identity, cursor boundary, attempt number, traceparent, tracestate, and baggage.
+      3: Trace-context propagation through durable rows is best-effort; consumers that ignore unknown metadata keys remain conformant.
+      4: Values that may contain secret material are redacted, rejected, or wrapped in `Effect.Redacted` before becoming durable metadata or span attributes.
+      5: Trace metadata helpers do not carry tenant identity, provider credentials, customer payload, or product authorization decisions; they are correlation carriers only.
+
+  SUBSTRATE_SPANS:
+    requirements:
+      1: Firegrid emits stable substrate spans for client send, observe, result, and call paths.
+      2: Firegrid emits substrate spans for runtime boot and runtime handler invocation.
+      3: Firegrid emits substrate spans for EventStream append, read, replay, and live-tail boundaries.
+      4: Firegrid emits substrate spans for EventPlane emit and projection read.
+      5: Firegrid emits substrate spans for `RunWait` suspend and `RunWait` resume; resume spans link back to durable suspend context when carried in row metadata.
+      6: Firegrid emits substrate spans for projection-match subscriber evaluation and wake.
+      7: Firegrid emits substrate spans for durable subscriber claim, attempt, retry, completion, and dead-letter outcomes once the durable subscriber lane lands; this requirement does not block landing of the other span boundaries.
+      8: Firegrid emits substrate spans for operation terminalization including typed success and typed failure paths.
+      9: Substrate span emission may land in incremental PRs by span category; this spec does not require all spans to land in a single change.
+
+  ATTRIBUTES:
+    requirements:
+      1: Substrate span and attribute names are namespaced under a Firegrid-owned prefix and remain stable across products.
+      2: Stable attributes cover operation descriptor, handle id, run id, runtime id, stream descriptor, event type, event key, plane descriptor, row family, row key, cursor boundary, subscriber id, attempt number, status, and error tag.
+      3: Attribute names do not encode product vocabulary; no session, provider, model, tenant, prompt, permission, tool, capability, sandbox, agent, ACP, MCP, AgentSpec, or product-specific identifier appears in Firegrid-native attribute names.
+      4: Static attributes known at span open are passed through `Effect.withSpan` options; attributes that are only known after operation start use `Effect.annotateCurrentSpan` inside the active span.
+      5: Attribute values that may contain secret material are filtered or redacted before annotation; substrate attributes do not become a side channel for secret leak.
+
+  ERROR_TERMINAL_CORRELATION:
+    requirements:
+      1: Typed expected errors and terminal operation failures attach substrate context covering operation descriptor, run or operation id, stream cursor when available, subscriber id and attempt when relevant, error class, and terminal status.
+      2: Product-domain failure shapes such as provider unavailable, capability unsupported, permission denied, prompt unsupported, sandbox failed, or model unsupported do not appear as Firegrid substrate error variants; product errors remain on app-owned operation error schemas.
+      3: Error correlation does not change error semantics; an Effect that fails with a typed expected error continues to fail with the same error when tracing Layers are active or absent.
+      4: Decode failures, malformed cursor errors, retention gap errors, and other typed expected read failures from `firegrid-projection-query.EXPECTED_ERRORS.*` carry their existing substrate context and do not gain product-shaped fields through observability instrumentation.
+
+  NON_AUTHORITY:
+    requirements:
+      1: Adding or removing observability Layers does not change the operation result, durable row shape, terminalization path, retry behavior, claim eligibility, or authorization checks.
+      2: Trace metadata is context, not authority; correctness, terminalization, and access decisions do not depend on trace metadata.
+      3: Missing trace context does not change durable behavior including wait wake-up, claim ownership, completion authority, retry classification, or first-terminal-wins folds.
+      4: Production tracing may be sampled; Firegrid does not rely on span data as the only copy of a correctness-critical identifier; correctness identifiers belong in durable row metadata first and may also be mirrored into span attributes for operator convenience.
+      5: Optional durable trace rows, if added by a later spec, remain a debug or read materialization; they do not decide wait eligibility, claim ownership, terminal state, or authorization.
+
+constraints:
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `firegrid-platform-invariants.SECURITY.4` for redaction, rejection, or `Effect.Redacted` handling of any value that could contain secret material before durable metadata or span attribute storage.
+      2: This spec is bound by `firegrid-platform-invariants.SECURITY.5` for the rule that correctness, terminalization, and authorization do not depend on trace metadata and that missing trace metadata does not change durable behavior.
+      3: This spec is bound by `firegrid-platform-invariants.BOUNDARY.1`, `firegrid-platform-invariants.BOUNDARY.3`, and `firegrid-platform-invariants.BOUNDARY.5` for the prohibition on product vocabulary in Firegrid-native attribute names and the preservation of generic mechanic vocabulary as Firegrid-native.
+      4: This spec is bound by `firegrid-platform-invariants.AUTHORITY.1` and `firegrid-platform-invariants.AUTHORITY.7` so that terminalization remains driven by handler return or `Effect.fail` and observability does not reintroduce claim, completion, or terminal authority into application code.
+      5: This spec is bound by `firegrid-platform-invariants.ENFORCEMENT.1`, `firegrid-platform-invariants.ENFORCEMENT.2`, and `firegrid-platform-invariants.ENFORCEMENT.3` for citation discipline.
+
+  PACKAGE_BOUNDARY:
+    requirements:
+      1: Firegrid core packages do not depend on `@effect/opentelemetry` directly; Effect tracing primitives `Effect.withSpan` and `Effect.annotateCurrentSpan` are the integration surface and exporter wiring is owned downstream.
+      2: Browser-safe `@firegrid/client` entrypoints do not pull Node-only OpenTelemetry SDK modules through any reachable import path.
+      3: Trace context encode and decode helpers safe for browser use live in `@firegrid/client` or `@firegrid/substrate` curated public surfaces; runtime-tier span Layers and span emitter wiring live in `@firegrid/runtime`.
+      4: Direct OpenTelemetry exporter configuration, sampler choice, and vendor wiring stay downstream in product packages; Firegrid core does not adopt a default exporter.
+      5: This spec does not introduce a `@firegrid/runtime` to `@firegrid/client` package edge or a `@firegrid/client` to `@firegrid/runtime` package edge through observability helpers.
+
+  NON_SCOPE:
+    requirements:
+      1: This spec does not define product span names, business attribute keys, tenant or auth identity attributes, or customer-data redaction policy.
+      2: This spec does not define authorization decisions, access policy, or audit and compliance retention.
+      3: This spec does not define OpenTelemetry exporter configuration, sampler policy, or backend or vendor selection.
+      4: This spec does not define billing, usage analytics, or cost telemetry.
+      5: This spec does not define provider-specific trace context formats or cross-vendor trace correlation rules.
+      6: This spec does not require a single-PR landing of all spans; incremental implementation by category is allowed and expected per `SUBSTRATE_SPANS.9`.
+      7: This spec does not define durable trace rows as authority; if added, durable trace rows remain non-authoritative read materializations per `NON_AUTHORITY.5`.
