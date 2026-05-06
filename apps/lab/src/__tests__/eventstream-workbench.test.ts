@@ -17,9 +17,17 @@ describe("runtime-lab-inspector.WRITE_BOUNDARY.1 + firegrid-event-streams.CLIENT
       resolve(labRoot, "LabEventStreamPanel.tsx"),
       "utf8",
     )
+    const app = readFileSync(resolve(labRoot, "App.tsx"), "utf8")
     const descriptor = readFileSync(resolve(labRoot, "lab-events.ts"), "utf8")
-    const combined = `${seam}\n${currentAdapter}\n${panel}\n${descriptor}`
+    const combined = `${seam}\n${currentAdapter}\n${panel}\n${app}\n${descriptor}`
 
+    expect(app).toContain("Production client readiness surface")
+    expect(app).toContain("stream source:")
+    expect(app).toContain("uses LabClient seam")
+    expect(app).toContain("Read-only raw stream inspector")
+    expect(app).toContain("not a client")
+    expect(app).toContain("<LabEventStreamPanel streamUrl={streamUrl} />")
+    expect(app).toContain("<RawStreamInspector streamUrl={streamUrl} />")
     expect(panel).toContain("./LabClient.ts")
     expect(panel).not.toContain("./LabEventStreamClient.ts")
     expect(seam).toContain("createLabEventStreamClient")
@@ -38,6 +46,10 @@ describe("runtime-lab-inspector.WRITE_BOUNDARY.1 + firegrid-event-streams.CLIENT
     expect(combined).not.toContain("processReadyWorkItem")
     expect(combined).not.toContain("claimRun")
     expect(combined).not.toContain("terminalize")
+    expect(combined).not.toContain("client.send")
+    expect(combined).not.toContain("client.call")
+    expect(combined).not.toContain("client.result")
+    expect(combined).not.toContain("client.observe")
     expect(currentAdapter).toContain("client.emit(LabEvents")
     expect(currentAdapter).toContain("client.events(LabEvents")
   })

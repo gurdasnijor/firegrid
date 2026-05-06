@@ -23,7 +23,16 @@ const envStreamUrl = (
   import.meta as unknown as { env?: Record<string, string> }
 ).env?.["VITE_DURABLE_STREAMS_URL"]
 
-const streamUrl = queryStreamUrl ?? envStreamUrl
+const streamUrl =
+  queryStreamUrl !== undefined && queryStreamUrl.length > 0
+    ? queryStreamUrl
+    : envStreamUrl
+const streamUrlSource =
+  queryStreamUrl !== undefined && queryStreamUrl.length > 0
+    ? "query"
+    : streamUrl !== undefined && streamUrl.length > 0
+      ? "vite-env"
+      : undefined
 
 const root = document.getElementById("root")
 if (root === null) {
@@ -67,7 +76,7 @@ if (streamUrl === undefined || streamUrl.length === 0) {
 } else {
   createRoot(root).render(
     <React.StrictMode>
-      <App streamUrl={streamUrl} />
+      <App streamUrl={streamUrl} streamUrlSource={streamUrlSource} />
     </React.StrictMode>,
   )
 }

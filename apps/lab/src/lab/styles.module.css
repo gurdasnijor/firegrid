@@ -26,13 +26,48 @@
   border-bottom: 1px solid #d8dde3;
   background: #ffffff;
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 16px;
 }
 
 .headerTitle {
   font-weight: 700;
   letter-spacing: 0.01em;
+  margin-right: 10px;
+}
+
+.headerSubtitle {
+  color: #4b5563;
+  font-size: 12px;
+}
+
+.headerConnection {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-width: 0;
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #2b6cb0;
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #1f4f82;
+  background: #ebf4ff;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.headerStreamSource {
+  color: #4b5563;
+  font-size: 12px;
 }
 
 .headerStreamUrl {
@@ -77,6 +112,43 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: #4a5568;
+}
+
+.sectionHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.sectionHeading h2 {
+  margin-bottom: 0;
+}
+
+.sectionEyebrow {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.boundaryList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 8px;
+}
+
+.boundaryList span {
+  display: inline-flex;
+  border: 1px solid #cbd5e0;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: #334155;
+  background: #f8fafc;
+  font-size: 11px;
 }
 
 .panel {
@@ -179,4 +251,31 @@
   font-size: 12px;
   color: #6b7280;
   margin-top: 4px;
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .headerConnection {
+    justify-content: flex-start;
+  }
+
+  .scenarioRegion,
+  .diagnosticRegion {
+    grid-column: 1;
+  }
+
+  .diagnosticRegion {
+    grid-row: 3;
+  }
 }
