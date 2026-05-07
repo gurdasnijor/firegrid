@@ -9,6 +9,7 @@ components:
       1: A WorkflowEngine.Encoded implementation stores executions, activities, deferred results, and workflow clock wakeups as Durable Streams State rows.
       2: Stored activity results and deferred exits are treated as opaque encoded @effect/workflow values whose schemas remain owned by @effect/workflow.
       3: Workflow definitions remain process-local and are re-registered before persisted executions are resumed.
+      4: The Durable Streams workflow engine exposes a ClusterWorkflowEngine-shaped integration pattern with a `make` constructor and `layer` installer for the `WorkflowEngine` service.
 
   VALIDATION:
     requirements:

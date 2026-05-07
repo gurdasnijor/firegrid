@@ -137,13 +137,34 @@ mechanic must Firegrid provide so Flamecast can stop owning the compensation?".
 
 | Need | Current Flamecast compensation | Firegrid primitive or spec | Gap to close before deletion |
 | --- | --- | --- | --- |
-| Durable inbound provider delivery | `/provider-events/:sessionId` writes Postgres metadata and `SessionDO` storage directly. | `firegrid-durable-subscriber-webhooks.DELIVERY_PRODUCER.*`; caller-owned EventPlane rows. | Need a product-neutral append helper with idempotency key, producer identity, duplicate/conflict result, and cursor acknowledgement proven through tests. Firegrid must not host the Flamecast HTTP route or token policy. |
-| Replay-safe processing of accepted deliveries | Provider callback handler performs state mutation inline inside the HTTP request. | `firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.*`; `firegrid-claimed-intent-transport.CLAIM_BEFORE_DISPATCH.*`. | Need a runtime subscriber proof that replays to live boundary before side effects, claims before processing, records retry/dead-letter/terminal rows, and performs no side effects during replay. |
-| External customer webhook fanout | `SessionDO.deliverStatusCallback` fetches the customer URL on status change, without durable retry/dead-letter state. | Durable delivery channel plus subscriber runtime; `firegrid-platform-invariants.SECURITY.6`. | Need outbound delivery rows, caller-supplied request classifier, retry/dead-letter projection, and idempotency/fencing guidance. Signing, callback URL, customer auth, and callbackEvents filtering remain Flamecast. |
+| Durable inbound provider delivery | `/provider-events/:sessionId` writes Postgres metadata and `SessionDO` storage directly. | Caller-owned EventPlane rows plus `@firegrid/runtime` workflow execution. | Product code should append provider delivery facts to its own stream rows, then execute a top-level workflow whose payload schema and idempotency key describe the provider callback intent. Firegrid must not host the Flamecast HTTP route or token policy. |
+| Replay-safe processing of accepted deliveries | Provider callback handler performs state mutation inline inside the HTTP request. | `firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.*`; `firegrid-claimed-intent-transport.CLAIM_BEFORE_DISPATCH.*`. | Use caller-declared `Workflow.make` and `Activity.make` definitions on the Durable Streams backed workflow engine so claim-before-body, replay, deferred waits, and durable sleep are workflow mechanics rather than a parallel subscriber store. |
+| External customer webhook fanout | `SessionDO.deliverStatusCallback` fetches the customer URL on status change, without durable retry/dead-letter state. | Caller-owned outbound intent rows plus workflow activities; `firegrid-platform-invariants.SECURITY.6`. | Need a Flamecast-declared outbound workflow with app-owned idempotency/fencing, retry policy, terminal/dead-letter projection, and request classifier. Signing, callback URL, customer auth, and callbackEvents filtering remain Flamecast. |
 | Internal terminal signalling | Slack turn callback receives a customer-shaped status webhook from the same worker. | State/EventPlane/EventStream observation; `flamecast-product-contract.CALLBACKS.5`; `flamecast-product-contract.LOWERING.10`. | No Firegrid product feature is needed if terminal session state is already durable and observable. The blocker is wiring Slack reply logic as a Flamecast subscriber/delivery side effect rather than as an HTTP callback to self. |
 | Public ingress discovery for providers/callback registrars | `WORKER_URL` is embedded in `providerEventCallbackUrl`. | `firegrid-runtime-presence.INGRESS_SELECTION.*`. | Need presence publication/query if callback registration must select among multiple runtime/edge ingress endpoints. Presence supplies endpoint discovery only; product code still owns route auth and token minting. |
 | Browser read/live replacement | REST polling and `/events/live` WebSocket read `SessionDO` or ClickHouse. | `firegrid-client-projection-api.*`; direct Durable Streams State subscriptions. | Need a no-gap snapshot-then-live facade over app-owned rows before deleting UI polling/WebSocket compensation. |
 | Event history projection | `SessionDO` SQLite assigns sequence and ClickHouse compensates for reads. | Direct Durable Streams State rows now; Firegrid EventStream/EventPlane if the broader chassis uses Firegrid. | Need explicit append boundary that allocates per-session `seq`, preserves normalized `IngestEvent`, and proves reads do not hit DO SQLite or ClickHouse. |
+
+Current Firegrid runtime slice:
+
+- `@firegrid/runtime` exposes the Durable Streams backed workflow engine. It
+  does not expose a separate delivery store or hidden subscriber runtime.
+  Product code declares inbound or outbound work as top-level `Workflow.make`
+  and `Activity.make` constructs, then provides the workflow layer to the
+  configured stream URL.
+- The slice proves caller-owned workflow payload/result schemas, workflow
+  idempotency and activity replay for duplicate suppression, durable activity
+  result/deferred/sleep recovery after engine reconstruction, and
+  caller-selected stream partitioning through configured workflow engine stream
+  URLs.
+- Firegrid still does not expose an HTTP ingress surface. Flamecast remains
+  responsible for accepting external HTTP, verifying auth/signatures/tokens, and
+  translating accepted product deliveries into stream appends.
+- Remaining Flamecast integration gaps before deleting all compensation:
+  product-owned delivery/conflict/terminal projections, retry/backoff and
+  dead-letter policy expressed in workflows, stale workflow activity takeover
+  validation, and an outbound HTTP activity helper only if Flamecast chooses to
+  reuse one after preparing an already-authorized request descriptor.
 
 The immediate implementation implication is that provider-event ingest and
 customer webhook fanout are not "keep for compatibility" items. They are either

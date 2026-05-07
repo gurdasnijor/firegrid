@@ -10,6 +10,7 @@ import { Duration, Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   fireDueWorkflowClocks,
+  layer,
   layerDurableStreams,
   makeWorkflowStateStore,
   type WorkflowEngineDurableStateOptions,
@@ -64,7 +65,183 @@ const inspectStore = async <A>(
 }
 
 describe("durable workflow engine", () => {
-  it("workflow-engine-durable-state.VALIDATION.1 replays a completed activity from Durable Streams State", async () => {
+  it("firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.1 lets subscriber-like work run on the Durable Streams workflow engine", async () => {
+    const streamUrl = await createStreamUrl("subscriber-workflow-engine")
+    const HandleInboundActivity = Activity.make({
+      name: "handle-inbound",
+      success: Schema.Struct({ accepted: Schema.Boolean }),
+      execute: Effect.succeed({ accepted: true }),
+    })
+    const InboundWorkflow = Workflow.make({
+      name: "inbound-subscriber-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.Struct({ accepted: Schema.Boolean }),
+      idempotencyKey: payload => payload.id,
+    })
+    const workflowLayer = InboundWorkflow.toLayer(() => HandleInboundActivity)
+
+    const result = await runWith(
+      { streamUrl },
+      workflowLayer,
+      InboundWorkflow.execute({ id: "delivery-1" }),
+    )
+
+    expect(result).toEqual({ accepted: true })
+  })
+
+  it("firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.2 and firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.4 keep subscriber intent in caller-declared Workflow and Activity constructs", async () => {
+    const streamUrl = await createStreamUrl("subscriber-workflow-intent")
+    const CallerPayload = Schema.Struct({
+      id: Schema.String,
+      providerKind: Schema.Literal("example-provider"),
+      value: Schema.Number,
+    })
+    const CallerResult = Schema.Struct({
+      providerKind: Schema.Literal("example-provider"),
+      doubled: Schema.Number,
+    })
+    const CallerActivity = Activity.make({
+      name: "caller-owned-activity",
+      success: CallerResult,
+      execute: Effect.succeed({
+        providerKind: "example-provider" as const,
+        doubled: 42,
+      }),
+    })
+    const CallerWorkflow = Workflow.make({
+      name: "caller-owned-workflow",
+      payload: CallerPayload,
+      success: CallerResult,
+      idempotencyKey: payload => payload.id,
+    })
+    const workflowLayer = CallerWorkflow.toLayer(() => CallerActivity)
+
+    const result = await runWith(
+      { streamUrl },
+      workflowLayer,
+      CallerWorkflow.execute({
+        id: "intent-1",
+        providerKind: "example-provider",
+        value: 21,
+      }),
+    )
+
+    expect(result).toEqual({
+      providerKind: "example-provider",
+      doubled: 42,
+    })
+  })
+
+  it("firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.3 suppresses duplicate subscriber-like work with workflow idempotency and activity replay", async () => {
+    const streamUrl = await createStreamUrl("subscriber-workflow-idempotency")
+    let activityRuns = 0
+    const IdempotentActivity = Activity.make({
+      name: "subscriber-idempotent-activity",
+      success: Schema.Number,
+      execute: Effect.sync(() => {
+        activityRuns += 1
+        return 11
+      }),
+    })
+    const IdempotentWorkflow = Workflow.make({
+      name: "subscriber-idempotent-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.Number,
+      idempotencyKey: payload => payload.id,
+    })
+    const workflowLayer = IdempotentWorkflow.toLayer(() => IdempotentActivity)
+
+    const first = await runWith(
+      { streamUrl },
+      workflowLayer,
+      IdempotentWorkflow.execute({ id: "same" }),
+    )
+    const second = await runWith(
+      { streamUrl },
+      workflowLayer,
+      IdempotentWorkflow.execute({ id: "same" }),
+    )
+
+    expect(first).toBe(11)
+    expect(second).toBe(11)
+    expect(activityRuns).toBe(1)
+  })
+
+  it("firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.6 and firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.7 use only caller-selected stream URLs for partitions", async () => {
+    const firstStreamUrl = await createStreamUrl("subscriber-partition-a")
+    const secondStreamUrl = await createStreamUrl("subscriber-partition-b")
+    let activityRuns = 0
+    const PartitionActivity = Activity.make({
+      name: "partitioned-subscriber-activity",
+      success: Schema.String,
+      execute: Effect.sync(() => {
+        activityRuns += 1
+        return "handled"
+      }),
+    })
+    const PartitionWorkflow = Workflow.make({
+      name: "partitioned-subscriber-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.String,
+      idempotencyKey: payload => payload.id,
+    })
+    const workflowLayer = PartitionWorkflow.toLayer(() => PartitionActivity)
+
+    const first = await runWith(
+      { streamUrl: firstStreamUrl },
+      workflowLayer,
+      PartitionWorkflow.execute({ id: "same-id" }),
+    )
+    const second = await runWith(
+      { streamUrl: secondStreamUrl },
+      workflowLayer,
+      PartitionWorkflow.execute({ id: "same-id" }),
+    )
+
+    expect(first).toBe("handled")
+    expect(second).toBe("handled")
+    expect(activityRuns).toBe(2)
+  })
+
+  it("workflow-engine-durable-state.ENGINE.4 exposes a ClusterWorkflowEngine-shaped layer installer", async () => {
+    const streamUrl = await createStreamUrl("workflow-layer-shape")
+    let runs = 0
+    const ShapeActivity = Activity.make({
+      name: "shape-activity",
+      success: Schema.Number,
+      execute: Effect.sync(() => {
+        runs += 1
+        return 1
+      }),
+    })
+    const ShapeWorkflow = Workflow.make({
+      name: "shape-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.Number,
+      idempotencyKey: payload => payload.id,
+    })
+    const workflowLayer = ShapeWorkflow.toLayer(() => ShapeActivity)
+
+    const first = await runWith(
+      { streamUrl },
+      workflowLayer,
+      ShapeWorkflow.execute({ id: "same" }),
+    )
+    const second = await Effect.runPromise(
+      Effect.scoped(
+        ShapeWorkflow.execute({ id: "same" }).pipe(
+          Effect.provide(workflowLayer),
+          Effect.provide(layer({ streamUrl })),
+        ),
+      ),
+    )
+
+    expect(first).toBe(1)
+    expect(second).toBe(1)
+    expect(runs).toBe(1)
+  })
+
+  it("workflow-engine-durable-state.VALIDATION.1 and firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.5 replays a completed activity from Durable Streams State", async () => {
     const streamUrl = await createStreamUrl("workflow-replay")
     let runs = 0
     const CountActivity = Activity.make({
@@ -104,7 +281,7 @@ describe("durable workflow engine", () => {
     expect(runs).toBe(1)
   })
 
-  it("workflow-engine-durable-state.VALIDATION.2 resolves a suspended workflow through a DurableDeferred token", async () => {
+  it("workflow-engine-durable-state.VALIDATION.2 and firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.5 resolves a suspended workflow through a DurableDeferred token", async () => {
     const streamUrl = await createStreamUrl("workflow-deferred")
     const Approval = DurableDeferred.make("approval", {
       success: Schema.String,
@@ -139,7 +316,7 @@ describe("durable workflow engine", () => {
     expect(result).toBe("approved")
   })
 
-  it("workflow-engine-durable-state.VALIDATION.3 persists a workflow DurableClock wakeup and fires it after engine reconstruction", async () => {
+  it("workflow-engine-durable-state.VALIDATION.3 and firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.5 persists a workflow DurableClock wakeup and fires it after engine reconstruction", async () => {
     const streamUrl = await createStreamUrl("workflow-clock")
     const ClockWorkflow = Workflow.make({
       name: "clock-workflow",

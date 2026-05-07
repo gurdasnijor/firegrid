@@ -56,6 +56,16 @@ components:
       5: Producer and subscriber identities are opaque to Firegrid and are preserved on accepted delivery, claim, completion, retry, terminal-failure, conflict, dead-letter, and cursor-acknowledgement rows; identity authentication is owned by the caller.
       6: Conflict and dead-letter rows are durable, replayable, queryable facts, not log-only; dead-letter repair is app-owned projection logic and Firegrid does not need a built-in repair row family.
 
+  RUNTIME_VERTICAL:
+    requirements:
+      1: Until the substrate package split exists, `@firegrid/runtime` exposes the Durable Streams backed workflow engine as the first implementation slice for durable subscriber-like work.
+      2: Runtime callers declare subscriber intent with top-level `Workflow.make` and `Activity.make` constructs using caller-owned payload, success, and error schemas; Firegrid persists only workflow engine rows.
+      3: Runtime idempotency and duplicate suppression for subscriber-like work come from workflow idempotency keys and activity replay, while product-specific duplicate/conflict rows remain caller-owned projections.
+      4: Runtime does not define hidden subscriber workflows, hidden delivery stores, or product-shaped helper APIs; products compose the Durable Streams backed workflow engine directly.
+      5: Workflow executions, activity results, deferred waits, and durable sleep wakeups remain readable and resumable after engine reconstruction.
+      6: Runtime workflow mechanics produce and consume only through configured Durable Streams stream URLs; Firegrid does not expose HTTP ingress, callback routes, webhook endpoints, or product request handlers.
+      7: Stream partitioning is caller configuration expressed through workflow engine stream URLs and workflow idempotency or app-owned ordering scopes; Firegrid does not require a single global delivery stream or one HTTP surface per subscriber.
+
 constraints:
   INVARIANTS:
     requirements:
@@ -92,3 +102,4 @@ constraints:
       5: This spec does not define a reusable product adapter package; it ships product-neutral helpers and example shapes only.
       6: This spec does not define exactly-once external delivery; exactly-once external side effects require app-owned idempotency or target-side fencing per `DELIVERY_SEMANTICS.1`.
       7: This spec does not define repair flow row families; repair logic is app-owned projection behavior per `DELIVERY_SEMANTICS.6`.
+      8: This spec does not define a Firegrid HTTP ingress service; products translate external HTTP deliveries into stream appends before Firegrid mechanics begin.
