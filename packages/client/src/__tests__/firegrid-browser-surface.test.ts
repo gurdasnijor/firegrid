@@ -86,6 +86,7 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.1 — projection-qu
     expect(ProjectionQuerySurface.observe).toBeTypeOf("function")
     expect(ProjectionQuerySurface.projectionFor).toBeTypeOf("function")
     expect(ProjectionQuerySurface.until).toBeTypeOf("function")
+    expect(ProjectionQuerySurface.untilWhere).toBeTypeOf("function")
     expect(
       ProjectionQuerySurface.ProjectionCursor.initial({ name: "example" })._tag,
     ).toBe("firegrid/ProjectionCursor")

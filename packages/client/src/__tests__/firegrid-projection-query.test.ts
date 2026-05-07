@@ -12,6 +12,7 @@ import {
   observe,
   projectionFor,
   until,
+  untilWhere,
   type ProjectionQuery,
 } from "../projection-query.ts"
 import { EventPlane } from "@firegrid/substrate/event-plane"
@@ -119,6 +120,29 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
 
     const ready = await Effect.runPromise(
       until(
+        plane,
+        readyRowQuery("w-ready"),
+        {
+          streamUrl: url,
+          contentType: "application/json",
+          timeout: Duration.seconds(1),
+        },
+      ),
+    )
+
+    expect(ready?.id).toBe("w-ready")
+  })
+
+  it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 — top-level untilWhere keeps predicate waits explicit", async () => {
+    const url = await createSubstrateStream("projection-query-top-level-until-where")
+    const plane = buildPlane()
+
+    await Effect.runPromise(
+      appendWidget(url, plane, { id: "w-ready", status: "ready", count: 1 }),
+    )
+
+    const ready = await Effect.runPromise(
+      untilWhere(
         plane,
         readyRowQuery("w-ready"),
         (row): row is WidgetRow => row?.status === "ready",
@@ -279,7 +303,6 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
         const handle = clientFor(url).projectionFor(plane)
         return yield* handle.until(
           readyRowQuery("w-ready"),
-          (row): row is WidgetRow => row?.status === "ready",
           { timeout: Duration.seconds(1) },
         )
       }),
@@ -294,7 +317,6 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
           const handle = clientFor(url).projectionFor(plane)
           return yield* handle.until(
             readyRowQuery("missing"),
-            (row): row is WidgetRow => row?.status === "ready",
             { timeout },
           )
         }),
@@ -313,6 +335,39 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
         }
       }
     }
+  })
+
+  it("firegrid-projection-query.QUERY_HANDLES.5 — handle untilWhere keeps advanced predicates separate from presence waits", async () => {
+    const url = await createSubstrateStream("projection-query-handle-until-where")
+    const plane = buildPlane()
+
+    await Effect.runPromise(
+      appendWidget(url, plane, { id: "w-ready", status: "pending", count: 1 }),
+    )
+
+    const ready = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const handle = clientFor(url).projectionFor(plane)
+          const fiber = yield* handle
+            .untilWhere(
+              readyRowQuery("w-ready"),
+              (row): row is WidgetRow => row?.status === "ready",
+              { timeout: Duration.seconds(1) },
+            )
+            .pipe(Effect.fork)
+          yield* Effect.sleep(Duration.millis(40))
+          yield* appendWidget(url, plane, {
+            id: "w-ready",
+            status: "ready",
+            count: 2,
+          })
+          return yield* fiber
+        }),
+      ),
+    )
+
+    expect(ready?.status).toBe("ready")
   })
 
   it("firegrid-projection-query.EXPECTED_ERRORS.1 — malformed cursors stay in the typed Effect error channel", async () => {

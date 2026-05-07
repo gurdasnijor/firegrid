@@ -78,6 +78,9 @@ export interface ProjectionUntilFromOptions extends ProjectionUntilOptions {
   readonly cursor: ProjectionCursor
 }
 
+const isPresent = <A>(value: A): value is NonNullable<A> =>
+  value !== undefined && value !== null
+
 export interface ProjectionQueryHandle<
   S extends StreamStateDefinition,
 > {
@@ -95,6 +98,14 @@ export interface ProjectionQueryHandle<
   ) => Stream.Stream<A, ProjectionQueryReadError | E>
 
   readonly until: <A, E>(
+    query: PlaneProjectionQuery<S, A, E, never>,
+    options: ProjectionUntilOptions,
+  ) => Effect.Effect<
+    NonNullable<A>,
+    ProjectionQueryTimeout | ProjectionQueryReadError | E
+  >
+
+  readonly untilWhere: <A, E>(
     query: PlaneProjectionQuery<S, A, E, never>,
     predicate: ProjectionPredicate<A>,
     options: ProjectionUntilOptions,
@@ -244,6 +255,15 @@ export const buildProjectionQueryClientService = (
 
       until: <A, E>(
         query: PlaneProjectionQuery<S, A, E, never>,
+        options: ProjectionUntilOptions,
+      ) =>
+        // firegrid-projection-query.QUERY_HANDLES.5
+        handle.untilWhere(query, isPresent, options).pipe(
+          Effect.map((value) => value as NonNullable<A>),
+        ),
+
+      untilWhere: <A, E>(
+        query: PlaneProjectionQuery<S, A, E, never>,
         predicate: ProjectionPredicate<A>,
         options: ProjectionUntilOptions,
       ) =>
@@ -320,14 +340,29 @@ export const until = <
 >(
   plane: EventPlaneDefinition<Name, S>,
   query: PlaneProjectionQuery<S, A, E, never>,
+  options: ProjectionQueryUntilOptions,
+): Effect.Effect<
+  NonNullable<A>,
+  ProjectionQueryTimeout | ProjectionQueryReadError | E
+> =>
+  createProjectionQueryClient(options)
+    .projectionFor(plane)
+    .until(query, timeoutOption(options.timeout))
+
+export const untilWhere = <
+  Name extends string,
+  S extends StreamStateDefinition,
+  A,
+  E,
+>(
+  plane: EventPlaneDefinition<Name, S>,
+  query: PlaneProjectionQuery<S, A, E, never>,
   predicate: ProjectionPredicate<A>,
   options: ProjectionQueryUntilOptions,
 ): Effect.Effect<A, ProjectionQueryTimeout | ProjectionQueryReadError | E> =>
-  createProjectionQueryClient(options).projectionFor(plane).until(
-    query,
-    predicate,
-    timeoutOption(options.timeout),
-  )
+  createProjectionQueryClient(options)
+    .projectionFor(plane)
+    .untilWhere(query, predicate, timeoutOption(options.timeout))
 
 export const projectionFor = <
   Name extends string,
