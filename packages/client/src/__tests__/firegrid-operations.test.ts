@@ -312,44 +312,43 @@ describe("firegrid-observability.SUBSTRATE_SPANS.1 + .3 — client operations an
     const url = await createSubstrateStream("client-observability-spans")
     const { spans, tracer } = makeRecordingTracer()
 
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const client = yield* FiregridClient
-        const handle = yield* client.send(EchoOperation, {
-          message: "hello",
-          count: 3,
-        })
+    const result = await Effect.gen(function* () {
+      const client = yield* FiregridClient
+      const handle = yield* client.send(EchoOperation, {
+        message: "hello",
+        count: 3,
+      })
 
-        yield* Effect.promise(() =>
-          appendRow(
-            url,
-            runRow(handle.id, {
-              state: "completed",
-              result: {
-                echoed: "hello",
-                total: "4",
-              },
-            }),
-          ),
-        )
+      yield* Effect.promise(() =>
+        appendRow(
+          url,
+          runRow(handle.id, {
+            state: "completed",
+            result: {
+              echoed: "hello",
+              total: "4",
+            },
+          }),
+        ),
+      )
 
-        const output = yield* client.result(EchoOperation, handle)
-        const states = yield* client.observe(EchoOperation, handle).pipe(
-          Stream.take(1),
-          Stream.runCollect,
-        )
+      const output = yield* client.result(EchoOperation, handle)
+      const states = yield* client.observe(EchoOperation, handle).pipe(
+        Stream.take(1),
+        Stream.runCollect,
+      )
 
-        yield* client.emit(ClientEvents, { kind: "ready", value: "ok" })
-        const events = yield* client.events(ClientEvents).pipe(
-          Stream.take(1),
-          Stream.runCollect,
-        )
+      yield* client.emit(ClientEvents, { kind: "ready", value: "ok" })
+      const events = yield* client.events(ClientEvents).pipe(
+        Stream.take(1),
+        Stream.runCollect,
+      )
 
-        return { handle, output, states, events } as const
-      }).pipe(
-        Effect.withTracer(tracer),
-        Effect.provide(layerFor(url)),
-      ),
+      return { handle, output, states, events } as const
+    }).pipe(
+      Effect.withTracer(tracer),
+      Effect.provide(layerFor(url)),
+      Effect.runPromise,
     )
 
     expect(result.output).toEqual({ echoed: "hello", total: 4 })
@@ -409,30 +408,29 @@ describe("firegrid-observability.SUBSTRATE_SPANS.1 + .3 — client operations an
     const url = await createSubstrateStream("client-observability-error")
     const { spans, tracer } = makeRecordingTracer()
 
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const client = yield* FiregridClient
-        const handle = yield* client.send(EchoOperation, {
-          message: "hello",
-          count: 3,
-        })
-        yield* Effect.promise(() =>
-          appendRow(
-            url,
-            runRow(handle.id, {
-              state: "failed",
-              error: {
-                code: "NOPE",
-                message: "rejected",
-              },
-            }),
-          ),
-        )
-        return yield* Effect.either(client.result(EchoOperation, handle))
-      }).pipe(
-        Effect.withTracer(tracer),
-        Effect.provide(layerFor(url)),
-      ),
+    const result = await Effect.gen(function* () {
+      const client = yield* FiregridClient
+      const handle = yield* client.send(EchoOperation, {
+        message: "hello",
+        count: 3,
+      })
+      yield* Effect.promise(() =>
+        appendRow(
+          url,
+          runRow(handle.id, {
+            state: "failed",
+            error: {
+              code: "NOPE",
+              message: "rejected",
+            },
+          }),
+        ),
+      )
+      return yield* Effect.either(client.result(EchoOperation, handle))
+    }).pipe(
+      Effect.withTracer(tracer),
+      Effect.provide(layerFor(url)),
+      Effect.runPromise,
     )
 
     expect(Either.isLeft(result)).toBe(true)

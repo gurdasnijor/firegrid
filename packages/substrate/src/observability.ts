@@ -28,13 +28,13 @@ export type FiregridSpanAttributeValue = string | number | boolean
 
 export const firegridSpanAttributes = (
   attributes: Readonly<Record<string, FiregridSpanAttributeValue | undefined>>,
-): Record<string, FiregridSpanAttributeValue> => {
-  const out: Record<string, FiregridSpanAttributeValue> = {}
-  for (const [key, value] of Object.entries(attributes)) {
-    if (value !== undefined) out[key] = value
-  }
-  return out
-}
+): Record<string, FiregridSpanAttributeValue> =>
+  Object.fromEntries(
+    Object.entries(attributes).filter(
+      (entry): entry is [string, FiregridSpanAttributeValue] =>
+        entry[1] !== undefined,
+    ),
+  )
 
 export const firegridErrorTag = (error: unknown): string => {
   if (
