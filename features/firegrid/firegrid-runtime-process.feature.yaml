@@ -85,6 +85,7 @@ components:
       6: Attached mode uses `DURABLE_STREAMS_URL` or an explicit CLI stream URL rather than Firegrid-specific stream URL environment variables.
       7: The binary does not start, stop, or supervise a Durable Streams server.
       8: The binary rejects launcher subcommands and runs only as an attached runtime process.
+      9: The binary remains available as the runtime launch/config entrypoint for development and production attached configurations without depending on the removed durable-clock surface.
 
   DEV_ENV_INJECTION:
     requirements:

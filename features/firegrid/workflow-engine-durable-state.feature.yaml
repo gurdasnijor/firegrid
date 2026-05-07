@@ -1,0 +1,31 @@
+feature:
+  name: workflow-engine-durable-state
+  product: firegrid
+  description: Provide a Durable Streams State backed @effect/workflow WorkflowEngine.Encoded runtime for Firegrid workflows.
+
+components:
+  ENGINE:
+    requirements:
+      1: A WorkflowEngine.Encoded implementation stores executions, activities, deferred results, and workflow clock wakeups as Durable Streams State rows.
+      2: Stored activity results and deferred exits are treated as opaque encoded @effect/workflow values whose schemas remain owned by @effect/workflow.
+      3: Workflow definitions remain process-local and are re-registered before persisted executions are resumed.
+
+  VALIDATION:
+    requirements:
+      1: Re-executing the same workflow execution against the same durable state short-circuits a completed activity instead of running the activity body again.
+      2: A DurableDeferred token can resolve a suspended workflow through the WorkflowEngine.Encoded deferredDone path.
+      3: A workflow DurableClock wakeup can be stored as durable state and later fired by a reconstructed engine.
+      4: Persisted workflow results, activity results, and deferred exits round-trip through the upstream @effect/workflow schemas instead of relying on process-local object prototypes.
+      5: A reconstructed engine does not resume a persisted execution until the workflow definition has been re-registered in that process.
+      6: Concurrent workers racing the same execution activity produce one durable activity claim and run the activity body once for the claimed attempt.
+      7: A worker may take over a previously claimed activity only after durable stale-owner evidence, lease expiry, or an explicit replacement-claim policy authorizes the retry.
+
+constraints:
+  RUNTIME_BOUNDARY:
+    requirements:
+      1:
+        requirement: The workflow engine does not delete or change the public durable-clock package surface.
+        deprecated: true
+      1-note: Deprecated because the public durable-clock surface was removed after call-site audit showed no production users and durable timing moved into workflow execution.
+      2: Distributed-worker race semantics are reported separately from replay and persistence semantics.
+      3: Firegrid runtime does not keep a public durable-clock package surface while workflow execution owns durable timing.
