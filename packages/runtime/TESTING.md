@@ -8,7 +8,5 @@ the same text appears in comments.
 
 Source-grep assertions are allowed only for explicit negative architectural
 constraints that are difficult to express through behavior, such as "the
-runtime binary must not discover app modules by dynamic import" or "runtime
-source must not import `@firegrid/client`." Tag those tests with
-`firegrid-runtime-process.RUNTIME_RUN_API.10` and include a short comment
-explaining why source inspection is the right tool.
+runtime binary must not discover app modules by dynamic import." Include a
+short comment explaining why source inspection is the right tool.

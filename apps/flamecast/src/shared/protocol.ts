@@ -1,71 +1,29 @@
-/* eslint-disable @effect/no-import-from-barrel-package -- flamecast-product-contract.LOWERING.7 */
-import { EventStream, Operation } from "@firegrid/client"
-import { Schema } from "effect"
-/* eslint-enable @effect/no-import-from-barrel-package */
+interface TimelineBase {
+  readonly eventId: string
+  readonly sessionId: string
+  readonly turnId: string
+  readonly sequence: number
+  readonly at: string
+}
 
-export const SessionTurn = Operation.define({
-  name: "flamecast.local.session.turn",
-  input: Schema.Struct({
-    sessionId: Schema.String,
-    turnId: Schema.String,
-    message: Schema.String,
-    ordinal: Schema.Number,
-  }),
-  output: Schema.Struct({
-    sessionId: Schema.String,
-    turnId: Schema.String,
-    summary: Schema.String,
-  }),
-  error: Schema.Struct({
-    code: Schema.String,
-    message: Schema.String,
-  }),
-})
-
-export type SessionTurnInput = Operation.Input<typeof SessionTurn>
-
-const TimelineBase = {
-  eventId: Schema.String,
-  sessionId: Schema.String,
-  turnId: Schema.String,
-  sequence: Schema.Number,
-  at: Schema.String,
-} as const
-
-export const SessionEvents = EventStream.define({
-  name: "flamecast.local.session.events",
-  event: Schema.Union(
-    Schema.Struct({
-      ...TimelineBase,
-      type: Schema.Literal("user_message"),
-      text: Schema.String,
-    }),
-    Schema.Struct({
-      ...TimelineBase,
-      type: Schema.Literal("turn_started"),
-      provider: Schema.Literal("local-deterministic"),
-      model: Schema.Literal("echo-rewrite-count"),
-    }),
-    Schema.Struct({
-      ...TimelineBase,
-      type: Schema.Literal("assistant_message"),
-      text: Schema.String,
-      wordCount: Schema.Number,
-    }),
-    Schema.Struct({
-      ...TimelineBase,
-      type: Schema.Literal("turn_complete"),
-      summary: Schema.String,
-    }),
-    Schema.Struct({
-      ...TimelineBase,
-      type: Schema.Literal("error"),
-      message: Schema.String,
-    }),
-  ),
-})
-
-export type SessionEvent = EventStream.Event<typeof SessionEvents>
+export type SessionEvent =
+  | (TimelineBase & {
+    readonly type: "user_message"
+    readonly text: string
+  })
+  | (TimelineBase & {
+    readonly type: "assistant_message"
+    readonly text: string
+    readonly wordCount: number
+  })
+  | (TimelineBase & {
+    readonly type: "turn_complete"
+    readonly summary: string
+  })
+  | (TimelineBase & {
+    readonly type: "error"
+    readonly message: string
+  })
 
 export interface SessionSummary {
   readonly sessionId: string
@@ -85,12 +43,10 @@ const byTimelineOrder = (left: SessionEvent, right: SessionEvent): number =>
     ? left.eventId.localeCompare(right.eventId)
     : left.sequence - right.sequence
 
-const titleFrom = (event: SessionEvent): string => {
-  if (event.type !== "user_message") return "Local Flamecast session"
-  const compact = event.text.trim().replace(/\s+/g, " ")
-  if (compact.length === 0) return "Local Flamecast session"
-  return compact.length > 56 ? `${compact.slice(0, 53)}...` : compact
-}
+const titleFrom = (event: SessionEvent): string =>
+  event.type === "user_message" && event.text.trim().length > 0
+    ? event.text.trim().replace(/\s+/g, " ").slice(0, 56)
+    : "Local Flamecast session"
 
 export const summarizeSessions = (
   events: readonly SessionEvent[],
@@ -110,15 +66,10 @@ export const summarizeSessions = (
       (event) => event.type === "turn_complete",
     ).length
     const failed = ordered.some((event) => event.type === "error")
-    const status: SessionSummary["status"] = failed
-      ? "failed"
-      : completeTurns > 0
-        ? "complete"
-        : "running"
     return {
       sessionId,
       title: first === undefined ? "Local Flamecast session" : titleFrom(first),
-      status,
+      status: failed ? "failed" : completeTurns > 0 ? "complete" : "running",
       turnCount: completeTurns,
       updatedAt: last?.at ?? new Date(0).toISOString(),
     }

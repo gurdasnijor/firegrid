@@ -6,26 +6,6 @@
         "scripts/*.mjs"
       ]
     },
-    "packages/substrate": {
-      "entry": [
-        "src/index.ts",
-        "src/kernel/index.ts",
-        "src/descriptors/index.ts"
-      ],
-      "project": [
-        "src/**/*.ts"
-      ]
-    },
-    "packages/client": {
-      "entry": [
-        "src/index.ts",
-        "src/event-streams-public.ts",
-        "src/projection-query.ts"
-      ],
-      "project": [
-        "src/**/*.ts"
-      ]
-    },
     "packages/runtime": {
       "entry": [
         "src/index.ts",
@@ -36,12 +16,24 @@
         "bin/**/*.ts"
       ]
     },
-    "apps/lab": {
+    "apps/flamecast": {
       "entry": [
-        "src/main.tsx"
+        "src/client/main.tsx",
+        "src/runtime/main.ts"
       ],
       "project": [
-        "src/**/*.{ts,tsx}"
+        "src/**/*.{ts,tsx,mts}",
+        "vite.config.ts",
+        "vitest.config.ts"
+      ]
+    },
+    "scenarios/firegrid": {
+      "entry": [
+        "src/cli.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "vitest.config.js"
       ]
     }
   },

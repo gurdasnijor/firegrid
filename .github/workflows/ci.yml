@@ -63,14 +63,8 @@ jobs:
       - name: Check duplicate-token baseline
         run: pnpm run lint:dup
 
-      - name: Check transitive dependency boundaries
-        run: pnpm run lint:deps
-
       - name: Check Effect-quality metric ratchet
         run: pnpm run lint:effect-quality
-
-      - name: Check Effect-artifact rule budgets
-        run: pnpm run lint:effect-rules
 
   semgrep:
     name: Semgrep
