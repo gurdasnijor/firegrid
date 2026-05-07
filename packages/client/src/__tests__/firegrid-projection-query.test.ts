@@ -1,7 +1,6 @@
 import { DurableStream } from "@durable-streams/client"
 import { createStateSchema } from "@durable-streams/state"
 import { Cause, Chunk, Duration, Effect, Exit, Schema, Stream } from "effect"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   ProjectionCursor,
   ProjectionQueryClient,
@@ -21,6 +20,8 @@ import {
   startTestServer,
   stopTestServer,
 } from "./helpers.ts"
+
+const { afterAll, beforeAll, describe, expect, it } = await import("vitest")
 
 beforeAll(async () => {
   await startTestServer()
@@ -80,16 +81,18 @@ const layerFor = (streamUrl: string) =>
 const clientFor = (streamUrl: string) =>
   createProjectionQueryClient({ streamUrl, contentType: "application/json" })
 
+const run = Effect.runPromise
+
 describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-scoped projection query handles", () => {
   it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 — top-level observe is query-first for basic UI reads", async () => {
     const url = await createSubstrateStream("projection-query-top-level-observe")
     const plane = buildPlane()
 
-    await Effect.runPromise(
+    await run(
       appendWidget(url, plane, { id: "w-1", status: "pending", count: 1 }),
     )
 
-    const collected = await Effect.runPromise(
+    const collected = await run(
       Effect.scoped(
         Effect.gen(function* () {
           const fiber = yield* observe(plane, countQuery(), {
@@ -110,62 +113,51 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     expect(Chunk.toReadonlyArray(collected)).toEqual([1, 2])
   })
 
-  it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 — top-level until is query-first and snapshot-first", async () => {
+  it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 — top-level until is query-first and untilWhere keeps predicates explicit", async () => {
     const url = await createSubstrateStream("projection-query-top-level-until")
     const plane = buildPlane()
 
-    await Effect.runPromise(
+    await run(
       appendWidget(url, plane, { id: "w-ready", status: "ready", count: 1 }),
     )
 
-    const ready = await Effect.runPromise(
-      until(
-        plane,
-        readyRowQuery("w-ready"),
-        {
-          streamUrl: url,
-          contentType: "application/json",
-          timeout: Duration.seconds(1),
-        },
-      ),
+    const results = await run(
+      Effect.all({
+        present: until(
+          plane,
+          readyRowQuery("w-ready"),
+          {
+            streamUrl: url,
+            contentType: "application/json",
+            timeout: Duration.seconds(1),
+          },
+        ),
+        predicate: untilWhere(
+          plane,
+          readyRowQuery("w-ready"),
+          (row): row is WidgetRow => row?.status === "ready",
+          {
+            streamUrl: url,
+            contentType: "application/json",
+            timeout: Duration.seconds(1),
+          },
+        ),
+      }),
     )
 
-    expect(ready?.id).toBe("w-ready")
+    expect(results.present.id).toBe("w-ready")
+    expect(results.predicate?.id).toBe("w-ready")
   })
 
-  it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 — top-level untilWhere keeps predicate waits explicit", async () => {
-    const url = await createSubstrateStream("projection-query-top-level-until-where")
-    const plane = buildPlane()
-
-    await Effect.runPromise(
-      appendWidget(url, plane, { id: "w-ready", status: "ready", count: 1 }),
-    )
-
-    const ready = await Effect.runPromise(
-      untilWhere(
-        plane,
-        readyRowQuery("w-ready"),
-        (row): row is WidgetRow => row?.status === "ready",
-        {
-          streamUrl: url,
-          contentType: "application/json",
-          timeout: Duration.seconds(1),
-        },
-      ),
-    )
-
-    expect(ready?.id).toBe("w-ready")
-  })
-
-  it("firegrid-projection-query.QUERY_HANDLES.2, .3 — snapshot returns typed app-owned projection data plus an opaque cursor", async () => {
+  it("firegrid-projection-query.QUERY_HANDLES.2, .3 and EXPECTED_ERRORS.1 — snapshot returns app-owned data and cursor errors stay typed", async () => {
     const url = await createSubstrateStream("projection-query-snapshot")
     const plane = buildPlane()
 
-    await Effect.runPromise(
+    await run(
       appendWidget(url, plane, { id: "w-1", status: "pending", count: 1 }),
     )
 
-    const result = await Effect.runPromise(
+    const result = await run(
       Effect.gen(function* () {
         const handle = yield* projectionFor(plane)
         return yield* handle.snapshot(countQuery())
@@ -176,17 +168,42 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     expect(result.cursor._tag).toBe("firegrid/ProjectionCursor")
     expect(result.cursor.descriptor).toBe("app.widgets")
     expect("collections" in result).toBe(false)
+
+    const wrongCursor = ProjectionCursor.initial({ name: "other.widgets" })
+    const exit = await run(
+      Effect.exit(
+        Effect.gen(function* () {
+          const handle = yield* projectionFor(plane)
+          return yield* handle.stream(countQuery(), wrongCursor).pipe(
+            Stream.runCollect,
+          )
+        }).pipe(Effect.provide(layerFor(url))),
+      ),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const error = Cause.failureOption(exit.cause)
+      expect(error._tag).toBe("Some")
+      if (error._tag === "Some") {
+        expect(ProjectionQueryReadError.is(error.value)).toBe(true)
+        if (ProjectionQueryReadError.is(error.value)) {
+          expect(error.value.reason).toBe("malformed-cursor")
+          expect(error.value.descriptor).toBe("app.widgets")
+        }
+      }
+    }
   })
 
   it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 and firegrid-projection-query.QUERY_HANDLES.4 — observe owns snapshot plus live follow for UI reads", async () => {
     const url = await createSubstrateStream("projection-query-observe")
     const plane = buildPlane()
 
-    await Effect.runPromise(
+    await run(
       appendWidget(url, plane, { id: "w-1", status: "pending", count: 1 }),
     )
 
-    const collected = await Effect.runPromise(
+    const collected = await run(
       Effect.scoped(
         Effect.gen(function* () {
           const client = clientFor(url)
@@ -222,11 +239,11 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     const url = await createSubstrateStream("projection-query-observe-no-drop-gap")
     const plane = buildPlane()
 
-    await Effect.runPromise(
+    await run(
       appendWidget(url, plane, { id: "w-1", status: "pending", count: 1 }),
     )
 
-    const collected = await Effect.runPromise(
+    const collected = await run(
       Effect.scoped(
         Effect.gen(function* () {
           const handle = clientFor(url).projectionFor(plane)
@@ -252,11 +269,11 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     const url = await createSubstrateStream("projection-query-stream")
     const plane = buildPlane()
 
-    await Effect.runPromise(
+    await run(
       appendWidget(url, plane, { id: "w-1", status: "pending", count: 1 }),
     )
 
-    const collected = await Effect.runPromise(
+    const collected = await run(
       Effect.scoped(
         Effect.gen(function* () {
           const client = yield* ProjectionQueryClient
@@ -290,28 +307,44 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     expect(Chunk.toReadonlyArray(collected)).toEqual([2, 3])
   })
 
-  it("firegrid-projection-query.QUERY_HANDLES.5 and EXPECTED_ERRORS.4 — until checks snapshot first and times out with typed errors", async () => {
+  it("firegrid-projection-query.QUERY_HANDLES.5 and EXPECTED_ERRORS.4 — until checks snapshot first, untilWhere keeps predicates explicit, and timeout errors are typed", async () => {
     const url = await createSubstrateStream("projection-query-until")
     const plane = buildPlane()
 
-    await Effect.runPromise(
+    await run(
       appendWidget(url, plane, { id: "w-ready", status: "ready", count: 1 }),
     )
 
-    const immediate = await Effect.runPromise(
+    const immediate = await run(
       Effect.gen(function* () {
         const handle = clientFor(url).projectionFor(plane)
-        return yield* handle.until(
+        const present = yield* handle.until(
           readyRowQuery("w-ready"),
           { timeout: Duration.seconds(1) },
         )
+        const predicateFiber = yield* handle
+          .untilWhere(
+            readyRowQuery("w-predicate"),
+            (row): row is WidgetRow => row?.status === "ready",
+            { timeout: Duration.seconds(1) },
+          )
+          .pipe(Effect.fork)
+        yield* Effect.sleep(Duration.millis(40))
+        yield* appendWidget(url, plane, {
+          id: "w-predicate",
+          status: "ready",
+          count: 2,
+        })
+        const predicate = yield* predicateFiber
+        return { predicate, present }
       }),
     )
 
-    expect(immediate?.id).toBe("w-ready")
+    expect(immediate.present.id).toBe("w-ready")
+    expect(immediate.predicate?.status).toBe("ready")
 
     const timeout = Duration.millis(100)
-    const exit = await Effect.runPromise(
+    const exit = await run(
       Effect.exit(
         Effect.gen(function* () {
           const handle = clientFor(url).projectionFor(plane)
@@ -328,73 +361,10 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
       const error = Cause.failureOption(exit.cause)
       expect(error._tag).toBe("Some")
       if (error._tag === "Some") {
-        expect(error.value).toBeInstanceOf(ProjectionQueryTimeout)
-        if (error.value instanceof ProjectionQueryTimeout) {
+        expect(ProjectionQueryTimeout.is(error.value)).toBe(true)
+        if (ProjectionQueryTimeout.is(error.value)) {
           expect(error.value.descriptor).toBe("app.widgets")
           expect(error.value.label).toBe("ready:missing")
-        }
-      }
-    }
-  })
-
-  it("firegrid-projection-query.QUERY_HANDLES.5 — handle untilWhere keeps advanced predicates separate from presence waits", async () => {
-    const url = await createSubstrateStream("projection-query-handle-until-where")
-    const plane = buildPlane()
-
-    await Effect.runPromise(
-      appendWidget(url, plane, { id: "w-ready", status: "pending", count: 1 }),
-    )
-
-    const ready = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const handle = clientFor(url).projectionFor(plane)
-          const fiber = yield* handle
-            .untilWhere(
-              readyRowQuery("w-ready"),
-              (row): row is WidgetRow => row?.status === "ready",
-              { timeout: Duration.seconds(1) },
-            )
-            .pipe(Effect.fork)
-          yield* Effect.sleep(Duration.millis(40))
-          yield* appendWidget(url, plane, {
-            id: "w-ready",
-            status: "ready",
-            count: 2,
-          })
-          return yield* fiber
-        }),
-      ),
-    )
-
-    expect(ready?.status).toBe("ready")
-  })
-
-  it("firegrid-projection-query.EXPECTED_ERRORS.1 — malformed cursors stay in the typed Effect error channel", async () => {
-    const url = await createSubstrateStream("projection-query-cursor")
-    const plane = buildPlane()
-    const wrongCursor = ProjectionCursor.initial({ name: "other.widgets" })
-
-    const exit = await Effect.runPromise(
-      Effect.exit(
-        Effect.gen(function* () {
-          const handle = yield* projectionFor(plane)
-          return yield* handle.stream(countQuery(), wrongCursor).pipe(
-            Stream.runCollect,
-          )
-        }).pipe(Effect.provide(layerFor(url))),
-      ),
-    )
-
-    expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) {
-      const error = Cause.failureOption(exit.cause)
-      expect(error._tag).toBe("Some")
-      if (error._tag === "Some") {
-        expect(error.value).toBeInstanceOf(ProjectionQueryReadError)
-        if (error.value instanceof ProjectionQueryReadError) {
-          expect(error.value.reason).toBe("malformed-cursor")
-          expect(error.value.descriptor).toBe("app.widgets")
         }
       }
     }

@@ -7,7 +7,7 @@ import {
   type PlaneSnapshot,
 } from "@firegrid/substrate/event-plane"
 import type { StreamStateDefinition } from "@durable-streams/state"
-import { Context, Data, Effect, Layer, Stream, type Duration } from "effect"
+import { Context, Effect, Layer, Stream, type Duration } from "effect"
 
 export interface ProjectionQueryClientConfig {
   readonly streamUrl: string
@@ -41,9 +41,8 @@ export const ProjectionCursor = {
     makeCursor(descriptor.name, "initial"),
 }
 
-export class ProjectionQueryReadError extends Data.TaggedError(
-  "firegrid/ProjectionQueryReadError",
-)<{
+export interface ProjectionQueryReadError {
+  readonly _tag: "firegrid/ProjectionQueryReadError"
   readonly descriptor: string
   readonly reason:
     | "decode-failure"
@@ -53,15 +52,38 @@ export class ProjectionQueryReadError extends Data.TaggedError(
     | "closed-stream"
     | "transport-read-failure"
   readonly cause?: unknown
-}> {}
+}
 
-export class ProjectionQueryTimeout extends Data.TaggedError(
-  "firegrid/ProjectionQueryTimeout",
-)<{
+export interface ProjectionQueryTimeout {
+  readonly _tag: "firegrid/ProjectionQueryTimeout"
   readonly descriptor: string
   readonly label: string
   readonly elapsed: Duration.Duration
-}> {}
+}
+
+export const ProjectionQueryReadError = {
+  make: (error: Omit<ProjectionQueryReadError, "_tag">): ProjectionQueryReadError => ({
+    _tag: "firegrid/ProjectionQueryReadError",
+    ...error,
+  }),
+  is: (error: unknown): error is ProjectionQueryReadError =>
+    typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    error._tag === "firegrid/ProjectionQueryReadError",
+}
+
+export const ProjectionQueryTimeout = {
+  make: (error: Omit<ProjectionQueryTimeout, "_tag">): ProjectionQueryTimeout => ({
+    _tag: "firegrid/ProjectionQueryTimeout",
+    ...error,
+  }),
+  is: (error: unknown): error is ProjectionQueryTimeout =>
+    typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    error._tag === "firegrid/ProjectionQueryTimeout",
+}
 
 export interface ProjectionSnapshotResult<A> {
   readonly value: A
@@ -132,7 +154,7 @@ const mapReadError = (
   descriptor: string,
   cause: unknown,
 ): ProjectionQueryReadError =>
-  new ProjectionQueryReadError({
+  ProjectionQueryReadError.make({
     descriptor,
     reason: "transport-read-failure",
     cause,
@@ -142,7 +164,7 @@ const mapTimeout = (
   descriptor: string,
   cause: PlaneProjectionWaitTimeout,
 ): ProjectionQueryTimeout =>
-  new ProjectionQueryTimeout({
+  ProjectionQueryTimeout.make({
     descriptor,
     label: cause.label,
     elapsed: cause.elapsed,
@@ -157,7 +179,7 @@ const validateCursor = (
     cursor.__firegridProjectionCursor !== "ProjectionCursor"
   ) {
     return Effect.fail(
-      new ProjectionQueryReadError({
+      ProjectionQueryReadError.make({
         descriptor,
         reason: "malformed-cursor",
         cause: cursor,
@@ -166,7 +188,7 @@ const validateCursor = (
   }
   if (cursor.descriptor !== descriptor) {
     return Effect.fail(
-      new ProjectionQueryReadError({
+      ProjectionQueryReadError.make({
         descriptor,
         reason: "malformed-cursor",
         cause: cursor,
