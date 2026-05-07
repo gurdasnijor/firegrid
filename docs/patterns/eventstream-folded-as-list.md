@@ -1,176 +1,113 @@
-# Pattern: Browser folds app-owned EventStream into a list
+# Pattern: Browser Reads A Live List
 
-Use this pattern when a browser or edge UI needs ordered history of events —
-for example, a session timeline, an audit feed, or any append-only log — and
-the read shape is a chronological list rather than a primary-keyed table.
-EventStream is the right primitive when ordering matters more than per-key
-state lookup.
-
-When the read shape is keyed state with snapshot-and-follow semantics, prefer
-[browser-eventplane-projection](./browser-eventplane-projection.md).
+Use this pattern when a browser UI needs a live list such as sessions, messages,
+events, or audit rows. The default browser API is the projection-query facade,
+not manual EventStream folding inside components.
 
 Authorizing ACIDs:
 
-- `firegrid-event-streams.*` — caller-owned EventStream append and read
-  semantics.
-- `firegrid-client-api.*` — public `FiregridClient.events` browser API.
-- `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.2` —
-  `FiregridClient.emit` is the canonical EventStream append primitive from any
-  tier.
-- `firegrid-projection-query.CURSOR_AND_REPLAY.*` — replay-then-live-tail
-  follows accepted stream order without dropping or duplicating entries.
+- `firegrid-client-projection-api.BROWSER_SAFE_FACADE.1`
+- `firegrid-client-projection-api.BROWSER_SAFE_FACADE.2`
+- `firegrid-projection-query.QUERY_HANDLES.*`
+- `firegrid-projection-query.AUTHORITY_BOUNDARY.*`
+- `firegrid-event-streams.*`
 
-## Shared descriptor
+## Shared Read Model
+
+Define the app-owned projection descriptor in shared schema code. Runtime or
+backend code writes the underlying rows; browser code reads through
+`@firegrid/client/projection-query`.
 
 ```ts
-// src/shared/timeline.ts
-import { EventStream } from "@firegrid/client"
+import { EventPlane } from "@firegrid/substrate/event-plane"
+import { createStateSchema } from "@durable-streams/state"
 import { Schema } from "effect"
 
-export const TimelineEvents = EventStream.define({
-  name: "example.timeline.events",
-  event: Schema.Union(
-    Schema.Struct({
-      _tag: Schema.Literal("UserMessage"),
-      sessionId: Schema.String,
-      text: Schema.String,
-    }),
-    Schema.Struct({
-      _tag: Schema.Literal("AssistantMessage"),
-      sessionId: Schema.String,
-      text: Schema.String,
-    }),
-    Schema.Struct({
-      _tag: Schema.Literal("TurnComplete"),
-      sessionId: Schema.String,
-      finalMessage: Schema.String,
-    }),
-  ),
+export const MessageRow = Schema.Struct({
+  id: Schema.String,
+  sessionId: Schema.String,
+  role: Schema.Literal("user", "assistant", "system"),
+  text: Schema.String,
+  createdAt: Schema.String,
+})
+export type MessageRow = Schema.Schema.Type<typeof MessageRow>
+
+export const MessagesPlane = EventPlane.define({
+  name: "app.messages",
+  state: createStateSchema({
+    messages: {
+      type: "app.message.row",
+      primaryKey: "id",
+      schema: Schema.standardSchemaV1(MessageRow),
+    },
+  }),
 })
 ```
 
-## Producer side
+## Browser Live List
 
-Either the browser (`client.send` -> server -> emit) or the runtime
-(`FiregridClient.emit` from inside a handler) appends to the same EventStream.
-Producer identity is supplied through caller-owned envelope metadata.
-
-Runtime side, inside a handler:
+Use `liveQuery(...)` for the UI list. It gives the browser one declarative
+read-model expression instead of hand-maintaining an event array.
 
 ```ts
-yield* client.emit(TimelineEvents, {
-  _tag: "AssistantMessage",
-  sessionId: input.sessionId,
-  text: assistantReply,
-})
-```
-
-Browser side, when the user submits a message through the UI:
-
-```ts
-yield* client.emit(TimelineEvents, {
-  _tag: "UserMessage",
-  sessionId,
-  text: userInputBox.value,
-})
-```
-
-Both calls produce the same durable row shape; downstream readers cannot
-distinguish them except through producer-identity metadata.
-
-## Browser-side reader
-
-Use `FiregridClient.events(stream)` to read replay-then-live-tail. Fold into
-local state for rendering:
-
-```ts
+import { liveQuery } from "@firegrid/client/projection-query"
 import { Effect, Stream } from "effect"
-import { EventStream, FiregridClient } from "@firegrid/client"
-import { TimelineEvents } from "../shared/timeline.ts"
+import { MessagesPlane, type MessageRow } from "../shared/messages-plane.ts"
 
-type TimelineEvent = EventStream.Event<typeof TimelineEvents>
+const messages = liveQuery(
+  MessagesPlane,
+  (q) =>
+    q
+      .from({ m: q.collection<"messages", MessageRow>("messages") })
+      .where(({ m }) => m.sessionId === activeSessionId)
+      .orderBy(({ m }) => m.createdAt, "asc")
+      .select(({ m }) => ({
+        id: m.id,
+        role: m.role,
+        text: m.text,
+        createdAt: m.createdAt,
+      })),
+  { streamUrl: appConfig.firegridStreamUrl },
+)
 
-const program = Effect.gen(function*() {
-  const client = yield* FiregridClient
-
-  const events: TimelineEvent[] = []
-
-  yield* client.events(TimelineEvents).pipe(
-    Stream.runForEach((event) =>
-      Effect.sync(() => {
-        events.push(event)
-        renderTimeline(events)
-      }),
-    ),
-  )
-})
-```
-
-Key points:
-
-- `client.events(TimelineEvents)` returns a stream that replays retained
-  history and then follows live tail. The replay-to-live boundary is shared so
-  no event is dropped or duplicated per
-  `firegrid-projection-query.CURSOR_AND_REPLAY.3`.
-- A reconnect resumes from the last delivered cursor without re-reading
-  history.
-- A retention gap surfaces as a typed
-  `firegrid-projection-query.EXPECTED_ERRORS.3` error rather than silent
-  partial state.
-
-## Reconnect / replay UI
-
-For UIs that need to render a long history before live, render after the first
-batch of events resolves. The pattern is identical for runtime-authored and
-client-authored events because the durable row shape is identical.
-
-```ts
-const initialBatch: TimelineEvent[] = []
-const recentBatch: TimelineEvent[] = []
-let livePhase = false
-
-yield* client.events(TimelineEvents).pipe(
-  Stream.runForEach((event) =>
-    Effect.sync(() => {
-      if (livePhase) {
-        recentBatch.push(event)
-        renderRecent(recentBatch)
-      } else {
-        initialBatch.push(event)
-      }
-    }),
+await Effect.runPromise(
+  messages.pipe(
+    Stream.runForEach((rows) => Effect.sync(() => renderMessages(rows))),
   ),
 )
 ```
 
-If a UI needs to render the replay batch before going live, group events into
-batches at the application layer; Firegrid does not split replay and live tail
-into different APIs by design.
+Count and filtered-list cases use the same surface:
 
-## Choosing EventStream vs EventPlane
+```ts
+const messageCount = liveQuery(
+  MessagesPlane,
+  (q) =>
+    q
+      .from({ m: q.collection<"messages", MessageRow>("messages") })
+      .where(({ m }) => m.sessionId === activeSessionId)
+      .count(),
+  { streamUrl: appConfig.firegridStreamUrl },
+)
+```
 
-| Concern | EventStream | EventPlane |
-| --- | --- | --- |
-| Ordered chronological history | First choice | Possible but unergonomic |
-| Primary-keyed state lookup | Browser-side fold required | First choice |
-| `until(predicate)` for snapshot then live | Possible | First choice |
-| Producer can be browser, server, or runtime | Yes | Yes |
-| Read API in browser | `client.events(stream)` | `@firegrid/client/projection-query` |
+## Where EventStream Fits
 
-EventStream is the simpler primitive when "what happened, in order" is the
-question. EventPlane is the better fit when the question is "what is the
-current state of X?" — see
-[browser-eventplane-projection](./browser-eventplane-projection.md).
+EventStream remains the right write/history primitive for ordered facts. Runtime
+and backend code may append normalized timeline facts with `FiregridClient.emit`,
+and materializers can project those facts into the read model above.
 
-## Anti-patterns
+Use raw `client.events(stream)` in browser code only when the UI truly wants an
+append-only log and is prepared to own the fold itself. Most product UI lists
+should use `liveQuery(...)`.
 
-- Storing the timeline in process-local memory in the runtime and exposing it
-  through a private socket. UIs reconstruct from durable rows per
+## Anti-Patterns
+
+- Browser components manually folding EventStream rows into canonical session
+  lists when a projection read model exists.
+- Browser components importing `@firegrid/substrate/kernel` or raw StreamDB.
+- Storing the list in process-local runtime memory and exposing it through a
+  private socket. UIs reconstruct from durable rows per
   `firegrid-agent-runtime-substrate.RECONNECT_REPLAY.5`.
-- Treating `Firegrid.eventStream(...)` as a browser-callable read API.
-  `Firegrid.eventStream` is a runtime-side materializer/subscriber per
-  `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.2`; the browser-side
-  read is `FiregridClient.events`.
-- Synthesizing `_tag: "TurnComplete"` from the browser as a way to mark a
-  session done. Terminalization is the runtime handler authority path per
-  `firegrid-platform-invariants.AUTHORITY.1`.
+- Synthesizing terminal states or session completion from the browser; operation
+  terminalization remains the runtime handler authority path.

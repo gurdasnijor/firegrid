@@ -24,7 +24,7 @@ client surface a browser should use.
 
 - [Runtime handler emits app-owned EventStream rows](./node-runtime-with-client-emit.md)
 - [Browser reads app-owned projection state](./browser-eventplane-projection.md)
-- [Browser folds app-owned EventStream into a list](./eventstream-folded-as-list.md)
+- [Browser reads a live list](./eventstream-folded-as-list.md)
 - [Runtime host is Node-tier, not a browser dev-server plugin](./node-runtime-as-separate-process.md)
 
 ## Anti-Patterns
