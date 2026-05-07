@@ -3,6 +3,10 @@ import {
   decodeAtBoundary,
   encodeAtBoundary,
   eventStreamEnvelopeFromStateRow,
+  FiregridSpanAttribute,
+  FiregridSpanName,
+  firegridErrorTag,
+  firegridSpanAttributes,
   makeEventStreamStateRow,
   type EventStream,
 } from "@firegrid/substrate/descriptors"
@@ -123,6 +127,9 @@ export const buildEventStreamService = (
     Effect.gen(function* () {
       const encoded = yield* encodeEvent(stream, event)
       const eventId = yield* idGen.nextId
+      yield* Effect.annotateCurrentSpan({
+        [FiregridSpanAttribute.eventKey]: eventId,
+      })
       yield* appendChange(
         durable,
         makeEventStreamStateRow({
@@ -132,7 +139,19 @@ export const buildEventStreamService = (
         }),
         (cause) => new EventStreamAppendError({ stream: stream.name, cause }),
       )
-    })
+    }).pipe(
+      Effect.tapError((error) =>
+        Effect.annotateCurrentSpan({
+          [FiregridSpanAttribute.errorTag]: firegridErrorTag(error),
+        }),
+      ),
+      Effect.withSpan(FiregridSpanName.eventStreamEmit, {
+        kind: "producer",
+        attributes: firegridSpanAttributes({
+          [FiregridSpanAttribute.streamDescriptor]: stream.name,
+        }),
+      }),
+    )
 
   const rawEvents = <S extends EventStream.Any>(
     stream: S,
@@ -167,6 +186,21 @@ export const buildEventStreamService = (
         if (envelope === undefined) return Option.none()
         if (envelope.stream !== stream.name) return Option.none()
         return Option.some(decodeEvent(stream, envelope.event))
+      }),
+      Stream.tap(() =>
+        Effect.annotateCurrentSpan({
+          [FiregridSpanAttribute.status]: "event",
+        }),
+      ),
+      Stream.tapError((error) =>
+        Effect.annotateCurrentSpan({
+          [FiregridSpanAttribute.errorTag]: firegridErrorTag(error),
+        }),
+      ),
+      Stream.withSpan(FiregridSpanName.eventStreamEvents, {
+        attributes: firegridSpanAttributes({
+          [FiregridSpanAttribute.streamDescriptor]: stream.name,
+        }),
       }),
     )
 

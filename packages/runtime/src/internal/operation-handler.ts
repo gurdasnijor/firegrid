@@ -21,6 +21,12 @@ import {
   type SubstrateStreamDB,
 } from "@firegrid/substrate/kernel"
 import {
+  FiregridSpanAttribute,
+  FiregridSpanName,
+  firegridErrorTag,
+  firegridSpanAttributes,
+} from "@firegrid/substrate/descriptors"
+import {
   Cause,
   Data,
   Effect,
@@ -159,6 +165,35 @@ export const runOperationDispatchLoopWithAcquire = <
 
           const handlerFiber = yield* Effect.fork(
             input.run(matched.input).pipe(
+              Effect.tap(() =>
+                Effect.annotateCurrentSpan({
+                  [FiregridSpanAttribute.status]: "completed",
+                }),
+              ),
+              Effect.tapError((error) =>
+                Effect.annotateCurrentSpan({
+                  [FiregridSpanAttribute.status]: "failed",
+                  [FiregridSpanAttribute.errorTag]: firegridErrorTag(error),
+                }),
+              ),
+              Effect.tapErrorCause((cause) =>
+                Effect.annotateCurrentSpan({
+                  [FiregridSpanAttribute.status]: Cause.isInterruptedOnly(cause)
+                    ? "interrupted"
+                    : "failed",
+                  [FiregridSpanAttribute.errorTag]: Cause.isInterruptedOnly(cause)
+                    ? "interrupted"
+                    : "cause",
+                }),
+              ),
+              Effect.withSpan(FiregridSpanName.runtimeHandler, {
+                kind: "server",
+                attributes: firegridSpanAttributes({
+                  [FiregridSpanAttribute.operationDescriptor]: input.op.name,
+                  [FiregridSpanAttribute.runId]: matched.run.runId,
+                  [FiregridSpanAttribute.runtimeId]: cfg.processId,
+                }),
+              }),
               Effect.provide(currentWorkContextForRun(cfg, matched.run)),
             ),
           )

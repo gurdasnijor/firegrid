@@ -1,14 +1,27 @@
 import { DurableStream } from "@durable-streams/client"
 import type { StateEvent } from "@durable-streams/state"
-import { Chunk, Duration, Effect, Either, Schema, Stream } from "effect"
+import {
+  Chunk,
+  Context,
+  Duration,
+  Effect,
+  Either,
+  Option,
+  Schema,
+  Stream,
+  Tracer,
+} from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
+  EventStream,
   FiregridClient,
   FiregridClientLive,
   Operation,
   OperationHandle,
 } from "../index.ts"
 import {
+  FiregridSpanAttribute,
+  FiregridSpanName,
   OPERATION_ENVELOPE_TAG,
   isOperationEnvelope,
 } from "@firegrid/substrate/descriptors"
@@ -41,6 +54,53 @@ const EchoOperation = Operation.define({
     message: Schema.String,
   }),
 })
+
+const ClientEvents = EventStream.define({
+  name: "client.events",
+  event: Schema.Struct({
+    kind: Schema.Literal("ready"),
+    value: Schema.String,
+  }),
+})
+
+interface RecordedSpan {
+  readonly name: string
+  readonly kind: string
+  readonly attributes: Map<string, unknown>
+}
+
+const makeRecordingTracer = () => {
+  const spans: Array<RecordedSpan> = []
+  const tracer = Tracer.make({
+    span: (name, _parent, _ctx, _links, startTime, kind, options) => {
+      const attributes = new Map<string, unknown>(
+        Object.entries(options?.attributes ?? {}),
+      )
+      spans.push({ name, kind, attributes })
+      return {
+        _tag: "Span",
+        name,
+        spanId: `${name}:${spans.length}`,
+        traceId: "firegrid-client-test-trace",
+        parent: Option.none(),
+        context: Context.empty(),
+        status: { _tag: "Started", startTime },
+        attributes,
+        links: [],
+        sampled: true,
+        kind,
+        end: () => {},
+        attribute: (key, value) => {
+          attributes.set(key, value)
+        },
+        event: () => {},
+        addLinks: () => {},
+      }
+    },
+    context: (f) => f(),
+  })
+  return { spans, tracer } as const
+}
 
 const layerFor = (streamUrl: string) =>
   FiregridClientLive({ streamUrl, clientId: "firegrid-operation-tests" })
@@ -244,5 +304,148 @@ describe("firegrid-client-api.AUTHORITY_BOUNDARY.1 — operation handles are att
       id: "existing-run",
       _operation: "client.echo",
     })
+  })
+})
+
+describe("firegrid-observability.SUBSTRATE_SPANS.1 + .3 — client operations and EventStreams emit Effect-native spans", () => {
+  it("a host Tracer observes send/result/observe/emit/events spans with stable firegrid attributes", async () => {
+    const url = await createSubstrateStream("client-observability-spans")
+    const { spans, tracer } = makeRecordingTracer()
+
+    const result = await Effect.gen(function* () {
+      const client = yield* FiregridClient
+      const handle = yield* client.send(EchoOperation, {
+        message: "hello",
+        count: 3,
+      })
+
+      yield* Effect.promise(() =>
+        appendRow(
+          url,
+          runRow(handle.id, {
+            state: "completed",
+            result: {
+              echoed: "hello",
+              total: "4",
+            },
+          }),
+        ),
+      )
+
+      const output = yield* client.result(EchoOperation, handle)
+      const states = yield* client.observe(EchoOperation, handle).pipe(
+        Stream.take(1),
+        Stream.runCollect,
+      )
+
+      yield* client.emit(ClientEvents, { kind: "ready", value: "ok" })
+      const events = yield* client.events(ClientEvents).pipe(
+        Stream.take(1),
+        Stream.runCollect,
+      )
+
+      return { handle, output, states, events } as const
+    }).pipe(
+      Effect.withTracer(tracer),
+      Effect.provide(layerFor(url)),
+      Effect.runPromise,
+    )
+
+    expect(result.output).toEqual({ echoed: "hello", total: 4 })
+    expect(Chunk.toReadonlyArray(result.states)).toEqual([
+      { _tag: "Completed", output: { echoed: "hello", total: 4 } },
+    ])
+    expect(Chunk.toReadonlyArray(result.events)).toEqual([
+      { kind: "ready", value: "ok" },
+    ])
+
+    const byName = new Map(spans.map((span) => [span.name, span]))
+    expect(byName.get(FiregridSpanName.clientOperationSend)?.kind).toBe(
+      "client",
+    )
+    expect(byName.get(FiregridSpanName.clientOperationResult)?.kind).toBe(
+      "client",
+    )
+    expect(byName.get(FiregridSpanName.clientOperationObserve)?.kind).toBe(
+      "client",
+    )
+    expect(byName.get(FiregridSpanName.eventStreamEmit)?.kind).toBe("producer")
+    expect(byName.has(FiregridSpanName.eventStreamEvents)).toBe(true)
+
+    expect(
+      byName
+        .get(FiregridSpanName.clientOperationSend)
+        ?.attributes.get(FiregridSpanAttribute.operationDescriptor),
+    ).toBe(EchoOperation.name)
+    expect(
+      byName
+        .get(FiregridSpanName.clientOperationSend)
+        ?.attributes.get(FiregridSpanAttribute.operationHandleId),
+    ).toBe(result.handle.id)
+    expect(
+      byName
+        .get(FiregridSpanName.clientOperationResult)
+        ?.attributes.get(FiregridSpanAttribute.status),
+    ).toBe("completed")
+    expect(
+      byName
+        .get(FiregridSpanName.clientOperationObserve)
+        ?.attributes.get(FiregridSpanAttribute.status),
+    ).toBe("Completed")
+    expect(
+      byName
+        .get(FiregridSpanName.eventStreamEmit)
+        ?.attributes.get(FiregridSpanAttribute.streamDescriptor),
+    ).toBe(ClientEvents.name)
+    expect(
+      byName
+        .get(FiregridSpanName.eventStreamEvents)
+        ?.attributes.get(FiregridSpanAttribute.status),
+    ).toBe("event")
+  })
+
+  it("firegrid-observability.ERROR_TERMINAL_CORRELATION.3 — tracing preserves typed operation failure semantics", async () => {
+    const url = await createSubstrateStream("client-observability-error")
+    const { spans, tracer } = makeRecordingTracer()
+
+    const result = await Effect.gen(function* () {
+      const client = yield* FiregridClient
+      const handle = yield* client.send(EchoOperation, {
+        message: "hello",
+        count: 3,
+      })
+      yield* Effect.promise(() =>
+        appendRow(
+          url,
+          runRow(handle.id, {
+            state: "failed",
+            error: {
+              code: "NOPE",
+              message: "rejected",
+            },
+          }),
+        ),
+      )
+      return yield* Effect.either(client.result(EchoOperation, handle))
+    }).pipe(
+      Effect.withTracer(tracer),
+      Effect.provide(layerFor(url)),
+      Effect.runPromise,
+    )
+
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      expect(result.left).toEqual({ code: "NOPE", message: "rejected" })
+    }
+
+    const resultSpan = spans.find(
+      (span) => span.name === FiregridSpanName.clientOperationResult,
+    )
+    expect(resultSpan?.attributes.get(FiregridSpanAttribute.status)).toBe(
+      "failed",
+    )
+    expect(resultSpan?.attributes.get(FiregridSpanAttribute.errorTag)).toBe(
+      "object",
+    )
   })
 })

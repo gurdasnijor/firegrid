@@ -10,6 +10,8 @@ import {
   type RunWaitService,
 } from "@firegrid/substrate"
 import {
+  FiregridSpanAttribute,
+  FiregridSpanName,
   Operation,
   OPERATION_ENVELOPE_TAG,
 } from "@firegrid/substrate/descriptors"
@@ -23,7 +25,18 @@ import {
   substrateState,
   type ProjectionMatchEvaluation,
 } from "@firegrid/substrate/kernel"
-import { Data, Deferred, Effect, Fiber, Layer, Schedule, Schema } from "effect"
+import {
+  Context,
+  Data,
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  Option,
+  Schedule,
+  Schema,
+  Tracer,
+} from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   freshStreamUrl,
@@ -41,6 +54,45 @@ class RebuildFailed extends Data.TaggedError("RebuildFailed")<{
 class RunNotYetCompleted extends Data.TaggedError(
   "RunNotYetCompleted",
 )<Record<string, never>> {}
+
+interface RecordedSpan {
+  readonly name: string
+  readonly kind: string
+  readonly attributes: Map<string, unknown>
+}
+
+const makeRecordingTracer = () => {
+  const spans: Array<RecordedSpan> = []
+  const tracer = Tracer.make({
+    span: (name, _parent, _ctx, _links, startTime, kind, options) => {
+      const attributes = new Map<string, unknown>(
+        Object.entries(options?.attributes ?? {}),
+      )
+      spans.push({ name, kind, attributes })
+      return {
+        _tag: "Span",
+        name,
+        spanId: `${name}:${spans.length}`,
+        traceId: "firegrid-runtime-test-trace",
+        parent: Option.none(),
+        context: Context.empty(),
+        status: { _tag: "Started", startTime },
+        attributes,
+        links: [],
+        sampled: true,
+        kind,
+        end: () => {},
+        attribute: (key, value) => {
+          attributes.set(key, value)
+        },
+        event: () => {},
+        addLinks: () => {},
+      }
+    },
+    context: (f) => f(),
+  })
+  return { spans, tracer } as const
+}
 
 // firegrid-operation-messaging.RUNTIME_HANDLERS.1
 // firegrid-operation-messaging.RUNTIME_HANDLERS.4
@@ -348,6 +400,7 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
   // resume scenario; the runtime sees the run only via the ready-work
   // projection on its first scan.
   it("encodes the handler's output and terminalizes started runs as well as resumed blocked runs", async () => {
+    const { spans, tracer } = makeRecordingTracer()
     const handlerLayer = Firegrid.handler(Echo, (input) =>
       Effect.succeed({ msg: input.msg, len: input.msg.length }),
     )
@@ -397,12 +450,25 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
     )
 
     const { started, resumed } = await Effect.runPromise(
-      Effect.scoped(program),
+      Effect.scoped(program).pipe(Effect.withTracer(tracer)),
     )
     expect(started.state).toBe("completed")
     expect(started.result).toEqual({ msg: "hello", len: 5 })
     expect(resumed.state).toBe("completed")
     expect(resumed.result).toEqual({ msg: "resume", len: 6 })
+
+    const handlerSpan = spans.find(
+      (span) =>
+        span.name === FiregridSpanName.runtimeHandler &&
+        span.attributes.get(FiregridSpanAttribute.runId) === startedRunId,
+    )
+    expect(handlerSpan?.kind).toBe("server")
+    expect(
+      handlerSpan?.attributes.get(FiregridSpanAttribute.operationDescriptor),
+    ).toBe(Echo.name)
+    expect(handlerSpan?.attributes.get(FiregridSpanAttribute.status)).toBe(
+      "completed",
+    )
   })
 
   // firegrid-runtime-process.READY_WORK_OPERATOR.5
