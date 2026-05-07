@@ -631,7 +631,7 @@ const deliveryOrNotFound = (
   return Effect.fail(new DurableDeliveryNotFoundError({ channel, deliveryKey }))
 }
 
-export const appendDurableDelivery = <
+const appendDurableDelivery = <
   Name extends string,
   S extends StreamStateDefinition,
   DeliveryInput,
@@ -715,7 +715,7 @@ export const appendDurableDelivery = <
 // firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.2
 // firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.3
 // firegrid-durable-subscriber-webhooks.DELIVERY_SEMANTICS.1
-export const claimDurableDelivery = <
+const claimDurableDelivery = <
   Name extends string,
   S extends StreamStateDefinition,
   DeliveryInput,
@@ -802,7 +802,7 @@ export const claimDurableDelivery = <
 // firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.4
 // firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.5
 // firegrid-durable-subscriber-webhooks.DELIVERY_PROJECTION.2
-export const recordDurableChannelOutcome = <
+const recordDurableChannelOutcome = <
   Name extends string,
   S extends StreamStateDefinition,
   DeliveryInput,
@@ -902,16 +902,16 @@ export const durableChannelCompletionQuery = <
   Name extends string,
   S extends StreamStateDefinition,
   DeliveryInput,
->(
-  channel: DurableChannelDefinition<Name, S, DeliveryInput>,
-  completionKey: CompletionKey,
-): PlaneProjectionQuery<S, DurableTerminalRecord | undefined> => ({
-  label: `durable-channel:${channel.name}:completion:${completionKey}`,
+>(args: {
+  readonly channel: DurableChannelDefinition<Name, S, DeliveryInput>
+  readonly completionKey: CompletionKey
+}): PlaneProjectionQuery<S, DurableTerminalRecord | undefined> => ({
+  label: `durable-channel:${args.channel.name}:completion:${args.completionKey}`,
   authority: "terminal-domain",
   evaluate: (snapshot) =>
     Effect.succeed(
-      foldDurableChannel(channel, snapshot).terminalByCompletionKey.get(
-        completionKey,
+      foldDurableChannel(args.channel, snapshot).terminalByCompletionKey.get(
+        args.completionKey,
       ),
     ),
 })

@@ -28,7 +28,6 @@ export * from "../execution/waits.ts"
 export * from "../execution/subscribers.ts"
 export * from "../id-gen.ts"
 export * from "../coordination/index.ts"
-export * from "../event-plane/index.ts"
 export {
   attemptClaim,
   type AttemptClaimArgs,
