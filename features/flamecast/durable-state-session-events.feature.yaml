@@ -1,0 +1,26 @@
+feature:
+  name: durable-state-session-events
+  product: flamecast
+  description: First vertical slice for storing Flamecast session state and normalized event history as Durable Streams State rows.
+
+components:
+  STATE:
+    requirements:
+      1: Session state is represented as a Durable Streams State row keyed by sessionId.
+      2: Normalized session events are represented as Durable Streams State rows keyed by sessionId and sequence.
+  LIFECYCLE:
+    requirements:
+      1: Session create, send-message turn state, provider state, and terminal lifecycle updates append State Protocol rows and read materialized state.
+  HISTORY:
+    requirements:
+      1: Session history reads return normalized event rows in ascending sequence order and honor since and limit.
+  VERTICAL:
+    requirements:
+      1: A focused test proves create session, send message, ingest assistant and terminal events, then read session state and ordered history.
+
+constraints:
+  DURABLE_STATE:
+    requirements:
+      1: Flamecast Durable Streams State rows are defined with Effect Schema vocabulary and createStateSchema.
+      2: Physical writes are contained at the Durable Streams append boundary without app-facing emit, producer, sink, handler, ctx, RunWait, EventPlane, PlaneProducer, operation descriptor, or substrate facade APIs.
+      3: Event history materialization uses Effect Stream.

@@ -1,219 +1,136 @@
 #!/usr/bin/env tsx
 import { Terminal } from "@effect/platform"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
-import { Config, Duration, Effect, Schedule } from "effect"
-import { DurableStreamTestServer } from "@durable-streams/server"
-import { DurableStream } from "@durable-streams/client"
-import {
-  clockLayer,
-  DurableClock,
-  DurableClockStoreError,
-  makeDurableStreamClockStore,
-} from "../src/durable-clock/durable-clock.ts"
+import { Config, Effect, Option, Redacted } from "effect"
 
-// ============================================================================
-// Config
-// ============================================================================
+type RuntimeMode = "dev" | "prod"
 
-const streamUrl = Config.string("DURABLE_STREAMS_URL").pipe(
-  Config.validate({
-    message: "DURABLE_STREAMS_URL must not be empty",
-    validation: (value) => value.length > 0,
-  }),
-)
+interface LaunchConfig {
+  readonly mode: RuntimeMode
+  readonly streamUrl: Redacted.Redacted<string>
+}
 
-const scope = Config.string("FIREGRID_SCOPE").pipe(Config.withDefault("default"))
+class CliUsageError extends Error {
+  readonly _tag = "CliUsageError"
+}
 
-// How often the wall-clock driver ticks the durable clock forward. Each tick
-// is a durable write, so don't crank this; 1s is fine for most agent
-// workloads. Pure timer-driven applications can lower it.
-const tickIntervalMs = Config.integer("FIREGRID_TICK_INTERVAL_MS").pipe(
-  Config.withDefault(1_000),
-)
+const streamUrlFromEnv = Config.option(Config.redacted("DURABLE_STREAMS_URL"))
 
-// ============================================================================
-// Helpers
-// ============================================================================
+const usage = [
+  "usage: firegrid <command> [options]",
+  "",
+  "commands:",
+  "  run       Validate attached runtime config and keep the process alive.",
+  "  config    Print the resolved attached runtime config.",
+  "  dev       Alias for: run --mode dev.",
+  "  prod      Alias for: run --mode prod.",
+  "",
+  "options:",
+  "  --mode <dev|prod>        Runtime config profile. Defaults to prod.",
+  "  --stream-url <url>       Durable Streams URL. Overrides DURABLE_STREAMS_URL.",
+  "",
+  "env:",
+  "  DURABLE_STREAMS_URL      Durable Streams URL for attached mode.",
+].join("\n")
 
 const write = (line: string) =>
   Effect.flatMap(Terminal.Terminal, (terminal) => terminal.display(`${line}\n`))
 
-// ============================================================================
-// Wall-clock driver
-// ============================================================================
-//
-// Drives the durable clock forward in real time. Forked into the layer's
-// scope so it dies when the layer closes. Each iteration:
-//   1. Read OS time.
-//   2. Compute delta from durable nowMs.
-//   3. If delta > 0, call advance(delta).
-//
-// `advance` itself persists the new tick + fires due wakeups, so a single
-// schedule-based loop is sufficient. We use a fixed schedule rather than
-// drift-correcting because the durable clock's source of truth is the log,
-// not the OS.
+const failUsage = (message: string) =>
+  Effect.fail(new CliUsageError(`${message}\n\n${usage}`))
 
-const wallClockDriver = (intervalMs: number) =>
+const parseMode = (value: string | undefined): Effect.Effect<RuntimeMode, CliUsageError> => {
+  if (value === undefined) return Effect.succeed("prod")
+  if (value === "dev" || value === "prod") return Effect.succeed(value)
+  return failUsage(`invalid --mode: ${value}`)
+}
+
+const parseArgs = (
+  argv: ReadonlyArray<string>,
+): Effect.Effect<{ readonly command: string; readonly mode: RuntimeMode; readonly streamUrl?: string }, CliUsageError> =>
   Effect.gen(function* () {
-    const dispatcher = yield* DurableClock
-    const step = Effect.gen(function* () {
-      const osNow = Date.now()
-      const durableNow = yield* dispatcher.nowMs
-      const delta = osNow - durableNow
-      if (delta > 0) {
-        yield* dispatcher.advance(delta).pipe(
-          Effect.catchAll((e) =>
-            Effect.logWarning("wall-clock driver advance failed").pipe(
-              Effect.annotateLogs({ cause: String(e.cause) }),
-            ),
-          ),
-        )
+    const command = argv[0] ?? "run"
+    let modeArg: string | undefined
+    let streamUrl: string | undefined
+
+    for (let index = 1; index < argv.length; index += 1) {
+      const arg = argv[index]
+      switch (arg) {
+        case "--mode": {
+          const value = argv[index + 1]
+          if (value === undefined) return yield* failUsage("--mode requires a value")
+          modeArg = value
+          index += 1
+          break
+        }
+        case "--stream-url": {
+          const value = argv[index + 1]
+          if (value === undefined) return yield* failUsage("--stream-url requires a value")
+          streamUrl = value
+          index += 1
+          break
+        }
+        default:
+          return yield* failUsage(`unknown option: ${arg}`)
       }
-    })
-    yield* Effect.repeat(
-      step,
-      Schedule.spaced(Duration.millis(intervalMs)),
-    )
+    }
+
+    const mode = command === "dev" ? "dev" : command === "prod" ? "prod" : yield* parseMode(modeArg)
+    return { command, mode, ...(streamUrl !== undefined ? { streamUrl } : {}) }
   })
 
-// ============================================================================
-// Subcommands
-// ============================================================================
+const resolveLaunchConfig = (
+  args: { readonly mode: RuntimeMode; readonly streamUrl?: string },
+) =>
+  Effect.gen(function* () {
+    if (args.streamUrl !== undefined && args.streamUrl.length > 0) {
+      return {
+        mode: args.mode,
+        streamUrl: Redacted.make(args.streamUrl),
+      }
+    }
+    const envUrl = yield* streamUrlFromEnv
+    if (Option.isSome(envUrl)) {
+      return {
+        mode: args.mode,
+        streamUrl: envUrl.value,
+      }
+    }
+    return yield* failUsage("attached mode requires --stream-url or DURABLE_STREAMS_URL")
+  })
 
-const usage = [
-  "usage: firegrid <command>",
-  "",
-  "commands:",
-  "  run     Boot the durable clock and stay alive until SIGINT.",
-  "  status  Print the current durable nowMs and pending wakeup count, then exit.",
-  "",
-  "env:",
-  "  DURABLE_STREAMS_URL       (required) Stream URL to back the clock log.",
-  "  FIREGRID_SCOPE            (default: default) Scope key in the log.",
-  "  FIREGRID_TICK_INTERVAL_MS (default: 1000) Wall-clock driver interval.",
-].join("\n")
+const printConfig = (config: LaunchConfig) =>
+  Effect.gen(function* () {
+    yield* write(`mode:       ${config.mode}`)
+    yield* write(`streamUrl:  ${Redacted.value(config.streamUrl)}`)
+  })
 
-const acquireStore = (streamUrl: string) =>
-  Effect.acquireRelease(
-    makeDurableStreamClockStore({ streamUrl }),
-    (store) => store.close,
-  )
-
-const devCommand = Effect.gen(function* () {
-  const scopeName = yield* scope
-  const interval = yield* tickIntervalMs
-  const port = 4437
-
-  const server = yield* Effect.acquireRelease(
-    Effect.tryPromise(async () => {
-      const s = new DurableStreamTestServer({ port, host: "127.0.0.1" })
-      await s.start()
-      return s
-    }),
-    (s) => Effect.promise(() => s.stop()),
-  )
-
-  const streamUrl = `${server.url}/v1/stream/firegrid-${scopeName}`
-
-  yield* Effect.tryPromise(async () =>
-    await DurableStream.create({
-      url: streamUrl,
-      contentType: "application/json",
-    }),
-  ).pipe(Effect.ignore)
-
-  yield* write(`firegrid dev: server on ${server.url}`)
-  yield* write(`firegrid dev: stream ${streamUrl}`)
-
-  const store = yield* acquireStore(streamUrl)
-  const initialDurableTimeMs = Date.now()
-
-  const main = Effect.gen(function* () {
-    yield* write(`firegrid dev: clock ready (scope=${scopeName})`)
-    yield* Effect.forkScoped(wallClockDriver(interval))
+const runCommand = (config: LaunchConfig) =>
+  Effect.gen(function* () {
+    yield* printConfig(config)
+    yield* write("firegrid runtime launch boundary ready")
+    yield* write("runtime graph execution will be attached here by Workflows.layerDurableStreams")
     return yield* Effect.never
   })
-
-  return yield* main.pipe(
-    Effect.provide(
-      clockLayer({ store, scope: scopeName, initialDurableTimeMs }),
-    ),
-  )
-})
-
-const runCommand = Effect.gen(function* () {
-  const url = yield* streamUrl
-  const scopeName = yield* scope
-  const interval = yield* tickIntervalMs
-
-  const store = yield* acquireStore(url)
-
-  // initialDurableTimeMs only matters on first boot for this scope. After
-  // the first run, recovery reads nowMs from the durable log.
-  const initialDurableTimeMs = Date.now()
-
-  const program = Effect.gen(function* () {
-    yield* write(`firegrid: clock ready (scope=${scopeName})`)
-    yield* write(`firegrid: wall-clock driver running every ${interval}ms`)
-    yield* write("firegrid: Ctrl-C to stop")
-    yield* Effect.forkScoped(wallClockDriver(interval))
-    return yield* Effect.never
-  })
-
-  return yield* program.pipe(
-    Effect.provide(
-      clockLayer({ store, scope: scopeName, initialDurableTimeMs }),
-    ),
-  )
-})
-
-const statusCommand = Effect.gen(function* () {
-  const url = yield* streamUrl
-  const scopeName = yield* scope
-
-  const store = yield* acquireStore(url)
-
-  const tick = yield* store.latestTick(scopeName)
-  const wakeups = yield* store.snapshot(scopeName)
-  const pending = wakeups.filter((w) => w.status === "pending").length
-  const dispatched = wakeups.filter((w) => w.status === "dispatched").length
-  const cancelled = wakeups.filter((w) => w.status === "cancelled").length
-
-  yield* write(`scope:      ${scopeName}`)
-  yield* write(`durableNow: ${tick?.nowMs ?? "(uninitialized)"}`)
-  yield* write(`wakeups:    ${wakeups.length} total`)
-  yield* write(`            ${pending} pending`)
-  yield* write(`            ${dispatched} dispatched`)
-  yield* write(`            ${cancelled} cancelled`)
-})
-
-// ============================================================================
-// Entrypoint
-// ============================================================================
 
 const program = Effect.gen(function* () {
-  const args = process.argv.slice(2)
-  const command = args[0]
-
-  switch (command) {
+  const parsed = yield* parseArgs(process.argv.slice(2))
+  switch (parsed.command) {
     case "run":
-      return yield* runCommand
-    case "dev":                      // <-- add this
-      return yield* devCommand
-    case "status":
-      return yield* statusCommand
-    case undefined:
+    case "dev":
+    case "prod":
+      return yield* runCommand(yield* resolveLaunchConfig(parsed))
+    case "config":
+      return yield* printConfig(yield* resolveLaunchConfig(parsed))
     case "help":
     case "--help":
     case "-h":
       return yield* write(usage)
     default:
-      yield* write(`unknown command: ${command}`)
-      yield* write(usage)
-      return yield* new DurableClockStoreError({ op: "unknownCommand", cause: command })
+      return yield* failUsage(`unknown command: ${parsed.command}`)
   }
 })
 
 NodeRuntime.runMain(
-  Effect.scoped(program).pipe(Effect.provide(NodeContext.layer)),
+  program.pipe(Effect.provide(NodeContext.layer)),
 )

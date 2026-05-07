@@ -8,10 +8,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./durable-clock": {
-      "types": "./dist/durable-clock/index.d.ts",
-      "default": "./dist/durable-clock/index.js"
     }
   },
   "bin": {
@@ -33,12 +29,15 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@durable-streams/client": "^0.2.3",
+    "@durable-streams/server": "^0.3.1",
     "@durable-streams/state": "^0.2.5",
+    "@effect/experimental": "0.60.0",
     "@effect/platform": "^0.96.0",
     "@effect/platform-node": "^0.106.0",
-    "effect": "^3.18.0",
-    "@durable-streams/server": "^0.3.1",
-    "@durable-streams/client": "^0.2.3"
+    "@effect/rpc": "0.75.1",
+    "@effect/workflow": "0.18.1",
+    "effect": "^3.18.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
