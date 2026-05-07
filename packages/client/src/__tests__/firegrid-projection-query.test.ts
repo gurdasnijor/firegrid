@@ -1,6 +1,6 @@
 import { DurableStream } from "@durable-streams/client"
 import { createStateSchema } from "@durable-streams/state"
-import { Cause, Chunk, Duration, Effect, Exit, Schema, Stream } from "effect"
+import { Chunk, Duration, Effect, Schema, Stream } from "effect"
 import {
   ProjectionCursor,
   ProjectionQueryClient,
@@ -159,6 +159,27 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     ])
   })
 
+  it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 — liveQuery rejects unsupported multi-collection from clauses visibly", async () => {
+    const url = await createSubstrateStream("projection-query-live-query-multi-source")
+    const plane = buildPlane()
+
+    const error = await run(
+      liveQuery(
+        plane,
+        (q) =>
+          q.from({
+            left: q.collection<"widgets", WidgetRow>("widgets"),
+            right: q.collection<"widgets", WidgetRow>("widgets"),
+          }),
+        { streamUrl: url, contentType: "application/json" },
+      ).pipe(Stream.take(1), Stream.runCollect, Effect.flip),
+    )
+
+    expect(error).toBeInstanceOf(ProjectionQueryReadError)
+    expect(error.reason).toBe("decode-failure")
+    expect(error.cause).toBe("liveQuery.from supports exactly one collection in this MVP")
+  })
+
   it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 — top-level until is query-first and untilWhere keeps predicates explicit", async () => {
     const url = await createSubstrateStream("projection-query-top-level-until")
     const plane = buildPlane()
@@ -216,29 +237,18 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     expect("collections" in result).toBe(false)
 
     const wrongCursor = ProjectionCursor.initial({ name: "other.widgets" })
-    const exit = await run(
-      Effect.exit(
-        Effect.gen(function* () {
-          const handle = yield* projectionFor(plane)
-          return yield* handle.stream(countQuery(), wrongCursor).pipe(
-            Stream.runCollect,
-          )
-        }).pipe(Effect.provide(layerFor(url))),
-      ),
+    const error = await run(
+      Effect.gen(function* () {
+        const handle = yield* projectionFor(plane)
+        return yield* handle.stream(countQuery(), wrongCursor).pipe(
+          Stream.runCollect,
+        )
+      }).pipe(Effect.provide(layerFor(url)), Effect.flip),
     )
 
-    expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) {
-      const error = Cause.failureOption(exit.cause)
-      expect(error._tag).toBe("Some")
-      if (error._tag === "Some") {
-        expect(ProjectionQueryReadError.is(error.value)).toBe(true)
-        if (ProjectionQueryReadError.is(error.value)) {
-          expect(error.value.reason).toBe("malformed-cursor")
-          expect(error.value.descriptor).toBe("app.widgets")
-        }
-      }
-    }
+    expect(error).toBeInstanceOf(ProjectionQueryReadError)
+    expect(error.reason).toBe("malformed-cursor")
+    expect(error.descriptor).toBe("app.widgets")
   })
 
   it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 and firegrid-projection-query.QUERY_HANDLES.4 — observe owns snapshot plus live follow for UI reads", async () => {
@@ -390,29 +400,19 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     expect(immediate.predicate?.status).toBe("ready")
 
     const timeout = Duration.millis(100)
-    const exit = await run(
-      Effect.exit(
-        Effect.gen(function* () {
-          const handle = clientFor(url).projectionFor(plane)
-          return yield* handle.until(
-            readyRowQuery("missing"),
-            { timeout },
-          )
-        }),
-      ),
+    const error = await run(
+      Effect.gen(function* () {
+        const handle = clientFor(url).projectionFor(plane)
+        return yield* handle.until(
+          readyRowQuery("missing"),
+          { timeout },
+        )
+      }).pipe(Effect.flip),
     )
 
-    expect(Exit.isFailure(exit)).toBe(true)
-    if (Exit.isFailure(exit)) {
-      const error = Cause.failureOption(exit.cause)
-      expect(error._tag).toBe("Some")
-      if (error._tag === "Some") {
-        expect(ProjectionQueryTimeout.is(error.value)).toBe(true)
-        if (ProjectionQueryTimeout.is(error.value)) {
-          expect(error.value.descriptor).toBe("app.widgets")
-          expect(error.value.label).toBe("ready:missing")
-        }
-      }
-    }
+    expect(error).toBeInstanceOf(ProjectionQueryTimeout)
+    if (!(error instanceof ProjectionQueryTimeout)) return
+    expect(error.descriptor).toBe("app.widgets")
+    expect(error.label).toBe("ready:missing")
   })
 })

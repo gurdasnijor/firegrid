@@ -167,7 +167,9 @@ yield* client.events(UiEvents).pipe(
 
 Use EventPlane from `@firegrid/substrate/event-plane` inside runtime layers when
 the domain needs primary-keyed state, materialized projections, or
-projection-match evaluation. EventPlane is not the browser client surface.
+projection-match evaluation. Browser and edge reads should use the
+`@firegrid/client/projection-query` facade below instead of raw EventPlane
+services.
 
 ## Projection Query Foundation
 
@@ -178,20 +180,23 @@ client package:
 ```ts
 import { liveQuery } from "@firegrid/client/projection-query"
 
-const liveMessages = liveQuery(MessagesPlane, (q) =>
-  q
-    .from({ message: q.collection<"messages", MessageRow>("messages") })
-    .where(({ message }) => message.threadId === activeThreadId)
-    .orderBy(({ message }) => message.createdAt, "desc")
-    .select(({ message }) => ({
-      id: message.id,
-      authorId: message.authorId,
-      text: message.text,
-      createdAt: message.createdAt,
-    })),
-{
-  streamUrl: appConfig.firegridStreamUrl,
-})
+const liveMessages = liveQuery(
+  MessagesPlane,
+  (q) =>
+    q
+      .from({ message: q.collection<"messages", MessageRow>("messages") })
+      .where(({ message }) => message.threadId === activeThreadId)
+      .orderBy(({ message }) => message.createdAt, "desc")
+      .select(({ message }) => ({
+        id: message.id,
+        authorId: message.authorId,
+        text: message.text,
+        createdAt: message.createdAt,
+      })),
+  {
+    streamUrl: appConfig.firegridStreamUrl,
+  },
+)
 ```
 
 This is the first Firegrid-native live read-model facade. It adapts the

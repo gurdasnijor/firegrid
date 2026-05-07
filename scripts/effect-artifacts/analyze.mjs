@@ -33,7 +33,13 @@ const classify = ({ node, typeText, initText, tags, effectChannels, layerChannel
   if (initText.includes("Context.Tag(") || extText.includes("Context.Tag(")) {
     return "service-tag"
   }
-  if (extText.includes("Data.TaggedError(")) return "tagged-error"
+  if (
+    extText.includes("Data.TaggedError(") ||
+    extText.includes("Schema.TaggedError")
+  ) {
+    return "tagged-error"
+  }
+  if (extText.includes("Schema.TaggedClass")) return "schema"
   if (layerChannels !== null) return "layer"
   if (effectChannels !== null) return "effect-returning"
   if (

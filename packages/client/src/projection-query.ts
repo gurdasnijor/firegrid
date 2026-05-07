@@ -7,7 +7,7 @@ import {
   type PlaneSnapshot,
 } from "@firegrid/substrate/event-plane"
 import type { StreamStateDefinition } from "@durable-streams/state"
-import { Context, Effect, Layer, Stream, type Duration } from "effect"
+import { Context, Effect, Layer, Schema, Stream, type Duration } from "effect"
 
 export interface ProjectionQueryClientConfig {
   readonly streamUrl: string
@@ -18,71 +18,60 @@ export interface ProjectionQueryUntilOptions extends ProjectionQueryClientConfig
   readonly timeout?: Duration.DurationInput
 }
 
-export interface ProjectionCursor {
-  readonly _tag: "firegrid/ProjectionCursor"
-  readonly descriptor: string
-  readonly boundary: "initial" | "snapshot"
-  readonly __firegridProjectionCursor: "ProjectionCursor"
+export class ProjectionCursor extends Schema.TaggedClass<ProjectionCursor>()(
+  "firegrid/ProjectionCursor",
+  {
+    descriptor: Schema.String,
+    boundary: Schema.Literal("initial", "snapshot"),
+    __firegridProjectionCursor: Schema.Literal("ProjectionCursor"),
+  },
+) {
+  static readonly is = Schema.is(ProjectionCursor)
+  static readonly initial = (descriptor: { readonly name: string }): ProjectionCursor =>
+    ProjectionCursor.make({
+      descriptor: descriptor.name,
+      boundary: "initial",
+      __firegridProjectionCursor: "ProjectionCursor",
+    })
 }
 
 const makeCursor = (
   descriptor: string,
   boundary: ProjectionCursor["boundary"],
 ): ProjectionCursor =>
-  ({
-    _tag: "firegrid/ProjectionCursor",
+  ProjectionCursor.make({
     descriptor,
     boundary,
     __firegridProjectionCursor: "ProjectionCursor",
   })
 
-export const ProjectionCursor = {
-  initial: (descriptor: { readonly name: string }): ProjectionCursor =>
-    makeCursor(descriptor.name, "initial"),
+export class ProjectionQueryReadError extends Schema.TaggedError<ProjectionQueryReadError>()(
+  "firegrid/ProjectionQueryReadError",
+  {
+    descriptor: Schema.String,
+    reason: Schema.Literal(
+      "decode-failure",
+      "malformed-cursor",
+      "retention-gap",
+      "missing-stream",
+      "closed-stream",
+      "transport-read-failure",
+    ),
+    cause: Schema.optional(Schema.Unknown),
+  },
+) {
+  static readonly is = Schema.is(ProjectionQueryReadError)
 }
 
-export interface ProjectionQueryReadError {
-  readonly _tag: "firegrid/ProjectionQueryReadError"
-  readonly descriptor: string
-  readonly reason:
-    | "decode-failure"
-    | "malformed-cursor"
-    | "retention-gap"
-    | "missing-stream"
-    | "closed-stream"
-    | "transport-read-failure"
-  readonly cause?: unknown
-}
-
-export interface ProjectionQueryTimeout {
-  readonly _tag: "firegrid/ProjectionQueryTimeout"
-  readonly descriptor: string
-  readonly label: string
-  readonly elapsed: Duration.Duration
-}
-
-export const ProjectionQueryReadError = {
-  make: (error: Omit<ProjectionQueryReadError, "_tag">): ProjectionQueryReadError => ({
-    _tag: "firegrid/ProjectionQueryReadError",
-    ...error,
-  }),
-  is: (error: unknown): error is ProjectionQueryReadError =>
-    typeof error === "object" &&
-    error !== null &&
-    "_tag" in error &&
-    error._tag === "firegrid/ProjectionQueryReadError",
-}
-
-export const ProjectionQueryTimeout = {
-  make: (error: Omit<ProjectionQueryTimeout, "_tag">): ProjectionQueryTimeout => ({
-    _tag: "firegrid/ProjectionQueryTimeout",
-    ...error,
-  }),
-  is: (error: unknown): error is ProjectionQueryTimeout =>
-    typeof error === "object" &&
-    error !== null &&
-    "_tag" in error &&
-    error._tag === "firegrid/ProjectionQueryTimeout",
+export class ProjectionQueryTimeout extends Schema.TaggedError<ProjectionQueryTimeout>()(
+  "firegrid/ProjectionQueryTimeout",
+  {
+    descriptor: Schema.String,
+    label: Schema.String,
+    elapsed: Schema.Duration,
+  },
+) {
+  static readonly is = Schema.is(ProjectionQueryTimeout)
 }
 
 export interface ProjectionSnapshotResult<A> {
@@ -144,7 +133,7 @@ export interface LiveProjectionQueryBuilder<
 
   readonly toProjectionQuery: (
     label?: string,
-  ) => PlaneProjectionQuery<S, Result, never, never>
+  ) => PlaneProjectionQuery<S, Result, ProjectionQueryReadError, never>
 }
 
 export interface LiveProjectionQueryFactory<S extends StreamStateDefinition> {
@@ -175,13 +164,14 @@ export type LiveProjectionQuerySpec<
 ) => {
   readonly toProjectionQuery: (
     label?: string,
-  ) => PlaneProjectionQuery<S, Result, never, never>
+  ) => PlaneProjectionQuery<S, Result, ProjectionQueryReadError, never>
 }
 
 interface LiveProjectionPlan<Row> {
   readonly label: string
   readonly collectionKey: string
   readonly alias: string
+  readonly sourceCount: number
   readonly predicates: ReadonlyArray<(row: Row) => boolean>
   readonly orderings: ReadonlyArray<{
     readonly selector: (row: Row) => ProjectionOrderValue
@@ -245,6 +235,15 @@ const makeLiveProjectionQueryBuilder = <
     label,
     authority: "observational",
     evaluate: (snapshot) => {
+      if (plan.sourceCount !== 1) {
+        return Effect.fail(
+          ProjectionQueryReadError.make({
+            descriptor: plan.collectionKey,
+            reason: "decode-failure",
+            cause: "liveQuery.from supports exactly one collection in this MVP",
+          }),
+        )
+      }
       const rows = [...snapshot[plan.collectionKey as keyof PlaneSnapshot<S>].values()]
         .map((value) => ({ [plan.alias]: value }) as Row)
         .filter((row) => plan.predicates.every((predicate) => predicate(row)))
@@ -284,7 +283,7 @@ export const createLiveProjectionQueryFactory = <
     ReadonlyArray<{ readonly [P in Alias]: ProjectionCollectionRefRow<Ref> }>
   > => {
     const entries = Object.entries(source) as Array<[Alias, Ref]>
-    const [alias, collection] = entries[0]!
+    const [alias, collection] = entries[0] ?? ["__invalid" as Alias, { key: "__invalid" } as Ref]
     type Row = { readonly [P in Alias]: ProjectionCollectionRefRow<Ref> }
     return makeLiveProjectionQueryBuilder<
       S,
@@ -296,6 +295,7 @@ export const createLiveProjectionQueryFactory = <
       label: `${collection.key}`,
       orderings: [],
       predicates: [],
+      sourceCount: entries.length,
     })
   }
 
@@ -573,7 +573,7 @@ export const toProjectionQuery = <
 >(
   spec: LiveProjectionQuerySpec<S, Result>,
   label?: string,
-): PlaneProjectionQuery<S, Result, never, never> =>
+): PlaneProjectionQuery<S, Result, ProjectionQueryReadError, never> =>
   spec(createLiveProjectionQueryFactory<S>()).toProjectionQuery(label)
 
 export const liveQuery = <
