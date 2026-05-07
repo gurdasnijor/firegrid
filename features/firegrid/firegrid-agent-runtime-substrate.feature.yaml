@@ -40,7 +40,7 @@ components:
       2: Runtime composition uses `Firegrid.composeRuntime` with explicit `handlers`, `subscribers`, and `provide` Layer arrays; runtime entry uses public `run({ connection, runtime })`.
       3: Provider adapters, provider credentials, and provider-side process supervision live below the product runtime layer and do not appear inside Firegrid packages, runtime composition, or app-owned EventPlane row family names.
       4: Edge-hosted `@firegrid/runtime`, dynamic runtime module loading via environment-driven module specifiers, and dev-launcher resurrection patterns remain anti-scope.
-      5: A product application that ships both a browser UI and a Node-tier runtime keeps the runtime in a Node-tier host owned by the app or dev orchestrator; the runtime is not loaded as a plugin or middleware into a browser bundler such as Vite, Webpack, esbuild, or Rspack.
+      5: A product application that ships both a browser UI and a Node-tier runtime keeps the runtime in a Node-tier host; the runtime is not loaded as a plugin or middleware into a browser bundler such as Vite, Webpack, esbuild, or Rspack.
 
   HANDLER_CLIENT_USAGE:
     requirements:

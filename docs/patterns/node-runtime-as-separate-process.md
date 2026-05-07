@@ -1,8 +1,11 @@
 # Pattern: Runtime Host Is Node-Tier, Not A Browser Dev-Server Plugin
 
 Use this pattern when an app has both a browser UI and Firegrid runtime handlers.
-The important boundary is that runtime code is hosted by a Node-tier app/runtime
-owner. It is not loaded through Vite, Webpack, esbuild, Rspack, or browser code.
+The runtime code runs in a Node-tier host. It is not loaded through Vite,
+Webpack, esbuild, Rspack, or browser code.
+
+This pattern is deliberately narrow: it shows the runtime boundary and the
+runtime entry shape. It does not invent a product dev launcher.
 
 Authorizing ACIDs:
 
@@ -11,44 +14,10 @@ Authorizing ACIDs:
 - `firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.5`
 - `firegrid-platform-invariants.PACKAGE_DISCIPLINE.7`
 
-## Embedded App Dev
-
-For product app development, a single app command may start or coordinate the
-browser dev server, local Firegrid infrastructure, and Node runtime host. That
-is an app-level dev orchestrator.
-
-```json
-{
-  "scripts": {
-    "dev": "tsx src/dev/main.ts",
-    "dev:web": "vite --host 127.0.0.1",
-    "dev:runtime": "tsx src/runtime/main.ts"
-  }
-}
-```
-
-Rules for embedded dev:
-
-- The developer should not need to provide `DURABLE_STREAMS_URL` for the default
-  app dev command.
-- The browser should not discover runtime state from generated files such as
-  `public/topology.json`.
-- Any local stream/server setup belongs to the app dev orchestrator or Firegrid
-  dev infrastructure, not to browser code and not hidden inside the runtime
-  handler module.
-- Runtime code still uses `Firegrid.composeRuntime(...)` and
-  `run({ connection, runtime })` after the orchestrator provides its connection.
-
-## Attached Runtime Mode
-
-The published `firegrid` binary is attached-only. It is for advanced runtime
-attachment where an external process supplies `DURABLE_STREAMS_URL`.
-
-That binary does not launch Durable Streams, does not spawn child dev processes,
-and does not replace embedded app dev. See `packages/runtime/bin/firegrid.ts`
-and `packages/runtime/README.md`.
-
 ## Runtime Entrypoint Shape
+
+Runtime entrypoints compose the app's handlers and Layers, then pass that graph
+to `run({ connection, runtime })`.
 
 ```ts
 import { FiregridClientLive } from "@firegrid/client"
@@ -56,8 +25,8 @@ import { Firegrid, run } from "@firegrid/runtime"
 import { Effect } from "effect"
 import { handlers } from "./handlers.ts"
 
-const streamUrl = configFromHost.streamUrl
-const runtimeId = configFromHost.runtimeId
+const streamUrl = config.streamUrl
+const runtimeId = config.runtimeId
 
 const runtime = Firegrid.composeRuntime({
   handlers,
@@ -78,10 +47,24 @@ await Effect.runPromise(
 )
 ```
 
+`config` is supplied by the runtime host. In attached mode, the published
+`firegrid` binary reads `DURABLE_STREAMS_URL` at the process edge; see
+`packages/runtime/bin/firegrid.ts`. Product app dev commands may choose another
+host/config source, but this pattern does not prescribe that launcher.
+
+## What This Pattern Forbids
+
+- importing `@firegrid/runtime` from browser code;
+- loading runtime code as a Vite/Webpack/esbuild/Rspack plugin;
+- using a browser dev server as the runtime lifecycle owner;
+- writing generated browser-public files such as `public/topology.json` as the
+  runtime/browser contract;
+- committing built `dist/` artifacts to make package `exports` work in dev.
+
 ## Why Not A Vite Plugin
 
-A Vite plugin can make the runtime appear to start with the UI, but it breaks
-the package and topology boundaries:
+A browser dev-server plugin can make the runtime appear to start with the UI, but
+it breaks the package and topology boundaries:
 
 - browser bundlers are not the runtime host;
 - dist-only `exports` can resolve before packages are built;
@@ -89,6 +72,5 @@ the package and topology boundaries:
   server;
 - process-local state can leak into UI code instead of durable rows.
 
-Use an embedded dev orchestrator for one-command local dev, or an attached
-runtime process for advanced deployments. Do not put `@firegrid/runtime` in the
-browser bundler path.
+Keep the runtime in a Node-tier host and keep browser code on browser-safe
+Firegrid client surfaces.
