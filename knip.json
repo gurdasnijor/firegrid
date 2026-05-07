@@ -19,7 +19,8 @@
     "packages/client": {
       "entry": [
         "src/index.ts",
-        "src/event-streams-public.ts"
+        "src/event-streams-public.ts",
+        "src/projection-query.ts"
       ],
       "project": [
         "src/**/*.ts"
