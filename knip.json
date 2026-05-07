@@ -6,16 +6,6 @@
         "scripts/*.mjs"
       ]
     },
-    "packages/runtime": {
-      "entry": [
-        "src/index.ts",
-        "bin/*.ts"
-      ],
-      "project": [
-        "src/**/*.ts",
-        "bin/**/*.ts"
-      ]
-    },
     "apps/flamecast": {
       "project": [
         "src/**/*.{ts,tsx,mts}"

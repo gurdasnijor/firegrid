@@ -5,10 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "build:firegrid": "pnpm --filter @firegrid/runtime build",
-    "check": "pnpm run build:firegrid && pnpm run typecheck && pnpm run test && pnpm run build",
+    "check": "pnpm run typecheck && pnpm run test && pnpm run build",
     "dev": "vite --host 127.0.0.1",
-    "runtime": "pnpm run build:firegrid && tsx --tsconfig tsconfig.json src/runtime/main.ts",
+    "runtime": "tsx --tsconfig tsconfig.json src/runtime/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
