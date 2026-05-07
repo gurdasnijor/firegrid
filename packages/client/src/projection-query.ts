@@ -14,6 +14,10 @@ export interface ProjectionQueryClientConfig {
   readonly contentType?: string
 }
 
+export interface ProjectionQueryUntilOptions extends ProjectionQueryClientConfig {
+  readonly timeout?: Duration.DurationInput
+}
+
 export interface ProjectionCursor {
   readonly _tag: "firegrid/ProjectionCursor"
   readonly descriptor: string
@@ -308,6 +312,35 @@ export const ProjectionQueryClientLive = (
 export const createProjectionQueryClient = (
   cfg: ProjectionQueryClientConfig,
 ): ProjectionQueryClientService => buildProjectionQueryClientService(cfg)
+
+export const observe = <
+  Name extends string,
+  S extends StreamStateDefinition,
+  A,
+  E,
+>(
+  plane: EventPlaneDefinition<Name, S>,
+  query: PlaneProjectionQuery<S, A, E, never>,
+  cfg: ProjectionQueryClientConfig,
+): Stream.Stream<A, ProjectionQueryReadError | E> =>
+  createProjectionQueryClient(cfg).projectionFor(plane).observe(query)
+
+export const until = <
+  Name extends string,
+  S extends StreamStateDefinition,
+  A,
+  E,
+>(
+  plane: EventPlaneDefinition<Name, S>,
+  query: PlaneProjectionQuery<S, A, E, never>,
+  predicate: (value: A) => boolean,
+  options: ProjectionQueryUntilOptions,
+): Effect.Effect<A, ProjectionQueryTimeout | ProjectionQueryReadError | E> =>
+  createProjectionQueryClient(options).projectionFor(plane).until(
+    query,
+    predicate,
+    options.timeout === undefined ? {} : { timeout: options.timeout },
+  )
 
 export const projectionFor = <
   Name extends string,

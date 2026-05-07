@@ -177,28 +177,33 @@ package:
 
 ```ts
 import {
-  createProjectionQueryClient,
+  observe,
+  until,
 } from "@firegrid/client/projection-query"
 
-const projections = createProjectionQueryClient({
+const liveList = observe(WidgetsPlane, widgetListQuery, {
   streamUrl: appConfig.firegridStreamUrl,
 })
 
-const widgets = projections.projectionFor(WidgetsPlane)
-
-const liveList = widgets.observe(widgetListQuery)
-
-const readyWidget = widgets.until(
+const readyWidget = until(
+  WidgetsPlane,
   readyWidgetQuery,
   (row) => row !== undefined,
-  { timeout: "10 seconds" },
+  {
+    streamUrl: appConfig.firegridStreamUrl,
+    timeout: "10 seconds",
+  },
 )
 ```
 
 Projection query handles are descriptor-scoped and read-only. They expose
-cursorless `observe` and `until` for normal UI reads. Advanced callers can use
-`snapshot` plus `stream(query, cursor)`, or `untilFrom(...)`, when they need to
-control an explicit cursor. The surface does not expose raw StreamDB
+top-level `observe(plane, query, config)` and
+`until(plane, query, predicate, config)` helpers for normal UI reads. Advanced
+or repeated-query callers can use `createProjectionQueryClient(...)` plus
+`projectionFor(plane)` to reuse configuration, then call cursorless
+`handle.observe(...)` and `handle.until(...)`; use `snapshot` plus
+`stream(query, cursor)`, or `untilFrom(...)`, only when an explicit cursor is
+needed. The surface does not expose raw StreamDB
 collections, substrate kernel imports, runtime handlers, claims, completions, or
 terminal run authority.
 

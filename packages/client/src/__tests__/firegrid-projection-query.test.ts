@@ -9,7 +9,9 @@ import {
   ProjectionQueryReadError,
   ProjectionQueryTimeout,
   createProjectionQueryClient,
+  observe,
   projectionFor,
+  until,
   type ProjectionQuery,
 } from "../projection-query.ts"
 import { EventPlane } from "@firegrid/substrate/event-plane"
@@ -78,6 +80,59 @@ const clientFor = (streamUrl: string) =>
   createProjectionQueryClient({ streamUrl, contentType: "application/json" })
 
 describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-scoped projection query handles", () => {
+  it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 — top-level observe is query-first for basic UI reads", async () => {
+    const url = await createSubstrateStream("projection-query-top-level-observe")
+    const plane = buildPlane()
+
+    await Effect.runPromise(
+      appendWidget(url, plane, { id: "w-1", status: "pending", count: 1 }),
+    )
+
+    const collected = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fiber = yield* observe(plane, countQuery(), {
+            streamUrl: url,
+            contentType: "application/json",
+          }).pipe(Stream.take(2), Stream.runCollect, Effect.fork)
+          yield* Effect.sleep(Duration.millis(40))
+          yield* appendWidget(url, plane, {
+            id: "w-2",
+            status: "pending",
+            count: 2,
+          })
+          return yield* fiber
+        }),
+      ),
+    )
+
+    expect(Chunk.toReadonlyArray(collected)).toEqual([1, 2])
+  })
+
+  it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 — top-level until is query-first and snapshot-first", async () => {
+    const url = await createSubstrateStream("projection-query-top-level-until")
+    const plane = buildPlane()
+
+    await Effect.runPromise(
+      appendWidget(url, plane, { id: "w-ready", status: "ready", count: 1 }),
+    )
+
+    const ready = await Effect.runPromise(
+      until(
+        plane,
+        readyRowQuery("w-ready"),
+        (row): row is WidgetRow => row?.status === "ready",
+        {
+          streamUrl: url,
+          contentType: "application/json",
+          timeout: Duration.seconds(1),
+        },
+      ),
+    )
+
+    expect(ready?.id).toBe("w-ready")
+  })
+
   it("firegrid-projection-query.QUERY_HANDLES.2, .3 — snapshot returns typed app-owned projection data plus an opaque cursor", async () => {
     const url = await createSubstrateStream("projection-query-snapshot")
     const plane = buildPlane()
