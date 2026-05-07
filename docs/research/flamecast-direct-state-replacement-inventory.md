@@ -91,25 +91,49 @@ use the primitive.
 
 ### Stream Topology
 
-Use a per-session Durable Stream for the first implementation slice:
+Use a small number of configured Flamecast state streams. Do **not** create one
+Durable Stream per session.
+
+The first implementation slice should use one canonical state stream for the
+deployment/environment:
 
 ```text
-/flamecast/sessions/{sessionId}
+/flamecast/state
 ```
+
+The actual stream URL should come from configuration, for example
+`FLAMECAST_STATE_STREAM_URL`. App code should not construct stream names from
+`sessionId`.
+
+The stream is the topic-like durable log. `sessionId` is data inside State
+Protocol messages, not the top-level stream identifier. This keeps the
+operational model closer to a Kafka-style topic where messages carry
+`session_id`, rather than creating one topic per session.
+
+Future scaling can shard the state stream deliberately, for example by org or a
+stable hash:
+
+```text
+/flamecast/state/{shard}
+```
+
+That is an operational sharding decision, not part of the product API and not
+something app code should choose per request.
 
 Reasons:
 
-- the required proof is session-scoped;
-- per-session event history needs ordered replay;
-- current Postgres tables can continue to own org/session membership, so the
-  first slice does not need an org-wide stream index;
-- a per-session stream avoids designing cross-session fanout before the
-  source-of-truth path works.
+- avoids per-session stream/config sprawl;
+- keeps subscriptions and clients pointed at stable stream URLs;
+- lets session, event, provider, callback, and future summary rows share one
+  ordered state log;
+- preserves the Flamecast API boundary: callers use sessions/events endpoints,
+  not stream names;
+- leaves room for deliberate sharding once usage warrants it.
 
 Postgres remains the org/ownership/list index during the first slice. Do not
 attempt a data migration. Do not remove Postgres ownership checks. Cross-session
 list summaries may be degraded or continue using existing paths until a later
-state-backed summary/index stream is designed.
+state-backed summary/index collection is designed.
 
 ### State Collections
 
@@ -122,16 +146,22 @@ The first slice should include these collections:
 | Collection | State `type` | Primary Key | Purpose |
 | --- | --- | --- | --- |
 | `sessions` | `flamecast.session` | `sessionId` | Current public session state plus internal counters needed for ordering. |
-| `sessionEvents` | `flamecast.session_event` | `eventId` | Ordered normalized event history for a session. |
+| `sessionEvents` | `flamecast.session_event` | `eventId = sessionId:seq` | Ordered normalized event history for a session. |
 | `providerSessions` | `flamecast.provider_session` | `sessionId` | Provider-native session id/status/cursor/usage/runtime metadata. |
 | `sessionCallbacks` | `flamecast.session_callback` | `sessionId` | External customer/provider callback configuration. |
+
+All session-owned rows in the shared state stream must include `orgId` and
+`sessionId` where applicable. Postgres remains the authoritative ownership
+gate, but state rows should still carry org identity so materialized reads,
+indexes, subscriptions, and future shard moves do not rely on out-of-band
+session lookup.
 
 Recommended row shapes:
 
 ```ts
 type FlamecastSessionRow = {
   sessionId: string
-  orgId?: string
+  orgId: string
   agent: AgentName | ProviderId
   machine: Machine
   workspace: WorkspaceLayout
@@ -153,6 +183,7 @@ type FlamecastSessionRow = {
 
 type FlamecastSessionEventRow = {
   eventId: string
+  orgId: string
   sessionId: string
   seq: number
   at: string
@@ -168,6 +199,7 @@ type FlamecastSessionEventRow = {
 
 type FlamecastProviderSessionRow = {
   sessionId: string
+  orgId: string
   providerId: ProviderId
   nativeSessionId: string
   status: ProviderStatus
@@ -184,6 +216,7 @@ type FlamecastProviderSessionRow = {
 
 type FlamecastSessionCallbackRow = {
   sessionId: string
+  orgId: string
   url: string
   updatedAt: string
 }
@@ -225,7 +258,7 @@ src/effect/services/session-state.ts
 
 It should own:
 
-- constructing the per-session stream URL;
+- resolving the configured Flamecast state stream URL or shard;
 - `createStateSchema(...)`;
 - `createStreamDB({ streamOptions, state, actions? })` if actions simplify
   mutation call sites;
@@ -267,17 +300,19 @@ RunWait
 `GET /sessions/:id` should:
 
 1. perform the existing org ownership check through Postgres;
-2. materialize the session stream;
-3. return the `sessions` row converted to current `SessionState`, including
+2. materialize the configured state stream or relevant shard;
+3. filter the `sessions` collection by `orgId` and `sessionId`;
+4. return the `sessions` row converted to current `SessionState`, including
    current `links` behavior where still needed.
 
 `GET /sessions/:id/events` should:
 
 1. perform the existing org ownership check through Postgres;
 2. materialize `sessionEvents`;
-3. sort by `seq ASC`;
-4. apply `since`, `limit`, and `tail`;
-5. return current `EventsResponse` shape.
+3. filter by `orgId` and `sessionId`;
+4. sort by `seq ASC`;
+5. apply `since`, `limit`, and `tail`;
+6. return current `EventsResponse` shape.
 
 ClickHouse must not be used as the primary per-session event source in the new
 path. It can remain for `/events`, `/observability/query`, and optional
@@ -365,6 +400,8 @@ Assertions:
 Any implementation lane that touches the source-of-truth path must report:
 
 - exact `createStateSchema` collections and primary keys;
+- exact stream resolver/config and proof it does not create per-session Durable
+  Streams;
 - exact append boundary;
 - whether `createStreamDB` actions or raw State Protocol appends are used;
 - the route/internal call site moved first;
