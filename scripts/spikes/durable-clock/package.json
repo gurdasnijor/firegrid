@@ -1,0 +1,16 @@
+{
+  "name": "firegrid-spike-durable-clock",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Isolated spike: validate Effect Clock substitution as a durable wake-up dispatch boundary. Not a workspace package; not part of CI; not a Firegrid public surface.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "effect": "^3.18.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}

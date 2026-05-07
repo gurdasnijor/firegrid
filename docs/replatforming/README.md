@@ -1,6 +1,6 @@
 # Flamecast Replatforming on Firegrid
 
-Status: build-facing draft packet
+Status: execution packet
 
 This folder is the dispatch packet for moving Flamecast durable agent-runtime
 mechanics onto Firegrid. It exists to keep the architecture, ownership
@@ -42,9 +42,33 @@ The first spec stack has landed:
 Implementation PRs should cite the smallest relevant ACID set. Do not invent a
 parallel requirement ID system in implementation plans, tests, or review notes.
 
-## Current Dispatch Priority
+## Current State
 
-The next useful proof is not a substrate-only smoke script. It is LT-02:
+The planning/spec stack is landed. We are no longer dispatching broad SDD or
+feature-spec authoring for the core lanes listed above.
+
+Shipped implementation proofs:
+
+- LT-02 `apps/flamecast` chassis: browser UI plus separate local Node runtime
+  process, deterministic local adapter, app-owned `Operation` and
+  `EventStream`, durable replay on refresh, and runtime restart recovery.
+- Firegrid observability MVP: Effect-native substrate spans for client
+  operations, EventStreams, and runtime handler execution.
+- Firegrid projection query MVP: browser-safe
+  `@firegrid/client/projection-query` facade with `liveQuery(...)`,
+  descriptor-scoped read access, Schema-backed cursor/errors, and explicit
+  low-level escape hatches.
+
+Active implementation PR:
+
+- `#120` durable channel subscriber primitives. This is the current blocking
+  core Firegrid lane. Finish and merge it before dispatching another durable
+  delivery/subscriber lane.
+
+## Dispatch Priority
+
+The product-shaped proof is now LT-02 in `apps/flamecast`; do not replace it
+with substrate-only smoke scripts. Use the chassis as the integration target:
 
 ```text
 Flamecast UI starts a session
@@ -54,9 +78,31 @@ Flamecast UI starts a session
   -> Flamecast UI remains the control surface
 ```
 
-Use `apps/flamecast` as the chassis target. Avoid throwaway examples and
-standalone smoke scripts. If a public Firegrid API is missing, report that gap
-directly rather than bypassing the substrate boundary.
+Next execution order:
+
+1. Finish `#120` durable channel subscriber primitives.
+2. Implement runtime presence MVP:
+   - durable runtime/host/node public presence descriptor;
+   - runtime publisher Layer for startup, readiness, heartbeat, and retirement;
+   - projection/query selection by readiness, freshness, topology, and public
+     metadata;
+   - tests proving presence is advisory discovery, not a command bus, host
+     mesh, credential directory, or leader-election primitive.
+3. Wire runtime presence into the LT-02 chassis so the UI can select or display
+   a local runtime-backed provider through durable public presence.
+4. Implement claimed-intent transport for follow-up/prompt-like work:
+   intent -> claim -> side effect -> terminal, with Flamecast prompt/session
+   semantics staying outside Firegrid core.
+5. Return to execution-plane resources and ownership transfer only after the
+   local-runtime session loop and runtime presence path are stable.
+
+Avoid:
+
+- new smoke-only scripts that bypass `apps/flamecast`;
+- Flamecast-only RPC facades;
+- direct `@firegrid/substrate/kernel` imports in app code;
+- raw `durable.run` or fake terminal rows;
+- product vocabulary in Firegrid packages.
 
 ## Proposal Archive
 

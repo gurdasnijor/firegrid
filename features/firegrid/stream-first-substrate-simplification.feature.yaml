@@ -1,0 +1,63 @@
+feature:
+  name: stream-first-substrate-simplification
+  product: firegrid
+  description: Simplify Firegrid from the client and runtime surfaces first by treating Durable Streams State, StreamDB actions, Effect Stream, and Effect Clock as canonical primitives while dismantling or privatizing substrate APIs that only shadow those primitives.
+
+components:
+  CLIENT_RUNTIME_FIRST:
+    requirements:
+      1: New stream-first design work starts from `@firegrid/client` and `@firegrid/runtime` usage, not from preserving `@firegrid/substrate` concepts.
+      2: Product-authored app and browser examples do not import `@firegrid/substrate` for normal durable app behavior.
+      3: Runtime examples import substrate internals only through runtime-owned implementation code, not as canonical handler authoring APIs.
+
+  RUNTIME_TRAVERSAL:
+    requirements:
+      1: Runtime simplification starts from `packages/runtime/bin/firegrid.ts` and `packages/runtime/src/run.ts`.
+      2: Runtime simplification follows the reachable import tree downward until it reaches the first outdated concept.
+      3: When traversal reaches a concept already provided by Durable Streams State or Effect, the whole branch is classified for replacement, privatization, or deletion.
+      4: Runtime traversal artifacts include a before/after for the caller-supplied runtime Layer.
+
+  STREAMDB_STATE:
+    requirements:
+      1: Stateful durable Firegrid data uses Durable Streams State Protocol collections as the canonical persisted shape.
+      2: "Confirmed state writes use `createStreamDB` actions with transaction ids and `awaitTxId` confirmation."
+      3: Firegrid-generated write helpers lower to StreamDB actions rather than to Firegrid-specific append helpers.
+      4: StreamDB-backed resources expose cleanup for their live consumers.
+
+  STREAM_OBSERVATION:
+    requirements:
+      1: Public Firegrid APIs that observe durable inputs expose Effect Stream values or StreamDB/live-query-native collection surfaces.
+      2: Public Firegrid APIs do not add Firegrid-specific wrappers for standard Stream operators such as map, tap, scan, take, takeUntil, timeout, filter, or mapEffect.
+      3: Public observation paths avoid compound snapshot-then-stream races unless they carry a single durable no-gap follow boundary.
+
+  CLOCK_TIME:
+    requirements:
+      1: New durable time examples use Effect Clock-backed APIs such as Effect.sleep, Effect timeout APIs, Schedule, and Clock-backed Stream operators.
+      2: New durable time examples do not introduce Firegrid-specific sleep, wait, timeout, retry, or schedule verbs.
+      3: Existing RunWait/choreography time APIs remain compatibility surfaces until a migration path replaces their canonical usage.
+
+  DESCRIPTORS:
+    requirements:
+      1: Firegrid descriptors describe names, schemas, partitioning, locality, and authority rules without embedding stream URLs, client instances, runtime handlers, or raw writer handles.
+      2: Browser-safe descriptor surfaces do not import runtime, kernel, DurableStream, or StreamDB implementation modules.
+      3: Descriptor lowering can derive State Protocol schemas and generated actions for app-owned state collections.
+
+  PUBLIC_EXAMPLES:
+    requirements:
+      1: New canonical examples exercise both client and runtime behavior rather than only appending bare stream events.
+      2: New browser/client examples do not import substrate kernel, event-plane producer internals, raw projection handles, or raw Durable Streams writer APIs.
+      3: New runtime examples author product actions or typed operation outputs rather than raw State Protocol row envelopes.
+
+constraints:
+  DEPRECATION:
+    requirements:
+      1: Existing substrate APIs may remain as private or deprecated compatibility while client/runtime stream-first replacements land.
+      2: Compatibility APIs are not used in new canonical examples once a stream-first replacement exists.
+      3: "`appendChange` is treated as internal compatibility and is not a public or canonical Firegrid state-write path."
+      4: Each substrate concept must prove it is not already provided by Durable Streams State or Effect before it remains public.
+
+  AUTHORITY:
+    requirements:
+      1: Stream-first simplification does not grant browser code runtime claim, completion, terminalization, or kernel authority.
+      2: Generated client actions and generated runtime actions encode their intended authority boundary.
+      3: Runtime-only claim, checkpoint, and terminal-winner algorithms remain runtime-owned private implementation when Durable Streams State does not provide the needed semantics.
