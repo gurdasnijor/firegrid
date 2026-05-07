@@ -1,17 +1,15 @@
 import { DurableStream } from "@durable-streams/client"
 import { createStateSchema } from "@durable-streams/state"
-import { Effect, Schema, type Context } from "effect"
+import { Effect, Schema } from "effect"
 import {
   CompletionKey,
   DeliveryKey,
   DurableChannel,
-  DurableDeliveryConflictError,
-  DurableSubscriberId,
-  DurableClaimId,
   EventPlane,
   OrderingScope,
   type DurableChannelDefinition,
   type DurableChannelFold,
+  type DurableDeliveryEnvelope,
   type DurableDeliveryRecord,
   type DurableTerminalRecord,
   type PlaneSnapshot,
@@ -60,47 +58,19 @@ const TerminalRow = Schema.Struct({
   ),
   value: Schema.String,
   recordedAtMs: Schema.Number,
-  subscriberId: Schema.optional(Schema.String),
-  claimId: Schema.optional(Schema.String),
-})
-
-const ClaimRow = Schema.Struct({
-  rowId: Schema.String,
-  channel: Schema.String,
-  deliveryKey: Schema.String,
-  orderingScope: Schema.String,
-  claimId: Schema.String,
-  subscriberId: Schema.String,
-  attempt: Schema.Number,
-  claimedAtMs: Schema.Number,
-})
-
-const RetryRow = Schema.Struct({
-  rowId: Schema.String,
-  channel: Schema.String,
-  deliveryKey: Schema.String,
-  claimId: Schema.String,
-  attempt: Schema.Number,
-  retryAtMs: Schema.Number,
-  reason: Schema.String,
 })
 
 const ConflictRow = Schema.Struct({
   rowId: Schema.String,
   channel: Schema.String,
-  deliveryKey: Schema.String,
-  completionKey: Schema.String,
-  idempotencyKey: Schema.String,
+  deliveryKey: Schema.optional(Schema.String),
+  completionKey: Schema.optional(Schema.String),
   reason: Schema.String,
   observedAtMs: Schema.Number,
-  existingFingerprint: Schema.String,
-  incomingFingerprint: Schema.String,
 })
 
 type DeliveryRow = Schema.Schema.Type<typeof DeliveryRow>
 type TerminalRow = Schema.Schema.Type<typeof TerminalRow>
-type ClaimRow = Schema.Schema.Type<typeof ClaimRow>
-type RetryRow = Schema.Schema.Type<typeof RetryRow>
 type ConflictRow = Schema.Schema.Type<typeof ConflictRow>
 
 const buildFixture = () => {
@@ -115,20 +85,10 @@ const buildFixture = () => {
       primaryKey: "rowId",
       schema: Schema.standardSchemaV1(TerminalRow),
     },
-    claims: {
-      type: "test.durable-channel.claim",
-      primaryKey: "rowId",
-      schema: Schema.standardSchemaV1(ClaimRow),
-    },
     deadLetters: {
       type: "test.durable-channel.dead-letter",
       primaryKey: "rowId",
       schema: Schema.standardSchemaV1(TerminalRow),
-    },
-    retries: {
-      type: "test.durable-channel.retry",
-      primaryKey: "rowId",
-      schema: Schema.standardSchemaV1(RetryRow),
     },
     conflicts: {
       type: "test.durable-channel.conflict",
@@ -163,12 +123,6 @@ const buildFixture = () => {
     kind: row.kind,
     value: row.value,
     recordedAtMs: row.recordedAtMs,
-    ...(row.subscriberId !== undefined
-      ? { subscriberId: DurableSubscriberId(row.subscriberId) }
-      : {}),
-    ...(row.claimId !== undefined
-      ? { claimId: DurableClaimId(row.claimId) }
-      : {}),
   })
 
   const channel: DurableChannelDefinition<
@@ -179,10 +133,6 @@ const buildFixture = () => {
     name: "test.channel",
     version: "v1",
     plane,
-    dedupe: {
-      retentionWindowMs: 86_400_000,
-      afterRetentionWindow: "conflict",
-    },
     derive: {
       deliveryKey: (input) => DeliveryKey(`delivery:${input.id}`),
       completionKey: (input) => CompletionKey(`completion:${input.id}`),
@@ -206,80 +156,13 @@ const buildFixture = () => {
             body: input.body,
           },
         }),
-      claim: (record) =>
-        plane.state.claims.insert({
-          value: {
-            rowId: record.claimId,
-            channel: record.channel,
-            deliveryKey: record.deliveryKey,
-            orderingScope: record.orderingScope,
-            claimId: record.claimId,
-            subscriberId: record.subscriberId,
-            attempt: record.attempt,
-            claimedAtMs: record.claimedAtMs,
-          },
-        }),
       completion: (record) =>
         plane.state.completions.insert({
-          value: {
-            rowId: `completion:${record.completionKey}`,
-            channel: record.channel,
-            deliveryKey: record.deliveryKey,
-            completionKey: record.completionKey,
-            kind: record.kind,
-            value: String(record.value),
-            recordedAtMs: record.recordedAtMs,
-            ...(record.subscriberId !== undefined
-              ? { subscriberId: record.subscriberId }
-              : {}),
-            ...(record.claimId !== undefined
-              ? { claimId: record.claimId }
-              : {}),
-          },
+          value: terminalRow(record, `completion:${record.completionKey}`),
         }),
       deadLetter: (record) =>
         plane.state.deadLetters.insert({
-          value: {
-            rowId: `dead-letter:${record.completionKey}`,
-            channel: record.channel,
-            deliveryKey: record.deliveryKey,
-            completionKey: record.completionKey,
-            kind: record.kind,
-            value: String(record.value),
-            recordedAtMs: record.recordedAtMs,
-            ...(record.subscriberId !== undefined
-              ? { subscriberId: record.subscriberId }
-              : {}),
-            ...(record.claimId !== undefined
-              ? { claimId: record.claimId }
-              : {}),
-          },
-        }),
-      retry: (record) =>
-        plane.state.retries.insert({
-          value: {
-            rowId: `retry:${record.deliveryKey}:${record.attempt}`,
-            channel: record.channel,
-            deliveryKey: record.deliveryKey,
-            claimId: record.claimId ?? "",
-            attempt: record.attempt,
-            retryAtMs: record.retryAtMs,
-            reason: String(record.reason),
-          },
-        }),
-      conflict: ({ envelope, existing, reason }) =>
-        plane.state.conflicts.insert({
-          value: {
-            rowId: `conflict:${envelope.idempotencyKey}`,
-            channel: envelope.channel,
-            deliveryKey: envelope.deliveryKey,
-            completionKey: envelope.completionKey,
-            idempotencyKey: envelope.idempotencyKey,
-            reason,
-            observedAtMs: envelope.acceptedAtMs,
-            existingFingerprint: existing.payloadFingerprint,
-            incomingFingerprint: envelope.payloadFingerprint,
-          },
+          value: terminalRow(record, `dead-letter:${record.completionKey}`),
         }),
     },
     select: {
@@ -291,53 +174,79 @@ const buildFixture = () => {
         Array.from(snapshot.completions.values()).map((row) =>
           terminalFromRow(row as TerminalRow),
         ),
-      claims: (snapshot: PlaneSnapshot<typeof plane.state>) =>
-        Array.from(snapshot.claims.values()).map((row) => {
-          const claim = row as ClaimRow
-          return {
-            channel: claim.channel,
-            deliveryKey: DeliveryKey(claim.deliveryKey),
-            orderingScope: OrderingScope(claim.orderingScope),
-            claimId: DurableClaimId(claim.claimId),
-            subscriberId: DurableSubscriberId(claim.subscriberId),
-            attempt: claim.attempt,
-            claimedAtMs: claim.claimedAtMs,
-          }
-        }),
       deadLetters: (snapshot: PlaneSnapshot<typeof plane.state>) =>
         Array.from(snapshot.deadLetters.values()).map((row) =>
           terminalFromRow(row as TerminalRow),
         ),
-      retries: (snapshot: PlaneSnapshot<typeof plane.state>) =>
-        Array.from(snapshot.retries.values()).map((row) => {
-          const retry = row as RetryRow
-          return {
-            channel: retry.channel,
-            deliveryKey: DeliveryKey(retry.deliveryKey),
-            claimId: DurableClaimId(retry.claimId),
-            attempt: retry.attempt,
-            retryAtMs: retry.retryAtMs,
-            reason: retry.reason,
-          }
-        }),
       conflicts: (snapshot: PlaneSnapshot<typeof plane.state>) =>
         Array.from(snapshot.conflicts.values()).map((row) => {
           const conflict = row as ConflictRow
           return {
             channel: conflict.channel,
-            deliveryKey: DeliveryKey(conflict.deliveryKey),
-            completionKey: CompletionKey(conflict.completionKey),
-            idempotencyKey: conflict.idempotencyKey,
+            ...(conflict.deliveryKey !== undefined
+              ? { deliveryKey: DeliveryKey(conflict.deliveryKey) }
+              : {}),
+            ...(conflict.completionKey !== undefined
+              ? { completionKey: CompletionKey(conflict.completionKey) }
+              : {}),
             reason: conflict.reason,
             observedAtMs: conflict.observedAtMs,
-            existingFingerprint: conflict.existingFingerprint,
-            incomingFingerprint: conflict.incomingFingerprint,
           }
         }),
     },
   })
 
   return { plane, channel }
+}
+
+const terminalRow = (
+  record: DurableTerminalRecord,
+  rowId: string,
+): TerminalRow => ({
+  rowId,
+  channel: record.channel,
+  deliveryKey: record.deliveryKey,
+  completionKey: record.completionKey,
+  kind: record.kind,
+  value: String(record.value),
+  recordedAtMs: record.recordedAtMs,
+})
+
+const deliveryEnvelope = (input: {
+  readonly id: string
+  readonly acceptedAtMs: number
+  readonly body?: string
+  readonly scope?: string
+  readonly idempotencyKey?: string
+}): DurableDeliveryEnvelope => ({
+  channel: "test.channel",
+  channelVersion: "v1",
+  deliveryKey: DeliveryKey(`delivery:${input.id}`),
+  completionKey: CompletionKey(`completion:${input.id}`),
+  orderingScope: OrderingScope(input.scope ?? "scope-a"),
+  producerId: "producer-a",
+  idempotencyKey: input.idempotencyKey ?? `idem:${input.id}`,
+  payloadFingerprint: input.body ?? `payload:${input.id}`,
+  acceptedAtMs: input.acceptedAtMs,
+})
+
+const terminalRecord = (input: {
+  readonly id: string
+  readonly kind: DurableTerminalRecord["kind"]
+  readonly value: string
+  readonly recordedAtMs: number
+}): DurableTerminalRecord => ({
+  channel: "test.channel",
+  deliveryKey: DeliveryKey(`delivery:${input.id}`),
+  completionKey: CompletionKey(`completion:${input.id}`),
+  kind: input.kind,
+  value: input.value,
+  recordedAtMs: input.recordedAtMs,
+})
+
+const appendEvent = async (url: string, event: unknown): Promise<void> => {
+  const stream = new DurableStream({ url, contentType: "application/json" })
+  await stream.append(JSON.stringify(event))
 }
 
 const snapshotFold = async (
@@ -356,7 +265,7 @@ const snapshotFold = async (
   )
 
 describe("firegrid-durable-subscriber-webhooks.CHANNEL_DESCRIPTOR.1, .2, .3, .4, .5", () => {
-  it("defines a product-neutral delivery channel descriptor with branded key derivation and caller-owned rows", () => {
+  it("defines a product-neutral channel descriptor over caller-owned EventPlane rows", () => {
     const { channel } = buildFixture()
     const input = { id: "a", body: "payload", scope: "scope-a" }
 
@@ -365,271 +274,126 @@ describe("firegrid-durable-subscriber-webhooks.CHANNEL_DESCRIPTOR.1, .2, .3, .4,
     expect(channel.derive.deliveryKey(input)).toBe("delivery:a")
     expect(channel.derive.completionKey(input)).toBe("completion:a")
     expect(channel.derive.orderingScope(input)).toBe("scope-a")
-    expect(channel.dedupe.afterRetentionWindow).toBe("conflict")
-  })
-})
-
-describe("firegrid-durable-subscriber-webhooks.DELIVERY_PRODUCER.1, .2, .3, .4, .5", () => {
-  it("accepts first append, dedupes same-payload idempotency, and records conflict evidence for different payload", async () => {
-    const url = freshStreamUrl("durable-channel-producer")
-    await DurableStream.create({ url, contentType: "application/json" })
-    const fixture = buildFixture()
-
-    const append = (body: string) =>
-      Effect.gen(function* () {
-        const producer = yield* fixture.plane.Producer
-        const projection = yield* fixture.plane.Projection
-        return yield* DurableChannel.appendDelivery(
-          fixture.channel,
-          { producer, projection },
-          {
-            input: { id: "a", body, scope: "scope-a" },
-            metadata: {
-              producerId: "producer-a",
-              idempotencyKey: "idem-a",
-              correlationId: "corr-a",
-              causationId: "cause-a",
-            },
-          },
-        )
-      }).pipe(Effect.provide(EventPlane.layer(fixture.plane, { streamUrl: url })))
-
-    const first = await run(Effect.scoped(append("same")))
-    const duplicate = await run(Effect.scoped(append("same")))
-    const conflict = await run(
-      Effect.scoped(append("different")).pipe(Effect.flip),
-    )
-
-    expect(first.kind).toBe("accepted")
-    expect(duplicate.kind).toBe("duplicate")
-    expect(conflict).toBeInstanceOf(DurableDeliveryConflictError)
-
-    const fold = await snapshotFold(url, fixture)
-    expect(fold.deliveriesByKey.size).toBe(1)
-    expect(fold.conflicts).toHaveLength(1)
-    expect(fold.conflicts[0]?.reason).toBe("idempotency-payload-conflict")
+    expect(channel.derive.payloadFingerprint(input)).toBe("payload")
   })
 })
 
 describe("firegrid-durable-subscriber-webhooks.DELIVERY_PROJECTION.1, .2, .3", () => {
-  it("folds completion and dead-letter terminals with deterministic first-terminal-wins", async () => {
-    const url = freshStreamUrl("durable-channel-fold")
+  it("folds deliveries into pending and idempotency-key indexes without producer semantics", async () => {
+    const url = freshStreamUrl("durable-channel-fold-deliveries")
     await DurableStream.create({ url, contentType: "application/json" })
     const fixture = buildFixture()
-    const stream = new DurableStream({ url, contentType: "application/json" })
-    const delivery = fixture.channel.events.delivery(
-      { id: "b", body: "payload", scope: "scope-b" },
-      {
-        channel: "test.channel",
-        channelVersion: "v1",
-        deliveryKey: DeliveryKey("delivery:b"),
-        completionKey: CompletionKey("completion:b"),
-        orderingScope: OrderingScope("scope-b"),
-        producerId: "producer-b",
-        idempotencyKey: "idem-b",
-        payloadFingerprint: "payload",
-        acceptedAtMs: 1,
-      },
-    )
-    const completed = fixture.plane.state.completions.insert({
-      value: {
-        rowId: "terminal:1",
-        channel: "test.channel",
-        deliveryKey: "delivery:b",
-        completionKey: "completion:b",
-        kind: "completed",
-        value: "ok",
-        recordedAtMs: 2,
-      },
+    const first = deliveryEnvelope({
+      id: "a",
+      acceptedAtMs: 2,
+      idempotencyKey: "idem-a",
     })
-    const deadLetter = fixture.plane.state.deadLetters.insert({
-      value: {
-        rowId: "terminal:2",
-        channel: "test.channel",
-        deliveryKey: "delivery:b",
-        completionKey: "completion:b",
-        kind: "dead-letter",
-        value: "failed",
-        recordedAtMs: 3,
-      },
+    const second = deliveryEnvelope({
+      id: "b",
+      acceptedAtMs: 1,
+      idempotencyKey: "idem-b",
     })
-    await stream.append(JSON.stringify(delivery))
-    await stream.append(JSON.stringify(completed))
-    await stream.append(JSON.stringify(deadLetter))
 
-    const first = await snapshotFold(url, fixture)
-    const second = await snapshotFold(url, fixture)
-
-    expect(first.terminalByCompletionKey.get(CompletionKey("completion:b"))?.kind)
-      .toBe("completed")
-    expect(first.pendingDeliveries).toHaveLength(0)
-    expect(first.deadLetters).toHaveLength(1)
-    expect(first.conflictingTerminals).toHaveLength(1)
-    expect(second.terminalByCompletionKey.get(CompletionKey("completion:b"))?.kind)
-      .toBe("completed")
-    expect(second.conflictingTerminals).toEqual(first.conflictingTerminals)
-  })
-})
-
-describe("firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.2, .3, .4, .5", () => {
-  it("claims a delivery before outcome append and records terminal or retry rows through caller-owned events", async () => {
-    const url = freshStreamUrl("durable-channel-claim-outcome")
-    await DurableStream.create({ url, contentType: "application/json" })
-    const fixture = buildFixture()
-    type PlaneRequirements =
-      | Context.Tag.Identifier<typeof fixture.plane.Producer>
-      | Context.Tag.Identifier<typeof fixture.plane.Projection>
-
-    const runWithPlane = <A, E>(
-      effect: Effect.Effect<A, E, PlaneRequirements>,
-    ): Promise<A> =>
-      run(
-        Effect.scoped(
-          effect.pipe(
-            Effect.provide(
-              EventPlane.layer(fixture.plane, { streamUrl: url }),
-            ),
-          ),
-        ),
-      )
-
-    await runWithPlane(
-      Effect.gen(function* () {
-        const producer = yield* fixture.plane.Producer
-        const projection = yield* fixture.plane.Projection
-        yield* DurableChannel.appendDelivery(
-          fixture.channel,
-          { producer, projection },
-          {
-            input: { id: "claim-1", body: "payload", scope: "scope-claim" },
-            metadata: {
-              producerId: "producer-claim",
-              idempotencyKey: "idem-claim",
-            },
-          },
-        )
-      }),
+    await appendEvent(
+      url,
+      fixture.channel.events.delivery(
+        { id: "a", body: "payload:a", scope: "scope-a" },
+        first,
+      ),
     )
-
-    const claimed = await runWithPlane(
-      Effect.gen(function* () {
-        const producer = yield* fixture.plane.Producer
-        const projection = yield* fixture.plane.Projection
-        return yield* DurableChannel.claimDelivery(
-          fixture.channel,
-          { producer, projection },
-          {
-            deliveryKey: DeliveryKey("delivery:claim-1"),
-            subscriberId: DurableSubscriberId("subscriber-a"),
-            claimId: DurableClaimId("claim-a"),
-            attempt: 1,
-          },
-        )
-      }),
-    )
-    expect(claimed.kind).toBe("claimed")
-
-    const retry = await runWithPlane(
-      Effect.gen(function* () {
-        const producer = yield* fixture.plane.Producer
-        const projection = yield* fixture.plane.Projection
-        return yield* DurableChannel.recordOutcome(
-          fixture.channel,
-          { producer, projection },
-          {
-            kind: "retry",
-            deliveryKey: DeliveryKey("delivery:claim-1"),
-            subscriberId: DurableSubscriberId("subscriber-a"),
-            claimId: DurableClaimId("claim-a"),
-            attempt: 1,
-            retryAtMs: 123,
-            reason: "temporary",
-          },
-        )
-      }),
-    )
-    expect(retry.kind).toBe("recorded-retry")
-
-    const completed = await runWithPlane(
-      Effect.gen(function* () {
-        const producer = yield* fixture.plane.Producer
-        const projection = yield* fixture.plane.Projection
-        return yield* DurableChannel.recordOutcome(
-          fixture.channel,
-          { producer, projection },
-          {
-            kind: "completed",
-            deliveryKey: DeliveryKey("delivery:claim-1"),
-            subscriberId: DurableSubscriberId("subscriber-a"),
-            claimId: DurableClaimId("claim-a"),
-            value: "done",
-          },
-        )
-      }),
-    )
-    expect(completed.kind).toBe("recorded-terminal")
-
-    const fold = await snapshotFold(url, fixture)
-    expect(fold.claimWinnerByDeliveryKey.get(DeliveryKey("delivery:claim-1"))?.claimId)
-      .toBe("claim-a")
-    expect(fold.retriesByDeliveryKey.get(DeliveryKey("delivery:claim-1")))
-      .toHaveLength(1)
-    expect(fold.terminalByDeliveryKey.get(DeliveryKey("delivery:claim-1"))?.kind)
-      .toBe("completed")
-  })
-
-  it("orders claim eligibility by ordering scope and reports later same-scope deliveries as not claimable", async () => {
-    const url = freshStreamUrl("durable-channel-ordering-scope")
-    await DurableStream.create({ url, contentType: "application/json" })
-    const fixture = buildFixture()
-
-    const append = (id: string) =>
-      Effect.gen(function* () {
-        const producer = yield* fixture.plane.Producer
-        const projection = yield* fixture.plane.Projection
-        yield* DurableChannel.appendDelivery(
-          fixture.channel,
-          { producer, projection },
-          {
-            input: { id, body: `payload-${id}`, scope: "same-scope" },
-            metadata: {
-              producerId: "producer-order",
-              idempotencyKey: `idem-${id}`,
-            },
-          },
-        )
-      }).pipe(
-        Effect.provide(EventPlane.layer(fixture.plane, { streamUrl: url })),
-        Effect.scoped,
-      )
-
-    await run(append("first"))
-    await run(append("second"))
-
-    const secondClaim = await run(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const producer = yield* fixture.plane.Producer
-          const projection = yield* fixture.plane.Projection
-          return yield* DurableChannel.claimDelivery(
-            fixture.channel,
-            { producer, projection },
-            {
-              deliveryKey: DeliveryKey("delivery:second"),
-              subscriberId: DurableSubscriberId("subscriber-order"),
-              claimId: DurableClaimId("claim-second"),
-              attempt: 1,
-            },
-          )
-        }).pipe(
-          Effect.provide(EventPlane.layer(fixture.plane, { streamUrl: url })),
-        ),
+    await appendEvent(
+      url,
+      fixture.channel.events.delivery(
+        { id: "b", body: "payload:b", scope: "scope-a" },
+        second,
       ),
     )
 
-    expect(secondClaim.kind).toBe("not-claimable")
     const fold = await snapshotFold(url, fixture)
-    expect(fold.claimableDeliveries.map((delivery) => delivery.deliveryKey))
-      .toEqual([DeliveryKey("delivery:first")])
+
+    expect(fold.deliveriesByKey.get(DeliveryKey("delivery:a"))).toEqual(first)
+    expect(fold.deliveriesByIdempotencyKey.get("idem-b")).toEqual(second)
+    expect(fold.pendingDeliveries.map((delivery) => delivery.deliveryKey))
+      .toEqual([DeliveryKey("delivery:b"), DeliveryKey("delivery:a")])
+  })
+
+  it("selects the earliest terminal by durable timestamp and reports later conflicts", async () => {
+    const url = freshStreamUrl("durable-channel-fold-terminals")
+    await DurableStream.create({ url, contentType: "application/json" })
+    const fixture = buildFixture()
+    const delivery = deliveryEnvelope({ id: "c", acceptedAtMs: 1 })
+    const completed = terminalRecord({
+      id: "c",
+      kind: "completed",
+      value: "ok",
+      recordedAtMs: 5,
+    })
+    const deadLetter = terminalRecord({
+      id: "c",
+      kind: "dead-letter",
+      value: "failed",
+      recordedAtMs: 3,
+    })
+
+    await appendEvent(
+      url,
+      fixture.channel.events.delivery(
+        { id: "c", body: "payload:c", scope: "scope-c" },
+        delivery,
+      ),
+    )
+    await appendEvent(url, fixture.channel.events.completion?.(completed))
+    await appendEvent(url, fixture.channel.events.deadLetter?.(deadLetter))
+
+    const fold = await snapshotFold(url, fixture)
+
+    expect(fold.terminalByCompletionKey.get(CompletionKey("completion:c"))?.kind)
+      .toBe("dead-letter")
+    expect(fold.pendingDeliveries).toHaveLength(0)
+    expect(fold.deadLetters).toHaveLength(1)
+    expect(fold.conflictingTerminals).toHaveLength(1)
+    expect(fold.conflictingTerminals[0]?.reason)
+      .toBe("terminal-conflict:dead-letter:completed")
+  })
+
+  it("materializes a completion query for projection-match callers", async () => {
+    const url = freshStreamUrl("durable-channel-completion-query")
+    await DurableStream.create({ url, contentType: "application/json" })
+    const fixture = buildFixture()
+    const delivery = deliveryEnvelope({ id: "d", acceptedAtMs: 1 })
+    const completed = terminalRecord({
+      id: "d",
+      kind: "completed",
+      value: "done",
+      recordedAtMs: 2,
+    })
+
+    await appendEvent(
+      url,
+      fixture.channel.events.delivery(
+        { id: "d", body: "payload:d", scope: "scope-d" },
+        delivery,
+      ),
+    )
+    await appendEvent(url, fixture.channel.events.completion?.(completed))
+
+    const terminal = await run(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const projection = yield* fixture.plane.Projection
+          return yield* projection.snapshot(
+            DurableChannel.completionQuery({
+              channel: fixture.channel,
+              completionKey: CompletionKey("completion:d"),
+            }),
+          )
+        }),
+      ).pipe(
+        Effect.provide(EventPlane.layer(fixture.plane, { streamUrl: url })),
+      ),
+    )
+
+    expect(terminal?.kind).toBe("completed")
+    expect(terminal?.value).toBe("done")
   })
 })

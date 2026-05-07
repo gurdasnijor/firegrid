@@ -58,15 +58,12 @@ describe("firegrid-architecture-boundary.SURFACE_AREA — runtime root exposes a
     }
   })
 
-  it("Firegrid namespace exposes stock subscribers, durable channel completion subscriber, handler, eventStream, and composeRuntime", () => {
+  it("Firegrid namespace exposes subscribers.{timer, scheduledWork, projectionMatch} (transitional), handler, eventStream, and composeRuntime", () => {
     expect(RuntimeSurface.Firegrid.subscribers.timer).toBeDefined()
     expect(RuntimeSurface.Firegrid.subscribers.scheduledWork).toBeDefined()
     expect(typeof RuntimeSurface.Firegrid.subscribers.projectionMatch).toBe(
       "function",
     )
-    expect(
-      typeof RuntimeSurface.Firegrid.subscribers.durableChannelCompletion,
-    ).toBe("function")
     expect(typeof RuntimeSurface.Firegrid.handler).toBe("function")
     expect(typeof RuntimeSurface.Firegrid.eventStream).toBe("function")
     expect(typeof RuntimeSurface.Firegrid.composeRuntime).toBe("function")
@@ -74,12 +71,7 @@ describe("firegrid-architecture-boundary.SURFACE_AREA — runtime root exposes a
       RuntimeSurface.Firegrid.subscribers,
     )
     expect(new Set(subscriberKeys)).toEqual(
-      new Set([
-        "timer",
-        "scheduledWork",
-        "projectionMatch",
-        "durableChannelCompletion",
-      ]),
+      new Set(["timer", "scheduledWork", "projectionMatch"]),
     )
     expect(new Set(Object.keys(RuntimeSurface.Firegrid))).toEqual(
       new Set(["subscribers", "handler", "eventStream", "composeRuntime"]),

@@ -13,7 +13,6 @@ import {
   type EventStream,
   type Operation,
   type ProjectionSnapshot,
-  type ProjectionMatchEvaluation,
   type ProjectionMatchEvaluator,
   type ReadyWorkItem,
   type RunValue,
@@ -23,28 +22,12 @@ import {
 /* eslint-disable @effect/no-import-from-barrel-package -- choreography-facade.CURRENT_WORK_CONTEXT.1: CurrentWorkContext is intentionally exported from the curated substrate root. */
 import {
   OwnerId,
-  type ProjectionMatchTrigger,
   WorkId,
   currentWorkContextLayer,
   type CurrentWorkContext,
 } from "@firegrid/substrate"
 /* eslint-enable @effect/no-import-from-barrel-package */
-import {
-  Cause,
-  Effect,
-  Layer,
-  Stream,
-  type Context,
-  type ParseResult,
-  type Scope,
-} from "effect"
-import {
-  type DurableChannelDefinition,
-  type DurableTerminalRecord,
-  type CompletionKey,
-  type PlaneProjectionQuery,
-} from "@firegrid/substrate/event-plane"
-import type { StreamStateDefinition } from "@durable-streams/state"
+import { Cause, Effect, Layer, Stream, type ParseResult, type Scope } from "effect"
 import {
   acquireSubstrateDb,
 } from "@firegrid/substrate/kernel"
@@ -148,34 +131,6 @@ interface ProjectionMatchSubscriberOptions {
   readonly evaluate: ProjectionMatchEvaluator
 }
 
-interface DurableChannelCompletionSubscriberOptions {
-  readonly matcherId: string
-  readonly completionKeyFromTrigger?: (
-    trigger: ProjectionMatchTrigger,
-  ) => CompletionKey
-  readonly matchedValue?: (terminal: DurableTerminalRecord) => unknown
-}
-
-const durableChannelRuntimeCompletionQuery = <
-  Name extends string,
-  S extends StreamStateDefinition,
-  DeliveryInput,
->(
-  channel: DurableChannelDefinition<Name, S, DeliveryInput>,
-  completionKey: CompletionKey,
-): PlaneProjectionQuery<S, DurableTerminalRecord | undefined> => ({
-  label: `runtime-durable-channel:${channel.name}:completion:${completionKey}`,
-  authority: "terminal-domain",
-  evaluate: (snapshot) =>
-    Effect.succeed(
-      [
-        ...channel.select.completions(snapshot),
-        ...(channel.select.terminalFailures?.(snapshot) ?? []),
-        ...channel.select.deadLetters(snapshot),
-      ].find((terminal) => terminal.completionKey === completionKey),
-    ),
-})
-
 // firegrid-runtime-process.RUNTIME_PACKAGE.5
 // firegrid-runtime-process.RUNTIME_HOT_PATH.2
 // firegrid-runtime-process.RUNTIME_HOT_PATH.3
@@ -204,54 +159,6 @@ const projectionMatchSubscriberLayer = (
         evaluate: options.evaluate,
       }),
   })
-
-// firegrid-durable-subscriber-webhooks.WAIT_INTEGRATION.1
-// firegrid-durable-subscriber-webhooks.WAIT_INTEGRATION.2
-// firegrid-durable-subscriber-webhooks.WAIT_INTEGRATION.3
-//
-// Runtime recipe that resolves projection-match waits from caller-owned
-// durable-channel terminal rows. It composes the existing projection-match
-// subscriber with the channel's EventPlane Projection; it does not introduce a
-// new wait row shape, transport adapter, or product vocabulary.
-const durableChannelCompletionSubscriberLayer = <
-  Name extends string,
-  S extends StreamStateDefinition,
-  DeliveryInput,
->(
-  channel: DurableChannelDefinition<Name, S, DeliveryInput>,
-  options: DurableChannelCompletionSubscriberOptions,
-): Layer.Layer<
-  never,
-  never,
-  RuntimeContext | Context.Tag.Identifier<typeof channel.plane.Projection>
-> =>
-  Layer.unwrapEffect(
-    Effect.gen(function* () {
-      const projection = yield* channel.plane.Projection
-      return projectionMatchSubscriberLayer({
-        evaluate: (_snapshot, trigger) => {
-          if (trigger.matcherId !== options.matcherId) {
-            return Effect.succeed<ProjectionMatchEvaluation>({
-              kind: "no-match",
-            })
-          }
-          const completionKey = options.completionKeyFromTrigger?.(trigger)
-            ?? (trigger.projectionKey as CompletionKey)
-          return projection
-            .snapshot(durableChannelRuntimeCompletionQuery(channel, completionKey))
-            .pipe(
-              Effect.map((terminal): ProjectionMatchEvaluation => {
-                if (terminal === undefined) return { kind: "no-match" }
-                return {
-                  kind: "match",
-                  value: options.matchedValue?.(terminal) ?? terminal.value,
-                }
-              }),
-            )
-        },
-      })
-    }),
-  )
 
 // firegrid-runtime-process.READY_WORK_OPERATOR.1
 // firegrid-runtime-process.READY_WORK_OPERATOR.2
@@ -549,7 +456,6 @@ export const Firegrid = {
       scan: runScheduledWorkSubscriberFromSnapshot,
     }),
     projectionMatch: projectionMatchSubscriberLayer,
-    durableChannelCompletion: durableChannelCompletionSubscriberLayer,
   },
   handler,
   eventStream,
