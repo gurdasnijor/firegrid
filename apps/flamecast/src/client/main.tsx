@@ -33,9 +33,6 @@ const eventText = (event: SessionEvent): string => {
   if (event.type === "user_message" || event.type === "assistant_message") {
     return event.text
   }
-  if (event.type === "turn_started") {
-    return `${event.provider} / ${event.model}`
-  }
   if (event.type === "turn_complete") return event.summary
   return event.message
 }
@@ -168,7 +165,6 @@ function App() {
       setTopology(loaded)
       const next = createFlamecastClient({
         streamUrl: loaded.streamUrl,
-        clientId: "flamecast-browser",
       })
       setClient(next)
       stop = next.watchEvents(

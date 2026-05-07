@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./durable-clock": {
+      "types": "./dist/durable-clock/index.d.ts",
+      "default": "./dist/durable-clock/index.js"
     }
   },
   "bin": {
@@ -22,22 +26,19 @@
     "access": "public"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && node ../../scripts/build-runtime-bin.mjs",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "check": "pnpm run typecheck && pnpm run test",
     "firegrid": "tsx ./bin/firegrid.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "@firegrid/substrate": "workspace:*",
-    "@durable-streams/client": "^0.2.3",
+    "@durable-streams/state": "^0.2.5",
     "@effect/platform": "^0.96.0",
     "@effect/platform-node": "^0.106.0",
     "effect": "^3.18.0"
   },
   "devDependencies": {
-    "@durable-streams/server": "^0.3.1",
-    "@durable-streams/state": "^0.2.5",
     "@types/node": "^22.10.0",
     "tsx": "^4.20.4",
     "typescript": "^5.7.0",

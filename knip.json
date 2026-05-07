@@ -6,26 +6,6 @@
         "scripts/*.mjs"
       ]
     },
-    "packages/substrate": {
-      "entry": [
-        "src/index.ts",
-        "src/kernel/index.ts",
-        "src/descriptors/index.ts"
-      ],
-      "project": [
-        "src/**/*.ts"
-      ]
-    },
-    "packages/client": {
-      "entry": [
-        "src/index.ts",
-        "src/event-streams-public.ts",
-        "src/projection-query.ts"
-      ],
-      "project": [
-        "src/**/*.ts"
-      ]
-    },
     "packages/runtime": {
       "entry": [
         "src/index.ts",
@@ -36,24 +16,24 @@
         "bin/**/*.ts"
       ]
     },
-    "apps/lab": {
-      "entry": [
-        "src/main.tsx"
-      ],
+    "apps/flamecast": {
       "project": [
-        "src/**/*.{ts,tsx}"
+        "src/**/*.{ts,tsx,mts}"
+      ]
+    },
+    "scenarios/firegrid": {
+      "project": [
+        "src/**/*.ts"
       ]
     }
   },
   "ignore": [
-    "**/__tests__/**",
     "semgrep-tests/**"
   ],
   "ignoreDependencies": [
     "jscpd"
   ],
   "ignoreBinaries": [
-    "dot",
     "ruby",
     "semgrep"
   ]

@@ -1,12 +1,9 @@
 import { DurableStream, FetchError } from "@durable-streams/client"
 import { DurableStreamTestServer } from "@durable-streams/server"
-/* eslint-disable @effect/no-import-from-barrel-package -- firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.2 */
-import { run } from "@firegrid/runtime"
-/* eslint-enable @effect/no-import-from-barrel-package */
 import { writeFile, mkdir } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { Effect } from "effect"
-import { makeFlamecastRuntime } from "./handler.ts"
+import { runFlamecastRuntime } from "./handler.ts"
 import type { FlamecastTopology } from "../shared/topology.ts"
 
 const runtimeId = `flamecast-local-${process.pid}`
@@ -55,11 +52,5 @@ process.once("SIGTERM", () => {
 })
 
 await Effect.runPromise(
-  run({
-    connection: { streamUrl },
-    runtime: makeFlamecastRuntime({
-      streamUrl,
-      clientId: runtimeId,
-    }),
-  }),
+  runFlamecastRuntime(streamUrl),
 )

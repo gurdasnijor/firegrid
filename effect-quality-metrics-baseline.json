@@ -2,15 +2,15 @@
   "metrics": {
     "extendsErrorCount": 0,
     "processEnvOutsideBinCount": 0,
-    "throwOutsideBinScriptCount": 2,
-    "forOfInPackageSourceCount": 11,
-    "anyNoContextCastCount": 1,
+    "throwOutsideBinScriptCount": 0,
+    "forOfInPackageSourceCount": 5,
+    "anyNoContextCastCount": 0,
     "nodeCryptoImportCount": 0,
-    "dataTaggedErrorDeclarationCount": 39,
-    "newDurableStreamSiteCount": 11,
+    "dataTaggedErrorDeclarationCount": 0,
+    "newDurableStreamSiteCount": 0,
     "perCallLayerProvideSiteCount": 0,
-    "effectOrDieSiteCount": 4,
-    "effectRunPromiseInTestsCount": 220,
-    "vitestItImportInTestsCount": 46
+    "effectOrDieSiteCount": 0,
+    "effectRunPromiseInTestsCount": 3,
+    "vitestItImportInTestsCount": 2
   }
 }

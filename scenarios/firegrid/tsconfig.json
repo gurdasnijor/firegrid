@@ -6,16 +6,15 @@
     "baseUrl": ".",
     "paths": {
       "@firegrid/runtime": ["../../packages/runtime/src/index.ts"],
-      "@firegrid/runtime/*": ["../../packages/runtime/src/*"],
-      "@firegrid/substrate": ["../../packages/substrate/src/index.ts"],
-      "@firegrid/substrate/descriptors": ["../../packages/substrate/src/descriptors/index.ts"],
-      "@firegrid/substrate/event-plane": ["../../packages/substrate/src/event-plane/index.ts"],
-      "@firegrid/substrate/id-gen": ["../../packages/substrate/src/id-gen.ts"],
-      "@firegrid/substrate/kernel": ["../../packages/substrate/src/kernel/index.ts"],
-      "@firegrid/substrate/*": ["../../packages/substrate/src/*"]
+      "@firegrid/runtime/durable-clock": ["../../packages/runtime/src/durable-clock/index.ts"],
+      "@firegrid/runtime/*": ["../../packages/runtime/src/*"]
     },
     "skipLibCheck": true,
-    "target": "ES2022"
+    "target": "ES2022",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"]
 }
