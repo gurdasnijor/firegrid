@@ -9,12 +9,17 @@ If you are building a sidebar/list/table of current session state, use
 
 Authorizing ACIDs:
 
-- `firegrid-event-streams.*`
-- `firegrid-client-api.*`
+- `firegrid-event-streams.EVENT_STREAM_DEFINITION.1`
+- `firegrid-event-streams.EVENT_STREAM_DEFINITION.2`
+- `firegrid-event-streams.CLIENT_API.1`
+- `firegrid-event-streams.CLIENT_API.2`
+- `firegrid-client-api.CLIENT_SURFACE.1`
+- `firegrid-client-api.CLIENT_SURFACE.2`
 - `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.1`
 - `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.2`
 - `firegrid-agent-runtime-substrate.MULTI_WAIT_RESUME.2`
-- `flamecast-product-contract.EVENTS.*`
+- `flamecast-product-contract.EVENTS.1`
+- `flamecast-product-contract.EVENTS.2`
 
 ## Use Case
 

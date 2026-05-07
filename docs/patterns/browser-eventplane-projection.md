@@ -11,9 +11,14 @@ Authorizing ACIDs:
 
 - `firegrid-client-projection-api.BROWSER_SAFE_FACADE.1`
 - `firegrid-client-projection-api.BROWSER_SAFE_FACADE.2`
-- `firegrid-projection-query.QUERY_HANDLES.*`
-- `firegrid-projection-query.AUTHORITY_BOUNDARY.*`
-- `client-event-plane-registration.*`
+- `firegrid-projection-query.QUERY_HANDLES.1`
+- `firegrid-projection-query.QUERY_HANDLES.2`
+- `firegrid-projection-query.AUTHORITY_BOUNDARY.1`
+- `firegrid-projection-query.AUTHORITY_BOUNDARY.2`
+- `client-event-plane-registration.EVENT_PLANE_DEFINITION.1`
+- `client-event-plane-registration.EVENT_PLANE_DEFINITION.5`
+- `client-event-plane-registration.PRODUCER_API.1`
+- `client-event-plane-registration.PRODUCER_API.5`
 
 ## Use Case
 

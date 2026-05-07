@@ -12,13 +12,13 @@ client surface a browser should use.
 
 | Question | Default answer | ACID |
 | --- | --- | --- |
-| Where does runtime handler logic run? | Node-tier runtime host; never browser code or a browser-bundler plugin | `firegrid-platform-invariants.LOCALITY.1`; `firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.1`, `.5` |
-| How does local app dev start? | This pattern does not define a launcher; use the app's chosen dev command while keeping runtime code in a Node-tier host | `firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.1`; `firegrid-runtime-process.CONFIG_SURFACE.*` |
+| Where does runtime handler logic run? | Node-tier runtime host; never browser code or a browser-bundler plugin | `firegrid-platform-invariants.LOCALITY.1`; `firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.1`; `firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.5` |
+| How does local app dev start? | This pattern does not define a launcher; use the app's chosen dev command while keeping runtime code in a Node-tier host | `firegrid-agent-runtime-substrate.TOPOLOGY_PROFILE.1`; `firegrid-runtime-process.CONFIG_SURFACE.1`; `firegrid-runtime-process.CONFIG_SURFACE.6` |
 | Where does the UI run? | Browser or edge, using `@firegrid/client` and approved browser-safe client subpaths | `firegrid-platform-invariants.LOCALITY.2`; `firegrid-client-projection-api.BROWSER_SAFE_FACADE.1` |
-| What carries ordered history? | `EventStream.define` plus `FiregridClient.emit` and `FiregridClient.events` | `firegrid-event-streams.*`; `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.1`, `.2` |
-| What carries keyed read models? | App-owned EventPlane descriptors, read in browser through `@firegrid/client/projection-query` | `firegrid-client-projection-api.BROWSER_SAFE_FACADE.*`; `firegrid-projection-query.QUERY_HANDLES.*` |
-| How does a runtime handler emit timeline/progress rows? | Provide `FiregridClientLive` once in `Firegrid.composeRuntime({ provide })`; inside the handler yield `FiregridClient` and call `client.emit(...)` | `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.*`; `firegrid-agent-runtime-substrate.MULTI_WAIT_RESUME.2` |
-| How do runtime subscribers react? | `Firegrid.subscribers.projectionMatch` for projection waits; `Firegrid.eventStream` for EventStream materialization | `run-wait-primitives.*`; `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.2` |
+| What carries ordered history? | `EventStream.define` plus `FiregridClient.emit` and `FiregridClient.events` | `firegrid-event-streams.EVENT_STREAM_DEFINITION.1`; `firegrid-event-streams.CLIENT_API.1`; `firegrid-event-streams.CLIENT_API.2`; `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.1`; `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.2` |
+| What carries keyed read models? | App-owned EventPlane descriptors, read in browser through `@firegrid/client/projection-query` | `firegrid-client-projection-api.BROWSER_SAFE_FACADE.1`; `firegrid-client-projection-api.BROWSER_SAFE_FACADE.2`; `firegrid-projection-query.QUERY_HANDLES.1`; `firegrid-projection-query.QUERY_HANDLES.2` |
+| How does a runtime handler emit timeline/progress rows? | Provide `FiregridClientLive` once in `Firegrid.composeRuntime({ provide })`; inside the handler yield `FiregridClient` and call `client.emit(...)` | `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.1`; `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.2`; `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.3`; `firegrid-agent-runtime-substrate.MULTI_WAIT_RESUME.2` |
+| How do runtime subscribers react? | `Firegrid.subscribers.projectionMatch` for projection waits; `Firegrid.eventStream` for EventStream materialization | `run-wait-primitives.RUN_WAIT_API.2`; `firegrid-event-streams.RUNTIME_API.1`; `firegrid-event-streams.RUNTIME_API.3`; `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.2` |
 
 ## Patterns
 
@@ -37,8 +37,8 @@ client surface a browser should use.
 | Runtime handler constructs `FiregridClientLive` inside every helper call | Client Layer should be provided once at runtime composition boundary | `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.1` |
 | Treating `Firegrid.eventStream(...)` as an EventStream emit primitive | It is a materializer/subscriber; the emitter is `FiregridClient.emit` | `firegrid-agent-runtime-substrate.HANDLER_CLIENT_USAGE.2` |
 | Browser code imports `@firegrid/runtime` or `@firegrid/substrate/kernel` | Runtime and kernel are not browser app surfaces | `firegrid-platform-invariants.LOCALITY.1`; `firegrid-platform-invariants.LOCALITY.5` |
-| Runtime code writes raw terminal rows to fake operation completion | Terminalization is handler return or `Effect.fail` only | `firegrid-platform-invariants.AUTHORITY.1`, `.2`, `.3` |
-| Fake assistant/provider output in a replatforming proof | Product adapters own provider semantics; Firegrid only carries durable mechanics | `flamecast-product-contract.EVENTS.*`; `flamecast-product-contract.LOWERING.7` |
+| Runtime code writes raw terminal rows to fake operation completion | Terminalization is handler return or `Effect.fail` only | `firegrid-platform-invariants.AUTHORITY.1`; `firegrid-platform-invariants.AUTHORITY.2`; `firegrid-platform-invariants.AUTHORITY.3` |
+| Fake assistant/provider output in a replatforming proof | Product adapters own provider semantics; Firegrid only carries durable mechanics | `flamecast-product-contract.EVENTS.1`; `flamecast-product-contract.LOWERING.7` |
 
 ## Adding Patterns
 
