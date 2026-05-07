@@ -17,9 +17,12 @@ components:
       1: "`@firegrid/runtime` is Node-tier; browser, edge, and Cloudflare Worker code does not import `@firegrid/runtime`."
       2: "`@firegrid/client` is browser- and edge-safe; the browser bundle does not depend on Node-only modules through any import path reachable from `@firegrid/client` exports."
       3: "There is no `@firegrid/client` to `@firegrid/runtime` package edge."
+      3-note: "`LOCALITY.3` and `LOCALITY.4` prohibit manifest-level dependency edges between the two packages, not application-level imports. An application may depend on and import both `@firegrid/client` and `@firegrid/runtime` from a single Node-tier entrypoint, provided each package is declared in the application's own dependency manifest. Browser bundles still satisfy `LOCALITY.1` and `LOCALITY.2` because the browser bundle excludes the Node-only entrypoint at build time."
       4: "There is no `@firegrid/runtime` to `@firegrid/client` package edge."
       5: "`@firegrid/substrate` exposes only the curated root and approved subpaths `./descriptors`, `./event-plane`, and `./id-gen` to application and downstream package code; `@firegrid/substrate/kernel` is not an application-facing import."
       6: Public scheduling, wait, projection, subscriber, runtime, and event-plane composition primitives are reachable through public package roots; applications do not need dist-internal or internal-subpath imports to compose runtime work.
+      7: "Browser and edge projection reads use the public `@firegrid/client/projection-query` facade for app-owned EventPlane read models; shared schema descriptor modules may import approved substrate descriptor subpaths, but browser components do not compose raw kernel, runtime, claim, completion, or terminal authority."
+      7-note: "`@firegrid/substrate/event-plane` remains an approved application-facing descriptor and runtime-composition subpath under `LOCALITY.5`; `LOCALITY.7` records the preferred browser read facade now that `firegrid-client-projection-api.BROWSER_SAFE_FACADE.*` has landed."
 
   AUTHORITY:
     requirements:
