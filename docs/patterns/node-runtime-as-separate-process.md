@@ -56,31 +56,26 @@ import { Firegrid, run } from "@firegrid/runtime"
 import { Effect } from "effect"
 import { handlers } from "./handlers.ts"
 
-export const makeRuntime = (cfg: {
-  readonly streamUrl: string
-  readonly runtimeId: string
-}) =>
-  Firegrid.composeRuntime({
-    handlers,
-    subscribers: [],
-    provide: [
-      FiregridClientLive({
-        streamUrl: cfg.streamUrl,
-        clientId: cfg.runtimeId,
-      }),
-    ],
-  })
+const streamUrl = configFromHost.streamUrl
+const runtimeId = configFromHost.runtimeId
 
-export const runRuntime = (cfg: {
-  readonly streamUrl: string
-  readonly runtimeId: string
-}) =>
+const runtime = Firegrid.composeRuntime({
+  handlers,
+  subscribers: [],
+  provide: [
+    FiregridClientLive({
+      streamUrl,
+      clientId: runtimeId,
+    }),
+  ],
+})
+
+await Effect.runPromise(
   run({
-    connection: { streamUrl: cfg.streamUrl },
-    runtime: makeRuntime(cfg),
-  })
-
-await Effect.runPromise(runRuntime(configFromHost))
+    connection: { streamUrl },
+    runtime,
+  }),
+)
 ```
 
 ## Why Not A Vite Plugin
