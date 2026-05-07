@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as FiregridSurface from "../event-streams-public.ts"
+import * as ProjectionQuerySurface from "../projection-query.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const clientRoot = resolve(here, "..")
@@ -69,7 +70,39 @@ describe("firegrid-event-streams.CLIENT_API.4 — Firegrid browser subpath is ph
       types: "./dist/event-streams-public.d.ts",
       default: "./dist/event-streams-public.js",
     })
+    expect(clientPackage.exports["./projection-query"]).toEqual({
+      types: "./dist/projection-query.d.ts",
+      default: "./dist/projection-query.js",
+    })
     expect(clientPackage.exports["./firegrid"]).toBeUndefined()
     expect(clientPackage.exports["./compat"]).toBeUndefined()
+  })
+})
+
+describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.1 — projection-query client surface stays browser-safe", () => {
+  it("exports projection-query APIs from the approved client subpath without runtime, kernel, or raw StreamDB authority imports", () => {
+    expect(ProjectionQuerySurface.ProjectionQueryClientLive).toBeTypeOf("function")
+    expect(ProjectionQuerySurface.createProjectionQueryClient).toBeTypeOf("function")
+    expect(ProjectionQuerySurface.liveQuery).toBeTypeOf("function")
+    expect(ProjectionQuerySurface.observe).toBeTypeOf("function")
+    expect(ProjectionQuerySurface.projectionFor).toBeTypeOf("function")
+    expect(ProjectionQuerySurface.toProjectionQuery).toBeTypeOf("function")
+    expect(ProjectionQuerySurface.until).toBeTypeOf("function")
+    expect(ProjectionQuerySurface.untilWhere).toBeTypeOf("function")
+    expect(
+      ProjectionQuerySurface.ProjectionCursor.initial({ name: "example" })._tag,
+    ).toBe("firegrid/ProjectionCursor")
+
+    const projectionQuery = readClient("projection-query.ts")
+    expect(projectionQuery).toContain("@firegrid/substrate/event-plane")
+    expect(projectionQuery).not.toContain("@firegrid/runtime")
+    expect(projectionQuery).not.toContain("@firegrid/substrate/kernel")
+    expect(projectionQuery).not.toContain("@firegrid/substrate\"")
+    expect(projectionQuery).not.toContain("@firegrid/substrate'")
+    expect(projectionQuery).not.toContain("@durable-streams/client")
+    expect(projectionQuery).not.toContain("StreamDB")
+    expect(projectionQuery).not.toContain("WorkClaim")
+    expect(projectionQuery).not.toContain("RunWait")
+    expect(projectionQuery).not.toContain("Completion")
   })
 })

@@ -167,7 +167,62 @@ yield* client.events(UiEvents).pipe(
 
 Use EventPlane from `@firegrid/substrate/event-plane` inside runtime layers when
 the domain needs primary-keyed state, materialized projections, or
-projection-match evaluation. EventPlane is not the browser client surface.
+projection-match evaluation. Browser and edge reads should use the
+`@firegrid/client/projection-query` facade below instead of raw EventPlane
+services.
+
+## Projection Query Foundation
+
+Use the `@firegrid/client/projection-query` subpath when browser or edge code
+needs read-only, live access to app-owned EventPlane projections through the
+client package:
+
+```ts
+import { liveQuery } from "@firegrid/client/projection-query"
+
+const liveMessages = liveQuery(
+  MessagesPlane,
+  (q) =>
+    q
+      .from({ message: q.collection<"messages", MessageRow>("messages") })
+      .where(({ message }) => message.threadId === activeThreadId)
+      .orderBy(({ message }) => message.createdAt, "desc")
+      .select(({ message }) => ({
+        id: message.id,
+        authorId: message.authorId,
+        text: message.text,
+        createdAt: message.createdAt,
+      })),
+  {
+    streamUrl: appConfig.firegridStreamUrl,
+  },
+)
+```
+
+This is the first Firegrid-native live read-model facade. It adapts the
+collection/query-builder feel into an Effect-native, framework-neutral,
+descriptor-scoped API over durable projections. This PR intentionally keeps the
+slice narrow: single-collection `from`, `where`, `orderBy`, `limit`, `select`,
+and `count` over app-owned projection rows.
+
+Advanced callers can still use `toProjectionQuery(...)`, `observe(...)`,
+`createProjectionQueryClient(...)`, and `projectionFor(plane)` to reuse
+configuration or pass an explicit low-level `PlaneProjectionQuery`.
+
+Wait semantics compose on top of live reads. Use `until(plane, query, config)`
+or `handle.until(query, config)` only when code needs to wait for a present
+value, meaning the query result is not `null` or `undefined`. Use
+`untilWhere(...)` or `handle.untilWhere(...)` when the wait needs an arbitrary
+predicate. Use `snapshot` plus `stream(query, cursor)`, or `untilFrom(...)`,
+only when an explicit cursor is needed. The surface does not expose raw StreamDB
+collections, substrate kernel imports, runtime handlers, claims, completions, or
+terminal run authority.
+
+Current limitation: this MVP keeps cursors opaque and validates descriptor
+ownership, but the underlying EventPlane projection service does not yet expose a
+durable snapshot sequence boundary. Full no-gap retained replay semantics need a
+lower-level EventPlane/StreamDB cursor boundary before `stream` can fully satisfy
+`firegrid-projection-query.CURSOR_AND_REPLAY.*`.
 
 ## Focused Smoke Checks
 

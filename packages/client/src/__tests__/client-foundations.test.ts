@@ -307,6 +307,10 @@ describe("firegrid-client-api.AUTHORITY_BOUNDARY.5 — client production entrypo
         types: "./dist/event-streams-public.d.ts",
         default: "./dist/event-streams-public.js",
       },
+      "./projection-query": {
+        types: "./dist/projection-query.d.ts",
+        default: "./dist/projection-query.js",
+      },
     })
 
     for (const [file, source] of graph) {

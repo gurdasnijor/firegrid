@@ -6,6 +6,7 @@
     "forbiddenLayerCrossingCount": 0,
     "effectReturningPerWorkspace": {
       "apps/lab": 1,
+      "packages/client": 3,
       "packages/runtime": 8,
       "packages/substrate": 73
     }

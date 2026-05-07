@@ -12,6 +12,10 @@
     "./event-streams": {
       "types": "./dist/event-streams-public.d.ts",
       "default": "./dist/event-streams-public.js"
+    },
+    "./projection-query": {
+      "types": "./dist/projection-query.d.ts",
+      "default": "./dist/projection-query.js"
     }
   },
   "files": [
