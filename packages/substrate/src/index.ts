@@ -16,14 +16,6 @@ export {
 } from "./descriptors/index.ts"
 
 export {
-  FiregridSpanAttribute,
-  FiregridSpanName,
-  firegridErrorTag,
-  firegridSpanAttributes,
-  type FiregridSpanAttributeValue,
-} from "./observability.ts"
-
-export {
   RunWait,
   CompletionId,
   CurrentWorkContext,

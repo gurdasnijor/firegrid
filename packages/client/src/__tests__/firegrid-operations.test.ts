@@ -440,8 +440,8 @@ describe("firegrid-observability.SUBSTRATE_SPANS.1 + .3 — client operations an
       expect(result.left).toEqual({ code: "NOPE", message: "rejected" })
     }
 
-    const resultSpan = spans.find((span) =>
-      span.name === FiregridSpanName.clientOperationResult
+    const resultSpan = spans.find(
+      (span) => span.name === FiregridSpanName.clientOperationResult,
     )
     expect(resultSpan?.attributes.get(FiregridSpanAttribute.status)).toBe(
       "failed",

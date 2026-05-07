@@ -457,9 +457,10 @@ describe("Firegrid.handler — typed dispatch over started runs", () => {
     expect(resumed.state).toBe("completed")
     expect(resumed.result).toEqual({ msg: "resume", len: 6 })
 
-    const handlerSpan = spans.find((span) =>
-      span.name === FiregridSpanName.runtimeHandler &&
-      span.attributes.get(FiregridSpanAttribute.runId) === startedRunId
+    const handlerSpan = spans.find(
+      (span) =>
+        span.name === FiregridSpanName.runtimeHandler &&
+        span.attributes.get(FiregridSpanAttribute.runId) === startedRunId,
     )
     expect(handlerSpan?.kind).toBe("server")
     expect(
