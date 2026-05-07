@@ -76,7 +76,19 @@ export interface ProjectionQueryHandle<
     cursor: ProjectionCursor,
   ) => Stream.Stream<A, ProjectionQueryReadError | E>
 
+  readonly observe: <A, E>(
+    query: PlaneProjectionQuery<S, A, E, never>,
+  ) => Stream.Stream<A, ProjectionQueryReadError | E>
+
   readonly until: <A, E>(
+    query: PlaneProjectionQuery<S, A, E, never>,
+    predicate: (value: A) => boolean,
+    options: {
+      readonly timeout?: Duration.DurationInput
+    },
+  ) => Effect.Effect<A, ProjectionQueryTimeout | ProjectionQueryReadError | E>
+
+  readonly untilFrom: <A, E>(
     query: PlaneProjectionQuery<S, A, E, never>,
     predicate: (value: A) => boolean,
     options: {
@@ -207,7 +219,41 @@ export const buildProjectionQueryClientService = (
           ),
         ),
 
+      observe: <A, E>(query: PlaneProjectionQuery<S, A, E, never>) =>
+        // firegrid-projection-query.QUERY_HANDLES.5
+        Stream.unwrap(
+          handle.snapshot(query).pipe(
+            Effect.map((snapshot) =>
+              Stream.make(snapshot.value).pipe(
+                Stream.concat(
+                  handle.stream(query, snapshot.cursor).pipe(Stream.drop(1)),
+                ),
+              ),
+            ),
+          ),
+        ),
+
       until: <A, E>(
+        query: PlaneProjectionQuery<S, A, E, never>,
+        predicate: (value: A) => boolean,
+        options: {
+          readonly timeout?: Duration.DurationInput
+        },
+      ) =>
+        // firegrid-projection-query.QUERY_HANDLES.5
+        handle.snapshot(query).pipe(
+          Effect.flatMap((snapshot) => {
+            if (predicate(snapshot.value)) return Effect.succeed(snapshot.value)
+            return handle.untilFrom(query, predicate, {
+              cursor: snapshot.cursor,
+              ...(options.timeout !== undefined
+                ? { timeout: options.timeout }
+                : {}),
+            })
+          }),
+        ),
+
+      untilFrom: <A, E>(
         query: PlaneProjectionQuery<S, A, E, never>,
         predicate: (value: A) => boolean,
         options: {
@@ -251,6 +297,10 @@ export const ProjectionQueryClientLive = (
     ProjectionQueryClient,
     buildProjectionQueryClientService(cfg),
   )
+
+export const createProjectionQueryClient = (
+  cfg: ProjectionQueryClientConfig,
+): ProjectionQueryClientService => buildProjectionQueryClientService(cfg)
 
 export const projectionFor = <
   Name extends string,

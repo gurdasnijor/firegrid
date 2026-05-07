@@ -177,30 +177,36 @@ package:
 
 ```ts
 import {
-  ProjectionQueryClientLive,
-  projectionFor,
+  createProjectionQueryClient,
 } from "@firegrid/client/projection-query"
 
-const ProjectionsLive = ProjectionQueryClientLive({
+const projections = createProjectionQueryClient({
   streamUrl: appConfig.firegridStreamUrl,
 })
 
-const program = Effect.gen(function* () {
-  const widgets = yield* projectionFor(WidgetsPlane)
-  const snapshot = yield* widgets.snapshot(widgetListQuery)
+const widgets = projections.projectionFor(WidgetsPlane)
 
-  return yield* widgets.until(
-    readyWidgetQuery,
-    (row) => row !== undefined,
-    { cursor: snapshot.cursor },
-  )
-}).pipe(Effect.provide(ProjectionsLive))
+const liveList = widgets.observe(widgetListQuery)
+
+const readyWidget = widgets.until(
+  readyWidgetQuery,
+  (row) => row !== undefined,
+  { timeout: "10 seconds" },
+)
 ```
 
 Projection query handles are descriptor-scoped and read-only. They expose
-`snapshot`, `stream`, and `until` over the app-owned plane without exposing raw
-StreamDB collections, substrate kernel imports, runtime handlers, claims,
-completions, or terminal run authority.
+cursorless `observe` and `until` for normal UI reads. Advanced callers can use
+`snapshot` plus `stream(query, cursor)`, or `untilFrom(...)`, when they need to
+control an explicit cursor. The surface does not expose raw StreamDB
+collections, substrate kernel imports, runtime handlers, claims, completions, or
+terminal run authority.
+
+Current limitation: this MVP keeps cursors opaque and validates descriptor
+ownership, but the underlying EventPlane projection service does not yet expose a
+durable snapshot sequence boundary. Full no-gap retained replay semantics need a
+lower-level EventPlane/StreamDB cursor boundary before `stream` can fully satisfy
+`firegrid-projection-query.CURSOR_AND_REPLAY.*`.
 
 ## Focused Smoke Checks
 

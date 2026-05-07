@@ -82,6 +82,7 @@ describe("firegrid-event-streams.CLIENT_API.4 — Firegrid browser subpath is ph
 describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.1 — projection-query client surface stays browser-safe", () => {
   it("exports projection-query APIs from the approved client subpath without runtime, kernel, or raw StreamDB authority imports", () => {
     expect(ProjectionQuerySurface.ProjectionQueryClientLive).toBeTypeOf("function")
+    expect(ProjectionQuerySurface.createProjectionQueryClient).toBeTypeOf("function")
     expect(ProjectionQuerySurface.projectionFor).toBeTypeOf("function")
     expect(
       ProjectionQuerySurface.ProjectionCursor.initial({ name: "example" })._tag,

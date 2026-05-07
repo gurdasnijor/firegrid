@@ -8,6 +8,7 @@ import {
   ProjectionQueryClientLive,
   ProjectionQueryReadError,
   ProjectionQueryTimeout,
+  createProjectionQueryClient,
   projectionFor,
   type ProjectionQuery,
 } from "../projection-query.ts"
@@ -73,6 +74,9 @@ const readyRowQuery = (
 const layerFor = (streamUrl: string) =>
   ProjectionQueryClientLive({ streamUrl, contentType: "application/json" })
 
+const clientFor = (streamUrl: string) =>
+  createProjectionQueryClient({ streamUrl, contentType: "application/json" })
+
 describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-scoped projection query handles", () => {
   it("firegrid-projection-query.QUERY_HANDLES.2, .3 — snapshot returns typed app-owned projection data plus an opaque cursor", async () => {
     const url = await createSubstrateStream("projection-query-snapshot")
@@ -95,7 +99,47 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     expect("collections" in result).toBe(false)
   })
 
-  it("firegrid-projection-query.QUERY_HANDLES.4 — stream follows app-owned projection changes from an explicit cursor", async () => {
+  it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 and firegrid-projection-query.QUERY_HANDLES.4 — observe owns snapshot plus live follow for UI reads", async () => {
+    const url = await createSubstrateStream("projection-query-observe")
+    const plane = buildPlane()
+
+    await Effect.runPromise(
+      appendWidget(url, plane, { id: "w-1", status: "pending", count: 1 }),
+    )
+
+    const collected = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const client = clientFor(url)
+          const handle = client.projectionFor(plane)
+          const fiber = yield* handle
+            .observe(countQuery())
+            .pipe(
+              Stream.take(3),
+              Stream.runCollect,
+              Effect.fork,
+            )
+          yield* Effect.sleep(Duration.millis(40))
+          yield* appendWidget(url, plane, {
+            id: "w-2",
+            status: "pending",
+            count: 2,
+          })
+          yield* Effect.sleep(Duration.millis(40))
+          yield* appendWidget(url, plane, {
+            id: "w-3",
+            status: "pending",
+            count: 3,
+          })
+          return yield* fiber
+        }),
+      ),
+    )
+
+    expect(Chunk.toReadonlyArray(collected)).toEqual([1, 2, 3])
+  })
+
+  it("firegrid-projection-query.QUERY_HANDLES.4 — advanced stream follows app-owned projection changes from an explicit cursor", async () => {
     const url = await createSubstrateStream("projection-query-stream")
     const plane = buildPlane()
 
@@ -147,14 +191,13 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
 
     const immediate = await Effect.runPromise(
       Effect.gen(function* () {
-        const handle = yield* projectionFor(plane)
-        const snapshot = yield* handle.snapshot(countQuery())
+        const handle = clientFor(url).projectionFor(plane)
         return yield* handle.until(
           readyRowQuery("w-ready"),
           (row): row is WidgetRow => row?.status === "ready",
-          { cursor: snapshot.cursor, timeout: Duration.seconds(1) },
+          { timeout: Duration.seconds(1) },
         )
-      }).pipe(Effect.provide(layerFor(url))),
+      }),
     )
 
     expect(immediate?.id).toBe("w-ready")
@@ -163,14 +206,13 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     const exit = await Effect.runPromise(
       Effect.exit(
         Effect.gen(function* () {
-          const handle = yield* projectionFor(plane)
-          const snapshot = yield* handle.snapshot(countQuery())
+          const handle = clientFor(url).projectionFor(plane)
           return yield* handle.until(
             readyRowQuery("missing"),
             (row): row is WidgetRow => row?.status === "ready",
-            { cursor: snapshot.cursor, timeout },
+            { timeout },
           )
-        }).pipe(Effect.provide(layerFor(url))),
+        }),
       ),
     )
 
