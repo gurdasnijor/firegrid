@@ -1,0 +1,44 @@
+feature:
+  name: durable-clock-layer
+  product: firegrid
+  description: Provide an Effect Clock layer that records durable wake-up intent before parking fibers and lets a dispatcher fire due wake-ups without introducing Firegrid-specific sleep, timeout, wait, or scheduler APIs.
+
+components:
+  CLOCK_LAYER:
+    requirements:
+      1: "The durable Clock implementation installs through Effect's `Layer.setClock` mechanism."
+      2: The durable Clock implementation does not override, replace, or configure Effect's Scheduler.
+      3: "`Clock.sleep(duration)` appends a wake-up record before the calling fiber can remain parked."
+      4: "`Clock.sleep(duration)` parks the calling fiber on an in-process deferred and resumes it only when the dispatcher fires the matching wake-up record."
+      5: Interrupting a parked sleep cancels the matching pending wake-up record when that wake-up is still live in the current dispatcher.
+
+  WAKEUP_STORE:
+    requirements:
+      1: The wake-up store interface supports appending wake-ups, listing pending wake-ups, listing due wake-ups, marking wake-ups dispatched, cancelling wake-ups, and snapshotting records.
+      2: Due wake-up listing is ordered by earliest deadline first.
+      3: A dispatcher created from a snapshot can discover due wake-up records that were appended by a previous dispatcher.
+      4: A Durable Streams-backed wake-up store represents wake-ups as State Protocol rows keyed by wake-up id.
+      5: A restarted Durable Streams-backed wake-up store pointed at the same stream URL can discover pending wake-ups without an in-process snapshot.
+      6: A Durable Streams-backed wake-up store writes wake-up changes through `createStreamDB` actions and `awaitTxId` confirmation instead of Firegrid-specific append helpers.
+      7: A Durable Streams-backed wake-up store exposes a close operation that releases the underlying StreamDB live consumer.
+
+  EFFECT_STACK:
+    requirements:
+      1: "Standard `Effect.sleep` uses the durable Clock layer without a Firegrid wrapper."
+      2: Standard Effect timeout APIs use the durable Clock layer without a Firegrid wrapper.
+      3: Standard Effect Schedule retry/repeat timing uses the durable Clock layer without a Firegrid wrapper.
+      4: Standard Clock-backed Stream operators use the durable Clock layer without a Firegrid wrapper.
+
+  RESTART_BOUNDARY:
+    requirements:
+      1: A recreated dispatcher can mark a rehydrated due wake-up as dispatched.
+      2: The durable Clock layer does not claim to preserve or resume in-memory Effect fibers across process death.
+      3: Cross-process continuation after a wake-up dispatch requires a runtime-owned re-dispatch or checkpoint primitive outside the Clock layer.
+      4: Production-shaped restart tests use a real Durable Streams stream URL as the durability boundary rather than an in-memory snapshot taken inside a live Effect scope.
+
+constraints:
+  PUBLIC_SURFACE:
+    requirements:
+      1: "The first durable Clock slice exposes a substrate `durable-clock` subpath and does not add Firegrid-specific sleep, wait, timeout, retry, or schedule verbs."
+      2: The first durable Clock slice includes a Durable Streams-backed wake-up store but does not implement a runtime checkpoint or continuation re-dispatch primitive.
+      3: "The first durable Clock slice does not change `RunWait`, `DurableWaits`, choreography, operation lifecycle, or subscriber APIs."

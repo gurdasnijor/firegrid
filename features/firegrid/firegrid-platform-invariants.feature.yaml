@@ -18,7 +18,7 @@ components:
       2: "`@firegrid/client` is browser- and edge-safe; the browser bundle does not depend on Node-only modules through any import path reachable from `@firegrid/client` exports."
       3: "There is no `@firegrid/client` to `@firegrid/runtime` package edge."
       4: "There is no `@firegrid/runtime` to `@firegrid/client` package edge."
-      5: "`@firegrid/substrate` exposes only the curated root and approved subpaths `./descriptors`, `./event-plane`, and `./id-gen` to application and downstream package code; `@firegrid/substrate/kernel` is not an application-facing import."
+      5: "`@firegrid/substrate` exposes only the curated root and approved subpaths `./descriptors`, `./event-plane`, `./durable-clock`, and `./id-gen` to application and downstream package code; `@firegrid/substrate/kernel` is not an application-facing import."
       6: Public scheduling, wait, projection, subscriber, runtime, and event-plane composition primitives are reachable through public package roots; applications do not need dist-internal or internal-subpath imports to compose runtime work.
 
   AUTHORITY:

@@ -57,8 +57,8 @@ import { EventStream, Operation } from "@firegrid/substrate/descriptors"
 ```
 
 Use `@firegrid/substrate/id-gen` when code needs the public ID generator
-service, and `@firegrid/substrate/event-plane` for app-owned stateful row
-families.
+service, `@firegrid/substrate/event-plane` for app-owned stateful row families,
+and `@firegrid/substrate/durable-clock` for installing the durable Clock layer.
 
 ## Operation And EventStream Descriptors
 
@@ -132,6 +132,43 @@ EventPlane is appropriate when runtime code needs primary-keyed domain rows,
 materialized projection state, or projection-match evaluation. The row families
 belong to the application or downstream package, not to Firegrid itself.
 
+## Durable Clock
+
+Use `@firegrid/substrate/durable-clock` when runtime code needs Effect's normal
+time APIs to record durable wake-up intent before parking fibers:
+
+```ts
+import {
+  makeDurableClockDispatcher,
+  makeDurableStreamClockWakeupStore,
+} from "@firegrid/substrate/durable-clock"
+import { Duration, Effect } from "effect"
+
+const store = makeDurableStreamClockWakeupStore({ streamUrl })
+const dispatcher = makeDurableClockDispatcher({
+  store,
+  initialDurableTimeMs: Date.now(),
+  scope: "runtime",
+})
+
+const program = Effect.sleep(Duration.seconds(5)).pipe(
+  Effect.provide(dispatcher.layer),
+)
+```
+
+The durable Clock subpath does not add Firegrid-specific `sleep`, `wait`,
+`timeout`, retry, or schedule verbs. It installs a custom Effect `Clock` via
+`Layer.setClock`, so ordinary `Effect.sleep`, timeout APIs, `Schedule`, and
+Clock-backed `Stream` operators use the supplied wake-up store.
+
+This first slice proves the Clock boundary and exposes an in-memory wake-up
+store for deterministic tests plus a Durable Streams-backed store for
+production-shaped restart validation. A recreated dispatcher pointed at the
+same stream URL can discover and dispatch pending wake-up records, but the
+Clock layer does not preserve in-memory Effect fibers across process death.
+Cross-process continuation requires a runtime-owned re-dispatch or checkpoint
+primitive above the Clock layer.
+
 ## RunWait And Projection Matching
 
 `RunWait` lets runtime handlers suspend on durable wait primitives while
@@ -184,6 +221,7 @@ documented public subpaths:
 - `@firegrid/substrate`
 - `@firegrid/substrate/descriptors`
 - `@firegrid/substrate/event-plane`
+- `@firegrid/substrate/durable-clock`
 - `@firegrid/substrate/id-gen`
 
 Do not treat substrate internals, raw durable row builders, claim/terminal
