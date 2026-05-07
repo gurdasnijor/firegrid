@@ -220,16 +220,23 @@ export const buildProjectionQueryClientService = (
         ),
 
       observe: <A, E>(query: PlaneProjectionQuery<S, A, E, never>) =>
-        // firegrid-projection-query.QUERY_HANDLES.5
+        // firegrid-projection-query.QUERY_HANDLES.4
+        //
+        // Use one projection stream subscription for snapshot-plus-live UI reads.
+        // Composing snapshot() and stream(cursor) would acquire two reads and can
+        // drop a live update between them. Until EventPlane exposes durable
+        // no-gap cursors, duplicate-safe output is preferable to gap-prone output.
         Stream.unwrap(
-          handle.snapshot(query).pipe(
-            Effect.map((snapshot) =>
-              Stream.make(snapshot.value).pipe(
-                Stream.concat(
-                  handle.stream(query, snapshot.cursor).pipe(Stream.drop(1)),
-                ),
-              ),
-            ),
+          Effect.gen(function* () {
+            const projection = yield* plane.Projection
+            return projection.stream(query)
+          }),
+        ).pipe(
+          Stream.provideLayer(layer),
+          Stream.mapError((cause) =>
+            cause instanceof PlaneProjectionReadError
+              ? mapReadError(descriptor, cause.cause)
+              : cause,
           ),
         ),
 

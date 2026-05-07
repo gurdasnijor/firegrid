@@ -139,6 +139,36 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     expect(Chunk.toReadonlyArray(collected)).toEqual([1, 2, 3])
   })
 
+  it("firegrid-projection-query.CURSOR_AND_REPLAY.3 — observe avoids the snapshot-then-drop gap", async () => {
+    const url = await createSubstrateStream("projection-query-observe-no-drop-gap")
+    const plane = buildPlane()
+
+    await Effect.runPromise(
+      appendWidget(url, plane, { id: "w-1", status: "pending", count: 1 }),
+    )
+
+    const collected = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const handle = clientFor(url).projectionFor(plane)
+          const snapshot = yield* handle.snapshot(countQuery())
+          yield* appendWidget(url, plane, {
+            id: "w-2",
+            status: "pending",
+            count: 2,
+          })
+          return yield* handle
+            .observe(countQuery())
+            .pipe(Stream.take(1), Stream.runCollect)
+            .pipe(Effect.map((values) => ({ snapshot, values })))
+        }),
+      ),
+    )
+
+    expect(collected.snapshot.value).toBe(1)
+    expect(Chunk.toReadonlyArray(collected.values)).toEqual([2])
+  })
+
   it("firegrid-projection-query.QUERY_HANDLES.4 — advanced stream follows app-owned projection changes from an explicit cursor", async () => {
     const url = await createSubstrateStream("projection-query-stream")
     const plane = buildPlane()
