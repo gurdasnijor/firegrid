@@ -17,6 +17,10 @@
       "types": "./dist/event-plane/index.d.ts",
       "default": "./dist/event-plane/index.js"
     },
+    "./durable-clock": {
+      "types": "./dist/durable-clock/index.d.ts",
+      "default": "./dist/durable-clock/index.js"
+    },
     "./id-gen": {
       "types": "./dist/id-gen.d.ts",
       "default": "./dist/id-gen.js"

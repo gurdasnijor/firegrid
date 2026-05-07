@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
+import * as DurableClockPublic from "../durable-clock/index.ts"
 import * as EventPlanePublic from "../event-plane/index.ts"
 import * as SubstrateRoot from "../index.ts"
 import * as SubstrateKernel from "../kernel/index.ts"
@@ -54,6 +55,9 @@ describe("firegrid-remediation-hardening.PUBLIC_SURFACES — substrate root is c
     const kernel = SubstrateKernel as unknown as Record<string, unknown>
     for (const symbol of [
       "CompletionProducer",
+      "makeDurableClockDispatcher",
+      "makeInMemoryDurableClockWakeupStore",
+      "makeDurableStreamClockWakeupStore",
       "SubstrateProducerLive",
       "WorkProducer",
       "createPendingCompletion",
@@ -150,6 +154,30 @@ describe("client-event-plane-registration.EVENT_PLANE_DEFINITION.5 — EventPlan
     ]) {
       expect(eventPlaneSymbols).not.toContain(forbidden)
     }
+  })
+})
+
+describe("durable-clock-layer.PUBLIC_SURFACE — Durable Clock public subpath", () => {
+  it("durable-clock-layer.PUBLIC_SURFACE.1 — exports Durable Clock through @firegrid/substrate/durable-clock without bloating the curated root", () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(import.meta.dirname, "../../package.json"), "utf8"),
+    ) as {
+      readonly exports?: Record<
+        string,
+        { readonly types: string; readonly default: string }
+      >
+    }
+
+    expect(packageJson.exports?.["./durable-clock"]).toEqual({
+      types: "./dist/durable-clock/index.d.ts",
+      default: "./dist/durable-clock/index.js",
+    })
+    expect("makeDurableClockDispatcher" in SubstrateRoot).toBe(false)
+    expect(typeof DurableClockPublic.makeDurableClockDispatcher).toBe("function")
+    expect(typeof DurableClockPublic.makeInMemoryDurableClockWakeupStore)
+      .toBe("function")
+    expect(typeof DurableClockPublic.makeDurableStreamClockWakeupStore)
+      .toBe("function")
   })
 })
 

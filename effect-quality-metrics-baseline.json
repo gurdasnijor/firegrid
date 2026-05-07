@@ -10,7 +10,7 @@
     "newDurableStreamSiteCount": 11,
     "perCallLayerProvideSiteCount": 0,
     "effectOrDieSiteCount": 4,
-    "effectRunPromiseInTestsCount": 204,
-    "vitestItImportInTestsCount": 45
+    "effectRunPromiseInTestsCount": 220,
+    "vitestItImportInTestsCount": 46
   }
 }
