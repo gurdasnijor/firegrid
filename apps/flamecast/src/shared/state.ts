@@ -26,14 +26,13 @@ export const FlamecastMessage = Schema.Struct({
 })
 export type FlamecastMessage = Schema.Schema.Type<typeof FlamecastMessage>
 
-export const FlamecastSession = Schema.Struct({
+const FlamecastSession = Schema.Struct({
   sessionId: Schema.String,
   title: Schema.String,
   status: Schema.Literal("running", "complete", "failed"),
   turnCount: Schema.Number,
   updatedAt: Schema.String,
 })
-export type FlamecastSession = Schema.Schema.Type<typeof FlamecastSession>
 
 export const flamecastState = createStateSchema({
   turns: {

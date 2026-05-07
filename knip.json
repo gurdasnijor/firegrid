@@ -17,35 +17,23 @@
       ]
     },
     "apps/flamecast": {
-      "entry": [
-        "src/client/main.tsx",
-        "src/runtime/main.ts"
-      ],
       "project": [
-        "src/**/*.{ts,tsx,mts}",
-        "vite.config.ts",
-        "vitest.config.ts"
+        "src/**/*.{ts,tsx,mts}"
       ]
     },
     "scenarios/firegrid": {
-      "entry": [
-        "src/cli.ts"
-      ],
       "project": [
-        "src/**/*.ts",
-        "vitest.config.js"
+        "src/**/*.ts"
       ]
     }
   },
   "ignore": [
-    "**/__tests__/**",
     "semgrep-tests/**"
   ],
   "ignoreDependencies": [
     "jscpd"
   ],
   "ignoreBinaries": [
-    "dot",
     "ruby",
     "semgrep"
   ]
