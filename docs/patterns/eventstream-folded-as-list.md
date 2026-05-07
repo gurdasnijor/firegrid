@@ -97,6 +97,24 @@ EventStream remains the right write/history primitive for ordered facts. Runtime
 and backend code may append normalized timeline facts with `FiregridClient.emit`,
 and materializers can project those facts into the read model above.
 
+When runtime code writes an EventPlane row directly, it emits the typed
+`ChangeEvent` produced by the plane state helper:
+
+```ts
+const producer = yield* MessagesPlane.Producer
+yield* producer.emit(
+  MessagesPlane.state.messages.insert({
+    value: {
+      id: messageId,
+      sessionId,
+      role: "assistant",
+      text,
+      createdAt: new Date().toISOString(),
+    },
+  }),
+)
+```
+
 Use raw `client.events(stream)` in browser code only when the UI truly wants an
 append-only log and is prepared to own the fold itself. Most product UI lists
 should use `liveQuery(...)`.

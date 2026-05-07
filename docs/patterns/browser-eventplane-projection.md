@@ -88,12 +88,16 @@ import { CreateSession } from "../shared/operations.ts"
 const createSession = Firegrid.handler(CreateSession, (input) =>
   Effect.gen(function* () {
     const producer = yield* SessionsPlane.Producer
-    yield* producer.emit("sessions", {
-      sessionId: input.sessionId,
-      title: input.title,
-      status: "active",
-      updatedAt: new Date().toISOString(),
-    })
+    yield* producer.emit(
+      SessionsPlane.state.sessions.insert({
+        value: {
+          sessionId: input.sessionId,
+          title: input.title,
+          status: "active",
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+    )
     return { sessionId: input.sessionId }
   }),
 )
