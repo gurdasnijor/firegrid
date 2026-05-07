@@ -1,5 +1,5 @@
 import type { ChangeEvent, StreamStateDefinition } from "@durable-streams/state"
-import { Data, Effect } from "effect"
+import { Effect, Schema } from "effect"
 import type { EventPlaneDefinition } from "./define.ts"
 import type { PlaneProducer, ProducerMetadata } from "./producer.ts"
 import type {
@@ -288,45 +288,45 @@ export const foldDurableChannel = <
   >()
   const deadLetters: DurableTerminalRecord[] = []
 
-  for (const delivery of channel.select.deliveries(snapshot)) {
+  Array.from(channel.select.deliveries(snapshot)).forEach((delivery) => {
     if (!deliveriesByKey.has(delivery.deliveryKey)) {
       deliveriesByKey.set(delivery.deliveryKey, delivery)
     }
     if (!deliveriesByIdempotencyKey.has(delivery.idempotencyKey)) {
       deliveriesByIdempotencyKey.set(delivery.idempotencyKey, delivery)
     }
-  }
+  })
 
-  for (const claim of channel.select.claims?.(snapshot) ?? []) {
+  Array.from(channel.select.claims?.(snapshot) ?? []).forEach((claim) => {
     appendGrouped(claimsByDeliveryKey, claim.deliveryKey, claim)
-  }
+  })
 
   const terminalInputs = [
     ...channel.select.completions(snapshot),
     ...(channel.select.terminalFailures?.(snapshot) ?? []),
     ...channel.select.deadLetters(snapshot),
   ]
-  for (const terminal of terminalInputs) {
+  terminalInputs.forEach((terminal) => {
     if (terminal.kind === "dead-letter") deadLetters.push(terminal)
 
     const existing = terminalByCompletionKey.get(terminal.completionKey)
     if (existing === undefined) {
       terminalByCompletionKey.set(terminal.completionKey, terminal)
       terminalByDeliveryKey.set(terminal.deliveryKey, terminal)
-      continue
+      return
     }
     if (sameTerminal(existing, terminal)) {
       duplicateTerminals.push(terminal)
-      continue
+      return
     }
     conflictingTerminals.push(terminalConflict(existing, terminal))
-  }
+  })
 
-  for (const retry of channel.select.retries?.(snapshot) ?? []) {
+  Array.from(channel.select.retries?.(snapshot) ?? []).forEach((retry) => {
     appendGrouped(retriesByDeliveryKey, retry.deliveryKey, retry)
-  }
+  })
 
-  for (const ack of channel.select.cursorAcks?.(snapshot) ?? []) {
+  Array.from(channel.select.cursorAcks?.(snapshot) ?? []).forEach((ack) => {
     const existing = cursorAcksBySubscriber.get(ack.subscriberId)
     if (
       existing === undefined
@@ -334,25 +334,25 @@ export const foldDurableChannel = <
     ) {
       cursorAcksBySubscriber.set(ack.subscriberId, ack)
     }
-  }
+  })
 
   const pendingDeliveries = Array.from(deliveriesByKey.values()).filter(
     (delivery) => !terminalByDeliveryKey.has(delivery.deliveryKey),
   )
   const claimWinnerByDeliveryKey = new Map<DeliveryKey, DurableClaimRecord>()
-  for (const [deliveryKey, claims] of claimsByDeliveryKey) {
+  Array.from(claimsByDeliveryKey).forEach(([deliveryKey, claims]) => {
     const first = claims[0]
     if (first !== undefined) claimWinnerByDeliveryKey.set(deliveryKey, first)
-  }
+  })
   const orderedPending = [...pendingDeliveries].sort((left, right) =>
     left.acceptedAtMs - right.acceptedAtMs,
   )
   const firstPendingByScope = new Map<OrderingScope, DeliveryKey>()
-  for (const delivery of orderedPending) {
+  orderedPending.forEach((delivery) => {
     if (!firstPendingByScope.has(delivery.orderingScope)) {
       firstPendingByScope.set(delivery.orderingScope, delivery.deliveryKey)
     }
-  }
+  })
   const claimableDeliveries = orderedPending.filter((delivery) =>
     !claimWinnerByDeliveryKey.has(delivery.deliveryKey)
       && firstPendingByScope.get(delivery.orderingScope) === delivery.deliveryKey,
@@ -376,21 +376,23 @@ export const foldDurableChannel = <
   }
 }
 
-export class DurableDeliveryConflictError extends Data.TaggedError(
+export class DurableDeliveryConflictError extends Schema.TaggedError<DurableDeliveryConflictError>()(
   "substrate/DurableDeliveryConflictError",
-)<{
-  readonly channel: string
-  readonly idempotencyKey: string
-  readonly existing: DurableDeliveryRecord
-  readonly incoming: DurableDeliveryEnvelope
-}> {}
+  {
+    channel: Schema.String,
+    idempotencyKey: Schema.String,
+    existing: Schema.Unknown,
+    incoming: Schema.Unknown,
+  },
+) {}
 
-export class DurableDeliveryAppendError extends Data.TaggedError(
+export class DurableDeliveryAppendError extends Schema.TaggedError<DurableDeliveryAppendError>()(
   "substrate/DurableDeliveryAppendError",
-)<{
-  readonly channel: string
-  readonly cause: unknown
-}> {}
+  {
+    channel: Schema.String,
+    cause: Schema.Unknown,
+  },
+) {}
 
 export type DurableDeliveryProducerError =
   | DurableDeliveryConflictError
@@ -411,26 +413,29 @@ export interface DurableDeliveryAppendInput<DeliveryInput> {
   readonly metadata: DurableDeliveryMetadata
 }
 
-export class DurableChannelMissingEventError extends Data.TaggedError(
+export class DurableChannelMissingEventError extends Schema.TaggedError<DurableChannelMissingEventError>()(
   "substrate/DurableChannelMissingEventError",
-)<{
-  readonly channel: string
-  readonly event: string
-}> {}
+  {
+    channel: Schema.String,
+    event: Schema.String,
+  },
+) {}
 
-export class DurableChannelClaimError extends Data.TaggedError(
+export class DurableChannelClaimError extends Schema.TaggedError<DurableChannelClaimError>()(
   "substrate/DurableChannelClaimError",
-)<{
-  readonly channel: string
-  readonly cause: unknown
-}> {}
+  {
+    channel: Schema.String,
+    cause: Schema.Unknown,
+  },
+) {}
 
-export class DurableDeliveryNotFoundError extends Data.TaggedError(
+export class DurableDeliveryNotFoundError extends Schema.TaggedError<DurableDeliveryNotFoundError>()(
   "substrate/DurableDeliveryNotFoundError",
-)<{
-  readonly channel: string
-  readonly deliveryKey: DeliveryKey
-}> {}
+  {
+    channel: Schema.String,
+    deliveryKey: Schema.String,
+  },
+) {}
 
 export type DurableChannelClaimFailure =
   | DurableChannelMissingEventError

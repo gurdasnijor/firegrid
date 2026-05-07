@@ -39,10 +39,10 @@ import {
   type Scope,
 } from "effect"
 import {
-  CompletionKey,
-  durableChannelCompletionQuery,
   type DurableChannelDefinition,
   type DurableTerminalRecord,
+  type CompletionKey,
+  type PlaneProjectionQuery,
 } from "@firegrid/substrate/event-plane"
 import type { StreamStateDefinition } from "@durable-streams/state"
 import {
@@ -156,6 +156,26 @@ interface DurableChannelCompletionSubscriberOptions {
   readonly matchedValue?: (terminal: DurableTerminalRecord) => unknown
 }
 
+const durableChannelRuntimeCompletionQuery = <
+  Name extends string,
+  S extends StreamStateDefinition,
+  DeliveryInput,
+>(
+  channel: DurableChannelDefinition<Name, S, DeliveryInput>,
+  completionKey: CompletionKey,
+): PlaneProjectionQuery<S, DurableTerminalRecord | undefined> => ({
+  label: `runtime-durable-channel:${channel.name}:completion:${completionKey}`,
+  authority: "terminal-domain",
+  evaluate: (snapshot) =>
+    Effect.succeed(
+      [
+        ...channel.select.completions(snapshot),
+        ...(channel.select.terminalFailures?.(snapshot) ?? []),
+        ...channel.select.deadLetters(snapshot),
+      ].find((terminal) => terminal.completionKey === completionKey),
+    ),
+})
+
 // firegrid-runtime-process.RUNTIME_PACKAGE.5
 // firegrid-runtime-process.RUNTIME_HOT_PATH.2
 // firegrid-runtime-process.RUNTIME_HOT_PATH.3
@@ -216,9 +236,9 @@ const durableChannelCompletionSubscriberLayer = <
             })
           }
           const completionKey = options.completionKeyFromTrigger?.(trigger)
-            ?? CompletionKey(trigger.projectionKey)
+            ?? (trigger.projectionKey as CompletionKey)
           return projection
-            .snapshot(durableChannelCompletionQuery(channel, completionKey))
+            .snapshot(durableChannelRuntimeCompletionQuery(channel, completionKey))
             .pipe(
               Effect.map((terminal): ProjectionMatchEvaluation => {
                 if (terminal === undefined) return { kind: "no-match" }

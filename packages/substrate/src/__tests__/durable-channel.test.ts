@@ -1,7 +1,6 @@
 import { DurableStream } from "@durable-streams/client"
 import { createStateSchema } from "@durable-streams/state"
-import { Cause, Effect, Exit, Schema, type Context } from "effect"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { Effect, Schema, type Context } from "effect"
 import {
   CompletionKey,
   DeliveryKey,
@@ -22,6 +21,9 @@ import {
   startTestServer,
   stopTestServer,
 } from "./helpers.ts"
+
+const { afterAll, beforeAll, describe, expect, it } = await import("vitest")
+const run = Effect.runPromise
 
 beforeAll(async () => {
   await startTestServer()
@@ -342,7 +344,7 @@ const snapshotFold = async (
   url: string,
   fixture: ReturnType<typeof buildFixture>,
 ): Promise<DurableChannelFold> =>
-  Effect.runPromise(
+  run(
     Effect.scoped(
       Effect.gen(function* () {
         const projection = yield* fixture.plane.Projection
@@ -392,22 +394,15 @@ describe("firegrid-durable-subscriber-webhooks.DELIVERY_PRODUCER.1, .2, .3, .4, 
         )
       }).pipe(Effect.provide(EventPlane.layer(fixture.plane, { streamUrl: url })))
 
-    const first = await Effect.runPromise(Effect.scoped(append("same")))
-    const duplicate = await Effect.runPromise(Effect.scoped(append("same")))
-    const conflictExit = await Effect.runPromise(
-      Effect.exit(Effect.scoped(append("different"))),
+    const first = await run(Effect.scoped(append("same")))
+    const duplicate = await run(Effect.scoped(append("same")))
+    const conflict = await run(
+      Effect.scoped(append("different")).pipe(Effect.flip),
     )
 
     expect(first.kind).toBe("accepted")
     expect(duplicate.kind).toBe("duplicate")
-    expect(Exit.isFailure(conflictExit)).toBe(true)
-    if (Exit.isFailure(conflictExit)) {
-      const err = Cause.failureOption(conflictExit.cause)
-      expect(err._tag).toBe("Some")
-      if (err._tag === "Some") {
-        expect(err.value).toBeInstanceOf(DurableDeliveryConflictError)
-      }
-    }
+    expect(conflict).toBeInstanceOf(DurableDeliveryConflictError)
 
     const fold = await snapshotFold(url, fixture)
     expect(fold.deliveriesByKey.size).toBe(1)
@@ -488,7 +483,7 @@ describe("firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.2, .3, .4, .5"
     const runWithPlane = <A, E>(
       effect: Effect.Effect<A, E, PlaneRequirements>,
     ): Promise<A> =>
-      Effect.runPromise(
+      run(
         Effect.scoped(
           effect.pipe(
             Effect.provide(
@@ -608,10 +603,10 @@ describe("firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.2, .3, .4, .5"
         Effect.scoped,
       )
 
-    await Effect.runPromise(append("first"))
-    await Effect.runPromise(append("second"))
+    await run(append("first"))
+    await run(append("second"))
 
-    const secondClaim = await Effect.runPromise(
+    const secondClaim = await run(
       Effect.scoped(
         Effect.gen(function* () {
           const producer = yield* fixture.plane.Producer
