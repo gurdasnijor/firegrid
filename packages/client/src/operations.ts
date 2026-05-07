@@ -247,6 +247,16 @@ const mapRunToState = <Op extends Operation.Any>(
   })
 }
 
+const operationHandleSpanAttributes = <Op extends Operation.Any>(
+  op: Op,
+  handle: OperationHandle<Op>,
+) =>
+  firegridSpanAttributes({
+    [FiregridSpanAttribute.operationDescriptor]: op.name,
+    [FiregridSpanAttribute.operationHandleId]: handle.id,
+    [FiregridSpanAttribute.runId]: handle.id,
+  })
+
 const buildFiregridClientService = (
   projection: Projection["Type"],
   durable: DurableStream,
@@ -372,11 +382,7 @@ const buildFiregridClientService = (
         ),
         Effect.withSpan(FiregridSpanName.clientOperationResult, {
           kind: "client",
-          attributes: firegridSpanAttributes({
-            [FiregridSpanAttribute.operationDescriptor]: op.name,
-            [FiregridSpanAttribute.operationHandleId]: handle.id,
-            [FiregridSpanAttribute.runId]: handle.id,
-          }),
+          attributes: operationHandleSpanAttributes(op, handle),
         }),
       )
   }
@@ -404,11 +410,7 @@ const buildFiregridClientService = (
         ),
         Stream.withSpan(FiregridSpanName.clientOperationObserve, {
           kind: "client",
-          attributes: firegridSpanAttributes({
-            [FiregridSpanAttribute.operationDescriptor]: op.name,
-            [FiregridSpanAttribute.operationHandleId]: handle.id,
-            [FiregridSpanAttribute.runId]: handle.id,
-          }),
+          attributes: operationHandleSpanAttributes(op, handle),
         }),
       )
 
