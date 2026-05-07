@@ -68,6 +68,16 @@ export interface ProjectionSnapshotResult<A> {
   readonly cursor: ProjectionCursor
 }
 
+export type ProjectionPredicate<A> = (value: A) => boolean
+
+export interface ProjectionUntilOptions {
+  readonly timeout?: Duration.DurationInput
+}
+
+export interface ProjectionUntilFromOptions extends ProjectionUntilOptions {
+  readonly cursor: ProjectionCursor
+}
+
 export interface ProjectionQueryHandle<
   S extends StreamStateDefinition,
 > {
@@ -86,19 +96,14 @@ export interface ProjectionQueryHandle<
 
   readonly until: <A, E>(
     query: PlaneProjectionQuery<S, A, E, never>,
-    predicate: (value: A) => boolean,
-    options: {
-      readonly timeout?: Duration.DurationInput
-    },
+    predicate: ProjectionPredicate<A>,
+    options: ProjectionUntilOptions,
   ) => Effect.Effect<A, ProjectionQueryTimeout | ProjectionQueryReadError | E>
 
   readonly untilFrom: <A, E>(
     query: PlaneProjectionQuery<S, A, E, never>,
-    predicate: (value: A) => boolean,
-    options: {
-      readonly cursor: ProjectionCursor
-      readonly timeout?: Duration.DurationInput
-    },
+    predicate: ProjectionPredicate<A>,
+    options: ProjectionUntilFromOptions,
   ) => Effect.Effect<A, ProjectionQueryTimeout | ProjectionQueryReadError | E>
 }
 
@@ -160,6 +165,11 @@ const validateCursor = (
   return Effect.void
 }
 
+const timeoutOption = (
+  timeout: Duration.DurationInput | undefined,
+): ProjectionUntilOptions =>
+  timeout === undefined ? {} : { timeout }
+
 export const buildProjectionQueryClientService = (
   cfg: ProjectionQueryClientConfig,
 ): ProjectionQueryClientService => ({
@@ -208,19 +218,7 @@ export const buildProjectionQueryClientService = (
       ) =>
         // firegrid-projection-query.QUERY_HANDLES.4
         Stream.fromEffect(validateCursor(descriptor, cursor)).pipe(
-          Stream.flatMap(() =>
-            Stream.unwrap(
-              Effect.gen(function* () {
-                const projection = yield* plane.Projection
-                return projection.stream(query)
-              }),
-            ).pipe(Stream.provideLayer(layer)),
-          ),
-          Stream.mapError((cause) =>
-            cause instanceof PlaneProjectionReadError
-              ? mapReadError(descriptor, cause.cause)
-              : cause,
-          ),
+          Stream.flatMap(() => handle.observe(query)),
         ),
 
       observe: <A, E>(query: PlaneProjectionQuery<S, A, E, never>) =>
@@ -246,10 +244,8 @@ export const buildProjectionQueryClientService = (
 
       until: <A, E>(
         query: PlaneProjectionQuery<S, A, E, never>,
-        predicate: (value: A) => boolean,
-        options: {
-          readonly timeout?: Duration.DurationInput
-        },
+        predicate: ProjectionPredicate<A>,
+        options: ProjectionUntilOptions,
       ) =>
         // firegrid-projection-query.QUERY_HANDLES.5
         handle.snapshot(query).pipe(
@@ -257,20 +253,15 @@ export const buildProjectionQueryClientService = (
             if (predicate(snapshot.value)) return Effect.succeed(snapshot.value)
             return handle.untilFrom(query, predicate, {
               cursor: snapshot.cursor,
-              ...(options.timeout !== undefined
-                ? { timeout: options.timeout }
-                : {}),
+              ...timeoutOption(options.timeout),
             })
           }),
         ),
 
       untilFrom: <A, E>(
         query: PlaneProjectionQuery<S, A, E, never>,
-        predicate: (value: A) => boolean,
-        options: {
-          readonly cursor: ProjectionCursor
-          readonly timeout?: Duration.DurationInput
-        },
+        predicate: ProjectionPredicate<A>,
+        options: ProjectionUntilFromOptions,
       ) =>
         // firegrid-projection-query.QUERY_HANDLES.5
         validateCursor(descriptor, options.cursor).pipe(
@@ -281,11 +272,7 @@ export const buildProjectionQueryClientService = (
                 return yield* projection.until(
                   query,
                   predicate,
-                  {
-                    ...(options.timeout !== undefined
-                      ? { timeout: options.timeout }
-                      : {}),
-                  },
+                  timeoutOption(options.timeout),
                 )
               }),
             ),
@@ -333,13 +320,13 @@ export const until = <
 >(
   plane: EventPlaneDefinition<Name, S>,
   query: PlaneProjectionQuery<S, A, E, never>,
-  predicate: (value: A) => boolean,
+  predicate: ProjectionPredicate<A>,
   options: ProjectionQueryUntilOptions,
 ): Effect.Effect<A, ProjectionQueryTimeout | ProjectionQueryReadError | E> =>
   createProjectionQueryClient(options).projectionFor(plane).until(
     query,
     predicate,
-    options.timeout === undefined ? {} : { timeout: options.timeout },
+    timeoutOption(options.timeout),
   )
 
 export const projectionFor = <
