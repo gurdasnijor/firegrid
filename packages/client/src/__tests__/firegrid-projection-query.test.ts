@@ -8,6 +8,7 @@ import {
   ProjectionQueryReadError,
   ProjectionQueryTimeout,
   createProjectionQueryClient,
+  liveQuery,
   observe,
   projectionFor,
   until,
@@ -111,6 +112,51 @@ describe("firegrid-client-projection-api.BROWSER_SAFE_FACADE.2 — descriptor-sc
     )
 
     expect(Chunk.toReadonlyArray(collected)).toEqual([1, 2])
+  })
+
+  it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 — liveQuery reads collections with where, orderBy, select, and count ergonomics", async () => {
+    const url = await createSubstrateStream("projection-query-live-query")
+    const plane = buildPlane()
+
+    await run(
+      Effect.all([
+        appendWidget(url, plane, { id: "w-1", status: "pending", count: 3 }),
+        appendWidget(url, plane, { id: "w-2", status: "ready", count: 1 }),
+        appendWidget(url, plane, { id: "w-3", status: "ready", count: 2 }),
+      ]),
+    )
+
+    const results = await run(
+      Effect.all({
+        count: liveQuery(
+          plane,
+          (q) =>
+            q
+              .from({ widget: q.collection<"widgets", WidgetRow>("widgets") })
+              .where(({ widget }) => widget.status === "ready")
+              .count(),
+          { streamUrl: url, contentType: "application/json" },
+        ).pipe(Stream.take(1), Stream.runCollect),
+        rows: liveQuery(
+          plane,
+          (q) =>
+            q
+              .from({ widget: q.collection<"widgets", WidgetRow>("widgets") })
+              .where(({ widget }) => widget.status === "ready")
+              .orderBy(({ widget }) => widget.count, "desc")
+              .select(({ widget }) => ({ id: widget.id, count: widget.count })),
+          { streamUrl: url, contentType: "application/json" },
+        ).pipe(Stream.take(1), Stream.runCollect),
+      }),
+    )
+
+    expect(Chunk.toReadonlyArray(results.count)).toEqual([2])
+    expect(Chunk.toReadonlyArray(results.rows)).toEqual([
+      [
+        { id: "w-3", count: 2 },
+        { id: "w-2", count: 1 },
+      ],
+    ])
   })
 
   it("firegrid-client-projection-api.BROWSER_SAFE_FACADE.3 — top-level until is query-first and untilWhere keeps predicates explicit", async () => {

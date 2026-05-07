@@ -172,27 +172,37 @@ projection-match evaluation. EventPlane is not the browser client surface.
 ## Projection Query Foundation
 
 Use the `@firegrid/client/projection-query` subpath when browser or edge code
-needs low-level, read-only access to app-owned EventPlane projections through
-the client package:
+needs read-only, live access to app-owned EventPlane projections through the
+client package:
 
 ```ts
-import { observe } from "@firegrid/client/projection-query"
+import { liveQuery } from "@firegrid/client/projection-query"
 
-const liveList = observe(WidgetsPlane, widgetListQuery, {
+const liveMessages = liveQuery(MessagesPlane, (q) =>
+  q
+    .from({ message: q.collection<"messages", MessageRow>("messages") })
+    .where(({ message }) => message.threadId === activeThreadId)
+    .orderBy(({ message }) => message.createdAt, "desc")
+    .select(({ message }) => ({
+      id: message.id,
+      authorId: message.authorId,
+      text: message.text,
+      createdAt: message.createdAt,
+    })),
+{
   streamUrl: appConfig.firegridStreamUrl,
 })
 ```
 
-This is the foundation layer for live read-model queries, not the final
-collection-query DSL. A higher-level API can later make UI code read more like
-`liveQuery(q.from({ m: collections.messages }).orderBy(...))`; this PR only
-exposes the descriptor-scoped projection facade that such an API can build on.
+This is the first Firegrid-native live read-model facade. It adapts the
+collection/query-builder feel into an Effect-native, framework-neutral,
+descriptor-scoped API over durable projections. This PR intentionally keeps the
+slice narrow: single-collection `from`, `where`, `orderBy`, `limit`, `select`,
+and `count` over app-owned projection rows.
 
-Projection query handles are descriptor-scoped and read-only. The headline path
-is `observe(plane, query, config)` for snapshot-plus-live streams over typed
-app-owned projection rows. Advanced or repeated-query callers can use
-`createProjectionQueryClient(...)` plus `projectionFor(plane)` to reuse
-configuration, then call cursorless `handle.observe(...)`.
+Advanced callers can still use `toProjectionQuery(...)`, `observe(...)`,
+`createProjectionQueryClient(...)`, and `projectionFor(plane)` to reuse
+configuration or pass an explicit low-level `PlaneProjectionQuery`.
 
 Wait semantics compose on top of live reads. Use `until(plane, query, config)`
 or `handle.until(query, config)` only when code needs to wait for a present

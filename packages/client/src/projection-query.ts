@@ -91,6 +91,219 @@ export interface ProjectionSnapshotResult<A> {
 }
 
 export type ProjectionPredicate<A> = (value: A) => boolean
+export type ProjectionCollectionKey<S extends StreamStateDefinition> =
+  Extract<keyof PlaneSnapshot<S>, string>
+export type ProjectionCollectionRow<
+  S extends StreamStateDefinition,
+  K extends ProjectionCollectionKey<S>,
+> = PlaneSnapshot<S>[K] extends ReadonlyMap<string, infer A> ? A : never
+
+export interface ProjectionCollectionRef<
+  S extends StreamStateDefinition,
+  K extends ProjectionCollectionKey<S>,
+  Row = ProjectionCollectionRow<S, K>,
+> {
+  readonly key: K
+  readonly __row?: Row
+}
+
+export type ProjectionCollectionRefRow<Ref> =
+  Ref extends { readonly __row?: infer Row } ? Row : never
+
+export type ProjectionOrderValue =
+  | string
+  | number
+  | boolean
+  | Date
+  | null
+  | undefined
+
+export type ProjectionOrderDirection = "asc" | "desc"
+
+export interface LiveProjectionQueryBuilder<
+  S extends StreamStateDefinition,
+  Row,
+  Result,
+> {
+  readonly where: (
+    predicate: (row: Row) => boolean,
+  ) => LiveProjectionQueryBuilder<S, Row, Result>
+
+  readonly orderBy: (
+    selector: (row: Row) => ProjectionOrderValue,
+    direction?: ProjectionOrderDirection,
+  ) => LiveProjectionQueryBuilder<S, Row, Result>
+
+  readonly limit: (count: number) => LiveProjectionQueryBuilder<S, Row, Result>
+
+  readonly select: <Next>(
+    selector: (row: Row) => Next,
+  ) => LiveProjectionQueryBuilder<S, Row, ReadonlyArray<Next>>
+
+  readonly count: () => LiveProjectionQueryBuilder<S, Row, number>
+
+  readonly toProjectionQuery: (
+    label?: string,
+  ) => PlaneProjectionQuery<S, Result, never, never>
+}
+
+export interface LiveProjectionQueryFactory<S extends StreamStateDefinition> {
+  readonly collection: <
+    K extends ProjectionCollectionKey<S>,
+    Row = ProjectionCollectionRow<S, K>,
+  >(
+    key: K,
+  ) => ProjectionCollectionRef<S, K, Row>
+
+  readonly from: <
+    Alias extends string,
+    Ref extends ProjectionCollectionRef<S, ProjectionCollectionKey<S>, unknown>,
+  >(
+    source: Record<Alias, Ref>,
+  ) => LiveProjectionQueryBuilder<
+    S,
+    { readonly [P in Alias]: ProjectionCollectionRefRow<Ref> },
+    ReadonlyArray<{ readonly [P in Alias]: ProjectionCollectionRefRow<Ref> }>
+  >
+}
+
+export type LiveProjectionQuerySpec<
+  S extends StreamStateDefinition,
+  Result,
+> = (
+  query: LiveProjectionQueryFactory<S>,
+) => {
+  readonly toProjectionQuery: (
+    label?: string,
+  ) => PlaneProjectionQuery<S, Result, never, never>
+}
+
+interface LiveProjectionPlan<Row> {
+  readonly label: string
+  readonly collectionKey: string
+  readonly alias: string
+  readonly predicates: ReadonlyArray<(row: Row) => boolean>
+  readonly orderings: ReadonlyArray<{
+    readonly selector: (row: Row) => ProjectionOrderValue
+    readonly direction: ProjectionOrderDirection
+  }>
+  readonly limitCount?: number
+  readonly selector?: (row: Row) => unknown
+  readonly aggregate?: "count"
+}
+
+const compareOrderValue = (
+  left: ProjectionOrderValue,
+  right: ProjectionOrderValue,
+): number => {
+  const a = left instanceof Date ? left.getTime() : left
+  const b = right instanceof Date ? right.getTime() : right
+  if (a === b) return 0
+  if (a === null || a === undefined) return 1
+  if (b === null || b === undefined) return -1
+  return a < b ? -1 : 1
+}
+
+const makeLiveProjectionQueryBuilder = <
+  S extends StreamStateDefinition,
+  Row,
+  Result,
+>(
+  plan: LiveProjectionPlan<Row>,
+): LiveProjectionQueryBuilder<S, Row, Result> => ({
+  where: (predicate) =>
+    makeLiveProjectionQueryBuilder<S, Row, Result>({
+      ...plan,
+      predicates: [...plan.predicates, predicate],
+    }),
+
+  orderBy: (selector, direction = "asc") =>
+    makeLiveProjectionQueryBuilder<S, Row, Result>({
+      ...plan,
+      orderings: [...plan.orderings, { selector, direction }],
+    }),
+
+  limit: (count) =>
+    makeLiveProjectionQueryBuilder<S, Row, Result>({
+      ...plan,
+      limitCount: count,
+    }),
+
+  select: (selector) =>
+    makeLiveProjectionQueryBuilder<S, Row, ReadonlyArray<ReturnType<typeof selector>>>({
+      ...plan,
+      selector,
+    }),
+
+  count: () =>
+    makeLiveProjectionQueryBuilder<S, Row, number>({
+      ...plan,
+      aggregate: "count",
+    }),
+
+  toProjectionQuery: (label = plan.label) => ({
+    label,
+    authority: "observational",
+    evaluate: (snapshot) => {
+      const rows = [...snapshot[plan.collectionKey as keyof PlaneSnapshot<S>].values()]
+        .map((value) => ({ [plan.alias]: value }) as Row)
+        .filter((row) => plan.predicates.every((predicate) => predicate(row)))
+        .sort((left, right) => {
+          for (let index = 0; index < plan.orderings.length; index += 1) {
+            const order = plan.orderings[index]
+            if (order === undefined) return 0
+            const compared = compareOrderValue(order.selector(left), order.selector(right))
+            if (compared !== 0) {
+              return order.direction === "asc" ? compared : -compared
+            }
+          }
+          return 0
+        })
+      const limited =
+        plan.limitCount === undefined ? rows : rows.slice(0, plan.limitCount)
+      if (plan.aggregate === "count") return Effect.succeed(limited.length as Result)
+      const selected = plan.selector === undefined
+        ? limited
+        : limited.map((row) => plan.selector?.(row))
+      return Effect.succeed(selected as Result)
+    },
+  }),
+})
+
+export const createLiveProjectionQueryFactory = <
+  S extends StreamStateDefinition,
+>(): LiveProjectionQueryFactory<S> => {
+  const from = <
+    Alias extends string,
+    Ref extends ProjectionCollectionRef<S, ProjectionCollectionKey<S>, unknown>,
+  >(
+    source: Record<Alias, Ref>,
+  ): LiveProjectionQueryBuilder<
+    S,
+    { readonly [P in Alias]: ProjectionCollectionRefRow<Ref> },
+    ReadonlyArray<{ readonly [P in Alias]: ProjectionCollectionRefRow<Ref> }>
+  > => {
+    const entries = Object.entries(source) as Array<[Alias, Ref]>
+    const [alias, collection] = entries[0]!
+    type Row = { readonly [P in Alias]: ProjectionCollectionRefRow<Ref> }
+    return makeLiveProjectionQueryBuilder<
+      S,
+      Row,
+      ReadonlyArray<Row>
+    >({
+      alias,
+      collectionKey: collection.key,
+      label: `${collection.key}`,
+      orderings: [],
+      predicates: [],
+    })
+  }
+
+  return {
+    collection: (key) => ({ key }),
+    from,
+  }
+}
 
 export interface ProjectionUntilOptions {
   readonly timeout?: Duration.DurationInput
@@ -353,6 +566,26 @@ export const observe = <
   cfg: ProjectionQueryClientConfig,
 ): Stream.Stream<A, ProjectionQueryReadError | E> =>
   createProjectionQueryClient(cfg).projectionFor(plane).observe(query)
+
+export const toProjectionQuery = <
+  S extends StreamStateDefinition,
+  Result,
+>(
+  spec: LiveProjectionQuerySpec<S, Result>,
+  label?: string,
+): PlaneProjectionQuery<S, Result, never, never> =>
+  spec(createLiveProjectionQueryFactory<S>()).toProjectionQuery(label)
+
+export const liveQuery = <
+  Name extends string,
+  S extends StreamStateDefinition,
+  Result,
+>(
+  plane: EventPlaneDefinition<Name, S>,
+  spec: LiveProjectionQuerySpec<S, Result>,
+  cfg: ProjectionQueryClientConfig,
+): Stream.Stream<Result, ProjectionQueryReadError> =>
+  observe(plane, toProjectionQuery(spec), cfg)
 
 export const until = <
   Name extends string,
