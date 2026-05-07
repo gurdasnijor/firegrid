@@ -169,42 +169,37 @@ Use EventPlane from `@firegrid/substrate/event-plane` inside runtime layers when
 the domain needs primary-keyed state, materialized projections, or
 projection-match evaluation. EventPlane is not the browser client surface.
 
-## Projection Query Reads
+## Projection Query Foundation
 
 Use the `@firegrid/client/projection-query` subpath when browser or edge code
-needs read-only access to app-owned EventPlane projections through the client
-package:
+needs low-level, read-only access to app-owned EventPlane projections through
+the client package:
 
 ```ts
-import {
-  observe,
-  until,
-} from "@firegrid/client/projection-query"
+import { observe } from "@firegrid/client/projection-query"
 
 const liveList = observe(WidgetsPlane, widgetListQuery, {
   streamUrl: appConfig.firegridStreamUrl,
 })
-
-const readyWidget = until(
-  WidgetsPlane,
-  readyWidgetQuery,
-  {
-    streamUrl: appConfig.firegridStreamUrl,
-    timeout: "10 seconds",
-  },
-)
 ```
 
-Projection query handles are descriptor-scoped and read-only. They expose
-top-level `observe(plane, query, config)` and
-`until(plane, query, config)` helpers for normal UI reads; `until` resolves
-when the query value is present, meaning it is not `null` or `undefined`.
-Advanced or repeated-query callers can use `createProjectionQueryClient(...)`
-plus `projectionFor(plane)` to reuse configuration, then call cursorless
-`handle.observe(...)` and `handle.until(...)`. Use `untilWhere(...)` or
-`handle.untilWhere(...)` when a query needs an arbitrary predicate; use
-`snapshot` plus `stream(query, cursor)`, or `untilFrom(...)`, only when an
-explicit cursor is needed. The surface does not expose raw StreamDB
+This is the foundation layer for live read-model queries, not the final
+collection-query DSL. A higher-level API can later make UI code read more like
+`liveQuery(q.from({ m: collections.messages }).orderBy(...))`; this PR only
+exposes the descriptor-scoped projection facade that such an API can build on.
+
+Projection query handles are descriptor-scoped and read-only. The headline path
+is `observe(plane, query, config)` for snapshot-plus-live streams over typed
+app-owned projection rows. Advanced or repeated-query callers can use
+`createProjectionQueryClient(...)` plus `projectionFor(plane)` to reuse
+configuration, then call cursorless `handle.observe(...)`.
+
+Wait semantics compose on top of live reads. Use `until(plane, query, config)`
+or `handle.until(query, config)` only when code needs to wait for a present
+value, meaning the query result is not `null` or `undefined`. Use
+`untilWhere(...)` or `handle.untilWhere(...)` when the wait needs an arbitrary
+predicate. Use `snapshot` plus `stream(query, cursor)`, or `untilFrom(...)`,
+only when an explicit cursor is needed. The surface does not expose raw StreamDB
 collections, substrate kernel imports, runtime handlers, claims, completions, or
 terminal run authority.
 
