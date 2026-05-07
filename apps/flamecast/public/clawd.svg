@@ -1,0 +1,224 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -22 28 42" width="28" height="42" shape-rendering="crispEdges">
+  <g class="canopy">
+    <animateTransform attributeName="transform" type="translate"
+      values="0 0; 1 0; 0 0; -1 0; 0 0"
+      keyTimes="0; 0.25; 0.5; 0.75; 1"
+      dur="6s" calcMode="discrete" repeatCount="indefinite"/>
+  <!-- Parachute canopy — pixel-art dome, muted orange/gold panels -->
+  <!-- y=-22 (apex, 4 wide) -->
+  <rect x="8" y="-22" width="2" height="1" fill="#B85A2A"/>
+  <rect x="10" y="-22" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-21 (6 wide) -->
+  <rect x="7" y="-21" width="2" height="1" fill="#C9A05A"/>
+  <rect x="9" y="-21" width="2" height="1" fill="#B85A2A"/>
+  <rect x="11" y="-21" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-20 (8 wide) -->
+  <rect x="6" y="-20" width="2" height="1" fill="#B85A2A"/>
+  <rect x="8" y="-20" width="2" height="1" fill="#C9A05A"/>
+  <rect x="10" y="-20" width="2" height="1" fill="#B85A2A"/>
+  <rect x="12" y="-20" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-19 (10 wide) -->
+  <rect x="5" y="-19" width="2" height="1" fill="#C9A05A"/>
+  <rect x="7" y="-19" width="2" height="1" fill="#B85A2A"/>
+  <rect x="9" y="-19" width="2" height="1" fill="#C9A05A"/>
+  <rect x="11" y="-19" width="2" height="1" fill="#B85A2A"/>
+  <rect x="13" y="-19" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-18 (12 wide) -->
+  <rect x="4" y="-18" width="2" height="1" fill="#B85A2A"/>
+  <rect x="6" y="-18" width="2" height="1" fill="#C9A05A"/>
+  <rect x="8" y="-18" width="2" height="1" fill="#B85A2A"/>
+  <rect x="10" y="-18" width="2" height="1" fill="#C9A05A"/>
+  <rect x="12" y="-18" width="2" height="1" fill="#B85A2A"/>
+  <rect x="14" y="-18" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-17 (14 wide) -->
+  <rect x="3" y="-17" width="2" height="1" fill="#C9A05A"/>
+  <rect x="5" y="-17" width="2" height="1" fill="#B85A2A"/>
+  <rect x="7" y="-17" width="2" height="1" fill="#C9A05A"/>
+  <rect x="9" y="-17" width="2" height="1" fill="#B85A2A"/>
+  <rect x="11" y="-17" width="2" height="1" fill="#C9A05A"/>
+  <rect x="13" y="-17" width="2" height="1" fill="#B85A2A"/>
+  <rect x="15" y="-17" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-16 (16 wide) -->
+  <rect x="2" y="-16" width="2" height="1" fill="#B85A2A"/>
+  <rect x="4" y="-16" width="2" height="1" fill="#C9A05A"/>
+  <rect x="6" y="-16" width="2" height="1" fill="#B85A2A"/>
+  <rect x="8" y="-16" width="2" height="1" fill="#C9A05A"/>
+  <rect x="10" y="-16" width="2" height="1" fill="#B85A2A"/>
+  <rect x="12" y="-16" width="2" height="1" fill="#C9A05A"/>
+  <rect x="14" y="-16" width="2" height="1" fill="#B85A2A"/>
+  <rect x="16" y="-16" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-15 (18 wide) -->
+  <rect x="1" y="-15" width="2" height="1" fill="#C9A05A"/>
+  <rect x="3" y="-15" width="2" height="1" fill="#B85A2A"/>
+  <rect x="5" y="-15" width="2" height="1" fill="#C9A05A"/>
+  <rect x="7" y="-15" width="2" height="1" fill="#B85A2A"/>
+  <rect x="9" y="-15" width="2" height="1" fill="#C9A05A"/>
+  <rect x="11" y="-15" width="2" height="1" fill="#B85A2A"/>
+  <rect x="13" y="-15" width="2" height="1" fill="#C9A05A"/>
+  <rect x="15" y="-15" width="2" height="1" fill="#B85A2A"/>
+  <rect x="17" y="-15" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-14 (20 wide) -->
+  <rect x="0" y="-14" width="2" height="1" fill="#B85A2A"/>
+  <rect x="2" y="-14" width="2" height="1" fill="#C9A05A"/>
+  <rect x="4" y="-14" width="2" height="1" fill="#B85A2A"/>
+  <rect x="6" y="-14" width="2" height="1" fill="#C9A05A"/>
+  <rect x="8" y="-14" width="2" height="1" fill="#B85A2A"/>
+  <rect x="10" y="-14" width="2" height="1" fill="#C9A05A"/>
+  <rect x="12" y="-14" width="2" height="1" fill="#B85A2A"/>
+  <rect x="14" y="-14" width="2" height="1" fill="#C9A05A"/>
+  <rect x="16" y="-14" width="2" height="1" fill="#B85A2A"/>
+  <rect x="18" y="-14" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-13 (22 wide) -->
+  <rect x="-1" y="-13" width="2" height="1" fill="#C9A05A"/>
+  <rect x="1" y="-13" width="2" height="1" fill="#B85A2A"/>
+  <rect x="3" y="-13" width="2" height="1" fill="#C9A05A"/>
+  <rect x="5" y="-13" width="2" height="1" fill="#B85A2A"/>
+  <rect x="7" y="-13" width="2" height="1" fill="#C9A05A"/>
+  <rect x="9" y="-13" width="2" height="1" fill="#B85A2A"/>
+  <rect x="11" y="-13" width="2" height="1" fill="#C9A05A"/>
+  <rect x="13" y="-13" width="2" height="1" fill="#B85A2A"/>
+  <rect x="15" y="-13" width="2" height="1" fill="#C9A05A"/>
+  <rect x="17" y="-13" width="2" height="1" fill="#B85A2A"/>
+  <rect x="19" y="-13" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-12 (24 wide) -->
+  <rect x="-2" y="-12" width="2" height="1" fill="#B85A2A"/>
+  <rect x="0" y="-12" width="2" height="1" fill="#C9A05A"/>
+  <rect x="2" y="-12" width="2" height="1" fill="#B85A2A"/>
+  <rect x="4" y="-12" width="2" height="1" fill="#C9A05A"/>
+  <rect x="6" y="-12" width="2" height="1" fill="#B85A2A"/>
+  <rect x="8" y="-12" width="2" height="1" fill="#C9A05A"/>
+  <rect x="10" y="-12" width="2" height="1" fill="#B85A2A"/>
+  <rect x="12" y="-12" width="2" height="1" fill="#C9A05A"/>
+  <rect x="14" y="-12" width="2" height="1" fill="#B85A2A"/>
+  <rect x="16" y="-12" width="2" height="1" fill="#C9A05A"/>
+  <rect x="18" y="-12" width="2" height="1" fill="#B85A2A"/>
+  <rect x="20" y="-12" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-11 rim (26 wide) -->
+  <rect x="-3" y="-11" width="2" height="1" fill="#C9A05A"/>
+  <rect x="-1" y="-11" width="2" height="1" fill="#B85A2A"/>
+  <rect x="1" y="-11" width="2" height="1" fill="#C9A05A"/>
+  <rect x="3" y="-11" width="2" height="1" fill="#B85A2A"/>
+  <rect x="5" y="-11" width="2" height="1" fill="#C9A05A"/>
+  <rect x="7" y="-11" width="2" height="1" fill="#B85A2A"/>
+  <rect x="9" y="-11" width="2" height="1" fill="#C9A05A"/>
+  <rect x="11" y="-11" width="2" height="1" fill="#B85A2A"/>
+  <rect x="13" y="-11" width="2" height="1" fill="#C9A05A"/>
+  <rect x="15" y="-11" width="2" height="1" fill="#B85A2A"/>
+  <rect x="17" y="-11" width="2" height="1" fill="#C9A05A"/>
+  <rect x="19" y="-11" width="2" height="1" fill="#B85A2A"/>
+  <rect x="21" y="-11" width="2" height="1" fill="#C9A05A"/>
+  <!-- y=-10 rim shadow (muted maroon) -->
+  <rect x="-3" y="-10" width="26" height="1" fill="#5C2818"/>
+
+  <!-- Strings — converging from rim toward (smaller) crab body top -->
+  <!-- Outer left -->
+  <rect x="-2" y="-9" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="-1" y="-8" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="0" y="-7" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="1" y="-6" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="2" y="-5" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="3" y="-4" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="4" y="-3" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="5" y="-2" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="6" y="-1" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="6" y="0" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="6" y="1" width="1" height="1" fill="#2a2a2a"/>
+  <!-- Inner left -->
+  <rect x="4" y="-9" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="5" y="-8" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="6" y="-7" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="7" y="-6" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="7" y="-5" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="8" y="-4" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="8" y="-3" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="9" y="-2" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="9" y="-1" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="9" y="0" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="9" y="1" width="1" height="1" fill="#2a2a2a"/>
+  <!-- Inner right -->
+  <rect x="15" y="-9" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="14" y="-8" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="13" y="-7" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="12" y="-6" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="12" y="-5" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="11" y="-4" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="11" y="-3" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="10" y="-2" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="10" y="-1" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="10" y="0" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="10" y="1" width="1" height="1" fill="#2a2a2a"/>
+  <!-- Outer right -->
+  <rect x="21" y="-9" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="20" y="-8" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="19" y="-7" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="18" y="-6" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="17" y="-5" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="16" y="-4" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="15" y="-3" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="14" y="-2" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="13" y="-1" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="13" y="0" width="1" height="1" fill="#2a2a2a"/>
+  <rect x="13" y="1" width="1" height="1" fill="#2a2a2a"/>
+
+  <!-- Crab (smaller than before — 16w × 9h; centered at x=10) -->
+  <!-- Body -->
+  <rect x="4" y="2" width="12" height="6" fill="#DA8B6A"/>
+  <!-- Left arm -->
+  <rect x="2" y="4" width="2" height="2" fill="#DA8B6A"/>
+  <!-- Right arm -->
+  <rect x="16" y="4" width="2" height="2" fill="#DA8B6A"/>
+  <!-- Left outer leg -->
+  <rect x="4" y="8" width="2" height="3" fill="#DA8B6A"/>
+  <!-- Left inner leg -->
+  <rect x="7" y="8" width="2" height="3" fill="#DA8B6A"/>
+  <!-- Right inner leg -->
+  <rect x="11" y="8" width="2" height="3" fill="#DA8B6A"/>
+  <!-- Right outer leg -->
+  <rect x="14" y="8" width="2" height="3" fill="#DA8B6A"/>
+  <!-- Eyes — derived from golden source ratios:
+       eye_w/body_w = 2/16 = 0.125 → 12 * 0.125 = 1.5
+       eye_h/body_h = 2/8  = 0.25  → 6  * 0.25  = 1.5
+       eye_x_off/body_w = 2/16 = 0.125 → 1.5 from body left
+       eye_y_off/body_h = 3/8  = 0.375 → 2.25 from body top -->
+  <rect x="5.5" y="4.25" width="1.5" height="1.5" fill="#1a1a1a"/>
+  <rect x="13" y="4.25" width="1.5" height="1.5" fill="#1a1a1a"/>
+  </g>
+
+  <g class="cloud-r">
+    <animateTransform attributeName="transform" type="translate"
+      values="0 0; -1 0; -2 0; -1 0; 0 0"
+      keyTimes="0; 0.25; 0.5; 0.75; 1"
+      dur="8s" calcMode="discrete" repeatCount="indefinite"/>
+  <!-- Right cloud (slightly right of vertical center) -->
+  <!-- y=13 top bumps -->
+  <rect x="13" y="13" width="2" height="1" fill="#FFFFFF"/>
+  <rect x="16" y="13" width="3" height="1" fill="#FFFFFF"/>
+  <!-- y=14 -->
+  <rect x="12" y="14" width="10" height="1" fill="#FFFFFF"/>
+  <!-- y=15 -->
+  <rect x="12" y="15" width="10" height="1" fill="#FFFFFF"/>
+  <!-- y=16 -->
+  <rect x="13" y="16" width="8" height="1" fill="#FFFFFF"/>
+  <!-- y=17 shadow -->
+  <rect x="14" y="17" width="6" height="1" fill="#C9C5B0"/>
+  </g>
+
+  <g class="cloud-l">
+    <animateTransform attributeName="transform" type="translate"
+      values="0 0; 1 0; 2 0; 1 0; 0 0"
+      keyTimes="0; 0.25; 0.5; 0.75; 1"
+      dur="10s" calcMode="discrete" repeatCount="indefinite"/>
+  <!-- Left cloud — same size, lower (clawd descending through clouds) -->
+  <!-- y=16 top bumps -->
+  <rect x="-1" y="16" width="2" height="1" fill="#FFFFFF"/>
+  <rect x="2" y="16" width="3" height="1" fill="#FFFFFF"/>
+  <!-- y=17 -->
+  <rect x="-2" y="17" width="10" height="1" fill="#FFFFFF"/>
+  <!-- y=18 -->
+  <rect x="-2" y="18" width="10" height="1" fill="#FFFFFF"/>
+  <!-- y=19 -->
+  <rect x="-1" y="19" width="8" height="1" fill="#FFFFFF"/>
+  <!-- y=20 shadow -->
+  <rect x="0" y="20" width="6" height="1" fill="#C9C5B0"/>
+  </g>
+</svg>
