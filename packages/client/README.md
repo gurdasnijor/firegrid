@@ -169,6 +169,39 @@ Use EventPlane from `@firegrid/substrate/event-plane` inside runtime layers when
 the domain needs primary-keyed state, materialized projections, or
 projection-match evaluation. EventPlane is not the browser client surface.
 
+## Projection Query Reads
+
+Use the `@firegrid/client/projection-query` subpath when browser or edge code
+needs read-only access to app-owned EventPlane projections through the client
+package:
+
+```ts
+import {
+  ProjectionQueryClientLive,
+  projectionFor,
+} from "@firegrid/client/projection-query"
+
+const ProjectionsLive = ProjectionQueryClientLive({
+  streamUrl: appConfig.firegridStreamUrl,
+})
+
+const program = Effect.gen(function* () {
+  const widgets = yield* projectionFor(WidgetsPlane)
+  const snapshot = yield* widgets.snapshot(widgetListQuery)
+
+  return yield* widgets.until(
+    readyWidgetQuery,
+    (row) => row !== undefined,
+    { cursor: snapshot.cursor },
+  )
+}).pipe(Effect.provide(ProjectionsLive))
+```
+
+Projection query handles are descriptor-scoped and read-only. They expose
+`snapshot`, `stream`, and `until` over the app-owned plane without exposing raw
+StreamDB collections, substrate kernel imports, runtime handlers, claims,
+completions, or terminal run authority.
+
 ## Focused Smoke Checks
 
 The focused package checks are:
