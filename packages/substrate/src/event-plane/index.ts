@@ -7,11 +7,14 @@
 // No global registry; consumers compose `define` with `layer` per their plane.
 import { define, type EventPlaneDefinition } from "./define.ts"
 import { layer, type EventPlaneLayerConfig } from "./layer.ts"
+import { DurableChannel } from "./durable-channel.ts"
 
 export const EventPlane = {
   define,
   layer,
 } as const
+
+export { DurableChannel }
 
 export type { EventPlaneDefinition, EventPlaneLayerConfig }
 
@@ -32,3 +35,48 @@ export {
   type PlaneSnapshot,
   type RowAuthority,
 } from "./projection.ts"
+
+export {
+  CompletionKey,
+  DeliveryKey,
+  DurableClaimId,
+  DurableSubscriberId,
+  OrderingScope,
+  DurableDeliveryAppendError,
+  DurableDeliveryConflictError,
+  DurableChannelClaimError,
+  DurableChannelMissingEventError,
+  DurableDeliveryNotFoundError,
+  appendDurableDelivery,
+  claimDurableDelivery,
+  defineDurableChannel,
+  durableChannelCompletionQuery,
+  durableChannelFoldQuery,
+  foldDurableChannel,
+  recordDurableChannelOutcome,
+  type DuplicateExpiryBehavior,
+  type DurableChannelDedupePolicy,
+  type DurableChannelDefinition,
+  type DurableChannelEvents,
+  type DurableChannelFold,
+  type DurableChannelSelectors,
+  type DurableChannelServices,
+  type DurableChannelClaimFailure,
+  type DurableChannelClaimInput,
+  type DurableChannelClaimResult,
+  type DurableClaimRecord,
+  type DurableConflictRecord,
+  type DurableCursorAckRecord,
+  type DurableDeliveryAppendInput,
+  type DurableDeliveryAppendResult,
+  type DurableDeliveryEnvelope,
+  type DurableDeliveryMetadata,
+  type DurableDeliveryProducerError,
+  type DurableDeliveryRecord,
+  type DurableOutcomeError,
+  type DurableOutcomeInput,
+  type DurableOutcomeResult,
+  type DurableRetryRecord,
+  type DurableTerminalKind,
+  type DurableTerminalRecord,
+} from "./durable-channel.ts"
