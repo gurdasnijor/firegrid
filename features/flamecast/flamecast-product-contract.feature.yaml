@@ -39,6 +39,7 @@ components:
       2: Callback tokens such as `fc_evt_*`, callback URL minting, and callback rotation policy are owned by Flamecast.
       3: "`permission.required` callback payload shape including `sessionId`, `sequence`, `callId`, `capability`, and `input` is owned by Flamecast."
       4: Customer-facing webhook authentication, retry policy beyond what Firegrid durable subscribers provide, and external delivery success criteria are owned by Flamecast.
+      5: Internal session status signalling between Flamecast components is not customer webhook behavior and lowers to durable state, EventStream, EventPlane, or projection observation when those mechanics can carry the fact.
 
   IDENTITY_AUTH:
     requirements:
@@ -58,6 +59,7 @@ components:
       7: Flamecast provider adapter execution lowers onto a runtime handler composed via `Firegrid.composeRuntime`; Flamecast retains the adapter implementation and credentials.
       8: Flamecast resources and secrets lower onto opaque resource references and secret references with product-owned runtime layers; Firegrid never sees raw secret material.
       9: Flamecast prompt transport, scheduled self-prompt, and provider-tool dispatch lower onto Firegrid claimed-intent and scheduling-tool-binding mechanics; Flamecast retains prompt schema, promptability policy, and provider-tool transport.
+      10: Flamecast session status transitions lower onto state or event rows first; external callback delivery, when required, is a downstream durable delivery side effect rather than the source of truth for internal progress.
 
 constraints:
   INVARIANTS:

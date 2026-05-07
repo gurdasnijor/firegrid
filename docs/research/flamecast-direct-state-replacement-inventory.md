@@ -89,6 +89,68 @@ Do not introduce Firegrid handlers, `ctx`, `RunWait`, `EventPlane`,
 `emit(...)` APIs. If a helper looks like an Effect or Durable Streams primitive,
 use the primitive.
 
+### Replacement Analysis Rule
+
+Do not keep a Flamecast mechanism because it has no one-line Firegrid
+equivalent. For each existing mechanism, implementation must identify:
+
+1. the job it performs today;
+2. whether that job is product semantics or durable mechanics;
+3. which Firegrid primitive can carry the durable-mechanics part;
+4. which Firegrid primitive is missing, unimplemented, or unproven;
+5. what Flamecast code remains only until that gap is closed.
+
+Compatibility is not a reason by itself. A remaining Flamecast path must be
+labeled as one of:
+
+- product-owned behavior that Firegrid should never absorb;
+- temporary fallback because a product-neutral Firegrid primitive is not ready;
+- dead internal compensation that should be deleted once state/event
+  observation exists.
+
+The Acai anchors for this rule are:
+
+- `flamecast-product-contract.LOWERING.1`
+- `flamecast-product-contract.CALLBACKS.5`
+- `flamecast-product-contract.LOWERING.10`
+- `firegrid-platform-invariants.BOUNDARY.1`
+- `firegrid-platform-invariants.SECURITY.2`
+- `firegrid-durable-subscriber-webhooks.*`
+
+### Webhook And Callback Trace
+
+Flamecast currently uses the word "callback" for several different jobs. They
+should not be migrated as one category.
+
+| Current path | Current code trace | Why it exists | Firegrid replacement posture |
+| --- | --- | --- | --- |
+| Customer session status callback | `callback_url` is accepted in `src/effect/schemas.ts`; routed through `src/effect/api/sessions-core-handlers.ts`; stored by `SessionDO.writeCallback`; fired from `SessionDO.writeState`; payload/signing live in `src/session-callback.ts`. | Notify an external caller that an async session status changed. Slack also reuses this path internally for turn completion. | External delivery remains Flamecast product behavior. The durable mechanics should lower to a delivery row plus replay-safe subscriber once `firegrid-durable-subscriber-webhooks.*` is implemented/proven. Internal Slack-style signalling should observe state/event rows instead of POSTing a customer webhook to ourselves. |
+| Provider event callback ingest | `providerEventCallbackUrl(env, sessionId)` mints `/provider-events/:sessionId`; `eventCallbackToken` is stored in provider metadata; `src/provider-events.ts` validates bearer token, reads provider metadata from Postgres, normalizes body events, updates Postgres, then calls `writeProviderStateToDo` and `ingestProviderEventsToDo`. | Let external providers report asynchronous progress, output, terminal state, usage, or errors when polling or immediate create response is not enough. | The route, token policy, payload schema, and provider taxonomy stay Flamecast. The accepted delivery, idempotency/conflict projection, sequence/gap handling, and wakeup into session state should lower to Firegrid durable delivery/EventPlane mechanics. |
+| Slack app mention ingest | `handleSlackEvents` verifies Slack signature, maps a Slack thread to a Flamecast session, starts an async turn through `SessionDO`, and posts an immediate thinking message. | Slack's Events API requires fast acknowledgement and product-specific auth/signature handling. | Slack route and signature verification stay Flamecast. The turn should lower to a Flamecast operation/runtime path. Posting final Slack replies should be an outbound delivery side effect driven by terminal state, not the session status callback transport. |
+| Slack turn callback | `handleSlackTurnCallback` receives `session.status_changed`, parses terminal status, and posts the summary to the Slack thread. | Internal bridge from session terminal state to Slack reply posting. | This is not customer webhook behavior. It should become a subscriber over Flamecast terminal state/event rows, producing an outbound Slack delivery intent with at-least-once semantics and product-owned idempotency. |
+| Runtime/SDK stream callbacks | Think and Claude-style runtimes use SDK callbacks/RPC targets to transform model chunks/tool events into `IngestEvent` rows, then `SessionDO` stores and fans out them. | Provider SDKs expose streaming callbacks; Flamecast needs to normalize them into session history. | Provider callback APIs remain adapter-owned. The storage/fanout target should be state/EventStream append, not DO SQLite/WebSocket. Firegrid does not replace provider SDK callback shape. |
+
+### Firegrid Gap Ledger
+
+The question is not "what has no direct mapping?". The question is "what durable
+mechanic must Firegrid provide so Flamecast can stop owning the compensation?".
+
+| Need | Current Flamecast compensation | Firegrid primitive or spec | Gap to close before deletion |
+| --- | --- | --- | --- |
+| Durable inbound provider delivery | `/provider-events/:sessionId` writes Postgres metadata and `SessionDO` storage directly. | `firegrid-durable-subscriber-webhooks.DELIVERY_PRODUCER.*`; caller-owned EventPlane rows. | Need a product-neutral append helper with idempotency key, producer identity, duplicate/conflict result, and cursor acknowledgement proven through tests. Firegrid must not host the Flamecast HTTP route or token policy. |
+| Replay-safe processing of accepted deliveries | Provider callback handler performs state mutation inline inside the HTTP request. | `firegrid-durable-subscriber-webhooks.SUBSCRIBER_RUNTIME.*`; `firegrid-claimed-intent-transport.CLAIM_BEFORE_DISPATCH.*`. | Need a runtime subscriber proof that replays to live boundary before side effects, claims before processing, records retry/dead-letter/terminal rows, and performs no side effects during replay. |
+| External customer webhook fanout | `SessionDO.deliverStatusCallback` fetches the customer URL on status change, without durable retry/dead-letter state. | Durable delivery channel plus subscriber runtime; `firegrid-platform-invariants.SECURITY.6`. | Need outbound delivery rows, caller-supplied request classifier, retry/dead-letter projection, and idempotency/fencing guidance. Signing, callback URL, customer auth, and callbackEvents filtering remain Flamecast. |
+| Internal terminal signalling | Slack turn callback receives a customer-shaped status webhook from the same worker. | State/EventPlane/EventStream observation; `flamecast-product-contract.CALLBACKS.5`; `flamecast-product-contract.LOWERING.10`. | No Firegrid product feature is needed if terminal session state is already durable and observable. The blocker is wiring Slack reply logic as a Flamecast subscriber/delivery side effect rather than as an HTTP callback to self. |
+| Public ingress discovery for providers/callback registrars | `WORKER_URL` is embedded in `providerEventCallbackUrl`. | `firegrid-runtime-presence.INGRESS_SELECTION.*`. | Need presence publication/query if callback registration must select among multiple runtime/edge ingress endpoints. Presence supplies endpoint discovery only; product code still owns route auth and token minting. |
+| Browser read/live replacement | REST polling and `/events/live` WebSocket read `SessionDO` or ClickHouse. | `firegrid-client-projection-api.*`; direct Durable Streams State subscriptions. | Need a no-gap snapshot-then-live facade over app-owned rows before deleting UI polling/WebSocket compensation. |
+| Event history projection | `SessionDO` SQLite assigns sequence and ClickHouse compensates for reads. | Direct Durable Streams State rows now; Firegrid EventStream/EventPlane if the broader chassis uses Firegrid. | Need explicit append boundary that allocates per-session `seq`, preserves normalized `IngestEvent`, and proves reads do not hit DO SQLite or ClickHouse. |
+
+The immediate implementation implication is that provider-event ingest and
+customer webhook fanout are not "keep for compatibility" items. They are either
+product-owned HTTP/auth surfaces, or temporary holders for missing/proving
+Firegrid durable delivery mechanics. Internal callback-to-self paths should be
+removed once the state transition is observable.
+
 ### Stream Topology
 
 Use a small number of configured Flamecast state streams. Do **not** create one
@@ -354,10 +416,17 @@ but their durable writes must go through the session state module.
 External customer/provider webhooks remain part of the Flamecast product.
 Internal DO callback/fanout compensation does not.
 
-Status callbacks should be triggered from a state transition write path or a
-state transition subscriber, using a fetch-free payload/header builder. The
-callback builder should not depend on DO storage, SQLite event counts, or
-`SessionDO.writeState`.
+Status transitions should first be recorded as durable state/event facts. Any
+external customer callback is then an outbound delivery side effect derived from
+that state. The callback builder should not depend on DO storage, SQLite event
+counts, or `SessionDO.writeState`.
+
+Internal consumers such as Slack replies should not receive customer-shaped
+webhooks from Flamecast itself. They should observe terminal state or event rows
+and append their own product-owned outbound delivery intent. This is the
+practical distinction required by
+`flamecast-product-contract.CALLBACKS.5` and
+`flamecast-product-contract.LOWERING.10`.
 
 ### `@electric-sql/durable-session` Decision Rule
 
@@ -399,6 +468,9 @@ Assertions:
 
 Any implementation lane that touches the source-of-truth path must report:
 
+- which current Flamecast mechanism it replaces, the job that mechanism
+  performed, and whether any remaining code is product-owned behavior,
+  temporary Firegrid-gap fallback, or dead internal compensation;
 - exact `createStateSchema` collections and primary keys;
 - exact stream resolver/config and proof it does not create per-session Durable
   Streams;
