@@ -47,10 +47,9 @@ await Effect.runPromise(
 )
 ```
 
-`config` is supplied by the runtime host. In attached mode, the published
-`firegrid` binary reads `DURABLE_STREAMS_URL` at the process edge; see
-`packages/runtime/bin/firegrid.ts`. Product app dev commands may choose another
-host/config source, but this pattern does not prescribe that launcher.
+`config` is supplied by the runtime host. This pattern does not define how a
+product app starts that host; it only shows what the runtime entrypoint does
+once it has a stream URL and runtime identity.
 
 ## What This Pattern Forbids
 
