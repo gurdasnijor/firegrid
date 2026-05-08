@@ -1,2 +1,1 @@
-export * as Workflows from "./workflows.js"
-export * from "./workflows.js"
+export * as Workflows from "./durable-workflow/workflows.ts"

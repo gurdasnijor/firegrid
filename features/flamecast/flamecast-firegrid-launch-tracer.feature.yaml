@@ -1,0 +1,34 @@
+feature:
+  name: flamecast-firegrid-launch-tracer
+  product: flamecast
+  description: Validate the minimal Flamecast responsibilities for launching an agent runtime through Firegrid durable launch planes while keeping Flamecast provider/session semantics product-owned.
+
+components:
+  PRODUCT_SPEC:
+    requirements:
+      1: Flamecast defines the provider wire row schemas written by its launched runtime into the session plane stream.
+      2: Flamecast defines the RuntimeTarget for each provider adapter it wants Firegrid to launch, including command/module shape, readiness predicate, and rebuild strategy.
+      3: Flamecast defines the session, diagnostics, execution, and resource plane refs needed by the provider runtime without requiring Firegrid to understand Flamecast provider ids.
+      4: Flamecast defines plane bindings that map Firegrid plane refs into runtime-visible handles such as environment variables, stdio config, mount paths, and adapter inputs.
+      5: Flamecast defines pure materializers from provider wire rows into Flamecast session summaries, session events, provider delivery state, and callback delivery state.
+
+  TRACER_FLOW:
+    requirements:
+      1: A Flamecast tracer launch appends a Firegrid launch row to a configured Durable Streams launch stream.
+      2: Firegrid starts the configured local runtime process and injects only the plane bindings declared by the Flamecast launch request.
+      3: The launched runtime appends a Flamecast-owned provider wire row to the session plane stream.
+      4: Firegrid records process lifecycle facts without parsing the Flamecast provider wire row as a Flamecast message, tool call, permission request, or terminal event.
+      5: Flamecast materialization over the session plane can observe the provider wire row and project the product-owned session state.
+
+constraints:
+  BOUNDARY:
+    requirements:
+      1: Flamecast does not rely on Firegrid HTTP ingress, REST polling, WebSocket fanout, SessionDO storage, or ClickHouse primary reads for the tracer flow.
+      2: Flamecast provider adapters do not copy legacy Flamecast runtime loop or webhook-delivery code as the implementation reference.
+      3: Firegrid remains responsible only for launch, process, plane, binding, lifecycle, and durable stream mechanics; Flamecast remains responsible for provider semantics.
+
+  DEPENDS_ON:
+    requirements:
+      1: "`firegrid-durable-launch-runtime-operator.*` governs launch rows, runtime targets, planes, bindings, launch operator behavior, LaunchHandle, and materializer contract."
+      2: "`durable-state-session-events.*` governs Flamecast session event state that materializers produce from provider wire rows."
+      3: "`flamecast-product-contract.*` governs Flamecast provider ids, event taxonomy, opaque-provider rules, callbacks, and product-facing behavior."

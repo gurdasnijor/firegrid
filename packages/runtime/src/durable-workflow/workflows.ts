@@ -1,16 +1,17 @@
 import { WorkflowEngine } from "@effect/workflow"
-import { Context, Effect, Layer, Scope } from "effect"
-import { fireDueWorkflowClocks } from "./durable-workflow/clock.js"
-import { makeWorkflowEngine } from "./durable-workflow/engine-runtime.js"
+import type { Scope } from "effect"
+import { Context, Effect, Layer } from "effect"
+import { fireDueWorkflowClocks } from "./clock.ts"
+import { makeWorkflowEngine } from "./engine-runtime.ts"
 import {
   acquireWorkflowStateStore,
   WorkflowStateStore,
   type WorkflowEngineDurableStateOptions,
   type WorkflowStateStoreError,
-} from "./durable-workflow/state.js"
+} from "./state.ts"
 
-export * from "./durable-workflow/clock.js"
-export * from "./durable-workflow/state.js"
+export * from "./clock.ts"
+export * from "./state.ts"
 
 export const make = (
   options: WorkflowEngineDurableStateOptions,

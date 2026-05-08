@@ -1,6 +1,6 @@
 import { DurableDeferred, WorkflowEngine } from "@effect/workflow"
 import { Effect, Exit } from "effect"
-import { WorkflowStateStore } from "./state.js"
+import { WorkflowStateStore } from "./state.ts"
 
 export const fireDueWorkflowClocks = (
   nowMs: number,

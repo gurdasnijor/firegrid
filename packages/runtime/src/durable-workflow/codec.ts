@@ -1,5 +1,6 @@
 import { Workflow } from "@effect/workflow"
-import { Effect, Exit, Schema } from "effect"
+import type { Effect } from "effect"
+import { Exit, Schema } from "effect"
 
 export const decodeWorkflowResult = (
   workflow: Workflow.Any,

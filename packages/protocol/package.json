@@ -1,0 +1,38 @@
+{
+  "name": "@firegrid/protocol",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./launch": {
+      "types": "./src/launch/index.ts",
+      "default": "./src/launch/index.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "pnpm run typecheck && pnpm run test",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@durable-streams/state": "^0.2.5",
+    "effect": "^3.18.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}

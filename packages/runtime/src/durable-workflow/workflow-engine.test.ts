@@ -15,7 +15,7 @@ import {
   makeWorkflowStateStore,
   type WorkflowEngineDurableStateOptions,
   type WorkflowStateStore,
-} from "../workflows.js"
+} from "./workflows.ts"
 
 let server: DurableStreamTestServer | undefined
 
@@ -39,19 +39,28 @@ const createStreamUrl = async (name: string): Promise<string> => {
   return streamUrl
 }
 
-const runWith = <A, E>(
-  options: WorkflowEngineDurableStateOptions,
-  workflowLayer: any,
-  effect: Effect.Effect<A, E, any>,
+const runWithLayer = <A, E>(
+  engineLayer: Layer.Layer<never, unknown, unknown>,
+  workflowLayer: unknown,
+  effect: Effect.Effect<A, E, unknown>,
 ): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(
       effect.pipe(
-        Effect.provide(workflowLayer),
-        Effect.provide(layerDurableStreams(options)),
+        Effect.provide(
+          (workflowLayer as Layer.Layer<never, unknown, unknown>).pipe(
+            Layer.provideMerge(engineLayer),
+          ),
+        ),
       ),
-    ) as Effect.Effect<A, any, never>,
-  ) as Promise<A>
+    ) as Effect.Effect<A, unknown, never>,
+  )
+
+const runWith = <A, E>(
+  options: WorkflowEngineDurableStateOptions,
+  workflowLayer: unknown,
+  effect: Effect.Effect<A, E, unknown>,
+): Promise<A> => runWithLayer(layerDurableStreams(options), workflowLayer, effect)
 
 const inspectStore = async <A>(
   streamUrl: string,
@@ -228,13 +237,10 @@ describe("durable workflow engine", () => {
       workflowLayer,
       ShapeWorkflow.execute({ id: "same" }),
     )
-    const second = await Effect.runPromise(
-      Effect.scoped(
-        ShapeWorkflow.execute({ id: "same" }).pipe(
-          Effect.provide(workflowLayer),
-          Effect.provide(layer({ streamUrl })),
-        ),
-      ),
+    const second = await runWithLayer(
+      layer({ streamUrl }),
+      workflowLayer,
+      ShapeWorkflow.execute({ id: "same" }),
     )
 
     expect(first).toBe(1)

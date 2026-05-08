@@ -1,5 +1,6 @@
 import { createStateSchema, createStreamDB } from "@durable-streams/state"
-import { Context, Effect, Schema, Scope } from "effect"
+import type { Scope } from "effect"
+import { Context, Effect, Schema } from "effect"
 
 export interface WorkflowEngineDurableStateOptions {
   readonly streamUrl: string
@@ -282,4 +283,7 @@ export const acquireWorkflowStateStore = (
 
 export const orDieStore = <A>(
   effect: Effect.Effect<A, WorkflowStateStoreError>,
-): Effect.Effect<A> => Effect.orDie(effect)
+): Effect.Effect<A> =>
+  // workflow-engine-durable-state.ENGINE.4
+  // eslint-disable-next-line no-restricted-syntax -- workflow engine adapter exposes upstream WorkflowEngine APIs, which cannot carry store errors.
+  Effect.orDie(effect)

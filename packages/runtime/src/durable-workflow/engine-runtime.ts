@@ -1,12 +1,13 @@
 import { Workflow, WorkflowEngine } from "@effect/workflow"
-import { Duration, Effect, Fiber, Scope } from "effect"
+import type { Scope } from "effect"
+import { Duration, Effect, Fiber } from "effect"
 import {
   decodeWorkflowResult,
   encodeWorkflowResult,
   reviveEncodedResult,
   reviveExit,
-} from "./codec.js"
-import { orDieStore, type WorkflowStateStore } from "./state.js"
+} from "./codec.ts"
+import { orDieStore, type WorkflowStateStore } from "./state.ts"
 
 export const makeWorkflowEngine = (
   store: WorkflowStateStore,

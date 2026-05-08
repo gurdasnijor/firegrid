@@ -1,0 +1,95 @@
+feature:
+  name: firegrid-durable-launch-runtime-operator
+  product: firegrid
+  description: Stream-native launch operator, launch handle, runtime target, and materializer contract for starting disposable runtime processes whose observable state is rebuildable from durable rows.
+
+components:
+  LAUNCH_ROWS:
+    requirements:
+      1: Runtime launch is requested by appending a durable launch row to a configured Durable Streams backed stream, not by invoking a Firegrid RPC or product HTTP endpoint.
+      2: Runtime stop is requested by appending a durable stop row to the same launch authority, not by treating a live process handle as authority.
+      3: The launch id is the v1 idempotency key for duplicate launch requests unless a later spec introduces a separate dedupe key.
+      4: Logical launch rows and runtime process-attempt rows are separate durable facts; launch lifecycle projections fold over one launch and N process attempts.
+      5: Launch request specs carry secret references only; adapters reject raw secret material in durable target specs.
+
+  RUNTIME_TARGET:
+    requirements:
+      1: A RuntimeTarget describes how to start a live runtime process or adapter without defining provider message, transcript, tool, permission, or product session schemas.
+      2: A RuntimeTarget may declare readiness as a predicate over durable rows in named streams; the launch operator observes the predicate but does not embed provider-specific readiness logic.
+      3: A RuntimeTarget may declare rebuild inputs and strategy so replacement runtimes can restore equivalence from durable rows before performing side effects.
+      4: Restart policy decides whether another process attempt is allowed; rebuild strategy decides what the replacement runtime must do after it starts.
+
+  PLANES:
+    requirements:
+      1: A launch request may declare session, diagnostics, execution, and resource plane references without making those planes Firegrid-owned provider taxonomies.
+      2: Session and diagnostics planes are Durable Streams backed stream references that can be observed or materialized independently of the runtime process.
+      3: Execution planes describe where side effects may run, such as local process, Docker-backed workspace, remote sandbox, or hosted adapter references, without embedding sandbox lifecycle policy in Firegrid.
+      4: Resource planes describe durable or external resources such as filesystem mounts, repository worktrees, artifact bundles, volumes, MCP proxies, and secret references without storing resource bytes or raw secret material in Firegrid launch rows.
+      5: Plane bindings declaratively map plane fields into runtime-visible handles such as environment variables, mount paths, stdio configuration, or adapter inputs.
+
+  SANDBOX_PROVIDERS:
+    requirements:
+      1: Execution plane providers implement a common SandboxProvider contract with provider name, capabilities, create, get, list, execute, and destroy operations.
+      2: SandboxProvider configuration carries image or runtime hints, resource limits, resolved non-durable environment values, labels, setup commands, working directory, and provider-specific config without becoming product session schema.
+      3: SandboxProvider instances return sandbox identity, state, labels, connection info, and provider metadata as live/provider facts, while durable launch rows remain the replay authority.
+      4: Local process execution and remote providers such as Val Town, E2B, Daytona, or container providers are interchangeable behind the SandboxProvider contract when their capabilities satisfy the launch request.
+      5: Optional capabilities such as persistence, snapshots, streaming, file upload, interactive shell, and GPU are declared as provider capabilities rather than assumed by Firegrid launch code.
+
+  SECRET_BINDINGS:
+    requirements:
+      1: Secret values needed by a local or remote runtime are represented in launch rows as resource-plane secret references, never as raw environment variable values.
+      2: Env-secret bindings resolve secret references only at the live execution boundary and inject the resolved value into the runtime process or platform provider without writing the value back to Durable Streams.
+      3: Secret resolution is performed by a host-provided resolver Layer or platform provider integration, not by Firegrid substrate state.
+      4: Local and remote launch providers may resolve the same durable secret reference through different backing stores while preserving the launch row and session stream identity.
+      5: Failed secret resolution records a launch or materialization failure instead of starting a runtime process with missing secret-dependent environment.
+
+  LAUNCH_OPERATOR:
+    requirements:
+      1: The launch operator rebuilds launch projections to the live boundary before starting live process side effects.
+      2: The launch operator arbitrates launch ownership through durable claim or workflow semantics before starting a process attempt.
+      3: The launch operator starts local processes through Effect Platform APIs and scopes live resources to the process attempt lifetime.
+      4: The launch operator records process started, ready, exited, lost, stopped, and failed facts as durable rows.
+      5: Process ids, child handles, stdio pipes, sockets, SDK clients, fibers, and filesystem handles are never durable authority.
+      6: Process death does not make product session or event state unavailable when those facts were durably written by the runtime or product.
+      7: The tracer bullet launcher starts a local command, injects configured plane bindings, and proves the launched process can append product-owned rows to a session plane stream.
+
+  REMOTE_TRACER:
+    requirements:
+      1: A remote tracer provider can deploy the same provider-wire tracer runtime to a remote execution plane using the same launch id, session stream plane, resource secret refs, and readiness predicate as the local tracer.
+      2: The first opt-in remote provider target is Val Town because it can create a small remotely hosted TypeScript val, expose an HTTP trigger, and provide private environment variables to the remote runtime.
+      3: Remote tracer tests are opt-in and require caller-provided provider credentials and account identity; default CI does not create external resources.
+      4: A successful basic remote tracer returns the same product-owned provider wire row shape that the local tracer appends, including proof that configured secret bindings were available to the remote runtime.
+      5: Remote tracer cleanup deletes, replaces, or marks retired the remote runtime resource when the selected provider adapter supports cleanup and records durable lifecycle state before the test exits.
+      6: Container or VM providers such as Fly Machines remain later conformance targets for process-supervision semantics that Val Town's HTTP-triggered runtime does not prove.
+      7: Remote session-plane writeback is a separate opt-in conformance lane that requires a Durable Streams endpoint reachable from the selected remote execution provider.
+
+  MATERIALIZERS:
+    requirements:
+      1: RuntimeTarget definitions and StreamMaterializer definitions are independent; either side may be reused without a 1:1 binding.
+      2: A StreamMaterializer declares one or more input stream names and one output projection name.
+      3: A StreamMaterializer can be attached after launch by a late observer when the required raw rows are still retained.
+      4: A StreamMaterializer fold is pure and deterministic over schema-decoded durable rows; impure enrichment is a downstream layer, not projection authority.
+      5: Unknown provider rows remain durable raw records even when no materializer maps them into canonical projection rows.
+      6: Dual client/runtime materialization uses a declared materializer identity, fold version, and source cursor contract.
+      7: Materialized projections remain consistent across process attempt death and replacement startup with no missing or duplicated logical rows at the boundary.
+
+  LAUNCH_HANDLE:
+    requirements:
+      1: A LaunchHandle is a durable observation and command handle for a launch id, not a live process handle.
+      2: A LaunchHandle exposes lifecycle, snapshot, named projection, and stop affordances.
+      3: Raw named stream access is diagnostic and is not the default product-facing observation surface.
+      4: Product packages may wrap LaunchHandle projections into product-specific APIs such as sessions, messages, transcripts, histories, or provider events.
+
+constraints:
+  PRODUCT_NEUTRALITY:
+    requirements:
+      1: Firegrid launch APIs do not define Claude, ACP, Codex, Cursor, Devin, Flamecast, prompt, chat, tool, permission, provider webhook, or product callback semantics.
+      2: Firegrid exposes no product HTTP launch or webhook surface for this feature; configured Durable Streams URLs are the ingress and observation boundary.
+      3: Built-in provider mappings for Claude SDK, Claude ACP, Codex, Devin, Cursor, Jules, OpenHands, Factory Droid, or Flamecast require separate adapter packages or product-owned code.
+
+  DEPENDS_ON:
+    requirements:
+      1: "`durable-records-and-projections.*` governs durable record authority, projection rebuild, materializer fold, and raw-row retention semantics."
+      2: "`firegrid-runtime-process.*` governs runtime package placement, Effect Platform process discipline, scoped runtime lifetimes, and binary attachment through `DURABLE_STREAMS_URL`."
+      3: "`firegrid-client-projection-api.*` governs browser-safe projection observation and prevents client surfaces from gaining claim, completion, terminal, or runtime authority."
+      4: "`firegrid-execution-plane-resources.*` governs resource identity, secret references, materialization facts, and local-to-remote handoff constraints consumed by launch resource planes."

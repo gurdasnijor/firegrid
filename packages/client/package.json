@@ -1,0 +1,37 @@
+{
+  "name": "@firegrid/client",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "pnpm run typecheck && pnpm run test",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@durable-streams/state": "^0.2.5",
+    "@firegrid/protocol": "workspace:*",
+    "effect": "^3.18.0"
+  },
+  "devDependencies": {
+    "@durable-streams/client": "^0.2.3",
+    "@durable-streams/server": "^0.3.1",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}

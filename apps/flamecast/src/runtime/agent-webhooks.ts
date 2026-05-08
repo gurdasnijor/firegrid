@@ -2,7 +2,7 @@ import { Activity, Workflow } from "@effect/workflow"
 import { Context, Effect, Schema } from "effect"
 import {
   layerDurableStreams,
-} from "../../../../packages/runtime/src/workflows.ts"
+} from "../../../../packages/runtime/src/durable-workflow/workflows.ts"
 import {
   pendingAgentsWebhooks,
   type FlamecastDb,
