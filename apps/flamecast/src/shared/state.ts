@@ -26,6 +26,22 @@ export const FlamecastMessage = Schema.Struct({
 })
 export type FlamecastMessage = Schema.Schema.Type<typeof FlamecastMessage>
 
+export const FlamecastAgentsWebhook = Schema.Struct({
+  webhookId: Schema.String,
+  sessionId: Schema.String,
+  turnId: Schema.String,
+  ordinal: Schema.Number,
+  provider: Schema.Literal("flamecast-agents"),
+  userMessage: Schema.String,
+  assistantText: Schema.String,
+  status: Schema.Literal("accepted", "processed", "failed"),
+  acceptedAt: Schema.String,
+  updatedAt: Schema.String,
+  summary: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+})
+export type FlamecastAgentsWebhook = Schema.Schema.Type<typeof FlamecastAgentsWebhook>
+
 const FlamecastSession = Schema.Struct({
   sessionId: Schema.String,
   title: Schema.String,
@@ -44,6 +60,11 @@ export const flamecastState = createStateSchema({
     type: "flamecast.message",
     primaryKey: "messageId",
     schema: Schema.standardSchemaV1(FlamecastMessage),
+  },
+  agentWebhooks: {
+    type: "flamecast.agent_webhook",
+    primaryKey: "webhookId",
+    schema: Schema.standardSchemaV1(FlamecastAgentsWebhook),
   },
   sessions: {
     type: "flamecast.session",

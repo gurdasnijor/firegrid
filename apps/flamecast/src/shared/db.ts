@@ -2,6 +2,7 @@ import { createStreamDB } from "@durable-streams/state"
 import { Effect } from "effect"
 import {
   flamecastState,
+  type FlamecastAgentsWebhook,
   type FlamecastMessage,
   type FlamecastTurn,
 } from "./state.ts"
@@ -17,6 +18,20 @@ interface SubmitTurnInput {
 
 interface CompleteTurnInput {
   readonly turn: FlamecastTurn
+}
+
+export interface AcceptAgentsWebhookInput {
+  readonly webhookId: string
+  readonly sessionId: string
+  readonly turnId: string
+  readonly ordinal: number
+  readonly userMessage: string
+  readonly assistantText: string
+  readonly summary?: string
+}
+
+interface CompleteAgentsWebhookInput {
+  readonly webhook: FlamecastAgentsWebhook
 }
 
 const nowIso = (): string => new Date().toISOString()
@@ -37,6 +52,12 @@ const deterministicReply = (turn: FlamecastTurn): string => {
   const reversed = compact.split(/\s+/).reverse().join(" ")
   return `Local deterministic turn ${turn.ordinal}: ${reversed} (${wordCount(turn.message)} words).`
 }
+
+const webhookSummary = (webhook: FlamecastAgentsWebhook): string =>
+  webhook.summary ?? `Completed Flamecast Agents webhook turn ${webhook.ordinal}.`
+
+const titleFromWebhook = (webhook: FlamecastAgentsWebhook): string =>
+  titleFrom(webhook.userMessage)
 
 const appendJson = async (
   stream: { readonly append: (body: string) => Promise<unknown> },
@@ -105,6 +126,7 @@ export const makeFlamecastDb = (streamUrl: string) =>
             }),
           )
           await db.utils.awaitTxId(txid)
+          await db.preload()
         },
       },
       completeTurn: {
@@ -172,6 +194,129 @@ export const makeFlamecastDb = (streamUrl: string) =>
             }),
           )
           await db.utils.awaitTxId(txid)
+          await db.preload()
+        },
+      },
+      acceptAgentsWebhook: {
+        onMutate: (input: AcceptAgentsWebhookInput) => {
+          // stream-webhook-workflows.STREAM_INGRESS.1
+          // stream-webhook-workflows.STREAM_INGRESS.3
+          if (db.collections.agentWebhooks.get(input.webhookId) !== undefined) return
+          const at = nowIso()
+          db.collections.agentWebhooks.insert({
+            ...input,
+            provider: "flamecast-agents",
+            status: "accepted",
+            acceptedAt: at,
+            updatedAt: at,
+          })
+        },
+        mutationFn: async (input: AcceptAgentsWebhookInput) => {
+          const at = nowIso()
+          const txid = crypto.randomUUID()
+          const webhook: FlamecastAgentsWebhook = {
+            ...input,
+            provider: "flamecast-agents",
+            status: "accepted",
+            acceptedAt: at,
+            updatedAt: at,
+          }
+          await appendJson(
+            stream,
+            flamecastState.agentWebhooks.upsert({
+              value: webhook,
+              headers: { txid },
+            }),
+          )
+          await db.utils.awaitTxId(txid)
+        },
+      },
+      completeAgentsWebhook: {
+        onMutate: ({ webhook }: CompleteAgentsWebhookInput) => {
+          // stream-webhook-workflows.WORKFLOW_PROCESSING.2
+          const at = nowIso()
+          for (const message of messagesForWebhook(webhook, at)) {
+            if (db.collections.messages.get(message.messageId) === undefined) {
+              db.collections.messages.insert(message)
+            }
+          }
+          const turn = turnForWebhook(webhook, at)
+          const existingTurn = db.collections.turns.get(turn.turnId)
+          if (existingTurn === undefined) {
+            db.collections.turns.insert(turn)
+          } else {
+            db.collections.turns.update(turn.turnId, (draft) => {
+              Object.assign(draft, turn)
+            })
+          }
+          const existingSession = db.collections.sessions.get(webhook.sessionId)
+          if (existingSession === undefined) {
+            db.collections.sessions.insert({
+              sessionId: webhook.sessionId,
+              title: titleFromWebhook(webhook),
+              status: "complete",
+              turnCount: webhook.ordinal,
+              updatedAt: at,
+            })
+          } else {
+            db.collections.sessions.update(webhook.sessionId, (draft) => {
+              draft.status = "complete"
+              draft.turnCount = Math.max(draft.turnCount, webhook.ordinal)
+              draft.updatedAt = at
+            })
+          }
+          const existingWebhook = db.collections.agentWebhooks.get(webhook.webhookId)
+          if (existingWebhook !== undefined) {
+            db.collections.agentWebhooks.update(webhook.webhookId, (draft) => {
+              draft.status = "processed"
+              draft.updatedAt = at
+            })
+          }
+        },
+        mutationFn: async ({ webhook }: CompleteAgentsWebhookInput) => {
+          const at = nowIso()
+          const txid = crypto.randomUUID()
+          for (const message of messagesForWebhook(webhook, at)) {
+            await appendJson(
+              stream,
+              flamecastState.messages.upsert({
+                value: message,
+                headers: { txid },
+              }),
+            )
+          }
+          await appendJson(
+            stream,
+            flamecastState.turns.upsert({
+              value: turnForWebhook(webhook, at),
+              headers: { txid },
+            }),
+          )
+          await appendJson(
+            stream,
+            flamecastState.sessions.upsert({
+              value: {
+                sessionId: webhook.sessionId,
+                title: titleFromWebhook(webhook),
+                status: "complete",
+                turnCount: webhook.ordinal,
+                updatedAt: at,
+              },
+              headers: { txid },
+            }),
+          )
+          await appendJson(
+            stream,
+            flamecastState.agentWebhooks.upsert({
+              value: {
+                ...webhook,
+                status: "processed",
+                updatedAt: at,
+              },
+              headers: { txid },
+            }),
+          )
+          await db.utils.awaitTxId(txid)
         },
       },
     }),
@@ -204,7 +349,53 @@ const messagesForTurn = (
   },
 ]
 
-const processSubmittedTurns = (
+const turnForWebhook = (
+  webhook: FlamecastAgentsWebhook,
+  at: string,
+): FlamecastTurn => ({
+  turnId: webhook.turnId,
+  sessionId: webhook.sessionId,
+  ordinal: webhook.ordinal,
+  message: webhook.userMessage,
+  status: "completed",
+  submittedAt: webhook.acceptedAt,
+  updatedAt: at,
+  summary: webhookSummary(webhook),
+})
+
+const messagesForWebhook = (
+  webhook: FlamecastAgentsWebhook,
+  at: string,
+): readonly [FlamecastMessage, FlamecastMessage] => [
+  {
+    messageId: `${webhook.turnId}:1:user`,
+    sessionId: webhook.sessionId,
+    turnId: webhook.turnId,
+    sequence: webhook.ordinal * 10 + 1,
+    at,
+    role: "user",
+    text: webhook.userMessage,
+  },
+  {
+    messageId: `${webhook.turnId}:2:assistant`,
+    sessionId: webhook.sessionId,
+    turnId: webhook.turnId,
+    sequence: webhook.ordinal * 10 + 2,
+    at,
+    role: "assistant",
+    text: webhook.assistantText,
+    wordCount: wordCount(webhook.assistantText),
+  },
+]
+
+export const pendingAgentsWebhooks = (
+  db: FlamecastDb,
+): readonly FlamecastAgentsWebhook[] =>
+  Array.from(db.collections.agentWebhooks.state.values())
+    .filter((webhook) => webhook.status === "accepted")
+    .sort((left, right) => left.acceptedAt.localeCompare(right.acceptedAt))
+
+export const processSubmittedTurns = (
   db: FlamecastDb,
 ): Effect.Effect<void, unknown> =>
   Effect.tryPromise({
@@ -219,12 +410,17 @@ const processSubmittedTurns = (
     catch: (cause) => cause,
   })
 
-const waitForTurnChange = (db: FlamecastDb): Effect.Effect<void> =>
+export const waitForFlamecastChange = (db: FlamecastDb): Effect.Effect<void> =>
   Effect.async<void>((resume) => {
-    const sub = db.collections.turns.subscribeChanges(() => {
+    const resumeOnce = () => {
       resume(Effect.void)
+    }
+    const turns = db.collections.turns.subscribeChanges(resumeOnce)
+    const webhooks = db.collections.agentWebhooks.subscribeChanges(resumeOnce)
+    return Effect.sync(() => {
+      turns.unsubscribe()
+      webhooks.unsubscribe()
     })
-    return Effect.sync(() => sub.unsubscribe())
   })
 
 export const runFlamecastProcessor = (
@@ -233,6 +429,6 @@ export const runFlamecastProcessor = (
   Effect.gen(function* () {
     while (true) {
       yield* processSubmittedTurns(db)
-      yield* waitForTurnChange(db)
+      yield* waitForFlamecastChange(db)
     }
   })

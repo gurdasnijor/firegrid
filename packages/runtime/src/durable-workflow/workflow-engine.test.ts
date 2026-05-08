@@ -14,7 +14,8 @@ import {
   layerDurableStreams,
   makeWorkflowStateStore,
   type WorkflowEngineDurableStateOptions,
-} from "./workflows.js"
+  type WorkflowStateStore,
+} from "../workflows.js"
 
 let server: DurableStreamTestServer | undefined
 
@@ -54,7 +55,7 @@ const runWith = <A, E>(
 
 const inspectStore = async <A>(
   streamUrl: string,
-  inspect: (store: Awaited<Effect.Effect.Success<ReturnType<typeof makeWorkflowStateStore>>>) => A,
+  inspect: (store: WorkflowStateStore) => A,
 ): Promise<A> => {
   const store = await Effect.runPromise(makeWorkflowStateStore({ streamUrl }))
   try {

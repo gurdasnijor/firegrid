@@ -1,0 +1,28 @@
+feature:
+  name: stream-webhook-workflows
+  product: flamecast
+  description: Flamecast provider webhook ingestion over Durable Streams URL with product-declared workflow processing.
+
+components:
+  STREAM_INGRESS:
+    requirements:
+      1: Flamecast accepts provider webhook deliveries as caller-owned Durable Streams State rows on the configured Durable Streams URL.
+      2: Flamecast webhook ingestion does not add a Firegrid HTTP route, callback endpoint, token issuer, or signing verifier.
+      3: A webhook delivery idempotency key is the durable row key so duplicate appends do not create a second logical webhook delivery.
+
+  WORKFLOW_PROCESSING:
+    requirements:
+      1: Accepted Flamecast webhook deliveries are processed by a top-level `Workflow.make` definition and a top-level `Activity.make` definition using the Durable Streams backed workflow engine.
+      2: The webhook activity writes Flamecast-owned session, turn, and message rows; Firegrid stores only workflow engine rows.
+      3: Reprocessing an already completed webhook workflow does not duplicate session messages.
+
+  LOCAL_RUNTIME:
+    requirements:
+      1: The local Flamecast runtime watches the configured Durable Streams URL and runs pending accepted webhook workflows without exposing a product HTTP server.
+      2: A focused test proves stream append, workflow processing, durable session materialization, and duplicate suppression for a Flamecast Agents webhook delivery.
+
+constraints:
+  BOUNDARY:
+    requirements:
+      1: This feature follows `flamecast-product-contract.PROVIDER_API.2`, `flamecast-product-contract.CALLBACKS.2`, and `flamecast-product-contract.LOWERING.4`; webhook payload shape and authentication remain Flamecast-owned.
+      2: This feature follows `firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.2`, `firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.4`, and `firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.6`; runtime work is declared as workflows and activities over stream URLs.
