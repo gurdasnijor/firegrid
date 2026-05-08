@@ -16,14 +16,14 @@ import {
   layerDurableStreams,
 } from "../durable-workflow/workflows.ts"
 
-interface RunLaunchOnceOptions {
+export interface RunLaunchOnceOptions {
   readonly launchStreamUrl: string
   readonly workflowStreamUrl?: string
   readonly launchId: string
   readonly workerId?: string
 }
 
-interface RunLaunchOnceResult {
+export interface RunLaunchOnceResult {
   readonly launchId: string
   readonly activityAttempt: number
   readonly exitCode: number

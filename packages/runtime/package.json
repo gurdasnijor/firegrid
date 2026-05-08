@@ -6,8 +6,16 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./Workflows": {
+      "types": "./src/durable-workflow/workflows.ts",
+      "default": "./src/durable-workflow/workflows.ts"
+    },
+    "./launch": {
+      "types": "./src/launch.ts",
+      "default": "./src/launch.ts"
     }
   },
   "bin": {

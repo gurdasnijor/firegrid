@@ -1,8 +1,6 @@
 import { Activity, Workflow } from "@effect/workflow"
+import * as Workflows from "@firegrid/runtime/Workflows"
 import { Context, Effect, Schema } from "effect"
-import {
-  layerDurableStreams,
-} from "../../../../packages/runtime/src/durable-workflow/workflows.ts"
 import {
   pendingAgentsWebhooks,
   type FlamecastDb,
@@ -61,7 +59,7 @@ export const processAcceptedAgentsWebhooks = (
       yield* FlamecastAgentsWebhookWorkflow.execute(webhook).pipe(
         Effect.provide(FlamecastAgentsWebhookWorkflowLayer),
         Effect.provideService(FlamecastDbService, db),
-        Effect.provide(layerDurableStreams({ streamUrl })),
+        Effect.provide(Workflows.layerDurableStreams({ streamUrl })),
         Effect.scoped,
       )
     }

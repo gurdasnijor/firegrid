@@ -92,6 +92,8 @@ components:
       6: Process death does not make provider-wire and diagnostic facts unavailable after those facts were durably journaled by Firegrid.
       7: The tracer bullet launcher starts a local black-box command, consumes its live stdout and stderr chunks, and appends durable provider-wire and diagnostics rows itself.
       8: The launch workflow is declared with @effect/workflow and uses the launch id as its idempotency key.
+      9: Node-tier hosts consume tracer 001 runtime launch execution through declared @firegrid/runtime package exports, not source subpaths.
+      10: A tracer 001 acceptance path starts with public Firegrid.launch, runs the runtime workflow with the returned launch id, and observes retained provider-wire and diagnostic rows from the same launch stream.
 
   JOURNAL_ROWS:
     requirements:
