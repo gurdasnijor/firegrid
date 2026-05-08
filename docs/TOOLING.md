@@ -40,7 +40,7 @@ Run:
 pnpm run build
 ```
 
-Each package emits production JavaScript into its local `dist` directory from `src`, excluding tests. Declaration emit is intentionally off for the first build baseline because the current substrate schemas need explicit exported type annotations before portable declaration generation can pass.
+Each package emits production JavaScript into its local `dist` directory from `src`, excluding tests. Declaration emit is intentionally off for the first build baseline because the current protocol/runtime schemas need explicit exported type annotations before portable declaration generation can pass.
 
 Source files use relative `.ts` import/export specifiers. TypeScript's `rewriteRelativeImportExtensions` rewrites those to `.js` in `dist`, so source stays TypeScript-native while emitted ESM remains runnable by Node. ESLint enforces and autofixes this convention.
 
@@ -81,10 +81,9 @@ full local `pnpm verify`.
 ### CI workflow shape
 
 The repo's CI workflow at `.github/workflows/ci.yml` runs five gating jobs in
-parallel — `Lint`, `Semgrep`, `Typecheck`, `Effect diagnostics`, `Tests` —
-plus one non-gating evidence job, `Architecture reports`, which uploads
-regenerated dependency graphs and the Effect artifact inventory as workflow
-artifacts on every pull request.
+parallel — `Lint`, `Semgrep`, `Typecheck`, `Effect diagnostics`, and `Tests`.
+Dependency-cruiser boundary checks run inside the `Lint` job. Dependency graph
+refreshes are local review evidence, not CI artifacts.
 
 Each job's setup boilerplate (checkout + pnpm setup + node setup + install)
 lives in the shared composite action at `.github/actions/setup`. Bumping the
@@ -102,7 +101,7 @@ Run duplicate-token detection:
 pnpm run lint:dup
 ```
 
-This runs jscpd over `packages/*/src` and `apps/*/src` and compares the duplicated-line count against the tracked threshold in `.jscpd.json`. The threshold is currently zero, so CI fails on any production-source token clone.
+This runs jscpd over production package/app source and compares the duplicated-line count against the tracked threshold in `.jscpd.json`. Tests, fixtures, build output, coverage, and dependency directories are excluded. The current baseline is the existing production duplicate count; CI fails on any increase.
 
 Recompute the duplication baseline:
 
@@ -110,7 +109,7 @@ Recompute the duplication baseline:
 pnpm run lint:dup:baseline
 ```
 
-This is intended for remediation slices after helper extractions reduce duplication. The script refuses to raise the threshold automatically; accepting any nonzero count requires an explicit config edit and coordinator review.
+This is intended for remediation slices after helper extractions reduce duplication. The script refuses to raise the threshold automatically; accepting any increase requires an explicit config edit and coordinator review.
 
 Run dead-code detection:
 
@@ -132,117 +131,65 @@ Run transitive dependency boundary checks:
 pnpm run lint:deps
 ```
 
-This runs dependency-cruiser with `.dependency-cruiser.cjs`. Unlike direct import lint rules, dependency-cruiser can flag transitive boundary violations, cycles, and orphan modules across the substrate, runtime, client packages and the lab app. It also gates general dependency hygiene for unresolvable imports, undeclared npm dependencies, deprecated package usage, production imports from test files, and duplicate dependency declarations.
+This runs dependency-cruiser with `.dependency-cruiser.cjs`. Unlike direct import lint rules, dependency-cruiser can flag transitive boundary violations, cycles, and cross-package dependency direction across the protocol, client, runtime, and app workspaces. It also gates general dependency hygiene for unresolvable imports, undeclared npm dependencies, deprecated package usage, production imports from test files, and duplicate dependency declarations.
 
 ## Architecture Reporting
 
 Architecture reports are review evidence, not the ready-for-review gate. They
-answer "what does the package and Effect surface look like right now?" before a
+answer "what does the package dependency graph look like right now?" before a
 package-structure or boundary cleanup. They do not prove runtime behavior,
 durable transition correctness, or Semgrep/ESLint policy compliance. Use
-`pnpm verify` and GitHub CI for those gates.
+`pnpm verify`, `pnpm run lint:deps`, and GitHub CI for those gates.
 
 Spec anchors:
 
 - `firegrid-remediation-hardening.STATIC_QUALITY.3`
-- `firegrid-architecture-boundary.EFFECT_ARTIFACT_GRAPH.1`
-- `firegrid-architecture-boundary.EFFECT_ARTIFACT_GRAPH.3`
-- `firegrid-architecture-boundary.EFFECT_ARTIFACT_GRAPH.5`
+- `firegrid-remediation-hardening.STATIC_QUALITY.5`
+- `firegrid-remediation-hardening.STATIC_QUALITY.8`
+- `firegrid-remediation-hardening.ARCHITECTURE_BOUNDARIES.5`
+- `firegrid-architecture-boundary.DEPENDENCY_GRAPH.1`
+- `firegrid-architecture-boundary.DEPENDENCY_GRAPH.2`
 - `firegrid-architecture-boundary.DEPENDENCY_GRAPH.6`
-
-Regenerate the full report set:
-
-```sh
-pnpm run arch:reports
-```
-
-This lightweight alias runs `pnpm run arch:effect-artifacts` followed by
-`pnpm run graph`. Use it before reviewing package-boundary changes,
-durable-core reshaping, public export movement, or SDD updates that cite
-current architecture evidence. Commit regenerated report files only when the
-slice intentionally changes architecture evidence; otherwise use the command as
-a local inspection tool.
-
-CI uploads the same evidence as a workflow artifact on every pull request via
-the non-gating `architecture-reports` job in `.github/workflows/ci.yml`.
-Reviewers can download the artifact bundle (`architecture-reports`) from the
-GitHub Actions run page and inspect the regenerated inventory and graph files
-without rerunning the commands locally. The job is `continue-on-error: true`
-so an evidence-regen failure on a structurally sound PR does not block merges;
-gating remains with the five strict jobs (`Lint`, `Semgrep`, `Typecheck`,
-`Effect diagnostics`, `Tests`).
-
-Generate Effect artifact architecture evidence:
-
-```sh
-pnpm run arch:effect-artifacts
-```
-
-This uses ts-morph to inventory exported declarations under `packages/*/src` and `apps/*/src`, classify Effect-facing artifacts, and emit:
-
-- `docs/effect-artifact-inventory.json` — structured data for independent SDD checks
-- `docs/effect-artifact-inventory.md` — human-readable summary for architecture review
-
-The inventory covers exported service tags, Layers, Schemas, tagged errors, Effect-returning exports, service interfaces paired with tags, plain types, constants, and pure helpers. It records package workspace, physical source area, inferred architecture layer, re-export binding, declaration-file imports, and richer type evidence such as generic type parameters, call parameters, return or declared type text, class/interface heritage and members, and variable binding shape. For `Effect.Effect<A, E, R>` and `Layer.Layer<ROut, E, RIn>` exports it uses ts-morph type APIs where possible to record channel text, flattened requirement entries, and resolved requirement declarations. The markdown report includes export-pressure tables and durable-core same-package import layer crossings to guide package-structure work.
-
-The JSON output is the authoritative machine-readable inventory for
-`firegrid-architecture-boundary.EFFECT_ARTIFACT_GRAPH.5`. The markdown output is
-rendered from the same data for humans. Use the JSON when writing independent
-checks or rule reports; use the markdown when reviewing export pressure,
-workspace re-exports, Effect requirement-channel crossings, and durable-core
-layer crossings.
-
-The current report is on-demand rather than part of `pnpm verify` because it is
-an architecture evidence artifact and can churn with harmless export movement.
-It does not decide whether a boundary is acceptable; it shows the exports,
-requirements, and crossings reviewers need to compare against the package SDD.
-
-Effect artifact rule reports:
-
-- Current `main` emits inventory evidence only through
-  `pnpm run arch:effect-artifacts`.
-- Static enforcement and baseline/rule ratchets are owned by the Q5 static
-  quality work. When those rule-report commands are present on `main`, list them
-  here with their generated output paths and whether they are CI gates.
+- `firegrid-package-migration.COMPATIBILITY.4`
 
 Regenerate dependency-graph evidence:
 
 ```sh
-pnpm run graph
+pnpm run arch:deps
 ```
 
-This uses dependency-cruiser to refresh the overview SVGs, the collapsed
-workspace Mermaid graph, and focused package-internal Mermaid graphs. Graph
-generation excludes tests and build outputs so the diagrams show production
-architecture rather than test reachability.
+This uses dependency-cruiser to refresh a workspace-level Mermaid graph and
+focused package/app Mermaid graphs. Graph generation excludes tests and build
+outputs so the diagrams show production architecture rather than test
+reachability. Use it before reviewing package-boundary changes, runtime/client
+split changes, public export movement, or SDD updates that cite current
+architecture evidence. Commit regenerated report files only when the slice
+intentionally changes architecture evidence; otherwise use the command as a
+local inspection tool.
 
 Outputs:
 
-- `docs/dependency-graph.svg` — broad production workspace graph.
-- `docs/dependency-graph-modules.svg` — module-collapsed production graph.
-- `docs/dependency-graph-archi.svg` — dependency-cruiser architecture view.
 - `docs/dependency-graph.mmd` — collapsed Mermaid graph for quick text review.
 - `docs/dependency-graph-client.mmd` — client package internals.
+- `docs/dependency-graph-protocol.mmd` — protocol package internals.
 - `docs/dependency-graph-runtime.mmd` — runtime package internals.
-- `docs/dependency-graph-substrate.mmd` — substrate package internals.
+- `docs/dependency-graph-flamecast.mmd` — Flamecast app internals.
 
 Focused graph targets:
 
 ```sh
-pnpm run graph:client:mermaid
-pnpm run graph:runtime:mermaid
-pnpm run graph:substrate:mermaid
+pnpm run arch:deps:client
+pnpm run arch:deps:protocol
+pnpm run arch:deps:runtime
+pnpm run arch:deps:flamecast
 ```
 
-These write `docs/dependency-graph-client.mmd`,
-`docs/dependency-graph-runtime.mmd`, and
-`docs/dependency-graph-substrate.mmd`. Use them when reviewing package-shape
-work; `pnpm run lint:deps` remains the strict CI dependency-boundary check.
-The graph commands show import reachability and direction, including the
-`firegrid-architecture-boundary.DEPENDENCY_GRAPH.6` app-vs-package boundary. They
-do not distinguish public workspace package entrypoints from direct internal
-subpath imports; use dependency-cruiser rules, package exports, and source
-guards for that stricter interpretation.
+Use focused graphs when reviewing package-shape work; `pnpm run lint:deps`
+remains the strict CI dependency-boundary check. The graph commands show import
+reachability and direction, including the
+`firegrid-architecture-boundary.DEPENDENCY_GRAPH.6` app-vs-package boundary.
+They do not prove API-level suitability; use package exports, source guards, and
+code review for stricter public-surface interpretation.
 
 Command map:
 
@@ -250,11 +197,8 @@ Command map:
 | --- | --- | --- | --- |
 | Ready-for-review static/test gate | `pnpm verify` | none | Yes, CI authoritative |
 | Strict dependency boundary check | `pnpm run lint:deps` | none | Yes |
-| Full architecture evidence refresh | `pnpm run arch:reports` | effect artifact reports and dependency graphs | No |
-| Effect artifact inventory only | `pnpm run arch:effect-artifacts` | `docs/effect-artifact-inventory.{json,md}` | No |
-| All dependency graphs | `pnpm run graph` | `docs/dependency-graph*` | No |
-| Focused package Mermaid graph | `pnpm run graph:<package>:mermaid` | one focused `.mmd` file | No |
-| Raw dependency-cruiser scan | `pnpm run graph:check` | none | No; prefer `lint:deps` for CI policy |
+| Dependency graph evidence refresh | `pnpm run arch:deps` | `docs/dependency-graph*.mmd` | No |
+| Focused package Mermaid graph | `pnpm run arch:deps:<package>` | one focused `.mmd` file | No |
 
 Run structural duplication-shape checks:
 
@@ -268,7 +212,7 @@ Semgrep is installed outside npm because the npm packages are not maintained. Lo
 pipx install semgrep
 ```
 
-The CI workflow uses the same `pipx install semgrep` path before running the root `.semgrep.yml` rules. The current rules flag repeated shapes for durable-stream append wrappers, scoped substrate-database acquisition, retained-row reads, and authoritative-run lookups. Rule paths include `packages/*/src` and `apps/*/src`; shared generated-file, fixture, test, and build-output exclusions live in `.semgrepignore`.
+The CI workflow uses the same `pipx install semgrep` path before running the root `.semgrep.yml` rules. The current blocking rule catches `process.env` reads outside binary, script, and test boundaries. Production scans are scoped to `packages apps`; fixtures live under `semgrep-tests/`.
 
 Test the Semgrep ruleset fixtures:
 
@@ -276,11 +220,11 @@ Test the Semgrep ruleset fixtures:
 pnpm run lint:semgrep:test
 ```
 
-`pnpm verify` and CI run this fixture test before the production Semgrep scan so rule refinements cannot silently stop matching. Each rule should carry `metadata` with the review/source ACID, category, and canonical helper path. Production Semgrep runs with `--error`; new rules need fixtures and clean path scopes before entering the blocking scan.
+`pnpm verify` and CI run this fixture test before the production Semgrep scan so rule refinements cannot silently stop matching. Each rule should carry `metadata` with the review/source ACID and category. Production Semgrep runs with `--error`; new rules need fixtures and clean path scopes before entering the blocking scan.
 
 The Effect ESLint plugin currently ships only two rules in `@effect/eslint-plugin@0.3.2`: `dprint` and `no-import-from-barrel-package`. `dprint` conflicts with this repo's existing stylistic formatter stack, so only `@effect/no-import-from-barrel-package` is enabled. If the plugin adds or changes rules during an upgrade, audit the shipped rule list before enabling anything new.
 
-To add a semgrep rule, add a focused rule to `.semgrep.yml`, prefer repo-root `.semgrepignore` for shared excludes, use per-rule path exclusions only for canonical helper homes, and add a matching fixture in `semgrep-tests/` with `ruleid` and `ok` comments. Verify it with:
+To add a semgrep rule, add a focused rule to `.semgrep.yml`, keep production scanning scoped to `packages apps`, and add a matching fixture in `semgrep-tests/` with `ruleid` and `ok` comments. Verify it with:
 
 ```sh
 pnpm run lint:semgrep:test
@@ -327,35 +271,6 @@ Tracked metrics in the ratchet baseline:
 
 The metric ratchet is intentionally conservative. A future Effect-detector ratchet (see "Effect-detector ratchet — deferred" below) would cover broader pattern families once the external detector is CI-stable.
 
-## Effect-artifact rule layer
-
-Run the inventory-driven rule layer:
-
-```sh
-pnpm run lint:effect-rules
-```
-
-`scripts/effect-artifacts-rules-check.mjs` regenerates the artifact inventory via `analyzeProject` and runs the rule set in `scripts/effect-artifacts/rules.mjs` against the committed baseline at `effect-artifact-rules-baseline.json`. CI fails on any rule violation or budget regression. Recompute via:
-
-```sh
-pnpm run lint:effect-rules:baseline
-```
-
-Rules implemented in this layer:
-
-- **Workspace-pair forbidden edges** — re-exports or imports across forbidden workspace pairs (`runtime → client`, `client → runtime`, `lab → substrate`, `lab → runtime`, `runtime → lab`, `substrate → client/runtime/lab`, `client → lab`). Strict-zero target; current count is 0. Every artifact whose `exportLocation.workspace ≠ declarationLocation.workspace` is checked against the forbidden pair list.
-- **Unknown-role exports budget** — count of `summary.byRole.unknown` artifacts. Ratcheted; reduce by extending `scripts/effect-artifacts/types.mjs` classification or by removing unused exports.
-- **Cross-workspace re-export budget** — count of artifacts whose export workspace differs from their declaration workspace. Ratcheted; covers public-surface re-exports across packages and apps.
-- **Boundary-crossing budget** — count of `summary.boundaryCrossings`. Ratcheted; the existing inventory tracks architecture-layer crossings.
-- **Forbidden-layer-crossing budget** — count of `summary.forbiddenLayerCrossings`. Strict-zero target.
-- **Effect-returning exports per workspace budget** — `effect-returning` role count per workspace. Ratcheted; prevents unintended growth of the Effect-returning surface area without a corresponding spec amendment.
-
-Rules deferred (require ts-morph evidence not currently emitted by the inventory; tracked in `docs/PROPOSAL_STATIC_ENFORCEMENT_2026-05-05.md`):
-
-- Service-tag namespace hygiene (tag string casing convention, namespace separator presence)
-- Explicit-return-type visibility for exported Effect-returning functions
-- Public-surface allowlist driven by the inventory itself (existing `client-foundations.test.ts` and `public-surface.test.ts` allowlist tests remain authoritative for now)
-
 ## Effect-detector ratchet — deferred
 
 The `claude-skill-effect-ts` detector reports ~4,023 findings across the repo (see `docs/REVIEW_EFFECT_FULL_AUDIT_2026-05-05.md`). The detector currently runs through the local `claude-skill-effect-ts` plugin cache and uses `bun`; it is not yet CI-stable. The metric ratchet above covers the highest-confidence patterns from that detector's output. When the detector becomes CI-installable, replace or augment the metric ratchet with a per-rule baseline against `firegrid-detect.json` and document the upgrade boundary here.
@@ -366,7 +281,7 @@ These deviations are deliberate and documented:
 
 - `Data.TaggedError` is the firegrid policy. `Schema.TaggedError` is reserved for the moment a future descriptor needs error-decoding from a wire envelope. See `docs/REVIEW_EFFECT_ERROR_MANAGEMENT_2026-05-05.md` §1. The metric ratchet caps the count at the current baseline.
 - `Effect.runPromise` is permitted in `__tests__/` while the `@effect/vitest` migration is in flight. The metric ratchet caps the count.
-- `Effect.orDie` / `Layer.orDie` / `Effect.die` is permitted at the RunWait facade documented in `packages/substrate/src/coordination/run-wait/service.ts` and at runtime fork-point logging boundaries. The metric ratchet caps the count; future tightening with a `local/orDie-needs-justification` rule is tracked in the static-enforcement proposal.
-- `Effect.runFork` / `Effect.runPromise` / `Effect.runPromiseExit` in `apps/lab/src/lab/LabEventStreamPanel.tsx` is the documented React boundary; the file carries explicit `eslint-disable-next-line no-restricted-syntax` suppressions.
+- `Effect.orDie` / `Layer.orDie` / `Effect.die` is permitted only where the code is deliberately crossing into a runtime fork point, bin entrypoint, or test harness. The metric ratchet caps the count; future tightening with a `local/orDie-needs-justification` rule is tracked in the static-enforcement proposal.
+- `Effect.runPromise` / `Effect.runPromiseExit` is permitted in app or bin entrypoints and in tests while the `@effect/vitest` migration is in flight. The metric ratchet caps the count.
 
-This tooling exists because the original manual review missed near-duplicates in `packages/substrate/src/retained-records.ts` and similar repeated static-quality issues. Manual review windows are too narrow to serve as the only guardrail.
+This tooling exists because manual review windows are too narrow to serve as the only guardrail for architecture boundaries, repeated durable-state helper shapes, and Effect-quality regressions.

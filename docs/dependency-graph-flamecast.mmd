@@ -1,0 +1,33 @@
+flowchart LR
+
+subgraph 0["apps"]
+subgraph 1["flamecast"]
+subgraph 2["src"]
+3["client"]
+4["runtime"]
+5["shared"]
+end
+end
+end
+subgraph 6["packages"]
+subgraph 7["runtime"]
+subgraph 8["src"]
+subgraph 9["durable-workflow"]
+A["clock.ts"]
+B["codec.ts"]
+C["engine-runtime.ts"]
+D["state.ts"]
+E["workflows.ts"]
+end
+end
+end
+end
+3-->5
+4-->E
+4-->5
+A-->D
+C-->B
+C-->D
+E-->A
+E-->C
+E-->D

@@ -6,6 +6,33 @@
         "scripts/*.mjs"
       ]
     },
+    "packages/client": {
+      "entry": [
+        "src/index.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "packages/protocol": {
+      "entry": [
+        "src/index.ts",
+        "src/launch/index.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "packages/runtime": {
+      "entry": [
+        "src/index.ts",
+        "src/bin/firegrid.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "bin/**/*.ts"
+      ]
+    },
     "apps/flamecast": {
       "project": [
         "src/**/*.{ts,tsx,mts}"

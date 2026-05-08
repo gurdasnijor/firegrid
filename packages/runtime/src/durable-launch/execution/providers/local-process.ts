@@ -8,7 +8,7 @@ import {
 } from "../sandbox.ts"
 import { Effect } from "effect"
 
-export const makeLocalProcessSandboxProvider = (): SandboxProviderService => {
+const makeLocalProcessSandboxProvider = (): SandboxProviderService => {
   const sandboxes = new Map<string, SandboxConfig>()
   const name = "local-process"
   return {

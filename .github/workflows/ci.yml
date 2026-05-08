@@ -50,6 +50,9 @@ jobs:
       - name: Check duplicate-token baseline
         run: pnpm run lint:dup
 
+      - name: Check dependency boundaries
+        run: pnpm run lint:deps
+
       - name: Check Effect-quality metric ratchet
         run: pnpm run lint:effect-quality
 

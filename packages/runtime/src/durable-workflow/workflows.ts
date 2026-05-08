@@ -26,7 +26,7 @@ export const make = (
     return yield* makeWorkflowEngine(store)
   })
 
-export const layer = (
+const layer = (
   options: WorkflowEngineDurableStateOptions,
 ) =>
   Layer.scopedContext(
@@ -41,6 +41,8 @@ export const layer = (
     }),
   )
 
-export const layerDurableStreams = layer
+export const layerDurableStreams = (
+  options: WorkflowEngineDurableStateOptions,
+) => layer(options)
 
 export { fireDueWorkflowClocks }

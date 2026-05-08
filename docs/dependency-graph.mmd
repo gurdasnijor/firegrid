@@ -1,0 +1,39 @@
+flowchart LR
+
+subgraph 0["apps"]
+subgraph 1["flamecast"]
+subgraph 2["src"]
+3["client"]
+4["runtime"]
+5["shared"]
+end
+end
+end
+subgraph 6["packages"]
+subgraph 7["client"]
+subgraph 8["src"]
+9["firegrid.ts"]
+A["index.ts"]
+end
+end
+subgraph B["protocol"]
+subgraph C["src"]
+D["index.ts"]
+E["launch"]
+end
+end
+subgraph F["runtime"]
+subgraph G["src"]
+H["durable-launch"]
+I["durable-workflow"]
+J["index.ts"]
+end
+end
+end
+3-->5
+4-->I
+4-->5
+9-->E
+A-->9
+D-->E
+J-->I
