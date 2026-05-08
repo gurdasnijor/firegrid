@@ -2,7 +2,7 @@ import type { PlaneBinding, ResourcePlaneRef, RuntimeLaunchRequest } from "@fire
 import { Context, Effect, Layer, Redacted } from "effect"
 import { RuntimeLaunchError } from "../launcher.ts"
 
-export interface SecretResolverService {
+interface SecretResolverService {
   readonly resolve: (ref: string) => Effect.Effect<Redacted.Redacted<string>, RuntimeLaunchError>
 }
 

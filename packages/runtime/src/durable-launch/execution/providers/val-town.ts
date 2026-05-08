@@ -12,7 +12,7 @@ import {
 } from "../sandbox.ts"
 import type { Layer } from "effect"
 
-export class ValTownSandboxProviderError extends Schema.TaggedError<ValTownSandboxProviderError>()(
+class ValTownSandboxProviderError extends Schema.TaggedError<ValTownSandboxProviderError>()(
   "ValTownSandboxProviderError",
   {
     op: Schema.String,
@@ -21,7 +21,7 @@ export class ValTownSandboxProviderError extends Schema.TaggedError<ValTownSandb
   },
 ) {}
 
-export interface ValTownSandboxProviderOptions {
+interface ValTownSandboxProviderOptions {
   readonly token: Redacted.Redacted<string>
   readonly httpSource: string
   readonly filePath?: string
@@ -30,7 +30,7 @@ export interface ValTownSandboxProviderOptions {
   readonly fetch?: typeof fetch
 }
 
-export interface ValTownSandboxDeployment {
+interface ValTownSandboxDeployment {
   readonly valId: string
   readonly endpoint: string
 }
@@ -230,7 +230,7 @@ const executionResult = (response: unknown): ExecutionResult => ({
   timedOut: false,
 })
 
-export const makeValTownSandboxProvider = (
+const makeValTownSandboxProvider = (
   options: ValTownSandboxProviderOptions,
 ): SandboxProviderService => {
   const sandboxes = new Map<string, ValTownSandboxRecord>()

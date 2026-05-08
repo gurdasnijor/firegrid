@@ -1,6 +1,7 @@
 import { stream as readStream } from "@durable-streams/client"
 import type { CommandExecutor } from "@effect/platform/CommandExecutor"
 import type { StreamPlaneRef } from "@firegrid/protocol/launch"
+import type { RuntimeLaunchRequest } from "@firegrid/protocol/launch"
 import type { Scope } from "effect"
 import { Effect, Schema } from "effect"
 import {
@@ -11,7 +12,6 @@ import {
 import { envForLaunch, type SecretResolver } from "./resources/secrets.ts"
 import {
   acquireRuntimeLaunchStore,
-  type RuntimeLaunchRequest,
   type RuntimeLaunchStore,
   type RuntimeLaunchStoreError,
 } from "./store.ts"
@@ -25,13 +25,13 @@ export class RuntimeLaunchError extends Schema.TaggedError<RuntimeLaunchError>()
   },
 ) {}
 
-export interface RunLaunchOnceOptions {
+interface RunLaunchOnceOptions {
   readonly launchStreamUrl: string
   readonly launchId: string
   readonly attempt?: number
 }
 
-export interface RunLaunchOnceResult {
+interface RunLaunchOnceResult {
   readonly launchId: string
   readonly processAttemptId: string
   readonly exitCode: number

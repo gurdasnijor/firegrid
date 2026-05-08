@@ -7,9 +7,7 @@ import {
 import type { Scope } from "effect"
 import { Effect, Schema } from "effect"
 
-export type { RuntimeLaunchRequest, RuntimeProcessEvent } from "@firegrid/protocol/launch"
-
-export interface RuntimeLaunchStoreOptions {
+interface RuntimeLaunchStoreOptions {
   readonly streamUrl: string
   readonly contentType?: string
   readonly txTimeoutMs?: number

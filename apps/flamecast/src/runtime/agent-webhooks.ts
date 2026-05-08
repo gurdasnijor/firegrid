@@ -17,7 +17,7 @@ const CurrentAgentsWebhook = Context.GenericTag<FlamecastAgentsWebhook>(
   "flamecast/CurrentAgentsWebhook",
 )
 
-export const FlamecastAgentsWebhookWorkflow = Workflow.make({
+const FlamecastAgentsWebhookWorkflow = Workflow.make({
   name: "flamecast-agents-webhook",
   payload: FlamecastAgentsWebhook,
   success: Schema.Void,
@@ -25,7 +25,7 @@ export const FlamecastAgentsWebhookWorkflow = Workflow.make({
   idempotencyKey: (webhook) => webhook.webhookId,
 })
 
-export const CompleteFlamecastAgentsWebhook = Activity.make({
+const CompleteFlamecastAgentsWebhook = Activity.make({
   name: "complete-flamecast-agents-webhook",
   success: Schema.Void,
   error: Schema.Unknown,
@@ -40,7 +40,7 @@ export const CompleteFlamecastAgentsWebhook = Activity.make({
   }),
 })
 
-export const FlamecastAgentsWebhookWorkflowLayer =
+const FlamecastAgentsWebhookWorkflowLayer =
   FlamecastAgentsWebhookWorkflow.toLayer((webhook) =>
     CompleteFlamecastAgentsWebhook.pipe(
       Effect.provideService(CurrentAgentsWebhook, webhook),

@@ -20,7 +20,7 @@ interface CompleteTurnInput {
   readonly turn: FlamecastTurn
 }
 
-export interface AcceptAgentsWebhookInput {
+interface AcceptAgentsWebhookInput {
   readonly webhookId: string
   readonly sessionId: string
   readonly turnId: string
@@ -421,14 +421,4 @@ export const waitForFlamecastChange = (db: FlamecastDb): Effect.Effect<void> =>
       turns.unsubscribe()
       webhooks.unsubscribe()
     })
-  })
-
-export const runFlamecastProcessor = (
-  db: FlamecastDb,
-): Effect.Effect<never, unknown> =>
-  Effect.gen(function* () {
-    while (true) {
-      yield* processSubmittedTurns(db)
-      yield* waitForFlamecastChange(db)
-    }
   })
