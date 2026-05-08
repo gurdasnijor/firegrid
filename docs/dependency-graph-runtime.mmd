@@ -1,12 +1,28 @@
 flowchart LR
 
 subgraph 0["packages"]
-subgraph 1["runtime"]
+subgraph 1["protocol"]
 subgraph 2["src"]
-3["durable-launch"]
-4["durable-workflow"]
+subgraph 3["launch"]
+4["helpers.ts"]
 5["index.ts"]
+6["schema.ts"]
+7["state.ts"]
+end
+end
+end
+subgraph 8["runtime"]
+subgraph 9["src"]
+A["durable-launch"]
+B["durable-workflow"]
+C["index.ts"]
 end
 end
 end
 5-->4
+5-->6
+5-->7
+7-->6
+A-->B
+A-->5
+C-->B
