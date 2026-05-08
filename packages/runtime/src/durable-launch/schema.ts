@@ -13,4 +13,3 @@ export const ProcessAttemptResultSchema = Schema.Struct({
   exitCode: Schema.Number,
   signal: Schema.optional(Schema.String),
 })
-export type ProcessAttemptResult = Schema.Schema.Type<typeof ProcessAttemptResultSchema>

@@ -8,13 +8,13 @@ import {
 } from "@firegrid/protocol/launch"
 import { Context, Duration, Effect, Layer, Option, Schema } from "effect"
 
-export interface RuntimeLaunchDbOptions {
+interface RuntimeLaunchDbOptions {
   readonly streamUrl: string
   readonly contentType?: string
   readonly txTimeout?: Duration.DurationInput
 }
 
-export class RuntimeLaunchDbError extends Schema.TaggedError<RuntimeLaunchDbError>()(
+class RuntimeLaunchDbError extends Schema.TaggedError<RuntimeLaunchDbError>()(
   "RuntimeLaunchDbError",
   {
     op: Schema.String,

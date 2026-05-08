@@ -150,15 +150,20 @@ console.error("diagnostic: child stderr")
       raw: "diagnostic: child stderr",
     }))
 
-    const workflowStore = await Effect.runPromise(makeWorkflowStateStore({ streamUrl: workflowStreamUrl }))
-    try {
+    const activityClaimNames = await Effect.runPromise(
+      Effect.acquireUseRelease(
+        makeWorkflowStateStore({ streamUrl: workflowStreamUrl }),
+        store =>
+          Effect.sync(() => store.activityClaims().map(claim => claim.activityName)),
+        store => store.close,
+      ),
+    )
+    {
       // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.2
       // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.8
-      expect(workflowStore.activityClaims().map(claim => claim.activityName)).toContain(
+      expect(activityClaimNames).toContain(
         "firegrid.launch-agent.run-process-attempt",
       )
-    } finally {
-      await Effect.runPromise(workflowStore.close)
     }
   })
 

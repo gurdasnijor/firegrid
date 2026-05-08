@@ -2,82 +2,73 @@ import type { CommandExecutor } from "@effect/platform/CommandExecutor"
 import type { Effect, Stream } from "effect"
 import { Context, Layer, Schema } from "effect"
 
-export const SandboxStateSchema = Schema.Literal(
-  "creating",
-  "starting",
-  "running",
-  "stopping",
-  "stopped",
-  "terminated",
-  "error",
-)
-export type SandboxState = Schema.Schema.Type<typeof SandboxStateSchema>
+type SandboxState =
+  | "creating"
+  | "starting"
+  | "running"
+  | "stopping"
+  | "stopped"
+  | "terminated"
+  | "error"
 
-export const SandboxConfigSchema = Schema.Struct({
-  image: Schema.optional(Schema.String),
-  language: Schema.optional(Schema.String),
-  memoryMb: Schema.optional(Schema.Number),
-  cpuCores: Schema.optional(Schema.Number),
-  timeoutSeconds: Schema.optional(Schema.Number),
-  envVars: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
-  labels: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
-  providerConfig: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.Unknown })),
-  setupCommands: Schema.optional(Schema.Array(Schema.Array(Schema.String))),
-  workingDir: Schema.optional(Schema.String),
-})
-export type SandboxConfig = Schema.Schema.Type<typeof SandboxConfigSchema>
+export interface SandboxConfig {
+  readonly image?: string
+  readonly language?: string
+  readonly memoryMb?: number
+  readonly cpuCores?: number
+  readonly timeoutSeconds?: number
+  readonly envVars?: Record<string, string>
+  readonly labels?: Record<string, string>
+  readonly providerConfig?: Record<string, unknown>
+  readonly setupCommands?: ReadonlyArray<ReadonlyArray<string>>
+  readonly workingDir?: string
+}
 
-export const SandboxCommandSchema = Schema.Struct({
-  argv: Schema.Array(Schema.String),
-  cwd: Schema.optional(Schema.String),
-  envVars: Schema.optional(Schema.Record({ key: Schema.String, value: Schema.String })),
-})
-export type SandboxCommand = Schema.Schema.Type<typeof SandboxCommandSchema>
+export interface SandboxCommand {
+  readonly argv: ReadonlyArray<string>
+  readonly cwd?: string
+  readonly envVars?: Record<string, string>
+}
 
-export const ExecutionResultSchema = Schema.Struct({
-  exitCode: Schema.Number,
-  stdout: Schema.String,
-  stderr: Schema.String,
-  durationMs: Schema.optional(Schema.Number),
-  truncated: Schema.Boolean,
-  timedOut: Schema.Boolean,
-})
-export type ExecutionResult = Schema.Schema.Type<typeof ExecutionResultSchema>
+export interface ExecutionResult {
+  readonly exitCode: number
+  readonly stdout: string
+  readonly stderr: string
+  readonly durationMs?: number
+  readonly truncated: boolean
+  readonly timedOut: boolean
+}
 
-export const SandboxSchema = Schema.Struct({
-  id: Schema.String,
-  provider: Schema.String,
-  state: SandboxStateSchema,
-  labels: Schema.Record({ key: Schema.String, value: Schema.String }),
-  createdAt: Schema.optional(Schema.String),
-  connectionInfo: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-  metadata: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
-})
-export type Sandbox = Schema.Schema.Type<typeof SandboxSchema>
+export interface Sandbox {
+  readonly id: string
+  readonly provider: string
+  readonly state: SandboxState
+  readonly labels: Record<string, string>
+  readonly createdAt?: string
+  readonly connectionInfo: Record<string, unknown>
+  readonly metadata: Record<string, unknown>
+}
 
-export const ProviderCapabilitiesSchema = Schema.Struct({
-  persistent: Schema.Boolean,
-  snapshot: Schema.Boolean,
-  streaming: Schema.Boolean,
-  fileUpload: Schema.Boolean,
-  interactiveShell: Schema.Boolean,
-  gpu: Schema.Boolean,
-})
-export type ProviderCapabilities = Schema.Schema.Type<typeof ProviderCapabilitiesSchema>
+interface ProviderCapabilities {
+  readonly persistent: boolean
+  readonly snapshot: boolean
+  readonly streaming: boolean
+  readonly fileUpload: boolean
+  readonly interactiveShell: boolean
+  readonly gpu: boolean
+}
 
-export const ProcessOutputChunkSchema = Schema.Union(
-  Schema.Struct({
-    type: Schema.Literal("output"),
-    channel: Schema.Literal("stdout", "stderr"),
-    text: Schema.String,
-  }),
-  Schema.Struct({
-    type: Schema.Literal("exit"),
-    exitCode: Schema.Number,
-    signal: Schema.optional(Schema.String),
-  }),
-)
-export type ProcessOutputChunk = Schema.Schema.Type<typeof ProcessOutputChunkSchema>
+export type ProcessOutputChunk =
+  | {
+    readonly type: "output"
+    readonly channel: "stdout" | "stderr"
+    readonly text: string
+  }
+  | {
+    readonly type: "exit"
+    readonly exitCode: number
+    readonly signal?: string
+  }
 
 export class SandboxProviderError extends Schema.TaggedError<SandboxProviderError>()(
   "SandboxProviderError",

@@ -60,7 +60,7 @@ export const LaunchAgentWorkflowLayer = LaunchAgentWorkflow.toLayer(
             labels: {
               firegridLaunchId: launch.launchId,
             },
-            workingDir: launch.runtime.config.cwd,
+            ...(launch.runtime.config.cwd === undefined ? {} : { workingDir: launch.runtime.config.cwd }),
             providerConfig: {
               launchId: launch.launchId,
             },
