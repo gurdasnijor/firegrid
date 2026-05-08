@@ -1,0 +1,27 @@
+# firegrid-remediation-hardening.STATIC_QUALITY.7
+rules:
+  - id: firegrid-no-process-env-outside-bin
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.10
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: configuration-boundary
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+        - "/packages/*/src/bin/**"
+    message: |
+      process.env reads belong at the binary entry boundary, scripts, or tests.
+      In application code use Effect Config or accept configuration as an
+      explicit parameter.
+    pattern: process.env.$ANY

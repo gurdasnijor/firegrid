@@ -101,7 +101,7 @@ Run duplicate-token detection:
 pnpm run lint:dup
 ```
 
-This runs jscpd over `packages/*/src` and `apps/*/src` and compares the duplicated-line count against the tracked threshold in `.jscpd.json`. The threshold is currently zero, so CI fails on any production-source token clone.
+This runs jscpd over production package/app source and compares the duplicated-line count against the tracked threshold in `.jscpd.json`. Tests, fixtures, build output, coverage, and dependency directories are excluded. The current baseline is the existing production duplicate count; CI fails on any increase.
 
 Recompute the duplication baseline:
 
@@ -109,7 +109,7 @@ Recompute the duplication baseline:
 pnpm run lint:dup:baseline
 ```
 
-This is intended for remediation slices after helper extractions reduce duplication. The script refuses to raise the threshold automatically; accepting any nonzero count requires an explicit config edit and coordinator review.
+This is intended for remediation slices after helper extractions reduce duplication. The script refuses to raise the threshold automatically; accepting any increase requires an explicit config edit and coordinator review.
 
 Run dead-code detection:
 
@@ -212,7 +212,7 @@ Semgrep is installed outside npm because the npm packages are not maintained. Lo
 pipx install semgrep
 ```
 
-The CI workflow uses the same `pipx install semgrep` path before running the root `.semgrep.yml` rules. The current rules flag repeated shapes for durable-stream append wrappers, scoped durable-state acquisition, retained-row reads, and authoritative-run lookups. Rule paths include `packages/*/src` and `apps/*/src`; shared generated-file, fixture, test, and build-output exclusions live in `.semgrepignore`.
+The CI workflow uses the same `pipx install semgrep` path before running the root `.semgrep.yml` rules. The current blocking rule catches `process.env` reads outside binary, script, and test boundaries. Production scans are scoped to `packages apps`; fixtures live under `semgrep-tests/`.
 
 Test the Semgrep ruleset fixtures:
 
@@ -220,11 +220,11 @@ Test the Semgrep ruleset fixtures:
 pnpm run lint:semgrep:test
 ```
 
-`pnpm verify` and CI run this fixture test before the production Semgrep scan so rule refinements cannot silently stop matching. Each rule should carry `metadata` with the review/source ACID, category, and canonical helper path. Production Semgrep runs with `--error`; new rules need fixtures and clean path scopes before entering the blocking scan.
+`pnpm verify` and CI run this fixture test before the production Semgrep scan so rule refinements cannot silently stop matching. Each rule should carry `metadata` with the review/source ACID and category. Production Semgrep runs with `--error`; new rules need fixtures and clean path scopes before entering the blocking scan.
 
 The Effect ESLint plugin currently ships only two rules in `@effect/eslint-plugin@0.3.2`: `dprint` and `no-import-from-barrel-package`. `dprint` conflicts with this repo's existing stylistic formatter stack, so only `@effect/no-import-from-barrel-package` is enabled. If the plugin adds or changes rules during an upgrade, audit the shipped rule list before enabling anything new.
 
-To add a semgrep rule, add a focused rule to `.semgrep.yml`, prefer repo-root `.semgrepignore` for shared excludes, use per-rule path exclusions only for canonical helper homes, and add a matching fixture in `semgrep-tests/` with `ruleid` and `ok` comments. Verify it with:
+To add a semgrep rule, add a focused rule to `.semgrep.yml`, keep production scanning scoped to `packages apps`, and add a matching fixture in `semgrep-tests/` with `ruleid` and `ok` comments. Verify it with:
 
 ```sh
 pnpm run lint:semgrep:test
