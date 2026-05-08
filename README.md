@@ -40,6 +40,12 @@ Mermaid files under `docs/`. Refresh it with:
 pnpm run arch:deps
 ```
 
+Module-level import graphs are available when a PR needs a closer import review:
+
+```sh
+pnpm run arch:deps:detail
+```
+
 The strict CI boundary gate is:
 
 ```sh
@@ -53,6 +59,10 @@ Generated artifacts:
 - [Protocol package dependency graph](docs/dependency-graph-protocol.mmd)
 - [Runtime package dependency graph](docs/dependency-graph-runtime.mmd)
 - [Flamecast tracer app dependency graph](docs/dependency-graph-flamecast.mmd)
+- [Workspace module-level dependency graph](docs/dependency-graph-detail.mmd)
+- [Runtime module-level dependency graph](docs/dependency-graph-runtime-detail.mmd)
+- [Runtime durable-launch module dependency graph](docs/dependency-graph-runtime-durable-launch-detail.mmd)
+- [Flamecast module-level dependency graph](docs/dependency-graph-flamecast-detail.mmd)
 
 ## Run The Runtime
 

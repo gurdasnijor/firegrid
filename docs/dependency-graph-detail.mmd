@@ -1,0 +1,112 @@
+flowchart LR
+
+subgraph 0["apps"]
+subgraph 1["flamecast"]
+subgraph 2["src"]
+subgraph 3["client"]
+4["firegrid.ts"]
+9["main.tsx"]
+A["styles.css"]
+end
+subgraph 5["shared"]
+6["db.ts"]
+7["state.ts"]
+8["protocol.ts"]
+B["topology.ts"]
+end
+subgraph C["runtime"]
+D["agent-webhooks.ts"]
+N["handler.ts"]
+O["main.ts"]
+end
+end
+end
+end
+subgraph E["packages"]
+subgraph F["runtime"]
+subgraph G["src"]
+subgraph H["durable-workflow"]
+I["workflows.ts"]
+J["clock.ts"]
+K["state.ts"]
+L["engine-runtime.ts"]
+M["codec.ts"]
+end
+subgraph 11["durable-launch"]
+12["command.ts"]
+13["errors.ts"]
+subgraph 14["execution"]
+subgraph 15["providers"]
+16["local-process.ts"]
+end
+17["sandbox.ts"]
+end
+18["ids.ts"]
+19["journal.ts"]
+1A["launcher.ts"]
+1B["store.ts"]
+1C["workflow.ts"]
+1D["schema.ts"]
+end
+1E["index.ts"]
+end
+end
+subgraph P["client"]
+subgraph Q["src"]
+R["firegrid.ts"]
+Z["index.ts"]
+end
+end
+subgraph S["protocol"]
+subgraph T["src"]
+subgraph U["launch"]
+V["index.ts"]
+W["helpers.ts"]
+X["schema.ts"]
+Y["state.ts"]
+end
+10["index.ts"]
+end
+end
+end
+4-->6
+4-->8
+6-->7
+9-->B
+9-->4
+9-->A
+D-->I
+D-->6
+D-->7
+I-->J
+I-->L
+I-->K
+J-->K
+L-->M
+L-->K
+N-->6
+N-->D
+O-->N
+R-->V
+V-->W
+V-->X
+V-->Y
+Y-->X
+Z-->R
+10-->V
+12-->13
+16-->17
+19-->13
+19-->18
+1A-->I
+1A-->13
+1A-->1B
+1A-->1C
+1C-->12
+1C-->13
+1C-->17
+1C-->19
+1C-->1D
+1C-->1B
+1C-->V
+1E-->I

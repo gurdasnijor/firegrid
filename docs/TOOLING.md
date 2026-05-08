@@ -167,6 +167,15 @@ architecture evidence. Commit regenerated report files only when the slice
 intentionally changes architecture evidence; otherwise use the command as a
 local inspection tool.
 
+Regenerate detailed module-level dependency-graph evidence:
+
+```sh
+pnpm run arch:deps:detail
+```
+
+This produces uncollapsed module-level graphs for import-review slices where
+the collapsed package graphs are too high-level.
+
 Outputs:
 
 - `docs/dependency-graph.mmd` — collapsed Mermaid graph for quick text review.
@@ -174,6 +183,10 @@ Outputs:
 - `docs/dependency-graph-protocol.mmd` — protocol package internals.
 - `docs/dependency-graph-runtime.mmd` — runtime package internals.
 - `docs/dependency-graph-flamecast.mmd` — Flamecast app internals.
+- `docs/dependency-graph-detail.mmd` — workspace module-level imports.
+- `docs/dependency-graph-runtime-detail.mmd` — runtime module-level imports.
+- `docs/dependency-graph-runtime-durable-launch-detail.mmd` — durable-launch module-level imports.
+- `docs/dependency-graph-flamecast-detail.mmd` — Flamecast module-level imports.
 
 Focused graph targets:
 
@@ -182,6 +195,7 @@ pnpm run arch:deps:client
 pnpm run arch:deps:protocol
 pnpm run arch:deps:runtime
 pnpm run arch:deps:flamecast
+pnpm run arch:deps:detail
 ```
 
 Use focused graphs when reviewing package-shape work; `pnpm run lint:deps`
@@ -198,6 +212,7 @@ Command map:
 | Ready-for-review static/test gate | `pnpm verify` | none | Yes, CI authoritative |
 | Strict dependency boundary check | `pnpm run lint:deps` | none | Yes |
 | Dependency graph evidence refresh | `pnpm run arch:deps` | `docs/dependency-graph*.mmd` | No |
+| Detailed module graph refresh | `pnpm run arch:deps:detail` | `docs/dependency-graph*-detail.mmd` | No |
 | Focused package Mermaid graph | `pnpm run arch:deps:<package>` | one focused `.mmd` file | No |
 
 Run structural duplication-shape checks:

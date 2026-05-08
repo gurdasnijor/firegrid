@@ -1,0 +1,55 @@
+flowchart LR
+
+subgraph 0["apps"]
+subgraph 1["flamecast"]
+subgraph 2["src"]
+subgraph 3["client"]
+4["firegrid.ts"]
+9["main.tsx"]
+A["styles.css"]
+end
+subgraph 5["shared"]
+6["db.ts"]
+7["state.ts"]
+8["protocol.ts"]
+B["topology.ts"]
+end
+subgraph C["runtime"]
+D["agent-webhooks.ts"]
+N["handler.ts"]
+O["main.ts"]
+end
+end
+end
+end
+subgraph E["packages"]
+subgraph F["runtime"]
+subgraph G["src"]
+subgraph H["durable-workflow"]
+I["workflows.ts"]
+J["clock.ts"]
+K["state.ts"]
+L["engine-runtime.ts"]
+M["codec.ts"]
+end
+end
+end
+end
+4-->6
+4-->8
+6-->7
+9-->B
+9-->4
+9-->A
+D-->I
+D-->6
+D-->7
+I-->J
+I-->L
+I-->K
+J-->K
+L-->M
+L-->K
+N-->6
+N-->D
+O-->N
