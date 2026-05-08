@@ -2,15 +2,15 @@
 
 Canonical design source:
 
-- [Firegrid Architecture and Operation Messaging Boundary](docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md)
-- [Durable Agent Substrate SDD](docs/SDD_DURABLE_AGENT_SUBSTRATE.md)
+- [Durable Launch Runtime Operator](docs/proposals/SDD_FIREGRID_DURABLE_LAUNCH_RUNTIME_OPERATOR.md)
+- [Firegrid Agent Runtime Substrate](docs/proposals/SDD_FIREGRID_AGENT_RUNTIME_SUBSTRATE.md)
+- [Workflow Engine Integration](docs/research/workflow-engine-integration.md)
 - [Docs map](docs/README.md)
 
-Other canonical SDDs:
+Current tracer docs:
 
-- [Client Event Planes And State Producers](docs/SDD_CLIENT_EVENT_PLANES_AND_STATE_PRODUCERS.md)
-- [Choreography Facade](docs/SDD_CHOREOGRAPHY_FACADE.md)
-- [Launchable Substrate Host And Lab](docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md)
+- [Firegrid Launch Tracer](docs/proposals/SDD_FLAMECAST_FIREGRID_LAUNCH_TRACER.md)
+- [Flamecast Clean Room On Firegrid](docs/proposals/SDD_FLAMECAST_CLEAN_ROOM_ON_FIREGRID.md)
 
 Acai specs live under `features/firegrid/` for Firegrid protocol, client,
 runtime, app, and remediation requirements.

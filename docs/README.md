@@ -1,162 +1,87 @@
 # Firegrid Docs
 
-This directory holds Firegrid's design documents, review evidence, generated
-architecture artifacts, and ongoing planning notes. Use this index to tell
-which file is authoritative for the current shape of the system, which is
-historical context, and which is execution evidence.
+This directory holds Firegrid design documents, generated architecture
+evidence, review packets, research notes, and historical context. Use this
+index to avoid mixing current architecture with older substrate/lab-era plans.
 
-The Acai feature files in `features/firegrid/` are the formal contract behind
-these docs. Code references stable ACIDs from those features; SDDs explain the
-intent and trade-offs.
+The Acai feature files in `../features/firegrid/` are the formal contract. Code
+and tests reference stable ACIDs from those feature files; design docs explain
+the intent and trade-offs behind those requirements.
 
-## Canonical Design Docs
+## Current Direction
 
-These describe Firegrid as it is now and as the next slice will extend it.
-Read these first.
+Read these first for the current shape of Firegrid:
 
-| Area | SDD | Primary Acai Specs |
+| Area | Document | Primary Specs |
 | --- | --- | --- |
-| Firegrid product/runtime/client/lab boundary; operation messaging model | `docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md` | `firegrid-architecture-boundary`, `firegrid-operation-messaging`, `firegrid-event-streams`, `firegrid-runtime-process`, `firegrid-package-migration` |
-| App-facing `@firegrid/client` role, stream configuration, EventStream/EventPlane split, and authority limits | `docs/SDD_FIREGRID_CLIENT_API.md` | `firegrid-client-api`, `firegrid-event-streams`, `client-event-plane-registration` |
-| Substrate package structure: `protocol/`, `state-store/`, `read-models/`, `write-api/`, `execution/`, RunWait/facade boundary | `docs/SDD_FIREGRID_PACKAGE_STRUCTURE.md` | `firegrid-architecture-boundary`, `firegrid-remediation-hardening` |
-| Effect-quality evidence and remediation ordering for the substrate | `docs/SDD_FIREGRID_EFFECT_QUALITY.md` | `firegrid-architecture-boundary` (`EFFECT_ARTIFACT_GRAPH.*`), `firegrid-remediation-hardening` |
-| Core durable substrate: rows, projections, claim authority, terminalization | `docs/SDD_DURABLE_AGENT_SUBSTRATE.md` | `durable-records-and-projections`, `awakeables-and-runs`, `effect-native-api`, `semantic-producer`, `ready-work-projection`, `claim-and-operator-authority`, `durable-waits-and-scheduling`, `implementation-sequencing` |
-| Firepixel-style runtime foundation using EventPlane + RunWait + app-owned handlers | `docs/SDD_FIREGRID_FIREPIXEL_FOUNDATION.md` | `client-event-plane-registration`, `firegrid-runtime-process`, `run-wait-primitives` |
-| RunWait primitives: sleep, wait-for, scheduled intent, and projection-match triggers | `docs/SDD_CHOREOGRAPHY_FACADE.md` | `run-wait-primitives`, `choreography-facade`, `ergonomic-facade` |
-| Runtime integration lab and adapter validation | `docs/SDD_DURABLE_AGENT_RUNTIME_LAB.md` | `features/durable-agent-runtime-lab/*.feature.yaml` |
-| Runtime CLI scenario validation (next-wave dispatch plan F1A–F1E) | `docs/SDD_FIREGRID_RUNTIME_CLI_VALIDATION.md` | `firegrid-operation-messaging`, `firegrid-runtime-process`, `launchable-substrate-host`, `durable-waits-and-scheduling`, `firegrid-event-streams` |
-| Typed runtime `run(...)` entrypoint for app-owned runtime graphs | `docs/SDD_FIREGRID_TYPED_RUNTIME_RUN_API.md` | `firegrid-runtime-process`, `firegrid-operation-messaging`, `durable-subscribers`, `claim-and-operator-authority` |
-| Runtime composition ergonomics for explicit app-owned Effect Layer graphs | `docs/SDD_FIREGRID_RUNTIME_COMPOSITION_ERGONOMICS.md` | `firegrid-runtime-process` |
-| Tooling, verification, and architecture reporting commands | `docs/TOOLING.md` | n/a |
+| Durable launch runtime operator | `proposals/SDD_FIREGRID_DURABLE_LAUNCH_RUNTIME_OPERATOR.md` | `firegrid-durable-launch-runtime-operator`, `workflow-engine-durable-state` |
+| Product-neutral agent runtime substrate | `proposals/SDD_FIREGRID_AGENT_RUNTIME_SUBSTRATE.md` | `firegrid-agent-runtime-substrate`, `firegrid-platform-invariants` |
+| Effect Workflow backed by Durable Streams State | `research/workflow-engine-integration.md` | `workflow-engine-durable-state` |
+| Flamecast clean-room tracer over Firegrid | `proposals/SDD_FLAMECAST_FIREGRID_LAUNCH_TRACER.md` | `firegrid-durable-launch-runtime-operator` |
+| Flamecast replatforming research | `replatforming/README.md` | n/a |
+| Tooling, verification, and generated dependency evidence | `TOOLING.md` | `firegrid-remediation-hardening`, `firegrid-architecture-boundary`, `firegrid-package-migration` |
 
-## Historical / Background
+The current implementation shape is:
 
-These docs are useful context but are not canonical for current decisions. If
-they conflict with a doc in the table above, the canonical doc wins.
+- `packages/protocol` — browser-safe launch schemas and Durable Streams State
+  schema.
+- `packages/client` — browser/app-facing launch client; must not import runtime
+  code.
+- `packages/runtime` — server-side durable workflow engine and durable launch
+  runtime implementation.
+- `apps/flamecast` — clean-room tracer app that exercises Firegrid without
+  copying legacy Flamecast architecture.
 
-- `docs/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md` — original launchable-host
-  proposal. Predates the attached-only runtime decision. The
-  `SubstrateHost`/`SubstrateHostBoot`/`embeddedDev`/`withHost` vocabulary it
-  uses is superseded by
-  `docs/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md`. Treat its
-  inspector/lab UI narrative as proposal-level input; treat its boundary,
-  process, and dev-server text as historical.
-- `docs/SDD_NEXT_LAYER_REVIEW_SEQUENCE.md` — execution planning for the
-  next-layer SDD review order. Useful for orientation; not a replacement for
-  any canonical SDD.
-- `docs/HANDOFF_LEAD_ARCHITECT_FIREGRID_2026-05-05.md` — onboarding handoff
-  snapshot for the lead architect role.
-- `docs/ACAI_TASKS_FIREGRID_REMEDIATION_2026-05-05.md` — remediation task list
-  snapshot.
-- `docs/PROPOSAL_STATIC_ENFORCEMENT_2026-05-05.md` — proposal feeding the
-  Effect quality and remediation slices.
+## Generated Architecture Evidence
 
-## Review Evidence
+Generated artifacts are committed under `docs/` and refreshed with:
 
-Review packets, audit reports, and detector findings are execution artifacts.
-They can inform an SDD or spec change, but they are not canonical until folded
-into one of the docs above.
+```sh
+pnpm run arch:deps
+```
 
-- `docs/REVIEW_FIREGRID_2026-05-05.md`
-- `docs/REVIEW_FIREGRID_INVOCATION_BOUNDARY_2026-05-06.md`
-- `docs/REVIEW_EFFECT_*.md` (per-topic Effect detector / style / runtime / etc.
-  reviews dated 2026-05-05)
+Strict dependency-boundary enforcement runs with:
 
-## Generated Architecture Artifacts
+```sh
+pnpm run lint:deps
+```
 
-Regenerated by `pnpm run graph` and `pnpm run arch:reports`. Do not edit by
-hand; treat as evidence for SDD claims.
+Artifacts:
 
-- Dependency graphs: `docs/dependency-graph.{mmd,svg}`,
-  `docs/dependency-graph-modules.svg`, `docs/dependency-graph-archi.svg`,
-  `docs/dependency-graph-{client,runtime,substrate}.mmd`
-- Effect artifact inventory: `docs/effect-artifact-inventory.{md,json}`
+- `dependency-graph.mmd` — workspace-level dependency graph.
+- `dependency-graph-client.mmd` — client package graph.
+- `dependency-graph-protocol.mmd` — protocol package graph.
+- `dependency-graph-runtime.mmd` — runtime package graph.
+- `dependency-graph-flamecast.mmd` — Flamecast tracer app graph.
 
-See `docs/TOOLING.md` for which command produces which artifact and when to
-run graph-only versus the full bundle.
+Do not hand-edit generated graph files. Regenerate them after intentional
+package-shape or import-boundary changes.
 
-## How To Read The Current State
+## Historical Context
 
-1. Start with the relevant canonical SDD in the table above.
-2. Open the matching Acai feature file under `features/firegrid/` and read the
-   stable ACIDs.
-3. Search package code and tests for full ACID references.
-4. Treat unreferenced review notes and historical SDDs as input, not as
-   accepted design.
+These documents can be useful background, but they predate the current durable
+launch/runtime direction. If they conflict with the current-direction table
+above, the current docs and Acai specs win.
 
-## Current Source Layout (post-W4)
+- `sdds/SDD_FIREGRID_ARCHITECTURE_AND_INVOCATION_BOUNDARY.md`
+- `sdds/SDD_DURABLE_AGENT_SUBSTRATE.md`
+- `sdds/SDD_LAUNCHABLE_SUBSTRATE_HOST_AND_LAB.md`
+- `sdds/SDD_FIREGRID_PACKAGE_STRUCTURE.md`
+- `sdds/SDD_FIREGRID_EFFECT_QUALITY.md`
+- `sdds/SDD_FIREGRID_RUNTIME_CLI_VALIDATION.md`
+- `sdds/SDD_DURABLE_AGENT_RUNTIME_LAB.md`
+- `reviews/*.md`
+- `handoffs/**/*.md`
 
-The substrate package has been reorganized into named concern directories.
-`docs/SDD_FIREGRID_PACKAGE_STRUCTURE.md` documents the rationale; the current
-layout on `main` is:
+Historical docs may mention retired names such as `@firegrid/substrate`,
+`@firegrid/lab`, `apps/lab`, `packages/substrate`, `pnpm run graph`,
+`pnpm run arch:reports`, or Effect artifact inventory outputs. Treat those as
+old evidence, not current implementation guidance.
 
-- `packages/substrate/src/protocol/{schema,descriptors}/`,
-  `packages/substrate/src/protocol/state-machine.ts` — wire schemas,
-  descriptors, codecs, transition builders.
-- `packages/substrate/src/state-store/{stream,retained-records}.ts` — durable
-  stream acquisition and retained replay helpers.
-- `packages/substrate/src/read-models/{projection,projection-service,ready-work}.ts`
-  — projections and read-model derivations.
-- `packages/substrate/src/write-api/producer.ts` — substrate producer service.
-- `packages/substrate/src/execution/{operator,operator-errors,waits,subscribers,claims}.ts`
-  — durable execution primitives.
-- `packages/substrate/src/coordination/` — RunWait primitives plus projection/
-  work-claim public services.
-- `packages/substrate/src/kernel/index.ts` — explicit kernel subpath barrel.
-- `packages/substrate/src/{schema,descriptors,state-machine,projection,projection-service,retained-records,stream}.ts` and `packages/substrate/src/projection/ready-work.ts`
-  — compatibility re-export shims preserved for previously exposed paths.
+## How To Read The Repo Now
 
-## Next Feature Wave
-
-W4 completed the substrate boundary cleanup. The next wave is **runtime-first
-scenario validation**, not new SDK ergonomics or new infrastructure. The
-controlling document is `docs/SDD_FIREGRID_RUNTIME_CLI_VALIDATION.md`, which
-explicitly names what is *not* missing — fixture infrastructure, schema
-types, the Durable Streams CLI, runtime Layers, and projection machinery all
-exist — and what *is* missing: a small set of concrete scenarios that exercise
-those pieces end-to-end against an attached Firegrid runtime, with rows
-written through the Durable Streams CLI.
-
-Dispatch order (from the SDD):
-
-1. **F1A — Echo operation.** Smallest operation-message path: schema-valid
-   operation-started row → runtime handler → terminal run row → projection
-   shows completion.
-   Anchor ACIDs:
-   `firegrid-operation-messaging.{OPERATIONS.1-.4, RUNTIME_HANDLERS.1-.4}`.
-2. **F1B — waitFor projection-match.** Durable suspension via a caller-owned
-   EventStream and a projection-match completion.
-   Anchor ACIDs:
-   `durable-waits-and-scheduling.WAIT_FOR.{1,6,7}`,
-   `durable-subscribers.PROJECTION_MATCH_SUBSCRIBER.{1,4}`,
-   `firegrid-event-streams.SCHEMA_OWNERSHIP.3`,
-   `launchable-substrate-host.SCENARIOS.3`.
-3. **F1C — scheduleAt / scheduled work.** Scheduled-work completion lowering
-   without a second scheduler.
-   Anchor ACIDs:
-   `firegrid-operation-messaging.SCHEDULED_MESSAGES.{1-3}`,
-   `durable-waits-and-scheduling.SCHEDULE_WORK.{1,6}`,
-   `durable-subscribers.SCHEDULED_WORK_SUBSCRIBER.{1,4}`,
-   `launchable-substrate-host.SCENARIOS.2`.
-4. **F1D — projection surface / read-model inspection.** Read-only lab and
-   read-model APIs prove progress without raw row reading.
-   Anchor ACIDs:
-   `launchable-substrate-host.LAB_INSPECTOR.{1,2,4,7}`,
-   `launchable-substrate-host.NO_CONTROL_PLANE.{4,5}`.
-5. **F1E — claim-before-side-effect.** Once-only side-effect under competing
-   workers.
-   Anchor ACIDs:
-   `claim-and-operator-authority.{CLAIM_BEFORE_INVOKE.1, CLAIM_AUTHORITY.1, TERMINAL_AUTHORITY.1}`,
-   `launchable-substrate-host.SCENARIOS.4`.
-
-F1A and F1B are the critical path — they prove the runtime handler path and
-durable suspension before any further `@firegrid/client` work resumes.
-
-Explicit non-goals for the wave (from the SDD): no new client ergonomics, no
-fixture generator or Firegrid CLI wrapper, no `firegrid dev -- ...` /
-embedded dev-server launchers, no HTTP command endpoints, no
-product-specific durable row families, no shared `test-support` folders.
-
-The Acai spec process (`.agents/skills/acai/SKILL.md`) governs all of these.
-Each slice ends with full ACID references in code, tests, and PR/review
-notes.
+1. Start with the current-direction document for the area you are touching.
+2. Open the matching Acai feature file under `../features/firegrid/`.
+3. Search code and tests for the full ACID references.
+4. Use generated dependency graphs for ground-truth import shape.
+5. Treat old review notes and historical SDDs as context only.
