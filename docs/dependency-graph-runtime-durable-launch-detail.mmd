@@ -1,0 +1,66 @@
+flowchart LR
+
+subgraph 0["packages"]
+subgraph 1["runtime"]
+subgraph 2["src"]
+subgraph 3["durable-launch"]
+4["command.ts"]
+5["errors.ts"]
+subgraph 6["execution"]
+subgraph 7["providers"]
+8["local-process.ts"]
+end
+9["sandbox.ts"]
+end
+A["ids.ts"]
+B["journal.ts"]
+C["launcher.ts"]
+J["store.ts"]
+K["workflow.ts"]
+L["schema.ts"]
+end
+subgraph D["durable-workflow"]
+E["workflows.ts"]
+F["clock.ts"]
+G["state.ts"]
+H["engine-runtime.ts"]
+I["codec.ts"]
+end
+end
+end
+subgraph M["protocol"]
+subgraph N["src"]
+subgraph O["launch"]
+P["index.ts"]
+Q["helpers.ts"]
+R["schema.ts"]
+S["state.ts"]
+end
+end
+end
+end
+4-->5
+8-->9
+B-->5
+B-->A
+C-->E
+C-->5
+C-->J
+C-->K
+E-->F
+E-->H
+E-->G
+F-->G
+H-->I
+H-->G
+K-->4
+K-->5
+K-->9
+K-->B
+K-->L
+K-->J
+K-->P
+P-->Q
+P-->R
+P-->S
+S-->R

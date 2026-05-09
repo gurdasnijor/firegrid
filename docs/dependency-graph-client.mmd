@@ -10,15 +10,17 @@ end
 subgraph 5["protocol"]
 subgraph 6["src"]
 subgraph 7["launch"]
-8["index.ts"]
-9["schema.ts"]
-A["state.ts"]
+8["helpers.ts"]
+9["index.ts"]
+A["schema.ts"]
+B["state.ts"]
 end
 end
 end
 end
-3-->8
+3-->9
 4-->3
-8-->9
-8-->A
-A-->9
+9-->8
+9-->A
+9-->B
+B-->A

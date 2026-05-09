@@ -1,73 +1,58 @@
 import { Schema } from "effect"
 
-export const StreamPlaneRefSchema = Schema.Struct({
-  kind: Schema.Literal("stream"),
-  role: Schema.Literal("state", "events", "control", "diagnostics"),
-  streamUrl: Schema.String,
-  schemaRef: Schema.optional(Schema.String),
-})
-export type StreamPlaneRef = Schema.Schema.Type<typeof StreamPlaneRefSchema>
+export const LaunchOutputSourceSchema = Schema.Literal("stdout", "stderr")
+export type LaunchOutputSource = Schema.Schema.Type<typeof LaunchOutputSourceSchema>
 
-export const ExecutionPlaneRefSchema = Schema.Struct({
-  kind: Schema.Literal("local-process", "docker-volume", "remote-sandbox", "hosted-adapter"),
-  provider: Schema.optional(Schema.String),
-  ref: Schema.optional(Schema.String),
-  mountPath: Schema.optional(Schema.String),
-})
-export type ExecutionPlaneRef = Schema.Schema.Type<typeof ExecutionPlaneRefSchema>
+export const LaunchJournalStreamSchema = Schema.Literal("provider-wire", "diagnostics")
+export type LaunchJournalStream = Schema.Schema.Type<typeof LaunchJournalStreamSchema>
 
-export const ResourcePlaneRefSchema = Schema.Struct({
-  kind: Schema.Literal("repository", "filesystem-mount", "artifact-bundle", "volume", "mcp-proxy", "secret"),
-  ref: Schema.String,
-  mountPath: Schema.optional(Schema.String),
-  integrity: Schema.optional(Schema.String),
-})
-export type ResourcePlaneRef = Schema.Schema.Type<typeof ResourcePlaneRefSchema>
+export const LaunchJournalFormatSchema = Schema.Literal("jsonl", "text-lines")
+export type LaunchJournalFormat = Schema.Schema.Type<typeof LaunchJournalFormatSchema>
 
-export const PlaneBindingSchema = Schema.Struct({
-  kind: Schema.Literal("env", "env-secret", "mount", "stdio"),
-  name: Schema.String,
-  from: Schema.Struct({
-    plane: Schema.Literal("session", "diagnostics", "execution", "resources"),
-    name: Schema.String,
-    field: Schema.Literal("streamUrl", "ref", "mountPath"),
-  }),
+export const RuntimeProviderSchema = Schema.Literal("local-process")
+export type RuntimeProvider = Schema.Schema.Type<typeof RuntimeProviderSchema>
+
+export const RuntimeConfigSchema = Schema.Struct({
+  argv: Schema.Array(Schema.String),
+  cwd: Schema.optional(Schema.String),
 })
-export type PlaneBinding = Schema.Schema.Type<typeof PlaneBindingSchema>
+export type RuntimeConfig = Schema.Schema.Type<typeof RuntimeConfigSchema>
+
+export const LaunchJournalRuleSchema = Schema.Struct({
+  source: LaunchOutputSourceSchema,
+  format: LaunchJournalFormatSchema,
+  stream: LaunchJournalStreamSchema,
+})
+export type LaunchJournalRule = Schema.Schema.Type<typeof LaunchJournalRuleSchema>
+
+export const LaunchRuntimeIntentSchema = Schema.Struct({
+  provider: RuntimeProviderSchema,
+  config: RuntimeConfigSchema,
+  journal: Schema.Array(LaunchJournalRuleSchema),
+})
+export type LaunchRuntimeIntent = Schema.Schema.Type<typeof LaunchRuntimeIntentSchema>
+
+export const PublicLaunchRuntimeIntentSchema = Schema.Struct({
+  provider: RuntimeProviderSchema,
+  config: RuntimeConfigSchema,
+})
+export type PublicLaunchRuntimeIntent = Schema.Schema.Type<typeof PublicLaunchRuntimeIntentSchema>
+
+export const PublicLaunchRequestSchema = Schema.Struct({
+  runtime: PublicLaunchRuntimeIntentSchema,
+  requestedBy: Schema.optional(Schema.String),
+}).annotations({
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type PublicLaunchRequest = Schema.Schema.Type<typeof PublicLaunchRequestSchema>
 
 export const RuntimeLaunchRequestSchema = Schema.Struct({
   launchId: Schema.String,
   requestedAt: Schema.String,
   requestedBy: Schema.optional(Schema.String),
-  target: Schema.Struct({
-    kind: Schema.Literal("command"),
-    spec: Schema.Struct({
-      argv: Schema.Array(Schema.String),
-      protocol: Schema.optional(Schema.String),
-      cwd: Schema.optional(Schema.String),
-    }),
-    readiness: Schema.optional(Schema.Struct({
-      stream: Schema.String,
-      rowType: Schema.String,
-      predicateRef: Schema.String,
-    })),
-    rebuild: Schema.optional(Schema.Struct({
-      inputs: Schema.Array(Schema.String),
-      strategy: Schema.Literal("fresh", "replay", "session-load"),
-      entrypointRef: Schema.String,
-    })),
-  }),
-  planes: Schema.Struct({
-    session: Schema.Record({ key: Schema.String, value: StreamPlaneRefSchema }),
-    diagnostics: Schema.optional(Schema.Record({ key: Schema.String, value: StreamPlaneRefSchema })),
-    execution: Schema.optional(Schema.Record({ key: Schema.String, value: ExecutionPlaneRefSchema })),
-    resources: Schema.optional(Schema.Record({ key: Schema.String, value: ResourcePlaneRefSchema })),
-  }),
-  bindings: Schema.optional(Schema.Array(PlaneBindingSchema)),
-  restartPolicy: Schema.optional(Schema.Struct({
-    mode: Schema.Literal("never", "on-failure", "always"),
-    maxAttempts: Schema.optional(Schema.Number),
-  })),
+  runtime: LaunchRuntimeIntentSchema,
 })
 export type RuntimeLaunchRequest = Schema.Schema.Type<typeof RuntimeLaunchRequestSchema>
 
@@ -75,10 +60,38 @@ export const RuntimeProcessEventSchema = Schema.Struct({
   processEventId: Schema.String,
   processAttemptId: Schema.String,
   launchId: Schema.String,
-  attempt: Schema.Number,
-  status: Schema.Literal("started", "ready", "exited", "failed"),
+  activityAttempt: Schema.Number,
+  status: Schema.Literal("started", "exited", "failed"),
   at: Schema.String,
+  provider: RuntimeProviderSchema,
   exitCode: Schema.optional(Schema.Number),
+  signal: Schema.optional(Schema.String),
   message: Schema.optional(Schema.String),
 })
 export type RuntimeProcessEvent = Schema.Schema.Type<typeof RuntimeProcessEventSchema>
+
+export const ProviderWireRowSchema = Schema.Struct({
+  providerWireRowId: Schema.String,
+  launchId: Schema.String,
+  activityAttempt: Schema.Number,
+  sequence: Schema.Number,
+  channel: Schema.Literal("stdout"),
+  format: Schema.Literal("jsonl"),
+  stream: Schema.Literal("provider-wire"),
+  receivedAt: Schema.String,
+  raw: Schema.String,
+})
+export type ProviderWireRow = Schema.Schema.Type<typeof ProviderWireRowSchema>
+
+export const DiagnosticRowSchema = Schema.Struct({
+  diagnosticRowId: Schema.String,
+  launchId: Schema.String,
+  activityAttempt: Schema.Number,
+  sequence: Schema.Number,
+  channel: Schema.Literal("stderr"),
+  format: Schema.Literal("text-lines"),
+  stream: Schema.Literal("diagnostics"),
+  receivedAt: Schema.String,
+  raw: Schema.String,
+})
+export type DiagnosticRow = Schema.Schema.Type<typeof DiagnosticRowSchema>

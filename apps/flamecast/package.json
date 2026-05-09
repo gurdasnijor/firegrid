@@ -16,6 +16,7 @@
     "@durable-streams/server": "^0.3.1",
     "@durable-streams/state": "^0.2.5",
     "@effect/workflow": "0.18.1",
+    "@firegrid/runtime": "workspace:*",
     "effect": "^3.18.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

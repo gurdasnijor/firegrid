@@ -1,111 +1,188 @@
 import { createStreamDB } from "@durable-streams/state"
 import {
   runtimeLaunchStateSchema,
+  type DiagnosticRow,
+  type ProviderWireRow,
   type RuntimeLaunchRequest,
   type RuntimeProcessEvent,
 } from "@firegrid/protocol/launch"
-import type { Scope } from "effect"
-import { Effect, Schema } from "effect"
+import { Context, Duration, Effect, Layer, Option, Schema } from "effect"
 
-interface RuntimeLaunchStoreOptions {
+interface RuntimeLaunchDbOptions {
   readonly streamUrl: string
   readonly contentType?: string
-  readonly txTimeoutMs?: number
+  readonly txTimeout?: Duration.DurationInput
 }
 
-export class RuntimeLaunchStoreError extends Schema.TaggedError<RuntimeLaunchStoreError>()(
-  "RuntimeLaunchStoreError",
+class RuntimeLaunchDbError extends Schema.TaggedError<RuntimeLaunchDbError>()(
+  "RuntimeLaunchDbError",
   {
     op: Schema.String,
     cause: Schema.Unknown,
   },
 ) {}
 
-export interface RuntimeLaunchStore {
-  readonly getLaunchRequest: (launchId: string) => RuntimeLaunchRequest | undefined
-  readonly runtimeProcessEvents: () => ReadonlyArray<RuntimeProcessEvent>
-  readonly appendLaunchRequest: (request: RuntimeLaunchRequest) => Effect.Effect<void, RuntimeLaunchStoreError>
-  readonly appendRuntimeProcessEvent: (event: RuntimeProcessEvent) => Effect.Effect<void, RuntimeLaunchStoreError>
-  readonly preload: Effect.Effect<void, RuntimeLaunchStoreError>
-  readonly close: Effect.Effect<void>
+export interface RuntimeLaunchDbService {
+  readonly appendLaunchRequest: (
+    request: RuntimeLaunchRequest,
+  ) => Effect.Effect<void, RuntimeLaunchDbError>
+  readonly appendProcessEvent: (
+    event: RuntimeProcessEvent,
+  ) => Effect.Effect<void, RuntimeLaunchDbError>
+  readonly appendProviderWireRow: (
+    row: ProviderWireRow,
+  ) => Effect.Effect<void, RuntimeLaunchDbError>
+  readonly appendDiagnosticRow: (
+    row: DiagnosticRow,
+  ) => Effect.Effect<void, RuntimeLaunchDbError>
+  readonly getLaunchRequest: (launchId: string) => Option.Option<RuntimeLaunchRequest>
+  readonly processEventsFor: (launchId: string) => ReadonlyArray<RuntimeProcessEvent>
+  readonly providerWireFor: (launchId: string) => ReadonlyArray<ProviderWireRow>
+  readonly diagnosticsFor: (launchId: string) => ReadonlyArray<DiagnosticRow>
 }
+
+export class RuntimeLaunchDb extends Context.Tag("firegrid/runtime/RuntimeLaunchDb")<
+  RuntimeLaunchDb,
+  RuntimeLaunchDbService
+>() {}
+
+type ActionResult = {
+  readonly isPersisted: {
+    readonly promise: Promise<unknown>
+  }
+}
+
+type MutableCollection<Row> = {
+  readonly get: (id: string) => Row | undefined
+  readonly insert: (row: Row) => void
+}
+
+type UpsertEventBuilder<Row> = {
+  readonly upsert: (options: {
+    readonly value: Row
+    readonly headers: { readonly txid: string }
+  }) => unknown
+}
+
+const persistAction = <A extends ActionResult>(
+  op: string,
+  action: () => A,
+): Effect.Effect<void, RuntimeLaunchDbError> =>
+  Effect.tryPromise({
+    try: async () => {
+      await action().isPersisted.promise
+    },
+    catch: cause => new RuntimeLaunchDbError({ op, cause }),
+  })
 
 const promiseOp = <A>(
   op: string,
   promise: () => Promise<A>,
-): Effect.Effect<A, RuntimeLaunchStoreError> =>
+): Effect.Effect<A, RuntimeLaunchDbError> =>
   Effect.tryPromise({
     try: promise,
-    catch: cause => new RuntimeLaunchStoreError({ op, cause }),
+    catch: cause => new RuntimeLaunchDbError({ op, cause }),
   })
 
-export const makeRuntimeLaunchStore = (
-  options: RuntimeLaunchStoreOptions,
-): Effect.Effect<RuntimeLaunchStore, RuntimeLaunchStoreError> =>
-  Effect.gen(function* () {
-    const txTimeoutMs = options.txTimeoutMs ?? 2_000
-    const db = createStreamDB({
-      streamOptions: {
-        url: options.streamUrl,
-        contentType: options.contentType ?? "application/json",
-      },
-      state: runtimeLaunchStateSchema,
-      actions: ({ db, stream }) => ({
-        appendLaunchRequest: {
-          onMutate: (request: RuntimeLaunchRequest) => {
-            if (db.collections.launchRequests.get(request.launchId) === undefined) {
-              db.collections.launchRequests.insert(request)
-            }
-          },
-          mutationFn: async (request: RuntimeLaunchRequest) => {
-            const txid = `firegrid-launch:${request.launchId}`
-            await stream.append(JSON.stringify(runtimeLaunchStateSchema.launchRequests.upsert({
-              value: request,
-              headers: { txid },
-            })))
-            await db.utils.awaitTxId(txid, txTimeoutMs)
-          },
+const makeRuntimeLaunchStreamDb = (
+  options: RuntimeLaunchDbOptions,
+) => {
+  const txTimeoutMs = Duration.toMillis(Duration.decode(options.txTimeout ?? "2 seconds"))
+  return createStreamDB({
+    streamOptions: {
+      url: options.streamUrl,
+      contentType: options.contentType ?? "application/json",
+    },
+    state: runtimeLaunchStateSchema,
+    actions: ({ db, stream }) => {
+      const appendStateEvent = async (
+        txid: string,
+        event: unknown,
+      ) => {
+        await stream.append(JSON.stringify(event))
+        await db.utils.awaitTxId(txid, txTimeoutMs)
+      }
+      const stateAction = <Row>(
+        collection: MutableCollection<Row>,
+        eventBuilder: UpsertEventBuilder<Row>,
+        rowId: (row: Row) => string,
+        txidFor: (row: Row) => string = rowId,
+      ) => ({
+        onMutate: (row: Row) => {
+          const id = rowId(row)
+          if (collection.get(id) === undefined) {
+            collection.insert(row)
+          }
         },
-        appendRuntimeProcessEvent: {
-          onMutate: (event: RuntimeProcessEvent) => {
-            if (db.collections.runtimeProcesses.get(event.processEventId) === undefined) {
-              db.collections.runtimeProcesses.insert(event)
-            }
-          },
-          mutationFn: async (event: RuntimeProcessEvent) => {
-            const txid = event.processEventId
-            await stream.append(JSON.stringify(runtimeLaunchStateSchema.runtimeProcesses.insert({
-              value: event,
-              headers: { txid },
-            })))
-            await db.utils.awaitTxId(txid, txTimeoutMs)
-          },
+        mutationFn: (row: Row) => {
+          const txid = txidFor(row)
+          return appendStateEvent(txid, eventBuilder.upsert({
+            value: row,
+            headers: { txid },
+          }))
         },
-      }),
-    })
-
-    yield* promiseOp("preload", () => db.preload())
-
-    return {
-      getLaunchRequest: launchId => db.collections.launchRequests.get(launchId),
-      runtimeProcessEvents: () => Array.from(db.collections.runtimeProcesses.state.values()),
-      appendLaunchRequest: request =>
-        promiseOp("appendLaunchRequest", async () => {
-          await db.actions.appendLaunchRequest(request).isPersisted.promise
-        }),
-      appendRuntimeProcessEvent: event =>
-        promiseOp("appendRuntimeProcessEvent", async () => {
-          await db.actions.appendRuntimeProcessEvent(event).isPersisted.promise
-        }),
-      preload: promiseOp("preload", () => db.preload()),
-      close: Effect.sync(() => db.close()),
-    }
+      })
+      return {
+        appendLaunchRequest: stateAction(
+          db.collections.launchRequests,
+          runtimeLaunchStateSchema.launchRequests,
+          (request: RuntimeLaunchRequest) => request.launchId,
+          request => `firegrid-launch:${request.launchId}`,
+        ),
+        appendProcessEvent: stateAction(
+          db.collections.processEvents,
+          runtimeLaunchStateSchema.processEvents,
+          (event: RuntimeProcessEvent) => event.processEventId,
+        ),
+        appendProviderWireRow: stateAction(
+          db.collections.providerWire,
+          runtimeLaunchStateSchema.providerWire,
+          (row: ProviderWireRow) => row.providerWireRowId,
+        ),
+        appendDiagnosticRow: stateAction(
+          db.collections.diagnostics,
+          runtimeLaunchStateSchema.diagnostics,
+          (row: DiagnosticRow) => row.diagnosticRowId,
+        ),
+      }
+    },
   })
+}
 
-export const acquireRuntimeLaunchStore = (
-  options: RuntimeLaunchStoreOptions,
-): Effect.Effect<RuntimeLaunchStore, RuntimeLaunchStoreError, Scope.Scope> =>
-  Effect.acquireRelease(
-    makeRuntimeLaunchStore(options),
-    store => store.close,
+export const RuntimeLaunchDbLive = (
+  options: RuntimeLaunchDbOptions,
+) =>
+  Layer.scoped(
+    RuntimeLaunchDb,
+    Effect.gen(function* () {
+      const db = makeRuntimeLaunchStreamDb(options)
+      yield* promiseOp("preload", () => db.preload())
+      yield* Effect.addFinalizer(() => Effect.sync(() => db.close()))
+
+      return RuntimeLaunchDb.of({
+        appendLaunchRequest: request =>
+          persistAction("appendLaunchRequest", () =>
+            db.actions.appendLaunchRequest(request)),
+        appendProcessEvent: event =>
+          persistAction("appendProcessEvent", () =>
+            db.actions.appendProcessEvent(event)),
+        appendProviderWireRow: row =>
+          persistAction("appendProviderWireRow", () =>
+            db.actions.appendProviderWireRow(row)),
+        appendDiagnosticRow: row =>
+          persistAction("appendDiagnosticRow", () =>
+            db.actions.appendDiagnosticRow(row)),
+        getLaunchRequest: launchId =>
+          Option.fromNullable(db.collections.launchRequests.get(launchId)),
+        processEventsFor: launchId =>
+          Array.from(db.collections.processEvents.state.values() as Iterable<RuntimeProcessEvent>)
+            .filter(event => event.launchId === launchId),
+        providerWireFor: launchId =>
+          Array.from(db.collections.providerWire.state.values() as Iterable<ProviderWireRow>)
+            .filter(row => row.launchId === launchId),
+        diagnosticsFor: launchId =>
+          Array.from(db.collections.diagnostics.state.values() as Iterable<DiagnosticRow>)
+            .filter(row => row.launchId === launchId),
+      })
+    }),
   )

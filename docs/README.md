@@ -40,6 +40,13 @@ Generated artifacts are committed under `docs/` and refreshed with:
 pnpm run arch:deps
 ```
 
+Run the detailed module-level graph set when reviewing import direction inside
+packages or tracer apps:
+
+```sh
+pnpm run arch:deps:detail
+```
+
 Strict dependency-boundary enforcement runs with:
 
 ```sh
@@ -53,6 +60,10 @@ Artifacts:
 - `dependency-graph-protocol.mmd` — protocol package graph.
 - `dependency-graph-runtime.mmd` — runtime package graph.
 - `dependency-graph-flamecast.mmd` — Flamecast tracer app graph.
+- `dependency-graph-detail.mmd` — workspace module-level graph.
+- `dependency-graph-runtime-detail.mmd` — runtime module-level graph.
+- `dependency-graph-runtime-durable-launch-detail.mmd` — runtime durable-launch module graph.
+- `dependency-graph-flamecast-detail.mmd` — Flamecast module-level graph.
 
 Do not hand-edit generated graph files. Regenerate them after intentional
 package-shape or import-boundary changes.

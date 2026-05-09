@@ -9,6 +9,7 @@ import {
   Firegrid,
   FiregridConfig,
   FiregridLive,
+  local,
 } from "@firegrid/client"
 import { Effect, Layer, Stream } from "effect"
 
@@ -23,28 +24,13 @@ const FiregridBrowserLive = FiregridLive.pipe(
 const program = Effect.gen(function* () {
   const firegrid = yield* Firegrid
   const handle = yield* firegrid.launch({
-    launchId: crypto.randomUUID(),
-    requestedAt: new Date().toISOString(),
-    target: {
-      kind: "command",
-      spec: {
-        argv: ["npx", "-y", "my-agent"],
-        protocol: "acp",
-      },
-    },
-    planes: {
-      session: {
-        "provider-wire": {
-          kind: "stream",
-          role: "events",
-          streamUrl: "https://durable.example/v1/stream/session-provider-wire",
-        },
-      },
-    },
+    runtime: local.jsonl({
+      argv: ["npx", "-y", "my-agent"],
+    }),
   })
 
   return yield* handle.changes.pipe(Stream.take(1), Stream.runCollect)
 }).pipe(Effect.provide(FiregridBrowserLive))
 ```
 
-Use `handle.diagnosticStream(name)` when a product package needs to inspect a raw named stream. Product-facing APIs should normally wrap launch handles with projections such as sessions, messages, transcripts, or provider events.
+`launch(...)` assigns the launch id internally and appends normalized durable launch intent. Runtime execution, sandbox streaming, journaling rules, readiness, restart, and product/session materialization are not part of the client launch input.
