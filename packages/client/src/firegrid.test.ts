@@ -143,19 +143,20 @@ describe("@firegrid/client", () => {
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 rejects malformed public launch input at the client boundary", async () => {
     const launchStreamUrl = await createStreamUrl("launch")
+    const request: unknown = {
+      runtime: {
+        provider: "remote-provider",
+        config: {
+          argv: "node --version",
+        },
+      },
+    }
 
     const result = await runWithFiregrid(
       launchStreamUrl,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
-        return yield* Effect.either(firegrid.launch({
-          runtime: {
-            provider: "remote-provider",
-            config: {
-              argv: "node --version",
-            },
-          },
-        } as unknown as PublicLaunchRequest))
+        return yield* Effect.either(firegrid.launch(request as PublicLaunchRequest))
       }),
     )
 

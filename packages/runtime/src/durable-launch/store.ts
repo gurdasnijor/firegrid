@@ -14,7 +14,7 @@ interface RuntimeLaunchDbOptions {
   readonly txTimeout?: Duration.DurationInput
 }
 
-class RuntimeLaunchDbError extends Schema.TaggedError<RuntimeLaunchDbError>()(
+export class RuntimeLaunchDbError extends Schema.TaggedError<RuntimeLaunchDbError>()(
   "RuntimeLaunchDbError",
   {
     op: Schema.String,

@@ -136,7 +136,9 @@ console.error("diagnostic: child stderr")
       format: "jsonl",
       stream: "provider-wire",
     })
-    expect(JSON.parse(retained.providerWireRows[0]?.raw ?? "{}")).toMatchObject({
+    const firstProviderWireRow = retained.providerWireRows[0]
+    expect(firstProviderWireRow).toBeDefined()
+    expect(JSON.parse(firstProviderWireRow!.raw)).toMatchObject({
       type: "assistant",
     })
     expect(retained.providerWireRows[1]).toMatchObject({

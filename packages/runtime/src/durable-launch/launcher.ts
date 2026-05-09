@@ -4,8 +4,8 @@ import { Effect, Layer } from "effect"
 import type { SandboxProvider } from "./execution/sandbox.ts"
 import {
   asLaunchError,
-  RuntimeLaunchError,
 } from "./errors.ts"
+import type { RuntimeLaunchError } from "./errors.ts"
 import {
   LaunchAgentWorkflow,
   LaunchAgentWorkflowLayer,
@@ -61,14 +61,25 @@ export const runLaunchOnce = (
 > =>
   runObservedLaunch(options.launchId).pipe(
     Effect.provide(launchRuntimeLayer(options)),
+    Effect.catchTags({
+      RuntimeLaunchDbError: cause =>
+        Effect.fail(asLaunchError(
+          `launch-db.${cause.op}`,
+          "failed to initialize launch journal",
+          options.launchId,
+          cause,
+        )),
+      WorkflowStateStoreError: cause =>
+        Effect.fail(asLaunchError(
+          `workflow-state.${cause.op}`,
+          "failed to run launch workflow state",
+          options.launchId,
+          cause,
+        )),
+    }),
     Effect.map(result => ({
       launchId: result.launchId,
       activityAttempt: result.activityAttempt,
       exitCode: result.exitCode,
     })),
-    Effect.mapError(cause =>
-      cause instanceof RuntimeLaunchError
-        ? cause
-        : asLaunchError("runtime.launch", "failed to run launch workflow", options.launchId, cause),
-    ),
   )

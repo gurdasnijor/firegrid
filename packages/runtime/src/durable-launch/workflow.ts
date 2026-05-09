@@ -94,10 +94,10 @@ export const LaunchAgentWorkflowLayer = LaunchAgentWorkflow.toLayer(
           })
 
         const streamProcess = provider.stream(sandbox, command).pipe(
-          Stream.mapAccum(0, (sequence, chunk) => [
+          Stream.mapAccum(0, (sequence, chunk): readonly [number, SequencedChunk] => [
             sequence + 1,
             { sequence, chunk },
-          ] as const satisfies readonly [number, SequencedChunk]),
+          ]),
           Stream.tap(({ chunk, sequence }) => {
             if (chunk.type === "exit") return Effect.void
             // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.7
