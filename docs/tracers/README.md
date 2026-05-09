@@ -11,13 +11,18 @@ actually coherent.
 
 ## Bullets
 
-- [001: Black-Box Agent Output To Provider-Wire Journal](./001-black-box-agent-output-to-durable-state.md)
-- [002: Provider-Wire Journal To Session State](./002-provider-wire-journal-to-session-state.md)
-- [003: Provider-Wire Journal To Permission Workflow](./003-provider-wire-journal-to-permission-workflow.md)
+- [001: Black-Box Agent Output To Runtime Events](./001-black-box-agent-output-to-durable-state.md)
+- [002: Runtime Events To Session State](./002-runtime-events-to-session-state.md)
+- [003: Runtime Events To Permission Workflow](./003-runtime-events-to-permission-workflow.md)
 
 ## Handoff
 
 - [2026-05-08 Firegrid Durable Agent Tracers](./HANDOFF_FIREGRID_DURABLE_AGENT_TRACERS_2026-05-08.md)
+
+## Architecture Decisions
+
+- [Durable Streams As Runtime Truth, Durable State As Projection](../proposals/ADR_STREAMS_AS_RUNTIME_TRUTH_STATE_AS_PROJECTION.md)
+- [Runtime Control Plane And Data Plane Boundary](../proposals/ADR_RUNTIME_CONTROL_PLANE_AND_DATA_PLANE_BOUNDARY.md)
 
 ## Sequence
 
@@ -25,8 +30,8 @@ actually coherent.
 Prerequisite
   thin client launch surface
     -> launch({ runtime: providerHelper(...) })
-    -> no caller-provided launch id, planes, bindings, journal, or streams
-    -> append normalized launch intent row only
+    -> no caller-provided runtime context id, planes, bindings, journal, or streams
+    -> append normalized runtime context row only
 
 Prerequisite
   sandbox provider contract
@@ -38,15 +43,15 @@ Prerequisite
   launch(...)
     -> durable workflow
     -> sandbox command stream
-    -> durable provider-wire journal
+    -> durable runtime output data-plane events
 
 002
-  durable provider-wire journal
+  durable runtime output data-plane events
     -> downstream materializer
     -> State Protocol session-state stream
 
 003
-  durable provider-wire journal
+  durable runtime output data-plane events
     -> downstream permission workflow
     -> durable permission request / approval wait / input response
 ```
@@ -67,6 +72,6 @@ teach enough about the substrate and ergonomics to sharpen the next one.
 - End at durable, application-observable state.
 - Treat live resources such as process handles, sockets, pipes, and PIDs as
   disposable.
-- Keep provider wire formats opaque until a projector or materializer maps them.
+- Keep runtime event payloads opaque until a projector or materializer maps them.
 - Prefer one real provider/process over broad mocks.
 - Do not add HTTP/RPC launch surfaces. The stream is the invocation boundary.

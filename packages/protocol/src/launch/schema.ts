@@ -1,13 +1,13 @@
 import { Schema } from "effect"
 
-export const LaunchOutputSourceSchema = Schema.Literal("stdout", "stderr")
-export type LaunchOutputSource = Schema.Schema.Type<typeof LaunchOutputSourceSchema>
+export const RuntimeOutputSourceSchema = Schema.Literal("stdout", "stderr")
+export type RuntimeOutputSource = Schema.Schema.Type<typeof RuntimeOutputSourceSchema>
 
-export const LaunchJournalStreamSchema = Schema.Literal("provider-wire", "diagnostics")
-export type LaunchJournalStream = Schema.Schema.Type<typeof LaunchJournalStreamSchema>
+export const RuntimeJournalTargetSchema = Schema.Literal("events", "logs")
+export type RuntimeJournalTarget = Schema.Schema.Type<typeof RuntimeJournalTargetSchema>
 
-export const LaunchJournalFormatSchema = Schema.Literal("jsonl", "text-lines")
-export type LaunchJournalFormat = Schema.Schema.Type<typeof LaunchJournalFormatSchema>
+export const RuntimeJournalFormatSchema = Schema.Literal("jsonl", "text-lines")
+export type RuntimeJournalFormat = Schema.Schema.Type<typeof RuntimeJournalFormatSchema>
 
 export const RuntimeProviderSchema = Schema.Literal("local-process")
 export type RuntimeProvider = Schema.Schema.Type<typeof RuntimeProviderSchema>
@@ -18,19 +18,19 @@ export const RuntimeConfigSchema = Schema.Struct({
 })
 export type RuntimeConfig = Schema.Schema.Type<typeof RuntimeConfigSchema>
 
-export const LaunchJournalRuleSchema = Schema.Struct({
-  source: LaunchOutputSourceSchema,
-  format: LaunchJournalFormatSchema,
-  stream: LaunchJournalStreamSchema,
+export const RuntimeJournalRuleSchema = Schema.Struct({
+  source: RuntimeOutputSourceSchema,
+  format: RuntimeJournalFormatSchema,
+  target: RuntimeJournalTargetSchema,
 })
-export type LaunchJournalRule = Schema.Schema.Type<typeof LaunchJournalRuleSchema>
+export type RuntimeJournalRule = Schema.Schema.Type<typeof RuntimeJournalRuleSchema>
 
-export const LaunchRuntimeIntentSchema = Schema.Struct({
+export const RuntimeContextIntentSchema = Schema.Struct({
   provider: RuntimeProviderSchema,
   config: RuntimeConfigSchema,
-  journal: Schema.Array(LaunchJournalRuleSchema),
+  journal: Schema.Array(RuntimeJournalRuleSchema),
 })
-export type LaunchRuntimeIntent = Schema.Schema.Type<typeof LaunchRuntimeIntentSchema>
+export type RuntimeContextIntent = Schema.Schema.Type<typeof RuntimeContextIntentSchema>
 
 export const PublicLaunchRuntimeIntentSchema = Schema.Struct({
   provider: RuntimeProviderSchema,
@@ -48,18 +48,18 @@ export const PublicLaunchRequestSchema = Schema.Struct({
 })
 export type PublicLaunchRequest = Schema.Schema.Type<typeof PublicLaunchRequestSchema>
 
-export const RuntimeLaunchRequestSchema = Schema.Struct({
-  launchId: Schema.String,
-  requestedAt: Schema.String,
-  requestedBy: Schema.optional(Schema.String),
-  runtime: LaunchRuntimeIntentSchema,
+export const RuntimeContextSchema = Schema.Struct({
+  contextId: Schema.String,
+  createdAt: Schema.String,
+  createdBy: Schema.optional(Schema.String),
+  runtime: RuntimeContextIntentSchema,
 })
-export type RuntimeLaunchRequest = Schema.Schema.Type<typeof RuntimeLaunchRequestSchema>
+export type RuntimeContext = Schema.Schema.Type<typeof RuntimeContextSchema>
 
-export const RuntimeProcessEventSchema = Schema.Struct({
-  processEventId: Schema.String,
-  processAttemptId: Schema.String,
-  launchId: Schema.String,
+export const RuntimeRunEventSchema = Schema.Struct({
+  runEventId: Schema.String,
+  runId: Schema.String,
+  contextId: Schema.String,
   activityAttempt: Schema.Number,
   status: Schema.Literal("started", "exited", "failed"),
   at: Schema.String,
@@ -68,30 +68,54 @@ export const RuntimeProcessEventSchema = Schema.Struct({
   signal: Schema.optional(Schema.String),
   message: Schema.optional(Schema.String),
 })
-export type RuntimeProcessEvent = Schema.Schema.Type<typeof RuntimeProcessEventSchema>
+export type RuntimeRunEvent = Schema.Schema.Type<typeof RuntimeRunEventSchema>
 
-export const ProviderWireRowSchema = Schema.Struct({
-  providerWireRowId: Schema.String,
-  launchId: Schema.String,
+export const RuntimeEventSchema = Schema.Struct({
+  eventId: Schema.String,
+  contextId: Schema.String,
   activityAttempt: Schema.Number,
   sequence: Schema.Number,
-  channel: Schema.Literal("stdout"),
+  source: Schema.Literal("stdout"),
   format: Schema.Literal("jsonl"),
-  stream: Schema.Literal("provider-wire"),
   receivedAt: Schema.String,
   raw: Schema.String,
 })
-export type ProviderWireRow = Schema.Schema.Type<typeof ProviderWireRowSchema>
+export type RuntimeEvent = Schema.Schema.Type<typeof RuntimeEventSchema>
 
-export const DiagnosticRowSchema = Schema.Struct({
-  diagnosticRowId: Schema.String,
-  launchId: Schema.String,
+export const RuntimeLogLineSchema = Schema.Struct({
+  logLineId: Schema.String,
+  contextId: Schema.String,
   activityAttempt: Schema.Number,
   sequence: Schema.Number,
-  channel: Schema.Literal("stderr"),
+  source: Schema.Literal("stderr"),
   format: Schema.Literal("text-lines"),
-  stream: Schema.Literal("diagnostics"),
   receivedAt: Schema.String,
   raw: Schema.String,
 })
-export type DiagnosticRow = Schema.Schema.Type<typeof DiagnosticRowSchema>
+export type RuntimeLogLine = Schema.Schema.Type<typeof RuntimeLogLineSchema>
+
+export const RuntimeOutputStdoutJournalEventSchema = Schema.Struct({
+  type: Schema.Literal("firegrid.runtime.output.stdout"),
+  id: Schema.String,
+  at: Schema.String,
+  event: RuntimeEventSchema,
+})
+export type RuntimeOutputStdoutJournalEvent = Schema.Schema.Type<
+  typeof RuntimeOutputStdoutJournalEventSchema
+>
+
+export const RuntimeOutputStderrJournalEventSchema = Schema.Struct({
+  type: Schema.Literal("firegrid.runtime.output.stderr"),
+  id: Schema.String,
+  at: Schema.String,
+  log: RuntimeLogLineSchema,
+})
+export type RuntimeOutputStderrJournalEvent = Schema.Schema.Type<
+  typeof RuntimeOutputStderrJournalEventSchema
+>
+
+export const RuntimeJournalEventSchema = Schema.Union(
+  RuntimeOutputStdoutJournalEventSchema,
+  RuntimeOutputStderrJournalEventSchema,
+)
+export type RuntimeJournalEvent = Schema.Schema.Type<typeof RuntimeJournalEventSchema>

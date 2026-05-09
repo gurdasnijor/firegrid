@@ -62,7 +62,7 @@ Artifacts:
 - `dependency-graph-flamecast.mmd` — Flamecast tracer app graph.
 - `dependency-graph-detail.mmd` — workspace module-level graph.
 - `dependency-graph-runtime-detail.mmd` — runtime module-level graph.
-- `dependency-graph-runtime-durable-launch-detail.mmd` — runtime durable-launch module graph.
+- `dependency-graph-runtime-control-data-detail.mmd` — runtime control/data module graph.
 - `dependency-graph-flamecast-detail.mmd` — Flamecast module-level graph.
 
 Do not hand-edit generated graph files. Regenerate them after intentional

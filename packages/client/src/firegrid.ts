@@ -1,19 +1,26 @@
+import {
+  stream as readStream,
+} from "@durable-streams/client"
 import { createStreamDB } from "@durable-streams/state"
 import {
   PublicLaunchRequestSchema,
-  runtimeLaunchStateSchema,
+  RuntimeJournalEventSchema,
+  runtimeContextStateSchema,
   local,
   normalizeRuntimeIntent,
-  type DiagnosticRow,
-  type ProviderWireRow,
   type PublicLaunchRequest,
-  type RuntimeLaunchRequest,
-  type RuntimeProcessEvent,
+  type RuntimeContext,
+  type RuntimeEvent,
+  type RuntimeJournalEvent,
+  type RuntimeLogLine,
+  type RuntimeRunEvent,
 } from "@firegrid/protocol/launch"
 import { Context, Data, Effect, Layer, Schema, Stream } from "effect"
 
 export interface ClientOptions {
-  readonly launchStreamUrl: string
+  readonly runtimeStreamUrl: string
+  readonly controlPlaneStreamUrl?: string
+  readonly dataPlaneStreamUrl?: string
   readonly contentType?: string
   readonly txTimeoutMs?: number
 }
@@ -28,7 +35,7 @@ export class PreloadError extends Data.TaggedError("PreloadError")<{
 }> {}
 
 export class AppendError extends Data.TaggedError("AppendError")<{
-  readonly launchId: string
+  readonly contextId: string
   readonly cause: unknown
 }> {}
 
@@ -38,24 +45,24 @@ export class LaunchInputError extends Data.TaggedError("LaunchInputError")<{
 
 export type FiregridError = PreloadError | LaunchInputError | AppendError
 
-export interface LaunchSnapshot {
-  readonly launchId: string
-  readonly request?: RuntimeLaunchRequest
-  readonly status?: RuntimeProcessEvent["status"]
-  readonly processEvents: ReadonlyArray<RuntimeProcessEvent>
-  readonly providerWire: ReadonlyArray<ProviderWireRow>
-  readonly diagnostics: ReadonlyArray<DiagnosticRow>
+export interface RuntimeContextSnapshot {
+  readonly contextId: string
+  readonly context?: RuntimeContext
+  readonly status?: RuntimeRunEvent["status"]
+  readonly runs: ReadonlyArray<RuntimeRunEvent>
+  readonly events: ReadonlyArray<RuntimeEvent>
+  readonly logs: ReadonlyArray<RuntimeLogLine>
 }
 
-export interface LaunchHandle {
-  readonly launchId: string
-  readonly snapshot: Effect.Effect<LaunchSnapshot>
-  readonly changes: Stream.Stream<LaunchSnapshot>
+export interface RuntimeContextHandle {
+  readonly contextId: string
+  readonly snapshot: Effect.Effect<RuntimeContextSnapshot, PreloadError>
+  readonly changes: Stream.Stream<RuntimeContextSnapshot, PreloadError>
 }
 
 export interface FiregridService {
-  readonly launch: (request: PublicLaunchRequest) => Effect.Effect<LaunchHandle, LaunchInputError | AppendError>
-  readonly open: (launchId: string) => LaunchHandle
+  readonly launch: (request: PublicLaunchRequest) => Effect.Effect<RuntimeContextHandle, LaunchInputError | AppendError>
+  readonly open: (contextId: string) => RuntimeContextHandle
 }
 
 export class Firegrid extends Context.Tag("@firegrid/client/Firegrid")<
@@ -66,8 +73,8 @@ export class Firegrid extends Context.Tag("@firegrid/client/Firegrid")<
 export { local }
 
 const latestStatus = (
-  events: ReadonlyArray<RuntimeProcessEvent>,
-): RuntimeProcessEvent["status"] | undefined =>
+  events: ReadonlyArray<RuntimeRunEvent>,
+): RuntimeRunEvent["status"] | undefined =>
   [...events].sort((left, right) => left.at.localeCompare(right.at)).at(-1)?.status
 
 const compareJournalRows = (
@@ -76,22 +83,14 @@ const compareJournalRows = (
 ): number =>
   left.activityAttempt - right.activityAttempt || left.sequence - right.sequence
 
-const preload = (
-  db: { readonly preload: () => Promise<unknown> },
-): Effect.Effect<void, PreloadError> =>
-  Effect.tryPromise({
-    try: () => db.preload(),
-    catch: cause => new PreloadError({ cause }),
-  }).pipe(Effect.asVoid)
+const makeContextId = (): string => `ctx_${crypto.randomUUID()}`
 
-const makeLaunchId = (): string => `launch_${crypto.randomUUID()}`
-
-const normalizeLaunch = (request: PublicLaunchRequest): RuntimeLaunchRequest => ({
+const normalizeLaunch = (request: PublicLaunchRequest): RuntimeContext => ({
   // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.3
   // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.7
-  launchId: makeLaunchId(),
-  requestedAt: new Date().toISOString(),
-  ...(request.requestedBy === undefined ? {} : { requestedBy: request.requestedBy }),
+  contextId: makeContextId(),
+  createdAt: new Date().toISOString(),
+  ...(request.requestedBy === undefined ? {} : { createdBy: request.requestedBy }),
   runtime: normalizeRuntimeIntent(request.runtime),
 })
 
@@ -102,26 +101,61 @@ const decodePublicLaunchRequest = (
     Effect.mapError(cause => new LaunchInputError({ cause })),
   )
 
+const decodeJournalEvent = (
+  value: unknown,
+): RuntimeJournalEvent =>
+  Schema.decodeUnknownSync(RuntimeJournalEventSchema)(value)
+
+const snapshotFromJournal = (
+  contextId: string,
+  control: {
+    readonly context?: RuntimeContext
+    readonly runs: ReadonlyArray<RuntimeRunEvent>
+  },
+  journal: ReadonlyArray<RuntimeJournalEvent>,
+): RuntimeContextSnapshot => {
+  const events = journal
+    .flatMap(event => event.type === "firegrid.runtime.output.stdout" ? [event.event] : [])
+    .filter(row => row.contextId === contextId)
+    .sort(compareJournalRows)
+  const logs = journal
+    .flatMap(event => event.type === "firegrid.runtime.output.stderr" ? [event.log] : [])
+    .filter(row => row.contextId === contextId)
+    .sort(compareJournalRows)
+  const runs = [...control.runs].sort((left, right) => left.at.localeCompare(right.at))
+  const status = latestStatus(runs)
+  return {
+    contextId,
+    ...(control.context === undefined ? {} : { context: control.context }),
+    ...(status === undefined ? {} : { status }),
+    runs,
+    events,
+    logs,
+  }
+}
+
 const make = Effect.gen(function* () {
   const cfg = yield* FiregridConfig
+  const controlPlaneStreamUrl = cfg.controlPlaneStreamUrl ?? cfg.runtimeStreamUrl
+  const dataPlaneStreamUrl = cfg.dataPlaneStreamUrl
   const txTimeoutMs = cfg.txTimeoutMs ?? 2_000
   const db = createStreamDB({
     streamOptions: {
-      url: cfg.launchStreamUrl,
+      url: controlPlaneStreamUrl,
       contentType: cfg.contentType ?? "application/json",
     },
-    state: runtimeLaunchStateSchema,
+    state: runtimeContextStateSchema,
     actions: ({ db, stream }) => ({
-      appendLaunchRequest: {
-        onMutate: (request: RuntimeLaunchRequest) => {
-          if (db.collections.launchRequests.get(request.launchId) === undefined) {
-            db.collections.launchRequests.insert(request)
+      appendContext: {
+        onMutate: (context: RuntimeContext) => {
+          if (db.collections.contexts.get(context.contextId) === undefined) {
+            db.collections.contexts.insert(context)
           }
         },
-        mutationFn: async (request: RuntimeLaunchRequest) => {
-          const txid = `firegrid-client-launch:${request.launchId}`
-          await stream.append(JSON.stringify(runtimeLaunchStateSchema.launchRequests.upsert({
-            value: request,
+        mutationFn: async (context: RuntimeContext) => {
+          const txid = `firegrid-client-context:${context.contextId}`
+          await stream.append(JSON.stringify(runtimeContextStateSchema.contexts.upsert({
+            value: context,
             headers: { txid },
           })))
           await db.utils.awaitTxId(txid, txTimeoutMs)
@@ -130,63 +164,56 @@ const make = Effect.gen(function* () {
     }),
   })
 
-  yield* preload(db)
+  yield* Effect.tryPromise({
+    try: () => db.preload(),
+    catch: cause => new PreloadError({ cause }),
+  }).pipe(Effect.asVoid)
   yield* Effect.addFinalizer(() => Effect.sync(() => db.close()))
 
-  const readSnapshot = (launchId: string): LaunchSnapshot => {
-    const request = db.collections.launchRequests.get(launchId)
-    const processEvents = Array.from(db.collections.processEvents.state.values() as Iterable<RuntimeProcessEvent>)
-      .filter(event => event.launchId === launchId)
-      .sort((left, right) => left.at.localeCompare(right.at))
-    const providerWire = Array.from(db.collections.providerWire.state.values() as Iterable<ProviderWireRow>)
-      .filter(row => row.launchId === launchId)
-      .sort(compareJournalRows)
-    const diagnostics = Array.from(db.collections.diagnostics.state.values() as Iterable<DiagnosticRow>)
-      .filter(row => row.launchId === launchId)
-      .sort(compareJournalRows)
-    const status = latestStatus(processEvents)
-    return {
-      launchId,
-      ...(request === undefined ? {} : { request }),
-      ...(status === undefined ? {} : { status }),
-      processEvents,
-      providerWire,
-      diagnostics,
-    }
-  }
+  const readJournal = (): Effect.Effect<ReadonlyArray<RuntimeJournalEvent>, PreloadError> =>
+    dataPlaneStreamUrl === undefined
+      ? Effect.succeed([])
+      : Effect.tryPromise({
+        try: async () => {
+          const response = await readStream<unknown>({
+            url: dataPlaneStreamUrl,
+            offset: "-1",
+            live: false,
+            json: true,
+          })
+          const values = await response.json()
+          return values.map(decodeJournalEvent)
+        },
+        catch: cause => new PreloadError({ cause }),
+      })
 
-  const open = (launchId: string): LaunchHandle => ({
-    launchId,
-    snapshot: Effect.sync(() => readSnapshot(launchId)),
-    changes: Stream.asyncPush<LaunchSnapshot>(emit =>
-      Effect.acquireRelease(
-        Effect.sync(() => {
-          const push = () => {
-            emit.single(readSnapshot(launchId))
-          }
-          push()
-          const launches = db.collections.launchRequests.subscribeChanges(push)
-          const processEvents = db.collections.processEvents.subscribeChanges(push)
-          const providerWire = db.collections.providerWire.subscribeChanges(push)
-          const diagnostics = db.collections.diagnostics.subscribeChanges(push)
-          return () => {
-            launches.unsubscribe()
-            processEvents.unsubscribe()
-            providerWire.unsubscribe()
-            diagnostics.unsubscribe()
-          }
-        }),
-        cleanup => Effect.sync(cleanup),
-      ), { bufferSize: 16, strategy: "sliding" }),
-  })
-
-  const appendLaunchRequest = (request: RuntimeLaunchRequest): Effect.Effect<void, AppendError> =>
+  const appendContext = (context: RuntimeContext): Effect.Effect<void, AppendError> =>
     Effect.tryPromise({
       try: async () => {
-        await db.actions.appendLaunchRequest(request).isPersisted.promise
+        await db.actions.appendContext(context).isPersisted.promise
       },
-      catch: cause => new AppendError({ launchId: request.launchId, cause }),
+      catch: cause => new AppendError({ contextId: context.contextId, cause }),
     })
+
+  const readSnapshot = (
+    contextId: string,
+  ): Effect.Effect<RuntimeContextSnapshot, PreloadError> =>
+    readJournal().pipe(
+      Effect.map(journal => {
+        const context = db.collections.contexts.get(contextId)
+        return snapshotFromJournal(contextId, {
+          ...(context === undefined ? {} : { context }),
+          runs: Array.from(db.collections.runs.state.values() as Iterable<RuntimeRunEvent>)
+            .filter(row => row.contextId === contextId),
+        }, journal)
+      }),
+    )
+
+  const open = (contextId: string): RuntimeContextHandle => ({
+    contextId,
+    snapshot: readSnapshot(contextId),
+    changes: Stream.fromEffect(readSnapshot(contextId)),
+  })
 
   return Firegrid.of({
     launch: request => Effect.gen(function* () {
@@ -194,8 +221,8 @@ const make = Effect.gen(function* () {
       // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6
       const decoded = yield* decodePublicLaunchRequest(request)
       const normalized = normalizeLaunch(decoded)
-      yield* appendLaunchRequest(normalized)
-      return open(normalized.launchId)
+      yield* appendContext(normalized)
+      return open(normalized.contextId)
     }),
     open,
   })

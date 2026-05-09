@@ -2,20 +2,21 @@
 
 Date: 2026-05-08
 
-Status: docs aligned; implementation not started for the new tracer sequence.
+Status: tracer 001 runtime-context naming and implementation are in progress.
 
 ## Purpose
 
 This handoff captures the current tracer-bullet direction for Firegrid's
 durable agent runtime work. The next agent should use this as the entry point
 before changing `packages/client`, `packages/protocol`, or
-`packages/runtime/src/durable-launch`.
+`packages/runtime/src/control-plane`, `packages/runtime/src/data-plane`, or
+`packages/runtime/src/launch.ts`.
 
 The important architectural invariant is:
 
 ```txt
 live agent process output
-  -> durable provider-wire journal
+  -> durable runtime output data-plane events
   -> independent downstream consumers
 ```
 
@@ -37,27 +38,28 @@ downstream materializers, or product-owned workflows over durable journals.
 The launch system is intentionally split into three lanes:
 
 1. Launch lane:
-   `launch(...) -> normalized launch row -> workflow -> sandbox stream -> provider-wire journal`
+   `launch(...) -> runtime context control-plane row -> workflow -> sandbox stream -> runtime output data-plane events`
 2. Materialization lane:
-   `provider-wire journal -> replayable materializer -> State Protocol session-state`
+   `runtime output data-plane events -> replayable materializer -> State Protocol session-state`
 3. Coordination lane:
-   `provider-wire journal -> workflow/deferred consumer -> permission/input rows`
+   `runtime output data-plane events -> workflow/deferred consumer -> permission/input rows`
 
-The launch workflow should only coordinate durable execution and journaling. It
+The runtime context workflow should only coordinate durable execution and journaling. It
 must not interpret provider/session semantics beyond applying the provider
 helper's fixed journaling configuration.
 
 The public client should stay narrow. It launches configured runtime helpers
-and returns handles. Runtime details like launch ids, planes, bindings, stream
+and returns handles. Runtime details like context ids, planes, bindings, stream
 URLs, journal rules, readiness, rebuild, and restart policies are internal or
 provider owned.
 
 The sandbox provider boundary is live and non-durable. `stream(...)` emits live
-chunks. Durable truth begins only when workflow activities append rows through
-StreamDB actions.
+chunks. Durable truth begins only when workflow activities append control-plane
+rows or data-plane events to Durable Streams.
 
-Use `createStreamDB` as the persistence abstraction. Do not create parallel
-store/journal abstractions over it unless there is a proven missing capability.
+Use `createStreamDB` for sparse runtime context control-plane state. Use
+`RuntimeCaptureJournal` backed by `IdempotentProducer` for stdout/stderr
+data-plane event and log rows.
 
 ## Execution Order
 
@@ -69,10 +71,10 @@ passing end-to-end test proving:
 
 ```txt
 launch(...)
-  -> normalized launch row
-  -> LaunchAgentWorkflow
+  -> runtime context row
+  -> RuntimeContextWorkflow
   -> SandboxProvider.stream(...)
-  -> durable provider-wire / diagnostics journal rows
+  -> durable runtime output event / log data-plane events
 ```
 
 The prerequisites listed in tracer 001 are part of implementing tracer 001, not
@@ -81,12 +83,12 @@ separate future work:
 1. Thin the client launch surface.
 2. Add the sandbox `stream(...)` contract.
 3. Make `launcher.ts` workflow-native.
-4. Journal live output chunks through `createStreamDB` actions.
+4. Journal live output chunks through the runtime capture journal.
 
 After tracer 001 is passing, implement tracer 002:
 
 ```txt
-provider-wire journal
+runtime output data-plane events
   -> downstream materializer
   -> State Protocol session-state stream
 ```
@@ -94,7 +96,7 @@ provider-wire journal
 After tracer 002 is passing, implement tracer 003:
 
 ```txt
-provider-wire journal
+runtime output data-plane events
   -> downstream permission workflow
   -> durable approval wait / response input row
 ```
@@ -108,8 +110,8 @@ their current docs as directional constraints, not code-ready plans.
 
 - `docs/tracers/README.md`
 - `docs/tracers/001-black-box-agent-output-to-durable-state.md`
-- `docs/tracers/002-provider-wire-journal-to-session-state.md`
-- `docs/tracers/003-provider-wire-journal-to-permission-workflow.md`
+- `docs/tracers/002-runtime-events-to-session-state.md`
+- `docs/tracers/003-runtime-events-to-permission-workflow.md`
 
 The tracer index now defines this sequence:
 
@@ -124,15 +126,15 @@ Prerequisite
   launch(...)
     -> durable workflow
     -> sandbox command stream
-    -> durable provider-wire journal
+    -> durable runtime output data-plane events
 
 002
-  provider-wire journal
+  runtime output data-plane events
     -> downstream materializer
     -> State Protocol session-state stream
 
 003
-  provider-wire journal
+  runtime output data-plane events
     -> downstream permission workflow
     -> durable permission request / approval wait / input response
 ```
@@ -144,11 +146,11 @@ Prerequisite
 Tracer 001 no longer materializes session state. It only proves that a real
 black-box command can be launched and its live output can be durably journaled.
 
-This prevents the launch workflow from becoming a session pipeline.
+This prevents the runtime context workflow from becoming a session pipeline.
 
 ### 2. Materialization Is Downstream And Replayable
 
-Tracer 002 starts from retained provider-wire rows and emits State Protocol
+Tracer 002 starts from retained runtime output data-plane events and emits State Protocol
 changes to session-shaped resources. It can run eagerly, lazily, or after the
 agent process has exited.
 
@@ -156,15 +158,15 @@ This gives downstream products a clean replay story.
 
 ### 3. Permission Handling Is Another Downstream Consumer
 
-Tracer 003 starts from provider-wire rows that represent permission/tool
+Tracer 003 starts from runtime output data-plane events that represent permission/tool
 requests. It uses `@effect/workflow` and `DurableDeferred` to model a durable
 human-in-the-loop wait.
 
-The launch workflow must not know which provider events require approval.
+The runtime context workflow must not know which runtime events require approval.
 
 ### 4. The Client Launch Surface Must Be Thin
 
-The public client should not expose `launchId`, planes, bindings, stream URLs,
+The public client should not expose `contextId`, planes, bindings, stream URLs,
 journal rules, readiness policy, rebuild policy, or restart policy.
 
 The desired public shape is:
@@ -177,8 +179,8 @@ firegrid.launch({
 })
 ```
 
-The client library may generate an internal launch id and append a normalized
-launch row. The caller should not provide that id.
+The client library may generate an internal context id and append a normalized
+runtime context row. The caller should not provide that id.
 
 ### 5. Provider Helpers Collapse Fixed Provider Configuration
 
@@ -191,8 +193,8 @@ Example intent:
 local.jsonl({ argv })
 ```
 
-means local process execution with stdout JSONL journaled to provider-wire and
-stderr text journaled to diagnostics.
+means local process execution with stdout JSONL journaled to runtime event and
+stderr text journaled to runtime logs.
 
 Avoid introducing a durable `RuntimeTarget` registry for now. It is premature.
 
@@ -225,35 +227,33 @@ stream(
 `stream(...)` is live and non-durable. The workflow activity consumes it and
 persists durable rows.
 
-### 7. `launcher.ts` Should Become Workflow-Native
+### 7. `launcher.ts` Is Workflow-Native
 
-`packages/runtime/src/durable-launch/launcher.ts` is currently a prototype
-runner. It should be redesigned so it executes a launch workflow rather than
-directly owning the launch side effect.
+`packages/runtime/src/control-plane/runtime-context/launcher.ts` executes the runtime context
+workflow rather than directly owning the process side effect.
 
 Target shape:
 
 ```txt
 launcher
-  observes normalized launch rows
-  calls LaunchAgentWorkflow.execute({ launchId })
+  observes runtime context rows
+  calls RuntimeContextWorkflow.execute({ contextId })
 
-LaunchAgentWorkflow
-  read launch request activity
+RuntimeContextWorkflow
+  read runtime context activity
   run process attempt activity
     SandboxProvider.stream(...)
-    journal output chunks via StreamDB actions
-  finalize launch activity
+    journal output chunks via RuntimeCaptureJournal
 ```
 
-### 8. Use `createStreamDB` Actions, Not A Handwritten Store Facade
+### 8. Split Sparse State From High-Volume Output
 
-The runtime should mirror the existing client pattern:
+The runtime context store mirrors the existing client pattern:
 
 ```ts
 const db = createStreamDB({
   streamOptions,
-  state: runtimeLaunchStateSchema,
+  state: runtimeContextStateSchema,
   actions: ...
 })
 ```
@@ -262,8 +262,9 @@ The workflow should receive the acquired StreamDB handle through an Effect
 service for scoping, but durable operations should remain normal StreamDB
 collections/actions.
 
-Do not reintroduce a bespoke `LaunchJournal`/store abstraction that wraps every
-action. That was explicitly rejected as unnecessary ceremony.
+Runtime output event/log data-plane rows use `RuntimeCaptureJournal` and `IdempotentProducer` so the
+process-output path can batch and flush without awaiting StreamDB
+materialization for every chunk.
 
 ## Current Code State
 
@@ -271,147 +272,67 @@ action. That was explicitly rejected as unnecessary ceremony.
 
 Current file: `packages/client/src/firegrid.ts`
 
-The client already uses `createStreamDB` directly and appends launch rows with
-an `appendLaunchRequest` action.
-
-Current gaps:
-
-- `FiregridService.launch` still takes `RuntimeLaunchRequest` directly.
-- Caller still supplies `launchId`, planes, bindings, and current wide launch
-  shape.
-- `LaunchHandle.diagnosticStream(...)` still reflects the older planes model.
-
-Needed:
-
-- Add a narrow public launch input.
-- Generate internal launch id inside the client/library.
-- Normalize provider helper output into the internal launch row.
-- Keep client as launch-intent producer plus read handle.
+The client uses `createStreamDB` directly, accepts narrow public launch input,
+generates the internal runtime context id, appends a runtime context row, and
+returns a `RuntimeContextHandle`.
 
 ### Protocol
 
 Current file: `packages/protocol/src/launch/schema.ts`
 
-Current shape still has:
+Current protocol shape has `RuntimeContext`, `RuntimeRunEvent`, `RuntimeEvent`,
+and `RuntimeLogLine`. `runtimeContextStateSchema` exposes only contexts and
+runs; stdout/stderr rows are raw `RuntimeJournalEventSchema` data-plane events.
 
-- `target.spec.argv`
-- `planes`
-- `bindings`
-- `readiness`
-- `rebuild`
-- `restartPolicy`
-
-Needed:
-
-- Decide whether to replace or add a new internal normalized launch schema.
-- Add runtime helper output shape: `{ provider, config, journal }`.
-- Add provider-wire/diagnostic journal row schemas or collections.
-- Keep public launch input out of protocol if it is TypeScript-helper derived
-  and not a durable row.
-
-### Runtime Launch
+### Runtime Context And Data Plane
 
 Current files:
 
-- `packages/runtime/src/durable-launch/launcher.ts`
-- `packages/runtime/src/durable-launch/store.ts`
-- `packages/runtime/src/durable-launch/execution/sandbox.ts`
-- `packages/runtime/src/durable-launch/execution/providers/local-process.ts`
-- `packages/runtime/src/durable-launch/execution/providers/val-town.ts`
+- `packages/runtime/src/control-plane/runtime-context/launcher.ts`
+- `packages/runtime/src/control-plane/runtime-context/service.ts`
+- `packages/runtime/src/control-plane/runtime-context/workflow.ts`
+- `packages/runtime/src/data-plane/runtime-output/writer.ts`
+- `packages/runtime/src/data-plane/execution/sandbox/sandbox.ts`
+- `packages/runtime/src/data-plane/execution/sandbox/providers/local-process.ts`
 
-Current gaps:
-
-- `SandboxProviderService` has `executeCommand(...)`, not `stream(...)`.
-- local provider uses `Command.exitCode(...)` and returns empty stdout/stderr.
-- `runLaunchOnce(...)` manually handles attempts and process events.
-- launch execution is not an `@effect/workflow` workflow/activity.
-- no StreamDB action exists for journaling stdout/stderr chunks.
-
-Needed:
-
-- Add `ProcessOutputChunk`.
-- Add `SandboxProvider.stream(...)`.
-- Implement local process streaming first.
-- Keep `executeCommand(...)` as a helper or compatibility method if needed,
-  but build tracer 001 on `stream(...)`.
-- Add runtime StreamDB actions for process events and journal rows.
-- Replace or wrap `runLaunchOnce(...)` with `LaunchAgentWorkflow.execute(...)`.
+Current runtime launch path uses `SandboxProvider.stream(...)`, local process
+streaming, `RuntimeContextWorkflow`, `RuntimeControlPlane`, and
+`RuntimeCaptureJournal`.
 
 ### Existing Tests
 
-Current launch tests in `packages/runtime/src/durable-launch/launcher.test.ts`
-validate the older tracer where the child process directly appends to
-provider-wire.
-
-Needed:
-
-- Update tracer 001 test so the child process prints JSONL to stdout.
-- Firegrid runtime must journal stdout to provider-wire.
-- Firegrid runtime must journal stderr to diagnostics.
-- A late read must observe provider-wire rows after process exit.
+Current launch tests verify that a child process prints JSONL to stdout, the
+runtime journals stdout as runtime events, stderr as runtime logs, and late
+reads observe retained rows after process exit.
 
 ## Implementation Order
 
 Follow Acai discipline: update or add feature specs before code changes.
 
-Immediate implementation target: tracer 001 only. Complete every item below and
-land a passing tracer 001 test before starting tracer 002 or tracer 003.
-
-Tracer 001 implementation order:
-
-1. Update `features/firegrid/firegrid-durable-launch-runtime-operator.feature.yaml`
-   or add a focused tracer feature spec for:
-   - thin client launch surface;
-   - provider helper normalization;
-   - sandbox streaming contract;
-   - workflow-backed launch execution;
-   - provider-wire journal rows;
-   - no session materialization in tracer 001.
-2. Add or revise protocol schemas for the normalized internal launch row and
-   journal rows.
-3. Thin `@firegrid/client` launch input so callers use provider helpers and do
-   not pass internal identifiers or stream wiring.
-4. Add provider helper for the first local JSONL case.
-5. Add `SandboxProvider.stream(...)` and implement it for local process.
-6. Add StreamDB actions for runtime process events and journal output rows.
-7. Convert `launcher.ts` into the workflow-native launcher path.
-8. Update the tracer test to run a real local command that prints Claude
-   stream-json-compatible JSONL, then verify durable provider-wire rows.
-9. Run:
-   - `pnpm effect:diagnostics`
-   - `pnpm run check`
-
-Only after that should the next agent move to `002-provider-wire-journal-to-session-state.md`,
-then `003-provider-wire-journal-to-permission-workflow.md`.
+Tracer 001 is the immediate implementation target and must stay green before
+starting tracer 002 or tracer 003. Next implementation work should proceed to
+`002-runtime-events-to-session-state.md`, then
+`003-runtime-events-to-permission-workflow.md`.
 
 ## Open Design Questions
 
-### Physical Destination For Provider-Wire Rows
+### Physical Destination For Runtime Events
 
-The docs intentionally talk about a provider-wire journal. For tracer 001, the
-implementation can keep this as a collection in the launch StreamDB state or as
-a derived/internal stream destination.
-
-Given the client should not pass stream URLs, prefer the simplest internal
-choice first: one launch stream with state collections/actions for launch rows,
-process events, provider-wire rows, and diagnostics rows. Split physical streams
-later only if needed.
+The current model intentionally separates the runtime control-plane stream from
+the runtime output data-plane stream. The client may accept one legacy
+`runtimeStreamUrl` for ergonomic defaults, but implementation code should treat
+control and data streams as separate configured topics.
 
 ### Provider Helper Package Boundary
 
 The docs use:
 
 ```ts
-import { local } from "@firegrid/runtime/durable-launch/providers"
+import { local } from "@firegrid/protocol/launch"
 ```
 
-Before implementation, decide whether provider helpers are browser-safe enough
-to live under `@firegrid/client` or `@firegrid/protocol`, or whether
-`@firegrid/runtime/durable-launch/providers` can expose a browser-safe subpath
-with no Node-only imports.
-
-The helper must not pull process/sandbox implementation code into browser
-bundles.
+Provider helpers must stay browser-safe and must not pull process/sandbox
+implementation code into browser bundles.
 
 ### `executeCommand(...)` Compatibility
 
@@ -434,14 +355,16 @@ Local references:
 - `packages/client/src/firegrid.ts`
 - `packages/protocol/src/launch/schema.ts`
 - `packages/protocol/src/launch/state.ts`
-- `packages/runtime/src/durable-launch/launcher.ts`
-- `packages/runtime/src/durable-launch/store.ts`
-- `packages/runtime/src/durable-launch/execution/sandbox.ts`
-- `packages/runtime/src/durable-launch/execution/providers/local-process.ts`
-- `packages/runtime/src/durable-launch/launcher.test.ts`
-- `packages/runtime/src/durable-workflow/workflows.ts`
-- `packages/runtime/src/durable-workflow/engine-runtime.ts`
-- `packages/runtime/src/durable-workflow/workflow-engine.test.ts`
+- `packages/runtime/src/control-plane/runtime-context/launcher.ts`
+- `packages/runtime/src/control-plane/runtime-context/service.ts`
+- `packages/runtime/src/control-plane/runtime-context/workflow.ts`
+- `packages/runtime/src/control-plane/runtime-context/launcher.test.ts`
+- `packages/runtime/src/data-plane/runtime-output/writer.ts`
+- `packages/runtime/src/data-plane/execution/sandbox/sandbox.ts`
+- `packages/runtime/src/data-plane/execution/sandbox/providers/local-process.ts`
+- `packages/runtime/src/control-plane/workflow-engine/workflows.ts`
+- `packages/runtime/src/control-plane/workflow-engine/engine-runtime.ts`
+- `packages/runtime/src/control-plane/workflow-engine/workflow-engine.test.ts`
 - `docs/rfc/external/durable-stream-agent-plaform-rfc/concepts/core-principle.md`
 - `docs/rfc/external/durable-stream-agent-plaform-rfc/concepts/session-prompt-adapters.md`
 - `docs/proposals/SDD_FIREGRID_DURABLE_LAUNCH_RUNTIME_OPERATOR.md`
@@ -476,11 +399,12 @@ Important CLI finding: `--output-format stream-json` requires `--verbose`.
 - Do not import provider SDKs into Firegrid runtime for this tracer.
 - Treat the agent as a black-box process/sandbox command.
 - Do not add an HTTP launch surface; the stream remains the invocation boundary.
-- Do not expose planes, bindings, journal rules, stream URLs, or launch ids in
+- Do not expose planes, bindings, journal rules, stream URLs, or context ids in
   the public client launch input.
-- Do not build session materialization into the launch workflow.
-- Do not build permission handling into the launch workflow.
-- Use `createStreamDB` state/actions directly instead of a custom wrapper store.
+- Do not build session materialization into the runtime context workflow.
+- Do not build permission handling into the runtime context workflow.
+- Use `createStreamDB` for sparse runtime context control-plane state.
+- Use `RuntimeCaptureJournal`/`IdempotentProducer` for stdout/stderr data-plane event and log rows.
 - Keep `SandboxProvider.stream(...)` non-durable; durability begins only after
-  the workflow activity appends journal rows.
+  the workflow activity appends runtime event/log rows.
 - Keep Acai specs and ACID references aligned before implementation.

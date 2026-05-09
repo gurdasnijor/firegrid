@@ -2,9 +2,10 @@
 
 Date: 2026-05-07
 
-Status: Tracer bullet started, backed by
-`flamecast-firegrid-launch-tracer.*` and
-`firegrid-durable-launch-runtime-operator.*`
+Status: Historical Flamecast-oriented tracer proposal. Current Firegrid runtime
+execution work is governed by `docs/tracers/README.md`,
+`docs/tracers/001-black-box-agent-output-to-durable-state.md`, and
+`docs/proposals/ADR_RUNTIME_CONTROL_PLANE_AND_DATA_PLANE_BOUNDARY.md`.
 
 ## Purpose
 

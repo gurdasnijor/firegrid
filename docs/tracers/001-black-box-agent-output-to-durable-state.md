@@ -1,4 +1,4 @@
-# 001: Black-Box Agent Output To Provider-Wire Journal
+# 001: Black-Box Agent Output To Runtime Events
 
 Date: 2026-05-08
 
@@ -21,17 +21,17 @@ user launches an agent that speaks some transport or wire format
 to:
 
 ```txt
-agent event stream lands in a durable provider-wire journal
+agent output stream lands in durable runtime output data-plane events
 ```
 
 The first concrete provider target is Claude Code CLI using
 `--output-format stream-json`. The architectural target is broader: any launched
 agent can be treated as a black-box process whose observable I/O becomes a
-durable provider-wire journal.
+durable runtime output data-plane events.
 
 Downstream consumers of that journal are intentionally out of scope for this
 bullet. Session-shaped materialization is tracer 002. Permission workflows over
-provider events are tracer 003.
+runtime events are tracer 003.
 
 ## Non-Goals
 
@@ -48,13 +48,13 @@ provider events are tracer 003.
 
 A user or app calls `launch(...)`. The public request stays narrow: it chooses
 a provider helper and supplies that provider's minimal configuration. It does
-not provide a launch id, stream names, journal config, bindings, or session
+not provide a runtime context id, stream names, journal config, bindings, or session
 semantics.
 
 Example public shape:
 
 ```ts
-import { local } from "@firegrid/runtime/durable-launch/providers"
+import { local } from "@firegrid/protocol/launch"
 
 const handle = yield* firegrid.launch({
   runtime: local.jsonl({
@@ -77,24 +77,25 @@ const handle = yield* firegrid.launch({
 ```
 
 The provider helper owns the provider-specific fixed configuration. In this
-case, `local.jsonl(...)` means stdout is JSONL provider-wire and stderr is
-diagnostic text. Other providers can expose different typed helpers without
+case, `local.jsonl(...)` means stdout is JSONL runtime event and stderr is
+runtime log text. Other providers can expose different typed helpers without
 widening the public `launch(...)` surface.
 
-Internally, Firegrid normalizes the public request into a durable launch row.
+Internally, Firegrid normalizes the public request into a durable runtime context row.
 The internal row describes:
 
 - the runtime target to launch;
 - the command and arguments;
 - which live process outputs should be journaled durably;
-- which named streams receive those journaled rows;
+- which live process outputs should become data-plane output events;
 - optional environment or secret references needed by the process.
 
 Example internal shape:
 
 ```ts
-const launch = {
-  launchId: "launch_123",
+const context = {
+  contextId: "ctx_123",
+  createdAt: "2026-05-08T00:00:00.000Z",
   runtime: {
     provider: "local-process",
     config: {
@@ -117,19 +118,20 @@ const launch = {
       {
         source: "stdout",
         format: "jsonl",
-        stream: "provider-wire",
+        target: "events",
       },
       {
         source: "stderr",
         format: "text-lines",
-        stream: "diagnostics",
+        target: "logs",
       },
     ],
   },
 }
 ```
 
-This is not an RPC call. The normalized launch row is data in Durable Streams.
+This is not an RPC call. The normalized runtime context row is control-plane
+data in Durable Streams State Protocol.
 
 `journal` is internal durable journaling configuration, not public observability
 telemetry. It maps live output sources to Durable Streams destinations. The
@@ -155,14 +157,14 @@ firegrid.launch({
 
 The client must not require:
 
-- caller-provided `launchId`;
+- caller-provided `contextId`;
 - `planes`;
 - `bindings`;
 - explicit `journal`;
 - stream URLs or stream names;
 - readiness, rebuild, or restart policy.
 
-Those fields belong to the internal normalized launch row or provider helper
+Those fields belong to the internal normalized runtime context row or provider helper
 defaults. The workflow consumes the normalized row; the client only produces it.
 
 ## Prerequisite: Sandbox Streaming Contract
@@ -212,28 +214,28 @@ type ProcessOutputChunk =
 
 `stream(...)` is not durable. It exposes live process output from local,
 container, or remote execution providers. The launch workflow consumes that
-stream and appends durable provider-wire, diagnostic, and process lifecycle rows
-according to the normalized launch row.
+stream and appends durable runtime event, runtime log, and run lifecycle rows
+according to the normalized runtime context row.
 
 ## End Point
 
-The durable stream contains:
+The durable streams contain:
 
-- launch lifecycle rows;
-- process attempt rows;
-- provider-wire rows journaled from stdout chunks;
-- diagnostic rows journaled from stderr chunks.
+- control-plane runtime context rows;
+- control-plane run rows;
+- data-plane runtime event rows journaled from stdout chunks;
+- data-plane runtime log rows journaled from stderr chunks.
 
-A client or downstream consumer can later read the provider-wire journal without
+A client or downstream consumer can later read the runtime event rows without
 access to the original process.
 
 Example terminal observable journal entry:
 
 ```ts
 {
-  launchId: "launch_123",
+  contextId: "ctx_123",
   activityAttempt: 1,
-  channel: "stdout",
+  source: "stdout",
   format: "jsonl",
   receivedAt: "2026-05-08T00:00:00.000Z",
   raw: "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"pong\"}]}}",
@@ -242,21 +244,21 @@ Example terminal observable journal entry:
 
 ## Minimum Path
 
-### 1. Append Launch Intent
+### 1. Append Runtime Context
 
-The client calls `launch(...)`. Firegrid assigns the internal launch id and
-appends the normalized launch intent row to the launch stream.
+The client calls `launch(...)`. Firegrid assigns the internal runtime context id and
+appends the normalized runtime context row to the configured stream.
 
 Durable fact:
 
 ```txt
-launch requested
+runtime context created
 ```
 
-### 2. Start Launch Workflow
+### 2. Start Runtime Context Workflow
 
-A launcher calls `LaunchAgentWorkflow.execute({ launchId })` after observing the
-launch request row. Because the workflow's `idempotencyKey` is `launchId`,
+A launcher calls `RuntimeContextWorkflow.execute({ contextId })` after observing the
+runtime context row. Because the workflow's `idempotencyKey` is `contextId`,
 concurrent or repeated calls map to the same durable workflow execution.
 
 The workflow's `run-process-attempt` activity crosses into the live world by
@@ -268,38 +270,38 @@ sandbox stream; the other observes the persisted claim and suspends.
 Durable facts:
 
 ```txt
-process attempt started
+run attempt started
 ```
 
 The process handle, PID, stdio pipes, and sandbox stream are live resources
 only. They are not source-of-truth state.
 
-### 3. Capture Provider Wire Output
+### 3. Capture Runtime Output
 
 The `run-process-attempt` activity consumes output chunks from
 `SandboxProvider.stream(...)`. For this first bullet, stdout chunks are JSONL
 from a black-box sandbox command.
 
-Each observed stdout chunk is appended as a durable provider-wire row before
+Each observed stdout chunk is appended as a durable runtime event row before
 any downstream consumer treats it as visible.
 
-Example provider-wire row:
+Example runtime event row:
 
 ```ts
 {
-  launchId: "launch_123",
+  contextId: "ctx_123",
   activityAttempt: 1,
-  channel: "stdout",
+  source: "stdout",
   format: "jsonl",
   receivedAt: "2026-05-08T00:00:00.000Z",
   raw: "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"pong\"}]}}",
 }
 ```
 
-Malformed lines should also become durable diagnostic/provider-wire rows. The
+Malformed lines should also become durable runtime log/runtime event rows. The
 tracer should not silently drop provider output.
 
-### 4. Record Process Exit
+### 4. Record Run Exit
 
 When the sandbox stream emits an exit chunk, the activity appends a terminal
 process row.
@@ -307,26 +309,27 @@ process row.
 Durable facts:
 
 ```txt
-process attempt exited
-launch completed or failed
+run attempt exited
+runtime context completed or failed
 ```
 
-The process exit row does not replace provider-wire rows. The provider-wire
-journal is still the durable evidence of what the agent emitted.
+The process exit control-plane row does not replace runtime output data-plane
+events. The data-plane journal is still the durable evidence of what the agent
+emitted.
 
 ### 5. Stop At The Durable Journal
 
-This tracer stops once the provider-wire and diagnostic rows are durable. It
-does not project provider rows into session resources.
+This tracer stops once the runtime event and runtime log data-plane events are
+durable. It does not project runtime event rows into session resources.
 
-The provider-wire journal is the decoupling surface. Later consumers can run
+The runtime output data-plane events are the decoupling surface. Later consumers can run
 eagerly, lazily, or repeatedly against the retained journal:
 
 ```txt
-provider-wire journal
+runtime output data-plane events
   -> session materializer
   -> permission workflow
-  -> diagnostics projector
+  -> runtime logs projector
   -> replay/debug tooling
 ```
 
@@ -335,105 +338,70 @@ provider-wire journal
 This bullet should prove a reusable primitive:
 
 ```txt
-Workflow = durable data-plane execution coordinator
+Workflow = durable runtime execution coordinator
 Activity = disposable interaction with the outside world
-Stream rows = durable evidence of what happened
+Data-plane stream events = durable evidence of live output
 Process = live implementation detail
 ```
 
-The launch lifecycle should be one workflow instance per launch. The workflow
+The runtime context lifecycle should be one workflow instance per context. The workflow
 coordinates durable facts. It never stores the child process handle, PID, stdio
 pipe, TCP socket, fiber id, or other live resource as authoritative state.
 
-The workflow execution row is the launch-level idempotency boundary. A separate
-product-visible `launch.claimed` row is not required for correctness; repeated
+The workflow execution row is the runtime-context idempotency boundary. A separate
+product-visible claim row is not required for correctness; repeated
 or concurrent launchers should call `execute` and let the workflow engine
-converge on the single execution for the launch id. The activity claim row is
+converge on the single execution for the context id. The activity claim row is
 the worker-race boundary that prevents duplicate child process spawns for the
 same execution and activity attempt.
 
-Illustrative workflow definition:
+Illustrative workflow shape:
 
 ```ts
-export class LaunchError extends Schema.TaggedError<LaunchError>()("LaunchError", {
-  reason: Schema.String,
-  launchId: Schema.optional(Schema.String),
-  cause: Schema.optional(Schema.Unknown),
-}) {}
-
-class DurableLaunchDb extends Context.Tag("firegrid/DurableLaunchDb")<
-  DurableLaunchDb,
-  LaunchStreamDb
->() {}
-
-const LaunchAgentWorkflow = Workflow.make({
-  name: "firegrid.launch-agent",
+const RuntimeContextWorkflow = Workflow.make({
+  name: "firegrid.runtime-context",
   payload: Schema.Struct({
-    launchId: Schema.String,
+    contextId: Schema.String,
   }),
-  success: LaunchTerminalState,
-  error: LaunchError,
-  idempotencyKey: ({ launchId }) => launchId,
+  success: RuntimeContextTerminalState,
+  error: RuntimeContextError,
+  idempotencyKey: ({ contextId }) => contextId,
 })
-```
 
-Workflow implementation shape. This follows the upstream `@effect/workflow`
-style: the workflow definition is separate, and the implementation is provided
-with `Workflow.toLayer(...)`; durable side effects are expressed as
-`Activity.make(...)` at the step where the workflow needs them.
+const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
+  Effect.fn(function* runRuntimeContext({ contextId }) {
+    const controlPlane = yield* RuntimeControlPlane
+    const captureJournal = yield* RuntimeCaptureJournal
 
-```ts
-const LaunchAgentWorkflowLayer = LaunchAgentWorkflow.toLayer(
-  Effect.fn(function* runLaunchAgent({ launchId }) {
-    const db = yield* DurableLaunchDb
-
-    const launch = yield* Activity.make({
-      name: "firegrid.launch-agent.read-launch-request",
-      success: RuntimeLaunchRequest,
-      error: LaunchError,
-      execute: Effect.gen(function* () {
-        const launch = db.collections.launchRequests.get(launchId)
-        if (launch !== undefined) return launch
-        return yield* new LaunchError({
-          reason: "launch request not found",
-          launchId,
-        })
-      }),
+    const context = yield* Activity.make({
+      name: "firegrid.runtime-context.read-context",
+      success: RuntimeContext,
+      error: RuntimeContextError,
+      execute: requireContext(controlPlane, contextId),
     })
 
-    const attempt = yield* Activity.make({
-      name: "firegrid.launch-agent.run-process-attempt",
+    return yield* Activity.make({
+      name: "firegrid.runtime-context.run-process-attempt",
       success: ProcessAttemptResult,
-      error: LaunchError,
+      error: RuntimeContextError,
       execute: Effect.gen(function* () {
         const activityAttempt = yield* Activity.CurrentAttempt
         const provider = yield* SandboxProvider
+        const output = yield* captureJournal.openAttempt({ contextId, activityAttempt })
+        const command = yield* commandForContext(context)
+        const sandbox = yield* provider.getOrCreate({ config: context.runtime.config })
 
-        const sandbox = yield* provider.getOrCreate({
-          labels: {
-            firegridLaunchId: launch.launchId,
-          },
-          config: launch.runtime.config,
+        yield* controlPlane.appendRunStarted({
+          contextId,
+          activityAttempt,
+          provider: context.runtime.provider,
         })
-        const command = yield* commandForLaunch(launch)
-
-        yield* persistAction(
-          db.actions.appendProcessEvent({
-            type: "process.started",
-            launchId: launch.launchId,
-            activityAttempt,
-            provider: launch.runtime.provider,
-          }),
-        )
 
         const exit = yield* provider.stream(sandbox, command).pipe(
           Stream.tap((chunk) => {
             if (chunk.type === "output") {
-              return persistAction(db.actions.journalProcessOutput({
-                launch,
-                activityAttempt,
-                chunk,
-              }))
+              const row = runtimeOutputRowFromChunk(context, activityAttempt, chunk)
+              return output.write(row)
             }
             return Effect.void
           }),
@@ -444,64 +412,46 @@ const LaunchAgentWorkflowLayer = LaunchAgentWorkflow.toLayer(
           Stream.runHead,
           Effect.flatMap(
             Option.match({
-              onNone: () =>
-                new LaunchError({
-                  reason: "process stream ended without exit chunk",
-                  launchId: launch.launchId,
-                }),
+              onNone: () => new RuntimeContextError({ reason: "process stream ended without exit chunk" }),
               onSome: (chunk) =>
-                persistAction(db.actions.appendProcessEvent({
-                  type: "process.exited",
-                  launchId: launch.launchId,
-                  activityAttempt,
-                  code: chunk.exitCode,
-                  signal: chunk.signal,
-                })).pipe(
-                  Effect.as({
+                output.flush.pipe(
+                  Effect.zipRight(controlPlane.appendRunExited({
+                    contextId,
+                    activityAttempt,
+                    provider: context.runtime.provider,
                     exitCode: chunk.exitCode,
                     signal: chunk.signal,
-                  }),
+                  })),
+                  Effect.as({ exitCode: chunk.exitCode, signal: chunk.signal }),
                 ),
             }),
           ),
         )
 
-        return {
-          activityAttempt,
-          exit,
-        }
+        return { activityAttempt, exit }
       }),
-    })
-
-    return yield* Activity.make({
-      name: "firegrid.launch-agent.finalize-launch",
-      success: LaunchTerminalState,
-      error: LaunchError,
-      execute: persistAction(db.actions.finalizeLaunch({
-        launchId,
-        attempt,
-      })),
     })
   }),
 )
 ```
 
-`DurableLaunchDb` is not a handwritten store abstraction. It is the acquired
-`createStreamDB(...)` handle for the launch state schema, including its
-optimistic local collections and transactional action helpers. `persistAction`
-is only the small Effect wrapper around an action's `isPersisted.promise`.
+`RuntimeControlPlane` is a thin StreamDB service for context and run state.
+`RuntimeCaptureJournal` is a raw Durable Streams writer for stdout/stderr
+data-plane events. The workflow depends on both so the control/data boundary is
+visible at the call site.
 
-The launcher that observes launch request rows does not implement its own
+The launcher that observes runtime context rows does not implement its own
 claiming protocol. It executes the workflow and lets the workflow engine's
 execution idempotency and activity claims provide the concurrency boundary:
 
 ```ts
-const runObservedLaunch = (launchId: string) =>
+const startRuntime = (contextId: string) =>
   Effect.scoped(
-    LaunchAgentWorkflow.execute({ launchId }).pipe(
+    RuntimeContextWorkflow.execute({ contextId }).pipe(
       Effect.provide(
-        LaunchAgentWorkflowLayer.pipe(
-          Layer.provide(DurableLaunchDbLive),
+        RuntimeContextWorkflowLayer.pipe(
+          Layer.provide(RuntimeControlPlaneLive),
+          Layer.provide(RuntimeCaptureJournalLive),
           Layer.provide(SandboxProviderLive),
           Layer.provide(layerDurableStreams({ streamUrl: launchWorkflowStreamUrl })),
         ),
@@ -513,7 +463,7 @@ const runObservedLaunch = (launchId: string) =>
 That activity is the boundary between durable workflow coordination and live
 sandbox execution. The sandbox provider owns non-durable process mechanics and
 emits `ProcessOutputChunk`s. The activity owns durable journaling. If the worker
-dies mid-activity, already appended provider-wire rows remain durable; retry and
+dies mid-activity, already appended runtime output data-plane events remain durable; retry and
 replacement-attempt behavior is deferred to a later tracer.
 
 The first tracer should use the simpler activity-owned process attempt. The
@@ -537,7 +487,7 @@ immediately after this tracer:
 These are the tracer-specific contracts not already guaranteed by
 `@effect/workflow` or Durable Streams:
 
-1. **Journal-before-consumption.** A provider-wire row is durably appended and
+1. **Journal-before-consumption.** A runtime event row is durably appended and
    its Durable Streams offset is acknowledged before any downstream consumer
    observes its content.
 2. **Exit-after-output.** `process.exited` is appended only after all prior
@@ -553,19 +503,19 @@ client
   calls launch(...)
     |
     v
-Durable Streams launch stream
+Durable Streams control-plane stream
     |
     v
 Firegrid launcher
-  executes LaunchAgentWorkflow
+  executes RuntimeContextWorkflow
   consumes SandboxProvider.stream(...)
-  journals output chunks
+  journals output chunks to data-plane stream
     |
     v
-Durable Streams provider-wire and diagnostics rows
+Durable Streams data-plane runtime event and runtime log events
 ```
 
-Downstream consumers begin from that durable provider-wire journal in later
+Downstream consumers begin from those durable runtime output events in later
 tracers.
 
 ## First Provider Command
@@ -589,23 +539,23 @@ and other environment-specific behavior.
 
 The tracer is complete when one automated check can prove:
 
-1. `launch(...)` appends a normalized launch intent row;
-2. `LaunchAgentWorkflow` executes `RunProcessAttempt`;
-3. `RunProcessAttempt` consumes `SandboxProvider.stream(...)` for a real local
+1. `launch(...)` appends a normalized runtime context control-plane row;
+2. `RuntimeContextWorkflow` executes `run-process-attempt`;
+3. `run-process-attempt` consumes `SandboxProvider.stream(...)` for a real local
    command;
-4. stdout JSONL chunks from that stream are appended to durable provider-wire
-   rows;
-5. stderr text chunks from that stream are appended to durable diagnostic rows;
-6. a late consumer can read the provider-wire journal after the process exits.
+4. stdout JSONL chunks from that stream are appended to durable runtime event
+   data-plane events;
+5. stderr text chunks from that stream are appended to durable runtime log data-plane events;
+6. a late consumer can read the runtime output data-plane events after the process exits.
 
 ## Follow-On Bullets
 
-- Downstream materialization from provider-wire journal to session-shaped State
+- Downstream materialization from runtime output data-plane events to session-shaped State
   Protocol resources.
-- Permission workflows that subscribe to provider-wire rows and durably wait
+- Permission workflows that subscribe to runtime output data-plane events and durably wait
   for human approval.
 - Durable stdin delivery from user message rows into a long-lived process.
-- Process death and replacement attempt with no lost durable provider rows.
+- Process death and replacement attempt with no lost durable runtime event rows.
 - Remote sandbox launch with env/secret handoff.
-- ACP stdio provider capture using the same provider-wire journaling seam.
+- ACP stdio provider capture using the same runtime event seam.
 - Workflow-backed multi-agent choreography over durable launch/session rows.

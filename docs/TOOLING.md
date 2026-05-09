@@ -185,7 +185,7 @@ Outputs:
 - `docs/dependency-graph-flamecast.mmd` — Flamecast app internals.
 - `docs/dependency-graph-detail.mmd` — workspace module-level imports.
 - `docs/dependency-graph-runtime-detail.mmd` — runtime module-level imports.
-- `docs/dependency-graph-runtime-durable-launch-detail.mmd` — durable-launch module-level imports.
+- `docs/dependency-graph-runtime-control-data-detail.mmd` — runtime control/data module-level imports.
 - `docs/dependency-graph-flamecast-detail.mmd` — Flamecast module-level imports.
 
 Focused graph targets:

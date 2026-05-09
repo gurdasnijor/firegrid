@@ -1,25 +1,30 @@
-import { DurableStream } from "@durable-streams/client"
+import {
+  DurableStream,
+  stream as readStream,
+} from "@durable-streams/client"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { NodeContext } from "@effect/platform-node"
 import {
   local,
   normalizeRuntimeIntent,
+  RuntimeJournalEventSchema,
+  type RuntimeJournalEvent,
 } from "@firegrid/protocol/launch"
-import { Effect, Either, Layer, Option } from "effect"
+import { Effect, Either, Layer, Option, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   LocalProcessSandboxProviderLive,
-} from "./execution/providers/local-process.ts"
+} from "../../data-plane/execution/sandbox/providers/local-process.ts"
 import {
-  runLaunchOnce,
+  startRuntime,
 } from "./launcher.ts"
 import {
-  RuntimeLaunchDb,
-  RuntimeLaunchDbLive,
-} from "./store.ts"
+  RuntimeControlPlane,
+  RuntimeControlPlaneLive,
+} from "./service.ts"
 import {
   makeWorkflowStateStore,
-} from "../durable-workflow/workflows.ts"
+} from "../workflow-engine/workflows.ts"
 
 const LaunchTestLive = Layer.mergeAll(
   LocalProcessSandboxProviderLive,
@@ -48,29 +53,43 @@ const createStreamUrl = async (name: string): Promise<string> => {
   return streamUrl
 }
 
-const appendLaunchIntent = (
-  launchStreamUrl: string,
+const appendRuntimeContext = (
+  controlPlaneStreamUrl: string,
   argv: ReadonlyArray<string>,
 ): Promise<string> =>
   Effect.runPromise(Effect.gen(function* () {
-    const db = yield* RuntimeLaunchDb
-    const launchId = `launch_${crypto.randomUUID()}`
-    yield* db.appendLaunchRequest({
-      launchId,
-      requestedAt: new Date().toISOString(),
+    const controlPlane = yield* RuntimeControlPlane
+    const contextId = `ctx_${crypto.randomUUID()}`
+    yield* controlPlane.appendContext({
+      contextId,
+      createdAt: new Date().toISOString(),
       runtime: normalizeRuntimeIntent(local.jsonl({
         argv: [...argv],
       })),
     })
-    return launchId
+    return contextId
   }).pipe(
-    Effect.provide(RuntimeLaunchDbLive({ streamUrl: launchStreamUrl })),
+    Effect.provide(RuntimeControlPlaneLive({ streamUrl: controlPlaneStreamUrl })),
   ))
 
+const readDataPlane = async (
+  streamUrl: string,
+): Promise<ReadonlyArray<RuntimeJournalEvent>> => {
+  const response = await readStream<unknown>({
+    url: streamUrl,
+    offset: "-1",
+    live: false,
+    json: true,
+  })
+  const rows = await response.json()
+  return rows.map(row => Schema.decodeUnknownSync(RuntimeJournalEventSchema)(row))
+}
+
 describe("durable launch tracer bullet 001", () => {
-  it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.7 firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.5 journals child JSONL stdout and stderr diagnostics durably", async () => {
-    const launchStreamUrl = await createStreamUrl("launch-control")
-    const workflowStreamUrl = await createStreamUrl("launch-workflow")
+  it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.7 firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.5 journals child JSONL stdout events and stderr logs durably", async () => {
+    const controlPlaneStreamUrl = await createStreamUrl("runtime-control")
+    const dataPlaneStreamUrl = await createStreamUrl("runtime-data")
+    const workflowStreamUrl = await createStreamUrl("workflow")
     const childCode = `
 console.log(JSON.stringify({
   type: "assistant",
@@ -83,72 +102,74 @@ console.log(JSON.stringify({
 console.log("{malformed")
 console.error("diagnostic: child stderr")
 `
-    const launchId = await appendLaunchIntent(
-      launchStreamUrl,
+    const contextId = await appendRuntimeContext(
+      controlPlaneStreamUrl,
       [process.execPath, "--input-type=module", "-e", childCode],
     )
 
     const result = await Effect.runPromise(
-      runLaunchOnce({
-        launchStreamUrl,
+      startRuntime({
+        runtimeStreamUrl: controlPlaneStreamUrl,
+        dataPlaneStreamUrl,
         workflowStreamUrl,
-        launchId,
+        contextId,
       }).pipe(
         Effect.provide(LaunchTestLive),
       ),
     )
 
     expect(result).toMatchObject({
-      launchId,
+      contextId,
       activityAttempt: 1,
       exitCode: 0,
     })
 
     const retained = await Effect.runPromise(Effect.gen(function* () {
-      const db = yield* RuntimeLaunchDb
+      const controlPlane = yield* RuntimeControlPlane
+      const dataPlane = yield* Effect.promise(() => readDataPlane(dataPlaneStreamUrl))
       return {
-        request: db.getLaunchRequest(launchId),
-        processEvents: db.processEventsFor(launchId),
-        providerWireRows: [...db.providerWireFor(launchId)]
+        context: controlPlane.getContext(contextId),
+        runs: controlPlane.runsFor(contextId),
+        events: dataPlane
+          .flatMap(event => event.type === "firegrid.runtime.output.stdout" ? [event.event] : [])
           .sort((left, right) => left.sequence - right.sequence),
-        diagnosticRows: db.diagnosticsFor(launchId),
+        logs: dataPlane
+          .flatMap(event => event.type === "firegrid.runtime.output.stderr" ? [event.log] : []),
       }
     }).pipe(
-      Effect.provide(RuntimeLaunchDbLive({ streamUrl: launchStreamUrl })),
+      Effect.provide(RuntimeControlPlaneLive({ streamUrl: controlPlaneStreamUrl })),
     ))
 
-    expect(Option.getOrUndefined(retained.request)).toMatchObject({
-      launchId,
+    expect(Option.getOrUndefined(retained.context)).toMatchObject({
+      contextId,
       runtime: {
         provider: "local-process",
       },
     })
 
-    const statuses = retained.processEvents
+    const statuses = retained.runs
       .map(event => event.status)
     expect(statuses).toEqual(expect.arrayContaining(["started", "exited"]))
     expect(statuses).toHaveLength(2)
 
-    expect(retained.providerWireRows).toHaveLength(2)
-    expect(retained.providerWireRows[0]).toMatchObject({
+    expect(retained.events).toHaveLength(2)
+    expect(retained.events[0]).toMatchObject({
       sequence: 0,
-      channel: "stdout",
+      source: "stdout",
       format: "jsonl",
-      stream: "provider-wire",
     })
-    const firstProviderWireRow = retained.providerWireRows[0]
-    expect(firstProviderWireRow).toBeDefined()
-    expect(JSON.parse(firstProviderWireRow!.raw)).toMatchObject({
+    const firstEvent = retained.events[0]
+    expect(firstEvent).toBeDefined()
+    expect(JSON.parse(firstEvent!.raw)).toMatchObject({
       type: "assistant",
     })
-    expect(retained.providerWireRows[1]).toMatchObject({
+    expect(retained.events[1]).toMatchObject({
       sequence: 1,
       raw: "{malformed",
     })
 
-    expect(retained.diagnosticRows).toContainEqual(expect.objectContaining({
-      channel: "stderr",
-      stream: "diagnostics",
+    expect(retained.logs).toContainEqual(expect.objectContaining({
+      source: "stderr",
       raw: "diagnostic: child stderr",
     }))
 
@@ -164,24 +185,26 @@ console.error("diagnostic: child stderr")
       // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.2
       // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.8
       expect(activityClaimNames).toContain(
-        "firegrid.launch-agent.run-process-attempt",
+        "firegrid.runtime-context.run-process-attempt",
       )
     }
   })
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.4 records failed when local command streaming cannot start", async () => {
-    const launchStreamUrl = await createStreamUrl("launch-control")
-    const workflowStreamUrl = await createStreamUrl("launch-workflow")
-    const launchId = await appendLaunchIntent(
-      launchStreamUrl,
+    const controlPlaneStreamUrl = await createStreamUrl("runtime-control")
+    const dataPlaneStreamUrl = await createStreamUrl("runtime-data")
+    const workflowStreamUrl = await createStreamUrl("workflow")
+    const contextId = await appendRuntimeContext(
+      controlPlaneStreamUrl,
       [`missing-firegrid-command-${crypto.randomUUID()}`],
     )
 
     const result = await Effect.runPromise(
-      Effect.either(runLaunchOnce({
-        launchStreamUrl,
+      Effect.either(startRuntime({
+        runtimeStreamUrl: controlPlaneStreamUrl,
+        dataPlaneStreamUrl,
         workflowStreamUrl,
-        launchId,
+        contextId,
       }).pipe(
         Effect.provide(LaunchTestLive),
       )),
@@ -190,16 +213,16 @@ console.error("diagnostic: child stderr")
     expect(Either.isLeft(result)).toBe(true)
     if (Either.isLeft(result)) {
       expect(result.left).toMatchObject({
-        _tag: "RuntimeLaunchError",
+        _tag: "RuntimeContextError",
         op: "sandbox.stream",
       })
     }
 
     const statuses = await Effect.runPromise(Effect.gen(function* () {
-      const db = yield* RuntimeLaunchDb
-      return db.processEventsFor(launchId).map(event => event.status)
+      const controlPlane = yield* RuntimeControlPlane
+      return controlPlane.runsFor(contextId).map(event => event.status)
     }).pipe(
-      Effect.provide(RuntimeLaunchDbLive({ streamUrl: launchStreamUrl })),
+      Effect.provide(RuntimeControlPlaneLive({ streamUrl: controlPlaneStreamUrl })),
     ))
     expect(statuses).toEqual(expect.arrayContaining(["started", "failed"]))
     expect(statuses).toHaveLength(2)

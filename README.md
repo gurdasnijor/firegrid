@@ -61,7 +61,7 @@ Generated artifacts:
 - [Flamecast tracer app dependency graph](docs/dependency-graph-flamecast.mmd)
 - [Workspace module-level dependency graph](docs/dependency-graph-detail.mmd)
 - [Runtime module-level dependency graph](docs/dependency-graph-runtime-detail.mmd)
-- [Runtime durable-launch module dependency graph](docs/dependency-graph-runtime-durable-launch-detail.mmd)
+- [Runtime control/data module dependency graph](docs/dependency-graph-runtime-control-data-detail.mmd)
 - [Flamecast module-level dependency graph](docs/dependency-graph-flamecast-detail.mmd)
 
 ## Run The Runtime

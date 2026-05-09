@@ -103,7 +103,7 @@ export interface SandboxProviderService {
   readonly destroy: (sandbox: Sandbox) => Effect.Effect<boolean, SandboxProviderError>
 }
 
-export class SandboxProvider extends Context.Tag("firegrid/runtime/durable-launch/SandboxProvider")<
+export class SandboxProvider extends Context.Tag("firegrid/runtime/execution/SandboxProvider")<
   SandboxProvider,
   SandboxProviderService
 >() {

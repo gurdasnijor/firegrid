@@ -13,10 +13,9 @@ end
 end
 subgraph 8["runtime"]
 subgraph 9["src"]
-A["durable-launch"]
-B["durable-workflow"]
+A["control-plane"]
+B["data-plane"]
 C["index.ts"]
-D["launch.ts"]
 end
 end
 end
@@ -26,5 +25,5 @@ end
 7-->6
 A-->B
 A-->5
-C-->B
-D-->A
+B-->5
+C-->A

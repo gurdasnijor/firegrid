@@ -1,10 +1,8 @@
 import { DurableStream } from "@durable-streams/client"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
-  runtimeLaunchStateSchema,
   type PublicLaunchRequest,
 } from "@firegrid/protocol/launch"
-import { createStreamDB } from "@durable-streams/state"
 import { Effect, Either, Layer, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
@@ -37,25 +35,25 @@ const createStreamUrl = async (name: string): Promise<string> => {
 }
 
 const runWithFiregrid = <A, E>(
-  launchStreamUrl: string,
+  runtimeStreamUrl: string,
   effect: Effect.Effect<A, E, Firegrid>,
 ): Promise<A> =>
   Effect.runPromise(
     effect.pipe(
       Effect.provide(
         FiregridLive.pipe(
-          Layer.provide(Layer.succeed(FiregridConfig, { launchStreamUrl })),
+          Layer.provide(Layer.succeed(FiregridConfig, { runtimeStreamUrl })),
         ),
       ),
     ),
   )
 
 describe("@firegrid/client", () => {
-  it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1 firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.7 appends normalized launch requests without caller ids or stream wiring", async () => {
-    const launchStreamUrl = await createStreamUrl("launch")
+  it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1 firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.7 appends normalized runtime contexts without caller ids or stream wiring", async () => {
+    const runtimeStreamUrl = await createStreamUrl("runtime")
 
     const handle = await runWithFiregrid(
-      launchStreamUrl,
+      runtimeStreamUrl,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* firegrid.launch({
@@ -66,41 +64,35 @@ describe("@firegrid/client", () => {
       }),
     )
 
-    expect(handle.launchId).toMatch(/^launch_/)
+    expect(handle.contextId).toMatch(/^ctx_/)
 
-    const db = createStreamDB({
-      streamOptions: {
-        url: launchStreamUrl,
-        contentType: "application/json",
-      },
-      state: runtimeLaunchStateSchema,
-    })
-    await db.preload()
-    try {
-      const request = db.collections.launchRequests.get(handle.launchId)
-      expect(request).toMatchObject({
-        launchId: handle.launchId,
-        runtime: {
-          provider: "local-process",
-          config: {
-            argv: ["node", "--version"],
-          },
+    const snapshot = await runWithFiregrid(
+      runtimeStreamUrl,
+      Effect.gen(function* () {
+        const firegrid = yield* Firegrid
+        return yield* firegrid.open(handle.contextId).snapshot
+      }),
+    )
+    expect(snapshot.context).toMatchObject({
+      contextId: handle.contextId,
+      runtime: {
+        provider: "local-process",
+        config: {
+          argv: ["node", "--version"],
         },
-      })
-      expect(request?.runtime.journal).toContainEqual({
-        source: "stdout",
-        format: "jsonl",
-        stream: "provider-wire",
-      })
-    } finally {
-      db.close()
-    }
+      },
+    })
+    expect(snapshot.context?.runtime.journal).toContainEqual({
+      source: "stdout",
+      format: "jsonl",
+      target: "events",
+    })
   })
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_HANDLE.1 firegrid-durable-launch-runtime-operator.LAUNCH_HANDLE.5 exposes durable snapshots without live process authority", async () => {
-    const launchStreamUrl = await createStreamUrl("launch")
+    const runtimeStreamUrl = await createStreamUrl("runtime")
     const snapshot = await runWithFiregrid(
-      launchStreamUrl,
+      runtimeStreamUrl,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         const handle = yield* firegrid.launch({
@@ -112,17 +104,17 @@ describe("@firegrid/client", () => {
       }),
     )
 
-    expect(snapshot.request?.runtime.provider).toEqual("local-process")
-    expect(snapshot.processEvents).toEqual([])
-    expect(snapshot.providerWire).toEqual([])
-    expect(snapshot.diagnostics).toEqual([])
+    expect(snapshot.context?.runtime.provider).toEqual("local-process")
+    expect(snapshot.runs).toEqual([])
+    expect(snapshot.events).toEqual([])
+    expect(snapshot.logs).toEqual([])
   })
 
-  it("firegrid-durable-launch-runtime-operator.LAUNCH_HANDLE.5 exposes launch lifecycle changes as a Stream", async () => {
-    const launchStreamUrl = await createStreamUrl("launch")
+  it("firegrid-durable-launch-runtime-operator.LAUNCH_HANDLE.5 exposes runtime context changes as a Stream", async () => {
+    const runtimeStreamUrl = await createStreamUrl("runtime")
 
     const snapshots = await runWithFiregrid(
-      launchStreamUrl,
+      runtimeStreamUrl,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         const handle = yield* firegrid.launch({
@@ -138,11 +130,11 @@ describe("@firegrid/client", () => {
       }),
     )
 
-    expect(snapshots[0]?.request?.runtime.config.argv).toEqual(["node", "--version"])
+    expect(snapshots[0]?.context?.runtime.config.argv).toEqual(["node", "--version"])
   })
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 rejects malformed public launch input at the client boundary", async () => {
-    const launchStreamUrl = await createStreamUrl("launch")
+    const runtimeStreamUrl = await createStreamUrl("runtime")
     const request: unknown = {
       runtime: {
         provider: "remote-provider",
@@ -153,7 +145,7 @@ describe("@firegrid/client", () => {
     }
 
     const result = await runWithFiregrid(
-      launchStreamUrl,
+      runtimeStreamUrl,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* Effect.either(firegrid.launch(request as PublicLaunchRequest))
@@ -169,7 +161,7 @@ describe("@firegrid/client", () => {
   })
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 rejects public launch input with raw env or journal fields", async () => {
-    const launchStreamUrl = await createStreamUrl("launch")
+    const runtimeStreamUrl = await createStreamUrl("runtime")
     const request: unknown = {
       runtime: {
         provider: "local-process",
@@ -180,13 +172,13 @@ describe("@firegrid/client", () => {
           },
         },
         journal: [
-          { source: "stdout", format: "text-lines", stream: "diagnostics" },
+          { source: "stdout", format: "text-lines", target: "logs" },
         ],
       },
     }
 
     const result = await runWithFiregrid(
-      launchStreamUrl,
+      runtimeStreamUrl,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* Effect.either(firegrid.launch(request as PublicLaunchRequest))
