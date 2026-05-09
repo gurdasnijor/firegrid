@@ -12,6 +12,10 @@
     "./launch": {
       "types": "./src/launch/index.ts",
       "default": "./src/launch/index.ts"
+    },
+    "./session": {
+      "types": "./src/session/index.ts",
+      "default": "./src/session/index.ts"
     }
   },
   "files": [

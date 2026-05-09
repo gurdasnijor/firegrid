@@ -1,4 +1,4 @@
-import { DurableStream, IdempotentProducer } from "@durable-streams/client"
+import { IdempotentProducer } from "@durable-streams/client"
 import {
   RuntimeJournalEventSchema,
   type RuntimeEvent,
@@ -7,6 +7,7 @@ import {
 } from "@firegrid/protocol/launch"
 import type { Scope } from "effect"
 import { Context, Effect, Layer, Schema } from "effect"
+import { makeJsonDurableStream } from "../stream.ts"
 
 export type RuntimeOutputRow = RuntimeEvent | RuntimeLogLine
 
@@ -85,10 +86,7 @@ const producerIdFor = (
 export const RuntimeCaptureJournalLive = (
   options: RuntimeCaptureJournalOptions,
 ) => {
-  const stream = new DurableStream({
-    url: options.streamUrl,
-    contentType: options.contentType ?? "application/json",
-  })
+  const stream = makeJsonDurableStream(options.streamUrl, options.contentType ?? "application/json")
 
   return Layer.succeed(
     RuntimeCaptureJournal,

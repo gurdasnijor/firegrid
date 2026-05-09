@@ -6,8 +6,12 @@ import {
   PublicLaunchRequestSchema,
   runtimeContextStateSchema,
   RuntimeJournalEventSchema,
+  compareRuntimeOutputOrder,
+  isAfterRuntimeOutputCursor,
   type RuntimeContext,
+  type RuntimeEvent,
 } from "./index.ts"
+import { sessionStateSchema } from "../session/index.ts"
 
 describe("@firegrid/protocol launch schema", () => {
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1 firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.7 encodes normalized runtime contexts as control-plane state rows", async () => {
@@ -91,5 +95,64 @@ describe("@firegrid/protocol launch schema", () => {
       format: "jsonl",
       target: "events",
     })
+  })
+
+  it("durable-records-and-projections.RECORDS.3 orders runtime output by documented cursor", () => {
+    const first: RuntimeEvent = {
+      eventId: "event-1",
+      contextId: "ctx-1",
+      activityAttempt: 1,
+      sequence: 0,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt: "2026-05-07T00:00:00.000Z",
+      raw: "{}",
+    }
+    const second: RuntimeEvent = {
+      ...first,
+      eventId: "event-2",
+      sequence: 1,
+    }
+    const retry: RuntimeEvent = {
+      ...first,
+      eventId: "event-3",
+      activityAttempt: 2,
+      sequence: 0,
+    }
+
+    expect([retry, second, first].sort(compareRuntimeOutputOrder)).toEqual([
+      first,
+      second,
+      retry,
+    ])
+    expect(isAfterRuntimeOutputCursor(first, { activityAttempt: 1, sequence: 0 })).toBe(false)
+    expect(isAfterRuntimeOutputCursor(second, { activityAttempt: 1, sequence: 0 })).toBe(true)
+    expect(isAfterRuntimeOutputCursor(retry, { activityAttempt: 1, sequence: 99 })).toBe(true)
+  })
+
+  it("durable-records-and-projections.PROJECTIONS.5 encodes session projection rows as State Protocol changes", () => {
+    const session = sessionStateSchema.sessions.upsert({
+      value: {
+        sessionId: "session_ctx_1",
+        contextId: "ctx_1",
+        status: "active",
+      },
+      headers: { txid: "session-txid" },
+    })
+    const message = sessionStateSchema.messages.upsert({
+      value: {
+        messageId: "msg_ctx_1_1_0",
+        sessionId: "session_ctx_1",
+        contextId: "ctx_1",
+        role: "assistant",
+        text: "pong",
+        sourceRuntimeEventId: "event_ctx_1_1_0",
+        createdAt: "2026-05-08T00:00:00.000Z",
+      },
+      headers: { txid: "message-txid" },
+    })
+
+    expect(session.type).toEqual("firegrid.session")
+    expect(message.type).toEqual("firegrid.session.message")
   })
 })
