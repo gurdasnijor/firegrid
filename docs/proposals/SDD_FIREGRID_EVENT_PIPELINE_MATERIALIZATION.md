@@ -75,6 +75,11 @@ const SessionPipelineLive = EventPipelineLive.pipe(
 Materialize projection:
 
 ```ts
+const materializeTarget = yield* materialize.provisionRuntimeOutputProjection({
+  sourceName: "runtime_output",
+  webhookBaseUrl: "http://localhost:6874",
+})
+
 const SqlPipelineLive = EventPipelineLive.pipe(
   Layer.provide(RuntimeOutputEventSourceLive({
     streamUrl: runtimeOutputStreamUrl,
@@ -82,8 +87,7 @@ const SqlPipelineLive = EventPipelineLive.pipe(
   })),
   Layer.provide(RawRuntimeOutputProjectorLive),
   Layer.provide(MaterializeEventSinkLive({
-    sourceName: "runtime_output",
-    webhookBaseUrl: "http://localhost:6874",
+    target: materializeTarget,
   })),
 )
 ```
@@ -112,7 +116,7 @@ providing an `EventProjector` layer. The host chooses the sink.
 class EventSource extends Context.Tag("firegrid/runtime/EventSource")<
   EventSource,
   {
-    readonly read: Effect.Effect<ReadonlyArray<unknown>, EventSourceError>
+    readonly read: Effect.Effect<EventSourceReadResult, EventSourceError>
   }
 >() {}
 
@@ -123,7 +127,7 @@ class EventProjector extends Context.Tag("firegrid/runtime/EventProjector")<
     readonly version: string
     readonly project: (
       event: unknown,
-    ) => Effect.Effect<ReadonlyArray<unknown>, EventProjectorError>
+    ) => Effect.Effect<EventProjectorResult, EventProjectorError>
   }
 >() {}
 
@@ -132,7 +136,8 @@ class EventSink extends Context.Tag("firegrid/runtime/EventSink")<
   {
     readonly writeAll: (
       events: ReadonlyArray<unknown>,
-    ) => Effect.Effect<void, EventSinkError>
+      context: EventSinkWriteContext,
+    ) => Effect.Effect<number, EventSinkError>
     readonly flush: Effect.Effect<void, EventSinkError>
   }
 >() {}
@@ -145,9 +150,16 @@ class EventPipeline extends Context.Tag("firegrid/runtime/EventPipeline")<
 >() {}
 ```
 
-The implementation may expose typed helper constructors around these services
-so call sites keep useful TypeScript inference, but service wiring should
-remain Effect-native.
+The `writeAll` return value is the number of events the sink accepted and
+durably flushed inside the call. `EventPipelineSummary.eventsWritten` is derived
+from that returned count, not from projector output size.
+
+The service interfaces expose generic TypeScript parameters for source and
+projected event types, but the shared `Context.Tag` values are still runtime
+service keys. A fully static "projector output type must match sink input type"
+proof is deferred until Firegrid grows typed helper constructors for paired
+projector/sink layers. For this tracer, sinks may still validate their accepted
+event shape at runtime.
 
 ## Current Mappings
 
@@ -185,6 +197,9 @@ packages/runtime/src/data-plane/materialization/engines/materialize.ts
 Target mapping:
 
 - Materialize provider becomes `MaterializeEventSinkLive`;
+- `MaterializeEventSinkLive` takes a pre-provisioned
+  `RuntimeOutputProjectionTarget`; provisioning stays on the Materialize
+  provider/query helper layer, not inside the common sink adapter;
 - query/subscribe helpers become `MaterializeEventQueryLive` or exported query
   builders;
 - the old `MaterializationEngine` name should either be deprecated or reduced
@@ -224,6 +239,13 @@ Work can split safely:
    - keep Materialize query helpers intact.
 
 Both lanes meet at the `EventSink` service. Tests should include one fake
-source/projector/sink unit test and one compatibility test proving the existing
-session materialization path still works.
+source/projector/sink unit test, failure-path coverage for source/projector/sink
+errors, and one compatibility test proving the existing session materialization
+path still works.
 
+## Tooling Note
+
+The effect-quality ratchet no longer counts test-file growth or
+`Effect.runPromise` usage in tests. The production-source Effect-quality gates
+remain in place. Test runtime boundaries are allowed to run Effects; production
+library code should still remain Effect-native.

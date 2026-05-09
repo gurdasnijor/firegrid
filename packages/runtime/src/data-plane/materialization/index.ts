@@ -51,7 +51,7 @@ export {
   type RuntimeJournalReadResult,
 } from "./runner.ts"
 export {
-  RuntimeJournalEventSourceLive,
+  RawRuntimeJournalEventSourceLive,
   RuntimeOutputEventSourceLive,
   RuntimeOutputSourceError,
   stdoutRowsForContext,

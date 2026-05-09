@@ -6,13 +6,13 @@ export type EventPipelineFailure = {
   readonly cause?: unknown
 }
 
-export type EventSourceReadResult = {
-  readonly events: ReadonlyArray<unknown>
+export type EventSourceReadResult<out Event = unknown> = {
+  readonly events: ReadonlyArray<Event>
   readonly failures: ReadonlyArray<EventPipelineFailure>
 }
 
-export type EventProjectorResult = {
-  readonly events: ReadonlyArray<unknown>
+export type EventProjectorResult<out Event = unknown> = {
+  readonly events: ReadonlyArray<Event>
   readonly failures: ReadonlyArray<EventPipelineFailure>
 }
 
@@ -37,8 +37,9 @@ export type EventPipelineSummary = {
 }
 
 type ProjectAccumulator = {
-  readonly summary: EventPipelineSummary
-  readonly projectedEvents: ReadonlyArray<unknown>
+  readonly eventsProjected: number
+  readonly eventsIgnored: number
+  readonly eventsFailed: number
 }
 
 export class EventSourceError extends Schema.TaggedError<EventSourceError>()(
@@ -73,21 +74,23 @@ export class EventPipelineError extends Schema.TaggedError<EventPipelineError>()
   },
 ) {}
 
-export interface EventSourceService {
-  readonly read: Effect.Effect<EventSourceReadResult, EventSourceError>
+export interface EventSourceService<out Event = unknown> {
+  readonly read: Effect.Effect<EventSourceReadResult<Event>, EventSourceError>
 }
 
-export interface EventProjectorService extends EventProjectorIdentity {
+export interface EventProjectorService<in Source = unknown, out Projected = unknown>
+  extends EventProjectorIdentity
+{
   readonly project: (
-    event: unknown,
-  ) => Effect.Effect<EventProjectorResult, EventProjectorError>
+    event: Source,
+  ) => Effect.Effect<EventProjectorResult<Projected>, EventProjectorError>
 }
 
-export interface EventSinkService {
+export interface EventSinkService<in Event = unknown> {
   readonly writeAll: (
-    events: ReadonlyArray<unknown>,
+    events: ReadonlyArray<Event>,
     context: EventSinkWriteContext,
-  ) => Effect.Effect<void, EventSinkError>
+  ) => Effect.Effect<number, EventSinkError>
   readonly flush: Effect.Effect<void, EventSinkError>
 }
 
@@ -97,17 +100,17 @@ export interface EventPipelineService {
 
 export class EventSource extends Context.Tag("firegrid/runtime/EventSource")<
   EventSource,
-  EventSourceService
+  EventSourceService<unknown>
 >() {}
 
 export class EventProjector extends Context.Tag("firegrid/runtime/EventProjector")<
   EventProjector,
-  EventProjectorService
+  EventProjectorService<unknown, unknown>
 >() {}
 
 export class EventSink extends Context.Tag("firegrid/runtime/EventSink")<
   EventSink,
-  EventSinkService
+  EventSinkService<unknown>
 >() {}
 
 export class EventPipeline extends Context.Tag("firegrid/runtime/EventPipeline")<
@@ -123,19 +126,10 @@ const mapPipelineError = (
 
 const initialAccumulator = (
   source: EventSourceReadResult,
-  projector: EventProjectorIdentity,
 ): ProjectAccumulator => ({
-  summary: {
-    eventsRead: source.events.length + source.failures.length,
-    eventsProjected: 0,
-    eventsIgnored: 0,
-    eventsFailed: source.failures.length,
-    eventsWritten: 0,
-    projector: projector.name,
-    projectorVersion: projector.version,
-    failures: source.failures,
-  },
-  projectedEvents: [],
+  eventsProjected: 0,
+  eventsIgnored: 0,
+  eventsFailed: source.failures.length,
 })
 
 export const EventPipelineLive = Layer.effect(
@@ -151,52 +145,55 @@ export const EventPipelineLive = Layer.effect(
           Effect.mapError(cause => mapPipelineError("event-source.read", cause)),
         )
 
+        const projectedEvents: Array<unknown> = []
+        const failures: Array<EventPipelineFailure> = [...read.failures]
+
         const accumulated = yield* Effect.reduce(
           read.events,
-          initialAccumulator(read, projector),
+          initialAccumulator(read),
           (acc, event) =>
             projector.project(event).pipe(
               Effect.mapError(cause => mapPipelineError("event-projector.project", cause)),
               Effect.map(result => {
                 if (result.failures.length > 0) {
+                  failures.push(...result.failures)
                   return {
                     ...acc,
-                    summary: {
-                      ...acc.summary,
-                      eventsFailed: acc.summary.eventsFailed + 1,
-                      failures: [...acc.summary.failures, ...result.failures],
-                    },
+                    eventsFailed: acc.eventsFailed + 1,
                   }
                 }
                 if (result.events.length === 0) {
                   return {
                     ...acc,
-                    summary: {
-                      ...acc.summary,
-                      eventsIgnored: acc.summary.eventsIgnored + 1,
-                    },
+                    eventsIgnored: acc.eventsIgnored + 1,
                   }
                 }
+                projectedEvents.push(...result.events)
                 return {
-                  summary: {
-                    ...acc.summary,
-                    eventsProjected: acc.summary.eventsProjected + 1,
-                    eventsWritten: acc.summary.eventsWritten + result.events.length,
-                  },
-                  projectedEvents: [...acc.projectedEvents, ...result.events],
+                  ...acc,
+                  eventsProjected: acc.eventsProjected + 1,
                 }
               }),
             ),
         )
 
-        yield* sink.writeAll(accumulated.projectedEvents, { projector }).pipe(
+        const eventsWritten = yield* sink.writeAll(projectedEvents, { projector }).pipe(
           Effect.mapError(cause => mapPipelineError("event-sink.writeAll", cause)),
         )
         yield* sink.flush.pipe(
           Effect.mapError(cause => mapPipelineError("event-sink.flush", cause)),
         )
 
-        return accumulated.summary
+        return {
+          eventsRead: read.events.length + read.failures.length,
+          eventsProjected: accumulated.eventsProjected,
+          eventsIgnored: accumulated.eventsIgnored,
+          eventsFailed: accumulated.eventsFailed,
+          eventsWritten,
+          projector: projector.name,
+          projectorVersion: projector.version,
+          failures,
+        }
       }),
     })
   }),

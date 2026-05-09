@@ -51,7 +51,7 @@ export const MaterializeEventSinkLive = (
             return materialize.ingestRuntimeJournal(options.target, decoded.right).pipe(
               Effect.mapError(cause => sinkError("materialize-event-sink.ingest", cause)),
             )
-          }, { discard: true }),
+          }, { discard: true }).pipe(Effect.as(events.length)),
         flush: Effect.void,
       })
     }),

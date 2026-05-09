@@ -122,7 +122,7 @@ export const stdoutRowsForContext = (
     .filter(row => isAfterRuntimeOutputCursor(row, options.since))
     .sort(compareRuntimeOutputOrder)
 
-export const RuntimeJournalEventSourceLive = (
+export const RawRuntimeJournalEventSourceLive = (
   options: RuntimeOutputEventSourceOptions,
 ) =>
   Layer.succeed(
@@ -131,9 +131,9 @@ export const RuntimeJournalEventSourceLive = (
       read: readRuntimeJournal(options).pipe(
         Effect.mapError(mapSourceError),
         Effect.map(journal => ({
-            events: journal.events,
-            failures: journal.decodeFailures,
-          })),
+          events: journal.events,
+          failures: journal.decodeFailures,
+        })),
       ),
     }),
   )
@@ -147,9 +147,9 @@ export const RuntimeOutputEventSourceLive = (
       read: readRuntimeJournal(options).pipe(
         Effect.mapError(mapSourceError),
         Effect.map(journal => ({
-            events: stdoutRowsForContext(journal.events, options),
-            failures: journal.decodeFailures,
-          })),
+          events: stdoutRowsForContext(journal.events, options),
+          failures: journal.decodeFailures,
+        })),
       ),
     }),
   )

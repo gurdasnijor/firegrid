@@ -40,9 +40,9 @@ export const RuntimeOutputMaterializerProjectorLive = (
     EventProjector,
     EventProjector.of({
       name: materializer.name,
-        version: materializer.version,
-        project: event => {
-          const decoded = decodeRuntimeEvent(event)
+      version: materializer.version,
+      project: event => {
+        const decoded = decodeRuntimeEvent(event)
         if (Either.isLeft(decoded)) {
           return Effect.fail(eventProjectorError(
             "runtime-output-projector.decode",

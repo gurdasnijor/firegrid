@@ -72,6 +72,7 @@ export const StateProtocolEventSinkLive = (
               Effect.mapError(cause =>
                 sinkError("state-protocol-sink.flush", cause)),
             )
+            return events.length
           })),
         flush: Effect.void,
       })
