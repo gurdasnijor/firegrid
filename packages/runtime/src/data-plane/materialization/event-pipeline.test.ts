@@ -1,4 +1,7 @@
-import { Effect, Either, Layer } from "effect"
+import { DurableStream } from "@durable-streams/client"
+import { DurableStreamTestServer } from "@durable-streams/server"
+import type { RuntimeJournalEvent } from "@firegrid/protocol/launch"
+import { Effect, Either, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   EventPipeline,
@@ -8,6 +11,11 @@ import {
   EventSink,
   EventSource,
 } from "./event-pipeline.ts"
+import { MaterializeRuntimeOutputPipelineLive } from "./materialize-pipeline.ts"
+import {
+  MaterializeProvider,
+  MaterializeProviderError,
+} from "./materialize/index.ts"
 
 const runPipeline = (
   layer: Layer.Layer<EventPipeline>,
@@ -190,6 +198,83 @@ describe("event pipeline materialization", () => {
         _tag: "EventPipelineError",
         op: "event-sink.writeAll",
       })
+    }
+  })
+
+  it("firegrid-event-pipeline-materialization.SINK.3 sends runtime journal envelopes to Materialize", async () => {
+    const server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+    await server.start()
+    try {
+      const streamUrl = `${server.url}/v1/stream/runtime-output-materialize-${crypto.randomUUID()}`
+      await DurableStream.create({
+        url: streamUrl,
+        contentType: "application/json",
+      })
+      const stream = new DurableStream({
+        url: streamUrl,
+        contentType: "application/json",
+      })
+      const event: RuntimeJournalEvent = {
+        type: "firegrid.runtime.output.stdout",
+        id: "journal-1",
+        at: "2026-05-08T00:00:00.000Z",
+        event: {
+          eventId: "runtime-1",
+          contextId: "ctx_materialize",
+          activityAttempt: 1,
+          sequence: 0,
+          source: "stdout",
+          format: "jsonl",
+          receivedAt: "2026-05-08T00:00:00.000Z",
+          raw: JSON.stringify({ type: "assistant", text: "pong" }),
+        },
+      }
+      await stream.append(JSON.stringify(event))
+
+      const ingested: Array<RuntimeJournalEvent> = []
+      const layer = MaterializeRuntimeOutputPipelineLive({
+        runtimeOutputStreamUrl: streamUrl,
+        contextId: "ctx_materialize",
+        target: {
+          provider: "materialize",
+          sourceName: "runtime_output",
+          databaseName: "materialize",
+          schemaName: "public",
+          runtimeEventsViewName: "runtime_output_events",
+          webhookUrl: "http://materialize.invalid/webhook",
+        },
+      }).pipe(
+        Layer.provide(Layer.succeed(
+          MaterializeProvider,
+          MaterializeProvider.of({
+            name: "materialize",
+            provisionRuntimeOutputProjection: () =>
+              Effect.fail(new MaterializeProviderError({
+                provider: "materialize",
+                op: "test.provision",
+                cause: new Error("not used"),
+              })),
+            ingestRuntimeJournal: (_target, journalEvent) =>
+              Effect.sync(() => {
+                ingested.push(journalEvent)
+              }),
+            query: () => Effect.succeed([]),
+            subscribe: () => Stream.empty,
+          }),
+        )),
+      )
+
+      const summary = await runPipeline(layer)
+
+      expect(ingested).toEqual([event])
+      expect(summary).toMatchObject({
+        sourceEventsRead: 1,
+        sourceEventsProjected: 1,
+        sourceEventsFailed: 0,
+        sinkEventsWritten: 1,
+      })
+    } finally {
+      await server.stop()
     }
   })
 })

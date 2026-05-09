@@ -10,7 +10,7 @@ import {
 import {
   IdentityEventProjectorLive,
 } from "./projectors/index.ts"
-import { RuntimeOutputEventSourceLive } from "./runtime-output-source.ts"
+import { RawRuntimeJournalEventSourceLive } from "./runtime-output-source.ts"
 import type { RuntimeOutputProjectionTarget } from "./materialize/index.ts"
 
 export interface MaterializeRuntimeOutputProjectionOptions {
@@ -45,7 +45,7 @@ export const MaterializeRuntimeOutputPipelineLive = (
     }
 
   return EventPipelineLive.pipe(
-    Layer.provide(RuntimeOutputEventSourceLive(sourceOptions)),
+    Layer.provide(RawRuntimeJournalEventSourceLive(sourceOptions)),
     Layer.provide(IdentityEventProjectorLive({
       name: "runtime-output-materialize",
       version: "1",
