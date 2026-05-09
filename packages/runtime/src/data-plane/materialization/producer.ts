@@ -2,10 +2,8 @@ import { IdempotentProducer } from "@durable-streams/client"
 import { sessionStateSchema } from "@firegrid/protocol/session"
 import type { Scope } from "effect"
 import { Context, Effect, Layer, Option, Queue, Schema } from "effect"
-import type {
-  MaterializerChange,
-  RuntimeOutputMaterializer,
-} from "./types.ts"
+import type { EventProjectorIdentity } from "./event-pipeline.ts"
+import type { MaterializerChange } from "./types.ts"
 import { makeJsonDurableStream } from "../stream.ts"
 
 export class ProducerError extends Schema.TaggedError<ProducerError>()(
@@ -68,7 +66,7 @@ export class StateProtocolProducer extends Context.Tag("firegrid/StateProtocolPr
 >() {}
 
 export const producerIdFor = (
-  materializer: RuntimeOutputMaterializer,
+  materializer: EventProjectorIdentity,
   contextId: string,
 ): string =>
   `session-materializer:${materializer.name}:${materializer.version}:${contextId}`
@@ -83,7 +81,7 @@ export const producerIdFor = (
  */
 export const toSessionStateEvent = (
   change: MaterializerChange,
-  materializer: RuntimeOutputMaterializer,
+  materializer: EventProjectorIdentity,
 ): unknown => {
   // durable-records-and-projections.PROJECTIONS.3
   // Include the materializer version so a future fold change has a distinct

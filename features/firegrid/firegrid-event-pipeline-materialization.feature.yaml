@@ -1,0 +1,35 @@
+feature:
+  name: firegrid-event-pipeline-materialization
+  product: firegrid
+  description: Provide a common Effect service and layer pipeline for projecting runtime-output events into pluggable sinks.
+
+components:
+  PIPELINE:
+    requirements:
+      1: An event pipeline composes an event source, event projector, and event sink as replaceable Effect services.
+      2: The event pipeline reads accepted runtime-output events from a source, projects them, writes projected events to a sink, and returns a summary.
+      3: The event pipeline does not import runtime control-plane modules or workflow-engine internals.
+
+  SOURCE:
+    requirements:
+      1: A runtime-output event source reads retained `RuntimeJournalEvent` rows from a Durable Streams data-plane journal.
+      2: A runtime-output event source supports context filtering and the documented runtime-output cursor.
+
+  PROJECTOR:
+    requirements:
+      1: An event projector is a provider/user-defined pure interpretation layer over accepted source events.
+      2: Event projectors expose stable `name` and `version` fields for idempotency and migration.
+      3: Event projectors do not write to streams, query engines, workflow state, or live process resources.
+
+  SINK:
+    requirements:
+      1: Event sinks are replaceable Effect services selected by the host or scenario.
+      2: A State Protocol event sink writes session projection changes to a Durable Streams State Protocol stream.
+      3: A Materialize event sink ingests runtime-output or projected events into Materialize without becoming source of truth.
+
+constraints:
+  BOUNDARY:
+    requirements:
+      1: Durable Streams runtime-output rows remain the source of truth; event sinks are derived outputs.
+      2: The runtime-output writer is not an event projector or sink; it only journals live runtime facts.
+      3: State Protocol and Materialize implementations must sit behind the common event sink interface.
