@@ -14,6 +14,7 @@ actually coherent.
 - [001: Black-Box Agent Output To Runtime Events](./001-black-box-agent-output-to-durable-state.md)
 - [002: Runtime Output Events To Session State](./002-runtime-events-to-session-state.md)
 - [003: Runtime Events To Permission Workflow](./003-runtime-events-to-permission-workflow.md)
+- [004: ACP Stdio Runtime Output To Materialize Session](./004-claude-code-runtime-output-to-materialize-session.md)
 
 ## Handoff
 
@@ -54,6 +55,13 @@ Prerequisite
   durable runtime output data-plane events
     -> downstream permission workflow
     -> durable permission request / approval wait / input response
+
+004 (parallel)
+  launch real ACP stdio agent, starting with claude-acp
+    -> durable runtime output data-plane events
+    -> Materialize webhook source
+    -> SQL session materialized view
+    -> SELECT/SUBSCRIBE endpoint query path
 ```
 
 The prerequisites establish the thin launch producer and live sandbox boundary.
@@ -61,6 +69,8 @@ The first bullet proves event production by consuming a sandbox's non-durable
 command stream and journaling it durably. The second and third bullets prove
 that downstream consumers can independently interpret the same durable journal
 without coupling agent launch to session materialization or permission handling.
+The fourth bullet proves a parallel query-engine path for endpoint demos without
+changing Durable Streams authority.
 
 Tracer 002 and tracer 003 are intentionally directional. They should be
 re-scoped after tracer 001 is implemented and reviewed. Each fired tracer should
