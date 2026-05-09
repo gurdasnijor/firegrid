@@ -237,7 +237,6 @@ Example terminal observable journal entry:
   format: "jsonl",
   receivedAt: "2026-05-08T00:00:00.000Z",
   raw: "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"pong\"}]}}",
-  parseStatus: "valid-json",
 }
 ```
 
@@ -279,7 +278,7 @@ only. They are not source-of-truth state.
 
 The `run-process-attempt` activity consumes output chunks from
 `SandboxProvider.stream(...)`. For this first bullet, stdout chunks are JSONL
-from Claude Code `stream-json`.
+from a black-box sandbox command.
 
 Each observed stdout chunk is appended as a durable provider-wire row before
 any downstream consumer treats it as visible.
@@ -294,7 +293,6 @@ Example provider-wire row:
   format: "jsonl",
   receivedAt: "2026-05-08T00:00:00.000Z",
   raw: "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"pong\"}]}}",
-  parseStatus: "valid-json",
 }
 ```
 
