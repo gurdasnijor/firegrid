@@ -76,12 +76,6 @@ const isOrDieOrDie = (callExpression) =>
   isMemberCall(callExpression, "Effect", "die") ||
   isMemberCall(callExpression, "Effect", "dieMessage")
 
-const isEffectRunner = (callExpression) =>
-  isMemberCall(callExpression, "Effect", "runPromise") ||
-  isMemberCall(callExpression, "Effect", "runPromiseExit") ||
-  isMemberCall(callExpression, "Effect", "runSync") ||
-  isMemberCall(callExpression, "Effect", "runFork")
-
 // `Effect.provide(<X>Live(...))` heuristic: matches `Effect.provide` as
 // callee and the first argument is a CallExpression whose own callee
 // ends in `Live`.
@@ -128,11 +122,6 @@ const isNodeCryptoImport = (importDeclaration) => {
   return spec === "node:crypto" || spec === "crypto"
 }
 
-const isVitestImport = (importDeclaration) => {
-  const spec = importDeclaration.getModuleSpecifierValue()
-  return spec === "vitest"
-}
-
 export const computeQualityMetrics = (project) => {
   const metrics = {
     extendsErrorCount: 0,
@@ -145,8 +134,6 @@ export const computeQualityMetrics = (project) => {
     newDurableStreamSiteCount: 0,
     perCallLayerProvideSiteCount: 0,
     effectOrDieSiteCount: 0,
-    effectRunPromiseInTestsCount: 0,
-    vitestItImportInTestsCount: 0,
   }
 
   // Walk every project source file (including tests) and apply our own
@@ -158,18 +145,7 @@ export const computeQualityMetrics = (project) => {
     const isTest = isTestSourcePath(path)
     if (!isProduction && !isTest) continue
 
-    if (isTest) {
-      // Test-only metrics.
-      sourceFile.forEachDescendant((node) => {
-        if (Node.isImportDeclaration(node) && isVitestImport(node)) {
-          metrics.vitestItImportInTestsCount += 1
-        }
-        if (Node.isCallExpression(node) && isEffectRunner(node)) {
-          metrics.effectRunPromiseInTestsCount += 1
-        }
-      })
-      continue
-    }
+    if (isTest) continue
 
     // Production-source metrics.
     sourceFile.forEachDescendant((node) => {
