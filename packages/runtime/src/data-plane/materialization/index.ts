@@ -1,6 +1,7 @@
 export {
   exampleJsonlSessionMaterializer,
 } from "./example-jsonl-session.ts"
+export * from "./engines/index.ts"
 export {
   ProducerError,
   producerIdFor,

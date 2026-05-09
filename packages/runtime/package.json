@@ -20,6 +20,10 @@
     "./data-plane/materialization": {
       "types": "./src/data-plane/materialization/index.ts",
       "default": "./src/data-plane/materialization/index.ts"
+    },
+    "./data-plane/materialization/engines": {
+      "types": "./src/data-plane/materialization/engines/index.ts",
+      "default": "./src/data-plane/materialization/engines/index.ts"
     }
   },
   "bin": {
@@ -48,6 +52,8 @@
     "@effect/platform": "^0.96.0",
     "@effect/platform-node": "^0.106.0",
     "@effect/rpc": "0.75.1",
+    "@effect/sql": "0.51.1",
+    "@effect/sql-pg": "0.52.1",
     "@effect/workflow": "0.18.1",
     "@firegrid/protocol": "workspace:*",
     "effect": "^3.18.0"
