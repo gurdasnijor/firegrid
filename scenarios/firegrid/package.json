@@ -10,8 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@durable-streams/state": "^0.2.5",
     "@effect/platform-node": "^0.106.0",
     "@firegrid/client": "workspace:*",
+    "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
     "effect": "^3.18.0"
   },

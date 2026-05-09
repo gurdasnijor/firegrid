@@ -12,7 +12,7 @@ actually coherent.
 ## Bullets
 
 - [001: Black-Box Agent Output To Runtime Events](./001-black-box-agent-output-to-durable-state.md)
-- [002: Runtime Events To Session State](./002-runtime-events-to-session-state.md)
+- [002: Runtime Output Events To Session State](./002-runtime-events-to-session-state.md)
 - [003: Runtime Events To Permission Workflow](./003-runtime-events-to-permission-workflow.md)
 
 ## Handoff

@@ -16,6 +16,10 @@
     "./data-plane/execution/sandbox": {
       "types": "./src/data-plane/execution/sandbox/index.ts",
       "default": "./src/data-plane/execution/sandbox/index.ts"
+    },
+    "./data-plane/materialization": {
+      "types": "./src/data-plane/materialization/index.ts",
+      "default": "./src/data-plane/materialization/index.ts"
     }
   },
   "bin": {

@@ -37,4 +37,9 @@ export {
   localJsonlJournal,
   normalizeRuntimeIntent,
 } from "./helpers.ts"
+export {
+  compareRuntimeOutputOrder,
+  isAfterRuntimeOutputCursor,
+  type RuntimeOutputCursor,
+} from "./cursor.ts"
 export { runtimeContextStateSchema } from "./state.ts"
