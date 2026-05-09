@@ -7,11 +7,16 @@ import {
   EventSinkError,
 } from "./event-pipeline.ts"
 import {
-  MaterializationEngine,
+  MaterializationEngine as MaterializeProjectionProvider,
   type RuntimeOutputProjectionTarget,
 } from "./engines/index.ts"
 
 export interface MaterializeEventSinkOptions {
+  /**
+   * Provisioned Materialize runtime-output target. Provisioning and query
+   * helpers remain on the Materialize provider; this layer is only the common
+   * EventSink adapter.
+   */
   readonly target: RuntimeOutputProjectionTarget
 }
 
@@ -24,7 +29,9 @@ const sinkError = (
 const decodeRuntimeJournalEvent = Schema.decodeUnknownEither(RuntimeJournalEventSchema)
 
 /**
+ * firegrid-event-pipeline-materialization.SINK.1
  * firegrid-event-pipeline-materialization.SINK.3
+ * firegrid-event-pipeline-materialization.BOUNDARY.3
  */
 export const MaterializeEventSinkLive = (
   options: MaterializeEventSinkOptions,
@@ -32,7 +39,7 @@ export const MaterializeEventSinkLive = (
   Layer.effect(
     EventSink,
     Effect.gen(function* () {
-      const engine = yield* MaterializationEngine
+      const materialize = yield* MaterializeProjectionProvider
 
       return EventSink.of({
         writeAll: events =>
@@ -41,7 +48,7 @@ export const MaterializeEventSinkLive = (
             if (Either.isLeft(decoded)) {
               return Effect.fail(sinkError("materialize-event-sink.decode", decoded.left))
             }
-            return engine.ingestRuntimeJournal(options.target, decoded.right).pipe(
+            return materialize.ingestRuntimeJournal(options.target, decoded.right).pipe(
               Effect.mapError(cause => sinkError("materialize-event-sink.ingest", cause)),
             )
           }, { discard: true }),
