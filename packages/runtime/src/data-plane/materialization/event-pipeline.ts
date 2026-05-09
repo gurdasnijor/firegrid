@@ -6,15 +6,24 @@ export type EventPipelineFailure = {
   readonly cause?: unknown
 }
 
-export type EventSourceReadResult<out Event = unknown> = {
+export type EventSourceReadResult<Event = unknown> = {
   readonly events: ReadonlyArray<Event>
   readonly failures: ReadonlyArray<EventPipelineFailure>
 }
 
-export type EventProjectorResult<out Event = unknown> = {
-  readonly events: ReadonlyArray<Event>
-  readonly failures: ReadonlyArray<EventPipelineFailure>
-}
+export type EventProjectorResult<Event = unknown> =
+  | {
+    readonly _tag: "Projected"
+    readonly events: ReadonlyArray<Event>
+  }
+  | {
+    readonly _tag: "Ignored"
+    readonly reason?: string
+  }
+  | {
+    readonly _tag: "Failed"
+    readonly failures: ReadonlyArray<EventPipelineFailure>
+  }
 
 export type EventProjectorIdentity = {
   readonly name: string
@@ -26,13 +35,12 @@ export type EventSinkWriteContext = {
 }
 
 export type EventPipelineSummary = {
-  readonly eventsRead: number
-  readonly eventsProjected: number
-  readonly eventsIgnored: number
-  readonly eventsFailed: number
-  readonly eventsWritten: number
-  readonly projector: string
-  readonly projectorVersion: string
+  readonly sourceEventsRead: number
+  readonly sourceEventsProjected: number
+  readonly sourceEventsIgnored: number
+  readonly sourceEventsFailed: number
+  readonly sinkEventsWritten: number
+  readonly projector: EventProjectorIdentity
   readonly failures: ReadonlyArray<EventPipelineFailure>
 }
 
@@ -74,11 +82,11 @@ export class EventPipelineError extends Schema.TaggedError<EventPipelineError>()
   },
 ) {}
 
-export interface EventSourceService<out Event = unknown> {
+export interface EventSourceService<Event = unknown> {
   readonly read: Effect.Effect<EventSourceReadResult<Event>, EventSourceError>
 }
 
-export interface EventProjectorService<in Source = unknown, out Projected = unknown>
+export interface EventProjectorService<Source = unknown, Projected = unknown>
   extends EventProjectorIdentity
 {
   readonly project: (
@@ -86,7 +94,7 @@ export interface EventProjectorService<in Source = unknown, out Projected = unkn
   ) => Effect.Effect<EventProjectorResult<Projected>, EventProjectorError>
 }
 
-export interface EventSinkService<in Event = unknown> {
+export interface EventSinkService<Event = unknown> {
   readonly writeAll: (
     events: ReadonlyArray<Event>,
     context: EventSinkWriteContext,
@@ -155,23 +163,24 @@ export const EventPipelineLive = Layer.effect(
             projector.project(event).pipe(
               Effect.mapError(cause => mapPipelineError("event-projector.project", cause)),
               Effect.map(result => {
-                if (result.failures.length > 0) {
-                  failures.push(...result.failures)
-                  return {
-                    ...acc,
-                    eventsFailed: acc.eventsFailed + 1,
-                  }
-                }
-                if (result.events.length === 0) {
-                  return {
-                    ...acc,
-                    eventsIgnored: acc.eventsIgnored + 1,
-                  }
-                }
-                projectedEvents.push(...result.events)
-                return {
-                  ...acc,
-                  eventsProjected: acc.eventsProjected + 1,
+                switch (result._tag) {
+                  case "Failed":
+                    failures.push(...result.failures)
+                    return {
+                      ...acc,
+                      eventsFailed: acc.eventsFailed + 1,
+                    }
+                  case "Ignored":
+                    return {
+                      ...acc,
+                      eventsIgnored: acc.eventsIgnored + 1,
+                    }
+                  case "Projected":
+                    projectedEvents.push(...result.events)
+                    return {
+                      ...acc,
+                      eventsProjected: acc.eventsProjected + 1,
+                    }
                 }
               }),
             ),
@@ -185,13 +194,12 @@ export const EventPipelineLive = Layer.effect(
         )
 
         return {
-          eventsRead: read.events.length + read.failures.length,
-          eventsProjected: accumulated.eventsProjected,
-          eventsIgnored: accumulated.eventsIgnored,
-          eventsFailed: accumulated.eventsFailed,
-          eventsWritten,
-          projector: projector.name,
-          projectorVersion: projector.version,
+          sourceEventsRead: read.events.length + read.failures.length,
+          sourceEventsProjected: accumulated.eventsProjected,
+          sourceEventsIgnored: accumulated.eventsIgnored,
+          sourceEventsFailed: accumulated.eventsFailed,
+          sinkEventsWritten: eventsWritten,
+          projector,
           failures,
         }
       }),

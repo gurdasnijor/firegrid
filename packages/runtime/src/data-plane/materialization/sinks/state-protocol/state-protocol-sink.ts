@@ -2,13 +2,13 @@ import { Effect, Layer } from "effect"
 import {
   EventSink,
   EventSinkError,
-} from "./event-pipeline.ts"
+} from "../../event-pipeline.ts"
+import type { SessionStateChange } from "./session-state-change.ts"
 import {
-  producerIdFor,
-  StateProtocolProducer,
+  StateProtocolWriter,
   toSessionStateEvent,
-} from "./producer.ts"
-import type { MaterializerChange } from "./types.ts"
+  writerIdFor,
+} from "./state-protocol-writer.ts"
 
 export interface StateProtocolEventSinkOptions {
   readonly streamUrl: string
@@ -21,23 +21,23 @@ const sinkError = (
 ): EventSinkError =>
   new EventSinkError({ op, cause })
 
-const decodeMaterializerChange = (
+const decodeSessionStateChange = (
   event: unknown,
-): Effect.Effect<MaterializerChange, EventSinkError> => {
+): Effect.Effect<SessionStateChange, EventSinkError> => {
   if (typeof event !== "object" || event === null || !("kind" in event)) {
     return Effect.fail(sinkError(
       "state-protocol-sink.decode",
-      new Error("projected event is not a MaterializerChange"),
+      new Error("projected event is not a SessionStateChange"),
     ))
   }
   const kind = (event as { readonly kind: unknown }).kind
   if (kind !== "upsertSession" && kind !== "upsertMessage") {
     return Effect.fail(sinkError(
       "state-protocol-sink.decode",
-      new Error("unsupported MaterializerChange kind"),
+      new Error("unsupported SessionStateChange kind"),
     ))
   }
-  return Effect.succeed(event as MaterializerChange)
+  return Effect.succeed(event as SessionStateChange)
 }
 
 /**
@@ -49,32 +49,31 @@ export const StateProtocolEventSinkLive = (
   Layer.effect(
     EventSink,
     Effect.gen(function* () {
-      const producerFactory = yield* StateProtocolProducer
+      const writer = yield* StateProtocolWriter
 
       return EventSink.of({
         writeAll: (events, context) =>
           Effect.scoped(Effect.gen(function* () {
-            const producer = yield* producerFactory.open({
+            const handle = yield* writer.open({
               streamUrl: options.streamUrl,
-              producerId: producerIdFor(context.projector, options.contextId),
+              writerId: writerIdFor(context.projector, options.contextId),
             }).pipe(
               Effect.mapError(cause => sinkError("state-protocol-sink.open", cause)),
             )
-            yield* Effect.forEach(events, event =>
-              decodeMaterializerChange(event).pipe(
-                Effect.flatMap(change =>
-                  producer.append(toSessionStateEvent(change, context.projector)).pipe(
-                    Effect.mapError(cause =>
-                      sinkError("state-protocol-sink.append", cause)),
-                  )),
+            const changes = yield* Effect.forEach(events, decodeSessionStateChange)
+            yield* Effect.forEach(changes, change =>
+              handle.append(toSessionStateEvent(change, context.projector)).pipe(
+                Effect.mapError(cause =>
+                  sinkError("state-protocol-sink.append", cause)),
               ), { discard: true })
-            yield* producer.flush.pipe(
+            yield* handle.flush.pipe(
               Effect.mapError(cause =>
                 sinkError("state-protocol-sink.flush", cause)),
             )
-            return events.length
+            return changes.length
           })),
         flush: Effect.void,
       })
     }),
   )
+

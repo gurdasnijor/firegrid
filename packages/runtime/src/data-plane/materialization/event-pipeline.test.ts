@@ -49,10 +49,12 @@ describe("event pipeline materialization", () => {
           name: "uppercase",
           version: "1",
           project: event =>
-            Effect.succeed({
-              events: event === "skip" ? [] : [String(event).toUpperCase()],
-              failures: [],
-            }),
+            Effect.succeed(event === "skip"
+              ? { _tag: "Ignored", reason: "skip-fixture" }
+              : {
+                _tag: "Projected",
+                events: [String(event).toUpperCase()],
+              }),
         }),
       )),
       Layer.provide(Layer.succeed(
@@ -72,13 +74,15 @@ describe("event pipeline materialization", () => {
 
     expect(written).toEqual(["ONE", "TWO"])
     expect(summary).toMatchObject({
-      eventsRead: 3,
-      eventsProjected: 2,
-      eventsIgnored: 1,
-      eventsFailed: 0,
-      eventsWritten: 2,
-      projector: "uppercase",
-      projectorVersion: "1",
+      sourceEventsRead: 3,
+      sourceEventsProjected: 2,
+      sourceEventsIgnored: 1,
+      sourceEventsFailed: 0,
+      sinkEventsWritten: 2,
+      projector: {
+        name: "uppercase",
+        version: "1",
+      },
     })
   })
 
@@ -105,15 +109,15 @@ describe("event pipeline materialization", () => {
             Effect.succeed(
               event === "project-fail"
                 ? {
-                  events: [],
+                  _tag: "Failed",
                   failures: [{
                     sourceEventId: "project-1",
                     reason: "unsupported-shape",
                   }],
                 }
                 : {
+                  _tag: "Projected",
                   events: [event],
-                  failures: [],
                 },
             ),
         }),
@@ -130,11 +134,11 @@ describe("event pipeline materialization", () => {
     const summary = await runPipeline(layer)
 
     expect(summary).toMatchObject({
-      eventsRead: 3,
-      eventsProjected: 1,
-      eventsIgnored: 0,
-      eventsFailed: 2,
-      eventsWritten: 1,
+      sourceEventsRead: 3,
+      sourceEventsProjected: 1,
+      sourceEventsIgnored: 0,
+      sourceEventsFailed: 2,
+      sinkEventsWritten: 1,
     })
     expect(summary.failures.map(failure => failure.reason)).toEqual([
       "decode-failure",
@@ -160,8 +164,8 @@ describe("event pipeline materialization", () => {
           version: "1",
           project: event =>
             Effect.succeed({
+              _tag: "Projected",
               events: [event],
-              failures: [],
             }),
         }),
       )),
