@@ -9,6 +9,12 @@ boundary needed to prove the path. Each bullet should stay small enough to
 delete or reshape, but complete enough to expose whether the system design is
 actually coherent.
 
+Tracer completion requires a production composition surface. Scenario and test
+code are adjacent proof: they configure the production surface, run it, and
+assert durable outcomes. They do not own the only working Layer graph, stream
+topology, or provider wiring for the tracer path. This is governed by
+`firegrid-platform-invariants.PRODUCTION_SURFACE.*`.
+
 ## Bullets
 
 - [001: Black-Box Agent Output To Runtime Events](./001-black-box-agent-output-to-durable-state.md)
@@ -79,6 +85,10 @@ teach enough about the substrate and ergonomics to sharpen the next one.
 ## Rules
 
 - Start from durable user intent, not from an internal helper.
+- Land a production package or app surface for the path before calling a tracer
+  implemented.
+- Keep scenario wiring thin: scenarios invoke production surfaces instead of
+  becoming hidden composition roots.
 - End at durable, application-observable state.
 - Treat live resources such as process handles, sockets, pipes, and PIDs as
   disposable.

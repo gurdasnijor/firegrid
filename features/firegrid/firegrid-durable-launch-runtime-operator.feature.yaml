@@ -189,3 +189,7 @@ constraints:
         requirement: "`firegrid-execution-plane-resources.*` governs resource identity, secret references, materialization facts, and local-to-remote handoff constraints consumed by launch resource planes."
         deprecated: true
       5: Later provider-conformance lanes govern provider helper config for resources, secret references, and local-to-remote handoff outside tracer 001.
+
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `firegrid-platform-invariants.PRODUCTION_SURFACE.1`, `firegrid-platform-invariants.PRODUCTION_SURFACE.2`, `firegrid-platform-invariants.PRODUCTION_SURFACE.3`, and `firegrid-platform-invariants.PRODUCTION_SURFACE.4`; tracer 001 is not complete when its launch-to-runtime-output path exists only inside scenario or test code.

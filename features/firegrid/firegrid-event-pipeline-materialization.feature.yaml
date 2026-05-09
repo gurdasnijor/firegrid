@@ -10,6 +10,7 @@ components:
       2: The event pipeline reads accepted runtime-output events from a source, projects them, writes projected events to a sink, and returns a summary.
       3: The event pipeline does not import runtime control-plane modules or workflow-engine internals.
       4: Session projection helpers expose EventPipeline layers and return EventPipeline summaries without legacy materializer wrapper types.
+      5: Session and query-engine projection paths expose production composition surfaces that assemble EventPipeline services; scenario code proves those surfaces by invoking them rather than reconstructing private wiring.
 
   SOURCE:
     requirements:
@@ -36,3 +37,7 @@ constraints:
       2: The runtime-output writer is not an event projector or sink; it only journals live runtime facts.
       3: State Protocol and Materialize implementations must sit behind the common event sink interface.
       4: Materialize provisioning and querying live in MaterializeProvider; Materialize is not exposed as an event-pipeline engine.
+
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `firegrid-platform-invariants.PRODUCTION_SURFACE.1`, `firegrid-platform-invariants.PRODUCTION_SURFACE.2`, `firegrid-platform-invariants.PRODUCTION_SURFACE.3`, and `firegrid-platform-invariants.PRODUCTION_SURFACE.4`; event-pipeline tracers are not complete when their only composition root lives in scenario or test code.

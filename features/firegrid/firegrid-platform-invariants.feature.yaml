@@ -51,6 +51,13 @@ components:
       7: Built `dist/` artifacts are not committed; public package manifests use dist-only `exports`, `main`, `types`, and `files` entries produced by build, and `files` includes the package README so consumers see public documentation in the packed tarball.
       8: Cross-repo smokes use `Firegrid.composeRuntime` for runtime composition, public `client.send` / `client.result` / `client.observe` / `client.emit` / `client.events` for application interaction, and public app-owned EventPlane and EventStream descriptors for app state.
 
+  PRODUCTION_SURFACE:
+    requirements:
+      1: A tracer, scenario, smoke, or test does not satisfy a Firegrid feature requirement by implementing the required behavior only inside scenario, test, fixture, or documentation code.
+      2: A tracer is complete only when the feature behavior is reachable through a production package or app surface that scenario and test code invoke as an adjacent proof.
+      3: Cross-plane composition roots that wire control-plane, data-plane, query, or provider services are production modules, not hidden scenario harnesses.
+      4: Scenario-local composition may configure production surfaces and assert durable outcomes, but it does not own the production Layer graph, stream topology, or provider wiring being proved.
+
   ENFORCEMENT:
     requirements:
       1: Each downstream Firegrid lane spec includes a `constraints.INVARIANTS` block citing the relevant `firegrid-platform-invariants.*` ACIDs by full identifier.
