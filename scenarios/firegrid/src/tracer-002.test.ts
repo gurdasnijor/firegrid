@@ -14,9 +14,8 @@ import type {
 } from "@firegrid/protocol/launch"
 import { sessionStateSchema } from "@firegrid/protocol/session"
 import {
-  materializeRuntimeOutputToSession,
-  exampleJsonlSessionMaterializer,
-  StateProtocolProducerLive,
+  projectRuntimeOutputToSessionState,
+  runSessionProjection,
 } from "@firegrid/runtime/data-plane/materialization"
 import {
   startRuntime,
@@ -132,14 +131,16 @@ const runWithFiregrid = <A, E>(
 
 describe("firegrid tracer 002 scenario", () => {
   test("durable-records-and-projections.PROJECTIONS.6 projects assistant payloads with provider-owned changes fields", () => {
-    const result = exampleJsonlSessionMaterializer.project(runtimeOutputEvent({
+    const result = projectRuntimeOutputToSessionState(runtimeOutputEvent({
       contextId: "ctx_collision",
       sequence: 0,
       raw: JSON.stringify({ type: "assistant", text: "pong", changes: [] }),
     }).event)
 
-    expect(result.failures).toEqual([])
-    expect(result.changes).toContainEqual(expect.objectContaining({
+    expect(result).toMatchObject({
+      _tag: "Projected",
+    })
+    expect(result._tag === "Projected" ? result.events : []).toContainEqual(expect.objectContaining({
       kind: "upsertMessage",
       value: expect.objectContaining({
         contextId: "ctx_collision",
@@ -160,25 +161,21 @@ describe("firegrid tracer 002 scenario", () => {
       }),
     ])
 
-    const summary = await Effect.runPromise(materializeRuntimeOutputToSession({
-      sourceDataPlaneStreamUrl: dataPlaneStreamUrl,
-      targetSessionStreamUrl: sessionStreamUrl,
+    const summary = await Effect.runPromise(runSessionProjection({
+      runtimeOutputStreamUrl: dataPlaneStreamUrl,
+      sessionStateStreamUrl: sessionStreamUrl,
       contextId,
-      materializer: exampleJsonlSessionMaterializer,
-    }).pipe(
-      Effect.provide(StateProtocolProducerLive),
-    ))
+    }))
 
     expect(summary).toMatchObject({
-      rowsRead: 1,
-      rowsProjected: 0,
-      rowsIgnored: 0,
-      rowsEmpty: 0,
-      rowsFailed: 1,
-      changesEmitted: 0,
+      sourceEventsRead: 1,
+      sourceEventsProjected: 0,
+      sourceEventsIgnored: 0,
+      sourceEventsFailed: 1,
+      sinkEventsWritten: 0,
     })
     expect(summary.failures).toContainEqual(expect.objectContaining({
-      sourceRuntimeEventId: `event_${contextId}_1_0`,
+      sourceEventId: `event_${contextId}_1_0`,
       reason: "malformed-json",
     }))
 
@@ -207,25 +204,21 @@ describe("firegrid tracer 002 scenario", () => {
       },
     ])
 
-    const summary = await Effect.runPromise(materializeRuntimeOutputToSession({
-      sourceDataPlaneStreamUrl: dataPlaneStreamUrl,
-      targetSessionStreamUrl: sessionStreamUrl,
+    const summary = await Effect.runPromise(runSessionProjection({
+      runtimeOutputStreamUrl: dataPlaneStreamUrl,
+      sessionStateStreamUrl: sessionStreamUrl,
       contextId,
-      materializer: exampleJsonlSessionMaterializer,
-    }).pipe(
-      Effect.provide(StateProtocolProducerLive),
-    ))
+    }))
 
     expect(summary).toMatchObject({
-      rowsRead: 2,
-      rowsProjected: 1,
-      rowsIgnored: 0,
-      rowsEmpty: 0,
-      rowsFailed: 1,
-      changesEmitted: 2,
+      sourceEventsRead: 2,
+      sourceEventsProjected: 1,
+      sourceEventsIgnored: 0,
+      sourceEventsFailed: 1,
+      sinkEventsWritten: 2,
     })
     expect(summary.failures).toContainEqual(expect.objectContaining({
-      sourceRuntimeEventId: `bad_${contextId}`,
+      sourceEventId: `bad_${contextId}`,
       reason: "decode-failure",
     }))
 
@@ -253,20 +246,17 @@ describe("firegrid tracer 002 scenario", () => {
       }),
     ])
 
-    const summary = await Effect.runPromise(materializeRuntimeOutputToSession({
-      sourceDataPlaneStreamUrl: dataPlaneStreamUrl,
-      targetSessionStreamUrl: sessionStreamUrl,
+    const summary = await Effect.runPromise(runSessionProjection({
+      runtimeOutputStreamUrl: dataPlaneStreamUrl,
+      sessionStateStreamUrl: sessionStreamUrl,
       contextId,
-      materializer: exampleJsonlSessionMaterializer,
       since: { activityAttempt: 1, sequence: 0 },
-    }).pipe(
-      Effect.provide(StateProtocolProducerLive),
-    ))
+    }))
 
     expect(summary).toMatchObject({
-      rowsRead: 1,
-      rowsProjected: 1,
-      changesEmitted: 2,
+      sourceEventsRead: 1,
+      sourceEventsProjected: 1,
+      sinkEventsWritten: 2,
       failures: [],
     })
 
@@ -332,25 +322,21 @@ console.error("diagnostic: tracer-002")
       event.event.contextId === handle.contextId)
     expect(sourceEvent).toBeDefined()
 
-    const materialize = materializeRuntimeOutputToSession({
-      sourceDataPlaneStreamUrl: dataPlaneStreamUrl,
-      targetSessionStreamUrl: sessionStreamUrl,
+    const materialize = runSessionProjection({
+      runtimeOutputStreamUrl: dataPlaneStreamUrl,
+      sessionStateStreamUrl: sessionStreamUrl,
       contextId: handle.contextId,
-      materializer: exampleJsonlSessionMaterializer,
-    }).pipe(
-      Effect.provide(StateProtocolProducerLive),
-    )
+    })
 
     const firstSummary = await Effect.runPromise(materialize)
     const secondSummary = await Effect.runPromise(materialize)
 
     expect(firstSummary).toMatchObject({
-      rowsRead: 1,
-      rowsProjected: 1,
-      rowsIgnored: 0,
-      rowsEmpty: 0,
-      rowsFailed: 0,
-      changesEmitted: 2,
+      sourceEventsRead: 1,
+      sourceEventsProjected: 1,
+      sourceEventsIgnored: 0,
+      sourceEventsFailed: 0,
+      sinkEventsWritten: 2,
       failures: [],
     })
     expect(secondSummary).toMatchObject(firstSummary)

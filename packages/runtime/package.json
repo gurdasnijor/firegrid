@@ -21,9 +21,9 @@
       "types": "./src/data-plane/materialization/index.ts",
       "default": "./src/data-plane/materialization/index.ts"
     },
-    "./data-plane/materialization/engines": {
-      "types": "./src/data-plane/materialization/engines/index.ts",
-      "default": "./src/data-plane/materialization/engines/index.ts"
+    "./data-plane/materialization/materialize": {
+      "types": "./src/data-plane/materialization/materialize/index.ts",
+      "default": "./src/data-plane/materialization/materialize/index.ts"
     }
   },
   "bin": {

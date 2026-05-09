@@ -5,18 +5,13 @@ import { Effect, Either, Layer, Schema } from "effect"
 import {
   EventSink,
   EventSinkError,
-} from "./event-pipeline.ts"
+} from "../../event-pipeline.ts"
 import {
-  MaterializationEngine as MaterializeProjectionProvider,
+  MaterializeProvider,
   type RuntimeOutputProjectionTarget,
-} from "./engines/index.ts"
+} from "../../materialize/index.ts"
 
 export interface MaterializeEventSinkOptions {
-  /**
-   * Provisioned Materialize runtime-output target. Provisioning and query
-   * helpers remain on the Materialize provider; this layer is only the common
-   * EventSink adapter.
-   */
   readonly target: RuntimeOutputProjectionTarget
 }
 
@@ -39,7 +34,7 @@ export const MaterializeEventSinkLive = (
   Layer.effect(
     EventSink,
     Effect.gen(function* () {
-      const materialize = yield* MaterializeProjectionProvider
+      const materialize = yield* MaterializeProvider
 
       return EventSink.of({
         writeAll: events =>
@@ -56,3 +51,4 @@ export const MaterializeEventSinkLive = (
       })
     }),
   )
+

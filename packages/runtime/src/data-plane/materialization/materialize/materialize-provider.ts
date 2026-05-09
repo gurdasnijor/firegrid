@@ -3,19 +3,19 @@ import { SqlClient } from "@effect/sql"
 import type { RuntimeJournalEvent } from "@firegrid/protocol/launch"
 import { Effect, Layer, Stream } from "effect"
 import {
-  MaterializationEngine,
-  MaterializationEngineError,
-  type MaterializationQuery,
+  MaterializeProvider,
+  MaterializeProviderError,
+  type MaterializeQuery,
   type RuntimeOutputProjectionPlan,
   type RuntimeOutputProjectionTarget,
-} from "./engine.ts"
+} from "./materialize-types.ts"
 
 export interface MaterializeRuntimeOutputProjectionPlan
   extends RuntimeOutputProjectionPlan {
   readonly runtimeEventsViewName?: string
 }
 
-const engine = "materialize"
+const provider = "materialize"
 
 const schemaNameFor = (
   plan: RuntimeOutputProjectionPlan,
@@ -40,7 +40,7 @@ const targetFor = (
   plan: MaterializeRuntimeOutputProjectionPlan,
 ): RuntimeOutputProjectionTarget => {
   const base = {
-    engine,
+    provider,
     sourceName: plan.sourceName,
     databaseName: databaseNameFor(plan),
     schemaName: schemaNameFor(plan),
@@ -53,8 +53,8 @@ const targetFor = (
 const mapError = (
   op: string,
   cause: unknown,
-): MaterializationEngineError =>
-  new MaterializationEngineError({ engine, op, cause })
+): MaterializeProviderError =>
+  new MaterializeProviderError({ provider, op, cause })
 
 const provisionSql = (
   plan: MaterializeRuntimeOutputProjectionPlan,
@@ -92,7 +92,7 @@ export const materializeRuntimeEventsQuery = (
     readonly contextId?: string
     readonly limit?: number
   } = {},
-): MaterializationQuery<{
+): MaterializeQuery<{
   readonly event_type: string
   readonly journal_id: string
   readonly journal_at: string
@@ -131,7 +131,7 @@ export const materializeRuntimeEventsSubscribe = (
   options: {
     readonly contextId?: string
   } = {},
-): MaterializationQuery<{
+): MaterializeQuery<{
   readonly mz_timestamp: unknown
   readonly mz_diff: unknown
   readonly event_id: string
@@ -158,14 +158,14 @@ SUBSCRIBE (
   }
 }
 
-export const MaterializeMaterializationEngineLive = Layer.effect(
-  MaterializationEngine,
+export const MaterializeProviderLive = Layer.effect(
+  MaterializeProvider,
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
 
-    return MaterializationEngine.of({
-      name: engine,
-      provisionRuntimeOutput: plan =>
+    return MaterializeProvider.of({
+      name: provider,
+      provisionRuntimeOutputProjection: plan =>
         Effect.suspend(() => {
           const [createSchema, createSource, createRuntimeEventsView] = provisionSql(plan, sql)
           return createSchema.pipe(
@@ -208,9 +208,9 @@ export const MaterializeMaterializationEngineLive = Layer.effect(
   }),
 )
 
-export const MaterializeMaterializationEnginePgLive = (
+export const MaterializeProviderPgLive = (
   config: PgClient.PgClientConfig,
 ) =>
-  MaterializeMaterializationEngineLive.pipe(
+  MaterializeProviderLive.pipe(
     Layer.provide(PgClient.layer(config)),
   )

@@ -9,6 +9,7 @@ components:
       1: An event pipeline composes an event source, event projector, and event sink as replaceable Effect services.
       2: The event pipeline reads accepted runtime-output events from a source, projects them, writes projected events to a sink, and returns a summary.
       3: The event pipeline does not import runtime control-plane modules or workflow-engine internals.
+      4: Session projection helpers expose EventPipeline layers and return EventPipeline summaries without legacy materializer wrapper types.
 
   SOURCE:
     requirements:
@@ -20,6 +21,7 @@ components:
       1: An event projector is a provider/user-defined pure interpretation layer over accepted source events.
       2: Event projectors expose stable `name` and `version` fields for idempotency and migration.
       3: Event projectors do not write to streams, query engines, workflow state, or live process resources.
+      4: Event projector results are tagged as projected, ignored, or failed so successful projected events are never mixed with projector failures.
 
   SINK:
     requirements:
@@ -33,3 +35,4 @@ constraints:
       1: Durable Streams runtime-output rows remain the source of truth; event sinks are derived outputs.
       2: The runtime-output writer is not an event projector or sink; it only journals live runtime facts.
       3: State Protocol and Materialize implementations must sit behind the common event sink interface.
+      4: Materialize provisioning and querying live in MaterializeProvider; Materialize is not exposed as an event-pipeline engine.
