@@ -9,8 +9,6 @@
     "dataTaggedErrorDeclarationCount": 3,
     "newDurableStreamSiteCount": 1,
     "perCallLayerProvideSiteCount": 0,
-    "effectOrDieSiteCount": 1,
-    "effectRunPromiseInTestsCount": 10,
-    "vitestItImportInTestsCount": 4
+    "effectOrDieSiteCount": 1
   }
 }
