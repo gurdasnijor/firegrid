@@ -1,7 +1,7 @@
 import type { RuntimeJournalEvent } from "@firegrid/protocol/launch"
-import type { Scope } from "effect"
-import { Context, Effect, Schema, Stream } from "effect"
 import type { Constructor, Statement } from "@effect/sql/Statement"
+import type { Effect, Scope, Stream } from "effect"
+import { Context, Schema } from "effect"
 
 export class MaterializationEngineError extends Schema.TaggedError<MaterializationEngineError>()(
   "MaterializationEngineError",

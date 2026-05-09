@@ -1,7 +1,7 @@
 import { PgClient } from "@effect/sql-pg"
 import { SqlClient } from "@effect/sql"
 import type { RuntimeJournalEvent } from "@firegrid/protocol/launch"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Effect, Layer, Stream } from "effect"
 import {
   MaterializationEngine,
   MaterializationEngineError,
