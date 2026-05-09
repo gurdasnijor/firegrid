@@ -30,6 +30,7 @@ topology, or provider wiring for the tracer path. This is governed by
 
 - [Durable Streams As Runtime Truth, Durable State As Projection](../proposals/ADR_STREAMS_AS_RUNTIME_TRUTH_STATE_AS_PROJECTION.md)
 - [Runtime Control Plane And Data Plane Boundary](../proposals/ADR_RUNTIME_CONTROL_PLANE_AND_DATA_PLANE_BOUNDARY.md)
+- [Firegrid Runtime Package Has No Production Root](../proposals/SDD_FIREGRID_RUNTIME_PACKAGE_HAS_NO_PRODUCTION_ROOT.md)
 
 ## Sequence
 
