@@ -10,12 +10,12 @@
       "default": "./src/index.ts"
     },
     "./Workflows": {
-      "types": "./src/durable-workflow/workflows.ts",
-      "default": "./src/durable-workflow/workflows.ts"
+      "types": "./src/control-plane/workflow-engine/workflows.ts",
+      "default": "./src/control-plane/workflow-engine/workflows.ts"
     },
-    "./launch": {
-      "types": "./src/launch.ts",
-      "default": "./src/launch.ts"
+    "./data-plane/execution/sandbox": {
+      "types": "./src/data-plane/execution/sandbox/index.ts",
+      "default": "./src/data-plane/execution/sandbox/index.ts"
     }
   },
   "bin": {

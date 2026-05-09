@@ -16,7 +16,7 @@ import { Effect, Layer, Stream } from "effect"
 const FiregridBrowserLive = FiregridLive.pipe(
   Layer.provide(
     Layer.succeed(FiregridConfig, {
-      launchStreamUrl: import.meta.env.VITE_DURABLE_STREAMS_URL,
+      runtimeStreamUrl: import.meta.env.VITE_DURABLE_STREAMS_URL,
     }),
   ),
 )
@@ -33,4 +33,4 @@ const program = Effect.gen(function* () {
 }).pipe(Effect.provide(FiregridBrowserLive))
 ```
 
-`launch(...)` assigns the launch id internally and appends normalized durable launch intent. Runtime execution, sandbox streaming, journaling rules, readiness, restart, and product/session materialization are not part of the client launch input.
+`launch(...)` assigns the runtime context id internally and appends a normalized durable runtime context. Runtime execution, sandbox streaming, journaling rules, readiness, restart, and product/session materialization are not part of the client launch input.

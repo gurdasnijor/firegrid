@@ -1,8 +1,8 @@
 import type {
-  LaunchJournalRule,
-  LaunchRuntimeIntent,
   PublicLaunchRuntimeIntent,
+  RuntimeContextIntent,
   RuntimeConfig,
+  RuntimeJournalRule,
 } from "./schema.ts"
 
 const normalizeRuntimeConfig = (config: RuntimeConfig): RuntimeConfig => ({
@@ -11,13 +11,13 @@ const normalizeRuntimeConfig = (config: RuntimeConfig): RuntimeConfig => ({
 })
 
 export const localJsonlJournal = [
-  { source: "stdout", format: "jsonl", stream: "provider-wire" },
-  { source: "stderr", format: "text-lines", stream: "diagnostics" },
-] satisfies ReadonlyArray<LaunchJournalRule>
+  { source: "stdout", format: "jsonl", target: "events" },
+  { source: "stderr", format: "text-lines", target: "logs" },
+] satisfies ReadonlyArray<RuntimeJournalRule>
 
 export const normalizeRuntimeIntent = (
   runtime: PublicLaunchRuntimeIntent,
-): LaunchRuntimeIntent => ({
+): RuntimeContextIntent => ({
   provider: runtime.provider,
   config: normalizeRuntimeConfig(runtime.config),
   // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.8

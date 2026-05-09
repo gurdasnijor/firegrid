@@ -185,7 +185,7 @@ Outputs:
 - `docs/dependency-graph-flamecast.mmd` — Flamecast app internals.
 - `docs/dependency-graph-detail.mmd` — workspace module-level imports.
 - `docs/dependency-graph-runtime-detail.mmd` — runtime module-level imports.
-- `docs/dependency-graph-runtime-durable-launch-detail.mmd` — durable-launch module-level imports.
+- `docs/dependency-graph-runtime-control-data-detail.mmd` — runtime control/data module-level imports.
 - `docs/dependency-graph-flamecast-detail.mmd` — Flamecast module-level imports.
 
 Focused graph targets:
@@ -278,7 +278,7 @@ Tracked metrics in the ratchet baseline:
 - `anyNoContextCastCount` — `as Schema.Schema.AnyNoContext` casts. Ratcheted; centralize behind a single helper at the descriptor or schema boundary (Q3 owns).
 - `nodeCryptoImportCount` — `import … from "node:crypto"` in package source. Ratcheted; replace with an injectable IdGen service (Q4 owns).
 - `dataTaggedErrorDeclarationCount` — `class … extends Data.TaggedError(...)` declarations. Ratcheted at the current count to lock in shape (no `extends Error` regressions sneaking in alongside legitimate tagged-error additions). New tagged-error classes are part of normal feature work; the documented happy path for adding one is to land the class and then re-run `pnpm run lint:effect-quality:baseline` in the same PR with an ACID reference for the new error in the commit message. The ratchet is a structural ceiling that never auto-raises, not a feature freeze on tagged errors.
-- `newDurableStreamSiteCount` — `new DurableStream(...)` constructor sites in package source. Ratcheted; migrate to a future `acquireDurableStream` helper.
+- `newDurableStreamSiteCount` — `new DurableStream(...)` constructor sites in package source. Ratcheted; direct construction is acceptable at explicit runtime data-plane stream boundaries, but new sites elsewhere should either reuse an existing boundary or justify a baseline update in the same PR.
 - `perCallLayerProvideSiteCount` — `Effect.provide(*Live(cfg))` invocations inside per-call helpers (`withSubstrate`, etc.). Ratcheted; hoist live layer construction (Q4 owns).
 - `effectOrDieSiteCount` — `Effect.orDie`, `Layer.orDie`, `Effect.die`, `Effect.dieMessage`. Ratcheted; documented as a policy exception.
 - `effectRunPromiseInTestsCount` — `Effect.runPromise`, `runSync`, `runFork`, `runPromiseExit` calls in `__tests__/`. Ratcheted; migrate via `@effect/vitest`.

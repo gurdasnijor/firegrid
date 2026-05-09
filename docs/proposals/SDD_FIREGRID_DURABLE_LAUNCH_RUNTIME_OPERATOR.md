@@ -2,7 +2,9 @@
 
 Date: 2026-05-07
 
-Status: Proposal, backed by `firegrid-durable-launch-runtime-operator.*`
+Status: Historical proposal. The current implementation direction is governed
+by `docs/tracers/001-black-box-agent-output-to-durable-state.md` and
+`docs/proposals/ADR_RUNTIME_CONTROL_PLANE_AND_DATA_PLANE_BOUNDARY.md`.
 
 Scope: A Firegrid capability for subscribing to durable launch facts and
 starting disposable runtime processes whose observable state is entirely

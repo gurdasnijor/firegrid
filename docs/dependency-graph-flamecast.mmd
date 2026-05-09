@@ -12,22 +12,24 @@ end
 subgraph 6["packages"]
 subgraph 7["runtime"]
 subgraph 8["src"]
-subgraph 9["durable-workflow"]
-A["clock.ts"]
-B["codec.ts"]
-C["engine-runtime.ts"]
-D["state.ts"]
-E["workflows.ts"]
+subgraph 9["control-plane"]
+subgraph A["workflow-engine"]
+B["clock.ts"]
+C["codec.ts"]
+D["engine-runtime.ts"]
+E["state.ts"]
+F["workflows.ts"]
+end
 end
 end
 end
 end
 3-->5
 4-->5
-4-->E
-A-->D
-C-->B
-C-->D
-E-->A
-E-->C
-E-->D
+4-->F
+B-->E
+D-->C
+D-->E
+F-->B
+F-->D
+F-->E

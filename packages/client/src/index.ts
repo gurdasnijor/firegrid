@@ -9,6 +9,6 @@ export {
   type ClientOptions,
   type FiregridError,
   type FiregridService,
-  type LaunchHandle,
-  type LaunchSnapshot,
+  type RuntimeContextHandle,
+  type RuntimeContextSnapshot,
 } from "./firegrid.ts"
