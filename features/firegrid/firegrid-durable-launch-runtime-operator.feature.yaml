@@ -11,11 +11,11 @@ components:
         requirement: Runtime stop is requested by appending a durable stop row to the same launch authority, not by treating a live process handle as authority.
         deprecated: true
       3: The internally assigned launch id is the v1 idempotency key for duplicate launch workflow execution unless a later spec introduces a separate dedupe key.
-      4: Logical launch rows and runtime process-attempt rows are separate durable facts; launch lifecycle projections fold over one launch and N process attempts.
+      4: Logical launch rows and process event rows are separate durable facts; launch lifecycle projections fold over one launch and N process attempts.
       5:
         requirement: Launch request specs carry secret references only; adapters reject raw secret material in durable target specs.
         deprecated: true
-      6: Public launch requests contain a provider helper result plus optional caller metadata; callers do not provide launch id, planes, bindings, stream URLs, journal config, readiness, rebuild, or restart policy.
+      6: Public launch requests contain a provider helper result plus optional caller metadata; callers do not provide launch id, planes, bindings, stream URLs, journal config, raw env values, readiness, rebuild, or restart policy.
       7: Firegrid normalizes a public launch request into an internal launch row that contains the assigned launch id, requested time, runtime provider, runtime config, and provider-owned journal mapping.
       8: Local JSONL launch helpers configure stdout as provider-wire JSONL and stderr as diagnostic text without exposing those journal rules on the public launch request.
 
@@ -99,7 +99,7 @@ components:
     requirements:
       1: Stdout chunks mapped to provider-wire are appended as durable raw rows before downstream consumers can observe provider content.
       2: Stderr chunks mapped to diagnostics are appended as durable diagnostic rows before the process exit row is appended.
-      3: Provider-wire JSONL rows preserve the raw line and include a parse status that distinguishes valid JSON from malformed JSON without interpreting provider-specific schemas.
+      3: Provider-wire JSONL rows preserve the raw line without parsing or interpreting provider-specific schemas in the launcher.
       4: Process exited rows are appended only after prior emitted output chunks from the sandbox stream have been durably journaled.
       5: Late consumers can read retained durable provider-wire rows after the launched process has exited.
       6: Provider-wire and diagnostic rows include a durable per-attempt sequence so retained consumers do not rely on wall-clock timestamp ordering.

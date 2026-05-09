@@ -130,8 +130,8 @@ const makeRuntimeLaunchStreamDb = (
           request => `firegrid-launch:${request.launchId}`,
         ),
         appendProcessEvent: stateAction(
-          db.collections.runtimeProcesses,
-          runtimeLaunchStateSchema.runtimeProcesses,
+          db.collections.processEvents,
+          runtimeLaunchStateSchema.processEvents,
           (event: RuntimeProcessEvent) => event.processEventId,
         ),
         appendProviderWireRow: stateAction(
@@ -175,7 +175,7 @@ export const RuntimeLaunchDbLive = (
         getLaunchRequest: launchId =>
           Option.fromNullable(db.collections.launchRequests.get(launchId)),
         processEventsFor: launchId =>
-          Array.from(db.collections.runtimeProcesses.state.values() as Iterable<RuntimeProcessEvent>)
+          Array.from(db.collections.processEvents.state.values() as Iterable<RuntimeProcessEvent>)
             .filter(event => event.launchId === launchId),
         providerWireFor: launchId =>
           Array.from(db.collections.providerWire.state.values() as Iterable<ProviderWireRow>)

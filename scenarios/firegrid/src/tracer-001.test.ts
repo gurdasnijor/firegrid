@@ -101,7 +101,6 @@ console.error("diagnostic: client-to-runtime")
       launchId: handle.launchId,
       channel: "stdout",
       stream: "provider-wire",
-      parseStatus: "valid-json",
       raw: "{\"type\":\"assistant\",\"text\":\"pong\"}",
     }))
     expect(snapshot.diagnostics).toContainEqual(expect.objectContaining({

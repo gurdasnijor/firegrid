@@ -2,10 +2,9 @@ import { Activity, Workflow } from "@effect/workflow"
 import { RuntimeLaunchRequestSchema } from "@firegrid/protocol/launch"
 import { Effect, Option, Schema, Stream } from "effect"
 import { commandForLaunch } from "./command.ts"
-import { SandboxProvider, type ProcessOutputChunk } from "./execution/sandbox.ts"
+import { SandboxProvider, type ProcessOutputChunk, type SandboxProviderError } from "./execution/sandbox.ts"
 import {
   asLaunchError,
-  mapLaunchError,
   RuntimeLaunchError,
 } from "./errors.ts"
 import {
@@ -17,6 +16,11 @@ import {
   ProcessAttemptResultSchema,
 } from "./schema.ts"
 import { RuntimeLaunchDb } from "./store.ts"
+
+type SequencedChunk = {
+  readonly sequence: number
+  readonly chunk: ProcessOutputChunk
+}
 
 export const LaunchAgentWorkflow = Workflow.make({
   name: "firegrid.launch-agent",
@@ -66,8 +70,6 @@ export const LaunchAgentWorkflowLayer = LaunchAgentWorkflow.toLayer(
             },
           }),
           sandbox => provider.destroy(sandbox).pipe(Effect.ignore),
-        ).pipe(
-          mapLaunchError("sandbox.getOrCreate", "failed to get or create sandbox", launch.launchId),
         )
 
         // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.2
@@ -95,22 +97,19 @@ export const LaunchAgentWorkflowLayer = LaunchAgentWorkflow.toLayer(
           Stream.mapAccum(0, (sequence, chunk) => [
             sequence + 1,
             { sequence, chunk },
-          ] as const),
+          ] as const satisfies readonly [number, SequencedChunk]),
           Stream.tap(({ chunk, sequence }) => {
             if (chunk.type === "exit") return Effect.void
             // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.7
             return journalOutputChunk(db, launch, activityAttempt, sequence, chunk)
           }),
-          Stream.filter((item): item is {
+          Stream.filter((item): item is SequencedChunk & {
             readonly sequence: number
             readonly chunk: Extract<ProcessOutputChunk, { readonly type: "exit" }>
           } =>
             item.chunk.type === "exit",
           ),
           Stream.runHead,
-          Effect.mapError(cause =>
-            asLaunchError("sandbox.stream", "failed while streaming process output", launch.launchId, cause),
-          ),
           Effect.flatMap(Option.match({
             onNone: () =>
               Effect.fail(asLaunchError(
@@ -138,7 +137,10 @@ export const LaunchAgentWorkflowLayer = LaunchAgentWorkflow.toLayer(
         )
 
         return yield* streamProcess
-      }),
+      }).pipe(
+        Effect.catchTag("SandboxProviderError", (cause: SandboxProviderError) =>
+          Effect.fail(asLaunchError(`sandbox.${cause.op}`, cause.message, launch.launchId, cause))),
+      ),
     })
 
     return {

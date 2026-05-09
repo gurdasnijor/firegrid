@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Either, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   local,
@@ -33,8 +33,8 @@ describe("@firegrid/protocol launch schema", () => {
     expect(row.type).toEqual("firegrid.launch.request")
   })
 
-  it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 decodes the thin public launch request", () => {
-    const decoded = Schema.decodeUnknownSync(PublicLaunchRequestSchema)({
+  it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 rejects public launch requests with env or journal fields", () => {
+    const decoded = Schema.decodeUnknownEither(PublicLaunchRequestSchema)({
       runtime: {
         provider: "local-process",
         config: {
@@ -50,12 +50,10 @@ describe("@firegrid/protocol launch schema", () => {
       },
     })
 
-    expect(decoded.runtime.config.argv).toEqual(["node", "--version"])
-    expect("journal" in decoded.runtime).toBe(false)
-    expect("env" in decoded.runtime.config).toBe(false)
+    expect(Either.isLeft(decoded)).toBe(true)
   })
 
-  it("firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.3 decodes provider-wire rows with parser status", () => {
+  it("firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.3 decodes provider-wire rows without parsing provider JSON", () => {
     const row = runtimeLaunchStateSchema.providerWire.insert({
       value: {
         providerWireRowId: "provider-wire-1",
@@ -67,7 +65,6 @@ describe("@firegrid/protocol launch schema", () => {
         stream: "provider-wire",
         receivedAt: "2026-05-07T00:00:00.000Z",
         raw: "{\"type\":\"assistant\"}",
-        parseStatus: "valid-json",
       },
     })
 

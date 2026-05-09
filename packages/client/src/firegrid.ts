@@ -42,7 +42,7 @@ export interface LaunchSnapshot {
   readonly launchId: string
   readonly request?: RuntimeLaunchRequest
   readonly status?: RuntimeProcessEvent["status"]
-  readonly runtimeProcesses: ReadonlyArray<RuntimeProcessEvent>
+  readonly processEvents: ReadonlyArray<RuntimeProcessEvent>
   readonly providerWire: ReadonlyArray<ProviderWireRow>
   readonly diagnostics: ReadonlyArray<DiagnosticRow>
 }
@@ -98,7 +98,7 @@ const normalizeLaunch = (request: PublicLaunchRequest): RuntimeLaunchRequest => 
 const decodePublicLaunchRequest = (
   request: PublicLaunchRequest,
 ): Effect.Effect<PublicLaunchRequest, LaunchInputError> =>
-  Schema.decodeUnknown(PublicLaunchRequestSchema)(request).pipe(
+  Schema.decodeUnknown(PublicLaunchRequestSchema, { onExcessProperty: "error" })(request).pipe(
     Effect.mapError(cause => new LaunchInputError({ cause })),
   )
 
@@ -135,7 +135,7 @@ const make = Effect.gen(function* () {
 
   const readSnapshot = (launchId: string): LaunchSnapshot => {
     const request = db.collections.launchRequests.get(launchId)
-    const runtimeProcesses = Array.from(db.collections.runtimeProcesses.state.values() as Iterable<RuntimeProcessEvent>)
+    const processEvents = Array.from(db.collections.processEvents.state.values() as Iterable<RuntimeProcessEvent>)
       .filter(event => event.launchId === launchId)
       .sort((left, right) => left.at.localeCompare(right.at))
     const providerWire = Array.from(db.collections.providerWire.state.values() as Iterable<ProviderWireRow>)
@@ -144,12 +144,12 @@ const make = Effect.gen(function* () {
     const diagnostics = Array.from(db.collections.diagnostics.state.values() as Iterable<DiagnosticRow>)
       .filter(row => row.launchId === launchId)
       .sort(compareJournalRows)
-    const status = latestStatus(runtimeProcesses)
+    const status = latestStatus(processEvents)
     return {
       launchId,
       ...(request === undefined ? {} : { request }),
       ...(status === undefined ? {} : { status }),
-      runtimeProcesses,
+      processEvents,
       providerWire,
       diagnostics,
     }
@@ -166,12 +166,12 @@ const make = Effect.gen(function* () {
           }
           push()
           const launches = db.collections.launchRequests.subscribeChanges(push)
-          const runtimeProcesses = db.collections.runtimeProcesses.subscribeChanges(push)
+          const processEvents = db.collections.processEvents.subscribeChanges(push)
           const providerWire = db.collections.providerWire.subscribeChanges(push)
           const diagnostics = db.collections.diagnostics.subscribeChanges(push)
           return () => {
             launches.unsubscribe()
-            runtimeProcesses.unsubscribe()
+            processEvents.unsubscribe()
             providerWire.unsubscribe()
             diagnostics.unsubscribe()
           }

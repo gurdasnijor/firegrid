@@ -21,6 +21,11 @@ import {
   makeWorkflowStateStore,
 } from "../durable-workflow/workflows.ts"
 
+const LaunchTestLive = Layer.mergeAll(
+  LocalProcessSandboxProviderLive,
+  NodeContext.layer,
+)
+
 let server: DurableStreamTestServer | undefined
 
 beforeEach(async () => {
@@ -89,10 +94,7 @@ console.error("diagnostic: child stderr")
         workflowStreamUrl,
         launchId,
       }).pipe(
-        Effect.provide(Layer.mergeAll(
-          LocalProcessSandboxProviderLive,
-          NodeContext.layer,
-        )),
+        Effect.provide(LaunchTestLive),
       ),
     )
 
@@ -133,7 +135,6 @@ console.error("diagnostic: child stderr")
       channel: "stdout",
       format: "jsonl",
       stream: "provider-wire",
-      parseStatus: "valid-json",
     })
     expect(JSON.parse(retained.providerWireRows[0]?.raw ?? "{}")).toMatchObject({
       type: "assistant",
@@ -141,7 +142,6 @@ console.error("diagnostic: child stderr")
     expect(retained.providerWireRows[1]).toMatchObject({
       sequence: 1,
       raw: "{malformed",
-      parseStatus: "malformed-json",
     })
 
     expect(retained.diagnosticRows).toContainEqual(expect.objectContaining({
@@ -181,10 +181,7 @@ console.error("diagnostic: child stderr")
         workflowStreamUrl,
         launchId,
       }).pipe(
-        Effect.provide(Layer.mergeAll(
-          LocalProcessSandboxProviderLive,
-          NodeContext.layer,
-        )),
+        Effect.provide(LaunchTestLive),
       )),
     )
 

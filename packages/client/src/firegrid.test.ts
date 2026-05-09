@@ -59,19 +59,10 @@ describe("@firegrid/client", () => {
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* firegrid.launch({
-          runtime: {
-            provider: "local-process",
-            config: {
-              argv: ["node", "--version"],
-              env: {
-                ANTHROPIC_API_KEY: "must-not-persist",
-              },
-            },
-            journal: [
-              { source: "stdout", format: "text-lines", stream: "diagnostics" },
-            ],
-          },
-        } as unknown as PublicLaunchRequest)
+          runtime: local.jsonl({
+            argv: ["node", "--version"],
+          }),
+        })
       }),
     )
 
@@ -96,7 +87,6 @@ describe("@firegrid/client", () => {
           },
         },
       })
-      expect("env" in (request?.runtime.config ?? {})).toBe(false)
       expect(request?.runtime.journal).toContainEqual({
         source: "stdout",
         format: "jsonl",
@@ -123,7 +113,7 @@ describe("@firegrid/client", () => {
     )
 
     expect(snapshot.request?.runtime.provider).toEqual("local-process")
-    expect(snapshot.runtimeProcesses).toEqual([])
+    expect(snapshot.processEvents).toEqual([])
     expect(snapshot.providerWire).toEqual([])
     expect(snapshot.diagnostics).toEqual([])
   })
@@ -166,6 +156,39 @@ describe("@firegrid/client", () => {
             },
           },
         } as unknown as PublicLaunchRequest))
+      }),
+    )
+
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      expect(result.left).toMatchObject({
+        _tag: "LaunchInputError",
+      })
+    }
+  })
+
+  it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 rejects public launch input with raw env or journal fields", async () => {
+    const launchStreamUrl = await createStreamUrl("launch")
+    const request: unknown = {
+      runtime: {
+        provider: "local-process",
+        config: {
+          argv: ["node", "--version"],
+          env: {
+            ANTHROPIC_API_KEY: "must-not-persist",
+          },
+        },
+        journal: [
+          { source: "stdout", format: "text-lines", stream: "diagnostics" },
+        ],
+      },
+    }
+
+    const result = await runWithFiregrid(
+      launchStreamUrl,
+      Effect.gen(function* () {
+        const firegrid = yield* Firegrid
+        return yield* Effect.either(firegrid.launch(request as PublicLaunchRequest))
       }),
     )
 

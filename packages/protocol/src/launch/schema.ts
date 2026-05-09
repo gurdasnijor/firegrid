@@ -41,6 +41,10 @@ export type PublicLaunchRuntimeIntent = Schema.Schema.Type<typeof PublicLaunchRu
 export const PublicLaunchRequestSchema = Schema.Struct({
   runtime: PublicLaunchRuntimeIntentSchema,
   requestedBy: Schema.optional(Schema.String),
+}).annotations({
+  parseOptions: {
+    onExcessProperty: "error",
+  },
 })
 export type PublicLaunchRequest = Schema.Schema.Type<typeof PublicLaunchRequestSchema>
 
@@ -76,7 +80,6 @@ export const ProviderWireRowSchema = Schema.Struct({
   stream: Schema.Literal("provider-wire"),
   receivedAt: Schema.String,
   raw: Schema.String,
-  parseStatus: Schema.Literal("valid-json", "malformed-json"),
 })
 export type ProviderWireRow = Schema.Schema.Type<typeof ProviderWireRowSchema>
 

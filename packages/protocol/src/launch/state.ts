@@ -13,8 +13,8 @@ export const runtimeLaunchStateSchema = createStateSchema({
     primaryKey: "launchId",
     schema: Schema.standardSchemaV1(RuntimeLaunchRequestSchema),
   },
-  runtimeProcesses: {
-    type: "firegrid.launch.runtime_process",
+  processEvents: {
+    type: "firegrid.launch.process_event",
     primaryKey: "processEventId",
     schema: Schema.standardSchemaV1(RuntimeProcessEventSchema),
   },

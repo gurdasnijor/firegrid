@@ -14,15 +14,6 @@ import type { RuntimeLaunchDbService } from "./store.ts"
 
 const nowIso = (): string => new Date().toISOString()
 
-const parseStatus = (raw: string): "valid-json" | "malformed-json" => {
-  try {
-    JSON.parse(raw)
-    return "valid-json"
-  } catch {
-    return "malformed-json"
-  }
-}
-
 export const appendProcessEvent = (
   db: RuntimeLaunchDbService,
   options: {
@@ -73,7 +64,6 @@ export const journalOutputChunk = (
       stream: "provider-wire",
       receivedAt,
       raw: chunk.text,
-      parseStatus: parseStatus(chunk.text),
     }).pipe(
       mapLaunchError("journal.provider-wire", "failed to append provider-wire row", launch.launchId),
     )
