@@ -124,11 +124,17 @@ Generated architecture graphs are intentionally out of scope for this tracer.
 - ACP parsing does not move into the runtime-output writer.
 - Do not reintroduce `MaterializationEngine`, `MaterializerSummary`, or legacy
   compatibility wrappers.
+- Do not replace the live Materialize scenario with an in-memory or mocked SQL
+  test. Package tests may supplement the scenario but cannot complete it.
 
 ## Minimal Proof
 
-The first scenario may assume a locally running Materialize instance and skip
-when required connection configuration is absent. It should prove:
+The scenario should run against a live Materialize emulator. If Materialize is
+not already reachable, the scenario/harness should start the documented Docker
+emulator before running the projection. Skipping is acceptable only when Docker
+or the Materialize image is unavailable in the environment.
+
+It should prove:
 
 ```txt
 runtime-output Durable Streams facts
@@ -136,11 +142,6 @@ runtime-output Durable Streams facts
   -> Materialize strategy run
   -> common strategy query returns derived session/message rows
 ```
-
-If a live Materialize scenario is too expensive for the first pass, add a
-package-level integration test around the strategy adapter and document the
-exact missing live scenario gate in this tracer file. Do not call the tracer
-complete without a scenario or an explicit skipped-live scenario file.
 
 Local emulator command for the live path:
 
