@@ -27,7 +27,7 @@ const createStreamUrl = async (name: string): Promise<string> => {
 }
 
 describe("firegrid tracer 009 required actions", () => {
-  it("firegrid-required-actions.RECORDS.1 firegrid-required-actions.RECORDS.2 firegrid-required-actions.RECORDS.3 firegrid-required-actions.WORKFLOW.1 firegrid-required-actions.WORKFLOW.2 firegrid-required-actions.WORKFLOW.3 firegrid-required-actions.WORKFLOW.4 firegrid-required-actions.WORKFLOW.5 firegrid-required-actions.BOUNDARY.1 firegrid-required-actions.BOUNDARY.2 firegrid-required-actions.BOUNDARY.3 firegrid-required-actions.BOUNDARY.4 proves required actions unblock through durable workflow state", async () => {
+  it("firegrid-required-actions.RECORDS.1 firegrid-required-actions.RECORDS.2 firegrid-required-actions.RECORDS.3 firegrid-required-actions.RECORDS.4 firegrid-required-actions.WORKFLOW.1 firegrid-required-actions.WORKFLOW.2 firegrid-required-actions.WORKFLOW.3 firegrid-required-actions.WORKFLOW.4 firegrid-required-actions.WORKFLOW.5 firegrid-required-actions.BOUNDARY.1 firegrid-required-actions.BOUNDARY.2 firegrid-required-actions.BOUNDARY.3 firegrid-required-actions.BOUNDARY.4 proves required actions unblock through durable workflow state", async () => {
     const requiredActionStreamUrl = await createStreamUrl("tracer-009-required-action")
     const workflowStreamUrl = await createStreamUrl("tracer-009-workflow")
     const requiredActionId = `req_${crypto.randomUUID()}`
