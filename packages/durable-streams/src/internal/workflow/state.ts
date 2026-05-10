@@ -17,7 +17,7 @@ export class WorkflowStateStoreError extends Schema.TaggedError<WorkflowStateSto
   },
 ) {}
 
-export const WorkflowExecutionRowSchema = Schema.Struct({
+const WorkflowExecutionRowSchema = Schema.Struct({
   executionId: Schema.String,
   workflowName: Schema.String,
   payload: Schema.Unknown,
@@ -28,7 +28,7 @@ export const WorkflowExecutionRowSchema = Schema.Struct({
 })
 export type WorkflowExecutionRow = Schema.Schema.Type<typeof WorkflowExecutionRowSchema>
 
-export const WorkflowActivityRowSchema = Schema.Struct({
+const WorkflowActivityRowSchema = Schema.Struct({
   activityKey: Schema.String,
   executionId: Schema.String,
   activityName: Schema.String,
@@ -37,7 +37,7 @@ export const WorkflowActivityRowSchema = Schema.Struct({
 })
 export type WorkflowActivityRow = Schema.Schema.Type<typeof WorkflowActivityRowSchema>
 
-export const WorkflowActivityClaimRowSchema = Schema.Struct({
+const WorkflowActivityClaimRowSchema = Schema.Struct({
   claimKey: Schema.String,
   executionId: Schema.String,
   activityName: Schema.String,
@@ -47,7 +47,7 @@ export const WorkflowActivityClaimRowSchema = Schema.Struct({
 })
 export type WorkflowActivityClaimRow = Schema.Schema.Type<typeof WorkflowActivityClaimRowSchema>
 
-export const WorkflowDeferredRowSchema = Schema.Struct({
+const WorkflowDeferredRowSchema = Schema.Struct({
   deferredKey: Schema.String,
   workflowName: Schema.String,
   executionId: Schema.String,
@@ -56,7 +56,7 @@ export const WorkflowDeferredRowSchema = Schema.Struct({
 })
 export type WorkflowDeferredRow = Schema.Schema.Type<typeof WorkflowDeferredRowSchema>
 
-export const WorkflowClockWakeupRowSchema = Schema.Struct({
+const WorkflowClockWakeupRowSchema = Schema.Struct({
   clockKey: Schema.String,
   workflowName: Schema.String,
   executionId: Schema.String,
@@ -67,7 +67,7 @@ export const WorkflowClockWakeupRowSchema = Schema.Struct({
 })
 export type WorkflowClockWakeupRow = Schema.Schema.Type<typeof WorkflowClockWakeupRowSchema>
 
-export const workflowStateSchema = createStateSchema({
+const workflowStateSchema = createStateSchema({
   executions: {
     type: "workflow.execution",
     primaryKey: "executionId",

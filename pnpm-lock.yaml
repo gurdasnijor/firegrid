@@ -62,9 +62,9 @@ importers:
       '@effect/workflow':
         specifier: 0.18.1
         version: 0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
-      '@firegrid/runtime':
+      '@firegrid/durable-streams':
         specifier: workspace:*
-        version: link:../../packages/runtime
+        version: link:../../packages/durable-streams
       effect:
         specifier: ^3.18.0
         version: 3.21.2
@@ -102,9 +102,9 @@ importers:
 
   packages/client:
     dependencies:
-      '@durable-streams/state':
-        specifier: ^0.2.5
-        version: 0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))
+      '@firegrid/durable-streams':
+        specifier: workspace:*
+        version: link:../durable-streams
       '@firegrid/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -112,12 +112,37 @@ importers:
         specifier: ^3.18.0
         version: 3.21.2
     devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)
+
+  packages/durable-streams:
+    dependencies:
       '@durable-streams/client':
         specifier: ^0.2.3
         version: 0.2.3
       '@durable-streams/server':
         specifier: ^0.3.1
         version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
+      '@durable-streams/state':
+        specifier: ^0.2.5
+        version: 0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))
+      '@effect/workflow':
+        specifier: 0.18.1
+        version: 0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@firegrid/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      effect:
+        specifier: ^3.18.0
+        version: 3.21.2
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -127,9 +152,6 @@ importers:
 
   packages/protocol:
     dependencies:
-      '@durable-streams/state':
-        specifier: ^0.2.5
-        version: 0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))
       effect:
         specifier: ^3.18.0
         version: 3.21.2
@@ -143,15 +165,6 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@durable-streams/client':
-        specifier: ^0.2.3
-        version: 0.2.3
-      '@durable-streams/server':
-        specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
-      '@durable-streams/state':
-        specifier: ^0.2.5
-        version: 0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))
       '@effect/experimental':
         specifier: 0.60.0
         version: 0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4)
@@ -173,6 +186,9 @@ importers:
       '@effect/workflow':
         specifier: 0.18.1
         version: 0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@firegrid/durable-streams':
+        specifier: workspace:*
+        version: link:../durable-streams
       '@firegrid/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -195,15 +211,15 @@ importers:
 
   scenarios/firegrid:
     dependencies:
-      '@durable-streams/state':
-        specifier: ^0.2.5
-        version: 0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))
       '@effect/platform-node':
         specifier: ^0.106.0
         version: 0.106.0(@effect/cluster@0.58.2(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
       '@firegrid/client':
         specifier: workspace:*
         version: link:../../packages/client
+      '@firegrid/durable-streams':
+        specifier: workspace:*
+        version: link:../../packages/durable-streams
       '@firegrid/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -214,12 +230,6 @@ importers:
         specifier: ^3.18.0
         version: 3.21.2
     devDependencies:
-      '@durable-streams/client':
-        specifier: ^0.2.3
-        version: 0.2.3
-      '@durable-streams/server':
-        specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17

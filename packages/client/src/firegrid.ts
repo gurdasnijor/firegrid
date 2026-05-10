@@ -1,11 +1,11 @@
 import {
-  stream as readStream,
-} from "@durable-streams/client"
-import { createStreamDB } from "@durable-streams/state"
+  createDurableStateDb,
+  readRetainedJson,
+  runtimeContextStateSchema,
+} from "@firegrid/durable-streams"
 import {
   PublicLaunchRequestSchema,
   RuntimeJournalEventSchema,
-  runtimeContextStateSchema,
   local,
   normalizeRuntimeIntent,
   type PublicLaunchRequest,
@@ -139,7 +139,7 @@ const make = Effect.gen(function* () {
   const controlPlaneStreamUrl = cfg.controlPlaneStreamUrl ?? cfg.runtimeStreamUrl
   const dataPlaneStreamUrl = cfg.dataPlaneStreamUrl
   const txTimeoutMs = cfg.txTimeoutMs ?? 2_000
-  const db = createStreamDB({
+  const db = createDurableStateDb({
     streamOptions: {
       url: controlPlaneStreamUrl,
       contentType: cfg.contentType ?? "application/json",
@@ -173,19 +173,10 @@ const make = Effect.gen(function* () {
   const readJournal = (): Effect.Effect<ReadonlyArray<RuntimeJournalEvent>, PreloadError> =>
     dataPlaneStreamUrl === undefined
       ? Effect.succeed([])
-      : Effect.tryPromise({
-        try: async () => {
-          const response = await readStream<unknown>({
-            url: dataPlaneStreamUrl,
-            offset: "-1",
-            live: false,
-            json: true,
-          })
-          const values = await response.json()
-          return values.map(decodeJournalEvent)
-        },
-        catch: cause => new PreloadError({ cause }),
-      })
+      : readRetainedJson<unknown>({ streamUrl: dataPlaneStreamUrl }).pipe(
+        Effect.map(values => values.map(decodeJournalEvent)),
+        Effect.mapError(cause => new PreloadError({ cause })),
+      )
 
   const appendContext = (context: RuntimeContext): Effect.Effect<void, AppendError> =>
     Effect.tryPromise({

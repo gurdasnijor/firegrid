@@ -1,6 +1,8 @@
-import { createStreamDB } from "@durable-streams/state"
 import {
+  createDurableStateDb,
   runtimeContextStateSchema,
+} from "@firegrid/durable-streams"
+import {
   type RuntimeContext,
   type RuntimeRunEvent,
 } from "@firegrid/protocol/launch"
@@ -138,7 +140,7 @@ const makeRuntimeControlPlaneDb = (
   options: RuntimeControlPlaneOptions,
 ) => {
   const txTimeoutMs = Duration.toMillis(Duration.decode(options.txTimeout ?? "2 seconds"))
-  return createStreamDB({
+  return createDurableStateDb({
     streamOptions: {
       url: options.streamUrl,
       contentType: options.contentType ?? "application/json",

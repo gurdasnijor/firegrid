@@ -1,8 +1,10 @@
 import {
-  DurableStream,
-  stream as readStream,
-} from "@durable-streams/client"
-import { DurableStreamTestServer } from "@durable-streams/server"
+  readRetainedJson,
+} from "@firegrid/durable-streams"
+import {
+  startDurableStreamsTestServer,
+  type DurableStreamsTestServerHandle,
+} from "@firegrid/durable-streams/test-utils"
 import { NodeContext } from "@effect/platform-node"
 import {
   local,
@@ -24,18 +26,17 @@ import {
 } from "./service.ts"
 import {
   makeWorkflowStateStore,
-} from "../workflow-engine/workflows.ts"
+} from "@firegrid/durable-streams"
 
 const LaunchTestLive = Layer.mergeAll(
   LocalProcessSandboxProviderLive,
   NodeContext.layer,
 )
 
-let server: DurableStreamTestServer | undefined
+let server: DurableStreamsTestServerHandle | undefined
 
 beforeEach(async () => {
-  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
-  await server.start()
+  server = await startDurableStreamsTestServer()
 })
 
 afterEach(async () => {
@@ -45,12 +46,7 @@ afterEach(async () => {
 
 const createStreamUrl = async (name: string): Promise<string> => {
   if (!server) throw new Error("server not started")
-  const streamUrl = `${server.url}/v1/stream/${name}-${crypto.randomUUID()}`
-  await DurableStream.create({
-    url: streamUrl,
-    contentType: "application/json",
-  })
-  return streamUrl
+  return server.createStreamUrl(name)
 }
 
 const appendRuntimeContext = (
@@ -75,13 +71,7 @@ const appendRuntimeContext = (
 const readDataPlane = async (
   streamUrl: string,
 ): Promise<ReadonlyArray<RuntimeJournalEvent>> => {
-  const response = await readStream<unknown>({
-    url: streamUrl,
-    offset: "-1",
-    live: false,
-    json: true,
-  })
-  const rows = await response.json()
+  const rows = await Effect.runPromise(readRetainedJson<unknown>({ streamUrl }))
   return rows.map(row => Schema.decodeUnknownSync(RuntimeJournalEventSchema)(row))
 }
 

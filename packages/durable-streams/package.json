@@ -1,5 +1,5 @@
 {
-  "name": "@firegrid/protocol",
+  "name": "@firegrid/durable-streams",
   "version": "0.0.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -9,13 +9,9 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./launch": {
-      "types": "./src/launch/index.ts",
-      "default": "./src/launch/index.ts"
-    },
-    "./session": {
-      "types": "./src/session/index.ts",
-      "default": "./src/session/index.ts"
+    "./test-utils": {
+      "types": "./src/test-utils.ts",
+      "default": "./src/test-utils.ts"
     }
   },
   "files": [
@@ -32,9 +28,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@durable-streams/client": "^0.2.3",
+    "@durable-streams/server": "^0.3.1",
+    "@durable-streams/state": "^0.2.5",
+    "@effect/workflow": "0.18.1",
+    "@firegrid/protocol": "workspace:*",
     "effect": "^3.18.0"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   }

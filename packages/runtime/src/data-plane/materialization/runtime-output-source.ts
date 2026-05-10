@@ -1,4 +1,7 @@
-import { stream as readStream } from "@durable-streams/client"
+import {
+  readRetainedJson,
+  type DurableStreamLogError,
+} from "@firegrid/durable-streams"
 import {
   compareRuntimeOutputOrder,
   isAfterRuntimeOutputCursor,
@@ -61,6 +64,11 @@ const mapSourceError = (
 ): EventSourceError =>
   new EventSourceError({ op: cause.op, cause })
 
+const mapDurableStreamLogError = (
+  cause: DurableStreamLogError,
+): RuntimeOutputSourceError =>
+  new RuntimeOutputSourceError({ op: `readRuntimeJournal.${cause.op}`, cause })
+
 /**
  * firegrid-event-pipeline-materialization.SOURCE.1
  * firegrid-event-pipeline-materialization.SOURCE.2
@@ -70,20 +78,9 @@ export const readRuntimeJournal = Effect.fn("readRuntimeJournal")(
     readonly streamUrl: string
     readonly contextId?: string
   }) {
-    const response = yield* Effect.tryPromise({
-      try: () =>
-        readStream<unknown>({
-          url: options.streamUrl,
-          offset: "-1",
-          live: false,
-          json: true,
-        }),
-      catch: cause => new RuntimeOutputSourceError({ op: "readRuntimeJournal.fetch", cause }),
-    })
-    const rows = yield* Effect.tryPromise({
-      try: () => response.json(),
-      catch: cause => new RuntimeOutputSourceError({ op: "readRuntimeJournal.parse", cause }),
-    })
+    const rows = yield* readRetainedJson<unknown>({
+      streamUrl: options.streamUrl,
+    }).pipe(Effect.mapError(mapDurableStreamLogError))
 
     const candidates = options.contextId === undefined
       ? rows

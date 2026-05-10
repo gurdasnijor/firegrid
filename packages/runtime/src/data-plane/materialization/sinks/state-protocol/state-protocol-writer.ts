@@ -1,9 +1,11 @@
-import { IdempotentProducer } from "@durable-streams/client"
-import { sessionStateSchema } from "@firegrid/protocol/session"
+import {
+  openDurableStreamProducer,
+  DurableStreamProducerError,
+  sessionStateSchema,
+} from "@firegrid/durable-streams"
 import type { Scope } from "effect"
-import { Context, Effect, Layer, Option, Queue, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import type { EventProjectorIdentity } from "../../event-pipeline.ts"
-import { makeJsonDurableStream } from "../../../stream.ts"
 import type { SessionStateChange } from "./session-state-change.ts"
 
 export class StateProtocolWriterError extends Schema.TaggedError<StateProtocolWriterError>()(
@@ -19,6 +21,7 @@ export class StateProtocolWriterError extends Schema.TaggedError<StateProtocolWr
 const isTransientWriterCause = (
   cause: unknown,
 ): boolean => {
+  if (cause instanceof DurableStreamProducerError) return cause.transient
   if (!(cause instanceof Error)) return false
   return /abort|connection|econn|fetch|network|timeout|timed out/i.test(
     `${cause.name} ${cause.message}`,
@@ -89,56 +92,24 @@ export const StateProtocolWriterLive = Layer.succeed(
   StateProtocolWriter,
   StateProtocolWriter.of({
     open: options =>
-      Effect.acquireRelease(
-        Effect.gen(function* () {
-          const errorQueue = yield* Queue.unbounded<Error>()
-          const stream = makeJsonDurableStream(options.streamUrl)
-          const producer = new IdempotentProducer(
-            stream,
-            options.writerId,
-            {
-              autoClaim: true,
-              lingerMs: 10,
-              onError: error => {
-                errorQueue.unsafeOffer(error)
-              },
-            },
-          )
-
-          const drainErrors = (
+      openDurableStreamProducer({
+        streamUrl: options.streamUrl,
+        producerId: options.writerId,
+      }).pipe(
+        Effect.map(producer => {
+          const mapDurableProducerError = (
             op: string,
-          ): Effect.Effect<void, StateProtocolWriterError> =>
-            Queue.poll(errorQueue).pipe(
-              Effect.flatMap(Option.match({
-                onNone: () => Effect.void,
-                onSome: cause =>
-                  Effect.fail(writerError(op, options.writerId, cause)),
-              })),
-            )
-
-          return { producer, drainErrors }
+          ) =>
+            Effect.mapError((cause: DurableStreamProducerError) =>
+              writerError(op, options.writerId, cause))
+          return {
+            append: event =>
+              producer.append(JSON.stringify(event)).pipe(
+                mapDurableProducerError("state-protocol.append"),
+              ),
+            flush: producer.flush.pipe(mapDurableProducerError("state-protocol.flush")),
+          }
         }),
-        ({ producer }) =>
-          Effect.tryPromise({
-            try: () => producer.detach(),
-            catch: cause =>
-              writerError("state-protocol.detach", options.writerId, cause),
-          }).pipe(Effect.ignore),
-      ).pipe(
-        Effect.map(({ producer, drainErrors }) => ({
-          append: event =>
-            Effect.try({
-              try: () => producer.append(JSON.stringify(event)),
-              catch: cause =>
-                writerError("state-protocol.append", options.writerId, cause),
-            }).pipe(Effect.zipRight(drainErrors("state-protocol.append"))),
-          flush: Effect.tryPromise({
-            try: () => producer.flush(),
-            catch: cause =>
-              writerError("state-protocol.flush", options.writerId, cause),
-          }).pipe(Effect.zipRight(drainErrors("state-protocol.flush"))),
-        })),
       ),
   }),
 )
-

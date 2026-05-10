@@ -16,8 +16,8 @@ import {
   RuntimeCaptureJournalLive,
 } from "../../data-plane/runtime-output/writer.ts"
 import {
-  layerDurableStreams,
-} from "../workflow-engine/workflows.ts"
+  DurableStreamsWorkflowEngine,
+} from "@firegrid/durable-streams"
 
 export interface StartRuntimeOptions {
   readonly runtimeStreamUrl: string
@@ -38,7 +38,7 @@ const runtimeContextLayer = (
   options: StartRuntimeOptions,
 ) =>
   RuntimeContextWorkflowLayer.pipe(
-    Layer.provideMerge(layerDurableStreams({
+    Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: options.workflowStreamUrl ?? options.controlPlaneStreamUrl ?? options.runtimeStreamUrl,
       ...(options.workerId === undefined ? {} : { workerId: options.workerId }),
     })),

@@ -1,5 +1,7 @@
-import { DurableStream } from "@durable-streams/client"
-import { DurableStreamTestServer } from "@durable-streams/server"
+import {
+  startDurableStreamsTestServer,
+  type DurableStreamsTestServerHandle,
+} from "@firegrid/durable-streams/test-utils"
 import {
   type PublicLaunchRequest,
 } from "@firegrid/protocol/launch"
@@ -12,11 +14,10 @@ import {
   local,
 } from "./index.ts"
 
-let server: DurableStreamTestServer | undefined
+let server: DurableStreamsTestServerHandle | undefined
 
 beforeEach(async () => {
-  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
-  await server.start()
+  server = await startDurableStreamsTestServer()
 })
 
 afterEach(async () => {
@@ -26,12 +27,7 @@ afterEach(async () => {
 
 const createStreamUrl = async (name: string): Promise<string> => {
   if (!server) throw new Error("server not started")
-  const streamUrl = `${server.url}/v1/stream/${name}-${crypto.randomUUID()}`
-  await DurableStream.create({
-    url: streamUrl,
-    contentType: "application/json",
-  })
-  return streamUrl
+  return server.createStreamUrl(name)
 }
 
 const runWithFiregrid = <A, E>(

@@ -1,5 +1,9 @@
-import { DurableStream } from "@durable-streams/client"
-import { DurableStreamTestServer } from "@durable-streams/server"
+import {
+  appendJson,
+} from "@firegrid/durable-streams"
+import {
+  startDurableStreamsTestServer,
+} from "@firegrid/durable-streams/test-utils"
 import type { RuntimeJournalEvent } from "@firegrid/protocol/launch"
 import { Effect, Either, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
@@ -202,18 +206,9 @@ describe("event pipeline materialization", () => {
   })
 
   it("firegrid-event-pipeline-materialization.SINK.3 sends runtime journal envelopes to Materialize", async () => {
-    const server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
-    await server.start()
+    const server = await startDurableStreamsTestServer()
     try {
-      const streamUrl = `${server.url}/v1/stream/runtime-output-materialize-${crypto.randomUUID()}`
-      await DurableStream.create({
-        url: streamUrl,
-        contentType: "application/json",
-      })
-      const stream = new DurableStream({
-        url: streamUrl,
-        contentType: "application/json",
-      })
+      const streamUrl = await server.createStreamUrl("runtime-output-materialize")
       const event: RuntimeJournalEvent = {
         type: "firegrid.runtime.output.stdout",
         id: "journal-1",
@@ -229,7 +224,7 @@ describe("event pipeline materialization", () => {
           raw: JSON.stringify({ type: "assistant", text: "pong" }),
         },
       }
-      await stream.append(JSON.stringify(event))
+      await Effect.runPromise(appendJson({ streamUrl, event }))
 
       const ingested: Array<RuntimeJournalEvent> = []
       const layer = MaterializeRuntimeOutputPipelineLive({

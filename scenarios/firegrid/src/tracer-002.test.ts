@@ -1,6 +1,13 @@
-import { DurableStream, stream as readStream } from "@durable-streams/client"
-import { DurableStreamTestServer } from "@durable-streams/server"
-import { createStreamDB } from "@durable-streams/state"
+import {
+  createDurableStateDb,
+  appendJson,
+  readRetainedJson,
+  sessionStateSchema,
+} from "@firegrid/durable-streams"
+import {
+  startDurableStreamsTestServer,
+  type DurableStreamsTestServerHandle,
+} from "@firegrid/durable-streams/test-utils"
 import { NodeContext } from "@effect/platform-node"
 import {
   Firegrid,
@@ -12,7 +19,6 @@ import type {
   RuntimeJournalEvent,
   RuntimeOutputStdoutJournalEvent,
 } from "@firegrid/protocol/launch"
-import { sessionStateSchema } from "@firegrid/protocol/session"
 import {
   projectRuntimeOutputToSessionState,
   runSessionProjection,
@@ -26,11 +32,10 @@ import {
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 
-let server: DurableStreamTestServer | undefined
+let server: DurableStreamsTestServerHandle | undefined
 
 beforeEach(async () => {
-  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
-  await server.start()
+  server = await startDurableStreamsTestServer()
 })
 
 afterEach(async () => {
@@ -40,12 +45,7 @@ afterEach(async () => {
 
 const createStreamUrl = async (name: string): Promise<string> => {
   if (!server) throw new Error("server not started")
-  const streamUrl = `${server.url}/v1/stream/${name}-${crypto.randomUUID()}`
-  await DurableStream.create({
-    url: streamUrl,
-    contentType: "application/json",
-  })
-  return streamUrl
+  return server.createStreamUrl(name)
 }
 
 const runtimeOutputEvent = (
@@ -77,19 +77,15 @@ const appendRuntimeOutputEvents = async (
   streamUrl: string,
   events: ReadonlyArray<RuntimeJournalEvent | unknown>,
 ): Promise<void> => {
-  const stream = new DurableStream({
-    url: streamUrl,
-    contentType: "application/json",
-  })
   for (const event of events) {
-    await stream.append(JSON.stringify(event))
+    await Effect.runPromise(appendJson({ streamUrl, event }))
   }
 }
 
 const readSessionState = async (
   sessionStreamUrl: string,
 ) => {
-  const sessionDb = createStreamDB({
+  const sessionDb = createDurableStateDb({
     streamOptions: {
       url: sessionStreamUrl,
       contentType: "application/json",
@@ -310,13 +306,9 @@ console.error("diagnostic: tracer-002")
       exitCode: 0,
     })
 
-    const retainedResponse = await readStream<RuntimeJournalEvent>({
-      url: dataPlaneStreamUrl,
-      offset: "-1",
-      live: false,
-      json: true,
-    })
-    const retainedJournal = await retainedResponse.json()
+    const retainedJournal = await Effect.runPromise(
+      readRetainedJson<RuntimeJournalEvent>({ streamUrl: dataPlaneStreamUrl }),
+    )
     const sourceEvent = retainedJournal.find(event =>
       event.type === "firegrid.runtime.output.stdout" &&
       event.event.contextId === handle.contextId)

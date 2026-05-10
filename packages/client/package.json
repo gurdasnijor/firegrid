@@ -24,13 +24,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@durable-streams/state": "^0.2.5",
+    "@firegrid/durable-streams": "workspace:*",
     "@firegrid/protocol": "workspace:*",
     "effect": "^3.18.0"
   },
   "devDependencies": {
-    "@durable-streams/client": "^0.2.3",
-    "@durable-streams/server": "^0.3.1",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   }
