@@ -69,8 +69,8 @@ const FiregridHostLive = Layer.mergeAll(
       event: RuntimeOutput.journalEvent,
     },
   }),
-  MaterializationEngine.layer(
-    materialize({
+  MaterializationStrategy.layer(
+    materializeStrategy({
       connection: pgConfig,
       projections: [sessionProjection(), permissionProjection()],
     }),
@@ -366,6 +366,7 @@ adding speculative package structure ahead of implementation pressure.
 | What is the materialization engine contract against current tracer 002 code? | The target says materialization is host-selected and pluggable, but current code still has event-pipeline and strategy details that need to converge on a common API. | 008: Materialization Strategy Interface |
 | What durable records and workflow waits implement required actions? | Approval should be workflow/event-wait behavior, not a callback package. We need the request, resolution, timeout, and wait identity model. | 009: Required-Action Workflow |
 | How do workflow-backed tools enter the agent tool surface? | `sleep`, `wait_for`, `schedule_me`, and `spawn` need a common tool-layer interface over durable workflows. | 010: Workflow-Backed Tools |
+| Who owns projection target schemas, encoders, folds, and query adapters? | Tracer 008 intentionally left State Protocol query support hardcoded to session schemas. Strategies should supply storage/query mechanics while projection targets own their schemas and target-specific query mapping. | 011: Projection Target Schema Ownership |
 
 ### 006 Focus
 

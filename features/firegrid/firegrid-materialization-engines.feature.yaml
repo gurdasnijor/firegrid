@@ -12,10 +12,12 @@ components:
       4: A reusable projection definition declares its source, projector, and query target independently of the selected materialization strategy.
       5: The same projection definition can run through State Protocol and raw-fold strategies without changing the projector definition.
       6: Strategy execution returns the common event pipeline summary used by production package code.
+      7: Projection target schemas, encoders, folds, and query adapters are owned by projection definitions or target descriptors, not hardcoded inside a strategy implementation.
 
   STATE_PROTOCOL:
     requirements:
       1: The State Protocol strategy writes projected session changes to a Durable Streams State Protocol stream behind the common strategy interface.
+      2: The State Protocol strategy consumes target-provided Durable State schema and query adapters so non-session projections can use the same strategy interface.
 
   RAW_FOLD:
     requirements:
@@ -37,3 +39,4 @@ constraints:
       2: The Materialize provider does not import runtime control-plane modules or workflow-engine internals.
       3: The Materialize provider does not define product-native session, permission, tool, prompt, or provider taxonomies.
       4: Materialization strategy interfaces do not import runtime host or runtime control-plane modules.
+      5: Runtime host configuration may select a materialization strategy, but client launch requests do not select projection target schemas or query adapters.

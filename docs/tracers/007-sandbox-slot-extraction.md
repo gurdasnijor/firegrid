@@ -40,13 +40,13 @@ more slot packages.
 
 ## Relationship To Parallel Tracers
 
-Tracer 006 owns the runtime-host root and launch/request boundary. Tracer 007
-owns only the sandbox slot contract and local-process provider extraction.
+Tracer 006 has landed the runtime-host root and launch/request boundary. Tracer
+007 owns only the sandbox slot contract and local-process provider extraction.
+Start from the current `FiregridRuntimeHostLive` wiring rather than
+reconstructing runtime layers in scenarios.
 
-Do not require a finished tracer 006 root. Provide a package surface that 006 or
-a later integration PR can consume.
-
-Tracer 008 owns materialization. Do not touch materialization files.
+Tracer 008 has landed the staged materialization strategy surface. Do not touch
+materialization files.
 
 ## Current Ground Truth
 
@@ -65,6 +65,14 @@ Current workflow usage:
 packages/runtime/src/control-plane/runtime-context/workflow.ts
   -> SandboxProvider.stream(...)
   -> workflow activity journals stdout/stderr to runtime-output durable events
+```
+
+Current host wiring:
+
+```txt
+packages/runtime/src/runtime-host/index.ts
+  -> LocalProcessSandboxProviderLive
+  -> FiregridRuntimeHostLive(...)
 ```
 
 Relevant existing ACIDs:
@@ -88,6 +96,7 @@ Preferred package shape:
 ```txt
 packages/sandboxes/
   core/
+    package.json       # @firegrid/sandboxes-core
     src/
       SandboxProvider.ts
       SandboxConfig.ts
@@ -96,16 +105,18 @@ packages/sandboxes/
       SandboxProviderRegistry.ts
       index.ts
   local-process/
+    package.json       # @firegrid/sandbox-local-process
     src/
       LocalProcessSandboxProvider.ts
       index.ts
 ```
 
-If creating both packages is too large for one tracer, first extract only:
+If the repo package tooling makes nested packages awkward, use equivalent
+top-level package names:
 
 ```txt
-packages/sandboxes/core
 packages/sandbox-local-process
+packages/sandboxes-core
 ```
 
 Use whatever package naming fits the repo's current package conventions, but do
@@ -168,22 +179,29 @@ Primary:
 packages/runtime/src/data-plane/execution/sandbox/**
 packages/sandboxes/**
 packages/sandbox-local-process/**
+packages/sandboxes-core/**
 packages/*/package.json
 features/firegrid/firegrid-durable-launch-runtime-operator.feature.yaml
 scenarios/firegrid/src/tracer-001.test.ts
 ```
 
-Avoid unless required for integration:
+Expected integration touch:
 
 ```txt
 packages/runtime/src/runtime-host/**
+packages/runtime/src/index.ts
+```
+
+Avoid unless required for integration:
+
+```txt
 packages/runtime/src/control-plane/runtime-context/workflow.ts
 packages/runtime/src/data-plane/materialization/**
 scenarios/firegrid/src/tracer-002.test.ts
 ```
 
-If tracer 006 has already moved host wiring, integrate through its public host
-root rather than reconstructing layers in scenario code.
+Integrate through the public host root. Do not create a new scenario-local
+composition root to prove the provider split.
 
 ## Acceptance Criteria
 
@@ -196,9 +214,11 @@ root rather than reconstructing layers in scenario code.
    runtime-output data-plane events.
 5. Scenario tests invoke production package surfaces; they do not become the
    only place local-process provider wiring works.
-6. The PR/report states whether the package split earned itself or should remain
+6. `@firegrid/runtime` no longer exports a runtime-internal local-process
+   provider surface as the primary integration path.
+7. The PR/report states whether the package split earned itself or should remain
    staged under runtime for one more tracer.
-7. The PR/report lists what a second sandbox provider would need to implement
+8. The PR/report lists what a second sandbox provider would need to implement
    next, based on the actual extracted contract.
 
 ## Validation

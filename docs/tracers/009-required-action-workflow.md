@@ -50,8 +50,8 @@ when implementing the required-action path.
 
 ## Relationship To Parallel Tracers
 
-Tracer 006 owns runtime host root. Tracer 008 owns materialization strategy.
-Tracer 009 should not require either to be finished.
+Tracer 006 has landed the runtime host root. Tracer 008 has landed the staged
+materialization strategy surface. Tracer 009 should not redesign either one.
 
 Build a production required-action workflow surface that can later be wired into
 the host root and materialization strategy. Scenario tests may provide concrete
@@ -61,6 +61,19 @@ layers, but the workflow and state services must live in package source.
 
 Relevant existing specs and docs:
 
+- `firegrid-required-actions.RECORDS.1`
+- `firegrid-required-actions.RECORDS.2`
+- `firegrid-required-actions.RECORDS.3`
+- `firegrid-required-actions.WORKFLOW.1`
+- `firegrid-required-actions.WORKFLOW.2`
+- `firegrid-required-actions.WORKFLOW.3`
+- `firegrid-required-actions.WORKFLOW.4`
+- `firegrid-required-actions.WORKFLOW.5`
+- `firegrid-required-actions.WORKFLOW.6`
+- `firegrid-required-actions.BOUNDARY.1`
+- `firegrid-required-actions.BOUNDARY.2`
+- `firegrid-required-actions.BOUNDARY.3`
+- `firegrid-required-actions.BOUNDARY.4`
 - `durable-waits-and-scheduling.WAIT_FOR.1`
 - `durable-waits-and-scheduling.WAIT_FOR.6`
 - `durable-waits-and-scheduling.WAIT_FOR.7`
@@ -68,10 +81,6 @@ Relevant existing specs and docs:
 - `run-wait-primitives.RUN_WAIT_API.8`
 - `run-wait-primitives.BOUNDARY.1`
 - `docs/rfc/external/durable-stream-agent-plaform-rfc/internals/durable-state-awaitables-approvals-timers.md`
-
-The current specs are generic wait/run primitives. Add or extend a Firegrid
-feature spec before implementation if the required-action domain needs stable
-ACIDs for request/resolution rows.
 
 ## Target Shape
 
@@ -144,6 +153,20 @@ Use the current `@effect/workflow` durable primitives available in the repo. If
 wait through the closest existing durable workflow/deferred mechanism and record
 the API gap explicitly.
 
+The most likely implementation path is:
+
+```txt
+RequiredActionWorkflow
+  -> append requested durable state
+  -> create/await durable deferred or equivalent workflow wait keyed by requiredActionId
+  -> RequiredActions.resolve appends resolution durable state
+  -> resolver completes the durable wait through WorkflowEngine machinery
+  -> workflow appends terminal durable state and returns the decision
+```
+
+Do not introduce a process-local queue or callback registry as authority for the
+wait.
+
 ## Resolution Surface
 
 Expose a package function or service for external resolution:
@@ -177,7 +200,7 @@ Primary:
 ```txt
 packages/runtime/src/required-action/**
 packages/runtime/src/index.ts
-features/firegrid/*required*action*.feature.yaml
+features/firegrid/firegrid-required-actions.feature.yaml
 features/firegrid/durable-waits-and-scheduling.feature.yaml
 features/firegrid/run-wait-primitives.feature.yaml
 scenarios/firegrid/src/tracer-009*.test.ts

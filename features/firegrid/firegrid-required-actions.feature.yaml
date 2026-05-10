@@ -1,0 +1,28 @@
+feature:
+  name: firegrid-required-actions
+  product: firegrid
+  description: Durable required-action requests, resolution records, and workflow waits for human or external decisions that unblock runtime work.
+
+components:
+  RECORDS:
+    requirements:
+      1: A required-action request is recorded durably with a required action id, runtime context id, request kind, opaque subject reference, options or prompt data, creation time, and optional expiry.
+      2: A required-action resolution is recorded durably with the same required action id, outcome, resolver identity, resolution time, and optional selected option or reason.
+      3: Required-action state exposes a single lifecycle from requested to approved, denied, timed_out, cancelled, or failed.
+
+  WORKFLOW:
+    requirements:
+      1: A required-action workflow records requested state before it starts waiting for an external decision.
+      2: Required-action waits are backed by durable workflow machinery or durable retained state, not process-local callbacks, promises, queues, or sockets.
+      3: The external resolution surface records durable resolution state and resumes the waiting workflow through workflow-engine machinery.
+      4: Resolving the same required action id with the same terminal decision is idempotent.
+      5: A conflicting resolution after terminal state does not change the winning terminal decision.
+      6: If timeout is implemented, timeout records a durable terminal state instead of surfacing only as an in-memory failure.
+
+constraints:
+  BOUNDARY:
+    requirements:
+      1: Required actions do not define approval UI, HTTP callback delivery, product notifications, or provider webhook transport.
+      2: Required actions do not require runtime-output launch code to parse provider-specific permission, tool, ACP, or Claude schemas.
+      3: Required-action records carry opaque subject references so later tool-call approval, prompt approval, and wait_for semantics can reuse the workflow without changing runtime launch authority.
+      4: Required-action projections may be materialized downstream, but required-action workflow authority does not depend on session materialization.

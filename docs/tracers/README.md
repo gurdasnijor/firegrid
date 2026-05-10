@@ -27,6 +27,7 @@ topology, or provider wiring for the tracer path. This is governed by
 - [008: Materialization Strategy Interface](./008-materialization-strategy-interface.md)
 - [009: Required-Action Workflow](./009-required-action-workflow.md)
 - 010: Workflow-Backed Tools
+- [011: Projection Target Schema Ownership](./011-projection-target-schema-ownership.md)
 
 ## Handoff
 
@@ -111,6 +112,12 @@ Prerequisite
     -> sleep/wait_for/schedule_me/spawn use durable workflow semantics
     -> spawn(agent, prompt) calls the same launch surface clients use
     -> agent tool layer can consume Firegrid runtime capabilities
+
+011
+  define projection target schema ownership
+    -> projection target owns schemas, encoders, folds, and query adapters
+    -> materialization strategies stop hardcoding session schemas
+    -> State Protocol/raw-fold strategies can run non-session projections
 ```
 
 The prerequisites establish the thin launch producer and live sandbox boundary.
@@ -120,10 +127,9 @@ that downstream consumers can independently interpret the same durable journal
 without coupling agent launch to session materialization or permission handling.
 The fourth bullet proves a parallel query-engine path for endpoint demos without
 changing Durable Streams authority.
-The fifth bullet is an architecture tracer: it validates whether Durable Streams
-can become a substrate package without speculative package splits.
-The sixth bullet is the next design tracer. It should clarify the production
-runtime host root before additional launch-slot packages are extracted.
+The fifth, sixth, eighth, and eleventh bullets are architecture tracers: they
+validate substrate, host-root, strategy, and projection-target seams before the
+repo commits to broader package extraction.
 
 Tracer 007 onward should be refined with feedback from the preceding tracer.
 Each fired tracer should teach enough about the substrate and ergonomics to
