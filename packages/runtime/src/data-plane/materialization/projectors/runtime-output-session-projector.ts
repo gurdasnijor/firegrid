@@ -8,6 +8,7 @@ import {
   EventProjectorError,
   type EventPipelineFailure,
   type EventProjectorResult,
+  type EventProjectorService,
 } from "../event-pipeline.ts"
 import type { SessionStateChange } from "../sinks/state-protocol/session-state-change.ts"
 
@@ -109,6 +110,24 @@ export const projectRuntimeOutputToSessionState = (
   }
 }
 
+export const RuntimeOutputSessionProjector: EventProjectorService<
+  RuntimeEvent,
+  SessionStateChange
+> = {
+  name: "runtime-output-session",
+  version: "1",
+  project: event => {
+    const decoded = decodeRuntimeEvent(event)
+    if (Either.isLeft(decoded)) {
+      return Effect.fail(eventProjectorError(
+        "runtime-output-session-projector.decode",
+        decoded.left,
+      ))
+    }
+    return Effect.succeed(projectRuntimeOutputToSessionState(decoded.right))
+  },
+}
+
 /**
  * firegrid-event-pipeline-materialization.PROJECTOR.1
  * firegrid-event-pipeline-materialization.PROJECTOR.2
@@ -116,19 +135,7 @@ export const projectRuntimeOutputToSessionState = (
  */
 export const RuntimeOutputSessionProjectorLive = Layer.succeed(
   EventProjector,
-  EventProjector.of({
-    name: "runtime-output-session",
-    version: "1",
-    project: event => {
-      const decoded = decodeRuntimeEvent(event)
-      if (Either.isLeft(decoded)) {
-        return Effect.fail(eventProjectorError(
-          "runtime-output-session-projector.decode",
-          decoded.left,
-        ))
-      }
-      return Effect.succeed(projectRuntimeOutputToSessionState(decoded.right))
-    },
-  }),
+  EventProjector.of(
+    RuntimeOutputSessionProjector as unknown as EventProjectorService<unknown, unknown>,
+  ),
 )
-
