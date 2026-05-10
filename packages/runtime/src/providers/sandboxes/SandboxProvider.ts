@@ -27,6 +27,7 @@ export interface SandboxCommand {
   readonly argv: ReadonlyArray<string>
   readonly cwd?: string
   readonly envVars?: Record<string, string>
+  readonly stdin?: string
 }
 
 export interface ExecutionResult {

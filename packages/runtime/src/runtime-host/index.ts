@@ -26,11 +26,20 @@ import {
 import {
   asRuntimeContextError,
 } from "../runtime-context/errors.ts"
+import {
+  RuntimeIngress,
+  RuntimeIngressLive,
+  RuntimeIngressUnavailableLive,
+  type RuntimeIngressError,
+  type RuntimeIngressRequest,
+  type RuntimeIngressRequestedRow,
+} from "../runtime-ingress/index.ts"
 
 export interface RuntimeHostStreams {
   readonly workflow: string
   readonly controlPlane: string
   readonly runtimeOutput: string
+  readonly runtimeIngress?: string
 }
 
 export interface RuntimeHostOptions {
@@ -44,6 +53,9 @@ interface FiregridRuntimeHostService {
   readonly start: (
     options: StartRuntimeOptions,
   ) => Effect.Effect<StartRuntimeResult, RuntimeContextError>
+  readonly ingress: (
+    request: RuntimeIngressRequest,
+  ) => Effect.Effect<RuntimeIngressRequestedRow, RuntimeIngressError>
 }
 
 export class FiregridRuntimeHost extends Context.Tag("firegrid/runtime/FiregridRuntimeHost")<
@@ -67,6 +79,11 @@ const runtimeContextLayer = (
     Layer.provide(RuntimeCaptureJournalLive({
       streamUrl: options.streams.runtimeOutput,
     })),
+    Layer.provide(options.streams.runtimeIngress === undefined
+      ? RuntimeIngressUnavailableLive
+      : RuntimeIngressLive({
+        streamUrl: options.streams.runtimeIngress,
+      })),
     Layer.provide(LocalProcessSandboxProvider.layer()),
     Layer.provide(NodeContext.layer),
   )
@@ -97,6 +114,17 @@ export const FiregridRuntimeHostLive = (
               )),
           }),
         ),
+      ingress: request =>
+        // firegrid-agent-ingress.HOST.1
+        // firegrid-agent-ingress.HOST.2
+        RuntimeIngress.pipe(
+          Effect.flatMap(ingress => ingress.append(request)),
+          Effect.provide(options.streams.runtimeIngress === undefined
+            ? RuntimeIngressUnavailableLive
+            : RuntimeIngressLive({
+              streamUrl: options.streams.runtimeIngress,
+            })),
+        ),
     }),
   )
 
@@ -106,4 +134,12 @@ export const startRuntime = (
   // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.3
   FiregridRuntimeHost.pipe(
     Effect.flatMap(host => host.start(options)),
+  )
+
+export const appendRuntimeIngress = (
+  request: RuntimeIngressRequest,
+): Effect.Effect<RuntimeIngressRequestedRow, RuntimeIngressError, FiregridRuntimeHost> =>
+  // firegrid-agent-ingress.HOST.1
+  FiregridRuntimeHost.pipe(
+    Effect.flatMap(host => host.ingress(request)),
   )

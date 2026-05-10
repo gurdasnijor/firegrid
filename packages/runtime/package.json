@@ -29,6 +29,10 @@
       "types": "./src/required-action/index.ts",
       "default": "./src/required-action/index.ts"
     },
+    "./runtime-ingress": {
+      "types": "./src/runtime-ingress/index.ts",
+      "default": "./src/runtime-ingress/index.ts"
+    },
     "./materialization/materialize": {
       "types": "./src/materialization/materialize/index.ts",
       "default": "./src/materialization/materialize/index.ts"

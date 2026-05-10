@@ -10,6 +10,7 @@ export {
 export {
   FiregridRuntimeHost,
   FiregridRuntimeHostLive,
+  appendRuntimeIngress,
   startRuntime,
   type RuntimeHostOptions,
   type RuntimeHostStreams,
@@ -34,3 +35,20 @@ export {
   type RequiredActionsOptions,
   type RequiredActionState,
 } from "./required-action/index.ts"
+export {
+  RuntimeIngress,
+  RuntimeIngressError,
+  RuntimeIngressLive,
+  RuntimeIngressUnavailableLive,
+  runtimeIngressDeliveredRowId,
+  runtimeIngressIdForIdempotencyKey,
+  runtimeIngressRequestedRowId,
+  type RuntimeIngressAuthor,
+  type RuntimeIngressDeliveredRow,
+  type RuntimeIngressDeliveryRequest,
+  type RuntimeIngressKind,
+  type RuntimeIngressOptions,
+  type RuntimeIngressRequest,
+  type RuntimeIngressRequestedRow,
+  type RuntimeIngressRow,
+} from "./runtime-ingress/index.ts"

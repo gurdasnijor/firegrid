@@ -65,6 +65,7 @@ const buildCommand = (
         ...command.envVars,
       }),
     )
+    if (command.stdin !== undefined) built = built.pipe(Command.feed(command.stdin))
     const cwd = command.cwd ?? config.workingDir
     if (cwd !== undefined) built = built.pipe(Command.workingDirectory(cwd))
     return built
