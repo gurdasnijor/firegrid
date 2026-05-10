@@ -1,5 +1,6 @@
 import { Context, Schema } from "effect"
 import type { Effect, Stream } from "effect"
+import type { Scope } from "effect"
 import type { EventPipelineSummary } from "../event-pipeline.ts"
 import type {
   ProjectionDefinition,
@@ -24,7 +25,7 @@ export interface MaterializationStrategyService {
   ) => Effect.Effect<ReadonlyArray<A>, ProjectionError>
   readonly subscribe: <A, Query>(
     query: ProjectionQuery<A, Query>,
-  ) => Stream.Stream<A, ProjectionError>
+  ) => Stream.Stream<A, ProjectionError, Scope.Scope>
 }
 
 /**

@@ -31,6 +31,8 @@ export interface RuntimeOutputProjectionTarget {
   readonly schemaName: string
   readonly webhookUrl?: string
   readonly runtimeEventsViewName: string
+  readonly sessionsViewName: string
+  readonly messagesViewName: string
 }
 
 export interface MaterializeProviderService {
@@ -41,6 +43,10 @@ export interface MaterializeProviderService {
   readonly ingestRuntimeJournal: (
     target: RuntimeOutputProjectionTarget,
     event: RuntimeJournalEvent,
+  ) => Effect.Effect<void, MaterializeProviderError>
+  readonly ingestJson: (
+    target: RuntimeOutputProjectionTarget,
+    event: unknown,
   ) => Effect.Effect<void, MaterializeProviderError>
   readonly query: <A extends object = Record<string, unknown>>(
     query: MaterializeQuery<A>,
@@ -54,4 +60,3 @@ export class MaterializeProvider extends Context.Tag("firegrid/runtime/Materiali
   MaterializeProvider,
   MaterializeProviderService
 >() {}
-
