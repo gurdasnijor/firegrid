@@ -162,6 +162,10 @@ Ingress is a durable event stream with multiple subscriber classes:
 - future system operators may append recovery or reattach ingress if a later
   tracer earns that behavior.
 
+Tracer 013 owns the generic workflow-operator substrate for workflow-backed
+subscribers. Tracer 012 should prove the ingress fact and one delivery path; it
+should not invent a private subscriber framework if tracer 013 has not landed.
+
 Subscribers track durable progress when repeated delivery would be visible to a
 provider or downstream runtime. Subscribers do not create workflow-specific
 launch endpoints.

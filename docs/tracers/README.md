@@ -34,6 +34,7 @@ durable outcome across the tracer's architectural boundary.
 - [010: Workflow-Backed Tools](./010-workflow-backed-tools.md)
 - [011: Projection Target Schema Ownership](./011-projection-target-schema-ownership.md)
 - [012: Agent Ingress Prompt Stream](./012-agent-ingress-prompt-stream.md)
+- [013: Reactive Workflow Operators](./013-reactive-workflow-operators.md)
 
 ## Handoff
 
@@ -130,6 +131,12 @@ Prerequisite
     -> initial and follow-up prompts append provider-neutral durable input facts
     -> runtime adapters translate durable ingress to stdin/ACP/provider protocols
     -> delivery progress is durable and runtime output remains a separate journal
+
+013
+  define reactive workflow operators
+    -> durable facts/time/projection predicates trigger Effect workflows
+    -> required actions become the first consumer of the generic operator substrate
+    -> tools and ingress subscribers stop needing bespoke workflow launch paths
 ```
 
 The prerequisites establish the thin launch producer and live sandbox boundary.
@@ -139,9 +146,9 @@ that downstream consumers can independently interpret the same durable journal
 without coupling agent launch to session materialization or permission handling.
 The fourth bullet proves a parallel query-engine path for endpoint demos without
 changing Durable Streams authority.
-The fifth, sixth, eighth, and eleventh bullets are architecture tracers: they
-validate substrate, host-root, strategy, and projection-target seams before the
-repo commits to broader package extraction.
+The fifth, sixth, eighth, eleventh, and thirteenth bullets are architecture
+tracers: they validate substrate, host-root, strategy, projection-target, and
+reactive-operator seams before the repo commits to broader package extraction.
 
 Tracer 007 onward should be refined with feedback from the preceding tracer.
 Each fired tracer should teach enough about the substrate and ergonomics to

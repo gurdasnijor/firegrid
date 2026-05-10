@@ -113,6 +113,7 @@ packages/
       runtime-context/
       runtime-output/
       runtime-operator/
+      runtime-operators/
       launch/
       index.ts
 
@@ -228,23 +229,27 @@ const approvalWorkflow = workflow.toLayer((payload, executionId) =>
 )
 ```
 
-The workflow consumes the durable event stream and blocks through
-`@effect/workflow` machinery until the approval/rejection resolution is durable.
-Notification delivery may later use callbacks, webhooks, UI subscriptions, or
-another transport, but that is not the semantic package boundary.
+The workflow consumes durable facts through a generic reactive workflow
+operator and blocks through `@effect/workflow` machinery until the
+approval/rejection resolution is durable. Notification delivery may later use
+callbacks, webhooks, UI subscriptions, or another transport, but that is not the
+semantic package boundary.
 
 The package placement to stress-test:
 
 ```txt
 runtime/
+  runtime-operators/
+    ...
   required-action/
     approval-workflow.ts
     required-action-events.ts
 ```
 
-The runtime host owns the workflows and event subscriptions. Clients and tools
-interact through durable required-action/session events, not through a
-`permissions-callback` provider.
+The runtime host owns the configured operator set. Required actions are one
+operator consumer: clients and tools interact through durable
+required-action/session events, not through a `permissions-callback` provider or
+a required-action-specific workflow launch endpoint.
 
 ## Materialization
 
@@ -317,6 +322,12 @@ their semantics are inherently durable:
 | `wait_for(trigger, timeoutMs?)` | Workflow waits for an event/projection match and timeout terminalization. |
 | `schedule_me(when, prompt)` | Workflow appends a future self-prompt intent when a timer fires. |
 | `spawn(agent, prompt)` | Workflow calls the same launch API available to clients, then waits for child completion. |
+
+Those tools should compose with the same reactive workflow operator substrate
+used by required actions and runtime ingress subscribers. A tool call records a
+durable intent or fact; an operator observes eligibility; workflow machinery
+performs the durable wait or scheduled reaction; follow-up prompts are appended
+through runtime ingress.
 
 This suggests a future provider package such as
 `@firegrid/tool-workflows` or an internal runtime tool provider that exposes

@@ -67,14 +67,16 @@ Tracer 010 should run after:
 
 - the stabilization wave settles substrate imports, runtime layout, and
   required-action topology;
+- tracer 013 proves the generic reactive workflow operator substrate;
 - tracer 012 defines durable prompt ingress.
 
 It should not run before tracer 012 if `schedule_me` or `spawn(agent, prompt)`
 are in scope, because both need the same durable prompt path used by clients.
 
 Required-action semantics from tracer 009 may be reused, but only as reactive
-workflow behavior over durable request/resolution facts. Do not preserve a
-separate required-action data plane as the pattern for tools.
+workflow behavior over durable request/resolution facts through tracer 013's
+operator substrate. Do not preserve a separate required-action data plane as
+the pattern for tools.
 
 ## Target Shape
 
