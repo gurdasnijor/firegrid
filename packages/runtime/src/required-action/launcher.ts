@@ -1,20 +1,22 @@
 import type { WorkflowEngine } from "@effect/workflow/WorkflowEngine"
 import {
-  WorkflowEngine as WorkflowEngineService,
-} from "@effect/workflow"
-import {
   DurableStreamsWorkflowEngine,
 } from "@firegrid/durable-streams/workflow-engine"
-import { Effect, Layer } from "effect"
+import { Duration, Effect, Exit, Layer } from "effect"
+import {
+  ReactiveWorkflowOperatorRuntimeLive,
+} from "../runtime-operators/index.ts"
 import {
   RequiredActionsLive,
-  type RequiredActions,
   type RequiredActionsOptions,
 } from "./service.ts"
 import {
   RequiredActionWorkflow,
-  runRequiredActionWorkflow,
+  RequiredActionWorkflowLayer,
 } from "./workflow.ts"
+import {
+  requiredActionWorkflowExecutionId,
+} from "./operator.ts"
 import type {
   RequiredActionError,
   RequiredActionRequest,
@@ -38,9 +40,12 @@ export const RequiredActionRuntimeLive = (
     streamUrl: options.requiredActionStreamUrl,
   })
 
-  return Layer.mergeAll(
-    requiredActions,
-    workflowEngine,
+  return RequiredActionWorkflowLayer.pipe(
+    Layer.provideMerge(Layer.mergeAll(
+      requiredActions,
+      workflowEngine,
+      ReactiveWorkflowOperatorRuntimeLive,
+    )),
   )
 }
 
@@ -51,15 +56,28 @@ export const RequiredActionStateLive = (
 
 export const startRequiredAction = (
   request: RequiredActionRequest,
-): Effect.Effect<RequiredActionResolution, RequiredActionError, WorkflowEngine | RequiredActions> =>
+): Effect.Effect<RequiredActionResolution, RequiredActionError, WorkflowEngine> =>
   // firegrid-required-actions.BOUNDARY.1
   // firegrid-required-actions.BOUNDARY.2
   // firegrid-required-actions.BOUNDARY.3
   // firegrid-required-actions.BOUNDARY.4
   Effect.scoped(
-    Effect.gen(function* () {
-      const engine = yield* WorkflowEngineService.WorkflowEngine
-      yield* engine.register(RequiredActionWorkflow, runRequiredActionWorkflow)
-      return yield* RequiredActionWorkflow.execute(request)
+    RequiredActionWorkflow.execute(request),
+  )
+
+export const awaitRequiredActionWorkflow = (
+  requiredActionId: string,
+): Effect.Effect<RequiredActionResolution, RequiredActionError, WorkflowEngine> =>
+  RequiredActionWorkflow.poll(requiredActionWorkflowExecutionId(requiredActionId)).pipe(
+    Effect.flatMap(result => {
+      if (result?._tag === "Complete") {
+        return Exit.matchEffect(result.exit, {
+          onFailure: cause => Effect.failCause(cause),
+          onSuccess: Effect.succeed,
+        })
+      }
+      return Effect.sleep(Duration.millis(10)).pipe(
+        Effect.flatMap(() => awaitRequiredActionWorkflow(requiredActionId)),
+      )
     }),
   )

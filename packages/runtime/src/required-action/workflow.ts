@@ -22,10 +22,14 @@ export const RequiredActionWorkflow = Workflow.make({
   idempotencyKey: payload => payload.requiredActionId,
 })
 
-export const runRequiredActionWorkflow = Effect.fn(function* runRequiredAction(payload: RequiredActionRequest) {
+const runRequiredActionWorkflow = Effect.fn(function* runRequiredAction(payload: RequiredActionRequest) {
     const actions = yield* RequiredActions
-    const token = yield* DurableDeferred.token(RequiredActionResolutionDeferred)
+    const token = payload.workflowDeferredToken ??
+      (yield* DurableDeferred.token(RequiredActionResolutionDeferred))
+    // firegrid-reactive-workflow-operators.WORKFLOW.2
+    // firegrid-reactive-workflow-operators.REQUIRED_ACTION_CONSUMER.1
     // firegrid-required-actions.WORKFLOW.1
+    // firegrid-required-actions.WORKFLOW.7
     yield* actions.request({
       ...payload,
       workflowDeferredToken: token,

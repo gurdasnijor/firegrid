@@ -8,6 +8,7 @@ export {
   type RequiredActionsOptions,
 } from "./service.ts"
 export {
+  awaitRequiredActionWorkflow,
   RequiredActionRuntimeLive,
   RequiredActionStateLive,
   startRequiredAction,
@@ -17,6 +18,12 @@ export {
   RequiredActionWorkflow,
   RequiredActionWorkflowLayer,
 } from "./workflow.ts"
+export {
+  requiredActionOperator,
+  requiredActionOperatorId,
+  requiredActionWorkflowExecutionId,
+  runRequiredActionOperator,
+} from "./operator.ts"
 export {
   RequiredActionError,
   RequiredActionOutcomeSchema,
