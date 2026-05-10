@@ -21,6 +21,7 @@ import {
   MaterializeProvider,
   MaterializeProviderError,
 } from "./materialize/index.ts"
+import type { ProjectionDefinition } from "./core/index.ts"
 import { createSessionProjectionDefinition } from "./session-projection-definition.ts"
 import type { SessionProjectionQuery } from "./session-projection-definition.ts"
 import { makeRawFoldStrategy } from "./raw-fold/index.ts"
@@ -316,7 +317,7 @@ describe("event pipeline materialization", () => {
       const rawMessages = await Effect.runPromise(
         rawFold.query<MessageProjection, SessionProjectionQuery>({
           projectionName: projection.name,
-          targetName: projection.target.name,
+          target: projection.target,
           query: { _tag: "messages", contextId },
           select: rows => rows as ReadonlyArray<MessageProjection>,
         }),
@@ -324,7 +325,7 @@ describe("event pipeline materialization", () => {
       const stateProtocolMessages = await Effect.runPromise(
         stateProtocol.query<MessageProjection, SessionProjectionQuery>({
           projectionName: projection.name,
-          targetName: projection.target.name,
+          target: projection.target,
           query: { _tag: "messages", contextId },
           select: rows => rows as ReadonlyArray<MessageProjection>,
         }),
@@ -343,6 +344,75 @@ describe("event pipeline materialization", () => {
         text: "strategy pong",
         sourceRuntimeEventId: "runtime-strategy-1",
       }))
+    } finally {
+      await server.stop()
+    }
+  })
+
+  it("firegrid-materialization-engines.ENGINE.7 firegrid-materialization-engines.RAW_FOLD.1 firegrid-materialization-engines.STATE_PROTOCOL.2 keeps non-session target capabilities out of strategies", async () => {
+    type CountChange = { readonly delta: number }
+    type CountQuery = { readonly _tag: "count" }
+    type CountState = { readonly count: number }
+
+    const countProjection: ProjectionDefinition<string, CountChange, CountQuery, CountState> = {
+      name: "runtime-output-count-probe",
+      version: "1",
+      source: {
+        read: Effect.succeed({
+          events: ["one", "two", "three"],
+          failures: [],
+        }),
+      },
+      projector: {
+        name: "count-probe",
+        version: "1",
+        project: () =>
+          Effect.succeed({
+            _tag: "Projected",
+            events: [{ delta: 1 }],
+          }),
+      },
+      target: {
+        name: "count-probe-state",
+        initialState: () => ({ count: 0 }),
+        fold: (state, change) => ({ count: state.count + change.delta }),
+        query: (state, query) => query.select([state]),
+      },
+    }
+
+    const rawFold = await Effect.runPromise(makeRawFoldStrategy)
+    const rawSummary = await Effect.runPromise(rawFold.run(countProjection))
+    const rawCounts = await Effect.runPromise(
+      rawFold.query<CountState, CountQuery>({
+        projectionName: countProjection.name,
+        target: countProjection.target,
+        query: { _tag: "count" },
+        select: rows => rows as ReadonlyArray<CountState>,
+      }),
+    )
+    const server = await startDurableStreamsTestServer()
+    try {
+      const stateProtocol = makeStateProtocolStrategy({
+        streamUrl: await server.createStreamUrl("count-probe-state"),
+        contextId: "ctx_count_probe",
+      })
+      const stateProtocolResult = await Effect.runPromise(
+        stateProtocol.run(countProjection).pipe(Effect.either),
+      )
+
+      expect(rawSummary).toMatchObject({
+        sourceEventsRead: 3,
+        sourceEventsProjected: 3,
+        sinkEventsWritten: 3,
+      })
+      expect(rawCounts).toEqual([{ count: 3 }])
+      expect(Either.isLeft(stateProtocolResult)).toBe(true)
+      if (Either.isLeft(stateProtocolResult)) {
+        expect(stateProtocolResult.left).toMatchObject({
+          _tag: "ProjectionError",
+          op: "state-protocol-strategy.target",
+        })
+      }
     } finally {
       await server.stop()
     }

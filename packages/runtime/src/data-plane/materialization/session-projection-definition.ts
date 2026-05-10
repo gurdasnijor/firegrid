@@ -1,12 +1,19 @@
+import {
+  sessionStateSchema,
+} from "@firegrid/durable-streams"
 import type { RuntimeEvent, RuntimeOutputCursor } from "@firegrid/protocol/launch"
 import type {
   MessageProjection,
   SessionProjection,
 } from "@firegrid/protocol/session"
-import type { ProjectionDefinition } from "./core/index.ts"
+import type {
+  ProjectionContext,
+  ProjectionDefinition,
+  ProjectionQuery,
+} from "./core/index.ts"
 import { RuntimeOutputSessionProjector } from "./projectors/index.ts"
 import { runtimeOutputEventSource } from "./runtime-output-source.ts"
-import type { SessionStateChange } from "./sinks/state-protocol/index.ts"
+import type { SessionStateChange } from "./session-state-change.ts"
 
 export interface SessionProjectionDefinitionOptions {
   readonly runtimeOutputStreamUrl: string
@@ -68,8 +75,57 @@ const querySessionProjectionState = (
   }
 }
 
+const querySessionStateProtocolStore = <A>(
+  store: unknown,
+  query: ProjectionQuery<A, SessionProjectionQuery>,
+): ReadonlyArray<A> => {
+  const collections = (store as {
+    readonly collections: {
+      readonly sessions: { readonly state: ReadonlyMap<string, SessionProjection> }
+      readonly messages: { readonly state: ReadonlyMap<string, MessageProjection> }
+    }
+  }).collections
+  return query.select(querySessionProjectionState({
+    sessions: collections.sessions.state,
+    messages: collections.messages.state,
+  }, query.query))
+}
+
+const sessionProjectionTxid = (
+  context: ProjectionContext,
+  kind: "message" | "session",
+  id: string,
+): string =>
+  [context.projector.name, context.projector.version, kind, id].join(":")
+
+const encodeSessionStateProtocolEvent = (
+  change: SessionStateChange,
+  context: ProjectionContext,
+): unknown => {
+  // firegrid-materialization-engines.ENGINE.7
+  // durable-records-and-projections.PROJECTIONS.3
+  switch (change.kind) {
+    case "upsertSession":
+      return sessionStateSchema.sessions.upsert({
+        value: change.value,
+        headers: {
+          txid: sessionProjectionTxid(context, "session", change.value.sessionId),
+        },
+      })
+    case "upsertMessage":
+      return sessionStateSchema.messages.upsert({
+        value: change.value,
+        headers: {
+          txid: sessionProjectionTxid(context, "message", change.value.messageId),
+        },
+      })
+  }
+}
+
 /**
  * firegrid-materialization-engines.ENGINE.4
+ * firegrid-materialization-engines.ENGINE.7
+ * firegrid-materialization-engines.STATE_PROTOCOL.2
  */
 export const createSessionProjectionDefinition = (
   options: SessionProjectionDefinitionOptions,
@@ -99,5 +155,11 @@ export const createSessionProjectionDefinition = (
     initialState: emptySessionProjectionState,
     fold: foldSessionStateChange,
     query: (state, query) => query.select(querySessionProjectionState(state, query.query)),
+    stateProtocol: {
+      stateSchema: sessionStateSchema,
+      encode: (change, context) =>
+        encodeSessionStateProtocolEvent(change as SessionStateChange, context),
+      query: querySessionStateProtocolStore,
+    },
   },
 })

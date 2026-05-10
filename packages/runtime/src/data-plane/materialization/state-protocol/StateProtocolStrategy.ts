@@ -1,18 +1,17 @@
 import {
   createDurableStateDb,
-  sessionStateSchema,
 } from "@firegrid/durable-streams"
-import type {
-  MessageProjection,
-  SessionProjection,
-} from "@firegrid/protocol/session"
+import type { Scope } from "effect"
 import { Effect, Layer, Stream } from "effect"
 import {
   EventPipeline,
   EventPipelineLive,
   EventProjector,
+  EventSink,
+  EventSinkError,
   EventSource,
   type EventProjectorService,
+  type EventSinkService,
   type EventSourceService,
 } from "../event-pipeline.ts"
 import {
@@ -20,17 +19,82 @@ import {
   projectionError,
   type MaterializationStrategyService,
 } from "../core/index.ts"
-import type { ProjectionQuery } from "../core/index.ts"
-import type { SessionProjectionQuery } from "../session-projection-definition.ts"
+import type {
+  ProjectionDefinition,
+  ProjectionQuery,
+  ProjectionTarget,
+  StateProtocolTarget,
+} from "../core/index.ts"
 import {
-  StateProtocolEventSinkLive,
   StateProtocolWriterLive,
+  StateProtocolWriter,
+  writerIdFor,
+  type StateProtocolWriterError,
+  type StateProtocolWriterHandle,
+  type StateProtocolWriterOpenOptions,
 } from "../sinks/state-protocol/index.ts"
 
 export interface StateProtocolStrategyOptions {
   readonly streamUrl: string
   readonly contextId: string
 }
+
+type DurableStateDbOptions = Parameters<typeof createDurableStateDb>[0]
+type StateProtocolWriterService = {
+  readonly open: (
+    options: StateProtocolWriterOpenOptions,
+  ) => Effect.Effect<StateProtocolWriterHandle, StateProtocolWriterError, Scope.Scope>
+}
+
+const sinkError = (
+  op: string,
+  cause: unknown,
+): EventSinkError =>
+  new EventSinkError({ op, cause })
+
+const requireStateProtocolTarget = <Projected, Query, State>(
+  target: ProjectionTarget<Projected, Query, State>,
+): Effect.Effect<StateProtocolTarget<Query>, EventSinkError> =>
+  target.stateProtocol === undefined
+    ? Effect.fail(sinkError(
+      "state-protocol-strategy.target",
+      new Error(`target does not expose State Protocol capability: ${target.name}`),
+    ))
+    : Effect.succeed(target.stateProtocol)
+
+const stateProtocolSinkFor = <Source, Projected, Query, State>(
+  options: StateProtocolStrategyOptions,
+  projection: ProjectionDefinition<Source, Projected, Query, State>,
+  writer: StateProtocolWriterService,
+): EventSinkService<Projected> =>
+  ({
+    writeAll: (events, context) =>
+      Effect.scoped(Effect.gen(function* () {
+        const stateProtocol = yield* requireStateProtocolTarget(projection.target)
+        const handle = yield* writer.open({
+          streamUrl: options.streamUrl,
+          writerId: writerIdFor(context.projector, options.contextId),
+        }).pipe(
+          Effect.mapError(cause => sinkError("state-protocol-strategy.open", cause)),
+        )
+        yield* Effect.forEach(events, event =>
+          handle.append(stateProtocol.encode(event, {
+            projection: {
+              name: projection.name,
+              version: projection.version,
+            },
+            projector: context.projector,
+          })).pipe(
+            Effect.mapError(cause =>
+              sinkError("state-protocol-strategy.append", cause)),
+          ), { discard: true })
+        yield* handle.flush.pipe(
+          Effect.mapError(cause => sinkError("state-protocol-strategy.flush", cause)),
+        )
+        return events.length
+      })),
+    flush: Effect.void,
+  })
 
 const runProjection = (
   options: StateProtocolStrategyOptions,
@@ -47,59 +111,52 @@ const runProjection = (
           projection.projector as unknown as EventProjectorService<unknown, unknown>,
         ),
       )),
-      Layer.provide(StateProtocolEventSinkLive({
-        streamUrl: options.streamUrl,
-        contextId: options.contextId,
-      })),
+      Layer.provide(Layer.effect(
+        EventSink,
+        Effect.map(StateProtocolWriter, writer =>
+          EventSink.of(
+            stateProtocolSinkFor(
+              options,
+              projection,
+              writer,
+            ) as EventSinkService<unknown>,
+          )),
+      )),
       Layer.provide(StateProtocolWriterLive),
     )
 
-    return Effect.scoped(
-      EventPipeline.pipe(
-        Effect.flatMap(pipeline => pipeline.run),
-        Effect.provide(layer),
-        Effect.mapError(cause => projectionError("state-protocol-strategy.run", cause)),
-      ),
+    return requireStateProtocolTarget(projection.target).pipe(
+      Effect.mapError(cause =>
+        projectionError("state-protocol-strategy.target", cause)),
+      Effect.zipRight(Effect.scoped(
+        EventPipeline.pipe(
+          Effect.flatMap(pipeline => pipeline.run),
+          Effect.provide(layer),
+          Effect.mapError(cause =>
+            projectionError("state-protocol-strategy.run", cause)),
+        ),
+      )),
     )
   }
 
-const isSessionProjectionQuery = (
-  query: unknown,
-): query is SessionProjectionQuery => {
-  if (typeof query !== "object" || query === null || !("_tag" in query)) return false
-  const tag = (query as { readonly _tag: unknown })._tag
-  return tag === "sessions" || tag === "messages"
-}
-
-const querySessionRows = (
+const queryStateProtocolTarget = <A>(
   streamUrl: string,
-  query: SessionProjectionQuery,
-): Effect.Effect<ReadonlyArray<unknown>, unknown> =>
+  stateProtocol: StateProtocolTarget<unknown>,
+  query: ProjectionQuery<A, unknown>,
+): Effect.Effect<ReadonlyArray<A>, unknown> =>
   Effect.tryPromise(async () => {
-    const sessionDb = createDurableStateDb({
+    const store = createDurableStateDb({
       streamOptions: {
         url: streamUrl,
         contentType: "application/json",
       },
-      state: sessionStateSchema,
+      state: stateProtocol.stateSchema as DurableStateDbOptions["state"],
     })
-    await sessionDb.preload()
+    await store.preload()
     try {
-      switch (query._tag) {
-        case "sessions":
-          return Array.from(sessionDb.collections.sessions.state.values()).filter(
-            (session: SessionProjection) =>
-              query.contextId === undefined || session.contextId === query.contextId,
-          )
-        case "messages":
-          return Array.from(sessionDb.collections.messages.state.values()).filter(
-            (message: MessageProjection) =>
-              (query.contextId === undefined || message.contextId === query.contextId) &&
-              (query.sessionId === undefined || message.sessionId === query.sessionId),
-          )
-      }
+      return stateProtocol.query(store, query)
     } finally {
-      sessionDb.close()
+      store.close()
     }
   })
 
@@ -107,15 +164,21 @@ const queryProjection = (
   options: StateProtocolStrategyOptions,
 ): MaterializationStrategyService["query"] =>
   <A, Query>(query: ProjectionQuery<A, Query>) => {
-    if (query.targetName !== "session-state" || !isSessionProjectionQuery(query.query)) {
+    const stateProtocol = query.target.stateProtocol
+    if (stateProtocol === undefined) {
       return Effect.fail(projectionError(
         "state-protocol-strategy.query",
-        new Error(`unsupported projection query target: ${query.targetName}`),
+        new Error(
+          `projection target does not expose State Protocol capability: ${query.target.name}`,
+        ),
       ))
     }
 
-    return querySessionRows(options.streamUrl, query.query).pipe(
-      Effect.map(rows => query.select(rows)),
+    return queryStateProtocolTarget(
+      options.streamUrl,
+      stateProtocol as StateProtocolTarget<unknown>,
+      query as ProjectionQuery<A, unknown>,
+    ).pipe(
       Effect.mapError(cause => projectionError("state-protocol-strategy.query", cause)),
     )
   }
@@ -123,7 +186,9 @@ const queryProjection = (
 /**
  * firegrid-materialization-engines.ENGINE.5
  * firegrid-materialization-engines.ENGINE.3
+ * firegrid-materialization-engines.ENGINE.7
  * firegrid-materialization-engines.STATE_PROTOCOL.1
+ * firegrid-materialization-engines.STATE_PROTOCOL.2
  */
 export const makeStateProtocolStrategy = (
   options: StateProtocolStrategyOptions,

@@ -10,7 +10,7 @@ import {
   type EventProjectorResult,
   type EventProjectorService,
 } from "../event-pipeline.ts"
-import type { SessionStateChange } from "../sinks/state-protocol/session-state-change.ts"
+import type { SessionStateChange } from "../session-state-change.ts"
 
 type ExampleAssistantEvent = {
   readonly type: "assistant"

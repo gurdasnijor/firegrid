@@ -1,12 +1,10 @@
 import {
   openDurableStreamProducer,
   DurableStreamProducerError,
-  sessionStateSchema,
 } from "@firegrid/durable-streams"
 import type { Scope } from "effect"
 import { Context, Effect, Layer, Schema } from "effect"
 import type { EventProjectorIdentity } from "../../event-pipeline.ts"
-import type { SessionStateChange } from "./session-state-change.ts"
 
 export class StateProtocolWriterError extends Schema.TaggedError<StateProtocolWriterError>()(
   "StateProtocolWriterError",
@@ -61,29 +59,6 @@ export const writerIdFor = (
   contextId: string,
 ): string =>
   `session-projection:${projector.name}:${projector.version}:${contextId}`
-
-export const toSessionStateEvent = (
-  change: SessionStateChange,
-  projector: EventProjectorIdentity,
-): unknown => {
-  // durable-records-and-projections.PROJECTIONS.3
-  switch (change.kind) {
-    case "upsertSession":
-      return sessionStateSchema.sessions.upsert({
-        value: change.value,
-        headers: {
-          txid: `${projector.name}:${projector.version}:session:${change.value.sessionId}`,
-        },
-      })
-    case "upsertMessage":
-      return sessionStateSchema.messages.upsert({
-        value: change.value,
-        headers: {
-          txid: `${projector.name}:${projector.version}:message:${change.value.messageId}`,
-        },
-      })
-  }
-}
 
 export const StateProtocolWriterLive = Layer.succeed(
   StateProtocolWriter,
