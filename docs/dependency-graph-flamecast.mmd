@@ -10,26 +10,61 @@ end
 end
 end
 subgraph 6["packages"]
-subgraph 7["runtime"]
+subgraph 7["durable-streams"]
 subgraph 8["src"]
-subgraph 9["control-plane"]
-subgraph A["workflow-engine"]
-B["clock.ts"]
-C["codec.ts"]
-D["engine-runtime.ts"]
-E["state.ts"]
-F["workflows.ts"]
+9["DurableState.ts"]
+A["DurableStreamLog.ts"]
+B["DurableStreamProducer.ts"]
+C["DurableStreamsWorkflowEngine.ts"]
+D["index.ts"]
+subgraph E["internal"]
+subgraph F["workflow"]
+G["clock.ts"]
+H["codec.ts"]
+I["engine-runtime.ts"]
+J["state.ts"]
 end
+end
+end
+end
+subgraph K["protocol"]
+subgraph L["src"]
+subgraph M["launch"]
+N["cursor.ts"]
+O["helpers.ts"]
+P["index.ts"]
+Q["schema.ts"]
+R["state.ts"]
+end
+subgraph S["session"]
+T["index.ts"]
+U["schema.ts"]
+V["state.ts"]
 end
 end
 end
 end
 3-->5
 4-->5
-4-->F
-B-->E
+4-->D
+9-->P
+9-->T
+B-->A
+C-->G
+C-->I
+C-->J
+D-->9
+D-->A
+D-->B
 D-->C
-D-->E
-F-->B
-F-->D
-F-->E
+G-->J
+I-->H
+I-->J
+P-->N
+P-->O
+P-->Q
+P-->R
+R-->Q
+T-->U
+T-->V
+V-->U

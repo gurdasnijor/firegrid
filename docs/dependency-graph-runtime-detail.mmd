@@ -9,74 +9,235 @@ subgraph 4["runtime-context"]
 6["errors.ts"]
 7["ids.ts"]
 8["launcher.ts"]
-P["service.ts"]
-Q["workflow.ts"]
-U["schema.ts"]
-end
-subgraph J["workflow-engine"]
-K["workflows.ts"]
-L["clock.ts"]
-M["state.ts"]
-N["engine-runtime.ts"]
-O["codec.ts"]
+9["workflow.ts"]
+12["schema.ts"]
+13["service.ts"]
 end
 end
-subgraph 9["data-plane"]
-subgraph A["runtime-output"]
-B["writer.ts"]
+subgraph A["data-plane"]
+subgraph B["runtime-output"]
+C["writer.ts"]
 end
-subgraph R["execution"]
-subgraph S["sandbox"]
-T["sandbox.ts"]
-V["index.ts"]
-subgraph W["providers"]
-X["local-process.ts"]
+subgraph 18["materialization"]
+subgraph 19["core"]
+1A["EventProjector.ts"]
+1C["EventSource.ts"]
+1D["MaterializationStrategy.ts"]
+1E["ProjectionDefinition.ts"]
+1F["Query.ts"]
+1G["index.ts"]
+end
+1B["event-pipeline.ts"]
+1H["index.ts"]
+1I["materialize-pipeline.ts"]
+1J["pipeline-source-options.ts"]
+subgraph 1K["projectors"]
+1L["index.ts"]
+1M["runtime-output-session-projector.ts"]
+end
+1N["runtime-output-source.ts"]
+subgraph 1O["sinks"]
+subgraph 1P["materialize"]
+1Q["index.ts"]
+1R["materialize-sink.ts"]
+end
+subgraph 24["state-protocol"]
+25["index.ts"]
+26["state-protocol-writer.ts"]
+end
+27["index.ts"]
+end
+subgraph 1S["materialize"]
+1T["index.ts"]
+1U["materialize-provider.ts"]
+1V["materialize-types.ts"]
+end
+subgraph 1W["raw-fold"]
+1X["index.ts"]
+1Y["RawFoldStrategy.ts"]
+end
+1Z["session-pipeline.ts"]
+20["session-projection-definition.ts"]
+subgraph 21["state-protocol"]
+22["index.ts"]
+23["StateProtocolStrategy.ts"]
+end
+28["session-state-change.ts"]
+end
+end
+29["index.ts"]
+subgraph 2A["required-action"]
+2B["index.ts"]
+2C["ids.ts"]
+2D["launcher.ts"]
+2E["service.ts"]
+2F["deferred.ts"]
+2G["schema.ts"]
+2H["workflow.ts"]
+end
+subgraph 2I["runtime-host"]
+2J["index.ts"]
 end
 end
 end
-end
-Y["index.ts"]
-end
-end
-subgraph C["protocol"]
-subgraph D["src"]
-subgraph E["launch"]
+subgraph D["durable-streams"]
+subgraph E["src"]
 F["index.ts"]
-G["helpers.ts"]
-H["schema.ts"]
-I["state.ts"]
+G["DurableState.ts"]
+T["DurableStreamLog.ts"]
+U["DurableStreamProducer.ts"]
+V["DurableStreamsWorkflowEngine.ts"]
+subgraph W["internal"]
+subgraph X["workflow"]
+Y["clock.ts"]
+Z["state.ts"]
+10["engine-runtime.ts"]
+11["codec.ts"]
 end
+end
+end
+end
+subgraph H["protocol"]
+subgraph I["src"]
+subgraph J["launch"]
+K["index.ts"]
+L["cursor.ts"]
+M["helpers.ts"]
+N["schema.ts"]
+O["state.ts"]
+end
+subgraph P["session"]
+Q["index.ts"]
+R["schema.ts"]
+S["state.ts"]
+end
+end
+end
+subgraph 14["sandboxes-core"]
+subgraph 15["src"]
+16["index.ts"]
+17["SandboxProvider.ts"]
+end
+end
+subgraph 2K["sandbox-local-process"]
+subgraph 2L["src"]
+2M["index.ts"]
+2N["LocalProcessSandboxProvider.ts"]
 end
 end
 end
 5-->6
-8-->B
-8-->K
 8-->6
-8-->P
-8-->Q
-B-->F
+8-->9
+9-->C
+9-->5
+9-->6
+9-->7
+9-->12
+9-->13
+9-->K
+9-->16
+C-->F
+C-->K
 F-->G
-F-->H
-F-->I
-I-->H
+F-->T
+F-->U
+F-->V
+G-->K
+G-->Q
 K-->L
-K-->N
 K-->M
-L-->M
-N-->O
-N-->M
-P-->7
-Q-->T
-Q-->B
-Q-->5
-Q-->6
-Q-->7
-Q-->U
-Q-->P
-Q-->F
-V-->X
-V-->T
-X-->T
-Y-->6
-Y-->8
+K-->N
+K-->O
+O-->N
+Q-->R
+Q-->S
+S-->R
+U-->T
+V-->Y
+V-->10
+V-->Z
+Y-->Z
+10-->11
+10-->Z
+13-->7
+16-->17
+1A-->1B
+1C-->1B
+1G-->1A
+1G-->1C
+1G-->1D
+1G-->1E
+1G-->1F
+1H-->1G
+1H-->1B
+1H-->1I
+1H-->1T
+1H-->1L
+1H-->1X
+1H-->1N
+1H-->1Z
+1H-->20
+1H-->27
+1H-->22
+1I-->1B
+1I-->1J
+1I-->1L
+1I-->1N
+1I-->1Q
+1L-->1B
+1L-->1M
+1M-->1B
+1M-->K
+1N-->1B
+1N-->F
+1N-->K
+1Q-->1R
+1R-->1B
+1R-->1T
+1R-->K
+1T-->1U
+1T-->1V
+1U-->1V
+1X-->1Y
+1Y-->1G
+1Y-->1B
+1Z-->20
+1Z-->22
+22-->23
+23-->1G
+23-->1B
+23-->25
+25-->26
+26-->F
+27-->1Q
+27-->25
+29-->6
+29-->8
+29-->2B
+29-->2J
+2B-->2C
+2B-->2D
+2B-->2G
+2B-->2E
+2B-->2H
+2D-->2E
+2D-->2H
+2D-->F
+2E-->2F
+2E-->2C
+2E-->2G
+2E-->F
+2F-->2G
+2H-->2F
+2H-->2G
+2H-->2E
+2J-->6
+2J-->8
+2J-->13
+2J-->9
+2J-->C
+2J-->F
+2J-->2M
+2M-->2N
+2N-->16

@@ -16,65 +16,146 @@ B["topology.ts"]
 end
 subgraph C["runtime"]
 D["agent-webhooks.ts"]
-O["handler.ts"]
-P["main.ts"]
+14["handler.ts"]
+15["main.ts"]
 end
 end
 end
 end
 subgraph E["packages"]
-subgraph F["runtime"]
+subgraph F["durable-streams"]
 subgraph G["src"]
-subgraph H["control-plane"]
-subgraph I["workflow-engine"]
-J["workflows.ts"]
-K["clock.ts"]
-L["state.ts"]
-M["engine-runtime.ts"]
-N["codec.ts"]
-end
-subgraph 12["runtime-context"]
-13["command.ts"]
-14["errors.ts"]
-15["ids.ts"]
-16["launcher.ts"]
-1A["service.ts"]
-1B["workflow.ts"]
-1F["schema.ts"]
+H["index.ts"]
+I["DurableState.ts"]
+V["DurableStreamLog.ts"]
+W["DurableStreamProducer.ts"]
+X["DurableStreamsWorkflowEngine.ts"]
+subgraph Y["internal"]
+subgraph Z["workflow"]
+10["clock.ts"]
+11["state.ts"]
+12["engine-runtime.ts"]
+13["codec.ts"]
 end
 end
-subgraph 17["data-plane"]
-subgraph 18["runtime-output"]
-19["writer.ts"]
-end
-subgraph 1C["execution"]
-subgraph 1D["sandbox"]
-1E["sandbox.ts"]
-1G["index.ts"]
-subgraph 1H["providers"]
-1I["local-process.ts"]
+1A["test-utils.ts"]
+subgraph 1B["testing"]
+1C["test-server.ts"]
 end
 end
 end
+subgraph J["protocol"]
+subgraph K["src"]
+subgraph L["launch"]
+M["index.ts"]
+N["cursor.ts"]
+O["helpers.ts"]
+P["schema.ts"]
+Q["state.ts"]
 end
-1J["index.ts"]
+subgraph R["session"]
+S["index.ts"]
+T["schema.ts"]
+U["state.ts"]
+end
+1D["index.ts"]
 end
 end
-subgraph Q["client"]
-subgraph R["src"]
-S["firegrid.ts"]
-10["index.ts"]
+subgraph 16["client"]
+subgraph 17["src"]
+18["firegrid.ts"]
+19["index.ts"]
 end
 end
-subgraph T["protocol"]
-subgraph U["src"]
-subgraph V["launch"]
-W["index.ts"]
-X["helpers.ts"]
-Y["schema.ts"]
-Z["state.ts"]
+subgraph 1E["runtime"]
+subgraph 1F["src"]
+subgraph 1G["control-plane"]
+subgraph 1H["runtime-context"]
+1I["command.ts"]
+1J["errors.ts"]
+1K["ids.ts"]
+1L["launcher.ts"]
+1M["workflow.ts"]
+1Q["schema.ts"]
+1R["service.ts"]
 end
-11["index.ts"]
+end
+subgraph 1N["data-plane"]
+subgraph 1O["runtime-output"]
+1P["writer.ts"]
+end
+subgraph 1W["materialization"]
+subgraph 1X["core"]
+1Y["EventProjector.ts"]
+20["EventSource.ts"]
+21["MaterializationStrategy.ts"]
+22["ProjectionDefinition.ts"]
+23["Query.ts"]
+24["index.ts"]
+end
+1Z["event-pipeline.ts"]
+25["index.ts"]
+26["materialize-pipeline.ts"]
+27["pipeline-source-options.ts"]
+subgraph 28["projectors"]
+29["index.ts"]
+2A["runtime-output-session-projector.ts"]
+end
+2B["runtime-output-source.ts"]
+subgraph 2C["sinks"]
+subgraph 2D["materialize"]
+2E["index.ts"]
+2F["materialize-sink.ts"]
+end
+subgraph 2S["state-protocol"]
+2T["index.ts"]
+2U["state-protocol-writer.ts"]
+end
+2V["index.ts"]
+end
+subgraph 2G["materialize"]
+2H["index.ts"]
+2I["materialize-provider.ts"]
+2J["materialize-types.ts"]
+end
+subgraph 2K["raw-fold"]
+2L["index.ts"]
+2M["RawFoldStrategy.ts"]
+end
+2N["session-pipeline.ts"]
+2O["session-projection-definition.ts"]
+subgraph 2P["state-protocol"]
+2Q["index.ts"]
+2R["StateProtocolStrategy.ts"]
+end
+2W["session-state-change.ts"]
+end
+end
+2X["index.ts"]
+subgraph 2Y["required-action"]
+2Z["index.ts"]
+30["ids.ts"]
+31["launcher.ts"]
+32["service.ts"]
+33["deferred.ts"]
+34["schema.ts"]
+35["workflow.ts"]
+end
+subgraph 36["runtime-host"]
+37["index.ts"]
+end
+end
+end
+subgraph 1S["sandboxes-core"]
+subgraph 1T["src"]
+1U["index.ts"]
+1V["SandboxProvider.ts"]
+end
+end
+subgraph 38["sandbox-local-process"]
+subgraph 39["src"]
+3A["index.ts"]
+3B["LocalProcessSandboxProvider.ts"]
 end
 end
 end
@@ -86,41 +167,129 @@ end
 9-->A
 D-->6
 D-->7
-D-->J
-J-->K
-J-->M
-J-->L
-K-->L
+D-->H
+H-->I
+H-->V
+H-->W
+H-->X
+I-->M
+I-->S
 M-->N
-M-->L
-O-->6
-O-->D
-P-->O
-S-->W
-W-->X
-W-->Y
-W-->Z
-Z-->Y
-10-->S
-11-->W
-13-->14
-16-->19
-16-->J
-16-->14
-16-->1A
-16-->1B
-19-->W
-1A-->15
-1B-->1E
-1B-->19
-1B-->13
-1B-->14
-1B-->15
-1B-->1F
-1B-->1A
-1B-->W
-1G-->1I
-1G-->1E
-1I-->1E
-1J-->14
-1J-->16
+M-->O
+M-->P
+M-->Q
+Q-->P
+S-->T
+S-->U
+U-->T
+W-->V
+X-->10
+X-->12
+X-->11
+10-->11
+12-->13
+12-->11
+14-->6
+14-->D
+15-->14
+18-->H
+18-->M
+19-->18
+1A-->1C
+1C-->V
+1D-->M
+1D-->S
+1I-->1J
+1L-->1J
+1L-->1M
+1M-->1P
+1M-->1I
+1M-->1J
+1M-->1K
+1M-->1Q
+1M-->1R
+1M-->M
+1M-->1U
+1P-->H
+1P-->M
+1R-->1K
+1U-->1V
+1Y-->1Z
+20-->1Z
+24-->1Y
+24-->20
+24-->21
+24-->22
+24-->23
+25-->24
+25-->1Z
+25-->26
+25-->2H
+25-->29
+25-->2L
+25-->2B
+25-->2N
+25-->2O
+25-->2V
+25-->2Q
+26-->1Z
+26-->27
+26-->29
+26-->2B
+26-->2E
+29-->1Z
+29-->2A
+2A-->1Z
+2A-->M
+2B-->1Z
+2B-->H
+2B-->M
+2E-->2F
+2F-->1Z
+2F-->2H
+2F-->M
+2H-->2I
+2H-->2J
+2I-->2J
+2L-->2M
+2M-->24
+2M-->1Z
+2N-->2O
+2N-->2Q
+2Q-->2R
+2R-->24
+2R-->1Z
+2R-->2T
+2T-->2U
+2U-->H
+2V-->2E
+2V-->2T
+2X-->1J
+2X-->1L
+2X-->2Z
+2X-->37
+2Z-->30
+2Z-->31
+2Z-->34
+2Z-->32
+2Z-->35
+31-->32
+31-->35
+31-->H
+32-->33
+32-->30
+32-->34
+32-->H
+33-->34
+35-->33
+35-->34
+35-->32
+37-->1J
+37-->1L
+37-->1R
+37-->1M
+37-->1P
+37-->H
+37-->3A
+3A-->3B
+3B-->1U

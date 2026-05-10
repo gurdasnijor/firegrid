@@ -1,29 +1,95 @@
 flowchart LR
 
 subgraph 0["packages"]
-subgraph 1["protocol"]
+subgraph 1["durable-streams"]
 subgraph 2["src"]
-subgraph 3["launch"]
-4["helpers.ts"]
-5["index.ts"]
-6["schema.ts"]
-7["state.ts"]
+3["DurableState.ts"]
+4["DurableStreamLog.ts"]
+5["DurableStreamProducer.ts"]
+6["DurableStreamsWorkflowEngine.ts"]
+7["index.ts"]
+subgraph 8["internal"]
+subgraph 9["workflow"]
+A["clock.ts"]
+B["codec.ts"]
+C["engine-runtime.ts"]
+D["state.ts"]
 end
 end
 end
-subgraph 8["runtime"]
-subgraph 9["src"]
-A["control-plane"]
-B["data-plane"]
-C["index.ts"]
+end
+subgraph E["protocol"]
+subgraph F["src"]
+subgraph G["launch"]
+H["cursor.ts"]
+I["helpers.ts"]
+J["index.ts"]
+K["schema.ts"]
+L["state.ts"]
+end
+subgraph M["session"]
+N["index.ts"]
+O["schema.ts"]
+P["state.ts"]
 end
 end
 end
+subgraph Q["runtime"]
+subgraph R["src"]
+S["control-plane"]
+T["data-plane"]
+U["index.ts"]
+V["required-action"]
+W["runtime-host"]
+end
+end
+subgraph X["sandbox-local-process"]
+subgraph Y["src"]
+Z["LocalProcessSandboxProvider.ts"]
+10["index.ts"]
+end
+end
+subgraph 11["sandboxes-core"]
+subgraph 12["src"]
+13["SandboxProvider.ts"]
+14["index.ts"]
+end
+end
+end
+3-->J
+3-->N
 5-->4
-5-->6
-5-->7
+6-->A
+6-->C
+6-->D
+7-->3
+7-->4
+7-->5
 7-->6
-A-->B
-A-->5
-B-->5
-C-->A
+A-->D
+C-->B
+C-->D
+J-->H
+J-->I
+J-->K
+J-->L
+L-->K
+N-->O
+N-->P
+P-->O
+S-->T
+S-->J
+S-->14
+T-->7
+T-->J
+U-->S
+U-->V
+U-->W
+V-->7
+W-->S
+W-->T
+W-->7
+W-->10
+Z-->14
+10-->Z
+14-->13
