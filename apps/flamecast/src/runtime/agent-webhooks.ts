@@ -1,7 +1,7 @@
 import { Activity, Workflow } from "@effect/workflow"
 import {
   DurableStreamsWorkflowEngine,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/workflow-engine"
 import { Context, Effect, Schema } from "effect"
 import {
   pendingAgentsWebhooks,

@@ -1,4 +1,6 @@
-import { createStateSchema } from "@durable-streams/state"
+import {
+  createDurableStateSchema,
+} from "@firegrid/durable-streams/state"
 import { Schema } from "effect"
 
 export const FlamecastTurn = Schema.Struct({
@@ -50,7 +52,7 @@ const FlamecastSession = Schema.Struct({
   updatedAt: Schema.String,
 })
 
-export const flamecastState = createStateSchema({
+export const flamecastState = createDurableStateSchema({
   turns: {
     type: "flamecast.turn",
     primaryKey: "turnId",

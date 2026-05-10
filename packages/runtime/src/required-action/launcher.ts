@@ -4,7 +4,7 @@ import {
 } from "@effect/workflow"
 import {
   DurableStreamsWorkflowEngine,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/workflow-engine"
 import { Effect, Layer } from "effect"
 import {
   RequiredActionsLive,

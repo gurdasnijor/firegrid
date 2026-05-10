@@ -10,8 +10,20 @@ export interface DurableStreamsTestServerHandle {
   readonly stop: () => Promise<void>
 }
 
-export const startDurableStreamsTestServer = async (): Promise<DurableStreamsTestServerHandle> => {
-  const server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+export interface StartDurableStreamsTestServerOptions {
+  readonly dataDir?: string
+  readonly host?: string
+  readonly port?: number
+}
+
+export const startDurableStreamsTestServer = async (
+  options: StartDurableStreamsTestServerOptions = {},
+): Promise<DurableStreamsTestServerHandle> => {
+  const server = new DurableStreamTestServer({
+    port: options.port ?? 0,
+    host: options.host ?? "127.0.0.1",
+    ...(options.dataDir === undefined ? {} : { dataDir: options.dataDir }),
+  })
   await server.start()
   return {
     url: server.url,

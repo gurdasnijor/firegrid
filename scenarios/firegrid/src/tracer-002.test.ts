@@ -1,9 +1,11 @@
 import {
-  createDurableStateDb,
   appendJson,
   readRetainedJson,
+} from "@firegrid/durable-streams/log"
+import {
+  createDurableStateDb,
   sessionStateSchema,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/state"
 import {
   startDurableStreamsTestServer,
   type DurableStreamsTestServerHandle,

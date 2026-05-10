@@ -1,0 +1,15 @@
+export {
+  DurableStreamsWorkflowEngine,
+  fireDueWorkflowClocks,
+  make,
+  makeWorkflowStateStore,
+  WorkflowStateStore,
+  WorkflowStateStoreError,
+  type WorkflowActivityClaimRow,
+  type WorkflowActivityRow,
+  type WorkflowClockWakeupRow,
+  type WorkflowDeferredRow,
+  type WorkflowEngineDurableStateOptions,
+  type WorkflowExecutionRow,
+  type WorkflowStateStore as WorkflowStateStoreService,
+} from "./DurableStreamsWorkflowEngine.ts"

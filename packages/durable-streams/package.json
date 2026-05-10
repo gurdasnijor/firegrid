@@ -9,9 +9,25 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./log": {
+      "types": "./src/log.ts",
+      "default": "./src/log.ts"
+    },
+    "./producer": {
+      "types": "./src/producer.ts",
+      "default": "./src/producer.ts"
+    },
+    "./state": {
+      "types": "./src/state.ts",
+      "default": "./src/state.ts"
+    },
     "./test-utils": {
       "types": "./src/test-utils.ts",
       "default": "./src/test-utils.ts"
+    },
+    "./workflow-engine": {
+      "types": "./src/workflow-engine.ts",
+      "default": "./src/workflow-engine.ts"
     }
   },
   "files": [

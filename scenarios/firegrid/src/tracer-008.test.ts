@@ -1,6 +1,6 @@
 import {
   appendJson,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/log"
 import {
   startDurableStreamsTestServer,
   type DurableStreamsTestServerHandle,
