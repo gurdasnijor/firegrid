@@ -23,7 +23,7 @@ components:
     requirements:
       1: The runtime host owns ingress stream topology and exposes a package/runtime surface for appending prompts to a runtime context.
       2: Client launch and prompt requests do not carry ingress stream URLs, workflow engine choices, materialization strategy, or provider registry configuration.
-      3: Launching with an initial prompt and sending a later prompt exercise the same host-owned ingress path.
+      3: Initial runtime input and later prompt requests exercise the same host-owned ingress path.
 
   SUBSCRIBERS:
     requirements:

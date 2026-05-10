@@ -23,6 +23,11 @@ import {
   type RuntimeCaptureJournalError,
 } from "../runtime-output/writer.ts"
 import {
+  RuntimeIngress,
+  type RuntimeIngressError,
+  type RuntimeIngressRequestedRow,
+} from "../runtime-ingress/index.ts"
+import {
   ProcessAttemptResultSchema,
   RuntimeContextTerminalStateSchema,
 } from "./schema.ts"
@@ -36,6 +41,39 @@ type SequencedChunk = {
 }
 
 const nowIso = (): string => new Date().toISOString()
+const localProcessIngressSubscriberId = "runtime-context:local-process:stdin"
+
+const textFromPayloadValue = (
+  value: unknown,
+): string | undefined => {
+  if (typeof value === "string") return value
+  if (typeof value !== "object" || value === null) return undefined
+  const record = value as Record<string, unknown>
+  return record.type === "text" && typeof record.text === "string"
+    ? record.text
+    : undefined
+}
+
+const providerInputFromIngress = (
+  row: RuntimeIngressRequestedRow,
+): string => {
+  if (Array.isArray(row.payload)) {
+    const text = row.payload.flatMap(value => {
+      const decoded = textFromPayloadValue(value)
+      return decoded === undefined ? [] : [decoded]
+    })
+    if (text.length > 0) return text.join("\n")
+  }
+  const text = textFromPayloadValue(row.payload)
+  return text ?? JSON.stringify(row.payload)
+}
+
+const stdinForIngress = (
+  rows: ReadonlyArray<RuntimeIngressRequestedRow>,
+): string | undefined =>
+  rows.length === 0
+    ? undefined
+    : `${rows.map(providerInputFromIngress).join("\n")}\n`
 
 const mapCaptureJournalError = (
   contextId: string,
@@ -44,6 +82,17 @@ const mapCaptureJournalError = (
     asRuntimeContextError(
       `runtime-capture.${cause.op}`,
       "failed to write runtime data-plane journal event",
+      contextId,
+      cause,
+    ))
+
+const mapRuntimeIngressError = (
+  contextId: string,
+) =>
+  Effect.mapError((cause: RuntimeIngressError) =>
+    asRuntimeContextError(
+      `runtime-ingress.${cause.op}`,
+      cause.message,
       contextId,
       cause,
     ))
@@ -115,6 +164,7 @@ export const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
   Effect.fn(function* runRuntimeContext({ contextId }) {
     const controlPlane = yield* RuntimeControlPlane
     const captureJournal = yield* RuntimeCaptureJournal
+    const runtimeIngress = yield* RuntimeIngress
 
     const context = yield* Activity.make({
       name: "firegrid.runtime-context.read-context",
@@ -142,6 +192,26 @@ export const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
           activityAttempt,
         })
         const command = yield* commandForContext(context)
+        const pendingIngress = yield* runtimeIngress.pending({
+          contextId: context.contextId,
+          subscriberId: localProcessIngressSubscriberId,
+        }).pipe(mapRuntimeIngressError(context.contextId))
+        // firegrid-agent-ingress.DELIVERY.1
+        // firegrid-agent-ingress.DELIVERY.2
+        // firegrid-agent-ingress.DELIVERY.3
+        // firegrid-agent-ingress.SUBSCRIBERS.1
+        const stdin = stdinForIngress(pendingIngress)
+        const deliveredCommand = {
+          ...command,
+          ...(stdin === undefined ? {} : { stdin }),
+        }
+        yield* Effect.forEach(pendingIngress, row =>
+          runtimeIngress.markDelivered({
+            contextId: row.contextId,
+            ingressId: row.ingressId,
+            subscriberId: localProcessIngressSubscriberId,
+            provider: context.runtime.provider,
+          }).pipe(mapRuntimeIngressError(context.contextId)), { discard: true })
         // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.3
         // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.5
         const sandbox = yield* Effect.acquireRelease(
@@ -175,7 +245,7 @@ export const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
             message,
           })
 
-        const streamProcess = provider.stream(sandbox, command).pipe(
+        const streamProcess = provider.stream(sandbox, deliveredCommand).pipe(
           Stream.mapAccum(0, (sequence, chunk): readonly [number, SequencedChunk] => [
             sequence + 1,
             { sequence, chunk },
