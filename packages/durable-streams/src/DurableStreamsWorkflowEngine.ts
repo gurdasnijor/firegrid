@@ -41,10 +41,6 @@ const layer = (
     }),
   )
 
-export const layerDurableStreams = (
-  options: WorkflowEngineDurableStateOptions,
-) => layer(options)
-
 export const DurableStreamsWorkflowEngine = {
   make,
   layer,

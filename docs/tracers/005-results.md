@@ -4,8 +4,8 @@ Date: 2026-05-09
 
 Branch: `firegrid/tracer-005-durable-streams-substrate`
 
-Scope: tracer 005 Durable Streams substrate extraction from current `main`
-commit `34b4978`.
+Scope: tracer 005 Durable Streams substrate extraction from the current tracer
+planning baseline on `main`.
 
 ## Summary
 
@@ -67,7 +67,6 @@ Current public surfaces:
 
 - `DurableStreamsWorkflowEngine.make`
 - `DurableStreamsWorkflowEngine.layer`
-- `layerDurableStreams` compatibility export
 - `fireDueWorkflowClocks`
 - workflow state store types and error types
 - `openDurableStreamProducer`
@@ -147,10 +146,12 @@ Updated consumers:
 Before:
 
 ```ts
-import { layerDurableStreams } from "../workflow-engine/workflows.ts"
+import { RuntimeWorkflowEngine } from "../workflow-engine/workflows.ts"
 
 const Live = RuntimeContextWorkflowLayer.pipe(
-  Layer.provideMerge(layerDurableStreams({ streamUrl: workflowStreamUrl })),
+  Layer.provideMerge(RuntimeWorkflowEngine.layer({
+    streamUrl: workflowStreamUrl,
+  })),
   Layer.provide(RuntimeControlPlaneLive({ streamUrl: controlPlaneStreamUrl })),
   Layer.provide(RuntimeCaptureJournalLive({ streamUrl: dataPlaneStreamUrl })),
 )

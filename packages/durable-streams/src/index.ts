@@ -1,7 +1,6 @@
 export {
   DurableStreamsWorkflowEngine,
   fireDueWorkflowClocks,
-  layerDurableStreams,
   make,
   makeWorkflowStateStore,
   WorkflowStateStore,

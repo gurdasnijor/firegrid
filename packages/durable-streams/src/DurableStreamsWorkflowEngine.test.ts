@@ -7,8 +7,8 @@ import {
 import { Duration, Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
+  DurableStreamsWorkflowEngine,
   fireDueWorkflowClocks,
-  layerDurableStreams,
   makeWorkflowStateStore,
   type WorkflowEngineDurableStateOptions,
   type WorkflowStateStore,
@@ -55,7 +55,8 @@ const runWith = <A, E>(
   options: WorkflowEngineDurableStateOptions,
   workflowLayer: unknown,
   effect: Effect.Effect<A, E, unknown>,
-): Promise<A> => runWithLayer(layerDurableStreams(options), workflowLayer, effect)
+): Promise<A> =>
+  runWithLayer(DurableStreamsWorkflowEngine.layer(options), workflowLayer, effect)
 
 const inspectStore = async <A>(
   streamUrl: string,
@@ -233,7 +234,7 @@ describe("durable workflow engine", () => {
       ShapeWorkflow.execute({ id: "same" }),
     )
     const second = await runWithLayer(
-      layerDurableStreams({ streamUrl }),
+      DurableStreamsWorkflowEngine.layer({ streamUrl }),
       workflowLayer,
       ShapeWorkflow.execute({ id: "same" }),
     )

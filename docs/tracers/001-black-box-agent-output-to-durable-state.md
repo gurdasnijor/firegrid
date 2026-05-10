@@ -453,7 +453,9 @@ const startRuntime = (contextId: string) =>
           Layer.provide(RuntimeControlPlaneLive),
           Layer.provide(RuntimeCaptureJournalLive),
           Layer.provide(SandboxProviderLive),
-          Layer.provide(layerDurableStreams({ streamUrl: launchWorkflowStreamUrl })),
+          Layer.provide(DurableStreamsWorkflowEngine.layer({
+            streamUrl: launchWorkflowStreamUrl,
+          })),
         ),
       ),
     ),
