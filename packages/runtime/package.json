@@ -9,10 +9,6 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./data-plane/execution/sandbox": {
-      "types": "./src/data-plane/execution/sandbox/index.ts",
-      "default": "./src/data-plane/execution/sandbox/index.ts"
-    },
     "./data-plane/materialization": {
       "types": "./src/data-plane/materialization/index.ts",
       "default": "./src/data-plane/materialization/index.ts"
@@ -62,6 +58,8 @@
     "@effect/workflow": "0.18.1",
     "@firegrid/durable-streams": "workspace:*",
     "@firegrid/protocol": "workspace:*",
+    "@firegrid/sandbox-local-process": "workspace:*",
+    "@firegrid/sandboxes-core": "workspace:*",
     "effect": "^3.18.0"
   },
   "devDependencies": {

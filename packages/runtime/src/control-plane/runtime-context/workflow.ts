@@ -5,7 +5,7 @@ import {
 } from "@firegrid/protocol/launch"
 import { Effect, Option, Schema, Stream } from "effect"
 import { commandForContext } from "./command.ts"
-import { SandboxProvider, type ProcessOutputChunk, type SandboxProviderError } from "../../data-plane/execution/sandbox/sandbox.ts"
+import { SandboxProvider, type ProcessOutputChunk, type SandboxProviderError } from "@firegrid/sandboxes-core"
 import {
   asRuntimeContextError,
   RuntimeContextError,
@@ -138,6 +138,8 @@ export const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
           activityAttempt,
         })
         const command = yield* commandForContext(context)
+        // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.3
+        // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.5
         const sandbox = yield* Effect.acquireRelease(
           provider.getOrCreate({
             labels: {
@@ -152,7 +154,6 @@ export const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
         )
 
         // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.2
-        // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.3
         // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.4
         yield* controlPlane.appendRunStarted({
           contextId: context.contextId,

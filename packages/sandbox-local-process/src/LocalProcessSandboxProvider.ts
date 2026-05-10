@@ -1,6 +1,9 @@
 import { Command } from "@effect/platform"
-import type { CommandExecutor } from "@effect/platform/CommandExecutor"
-import { Effect, Stream } from "effect"
+import {
+  CommandExecutor as CommandExecutorTag,
+  type CommandExecutor,
+} from "@effect/platform/CommandExecutor"
+import { Effect, Layer, Stream } from "effect"
 import {
   defaultCapabilities,
   findRunningSandbox,
@@ -12,9 +15,28 @@ import {
   SandboxProvider,
   SandboxProviderError,
   type SandboxProviderService,
-} from "../sandbox.ts"
+} from "@firegrid/sandboxes-core"
 
 const providerName = "local-process"
+
+export interface LocalProcessSandboxConfig {
+  readonly cwd?: string
+  readonly env?: Record<string, string>
+  readonly labels?: Record<string, string>
+  readonly providerConfig?: Record<string, unknown>
+}
+
+interface LocalProcessSandboxProviderHelper {
+  readonly provider: typeof providerName
+  readonly config: LocalProcessSandboxConfig
+}
+
+export const localProcess = (
+  config: LocalProcessSandboxConfig = {},
+): LocalProcessSandboxProviderHelper => ({
+  provider: providerName,
+  config,
+})
 
 const commandError = (
   op: string,
@@ -66,7 +88,9 @@ const unsupported = (
 ): Effect.Effect<void, SandboxProviderError> =>
   Effect.fail(commandError(op, `local process provider does not support ${op}`))
 
-const makeLocalProcessSandboxProvider = (): SandboxProviderService => {
+const makeLocalProcessSandboxProvider = (
+  commandExecutor: CommandExecutor,
+): SandboxProviderService => {
   const sandboxes = new Map<string, SandboxConfig>()
 
   const create = (config: SandboxConfig) =>
@@ -89,7 +113,7 @@ const makeLocalProcessSandboxProvider = (): SandboxProviderService => {
   const stream = (
     sandbox: Sandbox,
     command: SandboxCommand,
-  ): Stream.Stream<ProcessOutputChunk, SandboxProviderError, CommandExecutor> =>
+  ): Stream.Stream<ProcessOutputChunk, SandboxProviderError> =>
     Stream.unwrapScoped(
       Effect.gen(function* () {
         const config = sandboxes.get(sandbox.id)
@@ -97,7 +121,7 @@ const makeLocalProcessSandboxProvider = (): SandboxProviderService => {
           return yield* commandError("stream", `sandbox not found: ${sandbox.id}`)
         }
         const built = yield* buildCommand(config, command)
-        const process = yield* Command.start(built).pipe(
+        const process = yield* commandExecutor.start(built).pipe(
           Effect.mapError(cause =>
             commandError("stream", "local process command failed to start", cause),
           ),
@@ -144,7 +168,7 @@ const makeLocalProcessSandboxProvider = (): SandboxProviderService => {
   const execute = (
     sandbox: Sandbox,
     command: SandboxCommand,
-  ): Effect.Effect<ExecutionResult, SandboxProviderError, CommandExecutor> => {
+  ): Effect.Effect<ExecutionResult, SandboxProviderError> => {
     const startedAt = Date.now()
     const stdout: Array<string> = []
     const stderr: Array<string> = []
@@ -179,6 +203,8 @@ const makeLocalProcessSandboxProvider = (): SandboxProviderService => {
       streaming: true,
     },
     // firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1
+    // firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.4
+    // firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.5
     create,
     getOrCreate: config =>
       Effect.gen(function* () {
@@ -200,5 +226,10 @@ const makeLocalProcessSandboxProvider = (): SandboxProviderService => {
   }
 }
 
-export const LocalProcessSandboxProviderLive =
-  SandboxProvider.layer(makeLocalProcessSandboxProvider())
+export const LocalProcessSandboxProvider = {
+  layer: (): Layer.Layer<SandboxProvider, never, CommandExecutor> =>
+    Layer.effect(
+      SandboxProvider,
+      Effect.map(CommandExecutorTag, makeLocalProcessSandboxProvider),
+    ),
+}

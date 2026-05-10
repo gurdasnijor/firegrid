@@ -1,7 +1,6 @@
 export {
-  LocalProcessSandboxProviderLive,
-} from "./providers/local-process.ts"
-export {
+  defaultCapabilities,
+  findRunningSandbox,
   SandboxProvider,
   SandboxProviderError,
   type ExecutionResult,
@@ -9,5 +8,7 @@ export {
   type Sandbox,
   type SandboxCommand,
   type SandboxConfig,
+  type SandboxProviderCapabilities,
   type SandboxProviderService,
-} from "./sandbox.ts"
+  type SandboxState,
+} from "./SandboxProvider.ts"

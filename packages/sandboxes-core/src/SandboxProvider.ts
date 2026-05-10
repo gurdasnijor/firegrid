@@ -1,8 +1,7 @@
-import type { CommandExecutor } from "@effect/platform/CommandExecutor"
 import type { Effect, Stream } from "effect"
 import { Context, Layer, Schema } from "effect"
 
-type SandboxState =
+export type SandboxState =
   | "creating"
   | "starting"
   | "running"
@@ -49,7 +48,7 @@ export interface Sandbox {
   readonly metadata: Record<string, unknown>
 }
 
-interface ProviderCapabilities {
+export interface SandboxProviderCapabilities {
   readonly persistent: boolean
   readonly snapshot: boolean
   readonly streaming: boolean
@@ -82,28 +81,28 @@ export class SandboxProviderError extends Schema.TaggedError<SandboxProviderErro
 
 export interface SandboxProviderService {
   readonly name: string
-  readonly capabilities: ProviderCapabilities
+  readonly capabilities: SandboxProviderCapabilities
   readonly create: (config: SandboxConfig) => Effect.Effect<Sandbox, SandboxProviderError>
   readonly getOrCreate: (config: SandboxConfig) => Effect.Effect<Sandbox, SandboxProviderError>
   readonly find: (labels: Record<string, string>) => Effect.Effect<Sandbox | undefined, SandboxProviderError>
   readonly execute: (
     sandbox: Sandbox,
     command: SandboxCommand,
-  ) => Effect.Effect<ExecutionResult, SandboxProviderError, CommandExecutor>
+  ) => Effect.Effect<ExecutionResult, SandboxProviderError>
   readonly executeMany: (
     sandbox: Sandbox,
     commands: ReadonlyArray<SandboxCommand>,
-  ) => Effect.Effect<ReadonlyArray<ExecutionResult>, SandboxProviderError, CommandExecutor>
+  ) => Effect.Effect<ReadonlyArray<ExecutionResult>, SandboxProviderError>
   readonly stream: (
     sandbox: Sandbox,
     command: SandboxCommand,
-  ) => Stream.Stream<ProcessOutputChunk, SandboxProviderError, CommandExecutor>
+  ) => Stream.Stream<ProcessOutputChunk, SandboxProviderError>
   readonly upload: (sandbox: Sandbox, localPath: string, remotePath: string) => Effect.Effect<void, SandboxProviderError>
   readonly download: (sandbox: Sandbox, remotePath: string, localPath: string) => Effect.Effect<void, SandboxProviderError>
   readonly destroy: (sandbox: Sandbox) => Effect.Effect<boolean, SandboxProviderError>
 }
 
-export class SandboxProvider extends Context.Tag("firegrid/runtime/execution/SandboxProvider")<
+export class SandboxProvider extends Context.Tag("firegrid/sandboxes/SandboxProvider")<
   SandboxProvider,
   SandboxProviderService
 >() {
@@ -118,7 +117,7 @@ export const defaultCapabilities = {
   fileUpload: false,
   interactiveShell: false,
   gpu: false,
-} satisfies ProviderCapabilities
+} satisfies SandboxProviderCapabilities
 
 export const findRunningSandbox = (
   sandboxes: ReadonlyArray<Sandbox>,

@@ -18,8 +18,8 @@ import type {
   RuntimeContextError,
 } from "../control-plane/runtime-context/errors.ts"
 import {
-  LocalProcessSandboxProviderLive,
-} from "../data-plane/execution/sandbox/providers/local-process.ts"
+  LocalProcessSandboxProvider,
+} from "@firegrid/sandbox-local-process"
 import {
   RuntimeCaptureJournalLive,
 } from "../data-plane/runtime-output/writer.ts"
@@ -67,7 +67,7 @@ const runtimeContextLayer = (
     Layer.provide(RuntimeCaptureJournalLive({
       streamUrl: options.streams.runtimeOutput,
     })),
-    Layer.provide(LocalProcessSandboxProviderLive),
+    Layer.provide(LocalProcessSandboxProvider.layer()),
     Layer.provide(NodeContext.layer),
   )
 
