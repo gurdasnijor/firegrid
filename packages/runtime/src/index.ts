@@ -15,3 +15,22 @@ export {
   type RuntimeHostStreams,
   type StartRuntimeOptions,
 } from "./runtime-host/index.ts"
+export {
+  RequiredActions,
+  RequiredActionsLive,
+  RequiredActionRuntimeLive,
+  RequiredActionStateLive,
+  RequiredActionWorkflow,
+  RequiredActionWorkflowLayer,
+  startRequiredAction,
+  type RequiredActionOutcome,
+  type RequiredActionRequest,
+  type RequiredActionRequestedRow,
+  type RequiredActionResolution,
+  type RequiredActionResolveRequest,
+  type RequiredActionResolvedRow,
+  type RequiredActionRow,
+  type RequiredActionRuntimeOptions,
+  type RequiredActionsOptions,
+  type RequiredActionState,
+} from "./required-action/index.ts"
