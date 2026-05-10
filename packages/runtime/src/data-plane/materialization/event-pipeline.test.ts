@@ -1,6 +1,11 @@
-import { DurableStream } from "@durable-streams/client"
-import { DurableStreamTestServer } from "@durable-streams/server"
+import {
+  appendJson,
+} from "@firegrid/durable-streams"
+import {
+  startDurableStreamsTestServer,
+} from "@firegrid/durable-streams/test-utils"
 import type { RuntimeJournalEvent } from "@firegrid/protocol/launch"
+import type { MessageProjection } from "@firegrid/protocol/session"
 import { Effect, Either, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import {
@@ -16,6 +21,10 @@ import {
   MaterializeProvider,
   MaterializeProviderError,
 } from "./materialize/index.ts"
+import { createSessionProjectionDefinition } from "./session-projection-definition.ts"
+import type { SessionProjectionQuery } from "./session-projection-definition.ts"
+import { makeRawFoldStrategy } from "./raw-fold/index.ts"
+import { makeStateProtocolStrategy } from "./state-protocol/index.ts"
 
 const runPipeline = (
   layer: Layer.Layer<EventPipeline>,
@@ -202,18 +211,9 @@ describe("event pipeline materialization", () => {
   })
 
   it("firegrid-event-pipeline-materialization.SINK.3 sends runtime journal envelopes to Materialize", async () => {
-    const server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
-    await server.start()
+    const server = await startDurableStreamsTestServer()
     try {
-      const streamUrl = `${server.url}/v1/stream/runtime-output-materialize-${crypto.randomUUID()}`
-      await DurableStream.create({
-        url: streamUrl,
-        contentType: "application/json",
-      })
-      const stream = new DurableStream({
-        url: streamUrl,
-        contentType: "application/json",
-      })
+      const streamUrl = await server.createStreamUrl("runtime-output-materialize")
       const event: RuntimeJournalEvent = {
         type: "firegrid.runtime.output.stdout",
         id: "journal-1",
@@ -229,7 +229,7 @@ describe("event pipeline materialization", () => {
           raw: JSON.stringify({ type: "assistant", text: "pong" }),
         },
       }
-      await stream.append(JSON.stringify(event))
+      await Effect.runPromise(appendJson({ streamUrl, event }))
 
       const ingested: Array<RuntimeJournalEvent> = []
       const layer = MaterializeRuntimeOutputPipelineLive({
@@ -273,6 +273,76 @@ describe("event pipeline materialization", () => {
         sourceEventsFailed: 0,
         sinkEventsWritten: 1,
       })
+    } finally {
+      await server.stop()
+    }
+  })
+
+  it("firegrid-materialization-engines.ENGINE.3 firegrid-materialization-engines.ENGINE.4 firegrid-materialization-engines.ENGINE.5 runs and queries one session projection through raw-fold and State Protocol strategies", async () => {
+    const server = await startDurableStreamsTestServer()
+    try {
+      const runtimeOutputStreamUrl = await server.createStreamUrl("runtime-output-strategy")
+      const sessionStateStreamUrl = await server.createStreamUrl("session-state-strategy")
+      const contextId = "ctx_strategy"
+      const event: RuntimeJournalEvent = {
+        type: "firegrid.runtime.output.stdout",
+        id: "journal-strategy-1",
+        at: "2026-05-08T00:00:00.000Z",
+        event: {
+          eventId: "runtime-strategy-1",
+          contextId,
+          activityAttempt: 1,
+          sequence: 0,
+          source: "stdout",
+          format: "jsonl",
+          receivedAt: "2026-05-08T00:00:00.000Z",
+          raw: JSON.stringify({ type: "assistant", text: "strategy pong" }),
+        },
+      }
+      await Effect.runPromise(appendJson({ streamUrl: runtimeOutputStreamUrl, event }))
+
+      const projection = createSessionProjectionDefinition({
+        runtimeOutputStreamUrl,
+        contextId,
+      })
+      const rawFold = await Effect.runPromise(makeRawFoldStrategy)
+      const stateProtocol = makeStateProtocolStrategy({
+        streamUrl: sessionStateStreamUrl,
+        contextId,
+      })
+
+      const rawSummary = await Effect.runPromise(rawFold.run(projection))
+      const stateProtocolSummary = await Effect.runPromise(stateProtocol.run(projection))
+      const rawMessages = await Effect.runPromise(
+        rawFold.query<MessageProjection, SessionProjectionQuery>({
+          projectionName: projection.name,
+          targetName: projection.target.name,
+          query: { _tag: "messages", contextId },
+          select: rows => rows as ReadonlyArray<MessageProjection>,
+        }),
+      )
+      const stateProtocolMessages = await Effect.runPromise(
+        stateProtocol.query<MessageProjection, SessionProjectionQuery>({
+          projectionName: projection.name,
+          targetName: projection.target.name,
+          query: { _tag: "messages", contextId },
+          select: rows => rows as ReadonlyArray<MessageProjection>,
+        }),
+      )
+
+      expect(rawSummary).toMatchObject({
+        sourceEventsRead: 1,
+        sourceEventsProjected: 1,
+        sinkEventsWritten: 2,
+        failures: [],
+      })
+      expect(stateProtocolSummary).toMatchObject(rawSummary)
+      expect(rawMessages).toEqual(stateProtocolMessages)
+      expect(rawMessages).toContainEqual(expect.objectContaining({
+        contextId,
+        text: "strategy pong",
+        sourceRuntimeEventId: "runtime-strategy-1",
+      }))
     } finally {
       await server.stop()
     }

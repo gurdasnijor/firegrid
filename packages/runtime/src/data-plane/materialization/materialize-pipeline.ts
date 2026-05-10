@@ -11,6 +11,7 @@ import {
   IdentityEventProjectorLive,
 } from "./projectors/index.ts"
 import { RawRuntimeJournalEventSourceLive } from "./runtime-output-source.ts"
+import { runtimeOutputProjectionSourceOptions } from "./pipeline-source-options.ts"
 import type { RuntimeOutputProjectionTarget } from "./materialize/index.ts"
 
 export interface MaterializeRuntimeOutputProjectionOptions {
@@ -33,19 +34,8 @@ export class MaterializeRuntimeOutputProjectionError
 export const MaterializeRuntimeOutputPipelineLive = (
   options: MaterializeRuntimeOutputProjectionOptions,
 ) => {
-  const sourceOptions = options.since === undefined
-    ? {
-      streamUrl: options.runtimeOutputStreamUrl,
-      contextId: options.contextId,
-    }
-    : {
-      streamUrl: options.runtimeOutputStreamUrl,
-      contextId: options.contextId,
-      since: options.since,
-    }
-
   return EventPipelineLive.pipe(
-    Layer.provide(RawRuntimeJournalEventSourceLive(sourceOptions)),
+    Layer.provide(RawRuntimeJournalEventSourceLive(runtimeOutputProjectionSourceOptions(options))),
     Layer.provide(IdentityEventProjectorLive({
       name: "runtime-output-materialize",
       version: "1",

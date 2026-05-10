@@ -5,6 +5,7 @@ import {
 
 export {
   projectRuntimeOutputToSessionState,
+  RuntimeOutputSessionProjector,
   RuntimeOutputSessionProjectorLive,
 } from "./runtime-output-session-projector.ts"
 
@@ -26,4 +27,3 @@ export const IdentityEventProjectorLive = (
         }),
     }),
   )
-

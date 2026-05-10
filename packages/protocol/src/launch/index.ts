@@ -42,4 +42,4 @@ export {
   isAfterRuntimeOutputCursor,
   type RuntimeOutputCursor,
 } from "./cursor.ts"
-export { runtimeContextStateSchema } from "./state.ts"
+export { runtimeContextStateDescriptor } from "./state.ts"

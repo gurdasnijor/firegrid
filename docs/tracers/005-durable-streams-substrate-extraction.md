@@ -102,8 +102,10 @@ const WorkflowEngineLive = DurableStreamsWorkflowEngine.layer({
 })
 ```
 
-Keep the API close to the current `layerDurableStreams(...)` behavior. Rename
-only enough to make the substrate ownership clear.
+Keep the behavior close to the previous runtime-local workflow-engine layer
+factory. Rename enough to make the substrate ownership clear. The target public
+API should be `DurableStreamsWorkflowEngine.layer(...)`; do not keep a
+compatibility alias.
 
 ### Durable Producer Mechanics
 
@@ -284,7 +286,7 @@ or harder when it consumes `@firegrid/durable-streams` helpers.
 
 Add results to:
 
-`docs/research/runtime-package-layout-pressure-test.md`
+`docs/tracers/005-results.md`
 
 Include:
 

@@ -1,4 +1,7 @@
-import { stream as readStream } from "@durable-streams/client"
+import {
+  readRetainedJson,
+  type DurableStreamLogError,
+} from "@firegrid/durable-streams"
 import {
   compareRuntimeOutputOrder,
   isAfterRuntimeOutputCursor,
@@ -12,6 +15,7 @@ import {
   EventSource,
   EventSourceError,
   type EventPipelineFailure,
+  type EventSourceService,
 } from "./event-pipeline.ts"
 
 export class RuntimeOutputSourceError extends Schema.TaggedError<RuntimeOutputSourceError>()(
@@ -31,6 +35,11 @@ export interface RuntimeOutputEventSourceOptions {
   readonly streamUrl: string
   readonly contextId?: string
   readonly since?: RuntimeOutputCursor
+}
+
+export interface RuntimeOutputContextEventSourceOptions
+  extends RuntimeOutputEventSourceOptions {
+  readonly contextId: string
 }
 
 const decodeJournalEvent = Schema.decodeUnknownEither(RuntimeJournalEventSchema)
@@ -61,6 +70,22 @@ const mapSourceError = (
 ): EventSourceError =>
   new EventSourceError({ op: cause.op, cause })
 
+const mapDurableStreamLogError = (
+  cause: DurableStreamLogError,
+): RuntimeOutputSourceError =>
+  new RuntimeOutputSourceError({ op: `readRuntimeJournal.${cause.op}`, cause })
+
+const runtimeJournalEventSourceLive = (
+  read: Effect.Effect<{
+    readonly events: ReadonlyArray<unknown>
+    readonly failures: ReadonlyArray<EventPipelineFailure>
+  }, EventSourceError>,
+) =>
+  Layer.succeed(
+    EventSource,
+    EventSource.of({ read }),
+  )
+
 /**
  * firegrid-event-pipeline-materialization.SOURCE.1
  * firegrid-event-pipeline-materialization.SOURCE.2
@@ -70,20 +95,9 @@ export const readRuntimeJournal = Effect.fn("readRuntimeJournal")(
     readonly streamUrl: string
     readonly contextId?: string
   }) {
-    const response = yield* Effect.tryPromise({
-      try: () =>
-        readStream<unknown>({
-          url: options.streamUrl,
-          offset: "-1",
-          live: false,
-          json: true,
-        }),
-      catch: cause => new RuntimeOutputSourceError({ op: "readRuntimeJournal.fetch", cause }),
-    })
-    const rows = yield* Effect.tryPromise({
-      try: () => response.json(),
-      catch: cause => new RuntimeOutputSourceError({ op: "readRuntimeJournal.parse", cause }),
-    })
+    const rows = yield* readRetainedJson<unknown>({
+      streamUrl: options.streamUrl,
+    }).pipe(Effect.mapError(mapDurableStreamLogError))
 
     const candidates = options.contextId === undefined
       ? rows
@@ -125,31 +139,37 @@ export const stdoutRowsForContext = (
 export const RawRuntimeJournalEventSourceLive = (
   options: RuntimeOutputEventSourceOptions,
 ) =>
-  Layer.succeed(
-    EventSource,
-    EventSource.of({
-      read: readRuntimeJournal(options).pipe(
-        Effect.mapError(mapSourceError),
-        Effect.map(journal => ({
-          events: journal.events,
-          failures: journal.decodeFailures,
-        })),
-      ),
-    }),
-  )
+  runtimeJournalEventSourceLive(rawRuntimeJournalEventSource(options).read)
+
+export const rawRuntimeJournalEventSource = (
+  options: RuntimeOutputEventSourceOptions,
+): EventSourceService<RuntimeJournalEvent> =>
+  ({
+    read: readRuntimeJournal(options).pipe(
+      Effect.mapError(mapSourceError),
+      Effect.map(journal => ({
+        events: journal.events,
+        failures: journal.decodeFailures,
+      })),
+    ),
+  })
+
+export const runtimeOutputEventSource = (
+  options: RuntimeOutputContextEventSourceOptions,
+): EventSourceService<RuntimeEvent> =>
+  ({
+    read: readRuntimeJournal(options).pipe(
+      Effect.mapError(mapSourceError),
+      Effect.map(journal => ({
+        events: stdoutRowsForContext(journal.events, options),
+        failures: journal.decodeFailures,
+      })),
+    ),
+  })
 
 export const RuntimeOutputEventSourceLive = (
-  options: RuntimeOutputEventSourceOptions & { readonly contextId: string },
+  options: RuntimeOutputContextEventSourceOptions,
 ) =>
-  Layer.succeed(
-    EventSource,
-    EventSource.of({
-      read: readRuntimeJournal(options).pipe(
-        Effect.mapError(mapSourceError),
-        Effect.map(journal => ({
-          events: stdoutRowsForContext(journal.events, options),
-          failures: journal.decodeFailures,
-        })),
-      ),
-    }),
+  runtimeJournalEventSourceLive(
+    runtimeOutputEventSource(options).read,
   )

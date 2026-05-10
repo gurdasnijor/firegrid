@@ -4,17 +4,17 @@ import {
   local,
   normalizeRuntimeIntent,
   PublicLaunchRequestSchema,
-  runtimeContextStateSchema,
+  runtimeContextStateDescriptor,
   RuntimeJournalEventSchema,
   compareRuntimeOutputOrder,
   isAfterRuntimeOutputCursor,
   type RuntimeContext,
   type RuntimeEvent,
 } from "./index.ts"
-import { sessionStateSchema } from "../session/index.ts"
+import { sessionStateDescriptor } from "../session/index.ts"
 
 describe("@firegrid/protocol launch schema", () => {
-  it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1 firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.7 encodes normalized runtime contexts as control-plane state rows", async () => {
+  it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1 firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.7 declares normalized runtime context control-plane state descriptors", async () => {
     const context: RuntimeContext = {
       contextId: "ctx-1",
       createdAt: "2026-05-07T00:00:00.000Z",
@@ -30,12 +30,11 @@ describe("@firegrid/protocol launch schema", () => {
       },
     }
 
-    const row = runtimeContextStateSchema.contexts.upsert({
-      value: context,
-      headers: { txid: "ctx-1" },
-    })
+    const decoded = Schema.decodeUnknownSync(runtimeContextStateDescriptor.contexts.schema)(context)
 
-    expect(row.type).toEqual("firegrid.runtime.context")
+    expect(runtimeContextStateDescriptor.contexts.type).toEqual("firegrid.runtime.context")
+    expect(runtimeContextStateDescriptor.contexts.primaryKey).toEqual("contextId")
+    expect(decoded.contextId).toEqual("ctx-1")
   })
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 rejects public launch requests with env or journal fields", () => {
@@ -130,17 +129,13 @@ describe("@firegrid/protocol launch schema", () => {
     expect(isAfterRuntimeOutputCursor(retry, { activityAttempt: 1, sequence: 99 })).toBe(true)
   })
 
-  it("durable-records-and-projections.PROJECTIONS.5 encodes session projection rows as State Protocol changes", () => {
-    const session = sessionStateSchema.sessions.upsert({
-      value: {
+  it("durable-records-and-projections.PROJECTIONS.5 declares session projection state descriptors", () => {
+    const session = Schema.decodeUnknownSync(sessionStateDescriptor.sessions.schema)({
         sessionId: "session_ctx_1",
         contextId: "ctx_1",
         status: "active",
-      },
-      headers: { txid: "session-txid" },
     })
-    const message = sessionStateSchema.messages.upsert({
-      value: {
+    const message = Schema.decodeUnknownSync(sessionStateDescriptor.messages.schema)({
         messageId: "msg_ctx_1_1_0",
         sessionId: "session_ctx_1",
         contextId: "ctx_1",
@@ -148,11 +143,13 @@ describe("@firegrid/protocol launch schema", () => {
         text: "pong",
         sourceRuntimeEventId: "event_ctx_1_1_0",
         createdAt: "2026-05-08T00:00:00.000Z",
-      },
-      headers: { txid: "message-txid" },
     })
 
-    expect(session.type).toEqual("firegrid.session")
-    expect(message.type).toEqual("firegrid.session.message")
+    expect(sessionStateDescriptor.sessions.type).toEqual("firegrid.session")
+    expect(sessionStateDescriptor.sessions.primaryKey).toEqual("sessionId")
+    expect(session.sessionId).toEqual("session_ctx_1")
+    expect(sessionStateDescriptor.messages.type).toEqual("firegrid.session.message")
+    expect(sessionStateDescriptor.messages.primaryKey).toEqual("messageId")
+    expect(message.messageId).toEqual("msg_ctx_1_1_0")
   })
 })

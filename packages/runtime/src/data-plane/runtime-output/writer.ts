@@ -1,4 +1,7 @@
-import { IdempotentProducer } from "@durable-streams/client"
+import {
+  openDurableStreamProducer,
+  type DurableStreamProducerError,
+} from "@firegrid/durable-streams"
 import {
   RuntimeJournalEventSchema,
   type RuntimeEvent,
@@ -7,7 +10,6 @@ import {
 } from "@firegrid/protocol/launch"
 import type { Scope } from "effect"
 import { Context, Effect, Layer, Schema } from "effect"
-import { makeJsonDurableStream } from "../stream.ts"
 
 export type RuntimeOutputRow = RuntimeEvent | RuntimeLogLine
 
@@ -86,66 +88,33 @@ const producerIdFor = (
 export const RuntimeCaptureJournalLive = (
   options: RuntimeCaptureJournalOptions,
 ) => {
-  const stream = makeJsonDurableStream(options.streamUrl, options.contentType ?? "application/json")
-
   return Layer.succeed(
     RuntimeCaptureJournal,
     RuntimeCaptureJournal.of({
       openAttempt: attempt =>
-        Effect.acquireRelease(
-          Effect.sync(() => {
-            const errors: Array<Error> = []
-            const producer = new IdempotentProducer(
-              stream,
-              producerIdFor(attempt),
-              {
-                autoClaim: true,
-                lingerMs: options.lingerMs ?? 10,
-                onError: error => {
-                  errors.push(error)
-                },
-              },
-            )
-
-            const drainErrors = (
+        openDurableStreamProducer({
+          streamUrl: options.streamUrl,
+          contentType: options.contentType ?? "application/json",
+          producerId: producerIdFor(attempt),
+          lingerMs: options.lingerMs ?? 10,
+        }).pipe(
+          Effect.map(producer => {
+            const mapDurableProducerError = (
               op: string,
-            ): Effect.Effect<void, RuntimeCaptureJournalError> =>
-              errors.length === 0
-                ? Effect.void
-                : Effect.fail(mapProducerError(
-                  op,
-                  attempt.contextId,
-                  errors.shift() ?? new Error("unknown runtime capture producer error"),
-                ))
-
-            return { producer, drainErrors }
-          }),
-          ({ producer }) =>
-            Effect.tryPromise({
-              try: () => producer.detach(),
-              catch: cause => mapProducerError("runtime-capture.detach", attempt.contextId, cause),
-            }).pipe(Effect.ignore),
-        ).pipe(
-          Effect.map(({ producer, drainErrors }) => {
+            ) =>
+              Effect.mapError((cause: DurableStreamProducerError) =>
+                mapProducerError(op, attempt.contextId, cause))
             const appendOutput = (
               op: string,
               event: RuntimeJournalEvent,
             ): Effect.Effect<void, RuntimeCaptureJournalError> =>
-              Effect.try({
-                // firegrid-durable-launch-runtime-operator.STREAM_TRUTH_BOUNDARY.2
-                try: () => producer.append(encodeJournalEvent(event)),
-                catch: cause => mapProducerError(op, attempt.contextId, cause),
-              }).pipe(Effect.zipRight(drainErrors(op)))
+              // firegrid-durable-launch-runtime-operator.STREAM_TRUTH_BOUNDARY.2
+              producer.append(encodeJournalEvent(event)).pipe(mapDurableProducerError(op))
 
             return {
               write: row =>
                 appendOutput(`runtime-capture.${row.source}`, journalEventForOutput(row)),
-              flush: Effect.tryPromise({
-                try: async () => {
-                  await producer.flush()
-                },
-                catch: cause => mapProducerError("runtime-capture.flush", attempt.contextId, cause),
-              }).pipe(Effect.zipRight(drainErrors("runtime-capture.flush"))),
+              flush: producer.flush.pipe(mapDurableProducerError("runtime-capture.flush")),
             } satisfies RuntimeCaptureAttempt
           }),
         ),

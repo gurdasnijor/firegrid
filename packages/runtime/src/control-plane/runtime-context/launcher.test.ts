@@ -1,41 +1,34 @@
 import {
-  DurableStream,
-  stream as readStream,
-} from "@durable-streams/client"
-import { DurableStreamTestServer } from "@durable-streams/server"
-import { NodeContext } from "@effect/platform-node"
+  readRetainedJson,
+} from "@firegrid/durable-streams"
+import {
+  startDurableStreamsTestServer,
+  type DurableStreamsTestServerHandle,
+} from "@firegrid/durable-streams/test-utils"
 import {
   local,
   normalizeRuntimeIntent,
   RuntimeJournalEventSchema,
   type RuntimeJournalEvent,
 } from "@firegrid/protocol/launch"
-import { Effect, Either, Layer, Option, Schema } from "effect"
+import { Effect, Either, Option, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
-  LocalProcessSandboxProviderLive,
-} from "../../data-plane/execution/sandbox/providers/local-process.ts"
-import {
   startRuntime,
-} from "./launcher.ts"
+  FiregridRuntimeHostLive,
+} from "../../runtime-host/index.ts"
 import {
   RuntimeControlPlane,
   RuntimeControlPlaneLive,
 } from "./service.ts"
 import {
   makeWorkflowStateStore,
-} from "../workflow-engine/workflows.ts"
+} from "@firegrid/durable-streams"
 
-const LaunchTestLive = Layer.mergeAll(
-  LocalProcessSandboxProviderLive,
-  NodeContext.layer,
-)
-
-let server: DurableStreamTestServer | undefined
+let server: DurableStreamsTestServerHandle | undefined
 
 beforeEach(async () => {
-  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
-  await server.start()
+  server = await startDurableStreamsTestServer()
 })
 
 afterEach(async () => {
@@ -45,12 +38,7 @@ afterEach(async () => {
 
 const createStreamUrl = async (name: string): Promise<string> => {
   if (!server) throw new Error("server not started")
-  const streamUrl = `${server.url}/v1/stream/${name}-${crypto.randomUUID()}`
-  await DurableStream.create({
-    url: streamUrl,
-    contentType: "application/json",
-  })
-  return streamUrl
+  return server.createStreamUrl(name)
 }
 
 const appendRuntimeContext = (
@@ -75,13 +63,7 @@ const appendRuntimeContext = (
 const readDataPlane = async (
   streamUrl: string,
 ): Promise<ReadonlyArray<RuntimeJournalEvent>> => {
-  const response = await readStream<unknown>({
-    url: streamUrl,
-    offset: "-1",
-    live: false,
-    json: true,
-  })
-  const rows = await response.json()
+  const rows = await Effect.runPromise(readRetainedJson<unknown>({ streamUrl }))
   return rows.map(row => Schema.decodeUnknownSync(RuntimeJournalEventSchema)(row))
 }
 
@@ -109,12 +91,18 @@ console.error("diagnostic: child stderr")
 
     const result = await Effect.runPromise(
       startRuntime({
-        runtimeStreamUrl: controlPlaneStreamUrl,
-        dataPlaneStreamUrl,
-        workflowStreamUrl,
         contextId,
       }).pipe(
-        Effect.provide(LaunchTestLive),
+        // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.1
+        // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.2
+        // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.3
+        Effect.provide(FiregridRuntimeHostLive({
+          streams: {
+            workflow: workflowStreamUrl,
+            controlPlane: controlPlaneStreamUrl,
+            runtimeOutput: dataPlaneStreamUrl,
+          },
+        })),
       ),
     )
 
@@ -201,12 +189,15 @@ console.error("diagnostic: child stderr")
 
     const result = await Effect.runPromise(
       Effect.either(startRuntime({
-        runtimeStreamUrl: controlPlaneStreamUrl,
-        dataPlaneStreamUrl,
-        workflowStreamUrl,
         contextId,
       }).pipe(
-        Effect.provide(LaunchTestLive),
+        Effect.provide(FiregridRuntimeHostLive({
+          streams: {
+            workflow: workflowStreamUrl,
+            controlPlane: controlPlaneStreamUrl,
+            runtimeOutput: dataPlaneStreamUrl,
+          },
+        })),
       )),
     )
 

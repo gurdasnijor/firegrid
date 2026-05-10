@@ -3,7 +3,15 @@ export {
   RuntimeContextError,
 } from "./control-plane/runtime-context/errors.ts"
 export {
-  startRuntime,
-  type StartRuntimeOptions,
+  startRuntimeContext,
+  type StartRuntimeContextOptions,
   type StartRuntimeResult,
 } from "./control-plane/runtime-context/launcher.ts"
+export {
+  FiregridRuntimeHost,
+  FiregridRuntimeHostLive,
+  startRuntime,
+  type RuntimeHostOptions,
+  type RuntimeHostStreams,
+  type StartRuntimeOptions,
+} from "./runtime-host/index.ts"

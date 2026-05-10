@@ -9,10 +9,6 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./Workflows": {
-      "types": "./src/control-plane/workflow-engine/workflows.ts",
-      "default": "./src/control-plane/workflow-engine/workflows.ts"
-    },
     "./data-plane/execution/sandbox": {
       "types": "./src/data-plane/execution/sandbox/index.ts",
       "default": "./src/data-plane/execution/sandbox/index.ts"
@@ -20,6 +16,18 @@
     "./data-plane/materialization": {
       "types": "./src/data-plane/materialization/index.ts",
       "default": "./src/data-plane/materialization/index.ts"
+    },
+    "./data-plane/materialization/core": {
+      "types": "./src/data-plane/materialization/core/index.ts",
+      "default": "./src/data-plane/materialization/core/index.ts"
+    },
+    "./data-plane/materialization/raw-fold": {
+      "types": "./src/data-plane/materialization/raw-fold/index.ts",
+      "default": "./src/data-plane/materialization/raw-fold/index.ts"
+    },
+    "./data-plane/materialization/state-protocol": {
+      "types": "./src/data-plane/materialization/state-protocol/index.ts",
+      "default": "./src/data-plane/materialization/state-protocol/index.ts"
     },
     "./data-plane/materialization/materialize": {
       "types": "./src/data-plane/materialization/materialize/index.ts",
@@ -45,9 +53,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@durable-streams/client": "^0.2.3",
-    "@durable-streams/server": "^0.3.1",
-    "@durable-streams/state": "^0.2.5",
     "@effect/experimental": "0.60.0",
     "@effect/platform": "^0.96.0",
     "@effect/platform-node": "^0.106.0",
@@ -55,6 +60,7 @@
     "@effect/sql": "0.51.1",
     "@effect/sql-pg": "0.52.1",
     "@effect/workflow": "0.18.1",
+    "@firegrid/durable-streams": "workspace:*",
     "@firegrid/protocol": "workspace:*",
     "effect": "^3.18.0"
   },

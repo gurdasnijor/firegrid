@@ -32,7 +32,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@durable-streams/state": "^0.2.5",
     "effect": "^3.18.0"
   },
   "devDependencies": {

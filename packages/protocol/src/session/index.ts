@@ -8,4 +8,4 @@ export {
   type SessionRole,
   type SessionStatus,
 } from "./schema.ts"
-export { sessionStateSchema } from "./state.ts"
+export { sessionStateDescriptor } from "./state.ts"

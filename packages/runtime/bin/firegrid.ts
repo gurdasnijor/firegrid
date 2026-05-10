@@ -109,7 +109,7 @@ const runCommand = (config: LaunchConfig) =>
   Effect.gen(function* () {
     yield* printConfig(config)
     yield* write("firegrid runtime launch boundary ready")
-    yield* write("runtime graph execution will be attached here by Workflows.layerDurableStreams")
+    yield* write("runtime graph execution will be attached here by DurableStreamsWorkflowEngine.layer")
     return yield* Effect.never
   })
 

@@ -1,5 +1,3 @@
-import { DurableStream } from "@durable-streams/client"
-import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   Activity,
   DurableClock,
@@ -9,18 +7,21 @@ import {
 import { Duration, Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
+  DurableStreamsWorkflowEngine,
   fireDueWorkflowClocks,
-  layerDurableStreams,
   makeWorkflowStateStore,
   type WorkflowEngineDurableStateOptions,
   type WorkflowStateStore,
-} from "./workflows.ts"
+} from "./DurableStreamsWorkflowEngine.ts"
+import {
+  startDurableStreamsTestServer,
+  type DurableStreamsTestServerHandle,
+} from "./testing/test-server.ts"
 
-let server: DurableStreamTestServer | undefined
+let server: DurableStreamsTestServerHandle | undefined
 
 beforeEach(async () => {
-  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
-  await server.start()
+  server = await startDurableStreamsTestServer()
 })
 
 afterEach(async () => {
@@ -30,12 +31,7 @@ afterEach(async () => {
 
 const createStreamUrl = async (name: string): Promise<string> => {
   if (!server) throw new Error("server not started")
-  const streamUrl = `${server.url}/v1/stream/${name}-${crypto.randomUUID()}`
-  await DurableStream.create({
-    url: streamUrl,
-    contentType: "application/json",
-  })
-  return streamUrl
+  return server.createStreamUrl(name)
 }
 
 const runWithLayer = <A, E>(
@@ -59,7 +55,8 @@ const runWith = <A, E>(
   options: WorkflowEngineDurableStateOptions,
   workflowLayer: unknown,
   effect: Effect.Effect<A, E, unknown>,
-): Promise<A> => runWithLayer(layerDurableStreams(options), workflowLayer, effect)
+): Promise<A> =>
+  runWithLayer(DurableStreamsWorkflowEngine.layer(options), workflowLayer, effect)
 
 const inspectStore = async <A>(
   streamUrl: string,
@@ -237,7 +234,7 @@ describe("durable workflow engine", () => {
       ShapeWorkflow.execute({ id: "same" }),
     )
     const second = await runWithLayer(
-      layerDurableStreams({ streamUrl }),
+      DurableStreamsWorkflowEngine.layer({ streamUrl }),
       workflowLayer,
       ShapeWorkflow.execute({ id: "same" }),
     )

@@ -1,6 +1,7 @@
-import { DurableStream } from "@durable-streams/client"
-import { DurableStreamTestServer } from "@durable-streams/server"
-import { NodeContext } from "@effect/platform-node"
+import {
+  startDurableStreamsTestServer,
+  type DurableStreamsTestServerHandle,
+} from "@firegrid/durable-streams/test-utils"
 import {
   Firegrid,
   FiregridConfig,
@@ -8,19 +9,16 @@ import {
   local,
 } from "@firegrid/client"
 import {
+  FiregridRuntimeHostLive,
   startRuntime,
 } from "@firegrid/runtime"
-import {
-  LocalProcessSandboxProviderLive,
-} from "@firegrid/runtime/data-plane/execution/sandbox"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-let server: DurableStreamTestServer | undefined
+let server: DurableStreamsTestServerHandle | undefined
 
 beforeEach(async () => {
-  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
-  await server.start()
+  server = await startDurableStreamsTestServer()
 })
 
 afterEach(async () => {
@@ -30,12 +28,7 @@ afterEach(async () => {
 
 const createStreamUrl = async (name: string): Promise<string> => {
   if (!server) throw new Error("server not started")
-  const streamUrl = `${server.url}/v1/stream/${name}-${crypto.randomUUID()}`
-  await DurableStream.create({
-    url: streamUrl,
-    contentType: "application/json",
-  })
-  return streamUrl
+  return server.createStreamUrl(name)
 }
 
 const runWithFiregrid = <A, E>(
@@ -83,15 +76,16 @@ console.error("diagnostic: client-to-runtime")
 
     const result = await Effect.runPromise(
       startRuntime({
-        runtimeStreamUrl: controlPlaneStreamUrl,
-        dataPlaneStreamUrl,
-        workflowStreamUrl,
         contextId: handle.contextId,
       }).pipe(
-        Effect.provide(Layer.mergeAll(
-          LocalProcessSandboxProviderLive,
-          NodeContext.layer,
-        )),
+        // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.4
+        Effect.provide(FiregridRuntimeHostLive({
+          streams: {
+            workflow: workflowStreamUrl,
+            controlPlane: controlPlaneStreamUrl,
+            runtimeOutput: dataPlaneStreamUrl,
+          },
+        })),
       ),
     )
 
