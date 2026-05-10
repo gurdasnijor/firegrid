@@ -89,7 +89,7 @@ export const makeRawFoldStrategy = Effect.map(
       query: query =>
         Ref.get(state).pipe(
           Effect.flatMap(projections => {
-            const key = rawFoldKey(query.projectionName, query.targetName)
+            const key = rawFoldKey(query.projectionName, query.target.name)
             const projection = projections.get(key)
             if (projection === undefined) {
               return Effect.fail(projectionError(
@@ -106,7 +106,7 @@ export const makeRawFoldStrategy = Effect.map(
         Stream.fromEffect(
           Ref.get(state).pipe(
             Effect.flatMap(projections => {
-              const key = rawFoldKey(query.projectionName, query.targetName)
+              const key = rawFoldKey(query.projectionName, query.target.name)
               const projection = projections.get(key)
               if (projection === undefined) {
                 return Effect.fail(projectionError(

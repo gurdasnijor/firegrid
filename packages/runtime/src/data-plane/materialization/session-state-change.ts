@@ -12,4 +12,3 @@ export type SessionStateChange =
     readonly kind: "upsertMessage"
     readonly value: MessageProjection
   }
-
