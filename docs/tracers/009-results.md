@@ -18,3 +18,7 @@ Timeout is reserved in the durable lifecycle as `timed_out`, but this tracer doe
 ## Directory Boundary
 
 Required actions live under `packages/runtime/src/required-action/**`. Stale `control-plane` and `data-plane` runtime directories were read for existing patterns only; they remain outside tracer 009 scope.
+
+## Follow-Up Architecture Gap
+
+Required-action protocol schema extraction and Durable Streams State descriptor design are intentionally deferred. Tracer 009 keeps raw retained required-action request and resolution facts in the runtime namespace so the PR remains focused on workflow wait and resolution semantics.
