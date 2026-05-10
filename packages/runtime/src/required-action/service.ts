@@ -131,6 +131,17 @@ const getRequiredActionState = (
     Effect.map(rows => foldRequiredActionState(requiredActionId, rows)),
   )
 
+const completeRequiredActionDeferred = (
+  request: RequiredActionRequestedRow | undefined,
+  resolution: RequiredActionResolution,
+) =>
+  request?.workflowDeferredToken === undefined
+    ? Effect.void
+    : DurableDeferred.succeed(RequiredActionResolutionDeferred, {
+      token: request.workflowDeferredToken as DurableDeferred.Token,
+      value: resolution,
+    })
+
 export const RequiredActionsLive = (
   options: RequiredActionsOptions,
 ) =>
@@ -181,6 +192,7 @@ export const RequiredActionsLive = (
           if (existing.resolution !== undefined) {
             // firegrid-required-actions.WORKFLOW.4
             // firegrid-required-actions.WORKFLOW.5
+            yield* completeRequiredActionDeferred(existing.request, existing.resolution)
             return sameResolution(existing.resolution, decoded)
               ? existing.resolution
               : existing.resolution
@@ -197,12 +209,7 @@ export const RequiredActionsLive = (
           // firegrid-required-actions.RECORDS.2
           // firegrid-required-actions.WORKFLOW.3
           yield* appendRequiredActionRow(options.streamUrl, row)
-          if (existing.request?.workflowDeferredToken !== undefined) {
-            yield* DurableDeferred.succeed(RequiredActionResolutionDeferred, {
-              token: existing.request.workflowDeferredToken as DurableDeferred.Token,
-              value: decoded,
-            })
-          }
+          yield* completeRequiredActionDeferred(existing.request, decoded)
           return decoded
         }),
       get: requiredActionId =>

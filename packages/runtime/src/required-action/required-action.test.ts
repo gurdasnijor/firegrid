@@ -1,4 +1,7 @@
 import {
+  appendJson,
+} from "@firegrid/durable-streams"
+import {
   startDurableStreamsTestServer,
   type DurableStreamsTestServerHandle,
 } from "@firegrid/durable-streams/test-utils"
@@ -7,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RequiredActions,
   RequiredActionRuntimeLive,
+  requiredActionResolvedRowId,
   startRequiredAction,
 } from "./index.ts"
 
@@ -158,6 +162,77 @@ describe("required-action workflow", () => {
     expect(result.conflict).toEqual(result.first)
     expect(result.state.status).toBe("approved")
     expect(result.state.resolution).toEqual(result.first)
+    expect(result.rows.filter(row => row.type === "firegrid.required_action.resolved")).toHaveLength(1)
+  })
+
+  it("firegrid-required-actions.WORKFLOW.3 durable terminal state is enough for a later resolver retry to resume the workflow", async () => {
+    const requiredActionStreamUrl = await createStreamUrl("required-action-retry-wake")
+    const workflowStreamUrl = await createStreamUrl("required-action-retry-wake-workflow")
+    const requiredActionId = `req_${crypto.randomUUID()}`
+    const resolvedAt = "2026-05-09T00:00:00.000Z"
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.fork(startRequiredAction({
+          requiredActionId,
+          runtimeContextId: "ctx_retry_wake",
+          requestKind: "approval",
+          subject: { kind: "opaque" },
+        }))
+        const actions = yield* RequiredActions
+        let state = yield* actions.get(requiredActionId)
+        while (state.request === undefined) {
+          yield* Effect.sleep(Duration.millis(5))
+          state = yield* actions.get(requiredActionId)
+        }
+
+        yield* appendJson({
+          streamUrl: requiredActionStreamUrl,
+          event: {
+            type: "firegrid.required_action.resolved",
+            id: requiredActionResolvedRowId(requiredActionId),
+            at: resolvedAt,
+            requiredActionId,
+            resolution: {
+              requiredActionId,
+              outcome: "approved",
+              resolvedBy: "operator:test",
+              resolvedAt,
+              selectedOptionId: "allow",
+            },
+          },
+        })
+
+        const retry = yield* actions.resolve({
+          requiredActionId,
+          outcome: "approved",
+          resolvedBy: "operator:test",
+          resolvedAt,
+          selectedOptionId: "allow",
+        })
+        const decision = yield* Fiber.join(fiber)
+
+        return {
+          retry,
+          decision,
+          rows: yield* actions.rows,
+        }
+      }).pipe(
+        Effect.provide(RequiredActionRuntimeLive({
+          requiredActionStreamUrl,
+          workflowStreamUrl,
+          workerId: "required-action-retry-wake-worker",
+        })),
+      ),
+    )
+
+    expect(result.retry).toEqual(result.decision)
+    expect(result.decision).toMatchObject({
+      requiredActionId,
+      outcome: "approved",
+      resolvedBy: "operator:test",
+      selectedOptionId: "allow",
+    })
     expect(result.rows.filter(row => row.type === "firegrid.required_action.resolved")).toHaveLength(1)
   })
 })
