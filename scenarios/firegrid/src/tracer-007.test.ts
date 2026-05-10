@@ -1,7 +1,13 @@
 import {
+  readRetainedJson,
+} from "@firegrid/durable-streams"
+import {
   Firegrid,
   local,
 } from "@firegrid/client"
+import type {
+  RuntimeJournalEvent,
+} from "@firegrid/protocol/launch"
 import {
   FiregridRuntimeHostLive,
   startRuntime,
@@ -40,14 +46,14 @@ const runWithFiregrid = <A, E>(
   return harness.runWithFiregrid(options, effect)
 }
 
-describe("firegrid tracer scenarios", () => {
-  it("firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.10 starts from public launch and journals retained runtime events/logs", async () => {
+describe("firegrid tracer 007 sandbox slot extraction", () => {
+  it("firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1 firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.6 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.3 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.5 journals stdout stderr and exit through FiregridRuntimeHostLive", async () => {
     const controlPlaneStreamUrl = await createStreamUrl("runtime-control")
-    const dataPlaneStreamUrl = await createStreamUrl("runtime-data")
+    const dataPlaneStreamUrl = await createStreamUrl("runtime-output")
     const workflowStreamUrl = await createStreamUrl("workflow")
     const childCode = `
-console.log(JSON.stringify({ type: "assistant", text: "pong" }))
-console.error("diagnostic: client-to-runtime")
+console.log(JSON.stringify({ type: "assistant", text: "sandbox-slot-pong" }))
+console.error("diagnostic: sandbox-slot")
 `
 
     const handle = await runWithFiregrid(
@@ -62,11 +68,13 @@ console.error("diagnostic: client-to-runtime")
       }),
     )
 
-    const result = await Effect.runPromise(
+    const runtime = await Effect.runPromise(
       startRuntime({
         contextId: handle.contextId,
       }).pipe(
         // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.4
+        // firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1
+        // The scenario provides only the production host root; sandbox wiring stays inside FiregridRuntimeHostLive.
         Effect.provide(FiregridRuntimeHostLive({
           streams: {
             workflow: workflowStreamUrl,
@@ -77,7 +85,7 @@ console.error("diagnostic: client-to-runtime")
       ),
     )
 
-    expect(result).toMatchObject({
+    expect(runtime).toMatchObject({
       contextId: handle.contextId,
       exitCode: 0,
     })
@@ -90,15 +98,32 @@ console.error("diagnostic: client-to-runtime")
       }),
     )
 
-    expect(snapshot.events).toContainEqual(expect.objectContaining({
+    expect(snapshot.runs).toContainEqual(expect.objectContaining({
       contextId: handle.contextId,
-      source: "stdout",
-      raw: "{\"type\":\"assistant\",\"text\":\"pong\"}",
+      status: "exited",
+      exitCode: 0,
+      provider: "local-process",
     }))
-    expect(snapshot.logs).toContainEqual(expect.objectContaining({
-      contextId: handle.contextId,
-      source: "stderr",
-      raw: "diagnostic: client-to-runtime",
+
+    const retainedJournal = await Effect.runPromise(
+      readRetainedJson<RuntimeJournalEvent>({ streamUrl: dataPlaneStreamUrl }),
+    )
+
+    expect(retainedJournal).toContainEqual(expect.objectContaining({
+      type: "firegrid.runtime.output.stdout",
+      event: expect.objectContaining({
+        contextId: handle.contextId,
+        source: "stdout",
+        raw: "{\"type\":\"assistant\",\"text\":\"sandbox-slot-pong\"}",
+      }),
+    }))
+    expect(retainedJournal).toContainEqual(expect.objectContaining({
+      type: "firegrid.runtime.output.stderr",
+      log: expect.objectContaining({
+        contextId: handle.contextId,
+        source: "stderr",
+        raw: "diagnostic: sandbox-slot",
+      }),
     }))
   })
 })

@@ -192,6 +192,12 @@ importers:
       '@firegrid/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@firegrid/sandbox-local-process':
+        specifier: workspace:*
+        version: link:../sandbox-local-process
+      '@firegrid/sandboxes-core':
+        specifier: workspace:*
+        version: link:../sandboxes-core
       effect:
         specifier: ^3.18.0
         version: 3.21.2
@@ -202,6 +208,44 @@ importers:
       tsx:
         specifier: ^4.20.4
         version: 4.21.0
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)
+
+  packages/sandbox-local-process:
+    dependencies:
+      '@effect/platform':
+        specifier: ^0.96.0
+        version: 0.96.1(effect@3.21.2)
+      '@firegrid/sandboxes-core':
+        specifier: workspace:*
+        version: link:../sandboxes-core
+      effect:
+        specifier: ^3.18.0
+        version: 3.21.2
+    devDependencies:
+      '@effect/platform-node':
+        specifier: ^0.106.0
+        version: 0.106.0(@effect/cluster@0.58.2(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)
+
+  packages/sandboxes-core:
+    dependencies:
+      effect:
+        specifier: ^3.18.0
+        version: 3.21.2
+    devDependencies:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
