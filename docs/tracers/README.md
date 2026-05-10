@@ -19,6 +19,13 @@ Scenario-level end-to-end coverage is mandatory for every implemented tracer.
 Package/unit tests can prove internal contracts, but they do not complete a
 tracer unless a scenario also invokes the production surface and observes the
 durable outcome across the tracer's architectural boundary.
+Contract tests in package test files are useful for edge cases and typed
+interfaces, but scenario tests must stay as high fidelity and production-like as
+the local environment allows. If a real dependency can be run locally through
+Docker, a local process, or a production package surface, the scenario should
+use it rather than a mock. Skips are acceptable only for missing external
+runtime capabilities such as Docker or credentials, and the skipped scenario
+must make that dependency explicit.
 
 ## Bullets
 
