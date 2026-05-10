@@ -74,21 +74,22 @@ const foldRequiredActionState = (
   requiredActionId: string,
   rows: ReadonlyArray<RequiredActionRow>,
 ): RequiredActionState => {
-  const matchingRows = rows.filter(row => row.requiredActionId === requiredActionId)
-  const request = matchingRows.find(
-    (row): row is RequiredActionRequestedRow =>
-      row.type === "firegrid.required_action.requested",
-  )
-  const resolution = matchingRows.find(
-    (row): row is RequiredActionResolvedRow =>
-      row.type === "firegrid.required_action.resolved",
-  )?.resolution
+  const { request, resolved } = rows.reduce<{
+    readonly request?: RequiredActionRequestedRow
+    readonly resolved?: RequiredActionResolvedRow
+  }>((state, row) => {
+    if (row.requiredActionId !== requiredActionId) return state
+    if (row.type === "firegrid.required_action.requested") {
+      return { ...state, request: row }
+    }
+    return { ...state, resolved: row }
+  }, {})
 
   return {
     requiredActionId,
-    status: resolution?.outcome ?? "requested",
+    status: resolved?.resolution.outcome ?? "requested",
     ...(request === undefined ? {} : { request }),
-    ...(resolution === undefined ? {} : { resolution }),
+    ...(resolved === undefined ? {} : { resolution: resolved.resolution }),
   }
 }
 
@@ -155,19 +156,33 @@ export const RequiredActionsLive = (
             options.streamUrl,
             request.requiredActionId,
           )
-          if (existing.request !== undefined) return existing.request
+          if (
+            existing.request !== undefined &&
+            (
+              existing.request.workflowDeferredToken !== undefined ||
+              request.workflowDeferredToken === undefined
+            )
+          ) {
+            return existing.request
+          }
 
           const row = Schema.decodeUnknownSync(RequiredActionRequestedRowSchema)({
             type: "firegrid.required_action.requested",
             id: requiredActionRequestedRowId(request.requiredActionId),
             at: nowIso(),
             requiredActionId: request.requiredActionId,
-            runtimeContextId: request.runtimeContextId,
-            requestKind: request.requestKind,
-            subject: request.subject,
-            ...(request.options === undefined ? {} : { options: request.options }),
-            ...(request.prompt === undefined ? {} : { prompt: request.prompt }),
-            ...(request.expiresAt === undefined ? {} : { expiresAt: request.expiresAt }),
+            runtimeContextId: existing.request?.runtimeContextId ?? request.runtimeContextId,
+            requestKind: existing.request?.requestKind ?? request.requestKind,
+            subject: existing.request?.subject ?? request.subject,
+            ...((existing.request?.options ?? request.options) === undefined
+              ? {}
+              : { options: existing.request?.options ?? request.options }),
+            ...((existing.request?.prompt ?? request.prompt) === undefined
+              ? {}
+              : { prompt: existing.request?.prompt ?? request.prompt }),
+            ...((existing.request?.expiresAt ?? request.expiresAt) === undefined
+              ? {}
+              : { expiresAt: existing.request?.expiresAt ?? request.expiresAt }),
             ...(request.workflowDeferredToken === undefined
               ? {}
               : { workflowDeferredToken: request.workflowDeferredToken }),

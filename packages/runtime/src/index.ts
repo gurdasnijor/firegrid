@@ -17,12 +17,17 @@ export {
   type StartRuntimeOptions,
 } from "./runtime-host/index.ts"
 export {
+  awaitRequiredActionWorkflow,
+  requiredActionOperator,
+  requiredActionOperatorId,
   RequiredActions,
   RequiredActionsLive,
   RequiredActionRuntimeLive,
   RequiredActionStateLive,
   RequiredActionWorkflow,
   RequiredActionWorkflowLayer,
+  requiredActionWorkflowExecutionId,
+  runRequiredActionOperator,
   startRequiredAction,
   type RequiredActionOutcome,
   type RequiredActionRequest,
@@ -52,3 +57,15 @@ export {
   type RuntimeIngressRequestedRow,
   type RuntimeIngressRow,
 } from "./runtime-ingress/index.ts"
+export {
+  reactiveWorkflowExecutionId,
+  ReactiveWorkflowOperatorError,
+  ReactiveWorkflowOperatorRuntime,
+  ReactiveWorkflowOperatorRuntimeLive,
+  ReactiveWorkflowOperatorRunSummarySchema,
+  reactiveWorkflowOperatorError,
+  runReactiveWorkflowOperator,
+  type OperatorSource,
+  type ReactiveWorkflowOperator,
+  type ReactiveWorkflowOperatorRunSummary,
+} from "./runtime-operators/index.ts"
