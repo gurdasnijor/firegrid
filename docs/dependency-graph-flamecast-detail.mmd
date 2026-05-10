@@ -16,23 +16,43 @@ B["topology.ts"]
 end
 subgraph C["runtime"]
 D["agent-webhooks.ts"]
-O["handler.ts"]
-P["main.ts"]
+14["handler.ts"]
+15["main.ts"]
 end
 end
 end
 end
 subgraph E["packages"]
-subgraph F["runtime"]
+subgraph F["durable-streams"]
 subgraph G["src"]
-subgraph H["control-plane"]
-subgraph I["workflow-engine"]
-J["workflows.ts"]
-K["clock.ts"]
-L["state.ts"]
-M["engine-runtime.ts"]
-N["codec.ts"]
+H["index.ts"]
+I["DurableState.ts"]
+V["DurableStreamLog.ts"]
+W["DurableStreamProducer.ts"]
+X["DurableStreamsWorkflowEngine.ts"]
+subgraph Y["internal"]
+subgraph Z["workflow"]
+10["clock.ts"]
+11["state.ts"]
+12["engine-runtime.ts"]
+13["codec.ts"]
 end
+end
+end
+end
+subgraph J["protocol"]
+subgraph K["src"]
+subgraph L["launch"]
+M["index.ts"]
+N["cursor.ts"]
+O["helpers.ts"]
+P["schema.ts"]
+Q["state.ts"]
+end
+subgraph R["session"]
+S["index.ts"]
+T["schema.ts"]
+U["state.ts"]
 end
 end
 end
@@ -45,13 +65,28 @@ end
 9-->A
 D-->6
 D-->7
-D-->J
-J-->K
-J-->M
-J-->L
-K-->L
+D-->H
+H-->I
+H-->V
+H-->W
+H-->X
+I-->M
+I-->S
 M-->N
-M-->L
-O-->6
-O-->D
-P-->O
+M-->O
+M-->P
+M-->Q
+Q-->P
+S-->T
+S-->U
+U-->T
+W-->V
+X-->10
+X-->12
+X-->11
+10-->11
+12-->13
+12-->11
+14-->6
+14-->D
+15-->14
