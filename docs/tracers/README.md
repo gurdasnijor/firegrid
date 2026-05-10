@@ -21,6 +21,7 @@ topology, or provider wiring for the tracer path. This is governed by
 - [002: Runtime Output Events To Session State](./002-runtime-events-to-session-state.md)
 - [003: Runtime Events To Permission Workflow](./003-runtime-events-to-permission-workflow.md)
 - [004: ACP Stdio Runtime Output To Materialize Session](./004-claude-code-runtime-output-to-materialize-session.md)
+- [005: Durable Streams Substrate Extraction](./005-durable-streams-substrate-extraction.md)
 
 ## Handoff
 
@@ -69,6 +70,12 @@ Prerequisite
     -> Materialize webhook source
     -> SQL session materialized view
     -> SELECT/SUBSCRIBE endpoint query path
+
+005
+  extract Durable Streams substrate concerns
+    -> @firegrid/durable-streams owns direct @durable-streams/* imports
+    -> runtime consumes workflow/log/producer/state helpers through Effect services
+    -> tracer 001 and 002 keep passing through production surfaces
 ```
 
 The prerequisites establish the thin launch producer and live sandbox boundary.
@@ -78,6 +85,8 @@ that downstream consumers can independently interpret the same durable journal
 without coupling agent launch to session materialization or permission handling.
 The fourth bullet proves a parallel query-engine path for endpoint demos without
 changing Durable Streams authority.
+The fifth bullet is an architecture tracer: it validates whether Durable Streams
+can become a substrate package without speculative package splits.
 
 Tracer 002 and tracer 003 are intentionally directional. They should be
 re-scoped after tracer 001 is implemented and reviewed. Each fired tracer should
