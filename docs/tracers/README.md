@@ -22,9 +22,9 @@ topology, or provider wiring for the tracer path. This is governed by
 - [003: Runtime Events To Permission Workflow](./003-runtime-events-to-permission-workflow.md)
 - [004: ACP Stdio Runtime Output To Materialize Session](./004-claude-code-runtime-output-to-materialize-session.md)
 - [005: Durable Streams Substrate Extraction](./005-durable-streams-substrate-extraction.md)
-- 006: Runtime Host Root And Launch Boundary
+- [006: Runtime Host Root And Launch Boundary](./006-runtime-host-root-and-launch-boundary.md)
 - 007: Sandbox Slot Extraction
-- 008: Materialization Strategy Interface
+- [008: Materialization Strategy Interface](./008-materialization-strategy-interface.md)
 - 009: Required-Action Workflow
 - 010: Workflow-Backed Tools
 
