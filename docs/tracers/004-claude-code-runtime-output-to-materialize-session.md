@@ -142,8 +142,20 @@ package-level integration test around the strategy adapter and document the
 exact missing live scenario gate in this tracer file. Do not call the tracer
 complete without a scenario or an explicit skipped-live scenario file.
 
+Local emulator command for the live path:
+
+```sh
+docker run -d \
+  -p 127.0.0.1:6874:6874 \
+  -p 127.0.0.1:6875:6875 \
+  -p 127.0.0.1:6876:6876 \
+  -p 127.0.0.1:6877:6877 \
+  materialize/materialized:v26.23.0
+```
+
 ## References
 
+- Materialize emulator install guide: <https://materialize.com/docs/get-started/install-materialize-emulator/>
 - Materialize `CREATE SOURCE`: <https://materialize.com/docs/sql/create-source/>
 - Materialize sources concept: <https://materialize.com/docs/concepts/sources/>
 - Materialize `CREATE MATERIALIZED VIEW`: <https://materialize.com/docs/sql/create-materialized-view/>
