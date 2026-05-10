@@ -22,6 +22,11 @@ topology, or provider wiring for the tracer path. This is governed by
 - [003: Runtime Events To Permission Workflow](./003-runtime-events-to-permission-workflow.md)
 - [004: ACP Stdio Runtime Output To Materialize Session](./004-claude-code-runtime-output-to-materialize-session.md)
 - [005: Durable Streams Substrate Extraction](./005-durable-streams-substrate-extraction.md)
+- 006: Runtime Host Root And Launch Boundary
+- 007: Sandbox Slot Extraction
+- 008: Materialization Strategy Interface
+- 009: Required-Action Workflow
+- 010: Workflow-Backed Tools
 
 ## Handoff
 
@@ -76,6 +81,36 @@ Prerequisite
     -> @firegrid/durable-streams owns direct @durable-streams/* imports
     -> runtime consumes workflow/log/producer/state helpers through Effect services
     -> tracer 001 and 002 keep passing through production surfaces
+
+006
+  define runtime host root vs client launch request
+    -> host root chooses substrate/materialization/provider registry
+    -> client launch describes one agent request only
+    -> current runtime context flow runs through production root
+
+007
+  extract sandbox launch slot
+    -> sandbox core owns streamCommand(...) contract
+    -> local process becomes the first provider
+    -> tracer 001 keeps proving command stream journaling
+
+008
+  define materialization strategy interface
+    -> runtime host selects materialization backend
+    -> tracer 002 runs through common strategy API
+    -> state-protocol/raw-fold/materialize strategy shape is tested
+
+009
+  implement required-action workflow
+    -> runtime emits permission/required-action request event
+    -> workflow waits durably for resolution event or timeout
+    -> approval/rejection resumes through Effect workflow machinery
+
+010
+  expose workflow-backed tools
+    -> sleep/wait_for/schedule_me/spawn use durable workflow semantics
+    -> spawn(agent, prompt) calls the same launch surface clients use
+    -> agent tool layer can consume Firegrid runtime capabilities
 ```
 
 The prerequisites establish the thin launch producer and live sandbox boundary.
@@ -87,10 +122,12 @@ The fourth bullet proves a parallel query-engine path for endpoint demos without
 changing Durable Streams authority.
 The fifth bullet is an architecture tracer: it validates whether Durable Streams
 can become a substrate package without speculative package splits.
+The sixth bullet is the next design tracer. It should clarify the production
+runtime host root before additional launch-slot packages are extracted.
 
-Tracer 002 and tracer 003 are intentionally directional. They should be
-re-scoped after tracer 001 is implemented and reviewed. Each fired tracer should
-teach enough about the substrate and ergonomics to sharpen the next one.
+Tracer 007 onward should be refined with feedback from the preceding tracer.
+Each fired tracer should teach enough about the substrate and ergonomics to
+sharpen the next one.
 
 ## Rules
 

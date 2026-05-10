@@ -351,3 +351,38 @@ const FiregridHostLive = Layer.mergeAll(
 
 The stress test should determine whether this root is ergonomic and type-safe
 when applied to tracer 001, tracer 002, and a hypothetical Flamecast app root.
+
+## Open Questions And Tracers
+
+Each open question below should be answered by a focused tracer. The target
+architecture should be refined after each tracer lands; do not resolve these by
+adding speculative package structure ahead of implementation pressure.
+
+| Open question | Why it matters | Tracer |
+| --- | --- | --- |
+| What is the production runtime host root, and how is it separated from client launch requests? | Current composition is still spread across package helpers and scenario setup. We need one production surface that owns host-wide substrate/materialization/provider choices while clients only describe launch intent. | 006: Runtime Host Root And Launch Boundary |
+| What exactly belongs to the runtime kernel after substrate extraction? | `runtime-context`, `runtime-output`, `runtime-operator`, and `launch` need clear responsibility boundaries before more packages are split out. | 006: Runtime Host Root And Launch Boundary |
+| What is the first concrete launch-slot package contract? | The package model should be proven through one slot before creating every future package family. The sandbox slot is the most grounded because tracer 001 already depends on process streaming. | 007: Sandbox Slot Extraction |
+| What is the materialization engine contract against current tracer 002 code? | The target says materialization is host-selected and pluggable, but current code still has event-pipeline and strategy details that need to converge on a common API. | 008: Materialization Strategy Interface |
+| What durable records and workflow waits implement required actions? | Approval should be workflow/event-wait behavior, not a callback package. We need the request, resolution, timeout, and wait identity model. | 009: Required-Action Workflow |
+| How do workflow-backed tools enter the agent tool surface? | `sleep`, `wait_for`, `schedule_me`, and `spawn` need a common tool-layer interface over durable workflows. | 010: Workflow-Backed Tools |
+
+### 006 Focus
+
+The next design tracer should focus on the first two questions:
+
+```txt
+runtime host config
+  -> chooses durable substrate
+  -> chooses materialization strategy
+  -> registers current runtime/sandbox/tool/secret providers as far as they exist
+
+client launch request
+  -> describes one agent request
+  -> does not choose streams, materialization backend, workflow engine, or host provider registry
+```
+
+Tracer 006 should produce the smallest production root that can run the current
+runtime context flow without making scenario tests the only working composition
+surface. It should not introduce the full launch-slot package split unless the
+root cannot be expressed without it.
