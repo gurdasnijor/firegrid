@@ -201,6 +201,8 @@ launcher.
   transports, MCP, ACP, or chat schemas.
 - Do not add an HTTP/RPC workflow invocation endpoint.
 - Do not introduce a new package until the runtime-local shape has been proven.
+- Do not regenerate dependency graphs or edit
+  `docs/architecture/current-architecture-alignment-review.md`.
 
 ## Acceptance Criteria
 
@@ -232,3 +234,18 @@ pnpm run lint:dup
 pnpm run lint:dead
 pnpm run lint:effect-quality
 ```
+
+## References
+
+- Effect Workflow package source:
+  <https://github.com/Effect-TS/effect/tree/main/packages/workflow/src>
+- Effect `Workflow.make` / `Workflow.toLayer` source:
+  <https://github.com/Effect-TS/effect/blob/main/packages/workflow/src/Workflow.ts>
+- Effect Cluster workflow engine integration example:
+  <https://github.com/Effect-TS/effect/blob/main/packages/cluster/src/ClusterWorkflowEngine.ts>
+- Firegrid Durable Streams workflow engine:
+  `packages/durable-streams/src/DurableStreamsWorkflowEngine.ts`
+- Firegrid required-action workflow:
+  `packages/runtime/src/required-action/workflow.ts`
+- Firegrid required-action service:
+  `packages/runtime/src/required-action/service.ts`

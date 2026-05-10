@@ -206,7 +206,6 @@ schema/service should not be prompt-only.
 Primary:
 
 ```txt
-packages/runtime/src/agent-ingress/**
 packages/runtime/src/runtime-ingress/**
 packages/runtime/src/runtime-host/**
 packages/runtime/src/runtime-context/**
@@ -227,8 +226,15 @@ Avoid:
 ```txt
 packages/runtime/src/materialization/**
 packages/runtime/src/required-action/**
+packages/runtime/src/runtime-operators/**
 scenarios/firegrid/src/tracer-002.test.ts
+docs/dependency-graph*.mmd
+docs/architecture/current-architecture-alignment-review.md
 ```
+
+Tracer 012 owns runtime ingress facts, host topology for ingress, and one
+provider delivery path. It does not own generic workflow subscribers; tracer
+013 owns that. Generated architecture graphs are intentionally out of scope.
 
 ## Acceptance Criteria
 
@@ -281,3 +287,20 @@ pnpm run lint:effect-quality
   merging the two authorities?
 - Which subscriber classes need durable progress in tracer 012 versus future
   workflow-backed tool tracers?
+
+## References
+
+- Current runtime host root:
+  `packages/runtime/src/runtime-host/index.ts`
+- Current runtime workflow:
+  `packages/runtime/src/runtime-context/workflow.ts`
+- Current sandbox provider surface:
+  `packages/runtime/src/providers/sandboxes/**`
+- Current runtime output writer:
+  `packages/runtime/src/runtime-output/writer.ts`
+- Durable Streams substrate wrapper:
+  `packages/durable-streams/src/DurableStreamLog.ts`
+- ACP TypeScript stream reference:
+  <https://github.com/agentclientprotocol/typescript-sdk/blob/main/src/stream.ts>
+- ACP registry, useful for later provider candidates:
+  <https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json>

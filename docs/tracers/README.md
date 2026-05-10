@@ -169,3 +169,22 @@ sharpen the next one.
 - Keep runtime event payloads opaque until a projector or materializer maps them.
 - Prefer one real provider/process over broad mocks.
 - Do not add HTTP/RPC launch surfaces. The stream is the invocation boundary.
+
+## Parallel Dispatch Guardrails
+
+When multiple tracers run at once, each tracer owns only its documented write
+scope. Shared architecture artifacts are integration-owned, not tracer-owned:
+
+```txt
+docs/dependency-graph*.mmd
+docs/architecture/current-architecture-alignment-review.md
+```
+
+Tracer branches should not touch those files unless the tracer is explicitly an
+architecture-graph or architecture-review update. Regenerate graphs in a single
+integration pass after feature tracers merge.
+
+Parallel tracers should prefer additive production surfaces over edits to a
+shared root. If a tracer needs `packages/runtime/src/runtime-host/**`, the
+handoff must state exactly which host surface it owns and which other tracer
+must avoid that file.
