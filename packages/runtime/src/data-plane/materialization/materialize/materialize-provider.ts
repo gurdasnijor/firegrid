@@ -10,6 +10,8 @@ import {
   type RuntimeOutputProjectionTarget,
 } from "./materialize-types.ts"
 
+type MaterializeSql = Parameters<MaterializeQuery["statement"]>[0]
+
 export interface MaterializeRuntimeOutputProjectionPlan
   extends RuntimeOutputProjectionPlan {
   readonly runtimeEventsViewName?: string
@@ -86,6 +88,22 @@ WHERE body->>'type' = 'firegrid.runtime.output.stdout'
   ] as const
 }
 
+const runtimeEventsRelation = (
+  sql: MaterializeSql,
+  target: RuntimeOutputProjectionTarget,
+) => ({
+  schema: sql(target.schemaName),
+  view: sql(target.runtimeEventsViewName),
+})
+
+const runtimeEventsContextFilter = (
+  sql: MaterializeSql,
+  contextId: string | undefined,
+) =>
+  contextId === undefined
+    ? sql.literal("")
+    : sql`WHERE context_id = ${contextId}`
+
 export const materializeRuntimeEventsQuery = (
   target: RuntimeOutputProjectionTarget,
   options: {
@@ -107,11 +125,8 @@ export const materializeRuntimeEventsQuery = (
 }> => {
   return {
     statement: sql => {
-      const schema = sql(target.schemaName)
-      const view = sql(target.runtimeEventsViewName)
-      const where = options.contextId === undefined
-        ? sql.literal("")
-        : sql`WHERE context_id = ${options.contextId}`
+      const { schema, view } = runtimeEventsRelation(sql, target)
+      const where = runtimeEventsContextFilter(sql, options.contextId)
       const limit = options.limit === undefined
         ? sql.literal("")
         : sql`LIMIT ${Math.max(0, Math.floor(options.limit))}`
@@ -142,11 +157,8 @@ export const materializeRuntimeEventsSubscribe = (
 }> => {
   return {
     statement: sql => {
-      const schema = sql(target.schemaName)
-      const view = sql(target.runtimeEventsViewName)
-      const where = options.contextId === undefined
-        ? sql.literal("")
-        : sql`WHERE context_id = ${options.contextId}`
+      const { schema, view } = runtimeEventsRelation(sql, target)
+      const where = runtimeEventsContextFilter(sql, options.contextId)
       return sql`
 SUBSCRIBE (
   SELECT event_id, context_id, activity_attempt, sequence, raw

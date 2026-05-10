@@ -6,6 +6,7 @@ import {
 } from "./event-pipeline.ts"
 import { RuntimeOutputSessionProjectorLive } from "./projectors/index.ts"
 import { RuntimeOutputEventSourceLive } from "./runtime-output-source.ts"
+import { runtimeOutputProjectionSourceOptions } from "./pipeline-source-options.ts"
 import {
   StateProtocolEventSinkLive,
   StateProtocolWriterLive,
@@ -29,19 +30,8 @@ export class SessionProjectionError extends Schema.TaggedError<SessionProjection
 export const SessionProjectionPipelineLive = (
   options: SessionProjectionOptions,
 ) => {
-  const sourceOptions = options.since === undefined
-    ? {
-      streamUrl: options.runtimeOutputStreamUrl,
-      contextId: options.contextId,
-    }
-    : {
-      streamUrl: options.runtimeOutputStreamUrl,
-      contextId: options.contextId,
-      since: options.since,
-    }
-
   return EventPipelineLive.pipe(
-    Layer.provide(RuntimeOutputEventSourceLive(sourceOptions)),
+    Layer.provide(RuntimeOutputEventSourceLive(runtimeOutputProjectionSourceOptions(options))),
     Layer.provide(RuntimeOutputSessionProjectorLive),
     Layer.provide(StateProtocolEventSinkLive({
       streamUrl: options.sessionStateStreamUrl,

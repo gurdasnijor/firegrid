@@ -36,6 +36,11 @@ export interface RuntimeOutputEventSourceOptions {
   readonly since?: RuntimeOutputCursor
 }
 
+export interface RuntimeOutputContextEventSourceOptions
+  extends RuntimeOutputEventSourceOptions {
+  readonly contextId: string
+}
+
 const decodeJournalEvent = Schema.decodeUnknownEither(RuntimeJournalEventSchema)
 
 const peekContextId = (
@@ -68,6 +73,17 @@ const mapDurableStreamLogError = (
   cause: DurableStreamLogError,
 ): RuntimeOutputSourceError =>
   new RuntimeOutputSourceError({ op: `readRuntimeJournal.${cause.op}`, cause })
+
+const runtimeJournalEventSourceLive = (
+  read: Effect.Effect<{
+    readonly events: ReadonlyArray<unknown>
+    readonly failures: ReadonlyArray<EventPipelineFailure>
+  }, EventSourceError>,
+) =>
+  Layer.succeed(
+    EventSource,
+    EventSource.of({ read }),
+  )
 
 /**
  * firegrid-event-pipeline-materialization.SOURCE.1
@@ -122,31 +138,25 @@ export const stdoutRowsForContext = (
 export const RawRuntimeJournalEventSourceLive = (
   options: RuntimeOutputEventSourceOptions,
 ) =>
-  Layer.succeed(
-    EventSource,
-    EventSource.of({
-      read: readRuntimeJournal(options).pipe(
-        Effect.mapError(mapSourceError),
-        Effect.map(journal => ({
-          events: journal.events,
-          failures: journal.decodeFailures,
-        })),
-      ),
-    }),
+  runtimeJournalEventSourceLive(
+    readRuntimeJournal(options).pipe(
+      Effect.mapError(mapSourceError),
+      Effect.map(journal => ({
+        events: journal.events,
+        failures: journal.decodeFailures,
+      })),
+    ),
   )
 
 export const RuntimeOutputEventSourceLive = (
-  options: RuntimeOutputEventSourceOptions & { readonly contextId: string },
+  options: RuntimeOutputContextEventSourceOptions,
 ) =>
-  Layer.succeed(
-    EventSource,
-    EventSource.of({
-      read: readRuntimeJournal(options).pipe(
-        Effect.mapError(mapSourceError),
-        Effect.map(journal => ({
-          events: stdoutRowsForContext(journal.events, options),
-          failures: journal.decodeFailures,
-        })),
-      ),
-    }),
+  runtimeJournalEventSourceLive(
+    readRuntimeJournal(options).pipe(
+      Effect.mapError(mapSourceError),
+      Effect.map(journal => ({
+        events: stdoutRowsForContext(journal.events, options),
+        failures: journal.decodeFailures,
+      })),
+    ),
   )

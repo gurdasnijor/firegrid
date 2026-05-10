@@ -22,10 +22,7 @@ const isTransientWriterCause = (
   cause: unknown,
 ): boolean => {
   if (cause instanceof DurableStreamProducerError) return cause.transient
-  if (!(cause instanceof Error)) return false
-  return /abort|connection|econn|fetch|network|timeout|timed out/i.test(
-    `${cause.name} ${cause.message}`,
-  )
+  return false
 }
 
 const writerError = (
