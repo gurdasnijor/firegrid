@@ -8,7 +8,6 @@ import {
   startDurableStreamsTestServer,
   type DurableStreamsTestServerHandle,
 } from "@firegrid/durable-streams/test-utils"
-import { NodeContext } from "@effect/platform-node"
 import {
   Firegrid,
   FiregridConfig,
@@ -24,11 +23,9 @@ import {
   runSessionProjection,
 } from "@firegrid/runtime/data-plane/materialization"
 import {
+  FiregridRuntimeHostLive,
   startRuntime,
 } from "@firegrid/runtime"
-import {
-  LocalProcessSandboxProviderLive,
-} from "@firegrid/runtime/data-plane/execution/sandbox"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 
@@ -289,15 +286,15 @@ console.error("diagnostic: tracer-002")
 
     const runtime = await Effect.runPromise(
       startRuntime({
-        runtimeStreamUrl: controlPlaneStreamUrl,
-        dataPlaneStreamUrl,
-        workflowStreamUrl,
         contextId: handle.contextId,
       }).pipe(
-        Effect.provide(Layer.mergeAll(
-          LocalProcessSandboxProviderLive,
-          NodeContext.layer,
-        )),
+        Effect.provide(FiregridRuntimeHostLive({
+          streams: {
+            workflow: workflowStreamUrl,
+            controlPlane: controlPlaneStreamUrl,
+            runtimeOutput: dataPlaneStreamUrl,
+          },
+        })),
       ),
     )
 

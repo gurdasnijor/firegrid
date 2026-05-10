@@ -5,21 +5,18 @@ import {
   startDurableStreamsTestServer,
   type DurableStreamsTestServerHandle,
 } from "@firegrid/durable-streams/test-utils"
-import { NodeContext } from "@effect/platform-node"
 import {
   local,
   normalizeRuntimeIntent,
   RuntimeJournalEventSchema,
   type RuntimeJournalEvent,
 } from "@firegrid/protocol/launch"
-import { Effect, Either, Layer, Option, Schema } from "effect"
+import { Effect, Either, Option, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
-  LocalProcessSandboxProviderLive,
-} from "../../data-plane/execution/sandbox/providers/local-process.ts"
-import {
   startRuntime,
-} from "./launcher.ts"
+  FiregridRuntimeHostLive,
+} from "../../runtime-host/index.ts"
 import {
   RuntimeControlPlane,
   RuntimeControlPlaneLive,
@@ -27,11 +24,6 @@ import {
 import {
   makeWorkflowStateStore,
 } from "@firegrid/durable-streams"
-
-const LaunchTestLive = Layer.mergeAll(
-  LocalProcessSandboxProviderLive,
-  NodeContext.layer,
-)
 
 let server: DurableStreamsTestServerHandle | undefined
 
@@ -99,12 +91,18 @@ console.error("diagnostic: child stderr")
 
     const result = await Effect.runPromise(
       startRuntime({
-        runtimeStreamUrl: controlPlaneStreamUrl,
-        dataPlaneStreamUrl,
-        workflowStreamUrl,
         contextId,
       }).pipe(
-        Effect.provide(LaunchTestLive),
+        // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.1
+        // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.2
+        // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.3
+        Effect.provide(FiregridRuntimeHostLive({
+          streams: {
+            workflow: workflowStreamUrl,
+            controlPlane: controlPlaneStreamUrl,
+            runtimeOutput: dataPlaneStreamUrl,
+          },
+        })),
       ),
     )
 
@@ -191,12 +189,15 @@ console.error("diagnostic: child stderr")
 
     const result = await Effect.runPromise(
       Effect.either(startRuntime({
-        runtimeStreamUrl: controlPlaneStreamUrl,
-        dataPlaneStreamUrl,
-        workflowStreamUrl,
         contextId,
       }).pipe(
-        Effect.provide(LaunchTestLive),
+        Effect.provide(FiregridRuntimeHostLive({
+          streams: {
+            workflow: workflowStreamUrl,
+            controlPlane: controlPlaneStreamUrl,
+            runtimeOutput: dataPlaneStreamUrl,
+          },
+        })),
       )),
     )
 

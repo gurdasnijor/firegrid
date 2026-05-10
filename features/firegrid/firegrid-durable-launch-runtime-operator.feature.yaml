@@ -95,6 +95,13 @@ components:
       9: Node-tier hosts consume tracer 001 runtime launch execution through declared @firegrid/runtime package exports, not source subpaths.
       10: A tracer 001 acceptance path starts with public Firegrid.launch, runs the runtime workflow with the returned runtime context id, and observes retained event and log rows from the configured data-plane stream.
 
+  RUNTIME_HOST:
+    requirements:
+      1: The production runtime host root owns stream topology for workflow state, runtime control-plane rows, and runtime-output journal rows.
+      2: The production runtime host root owns workflow engine selection and worker identity for runtime context execution.
+      3: Runtime context start requests carry the context id only; host-owned stream URLs, workflow engine selection, worker identity, materialization backend, and provider wiring are not launch request fields.
+      4: Scenario tracer 001 configures the production runtime host root and starts runtime context execution through exported @firegrid/runtime package code.
+
   JOURNAL_ROWS:
     requirements:
       1: Stdout chunks mapped to runtime events are appended as raw durable runtime output data-plane events before downstream consumers can observe provider content.
