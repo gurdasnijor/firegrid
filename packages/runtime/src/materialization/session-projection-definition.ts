@@ -9,8 +9,11 @@ import type {
 import type {
   ProjectionContext,
   ProjectionDefinition,
+  ProjectionTarget,
   ProjectionQuery,
 } from "./core/index.ts"
+import type { MaterializeCapableTarget } from "./materialize/MaterializeStrategy.ts"
+import { materializeSessionProjectionCapability } from "./materialize/session-projection.ts"
 import { RuntimeOutputSessionProjector } from "./projectors/index.ts"
 import { runtimeOutputEventSource } from "./runtime-output-source.ts"
 import type { SessionStateChange } from "./session-state-change.ts"
@@ -122,10 +125,33 @@ const encodeSessionStateProtocolEvent = (
   }
 }
 
+const sessionProjectionTarget = {
+  name: "session-state",
+  initialState: emptySessionProjectionState,
+  fold: foldSessionStateChange,
+  query: (state, query) => query.select(querySessionProjectionState(state, query.query)),
+  stateProtocol: {
+    stateSchema: sessionStateSchema,
+    encode: (change, context) =>
+      encodeSessionStateProtocolEvent(change as SessionStateChange, context),
+    query: querySessionStateProtocolStore,
+  },
+  materialize: materializeSessionProjectionCapability,
+} satisfies ProjectionTarget<
+  SessionStateChange,
+  SessionProjectionQuery,
+  SessionProjectionState
+> & MaterializeCapableTarget<
+  SessionStateChange,
+  SessionProjectionQuery,
+  SessionProjectionState
+>
+
 /**
  * firegrid-materialization-engines.ENGINE.4
  * firegrid-materialization-engines.ENGINE.7
  * firegrid-materialization-engines.STATE_PROTOCOL.2
+ * firegrid-materialization-engines.MATERIALIZE.5
  */
 export const createSessionProjectionDefinition = (
   options: SessionProjectionDefinitionOptions,
@@ -150,16 +176,5 @@ export const createSessionProjectionDefinition = (
       },
   ),
   projector: RuntimeOutputSessionProjector,
-  target: {
-    name: "session-state",
-    initialState: emptySessionProjectionState,
-    fold: foldSessionStateChange,
-    query: (state, query) => query.select(querySessionProjectionState(state, query.query)),
-    stateProtocol: {
-      stateSchema: sessionStateSchema,
-      encode: (change, context) =>
-        encodeSessionStateProtocolEvent(change as SessionStateChange, context),
-      query: querySessionStateProtocolStore,
-    },
-  },
+  target: sessionProjectionTarget,
 })

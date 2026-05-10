@@ -18,8 +18,10 @@ import {
 } from "./event-pipeline.ts"
 import { MaterializeRuntimeOutputPipelineLive } from "./materialize-pipeline.ts"
 import {
+  makeMaterializeStrategy,
   MaterializeProvider,
   MaterializeProviderError,
+  type RuntimeOutputProjectionTarget,
 } from "./materialize/index.ts"
 import type { ProjectionDefinition } from "./core/index.ts"
 import { createSessionProjectionDefinition } from "./session-projection-definition.ts"
@@ -242,6 +244,8 @@ describe("event pipeline materialization", () => {
           databaseName: "materialize",
           schemaName: "public",
           runtimeEventsViewName: "runtime_output_events",
+          sessionsViewName: "runtime_output_sessions",
+          messagesViewName: "runtime_output_messages",
           webhookUrl: "http://materialize.invalid/webhook",
         },
       }).pipe(
@@ -259,6 +263,7 @@ describe("event pipeline materialization", () => {
               Effect.sync(() => {
                 ingested.push(journalEvent)
               }),
+            ingestJson: () => Effect.void,
             query: () => Effect.succeed([]),
             subscribe: () => Stream.empty,
           }),
@@ -344,6 +349,95 @@ describe("event pipeline materialization", () => {
         text: "strategy pong",
         sourceRuntimeEventId: "runtime-strategy-1",
       }))
+    } finally {
+      await server.stop()
+    }
+  })
+
+  it("firegrid-materialization-engines.MATERIALIZE.5 firegrid-event-pipeline-materialization.PIPELINE.5 runs session projection through Materialize strategy", async () => {
+    const server = await startDurableStreamsTestServer()
+    try {
+      const runtimeOutputStreamUrl = await server.createStreamUrl("runtime-output-materialize-strategy")
+      const contextId = "ctx_materialize_strategy"
+      const event: RuntimeJournalEvent = {
+        type: "firegrid.runtime.output.stdout",
+        id: "journal-materialize-strategy-1",
+        at: "2026-05-08T00:00:00.000Z",
+        event: {
+          eventId: "runtime-materialize-strategy-1",
+          contextId,
+          activityAttempt: 1,
+          sequence: 0,
+          source: "stdout",
+          format: "jsonl",
+          receivedAt: "2026-05-08T00:00:00.000Z",
+          raw: JSON.stringify({ type: "assistant", text: "materialize strategy" }),
+        },
+      }
+      await Effect.runPromise(appendJson({ streamUrl: runtimeOutputStreamUrl, event }))
+
+      const target: RuntimeOutputProjectionTarget = {
+        provider: "materialize",
+        sourceName: "runtime_output",
+        databaseName: "materialize",
+        schemaName: "public",
+        runtimeEventsViewName: "runtime_output_events",
+        sessionsViewName: "runtime_output_sessions",
+        messagesViewName: "runtime_output_messages",
+        webhookUrl: "http://materialize.invalid/webhook",
+      }
+      const ingested: Array<unknown> = []
+      const message: MessageProjection = {
+        messageId: `${contextId}-message`,
+        sessionId: `session_${contextId}`,
+        contextId,
+        role: "assistant",
+        text: "materialize strategy",
+        sourceRuntimeEventId: "runtime-materialize-strategy-1",
+        createdAt: "2026-05-08T00:00:00.000Z",
+      }
+
+      const strategy = await Effect.runPromise(
+        makeMaterializeStrategy({ target }).pipe(
+          Effect.provideService(MaterializeProvider, MaterializeProvider.of({
+            name: "materialize",
+            provisionRuntimeOutputProjection: () => Effect.succeed(target),
+            ingestRuntimeJournal: () => Effect.void,
+            ingestJson: (_target, projected) =>
+              Effect.sync(() => {
+                ingested.push(projected)
+              }),
+            query: <A extends object>() => Effect.succeed([message as A]),
+            subscribe: <A extends object>() => Stream.fromIterable([message as A]),
+          })),
+        ),
+      )
+      const projection = createSessionProjectionDefinition({
+        runtimeOutputStreamUrl,
+        contextId,
+      })
+
+      const summary = await Effect.runPromise(strategy.run(projection))
+      const messages = await Effect.runPromise(
+        strategy.query<MessageProjection, SessionProjectionQuery>({
+          projectionName: projection.name,
+          target: projection.target,
+          query: { _tag: "messages", contextId },
+          select: rows => rows as ReadonlyArray<MessageProjection>,
+        }),
+      )
+
+      expect(summary).toMatchObject({
+        sourceEventsRead: 1,
+        sourceEventsProjected: 1,
+        sinkEventsWritten: 2,
+        failures: [],
+      })
+      expect(ingested).toEqual([
+        expect.objectContaining({ kind: "upsertSession" }),
+        expect.objectContaining({ kind: "upsertMessage" }),
+      ])
+      expect(messages).toEqual([message])
     } finally {
       await server.stop()
     }
