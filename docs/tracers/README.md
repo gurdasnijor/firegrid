@@ -31,7 +31,7 @@ durable outcome across the tracer's architectural boundary.
 - [007: Sandbox Slot Extraction](./007-sandbox-slot-extraction.md)
 - [008: Materialization Strategy Interface](./008-materialization-strategy-interface.md)
 - [009: Required-Action Workflow](./009-required-action-workflow.md)
-- 010: Workflow-Backed Tools
+- [010: Workflow-Backed Tools](./010-workflow-backed-tools.md)
 - [011: Projection Target Schema Ownership](./011-projection-target-schema-ownership.md)
 - [012: Agent Ingress Prompt Stream](./012-agent-ingress-prompt-stream.md)
 

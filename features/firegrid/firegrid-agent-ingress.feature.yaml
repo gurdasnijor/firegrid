@@ -31,3 +31,4 @@ constraints:
       2: Agent ingress does not parse runtime-output provider events or own session materialization.
       3: Required-action resolution may later produce runtime input, but required-action workflow authority remains separate from prompt ingress authority.
       4: Workflow-backed tools may later call the prompt/launch surface, but tool semantics do not define the prompt ingress substrate.
+      5: Workflow-backed tools and required-action operators append durable ingress facts through the same host-owned prompt path as clients; they do not launch private workflow-specific prompt delivery paths.

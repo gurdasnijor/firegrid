@@ -319,6 +319,30 @@ durable tools backed by `@effect/workflow`. The exact package name should be
 stress-tested; the important property is that these tools are not ad hoc
 callbacks. They are tool-layer interfaces over durable workflows.
 
+The workflow backing is reactive, not a second launch API. External clients,
+agents, and tools record durable facts or intents through the same Firegrid
+surfaces used elsewhere. Workflow machinery observes those facts, durable time,
+or projection predicates and emits follow-up facts through existing authority
+surfaces.
+
+```txt
+correct
+  durable fact / timer / projection predicate
+    -> workflow or subscriber reacts
+    -> follow-up fact is appended through the normal runtime surface
+
+wrong
+  client or agent launches a workflow-specific endpoint
+    -> private workflow data plane
+    -> separate invocation model from launch, ingress, and runtime events
+```
+
+This applies to required actions, `sleep`, `wait_for`, `schedule_me`, and
+`spawn(agent, prompt)`. `schedule_me` should eventually append through prompt
+ingress when durable time fires. `spawn(agent, prompt)` should use the normal
+launch and prompt ingress surfaces rather than introducing a workflow-launch
+surface for child agents.
+
 ## Composition Root Shape
 
 A runtime host root assembles substrate services, runtime domain services,

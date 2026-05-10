@@ -18,6 +18,7 @@ components:
       2: A scheduling tool binding does not produce additional substrate authority that bypasses the runtime authority path; terminalization of any operation that uses a tool binding remains handler return or `Effect.fail` per `firegrid-platform-invariants.AUTHORITY.1` and `firegrid-platform-invariants.AUTHORITY.2`.
       3: Tool binding calls participate in observability spans through `firegrid-observability.SUBSTRATE_SPANS.*` using the same span names and attribute schema as the underlying runtime API call.
       4: A scheduling tool binding that lowers onto an existing wait, claim, or completion primitive depends on `run-wait-primitives.*`, `durable-waits-and-scheduling.*`, `awakeables-and-runs.*`, and `claim-and-operator-authority.*` rather than redefining wait or claim semantics.
+      5: Workflow-backed tool bindings record durable intent or facts and rely on downstream workflow/subscriber reactions; they do not expose a workflow-specific launch endpoint or a second client-facing invocation plane.
 
   DURABLE_DESCRIPTOR_PUBLICATION:
     requirements:

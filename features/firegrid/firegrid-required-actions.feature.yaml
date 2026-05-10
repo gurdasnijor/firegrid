@@ -19,6 +19,7 @@ components:
       4: Resolving the same required action id with the same terminal decision is idempotent.
       5: A conflicting resolution after terminal state does not change the winning terminal decision.
       6: If timeout is implemented, timeout records a durable terminal state instead of surfacing only as an in-memory failure.
+      7: Required-action workflows are reactive operators over request and resolution facts; clients and tools do not launch required-action workflows through a parallel workflow invocation endpoint.
 
 constraints:
   BOUNDARY:
@@ -28,3 +29,4 @@ constraints:
       3: Required-action records carry opaque subject references so later tool-call approval, prompt approval, and wait_for semantics can reuse the workflow without changing runtime launch authority.
       4: Required-action projections may be materialized downstream, but required-action workflow authority does not depend on session materialization.
       5: Required-action stream topology is either owned by the runtime host root or documented as an intentionally independent sibling runtime program before another runtime feature depends on it.
+      6: Required actions do not create a separate data plane for approvals; request, resolution, timeout, and follow-up effects are durable facts on the shared runtime substrate.

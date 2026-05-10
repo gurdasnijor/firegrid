@@ -31,6 +31,7 @@ components:
       5: External decisions or results that wake a `RunWait`-suspended handler are appended only after the test or smoke deterministically observes blocked-pending state; acceptable observation channels are public `client.observe(handle)` filtered to `Pending`, `projection.until` over an app-owned EventPlane row, or equivalent polling that confirms the handler reached the suspension point.
       6: "`Effect.sleep` between handler emit and `RunWait.for` is not an acceptable substitute for a deterministic blocked-pending observation."
       7: Browser, edge, lab, downstream, and example code does not expose claim authority, completion authority, terminal authority, RunWait authoring, subscriber registration, runtime handler registration, pending-completion creation, or `client.work.declare` as application APIs.
+      8: External clients, agents, and tools do not launch durable workflows directly; workflows react downstream to durable facts, time, or projection predicates and emit follow-up facts through existing authority surfaces.
 
   SECURITY:
     requirements:
