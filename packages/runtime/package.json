@@ -25,6 +25,10 @@
       "types": "./src/data-plane/materialization/state-protocol/index.ts",
       "default": "./src/data-plane/materialization/state-protocol/index.ts"
     },
+    "./required-action": {
+      "types": "./src/required-action/index.ts",
+      "default": "./src/required-action/index.ts"
+    },
     "./data-plane/materialization/materialize": {
       "types": "./src/data-plane/materialization/materialize/index.ts",
       "default": "./src/data-plane/materialization/materialize/index.ts"
