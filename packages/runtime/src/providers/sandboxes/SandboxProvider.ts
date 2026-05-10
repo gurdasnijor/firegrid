@@ -1,7 +1,7 @@
 import type { Effect, Stream } from "effect"
 import { Context, Layer, Schema } from "effect"
 
-export type SandboxState =
+type SandboxState =
   | "creating"
   | "starting"
   | "running"
@@ -48,7 +48,7 @@ export interface Sandbox {
   readonly metadata: Record<string, unknown>
 }
 
-export interface SandboxProviderCapabilities {
+interface SandboxProviderCapabilities {
   readonly persistent: boolean
   readonly snapshot: boolean
   readonly streaming: boolean

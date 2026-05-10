@@ -15,11 +15,11 @@ import {
   SandboxProvider,
   SandboxProviderError,
   type SandboxProviderService,
-} from "@firegrid/sandboxes-core"
+} from "./SandboxProvider.ts"
 
 const providerName = "local-process"
 
-export interface LocalProcessSandboxConfig {
+interface LocalProcessSandboxConfig {
   readonly cwd?: string
   readonly env?: Record<string, string>
   readonly labels?: Record<string, string>

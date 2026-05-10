@@ -5,27 +5,27 @@ import {
 import { Context, Effect, Layer } from "effect"
 import {
   RuntimeContextWorkflowLayer,
-} from "../control-plane/runtime-context/workflow.ts"
+} from "../runtime-context/workflow.ts"
 import {
   RuntimeControlPlaneLive,
-} from "../control-plane/runtime-context/service.ts"
+} from "../runtime-context/service.ts"
 import {
   startRuntimeContext,
   type StartRuntimeContextOptions,
   type StartRuntimeResult,
-} from "../control-plane/runtime-context/launcher.ts"
+} from "../runtime-context/launcher.ts"
 import type {
   RuntimeContextError,
-} from "../control-plane/runtime-context/errors.ts"
+} from "../runtime-context/errors.ts"
 import {
   LocalProcessSandboxProvider,
-} from "@firegrid/sandbox-local-process"
+} from "../providers/sandboxes/index.ts"
 import {
   RuntimeCaptureJournalLive,
-} from "../data-plane/runtime-output/writer.ts"
+} from "../runtime-output/writer.ts"
 import {
   asRuntimeContextError,
-} from "../control-plane/runtime-context/errors.ts"
+} from "../runtime-context/errors.ts"
 
 export interface RuntimeHostStreams {
   readonly workflow: string

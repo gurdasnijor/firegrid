@@ -1,12 +1,12 @@
 // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.9
 export {
   RuntimeContextError,
-} from "./control-plane/runtime-context/errors.ts"
+} from "./runtime-context/errors.ts"
 export {
   startRuntimeContext,
   type StartRuntimeContextOptions,
   type StartRuntimeResult,
-} from "./control-plane/runtime-context/launcher.ts"
+} from "./runtime-context/launcher.ts"
 export {
   FiregridRuntimeHost,
   FiregridRuntimeHostLive,

@@ -36,23 +36,13 @@ end
 end
 subgraph Q["runtime"]
 subgraph R["src"]
-S["control-plane"]
-T["data-plane"]
-U["index.ts"]
+S["index.ts"]
+T["materialization"]
+U["providers"]
 V["required-action"]
-W["runtime-host"]
-end
-end
-subgraph X["sandbox-local-process"]
-subgraph Y["src"]
-Z["LocalProcessSandboxProvider.ts"]
-10["index.ts"]
-end
-end
-subgraph 11["sandboxes-core"]
-subgraph 12["src"]
-13["SandboxProvider.ts"]
-14["index.ts"]
+W["runtime-context"]
+X["runtime-host"]
+Y["runtime-output"]
 end
 end
 end
@@ -77,19 +67,18 @@ L-->K
 N-->O
 N-->P
 P-->O
-S-->T
-S-->J
-S-->14
-T-->7
+S-->V
+S-->W
+S-->X
 T-->J
-U-->S
-U-->V
-U-->W
+T-->7
 V-->7
-W-->S
-W-->T
-W-->7
-W-->10
-Z-->14
-10-->Z
-14-->13
+W-->U
+W-->Y
+W-->J
+X-->U
+X-->W
+X-->Y
+X-->7
+Y-->7
+Y-->J

@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   startRuntime,
   FiregridRuntimeHostLive,
-} from "../../runtime-host/index.ts"
+} from "../runtime-host/index.ts"
 import {
   RuntimeControlPlane,
   RuntimeControlPlaneLive,
