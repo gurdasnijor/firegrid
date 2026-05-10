@@ -12,7 +12,9 @@ import type {
 import type { MessageProjection } from "@firegrid/protocol/session"
 import {
   createSessionProjectionDefinition,
+  makeRawFoldStrategy,
   makeStateProtocolStrategy,
+  type MaterializationStrategyService,
   type SessionProjectionQuery,
 } from "@firegrid/runtime/materialization"
 import { Effect } from "effect"
@@ -45,7 +47,7 @@ const runtimeOutputEvent = (
   return {
     type: "firegrid.runtime.output.stdout",
     id: eventId,
-    at: "2026-05-09T00:00:00.000Z",
+    at: "2026-05-10T00:00:00.000Z",
     event: {
       eventId,
       contextId: options.contextId,
@@ -53,7 +55,7 @@ const runtimeOutputEvent = (
       sequence: options.sequence,
       source: "stdout",
       format: "jsonl",
-      receivedAt: "2026-05-09T00:00:00.000Z",
+      receivedAt: "2026-05-10T00:00:00.000Z",
       raw: options.raw,
     },
   }
@@ -68,16 +70,33 @@ const appendRuntimeOutputEvents = async (
   }
 }
 
-describe("firegrid tracer 011 scenario", () => {
-  test("firegrid-materialization-engines.ENGINE.4 firegrid-materialization-engines.ENGINE.5 firegrid-materialization-engines.ENGINE.7 firegrid-materialization-engines.STATE_PROTOCOL.1 firegrid-materialization-engines.STATE_PROTOCOL.2 queries session projection through target-owned State Protocol contract", async () => {
-    const runtimeOutputStreamUrl = await createStreamUrl("tracer-011-runtime-output")
-    const sessionStateStreamUrl = await createStreamUrl("tracer-011-session-state")
-    const contextId = "ctx_tracer_011"
+const queryMessages = (
+  strategy: MaterializationStrategyService,
+  projection: ReturnType<typeof createSessionProjectionDefinition>,
+  contextId: string,
+) =>
+  strategy.query<MessageProjection, SessionProjectionQuery>({
+    projectionName: projection.name,
+    target: projection.target,
+    query: { _tag: "messages", contextId },
+    select: rows => rows as ReadonlyArray<MessageProjection>,
+  })
+
+describe("firegrid tracer 008 scenario", () => {
+  test("firegrid-materialization-engines.ENGINE.8 firegrid-materialization-engines.BOUNDARY.6 firegrid-platform-invariants.PRODUCTION_SURFACE.5 firegrid-architecture-boundary.SURFACE_AREA.6 runs raw-fold and State Protocol through stable runtime materialization surfaces", async () => {
+    const runtimeOutputStreamUrl = await createStreamUrl("tracer-008-runtime-output")
+    const sessionStateStreamUrl = await createStreamUrl("tracer-008-session-state")
+    const contextId = "ctx_tracer_008"
     await appendRuntimeOutputEvents(runtimeOutputStreamUrl, [
       runtimeOutputEvent({
         contextId,
         sequence: 0,
-        raw: JSON.stringify({ type: "assistant", text: "target-owned schema" }),
+        raw: JSON.stringify({ type: "assistant", text: "first strategy" }),
+      }),
+      runtimeOutputEvent({
+        contextId,
+        sequence: 1,
+        raw: JSON.stringify({ type: "assistant", text: "second strategy" }),
       }),
     ])
 
@@ -85,40 +104,32 @@ describe("firegrid tracer 011 scenario", () => {
       runtimeOutputStreamUrl,
       contextId,
     })
-    expect(projection.target.stateProtocol).toBeDefined()
+    const rawFold = await Effect.runPromise(makeRawFoldStrategy)
+    const stateProtocol = makeStateProtocolStrategy({
+      streamUrl: sessionStateStreamUrl,
+      contextId,
+    })
 
-    const runStrategy = makeStateProtocolStrategy({
-      streamUrl: sessionStateStreamUrl,
-      contextId,
-    })
-    const summary = await Effect.runPromise(runStrategy.run(projection))
-    const queryStrategy = makeStateProtocolStrategy({
-      streamUrl: sessionStateStreamUrl,
-      contextId,
-    })
-    const messages = await Effect.runPromise(
-      queryStrategy.query<MessageProjection, SessionProjectionQuery>({
-        projectionName: projection.name,
-        target: projection.target,
-        query: { _tag: "messages", contextId },
-        select: rows => rows as ReadonlyArray<MessageProjection>,
-      }),
+    const rawSummary = await Effect.runPromise(rawFold.run(projection))
+    const stateProtocolSummary = await Effect.runPromise(stateProtocol.run(projection))
+    const rawMessages = await Effect.runPromise(queryMessages(rawFold, projection, contextId))
+    const stateProtocolMessages = await Effect.runPromise(
+      queryMessages(stateProtocol, projection, contextId),
     )
 
-    expect(summary).toMatchObject({
-      sourceEventsRead: 1,
-      sourceEventsProjected: 1,
+    expect(rawSummary).toMatchObject({
+      sourceEventsRead: 2,
+      sourceEventsProjected: 2,
       sourceEventsIgnored: 0,
       sourceEventsFailed: 0,
-      sinkEventsWritten: 2,
+      sinkEventsWritten: 4,
       failures: [],
     })
-    expect(messages).toEqual([
-      expect.objectContaining({
-        contextId,
-        text: "target-owned schema",
-        sourceRuntimeEventId: `event_${contextId}_1_0`,
-      }),
+    expect(stateProtocolSummary).toEqual(rawSummary)
+    expect(rawMessages.map(message => message.text)).toEqual([
+      "first strategy",
+      "second strategy",
     ])
+    expect(stateProtocolMessages).toEqual(rawMessages)
   })
 })

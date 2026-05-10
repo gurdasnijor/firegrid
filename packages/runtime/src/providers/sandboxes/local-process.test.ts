@@ -2,19 +2,19 @@ import { NodeContext } from "@effect/platform-node"
 import {
   SandboxProvider,
   type ProcessOutputChunk,
-} from "@firegrid/sandboxes-core"
+} from "./SandboxProvider.ts"
 import { Effect, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   localProcess,
   LocalProcessSandboxProvider,
-} from "./LocalProcessSandboxProvider.ts"
+} from "./local-process.ts"
 
 const Live = LocalProcessSandboxProvider.layer().pipe(
   Layer.provide(NodeContext.layer),
 )
 
-describe("@firegrid/sandbox-local-process", () => {
+describe("runtime providers/sandboxes local-process", () => {
   it("firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1 firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.2 firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.3 firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.4 firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.5 exposes a local-process SandboxProvider slot implementation", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {

@@ -179,20 +179,25 @@ Non-contents:
 - materialization projections;
 - Materialize provider/query code.
 
-## Launch-Slot Packages
+## Launch-Slot Namespaces
 
-Launch-slot packages align with the top-level client launch shape.
+Launch-slot names align with the top-level client launch shape, but provider
+contracts should stay as internal runtime namespaces until a separate package
+earns itself. Lane B consolidates sandbox provider contracts and the
+local-process provider under `packages/runtime/src/providers/sandboxes/**`.
 
-| Launch key | Core package | Provider packages | Role |
+| Launch key | Current namespace | Future extraction pressure | Role |
 | --- | --- | --- | --- |
-| `runtime` | `@firegrid/runtimes-core` | `@firegrid/runtime-acp`, `@firegrid/runtime-claude-code` | Agent protocol/harness adapter. |
-| `sandbox` | `@firegrid/sandboxes-core` | `@firegrid/sandbox-local-process`, `@firegrid/sandbox-compute-sdk` | Execution environment and command streaming. |
-| `workspace` | `@firegrid/workspaces-core` | `@firegrid/workspace-git`, `@firegrid/workspace-local-fs` | Files/resources mounted or exposed to runtime/sandbox. |
-| `tools` | `@firegrid/tools-core` | `@firegrid/tool-mcp` | Tool specs, bindings, and future harness components. |
-| `secrets` | `@firegrid/secrets-core` | `@firegrid/secrets-env` | Secret resolution into private bindings. |
+| `runtime` | `packages/runtime/src/providers/runtimes/**` when needed | ACP/Claude/provider adapters after durable ingress exists. | Agent protocol/harness adapter. |
+| `sandbox` | `packages/runtime/src/providers/sandboxes/**` | A second non-local sandbox provider that needs independent reuse. | Execution environment and command streaming. |
+| `workspace` | `packages/runtime/src/providers/workspaces/**` when needed | Git/local-fs providers after runtime input/workspace authority is defined. | Files/resources mounted or exposed to runtime/sandbox. |
+| `tools` | `packages/runtime/src/providers/tools/**` when needed | Tool provider packages after workflow-backed tools stabilize. | Tool specs, bindings, and future harness components. |
+| `secrets` | `packages/runtime/src/providers/secrets/**` when needed | Secret providers after binding authority is explicit. | Secret resolution into private bindings. |
 
-Do not preserve `@firegrid/runtime-node` as a package boundary. Local process is
-a sandbox provider, so it belongs in `@firegrid/sandbox-local-process`.
+Do not preserve `@firegrid/runtime-node`, `@firegrid/sandboxes-core`, or
+`@firegrid/sandbox-local-process` as package boundaries just because earlier
+tracers used them to test seams. Local process is a sandbox provider, so it
+currently belongs in `packages/runtime/src/providers/sandboxes/local-process.ts`.
 
 ## Approvals And Required Actions
 

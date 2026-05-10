@@ -21,7 +21,7 @@ import type {
 import {
   projectRuntimeOutputToSessionState,
   runSessionProjection,
-} from "@firegrid/runtime/data-plane/materialization"
+} from "@firegrid/runtime/materialization"
 import {
   FiregridRuntimeHostLive,
   startRuntime,

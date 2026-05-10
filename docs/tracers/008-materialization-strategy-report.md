@@ -2,10 +2,12 @@
 
 ## Extraction Decision
 
-`packages/materialization` has not earned extraction yet. The strategy shape is
-staged under `@firegrid/runtime/data-plane/materialization/{core,raw-fold,state-protocol}`
-so tracer 002 can keep passing through production runtime package code while
-tracer 006 finishes the host root that will select a strategy.
+`packages/materialization` has not earned extraction yet. Lane B moved the
+strategy shape to stable runtime subpaths:
+`@firegrid/runtime/materialization/{core,raw-fold,state-protocol,materialize}`.
+This satisfies `firegrid-materialization-engines.ENGINE.8` and
+`firegrid-materialization-engines.BOUNDARY.6` without creating another package
+boundary ahead of a second consumer.
 
 The package boundary is now visible: `core` depends on Effect and local
 source/projector vocabulary only, while `state-protocol` is the place that
@@ -37,4 +39,12 @@ Materialize as a special top-level engine.
   SQL strings.
 - The dependency boundary is that `core` exports source, projector, projection,
   strategy, and query vocabulary without importing Durable Streams or runtime
-  control-plane modules per `firegrid-materialization-engines.BOUNDARY.4`.
+  context/host modules per `firegrid-materialization-engines.BOUNDARY.4`.
+
+## Scenario Proof
+
+`scenarios/firegrid/src/tracer-008.test.ts` is the dedicated production-surface
+proof for `firegrid-platform-invariants.PRODUCTION_SURFACE.5`. It imports
+`@firegrid/runtime/materialization`, creates one session projection definition,
+runs it through raw-fold and State Protocol strategies, and queries both through
+the common `MaterializationStrategyService.query` API.

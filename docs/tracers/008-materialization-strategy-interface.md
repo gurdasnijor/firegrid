@@ -33,7 +33,7 @@ package surface that 006 can later consume.
 Current materialization code lives under:
 
 ```txt
-packages/runtime/src/data-plane/materialization/
+packages/runtime/src/materialization/
   event-pipeline.ts
   runtime-output-source.ts
   projectors/runtime-output-session-projector.ts
@@ -160,7 +160,7 @@ clear follow-up note for 008D.
 Primary:
 
 ```txt
-packages/runtime/src/data-plane/materialization/**
+packages/runtime/src/materialization/**
 packages/materialization/**          # only if creating the new package
 packages/*/package.json              # only required dependency/export updates
 features/firegrid/firegrid-event-pipeline-materialization.feature.yaml
@@ -170,7 +170,7 @@ features/firegrid/firegrid-materialization-engines.feature.yaml
 Avoid touching:
 
 ```txt
-packages/runtime/src/control-plane/runtime-context/**
+packages/runtime/src/runtime-context/**
 packages/runtime/src/runtime-host/**
 scenarios/firegrid/src/tracer-001.test.ts
 ```
@@ -224,4 +224,4 @@ package-specific typecheck/tests.
 - What does a strategy query type need to contain to support both raw-fold and
   Materialize without flattening into untyped SQL strings?
 - What dependency boundary prevents `@firegrid/materialization/core` from
-  importing Durable Streams or runtime control-plane code?
+  importing Durable Streams or runtime context/host code?

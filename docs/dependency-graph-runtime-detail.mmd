@@ -3,241 +3,232 @@ flowchart LR
 subgraph 0["packages"]
 subgraph 1["runtime"]
 subgraph 2["src"]
-subgraph 3["control-plane"]
-subgraph 4["runtime-context"]
-5["command.ts"]
-6["errors.ts"]
-7["ids.ts"]
-8["launcher.ts"]
-9["workflow.ts"]
-12["schema.ts"]
-13["service.ts"]
+3["index.ts"]
+subgraph 4["required-action"]
+5["index.ts"]
+6["ids.ts"]
+7["launcher.ts"]
+8["service.ts"]
+9["deferred.ts"]
+A["schema.ts"]
+10["workflow.ts"]
+end
+subgraph 11["runtime-context"]
+12["errors.ts"]
+13["launcher.ts"]
+14["workflow.ts"]
+1C["command.ts"]
+1D["ids.ts"]
+1E["schema.ts"]
+1F["service.ts"]
+end
+subgraph 15["providers"]
+subgraph 16["sandboxes"]
+17["index.ts"]
+18["local-process.ts"]
+19["SandboxProvider.ts"]
 end
 end
-subgraph A["data-plane"]
-subgraph B["runtime-output"]
-C["writer.ts"]
+subgraph 1A["runtime-output"]
+1B["writer.ts"]
 end
-subgraph 18["materialization"]
-subgraph 19["core"]
-1A["EventProjector.ts"]
-1C["EventSource.ts"]
-1D["MaterializationStrategy.ts"]
-1E["ProjectionDefinition.ts"]
-1F["Query.ts"]
-1G["index.ts"]
-end
-1B["event-pipeline.ts"]
+subgraph 1G["runtime-host"]
 1H["index.ts"]
-1I["materialize-pipeline.ts"]
-1J["pipeline-source-options.ts"]
-subgraph 1K["projectors"]
-1L["index.ts"]
-1M["runtime-output-session-projector.ts"]
 end
-1N["runtime-output-source.ts"]
-subgraph 1O["sinks"]
-subgraph 1P["materialize"]
+subgraph 1I["materialization"]
+subgraph 1J["core"]
+1K["EventProjector.ts"]
+1M["EventSource.ts"]
+1N["MaterializationStrategy.ts"]
+1O["ProjectionDefinition.ts"]
+1P["Query.ts"]
 1Q["index.ts"]
-1R["materialize-sink.ts"]
 end
-subgraph 24["state-protocol"]
-25["index.ts"]
-26["state-protocol-writer.ts"]
+1L["event-pipeline.ts"]
+1R["index.ts"]
+1S["materialize-pipeline.ts"]
+1T["pipeline-source-options.ts"]
+subgraph 1U["projectors"]
+1V["index.ts"]
+1W["runtime-output-session-projector.ts"]
 end
+1X["runtime-output-source.ts"]
+subgraph 1Y["sinks"]
+subgraph 1Z["materialize"]
+20["index.ts"]
+21["materialize-sink.ts"]
+end
+subgraph 2E["state-protocol"]
+2F["index.ts"]
+2G["state-protocol-writer.ts"]
+end
+2H["index.ts"]
+end
+subgraph 22["materialize"]
+23["index.ts"]
+24["materialize-provider.ts"]
+25["materialize-types.ts"]
+end
+subgraph 26["raw-fold"]
 27["index.ts"]
+28["RawFoldStrategy.ts"]
 end
-subgraph 1S["materialize"]
-1T["index.ts"]
-1U["materialize-provider.ts"]
-1V["materialize-types.ts"]
+29["session-pipeline.ts"]
+2A["session-projection-definition.ts"]
+subgraph 2B["state-protocol"]
+2C["index.ts"]
+2D["StateProtocolStrategy.ts"]
 end
-subgraph 1W["raw-fold"]
-1X["index.ts"]
-1Y["RawFoldStrategy.ts"]
-end
-1Z["session-pipeline.ts"]
-20["session-projection-definition.ts"]
-subgraph 21["state-protocol"]
-22["index.ts"]
-23["StateProtocolStrategy.ts"]
-end
-28["session-state-change.ts"]
-end
-end
-29["index.ts"]
-subgraph 2A["required-action"]
-2B["index.ts"]
-2C["ids.ts"]
-2D["launcher.ts"]
-2E["service.ts"]
-2F["deferred.ts"]
-2G["schema.ts"]
-2H["workflow.ts"]
-end
-subgraph 2I["runtime-host"]
-2J["index.ts"]
+2I["session-state-change.ts"]
 end
 end
 end
-subgraph D["durable-streams"]
-subgraph E["src"]
-F["index.ts"]
-G["DurableState.ts"]
-T["DurableStreamLog.ts"]
-U["DurableStreamProducer.ts"]
-V["DurableStreamsWorkflowEngine.ts"]
-subgraph W["internal"]
-subgraph X["workflow"]
-Y["clock.ts"]
-Z["state.ts"]
-10["engine-runtime.ts"]
-11["codec.ts"]
+subgraph B["durable-streams"]
+subgraph C["src"]
+D["index.ts"]
+E["DurableState.ts"]
+R["DurableStreamLog.ts"]
+S["DurableStreamProducer.ts"]
+T["DurableStreamsWorkflowEngine.ts"]
+subgraph U["internal"]
+subgraph V["workflow"]
+W["clock.ts"]
+X["state.ts"]
+Y["engine-runtime.ts"]
+Z["codec.ts"]
 end
 end
 end
 end
-subgraph H["protocol"]
-subgraph I["src"]
-subgraph J["launch"]
-K["index.ts"]
-L["cursor.ts"]
-M["helpers.ts"]
-N["schema.ts"]
-O["state.ts"]
+subgraph F["protocol"]
+subgraph G["src"]
+subgraph H["launch"]
+I["index.ts"]
+J["cursor.ts"]
+K["helpers.ts"]
+L["schema.ts"]
+M["state.ts"]
 end
-subgraph P["session"]
-Q["index.ts"]
-R["schema.ts"]
-S["state.ts"]
-end
-end
-end
-subgraph 14["sandboxes-core"]
-subgraph 15["src"]
-16["index.ts"]
-17["SandboxProvider.ts"]
-end
-end
-subgraph 2K["sandbox-local-process"]
-subgraph 2L["src"]
-2M["index.ts"]
-2N["LocalProcessSandboxProvider.ts"]
+subgraph N["session"]
+O["index.ts"]
+P["schema.ts"]
+Q["state.ts"]
 end
 end
 end
+end
+3-->5
+3-->12
+3-->13
+3-->1H
 5-->6
-8-->6
+5-->7
+5-->A
+5-->8
+5-->10
+7-->8
+7-->10
+7-->D
 8-->9
-9-->C
-9-->5
-9-->6
-9-->7
-9-->12
-9-->13
-9-->K
-9-->16
-C-->F
-C-->K
-F-->G
-F-->T
-F-->U
-F-->V
-G-->K
-G-->Q
-K-->L
-K-->M
-K-->N
-K-->O
-O-->N
-Q-->R
-Q-->S
+8-->6
+8-->A
+8-->D
+9-->A
+D-->E
+D-->R
+D-->S
+D-->T
+E-->I
+E-->O
+I-->J
+I-->K
+I-->L
+I-->M
+M-->L
+O-->P
+O-->Q
+Q-->P
 S-->R
-U-->T
-V-->Y
-V-->10
-V-->Z
+T-->W
+T-->Y
+T-->X
+W-->X
 Y-->Z
-10-->11
-10-->Z
-13-->7
-16-->17
-1A-->1B
-1C-->1B
-1G-->1A
-1G-->1C
-1G-->1D
-1G-->1E
-1G-->1F
-1H-->1G
+Y-->X
+10-->9
+10-->A
+10-->8
+13-->12
+13-->14
+14-->17
+14-->1B
+14-->1C
+14-->12
+14-->1D
+14-->1E
+14-->1F
+14-->I
+17-->18
+17-->19
+18-->19
+1B-->D
+1B-->I
+1C-->12
+1F-->1D
+1H-->17
+1H-->12
+1H-->13
+1H-->1F
+1H-->14
 1H-->1B
-1H-->1I
-1H-->1T
-1H-->1L
-1H-->1X
-1H-->1N
-1H-->1Z
-1H-->20
-1H-->27
-1H-->22
-1I-->1B
-1I-->1J
-1I-->1L
-1I-->1N
-1I-->1Q
-1L-->1B
-1L-->1M
-1M-->1B
-1M-->K
-1N-->1B
-1N-->F
-1N-->K
-1Q-->1R
-1R-->1B
-1R-->1T
-1R-->K
-1T-->1U
-1T-->1V
-1U-->1V
-1X-->1Y
-1Y-->1G
-1Y-->1B
-1Z-->20
-1Z-->22
-22-->23
-23-->1G
-23-->1B
+1H-->D
+1K-->1L
+1M-->1L
+1Q-->1K
+1Q-->1M
+1Q-->1N
+1Q-->1O
+1Q-->1P
+1R-->1Q
+1R-->1L
+1R-->1S
+1R-->23
+1R-->1V
+1R-->27
+1R-->1X
+1R-->29
+1R-->2A
+1R-->2H
+1R-->2C
+1S-->1L
+1S-->1T
+1S-->1V
+1S-->1X
+1S-->20
+1V-->1L
+1V-->1W
+1W-->1L
+1W-->I
+1X-->1L
+1X-->D
+1X-->I
+20-->21
+21-->1L
+21-->23
+21-->I
+23-->24
 23-->25
-25-->26
-26-->F
-27-->1Q
-27-->25
-29-->6
-29-->8
-29-->2B
-29-->2J
-2B-->2C
-2B-->2D
-2B-->2G
-2B-->2E
-2B-->2H
-2D-->2E
-2D-->2H
-2D-->F
-2E-->2F
-2E-->2C
-2E-->2G
-2E-->F
+24-->25
+27-->28
+28-->1Q
+28-->1L
+29-->2A
+29-->2C
+2C-->2D
+2D-->1Q
+2D-->1L
+2D-->2F
 2F-->2G
+2G-->D
+2H-->20
 2H-->2F
-2H-->2G
-2H-->2E
-2J-->6
-2J-->8
-2J-->13
-2J-->9
-2J-->C
-2J-->F
-2J-->2M
-2M-->2N
-2N-->16

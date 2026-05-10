@@ -5,7 +5,11 @@ import {
 } from "@firegrid/protocol/launch"
 import { Effect, Option, Schema, Stream } from "effect"
 import { commandForContext } from "./command.ts"
-import { SandboxProvider, type ProcessOutputChunk, type SandboxProviderError } from "@firegrid/sandboxes-core"
+import {
+  SandboxProvider,
+  type ProcessOutputChunk,
+  type SandboxProviderError,
+} from "../providers/sandboxes/index.ts"
 import {
   asRuntimeContextError,
   RuntimeContextError,
@@ -17,7 +21,7 @@ import {
   type RuntimeOutputRow,
   RuntimeCaptureJournal,
   type RuntimeCaptureJournalError,
-} from "../../data-plane/runtime-output/writer.ts"
+} from "../runtime-output/writer.ts"
 import {
   ProcessAttemptResultSchema,
   RuntimeContextTerminalStateSchema,
