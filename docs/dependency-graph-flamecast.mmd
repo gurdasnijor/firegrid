@@ -14,57 +14,65 @@ subgraph 7["durable-streams"]
 subgraph 8["src"]
 9["DurableState.ts"]
 A["DurableStreamLog.ts"]
-B["DurableStreamProducer.ts"]
-C["DurableStreamsWorkflowEngine.ts"]
-D["index.ts"]
-subgraph E["internal"]
-subgraph F["workflow"]
-G["clock.ts"]
-H["codec.ts"]
-I["engine-runtime.ts"]
+B["DurableStreamsWorkflowEngine.ts"]
+subgraph C["internal"]
+subgraph D["workflow"]
+E["clock.ts"]
+F["codec.ts"]
+G["engine-runtime.ts"]
+H["state.ts"]
+end
+end
+I["log.ts"]
 J["state.ts"]
+K["test-utils.ts"]
+subgraph L["testing"]
+M["test-server.ts"]
+end
+N["workflow-engine.ts"]
 end
 end
-end
-end
-subgraph K["protocol"]
-subgraph L["src"]
-subgraph M["launch"]
-N["cursor.ts"]
-O["helpers.ts"]
-P["index.ts"]
-Q["schema.ts"]
-R["state.ts"]
-end
-subgraph S["session"]
+subgraph O["protocol"]
+subgraph P["src"]
+subgraph Q["launch"]
+R["cursor.ts"]
+S["helpers.ts"]
 T["index.ts"]
 U["schema.ts"]
 V["state.ts"]
+end
+subgraph W["session"]
+X["index.ts"]
+Y["schema.ts"]
+Z["state.ts"]
 end
 end
 end
 end
 3-->5
 4-->5
-4-->D
-9-->P
+4-->N
+4-->I
+4-->K
+5-->J
 9-->T
-B-->A
-C-->G
-C-->I
-C-->J
-D-->9
-D-->A
-D-->B
-D-->C
-G-->J
-I-->H
-I-->J
-P-->N
-P-->O
-P-->Q
-P-->R
-R-->Q
+9-->X
+B-->E
+B-->G
+B-->H
+E-->H
+G-->F
+G-->H
+I-->A
+J-->9
+K-->M
+M-->A
+N-->B
+T-->R
+T-->S
 T-->U
 T-->V
 V-->U
+X-->Y
+X-->Z
+Z-->Y

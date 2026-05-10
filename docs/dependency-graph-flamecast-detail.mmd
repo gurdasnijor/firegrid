@@ -5,88 +5,97 @@ subgraph 1["flamecast"]
 subgraph 2["src"]
 subgraph 3["client"]
 4["firegrid.ts"]
-9["main.tsx"]
-A["styles.css"]
+Q["main.tsx"]
+R["styles.css"]
 end
 subgraph 5["shared"]
 6["db.ts"]
 7["state.ts"]
-8["protocol.ts"]
-B["topology.ts"]
+P["protocol.ts"]
+S["topology.ts"]
 end
-subgraph C["runtime"]
-D["agent-webhooks.ts"]
-14["handler.ts"]
-15["main.ts"]
-end
-end
-end
-end
-subgraph E["packages"]
-subgraph F["durable-streams"]
-subgraph G["src"]
-H["index.ts"]
-I["DurableState.ts"]
-V["DurableStreamLog.ts"]
-W["DurableStreamProducer.ts"]
-X["DurableStreamsWorkflowEngine.ts"]
-subgraph Y["internal"]
-subgraph Z["workflow"]
-10["clock.ts"]
-11["state.ts"]
-12["engine-runtime.ts"]
-13["codec.ts"]
+subgraph T["runtime"]
+U["agent-webhooks.ts"]
+13["handler.ts"]
+14["main.ts"]
 end
 end
 end
 end
-subgraph J["protocol"]
-subgraph K["src"]
-subgraph L["launch"]
+subgraph 8["packages"]
+subgraph 9["durable-streams"]
+subgraph A["src"]
+B["state.ts"]
+C["DurableState.ts"]
+V["workflow-engine.ts"]
+W["DurableStreamsWorkflowEngine.ts"]
+subgraph X["internal"]
+subgraph Y["workflow"]
+Z["clock.ts"]
+10["state.ts"]
+11["engine-runtime.ts"]
+12["codec.ts"]
+end
+end
+15["log.ts"]
+16["DurableStreamLog.ts"]
+17["test-utils.ts"]
+subgraph 18["testing"]
+19["test-server.ts"]
+end
+end
+end
+subgraph D["protocol"]
+subgraph E["src"]
+subgraph F["launch"]
+G["index.ts"]
+H["cursor.ts"]
+I["helpers.ts"]
+J["schema.ts"]
+K["state.ts"]
+end
+subgraph L["session"]
 M["index.ts"]
-N["cursor.ts"]
-O["helpers.ts"]
-P["schema.ts"]
-Q["state.ts"]
-end
-subgraph R["session"]
-S["index.ts"]
-T["schema.ts"]
-U["state.ts"]
+N["schema.ts"]
+O["state.ts"]
 end
 end
 end
 end
 4-->6
-4-->8
+4-->P
 6-->7
-9-->B
-9-->4
-9-->A
-D-->6
-D-->7
-D-->H
-H-->I
-H-->V
-H-->W
-H-->X
-I-->M
-I-->S
+6-->B
+7-->B
+B-->C
+C-->G
+C-->M
+G-->H
+G-->I
+G-->J
+G-->K
+K-->J
 M-->N
 M-->O
-M-->P
-M-->Q
-Q-->P
-S-->T
-S-->U
-U-->T
-W-->V
-X-->10
-X-->12
-X-->11
-10-->11
-12-->13
-12-->11
-14-->6
-14-->D
-15-->14
+O-->N
+Q-->S
+Q-->4
+Q-->R
+U-->6
+U-->7
+U-->V
+V-->W
+W-->Z
+W-->11
+W-->10
+Z-->10
+11-->12
+11-->10
+13-->6
+13-->U
+14-->13
+14-->15
+14-->17
+15-->16
+17-->19
+19-->16

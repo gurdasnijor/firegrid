@@ -3,34 +3,34 @@ flowchart LR
 subgraph 0["packages"]
 subgraph 1["durable-streams"]
 subgraph 2["src"]
-3["DurableState.ts"]
-4["DurableStreamLog.ts"]
-5["DurableStreamProducer.ts"]
-6["DurableStreamsWorkflowEngine.ts"]
-7["index.ts"]
-subgraph 8["internal"]
-subgraph 9["workflow"]
-A["clock.ts"]
-B["codec.ts"]
-C["engine-runtime.ts"]
-D["state.ts"]
+3["DurableStreamLog.ts"]
+4["DurableStreamProducer.ts"]
+5["DurableStreamsWorkflowEngine.ts"]
+subgraph 6["internal"]
+subgraph 7["workflow"]
+8["clock.ts"]
+9["codec.ts"]
+A["engine-runtime.ts"]
+B["state.ts"]
 end
 end
+C["log.ts"]
+D["producer.ts"]
+E["workflow-engine.ts"]
 end
 end
-subgraph E["protocol"]
-subgraph F["src"]
-subgraph G["launch"]
-H["cursor.ts"]
-I["helpers.ts"]
-J["index.ts"]
-K["schema.ts"]
-L["state.ts"]
+subgraph F["protocol"]
+subgraph G["src"]
+subgraph H["launch"]
+I["cursor.ts"]
+J["helpers.ts"]
+K["index.ts"]
+L["schema.ts"]
+M["state.ts"]
 end
-subgraph M["session"]
-N["index.ts"]
-O["schema.ts"]
-P["state.ts"]
+subgraph N["required-action"]
+O["index.ts"]
+P["schema.ts"]
 end
 end
 end
@@ -46,39 +46,37 @@ Y["runtime-output"]
 end
 end
 end
-3-->J
-3-->N
-5-->4
-6-->A
-6-->C
-6-->D
-7-->3
-7-->4
-7-->5
-7-->6
-A-->D
-C-->B
-C-->D
-J-->H
-J-->I
-J-->K
-J-->L
-L-->K
-N-->O
-N-->P
-P-->O
+4-->3
+5-->8
+5-->A
+5-->B
+8-->B
+A-->9
+A-->B
+C-->3
+D-->4
+E-->5
+K-->I
+K-->J
+K-->L
+K-->M
+M-->L
+O-->P
 S-->V
 S-->W
 S-->X
-T-->J
-T-->7
-V-->7
+T-->K
+T-->C
+T-->D
+V-->E
+V-->C
+V-->O
 W-->U
 W-->Y
-W-->J
+W-->K
 X-->U
 X-->W
 X-->Y
-X-->7
-Y-->7
-Y-->J
+X-->E
+Y-->D
+Y-->K
