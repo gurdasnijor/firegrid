@@ -13,6 +13,7 @@ components:
       5: The same projection definition can run through State Protocol and raw-fold strategies without changing the projector definition.
       6: Strategy execution returns the common event pipeline summary used by production package code.
       7: Projection target schemas, encoders, folds, and query adapters are owned by projection definitions or target descriptors, not hardcoded inside a strategy implementation.
+      8: Materialization production surfaces use a stable package or subpath namespace that does not expose stale runtime-internal control-plane or data-plane directory structure as the public abstraction.
 
   STATE_PROTOCOL:
     requirements:
@@ -40,3 +41,4 @@ constraints:
       3: The Materialize provider does not define product-native session, permission, tool, prompt, or provider taxonomies.
       4: Materialization strategy interfaces do not import runtime host or runtime control-plane modules.
       5: Runtime host configuration may select a materialization strategy, but client launch requests do not select projection target schemas or query adapters.
+      6: Additional materialization strategies are not added behind a stale runtime-internal namespace until the staged namespace is either accepted in the target architecture or replaced by a stable materialization package/subpath.

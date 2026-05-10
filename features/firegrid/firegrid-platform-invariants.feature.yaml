@@ -20,6 +20,7 @@ components:
       4: "There is no `@firegrid/runtime` to `@firegrid/client` package edge."
       5: "`@firegrid/substrate` exposes only the curated root and approved subpaths `./descriptors`, `./event-plane`, `./durable-clock`, and `./id-gen` to application and downstream package code; `@firegrid/substrate/kernel` is not an application-facing import."
       6: Public scheduling, wait, projection, subscriber, runtime, and event-plane composition primitives are reachable through public package roots; applications do not need dist-internal or internal-subpath imports to compose runtime work.
+      7: Browser-safe package entrypoints do not import broad roots that make Node-tier, server-tier, test-only, workflow-engine, producer, SQL, or sandbox-provider modules statically reachable when narrower public entrypoints can express the dependency.
 
   AUTHORITY:
     requirements:
@@ -58,6 +59,7 @@ components:
       3: Cross-plane composition roots that wire control-plane, data-plane, query, or provider services are production modules, not hidden scenario harnesses.
       4: Scenario-local composition may configure production surfaces and assert durable outcomes, but it does not own the production Layer graph, stream topology, or provider wiring being proved.
       5: Every implemented tracer includes a scenario-level end-to-end proof that invokes production package or app surfaces and asserts durable observable outcomes across the tracer's relevant architectural boundary.
+      6: If an implemented tracer is proved by another tracer's scenario instead of a dedicated scenario file, the tracer document includes an explicit coverage map naming the proving scenario files and full ACIDs.
 
   ENFORCEMENT:
     requirements:

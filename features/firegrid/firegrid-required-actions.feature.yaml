@@ -9,6 +9,7 @@ components:
       1: A required-action request is recorded durably with a required action id, runtime context id, request kind, opaque subject reference, options or prompt data, creation time, and optional expiry.
       2: A required-action resolution is recorded durably with the same required action id, outcome, resolver identity, resolution time, and optional selected option or reason.
       3: Required-action state exposes a single lifecycle from requested to approved, denied, timed_out, cancelled, or failed.
+      4: Required-action record schema ownership is explicitly located in protocol, runtime, or a projection target before agent ingress or workflow-backed tools depend on required-action records.
 
   WORKFLOW:
     requirements:
@@ -26,3 +27,4 @@ constraints:
       2: Required actions do not require runtime-output launch code to parse provider-specific permission, tool, ACP, or Claude schemas.
       3: Required-action records carry opaque subject references so later tool-call approval, prompt approval, and wait_for semantics can reuse the workflow without changing runtime launch authority.
       4: Required-action projections may be materialized downstream, but required-action workflow authority does not depend on session materialization.
+      5: Required-action stream topology is either owned by the runtime host root or documented as an intentionally independent sibling runtime program before another runtime feature depends on it.
