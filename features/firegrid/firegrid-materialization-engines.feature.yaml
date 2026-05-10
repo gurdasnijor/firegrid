@@ -9,6 +9,18 @@ components:
       1: A materialization engine consumes accepted runtime-output data-plane facts and creates queryable derived projections.
       2: Materialization engines are replaceable provider services selected by the runtime host or scenario, not by browser clients.
       3: Materialization engines expose a query surface and may expose a subscription surface when the provider supports it.
+      4: A reusable projection definition declares its source, projector, and query target independently of the selected materialization strategy.
+      5: The same projection definition can run through State Protocol and raw-fold strategies without changing the projector definition.
+      6: Strategy execution returns the common event pipeline summary used by production package code.
+
+  STATE_PROTOCOL:
+    requirements:
+      1: The State Protocol strategy writes projected session changes to a Durable Streams State Protocol stream behind the common strategy interface.
+
+  RAW_FOLD:
+    requirements:
+      1: The raw-fold strategy folds retained runtime-output facts in memory for local or test queryability without writing a derived stream.
+      2: The raw-fold strategy exposes typed query results for session projections.
 
   MATERIALIZE:
     requirements:
@@ -16,6 +28,7 @@ components:
       2: The Materialize engine queries projection results through Effect SQL `SELECT` statements.
       3: The Materialize engine exposes live result streams through Effect SQL `SUBSCRIBE` statements.
       4: The first Materialize runtime-output projection uses a webhook JSON source for ingested runtime journal events.
+      5: Materialize remains a provider-backed derived output until it is wired behind the common strategy interface.
 
 constraints:
   BOUNDARY:
@@ -23,3 +36,4 @@ constraints:
       1: Durable Streams runtime-output rows remain the source of truth; Materialize projections are derived and rebuildable.
       2: The Materialize provider does not import runtime control-plane modules or workflow-engine internals.
       3: The Materialize provider does not define product-native session, permission, tool, prompt, or provider taxonomies.
+      4: Materialization strategy interfaces do not import runtime host or runtime control-plane modules.

@@ -1,16 +1,7 @@
 import type { RuntimeOutputCursor } from "@firegrid/protocol/launch"
-import { Effect, Layer, Schema } from "effect"
-import {
-  EventPipeline,
-  EventPipelineLive,
-} from "./event-pipeline.ts"
-import { RuntimeOutputSessionProjectorLive } from "./projectors/index.ts"
-import { RuntimeOutputEventSourceLive } from "./runtime-output-source.ts"
-import { runtimeOutputProjectionSourceOptions } from "./pipeline-source-options.ts"
-import {
-  StateProtocolEventSinkLive,
-  StateProtocolWriterLive,
-} from "./sinks/state-protocol/index.ts"
+import { Effect, Schema } from "effect"
+import { createSessionProjectionDefinition } from "./session-projection-definition.ts"
+import { makeStateProtocolStrategy } from "./state-protocol/index.ts"
 
 export interface SessionProjectionOptions {
   readonly runtimeOutputStreamUrl: string
@@ -27,35 +18,23 @@ export class SessionProjectionError extends Schema.TaggedError<SessionProjection
   },
 ) {}
 
-export const SessionProjectionPipelineLive = (
-  options: SessionProjectionOptions,
-) => {
-  return EventPipelineLive.pipe(
-    Layer.provide(RuntimeOutputEventSourceLive(runtimeOutputProjectionSourceOptions(options))),
-    Layer.provide(RuntimeOutputSessionProjectorLive),
-    Layer.provide(StateProtocolEventSinkLive({
-      streamUrl: options.sessionStateStreamUrl,
-      contextId: options.contextId,
-    })),
-    Layer.provide(StateProtocolWriterLive),
-  )
-}
-
 /**
  * firegrid-event-pipeline-materialization.PIPELINE.1
  * firegrid-event-pipeline-materialization.PIPELINE.2
  * firegrid-event-pipeline-materialization.SINK.2
+ * firegrid-materialization-engines.ENGINE.6
  */
 export const runSessionProjection = Effect.fn("runSessionProjection")(
   function* (options: SessionProjectionOptions) {
-    const layer = SessionProjectionPipelineLive(options)
-    return yield* Effect.scoped(
-      EventPipeline.pipe(
-        Effect.flatMap(pipeline => pipeline.run),
-        Effect.provide(layer),
-        Effect.mapError(cause =>
-          new SessionProjectionError({ op: "runSessionProjection", cause })),
-      ),
+    const strategy = makeStateProtocolStrategy({
+      streamUrl: options.sessionStateStreamUrl,
+      contextId: options.contextId,
+    })
+    return yield* strategy.run(
+      createSessionProjectionDefinition(options),
+    ).pipe(
+      Effect.mapError(cause =>
+        new SessionProjectionError({ op: "runSessionProjection", cause })),
     )
   },
 )

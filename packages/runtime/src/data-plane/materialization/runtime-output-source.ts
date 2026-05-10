@@ -15,6 +15,7 @@ import {
   EventSource,
   EventSourceError,
   type EventPipelineFailure,
+  type EventSourceService,
 } from "./event-pipeline.ts"
 
 export class RuntimeOutputSourceError extends Schema.TaggedError<RuntimeOutputSourceError>()(
@@ -138,25 +139,37 @@ export const stdoutRowsForContext = (
 export const RawRuntimeJournalEventSourceLive = (
   options: RuntimeOutputEventSourceOptions,
 ) =>
-  runtimeJournalEventSourceLive(
-    readRuntimeJournal(options).pipe(
+  runtimeJournalEventSourceLive(rawRuntimeJournalEventSource(options).read)
+
+export const rawRuntimeJournalEventSource = (
+  options: RuntimeOutputEventSourceOptions,
+): EventSourceService<RuntimeJournalEvent> =>
+  ({
+    read: readRuntimeJournal(options).pipe(
       Effect.mapError(mapSourceError),
       Effect.map(journal => ({
         events: journal.events,
         failures: journal.decodeFailures,
       })),
     ),
-  )
+  })
 
-export const RuntimeOutputEventSourceLive = (
+export const runtimeOutputEventSource = (
   options: RuntimeOutputContextEventSourceOptions,
-) =>
-  runtimeJournalEventSourceLive(
-    readRuntimeJournal(options).pipe(
+): EventSourceService<RuntimeEvent> =>
+  ({
+    read: readRuntimeJournal(options).pipe(
       Effect.mapError(mapSourceError),
       Effect.map(journal => ({
         events: stdoutRowsForContext(journal.events, options),
         failures: journal.decodeFailures,
       })),
     ),
+  })
+
+export const RuntimeOutputEventSourceLive = (
+  options: RuntimeOutputContextEventSourceOptions,
+) =>
+  runtimeJournalEventSourceLive(
+    runtimeOutputEventSource(options).read,
   )
