@@ -1,5 +1,7 @@
-import { DurableStream, FetchError } from "@durable-streams/client"
-import { DurableStreamTestServer } from "@durable-streams/server"
+import { ensureJsonDurableStream } from "@firegrid/durable-streams/log"
+import {
+  startDurableStreamsTestServer,
+} from "@firegrid/durable-streams/test-utils"
 import { writeFile, mkdir } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { Effect } from "effect"
@@ -10,21 +12,10 @@ const runtimeId = `flamecast-local-${process.pid}`
 const topologyPath = resolve("public/topology.json")
 const dataDir = resolve(".flamecast-durable-streams")
 
-const server = new DurableStreamTestServer({ dataDir, port: 0 })
-await server.start()
+const server = await startDurableStreamsTestServer({ dataDir, port: 0 })
 
 const streamUrl = `${server.url}/flamecast/lt02-local-session-loop`
-await DurableStream.head({ url: streamUrl }).catch((cause: unknown) => {
-  if (cause instanceof FetchError && cause.status === 404) {
-    return DurableStream.create({
-      url: streamUrl,
-      contentType: "application/json",
-    })
-  }
-  return Promise.reject(
-    cause instanceof Error ? cause : new Error(String(cause)),
-  )
-})
+await Effect.runPromise(ensureJsonDurableStream({ streamUrl }))
 
 const topology: FlamecastTopology = {
   streamUrl,

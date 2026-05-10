@@ -1,7 +1,7 @@
 import { NodeContext } from "@effect/platform-node"
 import {
   DurableStreamsWorkflowEngine,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/workflow-engine"
 import { Context, Effect, Layer } from "effect"
 import {
   RuntimeContextWorkflowLayer,

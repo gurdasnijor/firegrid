@@ -1,6 +1,6 @@
 import {
   sessionStateSchema,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/state"
 import type { RuntimeEvent, RuntimeOutputCursor } from "@firegrid/protocol/launch"
 import type {
   MessageProjection,

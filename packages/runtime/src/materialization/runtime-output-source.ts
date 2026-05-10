@@ -1,7 +1,7 @@
 import {
   readRetainedJson,
   type DurableStreamLogError,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/log"
 import {
   compareRuntimeOutputOrder,
   isAfterRuntimeOutputCursor,

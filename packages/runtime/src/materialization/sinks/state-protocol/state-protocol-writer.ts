@@ -1,7 +1,7 @@
 import {
   openDurableStreamProducer,
   DurableStreamProducerError,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/producer"
 import type { Scope } from "effect"
 import { Context, Effect, Layer, Schema } from "effect"
 import type { EventProjectorIdentity } from "../../event-pipeline.ts"

@@ -1,6 +1,6 @@
 import {
   readRetainedJson,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/log"
 import {
   startDurableStreamsTestServer,
   type DurableStreamsTestServerHandle,
@@ -23,7 +23,7 @@ import {
 } from "./service.ts"
 import {
   makeWorkflowStateStore,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/workflow-engine"
 
 let server: DurableStreamsTestServerHandle | undefined
 

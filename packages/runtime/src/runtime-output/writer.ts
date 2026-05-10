@@ -1,7 +1,7 @@
 import {
   openDurableStreamProducer,
   type DurableStreamProducerError,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/producer"
 import {
   RuntimeJournalEventSchema,
   type RuntimeEvent,

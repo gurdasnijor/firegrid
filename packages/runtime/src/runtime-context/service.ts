@@ -1,7 +1,7 @@
 import {
   createDurableStateDb,
   runtimeContextStateSchema,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/state"
 import {
   type RuntimeContext,
   type RuntimeRunEvent,

@@ -107,6 +107,48 @@ module.exports = {
       to: { path: "^apps/.*/src" },
     },
     {
+      // firegrid-architecture-boundary.DEPENDENCY_GRAPH.7
+      name: "durable-streams-imports-contained",
+      severity: "error",
+      comment:
+        "Only @firegrid/durable-streams may import the underlying Durable Streams packages; app exemptions must be explicit and mechanically guarded.",
+      from: {
+        path: "^(packages|apps)/.*/src",
+        pathNot: "^packages/durable-streams/src",
+      },
+      to: {
+        path: "(^|/)node_modules/(?:\\.pnpm/)?@durable-streams/",
+      },
+    },
+    {
+      // firegrid-architecture-boundary.DEPENDENCY_GRAPH.8
+      // firegrid-platform-invariants.LOCALITY.2
+      // firegrid-platform-invariants.LOCALITY.7
+      // firegrid-architecture-boundary.SURFACE_AREA.3
+      name: "client-no-broad-durable-streams-root",
+      severity: "error",
+      comment:
+        "@firegrid/client must use narrow browser-safe @firegrid/durable-streams subpaths instead of the broad root.",
+      from: { path: "^packages/client/src" },
+      to: { path: "^packages/durable-streams/src/index\\.ts$" },
+    },
+    {
+      // firegrid-architecture-boundary.DEPENDENCY_GRAPH.8
+      // firegrid-platform-invariants.LOCALITY.2
+      // firegrid-platform-invariants.LOCALITY.7
+      name: "client-production-no-node-tier-durable-streams-subpaths",
+      severity: "error",
+      comment:
+        "Production @firegrid/client code must not statically reach workflow-engine, producer, server, or test utility substrate modules.",
+      from: {
+        path: "^packages/client/src",
+        pathNot: "\\.test\\.ts$",
+      },
+      to: {
+        path: "^packages/durable-streams/src/(?:producer|workflow-engine|test-utils|testing/|internal/|DurableStreamProducer|DurableStreamsWorkflowEngine)",
+      },
+    },
+    {
       name: "flamecast-client-no-runtime-source",
       severity: "error",
       comment:

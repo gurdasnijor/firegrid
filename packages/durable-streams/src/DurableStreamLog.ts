@@ -1,5 +1,6 @@
 import {
   DurableStream,
+  FetchError,
   stream as readStream,
 } from "@durable-streams/client"
 import { Effect, Schema } from "effect"
@@ -29,6 +30,11 @@ export interface AppendJsonOptions {
   readonly contentType?: string
 }
 
+export interface EnsureJsonDurableStreamOptions {
+  readonly streamUrl: string
+  readonly contentType?: string
+}
+
 export const makeJsonDurableStream = (
   streamUrl: string,
   contentType = "application/json",
@@ -37,6 +43,11 @@ export const makeJsonDurableStream = (
     url: streamUrl,
     contentType,
   })
+
+const asError = (
+  cause: unknown,
+): Error =>
+  cause instanceof Error ? cause : new Error(String(cause))
 
 export const createJsonDurableStream = (
   options: CreateJsonDurableStreamOptions,
@@ -51,6 +62,29 @@ export const createJsonDurableStream = (
     catch: cause =>
       new DurableStreamLogError({
         op: "createJsonDurableStream",
+        streamUrl: options.streamUrl,
+        cause,
+      }),
+  })
+
+export const ensureJsonDurableStream = (
+  options: EnsureJsonDurableStreamOptions,
+): Effect.Effect<void, DurableStreamLogError> =>
+  Effect.tryPromise({
+    try: async () => {
+      await DurableStream.head({ url: options.streamUrl }).catch((cause: unknown) => {
+        if (cause instanceof FetchError && cause.status === 404) {
+          return DurableStream.create({
+            url: options.streamUrl,
+            contentType: options.contentType ?? "application/json",
+          })
+        }
+        return Promise.reject(asError(cause))
+      })
+    },
+    catch: cause =>
+      new DurableStreamLogError({
+        op: "ensureJsonDurableStream",
         streamUrl: options.streamUrl,
         cause,
       }),

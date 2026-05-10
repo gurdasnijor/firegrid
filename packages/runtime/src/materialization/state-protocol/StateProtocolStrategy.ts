@@ -1,6 +1,6 @@
 import {
   createDurableStateDb,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/state"
 import type { Scope } from "effect"
 import { Effect, Layer, Stream } from "effect"
 import {

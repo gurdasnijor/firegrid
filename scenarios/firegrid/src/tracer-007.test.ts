@@ -1,6 +1,6 @@
 import {
   readRetainedJson,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/log"
 import {
   Firegrid,
   local,

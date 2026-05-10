@@ -8,6 +8,7 @@ import {
 import { Schema } from "effect"
 
 export const createDurableStateDb = createStreamDB
+export const createDurableStateSchema = createStateSchema
 
 export const runtimeContextStateSchema = createStateSchema({
   contexts: {

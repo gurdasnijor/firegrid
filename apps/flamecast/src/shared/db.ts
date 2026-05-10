@@ -1,4 +1,6 @@
-import { createStreamDB } from "@durable-streams/state"
+import {
+  createDurableStateDb,
+} from "@firegrid/durable-streams/state"
 import { Effect } from "effect"
 import {
   flamecastState,
@@ -67,7 +69,7 @@ const appendJson = async (
 }
 
 export const makeFlamecastDb = (streamUrl: string) =>
-  createStreamDB({
+  createDurableStateDb({
     streamOptions: { url: streamUrl, contentType },
     state: flamecastState,
     actions: ({ db, stream }) => ({

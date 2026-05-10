@@ -5,7 +5,7 @@ import {
 import {
   appendJson,
   readRetainedJson,
-} from "@firegrid/durable-streams"
+} from "@firegrid/durable-streams/log"
 import { Context, Effect, Layer, Schema } from "effect"
 import {
   requiredActionRequestedRowId,
