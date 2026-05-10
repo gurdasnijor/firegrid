@@ -1,0 +1,33 @@
+feature:
+  name: firegrid-agent-ingress
+  product: firegrid
+  description: Durable, provider-neutral prompt ingress for initial and follow-up agent inputs over the Firegrid substrate.
+
+components:
+  PROMPTS:
+    requirements:
+      1: Agent prompt ingress is recorded as durable input facts with an input id, runtime context id, input kind, provider-neutral content, creation time, and caller metadata.
+      2: Initial prompts and follow-up prompts use the same durable ingress model.
+      3: Duplicate prompt writes with the same idempotency key do not create duplicate logical inputs for a runtime context.
+      4: Prompt ordering is derived from durable ingress order or an explicit durable input sequence, not wall-clock timestamps.
+
+  DELIVERY:
+    requirements:
+      1: Runtime providers consume durable ingress facts and translate them to provider-specific input protocols only at the live adapter boundary.
+      2: Provider-specific stdin, ACP, Claude, chat, or tool protocol payloads are not the durable ingress authority.
+      3: Input delivery or consumption progress is recorded durably so restart/retry behavior does not depend on process-local cursors.
+      4: Runtime output remains a separate durable journal; prompt ingress does not directly define session, transcript, or message projection schemas.
+
+  HOST:
+    requirements:
+      1: The runtime host owns ingress stream topology and exposes a package/runtime surface for appending prompts to a runtime context.
+      2: Client launch and prompt requests do not carry ingress stream URLs, workflow engine choices, materialization strategy, or provider registry configuration.
+      3: Launching with an initial prompt and sending a later prompt exercise the same host-owned ingress path.
+
+constraints:
+  BOUNDARY:
+    requirements:
+      1: Agent ingress does not introduce a product HTTP/RPC prompting endpoint as Firegrid substrate authority.
+      2: Agent ingress does not parse runtime-output provider events or own session materialization.
+      3: Required-action resolution may later produce runtime input, but required-action workflow authority remains separate from prompt ingress authority.
+      4: Workflow-backed tools may later call the prompt/launch surface, but tool semantics do not define the prompt ingress substrate.

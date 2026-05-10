@@ -367,6 +367,7 @@ adding speculative package structure ahead of implementation pressure.
 | What durable records and workflow waits implement required actions? | Approval should be workflow/event-wait behavior, not a callback package. We need the request, resolution, timeout, and wait identity model. | 009: Required-Action Workflow |
 | How do workflow-backed tools enter the agent tool surface? | `sleep`, `wait_for`, `schedule_me`, and `spawn` need a common tool-layer interface over durable workflows. | 010: Workflow-Backed Tools |
 | Who owns projection target schemas, encoders, folds, and query adapters? | Tracer 008 intentionally left State Protocol query support hardcoded to session schemas. Strategies should supply storage/query mechanics while projection targets own their schemas and target-specific query mapping. | 011: Projection Target Schema Ownership |
+| How do clients and tools supply prompts over the Durable Streams substrate? | Firegrid has durable runtime output, but no unified durable input model for initial prompts, follow-up prompts, steering, or tool-driven `spawn(agent, prompt)`. Prompt ingress needs its own authority boundary before real runtime providers are added. | 012: Agent Ingress Prompt Stream |
 
 ### 006 Focus
 

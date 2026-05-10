@@ -57,6 +57,7 @@ components:
       2: A tracer is complete only when the feature behavior is reachable through a production package or app surface that scenario and test code invoke as an adjacent proof.
       3: Cross-plane composition roots that wire control-plane, data-plane, query, or provider services are production modules, not hidden scenario harnesses.
       4: Scenario-local composition may configure production surfaces and assert durable outcomes, but it does not own the production Layer graph, stream topology, or provider wiring being proved.
+      5: Every implemented tracer includes a scenario-level end-to-end proof that invokes production package or app surfaces and asserts durable observable outcomes across the tracer's relevant architectural boundary.
 
   ENFORCEMENT:
     requirements:

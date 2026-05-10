@@ -54,6 +54,7 @@ packages/durable-streams/src/DurableState.ts
 
 Relevant ACIDs:
 
+- `firegrid-platform-invariants.PRODUCTION_SURFACE.5`
 - `firegrid-materialization-engines.ENGINE.4`
 - `firegrid-materialization-engines.ENGINE.5`
 - `firegrid-materialization-engines.ENGINE.7`
@@ -166,7 +167,10 @@ runs through the production package surface.
    unsupported target capability is reported through a typed strategy error.
 5. Client launch request types remain unaware of projection target schemas,
    query adapters, and materialization strategy choice.
-6. Tests assert the new target ownership boundary with full ACID references.
+6. A tracer 011 scenario-level E2E appends runtime-output facts, runs the
+   production materialization surface through State Protocol, and queries the
+   derived projection through target-owned schema/query behavior.
+7. Tests assert the new target ownership boundary with full ACID references.
 
 ## Validation
 

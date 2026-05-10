@@ -77,6 +77,7 @@ packages/runtime/src/runtime-host/index.ts
 
 Relevant existing ACIDs:
 
+- `firegrid-platform-invariants.PRODUCTION_SURFACE.5`
 - `firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1`
 - `firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.2`
 - `firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.3`
@@ -214,11 +215,14 @@ composition root to prove the provider split.
    runtime-output data-plane events.
 5. Scenario tests invoke production package surfaces; they do not become the
    only place local-process provider wiring works.
-6. `@firegrid/runtime` no longer exports a runtime-internal local-process
+6. A tracer 007 scenario-level E2E invokes the production host root, starts a
+   runtime through `@firegrid/runtime`, and observes retained runtime-output
+   rows produced through the extracted sandbox provider path.
+7. `@firegrid/runtime` no longer exports a runtime-internal local-process
    provider surface as the primary integration path.
-7. The PR/report states whether the package split earned itself or should remain
+8. The PR/report states whether the package split earned itself or should remain
    staged under runtime for one more tracer.
-8. The PR/report lists what a second sandbox provider would need to implement
+9. The PR/report lists what a second sandbox provider would need to implement
    next, based on the actual extracted contract.
 
 ## Validation

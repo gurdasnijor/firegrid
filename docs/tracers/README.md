@@ -15,6 +15,11 @@ assert durable outcomes. They do not own the only working Layer graph, stream
 topology, or provider wiring for the tracer path. This is governed by
 `firegrid-platform-invariants.PRODUCTION_SURFACE.*`.
 
+Scenario-level end-to-end coverage is mandatory for every implemented tracer.
+Package/unit tests can prove internal contracts, but they do not complete a
+tracer unless a scenario also invokes the production surface and observes the
+durable outcome across the tracer's architectural boundary.
+
 ## Bullets
 
 - [001: Black-Box Agent Output To Runtime Events](./001-black-box-agent-output-to-durable-state.md)
@@ -28,6 +33,7 @@ topology, or provider wiring for the tracer path. This is governed by
 - [009: Required-Action Workflow](./009-required-action-workflow.md)
 - 010: Workflow-Backed Tools
 - [011: Projection Target Schema Ownership](./011-projection-target-schema-ownership.md)
+- [012: Agent Ingress Prompt Stream](./012-agent-ingress-prompt-stream.md)
 
 ## Handoff
 
@@ -118,6 +124,12 @@ Prerequisite
     -> projection target owns schemas, encoders, folds, and query adapters
     -> materialization strategies stop hardcoding session schemas
     -> State Protocol/raw-fold strategies can run non-session projections
+
+012
+  define durable agent prompt ingress
+    -> initial and follow-up prompts append provider-neutral durable input facts
+    -> runtime adapters translate durable ingress to stdin/ACP/provider protocols
+    -> delivery progress is durable and runtime output remains a separate journal
 ```
 
 The prerequisites establish the thin launch producer and live sandbox boundary.
@@ -140,6 +152,8 @@ sharpen the next one.
 - Start from durable user intent, not from an internal helper.
 - Land a production package or app surface for the path before calling a tracer
   implemented.
+- Add a scenario-level end-to-end proof for every implemented tracer; package
+  tests alone are never enough.
 - Keep scenario wiring thin: scenarios invoke production surfaces instead of
   becoming hidden composition roots.
 - End at durable, application-observable state.

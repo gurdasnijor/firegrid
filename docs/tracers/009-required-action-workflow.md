@@ -61,6 +61,7 @@ layers, but the workflow and state services must live in package source.
 
 Relevant existing specs and docs:
 
+- `firegrid-platform-invariants.PRODUCTION_SURFACE.5`
 - `firegrid-required-actions.RECORDS.1`
 - `firegrid-required-actions.RECORDS.2`
 - `firegrid-required-actions.RECORDS.3`
@@ -232,7 +233,10 @@ scenario rather than changing tracer 001.
    failure.
 7. Scenario proof invokes package production surfaces and observes durable
    required-action state.
-8. Launch/runtime-output code remains unaware of provider-specific required
+8. The scenario proof crosses the required-action boundary end to end: request
+   recorded, workflow wait entered, durable resolution appended, workflow
+   resumed, and terminal decision observed.
+9. Launch/runtime-output code remains unaware of provider-specific required
    action semantics.
 
 ## Validation
