@@ -1,7 +1,4 @@
 import {
-  readRetainedJson,
-} from "@firegrid/durable-streams/log"
-import {
   Firegrid,
   local,
 } from "@firegrid/client"
@@ -23,6 +20,10 @@ import {
   startFiregridScenarioHarness,
   type FiregridScenarioHarness,
 } from "./scenario-harness.ts"
+import {
+  readRuntimeJournalEvents,
+  readUnknownDurableEvents,
+} from "./durable-stream-fixtures.ts"
 
 let harness: FiregridScenarioHarness | undefined
 
@@ -135,7 +136,7 @@ describe("firegrid tracer 012 runtime ingress", () => {
     })
 
     const runtimeJournal = await Effect.runPromise(
-      readRetainedJson<RuntimeJournalEvent>({ streamUrl: dataPlaneStreamUrl }),
+      readRuntimeJournalEvents(dataPlaneStreamUrl),
     )
     const stdout = runtimeJournal
       .flatMap(event => event.type === "firegrid.runtime.output.stdout" ? [event.event] : [])
@@ -147,7 +148,7 @@ describe("firegrid tracer 012 runtime ingress", () => {
     ])
 
     const ingressRows = await Effect.runPromise(
-      readRetainedJson<unknown>({ streamUrl: runtimeIngressStreamUrl }).pipe(
+      readUnknownDurableEvents(runtimeIngressStreamUrl).pipe(
         Effect.map(rows =>
           rows.map(row => Schema.decodeUnknownSync(RuntimeIngressRowSchema)(row))),
       ),

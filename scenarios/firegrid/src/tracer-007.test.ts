@@ -1,7 +1,4 @@
 import {
-  readRetainedJson,
-} from "@firegrid/durable-streams/log"
-import {
   Firegrid,
   local,
 } from "@firegrid/client"
@@ -18,6 +15,9 @@ import {
   startFiregridScenarioHarness,
   type FiregridScenarioHarness,
 } from "./scenario-harness.ts"
+import {
+  readRuntimeJournalEvents,
+} from "./durable-stream-fixtures.ts"
 
 let harness: FiregridScenarioHarness | undefined
 
@@ -106,7 +106,7 @@ console.error("diagnostic: sandbox-slot")
     }))
 
     const retainedJournal = await Effect.runPromise(
-      readRetainedJson<RuntimeJournalEvent>({ streamUrl: dataPlaneStreamUrl }),
+      readRuntimeJournalEvents(dataPlaneStreamUrl),
     )
 
     expect(retainedJournal).toContainEqual(expect.objectContaining({

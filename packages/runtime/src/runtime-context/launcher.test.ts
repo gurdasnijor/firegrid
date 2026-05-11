@@ -1,6 +1,4 @@
-import {
-  readRetainedJson,
-} from "@firegrid/durable-streams/log"
+import { FetchHttpClient } from "@effect/platform"
 import {
   startDurableStreamsTestServer,
   type DurableStreamsTestServerHandle,
@@ -11,7 +9,8 @@ import {
   RuntimeJournalEventSchema,
   type RuntimeJournalEvent,
 } from "@firegrid/protocol/launch"
-import { Effect, Either, Option, Schema } from "effect"
+import { Effect, Either, Option } from "effect"
+import { DurableStream } from "effect-durable-streams"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   startRuntime,
@@ -63,8 +62,12 @@ const appendRuntimeContext = (
 const readDataPlane = async (
   streamUrl: string,
 ): Promise<ReadonlyArray<RuntimeJournalEvent>> => {
-  const rows = await Effect.runPromise(readRetainedJson<unknown>({ streamUrl }))
-  return rows.map(row => Schema.decodeUnknownSync(RuntimeJournalEventSchema)(row))
+  return await Effect.runPromise(DurableStream.define({
+    endpoint: { url: streamUrl },
+    schema: RuntimeJournalEventSchema,
+  }).collect.pipe(
+    Effect.provide(FetchHttpClient.layer),
+  ))
 }
 
 describe("durable launch tracer bullet 001", () => {

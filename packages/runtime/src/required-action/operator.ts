@@ -1,4 +1,5 @@
 import { WorkflowEngine } from "@effect/workflow"
+import type { HttpClient } from "@effect/platform"
 import { Effect, Option } from "effect"
 import {
   reactiveWorkflowExecutionId,
@@ -41,7 +42,7 @@ export const requiredActionOperator = (): ReactiveWorkflowOperator<
   RequiredActionRow,
   RequiredActionRequest,
   RequiredActionError,
-  RequiredActions,
+  RequiredActions | HttpClient.HttpClient,
   RequiredActionError,
   WorkflowEngine.WorkflowEngine
 > => ({

@@ -1,9 +1,16 @@
 import { Activity, Workflow } from "@effect/workflow"
+import type { HttpClient } from "@effect/platform"
 import {
+  RuntimeJournalEventSchema,
   RuntimeContextSchema,
   type RuntimeContext,
+  type RuntimeEvent,
+  type RuntimeJournalEvent,
+  type RuntimeLogLine,
 } from "@firegrid/protocol/launch"
 import { Effect, Option, Schema, Stream } from "effect"
+import type { DurableStream } from "effect-durable-streams"
+import { DurableStream as DurableStreamClient } from "effect-durable-streams"
 import { commandForContext } from "./command.ts"
 import {
   SandboxProvider,
@@ -18,15 +25,17 @@ import {
   RuntimeControlPlane,
 } from "./service.ts"
 import {
-  type RuntimeOutputRow,
-  RuntimeCaptureJournal,
-  type RuntimeCaptureJournalError,
-} from "../runtime-output/writer.ts"
-import {
-  RuntimeIngress,
   type RuntimeIngressError,
+  RuntimeIngressRowSchema,
   type RuntimeIngressRequestedRow,
+  runtimeIngressError,
+  type RuntimeIngressDeliveryRequest,
+  type RuntimeIngressDeliveredRow,
+  type RuntimeIngressRow,
 } from "../runtime-ingress/index.ts"
+import {
+  makeRuntimeIngressDeliveredRow,
+} from "../runtime-ingress/rows.ts"
 import {
   ProcessAttemptResultSchema,
   RuntimeContextTerminalStateSchema,
@@ -38,6 +47,12 @@ import {
 type SequencedChunk = {
   readonly sequence: number
   readonly chunk: ProcessOutputChunk
+}
+
+type RuntimeOutputRow = RuntimeEvent | RuntimeLogLine
+type PendingIngressState = {
+  readonly delivered: Set<string>
+  readonly pending: Map<string, RuntimeIngressRequestedRow>
 }
 
 const nowIso = (): string => new Date().toISOString()
@@ -75,12 +90,56 @@ const stdinForIngress = (
     ? undefined
     : `${rows.map(providerInputFromIngress).join("\n")}\n`
 
-const mapCaptureJournalError = (
+const ingressDeliveryKey = (
+  row: {
+    readonly contextId: string
+    readonly ingressId: string
+    readonly subscriberId: string
+  },
+): string =>
+  `${row.contextId}:${row.ingressId}:${row.subscriberId}`
+
+const isRuntimeIngressDeliveryFor = (
+  row: RuntimeIngressRow,
+  options: {
+    readonly contextId: string
+    readonly subscriberId: string
+  },
+): row is RuntimeIngressDeliveredRow =>
+  row.type === "firegrid.runtime_ingress.delivered" &&
+  row.contextId === options.contextId &&
+  row.subscriberId === options.subscriberId
+
+const isRuntimeIngressRequestFor = (
+  row: RuntimeIngressRow,
+  contextId: string,
+): row is RuntimeIngressRequestedRow =>
+  row.type === "firegrid.runtime_ingress.requested" &&
+  row.contextId === contextId
+
+const runtimeJournalEventForOutput = (
+  row: RuntimeOutputRow,
+): RuntimeJournalEvent =>
+  row.source === "stdout"
+    ? {
+      type: "firegrid.runtime.output.stdout",
+      id: row.eventId,
+      at: row.receivedAt,
+      event: row,
+    }
+    : {
+      type: "firegrid.runtime.output.stderr",
+      id: row.logLineId,
+      at: row.receivedAt,
+      log: row,
+    }
+
+const mapRuntimeOutputError = (
   contextId: string,
 ) =>
-  Effect.mapError((cause: RuntimeCaptureJournalError) =>
+  Effect.mapError((cause: DurableStream.ProducerFailure) =>
     asRuntimeContextError(
-      `runtime-capture.${cause.op}`,
+      "runtime-output.write",
       "failed to write runtime data-plane journal event",
       contextId,
       cause,
@@ -96,6 +155,118 @@ const mapRuntimeIngressError = (
       contextId,
       cause,
     ))
+
+const mapRuntimeIngressStreamError = (
+  op: string,
+  message: string,
+  row?: {
+    readonly contextId?: string
+    readonly ingressId?: string
+  },
+) =>
+  Effect.mapError((cause: DurableStream.ReadError | DurableStream.WriteError) =>
+    runtimeIngressError(op, message, row?.contextId, row?.ingressId, cause))
+
+const pendingRuntimeIngressFromStream = (
+  options: {
+    readonly streamUrl: string
+    readonly contextId: string
+    readonly subscriberId: string
+  },
+): Effect.Effect<ReadonlyArray<RuntimeIngressRequestedRow>, RuntimeIngressError, HttpClient.HttpClient> => {
+  const initial: PendingIngressState = {
+    delivered: new Set<string>(),
+    pending: new Map<string, RuntimeIngressRequestedRow>(),
+  }
+  return DurableStreamClient.define({
+    endpoint: { url: options.streamUrl },
+    schema: RuntimeIngressRowSchema,
+  }).read({ live: false }).pipe(
+    Stream.runFold(initial, (state, row): PendingIngressState => {
+      if (isRuntimeIngressDeliveryFor(row, options)) {
+        const key = ingressDeliveryKey(row)
+        state.delivered.add(key)
+        state.pending.delete(key)
+        return state
+      }
+      if (!isRuntimeIngressRequestFor(row, options.contextId)) return state
+      const key = ingressDeliveryKey({
+        contextId: row.contextId,
+        ingressId: row.ingressId,
+        subscriberId: options.subscriberId,
+      })
+      if (!state.delivered.has(key) && !state.pending.has(key)) {
+        state.pending.set(key, row)
+      }
+      return state
+    }),
+    Effect.map(state => Array.from(state.pending.values())),
+    mapRuntimeIngressStreamError(
+      "pending",
+      "failed to read pending runtime ingress durable rows",
+      options,
+    ),
+  )
+}
+
+const hasDeliveredRuntimeIngress = (
+  options: {
+    readonly streamUrl: string
+    readonly contextId: string
+    readonly ingressId: string
+    readonly subscriberId: string
+  },
+): Effect.Effect<boolean, RuntimeIngressError, HttpClient.HttpClient> =>
+  DurableStreamClient.define({
+    endpoint: { url: options.streamUrl },
+    schema: RuntimeIngressRowSchema,
+  }).read({ live: false }).pipe(
+    Stream.filter(row =>
+      row.type === "firegrid.runtime_ingress.delivered" &&
+      row.contextId === options.contextId &&
+      row.ingressId === options.ingressId &&
+      row.subscriberId === options.subscriberId),
+    Stream.runHead,
+    Effect.map(Option.isSome),
+    mapRuntimeIngressStreamError(
+      "delivered.exists",
+      "failed to read runtime ingress delivery rows",
+      options,
+    ),
+  )
+
+const appendRuntimeIngressDelivered = (
+  options: {
+    readonly streamUrl: string
+    readonly request: RuntimeIngressDeliveryRequest
+  },
+): Effect.Effect<RuntimeIngressDeliveredRow, RuntimeIngressError, HttpClient.HttpClient> =>
+  Effect.gen(function* () {
+    const delivered = yield* hasDeliveredRuntimeIngress({
+      streamUrl: options.streamUrl,
+      contextId: options.request.contextId,
+      ingressId: options.request.ingressId,
+      subscriberId: options.request.subscriberId,
+    })
+    if (delivered) return makeRuntimeIngressDeliveredRow(options.request)
+
+    const row = makeRuntimeIngressDeliveredRow(options.request)
+    // firegrid-agent-ingress.DELIVERY.3
+    // firegrid-agent-ingress.SUBSCRIBERS.2
+    // effect-native-production-cutover.RUNTIME_IO.2
+    yield* DurableStreamClient.define({
+      endpoint: { url: options.streamUrl },
+      schema: RuntimeIngressRowSchema,
+    }).append(row).pipe(
+      Effect.asVoid,
+      mapRuntimeIngressStreamError(
+        "append",
+        "failed to append runtime ingress delivery row",
+        row,
+      ),
+    )
+    return row
+  })
 
 const outputRowFromChunk = (
   context: RuntimeContext,
@@ -160,11 +331,16 @@ export const RuntimeContextWorkflow = Workflow.make({
   idempotencyKey: ({ contextId }) => contextId,
 })
 
-export const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
+interface RuntimeContextWorkflowOptions {
+  readonly runtimeOutputStreamUrl: string
+  readonly runtimeIngressStreamUrl?: string
+}
+
+export const RuntimeContextWorkflowLayer = (
+  options: RuntimeContextWorkflowOptions,
+) => RuntimeContextWorkflow.toLayer(
   Effect.fn(function* runRuntimeContext({ contextId }) {
     const controlPlane = yield* RuntimeControlPlane
-    const captureJournal = yield* RuntimeCaptureJournal
-    const runtimeIngress = yield* RuntimeIngress
 
     const context = yield* Activity.make({
       name: "firegrid.runtime-context.read-context",
@@ -187,15 +363,23 @@ export const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
       execute: Effect.gen(function* () {
         const activityAttempt = yield* Activity.CurrentAttempt
         const provider = yield* SandboxProvider
-        const output = yield* captureJournal.openAttempt({
-          contextId: context.contextId,
-          activityAttempt,
-        })
+        // effect-native-production-cutover.RUNTIME_IO.3
+        const outputProducer = yield* DurableStreamClient.define({
+          endpoint: { url: options.runtimeOutputStreamUrl },
+          schema: RuntimeJournalEventSchema,
+        }).producer({
+          // effect-native-production-cutover.RUNTIME_IO.1
+          producerId: `firegrid-runtime-output:${context.contextId}:${activityAttempt}`,
+          lingerMs: 10,
+        }).pipe(mapRuntimeOutputError(context.contextId))
         const command = yield* commandForContext(context)
-        const pendingIngress = yield* runtimeIngress.pending({
-          contextId: context.contextId,
-          subscriberId: localProcessIngressSubscriberId,
-        }).pipe(mapRuntimeIngressError(context.contextId))
+        const pendingIngress = yield* (options.runtimeIngressStreamUrl === undefined
+          ? Effect.succeed([])
+          : pendingRuntimeIngressFromStream({
+            streamUrl: options.runtimeIngressStreamUrl,
+            contextId: context.contextId,
+            subscriberId: localProcessIngressSubscriberId,
+          })).pipe(mapRuntimeIngressError(context.contextId))
         // firegrid-agent-ingress.DELIVERY.1
         // firegrid-agent-ingress.DELIVERY.2
         // firegrid-agent-ingress.DELIVERY.3
@@ -205,13 +389,19 @@ export const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
           ...command,
           ...(stdin === undefined ? {} : { stdin }),
         }
-        yield* Effect.forEach(pendingIngress, row =>
-          runtimeIngress.markDelivered({
-            contextId: row.contextId,
-            ingressId: row.ingressId,
-            subscriberId: localProcessIngressSubscriberId,
-            provider: context.runtime.provider,
-          }).pipe(mapRuntimeIngressError(context.contextId)), { discard: true })
+        const runtimeIngressStreamUrl = options.runtimeIngressStreamUrl
+        if (runtimeIngressStreamUrl !== undefined) {
+          yield* Effect.forEach(pendingIngress, row =>
+            appendRuntimeIngressDelivered({
+              streamUrl: runtimeIngressStreamUrl,
+              request: {
+                contextId: row.contextId,
+                ingressId: row.ingressId,
+                subscriberId: localProcessIngressSubscriberId,
+                provider: context.runtime.provider,
+              },
+            }).pipe(mapRuntimeIngressError(context.contextId)), { discard: true })
+        }
         // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.3
         // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.5
         const sandbox = yield* Effect.acquireRelease(
@@ -255,7 +445,9 @@ export const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
             // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.7
             return outputRowFromChunk(context, activityAttempt, sequence, chunk).pipe(
               Effect.flatMap(row =>
-                output.write(row).pipe(mapCaptureJournalError(context.contextId))),
+                outputProducer.append(runtimeJournalEventForOutput(row)).pipe(
+                  mapRuntimeOutputError(context.contextId),
+                )),
             )
           }),
           Stream.filter((item): item is SequencedChunk & {
@@ -274,8 +466,8 @@ export const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
               )),
             onSome: ({ chunk: exit }) =>
               // firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.4
-              output.flush.pipe(
-                mapCaptureJournalError(context.contextId),
+              outputProducer.flush.pipe(
+                mapRuntimeOutputError(context.contextId),
                 Effect.zipRight(controlPlane.appendRunExited({
                   contextId: context.contextId,
                   activityAttempt,
@@ -291,8 +483,8 @@ export const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(
               ),
           })),
           Effect.catchAll(error =>
-            output.flush.pipe(
-              mapCaptureJournalError(context.contextId),
+            outputProducer.flush.pipe(
+              mapRuntimeOutputError(context.contextId),
               Effect.ignore,
               Effect.zipRight(appendFailed(error.message)),
               Effect.zipRight(Effect.fail(error)),

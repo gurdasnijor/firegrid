@@ -1,12 +1,10 @@
+import { type HttpClient } from "@effect/platform"
 import {
   DurableDeferred,
   type WorkflowEngine,
 } from "@effect/workflow"
-import {
-  appendJson,
-  readRetainedJson,
-} from "@firegrid/durable-streams/log"
 import { Context, Effect, Layer, Schema } from "effect"
+import { DurableStream } from "effect-durable-streams"
 import {
   requiredActionRequestedRowId,
   requiredActionResolvedRowId,
@@ -38,14 +36,14 @@ export interface RequiredActionsOptions {
 interface RequiredActionsService {
   readonly request: (
     request: RequiredActionRequest,
-  ) => Effect.Effect<RequiredActionRequestedRow, RequiredActionError>
+  ) => Effect.Effect<RequiredActionRequestedRow, RequiredActionError, HttpClient.HttpClient>
   readonly resolve: (
     resolution: RequiredActionResolveRequest,
-  ) => Effect.Effect<RequiredActionResolution, RequiredActionError, WorkflowEngine.WorkflowEngine>
+  ) => Effect.Effect<RequiredActionResolution, RequiredActionError, HttpClient.HttpClient | WorkflowEngine.WorkflowEngine>
   readonly get: (
     requiredActionId: string,
-  ) => Effect.Effect<RequiredActionState, RequiredActionError>
-  readonly rows: Effect.Effect<ReadonlyArray<RequiredActionRow>, RequiredActionError>
+  ) => Effect.Effect<RequiredActionState, RequiredActionError, HttpClient.HttpClient>
+  readonly rows: Effect.Effect<ReadonlyArray<RequiredActionRow>, RequiredActionError, HttpClient.HttpClient>
 }
 
 export class RequiredActions extends Context.Tag("firegrid/runtime/RequiredActions")<
@@ -55,12 +53,13 @@ export class RequiredActions extends Context.Tag("firegrid/runtime/RequiredActio
 
 const nowIso = (): string => new Date().toISOString()
 
-const decodeRow = (
-  row: unknown,
-): RequiredActionRow | undefined =>
-  Schema.decodeUnknownOption(RequiredActionRowSchema)(row).pipe(
-    option => option._tag === "Some" ? option.value : undefined,
-  )
+const requiredActionStream = (
+  streamUrl: string,
+) =>
+  DurableStream.define({
+    endpoint: { url: streamUrl },
+    schema: RequiredActionRowSchema,
+  })
 
 const sameResolution = (
   left: RequiredActionResolution,
@@ -96,8 +95,10 @@ const foldRequiredActionState = (
 const appendRequiredActionRow = (
   streamUrl: string,
   row: RequiredActionRow,
-) =>
-  appendJson({ streamUrl, event: row }).pipe(
+): Effect.Effect<void, RequiredActionError, HttpClient.HttpClient> =>
+  // effect-native-production-cutover.REQUIRED_ACTION.2
+  requiredActionStream(streamUrl).append(row).pipe(
+    Effect.asVoid,
     Effect.mapError(cause =>
       requiredActionError(
         "append",
@@ -109,12 +110,9 @@ const appendRequiredActionRow = (
 
 const readRequiredActionRows = (
   streamUrl: string,
-): Effect.Effect<ReadonlyArray<RequiredActionRow>, RequiredActionError> =>
-  readRetainedJson<unknown>({ streamUrl }).pipe(
-    Effect.map(rows => rows.flatMap(row => {
-      const decoded = decodeRow(row)
-      return decoded === undefined ? [] : [decoded]
-    })),
+): Effect.Effect<ReadonlyArray<RequiredActionRow>, RequiredActionError, HttpClient.HttpClient> =>
+  // effect-native-production-cutover.REQUIRED_ACTION.1
+  requiredActionStream(streamUrl).collect.pipe(
     Effect.mapError(cause =>
       requiredActionError(
         "read",
@@ -127,7 +125,7 @@ const readRequiredActionRows = (
 const getRequiredActionState = (
   streamUrl: string,
   requiredActionId: string,
-): Effect.Effect<RequiredActionState, RequiredActionError> =>
+): Effect.Effect<RequiredActionState, RequiredActionError, HttpClient.HttpClient> =>
   readRequiredActionRows(streamUrl).pipe(
     Effect.map(rows => foldRequiredActionState(requiredActionId, rows)),
   )

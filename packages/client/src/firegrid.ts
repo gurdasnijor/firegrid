@@ -1,6 +1,4 @@
-import {
-  readRetainedJson,
-} from "@firegrid/durable-streams/log"
+import { FetchHttpClient } from "@effect/platform"
 import {
   createDurableStateDb,
   runtimeContextStateSchema,
@@ -18,6 +16,7 @@ import {
   type RuntimeRunEvent,
 } from "@firegrid/protocol/launch"
 import { Context, Data, Effect, Layer, Schema, Stream } from "effect"
+import { DurableStream } from "effect-durable-streams"
 
 export interface ClientOptions {
   readonly runtimeStreamUrl: string
@@ -103,11 +102,6 @@ const decodePublicLaunchRequest = (
     Effect.mapError(cause => new LaunchInputError({ cause })),
   )
 
-const decodeJournalEvent = (
-  value: unknown,
-): RuntimeJournalEvent =>
-  Schema.decodeUnknownSync(RuntimeJournalEventSchema)(value)
-
 const snapshotFromJournal = (
   contextId: string,
   control: {
@@ -175,8 +169,12 @@ const make = Effect.gen(function* () {
   const readJournal = (): Effect.Effect<ReadonlyArray<RuntimeJournalEvent>, PreloadError> =>
     dataPlaneStreamUrl === undefined
       ? Effect.succeed([])
-      : readRetainedJson<unknown>({ streamUrl: dataPlaneStreamUrl }).pipe(
-        Effect.map(values => values.map(decodeJournalEvent)),
+      // effect-native-production-cutover.CLIENT_APP.1
+      : DurableStream.define({
+        endpoint: { url: dataPlaneStreamUrl },
+        schema: RuntimeJournalEventSchema,
+      }).collect.pipe(
+        Effect.provide(FetchHttpClient.layer),
         Effect.mapError(cause => new PreloadError({ cause })),
       )
 

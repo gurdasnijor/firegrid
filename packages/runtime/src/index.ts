@@ -41,10 +41,7 @@ export {
   type RequiredActionState,
 } from "./required-action/index.ts"
 export {
-  RuntimeIngress,
   RuntimeIngressError,
-  RuntimeIngressLive,
-  RuntimeIngressUnavailableLive,
   runtimeIngressDeliveredRowId,
   runtimeIngressIdForIdempotencyKey,
   runtimeIngressRequestedRowId,
@@ -52,7 +49,6 @@ export {
   type RuntimeIngressDeliveredRow,
   type RuntimeIngressDeliveryRequest,
   type RuntimeIngressKind,
-  type RuntimeIngressOptions,
   type RuntimeIngressRequest,
   type RuntimeIngressRequestedRow,
   type RuntimeIngressRow,

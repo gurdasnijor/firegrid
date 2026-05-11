@@ -18,18 +18,3 @@ export {
   runtimeContextStateSchema,
   sessionStateSchema,
 } from "./DurableState.ts"
-export {
-  appendJson,
-  createJsonDurableStream,
-  readRetainedJson,
-  DurableStreamLogError,
-  type AppendJsonOptions,
-  type CreateJsonDurableStreamOptions,
-  type ReadRetainedJsonOptions,
-} from "./DurableStreamLog.ts"
-export {
-  openDurableStreamProducer,
-  DurableStreamProducerError,
-  type DurableStreamProducerHandle,
-  type DurableStreamProducerOpenOptions,
-} from "./DurableStreamProducer.ts"

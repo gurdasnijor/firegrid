@@ -1,4 +1,5 @@
 import type { WorkflowEngine } from "@effect/workflow/WorkflowEngine"
+import { FetchHttpClient } from "@effect/platform"
 import {
   DurableStreamsWorkflowEngine,
 } from "@firegrid/durable-streams/workflow-engine"
@@ -45,6 +46,7 @@ export const RequiredActionRuntimeLive = (
       requiredActions,
       workflowEngine,
       ReactiveWorkflowOperatorRuntimeLive,
+      FetchHttpClient.layer,
     )),
   )
 }

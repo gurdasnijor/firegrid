@@ -1,0 +1,49 @@
+feature:
+  name: effect-native-production-cutover
+  product: firegrid
+  description: Cut production Firegrid runtime, materialization, client, app, and scenario code over to the Effect-native Durable Streams client as the only durable stream/log write-read surface.
+
+components:
+  RUNTIME_IO:
+    requirements:
+      1: Production runtime output writes use the Effect-native Durable Streams producer or Sink API.
+      2: Production runtime ingress reads and writes use the Effect-native Durable Streams read, collect, append, or producer APIs.
+      3: Production runtime workflow code does not depend on RuntimeCaptureJournal service tags.
+      4: Production runtime host wiring does not provide RuntimeCaptureJournalLive, RuntimeIngressLive, or RuntimeIngressUnavailableLive.
+
+  MATERIALIZATION:
+    requirements:
+      1: Runtime-output retained reads in materialization sources use the Effect-native Durable Streams read or collect API.
+      2: State Protocol materialization writes use the Effect-native Durable Streams producer or Sink API.
+      3: Materialization tests and scenarios seed durable streams through the Effect-native Durable Streams API.
+
+  REQUIRED_ACTION:
+    requirements:
+      1: Required-action durable fact reads use the Effect-native Durable Streams read or collect API.
+      2: Required-action durable fact writes use the Effect-native Durable Streams append or producer API.
+
+  CLIENT_APP:
+    requirements:
+      1: Firegrid client snapshot reads use the Effect-native Durable Streams API.
+      2: Flamecast durable stream usage does not import legacy Firegrid durable-streams log or producer helper subpaths.
+      3: Scenario setup and assertions use the Effect-native Durable Streams API except for durable-streams test infrastructure.
+
+constraints:
+  DELETION:
+    requirements:
+      1: The legacy appendJson helper is deleted or made non-importable.
+      2: The legacy readRetainedJson helper is deleted or made non-importable.
+      3: The legacy openDurableStreamProducer helper is deleted or made non-importable.
+      4: The @firegrid/durable-streams/log and @firegrid/durable-streams/producer subpaths are removed or made non-importable.
+      5: No compatibility aliases are added for legacy log or producer helpers.
+
+  GUARDRAILS:
+    requirements:
+      1: Static checks prevent new imports of @firegrid/durable-streams/log and @firegrid/durable-streams/producer.
+      2: Static checks prevent production code from importing appendJson, readRetainedJson, or openDurableStreamProducer.
+      3: The cutover leaves historical documentation as history only; current architecture documents name the Effect-native Durable Streams API as the durable stream primitive.
+
+  INVARIANTS:
+    requirements:
+      1: This cutover is bound by stream-native-runtime-loop.SURFACE.1, stream-native-runtime-loop.SURFACE.2, stream-native-runtime-loop.SURFACE.3, and stream-native-runtime-loop.SURFACE.4.
+      2: This cutover is bound by firegrid-platform-invariants.PRODUCTION_SURFACE.5.

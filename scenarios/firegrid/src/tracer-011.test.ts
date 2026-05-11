@@ -1,7 +1,4 @@
 import {
-  appendJson,
-} from "@firegrid/durable-streams/log"
-import {
   startDurableStreamsTestServer,
   type DurableStreamsTestServerHandle,
 } from "@firegrid/durable-streams/test-utils"
@@ -17,6 +14,9 @@ import {
 } from "@firegrid/runtime/materialization"
 import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import {
+  appendRuntimeJournalEvent,
+} from "./durable-stream-fixtures.ts"
 
 let server: DurableStreamsTestServerHandle | undefined
 
@@ -64,7 +64,7 @@ const appendRuntimeOutputEvents = async (
   events: ReadonlyArray<RuntimeJournalEvent>,
 ): Promise<void> => {
   for (const event of events) {
-    await Effect.runPromise(appendJson({ streamUrl, event }))
+    await Effect.runPromise(appendRuntimeJournalEvent(streamUrl, event))
   }
 }
 

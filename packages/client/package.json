@@ -24,9 +24,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@effect/platform": "^0.96.0",
     "@firegrid/durable-streams": "workspace:*",
     "@firegrid/protocol": "workspace:*",
-    "effect": "^3.18.0"
+    "effect": "^3.18.0",
+    "effect-durable-streams": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

@@ -1,3 +1,4 @@
+import type { HttpClient } from "@effect/platform"
 import {
   startDurableStreamsTestServer,
   type DurableStreamsTestServerHandle,
@@ -32,7 +33,7 @@ const createStreamUrl = async (name: string): Promise<string> => {
 
 const waitForTokenizedRequest = (
   requiredActionId: string,
-): Effect.Effect<RequiredActionState, never, RequiredActions> =>
+): Effect.Effect<RequiredActionState, never, RequiredActions | HttpClient.HttpClient> =>
   RequiredActions.pipe(
     Effect.flatMap(actions =>
       actions.get(requiredActionId).pipe(

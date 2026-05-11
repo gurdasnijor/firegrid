@@ -1,9 +1,7 @@
-import {
-  openDurableStreamProducer,
-  DurableStreamProducerError,
-} from "@firegrid/durable-streams/producer"
+import { FetchHttpClient } from "@effect/platform"
 import type { Scope } from "effect"
 import { Context, Effect, Layer, Schema } from "effect"
+import { DurableStream } from "effect-durable-streams"
 import type { EventProjectorIdentity } from "../../event-pipeline.ts"
 
 export class StateProtocolWriterError extends Schema.TaggedError<StateProtocolWriterError>()(
@@ -19,7 +17,7 @@ export class StateProtocolWriterError extends Schema.TaggedError<StateProtocolWr
 const isTransientWriterCause = (
   cause: unknown,
 ): boolean => {
-  if (cause instanceof DurableStreamProducerError) return cause.transient
+  if (cause instanceof DurableStream.TransportError) return true
   return false
 }
 
@@ -64,19 +62,25 @@ export const StateProtocolWriterLive = Layer.succeed(
   StateProtocolWriter,
   StateProtocolWriter.of({
     open: options =>
-      openDurableStreamProducer({
-        streamUrl: options.streamUrl,
+      // effect-native-production-cutover.MATERIALIZATION.2
+      DurableStream.define({
+        endpoint: { url: options.streamUrl },
+        schema: Schema.Unknown,
+      }).producer({
         producerId: options.writerId,
       }).pipe(
+        Effect.provide(FetchHttpClient.layer),
+        Effect.mapError(cause =>
+          writerError("state-protocol.open", options.writerId, cause)),
         Effect.map(producer => {
           const mapDurableProducerError = (
             op: string,
           ) =>
-            Effect.mapError((cause: DurableStreamProducerError) =>
+            Effect.mapError((cause: DurableStream.ProducerFailure) =>
               writerError(op, options.writerId, cause))
           return {
             append: event =>
-              producer.append(JSON.stringify(event)).pipe(
+              producer.append(event).pipe(
                 mapDurableProducerError("state-protocol.append"),
               ),
             flush: producer.flush.pipe(mapDurableProducerError("state-protocol.flush")),

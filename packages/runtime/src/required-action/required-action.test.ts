@@ -1,15 +1,15 @@
-import {
-  appendJson,
-} from "@firegrid/durable-streams/log"
+import { FetchHttpClient } from "@effect/platform"
 import {
   startDurableStreamsTestServer,
   type DurableStreamsTestServerHandle,
 } from "@firegrid/durable-streams/test-utils"
 import { Duration, Effect, Fiber } from "effect"
+import { DurableStream } from "effect-durable-streams"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RequiredActions,
   RequiredActionRuntimeLive,
+  RequiredActionRowSchema,
   requiredActionResolvedRowId,
   startRequiredAction,
 } from "./index.ts"
@@ -186,9 +186,10 @@ describe("required-action workflow", () => {
           state = yield* actions.get(requiredActionId)
         }
 
-        yield* appendJson({
-          streamUrl: requiredActionStreamUrl,
-          event: {
+        yield* DurableStream.define({
+          endpoint: { url: requiredActionStreamUrl },
+          schema: RequiredActionRowSchema,
+        }).append({
             type: "firegrid.required_action.resolved",
             id: requiredActionResolvedRowId(requiredActionId),
             at: resolvedAt,
@@ -200,8 +201,7 @@ describe("required-action workflow", () => {
               resolvedAt,
               selectedOptionId: "allow",
             },
-          },
-        })
+          }).pipe(Effect.provide(FetchHttpClient.layer))
 
         const retry = yield* actions.resolve({
           requiredActionId,

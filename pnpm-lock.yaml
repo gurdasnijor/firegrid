@@ -50,6 +50,9 @@ importers:
 
   apps/flamecast:
     dependencies:
+      '@effect/platform':
+        specifier: ^0.96.0
+        version: 0.96.1(effect@3.21.2)
       '@effect/workflow':
         specifier: 0.18.1
         version: 0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
@@ -59,6 +62,9 @@ importers:
       effect:
         specifier: ^3.18.0
         version: 3.21.2
+      effect-durable-streams:
+        specifier: workspace:*
+        version: link:../../packages/effect-durable-streams
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -93,6 +99,9 @@ importers:
 
   packages/client:
     dependencies:
+      '@effect/platform':
+        specifier: ^0.96.0
+        version: 0.96.1(effect@3.21.2)
       '@firegrid/durable-streams':
         specifier: workspace:*
         version: link:../durable-streams
@@ -102,6 +111,9 @@ importers:
       effect:
         specifier: ^3.18.0
         version: 3.21.2
+      effect-durable-streams:
+        specifier: workspace:*
+        version: link:../effect-durable-streams
     devDependencies:
       typescript:
         specifier: ^5.7.0
@@ -112,15 +124,15 @@ importers:
 
   packages/durable-streams:
     dependencies:
-      '@durable-streams/client':
-        specifier: ^0.2.3
-        version: 0.2.3
       '@durable-streams/server':
         specifier: ^0.3.1
         version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
       '@durable-streams/state':
         specifier: ^0.2.5
         version: 0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))
+      '@effect/platform':
+        specifier: ^0.96.0
+        version: 0.96.1(effect@3.21.2)
       '@effect/workflow':
         specifier: 0.18.1
         version: 0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
@@ -130,6 +142,9 @@ importers:
       effect:
         specifier: ^3.18.0
         version: 3.21.2
+      effect-durable-streams:
+        specifier: workspace:*
+        version: link:../effect-durable-streams
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
