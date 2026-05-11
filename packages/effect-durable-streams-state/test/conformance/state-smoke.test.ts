@@ -182,6 +182,137 @@ describe("Phase 2 state smoke", () => {
     )
   }, 20000)
 
+  it("write fails fast when the value does not conform to the collection schema", async () => {
+    const url = streamUrl("state-schema-write")
+    await runtime(
+      DurableStream.define({ endpoint: { url }, schema: Schema.Unknown }).create({
+        contentType: "application/json",
+      }),
+    )
+
+    await runtime(
+      Effect.gen(function* () {
+        const state = yield* State.make({ endpoint: { url }, producerId: "schema-write" })
+        const users = yield* state.collection({ type: "user", schema: User })
+        // `email` is required-string per User schema. An unknown-shaped
+        // value is rejected at the API boundary, BEFORE the wire write.
+        const exit = yield* Effect.exit(
+          users.insert("bad", { name: "x" } as unknown as { name: string; email: string }),
+        )
+        expect(exit._tag).toBe("Failure")
+        // Materialization fiber should still be healthy — write-side
+        // validation does not corrupt the read pipeline.
+        const fail = yield* state.failure
+        expect(Option.isNone(fail)).toBe(true)
+      }),
+    )
+  }, 15000)
+
+  it("State.failure surfaces a decode failure on a registered type", async () => {
+    // Register the user collection with the User schema, then write a
+    // wire-level message whose value does NOT conform — bypassing the
+    // collection's encode path so the bad value lands on the stream. The
+    // materialization fiber decodes against User, fails, and records the
+    // failure for the caller to observe.
+    const url = streamUrl("state-decode-fail")
+    await runtime(
+      DurableStream.define({ endpoint: { url }, schema: Schema.Unknown }).create({
+        contentType: "application/json",
+      }),
+    )
+
+    await runtime(
+      Effect.gen(function* () {
+        const state = yield* State.make({ endpoint: { url }, producerId: "decode-fail" })
+        const _users = yield* state.collection({ type: "user", schema: User })
+        void _users
+
+        // Bypass the collection encode and write a wire-shaped change msg
+        // whose `value` doesn't match the User schema.
+        const proto = DurableStream.define({
+          endpoint: { url },
+          schema: Schema.Unknown,
+        })
+        yield* proto.append({
+          type: "user",
+          key: "bad",
+          value: { name: 42, email: 99 },
+          headers: { operation: "insert" },
+        })
+
+        // Give the live read a moment to round-trip and decode.
+        for (let i = 0; i < 30; i++) {
+          const fail = yield* state.failure
+          if (Option.isSome(fail)) break
+          yield* Effect.sleep("100 millis")
+        }
+        const finalFailure = yield* state.failure
+        expect(Option.isSome(finalFailure)).toBe(true)
+      }),
+    )
+  }, 30000)
+
+  it("late registration replay preserves typed/control ordering", async () => {
+    // Two Reset markers interleaved with typed events: a registration
+    // that arrives AFTER all this history must replay events such that
+    // each Reset clears the state that came before it. The previous
+    // design applied typed events first and controls afterward, which
+    // would have collapsed every reset to the end and produced an empty
+    // collection.
+    const url = streamUrl("state-replay-order")
+    await runtime(
+      DurableStream.define({ endpoint: { url }, schema: Schema.Unknown }).create({
+        contentType: "application/json",
+      }),
+    )
+
+    await runtime(
+      Effect.gen(function* () {
+        // Write the history directly through the protocol stream so each
+        // append is a synchronous one-shot HTTP POST and order is
+        // deterministic on the wire. (Going via writer-State would batch
+        // the inserts and the resets — issued through a different
+        // append path — could interleave non-deterministically.)
+        const proto = DurableStream.define({
+          endpoint: { url },
+          schema: Schema.Unknown,
+        })
+
+        const change = (key: string, value: { name: string; email: string }) =>
+          proto.append({
+            type: "user",
+            key,
+            value,
+            headers: { operation: "insert" },
+          }).pipe(Effect.asVoid)
+
+        const reset = () =>
+          proto.append({ headers: { control: "reset" } }).pipe(Effect.asVoid)
+
+        yield* change("u1", { name: "A", email: "a@x" })
+        yield* reset()
+        yield* change("u2", { name: "B", email: "b@x" })
+        yield* reset()
+        yield* change("u3", { name: "C", email: "c@x" })
+
+        // Now start a State and register the collection AFTER all events
+        // are on the wire. Replay must apply the two resets in order:
+        // u1 → reset (cleared) → u2 → reset (cleared) → u3 → only u3 remains.
+        const latestate = yield* State.make({ endpoint: { url }, producerId: "rep-r" })
+        // Let the live-read replay catch up before we register the
+        // collection so events sit in the pre-registration log.
+        yield* Effect.sleep("300 millis")
+        const usersLate = yield* latestate.collection({ type: "user", schema: User })
+        yield* Effect.sleep("200 millis")
+
+        const size = yield* usersLate.size
+        const u3 = yield* usersLate.get("u3")
+        expect(size).toBe(1)
+        expect(Option.isSome(u3)).toBe(true)
+      }),
+    )
+  }, 30000)
+
   it("SchemaConflict on incompatible schema for existing type", async () => {
     const url = streamUrl("state-conflict")
     await runtime(

@@ -146,7 +146,7 @@ export const make = <A, I>(
       epoch: opts.epoch ?? 0,
       lastSeq: -1,
     })
-    const queue = yield* Queue.unbounded<A>()
+    const queue = yield* Queue.bounded<A>(opts.maxQueueSize ?? 10_000)
     const failure = yield* Ref.make<Option.Option<AnyProducerFailure>>(Option.none())
     // `offered` increments on every append; `sent` increments by batch size
     // after a POST completes (success OR failure — the failure is captured
@@ -197,25 +197,72 @@ export const make = <A, I>(
             yield* Ref.update(failure, (cur) =>
               Option.isSome(cur) ? cur : Option.some(extractFailure(result.cause)),
             )
-            // Stop sending further sub-batches on first failure — caller
-            // sees the failure on next append/flush.
+            // Stop sending further sub-batches; the background drain loop
+            // will no-op subsequent batches (still draining the queue so
+            // backpressured offers wake and observe the typed failure).
             return
           }
         }
       })
 
-    // Background drain: groupedWithin batches; sends are serialized to
-    // preserve producer-seq ordering. Per §5.2.1, the server validates seqs
-    // monotonically; safe concurrent pipelining requires per-batch state
-    // tracking with retry on out-of-order 409s — left as a follow-up.
-    yield* Stream.fromQueue(queue).pipe(
-      Stream.groupedWithin(
-        opts.maxBatchSize ?? 1000,
-        Duration.millis(opts.lingerMs ?? 5),
-      ),
-      Stream.runForEach((batch) => sendOne(batch)),
-      Effect.forkScoped,
-    )
+    // Background drain — eager-emission loop.
+    //
+    // `Stream.groupedWithin(maxBatch, lingerMs)` waits the FULL `lingerMs`
+    // every window, even when items are already queued at the moment the
+    // window opens. For a burst (500 events appended in tight succession)
+    // that means we pay a `lingerMs` tax we don't need: the first batch
+    // could have been sent immediately.
+    //
+    // The eager loop:
+    //   1. `Queue.take`         — suspend until at least one event is queued.
+    //   2. `Queue.takeUpTo(...)` — synchronously drain whatever else is
+    //                              already there, up to `maxBatch - 1`.
+    //   3. If we caught a burst (more than just the trigger event), send
+    //      now — no idle wait. Otherwise (sparse trickle), wait `lingerMs`
+    //      to coalesce stragglers, then send.
+    //
+    // Sends remain serialized to preserve producer-seq ordering — safe
+    // concurrent pipelining (`maxInFlight > 1`) requires per-(epoch, seq)
+    // state with 409 retry, left as a follow-up.
+    //
+    // After a terminal failure is recorded, the drain keeps reading and
+    // no-ops the batches (still advancing `sent` so `flush` exits and
+    // backpressured `append` fibers wake to observe the typed failure).
+    const maxBatch = opts.maxBatchSize ?? 1000
+    const lingerMs = opts.lingerMs ?? 5
+
+    const drainOnce: Effect.Effect<void, never, HttpClient.HttpClient> = Effect.gen(function* () {
+      const first = yield* Queue.take(queue)
+      const tail = yield* Queue.takeUpTo(queue, maxBatch - 1)
+      let batch: ReadonlyArray<A> = [first, ...Chunk.toReadonlyArray(tail)]
+      // Skip the linger if either:
+      //   - The batch is already FULL (maxBatch reached — no room to grow).
+      //     Notably: `maxBatch === 1` is always full at this point, so we
+      //     never linger on a count-1 producer.
+      //   - We caught a BURST (more than just the trigger event was queued).
+      //     Bursts are evidence of a tight writer; further coalescing would
+      //     only add tail latency without improving throughput.
+      // Linger only when the trigger event arrived alone AND we have room
+      // to coalesce more.
+      const isFull = batch.length >= maxBatch
+      const isBurst = batch.length > 1
+      if (!isFull && !isBurst && lingerMs > 0) {
+        yield* Effect.sleep(Duration.millis(lingerMs))
+        const stragglers = yield* Queue.takeUpTo(queue, maxBatch - 1)
+        if (Chunk.size(stragglers) > 0) {
+          batch = [...batch, ...Chunk.toReadonlyArray(stragglers)]
+        }
+      }
+      const chunk = Chunk.unsafeFromArray(batch.slice())
+      const f = yield* Ref.get(failure)
+      if (Option.isSome(f)) {
+        yield* SubscriptionRef.update(sent, (n) => n + batch.length)
+        return
+      }
+      yield* sendOne(chunk)
+    })
+
+    yield* drainOnce.pipe(Effect.forever, Effect.forkScoped)
 
     const checkFailure: Effect.Effect<void, AnyProducerFailure> = Ref.get(failure).pipe(
       Effect.flatMap((opt) => Option.isSome(opt) ? Effect.fail(opt.value) : Effect.void),
@@ -223,18 +270,33 @@ export const make = <A, I>(
 
     const append = (event: A): Effect.Effect<void, AnyProducerFailure> =>
       Effect.gen(function* () {
+        // Fast-fail: the queue is bounded, so a stalled drain backpressures
+        // here. Without this gate, `append` would suspend on a full queue
+        // after a terminal failure had already been recorded.
         yield* checkFailure
         yield* Queue.offer(queue, event)
+        // Re-check: failure may have been recorded between the entry gate
+        // and the offer (or during a backpressured wait). In that case the
+        // event will be dropped by the no-op drain, so surface the typed
+        // failure rather than letting the caller think the append landed.
+        yield* checkFailure
         yield* Ref.update(offered, (n) => n + 1)
       })
 
     const flush: Effect.Effect<void, AnyProducerFailure> = Effect.gen(function* () {
       // Drive off `sent.changes` — the stream emits the current value first,
-      // then every update. `takeUntilEffect` exits the loop the first time
-      // sent has caught up to (or surpassed) the current offered count.
+      // then every update. The predicate also fires when a terminal failure
+      // is recorded, otherwise events offered but never sent (because the
+      // queue was shut down on failure) would leave `sent < offered`
+      // forever. `checkFailure` after the loop surfaces the typed failure.
       yield* sent.changes.pipe(
         Stream.takeUntilEffect((s) =>
-          Effect.map(Ref.get(offered), (o) => s >= o),
+          Effect.gen(function* () {
+            const f = yield* Ref.get(failure)
+            if (Option.isSome(f)) return true
+            const o = yield* Ref.get(offered)
+            return s >= o
+          }),
         ),
         Stream.runDrain,
       )
@@ -252,9 +314,17 @@ export const make = <A, I>(
       restart,
     })
 
-    // Scope finalizer: drain pending events before scope releases.
+    // Scope finalizer: best-effort drain of pending events before the scope
+    // releases. Callers who require durability must `flush` explicitly at
+    // semantic boundaries — this hook only catches the common case of a
+    // tidy shutdown with nothing in flight. Any failure surfaced here is
+    // logged at warning so silent data loss is at least observable.
     yield* Effect.addFinalizer(() =>
-      flush.pipe(Effect.catchAll(() => Effect.void)),
+      flush.pipe(
+        Effect.catchAllCause((cause) =>
+          Effect.logWarning("effect-durable-streams: producer finalizer flush failed", cause),
+        ),
+      ),
     )
 
     return producer

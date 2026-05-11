@@ -21,12 +21,18 @@ Update as items land. Keep the priority column honest.
 | Item | Effort | Status | Notes |
 |---|---|---|---|
 | Bounded autoClaim epoch bumps | S | ✅ | `maxAutoClaimAttempts` (default 16) caps consecutive 403 retries. On exhaustion the producer surfaces `StaleEpoch` with the last-seen server epoch. Test in `live.test.ts` exercises `maxAutoClaimAttempts: 0`. |
-| `State.collection` buffer cap | S | ✅ | `maxBufferedEventsPerType` (default 10_000) and `maxBufferedControlEvents` (default 1_024) bound the pre-registration buffers. FIFO drop on overflow; one warning per type via `Effect.logWarning`. Test in `state-smoke.test.ts`. |
+| `State.collection` buffer cap | S | ✅ | `maxBufferedEventsPerType` (default 10_000) caps per-type changes; `maxBufferedControlEvents` (default 1_024) caps shared controls. FIFO drop on overflow; one warning per type / one for controls. Test in `state-smoke.test.ts`. |
 | Schema decode failure mid-stream → typed `ReadError` | ✅ | ✅ | Already done in PR #148 review pass. Captured here for the audit. |
 | `snapshotThenFollow` no-gap, no-duplicate | ✅ | ✅ | Already done. Regression test under concurrent appends in `live.test.ts`. |
 | SSE bridge lifecycle-bound (no unmanaged Promise) | ✅ | ✅ | Already done. |
 | Producer error policy reconciled | ✅ | ✅ | `StaleEpoch` / `SequenceGap` now typed failures, not defects. |
 | State replay race for late-registered collections | ✅ | ✅ | Per-type buffer + shared semaphore. |
+| Producer queue bounded + terminal-failure fast-fail | S | ✅ | `maxQueueSize` (default 10_000). `append` backpressures on a full queue, fast-fails after a terminal send failure has been recorded, and re-checks failure after `Queue.offer` so a concurrent failure during a backpressured wait still surfaces. Drain fiber no-ops after failure to release any waiting offers. Test in `live.test.ts` ("Phase 1 producer queue + terminal-failure semantics"). |
+| Producer finalizer surfaces flush failure | S | ✅ | Scope finalizer used `catchAll(() => Effect.void)` and silently swallowed `flush` failures. Now `catchAllCause` + `Effect.logWarning` so accidental data loss is at least observable; comment also calls out that explicit `flush` is the durability boundary. |
+| State materialization failure not silently swallowed | S | ✅ | `Store.ts` now captures the read/decode fiber's failure in `Ref<Option<ReadError>>` instead of `catchAll(() => Effect.void)`. Exposed as `State.failure` (polling) and the `events` stream is `interruptWhen`-merged with the failure ref so subscribers observe death. Test exercises a decode failure on a registered type. |
+| State late-registration replay preserves typed/control ordering | M | ✅ | Replaced two separate buffers (per-type typed + global controls applied AFTER) with a single ordered log of raw wire entries. Per-type drop on overflow for changes; shared cap for controls. On registration, walks the log replaying (this type ∪ all controls) in arrival order — so a `reset` between two updates clears state at the correct position. Test asserts only the post-final-reset entries survive. |
+| State collection schema applied at value boundaries | M | ✅ | Reads: `dispatchChange` decodes `msg.value` / `msg.old_value` through the registered collection's schema before applying; decode failure becomes a materialization failure (observable via `State.failure` / `events`). Writes: `writeChange` encodes through the schema first; encode failure short-circuits as a typed `DecodeError`. Late-registration replay decodes buffered raw messages with the registering schema. Collection write error channel widened to `CollectionWriteFailure = ProducerFailure \| DecodeError`. |
+| Default HTTP retry schedule shape | S | ✅ | Was `exponential.compose(recurs).either(spaced)` which collapsed delays to 0 (compose selects MIN delay; recurs delay is 0) and then re-extended forever via `either(spaced)`. Now `exponential.either(spaced("3 seconds")).intersect(recurs(4))` — `either` caps the per-step delay (MIN), `intersect` limits the count (continues only while both continue). |
 
 ## P1 — parity gaps with outsized impact
 
@@ -34,7 +40,7 @@ Update as items land. Keep the priority column honest.
 |---|---|---|---|
 | Concurrent batch pipelining (`maxInFlight > 1`) with per-`(epoch, seq)` tracking + out-of-order 409 retry | M | ⬜ | **Highest perf lever.** Currently capped at `concurrency: 1`. Reference uses `fastq` with `maxInFlight: 5` default and tracks seq completions in a `Map<epoch, Map<seq, { resolved, waiters }>>`. Expected win: 2–5x on producer cells where network roundtrip dominates. Closes the largest behavior gap. |
 | Append per-event microtask collapse | S | ⬜ | `append` currently issues `checkFailure` (`Ref.get`) + `Queue.offer` + `Ref.update(offered)` via `Effect.gen` — 3 microtasks per event. Fold into one `Effect.sync` block (semantics don't require yielding between them). Expected win: ~50% on the offer hot path. |
-| Eager batch emission via `Queue.takeBetween` | S/M | ⬜ | `groupedWithin(maxBatch, lingerMs)` waits the full `lingerMs` even when many items are already queued. Drain up to `maxBatch` immediately when the queue has items; only wait `lingerMs` when the queue is empty or has a partial batch. Expected win: `lingerMs=5` becomes ~as fast as `lingerMs=0` for bursty workloads. |
+| Eager batch emission | S | ✅ | Replaced `Stream.groupedWithin(maxBatch, lingerMs)` with an explicit `Queue.take` + `Queue.takeUpTo` loop. After waking on the first event we synchronously drain whatever's queued, then send immediately if the batch is full OR caught a burst (>1 item). Linger only fires for true single-event trickle. Cut the worst-case bench gap from 13.5x → 5.2x — linger=5 rows now match their linger=0 counterparts. Regression test in `live.test.ts` ("eager-emission semantics"). |
 | `onError(error) → { headers }` retry hook | M | ✅ | Per-endpoint `onError` invoked after transport retries exhaust. Returns `RetryOpts` to retry with merged headers; bounded by `onErrorMaxRetries` (default 4). Tests in `live.test.ts` cover retry-with-new-headers and the bounded-retry path. *Params merging deferred — Endpoint doesn't carry params today; revisit if needed.* |
 | `maxBatchBytes` byte-cap on producer | M | ✅ | `ProducerOptions.maxBatchBytes` (default 1 MiB). `sendOne` pre-measures encoded byte cost and splits the count-bounded chunk into sub-batches each within the cap. Each sub-batch gets its own producer-seq. Test exercises a 32-byte cap with 20 items. |
 | Auto-select live mode (SSE for JSON, long-poll for binary) | S | ✅ | `live: true` now picks SSE; `live: "long-poll"` is the opt-in for proxy-unfriendly environments or binary streams. |
@@ -82,8 +88,10 @@ Baseline from PR #148. Targets are from the SDD; gaps indicate work needed.
 | catch-up 100k | 1.48x | within 20% | 1.23x off | schema decode opt-out (P2) |
 | one-shot append | 1.71x | within 30% | 1.31x off | append microtask collapse (P1) |
 | snapshotThenFollow 500 | **0.69x** | within 20% | **met (faster)** | — |
-| producer N=500 batch=1000 linger=0 | 5.44x | within 30% | 4.18x off | pipelining (P1) + eager batch (P1) + microtask collapse (P1) |
-| producer N=500 batch=1 linger=0 | 321x | n/a | pathological config | document as anti-pattern |
+| producer N=500 batch=1000 linger=0 | 5.31x | within 30% | 4.05x off | pipelining (P1) + microtask collapse (P1) remain |
+| producer N=500 batch=1000 linger=5 | 5.34x | within 30% | 4.08x off | eager-emission closed the linger overhead; remaining is per-batch Effect cost |
+| producer N=500 batch=1 linger=0 | 1.77x | within 50% | 1.27x off | per-HTTP-request Effect overhead |
+| producer N=500 batch=1 linger=5 | 2.02x | within 50% | 1.52x off | eager emission did NOT regress count-1 producers (heuristic skips linger when batch is full) |
 | state replay N=500 | 9.70x | within 30% | 7.46x off | depends on producer + microtask fixes; partly setup-cost |
 
 ## Methodology backlog
