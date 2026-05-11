@@ -69,3 +69,9 @@ export {
   type ReactiveWorkflowOperator,
   type ReactiveWorkflowOperatorRunSummary,
 } from "./runtime-operators/index.ts"
+export {
+  runStreamNativeRuntimeLoop,
+  type LocalProcessRuntimeLoopCommand,
+  type RunStreamNativeRuntimeLoopOptions,
+  type StreamNativeRuntimeLoopSummary,
+} from "./stream-native-runtime-loop/index.ts"
