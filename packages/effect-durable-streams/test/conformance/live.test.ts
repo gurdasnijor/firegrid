@@ -1,5 +1,5 @@
-import { FetchHttpClient } from "@effect/platform"
-import { Chunk, Effect, Fiber, Ref, Schema, Stream } from "effect"
+import { FetchHttpClient, type HttpClient } from "@effect/platform"
+import { Chunk, Effect, Fiber, Ref, type Scope, Schema, Stream } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { DurableStream } from "../../src/index.ts"
 import { startTestServer, type TestServerHandle } from "./test-server.ts"
@@ -16,7 +16,9 @@ afterAll(async () => {
 
 const Message = Schema.Struct({ n: Schema.Number })
 
-const runtime = <A, E>(eff: Effect.Effect<A, E, any>) =>
+type Reqs = FetchHttpClient.Fetch | HttpClient.HttpClient | Scope.Scope
+
+const runtime = <A, E>(eff: Effect.Effect<A, E, Reqs>) =>
   Effect.runPromise(
     Effect.scoped(eff.pipe(Effect.provide(FetchHttpClient.layer))) as unknown as Effect.Effect<A, E, never>,
   )

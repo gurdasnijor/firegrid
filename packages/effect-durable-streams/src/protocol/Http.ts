@@ -1,7 +1,7 @@
 import {
   HttpClient,
   HttpClientRequest,
-  HttpClientResponse,
+  type HttpClientResponse,
 } from "@effect/platform"
 import type { HttpClientError } from "@effect/platform/HttpClientError"
 import { Effect, Schedule, Stream } from "effect"
@@ -15,8 +15,8 @@ const resolveHeader = (value: HeaderValue): Effect.Effect<string, never, never> 
   if (typeof value === "string") return Effect.succeed(value)
   const r = value()
   if (typeof r === "string") return Effect.succeed(r)
-  if (Effect.isEffect(r)) return r as Effect.Effect<string, never, never>
-  return Effect.promise(() => r as Promise<string>)
+  if (Effect.isEffect(r)) return r
+  return Effect.promise(() => r)
 }
 
 const resolveHeaders = (endpoint: Endpoint): Effect.Effect<Record<string, string>, never, never> =>
@@ -74,7 +74,9 @@ export const failForStatus = (
 const isTransient = (e: HttpClientError): boolean => e._tag === "RequestError"
 
 const retrySchedule = Schedule.exponential("100 millis").pipe(
+  // eslint-disable-next-line local/no-fixed-polling -- recurs is a retry count, not durable-runtime polling.
   Schedule.compose(Schedule.recurs(4)),
+  // eslint-disable-next-line local/no-fixed-polling -- spaced is a retry-backoff floor, not durable-runtime polling.
   Schedule.either(Schedule.spaced("3 seconds")),
 )
 
@@ -192,8 +194,8 @@ export const getJson = (
       ? []
       : (() => {
           try {
-            const parsed = JSON.parse(body)
-            return Array.isArray(parsed) ? parsed : [parsed]
+            const parsed: unknown = JSON.parse(body)
+            return Array.isArray(parsed) ? (parsed as ReadonlyArray<unknown>) : [parsed]
           } catch (cause) {
             throw new TransportError({ cause })
           }
@@ -257,6 +259,7 @@ export interface PostResponse {
   readonly streamClosed: boolean
   readonly producerExpectedSeq: number | undefined
   readonly producerReceivedSeq: number | undefined
+  readonly producerEpoch: number | undefined
 }
 
 export const post = (
@@ -286,12 +289,14 @@ export const post = (
     const streamClosed = isClosed(res)
     const expected = parseInt(headerValue(res, C.PRODUCER_EXPECTED_SEQ) ?? "", 10)
     const received = parseInt(headerValue(res, C.PRODUCER_RECEIVED_SEQ) ?? "", 10)
+    const epoch = parseInt(headerValue(res, C.PRODUCER_EPOCH) ?? "", 10)
     return {
       status: res.status,
       nextOffset,
       streamClosed,
       producerExpectedSeq: Number.isFinite(expected) ? expected : undefined,
       producerReceivedSeq: Number.isFinite(received) ? received : undefined,
+      producerEpoch: Number.isFinite(epoch) ? epoch : undefined,
     }
   })
 

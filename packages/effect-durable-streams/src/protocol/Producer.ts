@@ -1,4 +1,4 @@
-import { HttpClient } from "@effect/platform"
+import { type HttpClient } from "@effect/platform"
 import {
   Cause,
   Chunk,
@@ -7,9 +7,10 @@ import {
   Option,
   Queue,
   Ref,
-  Scope,
+  type Scope,
   Sink,
   Stream,
+  SubscriptionRef,
 } from "effect"
 import type { Producer, ProducerMakeOpts } from "../DurableStream.ts"
 import {
@@ -37,12 +38,6 @@ const extractWriteError = (cause: Cause.Cause<WriteError>): WriteError => {
   return new TransportError({ cause: Cause.squash(cause) })
 }
 
-interface BatchAttempt {
-  readonly bodyEvents: ReadonlyArray<unknown>
-  readonly epoch: number
-  readonly seq: number
-}
-
 const sendBatch = <A, I>(
   opts: ProducerMakeOpts<A, I>,
   state: Ref.Ref<ProducerState>,
@@ -64,7 +59,6 @@ const sendBatch = <A, I>(
           producerEpoch: current.epoch,
           producerSeq: nextSeq,
         })
-
         // §5.2.1 — server response interpretation:
         if (res.status === 200 || res.status === 204) {
           // New (200) or duplicate (204) success. Advance only on ack.
@@ -75,19 +69,25 @@ const sendBatch = <A, I>(
           return
         }
         if (res.status === 403) {
-          // Stale epoch / zombie-fenced.
+          // Stale epoch / zombie-fenced. Per §5.2.1 the server returns its
+          // current epoch in the `Producer-Epoch` response header — jump
+          // straight past it so autoClaim converges in O(1) round-trips.
           if (opts.autoClaim) {
-            const bumped: ProducerState = { epoch: current.epoch + 1, lastSeq: -1 }
+            const serverEpoch = res.producerEpoch ?? current.epoch
+            const bumped: ProducerState = { epoch: serverEpoch + 1, lastSeq: -1 }
             yield* Ref.set(state, bumped)
             return yield* attempt()
           }
-          return yield* Effect.die(new StaleEpoch({ currentEpoch: current.epoch }))
+          // eslint-disable-next-line no-restricted-syntax -- §5.2.1 invariant violation: caller has a stale epoch and no autoClaim. Recovering at this layer is impossible; surface as a defect so the host can decide.
+          return yield* Effect.die(
+            new StaleEpoch({ currentEpoch: res.producerEpoch ?? current.epoch }),
+          )
         }
         if (res.status === 409) {
           if (res.streamClosed) {
             return yield* Effect.fail(new StreamClosed({ finalOffset: res.nextOffset }))
           }
-          // Sequence gap is an invariant violation — caller's local state is broken.
+          // eslint-disable-next-line no-restricted-syntax -- §5.2.1 invariant violation: client's local lastSeq diverged from the server's. Treat as a defect — flush/append cannot recover, the host decides.
           return yield* Effect.die(
             new SequenceGap({
               expectedSeq: res.producerExpectedSeq ?? -1,
@@ -123,21 +123,18 @@ export const make = <A, I>(
     const queue = yield* Queue.unbounded<A>()
     const failure = yield* Ref.make<Option.Option<WriteError>>(Option.none())
     // `offered` increments on every append; `sent` increments by batch size
-    // after a successful POST (or after a failed POST so flush unblocks).
-    // Flush completes when `sent >= offered` — which captures the items
-    // currently buffered inside `groupedWithin` that aren't visible via
-    // `Queue.size`.
+    // after a POST completes (success OR failure — the failure is captured
+    // separately). Flush is event-driven on `sent.changes` so it wakes up
+    // exactly when a batch acks, without fixed polling.
     const offered = yield* Ref.make(0)
-    const sent = yield* Ref.make(0)
+    const sent = yield* SubscriptionRef.make(0)
 
     const sendOne = (batch: Chunk.Chunk<A>): Effect.Effect<void, never, HttpClient.HttpClient> =>
       Effect.gen(function* () {
         const size = Chunk.size(batch)
         if (size === 0) return
         const result = yield* sendBatch(opts, state, encode, batch).pipe(Effect.exit)
-        // Always bump `sent` so flush unblocks, even on failure (the failure
-        // is captured separately).
-        yield* Ref.update(sent, (n) => n + size)
+        yield* SubscriptionRef.update(sent, (n) => n + size)
         if (result._tag === "Failure") {
           yield* Ref.update(failure, (cur) =>
             Option.isSome(cur) ? cur : Option.some(extractWriteError(result.cause)),
@@ -145,16 +142,16 @@ export const make = <A, I>(
         }
       })
 
-    // Background drain: groupedWithin batches; mapEffect runs sends with concurrency.
+    // Background drain: groupedWithin batches; sends are serialized to
+    // preserve producer-seq ordering. Per §5.2.1, the server validates seqs
+    // monotonically; safe concurrent pipelining requires per-batch state
+    // tracking with retry on out-of-order 409s — left as a follow-up.
     yield* Stream.fromQueue(queue).pipe(
       Stream.groupedWithin(
         opts.maxBatchSize ?? 1000,
         Duration.millis(opts.lingerMs ?? 5),
       ),
-      Stream.mapEffect((batch) => sendOne(batch), {
-        concurrency: opts.maxInFlight ?? 5,
-      }),
-      Stream.runDrain,
+      Stream.runForEach((batch) => sendOne(batch)),
       Effect.forkScoped,
     )
 
@@ -170,21 +167,24 @@ export const make = <A, I>(
       })
 
     const flush: Effect.Effect<void, WriteError> = Effect.gen(function* () {
-      while (true) {
-        const o = yield* Ref.get(offered)
-        const s = yield* Ref.get(sent)
-        if (s >= o) break
-        yield* Effect.sleep("10 millis")
-      }
+      // Drive off `sent.changes` — the stream emits the current value first,
+      // then every update. `takeUntilEffect` exits the loop the first time
+      // sent has caught up to (or surpassed) the current offered count.
+      yield* sent.changes.pipe(
+        Stream.takeUntilEffect((s) =>
+          Effect.map(Ref.get(offered), (o) => s >= o),
+        ),
+        Stream.runDrain,
+      )
       yield* checkFailure
     })
 
-    const sink = Sink.forEach(append) as Sink.Sink<void, A, never, WriteError, never>
+    const sink = Sink.forEach(append)
 
     const producer: Producer<A> = Object.assign(sink, {
       append,
       flush,
-    }) as Producer<A>
+    })
 
     // Scope finalizer: drain pending events before scope releases.
     yield* Effect.addFinalizer(() =>

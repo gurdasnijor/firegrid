@@ -1,4 +1,4 @@
-import { HttpClient } from "@effect/platform"
+import { type HttpClient } from "@effect/platform"
 import { Chunk, Effect, Stream } from "effect"
 import type {
   CollectOpts,

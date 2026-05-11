@@ -2,13 +2,9 @@ import type { HttpClient } from "@effect/platform"
 import type { Brand, Effect, Schema, Scope, Sink, Stream } from "effect"
 import type {
   Conflict,
-  DecodeError,
   Gone,
   NotFound,
   ReadError,
-  SequenceGap,
-  StaleEpoch,
-  StreamClosed,
   TransportError,
   WriteError,
 } from "./errors.ts"

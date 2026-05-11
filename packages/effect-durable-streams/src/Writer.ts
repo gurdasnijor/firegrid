@@ -1,5 +1,5 @@
-import { HttpClient } from "@effect/platform"
-import { Effect, Scope } from "effect"
+import { type HttpClient } from "@effect/platform"
+import { Effect, type Scope } from "effect"
 import type {
   AppendOpts,
   CloseOptions,
@@ -41,7 +41,7 @@ export const append = <A, I>(
       if (res.streamClosed) {
         return yield* Effect.fail(new StreamClosed({ finalOffset: res.nextOffset }))
       }
-      return yield* Effect.fail(new Conflict({ reason: `409 Conflict on append` }))
+      return yield* Effect.fail(new Conflict({ reason: "409 Conflict on append" }))
     }
     if (res.status === 404) {
       return yield* Effect.fail(new NotFound({ url: String(opts.endpoint.url) }))
@@ -77,7 +77,7 @@ export const create = (
     const res = yield* Http.put(endpoint, putOpts)
     if (res.status === 200 || res.status === 201) return
     if (res.status === 409) {
-      return yield* Effect.fail(new Conflict({ reason: `Stream exists with different config` }))
+      return yield* Effect.fail(new Conflict({ reason: "Stream exists with different config" }))
     }
     return yield* Effect.fail(
       new TransportError({ cause: new Error(`PUT returned status ${res.status}`) }),

@@ -1,4 +1,4 @@
-import { HttpClient } from "@effect/platform"
+import { type HttpClient } from "@effect/platform"
 import { Chunk, Effect, Ref, Schedule, Stream } from "effect"
 import { createParser, type EventSourceMessage } from "eventsource-parser"
 import type { Endpoint, Offset } from "../DurableStream.ts"
@@ -27,8 +27,8 @@ const parseDataPayload = (data: string): ReadonlyArray<unknown> => {
   const trimmed = data.trim()
   if (trimmed === "") return []
   try {
-    const parsed = JSON.parse(trimmed)
-    return Array.isArray(parsed) ? parsed : [parsed]
+    const parsed: unknown = JSON.parse(trimmed)
+    return Array.isArray(parsed) ? (parsed as ReadonlyArray<unknown>) : [parsed]
   } catch {
     return []
   }
@@ -69,7 +69,7 @@ const sseConnection = (
           },
         })
         const decoder = new TextDecoder()
-        Effect.runPromise(
+        void Effect.runPromise(
           bytes.pipe(
             Stream.runForEach((chunk) =>
               Effect.sync(() => parser.feed(decoder.decode(chunk, { stream: true }))),

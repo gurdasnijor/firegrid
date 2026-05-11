@@ -1,5 +1,4 @@
 import type { Schema } from "effect"
-import { Effect } from "effect"
 import type { Bound, Endpoint } from "./DurableStream.ts"
 import * as Reader from "./Reader.ts"
 import * as Writer from "./Writer.ts"
