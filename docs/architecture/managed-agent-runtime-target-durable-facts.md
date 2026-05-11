@@ -298,9 +298,13 @@ the boundary.
 
 ## Durable Affordances
 
+These APIs are exposed to workflows, tools, or managed-agent runtime code;
+external clients still append launch, prompt, or decision facts through public
+Firegrid surfaces and do not invoke private workflow handles.
+
 ### `wait_for(trigger, timeout?)`
 
-User-facing shape:
+Runtime capability API shape:
 
 ```ts
 const event = yield* RuntimeWait.waitFor({
@@ -349,7 +353,7 @@ only in-memory failures.
 
 ### Required-Action And User Approval Waits
 
-User-facing shape:
+Runtime capability API shape:
 
 ```ts
 const decision = yield* RequiredAction.requestAndWait({
@@ -392,7 +396,7 @@ or workflow-specific launch endpoint.
 
 ### `schedule_me(when, prompt)`
 
-User-facing shape:
+Agent/tool/workflow-facing runtime capability shape:
 
 ```ts
 yield* RuntimeSchedule.scheduleMe({
@@ -440,7 +444,7 @@ yield* appendRuntimeIngress({
 
 ### `spawn(agent, prompt)` And `spawn_all`
 
-User-facing shape:
+Agent/tool/workflow-facing runtime capability shape:
 
 ```ts
 const child = yield* RuntimeSpawn.spawn({
@@ -505,7 +509,7 @@ clients. It must not introduce a private workflow launch API.
 
 ### `execute(tool/sandbox, input)`
 
-User-facing shape:
+Agent/tool/workflow-facing runtime capability shape:
 
 ```ts
 const output = yield* RuntimeExecute.execute({
@@ -643,4 +647,3 @@ Run stabilization/design tracers before new feature expansion:
 
 Every tracer above needs scenario-level E2E proof through production package
 surfaces per `firegrid-platform-invariants.PRODUCTION_SURFACE.5`.
-
