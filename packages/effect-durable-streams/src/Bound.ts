@@ -3,7 +3,7 @@ import type { Bound, Endpoint } from "./DurableStream.ts"
 import * as Reader from "./Reader.ts"
 import * as Writer from "./Writer.ts"
 
-export interface DefineOptions<A, I> {
+interface DefineOptions<A, I> {
   readonly endpoint: Endpoint
   readonly schema: Schema.Schema<A, I>
 }

@@ -4,9 +4,9 @@ import {
   type HttpClientResponse,
 } from "@effect/platform"
 import type { HttpClientError } from "@effect/platform/HttpClientError"
-import { Effect, Schedule, Stream } from "effect"
+import { Effect, Schedule } from "effect"
 import type { Endpoint, HeaderValue, HeadResult, Offset } from "../DurableStream.ts"
-import { Gone, NotFound, StreamClosed, TransportError } from "../errors.ts"
+import { Gone, NotFound, TransportError } from "../errors.ts"
 import * as C from "./constants.ts"
 
 // === Header resolution ===========================================
@@ -42,30 +42,6 @@ const headerValue = (
 const isClosed = (res: HttpClientResponse.HttpClientResponse): boolean =>
   headerValue(res, STREAM_CLOSED) === "true"
 
-/**
- * Map a non-2xx response to a typed error. Returns `Effect.fail` for protocol
- * errors (404/409/410) and `Effect.die` for unexpected status codes — any
- * unknown 5xx already passed through `retry` and exhausted, so a die is the
- * right escalation.
- */
-export const failForStatus = (
-  res: HttpClientResponse.HttpClientResponse,
-  url: string,
-): Effect.Effect<never, TransportError | NotFound | Gone | StreamClosed> => {
-  const status = res.status
-  if (status === 404) return Effect.fail(new NotFound({ url }))
-  if (status === 410) return Effect.fail(new Gone({ url }))
-  if (status === 409 && isClosed(res)) {
-    const finalOffset = (headerValue(res, STREAM_NEXT_OFFSET) ?? "") as Offset
-    return Effect.fail(new StreamClosed({ finalOffset }))
-  }
-  return Effect.fail(
-    new TransportError({
-      cause: new Error(`HTTP ${status} at ${url}: ${res.request.method} ${res.request.url}`),
-    }),
-  )
-}
-
 // === Retry policy ================================================
 //
 // Network-level errors (HttpClientError "RequestError") and 5xx-ish transport
@@ -84,12 +60,6 @@ const scheduleFor = (endpoint: Endpoint): Schedule.Schedule<unknown, unknown, ne
   endpoint.retrySchedule ?? defaultRetrySchedule
 
 // === Request construction =======================================
-
-export interface RequestOptions {
-  readonly endpoint: Endpoint
-  readonly headers?: Record<string, string>
-  readonly params?: Record<string, string>
-}
 
 const buildHeaders = (
   endpoint: Endpoint,
@@ -118,7 +88,7 @@ const applyParams = (
 // to prevent runaway loops. If it returns `undefined`, the original error
 // propagates.
 
-export const withOnErrorHandler = <A, E, R>(
+const withOnErrorHandler = <A, E, R>(
   endpoint: Endpoint,
   attempt: (ep: Endpoint) => Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> => {
@@ -147,17 +117,36 @@ export const withOnErrorHandler = <A, E, R>(
 const urlOf = (endpoint: Endpoint): string =>
   typeof endpoint.url === "string" ? endpoint.url : endpoint.url.toString()
 
+/**
+ * Shared request-execution boilerplate: build headers, build the request via
+ * the caller's shaper, execute with the endpoint's retry schedule, map
+ * transport errors. Returns the raw response — caller inspects status.
+ */
+const executeWithRetry = (
+  endpoint: Endpoint,
+  shape: (
+    url: string,
+    headers: Record<string, string>,
+  ) => HttpClientRequest.HttpClientRequest,
+  extraHeaders?: Record<string, string>,
+): Effect.Effect<HttpClientResponse.HttpClientResponse, TransportError, HttpClient.HttpClient> =>
+  Effect.gen(function* () {
+    const url = urlOf(endpoint)
+    const headers = yield* buildHeaders(endpoint, extraHeaders)
+    const client = yield* HttpClient.HttpClient
+    return yield* client.execute(shape(url, headers)).pipe(
+      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
+      Effect.mapError((e) => new TransportError({ cause: e })),
+    )
+  })
+
 const headInner = (
   endpoint: Endpoint,
 ): Effect.Effect<HeadResult, TransportError | NotFound | Gone, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const url = urlOf(endpoint)
-    const headers = yield* buildHeaders(endpoint, undefined)
-    const client = yield* HttpClient.HttpClient
-    const req = HttpClientRequest.head(url).pipe(HttpClientRequest.setHeaders(headers))
-    const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
-      Effect.mapError((e) => new TransportError({ cause: e })),
+    const res = yield* executeWithRetry(endpoint, (u, h) =>
+      HttpClientRequest.head(u).pipe(HttpClientRequest.setHeaders(h)),
     )
     if (res.status === 404) return yield* Effect.fail(new NotFound({ url }))
     if (res.status === 410) return yield* Effect.fail(new Gone({ url }))
@@ -184,43 +173,73 @@ export const head = (
 ): Effect.Effect<HeadResult, TransportError | NotFound | Gone, HttpClient.HttpClient> =>
   withOnErrorHandler(endpoint, headInner)
 
-export interface GetJsonResult {
+interface GetJsonResult {
   readonly items: ReadonlyArray<unknown>
   readonly nextOffset: Offset
   readonly cursor: string | undefined
   readonly upToDate: boolean
   readonly streamClosed: boolean
   readonly status: number
+  readonly etag: string | undefined
+  readonly notModified: boolean
 }
 
 export const getJson = (
   endpoint: Endpoint,
-  opts: { readonly offset: Offset; readonly live?: false | "long-poll"; readonly cursor?: string },
+  opts: {
+    readonly offset: Offset
+    readonly live?: false | "long-poll"
+    readonly cursor?: string
+    /**
+     * If supplied, send `If-None-Match: <etag>`. Server may return 304 Not
+     * Modified — caller treats that as "no new data since last read" and
+     * keeps using the prior offset + body. See §8.1.
+     */
+    readonly ifNoneMatch?: string
+  },
 ): Effect.Effect<GetJsonResult, TransportError | NotFound | Gone, HttpClient.HttpClient> =>
   withOnErrorHandler(endpoint, (ep) => getJsonInner(ep, opts))
 
 const getJsonInner = (
   endpoint: Endpoint,
-  opts: { readonly offset: Offset; readonly live?: false | "long-poll"; readonly cursor?: string },
+  opts: {
+    readonly offset: Offset
+    readonly live?: false | "long-poll"
+    readonly cursor?: string
+    readonly ifNoneMatch?: string
+  },
 ): Effect.Effect<GetJsonResult, TransportError | NotFound | Gone, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const url = urlOf(endpoint)
-    const headers = yield* buildHeaders(endpoint, undefined)
+    const extra: Record<string, string> = {}
+    if (opts.ifNoneMatch !== undefined) extra["if-none-match"] = opts.ifNoneMatch
     const params: Record<string, string> = { [C.QUERY_OFFSET]: opts.offset }
     if (opts.live === "long-poll") params[C.QUERY_LIVE] = C.LIVE_LONG_POLL
     if (opts.cursor !== undefined) params[C.QUERY_CURSOR] = opts.cursor
 
-    const client = yield* HttpClient.HttpClient
-    const req = applyParams(
-      HttpClientRequest.get(url).pipe(HttpClientRequest.setHeaders(headers)),
-      params,
-    )
-    const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
-      Effect.mapError((e) => new TransportError({ cause: e })),
+    const res = yield* executeWithRetry(
+      endpoint,
+      (u, h) =>
+        applyParams(HttpClientRequest.get(u).pipe(HttpClientRequest.setHeaders(h)), params),
+      extra,
     )
     if (res.status === 404) return yield* Effect.fail(new NotFound({ url }))
     if (res.status === 410) return yield* Effect.fail(new Gone({ url }))
+    if (res.status === 304) {
+      // Server says "nothing changed since the etag you sent". Surface as
+      // an empty result with notModified=true — caller decides whether to
+      // poll again later or treat as up-to-date.
+      return {
+        items: [],
+        nextOffset: opts.offset,
+        cursor: headerValue(res, C.STREAM_CURSOR),
+        upToDate: true,
+        streamClosed: isClosed(res),
+        status: 304,
+        etag: opts.ifNoneMatch,
+        notModified: true,
+      }
+    }
     if (res.status !== 200 && res.status !== 204) {
       return yield* Effect.fail(
         new TransportError({ cause: new Error(`GET ${url}: status ${res.status}`) }),
@@ -231,9 +250,19 @@ const getJsonInner = (
     const cursor = headerValue(res, C.STREAM_CURSOR)
     const upToDate = headerValue(res, C.STREAM_UP_TO_DATE) !== undefined
     const streamClosed = isClosed(res)
+    const etag = headerValue(res, "etag")
 
     if (res.status === 204) {
-      return { items: [], nextOffset, cursor, upToDate, streamClosed, status: 204 }
+      return {
+        items: [],
+        nextOffset,
+        cursor,
+        upToDate,
+        streamClosed,
+        status: 204,
+        etag,
+        notModified: false,
+      }
     }
     // 200 — parse JSON array (per protocol §7.1 reads return arrays).
     const body = yield* res.text.pipe(
@@ -250,7 +279,16 @@ const getJsonInner = (
           },
           catch: (cause) => new TransportError({ cause }),
         })
-    return { items, nextOffset, cursor, upToDate, streamClosed, status: 200 }
+    return {
+      items,
+      nextOffset,
+      cursor,
+      upToDate,
+      streamClosed,
+      status: 200,
+      etag,
+      notModified: false,
+    }
   })
 
 /**
@@ -265,43 +303,31 @@ export const getStream = (
   TransportError | NotFound | Gone,
   HttpClient.HttpClient
 > =>
-  withOnErrorHandler(endpoint, (ep) => getStreamInner(ep, opts))
-
-const getStreamInner = (
-  endpoint: Endpoint,
-  opts: { readonly offset: Offset; readonly accept?: string },
-): Effect.Effect<
-  HttpClientResponse.HttpClientResponse,
-  TransportError | NotFound | Gone,
-  HttpClient.HttpClient
-> =>
-  Effect.gen(function* () {
-    const url = urlOf(endpoint)
-    const baseHeaders = yield* buildHeaders(endpoint, undefined)
-    const headers = opts.accept ? { ...baseHeaders, accept: opts.accept } : baseHeaders
-    const client = yield* HttpClient.HttpClient
-    const req = applyParams(
-      HttpClientRequest.get(url).pipe(HttpClientRequest.setHeaders(headers)),
-      { [C.QUERY_OFFSET]: opts.offset, [C.QUERY_LIVE]: C.LIVE_SSE },
-    )
-    const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
-      Effect.mapError((e) => new TransportError({ cause: e })),
-    )
-    if (res.status === 404) return yield* Effect.fail(new NotFound({ url }))
-    if (res.status === 410) return yield* Effect.fail(new Gone({ url }))
-    if (res.status !== 200) {
-      return yield* Effect.fail(
-        new TransportError({ cause: new Error(`GET stream ${url}: status ${res.status}`) }),
+  withOnErrorHandler(endpoint, (ep) =>
+    Effect.gen(function* () {
+      const url = urlOf(ep)
+      const extra = opts.accept ? { accept: opts.accept } : undefined
+      const res = yield* executeWithRetry(
+        ep,
+        (u, h) =>
+          applyParams(HttpClientRequest.get(u).pipe(HttpClientRequest.setHeaders(h)), {
+            [C.QUERY_OFFSET]: opts.offset,
+            [C.QUERY_LIVE]: C.LIVE_SSE,
+          }),
+        extra,
       )
-    }
-    return res
-  })
-
-export interface PostResult {
-  readonly nextOffset: Offset
-  readonly streamClosed: boolean
-}
+      if (res.status === 404) return yield* Effect.fail(new NotFound({ url }))
+      if (res.status === 410) return yield* Effect.fail(new Gone({ url }))
+      if (res.status !== 200) {
+        return yield* Effect.fail(
+          new TransportError({
+            cause: new Error(`GET stream ${url}: status ${res.status}`),
+          }),
+        )
+      }
+      return res
+    }),
+  )
 
 export interface PostOptions {
   readonly body: string
@@ -313,7 +339,7 @@ export interface PostOptions {
   readonly streamClosed?: boolean
 }
 
-export interface PostResponse {
+interface PostResponse {
   readonly status: number
   readonly nextOffset: Offset
   readonly streamClosed: boolean
@@ -333,23 +359,22 @@ const postInner = (
   opts: PostOptions,
 ): Effect.Effect<PostResponse, TransportError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
-    const url = urlOf(endpoint)
+    void urlOf // kept for clarity in stack traces
     const extra: Record<string, string> = {}
     if (opts.seq !== undefined) extra[C.STREAM_SEQ] = opts.seq
     if (opts.producerId !== undefined) extra[C.PRODUCER_ID] = opts.producerId
     if (opts.producerEpoch !== undefined) extra[C.PRODUCER_EPOCH] = String(opts.producerEpoch)
     if (opts.producerSeq !== undefined) extra[C.PRODUCER_SEQ] = String(opts.producerSeq)
     if (opts.streamClosed) extra[C.STREAM_CLOSED] = "true"
-    const headers = yield* buildHeaders(endpoint, extra)
-    const client = yield* HttpClient.HttpClient
-    const req = HttpClientRequest.post(url).pipe(
-      HttpClientRequest.setHeaders(headers),
-      HttpClientRequest.bodyText(opts.body, opts.contentType ?? C.CONTENT_TYPE_JSON),
-    )
     // Retry transport errors only. Protocol errors (4xx) are returned to the caller.
-    const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
-      Effect.mapError((e) => new TransportError({ cause: e })),
+    const res = yield* executeWithRetry(
+      endpoint,
+      (u, h) =>
+        HttpClientRequest.post(u).pipe(
+          HttpClientRequest.setHeaders(h),
+          HttpClientRequest.bodyText(opts.body, opts.contentType ?? C.CONTENT_TYPE_JSON),
+        ),
+      extra,
     )
     const nextOffset = (headerValue(res, STREAM_NEXT_OFFSET) ?? "") as Offset
     const streamClosed = isClosed(res)
@@ -385,21 +410,20 @@ const putInner = (
   opts: PutOptions,
 ): Effect.Effect<{ readonly status: number }, TransportError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
-    const url = urlOf(endpoint)
     const extra: Record<string, string> = {}
     if (opts.ttlSeconds !== undefined) extra[C.STREAM_TTL] = String(opts.ttlSeconds)
     if (opts.expiresAt !== undefined) extra[C.STREAM_EXPIRES_AT] = opts.expiresAt
     if (opts.closed) extra[C.STREAM_CLOSED] = "true"
-    const headers = yield* buildHeaders(endpoint, extra)
-    const client = yield* HttpClient.HttpClient
     const ct = opts.contentType ?? C.CONTENT_TYPE_JSON
-    const reqBase = HttpClientRequest.put(url).pipe(HttpClientRequest.setHeaders(headers))
-    const req = opts.body !== undefined
-      ? HttpClientRequest.bodyText(opts.body, ct)(reqBase)
-      : HttpClientRequest.setHeader("content-type", ct)(reqBase)
-    const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
-      Effect.mapError((e) => new TransportError({ cause: e })),
+    const res = yield* executeWithRetry(
+      endpoint,
+      (u, h) => {
+        const base = HttpClientRequest.put(u).pipe(HttpClientRequest.setHeaders(h))
+        return opts.body !== undefined
+          ? HttpClientRequest.bodyText(opts.body, ct)(base)
+          : HttpClientRequest.setHeader("content-type", ct)(base)
+      },
+      extra,
     )
     return { status: res.status }
   })
@@ -413,16 +437,9 @@ const delInner = (
   endpoint: Endpoint,
 ): Effect.Effect<{ readonly status: number }, TransportError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
-    const url = urlOf(endpoint)
-    const headers = yield* buildHeaders(endpoint, undefined)
-    const client = yield* HttpClient.HttpClient
-    const req = HttpClientRequest.del(url).pipe(HttpClientRequest.setHeaders(headers))
-    const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
-      Effect.mapError((e) => new TransportError({ cause: e })),
+    const res = yield* executeWithRetry(endpoint, (u, h) =>
+      HttpClientRequest.del(u).pipe(HttpClientRequest.setHeaders(h)),
     )
     return { status: res.status }
   })
 
-// Re-export Stream type for consumers that want the SSE byte stream.
-export { Stream }

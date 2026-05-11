@@ -332,6 +332,36 @@ describe("Phase 1 idempotent producer correctness", () => {
     )
   }, 15000)
 
+  it("maxBatchBytes splits a count-bounded batch into byte-bounded sub-batches", async () => {
+    // 20 small items with a tiny maxBatchBytes — splitter must produce
+    // several sub-batches, each within the cap. The end-to-end result
+    // is the same N items on the server.
+    const url = server.streamUrl("idem-bytecap")
+    const s = DurableStream.define({ endpoint: { url }, schema: Message })
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* s.create({ contentType: "application/json" })
+        const p = yield* s.producer({
+          producerId: "bytecap",
+          lingerMs: 5,
+          maxBatchSize: 1000, // count cap won't trigger
+          maxBatchBytes: 32, // very small — each item ~12 bytes encoded, so ~2 per batch
+        })
+        for (let i = 0; i < 20; i++) {
+          yield* p.append({ n: i })
+        }
+        yield* p.flush
+
+        const items = yield* s.collect
+        expect(items.length).toBe(20)
+        expect(items.map((m) => m.n)).toEqual(
+          Array.from({ length: 20 }, (_, i) => i),
+        )
+      }),
+    )
+  }, 15000)
+
   it("without autoClaim, stale-epoch surfaces as a typed StaleEpoch failure", async () => {
     const url = server.streamUrl("idem-stale-fail")
     const s = DurableStream.define({ endpoint: { url }, schema: Message })

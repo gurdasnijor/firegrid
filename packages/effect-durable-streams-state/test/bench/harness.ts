@@ -16,7 +16,7 @@ export const makeEffectRuntime = () => ManagedRuntime.make(FetchHttpClient.layer
 
 export type EffectRuntime = ReturnType<typeof makeEffectRuntime>
 
-export type EffectReq = HttpClient.HttpClient | Scope.Scope
+type EffectReq = HttpClient.HttpClient | Scope.Scope
 
 export const runScoped = <A, E>(
   runtime: EffectRuntime,

@@ -23,8 +23,15 @@ const parseControl = (data: string): Effect.Effect<ParsedControl, DecodeError> =
 
 const parseDataPayload = (
   data: string,
+  base64: boolean,
 ): Effect.Effect<ReadonlyArray<unknown>, DecodeError> => {
-  const trimmed = data.trim()
+  // For binary streams the server sets `stream-sse-data-encoding: base64`
+  // (§5.8). The base64 payload may span multiple `data:` lines that got
+  // concatenated; per spec, strip newlines and decode before parsing.
+  const prepared = base64
+    ? Buffer.from(data.replace(/\r?\n/g, ""), "base64").toString("utf-8")
+    : data
+  const trimmed = prepared.trim()
   if (trimmed === "") return Effect.succeed([])
   return Effect.try({
     try: (): ReadonlyArray<unknown> => {
@@ -58,6 +65,13 @@ const sseConnection = (
         offset,
         accept: C.CONTENT_TYPE_SSE,
       })
+      // §5.8: when the server flags `stream-sse-data-encoding: base64`,
+      // every data payload is base64-encoded raw bytes. Pass the flag down
+      // to the parser so it decodes before JSON-parsing.
+      const dataEncodingHeader =
+        res.headers[C.STREAM_SSE_DATA_ENCODING] ??
+        res.headers[C.STREAM_SSE_DATA_ENCODING.toLowerCase()]
+      const isBase64 = dataEncodingHeader === "base64"
 
       // Per-connection state: parser, decoder, buffer for emitted events,
       // and a slot for any parser-level error. These are captured by the
@@ -90,7 +104,7 @@ const sseConnection = (
             for (const event of eventBuffer) {
               const name = event.event ?? "message"
               if (name === C.SSE_EVENT_DATA || name === "message") {
-                const items = yield* parseDataPayload(event.data)
+                const items = yield* parseDataPayload(event.data, isBase64)
                 for (const item of items) out.push(item)
               } else if (name === C.SSE_EVENT_CONTROL) {
                 const ctrl = yield* parseControl(event.data)

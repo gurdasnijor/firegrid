@@ -18,20 +18,11 @@ import type {
   WriteError,
 } from "./errors.ts"
 
-export type { HttpClient }
+// Note: error classes (Conflict / DecodeError / etc.) are exported from
+// `./errors.ts` and re-exported at the package root by `./namespace.ts` —
+// no duplicated re-exports here to keep knip's dead-code gate happy.
 
-// Re-export errors for the namespace pattern.
-export {
-  Conflict,
-  DecodeError,
-  Gone,
-  NotFound,
-  SequenceGap,
-  StaleEpoch,
-  StreamClosed,
-  TransportError,
-} from "./errors.ts"
-export type { ReadError, WriteError, ProducerError } from "./errors.ts"
+export type { ReadError, WriteError } from "./errors.ts"
 
 export type Offset = string & Brand.Brand<"DurableStream/Offset">
 
@@ -134,7 +125,19 @@ export interface ProducerOptions {
   readonly epoch?: number
   readonly autoClaim?: boolean
   readonly lingerMs?: number
+  /**
+   * Soft upper bound on the count of items per HTTP batch. Default 1000.
+   * The count cap interacts with `maxBatchBytes` — whichever is reached
+   * first triggers the batch send.
+   */
   readonly maxBatchSize?: number
+  /**
+   * Hard upper bound on the encoded JSON bytes per HTTP batch. Default
+   * 1MiB. If a count-bounded chunk would exceed this, the batch is split
+   * into sub-batches each within the cap before sending. A single event
+   * larger than the cap will still be sent as its own batch.
+   */
+  readonly maxBatchBytes?: number
   readonly maxInFlight?: number
   /**
    * Upper bound on consecutive autoClaim epoch bumps before the producer
@@ -167,6 +170,13 @@ export interface Producer<A>
   extends Sink.Sink<void, A, never, ProducerFailure, never> {
   readonly append: (event: A) => Effect.Effect<void, ProducerFailure>
   readonly flush: Effect.Effect<void, ProducerFailure>
+  /**
+   * Bump the producer epoch and reset the local sequence counter to 0.
+   * Use to take over a producer-id from a crashed peer without spinning
+   * a new producer instance. The new epoch must be strictly greater than
+   * the server's current epoch for the next batch to be accepted.
+   */
+  readonly restart: (epoch: number) => Effect.Effect<void, never>
 }
 
 export interface ReadOpts<A, I> {
@@ -174,6 +184,13 @@ export interface ReadOpts<A, I> {
   readonly schema: Schema.Schema<A, I>
   readonly offset?: Offset
   readonly live?: LiveMode
+  /**
+   * If supplied with `live: false`, the catch-up read sends `If-None-Match`
+   * on the FIRST request. A 304 response short-circuits the stream (it
+   * completes without emitting items). Use with the `etag` returned from
+   * a prior `head()` to cheaply check for new data behind a CDN.
+   */
+  readonly ifNoneMatch?: string
 }
 
 export interface CollectOpts<A, I> {

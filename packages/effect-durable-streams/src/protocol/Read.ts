@@ -8,7 +8,6 @@ import * as Http from "./Http.ts"
 import * as C from "./constants.ts"
 
 const BEGIN = MkOffset(C.OFFSET_BEGIN)
-const NOW = MkOffset(C.OFFSET_NOW)
 
 // ============================================================================
 // Catch-up (live: false) — terminates on first up-to-date or stream-closed
@@ -17,22 +16,43 @@ const NOW = MkOffset(C.OFFSET_NOW)
 interface CatchUpState {
   readonly offset: Offset
   readonly done: boolean
+  /**
+   * Sent as `If-None-Match` on the next request. Cleared after the first
+   * use — the body of subsequent batches isn't conditionally fetched.
+   */
+  readonly nextIfNoneMatch: string | undefined
 }
 
 const catchUpLoop = (
   endpoint: Endpoint,
   startOffset: Offset,
+  ifNoneMatch?: string,
 ): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> =>
   Stream.paginateChunkEffect<CatchUpState, unknown, ReadError, HttpClient.HttpClient>(
-    { offset: startOffset, done: false },
+    { offset: startOffset, done: false, nextIfNoneMatch: ifNoneMatch },
     (state) => {
       if (state.done) return Effect.succeed([Chunk.empty(), Option.none()])
       return Effect.gen(function* () {
-        const res = yield* Http.getJson(endpoint, { offset: state.offset, live: false })
+        const reqOpts: Parameters<typeof Http.getJson>[1] = {
+          offset: state.offset,
+          live: false,
+          ...(state.nextIfNoneMatch !== undefined
+            ? { ifNoneMatch: state.nextIfNoneMatch }
+            : {}),
+        }
+        const res = yield* Http.getJson(endpoint, reqOpts)
+        // 304: server says nothing new. Terminate immediately.
+        if (res.notModified) {
+          return [Chunk.empty<unknown>(), Option.none<CatchUpState>()] as const
+        }
         const items = Chunk.unsafeFromArray(res.items.slice())
         const next: Option.Option<CatchUpState> = res.upToDate || res.streamClosed
           ? Option.none()
-          : Option.some({ offset: res.nextOffset, done: false })
+          : Option.some({
+              offset: res.nextOffset,
+              done: false,
+              nextIfNoneMatch: undefined,
+            })
         return [items, next] as const
       })
     },
@@ -99,18 +119,21 @@ const resolveStart = (_live: LiveMode | undefined, offset: Offset | undefined): 
   // To tail from current end only, pass `offset: "now" as Offset`.
   return offset ?? BEGIN
 }
-void NOW
 
 export const readStream = <A, I>(
   opts: ReadOpts<A, I>,
 ): Stream.Stream<A, ReadError, HttpClient.HttpClient> => {
   const live = opts.live ?? true
   const startOffset = resolveStart(live, opts.offset)
+  // `live: true` is auto-select. SSE is the preferred live mode for JSON
+  // streams (matches reference behavior). Callers behind proxies / CDNs
+  // that don't honor SSE flush can pass explicit `live: "long-poll"`.
+  // Binary streams should also pick long-poll explicitly.
   const raw: Stream.Stream<unknown, ReadError, HttpClient.HttpClient> = live === false
-    ? catchUpLoop(opts.endpoint, startOffset)
-    : live === "sse"
-      ? sseLoop(opts.endpoint, startOffset)
-      : longPollLoop(opts.endpoint, startOffset)
+    ? catchUpLoop(opts.endpoint, startOffset, opts.ifNoneMatch)
+    : live === "long-poll"
+      ? longPollLoop(opts.endpoint, startOffset)
+      : sseLoop(opts.endpoint, startOffset)
   const decode = arrayDecoder(opts.schema)
   return raw.pipe(
     Stream.mapChunksEffect((chunk) =>
@@ -151,4 +174,4 @@ export const catchUpAll = (
   })
 
 // Helpers re-exported for Reader.
-export { BEGIN, NOW }
+export { BEGIN }

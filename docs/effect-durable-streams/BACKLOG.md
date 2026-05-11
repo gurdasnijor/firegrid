@@ -36,28 +36,28 @@ Update as items land. Keep the priority column honest.
 | Append per-event microtask collapse | S | ⬜ | `append` currently issues `checkFailure` (`Ref.get`) + `Queue.offer` + `Ref.update(offered)` via `Effect.gen` — 3 microtasks per event. Fold into one `Effect.sync` block (semantics don't require yielding between them). Expected win: ~50% on the offer hot path. |
 | Eager batch emission via `Queue.takeBetween` | S/M | ⬜ | `groupedWithin(maxBatch, lingerMs)` waits the full `lingerMs` even when many items are already queued. Drain up to `maxBatch` immediately when the queue has items; only wait `lingerMs` when the queue is empty or has a partial batch. Expected win: `lingerMs=5` becomes ~as fast as `lingerMs=0` for bursty workloads. |
 | `onError(error) → { headers }` retry hook | M | ✅ | Per-endpoint `onError` invoked after transport retries exhaust. Returns `RetryOpts` to retry with merged headers; bounded by `onErrorMaxRetries` (default 4). Tests in `live.test.ts` cover retry-with-new-headers and the bounded-retry path. *Params merging deferred — Endpoint doesn't carry params today; revisit if needed.* |
-| `maxBatchBytes` byte-cap on producer | M | ⬜ | Reference is bytes-only (default 1MB). I have count cap. Needs custom `Sink.foldWeighted` or `Stream.aggregateWithin` integration to track bytes pre-encode. Re-estimated to M after looking at the integration. |
-| Auto-select live mode (SSE for JSON, long-poll for binary) | S | ⬜ | I require explicit `live` mode; ref auto-picks. Should match. |
+| `maxBatchBytes` byte-cap on producer | M | ✅ | `ProducerOptions.maxBatchBytes` (default 1 MiB). `sendOne` pre-measures encoded byte cost and splits the count-bounded chunk into sub-batches each within the cap. Each sub-batch gets its own producer-seq. Test exercises a 32-byte cap with 20 items. |
+| Auto-select live mode (SSE for JSON, long-poll for binary) | S | ✅ | `live: true` now picks SSE; `live: "long-poll"` is the opt-in for proxy-unfriendly environments or binary streams. |
 
 ## P2 — feature parity, no current Firegrid blocker
 
 | Item | Effort | Status | Notes |
 |---|---|---|---|
 | Binary content type reads (`Uint8Array` body) | M | ⬜ | I assume JSON. No `bodyStream`/`textStream` equivalent typed as bytes. Add a parallel `readBytes` / `collectBytes` surface. |
-| Base64 SSE decoding (`stream-sse-data-encoding: base64`) | S | ⬜ | Protocol §5.8 path for binary streams. Detect header, decode payload. |
-| `Promise<Body>` as `append` argument | S | ⬜ | Reference awaits before buffering. Useful for "encode lazily" callers. |
+| Base64 SSE decoding (`stream-sse-data-encoding: base64`) | S | ✅ | SSE response header inspected once per connection; data payloads base64-decoded (newlines stripped per §5.8) before JSON parse. Binary content reads (typed as `Uint8Array`) are still a separate P2. |
+| `Promise<Body>` as `append` argument | S | ⏸ | Effect callers use `Effect.flatMap(promise, append)` — no surface change needed. Documented as the idiomatic pattern; reference's Promise-overload exists because it has no Effect runtime. Deleting from backlog as resolved-by-design. |
 | `writable()` returning `WritableStream<Uint8Array \| string>` | M | ⬜ | Streaming upload pattern. Not common in Firegrid today but documented. |
-| Producer `restart(epoch)` | S | ⬜ | Bumps epoch + resets local seq. Equivalent today is scoping a fresh producer. Add as a convenience. |
-| ETag + `If-None-Match` on catch-up reads | M | 🟡 | `head()` now surfaces `etag` and `cacheControl`. Sending `If-None-Match` on subsequent catch-ups and handling 304 still pending. |
+| Producer `restart(epoch)` | S | ✅ | `Producer<A>.restart(epoch)` sets state to `{ epoch, lastSeq: -1 }`. Caller is responsible for picking an epoch strictly greater than the server's. |
+| ETag + `If-None-Match` on catch-up reads | M | ✅ | `ReadOpts.ifNoneMatch` is sent on the first catch-up request. 304 short-circuits the stream (completes without emitting). Paired with `HeadResult.etag` for the typical "is anything new since I last looked" loop. |
 | `Cache-Control` surfaced on `head()` | S | ✅ | `HeadResult.cacheControl` returned as-is from the server header. Pairs with `etag` for CDN-aware callers. |
 | User-tunable `backoffOptions` | S | ✅ | `Endpoint.retrySchedule` accepts any `Effect.Schedule`. Defaults to the existing exponential 100ms × 4 with a 3s cap. |
 | User-supplied `fetch` implementation override | S | ⬜ | Reference accepts `opts.fetch`. Document the `Layer.provide(FetchHttpClient.layer)` swap path; potentially add a `withFetch` convenience. |
 | `SSEResilienceOptions` (fallback to long-poll on repeated short connections) | M | ⬜ | Reference fallback for misbehaving proxies / CDNs that don't honor SSE flush. Useful in production. |
 | `upsert` operation in state library | S | ⬜ | Reference supports it; I have insert/update/delete only. |
-| Standalone `MaterializedState` (apply events to a Map, no sync) | S | ⬜ | Reference splits sync from materialization. Useful escape hatch for callers that already own the read. |
+| Standalone `MaterializedState` (apply events to a Map, no sync) | S | ✅ | Pure data structure in `effect-durable-streams-state` — `apply(msg)`, `applyBatch(...)`, `applyControl(...)`, `get`/`has`/`size`/`snapshot(type)`. Also `replayFrom(raw, schemas)` for batch replay. |
 | Standard Schema input adapter | M | ⬜ | Reference accepts any Standard Schema; mine requires `effect/Schema`. Adapter via `Schema.fromStandardSchema`. |
 | Bounded conformance suite parity (port `@durable-streams/client/test`) | M | ⬜ | We have a focused subset; the full corpus is a sentinel against regressions. |
-| Public-surface lockdown with `expect-type` | S | ⬜ | Asserts `Producer<A> extends Sink<...>`, `read` returns `Stream<A, ReadError, HttpClient>`, etc. |
+| Public-surface lockdown with `expect-type` | S | ✅ | `test/unit/types.test.ts` pins 8 type-level assertions across read/collect/snapshotThenFollow/append/producer/Producer/HeadResult/Bound. Type-only — no runtime invocations. |
 
 ## P3 — deferred / out of scope
 

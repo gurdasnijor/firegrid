@@ -1,70 +1,44 @@
 import type { DurableStream } from "effect-durable-streams"
 import type { HttpClient } from "@effect/platform"
-import type { Effect, Option, Schema, Scope, Stream } from "effect"
+import { Data, type Effect, type Option, type Schema, type Scope, type Stream } from "effect"
 
 // ============================================================================
-// Tagged event surface
+// Tagged event surface — Data.TaggedClass-based for terse declarations and
+// idiomatic Match.tag interop.
 // ============================================================================
 
-export class Insert<V> {
-  readonly _tag = "State/Insert" as const
-  constructor(
-    readonly type: string,
-    readonly key: string,
-    readonly value: V,
-    readonly txid: Option.Option<string>,
-    readonly timestamp: Option.Option<string>,
-  ) {}
+interface ChangeBase<V> {
+  readonly type: string
+  readonly key: string
+  readonly value: V
+  readonly txid: Option.Option<string>
+  readonly timestamp: Option.Option<string>
 }
 
-export class Update<V> {
-  readonly _tag = "State/Update" as const
-  constructor(
-    readonly type: string,
-    readonly key: string,
-    readonly value: V,
-    readonly oldValue: Option.Option<V>,
-    readonly txid: Option.Option<string>,
-    readonly timestamp: Option.Option<string>,
-  ) {}
+export class Insert<V> extends Data.TaggedClass("State/Insert")<ChangeBase<V>> {}
+
+export class Update<V> extends Data.TaggedClass("State/Update")<
+  ChangeBase<V> & { readonly oldValue: Option.Option<V> }
+> {}
+
+export class Upsert<V> extends Data.TaggedClass("State/Upsert")<ChangeBase<V>> {}
+
+export class Delete<V> extends Data.TaggedClass("State/Delete")<{
+  readonly type: string
+  readonly key: string
+  readonly oldValue: Option.Option<V>
+  readonly txid: Option.Option<string>
+  readonly timestamp: Option.Option<string>
+}> {}
+
+interface ControlBase {
+  readonly offset: Option.Option<DurableStream.Offset>
 }
 
-export class Upsert<V> {
-  readonly _tag = "State/Upsert" as const
-  constructor(
-    readonly type: string,
-    readonly key: string,
-    readonly value: V,
-    readonly txid: Option.Option<string>,
-    readonly timestamp: Option.Option<string>,
-  ) {}
-}
+export class SnapshotStart extends Data.TaggedClass("State/SnapshotStart")<ControlBase> {}
+export class SnapshotEnd extends Data.TaggedClass("State/SnapshotEnd")<ControlBase> {}
 
-export class Delete<V> {
-  readonly _tag = "State/Delete" as const
-  constructor(
-    readonly type: string,
-    readonly key: string,
-    readonly oldValue: Option.Option<V>,
-    readonly txid: Option.Option<string>,
-    readonly timestamp: Option.Option<string>,
-  ) {}
-}
-
-export class SnapshotStart {
-  readonly _tag = "State/SnapshotStart" as const
-  constructor(readonly offset: Option.Option<DurableStream.Offset>) {}
-}
-
-export class SnapshotEnd {
-  readonly _tag = "State/SnapshotEnd" as const
-  constructor(readonly offset: Option.Option<DurableStream.Offset>) {}
-}
-
-export class Reset {
-  readonly _tag = "State/Reset" as const
-  constructor(readonly offset: Option.Option<DurableStream.Offset>) {}
-}
+export class Reset extends Data.TaggedClass("State/Reset")<ControlBase> {}
 
 export type Change<V> = Insert<V> | Update<V> | Upsert<V> | Delete<V>
 export type Control = SnapshotStart | SnapshotEnd | Reset

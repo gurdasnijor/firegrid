@@ -155,16 +155,52 @@ export const make = <A, I>(
     const offered = yield* Ref.make(0)
     const sent = yield* SubscriptionRef.make(0)
 
+    const maxBatchBytes = opts.maxBatchBytes ?? 1_048_576 // 1 MiB
+
+    /**
+     * Slice a count-bounded batch into sub-batches each within
+     * `maxBatchBytes`. A single item larger than the cap is sent as its
+     * own sub-batch (and may exceed the cap). Each sub-batch gets its own
+     * producer-seq through the existing `attempt()` chain.
+     */
+    const splitByBytes = (items: ReadonlyArray<A>): ReadonlyArray<ReadonlyArray<A>> => {
+      if (items.length === 0) return []
+      const out: Array<Array<A>> = []
+      let cur: Array<A> = []
+      let curBytes = 2 // `[` + `]` overhead
+      for (const item of items) {
+        // Approx per-item bytes by re-encoding through the schema. This is
+        // double work — sendBatch will encode again — but it's bounded and
+        // happens only at batch-emission time, not per-event.
+        const itemBytes = Buffer.byteLength(JSON.stringify(encode(item)), "utf8") + 1 // `,`
+        if (cur.length > 0 && curBytes + itemBytes > maxBatchBytes) {
+          out.push(cur)
+          cur = []
+          curBytes = 2
+        }
+        cur.push(item)
+        curBytes += itemBytes
+      }
+      if (cur.length > 0) out.push(cur)
+      return out
+    }
+
     const sendOne = (batch: Chunk.Chunk<A>): Effect.Effect<void, never, HttpClient.HttpClient> =>
       Effect.gen(function* () {
-        const size = Chunk.size(batch)
-        if (size === 0) return
-        const result = yield* sendBatch(opts, state, encode, batch).pipe(Effect.exit)
-        yield* SubscriptionRef.update(sent, (n) => n + size)
-        if (result._tag === "Failure") {
-          yield* Ref.update(failure, (cur) =>
-            Option.isSome(cur) ? cur : Option.some(extractFailure(result.cause)),
-          )
+        if (Chunk.size(batch) === 0) return
+        const subBatches = splitByBytes(Chunk.toReadonlyArray(batch))
+        for (const sub of subBatches) {
+          const subChunk = Chunk.unsafeFromArray(sub.slice())
+          const result = yield* sendBatch(opts, state, encode, subChunk).pipe(Effect.exit)
+          yield* SubscriptionRef.update(sent, (n) => n + sub.length)
+          if (result._tag === "Failure") {
+            yield* Ref.update(failure, (cur) =>
+              Option.isSome(cur) ? cur : Option.some(extractFailure(result.cause)),
+            )
+            // Stop sending further sub-batches on first failure — caller
+            // sees the failure on next append/flush.
+            return
+          }
         }
       })
 
@@ -205,11 +241,15 @@ export const make = <A, I>(
       yield* checkFailure
     })
 
+    const restart = (epoch: number): Effect.Effect<void, never> =>
+      Ref.set(state, { epoch, lastSeq: -1 })
+
     const sink = Sink.forEach(append)
 
     const producer: Producer<A> = Object.assign(sink, {
       append,
       flush,
+      restart,
     })
 
     // Scope finalizer: drain pending events before scope releases.

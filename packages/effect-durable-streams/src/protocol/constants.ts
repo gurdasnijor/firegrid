@@ -24,14 +24,9 @@ export const LIVE_LONG_POLL = "long-poll"
 export const LIVE_SSE = "sse"
 
 export const OFFSET_BEGIN = "-1"
-export const OFFSET_NOW = "now"
 
 export const SSE_EVENT_DATA = "data"
 export const SSE_EVENT_CONTROL = "control"
-export const SSE_FIELD_STREAM_NEXT_OFFSET = "streamNextOffset"
-export const SSE_FIELD_STREAM_CURSOR = "streamCursor"
-export const SSE_FIELD_UP_TO_DATE = "upToDate"
-export const SSE_FIELD_STREAM_CLOSED = "streamClosed"
 
 export const CONTENT_TYPE_JSON = "application/json"
 export const CONTENT_TYPE_SSE = "text/event-stream"

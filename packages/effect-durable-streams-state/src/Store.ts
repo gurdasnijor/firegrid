@@ -44,23 +44,31 @@ const toOffset = (v: string | undefined): Option.Option<DurableStream.Offset> =>
 
 const toChangeEvent = <V>(msg: P.ChangeMessage<V>): Event<V> => {
   const txid = toOption(msg.headers.txid)
-  const ts = toOption(msg.headers.timestamp)
+  const timestamp = toOption(msg.headers.timestamp)
+  const type = msg.type
+  const key = msg.key
   switch (msg.headers.operation) {
     case "insert":
-      return new Insert(msg.type, msg.key, msg.value as V, txid, ts)
+      return new Insert<V>({ type, key, value: msg.value as V, txid, timestamp })
     case "update":
-      return new Update(
-        msg.type,
-        msg.key,
-        msg.value as V,
-        toOption(msg.old_value),
+      return new Update<V>({
+        type,
+        key,
+        value: msg.value as V,
+        oldValue: toOption(msg.old_value),
         txid,
-        ts,
-      )
+        timestamp,
+      })
     case "upsert":
-      return new Upsert(msg.type, msg.key, msg.value as V, txid, ts)
+      return new Upsert<V>({ type, key, value: msg.value as V, txid, timestamp })
     case "delete":
-      return new Delete(msg.type, msg.key, toOption(msg.old_value), txid, ts)
+      return new Delete<V>({
+        type,
+        key,
+        oldValue: toOption(msg.old_value),
+        txid,
+        timestamp,
+      })
   }
 }
 
@@ -68,11 +76,11 @@ const toControlEvent = (msg: P.ControlMessage): Event<unknown> => {
   const offset = toOffset(msg.headers.offset)
   switch (msg.headers.control) {
     case "snapshot-start":
-      return new SnapshotStart(offset)
+      return new SnapshotStart({ offset })
     case "snapshot-end":
-      return new SnapshotEnd(offset)
+      return new SnapshotEnd({ offset })
     case "reset":
-      return new Reset(offset)
+      return new Reset({ offset })
   }
 }
 
