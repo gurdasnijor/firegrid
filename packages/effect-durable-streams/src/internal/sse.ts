@@ -1,5 +1,5 @@
 import { type HttpClient } from "@effect/platform"
-import { Chunk, Effect, Ref, Schedule, Stream } from "effect"
+import { Chunk, Effect, Ref, Stream } from "effect"
 import { createParser } from "eventsource-parser"
 import type { Endpoint, Offset } from "../DurableStream.ts"
 import { Offset as MkOffset } from "../DurableStream.ts"
@@ -126,7 +126,16 @@ const sseConnection = (
 /**
  * Stream items via SSE with automatic reconnection. The server closes
  * connections every ~60s (§8.2). On end of stream we re-open from the last
- * tracked offset. Terminates permanently once `streamClosed: true` is seen.
+ * tracked offset, UNLESS the just-finished connection observed a
+ * `streamClosed: true` control event — in which case we terminate.
+ *
+ * Termination is anchored on a `closedRef` checked between rounds rather
+ * than on the in-flight stream's elements. The previous shape used
+ * `Stream.repeat(forever).takeUntilEffect(closedRef)`, which only checked
+ * the predicate AFTER an element flowed through — so a control event that
+ * set the flag without producing items (the common case when a stream
+ * closes cleanly with no trailing data) wedged the outer loop into
+ * infinite reconnect.
  */
 export const sseStream = (
   endpoint: Endpoint,
@@ -137,14 +146,17 @@ export const sseStream = (
       const offsetRef = yield* Ref.make<Offset>(startOffset)
       const closedRef = yield* Ref.make<boolean>(false)
 
-      const round = Stream.suspend((): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> =>
-        sseConnection(endpoint, offsetRef, closedRef),
-      )
+      const loop = (): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            const closed = yield* Ref.get(closedRef)
+            if (closed) return Stream.empty
+            return sseConnection(endpoint, offsetRef, closedRef).pipe(
+              Stream.concat(Stream.suspend(loop)),
+            )
+          }),
+        )
 
-      // Repeat forever; outer `takeUntilEffect` exits when closedRef flips.
-      return round.pipe(
-        Stream.repeat(Schedule.forever),
-        Stream.takeUntilEffect(() => Ref.get(closedRef)),
-      )
+      return loop()
     }),
   )

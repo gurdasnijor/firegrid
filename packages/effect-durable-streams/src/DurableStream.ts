@@ -192,7 +192,30 @@ export interface Producer<A>
 export interface ReadOpts<A, I> {
   readonly endpoint: Endpoint
   readonly schema: Schema.Schema<A, I>
+  /**
+   * Starting offset for the read.
+   *
+   * **Default**: `BEGIN` (`"-1"`) — read from the start of the stream. This
+   * is the protocol-level default and matches `@durable-streams/client`.
+   *
+   * - `live: false` + default offset → bounded "snapshot" of everything in
+   *   the stream.
+   * - `live: true` + default offset → "catch up from the beginning, then
+   *   follow live". This is rarely what callers who want a tail-style
+   *   subscription expect; use {@link tail} or pass an explicit offset
+   *   (typically from a prior `head()`) for new-events-only behavior.
+   */
   readonly offset?: Offset
+  /**
+   * Live mode behavior:
+   * - `false` (default for `collect`) — catch-up only; stream ends at first
+   *   `upToDate` from the server.
+   * - `true` — auto-select best mode (SSE for JSON streams, long-poll
+   *   otherwise). **Combined with the default `offset: BEGIN`, this catches
+   *   up from the start and then follows live.** Use {@link tail} or pass
+   *   an explicit offset to subscribe to NEW events only.
+   * - `"long-poll"` / `"sse"` — explicit live transport.
+   */
   readonly live?: LiveMode
   /**
    * If supplied with `live: false`, the catch-up read sends `If-None-Match`
@@ -240,6 +263,20 @@ export interface Bound<A, I> {
   readonly snapshotThenFollow: Effect.Effect<
     SnapshotResult<A>,
     ReadError,
+    HttpClient.HttpClient
+  >
+  /**
+   * Tail from the current end of the stream — "subscribe to new events".
+   * The returned stream's first emit is the next append after `tail`
+   * resolves; historical items are NOT replayed. Uses a single `HEAD` to
+   * pin the resume offset, then a live read from there.
+   *
+   * Contrast with `read({ live: true })` which defaults to the start of
+   * the stream (catch up, then follow).
+   */
+  readonly tail: Effect.Effect<
+    Stream.Stream<A, ReadError, HttpClient.HttpClient>,
+    TransportError | NotFound | Gone,
     HttpClient.HttpClient
   >
   readonly append: (

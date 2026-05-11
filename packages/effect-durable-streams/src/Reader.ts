@@ -53,3 +53,30 @@ export const snapshotThenFollow = <A, I>(
     })
     return { snapshot: decoded, live }
   })
+
+/**
+ * Tail from the current end of the stream — "subscribe to new events".
+ *
+ * The first emit observed by the caller is the next append after `tail` was
+ * resolved. Historical items are NOT replayed. This is the ergonomic
+ * counterpart to `read({ live: true })`, which intentionally defaults to
+ * "catch up from the beginning, then follow" (matching the protocol).
+ *
+ * Implementation: a single `HEAD` request resolves the current end offset,
+ * then a live read resumes from exactly that offset.
+ */
+export const tail = <A, I>(
+  opts: CollectOpts<A, I>,
+): Effect.Effect<
+  Stream.Stream<A, ReadError, HttpClient.HttpClient>,
+  TransportError | NotFound | Gone,
+  HttpClient.HttpClient
+> =>
+  Effect.map(Http.head(opts.endpoint), (h) =>
+    read({
+      endpoint: opts.endpoint,
+      schema: opts.schema,
+      live: true,
+      offset: h.offset,
+    }),
+  )
