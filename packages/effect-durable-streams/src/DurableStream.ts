@@ -72,6 +72,13 @@ export interface ProducerOptions {
   readonly lingerMs?: number
   readonly maxBatchSize?: number
   readonly maxInFlight?: number
+  /**
+   * Upper bound on consecutive autoClaim epoch bumps before the producer
+   * surfaces `StaleEpoch` and stops retrying. Protects against an infinite
+   * loop if the server keeps returning 403 (e.g., a bug in epoch parsing,
+   * a misconfigured proxy stripping the `Producer-Epoch` header). Default 16.
+   */
+  readonly maxAutoClaimAttempts?: number
 }
 
 /**

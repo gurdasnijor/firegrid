@@ -143,6 +143,45 @@ describe("Phase 2 state smoke", () => {
     )
   }, 20000)
 
+  it("pre-registration buffer is bounded (FIFO drop)", async () => {
+    // Write 5 entries, then create a fresh State with cap=2. The late
+    // collection should only see the LAST 2 events because the buffer
+    // drops oldest on overflow.
+    const url = streamUrl("state-buffer-cap")
+    await runtime(
+      DurableStream.define({ endpoint: { url }, schema: Schema.Unknown }).create({
+        contentType: "application/json",
+      }),
+    )
+
+    await runtime(
+      Effect.gen(function* () {
+        const writer = yield* State.make({ endpoint: { url }, producerId: "cap-w" })
+        const writeUsers = yield* writer.collection({ type: "user", schema: User })
+        for (let i = 0; i < 5; i++) {
+          yield* writeUsers.insert(`u${i}`, { name: `n${i}`, email: `e${i}@x` })
+        }
+        yield* Effect.sleep("300 millis")
+
+        // Spin up a SECOND State with cap=2 — replay starts, buffers events,
+        // overflows to keep only the last 2.
+        const capped = yield* State.make({
+          endpoint: { url },
+          producerId: "cap-r",
+          maxBufferedEventsPerType: 2,
+        })
+        yield* Effect.sleep("300 millis")
+        const usersLate = yield* capped.collection({ type: "user", schema: User })
+        yield* Effect.sleep("300 millis")
+        const size = yield* usersLate.size
+        // Late collection sees AT MOST the last 2 + any post-registration
+        // events (none here). Confirm cap enforced.
+        expect(size).toBeLessThanOrEqual(2)
+        expect(size).toBeGreaterThan(0)
+      }),
+    )
+  }, 20000)
+
   it("SchemaConflict on incompatible schema for existing type", async () => {
     const url = streamUrl("state-conflict")
     await runtime(

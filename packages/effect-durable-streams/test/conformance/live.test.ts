@@ -284,6 +284,54 @@ describe("Phase 1 idempotent producer correctness", () => {
     )
   }, 15000)
 
+  it("autoClaim respects maxAutoClaimAttempts cap (no infinite loop)", async () => {
+    // With maxAutoClaimAttempts=0, even an autoClaim producer must NOT
+    // retry on the first 403. This guards against an infinite loop if the
+    // server keeps returning 403 (header bug, proxy stripping headers,
+    // etc.).
+    const url = server.streamUrl("idem-autoclaim-bounded")
+    const s = DurableStream.define({ endpoint: { url }, schema: Message })
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* s.create({ contentType: "application/json" })
+
+        // Writer A claims epoch 5.
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const a = yield* s.producer({
+              producerId: "shared-bounded",
+              epoch: 5,
+              lingerMs: 5,
+              maxBatchSize: 1,
+            })
+            yield* a.append({ n: 0 })
+            yield* a.flush
+          }),
+        )
+
+        // Writer B starts stale at epoch=0 with autoClaim BUT cap=0.
+        // Should hit 403 and surface StaleEpoch WITHOUT bumping.
+        const exit = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const b = yield* s.producer({
+              producerId: "shared-bounded",
+              epoch: 0,
+              autoClaim: true,
+              maxAutoClaimAttempts: 0,
+              lingerMs: 5,
+              maxBatchSize: 1,
+            })
+            yield* b.append({ n: 99 })
+            return yield* b.flush
+          }),
+        ).pipe(Effect.exit)
+
+        expect(exit._tag).toBe("Failure")
+      }),
+    )
+  }, 15000)
+
   it("without autoClaim, stale-epoch surfaces as a typed StaleEpoch failure", async () => {
     const url = server.streamUrl("idem-stale-fail")
     const s = DurableStream.define({ endpoint: { url }, schema: Message })

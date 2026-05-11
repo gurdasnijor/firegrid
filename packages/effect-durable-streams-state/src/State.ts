@@ -117,6 +117,22 @@ export interface State {
 export interface MakeOptions {
   readonly endpoint: DurableStream.Endpoint
   readonly producerId: string
+  /**
+   * Cap on the per-type buffer of events received before `collection()`
+   * registers that type. Prevents unbounded memory growth if a State
+   * instance is created but `collection()` is never called for some types.
+   * On overflow the OLDEST event is dropped (FIFO) and a warning is logged
+   * once per type. Defaults to 10_000 events per type.
+   *
+   * Set to `Infinity` to disable.
+   */
+  readonly maxBufferedEventsPerType?: number
+
+  /**
+   * Cap on the buffered `controlLog` (snapshot-start / snapshot-end / reset
+   * events) for replay into late-registered collections. Defaults to 1_024.
+   */
+  readonly maxBufferedControlEvents?: number
 }
 
 // Re-export the implementation entry point — see ./Store.ts

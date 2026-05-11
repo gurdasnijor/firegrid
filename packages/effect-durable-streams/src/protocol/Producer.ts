@@ -66,7 +66,11 @@ const sendBatch = <A, I>(
     const encoded = Chunk.toReadonlyArray(batch).map((event) => encode(event))
     const body = JSON.stringify(encoded)
 
-    const attempt = (): Effect.Effect<void, AnyProducerFailure, HttpClient.HttpClient> =>
+    const maxAutoClaim = opts.maxAutoClaimAttempts ?? 16
+
+    const attempt = (
+      autoClaimsSoFar: number,
+    ): Effect.Effect<void, AnyProducerFailure, HttpClient.HttpClient> =>
       Effect.gen(function* () {
         const current = yield* Ref.get(state)
         const nextSeq = current.lastSeq + 1
@@ -89,15 +93,16 @@ const sendBatch = <A, I>(
           // Stale epoch / zombie-fenced. Per §5.2.1 the server returns its
           // current epoch in the `Producer-Epoch` response header — jump
           // straight past it so autoClaim converges in O(1) round-trips.
-          if (opts.autoClaim) {
+          if (opts.autoClaim && autoClaimsSoFar < maxAutoClaim) {
             const serverEpoch = res.producerEpoch ?? current.epoch
             const bumped: ProducerState = { epoch: serverEpoch + 1, lastSeq: -1 }
             yield* Ref.set(state, bumped)
-            return yield* attempt()
+            return yield* attempt(autoClaimsSoFar + 1)
           }
-          // §5.2.1 invariant violation: caller has a stale epoch and no
-          // autoClaim. Surface as a typed failure so the caller can decide
-          // whether to spin a new producer with a fresh epoch.
+          // Either autoClaim is off, OR we've burned through the cap (which
+          // typically means the server keeps returning 403 — bug, proxy
+          // stripping the epoch header, or genuine contention). Surface as
+          // a typed failure so the caller can decide what to do.
           return yield* Effect.fail(
             new StaleEpoch({ currentEpoch: res.producerEpoch ?? current.epoch }),
           )
@@ -129,7 +134,7 @@ const sendBatch = <A, I>(
         )
       })
 
-    yield* attempt()
+    yield* attempt(0)
   })
 
 export const make = <A, I>(

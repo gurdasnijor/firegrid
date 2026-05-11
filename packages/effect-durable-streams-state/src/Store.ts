@@ -232,6 +232,12 @@ export const make = (
     const eventsHub = yield* PubSub.unbounded<Event<unknown>>()
     const mutex = yield* Effect.makeSemaphore(1)
 
+    const perTypeCap = opts.maxBufferedEventsPerType ?? 10_000
+    const controlCap = opts.maxBufferedControlEvents ?? 1_024
+    // Track types we've already warned about so we log the overflow notice
+    // once per type instead of every event.
+    const overflowWarned = yield* Ref.make<HashMap.HashMap<string, true>>(HashMap.empty())
+
     const dispatch = (event: Event<unknown>): Effect.Effect<void> =>
       mutex.withPermits(1)(
         Effect.gen(function* () {
@@ -246,20 +252,49 @@ export const make = (
             if (Option.isSome(entry)) {
               yield* entry.value.publish(event)
             } else {
-              // No collection yet for this type — buffer for future replay.
+              // No collection yet for this type — buffer for future replay,
+              // capped at `perTypeCap` (FIFO drop).
+              const type = event.type
               yield* Ref.update(buffered, (m) => {
-                const list = Option.getOrElse(HashMap.get(m, event.type), () => [] as Array<Event<unknown>>)
-                return HashMap.set(m, event.type, [...list, event])
+                const list = Option.getOrElse(
+                  HashMap.get(m, type),
+                  () => [] as Array<Event<unknown>>,
+                )
+                const next = list.length >= perTypeCap
+                  ? [...list.slice(list.length - perTypeCap + 1), event]
+                  : [...list, event]
+                return HashMap.set(m, type, next)
               })
+              if (Number.isFinite(perTypeCap)) {
+                const list = Option.getOrElse(
+                  HashMap.get(yield* Ref.get(buffered), type),
+                  () => [] as Array<Event<unknown>>,
+                )
+                if (list.length >= perTypeCap) {
+                  const warned = yield* Ref.get(overflowWarned)
+                  if (Option.isNone(HashMap.get(warned, type))) {
+                    yield* Effect.logWarning(
+                      `[effect-durable-streams-state] type "${type}" pre-registration buffer reached ${perTypeCap} events; dropping oldest. Register collection({ type: "${type}" }) earlier or raise maxBufferedEventsPerType.`,
+                    )
+                    yield* Ref.update(overflowWarned, HashMap.set(type, true))
+                  }
+                }
+              }
             }
           } else {
             // Control event → broadcast to currently-registered collections
             // AND record so future-registered collections replay it.
+            // controlLog is capped at `controlCap` to prevent unbounded
+            // growth on streams with frequent snapshot/reset markers.
             const reg = yield* Ref.get(registry)
             for (const entry of HashMap.values(reg)) {
               yield* entry.publish(event)
             }
-            yield* Ref.update(controlLog, (xs) => [...xs, event])
+            yield* Ref.update(controlLog, (xs) =>
+              xs.length >= controlCap
+                ? [...xs.slice(xs.length - controlCap + 1), event]
+                : [...xs, event],
+            )
           }
         }),
       )
