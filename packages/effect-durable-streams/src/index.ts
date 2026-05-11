@@ -1,0 +1,38 @@
+/**
+ * effect-durable-streams
+ *
+ * Effect-native client for the Durable Streams Protocol. Reads are Stream,
+ * writes are Sink, schema sits at the wire boundary.
+ *
+ * Provide `FetchHttpClient.layer` (or any `HttpClient` layer) at the top of
+ * your program — every operation requires `HttpClient.HttpClient` in `R`.
+ */
+
+export * as DurableStream from "./namespace.ts"
+export type {
+  Bound,
+  CloseOptions,
+  CreateOptions,
+  Endpoint,
+  HeadResult,
+  HeadersRecord,
+  HeaderValue,
+  LiveMode,
+  Offset,
+  Producer,
+  ProducerOptions,
+  ReadError,
+  ReadOpts,
+  SnapshotResult,
+  WriteError,
+} from "./DurableStream.ts"
+export {
+  Conflict,
+  DecodeError,
+  Gone,
+  NotFound,
+  SequenceGap,
+  StaleEpoch,
+  StreamClosed,
+  TransportError,
+} from "./errors.ts"

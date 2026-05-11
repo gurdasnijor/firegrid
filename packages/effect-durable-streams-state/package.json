@@ -1,0 +1,48 @@
+{
+  "name": "effect-durable-streams-state",
+  "version": "0.0.0",
+  "description": "Effect-native client for the Durable Streams State Protocol: typed change events, multi-type collections, schema-validated values.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "pnpm run typecheck && pnpm run test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run test/unit",
+    "test:conformance": "vitest run test/conformance",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@effect/platform": "^0.96.0",
+    "effect": "^3.18.0",
+    "effect-durable-streams": "workspace:*"
+  },
+  "devDependencies": {
+    "@durable-streams/client": "^0.2.3",
+    "@durable-streams/server": "^0.3.1",
+    "@durable-streams/state": "^0.2.5",
+    "@effect/platform": "^0.96.0",
+    "@effect/vitest": "^0.29.0",
+    "@types/node": "^22.10.0",
+    "effect": "^3.18.0",
+    "effect-durable-streams": "workspace:*",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}

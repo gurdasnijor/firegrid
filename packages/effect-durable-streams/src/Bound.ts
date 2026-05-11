@@ -1,0 +1,40 @@
+import type { Schema } from "effect"
+import { Effect } from "effect"
+import type { Bound, Endpoint } from "./DurableStream.ts"
+import * as Reader from "./Reader.ts"
+import * as Writer from "./Writer.ts"
+
+export interface DefineOptions<A, I> {
+  readonly endpoint: Endpoint
+  readonly schema: Schema.Schema<A, I>
+}
+
+export const define = <A, I>(opts: DefineOptions<A, I>): Bound<A, I> => {
+  const { endpoint, schema } = opts
+  return {
+    endpoint,
+    schema,
+    read: (readOpts) =>
+      Reader.read({
+        endpoint,
+        schema,
+        ...(readOpts?.live !== undefined ? { live: readOpts.live } : {}),
+        ...(readOpts?.offset !== undefined ? { offset: readOpts.offset } : {}),
+      }),
+    collect: Reader.collect({ endpoint, schema }),
+    snapshotThenFollow: Reader.snapshotThenFollow({ endpoint, schema }),
+    append: (event, appendOpts) =>
+      Writer.append({
+        endpoint,
+        schema,
+        event,
+        ...(appendOpts?.seq !== undefined ? { seq: appendOpts.seq } : {}),
+      }),
+    producer: (producerOpts) =>
+      Writer.producer({ endpoint, schema, ...producerOpts }),
+    head: Reader.head(endpoint),
+    create: (createOpts) => Writer.create(endpoint, createOpts),
+    close: (closeOpts) => Writer.close(endpoint, closeOpts),
+    delete: Writer.del(endpoint),
+  } satisfies Bound<A, I>
+}
