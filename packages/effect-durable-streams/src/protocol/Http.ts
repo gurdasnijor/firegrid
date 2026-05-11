@@ -4,7 +4,7 @@ import {
   type HttpClientResponse,
 } from "@effect/platform"
 import type { HttpClientError } from "@effect/platform/HttpClientError"
-import { Effect, Schedule } from "effect"
+import { Data, Duration, Effect, Schedule } from "effect"
 import type { Endpoint, HeaderValue, HeadResult, Offset } from "../DurableStream.ts"
 import { Gone, NotFound, TransportError } from "../errors.ts"
 import * as C from "./constants.ts"
@@ -44,10 +44,63 @@ const isClosed = (res: HttpClientResponse.HttpClientResponse): boolean =>
 
 // === Retry policy ================================================
 //
-// Network-level errors (HttpClientError "RequestError") and 5xx-ish transport
-// failures retry. Protocol errors (404/409/410) never retry.
+// Two classes of transient failure retry through the schedule:
+//
+//   1. Network-level errors (`HttpClientError` "RequestError") — the request
+//      never reached the server, or the response was abruptly cut off.
+//   2. Retryable server-side statuses — 5xx (server unhealthy) and 429
+//      (rate-limited). A successful HTTP exchange with a bad status is NOT
+//      raised by `@effect/platform`'s client, so we re-package it as a
+//      typed retryable failure (`RetryableHttpStatus`) so the schedule
+//      treats it the same way as a network error.
+//
+// Protocol errors (404 / 409 / 410) and other 4xx are NEVER retried — the
+// server is responding correctly and a retry would not change the answer.
 
-const isTransient = (e: HttpClientError): boolean => e._tag === "RequestError"
+/**
+ * Marker failure used to drive a response with a retryable status (5xx, 429)
+ * through `Effect.retry`. Carries the response so the per-op caller can
+ * inspect it on exhaustion.
+ */
+class RetryableHttpStatus extends Data.TaggedError("DurableStream/RetryableHttpStatus")<{
+  readonly response: HttpClientResponse.HttpClientResponse
+}> {}
+
+const isRetryableStatus = (status: number): boolean =>
+  status === 429 || (status >= 500 && status < 600)
+
+const isTransient = (e: HttpClientError | RetryableHttpStatus): boolean => {
+  if (e._tag === "DurableStream/RetryableHttpStatus") return true
+  return e._tag === "RequestError"
+}
+
+/**
+ * Parse a `Retry-After` header per RFC 7231 §7.1.3. Returns milliseconds, or
+ * `undefined` if the header is absent / malformed.
+ *
+ * Two formats are accepted:
+ *   - Delta-seconds: a non-negative integer-or-decimal seconds value.
+ *   - HTTP-date: parsed via `Date.parse`; the delta from "now" is returned.
+ *
+ * HTTP-date is CAPPED at 1 hour to defend against misbehaving / hostile
+ * servers that could otherwise wedge the client indefinitely.
+ */
+const parseRetryAfter = (raw: string | undefined): number | undefined => {
+  if (raw === undefined) return undefined
+  const trimmed = raw.trim()
+  if (trimmed === "") return undefined
+  // Delta-seconds.
+  const seconds = Number(trimmed)
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.floor(seconds * 1000)
+  }
+  // HTTP-date.
+  const parsed = Date.parse(trimmed)
+  if (Number.isNaN(parsed)) return undefined
+  const deltaMs = parsed - Date.now()
+  if (deltaMs <= 0) return 0
+  return Math.min(deltaMs, 60 * 60 * 1000) // 1-hour cap
+}
 
 // Exponential backoff (100ms, 200ms, 400ms, ...) capped at 3s per attempt,
 // limited to 4 total retries.
@@ -149,8 +202,36 @@ const executeWithRetry = (
     const url = urlOf(endpoint)
     const headers = yield* buildHeaders(endpoint, extraHeaders)
     const client = yield* HttpClient.HttpClient
-    return yield* client.execute(shape(url, headers)).pipe(
+
+    // Single attempt: execute the request and, if the server responded with
+    // a retryable status (5xx / 429), pre-sleep any `Retry-After` window
+    // and then fail with `RetryableHttpStatus` so `Effect.retry` re-enters
+    // the schedule. On non-retryable status we just return the response —
+    // the per-op caller inspects the status to map to typed protocol errors.
+    const attempt = client.execute(shape(url, headers)).pipe(
+      Effect.flatMap((res) => {
+        if (!isRetryableStatus(res.status)) return Effect.succeed(res)
+        const retryAfterMs = parseRetryAfter(headerValue(res, "retry-after"))
+        // The schedule's own delay still runs on top of `Retry-After`. In
+        // the common case the schedule's per-step delay (≤ 3s) is small
+        // compared to a server-provided wait, so the extra cost is bounded.
+        const wait = retryAfterMs !== undefined
+          ? Effect.sleep(Duration.millis(retryAfterMs))
+          : Effect.void
+        return wait.pipe(
+          Effect.zipRight(Effect.fail(new RetryableHttpStatus({ response: res }))),
+        )
+      }),
+    )
+
+    return yield* attempt.pipe(
       Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
+      // Retry exhausted on a retryable status: pass the last response
+      // through to the per-op caller so it can decide how to map the
+      // status (e.g., the catch-up read may surface it as TransportError).
+      Effect.catchTag("DurableStream/RetryableHttpStatus", (e) =>
+        Effect.succeed(e.response),
+      ),
       Effect.mapError((e) => new TransportError({ cause: e })),
     )
   })

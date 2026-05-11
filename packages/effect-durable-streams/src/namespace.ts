@@ -32,4 +32,4 @@ export {
 } from "./errors.ts"
 export { define } from "./Bound.ts"
 export { append, close, create, del as delete, producer } from "./Writer.ts"
-export { collect, head, read, snapshotThenFollow } from "./Reader.ts"
+export { collect, head, read, snapshotThenFollow, tail } from "./Reader.ts"

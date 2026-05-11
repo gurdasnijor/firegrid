@@ -545,6 +545,86 @@ describe("Phase 1 retention and lifecycle", () => {
   })
 })
 
+describe("Phase 1 tail() ergonomic helper", () => {
+  it("tail() observes only events appended AFTER it resolves", async () => {
+    const url = server.streamUrl("tail-only-new")
+    const s = DurableStream.define({ endpoint: { url }, schema: Message })
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* s.create({ contentType: "application/json" })
+        // History the caller does NOT want to see.
+        for (let i = 0; i < 5; i++) {
+          yield* s.append({ n: i })
+        }
+
+        // Resolve the tail (HEAD → live read from current end).
+        const live = yield* s.tail
+
+        // Kick off the consumer first so the live read is attached before
+        // new appends arrive; otherwise long-poll might miss the first ones.
+        const fiber = yield* live
+          .pipe(Stream.take(3), Stream.runCollect, Effect.map(Chunk.toReadonlyArray))
+          .pipe(Effect.fork)
+
+        yield* Effect.sleep("100 millis")
+        yield* s.append({ n: 100 })
+        yield* s.append({ n: 101 })
+        yield* s.append({ n: 102 })
+
+        const observed = yield* Fiber.join(fiber)
+        // Crucially: NONE of the historical 0..4 should appear.
+        expect(observed.map((m) => m.n)).toEqual([100, 101, 102])
+      }),
+    )
+  }, 15000)
+})
+
+describe("Phase 1 catchup→live deterministic handoff", () => {
+  it("snapshotThenFollow with no concurrent writes: live yields strictly new events", async () => {
+    // Deterministic baseline (no race): seed history, snapshotThenFollow,
+    // then append new items. Every old item appears in snapshot; every new
+    // item appears in live; no overlap.
+    const url = server.streamUrl("snapfollow-deterministic")
+    const s = DurableStream.define({ endpoint: { url }, schema: Message })
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* s.create({ contentType: "application/json" })
+        for (let i = 0; i < 10; i++) {
+          yield* s.append({ n: i })
+        }
+
+        const result = yield* s.snapshotThenFollow
+
+        // Snapshot must contain EXACTLY the seeded items.
+        expect(result.snapshot.map((m) => m.n).sort((a, b) => a - b)).toEqual([
+          0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+        ])
+
+        const fiber = yield* result.live
+          .pipe(Stream.take(3), Stream.runCollect, Effect.map(Chunk.toReadonlyArray))
+          .pipe(Effect.fork)
+
+        yield* Effect.sleep("100 millis")
+        yield* s.append({ n: 100 })
+        yield* s.append({ n: 101 })
+        yield* s.append({ n: 102 })
+
+        const liveItems = yield* Fiber.join(fiber)
+        const liveNs = liveItems.map((m) => m.n)
+        expect(liveNs).toEqual([100, 101, 102])
+
+        // No overlap: nothing from snapshot reappears in live.
+        const snapshotSet = new Set(result.snapshot.map((m) => m.n))
+        for (const n of liveNs) {
+          expect(snapshotSet.has(n)).toBe(false)
+        }
+      }),
+    )
+  }, 15000)
+})
+
 describe("Phase 1 producer eager-emission semantics", () => {
   it("a queued burst is emitted without waiting the full lingerMs", async () => {
     // Append a burst that fully fills a batch BEFORE flush is called. With

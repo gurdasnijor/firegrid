@@ -22,6 +22,7 @@ export const define = <A, I>(opts: DefineOptions<A, I>): Bound<A, I> => {
       }),
     collect: Reader.collect({ endpoint, schema }),
     snapshotThenFollow: Reader.snapshotThenFollow({ endpoint, schema }),
+    tail: Reader.tail({ endpoint, schema }),
     append: (event, appendOpts) =>
       Writer.append({
         endpoint,
