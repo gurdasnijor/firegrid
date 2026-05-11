@@ -14,6 +14,7 @@ export type {
   CloseOptions,
   CreateOptions,
   Endpoint,
+  ErrorHandler,
   HeadResult,
   HeadersRecord,
   HeaderValue,
@@ -24,6 +25,7 @@ export type {
   ProducerOptions,
   ReadError,
   ReadOpts,
+  RetryOpts,
   SnapshotResult,
   WriteError,
 } from "./DurableStream.ts"

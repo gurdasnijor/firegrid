@@ -73,12 +73,15 @@ export const failForStatus = (
 
 const isTransient = (e: HttpClientError): boolean => e._tag === "RequestError"
 
-const retrySchedule = Schedule.exponential("100 millis").pipe(
+const defaultRetrySchedule = Schedule.exponential("100 millis").pipe(
   // eslint-disable-next-line local/no-fixed-polling -- recurs is a retry count, not durable-runtime polling.
   Schedule.compose(Schedule.recurs(4)),
   // eslint-disable-next-line local/no-fixed-polling -- spaced is a retry-backoff floor, not durable-runtime polling.
   Schedule.either(Schedule.spaced("3 seconds")),
 )
+
+const scheduleFor = (endpoint: Endpoint): Schedule.Schedule<unknown, unknown, never> =>
+  endpoint.retrySchedule ?? defaultRetrySchedule
 
 // === Request construction =======================================
 
@@ -106,12 +109,45 @@ const applyParams = (
   return out
 }
 
+// === onError retry hook ==========================================
+//
+// Wrap any HTTP operation with the endpoint's `onError` handler (if set).
+// The handler is invoked after transport-level retries exhaust and the
+// operation fails. If it returns `RetryOpts`, headers are merged into the
+// endpoint and the operation is retried — bounded by `onErrorMaxRetries`
+// to prevent runaway loops. If it returns `undefined`, the original error
+// propagates.
+
+export const withOnErrorHandler = <A, E, R>(
+  endpoint: Endpoint,
+  attempt: (ep: Endpoint) => Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> => {
+  const handler = endpoint.onError
+  if (!handler) return attempt(endpoint)
+  const cap = endpoint.onErrorMaxRetries ?? 4
+  const loop = (ep: Endpoint, attemptsLeft: number): Effect.Effect<A, E, R> =>
+    attempt(ep).pipe(
+      Effect.catchAll((err) => {
+        if (attemptsLeft <= 0) return Effect.fail(err)
+        return Effect.flatMap(handler(err), (retry) => {
+          if (!retry) return Effect.fail(err)
+          const merged: Endpoint = {
+            ...ep,
+            headers: { ...(ep.headers ?? {}), ...(retry.headers ?? {}) },
+          }
+          return loop(merged, attemptsLeft - 1)
+        })
+      }),
+    )
+  return loop(endpoint, cap)
+}
+
 // === Operations ==================================================
 
 const urlOf = (endpoint: Endpoint): string =>
   typeof endpoint.url === "string" ? endpoint.url : endpoint.url.toString()
 
-export const head = (
+const headInner = (
   endpoint: Endpoint,
 ): Effect.Effect<HeadResult, TransportError | NotFound | Gone, HttpClient.HttpClient> =>
   Effect.gen(function* () {
@@ -120,7 +156,7 @@ export const head = (
     const client = yield* HttpClient.HttpClient
     const req = HttpClientRequest.head(url).pipe(HttpClientRequest.setHeaders(headers))
     const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: retrySchedule, while: isTransient }),
+      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
       Effect.mapError((e) => new TransportError({ cause: e })),
     )
     if (res.status === 404) return yield* Effect.fail(new NotFound({ url }))
@@ -137,9 +173,16 @@ export const head = (
       streamClosed: isClosed(res),
       ttlSeconds: parseInt(headerValue(res, C.STREAM_TTL) ?? "", 10) || undefined,
       expiresAt: headerValue(res, C.STREAM_EXPIRES_AT),
+      etag: headerValue(res, "etag"),
+      cacheControl: headerValue(res, "cache-control"),
     }
     return result
   })
+
+export const head = (
+  endpoint: Endpoint,
+): Effect.Effect<HeadResult, TransportError | NotFound | Gone, HttpClient.HttpClient> =>
+  withOnErrorHandler(endpoint, headInner)
 
 export interface GetJsonResult {
   readonly items: ReadonlyArray<unknown>
@@ -151,6 +194,12 @@ export interface GetJsonResult {
 }
 
 export const getJson = (
+  endpoint: Endpoint,
+  opts: { readonly offset: Offset; readonly live?: false | "long-poll"; readonly cursor?: string },
+): Effect.Effect<GetJsonResult, TransportError | NotFound | Gone, HttpClient.HttpClient> =>
+  withOnErrorHandler(endpoint, (ep) => getJsonInner(ep, opts))
+
+const getJsonInner = (
   endpoint: Endpoint,
   opts: { readonly offset: Offset; readonly live?: false | "long-poll"; readonly cursor?: string },
 ): Effect.Effect<GetJsonResult, TransportError | NotFound | Gone, HttpClient.HttpClient> =>
@@ -167,7 +216,7 @@ export const getJson = (
       params,
     )
     const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: retrySchedule, while: isTransient }),
+      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
       Effect.mapError((e) => new TransportError({ cause: e })),
     )
     if (res.status === 404) return yield* Effect.fail(new NotFound({ url }))
@@ -216,6 +265,16 @@ export const getStream = (
   TransportError | NotFound | Gone,
   HttpClient.HttpClient
 > =>
+  withOnErrorHandler(endpoint, (ep) => getStreamInner(ep, opts))
+
+const getStreamInner = (
+  endpoint: Endpoint,
+  opts: { readonly offset: Offset; readonly accept?: string },
+): Effect.Effect<
+  HttpClientResponse.HttpClientResponse,
+  TransportError | NotFound | Gone,
+  HttpClient.HttpClient
+> =>
   Effect.gen(function* () {
     const url = urlOf(endpoint)
     const baseHeaders = yield* buildHeaders(endpoint, undefined)
@@ -226,7 +285,7 @@ export const getStream = (
       { [C.QUERY_OFFSET]: opts.offset, [C.QUERY_LIVE]: C.LIVE_SSE },
     )
     const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: retrySchedule, while: isTransient }),
+      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
       Effect.mapError((e) => new TransportError({ cause: e })),
     )
     if (res.status === 404) return yield* Effect.fail(new NotFound({ url }))
@@ -267,6 +326,12 @@ export const post = (
   endpoint: Endpoint,
   opts: PostOptions,
 ): Effect.Effect<PostResponse, TransportError, HttpClient.HttpClient> =>
+  withOnErrorHandler(endpoint, (ep) => postInner(ep, opts))
+
+const postInner = (
+  endpoint: Endpoint,
+  opts: PostOptions,
+): Effect.Effect<PostResponse, TransportError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const url = urlOf(endpoint)
     const extra: Record<string, string> = {}
@@ -283,7 +348,7 @@ export const post = (
     )
     // Retry transport errors only. Protocol errors (4xx) are returned to the caller.
     const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: retrySchedule, while: isTransient }),
+      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
       Effect.mapError((e) => new TransportError({ cause: e })),
     )
     const nextOffset = (headerValue(res, STREAM_NEXT_OFFSET) ?? "") as Offset
@@ -313,6 +378,12 @@ export const put = (
   endpoint: Endpoint,
   opts: PutOptions,
 ): Effect.Effect<{ readonly status: number }, TransportError, HttpClient.HttpClient> =>
+  withOnErrorHandler(endpoint, (ep) => putInner(ep, opts))
+
+const putInner = (
+  endpoint: Endpoint,
+  opts: PutOptions,
+): Effect.Effect<{ readonly status: number }, TransportError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const url = urlOf(endpoint)
     const extra: Record<string, string> = {}
@@ -327,7 +398,7 @@ export const put = (
       ? HttpClientRequest.bodyText(opts.body, ct)(reqBase)
       : HttpClientRequest.setHeader("content-type", ct)(reqBase)
     const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: retrySchedule, while: isTransient }),
+      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
       Effect.mapError((e) => new TransportError({ cause: e })),
     )
     return { status: res.status }
@@ -336,13 +407,18 @@ export const put = (
 export const del = (
   endpoint: Endpoint,
 ): Effect.Effect<{ readonly status: number }, TransportError, HttpClient.HttpClient> =>
+  withOnErrorHandler(endpoint, delInner)
+
+const delInner = (
+  endpoint: Endpoint,
+): Effect.Effect<{ readonly status: number }, TransportError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const url = urlOf(endpoint)
     const headers = yield* buildHeaders(endpoint, undefined)
     const client = yield* HttpClient.HttpClient
     const req = HttpClientRequest.del(url).pipe(HttpClientRequest.setHeaders(headers))
     const res = yield* client.execute(req).pipe(
-      Effect.retry({ schedule: retrySchedule, while: isTransient }),
+      Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
       Effect.mapError((e) => new TransportError({ cause: e })),
     )
     return { status: res.status }

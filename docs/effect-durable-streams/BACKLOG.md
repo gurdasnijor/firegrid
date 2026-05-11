@@ -35,8 +35,8 @@ Update as items land. Keep the priority column honest.
 | Concurrent batch pipelining (`maxInFlight > 1`) with per-`(epoch, seq)` tracking + out-of-order 409 retry | M | ⬜ | **Highest perf lever.** Currently capped at `concurrency: 1`. Reference uses `fastq` with `maxInFlight: 5` default and tracks seq completions in a `Map<epoch, Map<seq, { resolved, waiters }>>`. Expected win: 2–5x on producer cells where network roundtrip dominates. Closes the largest behavior gap. |
 | Append per-event microtask collapse | S | ⬜ | `append` currently issues `checkFailure` (`Ref.get`) + `Queue.offer` + `Ref.update(offered)` via `Effect.gen` — 3 microtasks per event. Fold into one `Effect.sync` block (semantics don't require yielding between them). Expected win: ~50% on the offer hot path. |
 | Eager batch emission via `Queue.takeBetween` | S/M | ⬜ | `groupedWithin(maxBatch, lingerMs)` waits the full `lingerMs` even when many items are already queued. Drain up to `maxBatch` immediately when the queue has items; only wait `lingerMs` when the queue is empty or has a partial batch. Expected win: `lingerMs=5` becomes ~as fast as `lingerMs=0` for bursty workloads. |
-| `onError(error) → { headers, params }` retry hook | M | ⬜ | Reference's per-error mutation hook for auth-token refresh etc. Critical for any Firegrid use behind an auth gateway. Needs to thread into HTTP layer's retry decision. |
-| `maxBatchBytes` byte-cap on producer | S | ⬜ | Reference is bytes-only (default 1MB). I have count cap. Support both; default to bytes for parity. |
+| `onError(error) → { headers }` retry hook | M | ✅ | Per-endpoint `onError` invoked after transport retries exhaust. Returns `RetryOpts` to retry with merged headers; bounded by `onErrorMaxRetries` (default 4). Tests in `live.test.ts` cover retry-with-new-headers and the bounded-retry path. *Params merging deferred — Endpoint doesn't carry params today; revisit if needed.* |
+| `maxBatchBytes` byte-cap on producer | M | ⬜ | Reference is bytes-only (default 1MB). I have count cap. Needs custom `Sink.foldWeighted` or `Stream.aggregateWithin` integration to track bytes pre-encode. Re-estimated to M after looking at the integration. |
 | Auto-select live mode (SSE for JSON, long-poll for binary) | S | ⬜ | I require explicit `live` mode; ref auto-picks. Should match. |
 
 ## P2 — feature parity, no current Firegrid blocker
@@ -48,9 +48,9 @@ Update as items land. Keep the priority column honest.
 | `Promise<Body>` as `append` argument | S | ⬜ | Reference awaits before buffering. Useful for "encode lazily" callers. |
 | `writable()` returning `WritableStream<Uint8Array \| string>` | M | ⬜ | Streaming upload pattern. Not common in Firegrid today but documented. |
 | Producer `restart(epoch)` | S | ⬜ | Bumps epoch + resets local seq. Equivalent today is scoping a fresh producer. Add as a convenience. |
-| ETag + `If-None-Match` on catch-up reads | M | ⬜ | Cuts traffic on repeat catch-ups behind a CDN. Needs `head()` to surface etag, then catch-up to send `If-None-Match` and handle 304. |
-| `Cache-Control` surfaced on `head()` | S | ⬜ | Trivial — server already returns it. |
-| User-tunable `backoffOptions` | S | ⬜ | I have a fixed exponential schedule. Accept a `Schedule` from caller. |
+| ETag + `If-None-Match` on catch-up reads | M | 🟡 | `head()` now surfaces `etag` and `cacheControl`. Sending `If-None-Match` on subsequent catch-ups and handling 304 still pending. |
+| `Cache-Control` surfaced on `head()` | S | ✅ | `HeadResult.cacheControl` returned as-is from the server header. Pairs with `etag` for CDN-aware callers. |
+| User-tunable `backoffOptions` | S | ✅ | `Endpoint.retrySchedule` accepts any `Effect.Schedule`. Defaults to the existing exponential 100ms × 4 with a 3s cap. |
 | User-supplied `fetch` implementation override | S | ⬜ | Reference accepts `opts.fetch`. Document the `Layer.provide(FetchHttpClient.layer)` swap path; potentially add a `withFetch` convenience. |
 | `SSEResilienceOptions` (fallback to long-poll on repeated short connections) | M | ⬜ | Reference fallback for misbehaving proxies / CDNs that don't honor SSE flush. Useful in production. |
 | `upsert` operation in state library | S | ⬜ | Reference supports it; I have insert/update/delete only. |

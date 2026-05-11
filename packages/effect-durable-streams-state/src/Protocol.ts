@@ -5,7 +5,7 @@ import { Schema } from "effect"
  * Direct translation of https://github.com/durable-streams/durable-streams/blob/main/packages/state/STATE-PROTOCOL.md
  */
 
-export const Operation = Schema.Literal("insert", "update", "delete")
+export const Operation = Schema.Literal("insert", "update", "delete", "upsert")
 export type Operation = typeof Operation.Type
 
 export const ChangeHeaders = Schema.Struct({

@@ -29,6 +29,7 @@ import {
   SnapshotEnd,
   SnapshotStart,
   Update,
+  Upsert,
 } from "./State.ts"
 
 // ============================================================================
@@ -56,6 +57,8 @@ const toChangeEvent = <V>(msg: P.ChangeMessage<V>): Event<V> => {
         txid,
         ts,
       )
+    case "upsert":
+      return new Upsert(msg.type, msg.key, msg.value as V, txid, ts)
     case "delete":
       return new Delete(msg.type, msg.key, toOption(msg.old_value), txid, ts)
   }
@@ -97,6 +100,7 @@ const applyEvent = <V>(
   switch (event._tag) {
     case "State/Insert":
     case "State/Update":
+    case "State/Upsert":
       return Ref.update(state, HashMap.set(event.key, event.value))
     case "State/Delete":
       return Ref.update(state, HashMap.remove(event.key))
@@ -178,6 +182,7 @@ const makeCollection = <V, VI>(
       insert: (key, value, options) => writeChange("insert", key, value, undefined, options),
       update: (key, value, options) =>
         writeChange("update", key, value, options?.oldValue, options),
+      upsert: (key, value, options) => writeChange("upsert", key, value, undefined, options),
       delete: (key, options) =>
         writeChange("delete", key, undefined, options?.oldValue, options),
       changes: Stream.fromPubSub(hub),
@@ -245,6 +250,7 @@ export const make = (
           if (
             event._tag === "State/Insert" ||
             event._tag === "State/Update" ||
+            event._tag === "State/Upsert" ||
             event._tag === "State/Delete"
           ) {
             const reg = yield* Ref.get(registry)

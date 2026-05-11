@@ -29,6 +29,17 @@ export class Update<V> {
   ) {}
 }
 
+export class Upsert<V> {
+  readonly _tag = "State/Upsert" as const
+  constructor(
+    readonly type: string,
+    readonly key: string,
+    readonly value: V,
+    readonly txid: Option.Option<string>,
+    readonly timestamp: Option.Option<string>,
+  ) {}
+}
+
 export class Delete<V> {
   readonly _tag = "State/Delete" as const
   constructor(
@@ -55,7 +66,7 @@ export class Reset {
   constructor(readonly offset: Option.Option<DurableStream.Offset>) {}
 }
 
-export type Change<V> = Insert<V> | Update<V> | Delete<V>
+export type Change<V> = Insert<V> | Update<V> | Upsert<V> | Delete<V>
 export type Control = SnapshotStart | SnapshotEnd | Reset
 export type Event<V> = Change<V> | Control
 
@@ -98,6 +109,15 @@ export interface Collection<V> {
     key: string,
     value: V,
     options?: UpdateOptions<V>,
+  ) => Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient>
+  /**
+   * Insert-or-update: applies the value regardless of whether the key
+   * already exists. Materializes as `HashMap.set`; emits a `Upsert` event.
+   */
+  readonly upsert: (
+    key: string,
+    value: V,
+    options?: WriteOptions,
   ) => Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient>
   readonly delete: (
     key: string,

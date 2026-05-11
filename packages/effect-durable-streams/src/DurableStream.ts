@@ -1,5 +1,13 @@
 import type { HttpClient } from "@effect/platform"
-import type { Brand, Effect, Schema, Scope, Sink, Stream } from "effect"
+import type {
+  Brand,
+  Effect,
+  Schedule,
+  Schema,
+  Scope,
+  Sink,
+  Stream,
+} from "effect"
 import type {
   Conflict,
   Gone,
@@ -39,9 +47,54 @@ export interface HeadersRecord {
   readonly [name: string]: HeaderValue
 }
 
+/**
+ * Returned by an `ErrorHandler` to retry the failed operation with merged
+ * headers. Returning `undefined` (or omitting return) propagates the error.
+ */
+export interface RetryOpts {
+  readonly headers?: HeadersRecord
+}
+
+/**
+ * Hook invoked AFTER transport-level retries have exhausted. The caller
+ * decides whether to retry the operation with mutated headers (typical
+ * use: refresh an auth token on 401, renew a signed URL on 403). Return
+ * `RetryOpts` to retry, `undefined` to propagate.
+ *
+ * The handler may itself fail — in that case the original error propagates
+ * along with the handler failure. The handler is invoked with the original
+ * error in the `unknown` slot; pattern-match on `_tag` for typed errors.
+ */
+export type ErrorHandler = (
+  error: unknown,
+) => Effect.Effect<RetryOpts | undefined | void, never, never>
+
 export interface Endpoint {
   readonly url: string | URL
   readonly headers?: HeadersRecord
+  /**
+   * Optional handler invoked after transport retries exhaust. Returning
+   * `RetryOpts` retries the failed operation with merged headers; returning
+   * `undefined` (or omitting return) propagates the error to the caller.
+   *
+   * Retries via the handler are bounded by `onErrorMaxRetries` (default 4)
+   * to prevent runaway loops.
+   */
+  readonly onError?: ErrorHandler
+
+  /**
+   * Cap on consecutive `onError` retries before the original error
+   * propagates. Defaults to 4.
+   */
+  readonly onErrorMaxRetries?: number
+
+  /**
+   * Schedule used for transport-level retries on transient HTTP errors
+   * (network failures, ECONNRESET, etc.). Defaults to exponential backoff
+   * starting at 100ms with up to 4 retries, capped at 3s spacing. Pass
+   * any `Effect.Schedule` for custom policy.
+   */
+  readonly retrySchedule?: Schedule.Schedule<unknown, unknown, never>
 }
 
 export interface HeadResult {
@@ -50,6 +103,17 @@ export interface HeadResult {
   readonly streamClosed: boolean
   readonly ttlSeconds: number | undefined
   readonly expiresAt: string | undefined
+  /**
+   * ETag header value, if the server returns one. Pairs with `If-None-Match`
+   * on subsequent catch-up reads for CDN-aware caching.
+   */
+  readonly etag: string | undefined
+  /**
+   * `Cache-Control` header value as-is, e.g. `public, max-age=60,
+   * stale-while-revalidate=300`. Callers can parse for their own cache
+   * policy decisions.
+   */
+  readonly cacheControl: string | undefined
 }
 
 export interface CreateOptions {
