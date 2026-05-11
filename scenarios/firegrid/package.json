@@ -14,6 +14,9 @@
     "@firegrid/durable-streams": "workspace:*",
     "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
+    "@effect/platform": "^0.96.0",
+    "@effect/platform-node": "^0.106.0",
+    "effect-durable-streams": "workspace:*",
     "effect": "^3.18.0"
   },
   "devDependencies": {
