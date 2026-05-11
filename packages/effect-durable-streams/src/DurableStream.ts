@@ -146,6 +146,16 @@ export interface ProducerOptions {
    * a misconfigured proxy stripping the `Producer-Epoch` header). Default 16.
    */
   readonly maxAutoClaimAttempts?: number
+
+  /**
+   * Bounded capacity of the in-memory append queue. `append` backpressures
+   * (suspends) when the queue is full, so callers cannot accumulate
+   * unbounded work after a downstream stall. Default 10_000.
+   *
+   * After the first non-recoverable send failure the queue is shut down —
+   * subsequent `append` calls fail immediately with the captured failure.
+   */
+  readonly maxQueueSize?: number
 }
 
 /**

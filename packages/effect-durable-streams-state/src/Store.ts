@@ -5,6 +5,7 @@ import {
   Effect,
   HashMap,
   Option,
+  type ParseResult,
   PubSub,
   Ref,
   Schema,
@@ -14,6 +15,7 @@ import {
 import * as P from "./Protocol.ts"
 import type {
   Collection,
+  CollectionWriteFailure,
   DeleteOptions,
   Event,
   MakeOptions,
@@ -42,30 +44,39 @@ const toOption = <A>(v: A | undefined | null): Option.Option<A> =>
 const toOffset = (v: string | undefined): Option.Option<DurableStream.Offset> =>
   v === undefined ? Option.none() : Option.some(DurableStream.Offset(v))
 
-const toChangeEvent = <V>(msg: P.ChangeMessage<V>): Event<V> => {
+/**
+ * Build a typed Event from a decoded change message. `value` must already
+ * be decoded through the collection's schema by the caller (this layer is
+ * pure shape-shifting; it does not validate).
+ */
+const buildChangeEvent = <V>(
+  msg: P.ChangeMessage<unknown>,
+  value: V | undefined,
+  oldValue: V | undefined,
+): Event<V> => {
   const txid = toOption(msg.headers.txid)
   const timestamp = toOption(msg.headers.timestamp)
   const type = msg.type
   const key = msg.key
   switch (msg.headers.operation) {
     case "insert":
-      return new Insert<V>({ type, key, value: msg.value as V, txid, timestamp })
+      return new Insert<V>({ type, key, value: value as V, txid, timestamp })
     case "update":
       return new Update<V>({
         type,
         key,
-        value: msg.value as V,
-        oldValue: toOption(msg.old_value),
+        value: value as V,
+        oldValue: toOption(oldValue),
         txid,
         timestamp,
       })
     case "upsert":
-      return new Upsert<V>({ type, key, value: msg.value as V, txid, timestamp })
+      return new Upsert<V>({ type, key, value: value as V, txid, timestamp })
     case "delete":
       return new Delete<V>({
         type,
         key,
-        oldValue: toOption(msg.old_value),
+        oldValue: toOption(oldValue),
         txid,
         timestamp,
       })
@@ -84,9 +95,6 @@ const toControlEvent = (msg: P.ControlMessage): Event<unknown> => {
   }
 }
 
-const toEvent = (msg: P.Message<unknown>): Event<unknown> =>
-  P.isControlMessage(msg) ? toControlEvent(msg) : toChangeEvent(msg)
-
 // ============================================================================
 // Per-type Collection implementation
 // ============================================================================
@@ -97,6 +105,7 @@ interface CollectionImpl<V> extends Collection<V> {
 
 interface RegistryEntry {
   readonly schema: Schema.Schema<unknown, unknown>
+  readonly decodeValue: (raw: unknown) => Effect.Effect<unknown, ParseResult.ParseError>
   readonly collection: CollectionImpl<unknown>
   readonly publish: (event: Event<unknown>) => Effect.Effect<void>
 }
@@ -120,29 +129,15 @@ const applyEvent = <V>(
   }
 }
 
-const makeChangeStream = <V>(
-  type: string,
-  schema: Schema.Schema<V, unknown>,
-  endpoint: DurableStream.Endpoint,
-  producer: DurableStream.Producer<P.ChangeMessage<V>>,
-): { changes: Stream.Stream<Event<V>, DurableStream.ReadError, Scope.Scope>; write: (msg: P.ChangeMessage<V>) => Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient> } => {
-  void schema
-  void type
-  void endpoint
-  return {
-    changes: Stream.never,
-    write: (msg) => producer.append(msg),
-  }
-}
-
-void makeChangeStream
-
 const makeCollection = <V, VI>(
   type: string,
   schema: Schema.Schema<V, VI>,
-  endpoint: DurableStream.Endpoint,
-  producer: DurableStream.Producer<P.ChangeMessage<V>>,
-): Effect.Effect<{ collection: CollectionImpl<V>; publish: (e: Event<V>) => Effect.Effect<void> }, never, Scope.Scope> =>
+  producer: DurableStream.Producer<P.ChangeMessage<unknown>>,
+): Effect.Effect<
+  { collection: CollectionImpl<V>; publish: (e: Event<V>) => Effect.Effect<void> },
+  never,
+  Scope.Scope
+> =>
   Effect.gen(function* () {
     const state = yield* Ref.make<HashMap.HashMap<string, V>>(HashMap.empty())
     const hub = yield* PubSub.unbounded<Event<V>>()
@@ -150,27 +145,46 @@ const makeCollection = <V, VI>(
     const publish = (event: Event<V>): Effect.Effect<void> =>
       applyEvent(state, event).pipe(Effect.zipRight(PubSub.publish(hub, event)), Effect.asVoid)
 
+    const encodeValue = Schema.encodeUnknown(schema)
+
     const writeChange = (
       operation: P.Operation,
       key: string,
       value: V | undefined,
       oldValue: V | undefined,
       opts: WriteOptions | UpdateOptions<V> | DeleteOptions<V> | undefined,
-    ): Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient> => {
-      const headers: P.ChangeMessage<V>["headers"] = {
-        operation,
-        ...(opts?.txid !== undefined ? { txid: opts.txid } : {}),
-        ...(opts?.timestamp !== undefined ? { timestamp: opts.timestamp } : {}),
-      }
-      const msg: P.ChangeMessage<V> = {
-        type,
-        key,
-        ...(value !== undefined ? { value } : {}),
-        ...(oldValue !== undefined ? { old_value: oldValue } : {}),
-        headers,
-      }
-      return producer.append(msg)
-    }
+    ): Effect.Effect<void, CollectionWriteFailure, HttpClient.HttpClient> =>
+      Effect.gen(function* () {
+        // Encode both value and old_value through the collection's schema
+        // before they hit the wire. An encode failure surfaces as a typed
+        // DecodeError so the caller cannot accidentally ship a value that
+        // doesn't conform to the collection's declared shape.
+        const encodedValue = value === undefined
+          ? undefined
+          : yield* encodeValue(value).pipe(
+              Effect.mapError((cause) => new DurableStream.DecodeError({ cause, raw: value })),
+            )
+        const encodedOldValue = oldValue === undefined
+          ? undefined
+          : yield* encodeValue(oldValue).pipe(
+              Effect.mapError(
+                (cause) => new DurableStream.DecodeError({ cause, raw: oldValue }),
+              ),
+            )
+        const headers: P.ChangeMessage<unknown>["headers"] = {
+          operation,
+          ...(opts?.txid !== undefined ? { txid: opts.txid } : {}),
+          ...(opts?.timestamp !== undefined ? { timestamp: opts.timestamp } : {}),
+        }
+        const msg: P.ChangeMessage<unknown> = {
+          type,
+          key,
+          ...(encodedValue !== undefined ? { value: encodedValue } : {}),
+          ...(encodedOldValue !== undefined ? { old_value: encodedOldValue } : {}),
+          headers,
+        }
+        return yield* producer.append(msg)
+      })
 
     const collection: CollectionImpl<V> = {
       _state: state,
@@ -196,7 +210,6 @@ const makeCollection = <V, VI>(
       changes: Stream.fromPubSub(hub),
     }
 
-    void schema
     return { collection, publish }
   })
 
@@ -204,13 +217,26 @@ const makeCollection = <V, VI>(
 // State (multi-type container)
 // ============================================================================
 
+/**
+ * Pre-registration buffer entry: a raw wire message captured in arrival
+ * order so a late-registered collection can replay the full prefix of its
+ * type with the correct decoding schema applied.
+ *
+ * Control messages are kept until the buffer ages them off — every newly
+ * registered collection receives the full prefix of relevant controls so
+ * snapshot/reset boundaries that arrived before registration still apply.
+ */
+type LogEntry =
+  | { readonly kind: "change"; readonly msg: P.ChangeMessage<unknown> }
+  | { readonly kind: "control"; readonly msg: P.ControlMessage }
+
 export const make = (
   opts: MakeOptions,
 ): Effect.Effect<State, DurableStream.TransportError, HttpClient.HttpClient | Scope.Scope> =>
   Effect.gen(function* () {
-    // The wire-format producer is parameterized by the schema-less change
-    // message (each type's collection encodes its own value through its
-    // schema before reaching the producer).
+    // The wire-format producer is parameterized by `Schema.Unknown` for the
+    // value field — each per-type collection encodes through its OWN schema
+    // before reaching the producer (see `makeCollection.writeChange`).
     const wireSchema = P.Message(Schema.Unknown)
     const stream = DurableStream.define({
       endpoint: opts.endpoint,
@@ -221,105 +247,219 @@ export const make = (
       producerId: opts.producerId,
       autoClaim: true,
     })
+    // Cast to the wire-message-only view used by collections. The producer
+    // accepts unknown-shaped values; per-collection encoding happens in
+    // `writeChange`, so this is sound.
+    const wireProducer = producer as unknown as DurableStream.Producer<P.ChangeMessage<unknown>>
 
     // Demux: subscribe to live reads, decode each message to an Event, and
     // dispatch to the matching collection (by type). Maintain a registry so
     // `collection()` returns the same materialization for repeated calls.
     //
-    // Late-registered collections must see the full history of their type
-    // (per the review of PR #148). To make that work we keep two things:
-    //
-    //   - per-type `buffered`: events received BEFORE any collection() has
-    //     registered that type. On registration the buffer drains into the
-    //     new collection, in arrival order, atomically (under `mutex`).
-    //   - control events: applied to every registered collection AND every
-    //     later-registered one, so a late collection sees snapshot
-    //     boundaries / reset markers that arrived before it existed.
-    //
-    // `mutex` serializes dispatch and registration. The dispatch fiber and
-    // the user's `collection()` call therefore never interleave in a way
-    // that would let a new event slip past the replay loop.
+    // Late-registered collections must see the full prefix of their type
+    // AND of any control events that arrived before registration, in the
+    // ORIGINAL arrival order (controls interleaved with typed events). The
+    // previous design buffered typed events and controls separately and
+    // replayed controls after — which loses the ordering between a Reset
+    // and the typed events around it. The fix: a single ordered log of
+    // raw wire messages, capped at `maxBufferedEvents`. On registration we
+    // walk the log filtering for (this type) ∪ (all controls), in order.
     const registry = yield* Ref.make<HashMap.HashMap<string, RegistryEntry>>(HashMap.empty())
-    const buffered = yield* Ref.make<HashMap.HashMap<string, Array<Event<unknown>>>>(HashMap.empty())
-    const controlLog = yield* Ref.make<Array<Event<unknown>>>([])
+    const log = yield* Ref.make<ReadonlyArray<LogEntry>>([])
     const eventsHub = yield* PubSub.unbounded<Event<unknown>>()
     const mutex = yield* Effect.makeSemaphore(1)
 
+    // Two caps share a single ordered log. The log records both change and
+    // control entries in arrival order so a late-registered collection
+    // replays its type's events INTERLEAVED with the controls that
+    // happened between them — a Reset between two updates replays in the
+    // correct position. Caps are enforced per-kind (per-type for changes,
+    // shared for controls) to match the legacy API contract.
     const perTypeCap = opts.maxBufferedEventsPerType ?? 10_000
     const controlCap = opts.maxBufferedControlEvents ?? 1_024
-    // Track types we've already warned about so we log the overflow notice
-    // once per type instead of every event.
     const overflowWarned = yield* Ref.make<HashMap.HashMap<string, true>>(HashMap.empty())
+    const controlOverflowWarned = yield* Ref.make(false)
 
-    const dispatch = (event: Event<unknown>): Effect.Effect<void> =>
+    /**
+     * Capture the failure of the background materialization fiber so it is
+     * NOT silently swallowed. Collection reads remain failure-free for
+     * source-compatibility, but callers can poll `State.failure` or merge
+     * `State.events` into their pipeline to observe the typed failure.
+     */
+    const materializationFailure =
+      yield* Ref.make<Option.Option<DurableStream.ReadError>>(Option.none())
+
+    const recordFailure = (e: DurableStream.ReadError): Effect.Effect<void> =>
+      Ref.update(materializationFailure, (cur) =>
+        Option.isSome(cur) ? cur : Option.some(e),
+      )
+
+    /**
+     * Decode `value` and `old_value` of a change message through the
+     * supplied schema decoder. Either may be absent on the wire (`undefined`
+     * / `null`). Returns the decoded pair or records a materialization
+     * failure if either side fails to decode.
+     */
+    const decodeChangePayload = (
+      msg: P.ChangeMessage<unknown>,
+      decode: (raw: unknown) => Effect.Effect<unknown, ParseResult.ParseError>,
+    ): Effect.Effect<Option.Option<{ value: unknown; oldValue: unknown }>> =>
+      Effect.gen(function* () {
+        const exit = yield* Effect.exit(
+          Effect.gen(function* () {
+            const value = msg.value === undefined || msg.value === null
+              ? undefined
+              : yield* decode(msg.value)
+            const oldValue = msg.old_value === undefined || msg.old_value === null
+              ? undefined
+              : yield* decode(msg.old_value)
+            return { value, oldValue }
+          }),
+        )
+        if (exit._tag === "Failure") {
+          yield* recordFailure(
+            new DurableStream.DecodeError({ cause: exit.cause, raw: msg }),
+          )
+          return Option.none()
+        }
+        return Option.some(exit.value)
+      })
+
+    /**
+     * Drop the oldest entry of a given kind from the log. We can't blindly
+     * drop the oldest of ANY kind because that would silently lose
+     * snapshot/reset semantics when only changes overflow.
+     */
+    const dropOldest = (
+      xs: ReadonlyArray<LogEntry>,
+      predicate: (e: LogEntry) => boolean,
+    ): ReadonlyArray<LogEntry> => {
+      const idx = xs.findIndex(predicate)
+      if (idx < 0) return xs
+      return [...xs.slice(0, idx), ...xs.slice(idx + 1)]
+    }
+
+    const countWhere = (
+      xs: ReadonlyArray<LogEntry>,
+      predicate: (e: LogEntry) => boolean,
+    ): number => {
+      let n = 0
+      for (const e of xs) if (predicate(e)) n++
+      return n
+    }
+
+    const appendChange = (msg: P.ChangeMessage<unknown>): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const cap = perTypeCap
+        if (!Number.isFinite(cap)) {
+          yield* Ref.update(log, (xs) => [...xs, { kind: "change" as const, msg }])
+          return
+        }
+        yield* Ref.update(log, (xs) => {
+          const sameType = (e: LogEntry) =>
+            e.kind === "change" && e.msg.type === msg.type
+          const trimmed = countWhere(xs, sameType) >= cap ? dropOldest(xs, sameType) : xs
+          return [...trimmed, { kind: "change" as const, msg }]
+        })
+        const currentSame = countWhere(yield* Ref.get(log), (e) =>
+          e.kind === "change" && e.msg.type === msg.type,
+        )
+        if (currentSame >= cap) {
+          const warned = yield* Ref.get(overflowWarned)
+          if (Option.isNone(HashMap.get(warned, msg.type))) {
+            yield* Effect.logWarning(
+              `[effect-durable-streams-state] type "${msg.type}" pre-registration buffer reached ${cap} events; dropping oldest. Register collection({ type: "${msg.type}" }) earlier or raise maxBufferedEventsPerType.`,
+            )
+            yield* Ref.update(overflowWarned, HashMap.set(msg.type, true))
+          }
+        }
+      })
+
+    const appendControl = (msg: P.ControlMessage): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const cap = controlCap
+        if (!Number.isFinite(cap)) {
+          yield* Ref.update(log, (xs) => [...xs, { kind: "control" as const, msg }])
+          return
+        }
+        yield* Ref.update(log, (xs) => {
+          const isControl = (e: LogEntry) => e.kind === "control"
+          const trimmed = countWhere(xs, isControl) >= cap ? dropOldest(xs, isControl) : xs
+          return [...trimmed, { kind: "control" as const, msg }]
+        })
+        const ctrlCount = countWhere(yield* Ref.get(log), (e) => e.kind === "control")
+        if (ctrlCount >= cap) {
+          const warned = yield* Ref.get(controlOverflowWarned)
+          if (!warned) {
+            yield* Effect.logWarning(
+              `[effect-durable-streams-state] pre-registration control buffer reached ${cap} entries; dropping oldest. Raise maxBufferedControlEvents if late registrations need older snapshot/reset boundaries.`,
+            )
+            yield* Ref.set(controlOverflowWarned, true)
+          }
+        }
+      })
+
+    const dispatchChange = (msg: P.ChangeMessage<unknown>): Effect.Effect<void> =>
       mutex.withPermits(1)(
         Effect.gen(function* () {
-          yield* PubSub.publish(eventsHub, event)
-          if (
-            event._tag === "State/Insert" ||
-            event._tag === "State/Update" ||
-            event._tag === "State/Upsert" ||
-            event._tag === "State/Delete"
-          ) {
-            const reg = yield* Ref.get(registry)
-            const entry = HashMap.get(reg, event.type)
-            if (Option.isSome(entry)) {
-              yield* entry.value.publish(event)
-            } else {
-              // No collection yet for this type — buffer for future replay,
-              // capped at `perTypeCap` (FIFO drop).
-              const type = event.type
-              yield* Ref.update(buffered, (m) => {
-                const list = Option.getOrElse(
-                  HashMap.get(m, type),
-                  () => [] as Array<Event<unknown>>,
-                )
-                const next = list.length >= perTypeCap
-                  ? [...list.slice(list.length - perTypeCap + 1), event]
-                  : [...list, event]
-                return HashMap.set(m, type, next)
-              })
-              if (Number.isFinite(perTypeCap)) {
-                const list = Option.getOrElse(
-                  HashMap.get(yield* Ref.get(buffered), type),
-                  () => [] as Array<Event<unknown>>,
-                )
-                if (list.length >= perTypeCap) {
-                  const warned = yield* Ref.get(overflowWarned)
-                  if (Option.isNone(HashMap.get(warned, type))) {
-                    yield* Effect.logWarning(
-                      `[effect-durable-streams-state] type "${type}" pre-registration buffer reached ${perTypeCap} events; dropping oldest. Register collection({ type: "${type}" }) earlier or raise maxBufferedEventsPerType.`,
-                    )
-                    yield* Ref.update(overflowWarned, HashMap.set(type, true))
-                  }
-                }
-              }
-            }
+          const reg = yield* Ref.get(registry)
+          const entry = HashMap.get(reg, msg.type)
+          if (Option.isSome(entry)) {
+            // Registered type — decode value/old_value through the
+            // collection's schema before applying. A decode failure is
+            // materialization-fatal (we can't trust state after a missing
+            // event) and is captured via `State.failure` / `State.events`.
+            const decoded = yield* decodeChangePayload(msg, entry.value.decodeValue)
+            if (Option.isNone(decoded)) return
+            const event = buildChangeEvent<unknown>(msg, decoded.value.value, decoded.value.oldValue)
+            yield* entry.value.publish(event)
+            // Publish the raw-form event (value left as wire-unknown) on
+            // the multi-type events hub so observers don't need to know
+            // which schema applies.
+            const rawEvent = buildChangeEvent<unknown>(msg, msg.value ?? undefined, msg.old_value ?? undefined)
+            yield* PubSub.publish(eventsHub, rawEvent)
           } else {
-            // Control event → broadcast to currently-registered collections
-            // AND record so future-registered collections replay it.
-            // controlLog is capped at `controlCap` to prevent unbounded
-            // growth on streams with frequent snapshot/reset markers.
-            const reg = yield* Ref.get(registry)
-            for (const entry of HashMap.values(reg)) {
-              yield* entry.publish(event)
-            }
-            yield* Ref.update(controlLog, (xs) =>
-              xs.length >= controlCap
-                ? [...xs.slice(xs.length - controlCap + 1), event]
-                : [...xs, event],
-            )
+            // Unregistered type: buffer raw so a late registration can
+            // decode with the correct schema.
+            yield* appendChange(msg)
+            const rawEvent = buildChangeEvent<unknown>(msg, msg.value ?? undefined, msg.old_value ?? undefined)
+            yield* PubSub.publish(eventsHub, rawEvent)
           }
         }),
       )
 
+    const dispatchControl = (msg: P.ControlMessage): Effect.Effect<void> =>
+      mutex.withPermits(1)(
+        Effect.gen(function* () {
+          const event = toControlEvent(msg)
+          yield* PubSub.publish(eventsHub, event)
+          const reg = yield* Ref.get(registry)
+          for (const e of HashMap.values(reg)) {
+            yield* e.publish(event)
+          }
+          // Always append controls to the log: a later-registered
+          // collection MUST see every prior control to track snapshot/reset
+          // boundaries correctly. Controls roll off only when the dedicated
+          // controlCap fills (FIFO drop of oldest control).
+          yield* appendControl(msg)
+        }),
+      )
+
+    const dispatch = (raw: P.Message<unknown>): Effect.Effect<void> =>
+      P.isControlMessage(raw)
+        ? dispatchControl(raw)
+        : dispatchChange(raw)
+
     // Run the materialization fiber in the scope. Start at the beginning so
-    // we replay history first, then follow live.
+    // we replay history first, then follow live. Failures of the read
+    // stream are CAPTURED in `materializationFailure` instead of silently
+    // swallowed — collections would otherwise return stale data forever
+    // after a transport/decoded failure killed the fiber.
     yield* stream
       .read({ live: true, offset: DurableStream.Offset("-1") })
       .pipe(
-        Stream.runForEach((raw) => dispatch(toEvent(raw))),
-        Effect.catchAll(() => Effect.void),
+        Stream.runForEach((raw) => dispatch(raw)),
+        Effect.catchAll((e) => recordFailure(e)),
         Effect.forkScoped,
       )
 
@@ -337,33 +477,42 @@ export const make = (
             }
             return existing.value.collection as unknown as Collection<V>
           }
-          // Cast the wire producer to a typed view; each collection only ever
-          // submits messages it owns, so the cast is safe at the call sites.
-          const typedProducer = producer as unknown as DurableStream.Producer<P.ChangeMessage<V>>
-          const made = yield* makeCollection(input.type, input.schema, opts.endpoint, typedProducer)
-          // Replay buffered history for this type FIRST so the collection's
-          // materialized view is up-to-date before any caller observes it.
-          // Control events from before registration are applied too, in
-          // arrival order relative to typed events of this type (we keep a
-          // single log of controls, applied last — which is conservative;
-          // snapshot/reset markers still surface to subscribers).
-          const typedBuffer = Option.getOrElse(
-            HashMap.get(yield* Ref.get(buffered), input.type),
-            () => [] as Array<Event<unknown>>,
+          const made = yield* makeCollection(input.type, input.schema, wireProducer)
+          const decodeValue = Schema.decodeUnknown(input.schema) as unknown as (
+            raw: unknown,
+          ) => Effect.Effect<unknown, ParseResult.ParseError>
+          // Walk the log in arrival order, replaying (this-type changes) ∪
+          // (all controls). A decode failure during replay is captured the
+          // same way as a live-stream decode failure (materialization
+          // failure observable via `State.failure` / `State.events`).
+          const history = yield* Ref.get(log)
+          for (const entry of history) {
+            if (entry.kind === "control") {
+              const event = toControlEvent(entry.msg)
+              yield* made.publish(event as Event<V>)
+              continue
+            }
+            if (entry.msg.type !== input.type) continue
+            const decoded = yield* decodeChangePayload(entry.msg, decodeValue)
+            if (Option.isNone(decoded)) continue
+            const event = buildChangeEvent<V>(
+              entry.msg,
+              decoded.value.value as V | undefined,
+              decoded.value.oldValue as V | undefined,
+            )
+            yield* made.publish(event)
+          }
+          // Drop replayed change entries for this type — they're now
+          // applied in the new collection. Keep control entries so a
+          // future-registered type still sees them.
+          yield* Ref.update(log, (xs) =>
+            xs.filter((e) => e.kind === "control" || e.msg.type !== input.type),
           )
-          for (const e of typedBuffer) {
-            yield* made.publish(e as Event<V>)
-          }
-          yield* Ref.update(buffered, HashMap.remove(input.type))
-          // Replay accumulated control events so the collection sees prior
-          // snapshot/reset boundaries.
-          for (const e of yield* Ref.get(controlLog)) {
-            yield* made.publish(e as Event<V>)
-          }
           yield* Ref.update(
             registry,
             HashMap.set(input.type, {
               schema: input.schema as Schema.Schema<unknown, unknown>,
+              decodeValue,
               collection: made.collection as unknown as CollectionImpl<unknown>,
               publish: made.publish as (e: Event<unknown>) => Effect.Effect<void>,
             }),
@@ -372,9 +521,31 @@ export const make = (
         }),
       )
 
+    // `events` fails when the materialization fiber records a failure, so
+    // a long-running consumer can observe transport/decode death rather
+    // than silently going idle. The PubSub continues to publish until that
+    // moment; after a failure is recorded the merged failure stream wins.
+    const eventsStream: Stream.Stream<
+      Event<unknown>,
+      DurableStream.ReadError,
+      Scope.Scope
+    > = Stream.fromPubSub(eventsHub).pipe(
+      Stream.interruptWhen(
+        Ref.get(materializationFailure).pipe(
+          Effect.flatMap(
+            Option.match({
+              onNone: () => Effect.never,
+              onSome: (e) => Effect.fail(e),
+            }),
+          ),
+        ),
+      ),
+    )
+
     return {
       collection,
-      events: Stream.fromPubSub(eventsHub),
+      events: eventsStream,
+      failure: Ref.get(materializationFailure),
     } satisfies State
   })
 

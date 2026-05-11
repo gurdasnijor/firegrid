@@ -49,11 +49,26 @@ const isClosed = (res: HttpClientResponse.HttpClientResponse): boolean =>
 
 const isTransient = (e: HttpClientError): boolean => e._tag === "RequestError"
 
+// Exponential backoff (100ms, 200ms, 400ms, ...) capped at 3s per attempt,
+// limited to 4 total retries.
+//
+// - `Schedule.either(spaced(...))` (a.k.a. `union`) continues while either
+//   side continues, taking the MIN delay. exponential is unbounded, spaced
+//   is constant — `min(exp_n, 3s)` gives the per-step cap.
+// - `Schedule.intersect(recurs(n))` continues while BOTH sides continue,
+//   taking the MAX delay. recurs(n) has delay 0, so the delay stays the
+//   capped exponential, but the schedule stops after n recurrences.
+//
+// The previous shape used `Schedule.compose(recurs)` which selects the
+// SHORTER delay — composing with recurs (delay 0) collapses the entire
+// backoff to zero-delay retries, then `either(spaced)` re-extends the
+// schedule forever every 3s. That's not what "exponential capped at 3s,
+// 4 retries" means.
 const defaultRetrySchedule = Schedule.exponential("100 millis").pipe(
-  // eslint-disable-next-line local/no-fixed-polling -- recurs is a retry count, not durable-runtime polling.
-  Schedule.compose(Schedule.recurs(4)),
-  // eslint-disable-next-line local/no-fixed-polling -- spaced is a retry-backoff floor, not durable-runtime polling.
+  // eslint-disable-next-line local/no-fixed-polling -- spaced is a per-step cap on exponential, not durable-runtime polling.
   Schedule.either(Schedule.spaced("3 seconds")),
+  // eslint-disable-next-line local/no-fixed-polling -- recurs is a retry count, not durable-runtime polling.
+  Schedule.intersect(Schedule.recurs(4)),
 )
 
 const scheduleFor = (endpoint: Endpoint): Schedule.Schedule<unknown, unknown, never> =>

@@ -66,6 +66,17 @@ export class SchemaConflict {
   constructor(readonly type: string) {}
 }
 
+/**
+ * Errors a collection write can produce. Producer failures (transport,
+ * stream lifecycle, sequencing) AND schema encode failures — the latter
+ * happen when the supplied value fails to encode through the collection's
+ * declared schema, which is checked at the API boundary BEFORE the wire
+ * write is issued.
+ */
+export type CollectionWriteFailure =
+  | DurableStream.ProducerFailure
+  | DurableStream.DecodeError
+
 export interface Collection<V> {
   readonly type: string
   readonly get: (key: string) => Effect.Effect<Option.Option<V>>
@@ -78,12 +89,12 @@ export interface Collection<V> {
     key: string,
     value: V,
     options?: WriteOptions,
-  ) => Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient>
+  ) => Effect.Effect<void, CollectionWriteFailure, HttpClient.HttpClient>
   readonly update: (
     key: string,
     value: V,
     options?: UpdateOptions<V>,
-  ) => Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient>
+  ) => Effect.Effect<void, CollectionWriteFailure, HttpClient.HttpClient>
   /**
    * Insert-or-update: applies the value regardless of whether the key
    * already exists. Materializes as `HashMap.set`; emits a `Upsert` event.
@@ -92,11 +103,11 @@ export interface Collection<V> {
     key: string,
     value: V,
     options?: WriteOptions,
-  ) => Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient>
+  ) => Effect.Effect<void, CollectionWriteFailure, HttpClient.HttpClient>
   readonly delete: (
     key: string,
     options?: DeleteOptions<V>,
-  ) => Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient>
+  ) => Effect.Effect<void, CollectionWriteFailure, HttpClient.HttpClient>
   readonly changes: Stream.Stream<Event<V>, DurableStream.ReadError, Scope.Scope>
 }
 
@@ -106,6 +117,13 @@ export interface State {
     readonly schema: Schema.Schema<V, VI>
   }) => Effect.Effect<Collection<V>, SchemaConflict, HttpClient.HttpClient | Scope.Scope>
   readonly events: Stream.Stream<Event<unknown>, DurableStream.ReadError, Scope.Scope>
+  /**
+   * Current materialization failure, if the background read/decode fiber
+   * has died. Polling-style escape hatch for callers who don't want to
+   * subscribe to `events` just to observe failure. Returns `Option.none()`
+   * while the fiber is healthy.
+   */
+  readonly failure: Effect.Effect<Option.Option<DurableStream.ReadError>>
 }
 
 export interface MakeOptions {

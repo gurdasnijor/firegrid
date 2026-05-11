@@ -545,6 +545,99 @@ describe("Phase 1 retention and lifecycle", () => {
   })
 })
 
+describe("Phase 1 producer eager-emission semantics", () => {
+  it("a queued burst is emitted without waiting the full lingerMs", async () => {
+    // Append a burst that fully fills a batch BEFORE flush is called. With
+    // the previous `groupedWithin(maxBatch, linger)` drain we paid the full
+    // `lingerMs` even on a burst — eager emission should send immediately.
+    // We assert by bounding wall-clock time: 50 events with linger=200ms
+    // and a generous batch cap should finish in well under one linger
+    // window if the eager path is wired up.
+    const url = server.streamUrl("eager-burst")
+    const s = DurableStream.define({ endpoint: { url }, schema: Message })
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* s.create({ contentType: "application/json" })
+        const p = yield* s.producer({
+          producerId: "eager-burst",
+          epoch: 0,
+          // Wide enough that 50 items fit in a single batch, so eager
+          // emission of the burst yields exactly one HTTP send.
+          maxBatchSize: 1000,
+          // Tall linger amplifies the regression: if we wait it, the
+          // assertion below fails by an order of magnitude.
+          lingerMs: 200,
+        })
+        const start = Date.now()
+        for (let i = 0; i < 50; i++) {
+          yield* p.append({ n: i })
+        }
+        yield* p.flush
+        const elapsed = Date.now() - start
+        // Pre-eager behavior: ~200ms (full linger). Eager: ~5-20ms (just
+        // the HTTP round trip). Use 150ms as a comfortable upper bound.
+        expect(elapsed).toBeLessThan(150)
+
+        const items = yield* s.collect
+        expect(items.length).toBe(50)
+      }),
+    )
+  }, 15000)
+})
+
+describe("Phase 1 producer queue + terminal-failure semantics", () => {
+  it("after a terminal failure, subsequent appends fail immediately", async () => {
+    // Drive a non-recoverable StaleEpoch with autoClaim disabled, then
+    // confirm that the next `append` short-circuits with the same typed
+    // failure rather than silently enqueueing more work.
+    const url = server.streamUrl("terminal-fail")
+    const s = DurableStream.define({ endpoint: { url }, schema: Message })
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* s.create({ contentType: "application/json" })
+
+        // Writer A claims epoch 5 first.
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const a = yield* s.producer({
+              producerId: "term",
+              epoch: 5,
+              lingerMs: 5,
+              maxBatchSize: 1,
+            })
+            yield* a.append({ n: 0 })
+            yield* a.flush
+          }),
+        )
+
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const b = yield* s.producer({
+              producerId: "term",
+              epoch: 0,
+              autoClaim: false,
+              lingerMs: 5,
+              maxBatchSize: 1,
+              maxQueueSize: 4,
+            })
+            // First append triggers the send → 403 → StaleEpoch recorded.
+            yield* b.append({ n: 1 })
+            const flushExit = yield* Effect.exit(b.flush)
+            expect(flushExit._tag).toBe("Failure")
+
+            // Second append should fail fast, NOT block on the bounded queue
+            // or accept silently.
+            const appendExit = yield* Effect.exit(b.append({ n: 2 }))
+            expect(appendExit._tag).toBe("Failure")
+          }),
+        )
+      }),
+    )
+  }, 15000)
+})
+
 // `Chunk` is needed by the type signature of Stream operators; keep it
 // imported to satisfy strict lint.
 void Chunk
