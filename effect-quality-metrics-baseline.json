@@ -3,10 +3,10 @@
     "extendsErrorCount": 0,
     "processEnvOutsideBinCount": 0,
     "throwOutsideBinScriptCount": 1,
-    "forOfInPackageSourceCount": 9,
+    "forOfInPackageSourceCount": 23,
     "anyNoContextCastCount": 0,
     "nodeCryptoImportCount": 0,
-    "dataTaggedErrorDeclarationCount": 3,
+    "dataTaggedErrorDeclarationCount": 11,
     "newDurableStreamSiteCount": 1,
     "perCallLayerProvideSiteCount": 0,
     "effectOrDieSiteCount": 1
