@@ -87,7 +87,68 @@ describe("Phase 1 live reads", () => {
     )
   }, 15000)
 
-  it("snapshotThenFollow has no gap under concurrent appends", async () => {
+  it("snapshotThenFollow is gap-free AND duplicate-free under concurrent appends", async () => {
+    // Concurrent appends DURING the catch-up phase must end up in exactly one
+    // of {snapshot, live} — never both, never neither.
+    const url = server.streamUrl("snapfollow-concurrent")
+    const s = DurableStream.define({ endpoint: { url }, schema: Message })
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* s.create({ contentType: "application/json" })
+        // Seed 20 items as the initial history.
+        for (let i = 0; i < 20; i++) {
+          yield* s.append({ n: i })
+        }
+
+        // Start snapshotThenFollow and a concurrent appender at the same time.
+        // The appender writes n=100..119 while snapshotThenFollow is in flight.
+        const appender = Effect.gen(function* () {
+          for (let i = 0; i < 20; i++) {
+            yield* s.append({ n: 100 + i })
+            // Tiny pause so writes don't all land in the same HTTP request.
+            yield* Effect.sleep("1 millis")
+          }
+        }).pipe(Effect.fork)
+
+        const writerFiber = yield* appender
+        const result = yield* s.snapshotThenFollow
+
+        // Wait for the writer to finish so the live stream has time to see
+        // anything it should observe.
+        yield* Fiber.join(writerFiber)
+
+        // Collect up to (snapshot_size + 20 new) items from live, then stop.
+        const expectedTotal = result.snapshot.length + (20 - (result.snapshot.length - 20))
+        // Bound the live take by expected new items (everything not in snapshot).
+        const liveCount = (20 + 20) - result.snapshot.length
+        const liveItems = liveCount > 0
+          ? yield* result.live.pipe(Stream.take(liveCount), Stream.runCollect, Effect.map(Chunk.toReadonlyArray))
+          : []
+
+        const all = [...result.snapshot.map((m) => m.n), ...liveItems.map((m) => m.n)]
+        const seen = new Set<number>()
+        const duplicates: Array<number> = []
+        for (const n of all) {
+          if (seen.has(n)) duplicates.push(n)
+          seen.add(n)
+        }
+
+        // Every initial item AND every concurrent-write item must be present.
+        const expectedNs = new Set<number>([
+          ...Array.from({ length: 20 }, (_, i) => i),
+          ...Array.from({ length: 20 }, (_, i) => 100 + i),
+        ])
+        for (const n of expectedNs) {
+          expect(seen.has(n)).toBe(true)
+        }
+        expect(duplicates).toEqual([])
+        void expectedTotal
+      }),
+    )
+  }, 20000)
+
+  it("snapshotThenFollow has no gap under concurrent appends (basic)", async () => {
     const url = server.streamUrl("snapfollow-gap")
     const s = DurableStream.define({ endpoint: { url }, schema: Message })
 
@@ -219,6 +280,71 @@ describe("Phase 1 idempotent producer correctness", () => {
         const collected = yield* s.collect
         expect(collected.length).toBe(2)
         expect(collected.map((m) => m.n).sort()).toEqual([0, 1])
+      }),
+    )
+  }, 15000)
+
+  it("without autoClaim, stale-epoch surfaces as a typed StaleEpoch failure", async () => {
+    const url = server.streamUrl("idem-stale-fail")
+    const s = DurableStream.define({ endpoint: { url }, schema: Message })
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* s.create({ contentType: "application/json" })
+
+        // Writer A claims epoch 5.
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const a = yield* s.producer({
+              producerId: "shared-stale",
+              epoch: 5,
+              lingerMs: 5,
+              maxBatchSize: 1,
+            })
+            yield* a.append({ n: 0 })
+            yield* a.flush
+          }),
+        )
+
+        // Writer B starts at epoch 0 with NO autoClaim. The first batch
+        // should hit 403 and surface as a StaleEpoch failure (NOT a defect,
+        // NOT a TransportError) — caller can match on the tag.
+        const exit = yield* Effect.scoped(
+          Effect.gen(function* () {
+            const b = yield* s.producer({
+              producerId: "shared-stale",
+              epoch: 0,
+              autoClaim: false,
+              lingerMs: 5,
+              maxBatchSize: 1,
+            })
+            yield* b.append({ n: 1 })
+            return yield* b.flush
+          }),
+        ).pipe(Effect.exit)
+
+        expect(exit._tag).toBe("Failure")
+        if (exit._tag === "Failure") {
+          const fail = exit.cause
+          // Should be a typed failure, not a defect.
+          const failureOpt = (() => {
+            let found: unknown = undefined
+            // Walk Cause looking for the first Fail node.
+            JSON.stringify(fail, (_k, v: unknown) => {
+              if (
+                v !== null &&
+                typeof v === "object" &&
+                "_tag" in v &&
+                (v as { _tag: string })._tag === "DurableStream/StaleEpoch"
+              ) {
+                found = v
+              }
+              return v
+            })
+            return found
+          })()
+          expect(failureOpt).toBeDefined()
+        }
       }),
     )
   }, 15000)

@@ -8,8 +8,9 @@ import type {
   SnapshotResult,
 } from "./DurableStream.ts"
 import type { Gone, NotFound, ReadError, TransportError } from "./errors.ts"
+import { arrayDecoder } from "./internal/schema.ts"
 import * as Http from "./protocol/Http.ts"
-import { BEGIN, readStream } from "./protocol/Read.ts"
+import { BEGIN, catchUpAll, readStream } from "./protocol/Read.ts"
 
 export const read = <A, I>(
   opts: ReadOpts<A, I>,
@@ -29,24 +30,26 @@ export const head = (
   Http.head(endpoint)
 
 /**
- * Snapshot then follow.
+ * Snapshot then follow — no-gap, no-duplicate.
  *
- * Captures the tail offset via HEAD, collects all data up to that offset, then
- * returns a live stream from the captured offset. The split is a no-gap boundary:
- * any events appended between HEAD and the start of the live read are caught up
- * to during the collect phase (since the catch-up loop runs until upToDate).
+ * Walks the catch-up read loop to completion, capturing the precise terminal
+ * offset the server returned at the last in-progress response. Items past
+ * that offset are guaranteed not to be in the snapshot. The returned `live`
+ * stream resumes from exactly that offset, so any concurrent appends that
+ * arrive during the catch-up window are observed either fully in `snapshot`
+ * or fully in `live`, never in both.
  */
 export const snapshotThenFollow = <A, I>(
   opts: CollectOpts<A, I>,
 ): Effect.Effect<SnapshotResult<A>, ReadError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
-    const meta = yield* head(opts.endpoint)
-    const snapshot = yield* collect(opts)
+    const { items, finalOffset } = yield* catchUpAll(opts.endpoint, BEGIN)
+    const decoded = yield* arrayDecoder(opts.schema)(items)
     const live = read({
       endpoint: opts.endpoint,
       schema: opts.schema,
       live: true,
-      offset: meta.offset,
+      offset: finalOffset,
     })
-    return { snapshot, live }
+    return { snapshot: decoded, live }
   })

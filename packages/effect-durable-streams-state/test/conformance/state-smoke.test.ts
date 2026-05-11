@@ -100,6 +100,49 @@ describe("Phase 2 state smoke", () => {
     )
   }, 15000)
 
+  it("late-registered collection sees the full history of its type", async () => {
+    // Producer writes for type "user" BEFORE any collection() call. The
+    // State opens at offset 0 and starts replaying immediately. When we
+    // finally register the collection, it must materialize the full history.
+    const url = streamUrl("state-late-register")
+    await runtime(
+      DurableStream.define({ endpoint: { url }, schema: Schema.Unknown }).create({
+        contentType: "application/json",
+      }),
+    )
+
+    await runtime(
+      Effect.gen(function* () {
+        const state = yield* State.make({ endpoint: { url }, producerId: "late-1" })
+
+        // Pre-create a collection for "user", insert N entries via it.
+        // (We need _something_ to talk through the producer since the State's
+        // wire format lives in the encoded change-message form.)
+        const writer = yield* state.collection({ type: "user", schema: User })
+        for (let i = 0; i < 5; i++) {
+          yield* writer.insert(`u${i}`, { name: `n${i}`, email: `e${i}@x` })
+        }
+        yield* Effect.sleep("300 millis")
+
+        // Now spin up a SECOND State instance against the same stream,
+        // and register the collection LATE — well after replay started.
+        const state2 = yield* State.make({ endpoint: { url }, producerId: "late-2" })
+        // Give the replay fiber a chance to consume some history without a
+        // registered collection.
+        yield* Effect.sleep("300 millis")
+        const usersLate = yield* state2.collection({ type: "user", schema: User })
+
+        // After a short propagation delay, the late collection must show
+        // every entry — proving buffered events were replayed on register.
+        yield* Effect.sleep("300 millis")
+        const size = yield* usersLate.size
+        expect(size).toBe(5)
+        const first = yield* usersLate.get("u0")
+        expect(Option.isSome(first)).toBe(true)
+      }),
+    )
+  }, 20000)
+
   it("SchemaConflict on incompatible schema for existing type", async () => {
     const url = streamUrl("state-conflict")
     await runtime(

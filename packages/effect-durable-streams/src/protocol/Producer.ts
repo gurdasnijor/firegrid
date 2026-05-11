@@ -21,7 +21,7 @@ import {
   StreamClosed,
   TransportError,
 } from "../errors.ts"
-import type { WriteError } from "../errors.ts"
+import type { ProducerError, WriteError } from "../errors.ts"
 import { encodeUnsafe } from "../internal/schema.ts"
 import * as Http from "./Http.ts"
 
@@ -30,11 +30,28 @@ interface ProducerState {
   readonly lastSeq: number
 }
 
-const extractWriteError = (cause: Cause.Cause<WriteError>): WriteError => {
+type AnyProducerFailure = WriteError | ProducerError
+
+/**
+ * Reduce a Cause from a batch send to a single typed failure. Failures
+ * (Effect.fail) are surfaced as-is. Defects (Effect.die with a known
+ * ProducerError) are unwrapped to their typed form rather than being
+ * squashed into TransportError — callers can match on the tag and decide
+ * whether the producer is recoverable. Truly unexpected defects still
+ * become TransportError.
+ */
+const extractFailure = (
+  cause: Cause.Cause<AnyProducerFailure>,
+): AnyProducerFailure => {
   const fail = Cause.failureOption(cause)
   if (Option.isSome(fail)) return fail.value
-  // Defects (StaleEpoch/SequenceGap) shouldn't reach here, but fall through
-  // safely so the producer doesn't hang.
+  const defect = Cause.dieOption(cause)
+  if (Option.isSome(defect)) {
+    const d = defect.value
+    if (d instanceof StaleEpoch) return d
+    if (d instanceof SequenceGap) return d
+    return new TransportError({ cause: d })
+  }
   return new TransportError({ cause: Cause.squash(cause) })
 }
 
@@ -43,13 +60,13 @@ const sendBatch = <A, I>(
   state: Ref.Ref<ProducerState>,
   encode: (event: A) => I,
   batch: Chunk.Chunk<A>,
-): Effect.Effect<void, WriteError, HttpClient.HttpClient> =>
+): Effect.Effect<void, AnyProducerFailure, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     if (Chunk.size(batch) === 0) return
     const encoded = Chunk.toReadonlyArray(batch).map((event) => encode(event))
     const body = JSON.stringify(encoded)
 
-    const attempt = (): Effect.Effect<void, WriteError, HttpClient.HttpClient> =>
+    const attempt = (): Effect.Effect<void, AnyProducerFailure, HttpClient.HttpClient> =>
       Effect.gen(function* () {
         const current = yield* Ref.get(state)
         const nextSeq = current.lastSeq + 1
@@ -78,8 +95,10 @@ const sendBatch = <A, I>(
             yield* Ref.set(state, bumped)
             return yield* attempt()
           }
-          // eslint-disable-next-line no-restricted-syntax -- §5.2.1 invariant violation: caller has a stale epoch and no autoClaim. Recovering at this layer is impossible; surface as a defect so the host can decide.
-          return yield* Effect.die(
+          // §5.2.1 invariant violation: caller has a stale epoch and no
+          // autoClaim. Surface as a typed failure so the caller can decide
+          // whether to spin a new producer with a fresh epoch.
+          return yield* Effect.fail(
             new StaleEpoch({ currentEpoch: res.producerEpoch ?? current.epoch }),
           )
         }
@@ -87,8 +106,10 @@ const sendBatch = <A, I>(
           if (res.streamClosed) {
             return yield* Effect.fail(new StreamClosed({ finalOffset: res.nextOffset }))
           }
-          // eslint-disable-next-line no-restricted-syntax -- §5.2.1 invariant violation: client's local lastSeq diverged from the server's. Treat as a defect — flush/append cannot recover, the host decides.
-          return yield* Effect.die(
+          // §5.2.1 invariant violation: client's local lastSeq diverged from
+          // the server's. Surface as a typed failure — the caller cannot
+          // recover, but it learns what went wrong.
+          return yield* Effect.fail(
             new SequenceGap({
               expectedSeq: res.producerExpectedSeq ?? -1,
               receivedSeq: res.producerReceivedSeq ?? nextSeq,
@@ -121,7 +142,7 @@ export const make = <A, I>(
       lastSeq: -1,
     })
     const queue = yield* Queue.unbounded<A>()
-    const failure = yield* Ref.make<Option.Option<WriteError>>(Option.none())
+    const failure = yield* Ref.make<Option.Option<AnyProducerFailure>>(Option.none())
     // `offered` increments on every append; `sent` increments by batch size
     // after a POST completes (success OR failure — the failure is captured
     // separately). Flush is event-driven on `sent.changes` so it wakes up
@@ -137,7 +158,7 @@ export const make = <A, I>(
         yield* SubscriptionRef.update(sent, (n) => n + size)
         if (result._tag === "Failure") {
           yield* Ref.update(failure, (cur) =>
-            Option.isSome(cur) ? cur : Option.some(extractWriteError(result.cause)),
+            Option.isSome(cur) ? cur : Option.some(extractFailure(result.cause)),
           )
         }
       })
@@ -155,18 +176,18 @@ export const make = <A, I>(
       Effect.forkScoped,
     )
 
-    const checkFailure: Effect.Effect<void, WriteError> = Ref.get(failure).pipe(
+    const checkFailure: Effect.Effect<void, AnyProducerFailure> = Ref.get(failure).pipe(
       Effect.flatMap((opt) => Option.isSome(opt) ? Effect.fail(opt.value) : Effect.void),
     )
 
-    const append = (event: A): Effect.Effect<void, WriteError> =>
+    const append = (event: A): Effect.Effect<void, AnyProducerFailure> =>
       Effect.gen(function* () {
         yield* checkFailure
         yield* Queue.offer(queue, event)
         yield* Ref.update(offered, (n) => n + 1)
       })
 
-    const flush: Effect.Effect<void, WriteError> = Effect.gen(function* () {
+    const flush: Effect.Effect<void, AnyProducerFailure> = Effect.gen(function* () {
       // Drive off `sent.changes` — the stream emits the current value first,
       // then every update. `takeUntilEffect` exits the loop the first time
       // sent has caught up to (or surpassed) the current offered count.

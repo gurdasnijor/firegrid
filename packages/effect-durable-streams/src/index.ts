@@ -20,6 +20,7 @@ export type {
   LiveMode,
   Offset,
   Producer,
+  ProducerFailure,
   ProducerOptions,
   ReadError,
   ReadOpts,

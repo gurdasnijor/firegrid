@@ -190,16 +190,17 @@ export const getJson = (
     const body = yield* res.text.pipe(
       Effect.mapError((e) => new TransportError({ cause: e })),
     )
+    // Parse the JSON body via Effect.try so a malformed response surfaces
+    // as a typed TransportError on the error channel — never a defect.
     const items: ReadonlyArray<unknown> = body.trim() === ""
       ? []
-      : (() => {
-          try {
+      : yield* Effect.try({
+          try: (): ReadonlyArray<unknown> => {
             const parsed: unknown = JSON.parse(body)
             return Array.isArray(parsed) ? (parsed as ReadonlyArray<unknown>) : [parsed]
-          } catch (cause) {
-            throw new TransportError({ cause })
-          }
-        })()
+          },
+          catch: (cause) => new TransportError({ cause }),
+        })
     return { items, nextOffset, cursor, upToDate, streamClosed, status: 200 }
   })
 

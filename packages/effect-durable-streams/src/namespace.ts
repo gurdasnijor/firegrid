@@ -11,6 +11,7 @@ export {
   type HeaderValue,
   type LiveMode,
   type Producer,
+  type ProducerFailure,
   type ProducerOptions,
   type ReadError,
   type ReadOpts,

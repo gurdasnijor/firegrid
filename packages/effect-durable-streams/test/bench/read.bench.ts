@@ -67,7 +67,7 @@ describe(`catch-up read ${N} JSON items`, () => {
   })
 })
 
-describe(`HEAD metadata round-trip`, () => {
+describe("HEAD metadata round-trip", () => {
   bench("reference @durable-streams/client", async () => {
     const ref = new RefDurableStream({ url: populatedUrl })
     await ref.head()

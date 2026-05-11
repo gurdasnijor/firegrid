@@ -93,16 +93,16 @@ export interface Collection<V> {
     key: string,
     value: V,
     options?: WriteOptions,
-  ) => Effect.Effect<void, DurableStream.WriteError, HttpClient.HttpClient>
+  ) => Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient>
   readonly update: (
     key: string,
     value: V,
     options?: UpdateOptions<V>,
-  ) => Effect.Effect<void, DurableStream.WriteError, HttpClient.HttpClient>
+  ) => Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient>
   readonly delete: (
     key: string,
     options?: DeleteOptions<V>,
-  ) => Effect.Effect<void, DurableStream.WriteError, HttpClient.HttpClient>
+  ) => Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient>
   readonly changes: Stream.Stream<Event<V>, DurableStream.ReadError, Scope.Scope>
 }
 

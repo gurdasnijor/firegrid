@@ -121,5 +121,34 @@ export const readStream = <A, I>(
   )
 }
 
+// ============================================================================
+// Collect-all with terminal offset (used by Reader.snapshotThenFollow for a
+// no-gap, no-duplicate handoff from snapshot to live).
+//
+// Unlike `catchUpLoop`, this returns both the items and the EXACT offset the
+// server returned at the last in-progress response — guaranteed > every item
+// in the snapshot, and the natural resume point for a live read.
+// ============================================================================
+
+export const catchUpAll = (
+  endpoint: Endpoint,
+  startOffset: Offset = BEGIN,
+): Effect.Effect<
+  { readonly items: ReadonlyArray<unknown>; readonly finalOffset: Offset },
+  ReadError,
+  HttpClient.HttpClient
+> =>
+  Effect.gen(function* () {
+    const items: Array<unknown> = []
+    let offset = startOffset
+    while (true) {
+      const res = yield* Http.getJson(endpoint, { offset, live: false })
+      for (const item of res.items) items.push(item)
+      offset = res.nextOffset
+      if (res.upToDate || res.streamClosed) break
+    }
+    return { items, finalOffset: offset }
+  })
+
 // Helpers re-exported for Reader.
 export { BEGIN, NOW }

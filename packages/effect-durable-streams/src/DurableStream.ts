@@ -4,6 +4,7 @@ import type {
   Conflict,
   Gone,
   NotFound,
+  ProducerError,
   ReadError,
   TransportError,
   WriteError,
@@ -81,14 +82,20 @@ export interface ProducerOptions {
  * underlying stream stays open). Use `DurableStream.close` to terminate the
  * stream itself.
  *
- * Producer dies (not fails) with `StaleEpoch` / `SequenceGap` on invariant
- * violations — these indicate a programming error or external fence and
- * are intentionally unrecoverable from the producer's own context.
+ * The error channel includes `ProducerError` (`StaleEpoch` | `SequenceGap` |
+ * `TransportError`) in addition to ordinary `WriteError`. A `StaleEpoch`
+ * signals zombie fencing without `autoClaim` — the caller can match on it
+ * and decide whether to spin a fresh producer with a higher epoch.
+ * A `SequenceGap` signals the client's local lastSeq diverged from the
+ * server's — typically unrecoverable, but still surfaced as a typed
+ * failure rather than a defect so the caller can log and exit cleanly.
  */
+export type ProducerFailure = WriteError | ProducerError
+
 export interface Producer<A>
-  extends Sink.Sink<void, A, never, WriteError, never> {
-  readonly append: (event: A) => Effect.Effect<void, WriteError>
-  readonly flush: Effect.Effect<void, WriteError>
+  extends Sink.Sink<void, A, never, ProducerFailure, never> {
+  readonly append: (event: A) => Effect.Effect<void, ProducerFailure>
+  readonly flush: Effect.Effect<void, ProducerFailure>
 }
 
 export interface ReadOpts<A, I> {

@@ -113,7 +113,7 @@ const makeChangeStream = <V>(
   schema: Schema.Schema<V, unknown>,
   endpoint: DurableStream.Endpoint,
   producer: DurableStream.Producer<P.ChangeMessage<V>>,
-): { changes: Stream.Stream<Event<V>, DurableStream.ReadError, Scope.Scope>; write: (msg: P.ChangeMessage<V>) => Effect.Effect<void, DurableStream.WriteError, HttpClient.HttpClient> } => {
+): { changes: Stream.Stream<Event<V>, DurableStream.ReadError, Scope.Scope>; write: (msg: P.ChangeMessage<V>) => Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient> } => {
   void schema
   void type
   void endpoint
@@ -144,7 +144,7 @@ const makeCollection = <V, VI>(
       value: V | undefined,
       oldValue: V | undefined,
       opts: WriteOptions | UpdateOptions<V> | DeleteOptions<V> | undefined,
-    ): Effect.Effect<void, DurableStream.WriteError, HttpClient.HttpClient> => {
+    ): Effect.Effect<void, DurableStream.ProducerFailure, HttpClient.HttpClient> => {
       const headers: P.ChangeMessage<V>["headers"] = {
         operation,
         ...(opts?.txid !== undefined ? { txid: opts.txid } : {}),
@@ -210,28 +210,59 @@ export const make = (
     })
 
     // Demux: subscribe to live reads, decode each message to an Event, and
-    // dispatch to the matching collection (by type). Control events go to
-    // every collection. Maintain a registry so `collection()` returns the
-    // same materialization for repeated calls.
+    // dispatch to the matching collection (by type). Maintain a registry so
+    // `collection()` returns the same materialization for repeated calls.
+    //
+    // Late-registered collections must see the full history of their type
+    // (per the review of PR #148). To make that work we keep two things:
+    //
+    //   - per-type `buffered`: events received BEFORE any collection() has
+    //     registered that type. On registration the buffer drains into the
+    //     new collection, in arrival order, atomically (under `mutex`).
+    //   - control events: applied to every registered collection AND every
+    //     later-registered one, so a late collection sees snapshot
+    //     boundaries / reset markers that arrived before it existed.
+    //
+    // `mutex` serializes dispatch and registration. The dispatch fiber and
+    // the user's `collection()` call therefore never interleave in a way
+    // that would let a new event slip past the replay loop.
     const registry = yield* Ref.make<HashMap.HashMap<string, RegistryEntry>>(HashMap.empty())
+    const buffered = yield* Ref.make<HashMap.HashMap<string, Array<Event<unknown>>>>(HashMap.empty())
+    const controlLog = yield* Ref.make<Array<Event<unknown>>>([])
     const eventsHub = yield* PubSub.unbounded<Event<unknown>>()
+    const mutex = yield* Effect.makeSemaphore(1)
 
     const dispatch = (event: Event<unknown>): Effect.Effect<void> =>
-      Effect.gen(function* () {
-        yield* PubSub.publish(eventsHub, event)
-        const reg = yield* Ref.get(registry)
-        if (event._tag === "State/Insert" || event._tag === "State/Update" || event._tag === "State/Delete") {
-          const entry = HashMap.get(reg, event.type)
-          if (Option.isSome(entry)) {
-            yield* entry.value.publish(event)
+      mutex.withPermits(1)(
+        Effect.gen(function* () {
+          yield* PubSub.publish(eventsHub, event)
+          if (
+            event._tag === "State/Insert" ||
+            event._tag === "State/Update" ||
+            event._tag === "State/Delete"
+          ) {
+            const reg = yield* Ref.get(registry)
+            const entry = HashMap.get(reg, event.type)
+            if (Option.isSome(entry)) {
+              yield* entry.value.publish(event)
+            } else {
+              // No collection yet for this type — buffer for future replay.
+              yield* Ref.update(buffered, (m) => {
+                const list = Option.getOrElse(HashMap.get(m, event.type), () => [] as Array<Event<unknown>>)
+                return HashMap.set(m, event.type, [...list, event])
+              })
+            }
+          } else {
+            // Control event → broadcast to currently-registered collections
+            // AND record so future-registered collections replay it.
+            const reg = yield* Ref.get(registry)
+            for (const entry of HashMap.values(reg)) {
+              yield* entry.publish(event)
+            }
+            yield* Ref.update(controlLog, (xs) => [...xs, event])
           }
-        } else {
-          // Control event → broadcast to all collections.
-          for (const entry of HashMap.values(reg)) {
-            yield* entry.publish(event)
-          }
-        }
-      })
+        }),
+      )
 
     // Run the materialization fiber in the scope. Start at the beginning so
     // we replay history first, then follow live.
@@ -247,29 +278,50 @@ export const make = (
       readonly type: string
       readonly schema: Schema.Schema<V, VI>
     }): Effect.Effect<Collection<V>, SchemaConflict, HttpClient.HttpClient | Scope.Scope> =>
-      Effect.gen(function* () {
-        const reg = yield* Ref.get(registry)
-        const existing = HashMap.get(reg, input.type)
-        if (Option.isSome(existing)) {
-          if (existing.value.schema !== (input.schema as Schema.Schema<unknown, unknown>)) {
-            return yield* Effect.fail(new SchemaConflict(input.type))
+      mutex.withPermits(1)(
+        Effect.gen(function* () {
+          const reg = yield* Ref.get(registry)
+          const existing = HashMap.get(reg, input.type)
+          if (Option.isSome(existing)) {
+            if (existing.value.schema !== (input.schema as Schema.Schema<unknown, unknown>)) {
+              return yield* Effect.fail(new SchemaConflict(input.type))
+            }
+            return existing.value.collection as unknown as Collection<V>
           }
-          return existing.value.collection as unknown as Collection<V>
-        }
-        // Cast the wire producer to a typed view; each collection only ever
-        // submits messages it owns, so the cast is safe at the call sites.
-        const typedProducer = producer as unknown as DurableStream.Producer<P.ChangeMessage<V>>
-        const made = yield* makeCollection(input.type, input.schema, opts.endpoint, typedProducer)
-        yield* Ref.update(
-          registry,
-          HashMap.set(input.type, {
-            schema: input.schema as Schema.Schema<unknown, unknown>,
-            collection: made.collection as unknown as CollectionImpl<unknown>,
-            publish: made.publish as (e: Event<unknown>) => Effect.Effect<void>,
-          }),
-        )
-        return made.collection
-      })
+          // Cast the wire producer to a typed view; each collection only ever
+          // submits messages it owns, so the cast is safe at the call sites.
+          const typedProducer = producer as unknown as DurableStream.Producer<P.ChangeMessage<V>>
+          const made = yield* makeCollection(input.type, input.schema, opts.endpoint, typedProducer)
+          // Replay buffered history for this type FIRST so the collection's
+          // materialized view is up-to-date before any caller observes it.
+          // Control events from before registration are applied too, in
+          // arrival order relative to typed events of this type (we keep a
+          // single log of controls, applied last — which is conservative;
+          // snapshot/reset markers still surface to subscribers).
+          const typedBuffer = Option.getOrElse(
+            HashMap.get(yield* Ref.get(buffered), input.type),
+            () => [] as Array<Event<unknown>>,
+          )
+          for (const e of typedBuffer) {
+            yield* made.publish(e as Event<V>)
+          }
+          yield* Ref.update(buffered, HashMap.remove(input.type))
+          // Replay accumulated control events so the collection sees prior
+          // snapshot/reset boundaries.
+          for (const e of yield* Ref.get(controlLog)) {
+            yield* made.publish(e as Event<V>)
+          }
+          yield* Ref.update(
+            registry,
+            HashMap.set(input.type, {
+              schema: input.schema as Schema.Schema<unknown, unknown>,
+              collection: made.collection as unknown as CollectionImpl<unknown>,
+              publish: made.publish as (e: Event<unknown>) => Effect.Effect<void>,
+            }),
+          )
+          return made.collection
+        }),
+      )
 
     return {
       collection,
