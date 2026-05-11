@@ -15,6 +15,7 @@ export interface FiregridScenarioHarness {
     options: {
       readonly controlPlaneStreamUrl: string
       readonly dataPlaneStreamUrl: string
+      readonly inputStreamUrl?: string
       readonly legacyRuntimeStreamUrl?: string
     },
     effect: Effect.Effect<A, E, Firegrid>,
@@ -36,6 +37,7 @@ export const startFiregridScenarioHarness = async (): Promise<FiregridScenarioHa
                 runtimeStreamUrl: options.legacyRuntimeStreamUrl ?? options.controlPlaneStreamUrl,
                 controlPlaneStreamUrl: options.controlPlaneStreamUrl,
                 dataPlaneStreamUrl: options.dataPlaneStreamUrl,
+                ...(options.inputStreamUrl === undefined ? {} : { inputStreamUrl: options.inputStreamUrl }),
               })),
             ),
           ),

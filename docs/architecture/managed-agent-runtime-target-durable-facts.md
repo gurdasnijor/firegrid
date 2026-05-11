@@ -415,7 +415,7 @@ schedule_me(when, prompt)
   -> append firegrid.schedule.requested fact
   -> schedule operator waits through durable time
   -> operator appends runtime_ingress.requested via host ingress surface
-  -> provider adapter records runtime_ingress.delivered before stdin
+  -> provider adapter records runtime_ingress.accepted before stdin
 ```
 
 Implementation boundary:

@@ -146,6 +146,42 @@ must document whether it is:
 2. a transitional implementation name to be replaced by session input/prompt
    records.
 
+## Implementation Decision For This Tracer
+
+Tracer 016 keeps the physical `runtime_ingress` row family because it already
+has durable request rows and subscriber progress rows, but treats the name as
+transitional implementation vocabulary. The accepted session-plane concept is
+"session input" / "prompt request" facts. A future cleanup may rename the row
+family after the input, prompt, scheduling, and spawn surfaces converge.
+
+The local-process path records `firegrid.runtime_ingress.accepted` progress
+before handing bytes to the provider stdin sink. The current Effect Platform
+stdin sink does not expose per-chunk write acknowledgements, so this is an
+explicit at-most-once progress marker: failures are surfaced as runtime/provider
+failures, but accepted input is not retried blindly after the provider boundary
+may have observed it.
+
+This tracer chooses Option C from the public append boundary decision:
+
+```txt
+@firegrid/client prompt(...)
+  -> append runtime_ingress.requested durable fact
+
+@firegrid/runtime appendRuntimeIngress(...)
+  -> append the same durable fact family for server/runtime callers
+```
+
+Both surfaces share schema, deterministic row identity, append-only semantics,
+and durable row constructors through `@firegrid/protocol/runtime-ingress`.
+Neither surface invokes a workflow, operator, or provider adapter. Neither
+surface performs retained scans to fake command idempotency; provider-visible
+dedupe remains host-owned runtime code.
+
+Initial launch input lowering is deferred. The immediate invariant for this
+tracer is that follow-up input has a production durable fact path and a
+host-owned live delivery loop. A later cleanup should make launch-time initial
+input lower to the same durable input model.
+
 ## Required Design Decisions
 
 ### 1. Public Append Boundary
@@ -220,7 +256,7 @@ be a session-plane user operation.
 
 The tracer should decide whether progress is represented as:
 
-- an input-specific dispatched/delivered row;
+- an input-specific accepted/dispatched row;
 - a subscriber/operator progress row;
 - a provider-adapter-specific progress fact.
 
@@ -265,11 +301,11 @@ const runSessionInputLoop = (options) =>
     Stream.filter(isRelevantSessionInput(options.contextId)),
     Stream.runForEach(input =>
       Effect.gen(function* () {
-        const alreadyDelivered = yield* hasDurableDeliveryProgress(input)
-        if (alreadyDelivered) return
+        const alreadyAccepted = yield* hasDurableProgress(input)
+        if (alreadyAccepted) return
 
+        yield* options.sessionInput.append(sessionInputAccepted(input))
         yield* options.adapter.send(input.payload)
-        yield* options.sessionInput.append(sessionInputDispatched(input))
       }),
     ),
   )
@@ -304,11 +340,19 @@ Scenario shape:
 4. host-owned adapter/dispatcher feeds the live local process
 5. local process emits output
 6. runtime/session output facts prove the input was received
-7. duplicate input with the same idempotency key is not delivered twice
+7. duplicate input with the same idempotency key is not accepted for provider dispatch twice
 ```
 
 The scenario must invoke production package surfaces. It must not implement the
 input append, dispatch, or provider delivery logic inside the scenario harness.
+Scenario code may own environment setup such as Durable Streams test server
+lifecycle and stream URL allocation, but it must not define Firegrid-specific
+shadow surfaces or product-shaped observation helpers. Production composition
+should be visible at the call site: `FiregridLive` with `FiregridConfig`,
+`FiregridRuntimeHostLive`, and `startRuntime`. Client-visible behavior should be
+asserted through `Firegrid.open(...).snapshot`; direct protocol-schema reads of
+runtime ingress progress belong in package tests unless a production
+host/admin observation API is introduced.
 
 ## Non-Goals
 

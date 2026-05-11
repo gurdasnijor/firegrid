@@ -4,35 +4,35 @@ import {
 } from "@firegrid/protocol/launch"
 import { Schema } from "effect"
 import {
-  runtimeIngressDeliveredRowId,
+  runtimeIngressAcceptedRowId,
 } from "../runtime-ingress/ids.ts"
 import {
-  RuntimeIngressDeliveredRowSchema,
-  type RuntimeIngressDeliveredRow,
+  RuntimeIngressAcceptedRowSchema,
+  type RuntimeIngressAcceptedRow,
 } from "../runtime-ingress/schema.ts"
 
-export const makeRuntimeIngressDeliveredRow = (
+export const makeRuntimeIngressAcceptedRow = (
   options: {
     readonly contextId: string
     readonly ingressId: string
     readonly subscriberId: string
     readonly provider: string
-    readonly deliveredAt: string
+    readonly acceptedAt: string
   },
-): RuntimeIngressDeliveredRow =>
-  Schema.decodeUnknownSync(RuntimeIngressDeliveredRowSchema)({
-    type: "firegrid.runtime_ingress.delivered",
-    id: runtimeIngressDeliveredRowId(
+): RuntimeIngressAcceptedRow =>
+  Schema.decodeUnknownSync(RuntimeIngressAcceptedRowSchema)({
+    type: "firegrid.runtime_ingress.accepted",
+    id: runtimeIngressAcceptedRowId(
       options.contextId,
       options.subscriberId,
       options.ingressId,
     ),
-    at: options.deliveredAt,
+    at: options.acceptedAt,
     ingressId: options.ingressId,
     contextId: options.contextId,
     subscriberId: options.subscriberId,
     provider: options.provider,
-    deliveredAt: options.deliveredAt,
+    acceptedAt: options.acceptedAt,
   })
 
 export const runtimeJournalEventFromOutput = (

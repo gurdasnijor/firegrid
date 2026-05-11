@@ -166,7 +166,7 @@ describe("firegrid tracer 015 stream-native runtime loop validation", () => {
     const ingressRows = result.ingressAfterSecond.map(row =>
       Schema.decodeUnknownSync(RuntimeIngressRowSchema)(row)) as ReadonlyArray<RuntimeIngressRow>
     expect(ingressRows.filter(row => row.type === "firegrid.runtime_ingress.requested")).toHaveLength(1)
-    expect(ingressRows.filter(row => row.type === "firegrid.runtime_ingress.delivered")).toHaveLength(1)
+    expect(ingressRows.filter(row => row.type === "firegrid.runtime_ingress.accepted")).toHaveLength(1)
 
     expect(result.outputAfterSecond).toHaveLength(result.outputAfterFirst.length)
     const stdoutRows = result.outputAfterSecond

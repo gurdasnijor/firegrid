@@ -86,6 +86,65 @@ describe("runtime providers/sandboxes local-process", () => {
     } satisfies ProcessOutputChunk)
   })
 
+  it("firegrid-agent-ingress.DELIVERY.5 accepts a stream-shaped stdin source while keeping output streaming provider-neutral", async () => {
+    const chunks = await Effect.runPromise(
+      Effect.gen(function* () {
+        const provider = yield* SandboxProvider
+        const sandbox = yield* provider.create({})
+        return yield* provider.stream(sandbox, {
+          argv: [
+            process.execPath,
+            "--input-type=module",
+            "-e",
+            "process.stdin.setEncoding('utf8'); process.stdin.on('data', chunk => console.log('echo:' + chunk.trim()))",
+          ],
+          stdin: Stream.fromIterable([
+            new TextEncoder().encode("hello from stream\n"),
+          ]),
+        }).pipe(
+          Stream.runCollect,
+          Effect.map(collected => Array.from(collected)),
+        )
+      }).pipe(Effect.provide(Live)),
+    )
+
+    expect(chunks).toContainEqual({
+      type: "output",
+      channel: "stdout",
+      text: "echo:hello from stream",
+    } satisfies ProcessOutputChunk)
+  })
+
+  it("firegrid-agent-ingress.DELIVERY.5 surfaces stream-shaped stdin failures through the provider stream", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const provider = yield* SandboxProvider
+        const sandbox = yield* provider.create({})
+        return yield* provider.stream(sandbox, {
+          argv: [
+            process.execPath,
+            "--input-type=module",
+            "-e",
+            "setTimeout(() => process.exit(0), 1000)",
+          ],
+          stdin: Stream.fail(new Error("stdin source failed")),
+        }).pipe(
+          Stream.runDrain,
+          Effect.either,
+        )
+      }).pipe(Effect.provide(Live)),
+    )
+
+    expect(result._tag).toBe("Left")
+    if (result._tag === "Left") {
+      expect(result.left).toMatchObject({
+        _tag: "SandboxProviderError",
+        op: "stream.stdin",
+      })
+    }
+  })
+
+
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 sketches a provider helper without host stream or process authority", () => {
     expect(localProcess({
       cwd: "/workspace",

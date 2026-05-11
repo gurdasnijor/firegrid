@@ -15,6 +15,14 @@ import {
   type RuntimeLogLine,
   type RuntimeRunEvent,
 } from "@firegrid/protocol/launch"
+import {
+  makeRuntimeIngressRequestedRow,
+  promptToRuntimeIngressRequest,
+  PublicPromptRequestSchema,
+  RuntimeIngressRowSchema,
+  type PublicPromptRequest,
+  type RuntimeIngressRequestedRow,
+} from "@firegrid/protocol/runtime-ingress"
 import { Context, Data, Effect, Layer, Schema, Stream } from "effect"
 import { DurableStream } from "effect-durable-streams"
 
@@ -22,6 +30,7 @@ export interface ClientOptions {
   readonly runtimeStreamUrl: string
   readonly controlPlaneStreamUrl?: string
   readonly dataPlaneStreamUrl?: string
+  readonly inputStreamUrl?: string
   readonly contentType?: string
   readonly txTimeoutMs?: number
 }
@@ -44,6 +53,8 @@ export class LaunchInputError extends Data.TaggedError("LaunchInputError")<{
   readonly cause: unknown
 }> {}
 
+export type PromptInputError = LaunchInputError
+
 export type FiregridError = PreloadError | LaunchInputError | AppendError
 
 export interface RuntimeContextSnapshot {
@@ -63,6 +74,9 @@ export interface RuntimeContextHandle {
 
 export interface FiregridService {
   readonly launch: (request: PublicLaunchRequest) => Effect.Effect<RuntimeContextHandle, LaunchInputError | AppendError>
+  readonly prompt: (
+    request: PublicPromptRequest,
+  ) => Effect.Effect<RuntimeIngressRequestedRow, PromptInputError | AppendError>
   readonly open: (contextId: string) => RuntimeContextHandle
 }
 
@@ -102,6 +116,13 @@ const decodePublicLaunchRequest = (
     Effect.mapError(cause => new LaunchInputError({ cause })),
   )
 
+const decodePublicPromptRequest = (
+  request: PublicPromptRequest,
+): Effect.Effect<PublicPromptRequest, PromptInputError> =>
+  Schema.decodeUnknown(PublicPromptRequestSchema, { onExcessProperty: "error" })(request).pipe(
+    Effect.mapError(cause => new LaunchInputError({ cause })),
+  )
+
 const snapshotFromJournal = (
   contextId: string,
   control: {
@@ -134,6 +155,7 @@ const make = Effect.gen(function* () {
   const cfg = yield* FiregridConfig
   const controlPlaneStreamUrl = cfg.controlPlaneStreamUrl ?? cfg.runtimeStreamUrl
   const dataPlaneStreamUrl = cfg.dataPlaneStreamUrl
+  const inputStreamUrl = cfg.inputStreamUrl
   const txTimeoutMs = cfg.txTimeoutMs ?? 2_000
   const db = createDurableStateDb({
     streamOptions: {
@@ -186,6 +208,27 @@ const make = Effect.gen(function* () {
       catch: cause => new AppendError({ contextId: context.contextId, cause }),
     })
 
+  const inputStream = inputStreamUrl === undefined
+    ? undefined
+    : DurableStream.define({
+      endpoint: { url: inputStreamUrl },
+      schema: RuntimeIngressRowSchema,
+    })
+
+  const appendPrompt = (
+    row: RuntimeIngressRequestedRow,
+  ): Effect.Effect<void, AppendError> =>
+    inputStream === undefined
+      ? Effect.fail(new AppendError({
+        contextId: row.contextId,
+        cause: new Error("input stream is not configured"),
+      }))
+      : inputStream.append(row).pipe(
+        Effect.asVoid,
+        Effect.provide(FetchHttpClient.layer),
+        Effect.mapError(cause => new AppendError({ contextId: row.contextId, cause })),
+      )
+
   const readSnapshot = (
     contextId: string,
   ): Effect.Effect<RuntimeContextSnapshot, PreloadError> =>
@@ -214,6 +257,13 @@ const make = Effect.gen(function* () {
       const normalized = normalizeLaunch(decoded)
       yield* appendContext(normalized)
       return open(normalized.contextId)
+    }),
+    prompt: request => Effect.gen(function* () {
+      // firegrid-agent-ingress.INGRESS.6
+      const decoded = yield* decodePublicPromptRequest(request)
+      const row = makeRuntimeIngressRequestedRow(promptToRuntimeIngressRequest(decoded))
+      yield* appendPrompt(row)
+      return row
     }),
     open,
   })

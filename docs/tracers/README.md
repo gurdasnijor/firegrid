@@ -150,8 +150,8 @@ Prerequisite
   define session-plane input control surface
     -> request_session / launch and send_input / prompt become the only stable
        session-plane control operations
-    -> runtime_ingress is either accepted as target vocabulary or replaced by
-       clearer session input / prompt request facts
+    -> runtime_ingress remains transitional physical vocabulary for session
+       input / prompt request facts
     -> client/app input reaches a real provider through host-owned dispatchers,
        with durable progress and no workflow-specific endpoint
 ```

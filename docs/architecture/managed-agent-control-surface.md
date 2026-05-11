@@ -187,6 +187,10 @@ Historical term cleanup:
   it should be evaluated against the prompt/turn model. It may collapse into
   clearer session input and prompt request facts rather than surviving as a
   public architectural concept.
+- Tracer 016 keeps `runtime_ingress` as transitional physical vocabulary while
+  exposing the session-plane control concept as prompt/session input facts.
+  Client and runtime host append surfaces share the same durable row schema;
+  host-owned runtime code performs delivery.
 - Cancellation, interruption, and close semantics are deliberately not listed
   as session control operations yet. They require provider-specific
   promptability, terminal-state, and recovery semantics before becoming stable

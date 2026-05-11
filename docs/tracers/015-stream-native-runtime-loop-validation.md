@@ -105,13 +105,13 @@ program and should keep domain work plain:
 1. Scenario appends one durable ingress requested row.
 2. Program reads retained ingress rows through the Effect-native stream API.
 3. Program folds pending rows for `{ contextId, subscriberId }`.
-4. Program appends or produces the delivered row before writing to stdin.
+4. Program appends or produces the accepted-for-dispatch row before writing to stdin.
 5. Program starts a real local process fixture and writes exactly one prompt to stdin.
 6. Program captures stdout/stderr chunks and writes runtime-output facts through a producer Sink.
 7. Program exits and returns a summary.
 8. Scenario reads retained ingress and output streams and asserts:
    - requested row exists;
-   - delivered row exists;
+   - accepted progress row exists;
    - stdout row contains the prompt evidence;
    - re-running the program does not produce a second provider-visible stdin delivery.
 ```
