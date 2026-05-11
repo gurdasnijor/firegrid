@@ -1,8 +1,10 @@
+import { FetchHttpClient, type HttpClient } from "@effect/platform"
 import { NodeContext } from "@effect/platform-node"
 import {
   DurableStreamsWorkflowEngine,
 } from "@firegrid/durable-streams/workflow-engine"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Option, Stream } from "effect"
+import { DurableStream } from "effect-durable-streams"
 import {
   RuntimeContextWorkflowLayer,
 } from "../runtime-context/workflow.ts"
@@ -21,19 +23,19 @@ import {
   LocalProcessSandboxProvider,
 } from "../providers/sandboxes/index.ts"
 import {
-  RuntimeCaptureJournalLive,
-} from "../runtime-output/writer.ts"
-import {
   asRuntimeContextError,
 } from "../runtime-context/errors.ts"
 import {
-  RuntimeIngress,
-  RuntimeIngressLive,
-  RuntimeIngressUnavailableLive,
   type RuntimeIngressError,
   type RuntimeIngressRequest,
   type RuntimeIngressRequestedRow,
+  type RuntimeIngressRow,
+  RuntimeIngressRowSchema,
+  runtimeIngressError,
 } from "../runtime-ingress/index.ts"
+import {
+  makeRuntimeIngressRequestedRow,
+} from "../runtime-ingress/rows.ts"
 
 export interface RuntimeHostStreams {
   readonly workflow: string
@@ -63,12 +65,76 @@ export class FiregridRuntimeHost extends Context.Tag("firegrid/runtime/FiregridR
   FiregridRuntimeHostService
 >() {}
 
+const findExistingRuntimeIngressRequest = (
+  streamUrl: string,
+  request: RuntimeIngressRequestedRow,
+): Effect.Effect<Option.Option<RuntimeIngressRequestedRow>, RuntimeIngressError, HttpClient.HttpClient> =>
+  DurableStream.define({
+    endpoint: { url: streamUrl },
+    schema: RuntimeIngressRowSchema,
+  }).read({ live: false }).pipe(
+    Stream.filter((row): row is RuntimeIngressRequestedRow =>
+      row.type === "firegrid.runtime_ingress.requested" &&
+      row.contextId === request.contextId &&
+      (row.ingressId === request.ingressId ||
+        (request.idempotencyKey !== undefined &&
+          row.idempotencyKey === request.idempotencyKey))),
+    Stream.runHead,
+    Effect.mapError(cause =>
+      runtimeIngressError(
+        "request.exists",
+        "failed to read runtime ingress request rows",
+        request.contextId,
+        request.ingressId,
+        cause,
+      )),
+  )
+
+const appendRuntimeIngressRequested = (
+  streamUrl: string,
+  row: RuntimeIngressRow,
+): Effect.Effect<void, RuntimeIngressError, HttpClient.HttpClient> =>
+  // effect-native-production-cutover.RUNTIME_IO.2
+  DurableStream.define({
+    endpoint: { url: streamUrl },
+    schema: RuntimeIngressRowSchema,
+  }).append(row).pipe(
+    Effect.asVoid,
+    Effect.mapError(cause =>
+      runtimeIngressError(
+        "append",
+        "failed to append runtime ingress durable row",
+        row.contextId,
+        row.ingressId,
+        cause,
+      )),
+  )
+
+const appendRuntimeIngressRequestToStream = (
+  streamUrl: string,
+  request: RuntimeIngressRequest,
+): Effect.Effect<RuntimeIngressRequestedRow, RuntimeIngressError, HttpClient.HttpClient> =>
+  Effect.gen(function* () {
+    const row = makeRuntimeIngressRequestedRow(request)
+    const existing = yield* findExistingRuntimeIngressRequest(streamUrl, row)
+    if (Option.isSome(existing)) return existing.value
+    // firegrid-agent-ingress.INGRESS.1
+    // firegrid-agent-ingress.INGRESS.3
+    // firegrid-agent-ingress.HOST.1
+    yield* appendRuntimeIngressRequested(streamUrl, row)
+    return row
+  })
+
 const runtimeContextLayer = (
   options: RuntimeHostOptions,
 ) =>
   // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.1
   // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.2
-  RuntimeContextWorkflowLayer.pipe(
+  // effect-native-production-cutover.RUNTIME_IO.4
+  RuntimeContextWorkflowLayer({
+    runtimeOutputStreamUrl: options.streams.runtimeOutput,
+    ...(options.streams.runtimeIngress === undefined ? {} : { runtimeIngressStreamUrl: options.streams.runtimeIngress }),
+  }).pipe(
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: options.streams.workflow,
       ...(options.workerId === undefined ? {} : { workerId: options.workerId }),
@@ -76,15 +142,8 @@ const runtimeContextLayer = (
     Layer.provide(RuntimeControlPlaneLive({
       streamUrl: options.streams.controlPlane,
     })),
-    Layer.provide(RuntimeCaptureJournalLive({
-      streamUrl: options.streams.runtimeOutput,
-    })),
-    Layer.provide(options.streams.runtimeIngress === undefined
-      ? RuntimeIngressUnavailableLive
-      : RuntimeIngressLive({
-        streamUrl: options.streams.runtimeIngress,
-      })),
     Layer.provide(LocalProcessSandboxProvider.layer()),
+    Layer.provide(FetchHttpClient.layer),
     Layer.provide(NodeContext.layer),
   )
 
@@ -117,14 +176,17 @@ export const FiregridRuntimeHostLive = (
       ingress: request =>
         // firegrid-agent-ingress.HOST.1
         // firegrid-agent-ingress.HOST.2
-        RuntimeIngress.pipe(
-          Effect.flatMap(ingress => ingress.append(request)),
-          Effect.provide(options.streams.runtimeIngress === undefined
-            ? RuntimeIngressUnavailableLive
-            : RuntimeIngressLive({
-              streamUrl: options.streams.runtimeIngress,
-            })),
-        ),
+        options.streams.runtimeIngress === undefined
+          ? Effect.fail(runtimeIngressError(
+            "append",
+            "runtime ingress stream is not configured",
+            request.contextId,
+            request.ingressId,
+          ))
+          : appendRuntimeIngressRequestToStream(
+            options.streams.runtimeIngress,
+            request,
+          ).pipe(Effect.provide(FetchHttpClient.layer)),
     }),
   )
 

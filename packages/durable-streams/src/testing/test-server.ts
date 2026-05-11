@@ -1,8 +1,7 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Effect } from "effect"
-import {
-  createJsonDurableStream,
-} from "../DurableStreamLog.ts"
+import { FetchHttpClient } from "@effect/platform"
+import { Effect, Schema } from "effect"
+import { DurableStream } from "effect-durable-streams"
 
 export interface DurableStreamsTestServerHandle {
   readonly url: string
@@ -29,7 +28,12 @@ export const startDurableStreamsTestServer = async (
     url: server.url,
     createStreamUrl: async name => {
       const streamUrl = `${server.url}/v1/stream/${name}-${crypto.randomUUID()}`
-      await Effect.runPromise(createJsonDurableStream({ streamUrl }))
+      await Effect.runPromise(DurableStream.define({
+        endpoint: { url: streamUrl },
+        schema: Schema.Unknown,
+      }).create({ contentType: "application/json" }).pipe(
+        Effect.provide(FetchHttpClient.layer),
+      ))
       return streamUrl
     },
     stop: () => server.stop(),

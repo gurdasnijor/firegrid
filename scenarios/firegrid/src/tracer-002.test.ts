@@ -1,8 +1,4 @@
 import {
-  appendJson,
-  readRetainedJson,
-} from "@firegrid/durable-streams/log"
-import {
   createDurableStateDb,
   sessionStateSchema,
 } from "@firegrid/durable-streams/state"
@@ -30,6 +26,10 @@ import {
 } from "@firegrid/runtime"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import {
+  appendUnknownDurableEvent,
+  readRuntimeJournalEvents,
+} from "./durable-stream-fixtures.ts"
 
 let server: DurableStreamsTestServerHandle | undefined
 
@@ -77,7 +77,7 @@ const appendRuntimeOutputEvents = async (
   events: ReadonlyArray<RuntimeJournalEvent | unknown>,
 ): Promise<void> => {
   for (const event of events) {
-    await Effect.runPromise(appendJson({ streamUrl, event }))
+    await Effect.runPromise(appendUnknownDurableEvent(streamUrl, event))
   }
 }
 
@@ -306,7 +306,7 @@ console.error("diagnostic: tracer-002")
     })
 
     const retainedJournal = await Effect.runPromise(
-      readRetainedJson<RuntimeJournalEvent>({ streamUrl: dataPlaneStreamUrl }),
+      readRuntimeJournalEvents(dataPlaneStreamUrl),
     )
     const sourceEvent = retainedJournal.find(event =>
       event.type === "firegrid.runtime.output.stdout" &&

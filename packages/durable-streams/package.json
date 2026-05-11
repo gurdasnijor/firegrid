@@ -9,14 +9,6 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./log": {
-      "types": "./src/log.ts",
-      "default": "./src/log.ts"
-    },
-    "./producer": {
-      "types": "./src/producer.ts",
-      "default": "./src/producer.ts"
-    },
     "./state": {
       "types": "./src/state.ts",
       "default": "./src/state.ts"
@@ -44,12 +36,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@durable-streams/client": "^0.2.3",
     "@durable-streams/server": "^0.3.1",
     "@durable-streams/state": "^0.2.5",
+    "@effect/platform": "^0.96.0",
     "@effect/workflow": "0.18.1",
     "@firegrid/protocol": "workspace:*",
-    "effect": "^3.18.0"
+    "effect": "^3.18.0",
+    "effect-durable-streams": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

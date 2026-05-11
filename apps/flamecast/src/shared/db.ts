@@ -61,7 +61,7 @@ const webhookSummary = (webhook: FlamecastAgentsWebhook): string =>
 const titleFromWebhook = (webhook: FlamecastAgentsWebhook): string =>
   titleFrom(webhook.userMessage)
 
-const appendJson = async (
+const appendStateEvent = async (
   stream: { readonly append: (body: string) => Promise<unknown> },
   event: unknown,
 ) => {
@@ -102,7 +102,7 @@ export const makeFlamecastDb = (streamUrl: string) =>
           const at = nowIso()
           const txid = crypto.randomUUID()
           const existing = db.collections.sessions.get(input.sessionId)
-          await appendJson(
+          await appendStateEvent(
             stream,
             flamecastState.turns.insert({
               value: {
@@ -114,7 +114,7 @@ export const makeFlamecastDb = (streamUrl: string) =>
               headers: { txid },
             }),
           )
-          await appendJson(
+          await appendStateEvent(
             stream,
             flamecastState.sessions.upsert({
               value: {
@@ -162,7 +162,7 @@ export const makeFlamecastDb = (streamUrl: string) =>
           const txid = crypto.randomUUID()
           const existing = db.collections.sessions.get(turn.sessionId)
           for (const message of messagesForTurn(turn, at)) {
-            await appendJson(
+            await appendStateEvent(
               stream,
               flamecastState.messages.insert({
                 value: message,
@@ -170,7 +170,7 @@ export const makeFlamecastDb = (streamUrl: string) =>
               }),
             )
           }
-          await appendJson(
+          await appendStateEvent(
             stream,
             flamecastState.turns.upsert({
               value: {
@@ -182,7 +182,7 @@ export const makeFlamecastDb = (streamUrl: string) =>
               headers: { txid },
             }),
           )
-          await appendJson(
+          await appendStateEvent(
             stream,
             flamecastState.sessions.upsert({
               value: {
@@ -223,7 +223,7 @@ export const makeFlamecastDb = (streamUrl: string) =>
             acceptedAt: at,
             updatedAt: at,
           }
-          await appendJson(
+          await appendStateEvent(
             stream,
             flamecastState.agentWebhooks.upsert({
               value: webhook,
@@ -279,7 +279,7 @@ export const makeFlamecastDb = (streamUrl: string) =>
           const at = nowIso()
           const txid = crypto.randomUUID()
           for (const message of messagesForWebhook(webhook, at)) {
-            await appendJson(
+            await appendStateEvent(
               stream,
               flamecastState.messages.upsert({
                 value: message,
@@ -287,14 +287,14 @@ export const makeFlamecastDb = (streamUrl: string) =>
               }),
             )
           }
-          await appendJson(
+          await appendStateEvent(
             stream,
             flamecastState.turns.upsert({
               value: turnForWebhook(webhook, at),
               headers: { txid },
             }),
           )
-          await appendJson(
+          await appendStateEvent(
             stream,
             flamecastState.sessions.upsert({
               value: {
@@ -307,7 +307,7 @@ export const makeFlamecastDb = (streamUrl: string) =>
               headers: { txid },
             }),
           )
-          await appendJson(
+          await appendStateEvent(
             stream,
             flamecastState.agentWebhooks.upsert({
               value: {

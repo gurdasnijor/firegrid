@@ -1,12 +1,14 @@
-import {
-  appendJson,
-} from "@firegrid/durable-streams/log"
+import { FetchHttpClient } from "@effect/platform"
 import {
   startDurableStreamsTestServer,
 } from "@firegrid/durable-streams/test-utils"
-import type { RuntimeJournalEvent } from "@firegrid/protocol/launch"
+import {
+  RuntimeJournalEventSchema,
+  type RuntimeJournalEvent,
+} from "@firegrid/protocol/launch"
 import type { MessageProjection } from "@firegrid/protocol/session"
 import { Effect, Either, Layer, Stream } from "effect"
+import { DurableStream } from "effect-durable-streams"
 import { describe, expect, it } from "vitest"
 import {
   EventPipeline,
@@ -48,6 +50,18 @@ const runPipelineEither = (
       Effect.either,
       Effect.provide(layer),
     ),
+  )
+
+const appendRuntimeJournalEvent = (
+  streamUrl: string,
+  event: RuntimeJournalEvent,
+) =>
+  DurableStream.define({
+    endpoint: { url: streamUrl },
+    schema: RuntimeJournalEventSchema,
+  }).append(event).pipe(
+    Effect.asVoid,
+    Effect.provide(FetchHttpClient.layer),
   )
 
 describe("event pipeline materialization", () => {
@@ -232,7 +246,7 @@ describe("event pipeline materialization", () => {
           raw: JSON.stringify({ type: "assistant", text: "pong" }),
         },
       }
-      await Effect.runPromise(appendJson({ streamUrl, event }))
+      await Effect.runPromise(appendRuntimeJournalEvent(streamUrl, event))
 
       const ingested: Array<RuntimeJournalEvent> = []
       const layer = MaterializeRuntimeOutputPipelineLive({
@@ -305,7 +319,7 @@ describe("event pipeline materialization", () => {
           raw: JSON.stringify({ type: "assistant", text: "strategy pong" }),
         },
       }
-      await Effect.runPromise(appendJson({ streamUrl: runtimeOutputStreamUrl, event }))
+      await Effect.runPromise(appendRuntimeJournalEvent(runtimeOutputStreamUrl, event))
 
       const projection = createSessionProjectionDefinition({
         runtimeOutputStreamUrl,
@@ -374,7 +388,7 @@ describe("event pipeline materialization", () => {
           raw: JSON.stringify({ type: "assistant", text: "materialize strategy" }),
         },
       }
-      await Effect.runPromise(appendJson({ streamUrl: runtimeOutputStreamUrl, event }))
+      await Effect.runPromise(appendRuntimeJournalEvent(runtimeOutputStreamUrl, event))
 
       const target: RuntimeOutputProjectionTarget = {
         provider: "materialize",

@@ -1,3 +1,3 @@
 export * from "./ids.ts"
 export * from "./schema.ts"
-export * from "./service.ts"
+export * from "./rows.ts"

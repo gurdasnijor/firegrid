@@ -12,9 +12,11 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@effect/platform": "^0.96.0",
     "@effect/workflow": "0.18.1",
     "@firegrid/durable-streams": "workspace:*",
     "effect": "^3.18.0",
+    "effect-durable-streams": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

@@ -1,7 +1,4 @@
-import {
-  readRetainedJson,
-  type DurableStreamLogError,
-} from "@firegrid/durable-streams/log"
+import { FetchHttpClient } from "@effect/platform"
 import {
   compareRuntimeOutputOrder,
   isAfterRuntimeOutputCursor,
@@ -11,6 +8,7 @@ import {
   type RuntimeOutputCursor,
 } from "@firegrid/protocol/launch"
 import { Effect, Either, Layer, Schema } from "effect"
+import { DurableStream } from "effect-durable-streams"
 import {
   EventSource,
   EventSourceError,
@@ -70,10 +68,10 @@ const mapSourceError = (
 ): EventSourceError =>
   new EventSourceError({ op: cause.op, cause })
 
-const mapDurableStreamLogError = (
-  cause: DurableStreamLogError,
+const mapDurableStreamReadError = (
+  cause: DurableStream.ReadError,
 ): RuntimeOutputSourceError =>
-  new RuntimeOutputSourceError({ op: `readRuntimeJournal.${cause.op}`, cause })
+  new RuntimeOutputSourceError({ op: "readRuntimeJournal.collect", cause })
 
 const runtimeJournalEventSourceLive = (
   read: Effect.Effect<{
@@ -95,9 +93,14 @@ export const readRuntimeJournal = Effect.fn("readRuntimeJournal")(
     readonly streamUrl: string
     readonly contextId?: string
   }) {
-    const rows = yield* readRetainedJson<unknown>({
-      streamUrl: options.streamUrl,
-    }).pipe(Effect.mapError(mapDurableStreamLogError))
+    // effect-native-production-cutover.MATERIALIZATION.1
+    const rows = yield* DurableStream.define({
+      endpoint: { url: options.streamUrl },
+      schema: Schema.Unknown,
+    }).collect.pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.mapError(mapDurableStreamReadError),
+    )
 
     const candidates = options.contextId === undefined
       ? rows

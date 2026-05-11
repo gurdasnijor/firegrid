@@ -1,10 +1,11 @@
-import { ensureJsonDurableStream } from "@firegrid/durable-streams/log"
+import { FetchHttpClient } from "@effect/platform"
 import {
   startDurableStreamsTestServer,
 } from "@firegrid/durable-streams/test-utils"
 import { writeFile, mkdir } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
+import { DurableStream } from "effect-durable-streams"
 import { runFlamecastRuntime } from "./handler.ts"
 import type { FlamecastTopology } from "../shared/topology.ts"
 
@@ -15,7 +16,14 @@ const dataDir = resolve(".flamecast-durable-streams")
 const server = await startDurableStreamsTestServer({ dataDir, port: 0 })
 
 const streamUrl = `${server.url}/flamecast/lt02-local-session-loop`
-await Effect.runPromise(ensureJsonDurableStream({ streamUrl }))
+// effect-native-production-cutover.CLIENT_APP.2
+await Effect.runPromise(DurableStream.define({
+  endpoint: { url: streamUrl },
+  schema: Schema.Unknown,
+}).create({ contentType: "application/json" }).pipe(
+  Effect.catchTag("DurableStream/Conflict", () => Effect.void),
+  Effect.provide(FetchHttpClient.layer),
+))
 
 const topology: FlamecastTopology = {
   streamUrl,

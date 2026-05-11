@@ -15,13 +15,22 @@ Firegrid should separate three concerns:
 3. **Launch-slot packages** define and implement orthogonal managed-agent
    dimensions such as runtime adapter, sandbox, workspace, tools, and secrets.
 
-Durable Streams is the first substrate package. It earns a package boundary
-because it should be the only place concrete Durable Streams APIs leak into
-Firegrid:
+Durable Streams is the first substrate family. `effect-durable-streams` is the
+Effect-native stream primitive: domain code should use `DurableStream.define`
+with schemas and ordinary `Effect`, `Stream`, `Sink`, and `Scope` composition.
+`@firegrid/durable-streams` owns Firegrid-specific Durable Streams substrate
+concerns that are still real package dependencies, such as the workflow engine,
+StreamDB state helpers, and test infrastructure. It is not a retained-log
+wrapper package.
 
 ```txt
-@firegrid/durable-streams is the only package that imports @durable-streams/*.
+@firegrid/durable-streams and Effect-native Durable Streams packages are the only
+places that import @durable-streams/*.
 ```
+
+Production runtime code must not reintroduce Firegrid-specific retained-log or
+producer object protocols around the Effect-native client.
+`effect-native-production-cutover.GUARDRAILS.3`
 
 The rest of the system should not copy that substrate-driven split. Provider
 packages should follow the launch/configuration slots that collaborate to
@@ -63,12 +72,6 @@ const FiregridHostLive = Layer.mergeAll(
       descriptor: RuntimeContext.stateDescriptor,
     },
   }),
-  DurableStreamLog.layer({
-    runtimeOutput: {
-      streamUrl: env.RUNTIME_OUTPUT_STREAM_URL,
-      event: RuntimeOutput.journalEvent,
-    },
-  }),
   MaterializationStrategy.layer(
     materializeStrategy({
       connection: pgConfig,
@@ -97,21 +100,15 @@ packages/
   durable-streams/
     src/
       DurableStreamsWorkflowEngine.ts
-      DurableStreamLog.ts
-      DurableStreamProducer.ts
       DurableState.ts
-      DurableStateProtocol.ts
-      DurableCursor.ts
       internal/
         workflow/
         state/
-        stream/
       index.ts
 
   runtime/
     src/
       runtime-context/
-      runtime-output/
       runtime-operator/
       runtime-operators/
       launch/
@@ -149,21 +146,17 @@ packages/
 
 ## Substrate Package
 
-`@firegrid/durable-streams` owns Durable Streams substrate concerns, analogous
-to `@effect/cluster` owning cluster-backed implementations.
+`@firegrid/durable-streams` owns Firegrid-specific Durable Streams substrate
+concerns, analogous to `@effect/cluster` owning cluster-backed implementations.
+It should not wrap the Effect-native stream API with Firegrid-specific retained
+log or producer object protocols.
 
 Expected public services:
 
 - `DurableStreamsWorkflowEngine`: Durable Streams-backed implementation of
   `@effect/workflow`'s `WorkflowEngine`;
-- `DurableStreamLog`: append/read/tail retained stream events without exposing
-  `DurableStream`;
-- `DurableStreamProducer`: `IdempotentProducer` wrapper with standard producer
-  identity, batching, flush, detach, and error handling;
 - `DurableState`: StreamDB/createStreamDB-backed state lifecycle;
-- `DurableStateProtocol`: State Protocol change writer/encoder over Durable
-  Streams;
-- `DurableCursor`: cursor/offset helpers and retained-read boundaries.
+- test utilities for local Durable Streams protocol infrastructure.
 
 Do not add generic surfaces such as `DurableClaim` or
 `DurableStreamsTestServer` until a tracer or implementation needs them. Claims
@@ -401,7 +394,7 @@ adding speculative package structure ahead of implementation pressure.
 | Open question | Why it matters | Tracer |
 | --- | --- | --- |
 | What is the production runtime host root, and how is it separated from client launch requests? | Current composition is still spread across package helpers and scenario setup. We need one production surface that owns host-wide substrate/materialization/provider choices while clients only describe launch intent. | 006: Runtime Host Root And Launch Boundary |
-| What exactly belongs to the runtime kernel after substrate extraction? | `runtime-context`, `runtime-output`, `runtime-operator`, and `launch` need clear responsibility boundaries before more packages are split out. | 006: Runtime Host Root And Launch Boundary |
+| What exactly belongs to the runtime kernel after substrate extraction? | `runtime-context`, `runtime-operator`, and `launch` need clear responsibility boundaries before more packages are split out; runtime-output is currently protocol schema plus workflow-local mapping, not a package module. | 006: Runtime Host Root And Launch Boundary |
 | What is the first concrete launch-slot package contract? | The package model should be proven through one slot before creating every future package family. The sandbox slot is the most grounded because tracer 001 already depends on process streaming. | 007: Sandbox Slot Extraction |
 | What is the materialization engine contract against current tracer 002 code? | The target says materialization is host-selected and pluggable, but current code still has event-pipeline and strategy details that need to converge on a common API. | 008: Materialization Strategy Interface |
 | What durable records and workflow waits implement required actions? | Approval should be workflow/event-wait behavior, not a callback package. We need the request, resolution, timeout, and wait identity model. | 009: Required-Action Workflow |
