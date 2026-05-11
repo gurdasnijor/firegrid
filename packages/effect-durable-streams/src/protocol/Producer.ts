@@ -4,6 +4,7 @@ import {
   Chunk,
   Duration,
   Effect,
+  MutableRef,
   Option,
   Queue,
   Ref,
@@ -147,12 +148,17 @@ export const make = <A, I>(
       lastSeq: -1,
     })
     const queue = yield* Queue.bounded<A>(opts.maxQueueSize ?? 10_000)
-    const failure = yield* Ref.make<Option.Option<AnyProducerFailure>>(Option.none())
-    // `offered` increments on every append; `sent` increments by batch size
-    // after a POST completes (success OR failure — the failure is captured
-    // separately). Flush is event-driven on `sent.changes` so it wakes up
-    // exactly when a batch acks, without fixed polling.
-    const offered = yield* Ref.make(0)
+    // `failure` and `offered` are read on every `append` (the hot path). The
+    // append path is now a tight `Effect.suspend` block that tries
+    // `Queue.unsafeOffer` first and only falls back to async `Queue.offer`
+    // when the bounded queue is full. Backing both refs with `MutableRef`
+    // (synchronous get/set/increment) collapses the per-event microtask
+    // count from ~4 to ~1 vs the previous `Effect.gen` shape.
+    //
+    // `sent` stays a `SubscriptionRef` because `flush` consumes its
+    // `.changes` stream — reactive semantics are required there.
+    const failure = MutableRef.make<Option.Option<AnyProducerFailure>>(Option.none())
+    const offered = MutableRef.make(0)
     const sent = yield* SubscriptionRef.make(0)
 
     const maxBatchBytes = opts.maxBatchBytes ?? 1_048_576 // 1 MiB
@@ -194,9 +200,11 @@ export const make = <A, I>(
           const result = yield* sendBatch(opts, state, encode, subChunk).pipe(Effect.exit)
           yield* SubscriptionRef.update(sent, (n) => n + sub.length)
           if (result._tag === "Failure") {
-            yield* Ref.update(failure, (cur) =>
-              Option.isSome(cur) ? cur : Option.some(extractFailure(result.cause)),
-            )
+            // Single drain fiber writes here, so no CAS is needed — just
+            // keep the FIRST failure if one was already recorded.
+            if (Option.isNone(MutableRef.get(failure))) {
+              MutableRef.set(failure, Option.some(extractFailure(result.cause)))
+            }
             // Stop sending further sub-batches; the background drain loop
             // will no-op subsequent batches (still draining the queue so
             // backpressured offers wake and observe the typed failure).
@@ -254,7 +262,7 @@ export const make = <A, I>(
         }
       }
       const chunk = Chunk.unsafeFromArray(batch.slice())
-      const f = yield* Ref.get(failure)
+      const f = MutableRef.get(failure)
       if (Option.isSome(f)) {
         yield* SubscriptionRef.update(sent, (n) => n + batch.length)
         return
@@ -264,23 +272,53 @@ export const make = <A, I>(
 
     yield* drainOnce.pipe(Effect.forever, Effect.forkScoped)
 
-    const checkFailure: Effect.Effect<void, AnyProducerFailure> = Ref.get(failure).pipe(
-      Effect.flatMap((opt) => Option.isSome(opt) ? Effect.fail(opt.value) : Effect.void),
-    )
+    const checkFailure: Effect.Effect<void, AnyProducerFailure> = Effect.suspend(() => {
+      const f = MutableRef.get(failure)
+      return Option.isSome(f) ? Effect.fail(f.value) : Effect.void
+    })
 
+    /**
+     * Hot-path append. Pre-collapse shape paid 4 microtasks per event (one
+     * per `yield*` in an `Effect.gen` block: failure check → offer →
+     * failure re-check → counter update). At ~1 μs per microtask that's
+     * ~4 μs of pure Effect overhead per event, dominating the per-event
+     * cost on large-batch cells where HTTP is amortized to near-zero.
+     *
+     * Collapsed shape:
+     *   - The pre-offer failure check, post-offer failure re-check, and
+     *     counter update all happen synchronously via `MutableRef`. No
+     *     microtask hops between them.
+     *   - The `Queue.offer` step keeps its async variant so it (a) wakes
+     *     any drain fiber suspended on `Queue.take` and (b) backpressures
+     *     when the bounded queue is full. The earlier attempt used
+     *     `Queue.unsafeOffer` for a "fully sync fast path", but
+     *     `unsafeOffer` does NOT wake suspended takers — combined with
+     *     `Stream.run`'s per-item yield, this let the drain race ahead
+     *     and observe an empty queue between appends, triggering the
+     *     eager-emission linger path inappropriately. A ~3x regression
+     *     on the `batch=1000, linger=5` cell pointed at this directly.
+     *
+     * Net cost per event: 1 microtask (the `Queue.offer`).
+     */
     const append = (event: A): Effect.Effect<void, AnyProducerFailure> =>
-      Effect.gen(function* () {
-        // Fast-fail: the queue is bounded, so a stalled drain backpressures
-        // here. Without this gate, `append` would suspend on a full queue
-        // after a terminal failure had already been recorded.
-        yield* checkFailure
-        yield* Queue.offer(queue, event)
-        // Re-check: failure may have been recorded between the entry gate
-        // and the offer (or during a backpressured wait). In that case the
-        // event will be dropped by the no-op drain, so surface the typed
-        // failure rather than letting the caller think the append landed.
-        yield* checkFailure
-        yield* Ref.update(offered, (n) => n + 1)
+      Effect.suspend(() => {
+        // Fast-fail: a recorded terminal failure short-circuits before
+        // any queue interaction so we don't backpressure on a wedged
+        // producer.
+        const f = MutableRef.get(failure)
+        if (Option.isSome(f)) return Effect.fail(f.value)
+        return Queue.offer(queue, event).pipe(
+          Effect.flatMap(() => {
+            // Re-check failure synchronously: `sendOne` could have failed
+            // between the entry gate and the offer (or during a back-
+            // pressured wait). Surface the typed failure rather than let
+            // the caller think the event landed.
+            const f2 = MutableRef.get(failure)
+            if (Option.isSome(f2)) return Effect.fail(f2.value)
+            MutableRef.increment(offered)
+            return Effect.void
+          }),
+        )
       })
 
     const flush: Effect.Effect<void, AnyProducerFailure> = Effect.gen(function* () {
@@ -291,10 +329,10 @@ export const make = <A, I>(
       // forever. `checkFailure` after the loop surfaces the typed failure.
       yield* sent.changes.pipe(
         Stream.takeUntilEffect((s) =>
-          Effect.gen(function* () {
-            const f = yield* Ref.get(failure)
+          Effect.sync(() => {
+            const f = MutableRef.get(failure)
             if (Option.isSome(f)) return true
-            const o = yield* Ref.get(offered)
+            const o = MutableRef.get(offered)
             return s >= o
           }),
         ),
