@@ -12,6 +12,21 @@ edits in this PR are trivial doc-reference fixes for clearly stale text;
 everything substantive is captured as a finding with a recommended
 follow-up tracer.
 
+## Post-#161 Lane A Status
+
+Lane A is complete after PR #161. The cleanup removed the required-action
+runtime mini-plane rather than preserving it behind another operator wrapper.
+
+- F1 resolved: `packages/runtime/src/runtime-operators/**` deleted.
+- F2 resolved via deletion: `required-action/service.ts` collect/fold path
+  gone; future generic wait/operator proof tracked separately.
+- F3 resolved: `RequiredActionRuntimeLive` and `required-action/launcher.ts`
+  deleted; scenarios no longer rebuild the mini-root.
+- F6 resolved: decoder-as-constructor in required-action service gone with
+  deleted file.
+- F7 resolved: `runtime-operators/schema.ts` deleted.
+- Lane A complete; remaining drift is F4/F5/F8/F9/F10/F12 as applicable.
+
 ## Method
 
 ```bash
@@ -63,17 +78,13 @@ silently re-runs workflows on every host restart. Adopting
 `DurableConsumer` + `ConsumerCheckpointStore` makes restart semantics
 durable and matches the design direction.
 
-**Status:** Active drift. The `OperatorSource.scan: Effect<ReadonlyArray<Fact>>`
-shape is also explicitly the kind of "eager retained-fold" that tracer
-018's `ConsumerSource` is meant to replace.
+**Status:** Resolved by PR #161. `packages/runtime/src/runtime-operators/**`
+was deleted, runtime exports were removed, and
+`firegrid-reactive-workflow-operators.*` was deprecated as historical.
 
-**Recommended follow-up:** PR-sized tracer that:
-1. Migrates `requiredActionOperator()` from `runReactiveWorkflowOperator`
-   to a `DurableConsumer.run` call (with a dedicated checkpoint stream).
-2. Deletes `runtime-operators/**` and its `firegrid-reactive-workflow-operators`
-   feature spec ACIDs.
-3. Renames or removes `OperatorSource` in favor of `DurableConsumer`'s
-   `source.read` (or the planned `ConsumerSource` from tracer 018).
+**Recommended follow-up:** Future operator behavior should use
+`effect-durable-operators.ConsumerSource` and `DurableConsumer`; do not
+recreate a runtime-local operator package.
 
 ---
 
@@ -94,13 +105,12 @@ the operators-SDD calls out:
 rows is the target replacement; the in-memory `HashMap` table would
 serve `get` directly without re-reading the wire.
 
-**Status:** Active drift. Same shape as the `runtime_ingress.requested`
-fold we just deleted via tracer 017, just on a different row family.
+**Status:** Resolved by PR #161. `packages/runtime/src/required-action/**`
+was deleted, including `service.ts` and its per-query retained
+collect/fold.
 
-**Recommended follow-up:** Bundle with F1 into one "required-action
-durable rework" tracer (`019`?): project rows → `DurableTable` view,
-adopt `DurableConsumer` for the operator side, retire
-`foldRequiredActionState` and the per-call `.collect`.
+**Recommended follow-up:** Reintroduce required-action behavior only through
+generic wait/operator tooling over protocol-owned record schemas.
 
 ---
 
@@ -118,14 +128,13 @@ Per the coordinator's "mini composition roots" warning, this is the
 exact pattern that pulls future tracers back into bespoke wiring rather
 than the host substrate.
 
-**Status:** Active drift — but the test-surface dependency means it
-can't be deleted without also reshaping tracer-009/013.
+**Status:** Resolved by PR #161. `RequiredActionRuntimeLive` and the entire
+runtime required-action package were deleted; tracer-009/013 are historical
+markers.
 
-**Recommended follow-up:** Same tracer as F1/F2. Replace
-`RequiredActionRuntimeLive` with a `FiregridRuntimeHostLive` extension
-(or fold the required-action layers into the host streams config the
-way `inputCheckpoints` is now configured). Rewrite tracer-009/013 to
-use the production host surface.
+**Recommended follow-up:** Required-action behavior is deferred to generic
+wait/operator tooling. Do not replace the mini-root with another
+required-action-specific runtime surface.
 
 ---
 
@@ -191,11 +200,12 @@ through a decoder. Should use plain typed objects with `satisfies` or
 `.make()` on the row schema. Decoding belongs at the public API
 boundary only.
 
-**Status:** Active drift on the *same* pattern we cleaned in
-runtime-ingress/rows.ts during tracer 017.
+**Status:** Resolved by PR #161 via deletion of
+`packages/runtime/src/required-action/service.ts`.
 
-**Recommended follow-up:** Roll into F1/F2/F3 cleanup (the
-required-action durable rework). Mechanical fix; no behavioral change.
+**Recommended follow-up:** Keep trusted row construction for any future
+required-action behavior in protocol/domain helpers, not decoder-backed
+runtime services.
 
 ---
 
@@ -215,14 +225,11 @@ combinations are invalid (e.g. an "execution" failure cannot have no
 `executionId`). The new pattern — tagged-class union — would make
 invalid states unrepresentable.
 
-**Status:** Low-impact (error metadata, not config), but exactly the
-sibling-optional smell that the runtime-input refactor just cleaned up
-on the configuration side.
+**Status:** Resolved by PR #161 via deletion of
+`packages/runtime/src/runtime-operators/**`.
 
-**Recommended follow-up:** Drops out naturally when F1 deletes
-`runtime-operators/**`. If F1 slips, take it as a small standalone
-PR using the same `Schema.TaggedClass` + `Schema.Union` pattern as
-`RuntimeInputStreams`.
+**Recommended follow-up:** None for this file family; do not recreate this
+error surface.
 
 ---
 
@@ -407,7 +414,7 @@ following edits land alongside the inventory itself:
 
 Anything outside this list is **out of scope** for this PR. Lane A
 items (F1, F2, F3, F6, F7 — `runtime-operators/**` and
-`required-action/**`) are owned by a separate tracer/PR.
+`required-action/**`) were resolved by PR #161.
 
 ---
 
@@ -417,24 +424,18 @@ Five coherent work lanes, ordered by leverage. Each is ~1 tracer-sized PR.
 
 ### Lane A — Required-action durable rework (covers F1, F2, F3, F6, F7)
 
-The runtime-operators package, the required-action launcher, and the
-required-action fold all collapse into one DurableConsumer-shaped
-program. This is the highest-leverage cleanup because it deletes ~400
-lines of bespoke fold/launcher code while landing AtMostOnce restart
-semantics.
+The runtime-operators package, required-action launcher, required-action
+service, and required-action workflow were deleted instead of being converted
+into another required-action-specific consumer.
 
 **Acceptance:**
 - `runtime-operators/**` deleted; `firegrid-reactive-workflow-operators`
   spec retired.
-- `required-action` operator uses `DurableConsumer.run` with a
-  dedicated `requiredActions` checkpoint stream.
-- `required-action.get(...)` queries a `DurableTable` view; the
-  `.collect`-and-fold path is gone.
-- `RequiredActionRuntimeLive` replaced by a host-streams capability
-  (or merged into `FiregridRuntimeHostLive`); tracer-009/013 use the
-  production host.
-- `service.ts` row constructors use `satisfies` or `.make()` — no
-  `Schema.decodeUnknownSync` in trusted paths.
+- `packages/runtime/src/required-action/**` deleted.
+- `@firegrid/runtime/required-action` subpath deleted.
+- Required-action runtime workflow/service behavior deferred to generic
+  wait/operator tooling.
+- Required-action active ownership reduced to protocol record schemas.
 
 ### Lane B — Materialization strategy rationalization (covers F4, F8)
 

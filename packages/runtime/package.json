@@ -25,10 +25,6 @@
       "types": "./src/materialization/state-protocol/index.ts",
       "default": "./src/materialization/state-protocol/index.ts"
     },
-    "./required-action": {
-      "types": "./src/required-action/index.ts",
-      "default": "./src/required-action/index.ts"
-    },
     "./runtime-ingress": {
       "types": "./src/runtime-ingress/index.ts",
       "default": "./src/runtime-ingress/index.ts"

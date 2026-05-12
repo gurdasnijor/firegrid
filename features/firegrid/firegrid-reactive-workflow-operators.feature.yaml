@@ -1,58 +1,120 @@
 feature:
   name: firegrid-reactive-workflow-operators
   product: firegrid
-  description: Generic runtime-host-owned operators that react to durable facts, durable time, or projection predicates and drive Effect workflows without exposing workflow-specific launch endpoints.
+  description: Historical runtime-local reactive workflow operator surface. Deprecated after effect-durable-operators became the generic operator substrate.
 
 components:
   OPERATOR:
     requirements:
-      1: A reactive workflow operator observes durable facts, durable time, or projection predicates and starts or resumes an Effect workflow through the configured workflow engine.
-      2: A reactive workflow operator declares stable operator identity, source identity, eligibility rule, workflow target, idempotency key derivation, and durable progress identity.
-      3: Runtime host configuration selects the operator set for a runtime instance; client launch and prompt requests do not carry operator registrations, workflow stream URLs, or workflow engine choices.
-      4: Operator follow-up effects append through existing runtime authority surfaces such as runtime ingress, required-action resolution, runtime output, or app-owned event planes.
-      5: Operators are generic runtime mechanics and do not introduce product-specific provider, prompt, permission, tool, session, MCP, ACP, callback, or webhook row families.
+      1:
+        requirement: A reactive workflow operator observes durable facts, durable time, or projection predicates and starts or resumes an Effect workflow through the configured workflow engine.
+        deprecated: true
+      2:
+        requirement: A reactive workflow operator declares stable operator identity, source identity, eligibility rule, workflow target, idempotency key derivation, and durable progress identity.
+        deprecated: true
+      3:
+        requirement: Runtime host configuration selects the operator set for a runtime instance; client launch and prompt requests do not carry operator registrations, workflow stream URLs, or workflow engine choices.
+        deprecated: true
+      4:
+        requirement: Operator follow-up effects append through existing runtime authority surfaces such as runtime ingress, required-action resolution, runtime output, or app-owned event planes.
+        deprecated: true
+      5:
+        requirement: Operators are generic runtime mechanics and do not introduce product-specific provider, prompt, permission, tool, session, MCP, ACP, callback, or webhook row families.
+        deprecated: true
 
   REPLAY:
     requirements:
-      1: An operator can rebuild pending work from retained durable state without requiring process-local queues, callbacks, sockets, or timers.
-      2: An operator reaches a documented live boundary before performing provider-visible or client-visible side effects, unless the side effect is fenced by deterministic workflow execution idempotency.
-      3: Duplicate durable inputs that derive the same workflow execution id do not create duplicate logical workflow executions.
-      4: Operator progress is durable when missing or repeated work would change externally visible behavior.
-      5: Retention gaps surface as typed expected failures or explicit gap records; operators do not silently reset to latest state.
+      1:
+        requirement: An operator can rebuild pending work from retained durable state without requiring process-local queues, callbacks, sockets, or timers.
+        deprecated: true
+      2:
+        requirement: An operator reaches a documented live boundary before performing provider-visible or client-visible side effects, unless the side effect is fenced by deterministic workflow execution idempotency.
+        deprecated: true
+      3:
+        requirement: Duplicate durable inputs that derive the same workflow execution id do not create duplicate logical workflow executions.
+        deprecated: true
+      4:
+        requirement: Operator progress is durable when missing or repeated work would change externally visible behavior.
+        deprecated: true
+      5:
+        requirement: Retention gaps surface as typed expected failures or explicit gap records; operators do not silently reset to latest state.
+        deprecated: true
 
   WORKFLOW:
     requirements:
-      1: Operator handlers are authored as `@effect/workflow` workflows and registered with `Workflow.toLayer`.
-      2: Operator waits use workflow-engine-backed primitives such as durable deferreds, durable clocks, workflow resume, or substrate-backed projection waits, not process-local promises or callbacks.
-      3: A workflow blocked on an external decision resumes only after the decision is recorded as a durable fact.
-      4: A workflow waiting on time resumes from durable clock or timer state, not process-local elapsed time.
-      5: Workflow execution ids are deterministic from operator identity and the triggering durable fact or predicate identity.
+      1:
+        requirement: Operator handlers are authored as `@effect/workflow` workflows and registered with `Workflow.toLayer`.
+        deprecated: true
+      2:
+        requirement: Operator waits use workflow-engine-backed primitives such as durable deferreds, durable clocks, workflow resume, or substrate-backed projection waits, not process-local promises or callbacks.
+        deprecated: true
+      3:
+        requirement: A workflow blocked on an external decision resumes only after the decision is recorded as a durable fact.
+        deprecated: true
+      4:
+        requirement: A workflow waiting on time resumes from durable clock or timer state, not process-local elapsed time.
+        deprecated: true
+      5:
+        requirement: Workflow execution ids are deterministic from operator identity and the triggering durable fact or predicate identity.
+        deprecated: true
 
   REQUIRED_ACTION_CONSUMER:
     requirements:
-      1: Required actions are implemented as a consumer of the reactive workflow operator substrate rather than as bespoke runtime-host methods or a separate approval data plane.
-      2: A required-action operator records the request fact before it waits for a resolution fact.
-      3: A required-action operator resumes the workflow from durable resolution, timeout, cancellation, or failure facts through workflow-engine machinery.
-      4: Required-action host integration does not add required-action-specific stream topology, start, resolve, get, or rows methods to the runtime host root.
+      1:
+        requirement: Required actions are implemented as a consumer of the reactive workflow operator substrate rather than as bespoke runtime-host methods or a separate approval data plane.
+        deprecated: true
+      2:
+        requirement: A required-action operator records the request fact before it waits for a resolution fact.
+        deprecated: true
+      3:
+        requirement: A required-action operator resumes the workflow from durable resolution, timeout, cancellation, or failure facts through workflow-engine machinery.
+        deprecated: true
+      4:
+        requirement: Required-action host integration does not add required-action-specific stream topology, start, resolve, get, or rows methods to the runtime host root.
+        deprecated: true
 
   INGRESS_CONSUMER:
     requirements:
-      1: Runtime ingress subscribers are reactive operators or provider adapters over durable ingress facts, not private prompt-delivery workflow endpoints.
-      2: Workflow-backed tools that emit prompts append durable runtime ingress facts through the same host-owned ingress surface used by clients.
-      3: Scheduled prompts and spawn requests use the reactive operator substrate to turn durable time or workflow outcomes into runtime ingress facts.
+      1:
+        requirement: Runtime ingress subscribers are reactive operators or provider adapters over durable ingress facts, not private prompt-delivery workflow endpoints.
+        deprecated: true
+      2:
+        requirement: Workflow-backed tools that emit prompts append durable runtime ingress facts through the same host-owned ingress surface used by clients.
+        deprecated: true
+      3:
+        requirement: Scheduled prompts and spawn requests use the reactive operator substrate to turn durable time or workflow outcomes into runtime ingress facts.
+        deprecated: true
 
 constraints:
   INVARIANTS:
     requirements:
-      1: This spec is bound by `firegrid-platform-invariants.AUTHORITY.8` so external clients, agents, and tools do not launch durable workflows directly.
-      2: This spec is bound by `firegrid-platform-invariants.PRODUCTION_SURFACE.1`, `firegrid-platform-invariants.PRODUCTION_SURFACE.2`, and `firegrid-platform-invariants.PRODUCTION_SURFACE.5` so operator tracers must land production package surfaces and scenario E2E proof.
-      3: This spec is bound by `firegrid-agent-ingress.SUBSCRIBERS.1`, `firegrid-agent-ingress.SUBSCRIBERS.2`, and `firegrid-agent-ingress.SUBSCRIBERS.3` for runtime ingress subscriber behavior.
-      4: This spec is bound by `firegrid-required-actions.WORKFLOW.7` and `firegrid-required-actions.BOUNDARY.6` for required-action workflow/operator behavior.
-      5: This spec is bound by `firegrid-scheduling-tool-bindings.IDENTICAL_DURABLE_LOWERING.5` for workflow-backed tool invocation boundaries.
+      1:
+        requirement: This spec is bound by `firegrid-platform-invariants.AUTHORITY.8` so external clients, agents, and tools do not launch durable workflows directly.
+        deprecated: true
+      2:
+        requirement: This spec is bound by `firegrid-platform-invariants.PRODUCTION_SURFACE.1`, `firegrid-platform-invariants.PRODUCTION_SURFACE.2`, and `firegrid-platform-invariants.PRODUCTION_SURFACE.5` so operator tracers must land production package surfaces and scenario E2E proof.
+        deprecated: true
+      3:
+        requirement: This spec is bound by `firegrid-agent-ingress.SUBSCRIBERS.1`, `firegrid-agent-ingress.SUBSCRIBERS.2`, and `firegrid-agent-ingress.SUBSCRIBERS.3` for runtime ingress subscriber behavior.
+        deprecated: true
+      4:
+        requirement: This spec is bound by `firegrid-required-actions.WORKFLOW.7` and `firegrid-required-actions.BOUNDARY.6` for required-action workflow/operator behavior.
+        deprecated: true
+      5:
+        requirement: This spec is bound by `firegrid-scheduling-tool-bindings.IDENTICAL_DURABLE_LOWERING.5` for workflow-backed tool invocation boundaries.
+        deprecated: true
 
   NON_SCOPE:
     requirements:
-      1: This spec does not define an HTTP, RPC, or client workflow launch endpoint.
-      2: This spec does not define product permission policy, approval UI, provider webhook delivery, MCP, ACP, or vendor tool transports.
-      3: This spec does not require every operator to use the same source stream; host configuration may route operators to different durable streams while preserving generic operator mechanics.
-      4: This spec does not define materialized session, transcript, or chat schema ownership.
+      1:
+        requirement: This spec does not define an HTTP, RPC, or client workflow launch endpoint.
+        deprecated: true
+      2:
+        requirement: This spec does not define product permission policy, approval UI, provider webhook delivery, MCP, ACP, or vendor tool transports.
+        deprecated: true
+      3:
+        requirement: This spec does not require every operator to use the same source stream; host configuration may route operators to different durable streams while preserving generic operator mechanics.
+        deprecated: true
+      4:
+        requirement: This spec does not define materialized session, transcript, or chat schema ownership.
+        deprecated: true

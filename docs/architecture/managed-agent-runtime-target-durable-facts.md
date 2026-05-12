@@ -62,8 +62,6 @@ This target protects these invariants:
 - `effect-durable-operators.FIREGRID_PROOF.2`
 - `firegrid-platform-invariants.AUTHORITY.8`
 - `firegrid-agent-ingress.SUBSCRIBERS.1`
-- `firegrid-reactive-workflow-operators.OPERATOR.1`
-- `firegrid-reactive-workflow-operators.WORKFLOW.2`
 
 ## Core Model
 
@@ -131,8 +129,8 @@ interface RuntimeOperator<Fact, Payload, Error, Requirements> {
 }
 ```
 
-The current snapshot-array `OperatorSource.scan` shape is acceptable as a
-minimal tracer 013 proof. The target operator source should be stream-native so
+The snapshot-array `OperatorSource.scan` tracer proof is historical. Current
+operator sources should use `effect-durable-operators.ConsumerSource` so
 retained scans and live follow do not collapse into `collect -> array -> loop`
 unless the fold actually needs a retained snapshot.
 
@@ -168,9 +166,7 @@ const RuntimeHostLive = FiregridRuntimeHostLive({
       ingress: env.FIREGRID_RUNTIME_INGRESS_STREAM_URL,
       checkpoints: env.FIREGRID_RUNTIME_INPUT_CHECKPOINTS_STREAM_URL,
     }),
-    requiredActions: env.FIREGRID_REQUIRED_ACTION_STREAM_URL,
     schedules: env.FIREGRID_SCHEDULE_STREAM_URL,
-    operatorProgress: env.FIREGRID_OPERATOR_PROGRESS_STREAM_URL,
   },
   workflowEngine: DurableStreamsWorkflowEngine.layer({
     streamUrl: env.FIREGRID_WORKFLOW_STREAM_URL,
@@ -180,7 +176,8 @@ const RuntimeHostLive = FiregridRuntimeHostLive({
     projections: [sessionProjection(), requiredActionProjection()],
   }),
   operators: [
-    requiredActionOperator(),
+    // Future generic effect-durable-operators consumers live here.
+    // Do not add required-action-specific mini roots.
     runtimeIngressDeliveryOperator(),
     scheduledPromptOperator(),
     childSpawnOperator(),
@@ -255,7 +252,7 @@ packages/
       runtime-context/
       runtime-ingress/
       runtime-output/
-      required-action/
+      required-action/       # durable record schemas only
       session/
 
   runtime/
@@ -272,10 +269,10 @@ packages/
         ids.ts
         rows.ts
         local-process-stdin.ts  # uses DurableConsumer + AtMostOnce
-      required-action/
-        schema.ts
-        rows.ts
-        workflow.ts             # uses DurableConsumer / DurableTable
+      # runtime-operators/ and required-action/ runtime packages were deleted.
+      # Use effect-durable-operators for durable consumers and keep
+      # required-action row schemas in protocol until generic waits/operators
+      # reintroduce behavior through a non-required-action-specific surface.
       scheduling/
         schema.ts
         rows.ts                 # uses DurableConsumer + workflow durable clock
@@ -298,26 +295,23 @@ packages/
 
 ### Existing-but-deprecated (active drift, not target shape)
 
-These modules **exist on `main`** today and are scheduled for removal
-under Lane A of the legacy-drift inventory
-(`docs/architecture/legacy-drift-inventory-2026-05-12.md`). They are
-NOT part of the target tree and must not be reintroduced when adding
-new runtime capabilities:
+These modules existed before Lane A and were removed by the
+required-action/operator cleanup. They are NOT part of the target tree
+and must not be reintroduced when adding new runtime capabilities:
 
 ```txt
 packages/runtime/src/
-  runtime-operators/        # bespoke DurableConsumer; Lane A folds into effect-durable-operators (F1)
-  required-action/
-    launcher.ts             # mini composition root; Lane A merges into FiregridRuntimeHostLive (F3)
-    service.ts              # re-folds retained rows per query; Lane A migrates to DurableTable (F2)
+  runtime-operators/        # bespoke DurableConsumer; deleted
+  required-action/          # workflow/service mini-plane; deleted
   materialization/
     raw-fold/               # in-process strategy; kept while firegrid-materialization-engines ACIDs require it (F4)
 ```
 
 A `runtime-waits/` directory has been proposed in earlier drafts but
-does not currently exist; the durable-wait pattern is expected to land
-as `DurableConsumer` + workflow `DurableDeferred` composition (see
-`README` of `effect-durable-operators` for the wait_for sketch).
+does not currently exist and is not part of the current target package tree.
+If durable waits need named runtime modules later, they should land as future
+generic wait/operator tooling built from `effect-durable-operators` and
+workflow primitives rather than as a required-action package replacement.
 
 Future extraction candidates:
 
@@ -389,7 +383,25 @@ only in-memory failures.
 Runtime capability API shape:
 
 ```ts
-const decision = yield* RequiredAction.requestAndWait({
+const decision = yield* wait_for({
+  trigger: "required-action.resolved",
+  key: `ra:${contextId}:${toolCallId}`,
+  request: {
+    type: "firegrid.required_action.requested",
+    requiredActionId: `ra:${contextId}:${toolCallId}`,
+    runtimeContextId: contextId,
+    requestKind: "tool_approval",
+    subject: { type: "tool-call", id: toolCallId },
+    prompt: "Allow this tool call?",
+    expiresAt,
+  },
+})
+```
+
+Historical shape to avoid; this is not a current runtime API:
+
+```ts
+yield* RequiredAction.requestAndWait({
   requiredActionId: `ra:${contextId}:${toolCallId}`,
   runtimeContextId: contextId,
   requestKind: "tool_approval",
@@ -402,26 +414,29 @@ const decision = yield* RequiredAction.requestAndWait({
 Lowering:
 
 ```txt
-RequiredAction.requestAndWait(...)
+wait_for(required-action descriptor)
   -> append firegrid.required_action.requested
-  -> RequiredActionWorkflow stores DurableDeferred token
   -> external resolver appends firegrid.required_action.resolved
-  -> required-action operator/resolver completes DurableDeferred
-  -> workflow records/returns terminal decision
+  -> generic wait/operator machinery observes resolution fact
+  -> workflow records/returns terminal decision through generic wait result
 ```
 
 Implementation boundary:
 
 ```ts
-const requiredActions = DurableStream.define({
-  endpoint: { url: runtimeHostStreams.requiredActions },
+// Future generic wait/operator pseudocode, not a current API.
+const requestFact = makeRequiredActionRequestedRow(request)
+yield* DurableStream.define({
+  endpoint: { url: runtimeHostStreams.requiredActionFacts },
   schema: RequiredActionRowSchema,
+}).append(requestFact)
+
+const resolution = yield* wait_for({
+  source: "required-action",
+  key: requestFact.requiredActionId,
+  match: { type: "firegrid.required_action.resolved" },
+  timeout,
 })
-
-yield* requiredActions.append(makeRequiredActionRequestedRow(request))
-
-const token = yield* DurableDeferred.token(RequiredActionResolutionDeferred)
-const decision = yield* DurableDeferred.await(RequiredActionResolutionDeferred)
 ```
 
 Required actions are not a permissions provider, callback package, product UI,
@@ -618,12 +633,14 @@ or historical scaffolding:
   along with `docs/tracers/015-stream-native-runtime-loop-validation.md` and
   `features/firegrid/stream-native-runtime-loop.feature.yaml`. Listed here
   for historical reference; the surface no longer exists.
-- Snapshot-array `OperatorSource.scan`: acceptable tracer 013 proof, but target
-  sources should be stream-native where live/no-gap behavior matters.
-- `RequiredActionsLive`, `RequiredActionRuntimeLive`, and
-  `RequiredActionStateLive`: may stay if explicitly accepted as a domain API,
-  but should not be copied as a generic service pattern for waits, ingress, or
-  runtime output.
+- Snapshot-array `OperatorSource.scan` and `packages/runtime/src/runtime-operators/**`:
+  DELETED in the required-action/operator cleanup lane. Use
+  `effect-durable-operators.ConsumerSource` and `DurableConsumer`.
+- `packages/runtime/src/required-action/**`, `RequiredActionsLive`,
+  `RequiredActionWorkflow`, `RequiredActionRuntimeLive`, and
+  `RequiredActionStateLive`: DELETED in the required-action cleanup lane.
+  Protocol record schemas remain; behavior is deferred to generic
+  wait/operator tooling.
 - `docs/proposals/SDD_EFFECT_NATIVE_DURABLE_STREAMS_PRODUCTION_CUTOVER.md`
   examples that mention `runtime-ingress/stream.ts`,
   `runtime-ingress/folds.ts`, or `runtime-output/stream.ts`: those were
@@ -648,15 +665,15 @@ or historical scaffolding:
    materialization, and providers.
 7. Client launch/prompt requests own only agent/user intent.
 8. Match predicates are named/versioned data plus params, not persisted code.
-9. Required actions are durable fact/workflow behavior, not a permissions
-   provider package or callback plane.
+9. Required actions are durable facts consumed by generic wait/operator
+   behavior, not a permissions provider package, callback plane, or
+   required-action-specific runtime service.
 
 ## Decisions Still Open
 
 1. Where wait request/outcome row schemas live: protocol, runtime, or a future
    wait package.
-2. Whether `RequiredActions` remains an exported domain service or becomes
-   functions over explicit stream endpoints.
+2. Which generic wait/operator surface consumes required-action facts.
 3. How operator progress is represented durably for long-running live sources.
 4. How no-gap retained snapshot plus live follow is exposed for operator
    sources when `snapshotThenFollow` is required.
@@ -679,9 +696,10 @@ Run stabilization/design tracers before new feature expansion:
 3. **Child Agent Spawn Lowering**: prove `spawn` creates a child runtime
    context, appends initial ingress, starts the child through host surface, and
    awaits durable completion.
-4. **Required-Action API Shape Decision**: either keep `RequiredActions` as a
-   deliberate domain service or cut it down to functions over explicit stream
-   endpoints before workflow-backed tools depend on it.
+4. **Required-Action Generic Wait Proof**: rebuild required-action request and
+   resolution behavior through the accepted generic wait/operator substrate,
+   without reintroducing `RequiredActions` or a required-action-specific
+   workflow service.
 
 Every tracer above needs scenario-level E2E proof through production package
 surfaces per `firegrid-platform-invariants.PRODUCTION_SURFACE.5`.

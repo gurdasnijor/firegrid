@@ -13,13 +13,27 @@ components:
 
   WORKFLOW:
     requirements:
-      1: A required-action workflow records requested state before it starts waiting for an external decision.
-      2: Required-action waits are backed by durable workflow machinery or durable retained state, not process-local callbacks, promises, queues, or sockets.
-      3: The external resolution surface records durable resolution state and resumes the waiting workflow through workflow-engine machinery.
-      4: Resolving the same required action id with the same terminal decision is idempotent.
-      5: A conflicting resolution after terminal state does not change the winning terminal decision.
-      6: If timeout is implemented, timeout records a durable terminal state instead of surfacing only as an in-memory failure.
-      7: Required-action workflows are reactive operators over request and resolution facts; clients and tools do not launch required-action workflows through a parallel workflow invocation endpoint.
+      1:
+        requirement: A required-action workflow records requested state before it starts waiting for an external decision.
+        deprecated: true
+      2:
+        requirement: Required-action waits are backed by durable workflow machinery or durable retained state, not process-local callbacks, promises, queues, or sockets.
+        deprecated: true
+      3:
+        requirement: The external resolution surface records durable resolution state and resumes the waiting workflow through workflow-engine machinery.
+        deprecated: true
+      4:
+        requirement: Resolving the same required action id with the same terminal decision is idempotent.
+        deprecated: true
+      5:
+        requirement: A conflicting resolution after terminal state does not change the winning terminal decision.
+        deprecated: true
+      6:
+        requirement: If timeout is implemented, timeout records a durable terminal state instead of surfacing only as an in-memory failure.
+        deprecated: true
+      7:
+        requirement: Required-action workflow/operator consumption is deferred behind the generic effect-durable-operators substrate; clients and tools do not launch required-action workflows through a parallel workflow invocation endpoint.
+        deprecated: true
 
 constraints:
   BOUNDARY:
@@ -28,5 +42,5 @@ constraints:
       2: Required actions do not require runtime-output launch code to parse provider-specific permission, tool, ACP, or Claude schemas.
       3: Required-action records carry opaque subject references so later tool-call approval, prompt approval, and wait_for semantics can reuse the workflow without changing runtime launch authority.
       4: Required-action projections may be materialized downstream, but required-action workflow authority does not depend on session materialization.
-      5: Required-action stream topology is either owned by the runtime host root or documented as an intentionally independent sibling runtime program before another runtime feature depends on it.
+      5: Required-action stream topology and workflow authority are deferred to future generic wait/operator tooling; required actions do not expose a required-action-specific mini-root.
       6: Required actions do not create a separate data plane for approvals; request, resolution, timeout, and follow-up effects are durable facts on the shared runtime substrate.
