@@ -60,8 +60,6 @@ This direction keeps Firegrid aligned with:
 - `firegrid-platform-invariants.AUTHORITY.8`
 - `firegrid-platform-invariants.PRODUCTION_SURFACE.5`
 - `firegrid-agent-ingress.SUBSCRIBERS.1`
-- `firegrid-reactive-workflow-operators.OPERATOR.1`
-- `firegrid-reactive-workflow-operators.WORKFLOW.2`
 
 The design should explicitly avoid a Firegrid clone of Inngest `createFunction`,
 Temporal public workflow handles, or Restate service endpoints. Those systems
@@ -213,16 +211,15 @@ Design notes:
 
 ### 2. Wait For User Approval Or Required-Action Resolution
 
-Current required-action code already proves the primitive:
-`RequiredActionWorkflow` records a request, waits on `DurableDeferred`, and
-`RequiredActions.resolve` records resolution before completing the deferred.
-This aligns with:
+Historical required-action tracer code proved the primitive before the
+required-action runtime mini-plane was deleted. Future proof should use
+protocol-level required-action facts plus generic wait/operator tooling aligned
+with:
 
 - `firegrid-required-actions.WORKFLOW.1`
 - `firegrid-required-actions.WORKFLOW.2`
 - `firegrid-required-actions.WORKFLOW.3`
 - `firegrid-required-actions.WORKFLOW.7`
-- `firegrid-reactive-workflow-operators.WORKFLOW.2`
 
 Recommended call shape:
 
@@ -237,30 +234,27 @@ const resolution = yield* requestRequiredAction({
 })
 ```
 
-Workflow implementation should stay close to today's shape:
+Future workflow implementation should use protocol facts plus generic
+wait/operator machinery, not a required-action runtime service. Sketch:
 
 ```ts
-const token = yield* DurableDeferred.token(RequiredActionResolutionDeferred)
+const requested = makeRequiredActionRequestedRow(request)
+yield* DurableStream.define({
+  endpoint: { url: hostStreams.requiredActionFacts },
+  schema: RequiredActionRowSchema,
+}).append(requested)
 
-yield* requiredActionFacts.appendRequested({
-  ...request,
-  workflowDeferredToken: token,
+return yield* wait_for({
+  source: "required-action",
+  key: requested.requiredActionId,
+  match: { type: "firegrid.required_action.resolved" },
 })
-
-const existing = yield* requiredActionFacts.get(request.requiredActionId)
-if (existing.resolution !== undefined) return existing.resolution
-
-const decision = yield* DurableDeferred.await(RequiredActionResolutionDeferred)
-yield* requiredActionFacts.appendResolved(decision)
-return decision
 ```
 
-The cleanup opportunity is not to remove `DurableDeferred`; it is to decide
-whether `RequiredActions` should remain an exported service or become a small
-set of functions over an explicit stream URL. It is a domain API, not a generic
-stream wrapper, so it is less risky than the deleted log wrappers. Still,
-`firegrid-required-actions.BOUNDARY.5` says required-action topology must be
-settled before more runtime features depend on it.
+The cleanup opportunity is not to remove workflow primitives such as
+`DurableDeferred`; it is to avoid reintroducing a required-action service or
+mini-plane before generic wait/operator ownership is settled.
+`firegrid-required-actions.BOUNDARY.5` keeps that topology decision explicit.
 
 ### 3. Schedule A Future Self-Prompt
 
@@ -596,13 +590,10 @@ Must prove:
 - matcher missing/version mismatch expected failure
 - rescan idempotency
 
-Relevant ACIDs:
+Historical ACIDs from the deleted runtime-local operator spec are no longer
+current acceptance criteria. Relevant current ACIDs:
 
 - `firegrid-platform-invariants.PRODUCTION_SURFACE.5`
-- `firegrid-reactive-workflow-operators.OPERATOR.1`
-- `firegrid-reactive-workflow-operators.REPLAY.1`
-- `firegrid-reactive-workflow-operators.REPLAY.3`
-- `firegrid-reactive-workflow-operators.WORKFLOW.2`
 
 ### Tracer B: Scheduled Runtime Ingress
 
@@ -750,4 +741,3 @@ accepted post-cutover realities:
 5. If "Workflow Reactor" remains a desired term, add a source-of-truth SDD. If
    not, standardize on "runtime operators" and "dispatchers" because that term
    already has specs and code.
-

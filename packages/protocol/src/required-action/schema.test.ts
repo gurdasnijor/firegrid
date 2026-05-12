@@ -6,7 +6,7 @@ import {
 } from "./index.ts"
 
 describe("@firegrid/protocol required-action schema", () => {
-  it("firegrid-required-actions.RECORDS.4 firegrid-required-actions.BOUNDARY.5 declares shared required-action durable records", () => {
+  it("firegrid-required-actions.RECORDS.1 firegrid-required-actions.RECORDS.2 firegrid-required-actions.RECORDS.3 firegrid-required-actions.RECORDS.4 firegrid-required-actions.BOUNDARY.5 declares shared required-action durable records", () => {
     const requested = Schema.decodeUnknownSync(RequiredActionRequestedRowSchema)({
       type: "firegrid.required_action.requested",
       id: "required-action:req_1:requested",
