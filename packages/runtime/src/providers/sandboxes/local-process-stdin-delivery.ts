@@ -197,7 +197,11 @@ export const localProcessStdinDelivery = (
         row.type === "firegrid.runtime_ingress.requested" &&
         row.contextId === options.contextId,
     ),
-    Stream.mapEffect((row) =>
+    Stream.mapEffect((row): Effect.Effect<
+      Option.Option<Uint8Array>,
+      RuntimeIngressError,
+      RuntimeInputDeliveryTable
+    > =>
       Effect.gen(function* () {
         const table = yield* RuntimeInputDeliveryTable
         const key = {

@@ -539,6 +539,38 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
         new DurableTableError({ table: table.namespace, cause }),
     }).pipe(
       Effect.tap((db) =>
+        // Ensure the backing durable stream exists before preload. Calling
+        // .create() against an already-existing stream returns a typed
+        // CONFLICT_EXISTS error from @durable-streams/client; we tolerate
+        // that path so DurableTable.layer is idempotent across acquisitions
+        // against the same URL.
+        Effect.tryPromise({
+          try: async () => {
+            try {
+              const createOpts: { contentType?: string } = {}
+              if (options.streamOptions.contentType !== undefined) {
+                createOpts.contentType = options.streamOptions.contentType
+              }
+              await db.stream.create(createOpts)
+            } catch (cause) {
+              if (
+                typeof cause === "object" &&
+                cause !== null &&
+                "code" in cause &&
+                (cause as { code: unknown }).code === "CONFLICT_EXISTS"
+              ) {
+                // Stream already exists with compatible configuration; the
+                // server returns CONFLICT_EXISTS and we proceed to preload.
+                return
+              }
+              throw cause
+            }
+          },
+          catch: (cause) =>
+            new DurableTableError({ table: table.namespace, cause }),
+        }),
+      ),
+      Effect.tap((db) =>
         Effect.tryPromise({
           try: () => db.preload(),
           catch: (cause) =>

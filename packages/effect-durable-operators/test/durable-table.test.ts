@@ -19,11 +19,16 @@
  *  - effect-durable-operators.TABLE.15
  */
 
-import { DurableStream as UpstreamDurableStream } from "@durable-streams/client"
 import { Effect, Fiber, Option, Ref, Schema, Stream } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { DurableTable } from "../src/index.ts"
 import { runtime, TestStreamServer } from "./harness.ts"
+
+// DurableTable tests validate the table primitive natively through its
+// merged service API (yield* Table, Table.layer, collection facades). Raw
+// durable-stream mechanics — server lifecycle, stream pre-creation — live
+// behind TestStreamServer in ./harness.ts; the test never imports a stream
+// client plane directly.
 
 const server = new TestStreamServer()
 beforeAll(async () => {
@@ -45,25 +50,12 @@ class WorkflowTable extends DurableTable("workflow", {
   executions: WorkflowExecution,
 }) {}
 
-// Stream-creation fixture only. Reaches the narrowest possible upstream
-// raw helper so tests do not pull effect-durable-streams' Bound plane in to
-// validate DurableTable semantics. DurableTable behavior is asserted
-// through its merged service API (yield* Table, Table.layer, generated
-// insert/upsert/delete/get/query/subscribe).
-const createJsonStream = (url: string): Effect.Effect<void> =>
-  Effect.promise(async () => {
-    await new UpstreamDurableStream({ url }).create({
-      contentType: "application/json",
-    })
-  })
-
 describe("DurableTable", () => {
   it("effect-durable-operators.TABLE.7 extracts pipeable primaryKey metadata and consumes the table with yield* Table", async () => {
     const url = server.url("table-primary-key")
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           // effect-durable-operators.TABLE.6
@@ -82,6 +74,57 @@ describe("DurableTable", () => {
           if (Option.isSome(got)) {
             expect(got.value.executionId).toBe("exec-pk")
           }
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.19 layer acquisition against a fresh stream URL succeeds without prior create and is idempotent on re-acquire", async () => {
+    const url = server.url("table-layer-creates-stream")
+
+    // First acquisition: stream does not exist; layer must create it and
+    // preload to readiness before the program runs.
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          yield* table.executions.insert({
+            executionId: "exec-fresh",
+            workflowName: "demo",
+            payload: {},
+            status: "started",
+          })
+          const got = yield* table.executions.get("exec-fresh")
+          expect(Option.isSome(got)).toBe(true)
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+
+    // Second acquisition: stream already exists; the layer must tolerate
+    // CONFLICT_EXISTS from the underlying create and proceed to preload.
+    // Cold-start replay also proves the previously-written row is visible.
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const got = yield* table.executions.get("exec-fresh")
+          expect(Option.isSome(got)).toBe(true)
         })
 
         yield* program.pipe(
@@ -145,7 +188,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -226,7 +268,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -270,7 +311,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -302,7 +342,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -358,7 +397,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const seed = Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -437,7 +475,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           const table = yield* CheckpointTable
@@ -483,7 +520,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           const table = yield* WorkflowTable
