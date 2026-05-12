@@ -21,13 +21,14 @@
  */
 
 import { DurableStream } from "effect-durable-streams"
-import { Cause, Effect, Exit, Option, Ref, Schedule, Schema, Stream } from "effect"
+import { Effect, Exit, Option, Ref, Schedule, Schema, Stream } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   ClaimPolicy,
   ConsumerCheckpointStoreLive,
   DurableConsumer,
 } from "../src/index.ts"
+import { DurableConsumerError } from "../src/Errors.ts"
 import { runtime, TestStreamServer } from "./harness.ts"
 
 const server = new TestStreamServer()
@@ -247,8 +248,6 @@ describe("DurableConsumer — order-email scenario", () => {
 })
 
 // ----- Failure-window semantics & retry & sink form -----
-
-import { DurableConsumerError } from "../src/Errors.ts"
 
 const failOnce = (callsRef: Ref.Ref<number>) =>
   Effect.flatMap(
@@ -530,6 +529,85 @@ describe("DurableConsumer — failure-window semantics", () => {
     expect(out.result.processed).toBe(1)
   })
 
+  it("`process` is generic in caller-chosen E and R: caller services compose cleanly", async () => {
+    // Audit #1: `process` must not force `(DurableConsumerError, HttpClient)`
+    // on callers. This test wires a caller-owned service tag with a
+    // custom error type and asserts the surface composes through `run`.
+    const ordersUrl = server.url("generic-er")
+    const checkpointsUrl = server.url("generic-er-cp")
+
+    class CustomError extends Schema.TaggedError<CustomError>()(
+      "CustomError",
+      { detail: Schema.String },
+    ) {}
+    class EmailService extends Effect.Service<EmailService>()(
+      "test/EmailService",
+      {
+        succeed: {
+          send: (orderId: string) =>
+            Effect.succeed({ sent: true, orderId }) as Effect.Effect<
+              { readonly sent: boolean; readonly orderId: string },
+              CustomError,
+              never
+            >,
+        },
+      },
+    ) {}
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* DurableStream.define({
+          endpoint: { url: ordersUrl },
+          schema: Schema.Unknown,
+        }).create({ contentType: "application/json" })
+        yield* DurableStream.define({
+          endpoint: { url: checkpointsUrl },
+          schema: Schema.Unknown,
+        }).create({ contentType: "application/json" })
+
+        yield* DurableStream.define({
+          endpoint: { url: ordersUrl },
+          schema: Order,
+        }).append({ type: "order.created", orderId: "g-1", customer: "x" })
+      }),
+    )
+
+    const consumer = DurableConsumer.define({
+      name: "generic-er",
+      select: (o: Order) =>
+        o.type === "order.created" ? Option.some(o) : Option.none(),
+      key: (o) => o.orderId,
+    })
+
+    const out = await runtime(
+      DurableConsumer.run({
+        source: DurableStream.define({
+          endpoint: { url: ordersUrl },
+          schema: Order,
+        }),
+        checkpoint: { subscriberId: "generic-er.v1" },
+        definition: consumer,
+        policy: ClaimPolicy.AtLeastOnce(),
+        // `process` returns Effect<_, CustomError, EmailService> — the
+        // surface accepts arbitrary E/R, not just DurableConsumerError/HttpClient.
+        process: (o) =>
+          Effect.flatMap(EmailService, (svc) => svc.send(o.orderId)),
+        live: false,
+      }).pipe(
+        Effect.provide(EmailService.Default),
+        Effect.provide(
+          ConsumerCheckpointStoreLive({
+            streamOptions: {
+              endpoint: { url: checkpointsUrl },
+              producerId: "generic-er-cp-1",
+            },
+          }),
+        ),
+      ),
+    )
+    expect(out.processed).toBe(1)
+  })
+
   it("sink form consumes a caller-owned Stream<Fact> (CONSUMER.6 sink)", async () => {
     const checkpointsUrl = server.url("sink-cp")
 
@@ -585,9 +663,6 @@ describe("DurableConsumer — failure-window semantics", () => {
     expect([...out.calls].sort()).toEqual(["s-1", "s-3"])
   })
 })
-
-// Silence unused import warning if any of the above don't reference Cause.
-void Cause
 
 // ----- Trigger-shaped consumer (stream form) -----
 
@@ -655,16 +730,25 @@ describe("DurableConsumer — trigger-shaped (stream form)", () => {
       }),
     )
 
-    // Three unique keys; duplicate retained fact for "k-1" must collapse —
-    // both occurrences see the same checkpoint state during this run, so we
-    // accept either "k-1 processed twice" (when both pass the not-completed
-    // gate before the first writes completion) OR "k-1 processed once". The
-    // contract we ENFORCE is that across the restart in run #2, no further
-    // outputs are emitted. Run #1 is a soft check on the distinct-key set.
-    const distinctKeys1 = new Set(run1.map((s) => s.replace("out:", "")))
-    expect(distinctKeys1.has("k-1")).toBe(true)
-    expect(distinctKeys1.has("k-2")).toBe(true)
-    expect(distinctKeys1.has("k-3")).toBe(true)
+    // Run #1 contract:
+    //
+    //  - DOCUMENTED SAME-RUN LIMITATION: AtLeastOnce processes a same-key
+    //    duplicate retained fact at most twice in a single pass. Both
+    //    occurrences read the checkpoint BEFORE the first writes completion;
+    //    same-run per-key dedupe is not guaranteed in v0. (Adding a
+    //    per-key in-memory single-flight would close this; intentional
+    //    follow-up.)
+    //  - HARD CONTRACT: k-2 and k-3 each appear exactly once. k-1 appears
+    //    once OR twice (never zero).
+    //  - HARD CONTRACT: every emitted output corresponds to a key in the
+    //    expected key set.
+    const k1Count = run1.filter((s) => s === "out:k-1").length
+    const k2Count = run1.filter((s) => s === "out:k-2").length
+    const k3Count = run1.filter((s) => s === "out:k-3").length
+    expect(k2Count).toBe(1)
+    expect(k3Count).toBe(1)
+    expect(k1Count >= 1 && k1Count <= 2).toBe(true)
+    expect(run1.every((s) => s === "out:k-1" || s === "out:k-2" || s === "out:k-3")).toBe(true)
 
     // Run #2: fresh checkpoint store layer on the SAME checkpoints stream.
     // Completed keys must skip; the output stream MUST be empty.

@@ -75,13 +75,16 @@ export interface Checkpoint {
   readonly subscriberId: string
 }
 
-interface ProcessParams<Fact, FactI, Key extends string, Input, Output> {
+interface ProcessParams<Fact, FactI, Key extends string, Input, Output, E, R> {
   readonly source: DurableStream.Bound<Fact, FactI>
   readonly checkpoint: Checkpoint
   readonly definition: ConsumerDefinition<Fact, Key, Input>
   readonly policy: ClaimPolicyType
-  readonly process: (input: Input) => Effect.Effect<Output, DurableConsumerError, HttpClient.HttpClient>
-  readonly retry?: Schedule.Schedule<unknown, DurableConsumerError, never>
+  // Generic in caller-chosen error E and requirements R so adapters can
+  // freely compose their own Effect services (HttpClient, custom tools,
+  // etc.) without bending around an inflated R channel.
+  readonly process: (input: Input) => Effect.Effect<Output, E, R>
+  readonly retry?: Schedule.Schedule<unknown, E | DurableConsumerError, never>
   /**
    * If `true`, read the source with `live: true`. Default `true` for `run`/`sink`
    * (long-running consumers). The `stream` form follows the same default.
@@ -103,10 +106,10 @@ const wrapErr = (name: string) =>
     (cause: unknown) => new DurableConsumerError({ consumer: name, cause }),
   )
 
-const applyRetry = <A, R>(
-  eff: Effect.Effect<A, DurableConsumerError, R>,
-  retry: Schedule.Schedule<unknown, DurableConsumerError, never> | undefined,
-): Effect.Effect<A, DurableConsumerError, R> =>
+const applyRetry = <A, E, R>(
+  eff: Effect.Effect<A, E, R>,
+  retry: Schedule.Schedule<unknown, E, never> | undefined,
+): Effect.Effect<A, E, R> =>
   retry !== undefined ? Effect.retry(eff, retry) : eff
 
 // Policy → decision: returns whether to skip the input, and the pre/post
@@ -146,40 +149,43 @@ const decidePolicy = (
     }),
   })
 
-const runOnePolicy = <Input, Output>(
+const runOnePolicy = <Input, Output, E, R>(
   store: Context.Tag.Service<typeof ConsumerCheckpointStore>,
   subscriberId: string,
   k: string,
   input: Input,
-  process: (input: Input) => Effect.Effect<Output, DurableConsumerError, HttpClient.HttpClient>,
-  retry: Schedule.Schedule<unknown, DurableConsumerError, never> | undefined,
+  process: (input: Input) => Effect.Effect<Output, E, R>,
+  retry: Schedule.Schedule<unknown, E | DurableConsumerError, never> | undefined,
   action: PolicyAction,
   name: string,
-): Effect.Effect<Output, DurableConsumerError, HttpClient.HttpClient> => {
+): Effect.Effect<Output, E | DurableConsumerError, R> => {
   const claim = store.writeClaim(subscriberId, k).pipe(wrapErr(name))
   const complete = store.writeCompletion(subscriberId, k).pipe(wrapErr(name))
   return Effect.gen(function* () {
     if (action.preProcess === "claim") yield* claim
     else if (action.preProcess === "claim-if-unclaimed") yield* claim
-    const out = yield* applyRetry(process(input), retry)
+    const out = yield* applyRetry(
+      process(input) as Effect.Effect<Output, E | DurableConsumerError, R>,
+      retry,
+    )
     if (action.postProcess === "completion") yield* complete
     return out
   })
 }
 
-const processedStream = <Fact, FactI, Key extends string, Input, Output>(
-  params: ProcessParams<Fact, FactI, Key, Input, Output>,
+const processedStream = <Fact, FactI, Key extends string, Input, Output, E, R>(
+  params: ProcessParams<Fact, FactI, Key, Input, Output, E, R>,
 ): Stream.Stream<
   Output,
-  DurableConsumerError | DurableStream.ReadError,
-  ConsumerCheckpointStore | HttpClient.HttpClient
+  E | DurableConsumerError | DurableStream.ReadError,
+  R | ConsumerCheckpointStore | HttpClient.HttpClient
 > =>
   Stream.unwrap(
     Effect.map(ConsumerCheckpointStore, (store) => {
       const live = params.live ?? true
       const handle = (
         fact: Fact,
-      ): Stream.Stream<Output, DurableConsumerError, HttpClient.HttpClient> => {
+      ): Stream.Stream<Output, E | DurableConsumerError, R> => {
         const selected = params.definition.select(fact)
         if (Option.isNone(selected)) return Stream.empty
         const input = selected.value
@@ -217,19 +223,19 @@ const processedStream = <Fact, FactI, Key extends string, Input, Output>(
 // Public APIs: run / sink / stream
 // ---------------------------------------------------------------------------
 
-export type RunOptions<Fact, FactI, Key extends string, Input, Output> =
-  ProcessParams<Fact, FactI, Key, Input, Output>
+export type RunOptions<Fact, FactI, Key extends string, Input, Output, E, R> =
+  ProcessParams<Fact, FactI, Key, Input, Output, E, R>
 
 /**
  * Drain the source through the consumer. Returns the number of inputs
  * processed during this call.
  */
-export const run = <Fact, FactI, Key extends string, Input, Output>(
-  opts: RunOptions<Fact, FactI, Key, Input, Output>,
+export const run = <Fact, FactI, Key extends string, Input, Output, E, R>(
+  opts: RunOptions<Fact, FactI, Key, Input, Output, E, R>,
 ): Effect.Effect<
   { readonly processed: number },
-  DurableConsumerError | DurableStream.ReadError,
-  ConsumerCheckpointStore | HttpClient.HttpClient
+  E | DurableConsumerError | DurableStream.ReadError,
+  R | ConsumerCheckpointStore | HttpClient.HttpClient
 > =>
   processedStream(opts).pipe(
     Stream.runFold(0, (n) => n + 1),
@@ -240,20 +246,18 @@ export const run = <Fact, FactI, Key extends string, Input, Output>(
  * Sink form — consumes a `Stream<Fact>` and returns the processed count.
  * Use when the caller owns the source stream lifecycle.
  */
-export const sink = <Fact, Key extends string, Input, Output>(opts: {
+export const sink = <Fact, Key extends string, Input, Output, E, R>(opts: {
   readonly checkpoint: Checkpoint
   readonly definition: ConsumerDefinition<Fact, Key, Input>
   readonly policy: ClaimPolicyType
-  readonly process: (
-    input: Input,
-  ) => Effect.Effect<Output, DurableConsumerError, HttpClient.HttpClient>
-  readonly retry?: Schedule.Schedule<unknown, DurableConsumerError, never>
+  readonly process: (input: Input) => Effect.Effect<Output, E, R>
+  readonly retry?: Schedule.Schedule<unknown, E | DurableConsumerError, never>
 }): Sink.Sink<
   { readonly processed: number },
   Fact,
   never,
-  DurableConsumerError,
-  ConsumerCheckpointStore | HttpClient.HttpClient
+  E | DurableConsumerError,
+  R | ConsumerCheckpointStore | HttpClient.HttpClient
 > => {
   const step = (acc: number, fact: Fact) =>
     Effect.gen(function* () {
@@ -283,8 +287,8 @@ export const sink = <Fact, Key extends string, Input, Output>(opts: {
   return Sink.foldEffect<
     number,
     Fact,
-    DurableConsumerError,
-    ConsumerCheckpointStore | HttpClient.HttpClient
+    E | DurableConsumerError,
+    R | ConsumerCheckpointStore | HttpClient.HttpClient
   >(0, () => true, step).pipe(
     Sink.ignoreLeftover,
     Sink.map((processed) => ({ processed })),
@@ -298,10 +302,10 @@ export const sink = <Fact, Key extends string, Input, Output>(opts: {
  * error channel (per SDD open question #2; observability-only side channel
  * is deferred).
  */
-export const stream = <Fact, FactI, Key extends string, Input, Output>(
-  opts: RunOptions<Fact, FactI, Key, Input, Output>,
+export const stream = <Fact, FactI, Key extends string, Input, Output, E, R>(
+  opts: RunOptions<Fact, FactI, Key, Input, Output, E, R>,
 ): Stream.Stream<
   Output,
-  DurableConsumerError | DurableStream.ReadError,
-  ConsumerCheckpointStore | HttpClient.HttpClient
+  E | DurableConsumerError | DurableStream.ReadError,
+  R | ConsumerCheckpointStore | HttpClient.HttpClient
 > => processedStream(opts)

@@ -66,6 +66,12 @@ const recordOf = (row: CheckpointRow): CheckpointRecord => ({
 // Service tag
 // ---------------------------------------------------------------------------
 
+// The producer used by `ConsumerCheckpointStoreLive` is acquired at Layer
+// construction (inside the layer's HttpClient/Scope). Its `append` does
+// NOT require HttpClient at call time — the layer fronts the HTTP fiber
+// with a bounded in-memory queue. So `writeClaim`/`writeCompletion` here
+// have `R: never`; callers don't need to wire HttpClient through their
+// process effect just to record a checkpoint.
 export class ConsumerCheckpointStore extends Context.Tag(
   "effect-durable-operators/ConsumerCheckpointStore",
 )<
@@ -78,11 +84,11 @@ export class ConsumerCheckpointStore extends Context.Tag(
     readonly writeClaim: (
       subscriberId: string,
       key: string,
-    ) => Effect.Effect<void, CheckpointError, HttpClient.HttpClient>
+    ) => Effect.Effect<void, CheckpointError>
     readonly writeCompletion: (
       subscriberId: string,
       key: string,
-    ) => Effect.Effect<void, CheckpointError, HttpClient.HttpClient>
+    ) => Effect.Effect<void, CheckpointError>
   }
 >() {}
 
@@ -136,13 +142,29 @@ export const ConsumerCheckpointStoreLive = (
       }
 
       // Live follow-on: keep the in-memory map in sync with future appends.
-      // Forking into the scope so the fiber is torn down on layer release.
+      // Failures on the live fiber are captured (not silently dropped) so
+      // subsequent `read` calls surface a typed error rather than returning
+      // a stale view. The fiber is scoped to the layer so it's torn down
+      // on release.
+      const liveFailure =
+        yield* Ref.make<Option.Option<CheckpointError>>(Option.none())
       yield* Stream.runForEach(live, (row) =>
         Ref.update(stateRef, (m) =>
           HashMap.set(m, compositeKey(row.subscriberId, row.key), row),
         ),
       ).pipe(
-        Effect.catchAll(() => Effect.void),
+        Effect.catchAll((cause) =>
+          Ref.set(
+            liveFailure,
+            Option.some(
+              new CheckpointError({
+                subscriberId: "(live-follow)",
+                key: "(live-follow)",
+                cause,
+              }),
+            ),
+          ),
+        ),
         Effect.forkScoped,
       )
 
@@ -204,19 +226,27 @@ export const ConsumerCheckpointStoreLive = (
           return writeRow(subscriberId, key, next)
         })
 
+      // Surface any captured live-follow failure on read/write so callers
+      // see a typed error rather than a silently-stale view.
+      const guard = <A>(eff: Effect.Effect<A, CheckpointError>) =>
+        Effect.flatMap(Ref.get(liveFailure), (opt) =>
+          Option.isSome(opt) ? Effect.fail(opt.value) : eff,
+        )
+
       return ConsumerCheckpointStore.of({
         read: (subscriberId, key) =>
-          Effect.map(Ref.get(stateRef), (m) =>
-            Option.map(
-              HashMap.get(m, compositeKey(subscriberId, key)),
-              recordOf,
+          guard(
+            Effect.map(Ref.get(stateRef), (m) =>
+              Option.map(
+                HashMap.get(m, compositeKey(subscriberId, key)),
+                recordOf,
+              ),
             ),
           ),
-
         writeClaim: (subscriberId, key) =>
-          writeMarked(subscriberId, key, "claim"),
+          guard(writeMarked(subscriberId, key, "claim")),
         writeCompletion: (subscriberId, key) =>
-          writeMarked(subscriberId, key, "complete"),
+          guard(writeMarked(subscriberId, key, "complete")),
       })
     }),
   )

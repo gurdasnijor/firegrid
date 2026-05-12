@@ -65,15 +65,21 @@ describe("DurableTable", () => {
           receivedAt: "2026-01-01T00:00:00.000Z",
           status: "received",
         }
-        yield* wireBound.append(webhookCollections.collections.webhooks.upsert(row))
+        const base = webhookCollections.collections.webhooks.upsert(row)
+        // Tag with a txid so we can deterministically synchronize on
+        // observed materialization rather than sleeping for "long enough".
+        yield* wireBound.append({
+          ...base,
+          headers: { ...base.headers, txid: "evt-1-tx" },
+        })
 
         const table = yield* DurableTable.materialize({
           streamOptions: { url, contentType: "application/json" },
           collections: webhookCollections,
         })
 
-        // Give the materialization a moment to consume.
-        yield* Effect.sleep("200 millis")
+        // Wait for the tagged tx to flow through the materialization.
+        yield* table.awaitTxId("evt-1-tx", 3000)
 
         const got = yield* table.get("webhooks", "evt-1")
         expect(Option.isSome(got)).toBe(true)
@@ -229,7 +235,7 @@ describe("DurableTable", () => {
     )
   })
 
-  it("awaitTxId resolves after a tx with that id is synced (TABLE.3)", async () => {
+  it("awaitTxId is a coordination point: succeeds after sync, times out before (TABLE.3)", async () => {
     const url = server.url("table-awaittx")
 
     await runtime(
@@ -244,10 +250,18 @@ describe("DurableTable", () => {
           collections: webhookCollections,
         })
 
-        // Append a row tagged with a txid header. The wire-level upsert
-        // helper accepts headers; we surface the txid through the State
-        // Protocol's `headers.txid` slot so `awaitTxId` has something to
-        // observe.
+        // Negative half: awaiting a txid that was never written must time
+        // out — proves awaitTxId is not a no-op. A short 250ms deadline
+        // keeps the test fast.
+        const missResult = yield* table.awaitTxId("never-written", 250).pipe(
+          Effect.either,
+        )
+        expect(missResult._tag).toBe("Left")
+
+        // Positive half: tag an upsert with a txid, append, then await.
+        // The await must (a) succeed and (b) the row must be queryable
+        // immediately after — proving the txid signals a real
+        // read-after-write coordination point, not just a timer.
         const event = webhookCollections.collections.webhooks.upsert({
           providerEventId: "txid-evt",
           receivedAt: "2026-01-01T00:00:00.000Z",
@@ -262,16 +276,15 @@ describe("DurableTable", () => {
           schema: Schema.Any,
         }).append(tagged)
 
-        // `awaitTxId` should resolve once the tagged row is observed
-        // through the materialization. Bound the wait so a failure surfaces
-        // as a typed timeout.
-        const result = yield* table
-          .awaitTxId("tx-001", 3000)
-          .pipe(Effect.either)
-        // Either resolution-without-error OR a typed failure are acceptable
-        // PR-time behaviors — TanStack DB's awaitTxId implementation
-        // determines exact semantics. We assert the API doesn't throw.
-        expect(result._tag).toMatch(/Left|Right/)
+        const hitResult = yield* table.awaitTxId("tx-001", 3000).pipe(
+          Effect.either,
+        )
+        expect(hitResult._tag).toBe("Right")
+
+        // After awaitTxId resolves, the row MUST be queryable — that's the
+        // read-after-write contract this method is meant to provide.
+        const row = yield* table.get("webhooks", "txid-evt")
+        expect(Option.isSome(row)).toBe(true)
       }),
     )
   })
@@ -304,14 +317,15 @@ describe("DurableTable", () => {
     )
 
     // Fresh scope: a brand-new DurableTable acquires, preloads, and must
-    // observe the full retained history through cold-start replay.
+    // observe the full retained history through cold-start replay. The
+    // `materialize` Effect runs `createStreamDB.preload()` before acquire
+    // returns, so the snapshot is queryable IMMEDIATELY — no sleep needed.
     await runtime(
       Effect.gen(function* () {
         const table = yield* DurableTable.materialize({
           streamOptions: { url, contentType: "application/json" },
           collections: webhookCollections,
         })
-        yield* Effect.sleep("200 millis")
         const rows = yield* table.query("webhooks", (coll) => coll.toArray)
         expect(rows.length).toBe(3)
       }),

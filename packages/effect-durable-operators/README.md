@@ -14,7 +14,7 @@ and tracer [`017`](../../docs/tracers/017-effect-durable-operators.md).
 | `DurableTable`               | Scope-managed Effect facade over `@durable-streams/state`'s `createStreamDB`. Effect Schema in; Standard Schema at the upstream boundary. Pull (`get`/`query`) and push (`changes`) helpers. |
 | `DurableProjection`          | Stream operator that converts raw durable facts into State Protocol change events. Projection state is allocated inside Effect (Ref/SynchronizedRef).                              |
 | `DurableConsumer`            | "Process each logical item once per subscriber" operator. Selects, keys, claims/completes via the `ConsumerCheckpointStore` service. Exposes `run`, `sink`, and `stream` shapes.   |
-| `ConsumerCheckpointStore`    | `Context.Tag` service. v0 ships a `Live` Layer backed by `effect-durable-streams.snapshotThenFollow` so layer acquisition is a deterministic catch-up barrier.                    |
+| `ConsumerCheckpointStore`    | `Context.Tag` service. v0 ships a `Live` Layer that materializes checkpoint rows directly via `effect-durable-streams.snapshotThenFollow` (see "Checkpoint backend choice" below). Layer acquisition is a deterministic catch-up barrier. |
 | `ClaimPolicy`                | `Data.taggedEnum` over `AtMostOnce`, `AtLeastOnce`, `AtLeastOnceWithClaim`.                                                                                                       |
 
 ## Boundaries
@@ -25,6 +25,30 @@ and tracer [`017`](../../docs/tracers/017-effect-durable-operators.md).
   packages), enforced by `.dependency-cruiser.cjs` rules
   `durable-streams-imports-contained` and
   `effect-durable-operators-state-only`.
+
+## Checkpoint backend choice
+
+The SDD and tracer text describe checkpoints as "State Protocol-backed."
+This implementation takes a slightly different path:
+`ConsumerCheckpointStoreLive` materializes checkpoint rows directly from the
+underlying durable stream using `effect-durable-streams.snapshotThenFollow`
+rather than going through the `effect-durable-streams-state` `State`
+materialization.
+
+**Why:** `State.make` runs its read-and-decode work in a forked fiber and
+does not expose a deterministic "caught-up" signal. The State Protocol's
+`SnapshotEnd` control event is not emitted on fresh streams by the test
+server, so a SnapshotEnd-based preload would silently swallow the wait.
+`snapshotThenFollow` returns `{ snapshot, live }` only after the catch-up
+read has completed, which gives the Layer a precise, type-checked sync
+barrier: the first `read` after acquire is guaranteed to see all retained
+checkpoints, so restart semantics for AtMostOnce/AtLeastOnce are
+deterministic.
+
+The wire format remains a State-Protocol-compatible change event (the
+`CheckpointRow` schema is appended through a typed
+`DurableStream.Producer`); a future Layer could swap to a `State`-backed
+implementation without changing the service surface.
 
 ## Not in v0
 
