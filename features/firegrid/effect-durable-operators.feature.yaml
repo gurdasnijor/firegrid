@@ -46,7 +46,7 @@ components:
 
   FIREGRID_PROOF:
     requirements:
-      1: A Firegrid-shaped proof replaces runtime input requested-minus-accepted fold logic with DurableConsumer rather than adding another runtime-ingress service plane.
+      1: A Firegrid-shaped proof replaces session input requested-minus-progress fold logic with DurableConsumer rather than adding another session-input service plane.
       2: The Firegrid proof uses production package surfaces and high-fidelity scenario coverage, not scenario-only composition roots or shadow harnesses.
       3: The Firegrid proof remains a consumer of the generic operators package and does not introduce Firegrid-specific APIs into that package.
 

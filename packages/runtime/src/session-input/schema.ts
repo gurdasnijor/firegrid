@@ -1,28 +1,28 @@
-export * from "@firegrid/protocol/runtime-ingress"
+export * from "@firegrid/protocol/session-input"
 import { Schema } from "effect"
 
-export class RuntimeIngressError extends Schema.TaggedError<RuntimeIngressError>()(
-  "RuntimeIngressError",
+export class SessionInputError extends Schema.TaggedError<SessionInputError>()(
+  "SessionInputError",
   {
     op: Schema.String,
     contextId: Schema.optional(Schema.String),
-    ingressId: Schema.optional(Schema.String),
+    sessionInputId: Schema.optional(Schema.String),
     message: Schema.String,
     cause: Schema.optional(Schema.Unknown),
   },
 ) {}
 
-export const runtimeIngressError = (
+export const sessionInputError = (
   op: string,
   message: string,
   contextId?: string,
-  ingressId?: string,
+  sessionInputId?: string,
   cause?: unknown,
-): RuntimeIngressError =>
-  new RuntimeIngressError({
+): SessionInputError =>
+  new SessionInputError({
     op,
     message,
     ...(contextId === undefined ? {} : { contextId }),
-    ...(ingressId === undefined ? {} : { ingressId }),
+    ...(sessionInputId === undefined ? {} : { sessionInputId }),
     ...(cause === undefined ? {} : { cause }),
   })

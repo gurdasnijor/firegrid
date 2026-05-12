@@ -9,8 +9,8 @@ import {
   type PublicLaunchRequest,
 } from "@firegrid/protocol/launch"
 import {
-  RuntimeIngressRowSchema,
-} from "@firegrid/protocol/runtime-ingress"
+  SessionInputRowSchema,
+} from "@firegrid/protocol/session-input"
 import { Effect, Either, Layer, Stream } from "effect"
 import { DurableStream } from "effect-durable-streams"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -224,29 +224,29 @@ describe("@firegrid/client", () => {
       { inputStreamUrl },
     )
 
-    expect(result.duplicate.ingressId).toEqual(result.first.ingressId)
+    expect(result.duplicate.sessionInputId).toEqual(result.first.sessionInputId)
 
     const rows = await Effect.runPromise(DurableStream.define({
       endpoint: { url: inputStreamUrl },
-      schema: RuntimeIngressRowSchema,
+      schema: SessionInputRowSchema,
     }).collect.pipe(
       Effect.provide(FetchHttpClient.layer),
     ))
 
     expect(rows).toHaveLength(2)
-    expect(rows.map(row => row.ingressId)).toEqual([
-      result.first.ingressId,
-      result.first.ingressId,
+    expect(rows.map(row => row.sessionInputId)).toEqual([
+      result.first.sessionInputId,
+      result.first.sessionInputId,
     ])
     expect(rows[0]).toMatchObject({
-      type: "firegrid.runtime_ingress.requested",
+      type: "firegrid.session.input",
       contextId: "ctx_prompt",
       kind: "message",
       authoredBy: "client",
       idempotencyKey: "prompt-1",
     })
     expect(rows[1]).toMatchObject({
-      type: "firegrid.runtime_ingress.requested",
+      type: "firegrid.session.input",
       contextId: "ctx_prompt",
       kind: "message",
       authoredBy: "client",

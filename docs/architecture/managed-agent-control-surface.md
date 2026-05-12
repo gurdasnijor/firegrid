@@ -92,17 +92,17 @@ Responsibilities:
 Current ground truth:
 
 - `FiregridRuntimeHostLive` owns workflow, control-plane, runtime-output, and
-  optional runtime-ingress streams.
+  optional session-input streams.
 - `startRuntime({ contextId })` runs through the host-owned workflow/control
   and provider composition.
-- `appendRuntimeIngress(request)` appends host-owned ingress facts.
+- `appendSessionInput(request)` appends host-owned session input facts.
 
 Likely eventual host capabilities:
 
 | Host Capability | Purpose | Public To Client? |
 | --- | --- | --- |
 | `startRuntime` | Start or resume execution for a runtime context. | No. |
-| `appendRuntimeIngress` | Append provider-neutral runtime input facts. | Package/app boundary only. |
+| `appendSessionInput` | Append provider-neutral runtime input facts. | Package/app boundary only. |
 | `startDispatchers` | Start long-running subscribers that route durable facts to workflows, adapters, materializers, or follow-up facts. | No. |
 | `startMaterializers` | Start configured projection/materialization workers. | No. |
 | `configureAdapters` | Install runtime/provider adapters such as local process, stdio, ACP, HTTP, or vendor-specific adapters. | No. |
@@ -144,7 +144,7 @@ Responsibilities:
 Current ground truth:
 
 - `@firegrid/client` exposes `launch(request)` and `open(contextId)`.
-- Runtime ingress rows support `message`, `control`, `tool_result`, and
+- Session input rows support `message`, `control`, `tool_result`, and
   `required_action_result` inputs.
 - Runtime output rows are durable facts consumed by materialization strategies.
 
@@ -183,11 +183,9 @@ Historical term cleanup:
   It should become implementation vocabulary such as "dispatch prompt to live
   adapter" or "record adapter delivery progress", not a first-class client or
   session-plane verb.
-- `runtime_ingress` is the current implementation row family. Architecturally
-  it should be evaluated against the prompt/turn model. It may collapse into
-  clearer session input and prompt request facts rather than surviving as a
-  public architectural concept.
-- Tracer 016 keeps `runtime_ingress` as transitional physical vocabulary while
+- `firegrid.session.input` is the current implementation row family.
+  Historical `runtime_ingress` names are not public architectural concepts.
+- Tracer 019 deleted `runtime_ingress` physical vocabulary while
   exposing the session-plane control concept as prompt/session input facts.
   Client and runtime host append surfaces share the same durable row schema;
   host-owned runtime code performs delivery.
@@ -219,8 +217,8 @@ Target capability verbs:
 | --- | --- | --- |
 | `sleep(duration)` | Suspend until durable time reaches a deadline. | Durable timer/wait descriptor plus workflow resume. |
 | `wait_for(trigger, timeout?)` | Suspend until a named event/projection predicate resolves. | Durable wait descriptor, snapshot-first projection check, live follow after cursor, optional timeout. |
-| `schedule_me(when, prompt)` | Queue a future self-prompt. | Durable timer intent; timer operator appends `runtime_ingress.requested` when due. |
-| `spawn(agent, prompt)` | Start a child runtime and wait for terminal state. | Launch intent/control facts plus child ingress; projection/operator resolves parent wait. |
+| `schedule_me(when, prompt)` | Queue a future self-prompt. | Durable timer intent; timer operator appends `firegrid.session.input` when due. |
+| `spawn(agent, prompt)` | Start a child runtime and wait for terminal state. | Launch intent/control facts plus child session input; projection/operator resolves parent wait. |
 | `spawn_all(tasks)` | Fan out child runtimes and wait for all terminal states. | N child intents or one expansion intent plus aggregate projection. |
 | `execute(target, input)` | Call a named tool/sandbox/provider target. | Claim-visible work first, execute adapter, append durable result/failure facts. |
 | `request_decision` | Ask for external approval or input. | Required-action/request facts plus named wait for a durable decision. |
@@ -266,7 +264,7 @@ working inventory for future tracer selection.
 | --- | --- | --- | --- |
 | Launch/request session | Session plus Host | Implemented as client launch plus runtime host start. | Align launch naming with session lifecycle and initial prompt lowering. |
 | Start runtime worker | Host | Implemented as `startRuntime`. | Keep host-owned; do not expose workflow start endpoint. |
-| Send input / prompt | Session | Runtime host ingress exists; client API missing. | Rename toward prompt/turn semantics and decide client vs host append boundary. |
+| Send input / prompt | Session | Runtime host session input exists; client API missing. | Rename toward prompt/turn semantics and decide client vs host append boundary. |
 | Dispatch prompt to adapter | Host plus Session | Implemented for one provider path. | Treat as adapter/operator progress, not session-plane public API. |
 | Record session update/output | Session | Implemented with stream-native runtime output rows. | Align runtime-output rows with session update/prompt terminal vocabulary. |
 | Materialize session | Session observation | Implemented for raw-fold, State Protocol, Materialize. | Align strategy selection with host configuration. |
@@ -274,8 +272,8 @@ working inventory for future tracer selection.
 | Resolve decision | Session or Coordination input | Required-action-specific path exists. | Should append decision fact, not wake workflow directly. |
 | Sleep | Coordination | Planned. | Use workflow durable clock/timer operator, no bespoke plane. |
 | Wait for event/projection | Coordination | Planned. | Define named wait descriptor and coordination predicate model. |
-| Schedule self prompt | Coordination to Session | Planned. | Timer operator appends runtime ingress. |
-| Spawn child runtime | Coordination to Session/Host | Planned. | Reuse launch + ingress + projection wait. |
+| Schedule self prompt | Coordination to Session | Planned. | Timer operator appends session input. |
+| Spawn child runtime | Coordination to Session/Host | Planned. | Reuse launch + session input + projection wait. |
 | Execute tool/sandbox | Coordination plus Host provider | Sandbox provider exists; tool execution model planned. | Claim-before-side-effect and durable result facts. |
 | Cancel/interrupt/pause | Undecided | Not designed. | Needs provider-specific promptability, terminal-state, and recovery semantics before placement. |
 | Replay/reprocess | Host admin | Not designed. | Needs operator progress/cursor model. |
@@ -316,7 +314,7 @@ Prove:
 
 ```txt
 client/app prompt call
-  -> durable runtime ingress fact
+  -> durable session input fact
   -> provider adapter consumes
   -> runtime-output fact proves delivery/effect
 ```
@@ -325,7 +323,7 @@ Design questions:
 
 - Is the first public prompt surface in `@firegrid/client`, `@firegrid/runtime`,
   or an app/server facade over runtime host?
-- How does initial launch input lower to the same ingress path?
+- How does initial launch input lower to the same session input path?
 - Which idempotency key rules belong to the client contract?
 
 ### B. Generic Wait Descriptor And Matcher Registry
@@ -363,7 +361,7 @@ Design questions:
   exist?
 - What does the public decision API look like if it only appends facts?
 
-### D. Schedule Me Over Timer Plus Ingress
+### D. Schedule Me Over Timer Plus Session Input
 
 Prove:
 
@@ -371,7 +369,7 @@ Prove:
 schedule_me(when, prompt)
   -> durable timer intent
   -> timer operator fires
-  -> runtime_ingress.requested is appended
+  -> firegrid.session.input is appended
   -> provider output proves prompt delivery
 ```
 
@@ -387,7 +385,7 @@ Prove:
 ```txt
 spawn(agent, prompt)
   -> child runtime launch intent
-  -> child prompt ingress
+  -> child prompt session input
   -> projection observes child terminal state
   -> parent wait resolves
 ```
@@ -399,8 +397,8 @@ Design questions:
 
 ## Current Gaps To Track
 
-- `@firegrid/client` has no prompt/ingress API.
-- Current runtime ingress append lives on `FiregridRuntimeHost`; that is useful
+- `@firegrid/client` has no prompt/session input API.
+- Current session input append lives on `FiregridRuntimeHost`; that is useful
   for package-level proof but not yet a complete external control surface.
 - Required-action work is still not fully aligned with the generic operator
   model and should stay blocked from becoming the pattern.

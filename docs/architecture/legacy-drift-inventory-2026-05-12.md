@@ -171,9 +171,8 @@ remain.
 ### F5 [MEDIUM] `runtime_ingress.requested` is transitional naming
 
 **Files:**
-- `packages/protocol/src/runtime-ingress/schema.ts` (the row type itself)
-- `packages/client/src/firegrid.ts` (the public `Firegrid.prompt` API writes this row)
-- All scenarios that assert on row.type
+- Historical before tracer 019: `packages/protocol/src/runtime-ingress/schema.ts`,
+  `packages/client/src/firegrid.ts`, and scenarios that asserted on row.type.
 
 **Why it matters:** Tracer 017's PR body explicitly flagged the
 `requested → firegrid.session.input` rename as a deferred decision.
@@ -181,12 +180,14 @@ The current name reinforces the legacy "runtime ingress" framing on a
 **public** wire format. The longer it stays, the more migration
 friction we accumulate.
 
-**Status:** Acknowledged transitional naming; not silent drift.
+**Status:** Resolved by tracer 019. The current row type is
+`firegrid.session.input`, the protocol namespace is
+`packages/protocol/src/session-input/**`, and the runtime namespace is
+`packages/runtime/src/session-input/**`.
 
-**Recommended follow-up:** Standalone rename tracer when the team is
-ready. Touches `Firegrid.prompt`, `RuntimeIngressRow*`,
-`runtimeIngressError`, `runtimeIngressRequestedRowId`, plus all
-scenarios. Strict separation: this is a rename, not a behavioral change.
+**Recommended follow-up:** None for the physical vocabulary. Future
+prompt/session-input behavior should build on the session-input names
+without compatibility aliases.
 
 ---
 
@@ -449,15 +450,13 @@ Layer through host streams config.
 `RawFoldStrategy`; (b) reshaped strategy interface; (c) explicit
 "keep, here's why" rationale captured in `target-durable-facts.md`.
 
-### Lane C — `runtime_ingress.requested` → `firegrid.session.input` rename (F5)
+### Lane C — session input vocabulary rename (F5)
 
-Standalone rename tracer when the team is ready to commit to the new
-public name. Mechanical but invasive — touches `Firegrid.prompt`,
-all `RuntimeIngressRow*` types, every scenario.
+Resolved by tracer 019.
 
-**Acceptance:** the new row type is the public name; the old name is
-deleted with no compatibility shim; all scenarios and docs reference
-the new name.
+**Acceptance:** the new row type is `firegrid.session.input`; the old
+`runtime_ingress` physical vocabulary is deleted from current packages
+with no compatibility shim.
 
 ### Lane D — Historical doc segregation (F9, F12, partial)
 
@@ -529,7 +528,8 @@ taken up, those tracers will push their own ACID updates.
 
 - Any deletion of `runtime-operators/**`, `required-action/**`, or
   `RawFoldStrategy`. Those need their own tracer with tests.
-- Renaming `firegrid.runtime_ingress.requested`.
+- Further session-input behavior changes; tracer 019 only renamed the
+  physical durable input vocabulary.
 - Adding `STYLE.md` (Lane E follow-up).
 - Cleaning up `docs/research/durable-execution-api-design-survey.md`'s
   references to deleted features (research doc; historical OK).

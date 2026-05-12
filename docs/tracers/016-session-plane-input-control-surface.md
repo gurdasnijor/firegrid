@@ -1,5 +1,10 @@
 # 016: Session Plane Input Control Surface
 
+Historical note: tracer 016 originally kept the physical `runtime_ingress`
+row family as transitional vocabulary. Tracer 019 completed the rename:
+current code uses `firegrid.session.input`,
+`@firegrid/protocol/session-input`, and `@firegrid/runtime/session-input`.
+
 ## Objective
 
 Define the smallest stable session-plane control surface for managed-agent
@@ -16,9 +21,7 @@ send input
   -> runtime/session output facts prove the effect
 ```
 
-This tracer should decide whether the current `runtime_ingress` implementation
-is the right canonical shape, or whether it should collapse into clearer
-session-plane facts such as session input / prompt request records.
+Tracer 019 settled the canonical physical vocabulary as session input.
 
 ## Why This Is Load Bearing
 
@@ -50,7 +53,7 @@ Current implementation:
 ```txt
 packages/client/src/firegrid.ts
 packages/runtime/src/runtime-host/index.ts
-packages/runtime/src/runtime-ingress/**
+packages/runtime/src/session-input/**
 packages/runtime/src/runtime-context/workflow.ts
 packages/runtime/src/providers/sandboxes/**
 ```
@@ -60,19 +63,22 @@ Current public-ish surfaces:
 - `@firegrid/client` exposes `launch(request)` and `open(contextId)`.
 - `@firegrid/runtime` exposes `startRuntime(options)` through
   `FiregridRuntimeHost`.
-- `@firegrid/runtime` exposes `appendRuntimeIngress(request)` through
+- `@firegrid/runtime` exposes `appendSessionInput(request)` through
   `FiregridRuntimeHost`.
 
 Current durable input row family:
 
 ```ts
+type: "firegrid.session.input"
+sessionInputId: string
+contextId: string
 kind: "message" | "control" | "tool_result" | "required_action_result"
 authoredBy: "client" | "workflow" | "tool" | "system"
 payload: unknown
 ```
 
-That row family was useful for tracer 012, but its name and shape still reflect
-an implementation path more than a settled session-plane model.
+The historical tracer-012 row family was useful, but its old name reflected an
+implementation path more than a settled session-plane model.
 
 Relevant docs:
 
@@ -139,26 +145,20 @@ session output/update
   durable fact written by the runtime/provider adapter
 ```
 
-If `runtime_ingress` remains the physical path for compatibility, the tracer
-must document whether it is:
-
-1. accepted target vocabulary; or
-2. a transitional implementation name to be replaced by session input/prompt
-   records.
+The old `runtime_ingress` physical path was transitional and is not current
+target vocabulary.
 
 ## Implementation Decision For This Tracer
 
-Tracer 016 keeps the physical `runtime_ingress` row family because it already
-has durable request rows and subscriber progress rows, but treats the name as
-transitional implementation vocabulary. The accepted session-plane concept is
-"session input" / "prompt request" facts. A future cleanup may rename the row
-family after the input, prompt, scheduling, and spawn surfaces converge.
+Tracer 016 kept the physical `runtime_ingress` row family as transitional
+implementation vocabulary. Tracer 019 later renamed the active row family to
+`firegrid.session.input`.
 
 The local-process path records delivery progress through the generic
 `effect-durable-operators.ConsumerCheckpointStore` (see tracer 017). The
 backing `inputCheckpoints` stream is a separate durable stream wired via
-`FiregridRuntimeHostStreams.inputCheckpoints`; the runtime never writes the
-old `firegrid.runtime_ingress.accepted` row format (deleted in tracer 017).
+`FiregridRuntimeHostStreams.inputCheckpoints`; the runtime never writes an
+accepted progress row format (deleted in tracer 017).
 The current Effect Platform stdin sink does not expose per-chunk write
 acknowledgements, so the consumer uses `ClaimPolicy.AtMostOnce`: the
 durable checkpoint is written before bytes flow to the provider, and
@@ -169,14 +169,14 @@ This tracer chooses Option C from the public append boundary decision:
 
 ```txt
 @firegrid/client prompt(...)
-  -> append runtime_ingress.requested durable fact
+  -> append firegrid.session.input durable fact
 
-@firegrid/runtime appendRuntimeIngress(...)
+@firegrid/runtime appendSessionInput(...)
   -> append the same durable fact family for server/runtime callers
 ```
 
 Both surfaces share schema, deterministic row identity, append-only semantics,
-and durable row constructors through `@firegrid/protocol/runtime-ingress`.
+and durable row constructors through `@firegrid/protocol/session-input`.
 Neither surface invokes a workflow, operator, or provider adapter. Neither
 surface performs retained scans to fake command idempotency; provider-visible
 dedupe remains host-owned runtime code.
@@ -238,12 +238,7 @@ gap.
 
 ### 3. Fact Vocabulary
 
-Decide whether the canonical row family is still `runtime_ingress` or a
-session-oriented vocabulary.
-
-The model should be understandable without knowing tracer 012 history. Names
-such as `session_input.requested`, `prompt.requested`, or an equivalent
-session-plane phrase may be clearer than `runtime_ingress.requested`.
+The canonical row type is `firegrid.session.input`.
 
 ### 4. Idempotency
 
@@ -380,7 +375,7 @@ features/firegrid/firegrid-agent-ingress.feature.yaml
 features/firegrid/firegrid-client-api.feature.yaml
 packages/client/src/**
 packages/runtime/src/runtime-host/**
-packages/runtime/src/runtime-ingress/**
+packages/runtime/src/session-input/**
 packages/runtime/src/runtime-context/**
 packages/runtime/src/providers/sandboxes/**
 scenarios/firegrid/src/tracer-016*.test.ts

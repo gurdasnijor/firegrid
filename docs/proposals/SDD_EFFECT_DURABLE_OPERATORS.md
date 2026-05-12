@@ -611,7 +611,7 @@ Firegrid should be only one validation case.
 const LocalProcessInputConsumer = DurableConsumer.define({
   name: "local-process-session-input",
   select: row =>
-    row.type === "firegrid.runtime_ingress.requested" &&
+    row.type === "firegrid.session.input" &&
     row.contextId === contextId
       ? Option.some(row)
       : Option.none(),
@@ -619,7 +619,7 @@ const LocalProcessInputConsumer = DurableConsumer.define({
 })
 
 const stdin = DurableConsumer.stream({
-  source: RuntimeIngressRows,
+  source: SessionInputRows,
   checkpoint: {
     subscriberId: "runtime-context:local-process:stdin",
   },
@@ -632,7 +632,7 @@ const stdin = DurableConsumer.stream({
 ```
 
 The important result: Firegrid code stops maintaining a custom
-`PendingRuntimeIngressState` and stops manually folding `requested` minus
+`PendingSessionInputState` and stops manually folding `requested` minus
 `accepted` rows.
 
 ### Example E: Durable Wait Predicate

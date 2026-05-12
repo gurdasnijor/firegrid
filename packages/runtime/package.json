@@ -25,9 +25,9 @@
       "types": "./src/materialization/state-protocol/index.ts",
       "default": "./src/materialization/state-protocol/index.ts"
     },
-    "./runtime-ingress": {
-      "types": "./src/runtime-ingress/index.ts",
-      "default": "./src/runtime-ingress/index.ts"
+    "./session-input": {
+      "types": "./src/session-input/index.ts",
+      "default": "./src/session-input/index.ts"
     },
     "./materialization/materialize": {
       "types": "./src/materialization/materialize/index.ts",

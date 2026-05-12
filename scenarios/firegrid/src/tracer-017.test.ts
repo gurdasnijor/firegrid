@@ -4,7 +4,7 @@
  * Implements:
  *  - effect-durable-operators.FIREGRID_PROOF.1 — runtime input fold owned
  *    by the generic operator package (DurableConsumer); legacy
- *    PendingRuntimeIngressState/foldRuntimeIngressProgress no longer
+ *    PendingSessionInputState/foldSessionInputProgress no longer
  *    referenced from packages/runtime/src
  *  - effect-durable-operators.FIREGRID_PROOF.2 — uses production Firegrid
  *    surfaces only (Firegrid.launch / Firegrid.prompt /
@@ -100,7 +100,7 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
       const controlPlaneStreamUrl = await createStreamUrl("tracer-017-runtime-control")
       const dataPlaneStreamUrl = await createStreamUrl("tracer-017-runtime-output")
       const workflowStreamUrl = await createStreamUrl("tracer-017-workflow")
-      const inputStreamUrl = await createStreamUrl("tracer-017-runtime-ingress")
+      const inputStreamUrl = await createStreamUrl("tracer-017-session-input")
       const inputCheckpointsUrl = await createStreamUrl("tracer-017-input-checkpoints")
 
       const firegridConfigLayer = Layer.succeed(FiregridConfig, {
@@ -125,19 +125,18 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
       )
 
       // Production host surface — runtime is responsible for plumbing
-      // ingress into the local-process stdin via DurableConsumer.
+      // session input into the local-process stdin via DurableConsumer.
       const host = FiregridRuntimeHostLive({
         streams: {
           workflow: workflowStreamUrl,
           controlPlane: controlPlaneStreamUrl,
           runtimeOutput: dataPlaneStreamUrl,
-          // Tagged input capability: ingress + checkpoints are one
-          // indivisible value, so half-configured ingress is
+          // Tagged input capability: session input + checkpoints are one
+          // indivisible value, so half-configured input is
           // unrepresentable. Generic effect-durable-operators owns
-          // delivery progress; no firegrid.runtime_ingress.accepted
-          // rows are written.
+          // delivery progress; no session-input accepted progress rows are written.
           input: new RuntimeInputDurableStreams({
-            ingress: inputStreamUrl,
+            sessionInput: inputStreamUrl,
             checkpoints: inputCheckpointsUrl,
           }),
         },
@@ -164,7 +163,7 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
       })
 
       // Send a prompt, then send a duplicate with the SAME idempotency key.
-      // The duplicate must collapse at the protocol layer (same ingressId)
+      // The duplicate must collapse at the protocol layer (same sessionInputId)
       // AND the AtMostOnce DurableConsumer policy must ensure the provider
       // sees exactly one stdin chunk.
       const prompt = await Effect.runPromise(
@@ -186,7 +185,7 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
         ),
       )
 
-      expect(prompt.duplicate.ingressId).toEqual(prompt.first.ingressId)
+      expect(prompt.duplicate.sessionInputId).toEqual(prompt.first.sessionInputId)
 
       const result = await runtime
       expect(result).toMatchObject({

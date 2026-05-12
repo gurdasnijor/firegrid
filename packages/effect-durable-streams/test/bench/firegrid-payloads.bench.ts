@@ -31,7 +31,7 @@ const RuntimeOutputEvent = Schema.Struct({
   data: Schema.String,
 })
 
-const RuntimeIngressRow = Schema.Struct({
+const SessionInputRow = Schema.Struct({
   ts: Schema.Number,
   source: Schema.String,
   delivered: Schema.Boolean,
@@ -97,11 +97,11 @@ afterAll(async () => {
 
 const variants: Array<{
   name: string
-  schema: typeof RuntimeOutputEvent | typeof RuntimeIngressRow | typeof StateChange
+  schema: typeof RuntimeOutputEvent | typeof SessionInputRow | typeof StateChange
   gen: (i: number) => unknown
 }> = [
   { name: "runtime-output", schema: RuntimeOutputEvent, gen: samples.output },
-  { name: "runtime-ingress-row", schema: RuntimeIngressRow, gen: samples.ingress },
+  { name: "session-input-row", schema: SessionInputRow, gen: samples.ingress },
   { name: "state-change", schema: StateChange, gen: samples.state },
 ]
 

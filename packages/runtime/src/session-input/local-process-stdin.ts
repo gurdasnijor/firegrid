@@ -1,7 +1,7 @@
 /**
- * Local-process runtime ingress → stdin.
+ * Local-process session input → stdin.
  *
- * Streams `firegrid.runtime_ingress.requested` rows for a given
+ * Streams `firegrid.session.input` rows for a given
  * `(contextId, subscriberId)` as encoded stdin chunks for the
  * local-process sandbox provider. Delivery progress is recorded only
  * in the generic `effect-durable-operators.DurableConsumer` +
@@ -25,9 +25,9 @@
 
 import type { HttpClient } from "@effect/platform"
 import {
-  type RuntimeIngressRequestedRow,
-  RuntimeIngressRowSchema,
-} from "@firegrid/protocol/runtime-ingress"
+  type SessionInputRow,
+  SessionInputRowSchema,
+} from "@firegrid/protocol/session-input"
 import {
   ClaimPolicy,
   ConsumerCheckpointStoreLive,
@@ -37,15 +37,15 @@ import {
 import { DurableStream } from "effect-durable-streams"
 import { Effect, Layer, Option, Stream } from "effect"
 import {
-  type RuntimeIngressError,
-  runtimeIngressError,
+  type SessionInputError,
+  sessionInputError,
 } from "./schema.ts"
 
-interface LocalProcessRuntimeIngressStdinOptions {
+interface LocalProcessSessionInputStdinOptions {
   readonly streamUrl: string
   /**
    * Separate durable stream URL for the consumer's checkpoint records.
-   * Each `(subscriberId, ingressId)` claim/completion is appended here
+   * Each `(subscriberId, sessionInputId)` claim/completion is appended here
    * by `ConsumerCheckpointStoreLive`. The stream MUST exist; the host
    * pre-creates it.
    */
@@ -65,7 +65,7 @@ const textFromPayloadValue = (value: unknown): string | undefined => {
     : undefined
 }
 
-const providerInputFromIngress = (row: RuntimeIngressRequestedRow): string => {
+const providerInputFromSessionInput = (row: SessionInputRow): string => {
   if (Array.isArray(row.payload)) {
     const text = row.payload.flatMap((value) => {
       const decoded = textFromPayloadValue(value)
@@ -77,17 +77,17 @@ const providerInputFromIngress = (row: RuntimeIngressRequestedRow): string => {
   return text ?? JSON.stringify(row.payload)
 }
 
-export const localProcessRuntimeIngressStdin = (
-  options: LocalProcessRuntimeIngressStdinOptions,
-): Stream.Stream<Uint8Array, RuntimeIngressError, HttpClient.HttpClient> => {
+export const localProcessSessionInputStdin = (
+  options: LocalProcessSessionInputStdinOptions,
+): Stream.Stream<Uint8Array, SessionInputError, HttpClient.HttpClient> => {
   // The consumer treats a `requested` row matching this `contextId` as a
   // logical input. Per-key delivery progress is recorded in the separate
   // checkpoint stream by the generic `ConsumerCheckpointStoreLive` Layer.
   const consumer = DurableConsumer.define({
     name: "runtime-context:local-process:stdin",
-    select: (row: RuntimeIngressRequestedRow) =>
+    select: (row: SessionInputRow) =>
       row.contextId === options.contextId ? Option.some(row) : Option.none(),
-    key: (row) => row.ingressId,
+    key: (row) => row.sessionInputId,
   })
 
   const checkpointLayer = ConsumerCheckpointStoreLive({
@@ -108,21 +108,21 @@ export const localProcessRuntimeIngressStdin = (
       DurableConsumer.stream({
         source: ConsumerSource.fromDurableStream(DurableStream.define({
           endpoint: { url: options.streamUrl },
-          schema: RuntimeIngressRowSchema,
+          schema: SessionInputRowSchema,
         })),
         checkpoint: { subscriberId: options.subscriberId },
         definition: consumer,
         policy: ClaimPolicy.AtMostOnce(),
         process: (row) =>
-          Effect.succeed(encoder.encode(`${providerInputFromIngress(row)}\n`)),
+          Effect.succeed(encoder.encode(`${providerInputFromSessionInput(row)}\n`)),
       }).pipe(
         Stream.provideSomeContext(context),
         Stream.mapError((cause) =>
-          runtimeIngressError(
+          sessionInputError(
             "consumer",
             cause._tag === "DurableConsumerError"
               ? "durable consumer failure"
-              : "runtime ingress read failure",
+              : "session input read failure",
             options.contextId,
             undefined,
             cause,
@@ -131,9 +131,9 @@ export const localProcessRuntimeIngressStdin = (
       ),
     ).pipe(
       Effect.mapError((cause) =>
-        runtimeIngressError(
+        sessionInputError(
           "checkpoint-layer",
-          "runtime ingress checkpoint layer failed to initialize",
+          "session input checkpoint layer failed to initialize",
           options.contextId,
           undefined,
           cause,

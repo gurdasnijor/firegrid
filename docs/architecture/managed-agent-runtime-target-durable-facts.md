@@ -37,8 +37,8 @@ The stream primitive at implementation boundaries is
 
 ```ts
 const stream = DurableStream.define({
-  endpoint: { url: runtimeHostStreams.input.ingress },
-  schema: RuntimeIngressRowSchema,
+  endpoint: { url: runtimeHostStreams.input.sessionInput },
+  schema: SessionInputRowSchema,
 })
 
 yield* stream.append(row)
@@ -158,12 +158,12 @@ const RuntimeHostLive = FiregridRuntimeHostLive({
     workflow: env.FIREGRID_WORKFLOW_STREAM_URL,
     controlPlane: env.FIREGRID_RUNTIME_CONTEXT_STREAM_URL,
     runtimeOutput: env.FIREGRID_RUNTIME_OUTPUT_STREAM_URL,
-    // Tagged input capability: ingress + checkpoints are one
+    // Tagged input capability: session input + checkpoints are one
     // indivisible value (`RuntimeInputDurableStreams`) so misconfigured
     // half-state is unrepresentable. Omit `input` to start with no
-    // ingress (`runtimeInputDisabled`).
+    // session input (`runtimeInputDisabled`).
     input: new RuntimeInputDurableStreams({
-      ingress: env.FIREGRID_RUNTIME_INGRESS_STREAM_URL,
+      sessionInput: env.FIREGRID_SESSION_INPUT_STREAM_URL,
       checkpoints: env.FIREGRID_RUNTIME_INPUT_CHECKPOINTS_STREAM_URL,
     }),
     schedules: env.FIREGRID_SCHEDULE_STREAM_URL,
@@ -178,7 +178,7 @@ const RuntimeHostLive = FiregridRuntimeHostLive({
   operators: [
     // Future generic effect-durable-operators consumers live here.
     // Do not add required-action-specific mini roots.
-    runtimeIngressDeliveryOperator(),
+    sessionInputDeliveryOperator(),
     scheduledPromptOperator(),
     childSpawnOperator(),
   ],
@@ -250,7 +250,7 @@ packages/
     src/
       launch/
       runtime-context/
-      runtime-ingress/
+      session-input/
       runtime-output/
       required-action/       # durable record schemas only
       session/
@@ -264,7 +264,7 @@ packages/
         workflow.ts
         service.ts
         launcher.ts
-      runtime-ingress/
+      session-input/
         schema.ts
         ids.ts
         rows.ts
@@ -462,7 +462,7 @@ Lowering:
 schedule_me(when, prompt)
   -> append firegrid.schedule.requested fact
   -> schedule operator waits through durable time
-  -> operator appends runtime_ingress.requested via host ingress surface
+  -> operator appends firegrid.session.input through the host session input surface
   -> provider adapter routes input through effect-durable-operators.DurableConsumer
      with ClaimPolicy.AtMostOnce; the durable claim is written to the
      inputCheckpoints stream by ConsumerCheckpointStoreLive before bytes
@@ -484,7 +484,7 @@ yield* DurableClock.sleep({
   duration: millisUntil(request.when),
 })
 
-yield* appendRuntimeIngress({
+yield* appendSessionInput({
   contextId: request.contextId,
   kind: "message",
   authoredBy: "workflow",
@@ -535,7 +535,7 @@ Lowering:
 ```txt
 spawn(agent, prompt)
   -> append child runtime-context/control fact through host runtime surface
-  -> append initial runtime_ingress.requested through host ingress surface
+  -> append initial firegrid.session.input through the host session input surface
   -> start child runtime through FiregridRuntimeHost
   -> await child terminal run fact or session projection
 ```
@@ -555,7 +555,7 @@ const terminal = control.read({ live: "long-poll" }).pipe(
 )
 ```
 
-Child spawning must call the same runtime and ingress surfaces available to
+Child spawning must call the same runtime and session input surfaces available to
 clients. It must not introduce a private workflow launch API.
 
 ### `execute(tool/sandbox, input)`
@@ -642,14 +642,14 @@ or historical scaffolding:
   Protocol record schemas remain; behavior is deferred to generic
   wait/operator tooling.
 - `docs/proposals/SDD_EFFECT_NATIVE_DURABLE_STREAMS_PRODUCTION_CUTOVER.md`
-  examples that mention `runtime-ingress/stream.ts`,
-  `runtime-ingress/folds.ts`, or `runtime-output/stream.ts`: those were
+  examples that mention `session-input/stream.ts`,
+  `session-input/folds.ts`, or `runtime-output/stream.ts`: those were
   mid-review helper shapes, not the final post-cutover target.
 - `docs/tracers/012-agent-ingress-prompt-stream.md` references to
-  `runtime-ingress/service.ts` or a service-backed ingress store: replace with
+  `session-input/service.ts` or a service-backed session input store: replace with
   schema/ids/rows and host-owned direct DurableStream programs.
 - Any target-doc examples that imply `DurableStreamLog.layer`,
-  `RuntimeOutput.layer`, `RuntimeIngressLive`, or `RuntimeCaptureJournalLive`.
+  `RuntimeOutput.layer`, `RuntimeIngressLive (deleted historical wrapper)`, or `RuntimeCaptureJournalLive`.
 
 ## Decisions This Target Would Settle
 
@@ -691,10 +691,10 @@ Run stabilization/design tracers before new feature expansion:
 
 1. **Durable Fact Wait Descriptor**: implement named matcher wait request and
    outcome rows over runtime-output, with timeout and rescan idempotency.
-2. **Scheduled Runtime Ingress**: prove `schedule_me` appends durable schedule
-   facts and later appends runtime ingress through the host path.
+2. **Scheduled Session Input**: prove `schedule_me` appends durable schedule
+   facts and later appends session input through the host path.
 3. **Child Agent Spawn Lowering**: prove `spawn` creates a child runtime
-   context, appends initial ingress, starts the child through host surface, and
+   context, appends initial session input, starts the child through host surface, and
    awaits durable completion.
 4. **Required-Action Generic Wait Proof**: rebuild required-action request and
    resolution behavior through the accepted generic wait/operator substrate,

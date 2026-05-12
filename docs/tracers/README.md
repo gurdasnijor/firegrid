@@ -136,25 +136,30 @@ Prerequisite
     -> State Protocol/raw-fold strategies can run non-session projections
 
 012
-  define durable agent prompt ingress
+  define durable agent prompt/session input
     -> initial and follow-up prompts append provider-neutral durable input facts
-    -> runtime adapters translate durable ingress to stdin/ACP/provider protocols
+    -> runtime adapters translate durable session input to stdin/ACP/provider protocols
     -> delivery progress is durable and runtime output remains a separate journal
 
 013
   define reactive workflow operators
     -> durable facts/time/projection predicates trigger Effect workflows
     -> required actions become the first consumer of the generic operator substrate
-    -> tools and ingress subscribers stop needing bespoke workflow launch paths
+    -> tools and session input subscribers stop needing bespoke workflow launch paths
 
 016
   define session-plane input control surface
-    -> request_session / launch and send_input / prompt become the only stable
-       session-plane control operations
-    -> runtime_ingress remains transitional physical vocabulary for session
-       input / prompt request facts
-    -> client/app input reaches a real provider through host-owned dispatchers,
-       with durable progress and no workflow-specific endpoint
+  -> request_session / launch and send_input / prompt become the only stable
+     session-plane control operations
+  -> prompt requests append canonical session input facts
+  -> client/app input reaches a real provider through host-owned dispatchers,
+     with durable progress and no workflow-specific endpoint
+
+019
+  delete runtime_ingress vocabulary
+    -> durable input row type is firegrid.session.input
+    -> protocol/runtime namespaces are session-input oriented
+    -> no compatibility shim for runtime_ingress names
 
 017
   define generic Effect durable operators

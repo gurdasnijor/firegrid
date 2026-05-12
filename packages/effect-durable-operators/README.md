@@ -273,7 +273,7 @@ a `Schedule` on a workflow durable clock.
 A workflow-side pattern, not a package API. The workflow uses
 `@effect/workflow`'s durable clock to sleep, queries a `DurableTable` to
 check the condition, and only then appends a session-input fact through
-whatever ingress service the runtime exposes.
+the host-owned session input surface.
 
 ```ts
 // pseudocode — actual scheduling lives in @effect/workflow
@@ -284,7 +284,7 @@ const scheduleMeIf = (when: Date, condition: Effect.Effect<boolean>, fact: Sessi
     yield* DurableClock.sleepUntil(when)
     const stillRelevant = yield* condition
     if (!stillRelevant) return
-    yield* RuntimeIngress.appendInput(fact)
+    yield* appendSessionInput(fact)
   })
 ```
 
@@ -422,6 +422,5 @@ runtime refactor in PR #N (this branch):
 - `effect-durable-operators.TRACER_017.{1,2,3,4,5}` — generic tests
   (`test/`) and scenario E2E (`scenarios/firegrid/src/tracer-017.test.ts`).
 
-The transitional `firegrid.runtime_ingress.requested` row family remains
-as the public input fact in this PR. Renaming to `firegrid.session.input`
-is a separate decision; the operators package is agnostic to the row name.
+The canonical Firegrid input fact row type is `firegrid.session.input`; the
+operators package remains agnostic to the row name.

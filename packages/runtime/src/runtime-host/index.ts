@@ -26,16 +26,15 @@ import {
   asRuntimeContextError,
 } from "../runtime-context/errors.ts"
 import {
-  type RuntimeIngressError,
-  type RuntimeIngressRequest,
-  type RuntimeIngressRequestedRow,
-  type RuntimeIngressRow,
-  RuntimeIngressRowSchema,
-  runtimeIngressError,
-} from "../runtime-ingress/index.ts"
+  type SessionInputError,
+  type SessionInputRequest,
+  type SessionInputRow,
+  SessionInputRowSchema,
+  sessionInputError,
+} from "../session-input/index.ts"
 import {
-  makeRuntimeIngressRequestedRow,
-} from "../runtime-ingress/rows.ts"
+  makeSessionInputRow,
+} from "../session-input/rows.ts"
 import { Schema } from "effect"
 import {
   RuntimeInputStreamsSchema,
@@ -51,11 +50,11 @@ export const RuntimeHostStreamsSchema = Schema.Struct({
   controlPlane: Schema.String,
   runtimeOutput: Schema.String,
   /**
-   * Runtime input capability. Tagged so the misconfiguration "ingress
+   * Runtime input capability. Tagged so the misconfiguration "session input
    * stream without a checkpoint stream" is unrepresentable at the type
    * level. Omitting `input` decodes to {@link runtimeInputDisabled}.
    *
-   * Use `new RuntimeInputDurableStreams({ ingress, checkpoints })` to
+   * Use `new RuntimeInputDurableStreams({ sessionInput, checkpoints })` to
    * enable durable input. Both streams must be pre-created.
    */
   input: Schema.optionalWith(RuntimeInputStreamsSchema, {
@@ -78,9 +77,9 @@ interface FiregridRuntimeHostService {
   readonly start: (
     options: StartRuntimeOptions,
   ) => Effect.Effect<StartRuntimeResult, RuntimeContextError>
-  readonly ingress: (
-    request: RuntimeIngressRequest,
-  ) => Effect.Effect<RuntimeIngressRequestedRow, RuntimeIngressError>
+  readonly sessionInput: (
+    request: SessionInputRequest,
+  ) => Effect.Effect<SessionInputRow, SessionInputError>
 }
 
 export class FiregridRuntimeHost extends Context.Tag("firegrid/runtime/FiregridRuntimeHost")<
@@ -88,37 +87,37 @@ export class FiregridRuntimeHost extends Context.Tag("firegrid/runtime/FiregridR
   FiregridRuntimeHostService
 >() {}
 
-const appendRuntimeIngressRequested = (
+const appendSessionInputRow = (
   streamUrl: string,
-  row: RuntimeIngressRow,
-): Effect.Effect<void, RuntimeIngressError, HttpClient.HttpClient> =>
+  row: SessionInputRow,
+): Effect.Effect<void, SessionInputError, HttpClient.HttpClient> =>
   // effect-native-production-cutover.RUNTIME_IO.2
   DurableStream.define({
     endpoint: { url: streamUrl },
-    schema: RuntimeIngressRowSchema,
+    schema: SessionInputRowSchema,
   }).append(row).pipe(
     Effect.asVoid,
     Effect.mapError(cause =>
-      runtimeIngressError(
+      sessionInputError(
         "append",
-        "failed to append runtime ingress durable row",
+        "failed to append session input durable row",
         row.contextId,
-        row.ingressId,
+        row.sessionInputId,
         cause,
       )),
   )
 
-const appendRuntimeIngressRequestToStream = (
+const appendSessionInputRequestToStream = (
   streamUrl: string,
-  request: RuntimeIngressRequest,
-): Effect.Effect<RuntimeIngressRequestedRow, RuntimeIngressError, HttpClient.HttpClient> =>
+  request: SessionInputRequest,
+): Effect.Effect<SessionInputRow, SessionInputError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
-    const row = makeRuntimeIngressRequestedRow(request)
+    const row = makeSessionInputRow(request)
     // firegrid-agent-ingress.INGRESS.1
     // firegrid-agent-ingress.INGRESS.3
     // firegrid-agent-ingress.INGRESS.6
     // firegrid-agent-ingress.HOST.1
-    yield* appendRuntimeIngressRequested(streamUrl, row)
+    yield* appendSessionInputRow(streamUrl, row)
     return row
   })
 
@@ -130,7 +129,7 @@ const runtimeContextLayer = (
   // effect-native-production-cutover.RUNTIME_IO.4
   //
   // No misconfiguration guard needed: `RuntimeInputStreams` is a tagged
-  // union, so "ingress without checkpoints" is unrepresentable at the
+  // union, so "session input without checkpoints" is unrepresentable at the
   // type level.
   RuntimeContextWorkflowLayer({
     runtimeOutputStreamUrl: options.streams.runtimeOutput,
@@ -157,7 +156,7 @@ const runtimeContextLayer = (
  * is normalized through `Schema.decodeUnknownSync(RuntimeHostOptionsSchema)`
  * at this single boundary, which:
  *   - validates the shape (rejects unknown/half-formed `input` values
- *     such as `{ _tag: "RuntimeInputDurableStreams", ingress: "..." }`
+ *     such as `{ _tag: "RuntimeInputDurableStreams", sessionInput: "..." }`
  *     missing `checkpoints`),
  *   - applies the `input -> runtimeInputDisabled` default,
  *   - constructs class instances for the tagged union members.
@@ -193,19 +192,19 @@ export const FiregridRuntimeHostLive = (
               )),
           }),
         ),
-      ingress: request =>
+      sessionInput: request =>
         // firegrid-agent-ingress.HOST.1
         // firegrid-agent-ingress.HOST.2
         normalized.streams.input._tag === "RuntimeInputDurableStreams"
-          ? appendRuntimeIngressRequestToStream(
-              normalized.streams.input.ingress,
+          ? appendSessionInputRequestToStream(
+              normalized.streams.input.sessionInput,
               request,
             ).pipe(Effect.provide(FetchHttpClient.layer))
-          : Effect.fail(runtimeIngressError(
+          : Effect.fail(sessionInputError(
               "append",
-              "runtime ingress stream is not configured",
+              "session input stream is not configured",
               request.contextId,
-              request.ingressId,
+              request.sessionInputId,
             )),
     }),
   )
@@ -219,10 +218,10 @@ export const startRuntime = (
     Effect.flatMap(host => host.start(options)),
   )
 
-export const appendRuntimeIngress = (
-  request: RuntimeIngressRequest,
-): Effect.Effect<RuntimeIngressRequestedRow, RuntimeIngressError, FiregridRuntimeHost> =>
+export const appendSessionInput = (
+  request: SessionInputRequest,
+): Effect.Effect<SessionInputRow, SessionInputError, FiregridRuntimeHost> =>
   // firegrid-agent-ingress.HOST.1
   FiregridRuntimeHost.pipe(
-    Effect.flatMap(host => host.ingress(request)),
+    Effect.flatMap(host => host.sessionInput(request)),
   )

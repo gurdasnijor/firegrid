@@ -759,25 +759,22 @@ describe("DurableConsumer — trigger-shaped (stream form)", () => {
 
 // ----- Firegrid-shaped consumer (tracer 017 acceptance #7) -----
 //
-// Schemas mirror the real `firegrid.runtime_ingress.*` row shape but live
+// Schemas mirror the real `firegrid.session.input` row shape but live
 // inside the test — the operators package itself imports nothing from
 // `@firegrid/*` (PACKAGE.2 / BOUNDARIES.1).
 
-const RuntimeIngressRow = Schema.Struct({
-  type: Schema.Literal(
-    "firegrid.runtime_ingress.requested",
-    "firegrid.runtime_ingress.accepted",
-  ),
-  ingressId: Schema.String,
+const SessionInputRow = Schema.Struct({
+  type: Schema.Literal("firegrid.session.input"),
+  sessionInputId: Schema.String,
   contextId: Schema.String,
   payload: Schema.String,
 })
-type RuntimeIngressRow = Schema.Schema.Type<typeof RuntimeIngressRow>
+type SessionInputRow = Schema.Schema.Type<typeof SessionInputRow>
 
 describe("DurableConsumer — Firegrid-shaped (local schemas only)", () => {
   it("replaces a requested-minus-accepted fold with a generic consumer (FIREGRID_PROOF.1 shape, CONSUMER.6)", async () => {
-    const url = server.url("runtime-ingress")
-    const checkpointsUrl = server.url("runtime-ingress-checkpoints")
+    const url = server.url("session-input")
+    const checkpointsUrl = server.url("session-input-checkpoints")
     const contextId = "ctx-1"
 
     await runtime(
@@ -793,25 +790,25 @@ describe("DurableConsumer — Firegrid-shaped (local schemas only)", () => {
 
         const bound = DurableStream.define({
           endpoint: { url },
-          schema: RuntimeIngressRow,
+          schema: SessionInputRow,
         })
 
-        // Three requested rows, one already accepted.
+        // Three input facts; the different context is ignored by the consumer.
         yield* bound.append({
-          type: "firegrid.runtime_ingress.requested",
-          ingressId: "i-1",
+          type: "firegrid.session.input",
+          sessionInputId: "i-1",
           contextId,
           payload: "hello",
         })
         yield* bound.append({
-          type: "firegrid.runtime_ingress.requested",
-          ingressId: "i-2",
+          type: "firegrid.session.input",
+          sessionInputId: "i-2",
           contextId,
           payload: "world",
         })
         yield* bound.append({
-          type: "firegrid.runtime_ingress.requested",
-          ingressId: "i-3",
+          type: "firegrid.session.input",
+          sessionInputId: "i-3",
           contextId: "different-ctx",
           payload: "ignored",
         })
@@ -824,12 +821,12 @@ describe("DurableConsumer — Firegrid-shaped (local schemas only)", () => {
 
         const consumer = DurableConsumer.define({
           name: "local-process-session-input",
-          select: (row: RuntimeIngressRow) =>
-            row.type === "firegrid.runtime_ingress.requested" &&
+          select: (row: SessionInputRow) =>
+            row.type === "firegrid.session.input" &&
             row.contextId === contextId
               ? Option.some(row)
               : Option.none(),
-          key: (row) => row.ingressId,
+          key: (row) => row.sessionInputId,
         })
 
         const layer = ConsumerCheckpointStoreLive({
@@ -840,7 +837,7 @@ describe("DurableConsumer — Firegrid-shaped (local schemas only)", () => {
         })
 
         const result = yield* DurableConsumer.run({
-          source: durableSource(RuntimeIngressRow, url),
+          source: durableSource(SessionInputRow, url),
           checkpoint: {
             subscriberId: `runtime-context:${contextId}:stdin`,
           },

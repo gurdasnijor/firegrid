@@ -69,8 +69,8 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
     const controlPlaneStreamUrl = await createStreamUrl("tracer-016-runtime-control")
     const dataPlaneStreamUrl = await createStreamUrl("tracer-016-runtime-output")
     const workflowStreamUrl = await createStreamUrl("tracer-016-workflow")
-    const inputStreamUrl = await createStreamUrl("tracer-016-runtime-ingress")
-    const inputCheckpointsUrl = await createStreamUrl("tracer-016-runtime-ingress-cps")
+    const inputStreamUrl = await createStreamUrl("tracer-016-session-input")
+    const inputCheckpointsUrl = await createStreamUrl("tracer-016-session-input-cps")
 
     const handle = await Effect.runPromise(
       Effect.gen(function* () {
@@ -100,7 +100,7 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
         controlPlane: controlPlaneStreamUrl,
         runtimeOutput: dataPlaneStreamUrl,
         input: new RuntimeInputDurableStreams({
-          ingress: inputStreamUrl,
+          sessionInput: inputStreamUrl,
           checkpoints: inputCheckpointsUrl,
         }),
       },
@@ -161,7 +161,7 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
       ),
     )
 
-    expect(prompt.duplicate.ingressId).toEqual(prompt.first.ingressId)
+    expect(prompt.duplicate.sessionInputId).toEqual(prompt.first.sessionInputId)
 
     const result = await runtime
     expect(result).toMatchObject({

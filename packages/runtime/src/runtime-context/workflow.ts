@@ -28,8 +28,8 @@ import {
   RuntimeControlPlane,
 } from "./service.ts"
 import {
-  localProcessRuntimeIngressStdin,
-} from "../runtime-ingress/local-process-stdin.ts"
+  localProcessSessionInputStdin,
+} from "../session-input/local-process-stdin.ts"
 import {
   ProcessAttemptResultSchema,
   RuntimeContextTerminalStateSchema,
@@ -46,7 +46,7 @@ type SequencedChunk = {
 type RuntimeOutputRow = RuntimeEvent | RuntimeLogLine
 
 const nowIso = (): string => new Date().toISOString()
-const localProcessIngressSubscriberId = "runtime-context:local-process:stdin"
+const localProcessSessionInputSubscriberId = "runtime-context:local-process:stdin"
 
 const runtimeJournalEventForOutput = (
   row: RuntimeOutputRow,
@@ -145,8 +145,8 @@ interface RuntimeContextWorkflowOptions {
   /**
    * Tagged runtime input capability. `RuntimeInputDisabled` means no
    * stdin source is wired; `RuntimeInputDurableStreams` carries the
-   * ingress + checkpoint URLs as one indivisible value, so the
-   * misconfiguration "ingress without checkpoints" is unrepresentable.
+   * session input + checkpoint URLs as one indivisible value, so the
+   * misconfiguration "session input without checkpoints" is unrepresentable.
    */
   readonly input: RuntimeInputStreams
 }
@@ -194,15 +194,15 @@ export const RuntimeContextWorkflowLayer = (
         const stdin = Match.value(options.input).pipe(
           Match.tag("RuntimeInputDisabled", () => undefined),
           Match.tag("RuntimeInputDurableStreams", (durable) =>
-            localProcessRuntimeIngressStdin({
-              streamUrl: durable.ingress,
+            localProcessSessionInputStdin({
+              streamUrl: durable.sessionInput,
               checkpointStreamUrl: durable.checkpoints,
               contextId: context.contextId,
-              subscriberId: localProcessIngressSubscriberId,
+              subscriberId: localProcessSessionInputSubscriberId,
             }).pipe(
               Stream.mapError(cause =>
                 asRuntimeContextError(
-                  `runtime-ingress.${cause.op}`,
+                  `session-input.${cause.op}`,
                   cause.message,
                   context.contextId,
                   cause,

@@ -17,9 +17,9 @@
       "types": "./src/required-action/index.ts",
       "default": "./src/required-action/index.ts"
     },
-    "./runtime-ingress": {
-      "types": "./src/runtime-ingress/index.ts",
-      "default": "./src/runtime-ingress/index.ts"
+    "./session-input": {
+      "types": "./src/session-input/index.ts",
+      "default": "./src/session-input/index.ts"
     },
     "./session": {
       "types": "./src/session/index.ts",

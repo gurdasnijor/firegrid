@@ -12,7 +12,7 @@ export {
   FiregridRuntimeHostLive,
   RuntimeHostOptionsSchema,
   RuntimeHostStreamsSchema,
-  appendRuntimeIngress,
+  appendSessionInput,
   startRuntime,
   type RuntimeHostOptions,
   type RuntimeHostOptionsInput,
@@ -28,12 +28,11 @@ export {
   type RuntimeInputStreams,
 } from "./runtime-host/input.ts"
 export {
-  RuntimeIngressError,
-  runtimeIngressIdForIdempotencyKey,
-  runtimeIngressRequestedRowId,
-  type RuntimeIngressAuthor,
-  type RuntimeIngressKind,
-  type RuntimeIngressRequest,
-  type RuntimeIngressRequestedRow,
-  type RuntimeIngressRow,
-} from "./runtime-ingress/index.ts"
+  SessionInputError,
+  sessionInputIdForIdempotencyKey,
+  sessionInputRowId,
+  type SessionInputAuthor,
+  type SessionInputKind,
+  type SessionInputRequest,
+  type SessionInputRow,
+} from "./session-input/index.ts"

@@ -1,6 +1,6 @@
 # SDD: Effect-Native Durable Streams Production Cutover
 
-**Status:** proposed
+**Status:** historical / superseded in parts by tracers 017 and 019
 **Scope:** breaking stabilization wave
 **Primary spec:** `effect-native-production-cutover`
 **Depends on:** `effect-native-api`, `firegrid-platform-invariants`,
@@ -12,6 +12,13 @@
 > were all deleted in tracer 017 (PR #158). Runtime input delivery
 > now flows through `effect-durable-operators` (see
 > `docs/tracers/017-effect-durable-operators.md`).
+
+> Supersession note: examples below that use `runtime-ingress`,
+> `RuntimeIngress*`, or `appendRuntimeIngress` are pre-tracer-019 historical
+> vocabulary. Current code uses `@firegrid/protocol/session-input`,
+> `@firegrid/runtime/session-input`, `appendSessionInput`, and the durable row
+> type `firegrid.session.input`. Do not treat the old names in this document as
+> target architecture.
 
 ## Decision
 
@@ -111,7 +118,7 @@ DurableStream
 The module that owns a domain row owns the `DurableStream.define(...)` boundary
 for that row. For example:
 
-- runtime ingress owns `RuntimeIngressRowSchema`;
+- session input owns `SessionInputRowSchema`;
 - runtime output owns `RuntimeJournalEventSchema` write programs;
 - required actions own required-action durable fact rows;
 - materialization owns its projection input/output stream definitions;
@@ -122,7 +129,12 @@ together, and avoids a generic abstraction that must understand every row type.
 
 ## Production Module Shape
 
-### Runtime Ingress
+### Session Input (historical section was Runtime Ingress)
+
+This section originally used pre-tracer-019 `runtime-ingress` vocabulary. The
+current target is `packages/runtime/src/session-input/**` and
+`appendSessionInput`; the snippet below is preserved only to show the
+pre-renaming shape that tracer 019 superseded.
 
 Target:
 
@@ -274,7 +286,7 @@ RuntimeIngressLive
 RuntimeIngressUnavailableLive
 ```
 
-`RuntimeIngress` row schemas/types may remain. The service/layer wrapper should
+Session input row schemas/types may remain. The service/layer wrapper should
 not.
 
 ## Static Guardrails
@@ -310,7 +322,7 @@ the problem this cutover is meant to solve.
 Owned areas:
 
 ```txt
-packages/runtime/src/runtime-ingress/**
+packages/runtime/src/session-input/**
 packages/runtime/src/runtime-output/**
 packages/runtime/src/runtime-context/**
 packages/runtime/src/runtime-host/**

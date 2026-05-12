@@ -1,30 +1,30 @@
 import {
-  runtimeIngressIdForIdempotencyKey,
-  runtimeIngressRequestedRowId,
+  sessionInputIdForIdempotencyKey,
+  sessionInputRowId,
 } from "./ids.ts"
 import {
   type PublicPromptRequest,
-  type RuntimeIngressRequest,
-  type RuntimeIngressRequestedRow,
+  type SessionInputRequest,
+  type SessionInputRow,
 } from "./schema.ts"
 
 const nowIso = (): string => new Date().toISOString()
 
-export const ingressIdForRequest = (
-  request: RuntimeIngressRequest,
+export const sessionInputIdForRequest = (
+  request: SessionInputRequest,
 ): string =>
-  request.ingressId ??
+  request.sessionInputId ??
   (request.idempotencyKey === undefined
-    ? `ing_${crypto.randomUUID()}`
-    : runtimeIngressIdForIdempotencyKey(request.contextId, request.idempotencyKey))
+    ? `input_${crypto.randomUUID()}`
+    : sessionInputIdForIdempotencyKey(request.contextId, request.idempotencyKey))
 
 // `request` is already validated by the API boundary
 // (`Firegrid.prompt` decodes `PublicPromptRequestSchema` and passes the
 // validated value in). This trusted helper rebuilds it into the internal
-// `RuntimeIngressRequest` shape without re-decoding.
-export const promptToRuntimeIngressRequest = (
+// `SessionInputRequest` shape without re-decoding.
+export const promptToSessionInputRequest = (
   request: PublicPromptRequest,
-): RuntimeIngressRequest => ({
+): SessionInputRequest => ({
   contextId: request.contextId,
   kind: "message",
   authoredBy: "client",
@@ -34,25 +34,25 @@ export const promptToRuntimeIngressRequest = (
 })
 
 // Trusted row constructor: `request` is already typed as
-// `RuntimeIngressRequest` (validated upstream by `Firegrid.prompt`'s
+// `SessionInputRequest` (validated upstream by `Firegrid.prompt`'s
 // `Schema.decodeUnknown(PublicPromptRequestSchema)`). The wire-shape row
 // is built directly and constrained via `satisfies`; the durable stream
-// boundary re-encodes through `RuntimeIngressRowSchema` on append, so
+// boundary re-encodes through `SessionInputRowSchema` on append, so
 // decoding here would be redundant.
-export const makeRuntimeIngressRequestedRow = (
-  request: RuntimeIngressRequest,
+export const makeSessionInputRow = (
+  request: SessionInputRequest,
   options?: {
-    readonly ingressId?: string
+    readonly sessionInputId?: string
     readonly createdAt?: string
   },
-): RuntimeIngressRequestedRow => {
-  const ingressId = options?.ingressId ?? ingressIdForRequest(request)
+): SessionInputRow => {
+  const sessionInputId = options?.sessionInputId ?? sessionInputIdForRequest(request)
   const createdAt = options?.createdAt ?? nowIso()
   return {
-    type: "firegrid.runtime_ingress.requested",
-    id: runtimeIngressRequestedRowId(request.contextId, ingressId),
+    type: "firegrid.session.input",
+    id: sessionInputRowId(request.contextId, sessionInputId),
     at: createdAt,
-    ingressId,
+    sessionInputId,
     contextId: request.contextId,
     kind: request.kind,
     authoredBy: request.authoredBy,
@@ -60,5 +60,5 @@ export const makeRuntimeIngressRequestedRow = (
     ...(request.idempotencyKey === undefined ? {} : { idempotencyKey: request.idempotencyKey }),
     createdAt,
     ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
-  } satisfies RuntimeIngressRequestedRow
+  } satisfies SessionInputRow
 }

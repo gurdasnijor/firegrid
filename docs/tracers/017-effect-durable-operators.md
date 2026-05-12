@@ -25,7 +25,7 @@ Firegrid keeps rediscovering the same mechanics:
 - claim or checkpoint before a provider side effect;
 - rebuild queryable state from retained history.
 
-Those mechanics should not live in runtime-ingress, required-action,
+Those mechanics should not live in session-input, required-action,
 materialization, or future tool-specific modules. They are generic durable
 operator concerns. This tracer validates that they can be factored once without
 hiding Effect streams or overfitting to Firegrid.
@@ -117,7 +117,7 @@ scenario, app, or `@firegrid/durable-streams` packages.
 - The operators package must remain generic; Firegrid-specific schemas and row
   names stay outside it.
 - Runtime input delivery may still use the transitional physical
-  `runtime_ingress` row family, but the fold/checkpoint logic should move to the
+  `firegrid.session.input` row family, but the fold/checkpoint logic should move to the
   generic consumer operator.
 
 ## Non-Goals

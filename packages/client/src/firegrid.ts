@@ -16,13 +16,13 @@ import {
   type RuntimeRunEvent,
 } from "@firegrid/protocol/launch"
 import {
-  makeRuntimeIngressRequestedRow,
-  promptToRuntimeIngressRequest,
+  makeSessionInputRow,
+  promptToSessionInputRequest,
   PublicPromptRequestSchema,
-  RuntimeIngressRowSchema,
+  SessionInputRowSchema,
   type PublicPromptRequest,
-  type RuntimeIngressRequestedRow,
-} from "@firegrid/protocol/runtime-ingress"
+  type SessionInputRow,
+} from "@firegrid/protocol/session-input"
 import { Context, Data, Effect, Layer, Schema, Stream } from "effect"
 import { DurableStream } from "effect-durable-streams"
 
@@ -76,7 +76,7 @@ export interface FiregridService {
   readonly launch: (request: PublicLaunchRequest) => Effect.Effect<RuntimeContextHandle, LaunchInputError | AppendError>
   readonly prompt: (
     request: PublicPromptRequest,
-  ) => Effect.Effect<RuntimeIngressRequestedRow, PromptInputError | AppendError>
+  ) => Effect.Effect<SessionInputRow, PromptInputError | AppendError>
   readonly open: (contextId: string) => RuntimeContextHandle
 }
 
@@ -212,11 +212,11 @@ const make = Effect.gen(function* () {
     ? undefined
     : DurableStream.define({
       endpoint: { url: inputStreamUrl },
-      schema: RuntimeIngressRowSchema,
+      schema: SessionInputRowSchema,
     })
 
   const appendPrompt = (
-    row: RuntimeIngressRequestedRow,
+    row: SessionInputRow,
   ): Effect.Effect<void, AppendError> =>
     inputStream === undefined
       ? Effect.fail(new AppendError({
@@ -261,7 +261,7 @@ const make = Effect.gen(function* () {
     prompt: request => Effect.gen(function* () {
       // firegrid-agent-ingress.INGRESS.6
       const decoded = yield* decodePublicPromptRequest(request)
-      const row = makeRuntimeIngressRequestedRow(promptToRuntimeIngressRequest(decoded))
+      const row = makeSessionInputRow(promptToSessionInputRequest(decoded))
       yield* appendPrompt(row)
       return row
     }),

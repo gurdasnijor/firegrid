@@ -1,45 +1,48 @@
 feature:
   name: firegrid-agent-ingress
   product: firegrid
-  description: Durable, provider-neutral runtime ingress facts for client, workflow, tool, and system-authored inputs over the Firegrid substrate.
+  description: Durable, provider-neutral session input facts for client, workflow, tool, and system-authored inputs over the Firegrid substrate.
 
 components:
   INGRESS:
     requirements:
-      1: Runtime ingress is recorded as durable input facts with an input id, runtime context id, input kind, provider-neutral payload, author class, creation time, and caller metadata.
-      2: Initial prompts, follow-up prompts, steering inputs, scheduled prompts, required-action-derived inputs, and tool-authored spawn inputs use the same durable ingress model.
-      3: Duplicate ingress writes with the same idempotency key do not create duplicate logical inputs for a runtime context.
-      4: Ingress ordering is derived from durable ingress order or an explicit durable input sequence, not wall-clock timestamps.
-      5: Ingress author class distinguishes client-authored, workflow-authored, tool-authored, and system-authored facts without changing the provider delivery authority.
+      1: Session input is recorded as durable input facts with an input id, runtime context id, input kind, provider-neutral payload, author class, creation time, and caller metadata.
+      2: Initial prompts, follow-up prompts, steering inputs, scheduled prompts, required-action-derived inputs, and tool-authored spawn inputs use the same durable session input model.
+      3: Duplicate session input writes with the same idempotency key do not create duplicate logical inputs for a runtime context.
+      4: Session input ordering is derived from durable stream order or an explicit durable input sequence, not wall-clock timestamps.
+      5: Session input author class distinguishes client-authored, workflow-authored, tool-authored, and system-authored facts without changing the provider delivery authority.
       6: The canonical input surface is append-only durable facts; sending input does not synchronously invoke a workflow, operator, provider adapter, or RPC-style delivery method.
-      7: If the implementation keeps the `runtime_ingress` row family name, it documents whether that name is target vocabulary or a transitional implementation name for session input or prompt request facts.
+      7:
+        requirement: Historical implementations that kept the `runtime_ingress` row family documented whether that name was target vocabulary or a transitional implementation name for session input or prompt request facts.
+        deprecated: true
+      8: The canonical durable input fact row type is `firegrid.session.input`; `runtime_ingress` is not current production vocabulary.
 
   DELIVERY:
     requirements:
-      1: Runtime providers consume durable ingress facts and translate them to provider-specific input protocols only at the live adapter boundary.
-      2: Provider-specific stdin, ACP, Claude, chat, or tool protocol payloads are not the durable ingress authority.
+      1: Runtime providers consume durable session input facts and translate them to provider-specific input protocols only at the live adapter boundary.
+      2: Provider-specific stdin, ACP, Claude, chat, or tool protocol payloads are not the durable session input authority.
       3: Input delivery or consumption progress is recorded durably so restart/retry behavior does not depend on process-local cursors.
-      4: Runtime output remains a separate durable journal; runtime ingress does not directly define session, transcript, or message projection schemas.
+      4: Runtime output remains a separate durable journal; session input does not directly define session, transcript, or message projection schemas.
       5: Provider-visible input delivery is driven by a runtime-host-owned stream loop that reads durable input facts, folds durable progress, performs the next valid adapter effect, and appends resulting durable progress or output facts.
 
   HOST:
     requirements:
-      1: The runtime host owns ingress stream topology and exposes a package/runtime surface for appending prompts to a runtime context.
-      2: Client launch and prompt requests do not carry ingress stream URLs, workflow engine choices, materialization strategy, or provider registry configuration.
-      3: Initial runtime input and later prompt requests exercise the same host-owned ingress path.
+      1: The runtime host owns session input stream topology and exposes a package/runtime surface for appending prompts to a runtime context.
+      2: Client launch and prompt requests do not carry session input stream URLs, workflow engine choices, materialization strategy, or provider registry configuration.
+      3: Initial runtime input and later prompt requests exercise the same host-owned session input path.
       4: Runtime host configuration may start long-running input dispatch loops, but callers do not invoke an individual input dispatcher or operator as a top-level control operation.
 
   SUBSCRIBERS:
     requirements:
-      1: Ingress subscribers are runtime-host-owned workflows, provider adapters, or reactive operators over durable facts, durable time, or projection predicates.
+      1: Session input subscribers are runtime-host-owned workflows, provider adapters, or reactive operators over durable facts, durable time, or projection predicates.
       2: Subscriber progress is durable when missing or repeated delivery would change provider-visible behavior.
-      3: Workflow subscribers emit follow-up ingress or runtime facts through existing authority surfaces rather than launching private workflow endpoints.
+      3: Workflow subscribers emit follow-up session input or runtime facts through existing authority surfaces rather than launching private workflow endpoints.
 
 constraints:
   BOUNDARY:
     requirements:
-      1: Agent ingress does not introduce a product HTTP/RPC prompting endpoint as Firegrid substrate authority.
-      2: Agent ingress does not parse runtime-output provider events or own session materialization.
-      3: Required-action resolution may later produce runtime input, but required-action workflow authority remains separate from prompt ingress authority.
-      4: Workflow-backed tools may later call the prompt/launch surface, but tool semantics do not define the prompt ingress substrate.
-      5: Workflow-backed tools and required-action operators append durable ingress facts through the same host-owned prompt path as clients; they do not launch private workflow-specific prompt delivery paths.
+      1: Session input does not introduce a product HTTP/RPC prompting endpoint as Firegrid substrate authority.
+      2: Session input does not parse runtime-output provider events or own session materialization.
+      3: Required-action resolution may later produce runtime input, but required-action workflow authority remains separate from prompt input authority.
+      4: Workflow-backed tools may later call the prompt/launch surface, but tool semantics do not define the session input substrate.
+      5: Workflow-backed tools and required-action operators append durable session input facts through the same host-owned prompt path as clients; they do not launch private workflow-specific prompt delivery paths.
