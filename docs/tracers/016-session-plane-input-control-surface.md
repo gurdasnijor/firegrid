@@ -154,12 +154,16 @@ transitional implementation vocabulary. The accepted session-plane concept is
 "session input" / "prompt request" facts. A future cleanup may rename the row
 family after the input, prompt, scheduling, and spawn surfaces converge.
 
-The local-process path records `firegrid.runtime_ingress.accepted` progress
-before handing bytes to the provider stdin sink. The current Effect Platform
-stdin sink does not expose per-chunk write acknowledgements, so this is an
-explicit at-most-once progress marker: failures are surfaced as runtime/provider
-failures, but accepted input is not retried blindly after the provider boundary
-may have observed it.
+The local-process path records delivery progress through the generic
+`effect-durable-operators.ConsumerCheckpointStore` (see tracer 017). The
+backing `inputCheckpoints` stream is a separate durable stream wired via
+`FiregridRuntimeHostStreams.inputCheckpoints`; the runtime never writes the
+old `firegrid.runtime_ingress.accepted` row format (deleted in tracer 017).
+The current Effect Platform stdin sink does not expose per-chunk write
+acknowledgements, so the consumer uses `ClaimPolicy.AtMostOnce`: the
+durable checkpoint is written before bytes flow to the provider, and
+failures surface as runtime/provider failures without retrying accepted
+input across the provider boundary.
 
 This tracer chooses Option C from the public append boundary decision:
 

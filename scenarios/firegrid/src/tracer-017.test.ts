@@ -10,9 +10,11 @@
  *    surfaces only (Firegrid.launch / Firegrid.prompt /
  *    Firegrid.open(...).snapshot / FiregridRuntimeHostLive / startRuntime).
  *    NO shadow harnesses, NO product-shaped durable read helpers.
- *  - effect-durable-operators.FIREGRID_PROOF.3 — Firegrid-specific
- *    ConsumerCheckpointStore Layer (packages/runtime/src/runtime-ingress/
- *    checkpoint-store.ts) is the boundary; the generic operator package
+ *  - effect-durable-operators.FIREGRID_PROOF.3 — runtime input delivery
+ *    uses the GENERIC `effect-durable-operators.ConsumerCheckpointStoreLive`
+ *    backed by a separate `inputCheckpoints` stream URL wired through
+ *    `FiregridRuntimeHostStreams.inputCheckpoints`. There is no
+ *    Firegrid-specific checkpoint Layer; the generic operator package
  *    has no Firegrid imports.
  *  - effect-durable-operators.TRACER_017.5 — scenario E2E proves runtime
  *    input delivery still works through production surfaces after the

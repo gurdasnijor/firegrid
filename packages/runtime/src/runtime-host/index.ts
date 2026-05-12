@@ -113,11 +113,24 @@ const runtimeContextLayer = (
   // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.1
   // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.2
   // effect-native-production-cutover.RUNTIME_IO.4
-  RuntimeContextWorkflowLayer({
-    runtimeOutputStreamUrl: options.streams.runtimeOutput,
-    ...(options.streams.runtimeIngress === undefined ? {} : { runtimeIngressStreamUrl: options.streams.runtimeIngress }),
-    ...(options.streams.inputCheckpoints === undefined ? {} : { inputCheckpointsStreamUrl: options.streams.inputCheckpoints }),
-  }).pipe(
+  //
+  // Misconfiguration guard: ingress without a checkpoint stream would
+  // silently no-op delivery. `Layer.suspend` lets us short-circuit to a
+  // typed `Layer.fail` before constructing any downstream resources.
+  Layer.suspend(() =>
+    options.streams.runtimeIngress !== undefined &&
+    options.streams.inputCheckpoints === undefined
+      ? (Layer.fail(asRuntimeContextError(
+          "runtime-host.misconfigured",
+          "FiregridRuntimeHostLive: streams.runtimeIngress is configured but streams.inputCheckpoints is missing; refusing to wire a host that would silently drop prompts",
+          "(host-construction)",
+        )) as unknown as ReturnType<typeof RuntimeContextWorkflowLayer>)
+      : RuntimeContextWorkflowLayer({
+          runtimeOutputStreamUrl: options.streams.runtimeOutput,
+          ...(options.streams.runtimeIngress === undefined ? {} : { runtimeIngressStreamUrl: options.streams.runtimeIngress }),
+          ...(options.streams.inputCheckpoints === undefined ? {} : { inputCheckpointsStreamUrl: options.streams.inputCheckpoints }),
+        }),
+  ).pipe(
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: options.streams.workflow,
       ...(options.workerId === undefined ? {} : { workerId: options.workerId }),

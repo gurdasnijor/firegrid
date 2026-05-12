@@ -186,6 +186,20 @@ export const RuntimeContextWorkflowLayer = (
           lingerMs: 10,
         }).pipe(mapRuntimeOutputError(context.contextId))
         const command = yield* commandForContext(context)
+        // Fail-fast: configuring runtime ingress without a checkpoint
+        // stream would silently no-op delivery (prompts append but never
+        // reach the provider). Reject the misconfiguration here rather
+        // than letting the host pretend ingress is wired.
+        if (
+          options.runtimeIngressStreamUrl !== undefined &&
+          options.inputCheckpointsStreamUrl === undefined
+        ) {
+          return yield* Effect.fail(asRuntimeContextError(
+            "runtime-ingress.misconfigured",
+            "runtime ingress stream is configured but inputCheckpoints stream is missing; refusing to start with silent no-op delivery",
+            context.contextId,
+          ))
+        }
         const stdin = options.runtimeIngressStreamUrl === undefined
           || options.inputCheckpointsStreamUrl === undefined
           ? undefined
