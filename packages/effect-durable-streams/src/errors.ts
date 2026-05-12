@@ -36,5 +36,5 @@ export class SequenceGap extends Data.TaggedError("DurableStream/SequenceGap")<{
 }> {}
 
 export type ReadError = DecodeError | TransportError | NotFound | Gone
-export type WriteError = TransportError | StreamClosed | Conflict | NotFound
+export type WriteError = TransportError | StreamClosed | Conflict | NotFound | Gone
 export type ProducerError = StaleEpoch | SequenceGap | TransportError

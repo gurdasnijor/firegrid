@@ -16,6 +16,7 @@ import {
 import type { Producer, ProducerMakeOpts } from "../DurableStream.ts"
 import {
   Conflict,
+  Gone,
   NotFound,
   SequenceGap,
   StaleEpoch,
@@ -124,6 +125,9 @@ const sendBatch = <A, I>(
         }
         if (res.status === 404) {
           return yield* Effect.fail(new NotFound({ url: String(opts.endpoint.url) }))
+        }
+        if (res.status === 410) {
+          return yield* Effect.fail(new Gone({ url: String(opts.endpoint.url) }))
         }
         if (res.status === 400) {
           return yield* Effect.fail(

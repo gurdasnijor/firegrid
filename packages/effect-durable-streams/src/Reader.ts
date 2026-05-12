@@ -3,6 +3,7 @@ import { Chunk, Effect, Stream } from "effect"
 import type {
   CollectOpts,
   Endpoint,
+  HeadersRecord,
   HeadResult,
   ReadOpts,
   SnapshotResult,
@@ -19,15 +20,22 @@ export const read = <A, I>(
 export const collect = <A, I>(
   opts: CollectOpts<A, I>,
 ): Effect.Effect<ReadonlyArray<A>, ReadError, HttpClient.HttpClient> =>
-  read({ endpoint: opts.endpoint, schema: opts.schema, live: false, offset: BEGIN }).pipe(
+  read({
+    endpoint: opts.endpoint,
+    schema: opts.schema,
+    live: false,
+    offset: BEGIN,
+    ...(opts.headers !== undefined ? { headers: opts.headers } : {}),
+  }).pipe(
     Stream.runCollect,
     Effect.map(Chunk.toReadonlyArray),
   )
 
 export const head = (
   endpoint: Endpoint,
+  callHeaders?: HeadersRecord,
 ): Effect.Effect<HeadResult, TransportError | NotFound | Gone, HttpClient.HttpClient> =>
-  Http.head(endpoint)
+  Http.head(endpoint, callHeaders)
 
 /**
  * Snapshot then follow — no-gap, no-duplicate.
@@ -43,13 +51,14 @@ export const snapshotThenFollow = <A, I>(
   opts: CollectOpts<A, I>,
 ): Effect.Effect<SnapshotResult<A>, ReadError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
-    const { items, finalOffset } = yield* catchUpAll(opts.endpoint, BEGIN)
+    const { items, finalOffset } = yield* catchUpAll(opts.endpoint, BEGIN, opts.headers)
     const decoded = yield* arrayDecoder(opts.schema)(items)
     const live = read({
       endpoint: opts.endpoint,
       schema: opts.schema,
       live: true,
       offset: finalOffset,
+      ...(opts.headers !== undefined ? { headers: opts.headers } : {}),
     })
     return { snapshot: decoded, live }
   })
@@ -72,11 +81,12 @@ export const tail = <A, I>(
   TransportError | NotFound | Gone,
   HttpClient.HttpClient
 > =>
-  Effect.map(Http.head(opts.endpoint), (h) =>
+  Effect.map(Http.head(opts.endpoint, opts.headers), (h) =>
     read({
       endpoint: opts.endpoint,
       schema: opts.schema,
       live: true,
       offset: h.offset,
+      ...(opts.headers !== undefined ? { headers: opts.headers } : {}),
     }),
   )

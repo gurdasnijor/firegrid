@@ -447,3 +447,178 @@ describe("Phase 1 onError handler contract", () => {
     expect(seenHeaders[1]!["x-refreshed"]).toBe("1")
   })
 })
+
+// ============================================================================
+// Per-call header overrides
+// ============================================================================
+//
+// `ReadOpts`/`CollectOpts`/`AppendOpts`/`CreateOptions`/`CloseOptions` now
+// accept a `headers?` field. Per-call values merge ON TOP of endpoint-level
+// headers (call wins on collision). Function values are re-evaluated per
+// request, same as endpoint-level headers.
+
+describe("Phase 1 per-call header overrides", () => {
+  it("collect: per-call headers merge over endpoint headers (call wins)", async () => {
+    const seenHeaders: Array<Record<string, string>> = []
+    const fetchImpl: typeof globalThis.fetch = async (
+      _input: globalThis.RequestInfo | globalThis.URL,
+      init?: globalThis.RequestInit,
+    ): Promise<Response> => {
+      const hdrs = new Headers(init?.headers)
+      const out: Record<string, string> = {}
+      hdrs.forEach((v, k) => {
+        out[k.toLowerCase()] = v
+      })
+      seenHeaders.push(out)
+      return new Response("[]", {
+        status: 200,
+        headers: { "stream-up-to-date": "true" },
+      })
+    }
+
+    await runtimeWith(
+      fetchImpl,
+      DurableStream.collect({
+        endpoint: {
+          url: "http://example/v1/stream/x",
+          headers: { "x-tenant": "acme", "x-shared": "endpoint-value" },
+        },
+        schema: Message,
+        // Per-call: introduce a new header AND override an existing one.
+        headers: {
+          "x-request-id": "req-123",
+          "x-shared": "call-value",
+        },
+      }),
+    )
+
+    expect(seenHeaders.length).toBe(1)
+    expect(seenHeaders[0]!["x-tenant"]).toBe("acme")
+    expect(seenHeaders[0]!["x-request-id"]).toBe("req-123")
+    // Per-call override wins.
+    expect(seenHeaders[0]!["x-shared"]).toBe("call-value")
+  })
+
+  it("append: per-call headers reach the wire", async () => {
+    let seen: Record<string, string> = {}
+    const fetchImpl: typeof globalThis.fetch = async (
+      _input: globalThis.RequestInfo | globalThis.URL,
+      init?: globalThis.RequestInit,
+    ): Promise<Response> => {
+      const hdrs = new Headers(init?.headers)
+      seen = {}
+      hdrs.forEach((v, k) => {
+        seen[k.toLowerCase()] = v
+      })
+      return new Response("", {
+        status: 200,
+        headers: { "stream-next-offset": "0_42" },
+      })
+    }
+
+    await runtimeWith(
+      fetchImpl,
+      DurableStream.append({
+        endpoint: {
+          url: "http://example/v1/stream/x",
+          headers: { "x-tenant": "acme" },
+        },
+        schema: Message,
+        event: { n: 1 },
+        headers: { "x-idempotency-key": "abc-123" },
+      }),
+    )
+
+    expect(seen["x-tenant"]).toBe("acme")
+    expect(seen["x-idempotency-key"]).toBe("abc-123")
+  })
+
+  it("function-valued per-call headers are re-evaluated per request", async () => {
+    // Live read over long-poll: a function header must fire on EVERY
+    // poll, not just the first. Mock fetch reports two-then-close.
+    let pollCount = 0
+    let evalCount = 0
+    const seenHeaders: Array<Record<string, string>> = []
+    const fetchImpl: typeof globalThis.fetch = async (
+      _input: globalThis.RequestInfo | globalThis.URL,
+      init?: globalThis.RequestInit,
+    ): Promise<Response> => {
+      const hdrs = new Headers(init?.headers)
+      const out: Record<string, string> = {}
+      hdrs.forEach((v, k) => {
+        out[k.toLowerCase()] = v
+      })
+      seenHeaders.push(out)
+      pollCount += 1
+      return new Response("[]", {
+        status: 200,
+        headers: pollCount >= 2
+          ? { "stream-up-to-date": "true", "stream-closed": "true" }
+          : {},
+      })
+    }
+
+    await runtimeWith(
+      fetchImpl,
+      DurableStream.collect({
+        endpoint: { url: "http://example/v1/stream/x" },
+        schema: Message,
+        headers: {
+          "x-token": () => {
+            evalCount += 1
+            return `t-${evalCount}`
+          },
+        },
+      }),
+    )
+
+    expect(pollCount).toBeGreaterThanOrEqual(2)
+    expect(evalCount).toBeGreaterThanOrEqual(2)
+    expect(seenHeaders[0]!["x-token"]).toBe("t-1")
+    expect(seenHeaders[1]!["x-token"]).toBe("t-2")
+  })
+})
+
+// ============================================================================
+// 410 → Gone mapping
+// ============================================================================
+
+describe("Phase 1 410 Gone mapping", () => {
+  it("read: 410 surfaces as Gone (not TransportError)", async () => {
+    const { fetch } = makeFakeFetch([{ status: 410 }])
+    const exit = await runtimeWith(
+      fetch,
+      Effect.exit(
+        DurableStream.collect({
+          endpoint: { url: "http://example/v1/stream/dead" },
+          schema: Message,
+        }),
+      ),
+    )
+    expect(exit._tag).toBe("Failure")
+    // Walk the cause to find the typed Gone failure.
+    if (exit._tag === "Failure") {
+      const found = JSON.stringify(exit.cause).includes("DurableStream/Gone")
+      expect(found).toBe(true)
+    }
+  })
+
+  it("append: 410 surfaces as Gone (not TransportError)", async () => {
+    const { fetch } = makeFakeFetch([{ status: 410 }])
+    const exit = await runtimeWith(
+      fetch,
+      Effect.exit(
+        DurableStream.append({
+          endpoint: { url: "http://example/v1/stream/dead" },
+          schema: Message,
+          event: { n: 1 },
+        }),
+      ),
+    )
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") {
+      const found = JSON.stringify(exit.cause).includes("DurableStream/Gone")
+      expect(found).toBe(true)
+    }
+  })
+})

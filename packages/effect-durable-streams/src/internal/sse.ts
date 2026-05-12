@@ -1,7 +1,7 @@
 import { type HttpClient } from "@effect/platform"
 import { Chunk, Effect, Ref, Stream } from "effect"
 import { createParser } from "eventsource-parser"
-import type { Endpoint, Offset } from "../DurableStream.ts"
+import type { Endpoint, HeadersRecord, Offset } from "../DurableStream.ts"
 import { Offset as MkOffset } from "../DurableStream.ts"
 import type { ReadError } from "../errors.ts"
 import { DecodeError, TransportError } from "../errors.ts"
@@ -57,6 +57,7 @@ const sseConnection = (
   endpoint: Endpoint,
   offsetRef: Ref.Ref<Offset>,
   closedRef: Ref.Ref<boolean>,
+  callHeaders: HeadersRecord | undefined,
 ): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> =>
   Stream.unwrap(
     Effect.gen(function* () {
@@ -64,6 +65,7 @@ const sseConnection = (
       const res = yield* Http.getStream(endpoint, {
         offset,
         accept: C.CONTENT_TYPE_SSE,
+        ...(callHeaders !== undefined ? { callHeaders } : {}),
       })
       // §5.8: when the server flags `stream-sse-data-encoding: base64`,
       // every data payload is base64-encoded raw bytes. Pass the flag down
@@ -140,6 +142,7 @@ const sseConnection = (
 export const sseStream = (
   endpoint: Endpoint,
   startOffset: Offset,
+  callHeaders?: HeadersRecord,
 ): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> =>
   Stream.unwrap(
     Effect.gen(function* () {
@@ -151,7 +154,7 @@ export const sseStream = (
           Effect.gen(function* () {
             const closed = yield* Ref.get(closedRef)
             if (closed) return Stream.empty
-            return sseConnection(endpoint, offsetRef, closedRef).pipe(
+            return sseConnection(endpoint, offsetRef, closedRef, callHeaders).pipe(
               Stream.concat(Stream.suspend(loop)),
             )
           }),
