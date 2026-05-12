@@ -1,5 +1,13 @@
 # Current Architecture Alignment Review
 
+> **Historical (as of 2026-05-12):** dated alignment review pinned to
+> 2026-05-10. Its references to `managed-agent-runtime-target.md` and
+> the SDD-cutover proposal reflect those documents' state at that date.
+> The `target.md` file was deleted on 2026-05-12; the current target
+> lives in
+> `docs/architecture/managed-agent-runtime-target-durable-facts.md`.
+> Findings preserved as the review's reasoning record.
+
 Date: 2026-05-10
 
 Branch: `firegrid/stabilization-lane-b-runtime-layout`

@@ -1,5 +1,16 @@
 # Durable Execution API Design Survey
 
+> **Historical (as of 2026-05-12):** research-only doc, pinned to its
+> 2026-05-11 reference set. References to
+> `managed-agent-runtime-target.md`,
+> `stream-native-runtime-loop.SURFACE.*` ACIDs, and tracer-015 are
+> intentionally preserved as the survey's frame of reference at that
+> date. Current target architecture lives in
+> `docs/architecture/managed-agent-runtime-target-durable-facts.md`;
+> tracer 017 has since deleted the stream-native-runtime-loop scaffolding
+> and `firegrid.runtime_ingress.accepted` row family this survey
+> mentions.
+
 Status: research recommendation, not accepted architecture.
 
 Date: 2026-05-11

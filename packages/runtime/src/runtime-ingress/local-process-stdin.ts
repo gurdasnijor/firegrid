@@ -2,11 +2,14 @@
  * Local-process runtime ingress → stdin.
  *
  * Streams `firegrid.runtime_ingress.requested` rows for a given
- * `(contextId, subscriberId)` as encoded stdin chunks for the local-process
- * sandbox provider. Delivery progress is owned by the generic
- * `effect-durable-operators.DurableConsumer` + `ConsumerCheckpointStore`
- * stack — there is no Firegrid-specific checkpoint adapter, and no
- * `firegrid.runtime_ingress.accepted` row is written.
+ * `(contextId, subscriberId)` as encoded stdin chunks for the
+ * local-process sandbox provider. Delivery progress is recorded only
+ * in the generic `effect-durable-operators.DurableConsumer` +
+ * `ConsumerCheckpointStore` stack, on the separate
+ * `inputCheckpoints` stream wired through
+ * `RuntimeInputDurableStreams`. There is no Firegrid-specific
+ * checkpoint adapter; the runtime emits no progress rows on the
+ * input-fact stream itself.
  *
  * Implements:
  *  - effect-durable-operators.FIREGRID_PROOF.1 — runtime input fold lives

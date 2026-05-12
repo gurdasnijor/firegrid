@@ -1,3 +1,13 @@
+// runtime-output-source — the canonical `EventSource` adapter that
+// reads the runtime-output durable stream and feeds the materialization
+// pipeline. Not a composition mini-root: this is the only way to plumb
+// runtime output into the strategy-interface EventSource boundary, and
+// is consumed by `materialize-pipeline.ts`, `session-projection-definition.ts`,
+// and active scenario tests.
+//
+// See docs/architecture/legacy-drift-inventory-2026-05-12.md F8 for the
+// clarification of why this is NOT the runtime-host mini-root smell.
+
 import { FetchHttpClient } from "@effect/platform"
 import {
   compareRuntimeOutputOrder,
