@@ -140,7 +140,8 @@ constraints:
         deprecated: true
       4-note: Restated as a runtime delivery concern; see firegrid-agent-ingress.DELIVERY.3.
       5: Table semantics rely on @durable-streams/state and TanStack DB invariants; the wrapper must not mutate table state outside the sync protocol.
-      6: The package may depend only on effect-durable-streams, @durable-streams/client, @durable-streams/state, @tanstack/db, and Effect packages; @electric-sql/* dependencies and devDependencies are not permitted.
+      6: The package's runtime dependency surface is @durable-streams/client, @durable-streams/state, @tanstack/db, and Effect packages; @electric-sql/* dependencies and devDependencies are not permitted, and effect-durable-streams is not a dependency of effect-durable-operators.
+      8: The package effect-durable-streams-state has been deleted; DurableTable uses @durable-streams/state directly with no Firegrid-local State Protocol wrapper.
       7: The package must not import @firegrid/* packages; this is enforced by pnpm run lint:deps.
 
   TRACER_017:

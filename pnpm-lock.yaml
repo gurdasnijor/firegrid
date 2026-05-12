@@ -217,36 +217,6 @@ importers:
         specifier: ^3.2.0
         version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)
 
-  packages/effect-durable-streams-state:
-    devDependencies:
-      '@durable-streams/client':
-        specifier: ^0.2.3
-        version: 0.2.3
-      '@durable-streams/server':
-        specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
-      '@durable-streams/state':
-        specifier: ^0.2.5
-        version: 0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))
-      '@effect/platform':
-        specifier: ^0.96.0
-        version: 0.96.1(effect@3.21.2)
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.19.17
-      effect:
-        specifier: ^3.18.0
-        version: 3.21.2
-      effect-durable-streams:
-        specifier: workspace:*
-        version: link:../effect-durable-streams
-      typescript:
-        specifier: ^5.7.0
-        version: 5.9.3
-      vitest:
-        specifier: ^3.2.0
-        version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)
-
   packages/protocol:
     dependencies:
       effect:
