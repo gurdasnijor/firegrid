@@ -105,6 +105,14 @@ export interface HeadResult {
    * policy decisions.
    */
   readonly cacheControl: string | undefined
+  /**
+   * `Stream-Cursor` header value, if the server returns one. Per the
+   * protocol this is an opaque, monotonically-bounded token that CDNs
+   * use to collapse parallel requests for the same logical view of the
+   * stream. Surface for callers building CDN-aware integrations; the
+   * read loop already plumbs it on subsequent requests internally.
+   */
+  readonly cursor: string | undefined
 }
 
 export interface CreateOptions {
@@ -113,11 +121,20 @@ export interface CreateOptions {
   readonly expiresAt?: string
   readonly closed?: boolean
   readonly body?: string | Uint8Array
+  /**
+   * Per-call headers merged on top of the endpoint's headers for this
+   * single request. Useful for request IDs, one-off auth tokens, or any
+   * header that varies per call without rebuilding the {@link Endpoint}.
+   * Function-valued headers are resolved per request.
+   */
+  readonly headers?: HeadersRecord
 }
 
 export interface CloseOptions {
   readonly body?: string | Uint8Array
   readonly contentType?: string
+  /** See {@link CreateOptions.headers}. */
+  readonly headers?: HeadersRecord
 }
 
 export interface ProducerOptions {
@@ -224,11 +241,16 @@ export interface ReadOpts<A, I> {
    * a prior `head()` to cheaply check for new data behind a CDN.
    */
   readonly ifNoneMatch?: string
+  /** See {@link CreateOptions.headers}. Applied to every read request,
+   * including reconnects in live mode (function values re-evaluated). */
+  readonly headers?: HeadersRecord
 }
 
 export interface CollectOpts<A, I> {
   readonly endpoint: Endpoint
   readonly schema: Schema.Schema<A, I>
+  /** See {@link CreateOptions.headers}. */
+  readonly headers?: HeadersRecord
 }
 
 export interface AppendOpts<A, I> {
@@ -236,6 +258,8 @@ export interface AppendOpts<A, I> {
   readonly schema: Schema.Schema<A, I>
   readonly event: A
   readonly seq?: string
+  /** See {@link CreateOptions.headers}. */
+  readonly headers?: HeadersRecord
 }
 
 export interface ProducerMakeOpts<A, I> extends ProducerOptions {
@@ -257,7 +281,17 @@ export interface Bound<A, I> {
   readonly endpoint: Endpoint
   readonly schema: Schema.Schema<A, I>
   readonly read: (
-    opts?: { readonly live?: LiveMode; readonly offset?: Offset },
+    opts?: {
+      readonly live?: LiveMode
+      readonly offset?: Offset
+      /**
+       * Per-call headers merged on top of `endpoint.headers` for every
+       * request this read makes (including reconnects in live mode).
+       * Function values are re-evaluated per request, same as
+       * endpoint-level headers.
+       */
+      readonly headers?: HeadersRecord
+    },
   ) => Stream.Stream<A, ReadError, HttpClient.HttpClient>
   readonly collect: Effect.Effect<ReadonlyArray<A>, ReadError, HttpClient.HttpClient>
   readonly snapshotThenFollow: Effect.Effect<
@@ -281,7 +315,11 @@ export interface Bound<A, I> {
   >
   readonly append: (
     event: A,
-    opts?: { readonly seq?: string },
+    opts?: {
+      readonly seq?: string
+      /** Per-call headers merged on top of `endpoint.headers`. */
+      readonly headers?: HeadersRecord
+    },
   ) => Effect.Effect<{ readonly offset: Offset }, WriteError, HttpClient.HttpClient>
   readonly producer: (
     opts: ProducerOptions,

@@ -1,6 +1,12 @@
 import { type HttpClient } from "@effect/platform"
 import { Chunk, Effect, Option, Stream } from "effect"
-import type { Endpoint, LiveMode, Offset, ReadOpts } from "../DurableStream.ts"
+import type {
+  Endpoint,
+  HeadersRecord,
+  LiveMode,
+  Offset,
+  ReadOpts,
+} from "../DurableStream.ts"
 import { Offset as MkOffset } from "../DurableStream.ts"
 import type { ReadError } from "../errors.ts"
 import { arrayDecoder } from "../internal/schema.ts"
@@ -27,6 +33,7 @@ const catchUpLoop = (
   endpoint: Endpoint,
   startOffset: Offset,
   ifNoneMatch?: string,
+  callHeaders?: HeadersRecord,
 ): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> =>
   Stream.paginateChunkEffect<CatchUpState, unknown, ReadError, HttpClient.HttpClient>(
     { offset: startOffset, done: false, nextIfNoneMatch: ifNoneMatch },
@@ -39,6 +46,7 @@ const catchUpLoop = (
           ...(state.nextIfNoneMatch !== undefined
             ? { ifNoneMatch: state.nextIfNoneMatch }
             : {}),
+          ...(callHeaders !== undefined ? { callHeaders } : {}),
         }
         const res = yield* Http.getJson(endpoint, reqOpts)
         // 304: server says nothing new. Terminate immediately.
@@ -70,18 +78,22 @@ interface LongPollState {
 const longPollLoop = (
   endpoint: Endpoint,
   startOffset: Offset,
+  callHeaders?: HeadersRecord,
 ): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> =>
   Stream.unfoldChunkEffect<LongPollState, unknown, ReadError, HttpClient.HttpClient>(
     { offset: startOffset, cursor: undefined },
     (state) =>
       Effect.gen(function* () {
-        const getOpts = state.cursor !== undefined
+        const baseOpts = state.cursor !== undefined
           ? ({
               offset: state.offset,
               live: "long-poll" as const,
               cursor: state.cursor,
             })
           : ({ offset: state.offset, live: "long-poll" as const })
+        const getOpts = callHeaders !== undefined
+          ? { ...baseOpts, callHeaders }
+          : baseOpts
         const res = yield* Http.getJson(endpoint, getOpts)
         if (res.streamClosed && res.items.length === 0) {
           return Option.none()
@@ -101,14 +113,16 @@ const longPollLoop = (
 const sseLoop = (
   endpoint: Endpoint,
   startOffset: Offset,
-): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> =>
-  Stream.unwrap(
-    Effect.gen(function* () {
-      // Defer to internal/sse.ts where the eventsource-parser bridge lives.
-      const { sseStream } = yield* Effect.promise(() => import("../internal/sse.ts"))
-      return sseStream(endpoint, startOffset)
-    }),
+  callHeaders?: HeadersRecord,
+): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> => {
+  // Defer to internal/sse.ts where the eventsource-parser bridge lives.
+  const loadSseModule = Effect.promise(() => import("../internal/sse.ts"))
+  return Stream.unwrap(
+    loadSseModule.pipe(
+      Effect.map(({ sseStream }) => sseStream(endpoint, startOffset, callHeaders)),
+    ),
   )
+}
 
 // ============================================================================
 // Public read entry point
@@ -125,15 +139,16 @@ export const readStream = <A, I>(
 ): Stream.Stream<A, ReadError, HttpClient.HttpClient> => {
   const live = opts.live ?? true
   const startOffset = resolveStart(live, opts.offset)
+  const callHeaders = opts.headers
   // `live: true` is auto-select. SSE is the preferred live mode for JSON
   // streams (matches reference behavior). Callers behind proxies / CDNs
   // that don't honor SSE flush can pass explicit `live: "long-poll"`.
   // Binary streams should also pick long-poll explicitly.
   const raw: Stream.Stream<unknown, ReadError, HttpClient.HttpClient> = live === false
-    ? catchUpLoop(opts.endpoint, startOffset, opts.ifNoneMatch)
+    ? catchUpLoop(opts.endpoint, startOffset, opts.ifNoneMatch, callHeaders)
     : live === "long-poll"
-      ? longPollLoop(opts.endpoint, startOffset)
-      : sseLoop(opts.endpoint, startOffset)
+      ? longPollLoop(opts.endpoint, startOffset, callHeaders)
+      : sseLoop(opts.endpoint, startOffset, callHeaders)
   const decode = arrayDecoder(opts.schema)
   return raw.pipe(
     Stream.mapChunksEffect((chunk) =>
@@ -156,6 +171,7 @@ export const readStream = <A, I>(
 export const catchUpAll = (
   endpoint: Endpoint,
   startOffset: Offset = BEGIN,
+  callHeaders?: HeadersRecord,
 ): Effect.Effect<
   { readonly items: ReadonlyArray<unknown>; readonly finalOffset: Offset },
   ReadError,
@@ -165,7 +181,11 @@ export const catchUpAll = (
     const items: Array<unknown> = []
     let offset = startOffset
     while (true) {
-      const res = yield* Http.getJson(endpoint, { offset, live: false })
+      const res = yield* Http.getJson(endpoint, {
+        offset,
+        live: false,
+        ...(callHeaders !== undefined ? { callHeaders } : {}),
+      })
       for (const item of res.items) items.push(item)
       offset = res.nextOffset
       if (res.upToDate || res.streamClosed) break

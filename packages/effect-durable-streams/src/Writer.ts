@@ -5,6 +5,7 @@ import type {
   CloseOptions,
   CreateOptions,
   Endpoint,
+  HeadersRecord,
   Offset,
   Producer as ProducerType,
   ProducerMakeOpts,
@@ -27,9 +28,11 @@ export const append = <A, I>(
   Effect.gen(function* () {
     const encoded = encodeUnsafe(opts.schema)(opts.event)
     const body = JSON.stringify([encoded])
-    const postOpts: Http.PostOptions = opts.seq !== undefined
-      ? { body, seq: opts.seq }
-      : { body }
+    const postOpts: Http.PostOptions = {
+      body,
+      ...(opts.seq !== undefined ? { seq: opts.seq } : {}),
+      ...(opts.headers !== undefined ? { callHeaders: opts.headers } : {}),
+    }
     const res = yield* Http.post(opts.endpoint, postOpts)
     if (res.status === 200 || res.status === 204) {
       if (res.streamClosed) {
@@ -43,9 +46,8 @@ export const append = <A, I>(
       }
       return yield* Effect.fail(new Conflict({ reason: "409 Conflict on append" }))
     }
-    if (res.status === 404) {
-      return yield* Effect.fail(new NotFound({ url: String(opts.endpoint.url) }))
-    }
+    const missing = Http.missingStreamError(res.status, String(opts.endpoint.url))
+    if (missing !== undefined) return yield* Effect.fail(missing)
     return yield* Effect.fail(
       new TransportError({ cause: new Error(`POST returned status ${res.status}`) }),
     )
@@ -73,6 +75,7 @@ export const create = (
       ...(opts.body !== undefined
         ? { body: typeof opts.body === "string" ? opts.body : new TextDecoder().decode(opts.body) }
         : {}),
+      ...(opts.headers !== undefined ? { callHeaders: opts.headers } : {}),
     }
     const res = yield* Http.put(endpoint, putOpts)
     if (res.status === 200 || res.status === 201) return
@@ -95,6 +98,7 @@ export const close = (
         : "",
       streamClosed: true,
       ...(opts.contentType !== undefined ? { contentType: opts.contentType } : {}),
+      ...(opts.headers !== undefined ? { callHeaders: opts.headers } : {}),
     }
     const res = yield* Http.post(endpoint, postOpts)
     if (res.status === 200 || res.status === 204) {
@@ -110,9 +114,10 @@ export const close = (
 
 export const del = (
   endpoint: Endpoint,
+  callHeaders?: HeadersRecord,
 ): Effect.Effect<void, TransportError | NotFound, HttpClient.HttpClient> =>
   Effect.gen(function* () {
-    const res = yield* Http.del(endpoint)
+    const res = yield* Http.del(endpoint, callHeaders)
     if (res.status === 200 || res.status === 204) return
     if (res.status === 404) return yield* Effect.fail(new NotFound({ url: String(endpoint.url) }))
     return yield* Effect.fail(
