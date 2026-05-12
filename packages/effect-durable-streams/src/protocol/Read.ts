@@ -114,14 +114,15 @@ const sseLoop = (
   endpoint: Endpoint,
   startOffset: Offset,
   callHeaders?: HeadersRecord,
-): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> =>
-  Stream.unwrap(
-    Effect.gen(function* () {
-      // Defer to internal/sse.ts where the eventsource-parser bridge lives.
-      const { sseStream } = yield* Effect.promise(() => import("../internal/sse.ts"))
-      return sseStream(endpoint, startOffset, callHeaders)
-    }),
+): Stream.Stream<unknown, ReadError, HttpClient.HttpClient> => {
+  // Defer to internal/sse.ts where the eventsource-parser bridge lives.
+  const loadSseModule = Effect.promise(() => import("../internal/sse.ts"))
+  return Stream.unwrap(
+    loadSseModule.pipe(
+      Effect.map(({ sseStream }) => sseStream(endpoint, startOffset, callHeaders)),
+    ),
   )
+}
 
 // ============================================================================
 // Public read entry point

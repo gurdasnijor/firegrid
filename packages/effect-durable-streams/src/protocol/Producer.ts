@@ -16,8 +16,6 @@ import {
 import type { Producer, ProducerMakeOpts } from "../DurableStream.ts"
 import {
   Conflict,
-  Gone,
-  NotFound,
   SequenceGap,
   StaleEpoch,
   StreamClosed,
@@ -123,12 +121,8 @@ const sendBatch = <A, I>(
             }),
           )
         }
-        if (res.status === 404) {
-          return yield* Effect.fail(new NotFound({ url: String(opts.endpoint.url) }))
-        }
-        if (res.status === 410) {
-          return yield* Effect.fail(new Gone({ url: String(opts.endpoint.url) }))
-        }
+        const missing = Http.missingStreamError(res.status, String(opts.endpoint.url))
+        if (missing !== undefined) return yield* Effect.fail(missing)
         if (res.status === 400) {
           return yield* Effect.fail(
             new Conflict({ reason: `400 Bad Request from producer epoch=${current.epoch} seq=${nextSeq}` }),

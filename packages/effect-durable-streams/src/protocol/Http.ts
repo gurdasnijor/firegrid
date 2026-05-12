@@ -52,6 +52,16 @@ const headerValue = (
 const isClosed = (res: HttpClientResponse.HttpClientResponse): boolean =>
   headerValue(res, STREAM_CLOSED) === "true"
 
+export const missingStreamError = (
+  status: number,
+  url: string,
+): NotFound | Gone | undefined =>
+  status === 404
+    ? new NotFound({ url })
+    : status === 410
+      ? new Gone({ url })
+      : undefined
+
 // === Retry policy ================================================
 //
 // Two classes of transient failure retry through the schedule:
@@ -263,6 +273,20 @@ const executeWithRetry = (
     )
   })
 
+const executeGet = (
+  endpoint: Endpoint,
+  params: Record<string, string>,
+  callHeaders: HeadersRecord | undefined,
+  extraHeaders?: Record<string, string>,
+): Effect.Effect<HttpClientResponse.HttpClientResponse, TransportError, HttpClient.HttpClient> =>
+  executeWithRetry(
+    endpoint,
+    (u, h) =>
+      applyParams(HttpClientRequest.get(u).pipe(HttpClientRequest.setHeaders(h)), params),
+    callHeaders,
+    extraHeaders,
+  )
+
 const headInner = (
   endpoint: Endpoint,
   callHeaders: HeadersRecord | undefined,
@@ -274,8 +298,8 @@ const headInner = (
       (u, h) => HttpClientRequest.head(u).pipe(HttpClientRequest.setHeaders(h)),
       callHeaders,
     )
-    if (res.status === 404) return yield* Effect.fail(new NotFound({ url }))
-    if (res.status === 410) return yield* Effect.fail(new Gone({ url }))
+    const missing = missingStreamError(res.status, url)
+    if (missing !== undefined) return yield* Effect.fail(missing)
     if (res.status < 200 || res.status >= 300) {
       return yield* Effect.fail(
         new TransportError({ cause: new Error(`HEAD ${url}: status ${res.status}`) }),
@@ -348,15 +372,9 @@ const getJsonInner = (
     if (opts.live === "long-poll") params[C.QUERY_LIVE] = C.LIVE_LONG_POLL
     if (opts.cursor !== undefined) params[C.QUERY_CURSOR] = opts.cursor
 
-    const res = yield* executeWithRetry(
-      endpoint,
-      (u, h) =>
-        applyParams(HttpClientRequest.get(u).pipe(HttpClientRequest.setHeaders(h)), params),
-      opts.callHeaders,
-      extra,
-    )
-    if (res.status === 404) return yield* Effect.fail(new NotFound({ url }))
-    if (res.status === 410) return yield* Effect.fail(new Gone({ url }))
+    const res = yield* executeGet(endpoint, params, opts.callHeaders, extra)
+    const missing = missingStreamError(res.status, url)
+    if (missing !== undefined) return yield* Effect.fail(missing)
     if (res.status === 304) {
       // Server says "nothing changed since the etag you sent". Surface as
       // an empty result with notModified=true — caller decides whether to
@@ -443,18 +461,17 @@ export const getStream = (
     Effect.gen(function* () {
       const url = urlOf(ep)
       const extra = opts.accept ? { accept: opts.accept } : undefined
-      const res = yield* executeWithRetry(
+      const res = yield* executeGet(
         ep,
-        (u, h) =>
-          applyParams(HttpClientRequest.get(u).pipe(HttpClientRequest.setHeaders(h)), {
-            [C.QUERY_OFFSET]: opts.offset,
-            [C.QUERY_LIVE]: C.LIVE_SSE,
-          }),
+        {
+          [C.QUERY_OFFSET]: opts.offset,
+          [C.QUERY_LIVE]: C.LIVE_SSE,
+        },
         opts.callHeaders,
         extra,
       )
-      if (res.status === 404) return yield* Effect.fail(new NotFound({ url }))
-      if (res.status === 410) return yield* Effect.fail(new Gone({ url }))
+      const missing = missingStreamError(res.status, url)
+      if (missing !== undefined) return yield* Effect.fail(missing)
       if (res.status !== 200) {
         return yield* Effect.fail(
           new TransportError({
@@ -587,4 +604,3 @@ const delInner = (
     )
     return { status: res.status }
   })
-

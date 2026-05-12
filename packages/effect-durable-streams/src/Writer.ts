@@ -12,7 +12,6 @@ import type {
 } from "./DurableStream.ts"
 import {
   Conflict,
-  Gone,
   NotFound,
   StreamClosed,
   TransportError,
@@ -47,14 +46,8 @@ export const append = <A, I>(
       }
       return yield* Effect.fail(new Conflict({ reason: "409 Conflict on append" }))
     }
-    if (res.status === 404) {
-      return yield* Effect.fail(new NotFound({ url: String(opts.endpoint.url) }))
-    }
-    if (res.status === 410) {
-      // Stream has been deleted. Distinguish from 404 (never existed) so
-      // callers can branch on the difference (e.g., 410 → don't retry).
-      return yield* Effect.fail(new Gone({ url: String(opts.endpoint.url) }))
-    }
+    const missing = Http.missingStreamError(res.status, String(opts.endpoint.url))
+    if (missing !== undefined) return yield* Effect.fail(missing)
     return yield* Effect.fail(
       new TransportError({ cause: new Error(`POST returned status ${res.status}`) }),
     )
