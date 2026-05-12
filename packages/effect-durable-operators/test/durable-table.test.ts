@@ -16,6 +16,7 @@
  *  - effect-durable-operators.TABLE.12
  *  - effect-durable-operators.TABLE.13
  *  - effect-durable-operators.TABLE.14
+ *  - effect-durable-operators.TABLE.15
  */
 
 import { DurableStream } from "effect-durable-streams"
@@ -148,7 +149,7 @@ describe("DurableTable", () => {
     }).toThrow(/collides with a table service property/)
   })
 
-  it("effect-durable-operators.TABLE.10 effect-durable-operators.TABLE.11 effect-durable-operators.TABLE.12 generated insert/upsert/delete actions materialize and write txid events", async () => {
+  it("effect-durable-operators.TABLE.10 effect-durable-operators.TABLE.11 effect-durable-operators.TABLE.12 effect-durable-operators.TABLE.15 generated insert/upsert/delete actions materialize and write txid events", async () => {
     const url = server.url("table-actions")
 
     await runtime(
@@ -212,6 +213,12 @@ describe("DurableTable", () => {
       "upsert",
       "insert",
       "delete",
+    ])
+    expect(events.map((event) => event.key)).toEqual([
+      "exec-1",
+      "exec-1",
+      "exec-2",
+      "exec-1",
     ])
     expect(
       events.every((event) => typeof event.headers.txid === "string"),
