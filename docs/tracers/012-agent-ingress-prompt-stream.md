@@ -1,5 +1,14 @@
 # 012: Runtime Ingress Event Stream
 
+> **Historical note (as of tracer 017, PR #158):** the
+> `firegrid.runtime_ingress.accepted` row family referenced below has
+> been deleted. Runtime input delivery progress now lives in a
+> separate `effect-durable-operators.ConsumerCheckpointStore`-backed
+> `inputCheckpoints` stream (see
+> `docs/tracers/017-effect-durable-operators.md`). This tracer's prose
+> is preserved for historical record; the `runtime_ingress.requested`
+> public input fact remains valid.
+
 ## Objective
 
 Define the durable runtime ingress model for supplying client, workflow, tool, and system-authored inputs over Firegrid's Durable Streams substrate.

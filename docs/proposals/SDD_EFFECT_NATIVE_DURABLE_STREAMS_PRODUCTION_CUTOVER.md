@@ -3,8 +3,15 @@
 **Status:** proposed
 **Scope:** breaking stabilization wave
 **Primary spec:** `effect-native-production-cutover`
-**Depends on:** `stream-native-runtime-loop`, `effect-native-api`,
-`firegrid-platform-invariants`
+**Depends on:** `effect-native-api`, `firegrid-platform-invariants`,
+`effect-durable-operators`
+
+> Note: an earlier revision listed `stream-native-runtime-loop` as a
+> dependency. That feature spec, its tracer (`015`), and its production
+> implementation under `packages/runtime/src/stream-native-runtime-loop/`
+> were all deleted in tracer 017 (PR #158). Runtime input delivery
+> now flows through `effect-durable-operators` (see
+> `docs/tracers/017-effect-durable-operators.md`).
 
 ## Decision
 
