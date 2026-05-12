@@ -1,17 +1,21 @@
 /**
- * Verifies:
- *  - effect-durable-operators.TABLE.1 — facade over createStreamDB, not a
- *    new engine
- *  - effect-durable-operators.TABLE.2 — Effect Schema input, Standard Schema
- *    only at the @durable-streams/state boundary
- *  - effect-durable-operators.TABLE.3 — Scope-managed; preload on acquire,
- *    close on scope finalization; awaitTxId surfaced as Effect
- *  - effect-durable-operators.TABLE.4 — get / query / changes are real pull
- *    and push helpers, no re-folding of retained history
- *  - effect-durable-operators.TABLE.5 — cold-start replay rebuilds state
- *    from retained change events
- *  - effect-durable-operators.PACKAGE.1, PACKAGE.3 — package exposes typed
- *    operators and uses Effect Stream/Schema directly.
+ * Verifies the ksql-inspired DurableTable declaration/action API.
+ *
+ * Key ACIDs:
+ *  - effect-durable-operators.TABLE.1
+ *  - effect-durable-operators.TABLE.2
+ *  - effect-durable-operators.TABLE.3
+ *  - effect-durable-operators.TABLE.4
+ *  - effect-durable-operators.TABLE.5
+ *  - effect-durable-operators.TABLE.6
+ *  - effect-durable-operators.TABLE.7
+ *  - effect-durable-operators.TABLE.8
+ *  - effect-durable-operators.TABLE.9
+ *  - effect-durable-operators.TABLE.10
+ *  - effect-durable-operators.TABLE.11
+ *  - effect-durable-operators.TABLE.12
+ *  - effect-durable-operators.TABLE.13
+ *  - effect-durable-operators.TABLE.14
  */
 
 import { DurableStream } from "effect-durable-streams"
@@ -28,306 +32,401 @@ afterAll(async () => {
   await server.stop()
 })
 
-const Webhook = Schema.Struct({
-  providerEventId: Schema.String,
-  receivedAt: Schema.String,
-  status: Schema.Literal("received", "processed", "failed"),
+const WorkflowExecution = Schema.Struct({
+  executionId: Schema.String.pipe(DurableTable.primaryKey),
+  workflowName: Schema.String,
+  payload: Schema.Unknown,
+  status: Schema.Literal("started", "completed"),
 })
-type Webhook = Schema.Schema.Type<typeof Webhook>
+type WorkflowExecution = Schema.Schema.Type<typeof WorkflowExecution>
 
-const webhookCollections = DurableTable.collections({
-  webhooks: DurableTable.collection({
-    type: "example.webhook",
-    primaryKey: "providerEventId",
-    schema: Webhook,
+const RawStateEvent = Schema.Struct({
+  type: Schema.String,
+  key: Schema.String,
+  headers: Schema.Struct({
+    operation: Schema.String,
+    txid: Schema.optional(Schema.String),
   }),
 })
 
+class WorkflowTable extends DurableTable("workflow", {
+  executions: WorkflowExecution,
+}) {}
+
+const createJsonStream = (url: string) =>
+  DurableStream.define({
+    endpoint: { url },
+    schema: Schema.Unknown,
+  }).create({ contentType: "application/json" })
+
+const readRawEvents = (url: string) =>
+  DurableStream.define({
+    endpoint: { url },
+    schema: RawStateEvent,
+  }).collect
+
 describe("DurableTable", () => {
-  it("materializes upserts and serves get/query through @durable-streams/state", async () => {
-    const url = server.url("table")
+  it("effect-durable-operators.TABLE.7 extracts pipeable primaryKey metadata and consumes the table with yield* Table", async () => {
+    const url = server.url("table-primary-key")
 
     await runtime(
       Effect.gen(function* () {
-        // Pre-create the underlying durable stream so createStreamDB can read it.
-        yield* DurableStream.define({
-          endpoint: { url },
-          schema: Schema.Unknown,
-        }).create({ contentType: "application/json" })
+        yield* createJsonStream(url)
 
-        const wireBound = DurableStream.define({
-          endpoint: { url },
-          schema: Schema.Any,
-        })
-        // Append change events directly — the table observes via the wire.
-        const row: Webhook = {
-          providerEventId: "evt-1",
-          receivedAt: "2026-01-01T00:00:00.000Z",
-          status: "received",
-        }
-        const base = webhookCollections.collections.webhooks.upsert(row)
-        // Tag with a txid so we can deterministically synchronize on
-        // observed materialization rather than sleeping for "long enough".
-        yield* wireBound.append({
-          ...base,
-          headers: { ...base.headers, txid: "evt-1-tx" },
+        const program = Effect.gen(function* () {
+          // effect-durable-operators.TABLE.6
+          const table = yield* WorkflowTable
+          const row: WorkflowExecution = {
+            executionId: "exec-pk",
+            workflowName: "demo",
+            payload: { hello: "world" },
+            status: "started",
+          }
+
+          yield* table.executions.insert(row)
+          const got = yield* table.executions.get("exec-pk")
+
+          expect(Option.isSome(got)).toBe(true)
+          if (Option.isSome(got)) {
+            expect(got.value.executionId).toBe("exec-pk")
+          }
         })
 
-        const table = yield* DurableTable.materialize({
-          streamOptions: { url, contentType: "application/json" },
-          collections: webhookCollections,
-        })
-
-        // Wait for the tagged tx to flow through the materialization.
-        yield* table.awaitTxId("evt-1-tx", 3000)
-
-        const got = yield* table.get("webhooks", "evt-1")
-        expect(Option.isSome(got)).toBe(true)
-        if (Option.isSome(got)) {
-          expect(got.value.providerEventId).toBe("evt-1")
-          expect(got.value.status).toBe("received")
-        }
-
-        // query returns the synchronous view of the collection.
-        const allRows = yield* table.query("webhooks", (coll) => coll.toArray)
-        expect(allRows.length).toBe(1)
-      }),
-    )
-  })
-
-  it("push subscription via `changes` observes a later update after initial materialize (TABLE.4)", async () => {
-    const url = server.url("table-push")
-
-    await runtime(
-      Effect.gen(function* () {
-        yield* DurableStream.define({
-          endpoint: { url },
-          schema: Schema.Unknown,
-        }).create({ contentType: "application/json" })
-        const wireBound = DurableStream.define({
-          endpoint: { url },
-          schema: Schema.Any,
-        })
-        // Seed one row, materialize, then append a SECOND row — the
-        // subscription must fire for the live update without re-folding.
-        yield* wireBound.append(
-          webhookCollections.collections.webhooks.upsert({
-            providerEventId: "p-1",
-            receivedAt: "2026-01-01T00:00:00.000Z",
-            status: "received",
-          }),
-        )
-
-        const table = yield* DurableTable.materialize({
-          streamOptions: { url, contentType: "application/json" },
-          collections: webhookCollections,
-        })
-
-        const seenRef = yield* Ref.make<ReadonlyArray<string>>([])
-
-        // Subscribe — bridge TanStack subscribeChanges into the changes stream.
-        const changesStream = table.changes<"webhooks", string>(
-          "webhooks",
-          (coll, emit) => {
-            const sub = coll.subscribeChanges(
-              (changes) => {
-                for (const c of changes) {
-                  if (c.value !== undefined && c.value !== null) {
-                    emit(c.value.providerEventId)
-                  }
-                }
-              },
-              { includeInitialState: true },
-            )
-            return () => sub.unsubscribe()
-          },
-        )
-        const fiber = yield* Effect.fork(
-          Stream.runForEach(changesStream, (id) =>
-            Ref.update(seenRef, (a) => [...a, id]),
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
           ),
         )
-
-        // Let the subscription deliver initial state.
-        yield* Effect.sleep("200 millis")
-        // Append a SECOND row — this is the live update we want to observe.
-        yield* wireBound.append(
-          webhookCollections.collections.webhooks.upsert({
-            providerEventId: "p-2",
-            receivedAt: "2026-01-01T00:00:01.000Z",
-            status: "processed",
-          }),
-        )
-        yield* Effect.sleep("250 millis")
-        yield* Fiber.interrupt(fiber)
-
-        const ids = yield* Ref.get(seenRef)
-        expect(ids).toContain("p-1")
-        expect(ids).toContain("p-2")
       }),
     )
   })
 
-  it("wait_for-shaped: snapshot query misses; live subscription observes the later matching update (TABLE.4)", async () => {
-    const url = server.url("table-wait-for")
+  it("effect-durable-operators.TABLE.7 supports direct primaryKey(schema) form", () => {
+    expect(() => {
+      class DirectPrimaryKeyTable extends DurableTable("direct", {
+        rows: Schema.Struct({
+          id: DurableTable.primaryKey(Schema.String),
+          value: Schema.Number,
+        }),
+      }) {}
+      return DirectPrimaryKeyTable
+    }).not.toThrow()
+  })
+
+  it("effect-durable-operators.TABLE.8 fails loudly for zero or multiple primary keys", () => {
+    expect(() => {
+      class MissingPrimaryKeyTable extends DurableTable("missing", {
+        rows: Schema.Struct({
+          id: Schema.String,
+          value: Schema.Number,
+        }),
+      }) {}
+      return MissingPrimaryKeyTable
+    }).toThrow(/exactly one DurableTable\.primaryKey/)
+
+    expect(() => {
+      class MultiplePrimaryKeyTable extends DurableTable("multiple", {
+        rows: Schema.Struct({
+          id: Schema.String.pipe(DurableTable.primaryKey),
+          otherId: Schema.String.pipe(DurableTable.primaryKey),
+        }),
+      }) {}
+      return MultiplePrimaryKeyTable
+    }).toThrow(/found 2/)
+  })
+
+  it("effect-durable-operators.TABLE.10 rejects collection names reserved by the table service", () => {
+    expect(() => {
+      class ReservedCollectionTable extends DurableTable("reserved", {
+        awaitTxId: Schema.Struct({
+          id: Schema.String.pipe(DurableTable.primaryKey),
+        }),
+      }) {}
+      return ReservedCollectionTable
+    }).toThrow(/collides with a table service property/)
+  })
+
+  it("effect-durable-operators.TABLE.10 effect-durable-operators.TABLE.11 effect-durable-operators.TABLE.12 generated insert/upsert/delete actions materialize and write txid events", async () => {
+    const url = server.url("table-actions")
 
     await runtime(
       Effect.gen(function* () {
-        yield* DurableStream.define({
-          endpoint: { url },
-          schema: Schema.Unknown,
-        }).create({ contentType: "application/json" })
+        yield* createJsonStream(url)
 
-        const table = yield* DurableTable.materialize({
-          streamOptions: { url, contentType: "application/json" },
-          collections: webhookCollections,
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+
+          yield* table.executions.insert({
+            executionId: "exec-1",
+            workflowName: "demo",
+            payload: { step: 1 },
+            status: "started",
+          })
+
+          yield* table.executions.upsert({
+            executionId: "exec-1",
+            workflowName: "demo",
+            payload: { step: 2 },
+            status: "completed",
+          })
+
+          yield* table.executions.insert({
+            executionId: "exec-2",
+            workflowName: "demo",
+            payload: { step: 3 },
+            status: "started",
+          })
+
+          yield* table.executions.delete("exec-1")
+
+          const deleted = yield* table.executions.get("exec-1")
+          const kept = yield* table.executions.get("exec-2")
+          const rows = yield* table.executions.query((coll) => coll.toArray)
+
+          expect(Option.isNone(deleted)).toBe(true)
+          expect(Option.isSome(kept)).toBe(true)
+          expect(rows.map((row) => row.executionId)).toEqual(["exec-2"])
         })
-        yield* Effect.sleep("100 millis")
 
-        // Snapshot query misses — nothing has been appended yet.
-        const initial = yield* table.get("webhooks", "later")
-        expect(Option.isNone(initial)).toBe(true)
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
 
-        // Subscribe to changes BEFORE the append.
-        const matchedRef = yield* Ref.make<Array<string>>([])
-        const changesStream = table.changes<"webhooks", string>(
-          "webhooks",
-          (coll, emit) => {
+    const events = await runtime(readRawEvents(url))
+    expect(events.map((event) => event.type)).toEqual([
+      "workflow.executions",
+      "workflow.executions",
+      "workflow.executions",
+      "workflow.executions",
+    ])
+    expect(events.map((event) => event.headers.operation)).toEqual([
+      "insert",
+      "upsert",
+      "insert",
+      "delete",
+    ])
+    expect(
+      events.every((event) => typeof event.headers.txid === "string"),
+    ).toBe(true)
+  })
+
+  it("effect-durable-operators.TABLE.10 duplicate insert rejects rather than upserting", async () => {
+    const url = server.url("table-duplicate-insert")
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* createJsonStream(url)
+
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const row: WorkflowExecution = {
+            executionId: "exec-dup",
+            workflowName: "demo",
+            payload: { version: 1 },
+            status: "started",
+          }
+
+          yield* table.executions.insert(row)
+          const duplicate = yield* table.executions.insert({
+            ...row,
+            payload: { version: 2 },
+            status: "completed",
+          }).pipe(Effect.either)
+
+          expect(duplicate._tag).toBe("Left")
+
+          const current = yield* table.executions.get("exec-dup")
+          expect(Option.isSome(current)).toBe(true)
+          if (Option.isSome(current)) {
+            expect(current.value.status).toBe("started")
+            expect(current.value.payload).toEqual({ version: 1 })
+          }
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.12 generated writes are queryable immediately after action completion", async () => {
+    const url = server.url("table-read-after-write")
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* createJsonStream(url)
+
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+
+          yield* table.executions.upsert({
+            executionId: "exec-tx",
+            workflowName: "demo",
+            payload: { after: "write" },
+            status: "started",
+          })
+
+          const row = yield* table.executions.get("exec-tx")
+          expect(Option.isSome(row)).toBe(true)
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.4 exposes subscribe as a push query over live materialized updates", async () => {
+    const url = server.url("table-subscribe")
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* createJsonStream(url)
+
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const seenRef = yield* Ref.make<ReadonlyArray<string>>([])
+
+          const updates = table.executions.subscribe<string>((coll, emit) => {
             const sub = coll.subscribeChanges(
               (changes) => {
-                for (const c of changes) {
-                  if (c.value !== undefined && c.value !== null) {
-                    if (c.value.providerEventId === "later") {
-                      emit(c.value.status)
-                    }
+                for (const change of changes) {
+                  if (change.value !== undefined && change.value !== null) {
+                    emit(change.value.executionId)
                   }
                 }
               },
               { includeInitialState: false },
             )
             return () => sub.unsubscribe()
-          },
-        )
-        const fiber = yield* Effect.fork(
-          Stream.runForEach(changesStream, (status) =>
-            Ref.update(matchedRef, (a) => [...a, status]),
+          })
+
+          const fiber = yield* Effect.fork(
+            Stream.runForEach(updates, (id) =>
+              Ref.update(seenRef, (seen) => [...seen, id]),
+            ),
+          )
+
+          yield* Effect.sleep("50 millis")
+          yield* table.executions.upsert({
+            executionId: "exec-live",
+            workflowName: "demo",
+            payload: {},
+            status: "started",
+          })
+          yield* Effect.sleep("150 millis")
+          yield* Fiber.interrupt(fiber)
+
+          const seen = yield* Ref.get(seenRef)
+          expect(seen).toContain("exec-live")
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
           ),
         )
-
-        // Append the matching row.
-        yield* DurableStream.define({
-          endpoint: { url },
-          schema: Schema.Any,
-        }).append(
-          webhookCollections.collections.webhooks.upsert({
-            providerEventId: "later",
-            receivedAt: "2026-01-01T00:00:00.000Z",
-            status: "processed",
-          }),
-        )
-
-        // Allow the subscription to deliver.
-        yield* Effect.sleep("300 millis")
-        const observed = yield* Ref.get(matchedRef)
-        expect(observed).toContain("processed")
-        yield* Fiber.interrupt(fiber)
       }),
     )
   })
 
-  it("awaitTxId is a coordination point: succeeds after sync, times out before (TABLE.3)", async () => {
-    const url = server.url("table-awaittx")
+  it("effect-durable-operators.TABLE.5 cold-start replay rebuilds action-written state", async () => {
+    const url = server.url("table-cold-start")
 
     await runtime(
       Effect.gen(function* () {
-        yield* DurableStream.define({
-          endpoint: { url },
-          schema: Schema.Unknown,
-        }).create({ contentType: "application/json" })
+        yield* createJsonStream(url)
 
-        const table = yield* DurableTable.materialize({
-          streamOptions: { url, contentType: "application/json" },
-          collections: webhookCollections,
+        const seed = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          yield* table.executions.upsert({
+            executionId: "exec-replay-1",
+            workflowName: "demo",
+            payload: {},
+            status: "started",
+          })
+          yield* table.executions.upsert({
+            executionId: "exec-replay-2",
+            workflowName: "demo",
+            payload: {},
+            status: "completed",
+          })
         })
 
-        // Negative half: awaiting a txid that was never written must time
-        // out — proves awaitTxId is not a no-op. A short 250ms deadline
-        // keeps the test fast.
-        const missResult = yield* table.awaitTxId("never-written", 250).pipe(
-          Effect.either,
-        )
-        expect(missResult._tag).toBe("Left")
-
-        // Positive half: tag an upsert with a txid, append, then await.
-        // The await must (a) succeed and (b) the row must be queryable
-        // immediately after — proving the txid signals a real
-        // read-after-write coordination point, not just a timer.
-        const event = webhookCollections.collections.webhooks.upsert({
-          providerEventId: "txid-evt",
-          receivedAt: "2026-01-01T00:00:00.000Z",
-          status: "received",
-        })
-        const tagged = {
-          ...event,
-          headers: { ...event.headers, txid: "tx-001" },
-        }
-        yield* DurableStream.define({
-          endpoint: { url },
-          schema: Schema.Any,
-        }).append(tagged)
-
-        const hitResult = yield* table.awaitTxId("tx-001", 3000).pipe(
-          Effect.either,
-        )
-        expect(hitResult._tag).toBe("Right")
-
-        // After awaitTxId resolves, the row MUST be queryable — that's the
-        // read-after-write contract this method is meant to provide.
-        const row = yield* table.get("webhooks", "txid-evt")
-        expect(Option.isSome(row)).toBe(true)
-      }),
-    )
-  })
-
-  it("rebuilds state on cold start from retained change events (TABLE.5)", async () => {
-    const url = server.url("table-replay")
-
-    await runtime(
-      Effect.gen(function* () {
-        yield* DurableStream.define({
-          endpoint: { url },
-          schema: Schema.Unknown,
-        }).create({ contentType: "application/json" })
-
-        const wireBound = DurableStream.define({
-          endpoint: { url },
-          schema: Schema.Any,
-        })
-        // Append three upserts BEFORE any table materializes.
-        for (let i = 0; i < 3; i++) {
-          yield* wireBound.append(
-            webhookCollections.collections.webhooks.upsert({
-              providerEventId: `evt-${i}`,
-              receivedAt: `2026-01-01T00:00:0${i}.000Z`,
-              status: "received",
+        yield* seed.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
             }),
-          )
-        }
+          ),
+        )
       }),
     )
 
-    // Fresh scope: a brand-new DurableTable acquires, preloads, and must
-    // observe the full retained history through cold-start replay. The
-    // `materialize` Effect runs `createStreamDB.preload()` before acquire
-    // returns, so the snapshot is queryable IMMEDIATELY — no sleep needed.
     await runtime(
       Effect.gen(function* () {
-        const table = yield* DurableTable.materialize({
-          streamOptions: { url, contentType: "application/json" },
-          collections: webhookCollections,
+        const replay = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const rows = yield* table.executions.query((coll) => coll.toArray)
+          expect(rows.map((row) => row.executionId).sort()).toEqual([
+            "exec-replay-1",
+            "exec-replay-2",
+          ])
         })
-        const rows = yield* table.query("webhooks", (coll) => coll.toArray)
-        expect(rows.length).toBe(3)
+
+        yield* replay.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.3 still exposes awaitTxId through Effect", async () => {
+    const url = server.url("table-await-txid")
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* createJsonStream(url)
+
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const missed = yield* table.awaitTxId("missing", 100).pipe(
+            Effect.either,
+          )
+          expect(missed._tag).toBe("Left")
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
       }),
     )
   })

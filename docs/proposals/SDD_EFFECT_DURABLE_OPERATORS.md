@@ -94,32 +94,34 @@ All user-facing schemas in this package are Effect Schema. Translation to
 Standard Schema happens inside the operators package at the
 `@durable-streams/state` boundary with `Schema.standardSchemaV1`.
 
-Callers should not have to build raw `createStateSchema(...)` definitions. They
-should define collections with Effect Schema:
+Callers should not have to build raw `createStateSchema(...)` definitions or
+repeat primary-key names in a parallel options object. They should define a
+durable table as an Effect service tag whose collections are plain Effect row
+schemas:
 
 ```ts
-const Webhook = Schema.Struct({
-  providerEventId: Schema.String,
-  receivedAt: Schema.DateFromString,
-  status: Schema.Literal("received", "processed", "failed"),
-})
-
-const webhooks = DurableTable.collection({
-  type: "example.webhook",
-  schema: Webhook,
-  primaryKey: "providerEventId",
-})
-
-const collections = DurableTable.collections({
-  webhooks,
-})
+class WebhookTable extends DurableTable("example", {
+  webhooks: Schema.Struct({
+    providerEventId: Schema.String.pipe(DurableTable.primaryKey),
+    receivedAt: Schema.DateFromString,
+    status: Schema.Literal("received", "processed", "failed"),
+  }),
+}) {}
 ```
 
-The wrapper should validate the primary key name against the row type and
-generate typed `insert`, `update`, `delete`, and `upsert` helpers for the
-collection. Internally, `DurableTable.materialize` converts these collection
-definitions to
-the `@durable-streams/state` shape and calls `createStreamDB`.
+`DurableTable.primaryKey` is a schema modifier. It stores package-owned schema
+metadata on the field schema; callers do not use symbols directly. Each
+collection must have exactly one primary-key field. Zero or multiple primary
+keys are declaration errors.
+
+The wrapper derives the durable State Protocol type for each collection as
+`<tableNamespace>.<collectionKey>`. Renaming either the namespace or the
+collection key is a replay-breaking migration in v0. There are no
+`persistentType`, `Type`, or per-collection wire-type overrides.
+
+Internally, the table layer converts row schemas to the `@durable-streams/state`
+shape, calls `createStateSchema` / `createStreamDB`, and generates standard
+`insert`, `upsert`, and `delete` actions for every collection.
 
 Use `Schema.brand` for semantically meaningful primary keys, such as
 `AccountId` or `ProviderEventId`. Use `Schema.Class` or `Schema.TaggedClass`
@@ -247,33 +249,68 @@ The durable stream remains the source of truth. `@durable-streams/state`
 provides the queryable materialization layer: TanStack DB collections backed by
 the db-ivm engine.
 
-`DurableTable.materialize` should be a `Scope`-managed resource:
+### Table Declarations And Actions
+
+`DurableTable(...)` returns an Effect service-tag class with a static
+`.layer(...)` constructor. User programs consume a materialized table with
+`yield* Table`, and Layers bind the declaration to a Durable Streams URL:
+
+```ts
+class WorkflowTable extends DurableTable("workflow", {
+  executions: Schema.Struct({
+    executionId: Schema.String.pipe(DurableTable.primaryKey),
+    workflowName: Schema.String,
+    payload: Schema.Unknown,
+  }),
+}) {}
+
+const program = Effect.gen(function* () {
+  const table = yield* WorkflowTable
+
+  yield* table.executions.upsert({
+    executionId: "exec-1",
+    workflowName: "demo",
+    payload: {},
+  })
+
+  yield* table.executions.get("exec-1")
+  yield* table.executions.query((coll) => coll.toArray)
+  table.executions.subscribe((coll, emit) => {
+    const sub = coll.subscribeChanges(
+      (changes) => {
+        for (const change of changes) {
+          if (change.value !== undefined && change.value !== null) {
+            emit(change.value)
+          }
+        }
+      },
+      { includeInitialState: false },
+    )
+    return () => sub.unsubscribe()
+  })
+})
+
+const Live = WorkflowTable.layer({
+  streamOptions: { url: workflowStreamUrl, contentType: "application/json" },
+})
+```
+
+`DurableTable` is still a `Scope`-managed resource:
 
 - accept typed durable stream options/source;
-- accept Effect Schema-native collections built from
-  `DurableTable.collection(...)`;
+- accept Effect Schema-native table declarations built from row schemas;
 - call `createStreamDB`;
 - run `preload` on acquire;
 - call `close` on scope finalization;
 - expose `awaitTxId` through Effect.
 
-```ts
-const table = yield* DurableTable.materialize({
-  streamOptions,
-  collections: DurableTable.collections({
-    webhooks: DurableTable.collection({
-      type: "example.webhook",
-      primaryKey: "providerEventId",
-      schema: WebhookRowSchema,
-    }),
-  }),
-})
-
-const event = yield* table.get("webhooks", providerEventId)
-const rows = yield* table.query("webhooks", query => query.where(...))
-const changes = table.changes("webhooks", collection => subscribe(collection))
-yield* table.awaitTxId(txid)
-```
+Every declared collection gets `insert`, `upsert`, and `delete` write actions.
+Callers do not pass an `actions:` object for these standard writes.
+Generated actions use upstream `createStreamDB({ actions })` optimistic action
+semantics, write State Protocol events through the action `mutationFn`, attach
+txid headers, and call `db.utils.awaitTxId(txid)` before the returned Effect
+completes. Generated table writes do not route through separate package-owned
+manual append helpers.
 
 This gives the package:
 
@@ -453,15 +490,15 @@ projections must be fully retained for cold-start replay in v0. Bounded replay
 and checkpointed projection state are future work.
 
 The projection target is a typed durable stream for State Protocol change
-events, usually constructed from `DurableTable.collections(...)` collection
-helpers.
+events. For table-backed streams, event `type` values follow the
+`<tableNamespace>.<collectionKey>` DurableTable convention.
 
 Example:
 
 ```txt
 debit/credit facts
   -> DurableProjection computes account balance row
-  -> accountBalances.upsert(row)
+  -> example.accountBalances upsert event
   -> DurableTable query
 ```
 
@@ -508,13 +545,13 @@ Record webhook payloads as facts, then materialize latest processing state by
 provider event id.
 
 ```ts
-const webhookCollections = DurableTable.collections({
-  webhooks: DurableTable.collection({
-    type: "example.webhook",
-    primaryKey: "providerEventId",
-    schema: WebhookRowSchema,
+class WebhookTable extends DurableTable("example", {
+  webhooks: Schema.Struct({
+    providerEventId: Schema.String.pipe(DurableTable.primaryKey),
+    receivedAt: Schema.DateFromString,
+    status: Schema.Literal("received", "processed", "failed"),
   }),
-})
+}) {}
 
 const row = {
   providerEventId: fact.providerEventId,
@@ -522,18 +559,11 @@ const row = {
   status: "received",
 }
 
-const webhookChanges = DurableStream.define({
-  endpoint,
-  schema: StateEventSchema,
-})
+const table = yield* WebhookTable
+yield* table.webhooks.upsert(row)
+const webhook = yield* table.webhooks.get(fact.providerEventId)
 
-yield* webhookChanges.append(webhookCollections.webhooks.upsert(row))
-
-const table = yield* DurableTable.materialize({
-  streamOptions,
-  collections: webhookCollections,
-})
-const webhook = yield* table.get("webhooks", fact.providerEventId)
+const Live = WebhookTable.layer({ streamOptions })
 ```
 
 ### Example C: Account Balance Table
@@ -547,16 +577,19 @@ const AccountId = Schema.String.pipe(Schema.brand("AccountId"))
 type AccountId = Schema.Schema.Type<typeof AccountId>
 
 const AccountBalanceSchema = Schema.Struct({
-  accountId: AccountId,
+  accountId: AccountId.pipe(DurableTable.primaryKey),
   balance: Schema.Number,
 })
 
-const balanceCollections = DurableTable.collections({
-  accountBalances: DurableTable.collection({
-    type: "example.account_balance",
-    primaryKey: "accountId",
-    schema: AccountBalanceSchema,
-  }),
+class AccountBalanceTable extends DurableTable("example", {
+  accountBalances: AccountBalanceSchema,
+}) {}
+
+const accountBalanceUpsert = (row: typeof AccountBalanceSchema.Type) => ({
+  type: "example.accountBalances",
+  key: row.accountId,
+  value: row,
+  headers: { operation: "upsert" as const },
 })
 
 const AccountBalanceProjection = DurableProjection.define({
@@ -570,7 +603,7 @@ const AccountBalanceProjection = DurableProjection.define({
       const balance = previous + fact.delta
       const nextState = HashMap.set(state, fact.accountId, balance)
       return [
-        balanceCollections.accountBalances.upsert({
+        accountBalanceUpsert({
           accountId: fact.accountId,
           balance,
         }),
@@ -589,10 +622,7 @@ yield* DurableProjection.run({
   definition: AccountBalanceProjection,
 })
 
-const table = yield* DurableTable.materialize({
-  streamOptions,
-  collections: balanceCollections,
-})
+const Live = AccountBalanceTable.layer({ streamOptions })
 ```
 
 The projection target stream and `DurableTable` `streamOptions` must reference
@@ -727,60 +757,41 @@ yield* DurableConsumer.run({ source, ... })
 Tables should expose at least:
 
 ```ts
-interface DurableTable<Collections extends DurableTable.Collections<any>, E, R> {
-  readonly get: <Name extends keyof Collections["collections"]>(
-    name: Name,
-    key: DurableTable.PrimaryKey<Collections["collections"][Name]>,
-  ) => Effect.Effect<
-    Option.Option<DurableTable.Row<Collections["collections"][Name]>>,
-    E,
-    R
-  >
-
-  readonly query: <Name extends keyof Collections["collections"], A>(
-    name: Name,
-    build: (
-      coll: Collection<
-        DurableTable.Row<Collections["collections"][Name]> & object,
-        string
-      >,
-    ) => A,
-  ) => Effect.Effect<A, E, R>
-
-  readonly changes: <Name extends keyof Collections["collections"], A>(
-    name: Name,
-    subscribe: (
-      coll: Collection<
-        DurableTable.Row<Collections["collections"][Name]> & object,
-        string
-      >,
-      emit: (value: A) => void,
-    ) => Effect.Effect<void, E, R>,
-  ) => Stream.Stream<A, E, R>
-
-  readonly awaitTxId: (txid: string) => Effect.Effect<void, E, R>
+interface DurableTableService<Schemas extends Record<string, Schema.Struct<any>>, E, R> {
+  readonly [Name in keyof Schemas]: {
+    readonly insert: (row: DurableTable.Row<Schemas[Name]>) => Effect.Effect<void, E, R>
+    readonly upsert: (row: DurableTable.Row<Schemas[Name]>) => Effect.Effect<void, E, R>
+    readonly delete: (key: DurableTable.PrimaryKey<Schemas[Name]>) => Effect.Effect<void, E, R>
+    readonly get: (key: DurableTable.PrimaryKey<Schemas[Name]>) =>
+      Effect.Effect<Option.Option<DurableTable.Row<Schemas[Name]>>, E, R>
+    readonly query: <A>(
+      build: (coll: Collection<DurableTable.Row<Schemas[Name]> & object, string>) => A,
+    ) => Effect.Effect<A, E, R>
+    readonly subscribe: <A>(
+      subscribe: (
+        coll: Collection<DurableTable.Row<Schemas[Name]> & object, string>,
+        emit: (value: A) => void,
+      ) => () => void,
+    ) => Stream.Stream<A, E, R>
+  }
 }
 ```
 
-`DurableTable.collection(...)` returns a
-`DurableTable.CollectionDefinition<Row, Key>`. `DurableTable.collections(...)`
-returns `DurableTable.Collections<...>` and exposes its members under
-`.collections`. Table methods take the name of a collection, which is a key of
-`.collections`, and pass the corresponding TanStack DB `Collection` into query
-or subscription callbacks.
+Each table service exposes collection facades as direct properties. Methods do
+not take a collection name because the collection has already been selected by
+the property access.
 
 ```ts
 type DurableTable.Row<C> =
-  C extends DurableTable.CollectionDefinition<infer Row, any> ? Row : never
+  C extends Schema.Schema<infer Row, any, any> ? Row : never
 
 type DurableTable.PrimaryKey<C> =
-  C extends DurableTable.CollectionDefinition<infer Row, infer Key>
-    ? Row[Key]
-    : never
+  // the type of the one top-level field annotated with DurableTable.primaryKey
+  string | number
 ```
 
 This is the main way to stop application code from rebuilding folds in every
-call site. The exact `query` and `changes` function signatures should follow
+call site. The exact `query` and `subscribe` function signatures should follow
 TanStack DB collection/query-builder APIs; the important point is that the
 facade is multi-collection, matching `createStreamDB`.
 
