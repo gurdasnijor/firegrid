@@ -117,7 +117,25 @@ module.exports = {
         pathNot: "^packages/durable-streams/src",
       },
       to: {
-        path: "(^|/)node_modules/(?:\\.pnpm/)?@durable-streams/",
+        // effect-durable-operators consumes ONLY @durable-streams/state for
+        // its createStreamDB facade per SDD BOUNDARIES.1. Other
+        // @durable-streams/* packages remain off-limits.
+        path: "(^|/)node_modules/(?:\\.pnpm/)?@durable-streams/(?!state/)",
+      },
+    },
+    {
+      // effect-durable-operators is allowed to import @durable-streams/state
+      // (only) per docs/proposals/SDD_EFFECT_DURABLE_OPERATORS.md BOUNDARIES.1.
+      // This explicit rule documents the narrow exemption and prevents
+      // future drift into other @durable-streams/* packages from this
+      // workspace package.
+      name: "effect-durable-operators-state-only",
+      severity: "error",
+      comment:
+        "effect-durable-operators may import @durable-streams/state, but not other @durable-streams/* packages.",
+      from: { path: "^packages/effect-durable-operators/src" },
+      to: {
+        path: "(^|/)node_modules/(?:\\.pnpm/)?@durable-streams/(?!state/)",
       },
     },
     {
