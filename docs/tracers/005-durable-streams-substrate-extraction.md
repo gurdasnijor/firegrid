@@ -6,7 +6,14 @@ having to invent the future package model.
 
 Target architecture reference:
 
-`docs/architecture/managed-agent-runtime-target.md`
+`docs/architecture/managed-agent-runtime-target-durable-facts.md`
+
+> Note: this tracer originally referenced
+> `managed-agent-runtime-target.md`, which was the target document at the
+> time of tracer-005 (early 2026). That file was promoted/replaced by
+> `managed-agent-runtime-target-durable-facts.md` on 2026-05-12. The
+> tracer's reasoning and findings are still relevant against the current
+> target.
 
 Use the target architecture for direction, but keep this stress test grounded in
 today's repository. If the target architecture asks for a package or abstraction

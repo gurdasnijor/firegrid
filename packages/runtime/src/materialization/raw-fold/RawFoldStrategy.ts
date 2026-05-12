@@ -1,3 +1,19 @@
+// RawFoldStrategy — the IN-PROCESS, in-memory `MaterializationStrategy`
+// implementation. The strategy interface (firegrid-materialization-engines.*)
+// supports multiple backends; this is the simplest one (fold-on-write into
+// a `Ref<Map<...>>`; reads consult the in-memory map directly).
+//
+// It is NOT the target durable-table substrate. New durable view code should
+// use `effect-durable-operators.DurableTable` over a State-Protocol stream
+// (or `StateProtocolStrategy` if it must remain inside this strategy
+// interface). `RawFoldStrategy` is kept for:
+//   - the dev/test path (`event-pipeline.test.ts`, scenario tracer-008)
+//   - the `firegrid-materialization-engines` ACID coverage that proves
+//     the strategy boundary supports a non-StateProtocol implementation.
+//
+// See docs/architecture/legacy-drift-inventory-2026-05-12.md F4 + Lane B
+// for the longer-term consolidation plan.
+
 import { Effect, Layer, Ref, Stream } from "effect"
 import {
   EventPipeline,

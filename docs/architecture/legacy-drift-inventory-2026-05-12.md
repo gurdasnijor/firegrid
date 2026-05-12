@@ -358,7 +358,48 @@ here for completeness so future audits don't flag them again.
 
 ---
 
-## Doc-reference fixes applied in this PR
+## Status after the Lane B/C/D follow-up commit
+
+The follow-up commit on this branch executes the destructive cleanup
+for Lanes B, C, and D, disjoint from Lane A (which still owns
+`runtime-operators/**` and `required-action/**`):
+
+- **F12 resolved.** `docs/architecture/managed-agent-runtime-target.md`
+  is **deleted**.
+  `managed-agent-runtime-target-durable-facts.md` is promoted:
+  title is now plain "Target Architecture: Managed-Agent Runtime Over
+  Durable Facts"; the "Status: proposed fork ... does not replace"
+  disclaimer is gone; the source-material list points at the canonical
+  set. Cross-links updated:
+  - `docs/tracers/005-durable-streams-substrate-extraction.md` now
+    points at the canonical doc with a note about the promotion.
+  - `docs/research/durable-execution-api-design-survey.md` and
+    `docs/architecture/current-architecture-alignment-review.md` get
+    historical banners pinning them to their original dates with a
+    forward pointer to the canonical target.
+  - `docs/architecture/managed-agent-control-surface.md` already
+    pointed at the canonical doc; no change required.
+- **F4 / F8 clarified at source.** `RawFoldStrategy.ts` and
+  `runtime-output-source.ts` gain top-of-file comments explaining
+  current role + pointing at the inventory findings. RawFoldStrategy
+  is **kept** (in active use by `event-pipeline.test.ts`, scenario
+  tracer-008, and `firegrid-materialization-engines.*` ACIDs);
+  runtime-output-source is **kept** (the canonical EventSource
+  adapter, not a composition mini-root — F8 framing was overstated).
+  Longer-term consolidation deferred to Lane B follow-up.
+- **F9 / vocabulary audit.** `docs/tracers/012-agent-ingress-prompt-stream.md`
+  body text struck the "Minimum durable records: requested + accepted"
+  block down to just "requested", with an updated-post-tracer-017
+  note. The earlier rounds of PR #160 also handled the SDD-cutover
+  proposal's stale dependency and the tracer-015 validation invocation.
+- **No code paths deleted.** F1/F2/F3/F6/F7 remain Lane A's
+  responsibility; this PR does not touch
+  `packages/runtime/src/required-action/**` or
+  `packages/runtime/src/runtime-operators/**`.
+
+---
+
+## Doc-reference fixes applied in earlier rounds of this PR
 
 To avoid the inventory itself going stale on day one:
 

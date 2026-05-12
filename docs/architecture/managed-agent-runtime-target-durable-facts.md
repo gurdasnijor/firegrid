@@ -1,17 +1,19 @@
-# Proposed Target Architecture: Managed-Agent Runtime Over Durable Facts
+# Target Architecture: Managed-Agent Runtime Over Durable Facts
 
-Status: proposed fork for review. This document does not replace
-`docs/architecture/managed-agent-runtime-target.md`.
+**Status:** canonical target architecture. Promoted from "proposed fork"
+to canonical on 2026-05-12 (post tracer 017). The earlier
+`managed-agent-runtime-target.md` was deleted as part of the same
+cleanup — see `legacy-drift-inventory-2026-05-12.md` F12 for the
+rationale.
 
-Date: 2026-05-11
+**Last updated:** 2026-05-12
 
 Source material:
 
-- `docs/architecture/managed-agent-runtime-target.md`
-- `docs/research/durable-execution-api-design-survey.md`
+- `docs/research/durable-execution-api-design-survey.md` (historical research)
 - `docs/proposals/SDD_EFFECT_NATIVE_DURABLE_STREAMS_PRODUCTION_CUTOVER.md`
 - `docs/tracers/010-workflow-backed-tools.md`
-- `docs/tracers/012-agent-ingress-prompt-stream.md`
+- `docs/tracers/012-agent-ingress-prompt-stream.md` (historical — accepted-row family deleted in tracer 017)
 - `docs/tracers/013-reactive-workflow-operators.md`
 - `docs/tracers/016-session-plane-input-control-surface.md`
 - `docs/tracers/017-effect-durable-operators.md`

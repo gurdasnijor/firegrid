@@ -108,12 +108,15 @@ Minimum durable records:
 
 ```txt
 runtime_ingress.requested
-runtime_ingress.accepted
 ```
 
-`runtime_ingress.accepted` records subscriber progress for accepted-for-dispatch
-input. The exact representation is less important than the authority boundary:
-delivery progress must not live only in a process-local variable.
+> **Updated post-tracer-017:** the original tracer prescribed a sibling
+> `runtime_ingress.accepted` row family for "subscriber progress for
+> accepted-for-dispatch input." That row family was deleted in tracer
+> 017. The authority-boundary requirement — *delivery progress must
+> not live only in a process-local variable* — is still in force, but
+> the substrate is now a separate `effect-durable-operators.ConsumerCheckpointStore`-backed
+> durable stream rather than a sibling row on the same stream.
 
 The requested row should include at least:
 
