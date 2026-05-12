@@ -177,7 +177,8 @@ yield* DurableConsumer.forEach({
     order.type === "order.created" ? Option.some(order) : Option.none(),
   key: (order) => order.orderId,
   live: false,
-  process: (order) => EmailService.sendReceipt(order.orderId),
+  process: (order) =>
+    Effect.flatMap(EmailService, (svc) => svc.sendReceipt(order.orderId)),
 })
 ```
 
@@ -431,53 +432,3 @@ surface.
 - `ConsumerSource` keeps source-log progress separate from consumer processing
   progress. Electric shape offsets and D2TS graph frontiers never replace
   `ConsumerCheckpointStore`.
-
-## Consumer sources
-
-`DurableConsumer.run` and `DurableConsumer.stream` accept a minimal source:
-
-```ts
-interface ConsumerSource<Fact, E = never, R = never> {
-  read(options?: { readonly live?: boolean }): Stream.Stream<Fact, E, R>
-}
-```
-
-Production Firegrid code should keep using Durable Streams:
-
-```ts
-DurableConsumer.run({
-  source: ConsumerSource.fromDurableStream(
-    DurableStream.define({ endpoint, schema: InputFact }),
-  ),
-  checkpoint,
-  definition,
-  policy,
-  process,
-})
-```
-
-The Electric/D2TS adapters are intentionally source-only. They adapt Electric
-`ShapeStream` snapshots/subscriptions or D2TS-emitted Electric change messages
-into typed facts. Delivery policy, restart behavior, and side-effect
-checkpointing remain owned by `ConsumerCheckpointStore`.
-
-### Tracer 017 status
-
-All tracer-017 ACIDs are satisfied by this package plus the Firegrid
-runtime refactor in PR #N (this branch):
-
-- `effect-durable-operators.PACKAGE.{1,2,3}` — generic package surface
-- `effect-durable-operators.TABLE.{1,2,3,4,5}` — table operator
-- `effect-durable-operators.PROJECTION.{1,2,3,4}` — projection operator
-- `effect-durable-operators.CONSUMER.{1,2,3,4,5,6,7,8}` — consumer operator
-- `effect-durable-operators.BOUNDARIES.{1,2,3,4,5}` — package boundaries
-- `effect-durable-operators.FIREGRID_PROOF.{1,2,3}` — runtime input fold
-  moved to `DurableConsumer`; the **generic** `ConsumerCheckpointStoreLive`
-  owns delivery progress (no Firegrid-specific checkpoint Layer); no
-  Firegrid symbols inside this package
-- `effect-durable-operators.TRACER_017.{1,2,3,4,5}` — generic tests
-  (`test/`) and scenario E2E (`scenarios/firegrid/src/tracer-017.test.ts`).
-
-The transitional `firegrid.runtime_ingress.requested` row family remains
-as the public input fact in this PR. Renaming to `firegrid.session.input`
-is a separate decision; the operators package is agnostic to the row name.

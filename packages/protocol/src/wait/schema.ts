@@ -52,8 +52,15 @@ export type WaitRequestedRow = Schema.Schema.Type<typeof WaitRequestedRowSchema>
 /**
  * Outcome carried by a `firegrid.wait.matched` fact. `matchedValue` is
  * the matcher's typed match payload (e.g. the matched row, or a
- * derived shape). `sourceOffset` records where the match was observed
- * so consumers can correlate with the source stream.
+ * derived shape).
+ *
+ * `sourceOffset` is reserved on the schema for evaluators that can
+ * observe a stream-level offset and want to correlate the match with
+ * the source stream. The v0 helper composition
+ * (`DurableConsumer.forEach` + `ConsumerSource.findFirst`) does NOT
+ * surface the underlying offset; populate this field only if the
+ * matcher embeds offset metadata in its match value, or wire a future
+ * offset-aware source helper.
  */
 export const WaitMatchSchema = Schema.Struct({
   waitId: Schema.String,

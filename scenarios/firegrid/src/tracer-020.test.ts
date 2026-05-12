@@ -111,6 +111,12 @@ const appendSource = (fact: SourceFact) =>
     schema: SourceFact,
   }).append(fact)
 
+const waitBound = () =>
+  DurableStream.define({
+    endpoint: { url: waitStreamUrl },
+    schema: WaitRowSchema,
+  })
+
 const appendWaitRequested = (
   waitId: string,
   matcherId: string,
@@ -118,10 +124,7 @@ const appendWaitRequested = (
   params: unknown,
   options?: { readonly cursor?: string },
 ) =>
-  DurableStream.define({
-    endpoint: { url: waitStreamUrl },
-    schema: Schema.Any,
-  }).append(
+  waitBound().append(
     makeWaitRequestedRow({
       waitId,
       ownerId: "tracer-020",
@@ -136,26 +139,12 @@ const appendWaitRequested = (
     }),
   )
 
-const readWaitRows = () =>
-  Effect.map(
-    DurableStream.define({
-      endpoint: { url: waitStreamUrl },
-      schema: Schema.Unknown,
-    }).collect,
-    (rows) =>
-      rows.flatMap((r): ReadonlyArray<WaitRow> => {
-        const decoded = Schema.decodeUnknownEither(WaitRowSchema)(r)
-        return decoded._tag === "Right" ? [decoded.right] : []
-      }),
-  )
+const readWaitRows = () => waitBound().collect
 
 // ---------- evaluator: forEach + findFirst + protocol-row append ----------
 
 const evaluateSnapshotWait = (req: WaitRequestedRow) => {
-  const outcomes = DurableStream.define({
-    endpoint: { url: waitStreamUrl },
-    schema: Schema.Unknown,
-  })
+  const outcomes = waitBound()
   const appendFailed = (failure: WaitFailure) =>
     outcomes.append(makeWaitFailedRow({ waitId: req.waitId, failure }))
   const appendMatched = (matchedValue: unknown) => {
@@ -195,12 +184,7 @@ const evaluateSnapshotWait = (req: WaitRequestedRow) => {
 const runEvaluator = (subscriberId: string) =>
   DurableConsumer.forEach({
     name: "firegrid.wait.evaluator",
-    source: ConsumerSource.fromDurableStream(
-      DurableStream.define({
-        endpoint: { url: waitStreamUrl },
-        schema: WaitRowSchema,
-      }),
-    ),
+    source: ConsumerSource.fromDurableStream(waitBound()),
     checkpoint: { subscriberId },
     select: (row: WaitRow) =>
       row.type === "firegrid.wait.requested"
