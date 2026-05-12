@@ -24,6 +24,13 @@
  *  - effect-durable-operators.TABLE.14 — no package-owned append helper path
  *  - effect-durable-operators.TABLE.15 — change events come from
  *    createStateSchema collection helpers
+ *  - effect-durable-operators.TABLE.16 — primaryKey wraps the field schema
+ *    with a Schema.transform so its encoded form is a string; the package's
+ *    primary-key annotation is preserved for AST discovery
+ *  - effect-durable-operators.TABLE.17 — composite primary keys are declared
+ *    as Schema.transform schemas; no runtime separator concatenation
+ *  - effect-durable-operators.TABLE.18 — primary-key values are encoded
+ *    through the field schema (Schema.encodeSync); no string-coercion helper
  */
 
 import type { DurableStreamOptions } from "@durable-streams/client"
@@ -56,8 +63,8 @@ const primaryKeyAnnotationId = Symbol.for(
 )
 declare const primaryKeyTypeId: unique symbol
 
-interface PrimaryKeyField<Key> {
-  readonly [primaryKeyTypeId]: Key
+interface PrimaryKeyField<DecodedKey> {
+  readonly [primaryKeyTypeId]: DecodedKey
 }
 
 // `Schema.Struct<any>` is the practical top type for Struct schemas here:
@@ -82,7 +89,7 @@ type PrimaryKeyNameOf<S> = {
 
 export type PrimaryKeyOf<S extends StructSchema> =
   PrimaryKeyNameOf<S> extends keyof FieldsOf<S>
-    ? Extract<Schema.Schema.Type<FieldsOf<S>[PrimaryKeyNameOf<S>]>, string | number>
+    ? Schema.Schema.Type<FieldsOf<S>[PrimaryKeyNameOf<S>]>
     : never
 
 export interface LayerOptions {
@@ -90,7 +97,7 @@ export interface LayerOptions {
   readonly txTimeoutMs?: number
 }
 
-export interface CollectionFacade<Row extends object, Key extends string | number> {
+export interface CollectionFacade<Row extends object, Key> {
   readonly insert: (row: Row) => Effect.Effect<void, DurableTableError>
   readonly upsert: (row: Row) => Effect.Effect<void, DurableTableError>
   readonly delete: (key: Key) => Effect.Effect<void, DurableTableError>
@@ -135,6 +142,8 @@ type CompiledCollection = {
   readonly durableType: string
   readonly primaryKey: string
   readonly schema: StructSchema
+  readonly encodePrimaryKey: (decoded: unknown) => string
+  readonly decodePrimaryKey: (encoded: string) => unknown
 }
 
 type CompiledTable<Schemas extends TableSchemas<Schemas>> = {
@@ -158,13 +167,49 @@ type TableActionMap = TableStreamDB["actions"]
 
 const reservedFacadeProperties = new Set(["awaitTxId"])
 
-const keyString = (value: string | number): string => String(value)
-
+/**
+ * effect-durable-operators.TABLE.16
+ *
+ * `primaryKey` wraps the underlying field schema with a `Schema.transform`
+ * whose encoded form is a string, then attaches the package-owned annotation
+ * used for AST-level primary-key discovery.
+ *
+ * - The pipeable form is the primary path: `Schema.String.pipe(primaryKey)`.
+ * - For non-string-decoded primary keys, the user composes a Schema.transform
+ *   themselves (e.g., for composite keys) and pipes it through `primaryKey`.
+ *   The package never concatenates key parts at runtime.
+ */
 const primaryKey = <S extends Schema.Schema.Any>(
   schema: S,
-): S & PrimaryKeyField<Schema.Schema.Type<S>> =>
-  schema.annotations({ [primaryKeyAnnotationId]: true }) as S &
-    PrimaryKeyField<Schema.Schema.Type<S>>
+): Schema.transformOrFail<typeof Schema.String, S, never> &
+  PrimaryKeyField<Schema.Schema.Type<S>> => {
+  type Decoded = Schema.Schema.Type<S>
+  // Round-trip through the inner schema. The inner schema's encoded form may
+  // be string (the common case) or non-string; we final-encode to string via
+  // `String(...)` so the durable wire form is always string and lookups have
+  // a stable representation.
+  const transformed = Schema.transform(
+    Schema.String,
+    schema as unknown as Schema.Schema<Decoded, Schema.Schema.Encoded<S>, Schema.Schema.Context<S>>,
+    {
+      strict: false,
+      decode: (encoded: string): Decoded =>
+        Schema.decodeSync(
+          schema as unknown as Schema.Schema<Decoded, string, never>,
+        )(encoded),
+      encode: (decoded: Decoded): string => {
+        const inner = Schema.encodeSync(
+          schema as unknown as Schema.Schema<Decoded, unknown, never>,
+        )(decoded)
+        return typeof inner === "string" ? inner : String(inner)
+      },
+    },
+  )
+  return transformed.annotations({
+    [primaryKeyAnnotationId]: true,
+  }) as Schema.transformOrFail<typeof Schema.String, S, never> &
+    PrimaryKeyField<Decoded>
+}
 
 const raise = (message: string): never => {
   throw new Error(message)
@@ -178,6 +223,18 @@ const actionName = (
   operation: GeneratedOperation,
 ): string => `${collectionKey}.${operation}`
 
+const requireString = (
+  collection: CompiledCollection,
+  value: unknown,
+): string => {
+  if (typeof value !== "string") {
+    return raise(
+      `DurableTable("${collection.durableType}") primary-key field "${collection.primaryKey}" must encode to a string; got ${typeof value}`,
+    )
+  }
+  return value
+}
+
 const compileTable = <const Schemas extends TableSchemas<Schemas>>(
   namespace: string,
   schemas: Schemas,
@@ -190,30 +247,34 @@ const compileTable = <const Schemas extends TableSchemas<Schemas>>(
       )
     }
 
-    const primaryKeys = Object.entries(schema.fields)
-      .filter(([, fieldSchema]) =>
-        isPrimaryKeyField(fieldSchema as Schema.Schema.Any),
-      )
-      .map(([field]) => field)
+    const primaryKeyEntries = Object.entries(schema.fields).filter(
+      ([, fieldSchema]) => isPrimaryKeyField(fieldSchema as Schema.Schema.Any),
+    )
 
-    if (primaryKeys.length !== 1) {
+    if (primaryKeyEntries.length !== 1) {
       return raise(
-        `DurableTable("${namespace}").${collectionKey} must declare exactly one DurableTable.primaryKey field; found ${primaryKeys.length}`,
+        `DurableTable("${namespace}").${collectionKey} must declare exactly one DurableTable.primaryKey field; found ${primaryKeyEntries.length}`,
       )
     }
 
-    const primaryKeyName = primaryKeys[0]
-    if (primaryKeyName === undefined) {
-      return raise(
-        `DurableTable("${namespace}").${collectionKey} did not produce a primary key`,
-      )
-    }
+    const [primaryKeyName, primaryKeyFieldSchema] = primaryKeyEntries[0]!
+    const fieldSchema = primaryKeyFieldSchema as Schema.Schema.AnyNoContext
+    // effect-durable-operators.TABLE.18
+    // Capture encode/decode closures so action paths can run them in plain
+    // promise contexts without needing Effect or per-call schema resolution.
+    const encodeFn = Schema.encodeSync(fieldSchema)
+    const decodeFn = Schema.decodeSync(fieldSchema)
 
     return {
       collectionKey,
       durableType: `${namespace}.${collectionKey}`,
       primaryKey: primaryKeyName,
       schema,
+      encodePrimaryKey: (value: unknown) => {
+        const encoded = encodeFn(value as never) as unknown
+        return typeof encoded === "string" ? encoded : String(encoded)
+      },
+      decodePrimaryKey: (encoded: string) => decodeFn(encoded) as unknown,
     } satisfies CompiledCollection
   })
 
@@ -244,15 +305,27 @@ const makeStateSchema = (
   table: CompiledTable<AnyTableSchemas>,
 ): StateSchemaWithHelpers => createStateSchema(makeStateDefinition(table))
 
-const collectionKeyValue = <Row extends object>(
+/**
+ * effect-durable-operators.TABLE.18
+ *
+ * Returns a row whose primary-key field has been pre-encoded to its string
+ * wire form. @durable-streams/state's TanStack DB wiring uses
+ * `String(row[primaryKey])` to derive the collection index key; replacing the
+ * field's decoded value with the schema-encoded string keeps composite-key
+ * lookups consistent with the durable wire format.
+ */
+const encodeRowForStore = (
   collection: CompiledCollection,
-  row: Row,
-): string =>
-  keyString(
-    (row as Record<string, string | number>)[collection.primaryKey] as
-      | string
-      | number,
+  row: object,
+): { encoded: object; encodedKey: string } => {
+  const decoded = (row as Record<string, unknown>)[collection.primaryKey]
+  const encodedKey = requireString(
+    collection,
+    collection.encodePrimaryKey(decoded),
   )
+  const encoded = { ...row, [collection.primaryKey]: encodedKey }
+  return { encoded, encodedKey }
+}
 
 const makeActionDefinitions = (
   table: CompiledTable<AnyTableSchemas>,
@@ -267,12 +340,14 @@ const makeActionDefinitions = (
 
         actions[actionName(collection.collectionKey, "insert")] = {
           onMutate: (params: unknown) => {
-            coll.insert(params as object)
+            const { encoded } = encodeRowForStore(collection, params as object)
+            coll.insert(encoded)
           },
           mutationFn: async (params: unknown) => {
+            const { encoded } = encodeRowForStore(collection, params as object)
             const txid = crypto.randomUUID()
             const event = helpers.insert({
-              value: params,
+              value: encoded,
               headers: { txid },
             })
             // effect-durable-operators.TABLE.11
@@ -285,20 +360,23 @@ const makeActionDefinitions = (
 
         actions[actionName(collection.collectionKey, "upsert")] = {
           onMutate: (params: unknown) => {
-            const row = params as object
-            const key = collectionKeyValue(collection, row)
-            if (coll.get(key) === undefined) {
-              coll.insert(row)
+            const { encoded, encodedKey } = encodeRowForStore(
+              collection,
+              params as object,
+            )
+            if (coll.get(encodedKey) === undefined) {
+              coll.insert(encoded)
             } else {
-              coll.update(key, (draft) => {
-                Object.assign(draft, row)
+              coll.update(encodedKey, (draft) => {
+                Object.assign(draft, encoded)
               })
             }
           },
           mutationFn: async (params: unknown) => {
+            const { encoded } = encodeRowForStore(collection, params as object)
             const txid = crypto.randomUUID()
             const event = helpers.upsert({
-              value: params,
+              value: encoded,
               headers: { txid },
             })
             // effect-durable-operators.TABLE.15
@@ -309,16 +387,22 @@ const makeActionDefinitions = (
 
         actions[actionName(collection.collectionKey, "delete")] = {
           onMutate: (params: unknown) => {
-            const key = keyString(params as string | number)
-            if (coll.get(key) !== undefined) {
-              coll.delete(key)
+            const encodedKey = requireString(
+              collection,
+              collection.encodePrimaryKey(params),
+            )
+            if (coll.get(encodedKey) !== undefined) {
+              coll.delete(encodedKey)
             }
           },
           mutationFn: async (params: unknown) => {
-            const key = keyString(params as string | number)
+            const encodedKey = requireString(
+              collection,
+              collection.encodePrimaryKey(params),
+            )
             const txid = crypto.randomUUID()
             const event = helpers.delete({
-              key,
+              key: encodedKey,
               headers: { txid },
             })
             // effect-durable-operators.TABLE.15
@@ -349,66 +433,91 @@ const runAction = (
     catch: (cause) => new DurableTableError({ table: tableName, cause }),
   }).pipe(Effect.asVoid)
 
-const makeFacade = <Row extends object, Key extends string | number>(options: {
+/**
+ * effect-durable-operators.TABLE.18
+ *
+ * On read, the stored row carries the encoded-string primary-key value. To
+ * preserve the user-facing row type (whose primary-key field is the decoded
+ * form), decode the field back before returning to callers.
+ */
+const decodeRowForRead = <Row extends object>(
+  collection: CompiledCollection,
+  stored: Row,
+): Row => {
+  const encoded = (stored as Record<string, unknown>)[collection.primaryKey]
+  if (typeof encoded !== "string") return stored
+  const decoded = collection.decodePrimaryKey(encoded)
+  return { ...stored, [collection.primaryKey]: decoded } as Row
+}
+
+const makeFacade = <Row extends object, Key>(options: {
   readonly tableName: string
-  readonly collectionKey: string
-  readonly collection: TanStackCollection<Row, string>
+  readonly collection: CompiledCollection
+  readonly tanstackCollection: TanStackCollection<Row, string>
   readonly actions: TableActionMap
-}): CollectionFacade<Row, Key> => ({
-  insert: (row) =>
-    runAction(
-      options.tableName,
-      options.actions,
-      actionName(options.collectionKey, "insert"),
-      row,
-    ),
-  upsert: (row) =>
-    runAction(
-      options.tableName,
-      options.actions,
-      actionName(options.collectionKey, "upsert"),
-      row,
-    ),
-  delete: (key) =>
-    runAction(
-      options.tableName,
-      options.actions,
-      actionName(options.collectionKey, "delete"),
-      key,
-    ),
-  get: (key) =>
-    Effect.try({
-      try: () => {
-        const value = options.collection.get(keyString(key))
-        return value === undefined ? Option.none<Row>() : Option.some(value)
-      },
-      catch: (cause) =>
-        new DurableTableError({ table: options.tableName, cause }),
-    }),
-  query: (build) =>
-    Effect.try({
-      try: () => build(options.collection),
-      catch: (cause) =>
-        new DurableTableError({ table: options.tableName, cause }),
-    }),
-  subscribe: <A>(subscribe: (
-    coll: TanStackCollection<Row, string>,
-    emit: (value: A) => void,
-  ) => () => void) =>
-    Stream.async<A, DurableTableError>((emit) => {
-      let unsubscribe: (() => void) | undefined
-      try {
-        unsubscribe = subscribe(options.collection, (value) => {
-          void emit.single(value)
+}): CollectionFacade<Row, Key> => {
+  const { collection, tanstackCollection, tableName, actions } = options
+  const encodeKey = (key: unknown): string =>
+    requireString(collection, collection.encodePrimaryKey(key))
+  return {
+    insert: (row) =>
+      runAction(
+        tableName,
+        actions,
+        actionName(collection.collectionKey, "insert"),
+        row,
+      ),
+    upsert: (row) =>
+      runAction(
+        tableName,
+        actions,
+        actionName(collection.collectionKey, "upsert"),
+        row,
+      ),
+    delete: (key) =>
+      runAction(
+        tableName,
+        actions,
+        actionName(collection.collectionKey, "delete"),
+        key,
+      ),
+    get: (key) =>
+      Effect.try({
+        try: () => {
+          const encoded = encodeKey(key)
+          const value = tanstackCollection.get(encoded)
+          return value === undefined
+            ? Option.none<Row>()
+            : Option.some(decodeRowForRead(collection, value))
+        },
+        catch: (cause) => new DurableTableError({ table: tableName, cause }),
+      }),
+    query: (build) =>
+      Effect.try({
+        try: () => build(tanstackCollection),
+        catch: (cause) => new DurableTableError({ table: tableName, cause }),
+      }),
+    subscribe: <A>(
+      subscribe: (
+        coll: TanStackCollection<Row, string>,
+        emit: (value: A) => void,
+      ) => () => void,
+    ) =>
+      Stream.async<A, DurableTableError>((emit) => {
+        let unsubscribe: (() => void) | undefined
+        try {
+          unsubscribe = subscribe(tanstackCollection, (value) => {
+            void emit.single(value)
+          })
+        } catch (cause) {
+          void emit.fail(new DurableTableError({ table: tableName, cause }))
+        }
+        return Effect.sync(() => {
+          if (unsubscribe !== undefined) unsubscribe()
         })
-      } catch (cause) {
-        void emit.fail(new DurableTableError({ table: options.tableName, cause }))
-      }
-      return Effect.sync(() => {
-        if (unsubscribe !== undefined) unsubscribe()
-      })
-    }),
-})
+      }),
+  }
+}
 
 const makeService = <Schemas extends TableSchemas<Schemas>>(
   table: CompiledTable<Schemas>,
@@ -458,8 +567,8 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
             ...facades,
             [collection.collectionKey]: makeFacade({
               tableName: `${table.namespace}.${collection.collectionKey}`,
-              collectionKey: collection.collectionKey,
-              collection: coll,
+              collection,
+              tanstackCollection: coll,
               actions,
             }),
           }

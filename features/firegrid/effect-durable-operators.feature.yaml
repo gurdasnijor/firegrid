@@ -1,14 +1,18 @@
 feature:
   name: effect-durable-operators
   product: firegrid
-  description: Define a reusable Effect-native durable operators package that composes typed Durable Streams, State Protocol materialization, and Effect services without Firegrid-specific wrapper planes.
+  description: Define a reusable Effect-native durable operators package built around a single public primitive — DurableTable — over typed Durable Streams and @durable-streams/state.
 
 components:
   PACKAGE:
     requirements:
-      1: The durable operators package exposes generic DurableTable, DurableProjection, and DurableConsumer modules.
+      1:
+        requirement: The durable operators package exposes generic DurableTable, DurableProjection, and DurableConsumer modules.
+        deprecated: true
+      1-note: Deprecated. DurableProjection, DurableConsumer, ConsumerSource, ConsumerCheckpointStore, and the Electric adapter were removed; the public root now exposes DurableTable only. See PACKAGE.4.
       2: The durable operators package does not import Firegrid runtime, client, protocol, scenario, or app packages.
       3: The durable operators package uses Effect Stream, Effect Scope, Effect Schema, Effect Layer, and Effect concurrency primitives directly rather than hiding them behind custom stream or service wrappers.
+      4: The durable operators package public root exposes only the DurableTable primitive, its primaryKey field helper, supporting types/options, and error types; consumer/projection/source/checkpoint-store modules are not exported.
 
   TABLE:
     requirements:
@@ -27,58 +31,145 @@ components:
       13: DurableTable v0 does not expose persistentType, Type, per-collection wire-type overrides, or required actions configuration for standard collection writes.
       14: DurableTable consumers do not use package-owned manual durable stream append helpers for generated table writes.
       15: DurableTable generated writes construct State Protocol change events through @durable-streams/state createStateSchema collection helpers rather than package-owned change-event constructors.
+      16: DurableTable.primaryKey wraps the underlying field schema with a Schema transform whose encoded representation is a string, while preserving the package-owned primary-key annotation so DurableTable can discover the key field through AST inspection.
+      17: DurableTable composite primary keys are declared as Schema.transform schemas; the DurableTable runtime does not concatenate or split key parts with package-local separator strings.
+      18: DurableTable encodes primary-key values via the primary-key field schema (Schema.encodeSync) for insert, upsert, delete, and get paths; the package contains no string-coercion key helper.
 
   PROJECTION:
     requirements:
-      1: DurableProjection converts raw durable fact streams into State Protocol change event streams consumed by DurableTable.
-      2: DurableProjection v0 emits change events directly rather than defining a separate reducer execution model for tables.
-      3: DurableProjection state is allocated inside Effect, typically through Ref or SynchronizedRef, and is derived deterministically from retained source facts.
-      4: DurableProjection exposes derived outputs as Effect Stream values so projection fan-out composes with backpressure.
+      1:
+        requirement: DurableProjection converts raw durable fact streams into State Protocol change event streams consumed by DurableTable.
+        deprecated: true
+      1-note: Deprecated. Projection-shaped behavior is ordinary Effect stream code that reads DurableStream and writes through DurableTable generated actions; there is no DurableProjection module.
+      2:
+        requirement: DurableProjection v0 emits change events directly rather than defining a separate reducer execution model for tables.
+        deprecated: true
+      2-note: Deprecated together with PROJECTION.1; change events are now produced via DurableTable generated actions.
+      3:
+        requirement: DurableProjection state is allocated inside Effect, typically through Ref or SynchronizedRef, and is derived deterministically from retained source facts.
+        deprecated: true
+      3-note: Deprecated. State allocation is the caller's choice (Ref/SynchronizedRef as needed) in ordinary Effect stream code.
+      4:
+        requirement: DurableProjection exposes derived outputs as Effect Stream values so projection fan-out composes with backpressure.
+        deprecated: true
+      4-note: Deprecated. Stream composition and backpressure remain ordinary Effect Stream concerns at the call site.
 
   CONSUMER:
     requirements:
-      1: DurableConsumer selects logical inputs from durable fact streams and keys them per subscriber.
-      2: DurableConsumer checkpoint storage is provided through a ConsumerCheckpointStore service Layer rather than through caller-owned fold code.
-      3: DurableConsumer policies are explicit tagged values for AtMostOnce, AtLeastOnce, and AtLeastOnceWithClaim semantics.
-      4: AtMostOnce records a durable claim before running an externally visible side effect.
-      5: AtLeastOnce records durable completion after a successful side effect.
-      6: DurableConsumer exposes both Sink-shaped and Stream-shaped execution APIs.
-      7: DurableConsumer supports an optional Effect Schedule for retrying the processing effect.
-      8: DurableConsumer restart tests prove the selected policy does not silently duplicate or lose logical work beyond its documented delivery semantics.
+      1:
+        requirement: DurableConsumer selects logical inputs from durable fact streams and keys them per subscriber.
+        deprecated: true
+      1-note: Deprecated. Selection and per-key idempotency are expressed inline against DurableStream reads + a DurableTable checkpoint collection at the consumer's delivery boundary.
+      2:
+        requirement: DurableConsumer checkpoint storage is provided through a ConsumerCheckpointStore service Layer rather than through caller-owned fold code.
+        deprecated: true
+      2-note: Deprecated. Checkpoint rows are ordinary DurableTable collection rows; there is no ConsumerCheckpointStore service tag.
+      3:
+        requirement: DurableConsumer policies are explicit tagged values for AtMostOnce, AtLeastOnce, and AtLeastOnceWithClaim semantics.
+        deprecated: true
+      3-note: Deprecated. No generic policy API; delivery semantics are expressed directly by call sites that need them (see firegrid-agent-ingress.DELIVERY.* for local-process stdin AtMostOnce).
+      4:
+        requirement: AtMostOnce records a durable claim before running an externally visible side effect.
+        deprecated: true
+      4-note: Deprecated as a package primitive. The AtMostOnce claim-before-side-effect guarantee is preserved for local-process stdin in the provider-owned delivery code (firegrid-agent-ingress.DELIVERY.3/5).
+      5:
+        requirement: AtLeastOnce records durable completion after a successful side effect.
+        deprecated: true
+      5-note: Deprecated. No production consumer needed a generic AtLeastOnce policy API; future call sites may express it directly with DurableTable checkpoint upsert post-side-effect.
+      6:
+        requirement: DurableConsumer exposes both Sink-shaped and Stream-shaped execution APIs.
+        deprecated: true
+      6-note: Deprecated together with the DurableConsumer module.
+      7:
+        requirement: DurableConsumer supports an optional Effect Schedule for retrying the processing effect.
+        deprecated: true
+      7-note: Deprecated. Retry is expressed at the call site with Effect.retry/Schedule where needed.
+      8:
+        requirement: DurableConsumer restart tests prove the selected policy does not silently duplicate or lose logical work beyond its documented delivery semantics.
+        deprecated: true
+      8-note: Deprecated. Restart proofs for the only production consumer (local-process stdin AtMostOnce) live in the provider-owned delivery tests, including a failure-injection test between claim and byte emission.
 
   SOURCE:
     requirements:
-      1: DurableConsumer reads from a small Effect Stream-shaped ConsumerSource interface rather than directly requiring effect-durable-streams Bound sources.
-      2: The operators package ships a Durable Streams ConsumerSource adapter that preserves the existing production DS infrastructure as Firegrid's primary substrate.
-      3: The operators package ships an Electric ShapeStream/D2TS ConsumerSource adapter proof to validate the source interface against a second change-stream backend.
-      4: Electric ShapeStream integration remains source-only; DurableConsumer checkpoint and delivery semantics continue to be owned by ConsumerCheckpointStore.
-      5: D2TS integration is used only to adapt or transform Electric shape changes into typed consumer facts; it does not replace DurableTable or ConsumerCheckpointStore semantics.
+      1:
+        requirement: DurableConsumer reads from a small Effect Stream-shaped ConsumerSource interface rather than directly requiring effect-durable-streams Bound sources.
+        deprecated: true
+      1-note: Deprecated. Durable Streams is the explicit substrate; there is no source-abstraction interface.
+      2:
+        requirement: The operators package ships a Durable Streams ConsumerSource adapter that preserves the existing production DS infrastructure as Firegrid's primary substrate.
+        deprecated: true
+      2-note: Deprecated. Durable Streams is accessed directly via DurableStream.define(...).read(...) at call sites; no adapter is needed.
+      3:
+        requirement: The operators package ships an Electric ShapeStream/D2TS ConsumerSource adapter proof to validate the source interface against a second change-stream backend.
+        deprecated: true
+      3-note: Deprecated. Electric adapter removed; Electric Cloud Durable Streams is a streamOptions URL/auth swap and any future ShapeStream read-only adapter lives outside this package.
+      4:
+        requirement: Electric ShapeStream integration remains source-only; DurableConsumer checkpoint and delivery semantics continue to be owned by ConsumerCheckpointStore.
+        deprecated: true
+      4-note: Deprecated together with SOURCE.3 and CONSUMER.2.
+      5:
+        requirement: D2TS integration is used only to adapt or transform Electric shape changes into typed consumer facts; it does not replace DurableTable or ConsumerCheckpointStore semantics.
+        deprecated: true
+      5-note: Deprecated together with SOURCE.3.
 
   FIREGRID_PROOF:
     requirements:
-      1: A Firegrid-shaped proof replaces runtime input requested-minus-accepted fold logic with DurableConsumer rather than adding another runtime-ingress service plane.
+      1:
+        requirement: A Firegrid-shaped proof replaces runtime input requested-minus-accepted fold logic with DurableConsumer rather than adding another runtime-ingress service plane.
+        deprecated: true
+      1-note: Deprecated. Runtime input fold logic now uses DurableStream + a DurableTable checkpoint collection directly; there is no DurableConsumer. See FIREGRID_PROOF.4.
       2: The Firegrid proof uses production package surfaces and high-fidelity scenario coverage, not scenario-only composition roots or shadow harnesses.
-      3: The Firegrid proof remains a consumer of the generic operators package and does not introduce Firegrid-specific APIs into that package.
+      3:
+        requirement: The Firegrid proof remains a consumer of the generic operators package and does not introduce Firegrid-specific APIs into that package.
+        deprecated: true
+      3-note: Deprecated wording; effect-durable-operators still exports no Firegrid-specific APIs, but Firegrid runtime delivery now consumes DurableTable directly rather than a generic operator. See PACKAGE.4 and FIREGRID_PROOF.4.
+      4: Firegrid runtime input stdin delivery is implemented at the provider delivery boundary as ordinary Effect code reading DurableStream facts and recording AtMostOnce claim checkpoints through a DurableTable checkpoint collection.
 
 constraints:
   BOUNDARIES:
     requirements:
-      1: The package may depend on effect-durable-streams, effect-durable-streams-state, @durable-streams/client, @durable-streams/state, @tanstack/db, and Effect packages.
+      1:
+        requirement: The package may depend on effect-durable-streams, effect-durable-streams-state, @durable-streams/client, @durable-streams/state, @tanstack/db, and Effect packages.
+        deprecated: true
+      1-note: Replaced by BOUNDARIES.6 and BOUNDARIES.7 — the dependency surface narrows now that consumer/source/electric modules are deleted.
       2: The package must not depend on @firegrid/durable-streams; that package remains Firegrid's substrate adapter boundary.
       3: The package must not implement workflow suspension, durable clocks, required actions, prompt APIs, or Firegrid session semantics.
-      4: Consumer checkpoint state is distinct from durable stream producer idempotency.
+      4:
+        requirement: Consumer checkpoint state is distinct from durable stream producer idempotency.
+        deprecated: true
+      4-note: Restated as a runtime delivery concern; see firegrid-agent-ingress.DELIVERY.3.
       5: Table semantics rely on @durable-streams/state and TanStack DB invariants; the wrapper must not mutate table state outside the sync protocol.
+      6: The package may depend only on effect-durable-streams, @durable-streams/client, @durable-streams/state, @tanstack/db, and Effect packages; @electric-sql/* dependencies and devDependencies are not permitted.
+      7: The package must not import @firegrid/* packages; this is enforced by pnpm run lint:deps.
 
   TRACER_017:
     requirements:
-      1: Tracer 017 adds non-Firegrid DurableConsumer tests for an order-email style side-effect consumer.
-      2: Tracer 017 adds non-Firegrid DurableProjection plus DurableTable tests for an account-balance projection materialized through createStreamDB.
+      1:
+        requirement: Tracer 017 adds non-Firegrid DurableConsumer tests for an order-email style side-effect consumer.
+        deprecated: true
+      1-note: Deprecated. DurableConsumer module removed; consumer-style tests are gone.
+      2:
+        requirement: Tracer 017 adds non-Firegrid DurableProjection plus DurableTable tests for an account-balance projection materialized through createStreamDB.
+        deprecated: true
+      2-note: Deprecated. DurableProjection module removed; balance-projection-style behavior is ordinary Effect stream code over DurableTable actions.
       3: Tracer 017 adds a DurableTable restart or cold-start replay test proving retained change events rebuild queryable state.
-      4: Tracer 017 adds DurableConsumer restart tests for AtMostOnce and AtLeastOnce behavior.
-      5: Tracer 017 adds a Firegrid scenario E2E proving runtime input delivery still works through production surfaces after replacing custom fold code.
+      4:
+        requirement: Tracer 017 adds DurableConsumer restart tests for AtMostOnce and AtLeastOnce behavior.
+        deprecated: true
+      4-note: Deprecated. DurableConsumer module removed. AtMostOnce restart coverage for the only production consumer (local-process stdin) lives in the provider-owned delivery tests, including a failure-injection test between claim and byte emission.
+      5: Tracer 017 adds a Firegrid scenario E2E proving runtime input delivery still works through production surfaces after replacing the previous custom-fold path.
 
   TRACER_018:
     requirements:
-      1: Tracer 018 migrates DurableConsumer tests and Firegrid usage to ConsumerSource.fromDurableStream without changing observable behavior.
-      2: Tracer 018 adds a non-Firegrid Electric ShapeStream/D2TS source adapter test that feeds DurableConsumer through the same ConsumerSource interface.
-      3: Tracer 018 proves Electric source offsets or shape protocol progress are not treated as DurableConsumer processing checkpoints.
+      1:
+        requirement: Tracer 018 migrates DurableConsumer tests and Firegrid usage to ConsumerSource.fromDurableStream without changing observable behavior.
+        deprecated: true
+      1-note: Deprecated. ConsumerSource removed; Firegrid usage reads DurableStream directly.
+      2:
+        requirement: Tracer 018 adds a non-Firegrid Electric ShapeStream/D2TS source adapter test that feeds DurableConsumer through the same ConsumerSource interface.
+        deprecated: true
+      2-note: Deprecated. Electric adapter and ConsumerSource removed.
+      3:
+        requirement: Tracer 018 proves Electric source offsets or shape protocol progress are not treated as DurableConsumer processing checkpoints.
+        deprecated: true
+      3-note: Deprecated together with TRACER_018.1/2.
