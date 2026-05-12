@@ -221,7 +221,11 @@ host topology.
 ## Target Package And Module Shape
 
 This target prefers bounded runtime modules and provider namespaces until a
-package extraction is earned.
+package extraction is earned. The generic durable-operator primitives
+(`DurableConsumer`, `DurableTable`, `DurableProjection`,
+`ConsumerCheckpointStore`) live **outside** the runtime package, in
+`effect-durable-operators`. Runtime code consumes them; it does not
+re-implement them.
 
 ```txt
 packages/
@@ -231,6 +235,13 @@ packages/
       Reader.ts
       Writer.ts
       Bound.ts
+
+  effect-durable-operators/
+    src/
+      DurableConsumer.ts
+      DurableTable.ts
+      DurableProjection.ts
+      ConsumerCheckpointStore.ts
 
   durable-streams/
     src/
@@ -251,6 +262,7 @@ packages/
     src/
       runtime-host/
         index.ts
+        input.ts                # RuntimeInputStreams tagged capability
       runtime-context/
         workflow.ts
         service.ts
@@ -259,28 +271,17 @@ packages/
         schema.ts
         ids.ts
         rows.ts
-      runtime-operators/
-        OperatorDescriptor.ts
-        OperatorRuntime.ts
-        OperatorSource.ts
-        progress.ts
-      runtime-waits/
-        schema.ts
-        matchers.ts
-        operators.ts
+        local-process-stdin.ts  # uses DurableConsumer + AtMostOnce
       required-action/
         schema.ts
         rows.ts
-        workflow.ts
-        operator.ts
+        workflow.ts             # uses DurableConsumer / DurableTable
       scheduling/
         schema.ts
-        rows.ts
-        operator.ts
+        rows.ts                 # uses DurableConsumer + workflow durable clock
       spawn/
         schema.ts
-        rows.ts
-        operator.ts
+        rows.ts                 # child terminals -> DurableTable
       tools/
         workflow-tools.ts
       providers/
@@ -292,9 +293,31 @@ packages/
       materialization/
         core/
         state-protocol/
-        raw-fold/
         materialize/
 ```
+
+### Existing-but-deprecated (active drift, not target shape)
+
+These modules **exist on `main`** today and are scheduled for removal
+under Lane A of the legacy-drift inventory
+(`docs/architecture/legacy-drift-inventory-2026-05-12.md`). They are
+NOT part of the target tree and must not be reintroduced when adding
+new runtime capabilities:
+
+```txt
+packages/runtime/src/
+  runtime-operators/        # bespoke DurableConsumer; Lane A folds into effect-durable-operators (F1)
+  required-action/
+    launcher.ts             # mini composition root; Lane A merges into FiregridRuntimeHostLive (F3)
+    service.ts              # re-folds retained rows per query; Lane A migrates to DurableTable (F2)
+  materialization/
+    raw-fold/               # in-process strategy; kept while firegrid-materialization-engines ACIDs require it (F4)
+```
+
+A `runtime-waits/` directory has been proposed in earlier drafts but
+does not currently exist; the durable-wait pattern is expected to land
+as `DurableConsumer` + workflow `DurableDeferred` composition (see
+`README` of `effect-durable-operators` for the wait_for sketch).
 
 Future extraction candidates:
 

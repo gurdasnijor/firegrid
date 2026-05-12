@@ -226,21 +226,27 @@ PR using the same `Schema.TaggedClass` + `Schema.Union` pattern as
 
 ---
 
-### F8 [MEDIUM] `runtime-output-source.ts` exposes a Layer that's another mini-root
+### F8 [RESOLVED — no action] `runtime-output-source.ts` is the canonical EventSource adapter, not a composition mini-root
 
 **Files:** `packages/runtime/src/materialization/runtime-output-source.ts`
 
-The file builds its own `Layer.succeed(EventSource, ...)` for the
-runtime-output stream, parallel to (not via) the host streams config.
-Consumers must wire it directly rather than going through
-`FiregridRuntimeHostLive`.
+The initial draft of this finding framed
+`runtime-output-source.ts` as a parallel mini-root because it builds
+its own `Layer.succeed(EventSource, ...)` outside
+`FiregridRuntimeHostLive`. On closer inspection that framing was
+overstated: the file provides the only canonical
+`EventSourceService<RuntimeJournalEvent>` /
+`EventSourceService<RuntimeEvent>` adapter the materialization
+strategy interface relies on, and is consumed by
+`materialize-pipeline.ts`, `session-projection-definition.ts`, and
+active scenario tests. It's the EventSource boundary, not a runtime-host
+parallel root.
 
-**Status:** Adjacent to F3. Same mini-root smell, smaller scope.
+**Status:** Not drift. Top-of-file comment added in the Lane B/C/D
+follow-up to make the role explicit (so future audits don't re-flag
+it). No code change required.
 
-**Recommended follow-up:** When F1/F2/F3 land, evaluate whether the
-materialization layers should also be exposed through host streams
-config (a `RuntimeOutputProjections` tagged capability) or stay as
-caller-built layers. Either decision should be explicit.
+**Recommended follow-up:** None.
 
 ---
 
@@ -358,72 +364,50 @@ here for completeness so future audits don't flag them again.
 
 ---
 
-## Status after the Lane B/C/D follow-up commit
+## Net doc/spec edits in this PR
 
-The follow-up commit on this branch executes the destructive cleanup
-for Lanes B, C, and D, disjoint from Lane A (which still owns
-`runtime-operators/**` and `required-action/**`):
+The PR is structured as discovery first, destructive cleanup second. The
+following edits land alongside the inventory itself:
 
-- **F12 resolved.** `docs/architecture/managed-agent-runtime-target.md`
-  is **deleted**.
-  `managed-agent-runtime-target-durable-facts.md` is promoted:
-  title is now plain "Target Architecture: Managed-Agent Runtime Over
-  Durable Facts"; the "Status: proposed fork ... does not replace"
-  disclaimer is gone; the source-material list points at the canonical
-  set. Cross-links updated:
-  - `docs/tracers/005-durable-streams-substrate-extraction.md` now
-    points at the canonical doc with a note about the promotion.
-  - `docs/research/durable-execution-api-design-survey.md` and
-    `docs/architecture/current-architecture-alignment-review.md` get
-    historical banners pinning them to their original dates with a
-    forward pointer to the canonical target.
-  - `docs/architecture/managed-agent-control-surface.md` already
-    pointed at the canonical doc; no change required.
-- **F4 / F8 clarified at source.** `RawFoldStrategy.ts` and
-  `runtime-output-source.ts` gain top-of-file comments explaining
-  current role + pointing at the inventory findings. RawFoldStrategy
-  is **kept** (in active use by `event-pipeline.test.ts`, scenario
-  tracer-008, and `firegrid-materialization-engines.*` ACIDs);
-  runtime-output-source is **kept** (the canonical EventSource
-  adapter, not a composition mini-root — F8 framing was overstated).
-  Longer-term consolidation deferred to Lane B follow-up.
-- **F9 / vocabulary audit.** `docs/tracers/012-agent-ingress-prompt-stream.md`
-  body text struck the "Minimum durable records: requested + accepted"
-  block down to just "requested", with an updated-post-tracer-017
-  note. The earlier rounds of PR #160 also handled the SDD-cutover
-  proposal's stale dependency and the tracer-015 validation invocation.
-- **No code paths deleted.** F1/F2/F3/F6/F7 remain Lane A's
-  responsibility; this PR does not touch
-  `packages/runtime/src/required-action/**` or
-  `packages/runtime/src/runtime-operators/**`.
+1. **Deleted**: `docs/architecture/managed-agent-runtime-target.md`
+   (423 lines). Was the competing "Target Architecture" doc; resolves
+   F12.
+2. **Promoted to canonical**:
+   `docs/architecture/managed-agent-runtime-target-durable-facts.md`.
+   Title is now plain "Target Architecture..."; the
+   "Status: proposed fork ... does not replace" disclaimer is gone.
+   Cross-link list updated (tracer-012 flagged as historical inline).
+3. **Cross-link sweep**:
+   - `docs/tracers/005-durable-streams-substrate-extraction.md` now
+     points at the canonical doc, with a promotion note.
+   - `docs/research/durable-execution-api-design-survey.md` and
+     `docs/architecture/current-architecture-alignment-review.md` gain
+     historical banners pinning them to their original dates with a
+     forward pointer to the canonical target.
+   - `docs/architecture/managed-agent-control-surface.md` already
+     pointed at the canonical doc; no edit required.
+4. **Tracer-012 body**:
+   - Top-of-doc historical banner about the deleted
+     `runtime_ingress.accepted` row family.
+   - "Minimum durable records: requested + accepted" listing struck
+     down to just `requested`, with an updated-post-tracer-017 note
+     keeping the authority-boundary requirement and pointing the
+     substrate at `effect-durable-operators.ConsumerCheckpointStore`.
+5. **SDD-cutover proposal** (`docs/proposals/SDD_EFFECT_NATIVE_DURABLE_STREAMS_PRODUCTION_CUTOVER.md`):
+   - Stripped `stream-native-runtime-loop` from `Depends on:`.
+   - Replaced the `pnpm ... test -- tracer-015` validation invocation
+     with a comment + tracer-016/017 invocations.
+6. **Source-code rationale comments** (no behavioral change):
+   - `packages/runtime/src/materialization/raw-fold/RawFoldStrategy.ts`
+     — explains the file is the in-process strategy, not target
+     substrate; points at F4 / Lane B.
+   - `packages/runtime/src/materialization/runtime-output-source.ts`
+     — explains the file is the canonical `EventSource` adapter, not
+     a composition mini-root; points at F8 (now resolved).
 
----
-
-## Doc-reference fixes applied in earlier rounds of this PR
-
-To avoid the inventory itself going stale on day one:
-
-1. `docs/proposals/SDD_EFFECT_NATIVE_DURABLE_STREAMS_PRODUCTION_CUTOVER.md:6`
-   — "Depends on: stream-native-runtime-loop, ..." → strike the deleted
-   dependency; add an inline pointer to tracer 017.
-2. Same file's validation block line 359 — replaced the
-   `pnpm ... test -- tracer-015` invocation with a comment noting the
-   tracer was deleted in tracer 017, plus references to tracer-016 /
-   tracer-017 as the current input-delivery validation surface.
-3. `docs/tracers/012-agent-ingress-prompt-stream.md` — added a top-of-doc
-   banner noting that the `runtime_ingress.accepted` row family was
-   deleted in tracer 017 and delivery progress now lives in the
-   `effect-durable-operators.ConsumerCheckpointStore`-backed
-   inputCheckpoints stream. The prose body is left as-is so the
-   tracer's historical record stays intact.
-4. `docs/architecture/managed-agent-runtime-target.md` — added a
-   top-of-doc banner marking the file as historical reference and
-   pointing forward to `target-durable-facts.md` + the F12 finding in
-   this inventory. The file body is left intact; promotion or
-   merge/delete is the Lane D follow-up decision.
-
-Anything beyond these four lines is intentionally **out of scope** for
-this inventory PR.
+Anything outside this list is **out of scope** for this PR. Lane A
+items (F1, F2, F3, F6, F7 — `runtime-operators/**` and
+`required-action/**`) are owned by a separate tracer/PR.
 
 ---
 
