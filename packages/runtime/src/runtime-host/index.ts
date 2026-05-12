@@ -36,18 +36,41 @@ import {
 import {
   makeRuntimeIngressRequestedRow,
 } from "../runtime-ingress/rows.ts"
+import { Schema } from "effect"
+import {
+  RuntimeInputStreamsSchema,
+  runtimeInputDisabled,
+} from "./input.ts"
 
-export interface RuntimeHostStreams {
-  readonly workflow: string
-  readonly controlPlane: string
-  readonly runtimeOutput: string
-  readonly runtimeIngress?: string
-}
+// Schema-backed host config: validation + defaulting happens once at
+// `FiregridRuntimeHostLive`. Callers may pass either a plain options
+// object (it's `Schema.decodeUnknownSync`'d at the boundary) or
+// already-decoded values from elsewhere.
+export const RuntimeHostStreamsSchema = Schema.Struct({
+  workflow: Schema.String,
+  controlPlane: Schema.String,
+  runtimeOutput: Schema.String,
+  /**
+   * Runtime input capability. Tagged so the misconfiguration "ingress
+   * stream without a checkpoint stream" is unrepresentable at the type
+   * level. Omitting `input` decodes to {@link runtimeInputDisabled}.
+   *
+   * Use `new RuntimeInputDurableStreams({ ingress, checkpoints })` to
+   * enable durable input. Both streams must be pre-created.
+   */
+  input: Schema.optionalWith(RuntimeInputStreamsSchema, {
+    default: () => runtimeInputDisabled,
+  }),
+})
+export type RuntimeHostStreams = Schema.Schema.Type<typeof RuntimeHostStreamsSchema>
+export type RuntimeHostStreamsInput = Schema.Schema.Encoded<typeof RuntimeHostStreamsSchema>
 
-export interface RuntimeHostOptions {
-  readonly streams: RuntimeHostStreams
-  readonly workerId?: string
-}
+export const RuntimeHostOptionsSchema = Schema.Struct({
+  streams: RuntimeHostStreamsSchema,
+  workerId: Schema.optional(Schema.String),
+})
+export type RuntimeHostOptions = Schema.Schema.Type<typeof RuntimeHostOptionsSchema>
+export type RuntimeHostOptionsInput = Schema.Schema.Encoded<typeof RuntimeHostOptionsSchema>
 
 export type StartRuntimeOptions = StartRuntimeContextOptions
 
@@ -105,9 +128,13 @@ const runtimeContextLayer = (
   // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.1
   // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.2
   // effect-native-production-cutover.RUNTIME_IO.4
+  //
+  // No misconfiguration guard needed: `RuntimeInputStreams` is a tagged
+  // union, so "ingress without checkpoints" is unrepresentable at the
+  // type level.
   RuntimeContextWorkflowLayer({
     runtimeOutputStreamUrl: options.streams.runtimeOutput,
-    ...(options.streams.runtimeIngress === undefined ? {} : { runtimeIngressStreamUrl: options.streams.runtimeIngress }),
+    input: options.streams.input,
   }).pipe(
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: options.streams.workflow,
@@ -121,15 +148,34 @@ const runtimeContextLayer = (
     Layer.provide(NodeContext.layer),
   )
 
+/**
+ * Wires the Firegrid runtime host.
+ *
+ * Accepts options in **decoded** shape (returned by
+ * `Schema.decode(RuntimeHostOptionsSchema)`) OR in **encoded** shape
+ * (plain JS object with optional `streams.input`). Plain-object input
+ * is normalized through `Schema.decodeUnknownSync(RuntimeHostOptionsSchema)`
+ * at this single boundary, which:
+ *   - validates the shape (rejects unknown/half-formed `input` values
+ *     such as `{ _tag: "RuntimeInputDurableStreams", ingress: "..." }`
+ *     missing `checkpoints`),
+ *   - applies the `input -> runtimeInputDisabled` default,
+ *   - constructs class instances for the tagged union members.
+ *
+ * Any callers further down the stack receive the normalized
+ * `RuntimeHostOptions` value and never re-decode.
+ */
 export const FiregridRuntimeHostLive = (
-  options: RuntimeHostOptions,
-) =>
-  Layer.succeed(
+  options: RuntimeHostOptions | RuntimeHostOptionsInput,
+) => {
+  const normalized: RuntimeHostOptions =
+    Schema.decodeUnknownSync(RuntimeHostOptionsSchema)(options)
+  return Layer.succeed(
     FiregridRuntimeHost,
     FiregridRuntimeHost.of({
       start: request =>
         startRuntimeContext(request).pipe(
-          Effect.provide(runtimeContextLayer(options)),
+          Effect.provide(runtimeContextLayer(normalized)),
           Effect.catchTags({
             RuntimeControlPlaneError: cause =>
               Effect.fail(asRuntimeContextError(
@@ -150,19 +196,20 @@ export const FiregridRuntimeHostLive = (
       ingress: request =>
         // firegrid-agent-ingress.HOST.1
         // firegrid-agent-ingress.HOST.2
-        options.streams.runtimeIngress === undefined
-          ? Effect.fail(runtimeIngressError(
-            "append",
-            "runtime ingress stream is not configured",
-            request.contextId,
-            request.ingressId,
-          ))
-          : appendRuntimeIngressRequestToStream(
-            options.streams.runtimeIngress,
-            request,
-          ).pipe(Effect.provide(FetchHttpClient.layer)),
+        normalized.streams.input._tag === "RuntimeInputDurableStreams"
+          ? appendRuntimeIngressRequestToStream(
+              normalized.streams.input.ingress,
+              request,
+            ).pipe(Effect.provide(FetchHttpClient.layer))
+          : Effect.fail(runtimeIngressError(
+              "append",
+              "runtime ingress stream is not configured",
+              request.contextId,
+              request.ingressId,
+            )),
     }),
   )
+}
 
 export const startRuntime = (
   options: StartRuntimeOptions,

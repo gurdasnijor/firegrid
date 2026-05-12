@@ -13,7 +13,8 @@ Source material:
 - `docs/tracers/010-workflow-backed-tools.md`
 - `docs/tracers/012-agent-ingress-prompt-stream.md`
 - `docs/tracers/013-reactive-workflow-operators.md`
-- `docs/tracers/015-stream-native-runtime-loop-validation.md`
+- `docs/tracers/016-session-plane-input-control-surface.md`
+- `docs/tracers/017-effect-durable-operators.md`
 
 ## Thesis
 
@@ -34,7 +35,7 @@ The stream primitive at implementation boundaries is
 
 ```ts
 const stream = DurableStream.define({
-  endpoint: { url: runtimeHostStreams.runtimeIngress },
+  endpoint: { url: runtimeHostStreams.input.ingress },
   schema: RuntimeIngressRowSchema,
 })
 
@@ -55,8 +56,8 @@ This target protects these invariants:
 - `effect-native-production-cutover.RUNTIME_IO.2`
 - `effect-native-production-cutover.GUARDRAILS.1`
 - `effect-native-production-cutover.GUARDRAILS.2`
-- `stream-native-runtime-loop.SURFACE.1`
-- `stream-native-runtime-loop.SURFACE.2`
+- `effect-durable-operators.FIREGRID_PROOF.1`
+- `effect-durable-operators.FIREGRID_PROOF.2`
 - `firegrid-platform-invariants.AUTHORITY.8`
 - `firegrid-agent-ingress.SUBSCRIBERS.1`
 - `firegrid-reactive-workflow-operators.OPERATOR.1`
@@ -157,7 +158,14 @@ const RuntimeHostLive = FiregridRuntimeHostLive({
     workflow: env.FIREGRID_WORKFLOW_STREAM_URL,
     controlPlane: env.FIREGRID_RUNTIME_CONTEXT_STREAM_URL,
     runtimeOutput: env.FIREGRID_RUNTIME_OUTPUT_STREAM_URL,
-    runtimeIngress: env.FIREGRID_RUNTIME_INGRESS_STREAM_URL,
+    // Tagged input capability: ingress + checkpoints are one
+    // indivisible value (`RuntimeInputDurableStreams`) so misconfigured
+    // half-state is unrepresentable. Omit `input` to start with no
+    // ingress (`runtimeInputDisabled`).
+    input: new RuntimeInputDurableStreams({
+      ingress: env.FIREGRID_RUNTIME_INGRESS_STREAM_URL,
+      checkpoints: env.FIREGRID_RUNTIME_INPUT_CHECKPOINTS_STREAM_URL,
+    }),
     requiredActions: env.FIREGRID_REQUIRED_ACTION_STREAM_URL,
     schedules: env.FIREGRID_SCHEDULE_STREAM_URL,
     operatorProgress: env.FIREGRID_OPERATOR_PROGRESS_STREAM_URL,
@@ -415,7 +423,10 @@ schedule_me(when, prompt)
   -> append firegrid.schedule.requested fact
   -> schedule operator waits through durable time
   -> operator appends runtime_ingress.requested via host ingress surface
-  -> provider adapter records runtime_ingress.accepted before stdin
+  -> provider adapter routes input through effect-durable-operators.DurableConsumer
+     with ClaimPolicy.AtMostOnce; the durable claim is written to the
+     inputCheckpoints stream by ConsumerCheckpointStoreLive before bytes
+     reach stdin
 ```
 
 Implementation boundary:
@@ -578,8 +589,10 @@ the source of runtime facts.
 If this target is accepted, these items should be treated as cleanup candidates
 or historical scaffolding:
 
-- `packages/runtime/src/stream-native-runtime-loop/**`: keep only while useful
-  as tracer 015 validation. It should not be a second public runtime loop API.
+- `packages/runtime/src/stream-native-runtime-loop/**`: DELETED in tracer 017
+  along with `docs/tracers/015-stream-native-runtime-loop-validation.md` and
+  `features/firegrid/stream-native-runtime-loop.feature.yaml`. Listed here
+  for historical reference; the surface no longer exists.
 - Snapshot-array `OperatorSource.scan`: acceptable tracer 013 proof, but target
   sources should be stream-native where live/no-gap behavior matters.
 - `RequiredActionsLive`, `RequiredActionRuntimeLive`, and

@@ -8,10 +8,13 @@ import {
   type RuntimeJournalEvent,
   type RuntimeLogLine,
 } from "@firegrid/protocol/launch"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Effect, Match, Option, Schema, Stream } from "effect"
 import type { DurableStream } from "effect-durable-streams"
 import { DurableStream as DurableStreamClient } from "effect-durable-streams"
 import { commandForContext } from "./command.ts"
+import {
+  type RuntimeInputStreams,
+} from "../runtime-host/input.ts"
 import {
   SandboxProvider,
   type ProcessOutputChunk,
@@ -139,7 +142,13 @@ export const RuntimeContextWorkflow = Workflow.make({
 
 interface RuntimeContextWorkflowOptions {
   readonly runtimeOutputStreamUrl: string
-  readonly runtimeIngressStreamUrl?: string
+  /**
+   * Tagged runtime input capability. `RuntimeInputDisabled` means no
+   * stdin source is wired; `RuntimeInputDurableStreams` carries the
+   * ingress + checkpoint URLs as one indivisible value, so the
+   * misconfiguration "ingress without checkpoints" is unrepresentable.
+   */
+  readonly input: RuntimeInputStreams
 }
 
 export const RuntimeContextWorkflowLayer = (
@@ -179,23 +188,30 @@ export const RuntimeContextWorkflowLayer = (
           lingerMs: 10,
         }).pipe(mapRuntimeOutputError(context.contextId))
         const command = yield* commandForContext(context)
-        const stdin = options.runtimeIngressStreamUrl === undefined
-          ? undefined
-          : localProcessRuntimeIngressStdin({
-            streamUrl: options.runtimeIngressStreamUrl,
-            contextId: context.contextId,
-            subscriberId: localProcessIngressSubscriberId,
-            provider: context.runtime.provider,
-          }).pipe(
-            Stream.mapError(cause =>
-              asRuntimeContextError(
-                `runtime-ingress.${cause.op}`,
-                cause.message,
-                context.contextId,
-                cause,
-              )),
-            Stream.provideLayer(FetchHttpClient.layer),
-          )
+        // Misconfiguration is unrepresentable: `options.input` is a
+        // tagged `RuntimeInputStreams`. Match it to decide whether to
+        // wire a stdin source.
+        const stdin = Match.value(options.input).pipe(
+          Match.tag("RuntimeInputDisabled", () => undefined),
+          Match.tag("RuntimeInputDurableStreams", (durable) =>
+            localProcessRuntimeIngressStdin({
+              streamUrl: durable.ingress,
+              checkpointStreamUrl: durable.checkpoints,
+              contextId: context.contextId,
+              subscriberId: localProcessIngressSubscriberId,
+            }).pipe(
+              Stream.mapError(cause =>
+                asRuntimeContextError(
+                  `runtime-ingress.${cause.op}`,
+                  cause.message,
+                  context.contextId,
+                  cause,
+                )),
+              Stream.provideLayer(FetchHttpClient.layer),
+            ),
+          ),
+          Match.exhaustive,
+        )
         // firegrid-agent-ingress.DELIVERY.1
         // firegrid-agent-ingress.DELIVERY.2
         // firegrid-agent-ingress.DELIVERY.3

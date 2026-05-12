@@ -10,6 +10,7 @@ import {
 } from "@firegrid/client"
 import {
   FiregridRuntimeHostLive,
+  RuntimeInputDurableStreams,
   startRuntime,
 } from "@firegrid/runtime"
 import { Effect, Layer } from "effect"
@@ -69,6 +70,7 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
     const dataPlaneStreamUrl = await createStreamUrl("tracer-016-runtime-output")
     const workflowStreamUrl = await createStreamUrl("tracer-016-workflow")
     const inputStreamUrl = await createStreamUrl("tracer-016-runtime-ingress")
+    const inputCheckpointsUrl = await createStreamUrl("tracer-016-runtime-ingress-cps")
 
     const handle = await Effect.runPromise(
       Effect.gen(function* () {
@@ -97,7 +99,10 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
         workflow: workflowStreamUrl,
         controlPlane: controlPlaneStreamUrl,
         runtimeOutput: dataPlaneStreamUrl,
-        runtimeIngress: inputStreamUrl,
+        input: new RuntimeInputDurableStreams({
+          ingress: inputStreamUrl,
+          checkpoints: inputCheckpointsUrl,
+        }),
       },
     })
 
