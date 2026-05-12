@@ -26,6 +26,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   ClaimPolicy,
   ConsumerCheckpointStoreLive,
+  ConsumerSource,
   DurableConsumer,
 } from "../src/index.ts"
 import { DurableConsumerError } from "../src/Errors.ts"
@@ -47,6 +48,16 @@ const Order = Schema.Struct({
   customer: Schema.String,
 })
 type Order = Schema.Schema.Type<typeof Order>
+
+const durableSource = <A, I>(
+  schema: Schema.Schema<A, I>,
+  url: string,
+) => ConsumerSource.fromDurableStream(
+  DurableStream.define({
+    endpoint: { url },
+    schema,
+  }),
+)
 
 describe("DurableConsumer — order-email scenario", () => {
   it("AtLeastOnce processes each order once and does not re-process on restart (CONSUMER.5, CONSUMER.8)", async () => {
@@ -90,10 +101,7 @@ describe("DurableConsumer — order-email scenario", () => {
           key: (o) => o.orderId,
         })
         const result = yield* DurableConsumer.run({
-          source: DurableStream.define({
-            endpoint: { url: ordersUrl },
-            schema: Order,
-          }),
+          source: durableSource(Order, ordersUrl),
           checkpoint: { subscriberId: "email.receipt.v1" },
           definition: consumer,
           policy: ClaimPolicy.AtLeastOnce(),
@@ -130,10 +138,7 @@ describe("DurableConsumer — order-email scenario", () => {
           key: (o) => o.orderId,
         })
         const result = yield* DurableConsumer.run({
-          source: DurableStream.define({
-            endpoint: { url: ordersUrl },
-            schema: Order,
-          }),
+          source: durableSource(Order, ordersUrl),
           checkpoint: { subscriberId: "email.receipt.v1" },
           definition: consumer,
           policy: ClaimPolicy.AtLeastOnce(),
@@ -201,10 +206,7 @@ describe("DurableConsumer — order-email scenario", () => {
 
     const runOnce = (callsRef: Ref.Ref<ReadonlyArray<string>>, producerId: string) =>
       DurableConsumer.run({
-        source: DurableStream.define({
-          endpoint: { url: ordersUrl },
-          schema: Order,
-        }),
+        source: durableSource(Order, ordersUrl),
         checkpoint: { subscriberId: "email.receipt.amo.v1" },
         definition: consumer,
         policy: ClaimPolicy.AtMostOnce(),
@@ -299,10 +301,7 @@ describe("DurableConsumer — failure-window semantics", () => {
         const callsRef = yield* Ref.make(0)
         const exit = yield* Effect.exit(
           DurableConsumer.run({
-            source: DurableStream.define({
-              endpoint: { url: ordersUrl },
-              schema: Order,
-            }),
+            source: durableSource(Order, ordersUrl),
             checkpoint: { subscriberId: "amo.fail" },
             definition: consumer,
             policy: ClaimPolicy.AtMostOnce(),
@@ -340,10 +339,7 @@ describe("DurableConsumer — failure-window semantics", () => {
       Effect.gen(function* () {
         const processCalls = yield* Ref.make<ReadonlyArray<string>>([])
         const result = yield* DurableConsumer.run({
-          source: DurableStream.define({
-            endpoint: { url: ordersUrl },
-            schema: Order,
-          }),
+          source: durableSource(Order, ordersUrl),
           checkpoint: { subscriberId: "amo.fail" },
           definition: consumer,
           policy: ClaimPolicy.AtMostOnce(),
@@ -404,10 +400,7 @@ describe("DurableConsumer — failure-window semantics", () => {
       Effect.gen(function* () {
         const exit = yield* Effect.exit(
           DurableConsumer.run({
-            source: DurableStream.define({
-              endpoint: { url: ordersUrl },
-              schema: Order,
-            }),
+            source: durableSource(Order, ordersUrl),
             checkpoint: { subscriberId: "alo.fail" },
             definition: consumer,
             policy: ClaimPolicy.AtLeastOnce(),
@@ -440,10 +433,7 @@ describe("DurableConsumer — failure-window semantics", () => {
       Effect.gen(function* () {
         const callsRef = yield* Ref.make(0)
         const result = yield* DurableConsumer.run({
-          source: DurableStream.define({
-            endpoint: { url: ordersUrl },
-            schema: Order,
-          }),
+          source: durableSource(Order, ordersUrl),
           checkpoint: { subscriberId: "alo.fail" },
           definition: consumer,
           policy: ClaimPolicy.AtLeastOnce(),
@@ -502,10 +492,7 @@ describe("DurableConsumer — failure-window semantics", () => {
       Effect.gen(function* () {
         const callsRef = yield* Ref.make(0)
         const result = yield* DurableConsumer.run({
-          source: DurableStream.define({
-            endpoint: { url: ordersUrl },
-            schema: Order,
-          }),
+          source: durableSource(Order, ordersUrl),
           checkpoint: { subscriberId: "retry.v1" },
           definition: consumer,
           policy: ClaimPolicy.AtLeastOnce(),
@@ -581,10 +568,7 @@ describe("DurableConsumer — failure-window semantics", () => {
 
     const out = await runtime(
       DurableConsumer.run({
-        source: DurableStream.define({
-          endpoint: { url: ordersUrl },
-          schema: Order,
-        }),
+        source: durableSource(Order, ordersUrl),
         checkpoint: { subscriberId: "generic-er.v1" },
         definition: consumer,
         policy: ClaimPolicy.AtLeastOnce(),
@@ -715,10 +699,7 @@ describe("DurableConsumer — trigger-shaped (stream form)", () => {
           },
         })
         const stream = DurableConsumer.stream({
-          source: DurableStream.define({
-            endpoint: { url: eventsUrl },
-            schema: Order,
-          }),
+          source: durableSource(Order, eventsUrl),
           checkpoint: { subscriberId: "trigger.v1" },
           definition: consumer,
           policy: ClaimPolicy.AtLeastOnce(),
@@ -761,10 +742,7 @@ describe("DurableConsumer — trigger-shaped (stream form)", () => {
           },
         })
         const stream = DurableConsumer.stream({
-          source: DurableStream.define({
-            endpoint: { url: eventsUrl },
-            schema: Order,
-          }),
+          source: durableSource(Order, eventsUrl),
           checkpoint: { subscriberId: "trigger.v1" },
           definition: consumer,
           policy: ClaimPolicy.AtLeastOnce(),
@@ -862,10 +840,7 @@ describe("DurableConsumer — Firegrid-shaped (local schemas only)", () => {
         })
 
         const result = yield* DurableConsumer.run({
-          source: DurableStream.define({
-            endpoint: { url },
-            schema: RuntimeIngressRow,
-          }),
+          source: durableSource(RuntimeIngressRow, url),
           checkpoint: {
             subscriberId: `runtime-context:${contextId}:stdin`,
           },
@@ -884,4 +859,3 @@ describe("DurableConsumer — Firegrid-shaped (local schemas only)", () => {
     expect([...captured.payloads].sort()).toEqual(["hello", "world"])
   })
 })
-

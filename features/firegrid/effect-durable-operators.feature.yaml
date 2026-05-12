@@ -36,6 +36,14 @@ components:
       7: DurableConsumer supports an optional Effect Schedule for retrying the processing effect.
       8: DurableConsumer restart tests prove the selected policy does not silently duplicate or lose logical work beyond its documented delivery semantics.
 
+  SOURCE:
+    requirements:
+      1: DurableConsumer reads from a small Effect Stream-shaped ConsumerSource interface rather than directly requiring effect-durable-streams Bound sources.
+      2: The operators package ships a Durable Streams ConsumerSource adapter that preserves the existing production DS infrastructure as Firegrid's primary substrate.
+      3: The operators package ships an Electric ShapeStream/D2TS ConsumerSource adapter proof to validate the source interface against a second change-stream backend.
+      4: Electric ShapeStream integration remains source-only; DurableConsumer checkpoint and delivery semantics continue to be owned by ConsumerCheckpointStore.
+      5: D2TS integration is used only to adapt or transform Electric shape changes into typed consumer facts; it does not replace DurableTable or ConsumerCheckpointStore semantics.
+
   FIREGRID_PROOF:
     requirements:
       1: A Firegrid-shaped proof replaces runtime input requested-minus-accepted fold logic with DurableConsumer rather than adding another runtime-ingress service plane.
@@ -58,3 +66,9 @@ constraints:
       3: Tracer 017 adds a DurableTable restart or cold-start replay test proving retained change events rebuild queryable state.
       4: Tracer 017 adds DurableConsumer restart tests for AtMostOnce and AtLeastOnce behavior.
       5: Tracer 017 adds a Firegrid scenario E2E proving runtime input delivery still works through production surfaces after replacing custom fold code.
+
+  TRACER_018:
+    requirements:
+      1: Tracer 018 migrates DurableConsumer tests and Firegrid usage to ConsumerSource.fromDurableStream without changing observable behavior.
+      2: Tracer 018 adds a non-Firegrid Electric ShapeStream/D2TS source adapter test that feeds DurableConsumer through the same ConsumerSource interface.
+      3: Tracer 018 proves Electric source offsets or shape protocol progress are not treated as DurableConsumer processing checkpoints.
