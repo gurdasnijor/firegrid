@@ -9,7 +9,15 @@
  * docs/tracers/017-effect-durable-operators.md.
  */
 
-export * as DurableTable from "./DurableTable.ts"
+export { DurableTable } from "./DurableTable.ts"
+export type {
+  CollectionFacade as DurableTableCollectionFacade,
+  DurableTableService,
+  DurableTableTagClass,
+  LayerOptions as DurableTableLayerOptions,
+  PrimaryKeyOf as DurableTablePrimaryKeyOf,
+  RowOf as DurableTableRowOf,
+} from "./DurableTable.ts"
 export * as DurableProjection from "./DurableProjection.ts"
 export * as DurableConsumer from "./DurableConsumer.ts"
 export * as ConsumerSource from "./ConsumerSource.ts"

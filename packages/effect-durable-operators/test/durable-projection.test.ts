@@ -31,16 +31,27 @@ const DebitCredit = Schema.Struct({
 type DebitCredit = Schema.Schema.Type<typeof DebitCredit>
 
 const AccountBalance = Schema.Struct({
-  accountId: Schema.String,
+  accountId: Schema.String.pipe(DurableTable.primaryKey),
   balance: Schema.Number,
 })
+type AccountBalance = Schema.Schema.Type<typeof AccountBalance>
 
-const balanceCollections = DurableTable.collections({
-  accountBalances: DurableTable.collection({
-    type: "example.account_balance",
-    primaryKey: "accountId",
-    schema: AccountBalance,
-  }),
+class AccountBalanceTable extends DurableTable("example", {
+  accountBalances: AccountBalance,
+}) {}
+
+type AccountBalanceEvent = {
+  readonly type: "example.accountBalances"
+  readonly key: string
+  readonly value: AccountBalance
+  readonly headers: { readonly operation: "upsert" }
+}
+
+const accountBalanceUpsert = (value: AccountBalance): AccountBalanceEvent => ({
+  type: "example.accountBalances",
+  key: value.accountId,
+  value,
+  headers: { operation: "upsert" },
 })
 
 describe("DurableProjection", () => {
@@ -84,7 +95,7 @@ describe("DurableProjection", () => {
         const AccountBalanceProjection = DurableProjection.define<
           Ref.Ref<HashMap.HashMap<string, number>>,
           DebitCredit,
-          ReturnType<typeof balanceCollections.collections.accountBalances.upsert>
+          AccountBalanceEvent
         >({
           name: "account-balance",
           initialState: Ref.make(HashMap.empty<string, number>()),
@@ -97,7 +108,7 @@ describe("DurableProjection", () => {
                 )
                 const balance = prev + fact.delta
                 const next = HashMap.set(state, fact.accountId, balance)
-                const event = balanceCollections.collections.accountBalances.upsert({
+                const event = accountBalanceUpsert({
                   accountId: fact.accountId,
                   balance,
                 })
@@ -116,18 +127,26 @@ describe("DurableProjection", () => {
         })
 
         // Materialize the balances table and query.
-        const table = yield* DurableTable.materialize({
-          streamOptions: { url: balancesUrl, contentType: "application/json" },
-          collections: balanceCollections,
+        const checkBalances = Effect.gen(function* () {
+          const table = yield* AccountBalanceTable
+          const a1 = yield* table.accountBalances.get("a-1")
+          const a2 = yield* table.accountBalances.get("a-2")
+          expect(Option.isSome(a1)).toBe(true)
+          expect(Option.isSome(a2)).toBe(true)
+          if (Option.isSome(a1)) expect(a1.value.balance).toBe(70)
+          if (Option.isSome(a2)) expect(a2.value.balance).toBe(75)
         })
-        yield* Effect.sleep("200 millis")
 
-        const a1 = yield* table.get("accountBalances", "a-1")
-        const a2 = yield* table.get("accountBalances", "a-2")
-        expect(Option.isSome(a1)).toBe(true)
-        expect(Option.isSome(a2)).toBe(true)
-        if (Option.isSome(a1)) expect(a1.value.balance).toBe(70)
-        if (Option.isSome(a2)) expect(a2.value.balance).toBe(75)
+        yield* checkBalances.pipe(
+          Effect.provide(
+            AccountBalanceTable.layer({
+              streamOptions: {
+                url: balancesUrl,
+                contentType: "application/json",
+              },
+            }),
+          ),
+        )
       }),
     )
   })
@@ -166,7 +185,7 @@ describe("DurableProjection", () => {
       DurableProjection.define<
         Ref.Ref<HashMap.HashMap<string, number>>,
         DebitCredit,
-        ReturnType<typeof balanceCollections.collections.accountBalances.upsert>
+        AccountBalanceEvent
       >({
         name: "account-balance-replay",
         // initialState is re-evaluated every run; cold-start replay therefore
@@ -178,7 +197,7 @@ describe("DurableProjection", () => {
               const prev = Option.getOrElse(HashMap.get(s, fact.accountId), () => 0)
               const balance = prev + fact.delta
               const next = HashMap.set(s, fact.accountId, balance)
-              const event = balanceCollections.collections.accountBalances.upsert({
+              const event = accountBalanceUpsert({
                 accountId: fact.accountId,
                 balance,
               })
@@ -226,17 +245,26 @@ describe("DurableProjection", () => {
     // final state from retained change events alone (no live projection).
     await runtime(
       Effect.gen(function* () {
-        const table = yield* DurableTable.materialize({
-          streamOptions: { url: balancesUrl, contentType: "application/json" },
-          collections: balanceCollections,
+        const checkBalances = Effect.gen(function* () {
+          const table = yield* AccountBalanceTable
+          const x = yield* table.accountBalances.get("x")
+          const y = yield* table.accountBalances.get("y")
+          expect(Option.isSome(x)).toBe(true)
+          expect(Option.isSome(y)).toBe(true)
+          if (Option.isSome(x)) expect(x.value.balance).toBe(7)
+          if (Option.isSome(y)) expect(y.value.balance).toBe(5)
         })
-        yield* Effect.sleep("250 millis")
-        const x = yield* table.get("accountBalances", "x")
-        const y = yield* table.get("accountBalances", "y")
-        expect(Option.isSome(x)).toBe(true)
-        expect(Option.isSome(y)).toBe(true)
-        if (Option.isSome(x)) expect(x.value.balance).toBe(7)
-        if (Option.isSome(y)) expect(y.value.balance).toBe(5)
+
+        yield* checkBalances.pipe(
+          Effect.provide(
+            AccountBalanceTable.layer({
+              streamOptions: {
+                url: balancesUrl,
+                contentType: "application/json",
+              },
+            }),
+          ),
+        )
       }),
     )
   })

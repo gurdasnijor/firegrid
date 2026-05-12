@@ -1,24 +1,41 @@
 /**
- * DurableTable — typed Effect facade over `@durable-streams/state`'s
- * `createStreamDB`. Not a new materialization engine.
+ * DurableTable — ksql-inspired table declaration and action facade over
+ * `@durable-streams/state`'s `createStreamDB`.
  *
  * Implements:
  *  - effect-durable-operators.TABLE.1 — facade, no new engine
  *  - effect-durable-operators.TABLE.2 — Effect Schema in, Standard Schema only
  *    at the `@durable-streams/state` boundary
  *  - effect-durable-operators.TABLE.3 — Scope-managed; preload on acquire,
- *    close on finalization; awaitTxId surfaced as Effect
- *  - effect-durable-operators.TABLE.4 — multi-collection pull/push helpers,
- *    no re-folding of retained history
+ *    close on finalization; txid coordination through Effect
+ *  - effect-durable-operators.TABLE.4 — pull/push helpers, no re-folding
  *  - effect-durable-operators.TABLE.5 — replay rebuilds state through
- *    createStreamDB cold-start; verified in test.
+ *    createStreamDB cold-start
+ *  - effect-durable-operators.TABLE.6 — declaration returns an Effect service
+ *    tag class with a Layer constructor
+ *  - effect-durable-operators.TABLE.7 — primary key is field schema metadata
+ *  - effect-durable-operators.TABLE.8 — exactly one primary key per collection
+ *  - effect-durable-operators.TABLE.9 — durable type is namespace.collection
+ *  - effect-durable-operators.TABLE.10 — per-collection facade methods
+ *  - effect-durable-operators.TABLE.11 — writes use createStreamDB actions
+ *  - effect-durable-operators.TABLE.12 — generated writes attach txid headers
+ *    and await createStreamDB awaitTxId
+ *  - effect-durable-operators.TABLE.13 — no wire type/action overrides
+ *  - effect-durable-operators.TABLE.14 — no package-owned append helper path
  */
 
-import type { ChangeEvent } from "@durable-streams/state"
-import { createStreamDB } from "@durable-streams/state"
+import {
+  createStateSchema,
+  createStreamDB,
+  type ActionDefinition,
+  type StateSchema,
+  type StreamStateDefinition,
+} from "@durable-streams/state"
 import type { Collection as TanStackCollection } from "@tanstack/db"
 import {
+  Context,
   Effect,
+  Layer,
   Option,
   Schema,
   type Scope,
@@ -26,280 +43,468 @@ import {
 } from "effect"
 import { DurableTableError } from "./Errors.ts"
 
-// ---------------------------------------------------------------------------
-// Definitions are plain values (SDD §API Sketch — Definitions Are Values).
-// `collection(...)` and `collections(...)` produce typed metadata that
-// `materialize(...)` later converts to a Standard-Schema-shaped
-// CollectionDefinition for createStreamDB.
-// ---------------------------------------------------------------------------
+const primaryKeyAnnotationId = Symbol.for(
+  "effect-durable-operators/DurableTable/primaryKey",
+)
+declare const primaryKeyTypeId: unique symbol
 
-export interface CollectionDefinition<
-  Row extends object,
-  Key extends keyof Row & string,
-> {
-  readonly type: string
-  readonly schema: Schema.Schema<Row, unknown>
-  readonly primaryKey: Key
-  /** Construct a State Protocol `insert` change event for this collection. */
-  readonly insert: (row: Row) => ChangeEvent<Row>
-  /** Construct a State Protocol `update` change event. */
-  readonly update: (row: Row, oldValue?: Row) => ChangeEvent<Row>
-  /** Construct a State Protocol `delete` change event. */
-  readonly delete: (key: Row[Key] & (string | number), oldValue?: Row) => ChangeEvent<Row>
-  /** Construct a State Protocol `upsert` change event. */
-  readonly upsert: (row: Row) => ChangeEvent<Row>
+interface PrimaryKeyField<Key> {
+  readonly [primaryKeyTypeId]: Key
 }
 
-export interface CollectionOptions<
-  Row extends object,
-  Key extends keyof Row & string,
-  I,
-> {
-  readonly type: string
-  readonly schema: Schema.Schema<Row, I>
-  readonly primaryKey: Key
-}
-
-const keyString = (value: unknown): string =>
-  typeof value === "string" ? value : typeof value === "number" ? String(value) : JSON.stringify(value)
-
-/**
- * Define a typed collection. Schema is Effect Schema; primaryKey is
- * compile-time-validated against the row type.
- */
-export const collection = <
-  Row extends object,
-  Key extends keyof Row & string,
-  I,
->(opts: CollectionOptions<Row, Key, I>): CollectionDefinition<Row, Key> => {
-  const { type, schema, primaryKey } = opts
-  // The change-event helpers are *plain* constructors. They do not perform
-  // schema validation at construction time — encoding happens at the
-  // append boundary, mirroring `@durable-streams/state`'s helper shape.
-  return {
-    type,
-    schema: schema as Schema.Schema<Row, unknown>,
-    primaryKey,
-    insert: (row) => ({
-      type,
-      key: keyString(row[primaryKey]),
-      value: row,
-      headers: { operation: "insert" },
-    }),
-    update: (row, oldValue) => ({
-      type,
-      key: keyString(row[primaryKey]),
-      value: row,
-      ...(oldValue !== undefined ? { old_value: oldValue } : {}),
-      headers: { operation: "update" },
-    }),
-    delete: (key, oldValue) => ({
-      type,
-      key: keyString(key),
-      ...(oldValue !== undefined ? { old_value: oldValue } : {}),
-      headers: { operation: "delete" },
-    }),
-    upsert: (row) => ({
-      type,
-      key: keyString(row[primaryKey]),
-      value: row,
-      headers: { operation: "upsert" },
-    }),
-  }
-}
-
-// CollectionMap holds heterogeneous per-collection types. `any` here is the
-// type-level "wildcard"; precise per-collection inference is restored by the
-// `keyof C` lookups in DurableTable's method signatures (Row/Key are
-// recovered through `RowOf`/`KeyOf`).
+// `Schema.Struct<any>` is the practical top type for Struct schemas here:
+// Effect Schema's annotation methods are contravariant in their annotation
+// parameter, so a more "precise" index-signature field type rejects ordinary
+// concrete structs.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type CollectionMap = Record<string, CollectionDefinition<any, any>>
-
-export interface Collections<C extends CollectionMap> {
-  readonly collections: C
+type StructSchema = Schema.Struct<any>
+type TableSchemas<Schemas> = {
+  readonly [Key in keyof Schemas]: StructSchema
 }
+type AnyTableSchemas = Record<string, StructSchema>
 
-export const collections = <C extends CollectionMap>(map: C): Collections<C> => ({
-  collections: map,
-})
+export type RowOf<S extends Schema.Schema.All> = Schema.Schema.Type<S>
 
-// ---------------------------------------------------------------------------
-// Materialization
-// ---------------------------------------------------------------------------
+type FieldsOf<S> = S extends Schema.Struct<infer Fields> ? Fields : never
+type PrimaryKeyNameOf<S> = {
+  readonly [Key in keyof FieldsOf<S>]: FieldsOf<S>[Key] extends PrimaryKeyField<unknown>
+    ? Key
+    : never
+}[keyof FieldsOf<S>] & string
 
-// `@durable-streams/state`'s `streamOptions` shape comes from
-// `@durable-streams/client.DurableStreamOptions`. We accept it opaquely so
-// callers can pass exactly what they would pass to `createStreamDB`.
-export interface StreamOptions {
+export type PrimaryKeyOf<S extends StructSchema> =
+  PrimaryKeyNameOf<S> extends keyof FieldsOf<S>
+    ? Extract<Schema.Schema.Type<FieldsOf<S>[PrimaryKeyNameOf<S>]>, string | number>
+    : never
+
+interface StreamOptions {
   readonly url: string
   readonly contentType?: string
-  // Allow upstream additions without rev-locking this package.
   readonly [extra: string]: unknown
 }
 
-export interface MaterializeOptions<C extends CollectionMap> {
+export interface LayerOptions {
   readonly streamOptions: StreamOptions
-  readonly collections: Collections<C>
+  readonly txTimeoutMs?: number
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RowOf<D> = D extends CollectionDefinition<infer R, any> ? R : never
-type KeyOf<D> =
-  D extends CollectionDefinition<infer R, infer K> ? R[K] : never
-
-export interface DurableTable<C extends CollectionMap> {
-  /** Snapshot get by primary key. */
-  readonly get: <Name extends keyof C & string>(
-    name: Name,
-    key: KeyOf<C[Name]>,
-  ) => Effect.Effect<Option.Option<RowOf<C[Name]>>, DurableTableError>
-  /** Run a synchronous query over the live TanStack DB collection. */
-  readonly query: <Name extends keyof C & string, A>(
-    name: Name,
-    build: (coll: TanStackCollection<RowOf<C[Name]> & object, string>) => A,
+export interface CollectionFacade<Row extends object, Key extends string | number> {
+  readonly insert: (row: Row) => Effect.Effect<void, DurableTableError>
+  readonly upsert: (row: Row) => Effect.Effect<void, DurableTableError>
+  readonly delete: (key: Key) => Effect.Effect<void, DurableTableError>
+  readonly get: (key: Key) => Effect.Effect<Option.Option<Row>, DurableTableError>
+  readonly query: <A>(
+    build: (coll: TanStackCollection<Row, string>) => A,
   ) => Effect.Effect<A, DurableTableError>
-  /**
-   * Subscribe to a collection's change events as an Effect Stream.
-   * The `subscribe` callback wires a TanStack subscription that pushes
-   * derived values into the stream.
-   */
-  readonly changes: <Name extends keyof C & string, A>(
-    name: Name,
+  readonly subscribe: <A>(
     subscribe: (
-      coll: TanStackCollection<RowOf<C[Name]> & object, string>,
+      coll: TanStackCollection<Row, string>,
       emit: (value: A) => void,
     ) => () => void,
   ) => Stream.Stream<A, DurableTableError>
-  /** Wait until a given txid has been synced through the underlying stream. */
-  readonly awaitTxId: (txid: string, timeoutMs?: number) => Effect.Effect<void, DurableTableError>
 }
 
-const toStandardSchemaCollection = <Row extends object, Key extends keyof Row & string>(
-  def: CollectionDefinition<Row, Key>,
-) => ({
-  type: def.type,
-  primaryKey: def.primaryKey,
-  // Translation point: Effect Schema → Standard Schema lives here, at the
-  // createStreamDB boundary, per SDD §Schema Strategy + TABLE.2.
-  schema: Schema.standardSchemaV1(def.schema),
+export type DurableTableService<Schemas extends TableSchemas<Schemas>> = {
+  readonly [Name in keyof Schemas & string]: CollectionFacade<
+    RowOf<Schemas[Name]> & object,
+    PrimaryKeyOf<Schemas[Name]>
+  >
+} & {
+  readonly awaitTxId: (
+    txid: string,
+    timeoutMs?: number,
+  ) => Effect.Effect<void, DurableTableError>
+}
+
+export type DurableTableTagClass<Schemas extends TableSchemas<Schemas>> =
+  Context.TagClass<
+    unknown,
+    string,
+    DurableTableService<Schemas>
+  > & {
+    readonly namespace: string
+    readonly layer: (
+      options: LayerOptions,
+    ) => Layer.Layer<unknown, DurableTableError>
+  }
+
+type CompiledCollection = {
+  readonly collectionKey: string
+  readonly durableType: string
+  readonly primaryKey: string
+  readonly schema: StructSchema
+}
+
+type CompiledTable<Schemas extends TableSchemas<Schemas>> = {
+  readonly namespace: string
+  readonly schemas: Schemas
+  readonly collections: ReadonlyArray<CompiledCollection>
+}
+
+type StateSchemaWithHelpers = StateSchema<StreamStateDefinition>
+type ActionResult = { readonly isPersisted: { readonly promise: Promise<unknown> } }
+type ActionMap = Record<string, (params: unknown) => ActionResult>
+
+const reservedFacadeProperties = new Set(["awaitTxId"])
+
+const keyString = (value: string | number): string => String(value)
+
+const primaryKey = <S extends Schema.Schema.Any>(
+  schema: S,
+): S & PrimaryKeyField<Schema.Schema.Type<S>> =>
+  schema.annotations({ [primaryKeyAnnotationId]: true }) as S &
+    PrimaryKeyField<Schema.Schema.Type<S>>
+
+const raise = (message: string): never => {
+  throw new Error(message)
+}
+
+const isPrimaryKeyField = (schema: Schema.Schema.Any): boolean =>
+  schema.ast.annotations[primaryKeyAnnotationId] === true
+
+const actionName = (
+  collectionKey: string,
+  operation: "insert" | "upsert" | "delete",
+): string => `${collectionKey}.${operation}`
+
+const compileTable = <const Schemas extends TableSchemas<Schemas>>(
+  namespace: string,
+  schemas: Schemas,
+): CompiledTable<Schemas> => {
+  const collections = Object.entries(schemas).map(([collectionKey, schemaValue]) => {
+    const schema = schemaValue as StructSchema
+    if (reservedFacadeProperties.has(collectionKey)) {
+      return raise(
+        `DurableTable("${namespace}") collection "${collectionKey}" collides with a table service property`,
+      )
+    }
+
+    const primaryKeys = Object.entries(schema.fields)
+      .filter(([, fieldSchema]) =>
+        isPrimaryKeyField(fieldSchema as Schema.Schema.Any),
+      )
+      .map(([field]) => field)
+
+    if (primaryKeys.length !== 1) {
+      return raise(
+        `DurableTable("${namespace}").${collectionKey} must declare exactly one DurableTable.primaryKey field; found ${primaryKeys.length}`,
+      )
+    }
+
+    const primaryKeyName = primaryKeys[0]
+    if (primaryKeyName === undefined) {
+      return raise(
+        `DurableTable("${namespace}").${collectionKey} did not produce a primary key`,
+      )
+    }
+
+    return {
+      collectionKey,
+      durableType: `${namespace}.${collectionKey}`,
+      primaryKey: primaryKeyName,
+      schema,
+    } satisfies CompiledCollection
+  })
+
+  return { namespace, schemas, collections }
+}
+
+const makeStateSchema = (
+  table: CompiledTable<AnyTableSchemas>,
+): StateSchemaWithHelpers => {
+  const state = Object.fromEntries(
+    table.collections.map((collection) => [
+      collection.collectionKey,
+      {
+        // effect-durable-operators.TABLE.9
+        type: collection.durableType,
+        primaryKey: collection.primaryKey,
+        // effect-durable-operators.TABLE.2
+        schema: Schema.standardSchemaV1(
+          collection.schema as unknown as Schema.Schema<object, unknown, never>,
+        ),
+      },
+    ]),
+  ) as StreamStateDefinition
+
+  return createStateSchema(state)
+}
+
+const collectionKeyValue = <Row extends object>(
+  collection: CompiledCollection,
+  row: Row,
+): string =>
+  keyString(
+    (row as Record<string, string | number>)[collection.primaryKey] as
+      | string
+      | number,
+  )
+
+const makeActionDefinitions = (
+  table: CompiledTable<AnyTableSchemas>,
+  stateSchema: StateSchemaWithHelpers,
+  txTimeoutMs: number,
+): ((context: {
+  readonly db: {
+    readonly collections: Record<string, TanStackCollection<object, string>>
+    readonly utils: {
+      readonly awaitTxId: (txid: string, timeoutMs?: number) => Promise<void>
+    }
+  }
+  readonly stream: {
+    readonly append: (value: string) => Promise<unknown>
+  }
+}) => Record<string, ActionDefinition<unknown>>) =>
+  ({ db, stream }) =>
+    table.collections.reduce<Record<string, ActionDefinition<unknown>>>(
+      (actions, collection) => {
+        const coll = db.collections[collection.collectionKey]
+        const helpers = stateSchema[collection.collectionKey]
+        if (coll === undefined || helpers === undefined) {
+          return raise(
+            `DurableTable("${table.namespace}") failed to initialize collection "${collection.collectionKey}"`,
+          )
+        }
+
+      actions[actionName(collection.collectionKey, "insert")] = {
+        onMutate: (params: unknown) => {
+          coll.insert(params as object)
+        },
+        mutationFn: async (params: unknown) => {
+          const txid = crypto.randomUUID()
+          const event = helpers.insert({
+            value: params,
+            headers: { txid },
+          })
+          // effect-durable-operators.TABLE.11
+          // effect-durable-operators.TABLE.12
+          await stream.append(JSON.stringify(event))
+          await db.utils.awaitTxId(txid, txTimeoutMs)
+        },
+      }
+
+      actions[actionName(collection.collectionKey, "upsert")] = {
+        onMutate: (params: unknown) => {
+          const row = params as object
+          const key = collectionKeyValue(collection, row)
+          if (coll.get(key) === undefined) {
+            coll.insert(row)
+          } else {
+            coll.update(key, (draft) => {
+              Object.assign(draft, row)
+            })
+          }
+        },
+        mutationFn: async (params: unknown) => {
+          const txid = crypto.randomUUID()
+          const event = helpers.upsert({
+            value: params,
+            headers: { txid },
+          })
+          await stream.append(JSON.stringify(event))
+          await db.utils.awaitTxId(txid, txTimeoutMs)
+        },
+      }
+
+      actions[actionName(collection.collectionKey, "delete")] = {
+        onMutate: (params: unknown) => {
+          const key = keyString(params as string | number)
+          if (coll.get(key) !== undefined) {
+            coll.delete(key)
+          }
+        },
+        mutationFn: async (params: unknown) => {
+          const key = keyString(params as string | number)
+          const txid = crypto.randomUUID()
+          const event = helpers.delete({
+            key,
+            headers: { txid },
+          })
+          await stream.append(JSON.stringify(event))
+          await db.utils.awaitTxId(txid, txTimeoutMs)
+        },
+      }
+      return actions
+    },
+    {},
+  )
+
+const runAction = (
+  tableName: string,
+  actions: ActionMap,
+  name: string,
+  params: unknown,
+): Effect.Effect<void, DurableTableError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const action = actions[name]
+      if (action === undefined) {
+        await Promise.reject(new Error(`unknown DurableTable action: ${name}`))
+        return
+      }
+      await action(params).isPersisted.promise
+    },
+    catch: (cause) => new DurableTableError({ table: tableName, cause }),
+  }).pipe(Effect.asVoid)
+
+const makeFacade = <Row extends object, Key extends string | number>(options: {
+  readonly tableName: string
+  readonly collectionKey: string
+  readonly collection: TanStackCollection<Row, string>
+  readonly actions: ActionMap
+}): CollectionFacade<Row, Key> => ({
+  insert: (row) =>
+    runAction(
+      options.tableName,
+      options.actions,
+      actionName(options.collectionKey, "insert"),
+      row,
+    ),
+  upsert: (row) =>
+    runAction(
+      options.tableName,
+      options.actions,
+      actionName(options.collectionKey, "upsert"),
+      row,
+    ),
+  delete: (key) =>
+    runAction(
+      options.tableName,
+      options.actions,
+      actionName(options.collectionKey, "delete"),
+      key,
+    ),
+  get: (key) =>
+    Effect.try({
+      try: () => {
+        const value = options.collection.get(keyString(key))
+        return value === undefined ? Option.none<Row>() : Option.some(value)
+      },
+      catch: (cause) =>
+        new DurableTableError({ table: options.tableName, cause }),
+    }),
+  query: (build) =>
+    Effect.try({
+      try: () => build(options.collection),
+      catch: (cause) =>
+        new DurableTableError({ table: options.tableName, cause }),
+    }),
+  subscribe: <A>(subscribe: (
+    coll: TanStackCollection<Row, string>,
+    emit: (value: A) => void,
+  ) => () => void) =>
+    Stream.async<A, DurableTableError>((emit) => {
+      let unsubscribe: (() => void) | undefined
+      try {
+        unsubscribe = subscribe(options.collection, (value) => {
+          void emit.single(value)
+        })
+      } catch (cause) {
+        void emit.fail(new DurableTableError({ table: options.tableName, cause }))
+      }
+      return Effect.sync(() => {
+        if (unsubscribe !== undefined) unsubscribe()
+      })
+    }),
 })
 
-/**
- * Materialize a durable table. Returns a Scope-managed DurableTable.
- *
- * `preload` runs on acquire so the returned table is queryable without
- * application code repeatedly reading retained history. `close` runs on
- * scope finalization.
- */
-export const materialize = <C extends CollectionMap>(
-  opts: MaterializeOptions<C>,
-): Effect.Effect<DurableTable<C>, DurableTableError, Scope.Scope> =>
+const makeService = <Schemas extends TableSchemas<Schemas>>(
+  table: CompiledTable<Schemas>,
+  options: LayerOptions,
+): Effect.Effect<DurableTableService<Schemas>, DurableTableError, Scope.Scope> =>
   Effect.acquireRelease(
     Effect.try({
       try: () => {
-        const state = Object.fromEntries(
-          Object.entries(opts.collections.collections).map(([name, def]) => [
-            name,
-            toStandardSchemaCollection(def),
-          ]),
-        )
-        return createStreamDB({
-          streamOptions: opts.streamOptions,
-          state,
+        const stateSchema = makeStateSchema(table)
+        const db = createStreamDB({
+          streamOptions: options.streamOptions,
+          state: stateSchema,
+          // effect-durable-operators.TABLE.11
+          actions: makeActionDefinitions(
+            table as CompiledTable<AnyTableSchemas>,
+            stateSchema,
+            options.txTimeoutMs ?? 5_000,
+          ),
         })
+        return db
       },
       catch: (cause) =>
-        new DurableTableError({ table: "(materialize)", cause }),
+        new DurableTableError({ table: table.namespace, cause }),
     }).pipe(
       Effect.tap((db) =>
         Effect.tryPromise({
           try: () => db.preload(),
           catch: (cause) =>
-            new DurableTableError({ table: "(preload)", cause }),
+            new DurableTableError({ table: table.namespace, cause }),
         }),
       ),
     ),
-    (db) =>
-      Effect.sync(() => {
-        db.close()
-      }),
+    (db) => Effect.sync(() => db.close()),
   ).pipe(
     Effect.map((db) => {
-      const getColl = <Name extends keyof C & string>(name: Name) => {
-        const c = (db.collections as Record<string, unknown>)[name]
-        return c === undefined
-          ? Effect.fail(
-              new DurableTableError({
-                table: String(name),
-                cause: `unknown collection: ${String(name)}`,
-              }),
+      const actions = db.actions as ActionMap
+      const collectionFacades = table.collections.reduce<Record<string, unknown>>(
+        (facades, collection) => {
+          const coll = db.collections[collection.collectionKey]
+          if (coll === undefined) {
+            return raise(
+              `DurableTable("${table.namespace}") missing collection "${collection.collectionKey}"`,
             )
-          : Effect.succeed(
-              c as unknown as TanStackCollection<RowOf<C[Name]> & object, string>,
-            )
-      }
-
-      return {
-        get: <Name extends keyof C & string>(name: Name, key: KeyOf<C[Name]>) =>
-          Effect.flatMap(getColl(name), (coll) =>
-            Effect.try({
-              try: () => {
-                const value = coll.get(keyString(key))
-                return value === undefined
-                  ? Option.none<RowOf<C[Name]>>()
-                  : Option.some(value)
-              },
-              catch: (cause) =>
-                new DurableTableError({ table: String(name), cause }),
+          }
+          return {
+            ...facades,
+            [collection.collectionKey]: makeFacade({
+              tableName: `${table.namespace}.${collection.collectionKey}`,
+              collectionKey: collection.collectionKey,
+              collection: coll,
+              actions,
             }),
-          ),
+          }
+        },
+        {},
+      )
 
-        query: <Name extends keyof C & string, A>(
-          name: Name,
-          build: (coll: TanStackCollection<RowOf<C[Name]> & object, string>) => A,
-        ) =>
-          Effect.flatMap(getColl(name), (coll) =>
-            Effect.try({
-              try: () => build(coll),
-              catch: (cause) =>
-                new DurableTableError({ table: String(name), cause }),
-            }),
-          ),
-
-        changes: <Name extends keyof C & string, A>(
-          name: Name,
-          subscribe: (
-            coll: TanStackCollection<RowOf<C[Name]> & object, string>,
-            emit: (value: A) => void,
-          ) => () => void,
-        ) =>
-          Stream.unwrap(
-            Effect.map(getColl(name), (coll) =>
-              Stream.async<A, DurableTableError>((emit) => {
-                let unsubscribe: (() => void) | undefined
-                try {
-                  unsubscribe = subscribe(coll, (value) => {
-                    void emit.single(value)
-                  })
-                } catch (cause) {
-                  void emit.fail(
-                    new DurableTableError({ table: String(name), cause }),
-                  )
-                  return
-                }
-                return Effect.sync(() => {
-                  if (unsubscribe !== undefined) unsubscribe()
-                })
-              }),
-            ),
-          ),
-
+      const service: Record<string, unknown> = {
         awaitTxId: (txid: string, timeoutMs?: number) =>
           Effect.tryPromise({
             try: () => db.utils.awaitTxId(txid, timeoutMs),
             catch: (cause) =>
-              new DurableTableError({ table: "(awaitTxId)", cause }),
+              new DurableTableError({ table: table.namespace, cause }),
           }),
-      } satisfies DurableTable<C>
+        ...collectionFacades,
+      }
+
+      return service as DurableTableService<Schemas>
     }),
   )
+
+const defineDurableTable = <const Schemas extends TableSchemas<Schemas>>(
+  namespace: string,
+  schemas: Schemas,
+): DurableTableTagClass<Schemas> => {
+  const table = compileTable(namespace, schemas)
+
+  const Base = Context.Tag(
+    `effect-durable-operators/DurableTable/${namespace}`,
+  )<unknown, DurableTableService<Schemas>>()
+
+  class DurableTableTag extends Base {
+    static readonly namespace = namespace
+
+    static layer(
+      this: Context.Tag<unknown, DurableTableService<Schemas>>,
+      options: LayerOptions,
+    ) {
+      return Layer.scoped(
+        this,
+        makeService(table, options).pipe(Effect.map((service) => this.of(service))),
+      )
+    }
+  }
+
+  return DurableTableTag as DurableTableTagClass<Schemas>
+}
+
+export const DurableTable = Object.assign(defineDurableTable, {
+  primaryKey,
+})

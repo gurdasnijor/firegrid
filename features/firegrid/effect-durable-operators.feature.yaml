@@ -17,6 +17,15 @@ components:
       3: DurableTable materialization is Scope-managed, preloads on acquire, closes on scope finalization, and exposes txid read-after-write coordination through Effect.
       4: DurableTable exposes multi-collection pull query and push subscription helpers without re-folding retained durable history at every query boundary.
       5: DurableTable rebuilds correctly from retained source change events after restart or cold start.
+      6: DurableTable declarations return Effect service-tag classes with a Layer constructor so callers consume materialized table services through Effect context.
+      7: DurableTable collection declarations are plain Effect Schema row schemas whose primary key is marked on exactly one struct field through DurableTable.primaryKey schema metadata.
+      8: DurableTable fails loudly when a collection schema has zero primary-key fields or more than one primary-key field.
+      9: DurableTable v0 derives each collection's durable wire type from the table namespace and collection key as namespace.collectionKey.
+      10: DurableTable collection services expose insert, upsert, delete, get, query, and subscribe facades for each declared collection.
+      11: DurableTable generated collection writes use @durable-streams/state createStreamDB actions rather than caller-provided standard actions.
+      12: DurableTable generated writes attach txid headers and wait for createStreamDB awaitTxId before completing.
+      13: DurableTable v0 does not expose persistentType, Type, per-collection wire-type overrides, or required actions configuration for standard collection writes.
+      14: DurableTable consumers do not use package-owned manual durable stream append helpers for generated table writes.
 
   PROJECTION:
     requirements:
