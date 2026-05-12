@@ -1,5 +1,16 @@
 # Target Architecture: Managed-Agent Runtime Package Model
 
+> **Status (as of 2026-05-12, post-tracer-017):** historical reference.
+> The current target architecture lives in
+> [`managed-agent-runtime-target-durable-facts.md`](./managed-agent-runtime-target-durable-facts.md).
+> The package layout shown below — including `runtime-operators/` — was
+> superseded by the `effect-durable-operators` direction (PR #157, PR
+> #158). The legacy drift inventory at
+> [`legacy-drift-inventory-2026-05-12.md`](./legacy-drift-inventory-2026-05-12.md)
+> finding F12 captures the current state. Promotion of
+> `target-durable-facts.md` to canonical (and any merge/deletion of
+> this file) is tracked as Lane D of that inventory.
+
 This document captures the target package and composition model to stress-test
 against real Firegrid call sites. It is intentionally separate from the Agent D
 stress brief: this document states the desired architecture; the stress brief

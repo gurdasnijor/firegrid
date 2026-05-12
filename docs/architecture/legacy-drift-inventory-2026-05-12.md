@@ -129,19 +129,27 @@ use the production host surface.
 
 ---
 
-### F4 [HIGH] `RawFoldStrategy` materialization re-folds on every query
+### F4 [HIGH] `RawFoldStrategy` is a custom in-memory materialization table predating `DurableTable`
 
 **Files:** `packages/runtime/src/materialization/raw-fold/RawFoldStrategy.ts` (~133 lines)
 
-**Why it matters:** The `Raw` materialization strategy holds a `Ref<Map<string, ProjectionState>>` and folds events into it on each write. It's a custom mini-DurableTable that predates the operator package.
+**Why it matters:** The `Raw` materialization strategy holds a
+`Ref<Map<string, ProjectionState>>` and **folds events into it on each
+write** (`projectIntoFold` does `Ref.updateAndGet(state, previous =>
+... merge new events ...)`). Reads consult the in-memory map directly,
+so the per-query cost is fine — but the strategy is structurally a
+custom mini-`DurableTable` that predates the operator package.
 
 `DurableTable` over a State-Protocol projection already provides this
-with incremental view maintenance via TanStack DB/db-ivm — no per-call
-fold, no manual `Ref<Map>`.
+with incremental view maintenance via TanStack DB/db-ivm — no manual
+`Ref<Map>` plumbing, no parallel projection-state book-keeping, and
+the same query shape. The drift concern isn't "wasted work per query";
+it's "two different durable-table implementations in the codebase, one
+of them custom and unused at the strategy boundary."
 
 **Status:** Possibly intentional — it's a `MaterializationStrategy`
 implementation (one of several behind the strategy interface). But
-it's listed in our target-architecture doc as something the strategy
+it's listed in our target-architecture docs as something the strategy
 boundary lets us swap; we haven't actually swapped it.
 
 **Recommended follow-up:** Separate medium-sized tracer once F1/F2
@@ -284,6 +292,48 @@ assertion is the target standard (per FIREGRID_PROOF.2 phrasing).
 
 ---
 
+### F12 [HIGH] `managed-agent-runtime-target.md` claims "Target Architecture" but is not actually canonical
+
+**Files:**
+- `docs/architecture/managed-agent-runtime-target.md` (423 lines) — titled `# Target Architecture: Managed-Agent Runtime Package Model`. Shows package shape with `runtime-operators/` (the drift target from F1) and pre-`effect-durable-operators` framing throughout. No banner, no "superseded by" link.
+- `docs/architecture/managed-agent-runtime-target-durable-facts.md` (662 lines) — opens with: *"Status: proposed fork for review. This document does not replace `docs/architecture/managed-agent-runtime-target.md`."*
+
+**Why it matters:** Two docs in `docs/architecture/` both claim
+"target architecture" status. The newer one (with the correct
+post-tracer-017 framing) explicitly disclaims that it replaces the
+older one. The older one still shows the legacy `runtime-operators/`
+package shape and predates the effect-durable-operators direction.
+
+A new contributor (human or agent) reading `target.md` would walk away
+believing `runtime-operators/` is the current target — directly
+contradicting the drift this inventory is trying to surface. F1
+becomes much harder to argue if the canonical architecture doc still
+describes the deprecated package.
+
+This is the **single highest-leverage doc fix** in the inventory: the
+exact place where future tracers go to learn "what is Firegrid's
+target shape" cannot be ambiguous about which doc is authoritative.
+
+**Status:** Active drift. Not a typo — a structural ambiguity in the
+architecture-documentation corpus.
+
+**Recommended follow-up:** Either:
+
+1. **Promote `target-durable-facts.md` to canonical.** Strike the
+   "does not replace" disclaimer; banner `target.md` with "Historical:
+   superseded by `managed-agent-runtime-target-durable-facts.md` as of
+   tracer 017. Retained for the architectural reasoning record." OR
+2. **Merge and delete.** Fold any unique-to-`target.md` content into
+   `target-durable-facts.md` and delete `target.md`.
+
+A trivial banner update is applied in this PR (see "Edits in this PR")
+to mark `target.md` as historical with a forward pointer. The full
+merge/promotion decision is left to Lane D as a follow-up; this PR
+makes the inventory itself accurate without making the architectural
+decision for the team.
+
+---
+
 ### F11 [LOW] `@firegrid/durable-streams/state` and `/workflow-engine` subpaths used widely
 
 **Files:**
@@ -314,18 +364,24 @@ To avoid the inventory itself going stale on day one:
 
 1. `docs/proposals/SDD_EFFECT_NATIVE_DURABLE_STREAMS_PRODUCTION_CUTOVER.md:6`
    — "Depends on: stream-native-runtime-loop, ..." → strike the deleted
-   dependency. The SDD's "test invocation" line referring to tracer-015
-   is left as-is (it's example syntax inside a historical bullet list;
-   the file is a proposal, not a current spec).
-
-2. `docs/tracers/012-agent-ingress-prompt-stream.md` — added a top-of-doc
+   dependency; add an inline pointer to tracer 017.
+2. Same file's validation block line 359 — replaced the
+   `pnpm ... test -- tracer-015` invocation with a comment noting the
+   tracer was deleted in tracer 017, plus references to tracer-016 /
+   tracer-017 as the current input-delivery validation surface.
+3. `docs/tracers/012-agent-ingress-prompt-stream.md` — added a top-of-doc
    banner noting that the `runtime_ingress.accepted` row family was
    deleted in tracer 017 and delivery progress now lives in the
    `effect-durable-operators.ConsumerCheckpointStore`-backed
    inputCheckpoints stream. The prose body is left as-is so the
    tracer's historical record stays intact.
+4. `docs/architecture/managed-agent-runtime-target.md` — added a
+   top-of-doc banner marking the file as historical reference and
+   pointing forward to `target-durable-facts.md` + the F12 finding in
+   this inventory. The file body is left intact; promotion or
+   merge/delete is the Lane D follow-up decision.
 
-Anything beyond these two lines is intentionally **out of scope** for
+Anything beyond these four lines is intentionally **out of scope** for
 this inventory PR.
 
 ---
@@ -377,17 +433,36 @@ all `RuntimeIngressRow*` types, every scenario.
 deleted with no compatibility shim; all scenarios and docs reference
 the new name.
 
-### Lane D — Historical doc segregation (F9, partial)
+### Lane D — Historical doc segregation (F9, F12, partial)
 
 Move/banner the proposals and research docs that reference deleted
 surfaces. No code changes. Aim is to make the difference between
 "current target" and "historical record" mechanically obvious to a
 new contributor.
 
+The load-bearing decision in this lane is **promoting
+`managed-agent-runtime-target-durable-facts.md` to canonical** (F12):
+
+- Strike the "Status: proposed fork ... does not replace" disclaimer
+  at its top.
+- Either delete `managed-agent-runtime-target.md` (after folding any
+  unique content) or leave it with the historical banner this PR
+  already applied.
+- Audit every link into either file from elsewhere in the repo and
+  ensure they point at the canonical one (or are explicitly
+  "historical reference" links).
+
+The SDD-cutover proposal
+(`docs/proposals/SDD_EFFECT_NATIVE_DURABLE_STREAMS_PRODUCTION_CUTOVER.md`)
+also needs a "current vs historical" decision in this lane — it still
+describes itself as `Status: proposed` even though much of its target
+state shipped via tracer 017.
+
 **Acceptance:** every `docs/**.md` file is unambiguously either
 "current target" or "historical" (banner or directory). No links from
 current-target docs into historical without an explicit "historical
-reference" attribution.
+reference" attribution. `target-durable-facts.md` is the single
+canonical architecture doc.
 
 ### Lane E — Standing audit hygiene (cross-cutting)
 

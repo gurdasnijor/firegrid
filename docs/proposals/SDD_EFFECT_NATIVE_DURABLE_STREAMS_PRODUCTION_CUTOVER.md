@@ -356,7 +356,10 @@ pnpm --filter @firegrid/scenario-firegrid test -- tracer-008
 pnpm --filter @firegrid/scenario-firegrid test -- tracer-009
 pnpm --filter @firegrid/scenario-firegrid test -- tracer-011
 pnpm --filter @firegrid/scenario-firegrid test -- tracer-012
-pnpm --filter @firegrid/scenario-firegrid test -- tracer-015
+# tracer-015 (stream-native-runtime-loop validation) was deleted in
+# tracer 017. Runtime input delivery is now validated by tracer-017.
+pnpm --filter @firegrid/scenario-firegrid test -- tracer-016
+pnpm --filter @firegrid/scenario-firegrid test -- tracer-017
 pnpm run lint
 pnpm run lint:deps
 pnpm run lint:dup
