@@ -35,7 +35,7 @@ The stream primitive at implementation boundaries is
 
 ```ts
 const stream = DurableStream.define({
-  endpoint: { url: runtimeHostStreams.runtimeIngress },
+  endpoint: { url: runtimeHostStreams.input.ingress },
   schema: RuntimeIngressRowSchema,
 })
 
@@ -158,7 +158,14 @@ const RuntimeHostLive = FiregridRuntimeHostLive({
     workflow: env.FIREGRID_WORKFLOW_STREAM_URL,
     controlPlane: env.FIREGRID_RUNTIME_CONTEXT_STREAM_URL,
     runtimeOutput: env.FIREGRID_RUNTIME_OUTPUT_STREAM_URL,
-    runtimeIngress: env.FIREGRID_RUNTIME_INGRESS_STREAM_URL,
+    // Tagged input capability: ingress + checkpoints are one
+    // indivisible value (`RuntimeInputDurableStreams`) so misconfigured
+    // half-state is unrepresentable. Omit `input` to start with no
+    // ingress (`runtimeInputDisabled`).
+    input: new RuntimeInputDurableStreams({
+      ingress: env.FIREGRID_RUNTIME_INGRESS_STREAM_URL,
+      checkpoints: env.FIREGRID_RUNTIME_INPUT_CHECKPOINTS_STREAM_URL,
+    }),
     requiredActions: env.FIREGRID_REQUIRED_ACTION_STREAM_URL,
     schedules: env.FIREGRID_SCHEDULE_STREAM_URL,
     operatorProgress: env.FIREGRID_OPERATOR_PROGRESS_STREAM_URL,

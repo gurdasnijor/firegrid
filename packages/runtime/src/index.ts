@@ -10,10 +10,14 @@ export {
 export {
   FiregridRuntimeHost,
   FiregridRuntimeHostLive,
+  RuntimeHostOptionsSchema,
+  RuntimeHostStreamsSchema,
   appendRuntimeIngress,
   startRuntime,
   type RuntimeHostOptions,
+  type RuntimeHostOptionsInput,
   type RuntimeHostStreams,
+  type RuntimeHostStreamsInput,
   type StartRuntimeOptions,
 } from "./runtime-host/index.ts"
 export {
