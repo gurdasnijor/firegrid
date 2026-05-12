@@ -43,6 +43,7 @@ must make that dependency explicit.
 - [012: Agent Ingress Prompt Stream](./012-agent-ingress-prompt-stream.md)
 - [013: Reactive Workflow Operators](./013-reactive-workflow-operators.md)
 - [016: Session Plane Input Control Surface](./016-session-plane-input-control-surface.md)
+- [017: Effect Durable Operators](./017-effect-durable-operators.md)
 
 ## Handoff
 
@@ -154,6 +155,14 @@ Prerequisite
        input / prompt request facts
     -> client/app input reaches a real provider through host-owned dispatchers,
        with durable progress and no workflow-specific endpoint
+
+017
+  define generic Effect durable operators
+    -> table/projection/consumer operators compose effect-durable-streams,
+       @durable-streams/state, and Effect primitives
+    -> application-level requested-minus-progress folds move behind a generic
+       DurableConsumer checkpoint service
+    -> Firegrid runtime input becomes a consumer proof, not the package shape
 ```
 
 The prerequisites establish the thin launch producer and live sandbox boundary.

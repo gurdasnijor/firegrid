@@ -1,0 +1,60 @@
+feature:
+  name: effect-durable-operators
+  product: firegrid
+  description: Define a reusable Effect-native durable operators package that composes typed Durable Streams, State Protocol materialization, and Effect services without Firegrid-specific wrapper planes.
+
+components:
+  PACKAGE:
+    requirements:
+      1: The durable operators package exposes generic DurableTable, DurableProjection, and DurableConsumer modules.
+      2: The durable operators package does not import Firegrid runtime, client, protocol, scenario, or app packages.
+      3: The durable operators package uses Effect Stream, Effect Scope, Effect Schema, Effect Layer, and Effect concurrency primitives directly rather than hiding them behind custom stream or service wrappers.
+
+  TABLE:
+    requirements:
+      1: DurableTable is a typed Effect facade over @durable-streams/state createStreamDB rather than a new materialization engine.
+      2: DurableTable accepts Effect Schema-native collection definitions and translates them to Standard Schema only at the @durable-streams/state boundary.
+      3: DurableTable materialization is Scope-managed, preloads on acquire, closes on scope finalization, and exposes txid read-after-write coordination through Effect.
+      4: DurableTable exposes multi-collection pull query and push subscription helpers without re-folding retained durable history at every query boundary.
+      5: DurableTable rebuilds correctly from retained source change events after restart or cold start.
+
+  PROJECTION:
+    requirements:
+      1: DurableProjection converts raw durable fact streams into State Protocol change event streams consumed by DurableTable.
+      2: DurableProjection v0 emits change events directly rather than defining a separate reducer execution model for tables.
+      3: DurableProjection state is allocated inside Effect, typically through Ref or SynchronizedRef, and is derived deterministically from retained source facts.
+      4: DurableProjection exposes derived outputs as Effect Stream values so projection fan-out composes with backpressure.
+
+  CONSUMER:
+    requirements:
+      1: DurableConsumer selects logical inputs from durable fact streams and keys them per subscriber.
+      2: DurableConsumer checkpoint storage is provided through a ConsumerCheckpointStore service Layer rather than through caller-owned fold code.
+      3: DurableConsumer policies are explicit tagged values for AtMostOnce, AtLeastOnce, and AtLeastOnceWithClaim semantics.
+      4: AtMostOnce records a durable claim before running an externally visible side effect.
+      5: AtLeastOnce records durable completion after a successful side effect.
+      6: DurableConsumer exposes both Sink-shaped and Stream-shaped execution APIs.
+      7: DurableConsumer supports an optional Effect Schedule for retrying the processing effect.
+      8: DurableConsumer restart tests prove the selected policy does not silently duplicate or lose logical work beyond its documented delivery semantics.
+
+  FIREGRID_PROOF:
+    requirements:
+      1: A Firegrid-shaped proof replaces runtime input requested-minus-accepted fold logic with DurableConsumer rather than adding another runtime-ingress service plane.
+      2: The Firegrid proof uses production package surfaces and high-fidelity scenario coverage, not scenario-only composition roots or shadow harnesses.
+      3: The Firegrid proof remains a consumer of the generic operators package and does not introduce Firegrid-specific APIs into that package.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: The package may depend on effect-durable-streams, effect-durable-streams-state, @durable-streams/state, @tanstack/db, and Effect packages.
+      2: The package must not depend on @firegrid/durable-streams; that package remains Firegrid's substrate adapter boundary.
+      3: The package must not implement workflow suspension, durable clocks, required actions, prompt APIs, or Firegrid session semantics.
+      4: Consumer checkpoint state is distinct from durable stream producer idempotency.
+      5: Table semantics rely on @durable-streams/state and TanStack DB invariants; the wrapper must not mutate table state outside the sync protocol.
+
+  TRACER_017:
+    requirements:
+      1: Tracer 017 adds non-Firegrid DurableConsumer tests for an order-email style side-effect consumer.
+      2: Tracer 017 adds non-Firegrid DurableProjection plus DurableTable tests for an account-balance projection materialized through createStreamDB.
+      3: Tracer 017 adds a DurableTable restart or cold-start replay test proving retained change events rebuild queryable state.
+      4: Tracer 017 adds DurableConsumer restart tests for AtMostOnce and AtLeastOnce behavior.
+      5: Tracer 017 adds a Firegrid scenario E2E proving runtime input delivery still works through production surfaces after replacing custom fold code.
