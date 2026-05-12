@@ -1,12 +1,16 @@
 /**
  * effect-durable-operators
  *
- * Generic, Effect-native durable operators composed over
- * `effect-durable-streams`, `effect-durable-streams-state`,
- * `@durable-streams/state`, and `@tanstack/db`.
+ * Effect-native durable operators on top of `@durable-streams/state` and
+ * `@tanstack/db`. The public surface is intentionally minimal:
  *
- * See docs/proposals/SDD_EFFECT_DURABLE_OPERATORS.md and
- * docs/tracers/017-effect-durable-operators.md.
+ *   - DurableTable: ksql-inspired service-tag table with generated
+ *     insert/upsert/delete/get/query/subscribe facades over createStreamDB.
+ *   - DurableTable.primaryKey: a Schema.transform/annotation helper that pins
+ *     a struct field's encoded form to string and marks it for AST discovery.
+ *   - DurableTableError: the typed error for the table primitive.
+ *
+ * See docs/proposals/SDD_EFFECT_DURABLE_OPERATORS.md.
  */
 
 export { DurableTable } from "./DurableTable.ts"
@@ -18,16 +22,4 @@ export type {
   PrimaryKeyOf as DurableTablePrimaryKeyOf,
   RowOf as DurableTableRowOf,
 } from "./DurableTable.ts"
-export * as DurableProjection from "./DurableProjection.ts"
-export * as DurableConsumer from "./DurableConsumer.ts"
-export * as ConsumerSource from "./ConsumerSource.ts"
-export { ConsumerCheckpointStore, ConsumerCheckpointStoreLive } from "./ConsumerCheckpointStore.ts"
-export type { CheckpointRecord } from "./ConsumerCheckpointStore.ts"
-export { ClaimPolicy } from "./DurableConsumer.ts"
-export type { ClaimPolicyType } from "./DurableConsumer.ts"
-export {
-  CheckpointError,
-  DurableConsumerError,
-  DurableProjectionError,
-  DurableTableError,
-} from "./Errors.ts"
+export { DurableTableError } from "./Errors.ts"

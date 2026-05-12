@@ -10,28 +10,3 @@ export class DurableTableError extends Schema.TaggedError<DurableTableError>()(
     cause: Schema.Defect,
   },
 ) {}
-
-export class DurableProjectionError extends Schema.TaggedError<DurableProjectionError>()(
-  "DurableProjectionError",
-  {
-    projection: Schema.String,
-    cause: Schema.Defect,
-  },
-) {}
-
-export class DurableConsumerError extends Schema.TaggedError<DurableConsumerError>()(
-  "DurableConsumerError",
-  {
-    consumer: Schema.String,
-    cause: Schema.Defect,
-  },
-) {}
-
-export class CheckpointError extends Schema.TaggedError<CheckpointError>()(
-  "CheckpointError",
-  {
-    subscriberId: Schema.String,
-    key: Schema.String,
-    cause: Schema.optional(Schema.Defect),
-  },
-) {}

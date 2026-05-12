@@ -181,34 +181,24 @@ const reservedFacadeProperties = new Set(["awaitTxId"])
  */
 const primaryKey = <S extends Schema.Schema.Any>(
   schema: S,
-): Schema.transformOrFail<typeof Schema.String, S, never> &
+): Schema.transform<typeof Schema.String, S> &
   PrimaryKeyField<Schema.Schema.Type<S>> => {
-  type Decoded = Schema.Schema.Type<S>
-  // Round-trip through the inner schema. The inner schema's encoded form may
-  // be string (the common case) or non-string; we final-encode to string via
-  // `String(...)` so the durable wire form is always string and lookups have
-  // a stable representation.
-  const transformed = Schema.transform(
-    Schema.String,
-    schema as unknown as Schema.Schema<Decoded, Schema.Schema.Encoded<S>, Schema.Schema.Context<S>>,
-    {
-      strict: false,
-      decode: (encoded: string): Decoded =>
-        Schema.decodeSync(
-          schema as unknown as Schema.Schema<Decoded, string, never>,
-        )(encoded),
-      encode: (decoded: Decoded): string => {
-        const inner = Schema.encodeSync(
-          schema as unknown as Schema.Schema<Decoded, unknown, never>,
-        )(decoded)
-        return typeof inner === "string" ? inner : String(inner)
-      },
-    },
-  )
+  // The transform threads the inner schema's encoded representation through
+  // a `Schema.String` outer schema. For inner schemas whose encoded form is
+  // already string (Schema.String, branded strings, or user-supplied
+  // composite-key Schema.transform), the threading is identity. For inner
+  // schemas whose encoded form is non-string, the value is coerced via
+  // String(...) at encode time so the durable wire form is always a string.
+  const transformed = Schema.transform(Schema.String, schema, {
+    strict: false,
+    decode: (_fromA: string, fromI: string): unknown => fromI,
+    encode: (toI: unknown, _toA: unknown): string =>
+      typeof toI === "string" ? toI : String(toI),
+  })
   return transformed.annotations({
     [primaryKeyAnnotationId]: true,
-  }) as Schema.transformOrFail<typeof Schema.String, S, never> &
-    PrimaryKeyField<Decoded>
+  }) as Schema.transform<typeof Schema.String, S> &
+    PrimaryKeyField<Schema.Schema.Type<S>>
 }
 
 const raise = (message: string): never => {

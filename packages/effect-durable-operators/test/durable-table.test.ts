@@ -412,6 +412,76 @@ describe("DurableTable", () => {
     )
   })
 
+  it("effect-durable-operators.TABLE.17 effect-durable-operators.TABLE.18 supports composite primary keys declared as Schema.transform", async () => {
+    const url = server.url("table-composite-key")
+
+    const CompositeKey = Schema.transform(
+      Schema.String,
+      Schema.Struct({
+        subscriberId: Schema.String,
+        ingressId: Schema.String,
+      }),
+      {
+        strict: false,
+        decode: (encoded: string) => {
+          const [subscriberId = "", ingressId = ""] = encoded.split("\x1f")
+          return { subscriberId, ingressId }
+        },
+        encode: ({ subscriberId, ingressId }: { subscriberId: string; ingressId: string }) =>
+          `${subscriberId}\x1f${ingressId}`,
+      },
+    )
+
+    class CheckpointTable extends DurableTable("compositeKeyTest", {
+      checkpoints: Schema.Struct({
+        key: CompositeKey.pipe(DurableTable.primaryKey),
+        claimedAt: Schema.String,
+      }),
+    }) {}
+
+    await runtime(
+      Effect.gen(function* () {
+        yield* createJsonStream(url)
+
+        const program = Effect.gen(function* () {
+          const table = yield* CheckpointTable
+          const key = { subscriberId: "sub-a", ingressId: "ing-1" }
+
+          const missing = yield* table.checkpoints.get(key)
+          expect(Option.isNone(missing)).toBe(true)
+
+          yield* table.checkpoints.upsert({
+            key,
+            claimedAt: "2026-05-12T00:00:00.000Z",
+          })
+
+          const found = yield* table.checkpoints.get(key)
+          expect(Option.isSome(found)).toBe(true)
+          if (Option.isSome(found)) {
+            // get() decodes the primary-key field back to the user-typed form.
+            expect(found.value.key).toEqual(key)
+            expect(found.value.claimedAt).toBe("2026-05-12T00:00:00.000Z")
+          }
+
+          // Distinct composite key must miss.
+          const other = yield* table.checkpoints.get({
+            subscriberId: "sub-a",
+            ingressId: "ing-2",
+          })
+          expect(Option.isNone(other)).toBe(true)
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            CheckpointTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
   it("effect-durable-operators.TABLE.3 still exposes awaitTxId through Effect", async () => {
     const url = server.url("table-await-txid")
 
