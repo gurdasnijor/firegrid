@@ -338,6 +338,9 @@ importers:
       effect:
         specifier: ^3.18.0
         version: 3.21.2
+      effect-durable-operators:
+        specifier: workspace:*
+        version: link:../../packages/effect-durable-operators
       effect-durable-streams:
         specifier: workspace:*
         version: link:../../packages/effect-durable-streams

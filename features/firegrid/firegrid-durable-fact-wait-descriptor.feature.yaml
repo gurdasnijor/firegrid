@@ -1,0 +1,48 @@
+feature:
+  name: firegrid-durable-fact-wait-descriptor
+  product: firegrid
+  description: Generic named wait descriptor substrate over durable facts. A wait request is a durable fact; matching is performed by a host-owned named/versioned matcher table over a durable source stream snapshot; outcomes are durable facts written exactly once per wait id. v0 composition uses `effect-durable-operators.DurableConsumer` + `ConsumerSource` + `ConsumerCheckpointStore` directly, with no published wait-specific operator module; v0 is snapshot-only; live snapshot-then-follow and timeout firing are deferred. Time waits later lower to timer/due durable facts and reuse the same `DurableConsumer` pattern.
+
+components:
+  DESCRIPTOR:
+    requirements:
+      1: A wait request is a durable fact carrying a stable wait id, an owner id, a source descriptor identifying the durable stream the matcher reads, a matcher id and version, matcher parameters as data, and an optional starting cursor.
+      2: Wait requests do not persist JavaScript predicate functions or any code-as-data; the host-owned matcher registry resolves `(matcherId, matcherVersion)` to a local matcher implementation at evaluation time.
+      3: A wait request carries an idempotency key so duplicate requests for the same logical wait do not create independent waits.
+      4: Wait request and wait outcome rows are schema-owned by `@firegrid/protocol`; runtime packages do not redefine these row shapes.
+
+  EVALUATOR:
+    requirements:
+      1: The wait evaluator is a composition of `effect-durable-operators.DurableConsumer`, `ConsumerSource`, and `ConsumerCheckpointStore` over wait request facts with a host-owned named matcher table; it is not a published wait-specific operator module, required-action service, workflow, or runtime root.
+      2: "v0 evaluator composition is snapshot-only and resolves each processed request to matched or failed; the source stream is read with live false and every processed wait reaches a terminal outcome within the snapshot window. Live snapshot-then-follow is deferred (see EVALUATOR.7)."
+      3: A successful match appends a `firegrid.wait.matched` durable outcome fact carrying the wait id, matcher id and version, matched source row reference, and the matcher's typed match value.
+      4: The evaluator writes exactly one outcome fact per wait id even when the same wait request is rescanned across evaluator restarts or duplicate retained requests.
+      5: When the host-owned matcher table cannot resolve `(matcherId, matcherVersion)`, the evaluator records a typed expected failure rather than silently skipping the wait.
+      6: The evaluator's per-wait progress is tracked through the generic `ConsumerCheckpointStore` substrate; the wait outcome stream itself is not used as a checkpoint substrate.
+      7: Live snapshot-then-follow semantics — where a wait registered before a matching source row arrives blocks until the row appears, possibly across evaluator restarts — are deferred to a follow-up tracer. v0 explicitly appends a typed `matcher-error` failure outcome when the snapshot closes without a match rather than blocking indefinitely.
+
+  TIMEOUT:
+    requirements:
+      1: A wait request MAY carry an optional `timeoutAt` absolute durable deadline. v0 of this spec does NOT require the evaluator to fire timeouts; timeout semantics are deferred to a follow-up tracer with explicit durable-clock substrate.
+      2: When timeout firing is implemented, it MUST produce a durable `firegrid.wait.timed_out` outcome fact rather than rely on process-local timers as authority.
+      3: A `timeoutAt` already in the past at evaluator startup MUST NOT cause the evaluator to fire a timeout outcome in v0; the request is treated as a normal wait and the timeout-firing path waits for the dedicated tracer.
+
+constraints:
+  BOUNDARY:
+    requirements:
+      1: This spec does not introduce a required-action-specific service, workflow, or runtime root; required-action waits are a future consumer of this generic substrate.
+      2: This spec does not introduce a parallel workflow launch or poll endpoint; the wait evaluator runs as a host-owned operator program.
+      3: This spec does not own provider permission policy, approval UI, callback transport, or product session schemas; outcome facts are opaque to those concerns.
+      4: This spec does not recreate `packages/runtime/src/runtime-operators/**` or any `OperatorSource.scan`-shaped retained-fold abstraction under another name.
+
+  AUTHORITY:
+    requirements:
+      1: Wait outcomes are durable facts on the configured wait outcome stream; consumers observe them through the same Durable Streams substrate everything else in Firegrid uses.
+      2: Per-wait progress authority is the generic `ConsumerCheckpointStore` keyed by subscriber id and wait id; the evaluator does not re-fold retained history per query nor maintain in-process duplicate-suppression sets as authority.
+      3: Matcher registries are host configuration, not client configuration; clients and tools do not register matcher code through public APIs.
+
+  INVARIANTS:
+    requirements:
+      1: This spec is bound by `effect-durable-operators.CONSUMER.1`, `effect-durable-operators.CONSUMER.4`, `effect-durable-operators.CONSUMER.8`, and `effect-durable-operators.FIREGRID_PROOF.2` for evaluator delivery and restart semantics.
+      2: The tracer scenario proves the substrate through production package surfaces — `@firegrid/protocol/wait` (rows), `effect-durable-operators` (`DurableConsumer` + `ConsumerSource` + `ConsumerCheckpointStore`), `effect-durable-streams` (durable streams), and the Durable Streams test server — with no scenario-only composition roots or shadow harnesses. Wiring the evaluator into a long-running Firegrid host process is a separate consumer concern outside this v0 substrate proof.
+      3: This spec is bound by `firegrid-required-actions.BOUNDARY.6` so required-action behavior, if ever rebuilt, lowers through this generic wait substrate rather than re-introducing a separate data plane.

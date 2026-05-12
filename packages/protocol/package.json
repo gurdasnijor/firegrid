@@ -24,6 +24,10 @@
     "./session": {
       "types": "./src/session/index.ts",
       "default": "./src/session/index.ts"
+    },
+    "./wait": {
+      "types": "./src/wait/index.ts",
+      "default": "./src/wait/index.ts"
     }
   },
   "files": [
