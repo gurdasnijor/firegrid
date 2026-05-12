@@ -17,6 +17,13 @@ export {
   type StartRuntimeOptions,
 } from "./runtime-host/index.ts"
 export {
+  RuntimeInputDisabled,
+  RuntimeInputDurableStreams,
+  RuntimeInputStreamsSchema,
+  runtimeInputDisabled,
+  type RuntimeInputStreams,
+} from "./runtime-host/input.ts"
+export {
   awaitRequiredActionWorkflow,
   requiredActionOperator,
   requiredActionOperatorId,

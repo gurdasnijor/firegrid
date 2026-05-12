@@ -8,6 +8,7 @@ import type {
 import {
   appendRuntimeIngress,
   FiregridRuntimeHostLive,
+  RuntimeInputDurableStreams,
   startRuntime,
 } from "@firegrid/runtime"
 import {
@@ -99,8 +100,10 @@ describe("firegrid tracer 012 runtime ingress", () => {
         workflow: workflowStreamUrl,
         controlPlane: controlPlaneStreamUrl,
         runtimeOutput: dataPlaneStreamUrl,
-        runtimeIngress: runtimeIngressStreamUrl,
-        inputCheckpoints: inputCheckpointsStreamUrl,
+        input: new RuntimeInputDurableStreams({
+          ingress: runtimeIngressStreamUrl,
+          checkpoints: inputCheckpointsStreamUrl,
+        }),
       },
     })
 

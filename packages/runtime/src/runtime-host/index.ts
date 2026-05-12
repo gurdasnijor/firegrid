@@ -36,20 +36,24 @@ import {
 import {
   makeRuntimeIngressRequestedRow,
 } from "../runtime-ingress/rows.ts"
+import {
+  type RuntimeInputStreams,
+  runtimeInputDisabled,
+} from "./input.ts"
 
 export interface RuntimeHostStreams {
   readonly workflow: string
   readonly controlPlane: string
   readonly runtimeOutput: string
-  readonly runtimeIngress?: string
   /**
-   * Durable stream URL that backs the runtime-input `DurableConsumer`
-   * checkpoint records. Owned by
-   * `effect-durable-operators.ConsumerCheckpointStoreLive`; the host
-   * never writes to it directly. Required whenever `runtimeIngress` is
-   * set — ingress without a checkpoint stream is treated as no-ingress.
+   * Runtime input capability. Tagged so the misconfiguration "ingress
+   * stream without a checkpoint stream" is unrepresentable at the type
+   * level. Omitting `input` defaults to {@link runtimeInputDisabled}.
+   *
+   * Use `new RuntimeInputDurableStreams({ ingress, checkpoints })` to
+   * enable durable input. Both streams must be pre-created.
    */
-  readonly inputCheckpoints?: string
+  readonly input?: RuntimeInputStreams
 }
 
 export interface RuntimeHostOptions {
@@ -114,22 +118,13 @@ const runtimeContextLayer = (
   // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.2
   // effect-native-production-cutover.RUNTIME_IO.4
   //
-  // Misconfiguration guard: ingress without a checkpoint stream would
-  // silently no-op delivery. `Layer.suspend` lets us short-circuit to a
-  // typed `Layer.fail` before constructing any downstream resources.
-  Layer.suspend(() =>
-    options.streams.runtimeIngress !== undefined &&
-    options.streams.inputCheckpoints === undefined
-      ? (Layer.fail(asRuntimeContextError(
-          "runtime-host.misconfigured",
-          "FiregridRuntimeHostLive: streams.runtimeIngress is configured but streams.inputCheckpoints is missing; refusing to wire a host that would silently drop prompts",
-          "(host-construction)",
-        )) as unknown as ReturnType<typeof RuntimeContextWorkflowLayer>)
-      : RuntimeContextWorkflowLayer({
-          runtimeOutputStreamUrl: options.streams.runtimeOutput,
-          ...(options.streams.runtimeIngress === undefined ? {} : { runtimeIngressStreamUrl: options.streams.runtimeIngress }),
-          ...(options.streams.inputCheckpoints === undefined ? {} : { inputCheckpointsStreamUrl: options.streams.inputCheckpoints }),
-        }),
+  // No misconfiguration guard needed: `RuntimeInputStreams` is a tagged
+  // union, so "ingress without checkpoints" is unrepresentable at the
+  // type level.
+  RuntimeContextWorkflowLayer({
+    runtimeOutputStreamUrl: options.streams.runtimeOutput,
+    input: options.streams.input ?? runtimeInputDisabled,
+  }).pipe(
   ).pipe(
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: options.streams.workflow,
@@ -169,20 +164,22 @@ export const FiregridRuntimeHostLive = (
               )),
           }),
         ),
-      ingress: request =>
+      ingress: request => {
         // firegrid-agent-ingress.HOST.1
         // firegrid-agent-ingress.HOST.2
-        options.streams.runtimeIngress === undefined
-          ? Effect.fail(runtimeIngressError(
-            "append",
-            "runtime ingress stream is not configured",
-            request.contextId,
-            request.ingressId,
-          ))
-          : appendRuntimeIngressRequestToStream(
-            options.streams.runtimeIngress,
-            request,
-          ).pipe(Effect.provide(FetchHttpClient.layer)),
+        const input = options.streams.input ?? runtimeInputDisabled
+        return input._tag === "RuntimeInputDurableStreams"
+          ? appendRuntimeIngressRequestToStream(
+              input.ingress,
+              request,
+            ).pipe(Effect.provide(FetchHttpClient.layer))
+          : Effect.fail(runtimeIngressError(
+              "append",
+              "runtime ingress stream is not configured",
+              request.contextId,
+              request.ingressId,
+            ))
+      },
     }),
   )
 

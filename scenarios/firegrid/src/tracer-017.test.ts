@@ -33,6 +33,7 @@ import {
 } from "@firegrid/client"
 import {
   FiregridRuntimeHostLive,
+  RuntimeInputDurableStreams,
   startRuntime,
 } from "@firegrid/runtime"
 import { Effect, Layer } from "effect"
@@ -130,11 +131,15 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
           workflow: workflowStreamUrl,
           controlPlane: controlPlaneStreamUrl,
           runtimeOutput: dataPlaneStreamUrl,
-          runtimeIngress: inputStreamUrl,
-          // Generic effect-durable-operators checkpoint stream — owns
-          // delivery progress. No firegrid.runtime_ingress.accepted rows
-          // are written by the runtime.
-          inputCheckpoints: inputCheckpointsUrl,
+          // Tagged input capability: ingress + checkpoints are one
+          // indivisible value, so half-configured ingress is
+          // unrepresentable. Generic effect-durable-operators owns
+          // delivery progress; no firegrid.runtime_ingress.accepted
+          // rows are written.
+          input: new RuntimeInputDurableStreams({
+            ingress: inputStreamUrl,
+            checkpoints: inputCheckpointsUrl,
+          }),
         },
       })
 

@@ -10,6 +10,7 @@ import {
 } from "@firegrid/client"
 import {
   FiregridRuntimeHostLive,
+  RuntimeInputDurableStreams,
   startRuntime,
 } from "@firegrid/runtime"
 import { Effect, Layer } from "effect"
@@ -98,8 +99,10 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
         workflow: workflowStreamUrl,
         controlPlane: controlPlaneStreamUrl,
         runtimeOutput: dataPlaneStreamUrl,
-        runtimeIngress: inputStreamUrl,
-        inputCheckpoints: inputCheckpointsUrl,
+        input: new RuntimeInputDurableStreams({
+          ingress: inputStreamUrl,
+          checkpoints: inputCheckpointsUrl,
+        }),
       },
     })
 
