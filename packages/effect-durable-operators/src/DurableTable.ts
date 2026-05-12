@@ -125,16 +125,19 @@ export type DurableTableService<Schemas extends TableSchemas<Schemas>> = {
   ) => Effect.Effect<void, DurableTableError>
 }
 
-export type DurableTableTagClass<Schemas extends TableSchemas<Schemas>> =
+// `Self` is bound to the resulting tag class so consumers' Effects that
+// `yield* MyTable` get a precise requirements channel instead of `unknown`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type DurableTableTagClass<Schemas extends TableSchemas<Schemas>, Self = any> =
   Context.TagClass<
-    unknown,
+    Self,
     string,
     DurableTableService<Schemas>
   > & {
     readonly namespace: string
     readonly layer: (
       options: LayerOptions,
-    ) => Layer.Layer<unknown, DurableTableError>
+    ) => Layer.Layer<Self, DurableTableError>
   }
 
 type CompiledCollection = {
@@ -617,26 +620,32 @@ const defineDurableTable = <const Schemas extends TableSchemas<Schemas>>(
   schemas: Schemas,
 ): DurableTableTagClass<Schemas> => {
   const table = compileTable(namespace, schemas)
+  const tagKey = `effect-durable-operators/DurableTable/${namespace}`
 
-  const Base = Context.Tag(
-    `effect-durable-operators/DurableTable/${namespace}`,
-  )<unknown, DurableTableService<Schemas>>()
-
-  class DurableTableTag extends Base {
+  // Self-reference: the class is its own Identifier so `yield* MyTable`
+  // produces R = MyTable rather than R = unknown. The forward reference
+  // to `DurableTableTag` inside the Context.Tag generics is the canonical
+  // Effect pattern and works because class declarations are hoisted.
+  class DurableTableTag extends Context.Tag(tagKey)<
+    DurableTableTag,
+    DurableTableService<Schemas>
+  >() {
     static readonly namespace = namespace
 
     static layer(
-      this: Context.Tag<unknown, DurableTableService<Schemas>>,
+      this: Context.Tag<DurableTableTag, DurableTableService<Schemas>>,
       options: LayerOptions,
     ) {
       return Layer.scoped(
         this,
-        makeService(table, options).pipe(Effect.map((service) => this.of(service))),
+        makeService(table, options).pipe(
+          Effect.map((service) => this.of(service)),
+        ),
       )
     }
   }
 
-  return DurableTableTag as DurableTableTagClass<Schemas>
+  return DurableTableTag as unknown as DurableTableTagClass<Schemas>
 }
 
 export const DurableTable = Object.assign(defineDurableTable, {
