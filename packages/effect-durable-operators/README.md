@@ -158,6 +158,62 @@ Electric full shape log when they need catch-up plus live updates. Electric's
 `changes_only` mode skips the initial snapshot; that source-log choice does not
 change DurableConsumer processing checkpoint semantics.
 
+### `DurableConsumer.forEach` — combined define + run
+
+For the common "process each logical key once per subscriber" case,
+`forEach` inlines the consumer definition and runtime parameters into
+one options object and defaults `policy` to `ClaimPolicy.AtMostOnce()`.
+The lower-level `define`/`run`/`sink`/`stream` APIs are unchanged; this
+helper is purely additive.
+
+```ts
+yield* DurableConsumer.forEach({
+  name: "send-receipt-emails",
+  source: ConsumerSource.fromDurableStream(
+    DurableStream.define({ endpoint, schema: Order }),
+  ),
+  checkpoint: { subscriberId: "email.receipt.v1" },
+  select: (order) =>
+    order.type === "order.created" ? Option.some(order) : Option.none(),
+  key: (order) => order.orderId,
+  live: false,
+  process: (order) => EmailService.sendReceipt(order.orderId),
+})
+```
+
+Pass `policy: ClaimPolicy.AtLeastOnce()` (or `AtLeastOnceWithClaim`)
+to override the default. `retry` is supported the same way as `run`.
+
+### `ConsumerSource.findFirst` — snapshot predicate lookup
+
+`findFirst(source, predicate, options?)` runs a predicate-as-Option
+mapper over a source snapshot and returns the first match, or
+`Option.none()` if the snapshot closes without one. It hides the
+`Stream.runHead`/`Stream.filterMap` composition and defaults to
+`live: false`.
+
+```ts
+const firstCancellation = yield* ConsumerSource.findFirst(
+  ConsumerSource.fromDurableStream(
+    DurableStream.define({ endpoint, schema: Order }),
+  ),
+  (order) =>
+    order.type === "order.cancelled" ? Option.some(order.orderId) : Option.none(),
+)
+```
+
+`ConsumerSource.fromDurableStream(bound, { cursor })` accepts an
+optional starting cursor at the adapter; the adapter applies it as a
+DurableStream offset so the generic `ConsumerSource.read` shape stays
+free of DS-specific cursor types.
+
+```ts
+const fromOffset = ConsumerSource.fromDurableStream(
+  DurableStream.define({ endpoint, schema: Order }),
+  { cursor },
+)
+```
+
 ## Triggers are named consumers
 
 A "trigger" in this package is a named `DurableConsumer` program. There

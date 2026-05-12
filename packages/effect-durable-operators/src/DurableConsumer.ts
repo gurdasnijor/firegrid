@@ -242,6 +242,60 @@ export const run = <Fact, SourceError, SourceRequirements, Key extends string, I
   )
 
 /**
+ * Ergonomic convenience over `define` + `run`. Combines the consumer
+ * definition (`name`, `select`, `key`) and the runtime parameters
+ * (`source`, `checkpoint`, `process`) into one inlined options object,
+ * and defaults `policy` to `ClaimPolicy.AtMostOnce()` for the common
+ * "process each logical key once per subscriber" case.
+ *
+ * The lower-level `define` / `run` / `sink` / `stream` APIs are
+ * unchanged; this helper is purely additive.
+ *
+ * Implements effect-durable-operators.CONSUMER.9.
+ */
+export interface ForEachOptions<
+  Fact,
+  SourceError,
+  SourceRequirements,
+  Key extends string,
+  Input,
+  Output,
+  E,
+  R,
+> {
+  readonly name: string
+  readonly source: ConsumerSource<Fact, SourceError, SourceRequirements>
+  readonly checkpoint: Checkpoint
+  readonly select: (fact: Fact) => Option.Option<Input>
+  readonly key: (input: Input) => Key
+  readonly process: (input: Input) => Effect.Effect<Output, E, R>
+  readonly policy?: ClaimPolicyType
+  readonly retry?: Schedule.Schedule<unknown, E | DurableConsumerError, never>
+  readonly live?: boolean
+}
+
+export const forEach = <Fact, SourceError, SourceRequirements, Key extends string, Input, Output, E, R>(
+  opts: ForEachOptions<Fact, SourceError, SourceRequirements, Key, Input, Output, E, R>,
+): Effect.Effect<
+  { readonly processed: number },
+  SourceError | E | DurableConsumerError,
+  SourceRequirements | R | ConsumerCheckpointStore
+> =>
+  run({
+    source: opts.source,
+    checkpoint: opts.checkpoint,
+    definition: define<Fact, Key, Input>({
+      name: opts.name,
+      select: opts.select,
+      key: opts.key,
+    }),
+    policy: opts.policy ?? ClaimPolicy.AtMostOnce(),
+    process: opts.process,
+    ...(opts.retry === undefined ? {} : { retry: opts.retry }),
+    ...(opts.live === undefined ? {} : { live: opts.live }),
+  })
+
+/**
  * Sink form — consumes a `Stream<Fact>` and returns the processed count.
  * Use when the caller owns the source stream lifecycle.
  */

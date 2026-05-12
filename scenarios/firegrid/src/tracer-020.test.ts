@@ -1,11 +1,13 @@
 /**
  * Tracer 020 — Durable Fact Wait Descriptor.
  *
- * The wait evaluator is a composition of
- * `effect-durable-operators.DurableConsumer`, `ConsumerSource`, and
- * `ConsumerCheckpointStore` over `@firegrid/protocol/wait` request
- * rows with a host-owned named matcher table. There is no published
- * wait-specific operator module.
+ * The wait evaluator is composed from existing
+ * `effect-durable-operators` helpers — `DurableConsumer.forEach`
+ * (once-per-wait request consumption) + `ConsumerSource.findFirst`
+ * (source predicate lookup) + `ConsumerSource.fromDurableStream({
+ * cursor })` (offset start) — over `@firegrid/protocol/wait` rows
+ * with a host-owned named matcher table. No wait-specific operator
+ * module exists.
  *
  * Architecture and v0 contract: see
  * docs/tracers/020-durable-fact-wait-descriptor.md.
@@ -13,6 +15,7 @@
  * Spec ACIDs covered:
  *   firegrid-durable-fact-wait-descriptor.{DESCRIPTOR.{1,2,3,4},
  *     EVALUATOR.{1,3,4,5,6,7}, AUTHORITY.{1,2,3}}
+ *   effect-durable-operators.{CONSUMER.9, SOURCE.6, SOURCE.7}
  */
 
 import {
@@ -31,13 +34,12 @@ import {
   type WaitRow,
 } from "@firegrid/protocol/wait"
 import {
-  ClaimPolicy,
   ConsumerCheckpointStoreLive,
   ConsumerSource,
   DurableConsumer,
 } from "effect-durable-operators"
 import { DurableStream } from "effect-durable-streams"
-import { Effect, Option, Schema, Stream, type Scope } from "effect"
+import { Effect, Option, Schema, type Scope } from "effect"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 // ---------- harness ----------
@@ -65,11 +67,7 @@ const runtime = <A, E>(eff: Effect.Effect<A, E, Reqs>): Promise<A> =>
     ),
   )
 
-// ---------- host-owned matcher table ----------
-//
-// Plain `Record<"<id>@<version>", (row, params) => Option<output>>`.
-// Matchers receive `unknown` rows and own their own decode, so the
-// durable wait request carries no JS predicate code.
+// ---------- matcher table (host config) ----------
 
 type Matcher = (row: unknown, params: unknown) => Option.Option<unknown>
 
@@ -118,6 +116,7 @@ const appendWaitRequested = (
   matcherId: string,
   matcherVersion: number,
   params: unknown,
+  options?: { readonly cursor?: string },
 ) =>
   DurableStream.define({
     endpoint: { url: waitStreamUrl },
@@ -127,7 +126,10 @@ const appendWaitRequested = (
       waitId,
       ownerId: "tracer-020",
       idempotencyKey: waitId,
-      source: { streamUrl: sourceStreamUrl },
+      source: {
+        streamUrl: sourceStreamUrl,
+        ...(options?.cursor === undefined ? {} : { cursor: options.cursor }),
+      },
       matcherId,
       matcherVersion,
       matcherParams: params,
@@ -147,18 +149,16 @@ const readWaitRows = () =>
       }),
   )
 
-// ---------- evaluator (inline composition over existing primitives) ----------
+// ---------- evaluator: forEach + findFirst + protocol-row append ----------
 
-const runEvaluator = (subscriberId: string) => {
+const evaluateSnapshotWait = (req: WaitRequestedRow) => {
   const outcomes = DurableStream.define({
     endpoint: { url: waitStreamUrl },
     schema: Schema.Unknown,
   })
-
-  const appendFailed = (waitId: string, failure: WaitFailure) =>
-    outcomes.append(makeWaitFailedRow({ waitId, failure }))
-
-  const appendMatched = (req: WaitRequestedRow, matchedValue: unknown) => {
+  const appendFailed = (failure: WaitFailure) =>
+    outcomes.append(makeWaitFailedRow({ waitId: req.waitId, failure }))
+  const appendMatched = (matchedValue: unknown) => {
     const match: WaitMatch = {
       waitId: req.waitId,
       matcherId: req.matcherId,
@@ -169,29 +169,32 @@ const runEvaluator = (subscriberId: string) => {
     return outcomes.append(makeWaitMatchedRow({ waitId: req.waitId, match }))
   }
 
-  const handleWait = (req: WaitRequestedRow) =>
-    Effect.gen(function* () {
-      const matcher = matchers[`${req.matcherId}@${req.matcherVersion}`]
-      if (matcher === undefined) {
-        yield* appendFailed(req.waitId, { reason: "unknown-matcher" })
-        return
-      }
-      const sourceBound = DurableStream.define({
-        endpoint: { url: req.source.streamUrl },
-        schema: Schema.Unknown,
-      })
-      const found = yield* Stream.runHead(
-        sourceBound
-          .read({ live: false })
-          .pipe(Stream.filterMap((row) => matcher(row, req.matcherParams))),
-      )
-      yield* Option.match(found, {
-        onNone: () => appendFailed(req.waitId, { reason: "matcher-error" }),
-        onSome: (value) => appendMatched(req, value),
-      })
+  return Effect.gen(function* () {
+    const matcher = matchers[`${req.matcherId}@${req.matcherVersion}`]
+    if (matcher === undefined) {
+      yield* appendFailed({ reason: "unknown-matcher" })
+      return
+    }
+    const found = yield* ConsumerSource.findFirst(
+      ConsumerSource.fromDurableStream(
+        DurableStream.define({
+          endpoint: { url: req.source.streamUrl },
+          schema: Schema.Unknown,
+        }),
+        req.source.cursor === undefined ? undefined : { cursor: req.source.cursor },
+      ),
+      (row) => matcher(row, req.matcherParams),
+    )
+    yield* Option.match(found, {
+      onNone: () => appendFailed({ reason: "matcher-error" }),
+      onSome: (value) => appendMatched(value),
     })
+  })
+}
 
-  return DurableConsumer.run({
+const runEvaluator = (subscriberId: string) =>
+  DurableConsumer.forEach({
+    name: "firegrid.wait.evaluator",
     source: ConsumerSource.fromDurableStream(
       DurableStream.define({
         endpoint: { url: waitStreamUrl },
@@ -199,17 +202,13 @@ const runEvaluator = (subscriberId: string) => {
       }),
     ),
     checkpoint: { subscriberId },
-    definition: DurableConsumer.define({
-      name: "firegrid.wait.evaluator",
-      select: (row: WaitRow) =>
-        row.type === "firegrid.wait.requested"
-          ? Option.some(row satisfies WaitRequestedRow)
-          : Option.none(),
-      key: (req: WaitRequestedRow) => req.waitId,
-    }),
-    policy: ClaimPolicy.AtMostOnce(),
+    select: (row: WaitRow) =>
+      row.type === "firegrid.wait.requested"
+        ? Option.some(row satisfies WaitRequestedRow)
+        : Option.none(),
+    key: (req: WaitRequestedRow) => req.waitId,
     live: false,
-    process: handleWait,
+    process: evaluateSnapshotWait,
   }).pipe(
     Effect.provide(
       ConsumerCheckpointStoreLive({
@@ -220,7 +219,6 @@ const runEvaluator = (subscriberId: string) => {
       }),
     ),
   )
-}
 
 // ---------- tests ----------
 
@@ -347,6 +345,66 @@ describe("firegrid tracer 020 durable fact wait descriptor", () => {
             expect(failed[0].failure.reason).toBe("matcher-error")
           }
           expect(matched).toHaveLength(0)
+        }),
+      )
+    },
+  )
+
+  it(
+    "firegrid-durable-fact-wait-descriptor.DESCRIPTOR.1 starting cursor honored — rows at/before cursor do not match; rows after the cursor can match",
+    async () => {
+      await runtime(
+        Effect.gen(function* () {
+          // Append three source rows; capture the offset of the first.
+          // findFirst (via fromDurableStream({ cursor })) reads
+          // strictly past the cursor.
+          const sourceBound = DurableStream.define({
+            endpoint: { url: sourceStreamUrl },
+            schema: SourceFact,
+          })
+          const { offset: oA } = yield* sourceBound.append({
+            sequence: 0,
+            text: "alpha",
+          })
+          yield* sourceBound.append({ sequence: 1, text: "beta" })
+          yield* sourceBound.append({ sequence: 2, text: "gamma" })
+
+          yield* appendWaitRequested(
+            "wait:cursor-before",
+            "test.text-equals",
+            1,
+            { text: "alpha" },
+            { cursor: oA },
+          )
+          yield* appendWaitRequested(
+            "wait:cursor-after",
+            "test.text-equals",
+            1,
+            { text: "gamma" },
+            { cursor: oA },
+          )
+
+          const result = yield* runEvaluator("evaluator:cursor")
+          expect(result.processed).toBe(2)
+
+          const rows = yield* readWaitRows()
+          const failed = rows.filter((r) => r.type === "firegrid.wait.failed")
+          const matched = rows.filter((r) => r.type === "firegrid.wait.matched")
+
+          expect(failed).toHaveLength(1)
+          if (failed[0]?.type === "firegrid.wait.failed") {
+            expect(failed[0].waitId).toBe("wait:cursor-before")
+            expect(failed[0].failure.reason).toBe("matcher-error")
+          }
+
+          expect(matched).toHaveLength(1)
+          if (matched[0]?.type === "firegrid.wait.matched") {
+            expect(matched[0].waitId).toBe("wait:cursor-after")
+            expect(matched[0].match.matchedValue).toMatchObject({
+              sequence: 2,
+              text: "gamma",
+            })
+          }
         }),
       )
     },

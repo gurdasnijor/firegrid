@@ -1,7 +1,7 @@
 feature:
   name: firegrid-durable-fact-wait-descriptor
   product: firegrid
-  description: Generic named wait descriptor substrate over durable facts. A wait request is a durable fact; matching is performed by a host-owned named/versioned matcher table over a durable source stream snapshot; outcomes are durable facts written exactly once per wait id. v0 composition uses `effect-durable-operators.DurableConsumer` + `ConsumerSource` + `ConsumerCheckpointStore` directly, with no published wait-specific operator module; v0 is snapshot-only; live snapshot-then-follow and timeout firing are deferred. Time waits later lower to timer/due durable facts and reuse the same `DurableConsumer` pattern.
+  description: Generic named wait descriptor substrate over durable facts. A wait request is a durable fact; matching is performed by a host-owned named/versioned matcher table over a durable source stream snapshot; outcomes are durable facts written exactly once per wait id. v0 composition uses `effect-durable-operators.DurableConsumer.forEach` + `ConsumerSource.findFirst` + `ConsumerSource.fromDurableStream({ cursor })` + `ConsumerCheckpointStore`, with no published wait-specific operator module; v0 is snapshot-only; live snapshot-then-follow and timeout firing are deferred. Time waits later lower to timer/due durable facts and reuse the same `DurableConsumer.forEach` + `ConsumerSource.findFirst` pattern.
 
 components:
   DESCRIPTOR:
@@ -13,7 +13,7 @@ components:
 
   EVALUATOR:
     requirements:
-      1: The wait evaluator is a composition of `effect-durable-operators.DurableConsumer`, `ConsumerSource`, and `ConsumerCheckpointStore` over wait request facts with a host-owned named matcher table; it is not a published wait-specific operator module, required-action service, workflow, or runtime root.
+      1: The wait evaluator is a composition of `effect-durable-operators.DurableConsumer.forEach` (once-per-wait request consumption with `ClaimPolicy.AtMostOnce` default), `ConsumerSource.findFirst` (source predicate lookup), `ConsumerSource.fromDurableStream(bound, { cursor })` (DS-adapter starting offset), and `ConsumerCheckpointStore` (per-subscriber wait progress) over wait request facts with a host-owned named matcher table; it is not a published wait-specific operator module, required-action service, workflow, or runtime root.
       2: "v0 evaluator composition is snapshot-only and resolves each processed request to matched or failed; the source stream is read with live false and every processed wait reaches a terminal outcome within the snapshot window. Live snapshot-then-follow is deferred (see EVALUATOR.7)."
       3: A successful match appends a `firegrid.wait.matched` durable outcome fact carrying the wait id, matcher id and version, matched source row reference, and the matcher's typed match value.
       4: The evaluator writes exactly one outcome fact per wait id even when the same wait request is rescanned across evaluator restarts or duplicate retained requests.
@@ -44,5 +44,5 @@ constraints:
   INVARIANTS:
     requirements:
       1: This spec is bound by `effect-durable-operators.CONSUMER.1`, `effect-durable-operators.CONSUMER.4`, `effect-durable-operators.CONSUMER.8`, and `effect-durable-operators.FIREGRID_PROOF.2` for evaluator delivery and restart semantics.
-      2: The tracer scenario proves the substrate through production package surfaces — `@firegrid/protocol/wait` (rows), `effect-durable-operators` (`DurableConsumer` + `ConsumerSource` + `ConsumerCheckpointStore`), `effect-durable-streams` (durable streams), and the Durable Streams test server — with no scenario-only composition roots or shadow harnesses. Wiring the evaluator into a long-running Firegrid host process is a separate consumer concern outside this v0 substrate proof.
+      2: The tracer scenario proves the substrate through production package surfaces — `@firegrid/protocol/wait` (rows + constructors), `effect-durable-operators` (`DurableConsumer.forEach` + `ConsumerSource.findFirst` + `ConsumerSource.fromDurableStream` + `ConsumerCheckpointStore`), `effect-durable-streams` (durable streams), and the Durable Streams test server — with no scenario-only composition roots or shadow harnesses. Wiring the evaluator into a long-running Firegrid host process is a separate consumer concern outside this v0 substrate proof.
       3: This spec is bound by `firegrid-required-actions.BOUNDARY.6` so required-action behavior, if ever rebuilt, lowers through this generic wait substrate rather than re-introducing a separate data plane.

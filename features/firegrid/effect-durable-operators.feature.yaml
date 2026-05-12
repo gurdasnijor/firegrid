@@ -35,6 +35,7 @@ components:
       6: DurableConsumer exposes both Sink-shaped and Stream-shaped execution APIs.
       7: DurableConsumer supports an optional Effect Schedule for retrying the processing effect.
       8: DurableConsumer restart tests prove the selected policy does not silently duplicate or lose logical work beyond its documented delivery semantics.
+      9: "DurableConsumer exposes forEach as an ergonomic convenience over define + run that inlines name, source, checkpoint, select, key, process, and optional policy/retry/live, and defaults policy to ClaimPolicy.AtMostOnce() for the common process-each-key-once-per-subscriber case; the lower-level define/run/sink/stream APIs remain unchanged."
 
   SOURCE:
     requirements:
@@ -43,6 +44,8 @@ components:
       3: The operators package ships an Electric ShapeStream/D2TS ConsumerSource adapter proof to validate the source interface against a second change-stream backend.
       4: Electric ShapeStream integration remains source-only; DurableConsumer checkpoint and delivery semantics continue to be owned by ConsumerCheckpointStore.
       5: D2TS integration is used only to adapt or transform Electric shape changes into typed consumer facts; it does not replace DurableTable or ConsumerCheckpointStore semantics.
+      6: "ConsumerSource exposes findFirst(source, predicate, options) as a snapshot predicate lookup helper that returns Effect<Option<B>> where the predicate maps each fact to Option<B>; default live is false. It hides the Stream.runHead/Stream.filterMap composition without leaking DurableStream-specific cursor or offset types into the generic ConsumerSource interface."
+      7: "ConsumerSource.fromDurableStream(bound, options) accepts an optional adapter-level starting cursor string; the adapter applies it as a DurableStream offset so that DS-specific offset semantics remain scoped to the adapter and do not appear on the generic ConsumerSource.read shape."
 
   FIREGRID_PROOF:
     requirements:
