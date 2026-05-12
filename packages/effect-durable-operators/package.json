@@ -1,0 +1,49 @@
+{
+  "name": "effect-durable-operators",
+  "version": "0.0.0",
+  "description": "Effect-native durable operators: DurableTable, DurableProjection, DurableConsumer over effect-durable-streams + @durable-streams/state.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "pnpm run typecheck && pnpm run test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run test/unit",
+    "test:conformance": "vitest run test/conformance",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@durable-streams/state": "^0.2.5",
+    "@effect/platform": "^0.96.0",
+    "@tanstack/db": "^0.5.33",
+    "effect": "^3.18.0",
+    "effect-durable-streams": "workspace:*"
+  },
+  "devDependencies": {
+    "@durable-streams/server": "^0.3.1",
+    "@durable-streams/state": "^0.2.5",
+    "@effect/platform": "^0.96.0",
+    "@tanstack/db": "^0.5.33",
+    "@types/node": "^22.10.0",
+    "effect": "^3.18.0",
+    "effect-durable-streams": "workspace:*",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}
