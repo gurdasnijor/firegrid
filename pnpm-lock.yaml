@@ -170,12 +170,6 @@ importers:
       '@effect/platform':
         specifier: ^0.96.0
         version: 0.96.1(effect@3.21.2)
-      '@electric-sql/client':
-        specifier: 1.5.16
-        version: 1.5.16
-      '@electric-sql/d2ts':
-        specifier: 0.1.8
-        version: 0.1.8(@electric-sql/client@1.5.16)
       '@tanstack/db':
         specifier: ^0.5.33
         version: 0.5.33(typescript@5.9.3)
@@ -185,9 +179,6 @@ importers:
       effect:
         specifier: ^3.18.0
         version: 3.21.2
-      effect-durable-streams:
-        specifier: workspace:*
-        version: link:../effect-durable-streams
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -546,21 +537,6 @@ packages:
       '@effect/platform': ^0.96.1
       '@effect/rpc': ^0.75.1
       effect: ^3.21.2
-
-  '@electric-sql/client@1.5.16':
-    resolution: {integrity: sha512-HvdlSCfCLPG1ohNHA9F/BHSKcZwxTRXO4CgevnocTGU2UMmy6ttosuyTwXFQV4D0n5j6NcxvlGt1wmv7FrwzIg==}
-    hasBin: true
-
-  '@electric-sql/d2ts@0.1.8':
-    resolution: {integrity: sha512-2cyiDSaq5VxEHOQZ0yvknkdrVA44VADdDhNdeM3MIAVeati7gkiixKnX5osFaKvxM6SeLRKLQcaHSvlvdMDFRQ==}
-    peerDependencies:
-      '@electric-sql/client': '>=1.0.0-beta.4'
-      better-sqlite3: ^11.7.0
-    peerDependenciesMeta:
-      '@electric-sql/client':
-        optional: true
-      better-sqlite3:
-        optional: true
 
   '@emnapi/core@1.10.0':
     resolution: {integrity: sha512-yq6OkJ4p82CAfPl0u9mQebQHKPJkY7WrIuk205cTYnYe+k2Z8YBh11FrbRG/H6ihirqcacOgl2BIO8oyMQLeXw==}
@@ -1584,9 +1560,6 @@ packages:
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
-  '@types/murmurhash-js@1.0.7':
-    resolution: {integrity: sha512-XM6078Du3jaEJVwpxmPZsJQDMzWabjY4ILQQvW4VPBzTULd+Fjs2Z54s+OrLzDRxgs6J09YyDISnZDlltYAchw==}
-
   '@types/node@22.19.17':
     resolution: {integrity: sha512-wGdMcf+vPYM6jikpS/qhg6WiqSV/OhG+jeeHT/KlVqxYfD40iYJf9/AE1uQxVWFvU7MipKRkRv8NSHiCGgPr8Q==}
 
@@ -2336,9 +2309,6 @@ packages:
 
   multipasta@0.2.7:
     resolution: {integrity: sha512-KPA58d68KgGil15oDqXjkUBEBYc00XvbPj5/X+dyzeo/lWm9Nc25pQRlf1D+gv4OpK7NM0J1odrbu9JNNGvynA==}
-
-  murmurhash-js@1.0.0:
-    resolution: {integrity: sha512-TvmkNhkv8yct0SVBSy+o8wYzXjE4Zz3PCesbfs8HiCXXdcTuocApFv11UWlNFWKYsP2okqrhb7JNlSm9InBhIw==}
 
   nanoid@3.3.12:
     resolution: {integrity: sha512-ZB9RH/39qpq5Vu6Y+NmUaFhQR6pp+M2Xt76XBnEwDaGcVAqhlvxrl3B2bKS5D3NH3QR76v3aSrKaF/Kiy7lEtQ==}
@@ -3208,20 +3178,6 @@ snapshots:
       '@effect/rpc': 0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)
       effect: 3.21.2
 
-  '@electric-sql/client@1.5.16':
-    dependencies:
-      '@microsoft/fetch-event-source': 2.0.1
-    optionalDependencies:
-      '@rollup/rollup-darwin-arm64': 4.60.2
-
-  '@electric-sql/d2ts@0.1.8(@electric-sql/client@1.5.16)':
-    dependencies:
-      '@types/murmurhash-js': 1.0.7
-      fractional-indexing: 3.2.0
-      murmurhash-js: 1.0.0
-    optionalDependencies:
-      '@electric-sql/client': 1.5.16
-
   '@emnapi/core@1.10.0':
     dependencies:
       '@emnapi/wasi-threads': 1.2.1
@@ -3919,8 +3875,6 @@ snapshots:
   '@types/estree@1.0.8': {}
 
   '@types/json-schema@7.0.15': {}
-
-  '@types/murmurhash-js@1.0.7': {}
 
   '@types/node@22.19.17':
     dependencies:
@@ -4786,8 +4740,6 @@ snapshots:
       msgpackr-extract: 3.0.3
 
   multipasta@0.2.7: {}
-
-  murmurhash-js@1.0.0: {}
 
   nanoid@3.3.12: {}
 

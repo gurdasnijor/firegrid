@@ -16,6 +16,9 @@ import {
   type RuntimeInputStreams,
 } from "../runtime-host/input.ts"
 import {
+  localProcessStdinDelivery,
+  RuntimeInputDeliveryTable,
+  runtimeInputDeliveryLayer,
   SandboxProvider,
   type ProcessOutputChunk,
   type SandboxProviderError,
@@ -27,9 +30,6 @@ import {
 import {
   RuntimeControlPlane,
 } from "./service.ts"
-import {
-  localProcessRuntimeIngressStdin,
-} from "../runtime-ingress/local-process-stdin.ts"
 import {
   ProcessAttemptResultSchema,
   RuntimeContextTerminalStateSchema,
@@ -194,9 +194,8 @@ export const RuntimeContextWorkflowLayer = (
         const stdin = Match.value(options.input).pipe(
           Match.tag("RuntimeInputDisabled", () => undefined),
           Match.tag("RuntimeInputDurableStreams", (durable) =>
-            localProcessRuntimeIngressStdin({
+            localProcessStdinDelivery({
               streamUrl: durable.ingress,
-              checkpointStreamUrl: durable.checkpoints,
               contextId: context.contextId,
               subscriberId: localProcessIngressSubscriberId,
             }).pipe(
@@ -207,6 +206,11 @@ export const RuntimeContextWorkflowLayer = (
                   context.contextId,
                   cause,
                 )),
+              Stream.provideLayer(
+                runtimeInputDeliveryLayer({
+                  checkpointStreamUrl: durable.checkpoints,
+                }),
+              ),
               Stream.provideLayer(FetchHttpClient.layer),
             ),
           ),
