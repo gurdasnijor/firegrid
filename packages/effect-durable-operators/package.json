@@ -10,6 +10,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./electric": {
+      "types": "./src/electric.ts",
+      "default": "./src/electric.ts"
     }
   },
   "files": [
@@ -39,6 +43,8 @@
     "@durable-streams/server": "^0.3.1",
     "@durable-streams/state": "^0.2.5",
     "@effect/platform": "^0.96.0",
+    "@electric-sql/client": "1.5.16",
+    "@electric-sql/d2ts": "0.1.8",
     "@tanstack/db": "^0.5.33",
     "@types/node": "^22.10.0",
     "effect": "^3.18.0",

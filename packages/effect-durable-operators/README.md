@@ -7,6 +7,7 @@ Generic, Effect-native durable operators composed over
 import {
   ClaimPolicy,
   ConsumerCheckpointStoreLive,
+  ConsumerSource,
   DurableConsumer,
   DurableProjection,
   DurableTable,
@@ -26,6 +27,9 @@ import {
   Selects facts, keys them, and writes a durable claim/completion via the
   `ConsumerCheckpointStore` service. Delivery policy is explicit
   (`AtMostOnce`, `AtLeastOnce`, `AtLeastOnceWithClaim`).
+- **`ConsumerSource`** — the tiny `read({ live? }) => Stream` protocol that
+  feeds `DurableConsumer`. Durable Streams remains Firegrid's production
+  source through `ConsumerSource.fromDurableStream`.
 - **Workflows and tools sit *above* these operators.** Workflow suspension,
   durable clocks, required actions, prompts, and tool contracts belong to
   `@effect/workflow` (or your own runtime). This package is the primitives
@@ -36,14 +40,14 @@ import {
 A complete program: a domain `Effect.Service`, a `DurableConsumer.define`,
 a `run` call that composes the service through `process`, and a
 `Layer.mergeAll` at the application edge. This exact shape is
-dry-typechecked against the package — see
-`test/__readme-first-consumer-typecheck.ts`.
+dry-typechecked against the package.
 
 ```ts
 import { FetchHttpClient } from "@effect/platform"
 import {
   ClaimPolicy,
   ConsumerCheckpointStoreLive,
+  ConsumerSource,
   DurableConsumer,
 } from "effect-durable-operators"
 import { DurableStream } from "effect-durable-streams"
@@ -80,10 +84,12 @@ const checkpointsStreamUrl = "https://durable-streams.example/orders-checkpoints
 // 3. The program: process composes EmailService through R; delivery
 //    semantics are explicit; checkpoint state is owned by the service.
 const program = DurableConsumer.run({
-  source: DurableStream.define({
-    endpoint: { url: ordersStreamUrl },
-    schema: Order,
-  }),
+  source: ConsumerSource.fromDurableStream(
+    DurableStream.define({
+      endpoint: { url: ordersStreamUrl },
+      schema: Order,
+    }),
+  ),
   checkpoint: { subscriberId: "email.receipt.v1" },
   definition: SendReceiptEmails,
   policy: ClaimPolicy.AtLeastOnce(),
@@ -113,6 +119,44 @@ global `fetch`, a test-server stub, etc.) and runs the resulting effect.
 The `process` effect can require any services (`R`) and fail with any
 errors (`E`); they flow through `DurableConsumer.run` into the resulting
 Effect's signature without being bent into a fixed shape.
+
+## Consumer sources
+
+`DurableConsumer.run` and `DurableConsumer.stream` accept a minimal source:
+
+```ts
+interface ConsumerSource<Fact, E = never, R = never> {
+  read(options?: { readonly live?: boolean }): Stream.Stream<Fact, E, R>
+}
+```
+
+Production Firegrid code should keep using Durable Streams:
+
+```ts
+DurableConsumer.run({
+  source: ConsumerSource.fromDurableStream(
+    DurableStream.define({ endpoint, schema: InputFact }),
+  ),
+  checkpoint,
+  definition,
+  policy,
+  process,
+})
+```
+
+The optional Electric/D2TS adapters live under the `effect-durable-operators/electric`
+subpath so DS-only consumers do not need Electric types installed. Consumers of
+that subpath must install and provide `@electric-sql/client` themselves. The
+adapters are intentionally source-only: they adapt Electric `ShapeStream`
+snapshots or subscriptions and D2TS-emitted Electric change messages into typed
+facts.
+Delivery policy, restart behavior, and side-effect checkpointing remain owned
+by `ConsumerCheckpointStore`.
+
+Callers using `fromElectricShapeStream(...).read({ live: true })` should use an
+Electric full shape log when they need catch-up plus live updates. Electric's
+`changes_only` mode skips the initial snapshot; that source-log choice does not
+change DurableConsumer processing checkpoint semantics.
 
 ## Triggers are named consumers
 
@@ -147,10 +191,12 @@ const PermissionGrantedTrigger = DurableConsumer.define({
 })
 
 const triggerProgram = DurableConsumer.run({
-  source: DurableStream.define({
-    endpoint: { url: permissionFactsUrl },
-    schema: PermissionGranted,
-  }),
+  source: ConsumerSource.fromDurableStream(
+    DurableStream.define({
+      endpoint: { url: permissionFactsUrl },
+      schema: PermissionGranted,
+    }),
+  ),
   checkpoint: { subscriberId: "permission.granted.trigger.v1" },
   definition: PermissionGrantedTrigger,
   policy: ClaimPolicy.AtMostOnce(),
@@ -326,6 +372,38 @@ surface.
   packages), enforced by `.dependency-cruiser.cjs` rules
   `durable-streams-imports-contained` and
   `effect-durable-operators-state-only`.
+- `ConsumerSource` keeps source-log progress separate from consumer processing
+  progress. Electric shape offsets and D2TS graph frontiers never replace
+  `ConsumerCheckpointStore`.
+
+## Consumer sources
+
+`DurableConsumer.run` and `DurableConsumer.stream` accept a minimal source:
+
+```ts
+interface ConsumerSource<Fact, E = never, R = never> {
+  read(options?: { readonly live?: boolean }): Stream.Stream<Fact, E, R>
+}
+```
+
+Production Firegrid code should keep using Durable Streams:
+
+```ts
+DurableConsumer.run({
+  source: ConsumerSource.fromDurableStream(
+    DurableStream.define({ endpoint, schema: InputFact }),
+  ),
+  checkpoint,
+  definition,
+  policy,
+  process,
+})
+```
+
+The Electric/D2TS adapters are intentionally source-only. They adapt Electric
+`ShapeStream` snapshots/subscriptions or D2TS-emitted Electric change messages
+into typed facts. Delivery policy, restart behavior, and side-effect
+checkpointing remain owned by `ConsumerCheckpointStore`.
 
 ### Tracer 017 status
 

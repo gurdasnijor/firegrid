@@ -12,6 +12,7 @@
 export * as DurableTable from "./DurableTable.ts"
 export * as DurableProjection from "./DurableProjection.ts"
 export * as DurableConsumer from "./DurableConsumer.ts"
+export * as ConsumerSource from "./ConsumerSource.ts"
 export { ConsumerCheckpointStore, ConsumerCheckpointStoreLive } from "./ConsumerCheckpointStore.ts"
 export type { CheckpointRecord } from "./ConsumerCheckpointStore.ts"
 export { ClaimPolicy } from "./DurableConsumer.ts"

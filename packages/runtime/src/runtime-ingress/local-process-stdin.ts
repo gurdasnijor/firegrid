@@ -28,6 +28,7 @@ import {
 import {
   ClaimPolicy,
   ConsumerCheckpointStoreLive,
+  ConsumerSource,
   DurableConsumer,
 } from "effect-durable-operators"
 import { DurableStream } from "effect-durable-streams"
@@ -102,10 +103,10 @@ export const localProcessRuntimeIngressStdin = (
   return Stream.unwrapScoped(
     Effect.map(Layer.build(checkpointLayer), (context) =>
       DurableConsumer.stream({
-        source: DurableStream.define({
+        source: ConsumerSource.fromDurableStream(DurableStream.define({
           endpoint: { url: options.streamUrl },
           schema: RuntimeIngressRowSchema,
-        }),
+        })),
         checkpoint: { subscriberId: options.subscriberId },
         definition: consumer,
         policy: ClaimPolicy.AtMostOnce(),

@@ -20,7 +20,6 @@
  * idempotency (BOUNDARIES.4 / SDD §Checkpoint Semantics).
  */
 
-import type { HttpClient } from "@effect/platform"
 import {
   type Context,
   Data,
@@ -30,8 +29,8 @@ import {
   Sink,
   Stream,
 } from "effect"
-import type { DurableStream } from "effect-durable-streams"
 import { ConsumerCheckpointStore } from "./ConsumerCheckpointStore.ts"
+import type { ConsumerSource } from "./ConsumerSource.ts"
 import { DurableConsumerError } from "./Errors.ts"
 
 // ---------------------------------------------------------------------------
@@ -75,8 +74,8 @@ export interface Checkpoint {
   readonly subscriberId: string
 }
 
-interface ProcessParams<Fact, FactI, Key extends string, Input, Output, E, R> {
-  readonly source: DurableStream.Bound<Fact, FactI>
+interface ProcessParams<Fact, SourceError, SourceRequirements, Key extends string, Input, Output, E, R> {
+  readonly source: ConsumerSource<Fact, SourceError, SourceRequirements>
   readonly checkpoint: Checkpoint
   readonly definition: ConsumerDefinition<Fact, Key, Input>
   readonly policy: ClaimPolicyType
@@ -173,12 +172,12 @@ const runOnePolicy = <Input, Output, E, R>(
   })
 }
 
-const processedStream = <Fact, FactI, Key extends string, Input, Output, E, R>(
-  params: ProcessParams<Fact, FactI, Key, Input, Output, E, R>,
+const processedStream = <Fact, SourceError, SourceRequirements, Key extends string, Input, Output, E, R>(
+  params: ProcessParams<Fact, SourceError, SourceRequirements, Key, Input, Output, E, R>,
 ): Stream.Stream<
   Output,
-  E | DurableConsumerError | DurableStream.ReadError,
-  R | ConsumerCheckpointStore | HttpClient.HttpClient
+  SourceError | E | DurableConsumerError,
+  SourceRequirements | R | ConsumerCheckpointStore
 > =>
   Stream.unwrap(
     Effect.map(ConsumerCheckpointStore, (store) => {
@@ -223,19 +222,19 @@ const processedStream = <Fact, FactI, Key extends string, Input, Output, E, R>(
 // Public APIs: run / sink / stream
 // ---------------------------------------------------------------------------
 
-export type RunOptions<Fact, FactI, Key extends string, Input, Output, E, R> =
-  ProcessParams<Fact, FactI, Key, Input, Output, E, R>
+export type RunOptions<Fact, SourceError, SourceRequirements, Key extends string, Input, Output, E, R> =
+  ProcessParams<Fact, SourceError, SourceRequirements, Key, Input, Output, E, R>
 
 /**
  * Drain the source through the consumer. Returns the number of inputs
  * processed during this call.
  */
-export const run = <Fact, FactI, Key extends string, Input, Output, E, R>(
-  opts: RunOptions<Fact, FactI, Key, Input, Output, E, R>,
+export const run = <Fact, SourceError, SourceRequirements, Key extends string, Input, Output, E, R>(
+  opts: RunOptions<Fact, SourceError, SourceRequirements, Key, Input, Output, E, R>,
 ): Effect.Effect<
   { readonly processed: number },
-  E | DurableConsumerError | DurableStream.ReadError,
-  R | ConsumerCheckpointStore | HttpClient.HttpClient
+  SourceError | E | DurableConsumerError,
+  SourceRequirements | R | ConsumerCheckpointStore
 > =>
   processedStream(opts).pipe(
     Stream.runFold(0, (n) => n + 1),
@@ -257,7 +256,7 @@ export const sink = <Fact, Key extends string, Input, Output, E, R>(opts: {
   Fact,
   never,
   E | DurableConsumerError,
-  R | ConsumerCheckpointStore | HttpClient.HttpClient
+  R | ConsumerCheckpointStore
 > => {
   const step = (acc: number, fact: Fact) =>
     Effect.gen(function* () {
@@ -288,7 +287,7 @@ export const sink = <Fact, Key extends string, Input, Output, E, R>(opts: {
     number,
     Fact,
     E | DurableConsumerError,
-    R | ConsumerCheckpointStore | HttpClient.HttpClient
+    R | ConsumerCheckpointStore
   >(0, () => true, step).pipe(
     Sink.ignoreLeftover,
     Sink.map((processed) => ({ processed })),
@@ -302,10 +301,10 @@ export const sink = <Fact, Key extends string, Input, Output, E, R>(opts: {
  * error channel (per SDD open question #2; observability-only side channel
  * is deferred).
  */
-export const stream = <Fact, FactI, Key extends string, Input, Output, E, R>(
-  opts: RunOptions<Fact, FactI, Key, Input, Output, E, R>,
+export const stream = <Fact, SourceError, SourceRequirements, Key extends string, Input, Output, E, R>(
+  opts: RunOptions<Fact, SourceError, SourceRequirements, Key, Input, Output, E, R>,
 ): Stream.Stream<
   Output,
-  E | DurableConsumerError | DurableStream.ReadError,
-  R | ConsumerCheckpointStore | HttpClient.HttpClient
+  SourceError | E | DurableConsumerError,
+  SourceRequirements | R | ConsumerCheckpointStore
 > => processedStream(opts)
