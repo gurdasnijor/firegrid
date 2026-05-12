@@ -158,6 +158,9 @@ importers:
 
   packages/effect-durable-operators:
     devDependencies:
+      '@durable-streams/client':
+        specifier: ^0.2.3
+        version: 0.2.3
       '@durable-streams/server':
         specifier: ^0.3.1
         version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))

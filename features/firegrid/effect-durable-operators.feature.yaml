@@ -26,6 +26,7 @@ components:
       12: DurableTable generated writes attach txid headers and wait for createStreamDB awaitTxId before completing.
       13: DurableTable v0 does not expose persistentType, Type, per-collection wire-type overrides, or required actions configuration for standard collection writes.
       14: DurableTable consumers do not use package-owned manual durable stream append helpers for generated table writes.
+      15: DurableTable generated writes construct State Protocol change events through @durable-streams/state createStateSchema collection helpers rather than package-owned change-event constructors.
 
   PROJECTION:
     requirements:
@@ -62,7 +63,7 @@ components:
 constraints:
   BOUNDARIES:
     requirements:
-      1: The package may depend on effect-durable-streams, effect-durable-streams-state, @durable-streams/state, @tanstack/db, and Effect packages.
+      1: The package may depend on effect-durable-streams, effect-durable-streams-state, @durable-streams/client, @durable-streams/state, @tanstack/db, and Effect packages.
       2: The package must not depend on @firegrid/durable-streams; that package remains Firegrid's substrate adapter boundary.
       3: The package must not implement workflow suspension, durable clocks, required actions, prompt APIs, or Firegrid session semantics.
       4: Consumer checkpoint state is distinct from durable stream producer idempotency.

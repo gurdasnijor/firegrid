@@ -22,13 +22,21 @@
  *    and await createStreamDB awaitTxId
  *  - effect-durable-operators.TABLE.13 — no wire type/action overrides
  *  - effect-durable-operators.TABLE.14 — no package-owned append helper path
+ *  - effect-durable-operators.TABLE.15 — change events come from
+ *    createStateSchema collection helpers
  */
 
+import type { DurableStreamOptions } from "@durable-streams/client"
 import {
   createStateSchema,
   createStreamDB,
   type ActionDefinition,
+  type ActionFactory,
+  type CollectionDefinition as StateCollectionDefinition,
+  type CreateStreamDBOptions,
+  type Operation,
   type StateSchema,
+  type StreamDBWithActions,
   type StreamStateDefinition,
 } from "@durable-streams/state"
 import type { Collection as TanStackCollection } from "@tanstack/db"
@@ -77,14 +85,8 @@ export type PrimaryKeyOf<S extends StructSchema> =
     ? Extract<Schema.Schema.Type<FieldsOf<S>[PrimaryKeyNameOf<S>]>, string | number>
     : never
 
-interface StreamOptions {
-  readonly url: string
-  readonly contentType?: string
-  readonly [extra: string]: unknown
-}
-
 export interface LayerOptions {
-  readonly streamOptions: StreamOptions
+  readonly streamOptions: DurableStreamOptions
   readonly txTimeoutMs?: number
 }
 
@@ -142,8 +144,17 @@ type CompiledTable<Schemas extends TableSchemas<Schemas>> = {
 }
 
 type StateSchemaWithHelpers = StateSchema<StreamStateDefinition>
-type ActionResult = { readonly isPersisted: { readonly promise: Promise<unknown> } }
-type ActionMap = Record<string, (params: unknown) => ActionResult>
+type GeneratedOperation = Extract<Operation, "insert" | "upsert" | "delete">
+type TableActionDefinitions = Record<string, ActionDefinition<unknown>>
+type TableActionFactory = ActionFactory<
+  StateSchemaWithHelpers,
+  TableActionDefinitions
+>
+type TableStreamDB = StreamDBWithActions<
+  StateSchemaWithHelpers,
+  TableActionDefinitions
+>
+type TableActionMap = TableStreamDB["actions"]
 
 const reservedFacadeProperties = new Set(["awaitTxId"])
 
@@ -164,7 +175,7 @@ const isPrimaryKeyField = (schema: Schema.Schema.Any): boolean =>
 
 const actionName = (
   collectionKey: string,
-  operation: "insert" | "upsert" | "delete",
+  operation: GeneratedOperation,
 ): string => `${collectionKey}.${operation}`
 
 const compileTable = <const Schemas extends TableSchemas<Schemas>>(
@@ -209,26 +220,29 @@ const compileTable = <const Schemas extends TableSchemas<Schemas>>(
   return { namespace, schemas, collections }
 }
 
+const makeStateDefinition = (
+  table: CompiledTable<AnyTableSchemas>,
+): StreamStateDefinition =>
+  Object.fromEntries(
+    table.collections.map(
+      (collection): [string, StateCollectionDefinition] => [
+        collection.collectionKey,
+        {
+          // effect-durable-operators.TABLE.9
+          type: collection.durableType,
+          primaryKey: collection.primaryKey,
+          // effect-durable-operators.TABLE.2
+          schema: Schema.standardSchemaV1(
+            collection.schema as unknown as Schema.Schema<object, unknown, never>,
+          ),
+        },
+      ],
+    ),
+  )
+
 const makeStateSchema = (
   table: CompiledTable<AnyTableSchemas>,
-): StateSchemaWithHelpers => {
-  const state = Object.fromEntries(
-    table.collections.map((collection) => [
-      collection.collectionKey,
-      {
-        // effect-durable-operators.TABLE.9
-        type: collection.durableType,
-        primaryKey: collection.primaryKey,
-        // effect-durable-operators.TABLE.2
-        schema: Schema.standardSchemaV1(
-          collection.schema as unknown as Schema.Schema<object, unknown, never>,
-        ),
-      },
-    ]),
-  ) as StreamStateDefinition
-
-  return createStateSchema(state)
-}
+): StateSchemaWithHelpers => createStateSchema(makeStateDefinition(table))
 
 const collectionKeyValue = <Row extends object>(
   collection: CompiledCollection,
@@ -244,94 +258,82 @@ const makeActionDefinitions = (
   table: CompiledTable<AnyTableSchemas>,
   stateSchema: StateSchemaWithHelpers,
   txTimeoutMs: number,
-): ((context: {
-  readonly db: {
-    readonly collections: Record<string, TanStackCollection<object, string>>
-    readonly utils: {
-      readonly awaitTxId: (txid: string, timeoutMs?: number) => Promise<void>
-    }
-  }
-  readonly stream: {
-    readonly append: (value: string) => Promise<unknown>
-  }
-}) => Record<string, ActionDefinition<unknown>>) =>
+): TableActionFactory =>
   ({ db, stream }) =>
-    table.collections.reduce<Record<string, ActionDefinition<unknown>>>(
+    table.collections.reduce<TableActionDefinitions>(
       (actions, collection) => {
-        const coll = db.collections[collection.collectionKey]
-        const helpers = stateSchema[collection.collectionKey]
-        if (coll === undefined || helpers === undefined) {
-          return raise(
-            `DurableTable("${table.namespace}") failed to initialize collection "${collection.collectionKey}"`,
-          )
+        const coll = db.collections[collection.collectionKey]!
+        const helpers = stateSchema[collection.collectionKey]!
+
+        actions[actionName(collection.collectionKey, "insert")] = {
+          onMutate: (params: unknown) => {
+            coll.insert(params as object)
+          },
+          mutationFn: async (params: unknown) => {
+            const txid = crypto.randomUUID()
+            const event = helpers.insert({
+              value: params,
+              headers: { txid },
+            })
+            // effect-durable-operators.TABLE.11
+            // effect-durable-operators.TABLE.12
+            // effect-durable-operators.TABLE.15
+            await stream.append(JSON.stringify(event))
+            await db.utils.awaitTxId(txid, txTimeoutMs)
+          },
         }
 
-      actions[actionName(collection.collectionKey, "insert")] = {
-        onMutate: (params: unknown) => {
-          coll.insert(params as object)
-        },
-        mutationFn: async (params: unknown) => {
-          const txid = crypto.randomUUID()
-          const event = helpers.insert({
-            value: params,
-            headers: { txid },
-          })
-          // effect-durable-operators.TABLE.11
-          // effect-durable-operators.TABLE.12
-          await stream.append(JSON.stringify(event))
-          await db.utils.awaitTxId(txid, txTimeoutMs)
-        },
-      }
-
-      actions[actionName(collection.collectionKey, "upsert")] = {
-        onMutate: (params: unknown) => {
-          const row = params as object
-          const key = collectionKeyValue(collection, row)
-          if (coll.get(key) === undefined) {
-            coll.insert(row)
-          } else {
-            coll.update(key, (draft) => {
-              Object.assign(draft, row)
+        actions[actionName(collection.collectionKey, "upsert")] = {
+          onMutate: (params: unknown) => {
+            const row = params as object
+            const key = collectionKeyValue(collection, row)
+            if (coll.get(key) === undefined) {
+              coll.insert(row)
+            } else {
+              coll.update(key, (draft) => {
+                Object.assign(draft, row)
+              })
+            }
+          },
+          mutationFn: async (params: unknown) => {
+            const txid = crypto.randomUUID()
+            const event = helpers.upsert({
+              value: params,
+              headers: { txid },
             })
-          }
-        },
-        mutationFn: async (params: unknown) => {
-          const txid = crypto.randomUUID()
-          const event = helpers.upsert({
-            value: params,
-            headers: { txid },
-          })
-          await stream.append(JSON.stringify(event))
-          await db.utils.awaitTxId(txid, txTimeoutMs)
-        },
-      }
+            // effect-durable-operators.TABLE.15
+            await stream.append(JSON.stringify(event))
+            await db.utils.awaitTxId(txid, txTimeoutMs)
+          },
+        }
 
-      actions[actionName(collection.collectionKey, "delete")] = {
-        onMutate: (params: unknown) => {
-          const key = keyString(params as string | number)
-          if (coll.get(key) !== undefined) {
-            coll.delete(key)
-          }
-        },
-        mutationFn: async (params: unknown) => {
-          const key = keyString(params as string | number)
-          const txid = crypto.randomUUID()
-          const event = helpers.delete({
-            key,
-            headers: { txid },
-          })
-          await stream.append(JSON.stringify(event))
-          await db.utils.awaitTxId(txid, txTimeoutMs)
-        },
-      }
-      return actions
-    },
-    {},
-  )
+        actions[actionName(collection.collectionKey, "delete")] = {
+          onMutate: (params: unknown) => {
+            const key = keyString(params as string | number)
+            if (coll.get(key) !== undefined) {
+              coll.delete(key)
+            }
+          },
+          mutationFn: async (params: unknown) => {
+            const key = keyString(params as string | number)
+            const txid = crypto.randomUUID()
+            const event = helpers.delete({
+              key,
+              headers: { txid },
+            })
+            // effect-durable-operators.TABLE.15
+            await stream.append(JSON.stringify(event))
+            await db.utils.awaitTxId(txid, txTimeoutMs)
+          },
+        }
+        return actions
+      },
+      {},
+    )
 
 const runAction = (
   tableName: string,
-  actions: ActionMap,
+  actions: TableActionMap,
   name: string,
   params: unknown,
 ): Effect.Effect<void, DurableTableError> =>
@@ -351,7 +353,7 @@ const makeFacade = <Row extends object, Key extends string | number>(options: {
   readonly tableName: string
   readonly collectionKey: string
   readonly collection: TanStackCollection<Row, string>
-  readonly actions: ActionMap
+  readonly actions: TableActionMap
 }): CollectionFacade<Row, Key> => ({
   insert: (row) =>
     runAction(
@@ -416,17 +418,23 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
     Effect.try({
       try: () => {
         const stateSchema = makeStateSchema(table)
-        const db = createStreamDB({
+        const dbOptions: CreateStreamDBOptions<
+          StateSchemaWithHelpers,
+          TableActionDefinitions
+        > = {
           streamOptions: options.streamOptions,
           state: stateSchema,
           // effect-durable-operators.TABLE.11
           actions: makeActionDefinitions(
-            table as CompiledTable<AnyTableSchemas>,
+            table,
             stateSchema,
             options.txTimeoutMs ?? 5_000,
           ),
-        })
-        return db
+        }
+        return createStreamDB<
+          StateSchemaWithHelpers,
+          TableActionDefinitions
+        >(dbOptions)
       },
       catch: (cause) =>
         new DurableTableError({ table: table.namespace, cause }),
@@ -442,15 +450,10 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
     (db) => Effect.sync(() => db.close()),
   ).pipe(
     Effect.map((db) => {
-      const actions = db.actions as ActionMap
+      const actions = db.actions
       const collectionFacades = table.collections.reduce<Record<string, unknown>>(
         (facades, collection) => {
-          const coll = db.collections[collection.collectionKey]
-          if (coll === undefined) {
-            return raise(
-              `DurableTable("${table.namespace}") missing collection "${collection.collectionKey}"`,
-            )
-          }
+          const coll = db.collections[collection.collectionKey]!
           return {
             ...facades,
             [collection.collectionKey]: makeFacade({
