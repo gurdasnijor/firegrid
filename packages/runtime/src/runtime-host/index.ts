@@ -3,7 +3,7 @@ import { NodeContext } from "@effect/platform-node"
 import {
   DurableStreamsWorkflowEngine,
 } from "@firegrid/durable-streams/workflow-engine"
-import { Context, Effect, Layer, Option, Stream } from "effect"
+import { Context, Effect, Layer } from "effect"
 import { DurableStream } from "effect-durable-streams"
 import {
   RuntimeContextWorkflowLayer,
@@ -65,31 +65,6 @@ export class FiregridRuntimeHost extends Context.Tag("firegrid/runtime/FiregridR
   FiregridRuntimeHostService
 >() {}
 
-const findExistingRuntimeIngressRequest = (
-  streamUrl: string,
-  request: RuntimeIngressRequestedRow,
-): Effect.Effect<Option.Option<RuntimeIngressRequestedRow>, RuntimeIngressError, HttpClient.HttpClient> =>
-  DurableStream.define({
-    endpoint: { url: streamUrl },
-    schema: RuntimeIngressRowSchema,
-  }).read({ live: false }).pipe(
-    Stream.filter((row): row is RuntimeIngressRequestedRow =>
-      row.type === "firegrid.runtime_ingress.requested" &&
-      row.contextId === request.contextId &&
-      (row.ingressId === request.ingressId ||
-        (request.idempotencyKey !== undefined &&
-          row.idempotencyKey === request.idempotencyKey))),
-    Stream.runHead,
-    Effect.mapError(cause =>
-      runtimeIngressError(
-        "request.exists",
-        "failed to read runtime ingress request rows",
-        request.contextId,
-        request.ingressId,
-        cause,
-      )),
-  )
-
 const appendRuntimeIngressRequested = (
   streamUrl: string,
   row: RuntimeIngressRow,
@@ -116,10 +91,9 @@ const appendRuntimeIngressRequestToStream = (
 ): Effect.Effect<RuntimeIngressRequestedRow, RuntimeIngressError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
     const row = makeRuntimeIngressRequestedRow(request)
-    const existing = yield* findExistingRuntimeIngressRequest(streamUrl, row)
-    if (Option.isSome(existing)) return existing.value
     // firegrid-agent-ingress.INGRESS.1
     // firegrid-agent-ingress.INGRESS.3
+    // firegrid-agent-ingress.INGRESS.6
     // firegrid-agent-ingress.HOST.1
     yield* appendRuntimeIngressRequested(streamUrl, row)
     return row

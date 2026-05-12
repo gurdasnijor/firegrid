@@ -19,7 +19,7 @@ import {
   selectPendingIngress,
 } from "./folds.ts"
 import {
-  makeRuntimeIngressDeliveredRow,
+  makeRuntimeIngressAcceptedRow,
   runtimeJournalEventFromOutput,
 } from "./rows.ts"
 
@@ -225,12 +225,12 @@ export const runStreamNativeRuntimeLoop = (
         onNone: () => Effect.succeed(noPendingSummary(options, retained.rowsRead)),
         onSome: next =>
           // stream-native-runtime-loop.LOOP.3
-          ingressStream.append(makeRuntimeIngressDeliveredRow({
+          ingressStream.append(makeRuntimeIngressAcceptedRow({
             contextId: next.contextId,
             ingressId: next.ingressId,
             subscriberId: options.subscriberId,
             provider: options.provider,
-            deliveredAt: nowIso(),
+            acceptedAt: nowIso(),
           })).pipe(
             Effect.zipRight(runLocalProcess(outputStream, options, next)),
             Effect.map(process => ({

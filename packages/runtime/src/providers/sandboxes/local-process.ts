@@ -65,7 +65,9 @@ const buildCommand = (
         ...command.envVars,
       }),
     )
-    if (command.stdin !== undefined) built = built.pipe(Command.feed(command.stdin))
+    if (typeof command.stdin === "string") {
+      built = built.pipe(Command.feed(command.stdin))
+    }
     const cwd = command.cwd ?? config.workingDir
     if (cwd !== undefined) built = built.pipe(Command.workingDirectory(cwd))
     return built
@@ -150,6 +152,17 @@ const makeLocalProcessSandboxProvider = (
             commandError("stream", "failed while reading local process output", cause),
           ),
         )
+        const stdin = command.stdin !== undefined && typeof command.stdin !== "string"
+          ? Stream.fromEffect(
+            command.stdin.pipe(
+              Stream.interruptWhen(process.exitCode.pipe(Effect.ignore)),
+              Stream.run(process.stdin),
+              Effect.mapError(cause =>
+                commandError("stream.stdin", "failed while writing local process stdin", cause),
+              ),
+            ),
+          ).pipe(Stream.drain)
+          : Stream.empty
         const exit = Stream.fromEffect(
           process.exitCode.pipe(
             Effect.map(exitCode => ({
@@ -162,7 +175,10 @@ const makeLocalProcessSandboxProvider = (
           ),
         )
         // firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.6
-        return output.pipe(Stream.concat(exit))
+        return output.pipe(
+          Stream.merge(stdin),
+          Stream.concat(exit),
+        )
       }),
     )
 

@@ -1,11 +1,18 @@
 import {
+  FetchHttpClient,
+} from "@effect/platform"
+import {
   startDurableStreamsTestServer,
   type DurableStreamsTestServerHandle,
 } from "@firegrid/durable-streams/test-utils"
 import {
   type PublicLaunchRequest,
 } from "@firegrid/protocol/launch"
+import {
+  RuntimeIngressRowSchema,
+} from "@firegrid/protocol/runtime-ingress"
 import { Effect, Either, Layer, Stream } from "effect"
+import { DurableStream } from "effect-durable-streams"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   Firegrid,
@@ -33,12 +40,16 @@ const createStreamUrl = async (name: string): Promise<string> => {
 const runWithFiregrid = <A, E>(
   runtimeStreamUrl: string,
   effect: Effect.Effect<A, E, Firegrid>,
+  options: { readonly inputStreamUrl?: string } = {},
 ): Promise<A> =>
   Effect.runPromise(
     effect.pipe(
       Effect.provide(
         FiregridLive.pipe(
-          Layer.provide(Layer.succeed(FiregridConfig, { runtimeStreamUrl })),
+          Layer.provide(Layer.succeed(FiregridConfig, {
+            runtimeStreamUrl,
+            ...(options.inputStreamUrl === undefined ? {} : { inputStreamUrl: options.inputStreamUrl }),
+          })),
         ),
       ),
     ),
@@ -187,5 +198,59 @@ describe("@firegrid/client", () => {
         _tag: "LaunchInputError",
       })
     }
+  })
+
+  it("firegrid-agent-ingress.INGRESS.3 firegrid-agent-ingress.INGRESS.6 appends prompt input facts with deterministic identity without invoking runtime delivery", async () => {
+    const runtimeStreamUrl = await createStreamUrl("runtime")
+    const inputStreamUrl = await createStreamUrl("runtime-input")
+
+    const result = await runWithFiregrid(
+      runtimeStreamUrl,
+      Effect.gen(function* () {
+        const firegrid = yield* Firegrid
+        const first = yield* firegrid.prompt({
+          contextId: "ctx_prompt",
+          payload: [{ type: "text", text: "hello" }],
+          idempotencyKey: "prompt-1",
+          metadata: { source: "client-test" },
+        })
+        const duplicate = yield* firegrid.prompt({
+          contextId: "ctx_prompt",
+          payload: [{ type: "text", text: "hello duplicate" }],
+          idempotencyKey: "prompt-1",
+        })
+        return { first, duplicate }
+      }),
+      { inputStreamUrl },
+    )
+
+    expect(result.duplicate.ingressId).toEqual(result.first.ingressId)
+
+    const rows = await Effect.runPromise(DurableStream.define({
+      endpoint: { url: inputStreamUrl },
+      schema: RuntimeIngressRowSchema,
+    }).collect.pipe(
+      Effect.provide(FetchHttpClient.layer),
+    ))
+
+    expect(rows).toHaveLength(2)
+    expect(rows.map(row => row.ingressId)).toEqual([
+      result.first.ingressId,
+      result.first.ingressId,
+    ])
+    expect(rows[0]).toMatchObject({
+      type: "firegrid.runtime_ingress.requested",
+      contextId: "ctx_prompt",
+      kind: "message",
+      authoredBy: "client",
+      idempotencyKey: "prompt-1",
+    })
+    expect(rows[1]).toMatchObject({
+      type: "firegrid.runtime_ingress.requested",
+      contextId: "ctx_prompt",
+      kind: "message",
+      authoredBy: "client",
+      idempotencyKey: "prompt-1",
+    })
   })
 })

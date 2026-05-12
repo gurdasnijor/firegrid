@@ -42,6 +42,7 @@ must make that dependency explicit.
 - [011: Projection Target Schema Ownership](./011-projection-target-schema-ownership.md)
 - [012: Agent Ingress Prompt Stream](./012-agent-ingress-prompt-stream.md)
 - [013: Reactive Workflow Operators](./013-reactive-workflow-operators.md)
+- [016: Session Plane Input Control Surface](./016-session-plane-input-control-surface.md)
 
 ## Handoff
 
@@ -144,6 +145,15 @@ Prerequisite
     -> durable facts/time/projection predicates trigger Effect workflows
     -> required actions become the first consumer of the generic operator substrate
     -> tools and ingress subscribers stop needing bespoke workflow launch paths
+
+016
+  define session-plane input control surface
+    -> request_session / launch and send_input / prompt become the only stable
+       session-plane control operations
+    -> runtime_ingress remains transitional physical vocabulary for session
+       input / prompt request facts
+    -> client/app input reaches a real provider through host-owned dispatchers,
+       with durable progress and no workflow-specific endpoint
 ```
 
 The prerequisites establish the thin launch producer and live sandbox boundary.

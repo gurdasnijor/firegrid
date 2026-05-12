@@ -53,13 +53,23 @@ const runWithFiregrid = <A, E>(
 }
 
 const stdinEchoAgent = `
-const chunks = []
+let buffered = ""
+let count = 0
+const keepAlive = setInterval(() => {}, 1000)
 process.stdin.setEncoding("utf8")
-process.stdin.on("data", chunk => chunks.push(chunk))
-process.stdin.on("end", () => {
-  const text = chunks.join("").trim()
-  for (const line of text.length === 0 ? [] : text.split(/\\n+/)) {
+process.stdin.on("data", chunk => {
+  buffered += chunk
+  while (buffered.includes("\\n")) {
+    const index = buffered.indexOf("\\n")
+    const line = buffered.slice(0, index).trim()
+    buffered = buffered.slice(index + 1)
+    if (line.length === 0) continue
+    count += 1
     console.log(JSON.stringify({ type: "assistant", text: "ingress:" + line }))
+    if (count >= 2) {
+      clearInterval(keepAlive)
+      setTimeout(() => process.exit(0), 10)
+    }
   }
 })
 `
@@ -157,14 +167,15 @@ describe("firegrid tracer 012 runtime ingress", () => {
       RuntimeIngressRow,
       { readonly type: "firegrid.runtime_ingress.requested" }
     > => row.type === "firegrid.runtime_ingress.requested")
-    const delivered = ingressRows.filter((row): row is Extract<
+    const accepted = ingressRows.filter((row): row is Extract<
       RuntimeIngressRow,
-      { readonly type: "firegrid.runtime_ingress.delivered" }
-    > => row.type === "firegrid.runtime_ingress.delivered")
+      { readonly type: "firegrid.runtime_ingress.accepted" }
+    > => row.type === "firegrid.runtime_ingress.accepted")
 
-    expect(requested).toHaveLength(2)
+    expect(requested).toHaveLength(3)
     expect(requested.map(row => row.ingressId)).toEqual([
       initial.ingressId,
+      followUp.ingressId,
       followUp.ingressId,
     ])
     expect(requested[0]).toMatchObject({
@@ -181,7 +192,14 @@ describe("firegrid tracer 012 runtime ingress", () => {
       authoredBy: "client",
       idempotencyKey: "tracer-012-continue",
     })
-    expect(delivered).toEqual([
+    expect(requested[2]).toMatchObject({
+      contextId: handle.contextId,
+      ingressId: followUp.ingressId,
+      kind: "message",
+      authoredBy: "client",
+      idempotencyKey: "tracer-012-continue",
+    })
+    expect(accepted).toEqual([
       expect.objectContaining({
         contextId: handle.contextId,
         ingressId: initial.ingressId,

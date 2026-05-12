@@ -27,7 +27,7 @@ export interface SandboxCommand {
   readonly argv: ReadonlyArray<string>
   readonly cwd?: string
   readonly envVars?: Record<string, string>
-  readonly stdin?: string
+  readonly stdin?: string | Stream.Stream<Uint8Array, unknown>
 }
 
 export interface ExecutionResult {

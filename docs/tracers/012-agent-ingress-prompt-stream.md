@@ -99,11 +99,11 @@ Minimum durable records:
 
 ```txt
 runtime_ingress.requested
-runtime_ingress.delivered
+runtime_ingress.accepted
 ```
 
-`runtime_ingress.delivered` may be a per-input delivery row or a durable cursor
-row. The exact representation is less important than the authority boundary:
+`runtime_ingress.accepted` records subscriber progress for accepted-for-dispatch
+input. The exact representation is less important than the authority boundary:
 delivery progress must not live only in a process-local variable.
 
 The requested row should include at least:

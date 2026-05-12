@@ -1,5 +1,5 @@
 import { Activity, Workflow } from "@effect/workflow"
-import type { HttpClient } from "@effect/platform"
+import { FetchHttpClient } from "@effect/platform"
 import {
   RuntimeJournalEventSchema,
   RuntimeContextSchema,
@@ -25,17 +25,8 @@ import {
   RuntimeControlPlane,
 } from "./service.ts"
 import {
-  type RuntimeIngressError,
-  RuntimeIngressRowSchema,
-  type RuntimeIngressRequestedRow,
-  runtimeIngressError,
-  type RuntimeIngressDeliveryRequest,
-  type RuntimeIngressDeliveredRow,
-  type RuntimeIngressRow,
-} from "../runtime-ingress/index.ts"
-import {
-  makeRuntimeIngressDeliveredRow,
-} from "../runtime-ingress/rows.ts"
+  localProcessRuntimeIngressStdin,
+} from "../runtime-ingress/local-process-stdin.ts"
 import {
   ProcessAttemptResultSchema,
   RuntimeContextTerminalStateSchema,
@@ -50,72 +41,9 @@ type SequencedChunk = {
 }
 
 type RuntimeOutputRow = RuntimeEvent | RuntimeLogLine
-type PendingIngressState = {
-  readonly delivered: Set<string>
-  readonly pending: Map<string, RuntimeIngressRequestedRow>
-}
 
 const nowIso = (): string => new Date().toISOString()
 const localProcessIngressSubscriberId = "runtime-context:local-process:stdin"
-
-const textFromPayloadValue = (
-  value: unknown,
-): string | undefined => {
-  if (typeof value === "string") return value
-  if (typeof value !== "object" || value === null) return undefined
-  const record = value as Record<string, unknown>
-  return record.type === "text" && typeof record.text === "string"
-    ? record.text
-    : undefined
-}
-
-const providerInputFromIngress = (
-  row: RuntimeIngressRequestedRow,
-): string => {
-  if (Array.isArray(row.payload)) {
-    const text = row.payload.flatMap(value => {
-      const decoded = textFromPayloadValue(value)
-      return decoded === undefined ? [] : [decoded]
-    })
-    if (text.length > 0) return text.join("\n")
-  }
-  const text = textFromPayloadValue(row.payload)
-  return text ?? JSON.stringify(row.payload)
-}
-
-const stdinForIngress = (
-  rows: ReadonlyArray<RuntimeIngressRequestedRow>,
-): string | undefined =>
-  rows.length === 0
-    ? undefined
-    : `${rows.map(providerInputFromIngress).join("\n")}\n`
-
-const ingressDeliveryKey = (
-  row: {
-    readonly contextId: string
-    readonly ingressId: string
-    readonly subscriberId: string
-  },
-): string =>
-  `${row.contextId}:${row.ingressId}:${row.subscriberId}`
-
-const isRuntimeIngressDeliveryFor = (
-  row: RuntimeIngressRow,
-  options: {
-    readonly contextId: string
-    readonly subscriberId: string
-  },
-): row is RuntimeIngressDeliveredRow =>
-  row.type === "firegrid.runtime_ingress.delivered" &&
-  row.contextId === options.contextId &&
-  row.subscriberId === options.subscriberId
-
-const isRuntimeIngressRequestFor = (
-  row: RuntimeIngressRow,
-  contextId: string,
-): row is RuntimeIngressRequestedRow =>
-  row.type === "firegrid.runtime_ingress.requested" &&
-  row.contextId === contextId
 
 const runtimeJournalEventForOutput = (
   row: RuntimeOutputRow,
@@ -145,128 +73,6 @@ const mapRuntimeOutputError = (
       cause,
     ))
 
-const mapRuntimeIngressError = (
-  contextId: string,
-) =>
-  Effect.mapError((cause: RuntimeIngressError) =>
-    asRuntimeContextError(
-      `runtime-ingress.${cause.op}`,
-      cause.message,
-      contextId,
-      cause,
-    ))
-
-const mapRuntimeIngressStreamError = (
-  op: string,
-  message: string,
-  row?: {
-    readonly contextId?: string
-    readonly ingressId?: string
-  },
-) =>
-  Effect.mapError((cause: DurableStream.ReadError | DurableStream.WriteError) =>
-    runtimeIngressError(op, message, row?.contextId, row?.ingressId, cause))
-
-const pendingRuntimeIngressFromStream = (
-  options: {
-    readonly streamUrl: string
-    readonly contextId: string
-    readonly subscriberId: string
-  },
-): Effect.Effect<ReadonlyArray<RuntimeIngressRequestedRow>, RuntimeIngressError, HttpClient.HttpClient> => {
-  const initial: PendingIngressState = {
-    delivered: new Set<string>(),
-    pending: new Map<string, RuntimeIngressRequestedRow>(),
-  }
-  return DurableStreamClient.define({
-    endpoint: { url: options.streamUrl },
-    schema: RuntimeIngressRowSchema,
-  }).read({ live: false }).pipe(
-    Stream.runFold(initial, (state, row): PendingIngressState => {
-      if (isRuntimeIngressDeliveryFor(row, options)) {
-        const key = ingressDeliveryKey(row)
-        state.delivered.add(key)
-        state.pending.delete(key)
-        return state
-      }
-      if (!isRuntimeIngressRequestFor(row, options.contextId)) return state
-      const key = ingressDeliveryKey({
-        contextId: row.contextId,
-        ingressId: row.ingressId,
-        subscriberId: options.subscriberId,
-      })
-      if (!state.delivered.has(key) && !state.pending.has(key)) {
-        state.pending.set(key, row)
-      }
-      return state
-    }),
-    Effect.map(state => Array.from(state.pending.values())),
-    mapRuntimeIngressStreamError(
-      "pending",
-      "failed to read pending runtime ingress durable rows",
-      options,
-    ),
-  )
-}
-
-const hasDeliveredRuntimeIngress = (
-  options: {
-    readonly streamUrl: string
-    readonly contextId: string
-    readonly ingressId: string
-    readonly subscriberId: string
-  },
-): Effect.Effect<boolean, RuntimeIngressError, HttpClient.HttpClient> =>
-  DurableStreamClient.define({
-    endpoint: { url: options.streamUrl },
-    schema: RuntimeIngressRowSchema,
-  }).read({ live: false }).pipe(
-    Stream.filter(row =>
-      row.type === "firegrid.runtime_ingress.delivered" &&
-      row.contextId === options.contextId &&
-      row.ingressId === options.ingressId &&
-      row.subscriberId === options.subscriberId),
-    Stream.runHead,
-    Effect.map(Option.isSome),
-    mapRuntimeIngressStreamError(
-      "delivered.exists",
-      "failed to read runtime ingress delivery rows",
-      options,
-    ),
-  )
-
-const appendRuntimeIngressDelivered = (
-  options: {
-    readonly streamUrl: string
-    readonly request: RuntimeIngressDeliveryRequest
-  },
-): Effect.Effect<RuntimeIngressDeliveredRow, RuntimeIngressError, HttpClient.HttpClient> =>
-  Effect.gen(function* () {
-    const delivered = yield* hasDeliveredRuntimeIngress({
-      streamUrl: options.streamUrl,
-      contextId: options.request.contextId,
-      ingressId: options.request.ingressId,
-      subscriberId: options.request.subscriberId,
-    })
-    if (delivered) return makeRuntimeIngressDeliveredRow(options.request)
-
-    const row = makeRuntimeIngressDeliveredRow(options.request)
-    // firegrid-agent-ingress.DELIVERY.3
-    // firegrid-agent-ingress.SUBSCRIBERS.2
-    // effect-native-production-cutover.RUNTIME_IO.2
-    yield* DurableStreamClient.define({
-      endpoint: { url: options.streamUrl },
-      schema: RuntimeIngressRowSchema,
-    }).append(row).pipe(
-      Effect.asVoid,
-      mapRuntimeIngressStreamError(
-        "append",
-        "failed to append runtime ingress delivery row",
-        row,
-      ),
-    )
-    return row
-  })
 
 const outputRowFromChunk = (
   context: RuntimeContext,
@@ -373,34 +179,31 @@ export const RuntimeContextWorkflowLayer = (
           lingerMs: 10,
         }).pipe(mapRuntimeOutputError(context.contextId))
         const command = yield* commandForContext(context)
-        const pendingIngress = yield* (options.runtimeIngressStreamUrl === undefined
-          ? Effect.succeed([])
-          : pendingRuntimeIngressFromStream({
+        const stdin = options.runtimeIngressStreamUrl === undefined
+          ? undefined
+          : localProcessRuntimeIngressStdin({
             streamUrl: options.runtimeIngressStreamUrl,
             contextId: context.contextId,
             subscriberId: localProcessIngressSubscriberId,
-          })).pipe(mapRuntimeIngressError(context.contextId))
+            provider: context.runtime.provider,
+          }).pipe(
+            Stream.mapError(cause =>
+              asRuntimeContextError(
+                `runtime-ingress.${cause.op}`,
+                cause.message,
+                context.contextId,
+                cause,
+              )),
+            Stream.provideLayer(FetchHttpClient.layer),
+          )
         // firegrid-agent-ingress.DELIVERY.1
         // firegrid-agent-ingress.DELIVERY.2
         // firegrid-agent-ingress.DELIVERY.3
+        // firegrid-agent-ingress.DELIVERY.5
         // firegrid-agent-ingress.SUBSCRIBERS.1
-        const stdin = stdinForIngress(pendingIngress)
-        const deliveredCommand = {
+        const providerCommand = {
           ...command,
           ...(stdin === undefined ? {} : { stdin }),
-        }
-        const runtimeIngressStreamUrl = options.runtimeIngressStreamUrl
-        if (runtimeIngressStreamUrl !== undefined) {
-          yield* Effect.forEach(pendingIngress, row =>
-            appendRuntimeIngressDelivered({
-              streamUrl: runtimeIngressStreamUrl,
-              request: {
-                contextId: row.contextId,
-                ingressId: row.ingressId,
-                subscriberId: localProcessIngressSubscriberId,
-                provider: context.runtime.provider,
-              },
-            }).pipe(mapRuntimeIngressError(context.contextId)), { discard: true })
         }
         // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.3
         // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.5
@@ -435,7 +238,7 @@ export const RuntimeContextWorkflowLayer = (
             message,
           })
 
-        const streamProcess = provider.stream(sandbox, deliveredCommand).pipe(
+        const streamProcess = provider.stream(sandbox, providerCommand).pipe(
           Stream.mapAccum(0, (sequence, chunk): readonly [number, SequencedChunk] => [
             sequence + 1,
             { sequence, chunk },

@@ -9,6 +9,11 @@ export {
   type ClientOptions,
   type FiregridError,
   type FiregridService,
+  type PromptInputError,
   type RuntimeContextHandle,
   type RuntimeContextSnapshot,
 } from "./firegrid.ts"
+export type {
+  PublicPromptRequest,
+  RuntimeIngressRequestedRow,
+} from "@firegrid/protocol/runtime-ingress"

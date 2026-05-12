@@ -42,12 +42,12 @@ export {
 } from "./required-action/index.ts"
 export {
   RuntimeIngressError,
-  runtimeIngressDeliveredRowId,
+  runtimeIngressAcceptedRowId,
   runtimeIngressIdForIdempotencyKey,
   runtimeIngressRequestedRowId,
   type RuntimeIngressAuthor,
-  type RuntimeIngressDeliveredRow,
-  type RuntimeIngressDeliveryRequest,
+  type RuntimeIngressAcceptedRow,
+  type RuntimeIngressAcceptanceRequest,
   type RuntimeIngressKind,
   type RuntimeIngressRequest,
   type RuntimeIngressRequestedRow,

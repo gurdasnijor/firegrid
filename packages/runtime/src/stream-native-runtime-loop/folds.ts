@@ -4,9 +4,9 @@ import type {
   RuntimeIngressRow,
 } from "../runtime-ingress/schema.ts"
 
-type RuntimeIngressDeliveredRow = Extract<
+type RuntimeIngressAcceptedRow = Extract<
   RuntimeIngressRow,
-  { readonly type: "firegrid.runtime_ingress.delivered" }
+  { readonly type: "firegrid.runtime_ingress.accepted" }
 >
 
 const deliveredKey = (
@@ -38,8 +38,8 @@ const isDeliveredFor = (
 ) =>
 (
   row: RuntimeIngressRow,
-): row is RuntimeIngressDeliveredRow =>
-  row.type === "firegrid.runtime_ingress.delivered" &&
+): row is RuntimeIngressAcceptedRow =>
+  row.type === "firegrid.runtime_ingress.accepted" &&
   row.contextId === options.contextId &&
   row.subscriberId === options.subscriberId
 
