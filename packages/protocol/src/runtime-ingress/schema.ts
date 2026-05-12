@@ -45,7 +45,15 @@ export const RuntimeIngressRequestSchema = Schema.Struct({
 })
 export type RuntimeIngressRequest = Schema.Schema.Type<typeof RuntimeIngressRequestSchema>
 
-export const RuntimeIngressRequestedRowSchema = Schema.Struct({
+// `RuntimeIngressRowSchema` is the input-fact wire schema. Historically it
+// was a Union including a `firegrid.runtime_ingress.accepted` member;
+// delivery progress now lives in a separate
+// `effect-durable-operators.ConsumerCheckpointStore`-backed stream (see
+// docs/proposals/SDD_EFFECT_DURABLE_OPERATORS.md), so the row family has
+// collapsed to the single `requested` member. The transitional
+// `runtime_ingress.requested` type is still the public input fact;
+// renaming to `firegrid.session.input` is a separate decision.
+export const RuntimeIngressRowSchema = Schema.Struct({
   type: Schema.Literal("firegrid.runtime_ingress.requested"),
   id: Schema.String,
   at: Schema.String,
@@ -61,37 +69,8 @@ export const RuntimeIngressRequestedRowSchema = Schema.Struct({
     value: Schema.String,
   })),
 })
-export type RuntimeIngressRequestedRow = Schema.Schema.Type<
-  typeof RuntimeIngressRequestedRowSchema
->
-
-export const RuntimeIngressAcceptanceRequestSchema = Schema.Struct({
-  contextId: Schema.String,
-  ingressId: Schema.String,
-  subscriberId: Schema.String,
-  provider: Schema.String,
-  acceptedAt: Schema.optional(Schema.String),
-})
-export type RuntimeIngressAcceptanceRequest = Schema.Schema.Type<
-  typeof RuntimeIngressAcceptanceRequestSchema
->
-
-export const RuntimeIngressAcceptedRowSchema = Schema.Struct({
-  type: Schema.Literal("firegrid.runtime_ingress.accepted"),
-  id: Schema.String,
-  at: Schema.String,
-  ingressId: Schema.String,
-  contextId: Schema.String,
-  subscriberId: Schema.String,
-  provider: Schema.String,
-  acceptedAt: Schema.String,
-})
-export type RuntimeIngressAcceptedRow = Schema.Schema.Type<
-  typeof RuntimeIngressAcceptedRowSchema
->
-
-export const RuntimeIngressRowSchema = Schema.Union(
-  RuntimeIngressRequestedRowSchema,
-  RuntimeIngressAcceptedRowSchema,
-)
 export type RuntimeIngressRow = Schema.Schema.Type<typeof RuntimeIngressRowSchema>
+
+// Historical type alias: callers that distinguished "requested" from
+// the now-removed "accepted" member referenced this name.
+export type RuntimeIngressRequestedRow = RuntimeIngressRow

@@ -1,7 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
-  makeRuntimeIngressAcceptedRow,
   makeRuntimeIngressRequestedRow,
   promptToRuntimeIngressRequest,
   PublicPromptRequestSchema,
@@ -29,25 +28,6 @@ describe("@firegrid/protocol runtime-ingress schema", () => {
       kind: "message",
       authoredBy: "client",
       idempotencyKey: "prompt-1",
-    })
-  })
-
-  it("firegrid-agent-ingress.DELIVERY.3 firegrid-agent-ingress.DELIVERY.5 declares accepted-for-dispatch progress facts", () => {
-    const row = makeRuntimeIngressAcceptedRow({
-      contextId: "ctx_1",
-      ingressId: "ing_1",
-      subscriberId: "runtime-context:local-process:stdin",
-      provider: "local-process",
-      acceptedAt: "2026-05-11T00:00:00.000Z",
-    })
-    const decoded = Schema.decodeUnknownSync(RuntimeIngressRowSchema)(row)
-
-    expect(decoded).toMatchObject({
-      type: "firegrid.runtime_ingress.accepted",
-      contextId: "ctx_1",
-      ingressId: "ing_1",
-      provider: "local-process",
-      acceptedAt: "2026-05-11T00:00:00.000Z",
     })
   })
 })

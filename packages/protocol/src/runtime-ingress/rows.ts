@@ -1,17 +1,9 @@
-import { Schema } from "effect"
 import {
-  runtimeIngressAcceptedRowId,
   runtimeIngressIdForIdempotencyKey,
   runtimeIngressRequestedRowId,
 } from "./ids.ts"
 import {
-  PublicPromptRequestSchema,
-  RuntimeIngressAcceptedRowSchema,
-  RuntimeIngressRequestSchema,
-  RuntimeIngressRequestedRowSchema,
   type PublicPromptRequest,
-  type RuntimeIngressAcceptanceRequest,
-  type RuntimeIngressAcceptedRow,
   type RuntimeIngressRequest,
   type RuntimeIngressRequestedRow,
 } from "./schema.ts"
@@ -26,20 +18,27 @@ export const ingressIdForRequest = (
     ? `ing_${crypto.randomUUID()}`
     : runtimeIngressIdForIdempotencyKey(request.contextId, request.idempotencyKey))
 
+// `request` is already validated by the API boundary
+// (`Firegrid.prompt` decodes `PublicPromptRequestSchema` and passes the
+// validated value in). This trusted helper rebuilds it into the internal
+// `RuntimeIngressRequest` shape without re-decoding.
 export const promptToRuntimeIngressRequest = (
   request: PublicPromptRequest,
-): RuntimeIngressRequest => {
-  const decoded = Schema.decodeUnknownSync(PublicPromptRequestSchema)(request)
-  return {
-    contextId: decoded.contextId,
-    kind: "message",
-    authoredBy: "client",
-    payload: decoded.payload,
-    ...(decoded.idempotencyKey === undefined ? {} : { idempotencyKey: decoded.idempotencyKey }),
-    ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
-  }
-}
+): RuntimeIngressRequest => ({
+  contextId: request.contextId,
+  kind: "message",
+  authoredBy: "client",
+  payload: request.payload,
+  ...(request.idempotencyKey === undefined ? {} : { idempotencyKey: request.idempotencyKey }),
+  ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
+})
 
+// Trusted row constructor: `request` is already typed as
+// `RuntimeIngressRequest` (validated upstream by `Firegrid.prompt`'s
+// `Schema.decodeUnknown(PublicPromptRequestSchema)`). The wire-shape row
+// is built directly and constrained via `satisfies`; the durable stream
+// boundary re-encodes through `RuntimeIngressRowSchema` on append, so
+// decoding here would be redundant.
 export const makeRuntimeIngressRequestedRow = (
   request: RuntimeIngressRequest,
   options?: {
@@ -47,36 +46,19 @@ export const makeRuntimeIngressRequestedRow = (
     readonly createdAt?: string
   },
 ): RuntimeIngressRequestedRow => {
-  const decoded = Schema.decodeUnknownSync(RuntimeIngressRequestSchema)(request)
-  const ingressId = options?.ingressId ?? ingressIdForRequest(decoded)
+  const ingressId = options?.ingressId ?? ingressIdForRequest(request)
   const createdAt = options?.createdAt ?? nowIso()
-  return Schema.decodeUnknownSync(RuntimeIngressRequestedRowSchema)({
+  return {
     type: "firegrid.runtime_ingress.requested",
-    id: runtimeIngressRequestedRowId(decoded.contextId, ingressId),
+    id: runtimeIngressRequestedRowId(request.contextId, ingressId),
     at: createdAt,
     ingressId,
-    contextId: decoded.contextId,
-    kind: decoded.kind,
-    authoredBy: decoded.authoredBy,
-    payload: decoded.payload,
-    ...(decoded.idempotencyKey === undefined ? {} : { idempotencyKey: decoded.idempotencyKey }),
-    createdAt,
-    ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
-  })
-}
-
-export const makeRuntimeIngressAcceptedRow = (
-  request: RuntimeIngressAcceptanceRequest,
-): RuntimeIngressAcceptedRow => {
-  const acceptedAt = request.acceptedAt ?? nowIso()
-  return Schema.decodeUnknownSync(RuntimeIngressAcceptedRowSchema)({
-    type: "firegrid.runtime_ingress.accepted",
-    id: runtimeIngressAcceptedRowId(request.contextId, request.subscriberId, request.ingressId),
-    at: acceptedAt,
-    ingressId: request.ingressId,
     contextId: request.contextId,
-    subscriberId: request.subscriberId,
-    provider: request.provider,
-    acceptedAt,
-  })
+    kind: request.kind,
+    authoredBy: request.authoredBy,
+    payload: request.payload,
+    ...(request.idempotencyKey === undefined ? {} : { idempotencyKey: request.idempotencyKey }),
+    createdAt,
+    ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
+  } satisfies RuntimeIngressRequestedRow
 }

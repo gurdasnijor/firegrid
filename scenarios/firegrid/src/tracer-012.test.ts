@@ -80,6 +80,7 @@ describe("firegrid tracer 012 runtime ingress", () => {
     const dataPlaneStreamUrl = await createStreamUrl("tracer-012-runtime-output")
     const workflowStreamUrl = await createStreamUrl("tracer-012-workflow")
     const runtimeIngressStreamUrl = await createStreamUrl("tracer-012-runtime-ingress")
+    const inputCheckpointsStreamUrl = await createStreamUrl("tracer-012-runtime-ingress-cps")
 
     const handle = await runWithFiregrid(
       { controlPlaneStreamUrl, dataPlaneStreamUrl },
@@ -99,6 +100,7 @@ describe("firegrid tracer 012 runtime ingress", () => {
         controlPlane: controlPlaneStreamUrl,
         runtimeOutput: dataPlaneStreamUrl,
         runtimeIngress: runtimeIngressStreamUrl,
+        inputCheckpoints: inputCheckpointsStreamUrl,
       },
     })
 
@@ -163,14 +165,10 @@ describe("firegrid tracer 012 runtime ingress", () => {
           rows.map(row => Schema.decodeUnknownSync(RuntimeIngressRowSchema)(row))),
       ),
     )
-    const requested = ingressRows.filter((row): row is Extract<
-      RuntimeIngressRow,
-      { readonly type: "firegrid.runtime_ingress.requested" }
-    > => row.type === "firegrid.runtime_ingress.requested")
-    const accepted = ingressRows.filter((row): row is Extract<
-      RuntimeIngressRow,
-      { readonly type: "firegrid.runtime_ingress.accepted" }
-    > => row.type === "firegrid.runtime_ingress.accepted")
+    const requested = ingressRows.filter(
+      (row): row is RuntimeIngressRow =>
+        row.type === "firegrid.runtime_ingress.requested",
+    )
 
     expect(requested).toHaveLength(3)
     expect(requested.map(row => row.ingressId)).toEqual([
@@ -199,17 +197,10 @@ describe("firegrid tracer 012 runtime ingress", () => {
       authoredBy: "client",
       idempotencyKey: "tracer-012-continue",
     })
-    expect(accepted).toEqual([
-      expect.objectContaining({
-        contextId: handle.contextId,
-        ingressId: initial.ingressId,
-        provider: "local-process",
-      }),
-      expect.objectContaining({
-        contextId: handle.contextId,
-        ingressId: followUp.ingressId,
-        provider: "local-process",
-      }),
-    ])
+    // Delivery progress now lives in a separate checkpoint stream owned
+    // by `effect-durable-operators.ConsumerCheckpointStoreLive`; the
+    // provider-visible `stdout` events above (lines 155-158) are the
+    // primary delivery proof. The `firegrid.runtime_ingress.accepted`
+    // row family has been removed.
   })
 })

@@ -42,6 +42,14 @@ export interface RuntimeHostStreams {
   readonly controlPlane: string
   readonly runtimeOutput: string
   readonly runtimeIngress?: string
+  /**
+   * Durable stream URL that backs the runtime-input `DurableConsumer`
+   * checkpoint records. Owned by
+   * `effect-durable-operators.ConsumerCheckpointStoreLive`; the host
+   * never writes to it directly. Required whenever `runtimeIngress` is
+   * set — ingress without a checkpoint stream is treated as no-ingress.
+   */
+  readonly inputCheckpoints?: string
 }
 
 export interface RuntimeHostOptions {
@@ -108,6 +116,7 @@ const runtimeContextLayer = (
   RuntimeContextWorkflowLayer({
     runtimeOutputStreamUrl: options.streams.runtimeOutput,
     ...(options.streams.runtimeIngress === undefined ? {} : { runtimeIngressStreamUrl: options.streams.runtimeIngress }),
+    ...(options.streams.inputCheckpoints === undefined ? {} : { inputCheckpointsStreamUrl: options.streams.inputCheckpoints }),
   }).pipe(
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: options.streams.workflow,

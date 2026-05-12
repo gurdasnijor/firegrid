@@ -42,12 +42,9 @@ export {
 } from "./required-action/index.ts"
 export {
   RuntimeIngressError,
-  runtimeIngressAcceptedRowId,
   runtimeIngressIdForIdempotencyKey,
   runtimeIngressRequestedRowId,
   type RuntimeIngressAuthor,
-  type RuntimeIngressAcceptedRow,
-  type RuntimeIngressAcceptanceRequest,
   type RuntimeIngressKind,
   type RuntimeIngressRequest,
   type RuntimeIngressRequestedRow,
@@ -65,9 +62,3 @@ export {
   type ReactiveWorkflowOperator,
   type ReactiveWorkflowOperatorRunSummary,
 } from "./runtime-operators/index.ts"
-export {
-  runStreamNativeRuntimeLoop,
-  type LocalProcessRuntimeLoopCommand,
-  type RunStreamNativeRuntimeLoopOptions,
-  type StreamNativeRuntimeLoopSummary,
-} from "./stream-native-runtime-loop/index.ts"

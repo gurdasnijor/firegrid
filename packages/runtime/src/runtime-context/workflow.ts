@@ -140,6 +140,13 @@ export const RuntimeContextWorkflow = Workflow.make({
 interface RuntimeContextWorkflowOptions {
   readonly runtimeOutputStreamUrl: string
   readonly runtimeIngressStreamUrl?: string
+  /**
+   * Separate durable stream URL backing the runtime input
+   * `DurableConsumer`'s checkpoint records. Required whenever
+   * `runtimeIngressStreamUrl` is set; ingress without a checkpoint stream
+   * is rejected at host wiring time.
+   */
+  readonly inputCheckpointsStreamUrl?: string
 }
 
 export const RuntimeContextWorkflowLayer = (
@@ -180,12 +187,13 @@ export const RuntimeContextWorkflowLayer = (
         }).pipe(mapRuntimeOutputError(context.contextId))
         const command = yield* commandForContext(context)
         const stdin = options.runtimeIngressStreamUrl === undefined
+          || options.inputCheckpointsStreamUrl === undefined
           ? undefined
           : localProcessRuntimeIngressStdin({
             streamUrl: options.runtimeIngressStreamUrl,
+            checkpointStreamUrl: options.inputCheckpointsStreamUrl,
             contextId: context.contextId,
             subscriberId: localProcessIngressSubscriberId,
-            provider: context.runtime.provider,
           }).pipe(
             Stream.mapError(cause =>
               asRuntimeContextError(
