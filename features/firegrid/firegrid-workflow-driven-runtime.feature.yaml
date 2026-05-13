@@ -17,6 +17,8 @@ components:
       2: The synchronous run entrypoint blocks until RuntimeContextWorkflow completes and exits with the runtime execution exit code.
       3: The synchronous run entrypoint uses the same runtime host Layer composition, RuntimeControlPlaneTable, RuntimeIngressTable, RuntimeOutputTable, workflow engine, and local-process provider path as normal runtime execution.
       4: The synchronous run entrypoint accepts secrets only through Effect Config or environment-backed redacted configuration, not through command-line token flags.
+      5: The synchronous run entrypoint can attach env bindings of shape { name, ref:"env:VAR" } to the local-process provider's runtime.config.envBindings; only the binding ref is durably persisted, and the resolved value is sourced from the host process's env at spawn time and merged into the local-process SandboxCommand.envVars without traversing the durable plane.
+      6: The runtime resolver denies any envBinding whose ref is not on a host-authorized allowlist; the synchronous run entrypoint authorizes specific host env vars through a --secret-env flag whose value is the env-var name only, never the secret value itself.
 
   PHASE_3_ACTIVITY_CLAIMS:
     requirements:

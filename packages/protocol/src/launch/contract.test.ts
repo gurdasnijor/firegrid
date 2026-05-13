@@ -1,6 +1,7 @@
 import { Either, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
+  envBinding,
   local,
   normalizeRuntimeIntent,
   PublicLaunchRequestSchema,
@@ -40,6 +41,45 @@ describe("@firegrid/protocol launch schema", () => {
       format: "jsonl",
       target: "events",
     })
+  })
+
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 accepts envBindings on a public launch request as durable refs", () => {
+    const decoded = Schema.decodeUnknownSync(PublicLaunchRequestSchema)({
+      runtime: {
+        provider: "local-process",
+        config: {
+          argv: ["node", "agent.mjs"],
+          envBindings: [
+            { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
+            { name: "ANTHROPIC_API_KEY_ALT", ref: "env:PARENT_ANTHROPIC_KEY" },
+          ],
+        },
+      },
+    })
+
+    expect(decoded.runtime.config.envBindings).toEqual([
+      { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
+      { name: "ANTHROPIC_API_KEY_ALT", ref: "env:PARENT_ANTHROPIC_KEY" },
+    ])
+  })
+
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 envBinding helper produces a durable ref-only binding", () => {
+    expect(envBinding("ANTHROPIC_API_KEY")).toEqual({
+      name: "ANTHROPIC_API_KEY",
+      ref: "env:ANTHROPIC_API_KEY",
+    })
+    expect(envBinding("ANTHROPIC_API_KEY", "PARENT_ANTHROPIC_KEY")).toEqual({
+      name: "ANTHROPIC_API_KEY",
+      ref: "env:PARENT_ANTHROPIC_KEY",
+    })
+  })
+
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 normalization preserves envBindings on the runtime intent", () => {
+    const intent = normalizeRuntimeIntent(local.jsonl({
+      argv: ["node", "agent.mjs"],
+      envBindings: [{ name: "X", ref: "env:Y" }],
+    }))
+    expect(intent.config.envBindings).toEqual([{ name: "X", ref: "env:Y" }])
   })
 
   it("firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.3 decodes runtime event rows without parsing provider JSON", () => {

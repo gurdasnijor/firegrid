@@ -12,9 +12,21 @@ export type RuntimeJournalFormat = Schema.Schema.Type<typeof RuntimeJournalForma
 export const RuntimeProviderSchema = Schema.Literal("local-process")
 export type RuntimeProvider = Schema.Schema.Type<typeof RuntimeProviderSchema>
 
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
+//
+// Only the binding (name + ref) is durably persisted. The ref names a host
+// env var; the resolver reads the value at spawn time and merges it into
+// SandboxCommand.envVars. The durable plane never sees the value.
+export const RuntimeEnvBindingSchema = Schema.Struct({
+  name: Schema.String,
+  ref: Schema.String,
+})
+export type RuntimeEnvBinding = Schema.Schema.Type<typeof RuntimeEnvBindingSchema>
+
 export const RuntimeConfigSchema = Schema.Struct({
   argv: Schema.Array(Schema.String),
   cwd: Schema.optional(Schema.String),
+  envBindings: Schema.optional(Schema.Array(RuntimeEnvBindingSchema)),
 })
 export type RuntimeConfig = Schema.Schema.Type<typeof RuntimeConfigSchema>
 
@@ -51,6 +63,12 @@ export type PublicLaunchRequest = Schema.Schema.Type<typeof PublicLaunchRequestS
 const normalizeRuntimeConfig = (config: RuntimeConfig): RuntimeConfig => ({
   argv: [...config.argv],
   ...(config.cwd === undefined ? {} : { cwd: config.cwd }),
+  ...(config.envBindings === undefined ? {} : {
+    envBindings: config.envBindings.map(binding => ({
+      name: binding.name,
+      ref: binding.ref,
+    })),
+  }),
 })
 
 export const localJsonlJournal = [
@@ -73,6 +91,19 @@ export const local = {
     config: normalizeRuntimeConfig(config),
   }),
 }
+
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
+//
+// Helper to construct an env binding with the env: ref shape. v1 supports
+// only "env:VAR"; future ref shapes (vault, k8s secret, etc.) get their own
+// constructors here.
+export const envBinding = (
+  name: string,
+  envVarName: string = name,
+): RuntimeEnvBinding => ({
+  name,
+  ref: `env:${envVarName}`,
+})
 
 export const RuntimeContextSchema = Schema.Struct({
   contextId: Schema.String,
