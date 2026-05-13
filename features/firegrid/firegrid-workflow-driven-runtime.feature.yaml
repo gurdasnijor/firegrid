@@ -1,0 +1,53 @@
+feature:
+  name: firegrid-workflow-driven-runtime
+  product: firegrid
+  description: Move runtime-context execution authority into durable workflows so runtime launch, synchronous agent runs, temporal waits, and future host supervision share one workflow-backed coordination plane.
+
+components:
+  PHASE_1_CONTEXT_WORKFLOW:
+    requirements:
+      1: startRuntime(contextId) starts or resumes a RuntimeContextWorkflow keyed by the contextId instead of directly owning local process execution.
+      2: RuntimeContextWorkflow reads the RuntimeControlPlaneTable context row, records run started and terminal run evidence, and completes with the runtime exit evidence.
+      3: RuntimeContextWorkflow performs external runtime side effects through one runRuntimeContext workflow activity per runtime attempt rather than through top-level runtime-host code.
+      4: Duplicate startRuntime(contextId) calls do not start duplicate external runtime executions for the same context attempt.
+
+  PHASE_2_SYNC_RUN:
+    requirements:
+      1: A synchronous Firegrid run entrypoint can create a RuntimeContext row from a command supplied after a "--" separator and then call startRuntime(contextId).
+      2: The synchronous run entrypoint blocks until RuntimeContextWorkflow completes and exits with the runtime execution exit code.
+      3: The synchronous run entrypoint uses the same runtime host Layer composition, RuntimeControlPlaneTable, RuntimeIngressTable, RuntimeOutputTable, workflow engine, and local-process provider path as normal runtime execution.
+      4: The synchronous run entrypoint accepts secrets only through Effect Config or environment-backed redacted configuration, not through command-line token flags.
+
+  PHASE_3_ACTIVITY_CLAIMS:
+    requirements:
+      1: Workflow activity claims are the single side-effect fence for runRuntimeContext; a competing context ownership mutex is not introduced for the normal runtime-context path.
+      2: The workflow activity-claim implementation does not silently report the local worker as winner when the claim row fails to materialize.
+      3: The workflow activity-claim implementation does not rely on fixed Effect.sleep polling as its normal materialization wait path.
+
+  PHASE_4_TEMPORAL_WORKFLOWS:
+    requirements:
+      1: sleep(durationMs) semantics are expressed through DurableClock.sleep inside workflow code rather than through a Firegrid-owned timer table.
+      2: schedule_me-style delayed self input is expressed as workflow state plus DurableClock.sleep followed by a runtime input append.
+      3: Effect Schedule may be used to compute recurrence, backoff, or calendar policy, but DurableClock is the durable suspension primitive.
+      4: effect/Scheduler is not used as Firegrid's durable scheduling abstraction.
+
+  PHASE_5_HOST_WORKFLOW:
+    requirements:
+      1: A future HostWorkflow observes explicit eligible runtime-context work and starts or resumes RuntimeContextWorkflow executions without directly performing external runtime side effects.
+      2: HostWorkflow does not use app-local in-memory sets as a correctness fence for context execution.
+      3: HostWorkflow does not start child context workflows from retained context rows until the control-plane model can distinguish eligible work from already-observed context evidence.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: RuntimeContext remains the durable intent and identity record; runRuntimeContext is an activity effect, not a new durable record family or product plane.
+      2: RuntimeIngressTable.deliveries remains per-input delivery evidence inside runRuntimeContext unless a narrower activity-private checkpoint table is explicitly introduced.
+      3: packages/runtime/src/durable-tools is provisional and may only bridge DurableTable row matches into workflow deferred completion; it must not own host dispatch, runtime execution, temporal scheduling, or context ownership.
+      4: The workflow-driven runtime model does not introduce a public executeByName, workflow-name registry, DurableConsumer, ConsumerSource, ConsumerCheckpointStore, or DurableProjection replacement.
+      5: Per-message runtime input delivery is not modeled as one workflow activity per input row in the default runtime path.
+
+  VALIDATION:
+    requirements:
+      1: The first implementation phase must prove duplicate startRuntime(contextId) calls do not duplicate process start.
+      2: The synchronous run phase must prove a real local-process command can be launched and observed through RuntimeOutputTable using the same runtime-context workflow path.
+      3: A temporal workflow phase must prove DurableClock wakeup survives workflow-engine reconstruction before any Firegrid-owned schedule_me facade is accepted.
