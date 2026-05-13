@@ -6,12 +6,24 @@
 //   - The durable RuntimeContext row stores binding refs only — never the
 //     resolved value.
 //   - The child process receives the resolved value at spawn time when the
-//     host policy authorizes the env ref.
-//   - The child process never sees a value (and never even spawns) when
-//     the host policy denies the env ref, even if the binding row is
-//     persisted by an upstream / malicious launcher.
+//     host policy authorizes the exact (target,source) pair.
+//   - A row whose pair is not authorized fails before any spawn.
+//   - The default deny-all policy rejects any binding.
+//
+// Important comment for future test authors: Firegrid never stores
+// resolved env values as control-plane config, run-status evidence, or
+// snapshots — that invariant is what this file protects. The child
+// process's stdout/stderr are UNTRUSTED user output and the runtime
+// journals them into RuntimeOutputTable verbatim; if a child prints its
+// own env, it leaks. To prove the resolver delivered the right value
+// WITHOUT leaking it into the journal, the happy path uses a SHA-256
+// digest probe: the child computes a hash of process.env.FAKE_AGENT_KEY
+// and prints only the digest. The test asserts the digest matches the
+// expected one and that the raw secret value never appears in any
+// durable surface.
 
 import { DurableStreamTestServer } from "@durable-streams/server"
+import { createHash } from "node:crypto"
 import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
@@ -68,34 +80,45 @@ const appendRuntimeContext = (
     Effect.scoped,
   ))
 
-const allowingPolicy = (
-  allowedEnvVars: ReadonlyArray<string>,
+const authorizingPolicy = (
+  pairs: ReadonlyArray<readonly [string, string]>,
   values: Record<string, string>,
 ) =>
   Layer.succeed(
     RuntimeEnvResolverPolicy,
     RuntimeEnvResolverPolicy.make({
-      allowedEnvVars,
+      authorizedBindings: pairs,
       lookupEnv: (name) => values[name],
     }),
   )
 
+const sha256Hex = (input: string): string =>
+  createHash("sha256").update(input).digest("hex")
+
 describe("runtime env bindings authority boundary", () => {
-  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 child receives resolved value while durable row stores the ref only", async () => {
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 child receives resolved value (proved via digest probe) while durable row + output journal store no secret", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-${crypto.randomUUID()}`
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
     const outputTableStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtimeOutput`
     const secretValue = `super-secret-${crypto.randomUUID()}`
+    const expectedDigest = sha256Hex(secretValue)
 
-    // Child prints exactly what it saw in process.env.FAKE_AGENT_KEY so we
-    // can assert the resolved value reached it. The child wraps it in a
-    // JSONL envelope so the runtime journals it to the events table.
+    // Digest-based proof: child computes SHA-256 of the env value and
+    // prints only the digest. The runtime journal therefore captures a
+    // digest, never the secret. The test verifies the digest matches
+    // what we'd compute over the secret we injected through the policy
+    // lookup — proving end-to-end resolution without leaking the secret
+    // through child stdout into RuntimeOutputTable.events.
     const childCode = `
-console.log(JSON.stringify({
-  type: "assistant",
-  message: { content: [{ type: "text", text: process.env.FAKE_AGENT_KEY }] },
-}))
+import { createHash } from "node:crypto"
+const value = process.env.FAKE_AGENT_KEY
+if (value === undefined) {
+  process.stderr.write("missing env\\n")
+  process.exit(7)
+}
+const digest = createHash("sha256").update(value).digest("hex")
+console.log(JSON.stringify({ type: "probe", digest }))
 `
     const contextId = await appendRuntimeContext(
       controlPlaneStreamUrl,
@@ -107,11 +130,12 @@ console.log(JSON.stringify({
       startRuntime({ contextId }).pipe(
         Effect.provide(FiregridRuntimeHostWithWorkflowLive(
           { durableStreamsBaseUrl: baseUrl, namespace },
-          // Authorize the host env var that the binding ref names. The
-          // test injects its lookup so we never touch real process env.
-          allowingPolicy(["PARENT_FAKE_AGENT_KEY"], {
-            PARENT_FAKE_AGENT_KEY: secretValue,
-          }),
+          // Authorize the exact (target, source) pair the row uses. The
+          // lookup is injected so the test never touches real process env.
+          authorizingPolicy(
+            [["FAKE_AGENT_KEY", "PARENT_FAKE_AGENT_KEY"]],
+            { PARENT_FAKE_AGENT_KEY: secretValue },
+          ),
         )),
       ),
     )
@@ -126,7 +150,9 @@ console.log(JSON.stringify({
         coll.toArray
           .filter(event => event.contextId === contextId)
           .sort((left, right) => left.sequence - right.sequence))
-      return { context, events }
+      const logs = yield* outputTable.logs.query((coll) =>
+        coll.toArray.filter(log => log.contextId === contextId))
+      return { context, events, logs }
     }).pipe(
       Effect.provide(RuntimeControlPlaneTable.layer({
         streamOptions: {
@@ -144,51 +170,61 @@ console.log(JSON.stringify({
     ))
 
     const contextRow = Option.getOrThrow(retained.context)
-    // Bindings present, value never.
+    // Durable row records the binding ref, never the resolved value.
     expect(contextRow.runtime.config.envBindings).toEqual([
       { name: "FAKE_AGENT_KEY", ref: "env:PARENT_FAKE_AGENT_KEY" },
     ])
-    const serializedRow = JSON.stringify(contextRow)
-    expect(serializedRow).not.toContain(secretValue)
 
-    // Child saw the resolved value.
+    // The child saw the resolved value — proved by the matching digest.
     expect(retained.events).toHaveLength(1)
     const firstEvent = retained.events[0]
     expect(firstEvent).toBeDefined()
     const parsed = JSON.parse(firstEvent!.raw) as {
-      readonly message: { readonly content: ReadonlyArray<{ readonly text: string }> }
+      readonly type: string
+      readonly digest: string
     }
-    expect(parsed.message.content[0]!.text).toBe(secretValue)
-    // Output journal should not contain anything that reveals the host env
-    // var name (the journal is bounded by what the child printed; we just
-    // sanity-check there's no leakage of the binding ref into evidence).
-    const serializedEvents = JSON.stringify(retained.events)
-    expect(serializedEvents).not.toContain("env:PARENT_FAKE_AGENT_KEY")
+    expect(parsed.type).toBe("probe")
+    expect(parsed.digest).toBe(expectedDigest)
+
+    // The secret value must not appear anywhere durable: not in the
+    // context row, not in the event journal, not in the log journal.
+    // This is the Firegrid invariant the proposal protects. (Note: this
+    // assertion stays trustworthy only because the child intentionally
+    // does not print the raw secret — child stdout/stderr are untrusted
+    // user output that the runtime journals verbatim, so a misbehaving
+    // child *could* leak its own env. The platform guarantee is about
+    // config/evidence rows, not about child-emitted bytes.)
+    expect(JSON.stringify(contextRow)).not.toContain(secretValue)
+    expect(JSON.stringify(retained.events)).not.toContain(secretValue)
+    expect(JSON.stringify(retained.logs)).not.toContain(secretValue)
   })
 
-  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 denies a row whose env ref is not on the host allowlist (no child spawn, no leak)", async () => {
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 denies a row whose authorized pair does not match (no child spawn, no leak)", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-deny-${crypto.randomUUID()}`
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
+    const outputTableStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtimeOutput`
 
     // Simulate a malicious / untrusted upstream that writes a binding
-    // asking for AWS_SECRET_ACCESS_KEY. The host's policy only authorizes
-    // ANTHROPIC_API_KEY — so the resolver must refuse before any spawn.
+    // asking for AWS_SECRET_ACCESS_KEY. The host's policy authorizes
+    // a different (target, source) pair — so the resolver must refuse
+    // before any spawn.
     const contextId = await appendRuntimeContext(
       controlPlaneStreamUrl,
       [process.execPath, "--input-type=module", "-e", "process.exit(0)"],
       [{ name: "X", ref: "env:AWS_SECRET_ACCESS_KEY" }],
     )
 
+    const awsSecret = `must-never-be-read-${crypto.randomUUID()}`
     const result = await Effect.runPromise(
       Effect.either(
         startRuntime({ contextId }).pipe(
           Effect.provide(FiregridRuntimeHostWithWorkflowLive(
             { durableStreamsBaseUrl: baseUrl, namespace },
-            allowingPolicy(["ANTHROPIC_API_KEY"], {
-              ANTHROPIC_API_KEY: "ok",
-              AWS_SECRET_ACCESS_KEY: "must-never-be-read",
-            }),
+            authorizingPolicy(
+              [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
+              { ANTHROPIC_API_KEY: "ok", AWS_SECRET_ACCESS_KEY: awsSecret },
+            ),
           )),
         ),
       ),
@@ -200,17 +236,24 @@ console.log(JSON.stringify({
         _tag: "RuntimeContextError",
         op: "buildCommand.resolveEnvBindings",
       })
-      expect(result.left.message).toContain("AWS_SECRET_ACCESS_KEY")
-      expect(result.left.message).toContain("not on the runtime host's authorized env allowlist")
+      expect(result.left.message).toContain("not authorized")
     }
 
     // run-status row chain should reflect "started" then "failed", and no
-    // events row should exist (we never spawned the child).
+    // events row should exist (we never spawned the child). Sanity-check
+    // that the unauthorized source value never made it into any durable
+    // surface.
     const retained = await Effect.runPromise(Effect.gen(function* () {
       const control = yield* RuntimeControlPlaneTable
+      const outputTable = yield* RuntimeOutputTable
       const runs = yield* control.runs.query((coll) =>
         coll.toArray.filter(event => event.contextId === contextId))
-      return runs.map(event => event.status)
+      const context = yield* control.contexts.get(contextId)
+      const events = yield* outputTable.events.query((coll) =>
+        coll.toArray.filter(event => event.contextId === contextId))
+      const logs = yield* outputTable.logs.query((coll) =>
+        coll.toArray.filter(log => log.contextId === contextId))
+      return { runs, context, events, logs }
     }).pipe(
       Effect.provide(RuntimeControlPlaneTable.layer({
         streamOptions: {
@@ -218,9 +261,92 @@ console.log(JSON.stringify({
           contentType: "application/json",
         },
       })),
+      Effect.provide(RuntimeOutputTable.layer({
+        streamOptions: {
+          url: outputTableStreamUrl,
+          contentType: "application/json",
+        },
+      })),
       Effect.scoped,
     ))
-    expect(retained).toEqual(expect.arrayContaining(["started", "failed"]))
+    expect(retained.runs.map(event => event.status)).toEqual(expect.arrayContaining(["started", "failed"]))
+    expect(retained.events).toHaveLength(0)
+    expect(JSON.stringify(retained)).not.toContain(awsSecret)
+  })
+
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 rejects a row that smuggles an authorized source into an unapproved target (NODE_OPTIONS exfil)", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const namespace = `runtime-env-bindings-target-mismatch-${crypto.randomUUID()}`
+    const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
+    const outputTableStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtimeOutput`
+
+    // Operator authorized (ANTHROPIC_API_KEY, ANTHROPIC_API_KEY). A
+    // malicious / untrusted row asks for the same source env but routes
+    // it into the child's NODE_OPTIONS — which Node treats as command-
+    // line flags and would let the attacker execute arbitrary code if
+    // the resolver only gated by source env name. The pair-based
+    // resolver must refuse.
+    const apiKey = `would-be-injected-into-NODE_OPTIONS-${crypto.randomUUID()}`
+    const contextId = await appendRuntimeContext(
+      controlPlaneStreamUrl,
+      [process.execPath, "--input-type=module", "-e", "process.exit(0)"],
+      [{ name: "NODE_OPTIONS", ref: "env:ANTHROPIC_API_KEY" }],
+    )
+
+    const result = await Effect.runPromise(
+      Effect.either(
+        startRuntime({ contextId }).pipe(
+          Effect.provide(FiregridRuntimeHostWithWorkflowLive(
+            { durableStreamsBaseUrl: baseUrl, namespace },
+            authorizingPolicy(
+              [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
+              { ANTHROPIC_API_KEY: apiKey },
+            ),
+          )),
+        ),
+      ),
+    )
+
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      expect(result.left).toMatchObject({
+        _tag: "RuntimeContextError",
+        op: "buildCommand.resolveEnvBindings",
+      })
+      expect(result.left.message).toContain("NODE_OPTIONS")
+      expect(result.left.message).toContain("not authorized")
+    }
+
+    // The would-be-injected source value should not appear in any
+    // retained durable surface.
+    const retained = await Effect.runPromise(Effect.gen(function* () {
+      const control = yield* RuntimeControlPlaneTable
+      const outputTable = yield* RuntimeOutputTable
+      const runs = yield* control.runs.query((coll) =>
+        coll.toArray.filter(event => event.contextId === contextId))
+      const events = yield* outputTable.events.query((coll) =>
+        coll.toArray.filter(event => event.contextId === contextId))
+      const logs = yield* outputTable.logs.query((coll) =>
+        coll.toArray.filter(log => log.contextId === contextId))
+      return { runs, events, logs }
+    }).pipe(
+      Effect.provide(RuntimeControlPlaneTable.layer({
+        streamOptions: {
+          url: controlPlaneStreamUrl,
+          contentType: "application/json",
+        },
+      })),
+      Effect.provide(RuntimeOutputTable.layer({
+        streamOptions: {
+          url: outputTableStreamUrl,
+          contentType: "application/json",
+        },
+      })),
+      Effect.scoped,
+    ))
+    expect(retained.runs.map(event => event.status)).toEqual(expect.arrayContaining(["started", "failed"]))
+    expect(retained.events).toHaveLength(0)
+    expect(JSON.stringify(retained)).not.toContain(apiKey)
   })
 
   it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 default deny-all policy denies env bindings even with valid env values present", async () => {

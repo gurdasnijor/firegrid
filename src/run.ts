@@ -70,7 +70,10 @@ const readArgv = Effect.sync(() => globalThis.process.argv.slice(2))
 interface ParsedRunCommand {
   readonly agentArgv: ReadonlyArray<string>
   readonly bindings: ReadonlyArray<RuntimeEnvBinding>
-  readonly allowedEnvVars: ReadonlyArray<string>
+  // (childEnvVarName, hostEnvVarName) pairs. Authorization is over the
+  // exact pair so an attacker cannot route an authorized source value
+  // into an unapproved child target like NODE_OPTIONS.
+  readonly authorizedBindings: ReadonlyArray<readonly [string, string]>
 }
 
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -123,7 +126,25 @@ const parseCommand = (
     }
 
     const bindings: Array<RuntimeEnvBinding> = []
-    const allowedEnvVars: Array<string> = []
+    const authorizedBindings: Array<readonly [string, string]> = []
+    const seenTargets = new Set<string>()
+    const recordBinding = (
+      binding: RuntimeEnvBinding,
+    ): Effect.Effect<void, FiregridRunUsageError> => {
+      if (seenTargets.has(binding.name)) {
+        return Effect.fail(usageError(
+          `--secret-env target ${binding.name} was specified more than once; ` +
+            "each child env-var name may be authorized at most once per invocation.",
+        ))
+      }
+      seenTargets.add(binding.name)
+      // ref always has shape "env:VAR" because parseSecretEnvFlag built it.
+      const envName = binding.ref.slice("env:".length)
+      bindings.push(binding)
+      authorizedBindings.push([binding.name, envName])
+      return Effect.void
+    }
+
     let index = 0
     while (index < before.length) {
       const token = before[index]!
@@ -135,20 +156,14 @@ const parseCommand = (
           ))
         }
         const binding = yield* parseSecretEnvFlag(value)
-        // Pull the env name back out of the ref. Bindings only ever take
-        // shape "env:VAR" here because parseSecretEnvFlag constructs them.
-        const envName = binding.ref.slice("env:".length)
-        bindings.push(binding)
-        allowedEnvVars.push(envName)
+        yield* recordBinding(binding)
         index += 2
         continue
       }
       if (token.startsWith("--secret-env=")) {
         const value = token.slice("--secret-env=".length)
         const binding = yield* parseSecretEnvFlag(value)
-        const envName = binding.ref.slice("env:".length)
-        bindings.push(binding)
-        allowedEnvVars.push(envName)
+        yield* recordBinding(binding)
         index += 1
         continue
       }
@@ -161,7 +176,7 @@ const parseCommand = (
     return {
       agentArgv: after,
       bindings,
-      allowedEnvVars,
+      authorizedBindings,
     }
   })
 
@@ -203,15 +218,15 @@ const runWithLayer = (parsed: ParsedRunCommand) =>
 //
 // The env policy layer is constructed here, at the binary boundary, so
 // that globalThis.process.env reads never leak into library code. The
-// allowlist is derived from --secret-env flags exclusively; nothing else
-// can authorize an env-binding ref.
+// pair-based authorization map is derived from --secret-env flags
+// exclusively; nothing else can authorize an env-binding pair.
 const envPolicyLayer = (
-  allowedEnvVars: ReadonlyArray<string>,
+  authorizedBindings: ReadonlyArray<readonly [string, string]>,
 ) =>
   Layer.succeed(
     RuntimeEnvResolverPolicy,
     RuntimeEnvResolverPolicy.make({
-      allowedEnvVars,
+      authorizedBindings,
       lookupEnv: (name: string) => globalThis.process.env[name],
     }),
   )
@@ -223,7 +238,7 @@ const programWithExitCode: Effect.Effect<number, never, never> = Effect.gen(
     return yield* runWithLayer(parsed).pipe(
       Effect.provide(
         FiregridRuntimeHostWithWorkflowFromConfigWithEnvPolicy(
-          envPolicyLayer(parsed.allowedEnvVars),
+          envPolicyLayer(parsed.authorizedBindings),
         ),
       ),
       Effect.scoped,

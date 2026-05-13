@@ -7,13 +7,13 @@ import {
 } from "./secrets.ts"
 
 const policyLayer = (
-  allowed: ReadonlyArray<string>,
+  authorized: ReadonlyArray<readonly [string, string]>,
   env: Record<string, string>,
 ) =>
   Layer.succeed(
     RuntimeEnvResolverPolicy,
     RuntimeEnvResolverPolicy.make({
-      allowedEnvVars: allowed,
+      authorizedBindings: authorized,
       lookupEnv: (name) => env[name],
     }),
   )
@@ -24,9 +24,10 @@ describe("runtime providers/sandboxes secrets resolver", () => {
       resolveSpawnEnvVars([
         { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
       ]).pipe(
-        Effect.provide(policyLayer(["ANTHROPIC_API_KEY"], {
-          ANTHROPIC_API_KEY: "sk-test-value",
-        })),
+        Effect.provide(policyLayer(
+          [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
+          { ANTHROPIC_API_KEY: "sk-test-value" },
+        )),
       ),
     )
     expect(out).toEqual({ ANTHROPIC_API_KEY: "sk-test-value" })
@@ -37,27 +38,25 @@ describe("runtime providers/sandboxes secrets resolver", () => {
       resolveSpawnEnvVars([
         { name: "ANTHROPIC_API_KEY", ref: "env:PARENT_ANTHROPIC_KEY" },
       ]).pipe(
-        Effect.provide(policyLayer(["PARENT_ANTHROPIC_KEY"], {
-          PARENT_ANTHROPIC_KEY: "sk-renamed",
-        })),
+        Effect.provide(policyLayer(
+          [["ANTHROPIC_API_KEY", "PARENT_ANTHROPIC_KEY"]],
+          { PARENT_ANTHROPIC_KEY: "sk-renamed" },
+        )),
       ),
     )
     expect(out).toEqual({ ANTHROPIC_API_KEY: "sk-renamed" })
   })
 
-  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 denies a binding whose env ref is not on the allowlist", async () => {
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 denies a binding whose target name is not on the authorized pair map", async () => {
     const result = await Effect.runPromise(
       Effect.either(
         resolveSpawnEnvVars([
-          { name: "ANTHROPIC_API_KEY", ref: "env:AWS_SECRET_ACCESS_KEY" },
+          { name: "AWS_ACCESS_KEY_ID", ref: "env:AWS_ACCESS_KEY_ID" },
         ]).pipe(
-          // Allowlist authorizes ANTHROPIC_API_KEY only; the malicious row
-          // names AWS_SECRET_ACCESS_KEY as the ref. The lookup will never
-          // be consulted because authorization fails first.
-          Effect.provide(policyLayer(["ANTHROPIC_API_KEY"], {
-            AWS_SECRET_ACCESS_KEY: "must-never-be-read",
-            ANTHROPIC_API_KEY: "ok",
-          })),
+          Effect.provide(policyLayer(
+            [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
+            { AWS_ACCESS_KEY_ID: "must-never-be-read" },
+          )),
         ),
       ),
     )
@@ -65,8 +64,62 @@ describe("runtime providers/sandboxes secrets resolver", () => {
     if (Either.isLeft(result)) {
       expect(result.left).toBeInstanceOf(ResolveEnvBindingError)
       expect(result.left.op).toBe("resolveSpawnEnvVars")
+      expect(result.left.message).toContain("not authorized")
+    }
+  })
+
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 rejects a row that maps an authorized source value into an unapproved child target (NODE_OPTIONS exfil pattern)", async () => {
+    // Operator authorized only (ANTHROPIC_API_KEY, ANTHROPIC_API_KEY).
+    // A malicious / untrusted upstream writes a row that asks for the
+    // same source env but routes it into the child's NODE_OPTIONS,
+    // which Node treats as command-line flags — code execution via
+    // env exfil. The resolver must refuse even though the *source*
+    // envName is authorized for a different target.
+    const result = await Effect.runPromise(
+      Effect.either(
+        resolveSpawnEnvVars([
+          { name: "NODE_OPTIONS", ref: "env:ANTHROPIC_API_KEY" },
+        ]).pipe(
+          Effect.provide(policyLayer(
+            [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
+            { ANTHROPIC_API_KEY: "should-never-end-up-in-NODE_OPTIONS" },
+          )),
+        ),
+      ),
+    )
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      expect(result.left.op).toBe("resolveSpawnEnvVars")
+      expect(result.left.bindingName).toBe("NODE_OPTIONS")
+      expect(result.left.message).toContain("not authorized")
+    }
+  })
+
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 rejects an authorized binding-name paired with an unauthorized source env", async () => {
+    // Operator authorized (ANTHROPIC_API_KEY, PARENT_ANTHROPIC_KEY). A
+    // row reusing the same target name but pointing at a different host
+    // env must be refused — the authorization is over the exact pair.
+    const result = await Effect.runPromise(
+      Effect.either(
+        resolveSpawnEnvVars([
+          { name: "ANTHROPIC_API_KEY", ref: "env:AWS_SECRET_ACCESS_KEY" },
+        ]).pipe(
+          Effect.provide(policyLayer(
+            [["ANTHROPIC_API_KEY", "PARENT_ANTHROPIC_KEY"]],
+            {
+              PARENT_ANTHROPIC_KEY: "ok",
+              AWS_SECRET_ACCESS_KEY: "must-never-be-read",
+            },
+          )),
+        ),
+      ),
+    )
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      expect(result.left.op).toBe("resolveSpawnEnvVars")
+      expect(result.left.bindingName).toBe("ANTHROPIC_API_KEY")
       expect(result.left.envName).toBe("AWS_SECRET_ACCESS_KEY")
-      expect(result.left.message).toContain("not on the runtime host's authorized env allowlist")
+      expect(result.left.message).toContain("does not match the authorized pair")
     }
   })
 
@@ -89,7 +142,10 @@ describe("runtime providers/sandboxes secrets resolver", () => {
       Effect.either(
         resolveSpawnEnvVars([
           { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
-        ]).pipe(Effect.provide(policyLayer(["ANTHROPIC_API_KEY"], {}))),
+        ]).pipe(Effect.provide(policyLayer(
+          [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
+          {},
+        ))),
       ),
     )
     expect(Either.isLeft(result)).toBe(true)
@@ -104,7 +160,10 @@ describe("runtime providers/sandboxes secrets resolver", () => {
         resolveSpawnEnvVars([
           { name: "ANTHROPIC_API_KEY", ref: "env:ONE" },
           { name: "ANTHROPIC_API_KEY", ref: "env:TWO" },
-        ]).pipe(Effect.provide(policyLayer(["ONE", "TWO"], { ONE: "1", TWO: "2" }))),
+        ]).pipe(Effect.provide(policyLayer(
+          [["ANTHROPIC_API_KEY", "ONE"]],
+          { ONE: "1", TWO: "2" },
+        ))),
       ),
     )
     expect(Either.isLeft(result)).toBe(true)
@@ -113,12 +172,32 @@ describe("runtime providers/sandboxes secrets resolver", () => {
     }
   })
 
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 rejects a binding whose target name is not a valid env-var identifier", async () => {
+    const result = await Effect.runPromise(
+      Effect.either(
+        resolveSpawnEnvVars([
+          { name: "BAD;NAME", ref: "env:ANTHROPIC_API_KEY" },
+        ]).pipe(Effect.provide(policyLayer(
+          [["BAD;NAME", "ANTHROPIC_API_KEY"]],
+          { ANTHROPIC_API_KEY: "secret" },
+        ))),
+      ),
+    )
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      expect(result.left.message).toContain("not a valid env-var identifier")
+    }
+  })
+
   it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 rejects unknown ref shapes loudly (forward-compat for vault: / secret:)", async () => {
     const result = await Effect.runPromise(
       Effect.either(
         resolveSpawnEnvVars([
           { name: "ANTHROPIC_API_KEY", ref: "vault:secret/anthropic" },
-        ]).pipe(Effect.provide(policyLayer(["ANTHROPIC_API_KEY"], {}))),
+        ]).pipe(Effect.provide(policyLayer(
+          [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
+          {},
+        ))),
       ),
     )
     expect(Either.isLeft(result)).toBe(true)
