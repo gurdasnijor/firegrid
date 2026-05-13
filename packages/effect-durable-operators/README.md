@@ -221,10 +221,14 @@ import {
   DurableTableProvider,
   useDurableLiveQuery,
   useDurableTable,
+  useDurableTableProviderStatus,
 } from "effect-durable-operators/react"
 import { eq } from "@tanstack/db"
 
 function Executions({ workflowName }: { workflowName: string }) {
+  const provider = useDurableTableProviderStatus()
+  if (provider.status === "error") return String(provider.error)
+
   const table = useDurableTable(WorkflowTable)
   const { data = [] } = useDurableLiveQuery(
     (q) =>
@@ -255,8 +259,10 @@ const app = (
 ```
 
 `DurableTableProvider` builds the supplied Layer once for the provider
-lifetime and releases the backing Effect Scope on unmount. Do not acquire
-table layers inside individual components or route handlers.
+lifetime and releases the backing Effect Scope on unmount.
+`useDurableTableProviderStatus()` returns `{ status, error }`, where `status`
+is `"loading"`, `"ready"`, or `"error"`. Do not acquire table layers inside
+individual components or route handlers.
 
 ## Writes
 
