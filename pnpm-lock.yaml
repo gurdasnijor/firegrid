@@ -20,7 +20,7 @@ importers:
     devDependencies:
       '@durable-streams/server':
         specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
+        version: 0.3.1(@tanstack/db@0.6.5(typescript@5.9.3))
       '@effect/eslint-plugin':
         specifier: ^0.3.2
         version: 0.3.2
@@ -66,15 +66,21 @@ importers:
 
   apps/flamecast:
     dependencies:
-      '@effect/platform':
-        specifier: ^0.96.0
-        version: 0.96.1(effect@3.21.2)
-      '@effect/workflow':
-        specifier: 0.18.1
-        version: 0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@effect/platform-node':
+        specifier: ^0.106.0
+        version: 0.106.0(@effect/cluster@0.58.2(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@firegrid/client':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@firegrid/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@tanstack/db':
+        specifier: ^0.5.33
+        version: 0.5.33(typescript@5.9.3)
+      '@tanstack/react-db':
+        specifier: 0.1.77
+        version: 0.1.77(react@18.3.1)(typescript@5.9.3)
       effect:
         specifier: ^3.18.0
         version: 3.21.2
@@ -88,6 +94,9 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@effect/vitest':
+        specifier: ^0.29.0
+        version: 0.29.0(effect@3.21.2)(vitest@3.2.4(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4))
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17
@@ -446,6 +455,12 @@ packages:
       '@effect/experimental': ^0.60.0
       '@effect/platform': ^0.96.1
       effect: ^3.21.2
+
+  '@effect/vitest@0.29.0':
+    resolution: {integrity: sha512-DvWr1aeEcaZ8mtu8hNVb4e3rEYvGEwQSr7wsNrW53t6nKYjkmjRICcvVEsXUhjoCblRHSxRsRV0TOt0+UmcvaQ==}
+    peerDependencies:
+      effect: ^3.21.0
+      vitest: ^3.2.0
 
   '@effect/workflow@0.18.1':
     resolution: {integrity: sha512-FxsUxkyvd7CyN7tw4bQgmAJv8tf8hUwy72bwGYzKGpeuiEObiUKgO1pg8xM49gB6EtwOdVRJhytwcFc8eM/6ow==}
@@ -1405,8 +1420,18 @@ packages:
     peerDependencies:
       typescript: '>=4.7'
 
+  '@tanstack/db-ivm@0.1.18':
+    resolution: {integrity: sha512-+pZJiRKdoKRM5Epq9T7otD9ZJl82pRFauo7LKuJGrarjVKQ7r+QQlPe3kGdN9LEKSnuNGIWjX9OOY4M8kH4eLw==}
+    peerDependencies:
+      typescript: '>=4.7'
+
   '@tanstack/db@0.5.33':
     resolution: {integrity: sha512-8pV3jZdqx6VgDubuddoT0UbQi8RrlCJ/kjhmgPIZUjvfhD3sz1TRMK4RTwOOf/JPTQ4qwWy5ggYLUTJxZZRB2w==}
+    peerDependencies:
+      typescript: '>=4.7'
+
+  '@tanstack/db@0.6.5':
+    resolution: {integrity: sha512-gtCuAo4UtC9SR/kTMu5fVEff6qZ2R1FZi9X7MybtHKA6wve7RePifGG6qBI4OmMB+7juT5/+glNbnqZOrG0/pg==}
     peerDependencies:
       typescript: '>=4.7'
 
@@ -2899,10 +2924,10 @@ snapshots:
       '@microsoft/fetch-event-source': 2.0.1
       fastq: 1.20.1
 
-  '@durable-streams/server@0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))':
+  '@durable-streams/server@0.3.1(@tanstack/db@0.6.5(typescript@5.9.3))':
     dependencies:
       '@durable-streams/client': 0.2.3
-      '@durable-streams/state': 0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))
+      '@durable-streams/state': 0.2.5(@tanstack/db@0.6.5(typescript@5.9.3))
       '@neophi/sieve-cache': 1.5.0
       lmdb: 3.5.4
     transitivePeerDependencies:
@@ -2913,6 +2938,12 @@ snapshots:
       '@durable-streams/client': 0.2.3
       '@standard-schema/spec': 1.1.0
       '@tanstack/db': 0.5.33(typescript@5.9.3)
+
+  '@durable-streams/state@0.2.5(@tanstack/db@0.6.5(typescript@5.9.3))':
+    dependencies:
+      '@durable-streams/client': 0.2.3
+      '@standard-schema/spec': 1.1.0
+      '@tanstack/db': 0.6.5(typescript@5.9.3)
 
   '@effect/cluster@0.58.2(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)':
     dependencies:
@@ -2987,6 +3018,11 @@ snapshots:
       '@effect/platform': 0.96.1(effect@3.21.2)
       effect: 3.21.2
       uuid: 11.1.1
+
+  '@effect/vitest@0.29.0(effect@3.21.2)(vitest@3.2.4(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4))':
+    dependencies:
+      effect: 3.21.2
+      vitest: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)
 
   '@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)':
     dependencies:
@@ -3621,10 +3657,23 @@ snapshots:
       sorted-btree: 1.8.1
       typescript: 5.9.3
 
+  '@tanstack/db-ivm@0.1.18(typescript@5.9.3)':
+    dependencies:
+      fractional-indexing: 3.2.0
+      sorted-btree: 1.8.1
+      typescript: 5.9.3
+
   '@tanstack/db@0.5.33(typescript@5.9.3)':
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@tanstack/db-ivm': 0.1.17(typescript@5.9.3)
+      '@tanstack/pacer-lite': 0.2.1
+      typescript: 5.9.3
+
+  '@tanstack/db@0.6.5(typescript@5.9.3)':
+    dependencies:
+      '@standard-schema/spec': 1.1.0
+      '@tanstack/db-ivm': 0.1.18(typescript@5.9.3)
       '@tanstack/pacer-lite': 0.2.1
       typescript: 5.9.3
 

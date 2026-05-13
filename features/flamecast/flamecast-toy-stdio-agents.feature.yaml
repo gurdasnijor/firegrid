@@ -1,0 +1,32 @@
+feature:
+  name: flamecast-toy-stdio-agents
+  product: flamecast
+  description: Minimal Flamecast toy app that adapts the Flamecast web assets and proves a local stdio agent can be launched through current Firegrid runtime tables.
+
+components:
+  WEB_ASSETS:
+    requirements:
+      1: The toy Flamecast web app uses the source web infra assets from `flamecast-agents/web` under `apps/flamecast`, excluding generated output and dependency directories.
+      2: The browser UI lets a user submit one prompt and inspect the resulting local-agent runtime output.
+
+  LOCAL_AGENT:
+    requirements:
+      1: Submitting a toy prompt uses `@firegrid/client` launch semantics to create a `local-process` stdio runtime context.
+      2: The prompt is delivered to the stdio command through `@firegrid/client` prompt semantics.
+      3: The toy reads local-agent stdout and stderr through `@firegrid/client` snapshot and collection observation so the UI can verify the round trip.
+
+  REACTIVE_UI:
+    requirements:
+      1: The browser observes Firegrid runtime collections with TanStack live query semantics instead of a custom Flamecast session endpoint.
+
+  RUNBOOK:
+    requirements:
+      1: The app documents the local durable-stream server, toy runtime, and Vite UI commands needed to run the toy without an Electric Cloud token.
+
+constraints:
+  FIREGRID_BOUNDARY:
+    requirements:
+      1: The toy path uses current Firegrid runtime primitives rather than resurrecting stale Flamecast durable wrappers or old substrate patterns.
+      2: Runtime product code does not import upstream `@durable-streams/client` or `@durable-streams/state` packages directly.
+      3: Reusable runtime package changes stay limited to public surface needed by product apps to compose their own runtime hosts.
+      4: Flamecast app code does not define a custom HTTP JSON control-plane server for toy sessions.
