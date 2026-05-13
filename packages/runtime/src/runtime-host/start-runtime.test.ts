@@ -1,4 +1,7 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
+import { mkdir, readFile, rm } from "node:fs/promises"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
 import {
   local,
   normalizeRuntimeIntent,
@@ -8,7 +11,7 @@ import { Effect, Either, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   startRuntime,
-  FiregridRuntimeHostLive,
+  FiregridRuntimeHostWithWorkflowLive,
 } from "../runtime-host/index.ts"
 import {
   RuntimeControlPlaneTable,
@@ -54,7 +57,7 @@ const appendRuntimeContext = (
   ))
 
 describe("durable launch tracer bullet 001", () => {
-  it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.7 firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.5 journals child JSONL stdout events and stderr logs durably", async () => {
+  it("firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.1 firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.2 firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.3 journals child JSONL stdout events and stderr logs durably through RuntimeContextWorkflow", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-launcher-${crypto.randomUUID()}`
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
@@ -82,7 +85,7 @@ console.error("diagnostic: child stderr")
       }).pipe(
         // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.3
         // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.5
-        Effect.provide(FiregridRuntimeHostLive({
+        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
           durableStreamsBaseUrl: baseUrl,
           namespace,
         })),
@@ -166,7 +169,7 @@ console.error("diagnostic: child stderr")
     }))
   })
 
-  it("firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.4 records failed when local command streaming cannot start", async () => {
+  it("firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.2 records failed when local command streaming cannot start", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-launcher-${crypto.randomUUID()}`
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
@@ -179,7 +182,7 @@ console.error("diagnostic: child stderr")
       Effect.either(startRuntime({
         contextId,
       }).pipe(
-        Effect.provide(FiregridRuntimeHostLive({
+        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
           durableStreamsBaseUrl: baseUrl,
           namespace,
         })),
@@ -211,5 +214,92 @@ console.error("diagnostic: child stderr")
     ))
     expect(statuses).toEqual(expect.arrayContaining(["started", "failed"]))
     expect(statuses).toHaveLength(2)
+  })
+
+  it("firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.4 firegrid-workflow-driven-runtime.VALIDATION.1 does not duplicate external runtime execution for duplicate starts", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const namespace = `runtime-launcher-${crypto.randomUUID()}`
+    const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
+    const outputTableStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtimeOutput`
+    const markerDir = join(tmpdir(), `firegrid-runtime-start-${crypto.randomUUID()}`)
+    await mkdir(markerDir)
+    const markerPath = join(markerDir, "starts.txt")
+    const childCode = `
+import { appendFileSync } from "node:fs"
+appendFileSync(${JSON.stringify(markerPath)}, "start\\n")
+await new Promise(resolve => setTimeout(resolve, 75))
+console.log(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "once" }] } }))
+`
+    const contextId = await appendRuntimeContext(
+      controlPlaneStreamUrl,
+      [process.execPath, "--input-type=module", "-e", childCode],
+    )
+
+    try {
+      const [first, second] = await Promise.all([
+        Effect.runPromise(
+          startRuntime({ contextId }).pipe(
+            Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+              durableStreamsBaseUrl: baseUrl,
+              namespace,
+            })),
+          ),
+        ),
+        Effect.runPromise(
+          startRuntime({ contextId }).pipe(
+            Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+              durableStreamsBaseUrl: baseUrl,
+              namespace,
+            })),
+          ),
+        ),
+      ])
+
+      expect(first).toMatchObject({
+        contextId,
+        activityAttempt: 1,
+        exitCode: 0,
+      })
+      expect(second).toEqual(first)
+
+      const marker = await readFile(markerPath, "utf8")
+      expect(marker.trim().split("\n")).toHaveLength(1)
+
+      const retained = await Effect.runPromise(Effect.gen(function* () {
+        const table = yield* RuntimeControlPlaneTable
+        const outputTable = yield* RuntimeOutputTable
+        const runs = yield* table.runs.query((coll) =>
+          coll.toArray.filter(event => event.contextId === contextId),
+        )
+        const events = yield* outputTable.events.query((coll) =>
+          coll.toArray.filter(event => event.contextId === contextId),
+        )
+        return {
+          runs,
+          events,
+        }
+      }).pipe(
+        Effect.provide(RuntimeControlPlaneTable.layer({
+          streamOptions: {
+            url: controlPlaneStreamUrl,
+            contentType: "application/json",
+          },
+        })),
+        Effect.provide(RuntimeOutputTable.layer({
+          streamOptions: {
+            url: outputTableStreamUrl,
+            contentType: "application/json",
+          },
+        })),
+        Effect.scoped,
+      ))
+
+      expect(retained.runs.map(event => event.status)).toEqual(expect.arrayContaining(["started", "exited"]))
+      expect(retained.runs).toHaveLength(2)
+      expect(new Set(retained.runs.map(event => event.activityAttempt))).toEqual(new Set([1]))
+      expect(retained.events).toHaveLength(1)
+    } finally {
+      await rm(markerDir, { recursive: true, force: true })
+    }
   })
 })
