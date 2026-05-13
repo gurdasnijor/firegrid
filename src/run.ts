@@ -11,7 +11,7 @@
  *    RuntimeControlPlaneTable, and call startRuntime(contextId).
  *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2 — block until
  *    startRuntime / RuntimeContextWorkflow returns and exit with the runtime
- *    execution exit code.
+ *    execution exit code via NodeRuntime.runMain's teardown boundary.
  *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.3 — reuse
  *    FiregridRuntimeHostWithWorkflowFromConfig so the same control-plane,
  *    ingress, output, workflow engine, and local-process provider layers
@@ -26,49 +26,70 @@
  *    be launched and observed through RuntimeOutputTable using the same
  *    runtime-context path. See the runbook in
  *    docs/runbooks/firegrid-run-sync-mvp.md for the smoke command.
+ *
+ * Implementation notes:
+ *  - The entry boundary is `NodeRuntime.runMain` from `@effect/platform-node`
+ *    with a custom `teardown` that maps the program's success value to the
+ *    process exit code. We do not import `node:process`, do not call
+ *    `Effect.runPromiseExit`, and do not call `process.exit` ourselves.
+ *  - argv is read once via `Effect.sync` against the ambient `process` global
+ *    (no `node:process` import). All subsequent error/exit handling is in
+ *    Effect.
+ *  - All errors are mapped into the success channel as exit codes so the
+ *    teardown only has to translate `Exit<never, number>` → `onExit(code)`.
+ *    Interruption (SIGINT) follows defaultTeardown's interruption-only
+ *    semantic (exit 0).
  */
 
-import { startRuntime } from "@firegrid/runtime/runtime-host"
-import { RuntimeControlPlaneTable } from "@firegrid/protocol/launch"
+import { NodeRuntime } from "@effect/platform-node"
 import {
+  RuntimeControlPlaneTable,
   local,
   normalizeRuntimeIntent,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import { FiregridRuntimeHostWithWorkflowFromConfig } from "@firegrid/runtime"
-import { Clock, Console, Effect, Layer } from "effect"
-import process from "node:process"
+import { startRuntime } from "@firegrid/runtime/runtime-host"
+import { Cause, Clock, Console, Data, Effect, Exit } from "effect"
 
-class FiregridRunUsageError extends Error {
-  override readonly name = "FiregridRunUsageError"
-}
+class FiregridRunUsageError extends Data.TaggedError("FiregridRunUsageError")<{
+  readonly message: string
+}> {}
 
-/**
- * Parse argv looking for the "--" separator. Everything after the separator is
- * the agent command. Anything before the separator is reserved for a future
- * flag-set; for the Phase 2 MVP we accept zero flags before "--".
- */
-const parseAgentCommand = (argv: ReadonlyArray<string>): ReadonlyArray<string> => {
-  const separatorIndex = argv.indexOf("--")
-  if (separatorIndex === -1) {
-    throw new FiregridRunUsageError(
-      "firegrid:run requires `--` followed by an agent command. Example: pnpm firegrid:run -- node -e 'console.log(\"hello\")'",
-    )
-  }
-  const before = argv.slice(0, separatorIndex)
-  if (before.length > 0) {
-    throw new FiregridRunUsageError(
-      `firegrid:run does not accept arguments before "--" in this MVP. Got: ${before.join(" ")}. Configure the host through env (DURABLE_STREAMS_BASE_URL, FIREGRID_RUNTIME_NAMESPACE, FIREGRID_DURABLE_STREAMS_TOKEN).`,
-    )
-  }
-  const after = argv.slice(separatorIndex + 1)
-  if (after.length === 0) {
-    throw new FiregridRunUsageError(
-      "firegrid:run requires at least one argument after `--` (the agent command).",
-    )
-  }
-  return after
-}
+const usage =
+  "firegrid:run requires `--` followed by an agent command. Example: pnpm firegrid:run -- node -e 'console.log(\"hello\")'"
+
+// Read argv from the ambient `process` global. The lint guard bans
+// `import process from "node:process"` from product source; the global is
+// allowed and is what NodeRuntime itself reads internally for signals.
+const readArgv = Effect.sync(() => globalThis.process.argv.slice(2))
+
+const parseAgentCommand = (
+  argv: ReadonlyArray<string>,
+): Effect.Effect<ReadonlyArray<string>, FiregridRunUsageError> =>
+  Effect.suspend(() => {
+    const separatorIndex = argv.indexOf("--")
+    if (separatorIndex === -1) {
+      return Effect.fail(new FiregridRunUsageError({ message: usage }))
+    }
+    const before = argv.slice(0, separatorIndex)
+    if (before.length > 0) {
+      return Effect.fail(new FiregridRunUsageError({
+        message:
+          `firegrid:run does not accept arguments before "--" in this MVP. Got: ${
+            before.join(" ")
+          }. Configure the host through env (DURABLE_STREAMS_BASE_URL, FIREGRID_RUNTIME_NAMESPACE, FIREGRID_DURABLE_STREAMS_TOKEN).`,
+      }))
+    }
+    const after = argv.slice(separatorIndex + 1)
+    if (after.length === 0) {
+      return Effect.fail(new FiregridRunUsageError({
+        message:
+          "firegrid:run requires at least one argument after `--` (the agent command).",
+      }))
+    }
+    return Effect.succeed(after)
+  })
 
 const makeContextId = (): string => `ctx_${crypto.randomUUID()}`
 
@@ -87,10 +108,10 @@ const buildRuntimeContextRow = (
  * firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2
  *
  * Build the row, append it through the same control-plane table the runtime
- * host owns, then call startRuntime and propagate its result. Returns the
- * child runtime exit code.
+ * host owns, then call startRuntime and return its exit code in the success
+ * channel.
  */
-const program = (agentArgv: ReadonlyArray<string>) =>
+const runWithLayer = (agentArgv: ReadonlyArray<string>) =>
   Effect.gen(function* () {
     const control = yield* RuntimeControlPlaneTable
     const context = yield* buildRuntimeContextRow(agentArgv)
@@ -120,39 +141,57 @@ const program = (agentArgv: ReadonlyArray<string>) =>
  */
 const layer = FiregridRuntimeHostWithWorkflowFromConfig
 
-const handleUsageError = (error: FiregridRunUsageError): never => {
-  // Synchronous CLI boundary: print usage and exit 2 (POSIX convention for
-  // misuse). This runs before any Effect program is started, so a direct
-  // throw / process.exit is the right shape.
-  process.stderr.write(`${error.message}\n`)
-  return process.exit(2) as never
+/**
+ * Argv parsing runs first — before layer construction — so a usage error
+ * surfaces with exit 2 even when env-driven Config is missing. Layer
+ * construction only happens once we have a real agent command to execute.
+ *
+ * Map all errors to POSIX-style exit codes in the success channel so the
+ * teardown only has to translate `Exit<number, never>` → `onExit(code)`.
+ *
+ *   usage error           → exit 2 (POSIX convention for misuse)
+ *   layer/runtime failure → exit 1 with the cause printed via Console.error
+ *   child runtime exit    → that exit code (0 for success, anything else
+ *                           for the agent command's own exit)
+ */
+const programWithExitCode: Effect.Effect<number, never, never> = Effect.gen(
+  function* () {
+    const argv = yield* readArgv
+    const agentArgv = yield* parseAgentCommand(argv)
+    return yield* runWithLayer(agentArgv).pipe(
+      Effect.provide(layer),
+      Effect.scoped,
+    )
+  },
+).pipe(
+  Effect.catchTag("FiregridRunUsageError", (error) =>
+    Console.error(error.message).pipe(Effect.as(2))),
+  Effect.catchAllCause((cause) =>
+    Console.error(`firegrid:run failed: ${Cause.pretty(cause)}`).pipe(
+      Effect.as(1),
+    )),
+)
+
+/**
+ * firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2
+ *
+ * Custom teardown is the @effect/platform-node entry boundary for arbitrary
+ * exit codes. Success carries the exit code as a number; interruption-only
+ * causes follow defaultTeardown's semantic (exit 0); everything else exits 1.
+ */
+function teardown<E, A>(
+  exit: Exit.Exit<E, A>,
+  onExit: (code: number) => void,
+): void {
+  if (Exit.isSuccess(exit)) {
+    const value: unknown = exit.value
+    onExit(typeof value === "number" ? value : 0)
+    return
+  }
+  onExit(Cause.isInterruptedOnly(exit.cause) ? 0 : 1)
 }
 
-const runFiregridRun = async (): Promise<void> => {
-  let agentArgv: ReadonlyArray<string>
-  try {
-    agentArgv = parseAgentCommand(process.argv.slice(2))
-  } catch (error) {
-    if (error instanceof FiregridRunUsageError) {
-      handleUsageError(error)
-      return
-    }
-    throw error
-  }
-
-  const exit = await Effect.runPromiseExit(
-    Effect.scoped(program(agentArgv).pipe(Effect.provide(layer))),
-  )
-
-  if (exit._tag === "Success") {
-    process.exit(exit.value)
-  }
-
-  // Surface the failure cause so the operator can debug; non-zero exit
-  // matches normal Node CLI failure semantics.
-  process.stderr.write(`firegrid:run failed:\n`)
-  process.stderr.write(`${String(exit.cause)}\n`)
-  process.exit(1)
-}
-
-void runFiregridRun()
+NodeRuntime.runMain(programWithExitCode, {
+  disableErrorReporting: true,
+  teardown,
+})
