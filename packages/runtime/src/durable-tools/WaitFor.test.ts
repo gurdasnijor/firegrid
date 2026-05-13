@@ -708,4 +708,147 @@ describe("durable-tools wait_for", () => {
       }),
     )
   })
+
+  it("firegrid-durable-tools.WAIT_FOR.7 reconciles a match completion written before the wait status was flipped to completed", async () => {
+    const streams = makeStreams("mid-crash")
+    const Wf = Workflow.make({
+      name: "wait-for-mid-crash",
+      payload: Schema.Struct({ id: Schema.String, requestId: Schema.String }),
+      success: TestRowResultSchema,
+      idempotencyKey: (p) => p.id,
+    })
+    const workflowLayer = Wf.toLayer((payload) =>
+      Effect.gen(function*() {
+        const outcome = yield* waitForOrDie<TestRow>({
+          name: "mid-crash",
+          source: "test-source",
+          trigger: [{ path: ["requestId"], equals: payload.requestId }],
+          resultSchema: TestRowResultSchema,
+        })
+        if (outcome._tag !== "Match") {
+          throw new Error("expected Match")
+        }
+        return outcome.row
+      }))
+
+    // Run 1: persist the wait, then crash without dispatching.
+    await runWith(
+      buildLayer(streams, workflowLayer),
+      Effect.gen(function*() {
+        yield* registerTestSource
+        yield* driveClocks
+        yield* Wf.execute(
+          { id: "mid-crash-1", requestId: "req-mid" },
+          { discard: true },
+        )
+        yield* sleep(50)
+      }),
+    )
+
+    // Between runs: write the completion row but leave the wait row in
+    // status === "active". This is the exact crash window the reconciler
+    // must bridge.
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const table = yield* DurableToolsTable
+          const waitsBefore = yield* table.waits.query((coll) => coll.toArray)
+          expect(waitsBefore).toHaveLength(1)
+          const wait = waitsBefore[0]!
+          expect(wait.status).toBe("active")
+          yield* table.completions.upsert({
+            waitKey: wait.waitKey,
+            outcome: "match",
+            matchedRowPayload: {
+              id: "match-mid",
+              requestId: "req-mid",
+              status: "submitted",
+            } satisfies TestRow,
+            completedAtMs: Date.now(),
+          })
+        }).pipe(
+          Effect.provide(DurableToolsTable.layer({
+            streamOptions: {
+              url: streams.waitForUrl,
+              contentType: "application/json",
+            },
+          })),
+        ) as Effect.Effect<void, unknown, never>,
+      ),
+    )
+
+    const result = await runWith(
+      buildLayer(streams, workflowLayer),
+      Effect.gen(function*() {
+        yield* registerTestSource
+        yield* driveClocks
+        return yield* Wf.execute({ id: "mid-crash-1", requestId: "req-mid" })
+      }),
+    )
+    expect(result.id).toBe("match-mid")
+
+    // After reconcile, the wait row should also be flipped to completed.
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const table = yield* DurableToolsTable
+          const wait = (yield* table.waits.query((coll) => coll.toArray))[0]
+          expect(wait?.status).toBe("completed")
+        }).pipe(
+          Effect.provide(DurableToolsTable.layer({
+            streamOptions: {
+              url: streams.waitForUrl,
+              contentType: "application/json",
+            },
+          })),
+        ) as Effect.Effect<void, unknown, never>,
+      ),
+    )
+  })
+
+  it("firegrid-durable-tools.RUNTIME_BOUNDARY.3 attaches a wait whose source is registered after the wait row is created", async () => {
+    const streams = makeStreams("late-source")
+    const Wf = Workflow.make({
+      name: "wait-for-late-source",
+      payload: Schema.Struct({ id: Schema.String, requestId: Schema.String }),
+      success: TestRowResultSchema,
+      idempotencyKey: (p) => p.id,
+    })
+    const workflowLayer = Wf.toLayer((payload) =>
+      Effect.gen(function*() {
+        const outcome = yield* waitForOrDie<TestRow>({
+          name: "late-source",
+          source: "test-source",
+          trigger: [{ path: ["requestId"], equals: payload.requestId }],
+          resultSchema: TestRowResultSchema,
+        })
+        if (outcome._tag !== "Match") {
+          throw new Error("expected Match")
+        }
+        return outcome.row
+      }))
+
+    const result = await runWith(
+      buildLayer(streams, workflowLayer),
+      Effect.gen(function*() {
+        yield* driveClocks
+        // Start the workflow BEFORE registering the source. The router must
+        // suspend the per-wait fiber on awaitHandle until register lands,
+        // not silently drop the wait.
+        const fiber = yield* Effect.fork(
+          Wf.execute({ id: "late-source-1", requestId: "req-late" }),
+        )
+        yield* sleep(100)
+        yield* registerTestSource
+        const source = yield* TestSourceTable
+        yield* source.rows.upsert({
+          id: "match-late",
+          requestId: "req-late",
+          status: "submitted",
+        })
+        return yield* Fiber.join(fiber)
+      }),
+    )
+    expect(result.id).toBe("match-late")
+  })
 })

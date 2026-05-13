@@ -68,6 +68,24 @@ const completeMatch = (
 
     if (!evaluateFieldEquals(wait.trigger, row)) return
 
+    // firegrid-durable-tools.TIMEOUT.3 — if a timeout completion was already
+    // written for this wait, skip; the timeout path will resolve the
+    // workflow's deferred. The final guarantee that exactly one of match /
+    // timeout resolves the workflow is `engine.deferredDone`'s Option.isNone
+    // guard, which makes the second deferredDone call a no-op.
+    const existingCompletion = yield* table.completions.query((coll) =>
+      coll.toArray.find(
+        (c) =>
+          c.waitKey.executionId === wait.waitKey.executionId &&
+          c.waitKey.name === wait.waitKey.name,
+      ))
+    if (
+      existingCompletion !== undefined &&
+      existingCompletion.outcome === "timeout"
+    ) {
+      return
+    }
+
     const completedAtMs = yield* Clock.currentTimeMillis
     yield* table.completions.upsert({
       waitKey: wait.waitKey,
@@ -177,22 +195,19 @@ const startRouter = Effect.gen(function*() {
         )
         const set = yield* Ref.get(attached)
         if (set.has(encoded)) return
+        // Mark before the awaitHandle so concurrent emits of the same wait
+        // do not each fork a waiter. The awaiter resolves when the source
+        // registers; until then this per-wait fiber simply suspends inside
+        // the runtime-host scope.
         yield* Ref.update(
           attached,
           (s) => new Set([...s, encoded]),
         )
-        const handleOpt = yield* sources.lookup(wait.sourceName)
-        if (Option.isNone(handleOpt)) {
-          yield* Effect.logWarning(
-            "[durable-tools] router: no source registered",
-          ).pipe(Effect.annotateLogs({
-            sourceName: wait.sourceName,
-            waitName: wait.waitKey.name,
-          }))
-          return
-        }
         yield* Effect.forkScoped(
-          attachWaitToSource(wait, handleOpt.value, table, engine),
+          Effect.gen(function*() {
+            const handle = yield* sources.awaitHandle(wait.sourceName)
+            yield* attachWaitToSource(wait, handle, table, engine)
+          }),
         )
       })),
     Effect.catchAll((cause) =>

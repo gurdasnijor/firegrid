@@ -163,6 +163,31 @@ const writeTimeoutCompletion = (
     if (Option.isNone(existing)) return
     const current = existing.value
     if (current.status !== "active") return
+    // firegrid-durable-tools.TIMEOUT.3 — if a match completion was already
+    // written for this wait, skip. The router's deferredDone for the match
+    // will resolve the workflow; we should not overwrite the completion
+    // record with a stale timeout.
+    const existingCompletion = yield* Effect.mapError(
+      table.completions.query((coll) =>
+        coll.toArray.find(
+          (c) =>
+            c.waitKey.executionId === waitKey.executionId &&
+            c.waitKey.name === waitKey.name,
+        )),
+      (cause) =>
+        waitForError({
+          op: "wait-for/timeout",
+          waitName,
+          message: "failed reading existing completion row",
+          cause,
+        }),
+    )
+    if (
+      existingCompletion !== undefined &&
+      existingCompletion.outcome === "match"
+    ) {
+      return
+    }
     const nowMs = yield* Clock.currentTimeMillis
     yield* Effect.mapError(
       table.completions.upsert({

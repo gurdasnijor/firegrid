@@ -44,7 +44,8 @@ components:
       1: The wait and completion DurableTable is acquired once per runtime-host scope through a runtime-owned Layer; the table is not acquired per wait_for invocation.
       2: The durable-tools wait and completion table declaration lives under @firegrid/runtime; it is not added to @firegrid/protocol unless and until a browser or edge client also needs the row contract.
       3: Source collections are registered with the router by typed DurableTable facade reference; the registry does not accept raw Durable Streams URLs or @durable-streams/* client objects.
-      4: The runtime host provides the subscription router and source-collection registry once per runtime-host lifetime alongside the existing workflow-engine and ingress layers.
+      4: The subscription router and source-collection registry are exposed as a composable runtime Layer (DurableToolsWaitForLive) intended for once-per-runtime-host composition alongside workflow-engine and ingress layers; consumers wire it through their runtime-host composition entrypoint.
+      4-note: Initial wait_for iteration ships the Layer; FiregridRuntimeHostLive does not yet compose it because that host has no workflow-engine layer wired today. Wiring is a follow-up that lands together with workflow-engine integration into the host.
 
 constraints:
   PUBLIC_SURFACE:
@@ -69,7 +70,7 @@ constraints:
 
   EFFECT_IDIOMS:
     requirements:
-      1: New tests use the @effect/vitest it.effect runner; Effect.runSync wrappers around regular it are not introduced.
+      1: New tests use @effect/vitest's it.effect runner when @effect/vitest is available in the package, and the established async it + Effect.runPromise harness (matching packages/runtime/src/workflow-engine/DurableStreamsWorkflowEngine.test.ts) when it is not; in either case, Effect.runSync wrappers around regular it are not introduced.
       2: Timestamps recorded on wait and completion rows are produced through Clock.currentTimeMillis rather than Date.now().
       3: Branching on a wait resume outcome (match versus timeout) uses Match.value or Match.tag rather than if/else or switch on the discriminator.
       4: durable-tools production code does not introduce new `as Effect.Effect<...>` or `as unknown as Effect.Effect<...>` type assertions.
