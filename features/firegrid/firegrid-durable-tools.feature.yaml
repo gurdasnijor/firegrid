@@ -8,16 +8,17 @@ components:
     requirements:
       1: A workflow handler can call wait_for(trigger, timeoutMs?) to suspend the current durable workflow until either a matching row appears in a registered source DurableTable collection or the optional timeout elapses.
       2: wait_for persists a durable wait-intent row keyed by a deterministic wait key derived from the workflow executionId and a caller-supplied name so repeated calls within the same execution observe the same wait identity.
-      3: wait_for resumes the suspended workflow by completing a workflow-engine deferred associated with the wait identity, returning the typed matched row decoded through an Effect Schema supplied at the call site.
+      3: wait_for resumes the suspended workflow when its workflow-engine deferred is completed by the router; wait_for performs call-site decoding of the deferred's raw matched-row payload through the Effect Schema supplied at the wait_for call site and returns the typed value.
       4: wait_for distinguishes a match resume from a timeout resume so the caller can branch on which side resolved without inspecting raw completion rows.
       5: wait_for is a @firegrid/runtime workflow-handler surface and does not extend the @firegrid/client browser/edge API surface.
       6: A wait identity resolves exactly once across replay, restart, and initial-state-replay re-emissions; further matches against the same wait identity are ignored.
+      7: The wait completion row is the authoritative record of resolution; on router startup or replay, a completed wait row whose workflow-engine deferred has not yet been observed as done is reconciled by an idempotent deferredDone call so that a crash between completion-row write and deferred resume does not strand the wait.
 
   SUBSCRIPTION:
     requirements:
       1: The subscription router attaches to each active wait's declared source DurableTable collection through subscribeChanges with includeInitialState equal to true so initial state and live changes flow through a single match-evaluation code path.
       2: The subscription router does not perform a snapshot query followed by a separate live subscribe.
-      3: The subscription router evaluates the wait's trigger against each row change and, on match, writes a wait completion row and completes the workflow-engine deferred with the decoded matched row.
+      3: The subscription router evaluates the wait's trigger against each row change and, on match, writes a wait completion row recording the raw matched-row payload and completes the workflow-engine deferred with that raw payload; the router does not decode the payload against a call-site schema.
       4: Trigger expressivity for v0 is an AND of scalar field-equality predicates over decoded row paths, expressed as ReadonlyArray of { path, equals } where equals is a string, number, or boolean.
       5: OR is expressed by registering multiple subscriptions; the trigger DSL itself does not include OR within a single subscription.
       6: The trigger DSL does not include NOT, range comparison, arbitrary lambda predicates, array membership, or defaulted path traversal in v0.
@@ -25,7 +26,7 @@ components:
 
   TIMEOUT:
     requirements:
-      1: An optional wait timeout is scheduled through the existing workflow-engine clockWakeups DurableTable and fireDueWorkflowClocks worker; no separate ToolTimersTable is introduced.
+      1: An optional wait timeout uses the existing @effect/workflow clock semantics (for example DurableClock) for durable suspension and wake-up; the router does not manipulate workflow clock storage or fire-due-clocks workers directly, and no separate ToolTimersTable is introduced.
       2: A timeout firing marks the wait as timed_out and completes the workflow-engine deferred with a typed timeout exit distinguishable from a match exit.
       3: A match resume preempts a pending timeout firing such that a single wait identity resolves at most once between match and timeout.
       4: A timeout firing for a wait that has already resolved via match is a no-op.
@@ -34,14 +35,14 @@ components:
     requirements:
       1: Each wait row carries a lifecycle status of active, completed, timed_out, or retired.
       2: Before writing a wait completion row or completing the workflow-engine deferred, the subscription router re-reads the wait row and skips dispatch if the wait is not in active status.
-      3: A retired or paused wait does not produce a completion row or a deferred resume even when a matching source row is observed in the same process scope.
+      3: A retired wait does not produce a completion row or a deferred resume even when a matching source row is observed in the same process scope.
       4: The router does not maintain a per-wait dynamic fiber registry to enforce lifecycle; lifecycle changes are observed at the per-dispatch re-check boundary.
       5: An attached source-collection subscription may persist until host restart after a wait it served is retired; correctness is preserved by the per-dispatch re-check, not by tearing down source streams.
 
   RUNTIME_BOUNDARY:
     requirements:
-      1: The wait, completion, and subscription DurableTable is acquired once per runtime-host scope through a runtime-owned Layer; the table is not acquired per wait_for invocation.
-      2: The durable-tools wait/completion/subscription table declaration lives under @firegrid/runtime; it is not added to @firegrid/protocol unless and until a browser or edge client also needs the row contract.
+      1: The wait and completion DurableTable is acquired once per runtime-host scope through a runtime-owned Layer; the table is not acquired per wait_for invocation.
+      2: The durable-tools wait and completion table declaration lives under @firegrid/runtime; it is not added to @firegrid/protocol unless and until a browser or edge client also needs the row contract.
       3: Source collections are registered with the router by typed DurableTable facade reference; the registry does not accept raw Durable Streams URLs or @durable-streams/* client objects.
       4: The runtime host provides the subscription router and source-collection registry once per runtime-host lifetime alongside the existing workflow-engine and ingress layers.
 
@@ -52,7 +53,7 @@ constraints:
       2: The runtime does not introduce a public executeByName, WorkflowDispatchService, or workflow-name registry to support wait_for.
       3: The trigger DSL does not grow OR (inside a single subscription), NOT, range comparisons, array membership, defaulted path traversal, or arbitrary lambdas in this iteration; any extension must be justified by a real product call site.
       4: This iteration does not ship a Firegrid-owned sleep(durationMs) facade; DurableClock.sleep remains the durable timer entrypoint for workflow handlers.
-      5: The wait/completion/subscription rows are not exposed through @firegrid/client; only the workflow-handler-facing wait_for surface is exposed.
+      5: The wait and completion rows are not exposed through @firegrid/client; only the workflow-handler-facing wait_for surface is exposed.
 
   BOUNDARIES:
     requirements:
@@ -60,16 +61,16 @@ constraints:
       2: The subscription router is not implemented as a new top-level package; it lives under packages/runtime alongside the workflow engine and ingress modules.
       3: The router does not implement match detection via Effect.sleep polling loops over DurableTable.get; DurableTable.subscribe is the discovery channel.
       4: The waitForActivityClaim multi-worker fencing helper in the workflow engine is not reused as the wait_for resolution strategy; activity claims remain a distinct isolated path.
-      5: The wait, completion, and subscription rows are not modeled through DurableConsumer, ConsumerSource, ConsumerCheckpointStore, or DurableProjection, and no new modules under those or analogous names are introduced.
+      5: The wait and completion rows are not modeled through DurableConsumer, ConsumerSource, ConsumerCheckpointStore, or DurableProjection, and no new modules under those or analogous names are introduced.
       6: New composite primary keys in durable-tools tables are encoded through Schema.transformOrFail to a JSON-tuple string with ParseResult.fail on malformed input, matching packages/protocol/src/launch/table.ts; the RuntimeInputDeliveryKey separator pattern is not extended to new keys.
-      7: durable-tools table writes go through DurableTable generated insert/upsert/delete actions; no raw Durable Streams append helpers are introduced for wait, completion, or subscription writes.
+      7: durable-tools table writes go through DurableTable generated insert/upsert/delete actions; no raw Durable Streams append helpers are introduced for wait or completion writes.
       8: DurableTable does not grow a fenced-claim, compare-and-set, or insert-if-absent action to support wait_for; wait dispatch idempotency is provided by deterministic wait keys and the per-dispatch lifecycle re-check.
-      9: The wait, completion, and subscription DurableTable schemas are not duplicated across @firegrid/runtime and @firegrid/client; a single declaration owns the row contract.
+      9: The wait and completion DurableTable schemas are not duplicated across @firegrid/runtime and @firegrid/client; a single declaration owns the row contract.
 
   EFFECT_IDIOMS:
     requirements:
       1: New tests use the @effect/vitest it.effect runner; Effect.runSync wrappers around regular it are not introduced.
-      2: Timestamps recorded on wait, completion, and subscription rows are produced through Clock.currentTimeMillis rather than Date.now().
+      2: Timestamps recorded on wait and completion rows are produced through Clock.currentTimeMillis rather than Date.now().
       3: Branching on a wait resume outcome (match versus timeout) uses Match.value or Match.tag rather than if/else or switch on the discriminator.
       4: durable-tools production code does not introduce new `as Effect.Effect<...>` or `as unknown as Effect.Effect<...>` type assertions.
-      5: durable-tools tests inspect persisted wait, completion, and subscription rows through the production DurableTable declaration rather than a test-only state store facade.
+      5: durable-tools tests inspect persisted wait and completion rows through the production DurableTable declaration rather than a test-only state store facade.

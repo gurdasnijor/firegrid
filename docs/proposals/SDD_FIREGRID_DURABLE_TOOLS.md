@@ -161,14 +161,17 @@ This may be unnecessary if `@effect/workflow` clock wakeups already cover the
 tool use case cleanly. Prefer reusing workflow clock semantics before adding a
 separate timer table.
 
-### `SubscriptionsTable`
+### `SubscriptionsTable` (deferred past PR 1)
 
 Rows:
 
 - `subscriptions`: source table + trigger + target action/workflow + status
 
-This is useful for `wait_for` and projection-style triggers. It is not the
-whole durable tools substrate.
+A separate subscriptions collection is **not** introduced in the `wait_for`
+PR 1. For PR 1, the router uses the active `waits` rows as its subscription
+source directly. A dedicated `SubscriptionsTable` is only warranted if a later
+trigger family (for example, projection-style subscriptions not tied to a
+specific wait identity) needs a longer-lived subscription contract.
 
 ### `ToolExecutionsTable`
 
@@ -186,19 +189,22 @@ The router is a scoped runtime worker, not a public service facade.
 
 Inputs:
 
-- `SubscriptionsTable`
+- the `waits` collection on the wait/completion `DurableTable`
 - a registry from durable table source name to collection facade
-- workflow engine or target dispatcher
+- the workflow engine (only to resolve deferreds; never to start workflows)
 
 Behavior:
 
-1. Subscribe to active subscription rows.
-2. For each subscription, attach to the source using `subscribeChanges` with
-   `{ includeInitialState: true }`, matching the existing
-   `localProcessStdinDelivery` pattern.
+1. Subscribe to active `waits` rows.
+2. For each active wait, attach to the wait's declared source collection using
+   `subscribeChanges` with `{ includeInitialState: true }`, matching the
+   existing `localProcessStdinDelivery` pattern.
 3. Treat the initial state and later changes through one code path.
-4. For each match, write or resolve the corresponding wait/completion row.
-5. If dispatching a workflow, use a deterministic execution id.
+4. For each match, re-read the wait row; if still `active`, write the wait
+   completion row recording the raw matched-row payload and complete the
+   workflow-engine deferred with that raw payload. The wait_for caller decodes
+   the payload through its call-site Effect Schema; the router does not.
+5. The router does not start workflow executions.
 
 Do not implement a separate snapshot query followed by a live subscribe. That
 two-step pattern creates a race window between the snapshot and the
@@ -227,11 +233,14 @@ The MVP router should not try to solve perfect dynamic fiber lifecycle unless
 the first product use case needs it.
 
 For v0, use a per-dispatch status re-check: before writing a completion row or
-initiating a workflow, read the subscription row and confirm it is still
-`active`. This is simpler than owning a dynamic fiber registry and is good
-enough for single-host MVP semantics. A paused or retired subscription may
-keep an attached source fiber until host restart, but it must not dispatch new
-matches after the status re-check observes the non-active row.
+completing the workflow-engine deferred, read the wait row and confirm it is
+still `active`. This is simpler than owning a dynamic fiber registry and is
+good enough for single-host MVP semantics. A retired wait may keep an attached
+source fiber until host restart, but it must not produce a completion or
+deferred resume after the status re-check observes the non-active row.
+
+The wait status enum for v0 is `active`, `completed`, `timed_out`, `retired`.
+There is no separate `paused` status in PR 1.
 
 A later router can replace this with explicit stop signals and scoped fiber
 ownership if dynamic attach/detach becomes operationally important.
@@ -295,13 +304,22 @@ suspended.
 
 Deliver:
 
-- wait intent + completion + subscription rows as a runtime-private DurableTable
-- subscription router MVP attached through one `subscribeChanges(..., { includeInitialState: true })` per source
+- wait intent + completion rows as a runtime-private `DurableTable`
+- subscription router MVP attached through one
+  `subscribeChanges(..., { includeInitialState: true })` per source, driven by
+  the active `waits` rows
 - AND-of-`fieldEquals` trigger DSL only
-- timeout path via the existing `clockWakeups` table and `fireDueWorkflowClocks`
-- per-dispatch status re-check on wait + subscription rows; no dynamic fiber
-  registry
+- timeout path via existing `@effect/workflow` clock semantics (e.g.
+  `DurableClock`); the router does not manipulate workflow clock storage or
+  fire-due-clocks workers directly
+- per-dispatch status re-check on wait rows; no dynamic fiber registry
 - runtime-host Layer that registers source DurableTable facades by typed handle
+- crash recovery: the wait completion row is authoritative; router startup
+  reconciles completed wait rows by issuing an idempotent `deferredDone` call
+  so that a crash between completion-row write and deferred resume does not
+  strand the wait
+- router writes/completes deferreds with the **raw** matched-row payload;
+  decoding through an Effect Schema is the `wait_for` caller's responsibility
 
 `wait_for` does not start new workflow executions. It resolves a workflow-engine
 deferred owned by a workflow that is already running and awaiting. The narrow
