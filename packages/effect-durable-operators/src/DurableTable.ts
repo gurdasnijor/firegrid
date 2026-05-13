@@ -17,9 +17,10 @@
  *  - effect-durable-operators.TABLE.8 — exactly one primary key per collection
  *  - effect-durable-operators.TABLE.9 — durable type is namespace.collection
  *  - effect-durable-operators.TABLE.10 — per-collection facade methods
- *  - effect-durable-operators.TABLE.11 — writes use createStreamDB actions
- *  - effect-durable-operators.TABLE.12 — generated writes attach txid headers
- *    and await createStreamDB awaitTxId
+ *  - effect-durable-operators.TABLE.11 — insert/upsert/delete writes use
+ *    createStreamDB actions
+ *  - effect-durable-operators.TABLE.12 — insert/upsert/delete writes attach
+ *    txid headers and await createStreamDB awaitTxId
  *  - effect-durable-operators.TABLE.13 — no wire type/action overrides
  *  - effect-durable-operators.TABLE.14 — no package-owned append helper path
  *  - effect-durable-operators.TABLE.15 — change events come from
@@ -41,9 +42,12 @@
  *    values fail loudly with a typed DurableTableError; no String() fallback
  *  - effect-durable-operators.TABLE.25 — get/upsert/delete agree with
  *    query.toArray for Schema.transformOrFail JSON-tuple composite keys
+ *  - effect-durable-operators.TABLE.26 — insertOrGet inserts absent rows and
+ *    observes existing rows without silent replacement
  */
 
 import type { DurableStreamOptions } from "@durable-streams/client"
+import { FetchHttpClient } from "@effect/platform"
 import {
   createStateSchema,
   createStreamDB,
@@ -60,6 +64,7 @@ import type {
   ChangeMessage,
   Collection as TanStackCollection,
 } from "@tanstack/db"
+import { DurableStream } from "effect-durable-streams"
 import {
   Context,
   Effect,
@@ -117,6 +122,10 @@ export type DurableTableHeaders = Readonly<
 export type DurableTableCollection<Row extends object> =
   TanStackCollection<Row, string>
 
+export type InsertOrGetResult<Row> =
+  | { readonly _tag: "Inserted" }
+  | { readonly _tag: "Found"; readonly row: Row }
+
 export interface CollectionFacade<Row extends object, Key> {
   /**
    * Read-only TanStack collection view for query engines and UI bindings.
@@ -131,6 +140,18 @@ export interface CollectionFacade<Row extends object, Key> {
    */
   readonly collection: DurableTableCollection<Row>
   readonly insert: (row: Row) => Effect.Effect<void, DurableTableError>
+  /**
+   * Row-level insert-or-read by primary key.
+   *
+   * effect-durable-operators.TABLE.26
+   * effect-durable-operators.TABLE.26-8
+   *
+   * This is not a lock, claim, mutex, semaphore, lease, or general
+   * coordination primitive.
+   */
+  readonly insertOrGet: (
+    row: Row,
+  ) => Effect.Effect<InsertOrGetResult<Row>, DurableTableError>
   readonly upsert: (row: Row) => Effect.Effect<void, DurableTableError>
   readonly delete: (key: Key) => Effect.Effect<void, DurableTableError>
   readonly get: (key: Key) => Effect.Effect<Option.Option<Row>, DurableTableError>
@@ -493,6 +514,88 @@ const decodeChangeForRead = <Row extends object>(
     : { previousValue: decodeRowForRead(collection, change.previousValue) }),
 })
 
+const encodeHeaderFragment = (value: string): string =>
+  Array.from(new TextEncoder().encode(value), (byte) =>
+    byte.toString(16).padStart(2, "0")).join("")
+
+const streamEndpoint = (
+  streamOptions: DurableStreamOptions,
+): DurableStream.Endpoint => ({
+  url: streamOptions.url,
+  ...(streamOptions.headers !== undefined ? { headers: streamOptions.headers } : {}),
+  ...(streamOptions.params !== undefined ? { params: streamOptions.params } : {}),
+})
+
+const appendInsertWithPrimaryKeyFence = (options: {
+  readonly streamOptions: DurableStreamOptions
+  readonly collection: CompiledCollection
+  readonly encodedKey: string
+  readonly event: unknown
+}) => {
+  const { collection, encodedKey, event, streamOptions } = options
+  const producerId = [
+    "durable-table",
+    collection.durableType,
+    encodeHeaderFragment(encodedKey),
+  ].join(":")
+  const append = DurableStream.appendWithProducer({
+    endpoint: streamEndpoint(streamOptions),
+    schema: Schema.Unknown,
+    event,
+    producerId,
+    producerEpoch: 0,
+    producerSeq: 0,
+  }).pipe(Effect.provide(FetchHttpClient.layer))
+  return streamOptions.fetch === undefined
+    ? append
+    : append.pipe(
+        Effect.provide(Layer.succeed(FetchHttpClient.Fetch, streamOptions.fetch)),
+      )
+}
+
+const waitForStoredRow = <Row extends object>(
+  collection: CompiledCollection,
+  tanstackCollection: TanStackCollection<Row, string>,
+  encodedKey: string,
+  timeoutMs: number,
+): Promise<Row> =>
+  new Promise((resolve, reject) => {
+    const current = tanstackCollection.get(encodedKey)
+    if (current !== undefined) {
+      resolve(decodeRowForRead(collection, current))
+      return
+    }
+
+    let unsubscribe: (() => void) | undefined
+    const finish = (row: Row): void => {
+      clearTimeout(timeout)
+      if (unsubscribe !== undefined) unsubscribe()
+      resolve(decodeRowForRead(collection, row))
+    }
+    const timeout = setTimeout(() => {
+      if (unsubscribe !== undefined) unsubscribe()
+      reject(
+        new Error(
+          `Timed out waiting for DurableTable row ${collection.durableType}:${encodedKey}`,
+        ),
+      )
+    }, timeoutMs)
+
+    try {
+      const subscription = tanstackCollection.subscribeChanges(
+        () => {
+          const row = tanstackCollection.get(encodedKey)
+          if (row !== undefined) finish(row)
+        },
+        { includeInitialState: true },
+      )
+      unsubscribe = () => subscription.unsubscribe()
+    } catch (cause) {
+      clearTimeout(timeout)
+      reject(cause instanceof Error ? cause : new Error(String(cause)))
+    }
+  })
+
 const makeReadableCollection = <Row extends object>(
   tableName: string,
   collection: CompiledCollection,
@@ -602,10 +705,23 @@ const makeReadableCollection = <Row extends object>(
 const makeFacade = <Row extends object, Key>(options: {
   readonly tableName: string
   readonly collection: CompiledCollection
+  readonly helper: StateSchemaWithHelpers[string]
   readonly tanstackCollection: TanStackCollection<Row, string>
   readonly actions: TableActionMap
+  readonly awaitTxId: (txid: string, timeoutMs?: number) => Promise<void>
+  readonly streamOptions: DurableStreamOptions
+  readonly txTimeoutMs: number
 }): CollectionFacade<Row, Key> => {
-  const { collection, tanstackCollection, tableName, actions } = options
+  const {
+    actions,
+    awaitTxId,
+    collection,
+    helper,
+    streamOptions,
+    tableName,
+    tanstackCollection,
+    txTimeoutMs,
+  } = options
   const encodeKey = (key: unknown): string =>
     requireString(collection, collection.encodePrimaryKey(key))
   const readableCollection = makeReadableCollection(
@@ -621,6 +737,61 @@ const makeFacade = <Row extends object, Key>(options: {
         actions,
         actionName(collection.collectionKey, "insert"),
         row,
+      ),
+    insertOrGet: (row) =>
+      Effect.gen(function* () {
+        // effect-durable-operators.TABLE.26
+        const { encoded, encodedKey } = yield* Effect.try({
+          try: () => encodeRowForStore(collection, row),
+          catch: (cause) => new DurableTableError({ table: tableName, cause }),
+        })
+        const txid = crypto.randomUUID()
+        const event = helper.insert({
+          value: encoded,
+          headers: { txid },
+        })
+        const result = yield* appendInsertWithPrimaryKeyFence({
+          streamOptions,
+          collection,
+          encodedKey,
+          event,
+        }).pipe(
+          Effect.mapError((cause) =>
+            new DurableTableError({ table: tableName, cause }),
+          ),
+        )
+        if (result._tag === "Appended") {
+          yield* Effect.tryPromise({
+            try: () => awaitTxId(txid, txTimeoutMs),
+            catch: (cause) => new DurableTableError({ table: tableName, cause }),
+          })
+          return {
+            _tag: "Inserted",
+          } satisfies InsertOrGetResult<Row>
+        }
+
+        // A duplicate producer response means no loser event was appended,
+        // so there is no loser txid for awaitTxId. Wait narrowly for the
+        // winning row to become visible in this materialized table handle.
+        return {
+          _tag: "Found",
+          row: yield* Effect.tryPromise({
+            try: () =>
+              waitForStoredRow(
+                collection,
+                tanstackCollection,
+                encodedKey,
+                txTimeoutMs,
+              ),
+            catch: (cause) => new DurableTableError({ table: tableName, cause }),
+          }),
+        } satisfies InsertOrGetResult<Row>
+      }).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof DurableTableError
+            ? cause
+            : new DurableTableError({ table: tableName, cause }),
+        ),
       ),
     upsert: (row) =>
       runAction(
@@ -747,6 +918,8 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
   ).pipe(
     Effect.map((db) => {
       const actions = db.actions
+      const stateSchema = makeStateSchema(table)
+      const txTimeoutMs = options.txTimeoutMs ?? 5_000
       const collectionFacades = table.collections.reduce<Record<string, unknown>>(
         (facades, collection) => {
           const coll = db.collections[collection.collectionKey]!
@@ -755,8 +928,12 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
             [collection.collectionKey]: makeFacade({
               tableName: `${table.namespace}.${collection.collectionKey}`,
               collection,
+              helper: stateSchema[collection.collectionKey]!,
               tanstackCollection: coll,
               actions,
+              awaitTxId: db.utils.awaitTxId,
+              streamOptions: options.streamOptions,
+              txTimeoutMs,
             }),
           }
         },

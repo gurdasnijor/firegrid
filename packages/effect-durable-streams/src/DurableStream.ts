@@ -38,6 +38,15 @@ export interface HeadersRecord {
   readonly [name: string]: HeaderValue
 }
 
+export type ParamValue =
+  | string
+  | (() => string | Promise<string> | Effect.Effect<string, never, never>)
+  | undefined
+
+export interface ParamsRecord {
+  readonly [name: string]: ParamValue
+}
+
 /**
  * Returned by an `ErrorHandler` to retry the failed operation with merged
  * headers. Returning `undefined` (or omitting return) propagates the error.
@@ -63,6 +72,7 @@ export type ErrorHandler = (
 export interface Endpoint {
   readonly url: string | URL
   readonly headers?: HeadersRecord
+  readonly params?: ParamsRecord
   /**
    * Optional handler invoked after transport retries exhaust. Returning
    * `RetryOpts` retries the failed operation with merged headers; returning
@@ -258,6 +268,21 @@ export interface AppendOpts<A, I> {
   readonly schema: Schema.Schema<A, I>
   readonly event: A
   readonly seq?: string
+  /** See {@link CreateOptions.headers}. */
+  readonly headers?: HeadersRecord
+}
+
+export type ProducerAppendResult =
+  | { readonly _tag: "Appended"; readonly offset: Offset }
+  | { readonly _tag: "Duplicate"; readonly offset: Offset }
+
+export interface ProducerAppendOpts<A, I> {
+  readonly endpoint: Endpoint
+  readonly schema: Schema.Schema<A, I>
+  readonly event: A
+  readonly producerId: string
+  readonly producerEpoch: number
+  readonly producerSeq: number
   /** See {@link CreateOptions.headers}. */
   readonly headers?: HeadersRecord
 }

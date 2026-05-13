@@ -148,6 +148,10 @@ importers:
         version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)
 
   packages/effect-durable-operators:
+    dependencies:
+      effect-durable-streams:
+        specifier: workspace:*
+        version: link:../effect-durable-streams
     devDependencies:
       '@durable-streams/client':
         specifier: ^0.2.3

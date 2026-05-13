@@ -15,6 +15,13 @@ interface ParsedControl {
   readonly upToDate?: boolean
 }
 
+const textDecoder = new TextDecoder()
+
+const decodeBase64Utf8 = (data: string): string =>
+  textDecoder.decode(
+    Uint8Array.from(atob(data), (char) => char.charCodeAt(0)),
+  )
+
 const parseControl = (data: string): Effect.Effect<ParsedControl, DecodeError> =>
   Effect.try({
     try: () => JSON.parse(data) as ParsedControl,
@@ -29,7 +36,7 @@ const parseDataPayload = (
   // (§5.8). The base64 payload may span multiple `data:` lines that got
   // concatenated; per spec, strip newlines and decode before parsing.
   const prepared = base64
-    ? Buffer.from(data.replace(/\r?\n/g, ""), "base64").toString("utf-8")
+    ? decodeBase64Utf8(data.replace(/\r?\n/g, ""))
     : data
   const trimmed = prepared.trim()
   if (trimmed === "") return Effect.succeed([])

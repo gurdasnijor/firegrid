@@ -8,49 +8,112 @@ import type {
   HeadersRecord,
   Offset,
   Producer as ProducerType,
+  ProducerAppendOpts,
+  ProducerAppendResult,
   ProducerMakeOpts,
 } from "./DurableStream.ts"
 import {
   Conflict,
   NotFound,
+  SequenceGap,
+  StaleEpoch,
   StreamClosed,
   TransportError,
 } from "./errors.ts"
-import type { WriteError } from "./errors.ts"
+import type { ProducerError, WriteError } from "./errors.ts"
 import { encodeUnsafe } from "./internal/schema.ts"
 import * as Http from "./protocol/Http.ts"
 import * as ProducerImpl from "./protocol/Producer.ts"
+
+const encodeSingleJson = <A, I>(
+  schema: AppendOpts<A, I>["schema"],
+  event: A,
+): string => JSON.stringify([encodeUnsafe(schema)(event)])
+
+const failIfClosed = (
+  res: { readonly streamClosed: boolean; readonly nextOffset: Offset },
+): Effect.Effect<void, StreamClosed> =>
+  res.streamClosed
+    ? Effect.fail(new StreamClosed({ finalOffset: res.nextOffset }))
+    : Effect.void
+
+const failMissingOrTransport = (
+  endpoint: Endpoint,
+  status: number,
+): Effect.Effect<never, WriteError> => {
+  const missing = Http.missingStreamError(status, String(endpoint.url))
+  return missing !== undefined
+    ? Effect.fail(missing)
+    : Effect.fail(
+        new TransportError({ cause: new Error(`POST returned status ${status}`) }),
+      )
+}
 
 /** One-shot append. Encodes via schema, POSTs as a single-element JSON array. */
 export const append = <A, I>(
   opts: AppendOpts<A, I>,
 ): Effect.Effect<{ readonly offset: Offset }, WriteError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
-    const encoded = encodeUnsafe(opts.schema)(opts.event)
-    const body = JSON.stringify([encoded])
     const postOpts: Http.PostOptions = {
-      body,
+      body: encodeSingleJson(opts.schema, opts.event),
       ...(opts.seq !== undefined ? { seq: opts.seq } : {}),
       ...(opts.headers !== undefined ? { callHeaders: opts.headers } : {}),
     }
     const res = yield* Http.post(opts.endpoint, postOpts)
     if (res.status === 200 || res.status === 204) {
-      if (res.streamClosed) {
-        return yield* Effect.fail(new StreamClosed({ finalOffset: res.nextOffset }))
-      }
+      yield* failIfClosed(res)
       return { offset: res.nextOffset }
     }
     if (res.status === 409) {
-      if (res.streamClosed) {
-        return yield* Effect.fail(new StreamClosed({ finalOffset: res.nextOffset }))
-      }
+      yield* failIfClosed(res)
       return yield* Effect.fail(new Conflict({ reason: "409 Conflict on append" }))
     }
-    const missing = Http.missingStreamError(res.status, String(opts.endpoint.url))
-    if (missing !== undefined) return yield* Effect.fail(missing)
-    return yield* Effect.fail(
-      new TransportError({ cause: new Error(`POST returned status ${res.status}`) }),
-    )
+    return yield* failMissingOrTransport(opts.endpoint, res.status)
+  })
+
+export const appendWithProducer = <A, I>(
+  opts: ProducerAppendOpts<A, I>,
+): Effect.Effect<
+  ProducerAppendResult,
+  WriteError | ProducerError,
+  HttpClient.HttpClient
+> =>
+  Effect.gen(function* () {
+    const res = yield* Http.post(opts.endpoint, {
+      body: encodeSingleJson(opts.schema, opts.event),
+      producerId: opts.producerId,
+      producerEpoch: opts.producerEpoch,
+      producerSeq: opts.producerSeq,
+      ...(opts.headers !== undefined ? { callHeaders: opts.headers } : {}),
+    })
+    if (res.status === 200 || res.status === 204) {
+      yield* failIfClosed(res)
+      return res.status === 200
+        ? { _tag: "Appended", offset: res.nextOffset }
+        : { _tag: "Duplicate", offset: res.nextOffset }
+    }
+    if (res.status === 403) {
+      return yield* Effect.fail(
+        new StaleEpoch({ currentEpoch: res.producerEpoch ?? opts.producerEpoch }),
+      )
+    }
+    if (res.status === 409) {
+      yield* failIfClosed(res)
+      return yield* Effect.fail(
+        new SequenceGap({
+          expectedSeq: res.producerExpectedSeq ?? -1,
+          receivedSeq: res.producerReceivedSeq ?? opts.producerSeq,
+        }),
+      )
+    }
+    if (res.status === 400) {
+      return yield* Effect.fail(
+        new Conflict({
+          reason: `400 Bad Request from producer epoch=${opts.producerEpoch} seq=${opts.producerSeq}`,
+        }),
+      )
+    }
+    return yield* failMissingOrTransport(opts.endpoint, res.status)
   })
 
 export const producer = <A, I>(

@@ -25,9 +25,9 @@ components:
       7: DurableTable collection declarations are plain Effect Schema row schemas whose primary key is marked on exactly one struct field through DurableTable.primaryKey schema metadata.
       8: DurableTable fails loudly when a collection schema has zero primary-key fields or more than one primary-key field.
       9: DurableTable v0 derives each collection's durable wire type from the table namespace and collection key as namespace.collectionKey.
-      10: DurableTable collection services expose insert, upsert, delete, get, query, and subscribe facades for each declared collection.
-      11: DurableTable generated collection writes use @durable-streams/state createStreamDB actions rather than caller-provided standard actions.
-      12: DurableTable generated writes attach txid headers and wait for createStreamDB awaitTxId before completing.
+      10: DurableTable collection services expose insert, insertOrGet, upsert, delete, get, query, and subscribe facades for each declared collection.
+      11: DurableTable generated insert, upsert, and delete collection writes use @durable-streams/state createStreamDB actions rather than caller-provided standard actions.
+      12: DurableTable generated insert, upsert, and delete writes attach txid headers and wait for createStreamDB awaitTxId before completing.
       13: DurableTable v0 does not expose persistentType, Type, per-collection wire-type overrides, or required actions configuration for standard collection writes.
       14: DurableTable consumers do not use package-owned manual durable stream append helpers for generated table writes.
       15: DurableTable generated writes construct State Protocol change events through @durable-streams/state createStateSchema collection helpers rather than package-owned change-event constructors.
@@ -41,6 +41,17 @@ components:
       23: DurableTable read-only collection view mutation rejection throws the typed DurableTableError directly at the synchronous TanStack boundary so callers can match `instanceof DurableTableError`; the package does not wrap synchronous failures in a FiberFailure.
       24: DurableTable rejects primary-key encodings that produce a non-string wire value with a typed DurableTableError naming the durable type and field; the package contains no silent String(...) coercion for encoded primary keys.
       25: DurableTable get/upsert/delete by composite primary key declared with Schema.transformOrFail (JSON-tuple encoded) returns the same decoded row as query.toArray on the same key.
+      26: DurableTable collection services expose insertOrGet(row), which attempts a row-level primary-key insert and otherwise returns the already-materialized row for that key.
+      26-1: insertOrGet returns Inserted without a row when the caller's row wins the primary-key insert fence and the insert event is locally observable.
+      26-2: insertOrGet returns Found with the materialized row when the primary key is already owned by an earlier insertOrGet call; Found does not write a replacement event.
+      26-3: Concurrent insertOrGet calls from independently acquired DurableTable layers for the same primary key converge to exactly one Inserted result and one or more Found results.
+      26-4: A concurrent insertOrGet caller that loses the primary-key race observes the winning row rather than its own candidate row.
+      26-5: insertOrGet never silently overwrites an existing row; callers that need replacement semantics must use upsert.
+      26-6: A successful Inserted result has the same read-after-write visibility guarantee as generated insert and upsert writes.
+      26-7: insertOrGet failures surface as DurableTableError.
+      26-8: insertOrGet is a row-level insert-or-read primitive, not a lock, claim, mutex, semaphore, lease, or general coordination primitive.
+      26-9: insertOrGet consumers branch on Inserted versus Found with Match.value, Match.tag, and Match.exhaustive rather than manual discriminator switches.
+      26-10: insertOrGet relies on a generic effect-durable-streams producer-fenced append classification to distinguish first append from duplicate append for the same primary key.
 
   REACT:
     requirements:
@@ -157,15 +168,16 @@ constraints:
         deprecated: true
       4-note: Restated as a runtime delivery concern; see firegrid-agent-ingress.DELIVERY.3.
       5: Table semantics rely on @durable-streams/state and TanStack DB invariants; the wrapper must not mutate table state outside the sync protocol.
-      6: The package's runtime dependency surface is @durable-streams/client, @durable-streams/state, @tanstack/db, and Effect packages; @electric-sql/* dependencies and devDependencies are not permitted, and effect-durable-streams is not a dependency of effect-durable-operators.
+      6: The package's runtime dependency surface is @durable-streams/client, @durable-streams/state, @tanstack/db, effect-durable-streams for generic producer-fenced append classification, @effect/platform, and Effect packages; @electric-sql/* dependencies and devDependencies are not permitted.
       8: The package effect-durable-streams-state has been deleted; DurableTable uses @durable-streams/state directly with no Firegrid-local State Protocol wrapper.
       7: The package must not import @firegrid/* packages; this is enforced by pnpm run lint:deps.
       9: The package @firegrid/durable-streams has been deleted; runtime, client, protocol, app, and scenario source do not import upstream @durable-streams packages directly for ordinary table or state behavior.
-      10: The package effect-durable-streams remains only as a minimal Effect adapter for raw retained Durable Stream IO and does not own State Protocol tables, Firegrid workflow state, or public test utilities.
+      10: The package effect-durable-streams remains only as a generic Effect adapter for retained Durable Stream IO and producer coordination semantics; it does not own State Protocol tables, Firegrid workflow state, or public test utilities.
       11: Ordinary retained table/state behavior in runtime, client, app, and scenario code is expressed through DurableTable declarations and generated facades rather than createStateSchema, createStreamDB, or manual State Protocol event builders.
       12: Browser and host code share one DurableTable declaration for a durable table shape; duplicate client/runtime table declarations for the same namespace are not allowed.
       13: Shared protocol/contract packages do not expose manual state descriptors or createStateSchema-style schema files for ordinary table behavior.
       14: UI apps bind directly to shared DurableTable declarations through read-only table collection views and TanStack live queries; app-local APIs that duplicate Firegrid control-plane semantics are not the preferred pattern.
+      15: effect-durable-streams exposes generic producer-fenced append classification as Appended versus Duplicate without DurableTable, State Protocol, or Firegrid-specific logic.
 
   TRACER_017:
     requirements:
