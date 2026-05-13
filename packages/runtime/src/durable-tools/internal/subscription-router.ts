@@ -155,11 +155,11 @@ const startRouter = Effect.gen(function*() {
   const waitChanges = table.waits.subscribe<WaitRow>((coll, emit) => {
     const sub = coll.subscribeChanges(
       (changes) => {
-        for (const change of changes) {
-          if (change.value === undefined || change.value === null) continue
-          if (change.value.status !== "active") continue
+        changes.forEach((change) => {
+          if (change.value === undefined || change.value === null) return
+          if (change.value.status !== "active") return
           emit(change.value)
-        }
+        })
       },
       { includeInitialState: true },
     )

@@ -87,18 +87,23 @@ export const waitForError = (options: {
  * Path traversal uses plain Record indexing; absent fields are treated as
  * non-matches (no defaulted traversal — SUBSCRIPTION.6).
  */
+const traversePath = (
+  row: unknown,
+  path: ReadonlyArray<string>,
+): unknown =>
+  path.reduce<unknown>(
+    (cursor, segment) =>
+      typeof cursor === "object" && cursor !== null
+        ? (cursor as Record<string, unknown>)[segment]
+        : undefined,
+    row,
+  )
+
 export const evaluateFieldEquals = (
   trigger: FieldEqualsTrigger,
   row: unknown,
 ): boolean => {
   if (typeof row !== "object" || row === null) return false
-  for (const predicate of trigger) {
-    let cursor: unknown = row
-    for (const segment of predicate.path) {
-      if (typeof cursor !== "object" || cursor === null) return false
-      cursor = (cursor as Record<string, unknown>)[segment]
-    }
-    if (cursor !== predicate.equals) return false
-  }
-  return true
+  return trigger.every((predicate) =>
+    traversePath(row, predicate.path) === predicate.equals)
 }

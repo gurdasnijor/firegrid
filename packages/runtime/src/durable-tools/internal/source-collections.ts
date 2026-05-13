@@ -46,10 +46,10 @@ export const sourceCollectionHandle = <Row extends object, Key>(
     facade.subscribe<Row>((coll, emit) => {
       const sub = coll.subscribeChanges(
         (changes) => {
-          for (const change of changes) {
-            if (change.value === undefined || change.value === null) continue
+          changes.forEach((change) => {
+            if (change.value === undefined || change.value === null) return
             emit(change.value)
-          }
+          })
         },
         { includeInitialState: true },
       )

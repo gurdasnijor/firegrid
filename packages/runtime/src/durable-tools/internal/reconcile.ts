@@ -27,32 +27,26 @@ export const reconcileCompletions = (
   Effect.gen(function*() {
     const completions = yield* table.completions.query((coll) =>
       coll.toArray)
-    for (const completion of completions) {
-      const waitOpt = yield* findWaitByKey(table, completion.waitKey)
-      if (Option.isNone(waitOpt)) continue
-      const wait = waitOpt.value
-      if (completion.outcome === "match" && wait.status !== "completed") {
-        continue
-      }
-      if (completion.outcome === "timeout" && wait.status !== "timed_out") {
-        continue
-      }
-      if (completion.outcome !== "match") {
-        // Timeout completions are produced inside the workflow body's race;
-        // on replay, the workflow's DurableClock.sleep returns immediately
-        // from its persisted state and the race captures the Timeout marker.
-        // No router-side bridge is needed for the timeout outcome.
-        continue
-      }
-      // firegrid-durable-tools.WAIT_FOR.7
-      yield* engine.deferredDone(
-        matchDeferredFor(wait.deferredName),
-        {
-          workflowName: wait.workflowName,
-          executionId: wait.executionId,
-          deferredName: wait.deferredName,
-          exit: Exit.succeed(completion.matchedRowPayload),
-        },
-      )
-    }
+    yield* Effect.forEach(completions, (completion) =>
+      Effect.gen(function*() {
+        const waitOpt = yield* findWaitByKey(table, completion.waitKey)
+        if (Option.isNone(waitOpt)) return
+        const wait = waitOpt.value
+        // Match outcomes are the only path that need a router-side bridge.
+        // Timeout completions are produced inside the workflow body's race
+        // (DurableClock + race deferred), and on replay the race captures
+        // the Timeout marker without our help.
+        if (completion.outcome !== "match") return
+        if (wait.status !== "completed") return
+        // firegrid-durable-tools.WAIT_FOR.7
+        yield* engine.deferredDone(
+          matchDeferredFor(wait.deferredName),
+          {
+            workflowName: wait.workflowName,
+            executionId: wait.executionId,
+            deferredName: wait.deferredName,
+            exit: Exit.succeed(completion.matchedRowPayload),
+          },
+        )
+      }))
   })
