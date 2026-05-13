@@ -7,6 +7,7 @@ Effect-native `DurableTable`: a ksql-inspired service-tag table over
 import {
   DurableTable,
   DurableTableError,
+  type DurableTableInsertOrGetResult,
   type DurableTableLayerOptions,
   type DurableTableService,
 } from "effect-durable-operators"
@@ -21,7 +22,7 @@ The package intentionally exposes one durable state primitive:
 | `DurableTable` | Declares an Effect service-tag class for durable table state. |
 | `DurableTable.primaryKey` | Pipe-able Effect Schema field modifier for the collection key. |
 | `DurableTableError` | Typed error for table acquisition, reads, writes, and subscriptions. |
-| `DurableTableService` and related types | Type helpers for table services, rows, keys, and layer options. |
+| `DurableTableService` and related types | Type helpers for table services, insertOrGet results, rows, keys, and layer options. |
 | `effect-durable-operators/react` | Optional React bindings for scoped table acquisition and TanStack live queries. |
 
 The old generic consumer, projection, source adapter, checkpoint-store, and
@@ -84,6 +85,7 @@ Each collection exposes:
 | Method | Behavior |
 | --- | --- |
 | `insert(row)` | Inserts a new row. Duplicate primary keys follow upstream insert semantics and fail instead of silently replacing the row. |
+| `insertOrGet(row)` | Inserts the row when the primary key is absent, or returns the existing row without replacing it. |
 | `upsert(row)` | Inserts or updates a row by primary key. |
 | `delete(key)` | Deletes by primary key. |
 | `get(key)` | Reads by primary key and returns `Option<Row>`. |

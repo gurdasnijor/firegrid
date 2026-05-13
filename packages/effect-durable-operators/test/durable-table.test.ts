@@ -19,6 +19,7 @@
  *  - effect-durable-operators.TABLE.15
  *  - effect-durable-operators.TABLE.21
  *  - effect-durable-operators.TABLE.22
+ *  - effect-durable-operators.TABLE.26
  */
 
 import {
@@ -312,6 +313,301 @@ describe("DurableTable", () => {
         yield* program.pipe(
           Effect.provide(
             WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.26-1 insertOrGet returns Inserted for an absent primary key", async () => {
+    const url = server.url("table-insert-or-get-inserted")
+
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const row: WorkflowExecution = {
+            executionId: "exec-insert-or-get-new",
+            workflowName: "demo",
+            payload: { version: 1 },
+            status: "started",
+          }
+
+          const result = yield* table.executions.insertOrGet(row)
+
+          expect(result).toEqual({ _tag: "Inserted", row })
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.26-2 insertOrGet returns Existing in the same layer without replacement", async () => {
+    const url = server.url("table-insert-or-get-existing-same-layer")
+
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const first: WorkflowExecution = {
+            executionId: "exec-insert-or-get-existing",
+            workflowName: "demo",
+            payload: { version: 1 },
+            status: "started",
+          }
+          const candidate: WorkflowExecution = {
+            ...first,
+            payload: { version: 2 },
+            status: "completed",
+          }
+
+          yield* table.executions.insertOrGet(first)
+          const result = yield* table.executions.insertOrGet(candidate)
+
+          expect(result).toEqual({ _tag: "Existing", row: first })
+          const current = yield* table.executions.get(first.executionId)
+          expect(Option.isSome(current)).toBe(true)
+          if (Option.isSome(current)) {
+            expect(current.value).toEqual(first)
+          }
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.26-3 concurrent insertOrGet calls from independent layers converge to one Inserted and one Existing", async () => {
+    const url = server.url("table-insert-or-get-concurrent")
+
+    await runtime(
+      Effect.gen(function* () {
+        const left: WorkflowExecution = {
+          executionId: "exec-insert-or-get-race",
+          workflowName: "demo",
+          payload: { contender: "left" },
+          status: "started",
+        }
+        const right: WorkflowExecution = {
+          ...left,
+          payload: { contender: "right" },
+        }
+        const insertInLayer = (row: WorkflowExecution) =>
+          Effect.gen(function* () {
+            const table = yield* WorkflowTable
+            return yield* table.executions.insertOrGet(row)
+          }).pipe(
+            Effect.provide(
+              WorkflowTable.layer({
+                streamOptions: { url, contentType: "application/json" },
+              }),
+            ),
+          )
+
+        const leftFiber = yield* Effect.fork(insertInLayer(left))
+        const rightFiber = yield* Effect.fork(insertInLayer(right))
+        const leftResult = yield* Fiber.join(leftFiber)
+        const rightResult = yield* Fiber.join(rightFiber)
+        const tags = [leftResult._tag, rightResult._tag].sort()
+
+        expect(tags).toEqual(["Existing", "Inserted"])
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.26-4 concurrent insertOrGet loser observes the winner row", async () => {
+    const url = server.url("table-insert-or-get-loser-observes-winner")
+
+    await runtime(
+      Effect.gen(function* () {
+        const left: WorkflowExecution = {
+          executionId: "exec-insert-or-get-winner",
+          workflowName: "demo",
+          payload: { contender: "left" },
+          status: "started",
+        }
+        const right: WorkflowExecution = {
+          ...left,
+          payload: { contender: "right" },
+        }
+        const insertInLayer = (row: WorkflowExecution) =>
+          Effect.gen(function* () {
+            const table = yield* WorkflowTable
+            return yield* table.executions.insertOrGet(row)
+          }).pipe(
+            Effect.provide(
+              WorkflowTable.layer({
+                streamOptions: { url, contentType: "application/json" },
+              }),
+            ),
+          )
+
+        const leftFiber = yield* Effect.fork(insertInLayer(left))
+        const rightFiber = yield* Effect.fork(insertInLayer(right))
+        const results = [
+          yield* Fiber.join(leftFiber),
+          yield* Fiber.join(rightFiber),
+        ]
+        const inserted = results.find((result) => result._tag === "Inserted")
+        const existing = results.find((result) => result._tag === "Existing")
+
+        expect(inserted).toBeDefined()
+        expect(existing).toBeDefined()
+        expect(existing?.row).toEqual(inserted?.row)
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.26-5 insertOrGet never silently overwrites an existing row", async () => {
+    const url = server.url("table-insert-or-get-no-overwrite")
+
+    await runtime(
+      Effect.gen(function* () {
+        const first: WorkflowExecution = {
+          executionId: "exec-insert-or-get-no-overwrite",
+          workflowName: "demo",
+          payload: { contender: "first" },
+          status: "started",
+        }
+        const second: WorkflowExecution = {
+          ...first,
+          payload: { contender: "second" },
+          status: "completed",
+        }
+
+        const seed = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          return yield* table.executions.insertOrGet(first)
+        }).pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+        const contend = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          return yield* table.executions.insertOrGet(second)
+        }).pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+
+        const seedResult = yield* seed
+        const contendResult = yield* contend
+        expect(seedResult._tag).toBe("Inserted")
+        expect(contendResult).toEqual({ _tag: "Existing", row: first })
+
+        const read = yield* Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          return yield* table.executions.get(first.executionId)
+        }).pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+
+        expect(Option.isSome(read)).toBe(true)
+        if (Option.isSome(read)) {
+          expect(read.value).toEqual(first)
+        }
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.26-6 insertOrGet Inserted result is queryable immediately", async () => {
+    const url = server.url("table-insert-or-get-read-after-write")
+
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const row: WorkflowExecution = {
+            executionId: "exec-insert-or-get-readable",
+            workflowName: "demo",
+            payload: { visible: true },
+            status: "started",
+          }
+
+          const result = yield* table.executions.insertOrGet(row)
+          const read = yield* table.executions.get(row.executionId)
+
+          expect(result._tag).toBe("Inserted")
+          expect(Option.isSome(read)).toBe(true)
+          if (Option.isSome(read)) {
+            expect(read.value).toEqual(row)
+          }
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.26-7 insertOrGet failures surface as DurableTableError", async () => {
+    const NumericEncodedKey = Schema.transform(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      Schema.Any as unknown as Schema.Schema<string, any>,
+      Schema.String,
+      {
+        strict: false,
+        decode: (encoded: unknown) => String(encoded),
+        encode: (decoded: string) => Number(decoded) as unknown as string,
+      },
+    )
+
+    class BadInsertOrGetKeyTable extends DurableTable("badInsertOrGetKey", {
+      rows: Schema.Struct({
+        id: NumericEncodedKey.pipe(DurableTable.primaryKey),
+        value: Schema.String,
+      }),
+    }) {}
+
+    const url = server.url("table-insert-or-get-bad-pk-encode")
+
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* BadInsertOrGetKeyTable
+          const result = yield* table.rows
+            .insertOrGet({ id: "123", value: "hello" })
+            .pipe(Effect.either)
+
+          expect(result._tag).toBe("Left")
+          if (result._tag === "Left") {
+            expect(result.left).toBeInstanceOf(DurableTableError)
+          }
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            BadInsertOrGetKeyTable.layer({
               streamOptions: { url, contentType: "application/json" },
             }),
           ),

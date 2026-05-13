@@ -65,7 +65,10 @@ constraints:
       5: The wait and completion rows are not modeled through DurableConsumer, ConsumerSource, ConsumerCheckpointStore, or DurableProjection, and no new modules under those or analogous names are introduced.
       6: New composite primary keys in durable-tools tables are encoded through Schema.transformOrFail to a JSON-tuple string with ParseResult.fail on malformed input, matching packages/protocol/src/launch/table.ts; the RuntimeInputDeliveryKey separator pattern is not extended to new keys.
       7: durable-tools table writes go through DurableTable generated insert/upsert/delete actions; no raw Durable Streams append helpers are introduced for wait or completion writes.
-      8: DurableTable does not grow a fenced-claim, compare-and-set, or insert-if-absent action to support wait_for; wait dispatch idempotency is provided by deterministic wait keys and the per-dispatch lifecycle re-check.
+      8:
+        requirement: DurableTable does not grow a fenced-claim, compare-and-set, or insert-if-absent action to support wait_for; wait dispatch idempotency is provided by deterministic wait keys and the per-dispatch lifecycle re-check.
+        deprecated: true
+      8-note: Deprecated because DurableTable now exposes a generic insertOrGet primary-key insert-or-observe primitive. wait_for still does not consume it for dispatch idempotency; deterministic wait keys and the per-dispatch lifecycle re-check remain the wait_for boundary.
       9: The wait and completion DurableTable schemas are not duplicated across @firegrid/runtime and @firegrid/client; a single declaration owns the row contract.
 
   EFFECT_IDIOMS:
