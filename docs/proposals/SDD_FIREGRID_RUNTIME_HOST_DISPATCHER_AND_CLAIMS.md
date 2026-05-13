@@ -129,29 +129,45 @@ SDD doesn't quietly bake in unbounded host concurrency assumptions — if
 product pressure introduces those layers later, they slot in at the
 documented seams.
 
-This SDD is the **first customer** of `DurableKeyedMutex`. The same
-primitive replaces two existing claim paths in the codebase:
+This SDD is the **first declared customer** of `DurableKeyedMutex`. The
+Flamecast toy host's in-process `Set<contextId>` becomes the second
+consumer once its watcher moves into `@firegrid/runtime` and consumes
+the dispatcher's mutex directly.
 
-- The raw `DurableStream.producer` activity-claim path at
-  `packages/runtime/src/workflow-engine/internal/engine-runtime.ts:42-105`
-  (currently the only raw-DS append in production runtime code).
-- The single-host AtMostOnce stdin-delivery claim at
-  `packages/runtime/src/providers/sandboxes/local-process-stdin-delivery.ts`.
-
-Three concrete consumers from day one (dispatcher + activity claims +
-stdin delivery) means the abstraction-promotion bar is met without
-speculative design.
+The proposal also defines a sibling primitive, `DurableClaim<K>`, with
+**different lifecycle semantics** — write-once, no release — for
+AtMostOnce side effects (stdin delivery, workflow activity claims).
+`DurableClaim` is not used by this SDD; the distinction matters because
+the dispatcher's contextId ownership is release-on-exit (the workflow
+terminates and the slot frees), not write-once. Conflating the two
+primitives would break either AtMostOnce delivery or dispatcher slot
+recovery. See the proposal's decision-rule table for the criteria.
 
 ### Implementation precondition
 
-`DurableKeyedMutex` requires a cross-host fence. The proposal recommends
-amending `firegrid-durable-tools.BOUNDARIES.8` to permit a
-`DurableTable.insertIfAbsent(row)` action; the rejection of duplicate
-inserts is the fence. Until that amendment lands, a transitional
-`Path A` implementation can use first-by-stream-offset materialization
-for tie-breaking. The dispatcher's interface to the mutex
-(`tryWithLock<contextId>`) is the same regardless; only the
-implementation details under the hood change.
+`DurableKeyedMutex` requires a cross-host fence at the substrate level
+— specifically, a Durable Streams **server-side conditional append**
+that rejects duplicate writes for the same logical key. A client-side
+`.get`-then-`.upsert` against `DurableTable` is **not** sufficient: two
+hosts with stale local views can each observe "no holder exists" and
+both upsert successfully.
+
+The proposal recommends amending `firegrid-durable-tools.BOUNDARIES.8`
+to permit a `DurableTable.insertIfAbsent(row)` action implemented over
+the Durable Streams idempotent-producer append pattern (the same fence
+mechanism the existing activity-claim path uses today, lifted into a
+typed action).
+
+**`Path A` (first-by-stream-offset materialization without
+`insertIfAbsent`) is single-host / dev only**: under multi-host
+deployment, two hosts can each observe the absence of a holder, each
+append a row, and each act on their own write before the materializer
+selects a winner. That is exactly the failure mode this SDD is
+intended to eliminate, so **the dispatcher cannot ship on Path A**.
+The dispatcher's correctness invariants require `Path B`
+(`insertIfAbsent` + server-rejected duplicates). See the proposal's
+"Substrate fence" section for the concrete substrate guarantee
+required.
 
 ## Materialized Host State
 
@@ -177,12 +193,11 @@ art recommends: shared claim code decides whether to acquire, evaluate,
 or skip; product code owns eligibility and execution.
 
 Claim rows remain append-only facts inside the primitive's
-implementation. If two hosts race, both claim facts may exist; the
-mutex's materialized projection chooses the authoritative winner by
-deterministic stream order (Path A) or by `DurableTable.insertIfAbsent`
-server-rejection (Path B, once `BOUNDARIES.8` is amended). Either way,
-the dispatcher only sees the winner-or-skip decision through the
-primitive's interface.
+implementation. The dispatcher's correctness depends on the
+**server-side conditional append** described in the Implementation
+precondition section above: only one of two racing hosts has its claim
+row accepted by Durable Streams, and the dispatcher only sees the
+winner-or-skip decision through the primitive's interface.
 
 ## Materialized Views
 
@@ -480,11 +495,14 @@ fourth consumer, with the primitives already battle-tested.
 
 - ~~Should claim winner projection consume raw Durable Streams state envelopes
   so stream offset is the tie-breaker, or should DurableTable expose enough
-  ordered change metadata for this materializer?~~ → Both paths are valid
-  implementations of `DurableKeyedMutex`. Path A (first-by-stream-offset)
-  unblocks v0; Path B (`DurableTable.insertIfAbsent`) is the canonical
-  implementation once `BOUNDARIES.8` is amended. The dispatcher's interface
-  is unchanged either way.
+  ordered change metadata for this materializer?~~ → The dispatcher
+  requires a **substrate-level server-side conditional append**
+  (`DurableTable.insertIfAbsent`, Path B), not a client-side materializer
+  trick. Stream-offset materialization (Path A) is single-host / dev only
+  and cannot be the dispatcher's correctness mechanism, because under
+  multi-host both hosts can write before the materializer decides a
+  winner. The dispatcher's interface to the mutex is the same regardless;
+  the substrate guarantee is what differs.
 - ~~Should claim rows live in the same stream as runtime control-plane rows
   or in a separate `firegrid.runtimeHost` stream?~~ → Claim rows are now
   internal to `DurableKeyedMutex` and are not part of the dispatcher's row
