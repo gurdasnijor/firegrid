@@ -68,7 +68,7 @@ constraints:
       8:
         requirement: DurableTable does not grow a fenced-claim, compare-and-set, or insert-if-absent action to support wait_for; wait dispatch idempotency is provided by deterministic wait keys and the per-dispatch lifecycle re-check.
         deprecated: true
-      8-note: Deprecated because DurableTable now exposes a generic insertOrGet primary-key insert-or-observe primitive. wait_for still does not consume it for dispatch idempotency; deterministic wait keys and the per-dispatch lifecycle re-check remain the wait_for boundary.
+      8-note: Deprecated because DurableTable now exposes insertOrGet as a row-level primary-key insert-or-read primitive only. wait_for still does not consume it for dispatch idempotency; deterministic wait keys and the per-dispatch lifecycle re-check remain the wait_for boundary.
       9: The wait and completion DurableTable schemas are not duplicated across @firegrid/runtime and @firegrid/client; a single declaration owns the row contract.
 
   EFFECT_IDIOMS:

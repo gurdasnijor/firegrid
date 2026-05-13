@@ -46,12 +46,8 @@
  *    observes existing rows without silent replacement
  */
 
-import {
-  PRODUCER_EPOCH_HEADER,
-  PRODUCER_ID_HEADER,
-  PRODUCER_SEQ_HEADER,
-  type DurableStreamOptions,
-} from "@durable-streams/client"
+import type { DurableStreamOptions } from "@durable-streams/client"
+import { FetchHttpClient } from "@effect/platform"
 import {
   createStateSchema,
   createStreamDB,
@@ -68,6 +64,7 @@ import type {
   ChangeMessage,
   Collection as TanStackCollection,
 } from "@tanstack/db"
+import { DurableStream } from "effect-durable-streams"
 import {
   Context,
   Effect,
@@ -126,8 +123,8 @@ export type DurableTableCollection<Row extends object> =
   TanStackCollection<Row, string>
 
 export type InsertOrGetResult<Row> =
-  | { readonly _tag: "Inserted"; readonly row: Row }
-  | { readonly _tag: "Existing"; readonly row: Row }
+  | { readonly _tag: "Inserted" }
+  | { readonly _tag: "Found"; readonly row: Row }
 
 export interface CollectionFacade<Row extends object, Key> {
   /**
@@ -143,6 +140,15 @@ export interface CollectionFacade<Row extends object, Key> {
    */
   readonly collection: DurableTableCollection<Row>
   readonly insert: (row: Row) => Effect.Effect<void, DurableTableError>
+  /**
+   * Row-level insert-or-read by primary key.
+   *
+   * effect-durable-operators.TABLE.26
+   * effect-durable-operators.TABLE.26-8
+   *
+   * This is not a lock, claim, mutex, semaphore, lease, or general
+   * coordination primitive.
+   */
   readonly insertOrGet: (
     row: Row,
   ) => Effect.Effect<InsertOrGetResult<Row>, DurableTableError>
@@ -512,81 +518,39 @@ const encodeHeaderFragment = (value: string): string =>
   Array.from(new TextEncoder().encode(value), (byte) =>
     byte.toString(16).padStart(2, "0")).join("")
 
-const resolveStreamValue = async <A>(
-  value: A | (() => A | Promise<A>),
-): Promise<A> => typeof value === "function"
-  ? await (value as () => A | Promise<A>)()
-  : value
-
-const streamRequestUrl = async (
+const streamEndpoint = (
   streamOptions: DurableStreamOptions,
-): Promise<string> => {
-  const url = new URL(streamOptions.url.toString())
-  const entries = Object.entries(streamOptions.params ?? {})
-  await Promise.all(entries.map(async ([name, value]) => {
-    if (value === undefined) return
-    url.searchParams.set(name, await resolveStreamValue(value))
-  }))
-  return url.toString()
-}
+): DurableStream.Endpoint => ({
+  url: streamOptions.url,
+  ...(streamOptions.headers !== undefined ? { headers: streamOptions.headers } : {}),
+  ...(streamOptions.params !== undefined ? { params: streamOptions.params } : {}),
+})
 
-const streamRequestHeaders = async (
-  streamOptions: DurableStreamOptions,
-  contentType: string,
-  producerId: string,
-): Promise<Record<string, string>> => {
-  const headers: Record<string, string> = {
-    "content-type": contentType,
-    [PRODUCER_ID_HEADER]: producerId,
-    [PRODUCER_EPOCH_HEADER]: "0",
-    [PRODUCER_SEQ_HEADER]: "0",
-  }
-  const entries = Object.entries(streamOptions.headers ?? {})
-  await Promise.all(entries.map(async ([name, value]) => {
-    headers[name] = await resolveStreamValue(value)
-  }))
-  return headers
-}
-
-const appendInsertWithPrimaryKeyFence = async (options: {
+const appendInsertWithPrimaryKeyFence = (options: {
   readonly streamOptions: DurableStreamOptions
   readonly collection: CompiledCollection
   readonly encodedKey: string
   readonly event: unknown
-}): Promise<"inserted" | "existing"> => {
+}) => {
   const { collection, encodedKey, event, streamOptions } = options
-  const contentType = streamOptions.contentType ?? "application/json"
   const producerId = [
     "durable-table",
     collection.durableType,
     encodeHeaderFragment(encodedKey),
   ].join(":")
-  const fetchClient = streamOptions.fetch ?? globalThis.fetch
-  const requestInit: RequestInit = {
-    method: "POST",
-    headers: await streamRequestHeaders(
-      streamOptions,
-      contentType,
-      producerId,
-    ),
-    body: `[${JSON.stringify(event)}]`,
-  }
-  if (streamOptions.signal !== undefined) {
-    requestInit.signal = streamOptions.signal
-  }
-  const response = await fetchClient(
-    await streamRequestUrl(streamOptions),
-    requestInit,
-  )
-
-  if (response.status === 200) return "inserted"
-  if (response.status === 204) return "existing"
-  const text = await response.text().catch(() => "")
-  return await Promise.reject(
-    new Error(
-      `DurableTable insertOrGet append failed with HTTP ${response.status}${text === "" ? "" : `: ${text}`}`,
-    ),
-  )
+  const append = DurableStream.appendWithProducer({
+    endpoint: streamEndpoint(streamOptions),
+    schema: Schema.Unknown,
+    event,
+    producerId,
+    producerEpoch: 0,
+    producerSeq: 0,
+  }).pipe(Effect.provide(FetchHttpClient.layer))
+  return streamOptions.fetch === undefined
+    ? append
+    : append.pipe(
+        Effect.provide(Layer.succeed(FetchHttpClient.Fetch, streamOptions.fetch)),
+      )
 }
 
 const waitForStoredRow = <Row extends object>(
@@ -744,11 +708,13 @@ const makeFacade = <Row extends object, Key>(options: {
   readonly helper: StateSchemaWithHelpers[string]
   readonly tanstackCollection: TanStackCollection<Row, string>
   readonly actions: TableActionMap
+  readonly awaitTxId: (txid: string, timeoutMs?: number) => Promise<void>
   readonly streamOptions: DurableStreamOptions
   readonly txTimeoutMs: number
 }): CollectionFacade<Row, Key> => {
   const {
     actions,
+    awaitTxId,
     collection,
     helper,
     streamOptions,
@@ -773,54 +739,60 @@ const makeFacade = <Row extends object, Key>(options: {
         row,
       ),
     insertOrGet: (row) =>
-      Effect.tryPromise({
-        try: async () => {
-          // effect-durable-operators.TABLE.26
-          const { encoded, encodedKey } = encodeRowForStore(collection, row)
-          const current = tanstackCollection.get(encodedKey)
-          if (current !== undefined) {
-            return {
-              _tag: "Existing",
-              row: decodeRowForRead(collection, current),
-            } satisfies InsertOrGetResult<Row>
-          }
-
-          const txid = crypto.randomUUID()
-          const event = helper.insert({
-            value: encoded,
-            headers: { txid },
+      Effect.gen(function* () {
+        // effect-durable-operators.TABLE.26
+        const { encoded, encodedKey } = yield* Effect.try({
+          try: () => encodeRowForStore(collection, row),
+          catch: (cause) => new DurableTableError({ table: tableName, cause }),
+        })
+        const txid = crypto.randomUUID()
+        const event = helper.insert({
+          value: encoded,
+          headers: { txid },
+        })
+        const result = yield* appendInsertWithPrimaryKeyFence({
+          streamOptions,
+          collection,
+          encodedKey,
+          event,
+        }).pipe(
+          Effect.mapError((cause) =>
+            new DurableTableError({ table: tableName, cause }),
+          ),
+        )
+        if (result._tag === "Appended") {
+          yield* Effect.tryPromise({
+            try: () => awaitTxId(txid, txTimeoutMs),
+            catch: (cause) => new DurableTableError({ table: tableName, cause }),
           })
-          const result = await appendInsertWithPrimaryKeyFence({
-            streamOptions,
-            collection,
-            encodedKey,
-            event,
-          })
-          if (result === "inserted") {
-            const inserted = await waitForStoredRow(
-              collection,
-              tanstackCollection,
-              encodedKey,
-              txTimeoutMs,
-            )
-            return {
-              _tag: "Inserted",
-              row: inserted,
-            } satisfies InsertOrGetResult<Row>
-          }
-
           return {
-            _tag: "Existing",
-            row: await waitForStoredRow(
-              collection,
-              tanstackCollection,
-              encodedKey,
-              txTimeoutMs,
-            ),
+            _tag: "Inserted",
           } satisfies InsertOrGetResult<Row>
-        },
-        catch: (cause) => new DurableTableError({ table: tableName, cause }),
-      }),
+        }
+
+        // A duplicate producer response means no loser event was appended,
+        // so there is no loser txid for awaitTxId. Wait narrowly for the
+        // winning row to become visible in this materialized table handle.
+        return {
+          _tag: "Found",
+          row: yield* Effect.tryPromise({
+            try: () =>
+              waitForStoredRow(
+                collection,
+                tanstackCollection,
+                encodedKey,
+                txTimeoutMs,
+              ),
+            catch: (cause) => new DurableTableError({ table: tableName, cause }),
+          }),
+        } satisfies InsertOrGetResult<Row>
+      }).pipe(
+        Effect.mapError((cause) =>
+          cause instanceof DurableTableError
+            ? cause
+            : new DurableTableError({ table: tableName, cause }),
+        ),
+      ),
     upsert: (row) =>
       runAction(
         tableName,
@@ -959,6 +931,7 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
               helper: stateSchema[collection.collectionKey]!,
               tanstackCollection: coll,
               actions,
+              awaitTxId: db.utils.awaitTxId,
               streamOptions: options.streamOptions,
               txTimeoutMs,
             }),

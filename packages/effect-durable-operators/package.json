@@ -33,6 +33,7 @@
   "peerDependencies": {
     "@durable-streams/client": "^0.2.3",
     "@durable-streams/state": "^0.2.5",
+    "@effect/platform": "^0.96.0",
     "@tanstack/db": "^0.5.33",
     "@tanstack/react-db": "0.1.77",
     "effect": "^3.18.0",
@@ -45,6 +46,9 @@
     "react": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "effect-durable-streams": "workspace:*"
   },
   "devDependencies": {
     "@durable-streams/client": "^0.2.3",

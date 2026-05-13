@@ -11,7 +11,10 @@ export {
   type HeaderValue,
   type LiveMode,
   type ErrorHandler,
+  type ParamsRecord,
   type Producer,
+  type ProducerAppendOpts,
+  type ProducerAppendResult,
   type ProducerFailure,
   type ProducerOptions,
   type RetryOpts,
@@ -31,5 +34,5 @@ export {
   TransportError,
 } from "./errors.ts"
 export { define } from "./Bound.ts"
-export { append, close, create, del as delete, producer } from "./Writer.ts"
+export { append, appendWithProducer, close, create, del as delete, producer } from "./Writer.ts"
 export { collect, head, read, snapshotThenFollow, tail } from "./Reader.ts"

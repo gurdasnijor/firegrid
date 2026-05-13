@@ -38,7 +38,7 @@ service with `yield* Table`, and provide the backing stream once with
 
 ```ts
 import { DurableTable } from "effect-durable-operators"
-import { Effect, Option, Schema } from "effect"
+import { Effect, Match, Option, Schema } from "effect"
 
 class WorkflowTable extends DurableTable("workflow", {
   executions: Schema.Struct({
@@ -85,13 +85,34 @@ Each collection exposes:
 | Method | Behavior |
 | --- | --- |
 | `insert(row)` | Inserts a new row. Duplicate primary keys follow upstream insert semantics and fail instead of silently replacing the row. |
-| `insertOrGet(row)` | Inserts the row when the primary key is absent, or returns the existing row without replacing it. |
+| `insertOrGet(row)` | Attempts a row-level primary-key insert and returns either `{ _tag: "Inserted" }` or `{ _tag: "Found", row }` without replacing the winning row. |
 | `upsert(row)` | Inserts or updates a row by primary key. |
 | `delete(key)` | Deletes by primary key. |
 | `get(key)` | Reads by primary key and returns `Option<Row>`. |
 | `query(fn)` | Runs `fn` against the underlying TanStack collection. |
 | `subscribe(fn)` | Builds an Effect Stream from the underlying TanStack collection subscription API. |
 | `collection` | Read-only TanStack collection view for query engines and UI bindings. |
+
+Consume `insertOrGet` results with `Match.value`, `Match.tag`, and
+`Match.exhaustive`:
+
+```ts
+const result = yield* table.executions.insertOrGet({
+  executionId: "exec-2",
+  workflowName: "demo",
+  payload: { input: "hello" },
+})
+
+const execution = Match.value(result).pipe(
+  Match.tag("Inserted", () => undefined),
+  Match.tag("Found", ({ row }) => row),
+  Match.exhaustive,
+)
+```
+
+`insertOrGet` is not a lock, claim, mutex, semaphore, lease, or general
+coordination primitive. It is only a row-level insert-or-read helper for a
+single DurableTable primary key.
 
 ## Primary Keys
 

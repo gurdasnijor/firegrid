@@ -11,13 +11,18 @@ import type {
   HeaderValue,
   HeadResult,
   Offset,
+  ParamValue,
 } from "../DurableStream.ts"
 import { Gone, NotFound, TransportError } from "../errors.ts"
 import * as C from "./constants.ts"
 
-// === Header resolution ===========================================
+// === Header / query param resolution =============================
 
-const resolveHeader = (value: HeaderValue): Effect.Effect<string, never, never> => {
+type ResolvableString = HeaderValue | Exclude<ParamValue, undefined>
+
+const resolveString = (
+  value: ResolvableString,
+): Effect.Effect<string, never, never> => {
   if (typeof value === "string") return Effect.succeed(value)
   const r = value()
   if (typeof r === "string") return Effect.succeed(r)
@@ -25,19 +30,44 @@ const resolveHeader = (value: HeaderValue): Effect.Effect<string, never, never> 
   return Effect.promise(() => r)
 }
 
+const resolveRecord = <A>(
+  record: { readonly [name: string]: A } | undefined,
+  resolve: (value: A) => Effect.Effect<string | undefined, never, never>,
+): Effect.Effect<Record<string, string>, never, never> =>
+  record === undefined
+    ? Effect.succeed({})
+    : Effect.forEach(
+        Object.entries(record),
+        ([name, value]) =>
+          Effect.map(resolve(value), (resolved) => [name, resolved] as const),
+      ).pipe(
+        Effect.map((pairs) =>
+          Object.fromEntries(
+            pairs.filter((entry): entry is readonly [string, string] =>
+              entry[1] !== undefined),
+          ),
+        ),
+      )
+
 const resolveHeadersRecord = (
   headers: { readonly [name: string]: HeaderValue } | undefined,
 ): Effect.Effect<Record<string, string>, never, never> =>
-  headers === undefined
-    ? Effect.succeed({})
-    : Effect.forEach(
-        Object.entries(headers),
-        ([name, value]) =>
-          Effect.map(resolveHeader(value), (resolved) => [name, resolved] as const),
-      ).pipe(Effect.map((pairs) => Object.fromEntries(pairs)))
+  resolveRecord(headers, (value) => resolveString(value))
 
 const resolveHeaders = (endpoint: Endpoint): Effect.Effect<Record<string, string>, never, never> =>
   resolveHeadersRecord(endpoint.headers)
+
+const resolveParam = (
+  value: ParamValue,
+): Effect.Effect<string | undefined, never, never> => {
+  if (value === undefined) return Effect.succeed(undefined)
+  return resolveString(value)
+}
+
+const resolveParamsRecord = (
+  params: Endpoint["params"],
+): Effect.Effect<Record<string, string>, never, never> =>
+  resolveRecord(params, resolveParam)
 
 // === Response → typed error mapping =============================
 
@@ -219,6 +249,18 @@ const withOnErrorHandler = <A, E, R>(
 const urlOf = (endpoint: Endpoint): string =>
   typeof endpoint.url === "string" ? endpoint.url : endpoint.url.toString()
 
+const requestUrlOf = (
+  endpoint: Endpoint,
+): Effect.Effect<string, never, never> =>
+  Effect.gen(function* () {
+    const url = new URL(urlOf(endpoint))
+    const params = yield* resolveParamsRecord(endpoint.params)
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, value)
+    }
+    return url.toString()
+  })
+
 /**
  * Shared request-execution boilerplate: build headers, build the request via
  * the caller's shaper, execute with the endpoint's retry schedule, map
@@ -234,7 +276,7 @@ const executeWithRetry = (
   extraHeaders?: Record<string, string>,
 ): Effect.Effect<HttpClientResponse.HttpClientResponse, TransportError, HttpClient.HttpClient> =>
   Effect.gen(function* () {
-    const url = urlOf(endpoint)
+    const url = yield* requestUrlOf(endpoint)
     const headers = yield* buildHeaders(endpoint, callHeaders, extraHeaders)
     const client = yield* HttpClient.HttpClient
 

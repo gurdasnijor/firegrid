@@ -25,6 +25,7 @@
 import {
   Effect,
   Fiber,
+  Match,
   Option,
   ParseResult,
   Ref,
@@ -337,7 +338,7 @@ describe("DurableTable", () => {
 
           const result = yield* table.executions.insertOrGet(row)
 
-          expect(result).toEqual({ _tag: "Inserted", row })
+          expect(result).toEqual({ _tag: "Inserted" })
         })
 
         yield* program.pipe(
@@ -351,15 +352,15 @@ describe("DurableTable", () => {
     )
   })
 
-  it("effect-durable-operators.TABLE.26-2 insertOrGet returns Existing in the same layer without replacement", async () => {
-    const url = server.url("table-insert-or-get-existing-same-layer")
+  it("effect-durable-operators.TABLE.26-2 insertOrGet returns Found in the same layer without replacement", async () => {
+    const url = server.url("table-insert-or-get-found-same-layer")
 
     await runtime(
       Effect.gen(function* () {
         const program = Effect.gen(function* () {
           const table = yield* WorkflowTable
           const first: WorkflowExecution = {
-            executionId: "exec-insert-or-get-existing",
+            executionId: "exec-insert-or-get-found",
             workflowName: "demo",
             payload: { version: 1 },
             status: "started",
@@ -373,7 +374,7 @@ describe("DurableTable", () => {
           yield* table.executions.insertOrGet(first)
           const result = yield* table.executions.insertOrGet(candidate)
 
-          expect(result).toEqual({ _tag: "Existing", row: first })
+          expect(result).toEqual({ _tag: "Found", row: first })
           const current = yield* table.executions.get(first.executionId)
           expect(Option.isSome(current)).toBe(true)
           if (Option.isSome(current)) {
@@ -392,58 +393,60 @@ describe("DurableTable", () => {
     )
   })
 
-  it("effect-durable-operators.TABLE.26-3 concurrent insertOrGet calls from independent layers converge to one Inserted and one Existing", async () => {
-    const url = server.url("table-insert-or-get-concurrent")
-
+  it("effect-durable-operators.TABLE.26-3 concurrent insertOrGet calls from independent layers converge across at least 20 races", async () => {
     await runtime(
       Effect.gen(function* () {
-        const left: WorkflowExecution = {
-          executionId: "exec-insert-or-get-race",
-          workflowName: "demo",
-          payload: { contender: "left" },
-          status: "started",
-        }
-        const right: WorkflowExecution = {
-          ...left,
-          payload: { contender: "right" },
-        }
-        const insertInLayer = (row: WorkflowExecution) =>
-          Effect.gen(function* () {
-            const table = yield* WorkflowTable
-            return yield* table.executions.insertOrGet(row)
-          }).pipe(
-            Effect.provide(
-              WorkflowTable.layer({
-                streamOptions: { url, contentType: "application/json" },
-              }),
-            ),
-          )
+        for (let i = 0; i < 20; i++) {
+          const url = server.url(`table-insert-or-get-concurrent-${i}`)
+          const left: WorkflowExecution = {
+            executionId: `exec-insert-or-get-race-${i}`,
+            workflowName: "demo",
+            payload: { contender: "left", iteration: i },
+            status: "started",
+          }
+          const right: WorkflowExecution = {
+            ...left,
+            payload: { contender: "right", iteration: i },
+          }
+          const insertInLayer = (row: WorkflowExecution) =>
+            Effect.gen(function* () {
+              const table = yield* WorkflowTable
+              return yield* table.executions.insertOrGet(row)
+            }).pipe(
+              Effect.provide(
+                WorkflowTable.layer({
+                  streamOptions: { url, contentType: "application/json" },
+                }),
+              ),
+            )
 
-        const leftFiber = yield* Effect.fork(insertInLayer(left))
-        const rightFiber = yield* Effect.fork(insertInLayer(right))
-        const leftResult = yield* Fiber.join(leftFiber)
-        const rightResult = yield* Fiber.join(rightFiber)
-        const tags = [leftResult._tag, rightResult._tag].sort()
+          const leftFiber = yield* Effect.fork(insertInLayer(left))
+          const rightFiber = yield* Effect.fork(insertInLayer(right))
+          const leftResult = yield* Fiber.join(leftFiber)
+          const rightResult = yield* Fiber.join(rightFiber)
+          const tags = [leftResult._tag, rightResult._tag].sort()
 
-        expect(tags).toEqual(["Existing", "Inserted"])
+          expect(tags).toEqual(["Found", "Inserted"])
+        }
       }),
     )
   })
 
-  it("effect-durable-operators.TABLE.26-4 concurrent insertOrGet loser observes the winner row", async () => {
-    const url = server.url("table-insert-or-get-loser-observes-winner")
+  it("effect-durable-operators.TABLE.26-4 effect-durable-operators.TABLE.26-5 B proposes B but Found row is A", async () => {
+    const url = server.url("table-insert-or-get-b-finds-a")
 
     await runtime(
       Effect.gen(function* () {
-        const left: WorkflowExecution = {
-          executionId: "exec-insert-or-get-winner",
+        const winner: WorkflowExecution = {
+          executionId: "exec-insert-or-get-a-wins",
           workflowName: "demo",
-          payload: { contender: "left" },
+          payload: { proposed: "A" },
           status: "started",
         }
-        const right: WorkflowExecution = {
-          ...left,
-          payload: { contender: "right" },
+        const loser: WorkflowExecution = {
+          ...winner,
+          payload: { proposed: "B" },
+          status: "completed",
         }
         const insertInLayer = (row: WorkflowExecution) =>
           Effect.gen(function* () {
@@ -457,18 +460,11 @@ describe("DurableTable", () => {
             ),
           )
 
-        const leftFiber = yield* Effect.fork(insertInLayer(left))
-        const rightFiber = yield* Effect.fork(insertInLayer(right))
-        const results = [
-          yield* Fiber.join(leftFiber),
-          yield* Fiber.join(rightFiber),
-        ]
-        const inserted = results.find((result) => result._tag === "Inserted")
-        const existing = results.find((result) => result._tag === "Existing")
+        const inserted = yield* insertInLayer(winner)
+        const found = yield* insertInLayer(loser)
 
-        expect(inserted).toBeDefined()
-        expect(existing).toBeDefined()
-        expect(existing?.row).toEqual(inserted?.row)
+        expect(inserted).toEqual({ _tag: "Inserted" })
+        expect(found).toEqual({ _tag: "Found", row: winner })
       }),
     )
   })
@@ -514,7 +510,7 @@ describe("DurableTable", () => {
         const seedResult = yield* seed
         const contendResult = yield* contend
         expect(seedResult._tag).toBe("Inserted")
-        expect(contendResult).toEqual({ _tag: "Existing", row: first })
+        expect(contendResult).toEqual({ _tag: "Found", row: first })
 
         const read = yield* Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -552,7 +548,7 @@ describe("DurableTable", () => {
           const result = yield* table.executions.insertOrGet(row)
           const read = yield* table.executions.get(row.executionId)
 
-          expect(result._tag).toBe("Inserted")
+          expect(result).toEqual({ _tag: "Inserted" })
           expect(Option.isSome(read)).toBe(true)
           if (Option.isSome(read)) {
             expect(read.value).toEqual(row)
@@ -608,6 +604,122 @@ describe("DurableTable", () => {
         yield* program.pipe(
           Effect.provide(
             BadInsertOrGetKeyTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.26-8 effect-durable-operators.TABLE.26-9 consumes insertOrGet with Match.value", async () => {
+    const url = server.url("table-insert-or-get-match")
+
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const row: WorkflowExecution = {
+            executionId: "exec-insert-or-get-match",
+            workflowName: "demo",
+            payload: { match: true },
+            status: "started",
+          }
+
+          yield* table.executions.insertOrGet(row)
+          const result = yield* table.executions.insertOrGet({
+            ...row,
+            payload: { match: false },
+          })
+          const matched = Match.value(result).pipe(
+            Match.tag("Inserted", () => "inserted"),
+            Match.tag("Found", ({ row: found }) => found.payload),
+            Match.exhaustive,
+          )
+
+          expect(matched).toEqual({ match: true })
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.26-1 effect-durable-operators.TABLE.26-2 supports Schema.transformOrFail composite keys for Inserted and Found", async () => {
+    const url = server.url("table-insert-or-get-composite")
+
+    const invalidTuple = (
+      ast: SchemaAST.AST,
+      encoded: string,
+      message: string,
+    ) => ParseResult.fail(new ParseResult.Type(ast, encoded, message))
+
+    const RequestKey = Schema.transformOrFail(
+      Schema.String,
+      Schema.Struct({
+        executionId: Schema.String,
+        activityId: Schema.String,
+      }),
+      {
+        strict: false,
+        decode: (encoded: string, _options, ast) => {
+          let parsed: unknown
+          try {
+            parsed = JSON.parse(encoded)
+          } catch {
+            return invalidTuple(ast, encoded, "RequestKey is not valid JSON")
+          }
+          if (!isUnknownArray(parsed) || parsed.length !== 2) {
+            return invalidTuple(ast, encoded, "RequestKey must be a 2-item JSON tuple")
+          }
+          const executionId = parsed[0]
+          const activityId = parsed[1]
+          if (typeof executionId !== "string" || typeof activityId !== "string") {
+            return invalidTuple(
+              ast,
+              encoded,
+              "RequestKey tuple must be [executionId, activityId] of strings",
+            )
+          }
+          return ParseResult.succeed({ executionId, activityId })
+        },
+        encode: ({ executionId, activityId }: { executionId: string; activityId: string }) =>
+          ParseResult.succeed(JSON.stringify([executionId, activityId])),
+      },
+    )
+
+    class ActivityRequestTable extends DurableTable("insertOrGetComposite", {
+      requests: Schema.Struct({
+        requestKey: RequestKey.pipe(DurableTable.primaryKey),
+        owner: Schema.String,
+      }),
+    }) {}
+
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* ActivityRequestTable
+          const insertedKey = { executionId: "exec-1", activityId: "activity-1" }
+          const foundKey = { executionId: "exec-1", activityId: "activity-1" }
+          const winner = { requestKey: insertedKey, owner: "A" }
+          const candidate = { requestKey: foundKey, owner: "B" }
+
+          const inserted = yield* table.requests.insertOrGet(winner)
+          const found = yield* table.requests.insertOrGet(candidate)
+
+          expect(inserted).toEqual({ _tag: "Inserted" })
+          expect(found).toEqual({ _tag: "Found", row: winner })
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            ActivityRequestTable.layer({
               streamOptions: { url, contentType: "application/json" },
             }),
           ),

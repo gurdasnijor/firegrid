@@ -55,6 +55,9 @@ const extractFailure = (
   return new TransportError({ cause: Cause.squash(cause) })
 }
 
+const encodedByteLength = (value: string): number =>
+  new TextEncoder().encode(value).byteLength
+
 const sendBatch = <A, I>(
   opts: ProducerMakeOpts<A, I>,
   state: Ref.Ref<ProducerState>,
@@ -176,7 +179,7 @@ export const make = <A, I>(
         // Approx per-item bytes by re-encoding through the schema. This is
         // double work — sendBatch will encode again — but it's bounded and
         // happens only at batch-emission time, not per-event.
-        const itemBytes = Buffer.byteLength(JSON.stringify(encode(item)), "utf8") + 1 // `,`
+        const itemBytes = encodedByteLength(JSON.stringify(encode(item))) + 1 // `,`
         if (cur.length > 0 && curBytes + itemBytes > maxBatchBytes) {
           out.push(cur)
           cur = []

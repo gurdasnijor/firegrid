@@ -6,8 +6,8 @@ Low-level Effect adapter for the
 Most Firegrid state should use
 [`effect-durable-operators` `DurableTable`](../effect-durable-operators/README.md)
 instead. Use this package only when you intentionally need raw retained stream
-semantics, such as an append-only fact stream or a fenced append path that
-`DurableTable` does not expose.
+semantics, such as an append-only fact stream or a generic producer-fenced
+append path.
 
 ## Public API
 
@@ -20,6 +20,7 @@ Effect-native operations:
 
 - `create`
 - `append`
+- `appendWithProducer`
 - `collect`
 - `read`
 - `producer`
@@ -27,6 +28,20 @@ Effect-native operations:
 
 Reads are `Stream`s. Writes are `Effect`s or scoped producers. Schema
 validation happens at the wire boundary.
+
+`appendWithProducer` is a one-shot producer-fenced append for callers that
+need to distinguish a newly accepted append from an idempotent duplicate:
+
+```ts
+const result = yield* DurableStream.appendWithProducer({
+  endpoint,
+  schema: Message,
+  event: { user: "alice", text: "hello" },
+  producerId: "message-123",
+  producerEpoch: 0,
+  producerSeq: 0,
+})
+```
 
 ## Example
 
