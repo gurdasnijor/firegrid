@@ -16,6 +16,8 @@
     "effect:unpatch": "effect-language-service unpatch",
     "firegrid:host": "tsx src/index.ts",
     "firegrid:host:env": "node --env-file-if-exists=.env --import tsx src/index.ts",
+    "firegrid:run": "tsx src/run.ts",
+    "firegrid:run:env": "node --env-file-if-exists=.env --import tsx src/run.ts",
     "flamecast:dev": "pnpm --filter @firegrid/flamecast dev:local",
     "flamecast:run": "pnpm --filter @firegrid/flamecast run:env",
     "format": "eslint . --fix",
@@ -45,6 +47,7 @@
   },
   "dependencies": {
     "@effect/platform-node": "^0.106.0",
+    "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
     "effect": "^3.18.0"
   },
