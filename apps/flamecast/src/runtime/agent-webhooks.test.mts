@@ -1,31 +1,27 @@
+import { DurableStreamTestServer } from "@durable-streams/server"
 import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import {
-  startDurableStreamsTestServer,
-  type DurableStreamsTestServerHandle,
-} from "@firegrid/durable-streams/test-utils"
 import { makeFlamecastDb } from "../shared/db.ts"
 import { processAcceptedAgentsWebhooks } from "./agent-webhooks.ts"
 
-let server: DurableStreamsTestServerHandle | undefined
+let server: DurableStreamTestServer | undefined
+let baseUrl: string | undefined
 
 beforeEach(async () => {
-  server = await startDurableStreamsTestServer()
+  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+  baseUrl = await server.start()
 })
 
 afterEach(async () => {
   await server?.stop()
   server = undefined
+  baseUrl = undefined
 })
-
-const createStreamUrl = async (name: string): Promise<string> => {
-  if (!server) throw new Error("server not started")
-  return server.createStreamUrl(name)
-}
 
 describe("Flamecast Agents stream webhook workflow", () => {
   it("stream-webhook-workflows.LOCAL_RUNTIME.2 and stream-webhook-workflows.WORKFLOW_PROCESSING.3 processes a stream-ingested webhook through workflow activity once", async () => {
-    const streamUrl = await createStreamUrl("flamecast-agent-webhook")
+    if (!baseUrl) throw new Error("server not started")
+    const streamUrl = `${baseUrl}/v1/stream/flamecast-agent-webhook-${crypto.randomUUID()}`
     const db = makeFlamecastDb(streamUrl)
     await db.preload()
     try {

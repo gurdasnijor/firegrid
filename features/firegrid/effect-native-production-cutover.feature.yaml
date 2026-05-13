@@ -13,8 +13,11 @@ components:
 
   MATERIALIZATION:
     requirements:
-      1: Runtime-output retained reads in materialization sources use the Effect-native Durable Streams read or collect API.
-      2: State Protocol materialization writes use the Effect-native Durable Streams producer or Sink API.
+      1: Runtime-output retained reads in session projection and external provider sinks use the Effect-native Durable Streams read or collect API.
+      2:
+        requirement: State Protocol materialization writes use the Effect-native Durable Streams producer or Sink API.
+        deprecated: true
+      2-note: Deprecated. Ordinary table writes now use DurableTable generated facades; raw durable fact streams use effect-durable-streams.
       3: Materialization tests and scenarios seed durable streams through the Effect-native Durable Streams API.
 
   REQUIRED_ACTION:
@@ -45,5 +48,5 @@ constraints:
 
   INVARIANTS:
     requirements:
-      1: This cutover is bound by effect-durable-operators.PACKAGE.1, effect-durable-operators.PACKAGE.2, effect-durable-operators.PACKAGE.3, effect-durable-operators.FIREGRID_PROOF.1, effect-durable-operators.FIREGRID_PROOF.2, and effect-durable-operators.FIREGRID_PROOF.3. The legacy stream-native-runtime-loop validation surface and its feature spec were deleted in tracer 017; runtime input delivery now flows through the generic effect-durable-operators DurableConsumer plus ConsumerCheckpointStoreLive stack.
+      1: This cutover is bound by effect-durable-operators.PACKAGE.4, effect-durable-operators.PACKAGE.2, effect-durable-operators.PACKAGE.3, effect-durable-operators.FIREGRID_PROOF.2, effect-durable-operators.FIREGRID_PROOF.4, effect-durable-operators.BOUNDARIES.9, and effect-durable-operators.BOUNDARIES.10. The legacy stream-native-runtime-loop validation surface and its feature spec were deleted in tracer 017; runtime input delivery now flows through provider-owned Effect code plus DurableTable checkpoint collections.
       2: This cutover is bound by firegrid-platform-invariants.PRODUCTION_SURFACE.5.

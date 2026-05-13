@@ -428,14 +428,14 @@ surface.
 ### Boundaries
 
 - This package does **not** import Firegrid runtime, client, protocol,
-  scenarios, apps, or `@firegrid/durable-streams`.
+  scenarios, apps, or any Firegrid substrate wrapper.
 - It imports `@durable-streams/state` only (not other `@durable-streams/*`
   packages), enforced by `.dependency-cruiser.cjs` rules
   `durable-streams-imports-contained` and
   `effect-durable-operators-state-only`.
-- `ConsumerSource` keeps source-log progress separate from consumer processing
-  progress. Electric shape offsets and D2TS graph frontiers never replace
-  `ConsumerCheckpointStore`.
+- Consumer/projection/checkpoint behavior is expressed by caller-owned Effect
+  programs that read `DurableStream` facts and write `DurableTable`
+  collections.
 
 ## Consumer sources
 

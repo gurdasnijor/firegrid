@@ -240,9 +240,11 @@ const compileTable = <const Schemas extends TableSchemas<Schemas>>(
       )
     }
 
-    const primaryKeyEntries = Object.entries(schema.fields).filter(
-      ([, fieldSchema]) => isPrimaryKeyField(fieldSchema as Schema.Schema.Any),
-    )
+    const fieldEntries = Object.entries(schema.fields) as Array<
+      readonly [string, Schema.Schema.Any]
+    >
+    const primaryKeyEntries = fieldEntries.filter(([, fieldSchema]) =>
+      isPrimaryKeyField(fieldSchema))
 
     if (primaryKeyEntries.length !== 1) {
       return raise(
@@ -251,7 +253,7 @@ const compileTable = <const Schemas extends TableSchemas<Schemas>>(
     }
 
     const [primaryKeyName, primaryKeyFieldSchema] = primaryKeyEntries[0]!
-    const fieldSchema = primaryKeyFieldSchema as Schema.Schema.AnyNoContext
+    const fieldSchema = primaryKeyFieldSchema as Schema.Schema<unknown, unknown, never>
     // effect-durable-operators.TABLE.18
     // Capture encode/decode closures so action paths can run them in plain
     // promise contexts without needing Effect or per-call schema resolution.
@@ -264,10 +266,10 @@ const compileTable = <const Schemas extends TableSchemas<Schemas>>(
       primaryKey: primaryKeyName,
       schema,
       encodePrimaryKey: (value: unknown) => {
-        const encoded = encodeFn(value as never) as unknown
+        const encoded = encodeFn(value)
         return typeof encoded === "string" ? encoded : String(encoded)
       },
-      decodePrimaryKey: (encoded: string) => decodeFn(encoded) as unknown,
+      decodePrimaryKey: (encoded: string) => decodeFn(encoded),
     } satisfies CompiledCollection
   })
 
@@ -440,7 +442,7 @@ const decodeRowForRead = <Row extends object>(
   const encoded = (stored as Record<string, unknown>)[collection.primaryKey]
   if (typeof encoded !== "string") return stored
   const decoded = collection.decodePrimaryKey(encoded)
-  return { ...stored, [collection.primaryKey]: decoded } as Row
+  return { ...stored, [collection.primaryKey]: decoded }
 }
 
 const makeFacade = <Row extends object, Key>(options: {
@@ -560,7 +562,7 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
                 typeof cause === "object" &&
                 cause !== null &&
                 "code" in cause &&
-                (cause as { code: unknown }).code === "CONFLICT_EXISTS"
+                (cause).code === "CONFLICT_EXISTS"
               ) {
                 // Stream already exists with compatible configuration; the
                 // server returns CONFLICT_EXISTS and we proceed to preload.

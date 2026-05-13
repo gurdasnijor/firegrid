@@ -1,12 +1,10 @@
 /**
  * Local-process sandbox stdin delivery.
  *
- * Reads `firegrid.runtime_ingress.requested` facts for a given
- * `(contextId, subscriberId)` from a durable ingress stream and translates
- * them into encoded stdin chunks for the local-process sandbox. Per-key
- * delivery progress is recorded in a `RuntimeInputDeliveryTable`
- * checkpoint collection (an ordinary `DurableTable` over the checkpoint
- * stream), not in a generic consumer/checkpoint-store service.
+ * Reads sequenced RuntimeIngressTable input rows for a given
+ * `(contextId, subscriberId)` and translates them into encoded stdin chunks
+ * for the local-process sandbox. Per-key delivery progress is recorded in the
+ * same RuntimeIngressTable deliveries collection.
  *
  * Semantic guarantee (AtMostOnce):
  *  - the durable claim upsert is awaited (txid + materialized view) BEFORE
@@ -18,93 +16,42 @@
  *
  * Implements:
  *  - effect-durable-operators.FIREGRID_PROOF.4 — runtime input stdin delivery
- *    uses DurableStream + DurableTable directly, not a generic consumer.
+ *    uses RuntimeIngressTable directly, not a generic consumer.
  *  - firegrid-agent-ingress.DELIVERY.1
  *  - firegrid-agent-ingress.DELIVERY.2
  *  - firegrid-agent-ingress.DELIVERY.3 — claim row is durable.
  *  - firegrid-agent-ingress.DELIVERY.5 — host-owned stream loop.
  */
 
-import type { HttpClient } from "@effect/platform"
 import {
-  type RuntimeIngressRequestedRow,
-  RuntimeIngressRowSchema,
+  RuntimeIngressTable,
+  type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { DurableTable } from "effect-durable-operators"
-import { DurableStream } from "effect-durable-streams"
-import { Effect, Layer, Option, Schema, Stream } from "effect"
-import {
-  type RuntimeIngressError,
-  runtimeIngressError,
-} from "../../runtime-ingress/schema.ts"
-
-// ---------------------------------------------------------------------------
-// Composite checkpoint key
-// ---------------------------------------------------------------------------
-
-/**
- * Composite primary key for runtime input delivery checkpoints. Encoded as a
- * single string for the durable wire format; the schema's decode/encode
- * functions own the separator. The runtime does not concatenate or split
- * key parts directly — this is the only place that touches the separator.
- *
- * effect-durable-operators.TABLE.17 — composite primary keys are
- * Schema.transform schemas, not runtime separator concatenation.
- */
-const CHECKPOINT_KEY_SEPARATOR = "\x1f"
-
-export const RuntimeInputDeliveryKey = Schema.transform(
-  Schema.String,
-  Schema.Struct({
-    subscriberId: Schema.String,
-    ingressId: Schema.String,
-  }),
+import { Effect, Option, Schema, Stream } from "effect"
+export class LocalProcessStdinDeliveryError extends Schema.TaggedError<LocalProcessStdinDeliveryError>()(
+  "LocalProcessStdinDeliveryError",
   {
-    strict: false,
-    decode: (encoded: string) => {
-      const [subscriberId = "", ingressId = ""] = encoded.split(
-        CHECKPOINT_KEY_SEPARATOR,
-      )
-      return { subscriberId, ingressId }
-    },
-    encode: ({
-      subscriberId,
-      ingressId,
-    }: {
-      readonly subscriberId: string
-      readonly ingressId: string
-    }) => `${subscriberId}${CHECKPOINT_KEY_SEPARATOR}${ingressId}`,
-  },
-)
-
-/**
- * Durable checkpoint table for runtime input delivery. The composite key
- * carries `(subscriberId, ingressId)`; the row records claim and (optional)
- * completion timestamps. AtMostOnce delivery only writes `claimedAt`.
- */
-export class RuntimeInputDeliveryTable extends DurableTable(
-  "runtimeInputDelivery",
-  {
-    checkpoints: Schema.Struct({
-      key: RuntimeInputDeliveryKey.pipe(DurableTable.primaryKey),
-      claimedAt: Schema.optional(Schema.String),
-      completedAt: Schema.optional(Schema.String),
-    }),
+    op: Schema.String,
+    contextId: Schema.String,
+    inputId: Schema.optional(Schema.String),
+    message: Schema.String,
+    cause: Schema.optional(Schema.Unknown),
   },
 ) {}
 
-export interface RuntimeInputDeliveryLayerOptions {
-  readonly checkpointStreamUrl: string
-}
-
-export const runtimeInputDeliveryLayer = (
-  options: RuntimeInputDeliveryLayerOptions,
-) =>
-  RuntimeInputDeliveryTable.layer({
-    streamOptions: {
-      url: options.checkpointStreamUrl,
-      contentType: "application/json",
-    },
+const localProcessStdinDeliveryError = (
+  op: string,
+  message: string,
+  contextId: string,
+  inputId?: string,
+  cause?: unknown,
+): LocalProcessStdinDeliveryError =>
+  new LocalProcessStdinDeliveryError({
+    op,
+    message,
+    contextId,
+    ...(inputId === undefined ? {} : { inputId }),
+    ...(cause === undefined ? {} : { cause }),
   })
 
 // ---------------------------------------------------------------------------
@@ -122,7 +69,7 @@ const textFromPayloadValue = (value: unknown): string | undefined => {
     : undefined
 }
 
-const providerInputFromIngress = (row: RuntimeIngressRequestedRow): string => {
+const providerInputFromIngress = (row: RuntimeIngressInputRow): string => {
   if (Array.isArray(row.payload)) {
     const text = row.payload.flatMap((value) => {
       const decoded = textFromPayloadValue(value)
@@ -138,8 +85,7 @@ const providerInputFromIngress = (row: RuntimeIngressRequestedRow): string => {
 // Stdin delivery stream
 // ---------------------------------------------------------------------------
 
-export interface LocalProcessStdinDeliveryOptions {
-  readonly streamUrl: string
+interface LocalProcessStdinDeliveryOptions {
   readonly contextId: string
   readonly subscriberId: string
   /**
@@ -151,15 +97,14 @@ export interface LocalProcessStdinDeliveryOptions {
    * durable so a subsequent run skips the same ingress row.
    */
   readonly onClaimedBeforeEmit?: (
-    row: RuntimeIngressRequestedRow,
-  ) => Effect.Effect<void, RuntimeIngressError>
+    row: RuntimeIngressInputRow,
+  ) => Effect.Effect<void, LocalProcessStdinDeliveryError>
 }
 
 /**
- * Build a stdin source `Stream<Uint8Array, RuntimeIngressError>` for the
- * local-process sandbox. The returned Stream requires the
- * `RuntimeInputDeliveryTable` service plus an HTTP client (the checkpoint
- * table layer is wired by the caller; see `runtimeInputDeliveryLayer`).
+ * Build a stdin source `Stream<Uint8Array, LocalProcessStdinDeliveryError>` for the
+ * local-process sandbox. The returned Stream requires the RuntimeIngressTable
+ * service.
  *
  * AtMostOnce semantic: the generated DurableTable `upsert` action attaches a
  * txid header and awaits `awaitTxId` before completing, so the claim is
@@ -171,59 +116,39 @@ export const localProcessStdinDelivery = (
   options: LocalProcessStdinDeliveryOptions,
 ): Stream.Stream<
   Uint8Array,
-  RuntimeIngressError,
-  HttpClient.HttpClient | RuntimeInputDeliveryTable
+  LocalProcessStdinDeliveryError,
+  RuntimeIngressTable
 > => {
-  const factStream = DurableStream.define({
-    endpoint: { url: options.streamUrl },
-    schema: RuntimeIngressRowSchema,
-  }).read({ live: true }).pipe(
-    // Wrap source DurableStream errors into the RuntimeIngressError shape
-    // up front so the rest of the pipeline has a uniform error channel.
-    Stream.mapError((cause) =>
-      runtimeIngressError(
-        "source-read",
-        "runtime ingress read failure",
-        options.contextId,
-        undefined,
-        cause,
-      ),
-    ),
-  )
-
-  return factStream.pipe(
-    Stream.filter(
-      (row): row is RuntimeIngressRequestedRow =>
-        row.type === "firegrid.runtime_ingress.requested" &&
-        row.contextId === options.contextId,
-    ),
-    Stream.mapEffect((row): Effect.Effect<
-      Option.Option<Uint8Array>,
-      RuntimeIngressError,
-      RuntimeInputDeliveryTable
-    > =>
-      Effect.gen(function* () {
-        const table = yield* RuntimeInputDeliveryTable
+  const stream = Stream.repeatEffect(
+    Effect.gen(function* () {
+      const table = yield* RuntimeIngressTable
+      const candidates = yield* table.inputs.query((coll) =>
+        coll.toArray
+          .filter(row =>
+            row.contextId === options.contextId &&
+            row.status === "sequenced" &&
+            row.sequence !== undefined,
+          )
+          .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0)),
+      )
+      for (const row of candidates) {
         const key = {
           subscriberId: options.subscriberId,
-          ingressId: row.ingressId,
+          inputId: row.inputId,
         }
-        const existing = yield* table.checkpoints.get(key)
+        const existing = yield* table.deliveries.get(key)
         if (
           Option.isSome(existing) &&
           existing.value.claimedAt !== undefined
         ) {
-          return Option.none<Uint8Array>()
+          continue
         }
 
-        // The generated DurableTable upsert action appends a State Protocol
-        // change event with a txid header AND awaits `db.utils.awaitTxId`
-        // before this Effect resolves. That makes the claim row durable
-        // and locally visible BEFORE we expose the encoded bytes to the
-        // sandbox. The txid wait is intentional for AtMostOnce semantics;
-        // do not remove it as redundant.
-        yield* table.checkpoints.upsert({
+        yield* table.deliveries.upsert({
           key,
+          inputId: row.inputId,
+          contextId: row.contextId,
+          subscriberId: options.subscriberId,
           claimedAt: new Date().toISOString(),
         })
 
@@ -234,49 +159,45 @@ export const localProcessStdinDelivery = (
         return Option.some(
           encoder.encode(`${providerInputFromIngress(row)}\n`),
         )
-      }).pipe(
-        Effect.mapError((cause): RuntimeIngressError => {
-          if (
-            typeof cause === "object" &&
-            cause !== null &&
-            "_tag" in cause
-          ) {
-            const tag = (cause as { _tag: string })._tag
-            if (tag === "RuntimeIngressError") return cause as RuntimeIngressError
-            if (tag === "DurableTableError") {
-              return runtimeIngressError(
-                "checkpoint-write",
-                "runtime input delivery checkpoint failure",
-                options.contextId,
-                row.ingressId,
-                cause,
-              )
-            }
+      }
+      yield* Effect.sleep("25 millis")
+      return Option.none<Uint8Array>()
+    }).pipe(
+      Effect.mapError((cause): LocalProcessStdinDeliveryError => {
+        if (
+          typeof cause === "object" &&
+          cause !== null &&
+          "_tag" in cause
+        ) {
+          const tag = (cause as { _tag: string })._tag
+          if (tag === "LocalProcessStdinDeliveryError") {
+            return cause as LocalProcessStdinDeliveryError
           }
-          return runtimeIngressError(
-            "delivery",
-            "runtime input stdin delivery failure",
-            options.contextId,
-            row.ingressId,
-            cause,
-          )
-        }),
-      ),
+          if (tag === "DurableTableError") {
+            return localProcessStdinDeliveryError(
+              "delivery-write",
+              "runtime input delivery table failure",
+              options.contextId,
+              undefined,
+              cause,
+            )
+          }
+        }
+        return localProcessStdinDeliveryError(
+          "delivery",
+          "runtime input stdin delivery failure",
+          options.contextId,
+          undefined,
+          cause,
+        )
+      }),
     ),
+  ).pipe(
     Stream.filterMap((value) => value),
   )
-}
-
-/**
- * Combined helper layer for callers that want one Layer to provide both the
- * checkpoint table and an HttpClient. Keep `HttpClient.HttpClient` as a
- * separately-wired requirement at the application edge; this helper only
- * fronts the checkpoint table layer.
- */
-export const RuntimeInputDeliveryLayer = (
-  options: RuntimeInputDeliveryLayerOptions,
-): Layer.Layer<RuntimeInputDeliveryTable, never> =>
-  runtimeInputDeliveryLayer(options) as unknown as Layer.Layer<
-    RuntimeInputDeliveryTable,
-    never
+  return stream as Stream.Stream<
+    Uint8Array,
+    LocalProcessStdinDeliveryError,
+    RuntimeIngressTable
   >
+}

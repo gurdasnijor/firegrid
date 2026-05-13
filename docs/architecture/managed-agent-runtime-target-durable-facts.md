@@ -46,11 +46,11 @@ yield* stream.read({ live: false }).pipe(...)
 yield* stream.producer({ producerId })
 ```
 
-`@firegrid/durable-streams` owns Firegrid-specific Durable Streams substrate
-pieces that remain real dependencies: workflow engine, state helpers, and test
-infrastructure. It is not a retained-log wrapper package and should not grow
-new public `DurableLog`, `DurableLogWriter`, `appendJson`,
-`readRetainedJson`, or producer helper protocols.
+Firegrid-specific Durable Streams ownership is local to the package that needs
+it. Ordinary table-shaped state is declared with `DurableTable`; raw retained
+fact streams use `effect-durable-streams`. Test servers are private test
+support, not a public Firegrid wrapper. The old `@firegrid/durable-streams`
+wrapper package is deleted.
 
 This target protects these invariants:
 
@@ -219,10 +219,9 @@ host topology.
 
 This target prefers bounded runtime modules and provider namespaces until a
 package extraction is earned. The generic durable-operator primitives
-(`DurableConsumer`, `DurableTable`, `DurableProjection`,
-`ConsumerCheckpointStore`) live **outside** the runtime package, in
-`effect-durable-operators`. Runtime code consumes them; it does not
-re-implement them.
+(`DurableTable`) live **outside** the runtime package, in
+`effect-durable-operators`. Runtime code consumes it; it does not
+re-implement table/materialization machinery.
 
 ```txt
 packages/
@@ -235,16 +234,7 @@ packages/
 
   effect-durable-operators/
     src/
-      DurableConsumer.ts
       DurableTable.ts
-      DurableProjection.ts
-      ConsumerCheckpointStore.ts
-
-  durable-streams/
-    src/
-      DurableStreamsWorkflowEngine.ts
-      DurableState.ts
-      test-utils/
 
   protocol/
     src/
@@ -268,14 +258,15 @@ packages/
         schema.ts
         ids.ts
         rows.ts
-        local-process-stdin.ts  # uses DurableConsumer + AtMostOnce
+        local-process-stdin.ts  # provider-owned raw fact read + DurableTable checkpoint
       # runtime-operators/ and required-action/ runtime packages were deleted.
-      # Use effect-durable-operators for durable consumers and keep
-      # required-action row schemas in protocol until generic waits/operators
-      # reintroduce behavior through a non-required-action-specific surface.
+      # Use DurableTable for ordinary table/checkpoint state and
+      # effect-durable-streams for raw fact reads/writes. Required-action row
+      # schemas stay in protocol until generic waits/operators prove a new
+      # production behavior through a non-required-action-specific surface.
       scheduling/
         schema.ts
-        rows.ts                 # uses DurableConsumer + workflow durable clock
+        rows.ts                 # raw schedule facts + workflow-owned DurableTable clock
       spawn/
         schema.ts
         rows.ts                 # child terminals -> DurableTable
@@ -283,14 +274,11 @@ packages/
         workflow-tools.ts
       providers/
         sandboxes/
+        materialize/
         runtimes/
         workspaces/
         tools/
         secrets/
-      materialization/
-        core/
-        state-protocol/
-        materialize/
 ```
 
 ### Existing-but-deprecated (active drift, not target shape)
@@ -303,8 +291,8 @@ and must not be reintroduced when adding new runtime capabilities:
 packages/runtime/src/
   runtime-operators/        # bespoke DurableConsumer; deleted
   required-action/          # workflow/service mini-plane; deleted
-  materialization/
-    raw-fold/               # in-process strategy; kept while firegrid-materialization-engines ACIDs require it (F4)
+  materialization/          # generic EventSource/EventSink/strategy plane; deleted
+  session-projection/       # runtime-owned demo session projector; deleted
 ```
 
 A `runtime-waits/` directory has been proposed in earlier drafts but
@@ -316,7 +304,8 @@ workflow primitives rather than as a required-action package replacement.
 Future extraction candidates:
 
 - sandbox providers, after a second provider creates reuse pressure;
-- materialization package, after host strategy APIs stabilize;
+- projection/provider package extraction, after a second production consumer
+  creates reuse pressure;
 - wait/scheduling substrate, after named wait descriptors prove ownership;
 - tool provider packages, after workflow-backed tools prove the lowering.
 
@@ -463,10 +452,9 @@ schedule_me(when, prompt)
   -> append firegrid.schedule.requested fact
   -> schedule operator waits through durable time
   -> operator appends runtime_ingress.requested via host ingress surface
-  -> provider adapter routes input through effect-durable-operators.DurableConsumer
-     with ClaimPolicy.AtMostOnce; the durable claim is written to the
-     inputCheckpoints stream by ConsumerCheckpointStoreLive before bytes
-     reach stdin
+  -> provider adapter reads raw ingress facts through effect-durable-streams
+     and records delivery checkpoints in a provider-owned DurableTable before
+     bytes reach stdin
 ```
 
 Implementation boundary:
@@ -620,9 +608,10 @@ runtime-output fact stream
   -> queryable projection
 ```
 
-Materialize, State Protocol, and raw retained folds are EventSink or
-strategy implementations. They are not durable truth. Durable Streams remain
-the source of runtime facts.
+Materialize is an external derived output. DurableTable owns ordinary table
+state. Raw retained folds and State Protocol writer strategies are historical
+scaffolding, not durable truth. Durable Streams remain the source of runtime
+facts.
 
 ## What Current Code Becomes Historical Baggage
 
@@ -635,7 +624,8 @@ or historical scaffolding:
   for historical reference; the surface no longer exists.
 - Snapshot-array `OperatorSource.scan` and `packages/runtime/src/runtime-operators/**`:
   DELETED in the required-action/operator cleanup lane. Use
-  `effect-durable-operators.ConsumerSource` and `DurableConsumer`.
+  effect-durable-streams for raw facts and DurableTable for checkpoints/table
+  state.
 - `packages/runtime/src/required-action/**`, `RequiredActionsLive`,
   `RequiredActionWorkflow`, `RequiredActionRuntimeLive`, and
   `RequiredActionStateLive`: DELETED in the required-action cleanup lane.
@@ -655,14 +645,15 @@ or historical scaffolding:
 
 1. `effect-durable-streams` is the visible durable stream primitive at
    implementation boundaries.
-2. `@firegrid/durable-streams` is substrate support, not retained-log wrapper
-   API.
+2. Firegrid has no broad `@firegrid/durable-streams` substrate wrapper package.
+   Owners use `effect-durable-streams` for raw facts and `DurableTable` for
+   ordinary table-shaped state.
 3. Firegrid does not add `DurableLog` or `DurableLogWriter` object protocols.
 4. Clients and tools append durable facts; they do not launch private workflows.
 5. `wait_for`, `schedule_me`, `spawn`, `spawn_all`, and `execute` lower to
    durable facts plus runtime-host-owned operators.
-6. Runtime host config owns topology, operators, matchers, workflow engine,
-   materialization, and providers.
+6. Runtime host config owns topology, operators, matchers, workflow engine, and
+   providers; it does not select a generic materialization strategy.
 7. Client launch/prompt requests own only agent/user intent.
 8. Match predicates are named/versioned data plus params, not persisted code.
 9. Required actions are durable facts consumed by generic wait/operator

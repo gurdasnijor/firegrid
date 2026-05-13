@@ -133,7 +133,10 @@ constraints:
         requirement: The package may depend on effect-durable-streams, effect-durable-streams-state, @durable-streams/client, @durable-streams/state, @tanstack/db, and Effect packages.
         deprecated: true
       1-note: Replaced by BOUNDARIES.6 and BOUNDARIES.7 — the dependency surface narrows now that consumer/source/electric modules are deleted.
-      2: The package must not depend on @firegrid/durable-streams; that package remains Firegrid's substrate adapter boundary.
+      2:
+        requirement: The package must not depend on @firegrid/durable-streams; that package remains Firegrid's substrate adapter boundary.
+        deprecated: true
+      2-note: Deprecated because @firegrid/durable-streams is no longer a Firegrid substrate boundary package; Firegrid code uses DurableTable for ordinary table state and effect-durable-streams for raw facts. See BOUNDARIES.9 and BOUNDARIES.11.
       3: The package must not implement workflow suspension, durable clocks, required actions, prompt APIs, or Firegrid session semantics.
       4:
         requirement: Consumer checkpoint state is distinct from durable stream producer idempotency.
@@ -143,6 +146,11 @@ constraints:
       6: The package's runtime dependency surface is @durable-streams/client, @durable-streams/state, @tanstack/db, and Effect packages; @electric-sql/* dependencies and devDependencies are not permitted, and effect-durable-streams is not a dependency of effect-durable-operators.
       8: The package effect-durable-streams-state has been deleted; DurableTable uses @durable-streams/state directly with no Firegrid-local State Protocol wrapper.
       7: The package must not import @firegrid/* packages; this is enforced by pnpm run lint:deps.
+      9: The package @firegrid/durable-streams has been deleted; runtime, client, protocol, app, and scenario source do not import upstream @durable-streams packages directly for ordinary table or state behavior.
+      10: The package effect-durable-streams remains only as a minimal Effect adapter for raw retained Durable Stream IO and does not own State Protocol tables, Firegrid workflow state, or public test utilities.
+      11: Ordinary retained table/state behavior in runtime, client, app, and scenario code is expressed through DurableTable declarations and generated facades rather than createStateSchema, createStreamDB, or manual State Protocol event builders.
+      12: Browser and host code share one DurableTable declaration for a durable table shape; duplicate client/runtime table declarations for the same namespace are not allowed.
+      13: Shared protocol/contract packages do not expose manual state descriptors or createStateSchema-style schema files for ordinary table behavior.
 
   TRACER_017:
     requirements:

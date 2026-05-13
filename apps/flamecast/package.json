@@ -14,13 +14,14 @@
   "dependencies": {
     "@effect/platform": "^0.96.0",
     "@effect/workflow": "0.18.1",
-    "@firegrid/durable-streams": "workspace:*",
+    "@firegrid/runtime": "workspace:*",
     "effect": "^3.18.0",
-    "effect-durable-streams": "workspace:*",
+    "effect-durable-operators": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@durable-streams/server": "^0.3.1",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",

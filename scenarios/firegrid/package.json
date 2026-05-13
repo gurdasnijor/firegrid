@@ -11,14 +11,11 @@
   },
   "dependencies": {
     "@firegrid/client": "workspace:*",
-    "@firegrid/durable-streams": "workspace:*",
-    "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
-    "@effect/platform": "^0.96.0",
-    "effect-durable-streams": "workspace:*",
     "effect": "^3.18.0"
   },
   "devDependencies": {
+    "@durable-streams/server": "^0.3.1",
     "@types/node": "^22.10.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.0"

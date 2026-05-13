@@ -1,16 +1,16 @@
 feature:
   name: durable-state-session-events
   product: flamecast
-  description: First vertical slice for storing Flamecast session state and normalized event history as Durable Streams State rows.
+  description: First vertical slice for storing Flamecast-owned session state and normalized event history through an app-owned DurableTable.
 
 components:
   STATE:
     requirements:
-      1: Session state is represented as a Durable Streams State row keyed by sessionId.
-      2: Normalized session events are represented as Durable Streams State rows keyed by sessionId and sequence.
+      1: Session state is represented as a Flamecast DurableTable row keyed by sessionId.
+      2: Normalized session events are represented as Flamecast DurableTable rows keyed by sessionId and sequence-derived message id.
   LIFECYCLE:
     requirements:
-      1: Session create, send-message turn state, provider state, and terminal lifecycle updates append State Protocol rows and read materialized state.
+      1: Session create, send-message turn state, provider state, and terminal lifecycle updates write through Flamecast DurableTable generated facades and read materialized table state.
   HISTORY:
     requirements:
       1: Session history reads return normalized event rows in ascending sequence order and honor since and limit.
@@ -21,6 +21,10 @@ components:
 constraints:
   DURABLE_STATE:
     requirements:
-      1: Flamecast Durable Streams State rows are defined with Effect Schema vocabulary and createStateSchema.
-      2: Physical writes are contained at the Durable Streams append boundary without app-facing emit, producer, sink, handler, ctx, RunWait, EventPlane, PlaneProducer, operation descriptor, or substrate facade APIs.
+      1:
+        requirement: Flamecast Durable Streams State rows are defined with Effect Schema vocabulary and createStateSchema.
+        deprecated: true
+      1-note: Deprecated. Flamecast now owns a DurableTable declaration with Effect Schema rows and no app-local createStateSchema/createStreamDB surface.
+      2: Physical writes are contained behind the DurableTable generated write facades without app-facing emit, producer, sink, handler, ctx, RunWait, EventPlane, PlaneProducer, operation descriptor, or substrate facade APIs.
       3: Event history materialization uses Effect Stream.
+      4: Flamecast app source does not import upstream `@durable-streams/*` packages directly for ordinary table/state behavior.

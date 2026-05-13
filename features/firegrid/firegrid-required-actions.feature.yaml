@@ -6,10 +6,22 @@ feature:
 components:
   RECORDS:
     requirements:
-      1: A required-action request is recorded durably with a required action id, runtime context id, request kind, opaque subject reference, options or prompt data, creation time, and optional expiry.
-      2: A required-action resolution is recorded durably with the same required action id, outcome, resolver identity, resolution time, and optional selected option or reason.
-      3: Required-action state exposes a single lifecycle from requested to approved, denied, timed_out, cancelled, or failed.
-      4: Required-action record schema ownership is explicitly located in protocol, runtime, or a projection target before agent ingress or workflow-backed tools depend on required-action records.
+      1:
+        requirement: A required-action request is recorded durably with a required action id, runtime context id, request kind, opaque subject reference, options or prompt data, creation time, and optional expiry.
+        deprecated: true
+      1-note: Deprecated. No current production surface consumes required-action rows; protocol required-action schemas are deleted until a generic wait/operator feature reintroduces them.
+      2:
+        requirement: A required-action resolution is recorded durably with the same required action id, outcome, resolver identity, resolution time, and optional selected option or reason.
+        deprecated: true
+      2-note: Deprecated with RECORDS.1.
+      3:
+        requirement: Required-action state exposes a single lifecycle from requested to approved, denied, timed_out, cancelled, or failed.
+        deprecated: true
+      3-note: Deprecated with RECORDS.1.
+      4:
+        requirement: Required-action record schema ownership is explicitly located in protocol, runtime, or a projection target before agent ingress or workflow-backed tools depend on required-action records.
+        deprecated: true
+      4-note: Deprecated. Required-action schema ownership is deferred because the current proof-only protocol package surface is deleted.
 
   WORKFLOW:
     requirements:
@@ -40,7 +52,14 @@ constraints:
     requirements:
       1: Required actions do not define approval UI, HTTP callback delivery, product notifications, or provider webhook transport.
       2: Required actions do not require runtime-output launch code to parse provider-specific permission, tool, ACP, or Claude schemas.
-      3: Required-action records carry opaque subject references so later tool-call approval, prompt approval, and wait_for semantics can reuse the workflow without changing runtime launch authority.
+      3:
+        requirement: Required-action records carry opaque subject references so later tool-call approval, prompt approval, and wait_for semantics can reuse the workflow without changing runtime launch authority.
+        deprecated: true
+      3-note: Deprecated with RECORDS.1.
       4: Required-action projections may be materialized downstream, but required-action workflow authority does not depend on session materialization.
       5: Required-action stream topology and workflow authority are deferred to future generic wait/operator tooling; required actions do not expose a required-action-specific mini-root.
-      6: Required actions do not create a separate data plane for approvals; request, resolution, timeout, and follow-up effects are durable facts on the shared runtime substrate.
+      6:
+        requirement: Required actions do not create a separate data plane for approvals; request, resolution, timeout, and follow-up effects are durable facts on the shared runtime substrate.
+        deprecated: true
+      6-note: Deprecated with RECORDS.1.
+      7: Required-action protocol modules, tests, runtime services, workflows, and mini-roots are absent until a current production requirement reintroduces the behavior through generic wait/operator tooling.

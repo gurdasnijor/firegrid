@@ -238,7 +238,7 @@ Client snapshot reads and scenario setup/assertions should use
 Scenarios may continue using durable-streams test infrastructure:
 
 ```ts
-import { startDurableStreamsTestServer } from "@firegrid/durable-streams/test-utils"
+// Historical examples imported a Firegrid-owned Durable Streams test helper here.
 ```
 
 But they should not use `@firegrid/durable-streams/log` or

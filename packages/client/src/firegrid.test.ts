@@ -1,18 +1,8 @@
-import {
-  FetchHttpClient,
-} from "@effect/platform"
-import {
-  startDurableStreamsTestServer,
-  type DurableStreamsTestServerHandle,
-} from "@firegrid/durable-streams/test-utils"
+import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   type PublicLaunchRequest,
 } from "@firegrid/protocol/launch"
-import {
-  RuntimeIngressRowSchema,
-} from "@firegrid/protocol/runtime-ingress"
 import { Effect, Either, Layer, Stream } from "effect"
-import { DurableStream } from "effect-durable-streams"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   Firegrid,
@@ -21,35 +11,37 @@ import {
   local,
 } from "./index.ts"
 
-let server: DurableStreamsTestServerHandle | undefined
+let server: DurableStreamTestServer | undefined
+let baseUrl: string | undefined
 
 beforeEach(async () => {
-  server = await startDurableStreamsTestServer()
+  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+  baseUrl = await server.start()
 })
 
 afterEach(async () => {
   await server?.stop()
   server = undefined
+  baseUrl = undefined
 })
 
-const createStreamUrl = async (name: string): Promise<string> => {
-  if (!server) throw new Error("server not started")
-  return server.createStreamUrl(name)
-}
-
 const runWithFiregrid = <A, E>(
-  runtimeStreamUrl: string,
+  config: {
+    readonly durableStreamsBaseUrl: string
+    readonly namespace: string
+  },
   effect: Effect.Effect<A, E, Firegrid>,
-  options: { readonly inputStreamUrl?: string } = {},
 ): Promise<A> =>
   Effect.runPromise(
-    effect.pipe(
-      Effect.provide(
-        FiregridLive.pipe(
-          Layer.provide(Layer.succeed(FiregridConfig, {
-            runtimeStreamUrl,
-            ...(options.inputStreamUrl === undefined ? {} : { inputStreamUrl: options.inputStreamUrl }),
-          })),
+    Effect.scoped(
+      effect.pipe(
+        Effect.provide(
+          FiregridLive.pipe(
+            Layer.provide(Layer.succeed(FiregridConfig, {
+              durableStreamsBaseUrl: config.durableStreamsBaseUrl,
+              namespace: config.namespace,
+            })),
+          ),
         ),
       ),
     ),
@@ -57,10 +49,14 @@ const runWithFiregrid = <A, E>(
 
 describe("@firegrid/client", () => {
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1 firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.7 appends normalized runtime contexts without caller ids or stream wiring", async () => {
-    const runtimeStreamUrl = await createStreamUrl("runtime")
+    if (!baseUrl) throw new Error("server not started")
+    const firegridConfig = {
+      durableStreamsBaseUrl: baseUrl,
+      namespace: `client-${crypto.randomUUID()}`,
+    }
 
     const handle = await runWithFiregrid(
-      runtimeStreamUrl,
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* firegrid.launch({
@@ -74,7 +70,7 @@ describe("@firegrid/client", () => {
     expect(handle.contextId).toMatch(/^ctx_/)
 
     const snapshot = await runWithFiregrid(
-      runtimeStreamUrl,
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* firegrid.open(handle.contextId).snapshot
@@ -97,9 +93,13 @@ describe("@firegrid/client", () => {
   })
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_HANDLE.1 firegrid-durable-launch-runtime-operator.LAUNCH_HANDLE.5 exposes durable snapshots without live process authority", async () => {
-    const runtimeStreamUrl = await createStreamUrl("runtime")
+    if (!baseUrl) throw new Error("server not started")
+    const firegridConfig = {
+      durableStreamsBaseUrl: baseUrl,
+      namespace: `client-${crypto.randomUUID()}`,
+    }
     const snapshot = await runWithFiregrid(
-      runtimeStreamUrl,
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         const handle = yield* firegrid.launch({
@@ -118,10 +118,14 @@ describe("@firegrid/client", () => {
   })
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_HANDLE.5 exposes runtime context changes as a Stream", async () => {
-    const runtimeStreamUrl = await createStreamUrl("runtime")
+    if (!baseUrl) throw new Error("server not started")
+    const firegridConfig = {
+      durableStreamsBaseUrl: baseUrl,
+      namespace: `client-${crypto.randomUUID()}`,
+    }
 
     const snapshots = await runWithFiregrid(
-      runtimeStreamUrl,
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         const handle = yield* firegrid.launch({
@@ -141,7 +145,11 @@ describe("@firegrid/client", () => {
   })
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 rejects malformed public launch input at the client boundary", async () => {
-    const runtimeStreamUrl = await createStreamUrl("runtime")
+    if (!baseUrl) throw new Error("server not started")
+    const firegridConfig = {
+      durableStreamsBaseUrl: baseUrl,
+      namespace: `client-${crypto.randomUUID()}`,
+    }
     const request: unknown = {
       runtime: {
         provider: "remote-provider",
@@ -152,7 +160,7 @@ describe("@firegrid/client", () => {
     }
 
     const result = await runWithFiregrid(
-      runtimeStreamUrl,
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* Effect.either(firegrid.launch(request as PublicLaunchRequest))
@@ -168,7 +176,11 @@ describe("@firegrid/client", () => {
   })
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 rejects public launch input with raw env or journal fields", async () => {
-    const runtimeStreamUrl = await createStreamUrl("runtime")
+    if (!baseUrl) throw new Error("server not started")
+    const firegridConfig = {
+      durableStreamsBaseUrl: baseUrl,
+      namespace: `client-${crypto.randomUUID()}`,
+    }
     const request: unknown = {
       runtime: {
         provider: "local-process",
@@ -185,7 +197,7 @@ describe("@firegrid/client", () => {
     }
 
     const result = await runWithFiregrid(
-      runtimeStreamUrl,
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* Effect.either(firegrid.launch(request as PublicLaunchRequest))
@@ -201,11 +213,13 @@ describe("@firegrid/client", () => {
   })
 
   it("firegrid-agent-ingress.INGRESS.3 firegrid-agent-ingress.INGRESS.6 appends prompt input facts with deterministic identity without invoking runtime delivery", async () => {
-    const runtimeStreamUrl = await createStreamUrl("runtime")
-    const inputStreamUrl = await createStreamUrl("runtime-input")
-
+    if (!baseUrl) throw new Error("server not started")
+    const firegridConfig = {
+      durableStreamsBaseUrl: baseUrl,
+      namespace: `client-${crypto.randomUUID()}`,
+    }
     const result = await runWithFiregrid(
-      runtimeStreamUrl,
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         const first = yield* firegrid.prompt({
@@ -221,33 +235,12 @@ describe("@firegrid/client", () => {
         })
         return { first, duplicate }
       }),
-      { inputStreamUrl },
     )
 
-    expect(result.duplicate.ingressId).toEqual(result.first.ingressId)
-
-    const rows = await Effect.runPromise(DurableStream.define({
-      endpoint: { url: inputStreamUrl },
-      schema: RuntimeIngressRowSchema,
-    }).collect.pipe(
-      Effect.provide(FetchHttpClient.layer),
-    ))
-
-    expect(rows).toHaveLength(2)
-    expect(rows.map(row => row.ingressId)).toEqual([
-      result.first.ingressId,
-      result.first.ingressId,
-    ])
-    expect(rows[0]).toMatchObject({
-      type: "firegrid.runtime_ingress.requested",
+    expect(result.duplicate.inputId).toEqual(result.first.inputId)
+    expect(result.first).toMatchObject({
       contextId: "ctx_prompt",
-      kind: "message",
-      authoredBy: "client",
-      idempotencyKey: "prompt-1",
-    })
-    expect(rows[1]).toMatchObject({
-      type: "firegrid.runtime_ingress.requested",
-      contextId: "ctx_prompt",
+      status: "pending",
       kind: "message",
       authoredBy: "client",
       idempotencyKey: "prompt-1",

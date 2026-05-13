@@ -80,7 +80,7 @@ Current public surfaces:
 Test-only surface:
 
 - `@firegrid/durable-streams/test-utils`
-  - `startDurableStreamsTestServer`
+  - historical Firegrid-owned Durable Streams test-server helper
   - `DurableStreamsTestServerHandle`
 
 This does not expose `DurableStreamTestServer` directly. It gives package and

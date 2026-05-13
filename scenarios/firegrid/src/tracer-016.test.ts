@@ -1,7 +1,4 @@
-import {
-  startDurableStreamsTestServer,
-  type DurableStreamsTestServerHandle,
-} from "@firegrid/durable-streams/test-utils"
+import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   Firegrid,
   FiregridConfig,
@@ -10,27 +7,24 @@ import {
 } from "@firegrid/client"
 import {
   FiregridRuntimeHostLive,
-  RuntimeInputDurableStreams,
   startRuntime,
 } from "@firegrid/runtime"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-let server: DurableStreamsTestServerHandle | undefined
+let server: DurableStreamTestServer | undefined
+let baseUrl: string | undefined
 
 beforeEach(async () => {
-  server = await startDurableStreamsTestServer()
+  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+  baseUrl = await server.start()
 })
 
 afterEach(async () => {
   await server?.stop()
   server = undefined
+  baseUrl = undefined
 })
-
-const createStreamUrl = async (name: string): Promise<string> => {
-  if (!server) throw new Error("durable streams test server not started")
-  return server.createStreamUrl(name)
-}
 
 const waitFor = async (
   check: () => Promise<boolean>,
@@ -66,13 +60,13 @@ process.stdin.on("data", chunk => {
 
 describe("firegrid tracer 016 session-plane input control surface", () => {
   it("firegrid-agent-ingress.INGRESS.6 firegrid-agent-ingress.INGRESS.7 firegrid-agent-ingress.DELIVERY.5 firegrid-agent-ingress.HOST.4 appends prompt facts and host-owned runtime loop delivers live input once", async () => {
-    const controlPlaneStreamUrl = await createStreamUrl("tracer-016-runtime-control")
-    const dataPlaneStreamUrl = await createStreamUrl("tracer-016-runtime-output")
-    const workflowStreamUrl = await createStreamUrl("tracer-016-workflow")
-    const inputStreamUrl = await createStreamUrl("tracer-016-runtime-ingress")
-    const inputCheckpointsUrl = await createStreamUrl("tracer-016-runtime-ingress-cps")
+    if (!baseUrl) throw new Error("durable streams test server not started")
+    const firegridConfig = {
+      durableStreamsBaseUrl: baseUrl,
+      namespace: `tracer-016-${crypto.randomUUID()}`,
+    }
 
-    const handle = await Effect.runPromise(
+    const handle = await Effect.runPromise(Effect.scoped(
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* firegrid.launch({
@@ -84,26 +78,16 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
         Effect.provide(
           FiregridLive.pipe(
             Layer.provide(Layer.succeed(FiregridConfig, {
-              runtimeStreamUrl: controlPlaneStreamUrl,
-              controlPlaneStreamUrl,
-              dataPlaneStreamUrl,
-              inputStreamUrl,
+              ...firegridConfig,
             })),
           ),
         ),
       ),
-    )
+    ))
 
     const host = FiregridRuntimeHostLive({
-      streams: {
-        workflow: workflowStreamUrl,
-        controlPlane: controlPlaneStreamUrl,
-        runtimeOutput: dataPlaneStreamUrl,
-        input: new RuntimeInputDurableStreams({
-          ingress: inputStreamUrl,
-          checkpoints: inputCheckpointsUrl,
-        }),
-      },
+      ...firegridConfig,
+      input: true,
     })
 
     const runtime = Effect.runPromise(
@@ -113,7 +97,7 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
     )
 
     await waitFor(async () => {
-      const snapshot = await Effect.runPromise(
+      const snapshot = await Effect.runPromise(Effect.scoped(
         Effect.gen(function* () {
           const firegrid = yield* Firegrid
           return yield* firegrid.open(handle.contextId).snapshot
@@ -121,19 +105,16 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
           Effect.provide(
             FiregridLive.pipe(
               Layer.provide(Layer.succeed(FiregridConfig, {
-                runtimeStreamUrl: controlPlaneStreamUrl,
-                controlPlaneStreamUrl,
-                dataPlaneStreamUrl,
-                inputStreamUrl,
+                ...firegridConfig,
               })),
             ),
           ),
         ),
-      )
+      ))
       return snapshot.status === "started"
     })
 
-    const prompt = await Effect.runPromise(
+    const prompt = await Effect.runPromise(Effect.scoped(
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         const first = yield* firegrid.prompt({
@@ -151,17 +132,14 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
         Effect.provide(
           FiregridLive.pipe(
             Layer.provide(Layer.succeed(FiregridConfig, {
-              runtimeStreamUrl: controlPlaneStreamUrl,
-              controlPlaneStreamUrl,
-              dataPlaneStreamUrl,
-              inputStreamUrl,
+              ...firegridConfig,
             })),
           ),
         ),
       ),
-    )
+    ))
 
-    expect(prompt.duplicate.ingressId).toEqual(prompt.first.ingressId)
+    expect(prompt.duplicate.inputId).toEqual(prompt.first.inputId)
 
     const result = await runtime
     expect(result).toMatchObject({
@@ -169,7 +147,7 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
       exitCode: 0,
     })
 
-    const snapshot = await Effect.runPromise(
+    const snapshot = await Effect.runPromise(Effect.scoped(
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* firegrid.open(handle.contextId).snapshot
@@ -177,15 +155,12 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
         Effect.provide(
           FiregridLive.pipe(
             Layer.provide(Layer.succeed(FiregridConfig, {
-              runtimeStreamUrl: controlPlaneStreamUrl,
-              controlPlaneStreamUrl,
-              dataPlaneStreamUrl,
-              inputStreamUrl,
+              ...firegridConfig,
             })),
           ),
         ),
       ),
-    )
+    ))
 
     expect(snapshot.events.map(event => event.raw)).toEqual([
       "{\"type\":\"assistant\",\"text\":\"input:continue live\"}",

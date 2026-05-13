@@ -1,8 +1,7 @@
 # effect-durable-streams · backlog
 
-Running punch list for `effect-durable-streams` and
-`effect-durable-streams-state`. Tracks every divergence from
-`@durable-streams/client` + `@durable-streams/state`, every review
+Running punch list for `effect-durable-streams`. Tracks every divergence from
+`@durable-streams/client`, every review
 follow-up, every perf opportunity.
 
 Update as items land. Keep the priority column honest.
@@ -21,7 +20,7 @@ Update as items land. Keep the priority column honest.
 | Item | Effort | Status | Notes |
 |---|---|---|---|
 | Bounded autoClaim epoch bumps | S | ✅ | `maxAutoClaimAttempts` (default 16) caps consecutive 403 retries. On exhaustion the producer surfaces `StaleEpoch` with the last-seen server epoch. Test in `live.test.ts` exercises `maxAutoClaimAttempts: 0`. |
-| `State.collection` buffer cap | S | ✅ | `maxBufferedEventsPerType` (default 10_000) caps per-type changes; `maxBufferedControlEvents` (default 1_024) caps shared controls. FIFO drop on overflow; one warning per type / one for controls. Test in `state-smoke.test.ts`. |
+| State Protocol package deletion | S | ✅ | The local `effect-durable-streams-state` package was deleted. Ordinary table/state behavior is owned by `DurableTable`; direct upstream `@durable-streams/state` usage is limited to the DurableTable implementation boundary. |
 | Schema decode failure mid-stream → typed `ReadError` | ✅ | ✅ | Already done in PR #148 review pass. Captured here for the audit. |
 | `snapshotThenFollow` no-gap, no-duplicate | ✅ | ✅ | Already done. Regression test under concurrent appends in `live.test.ts`. |
 | SSE bridge lifecycle-bound (no unmanaged Promise) | ✅ | ✅ | Already done. |
@@ -66,7 +65,7 @@ Update as items land. Keep the priority column honest.
 | User-supplied `fetch` implementation override | S | ⬜ | Reference accepts `opts.fetch`. Document the `Layer.provide(FetchHttpClient.layer)` swap path; potentially add a `withFetch` convenience. |
 | `SSEResilienceOptions` (fallback to long-poll on repeated short connections) | M | ⬜ | Reference fallback for misbehaving proxies / CDNs that don't honor SSE flush. Useful in production. |
 | `upsert` operation in state library | S | ⬜ | Reference supports it; I have insert/update/delete only. |
-| Standalone `MaterializedState` (apply events to a Map, no sync) | S | ✅ | Pure data structure in `effect-durable-streams-state` — `apply(msg)`, `applyBatch(...)`, `applyControl(...)`, `get`/`has`/`size`/`snapshot(type)`. Also `replayFrom(raw, schemas)` for batch replay. |
+| Standalone `MaterializedState` (apply events to a Map, no sync) | S | ⏸ | Deferred to upstream `@durable-streams/state` or owner-local test helpers; no Firegrid-owned state wrapper remains. |
 | Standard Schema input adapter | M | ⬜ | Reference accepts any Standard Schema; mine requires `effect/Schema`. Adapter via `Schema.fromStandardSchema`. |
 | Bounded conformance suite parity (port `@durable-streams/client/test`) | M | 🟡 | Ported the runtime-behavior layer: retry classification (4xx-no-retry sweep, 5xx-retry sweep, 429, Retry-After), full `onError` handler contract (7 of 12 cases; remaining 4 are params-related and N/A), and 5 SSE edge cases (data, unknown events, invalid control, empty stream, reconnect-with-offset). Skipped on purpose: `http-warning` / `visibility` (browser-only), `asyncIterableReadableStream` / `stream-api > subscribe*` / `stream-response-state` (different API shape — Effect.Stream replaces them), `fetch.test` (custom fetch is `Layer.provide(FetchHttpClient.layer)`), `headers-params-functions` params half (no params surface). Per-op append/create/delete contract still uses our own smoke + live tests rather than direct upstream port. |
 | Public-surface lockdown with `expect-type` | S | ✅ | `test/unit/types.test.ts` pins 8 type-level assertions across read/collect/snapshotThenFollow/append/producer/Producer/HeadResult/Bound. Type-only — no runtime invocations. |
@@ -111,7 +110,7 @@ Baseline from PR #148. Targets are from the SDD; gaps indicate work needed.
 
 | Item | Effort | Status | Notes |
 |---|---|---|---|
-| Rewire `@firegrid/durable-streams`'s `DurableLog.{append,read,stream,write}Json` over these packages | M | ⬜ | Closes tracer 014's BOUNDARY invariant. Blocks on this PR landing first. |
+| Delete `@firegrid/durable-streams` broad wrapper | M | ✅ | Wrapper package deleted. Runtime/workflow/app ordinary state uses DurableTable, raw facts use effect-durable-streams, and shared test-server setup lives only in private repo test support rather than a public Firegrid wrapper. |
 | Migrate runtime ingress to `DurableLog.streamJson` | M | ⬜ | Tracer 014 scope item. |
 | Migrate runtime output writer | M | ⬜ | Tracer 014 scope item. |
 | Delete legacy `appendJson` / `readRetainedJson` helpers | S | ⬜ | After ingress + output migrate. |

@@ -48,6 +48,32 @@ export const PublicLaunchRequestSchema = Schema.Struct({
 })
 export type PublicLaunchRequest = Schema.Schema.Type<typeof PublicLaunchRequestSchema>
 
+const normalizeRuntimeConfig = (config: RuntimeConfig): RuntimeConfig => ({
+  argv: [...config.argv],
+  ...(config.cwd === undefined ? {} : { cwd: config.cwd }),
+})
+
+export const localJsonlJournal = [
+  { source: "stdout", format: "jsonl", target: "events" },
+  { source: "stderr", format: "text-lines", target: "logs" },
+] satisfies ReadonlyArray<RuntimeJournalRule>
+
+export const normalizeRuntimeIntent = (
+  runtime: PublicLaunchRuntimeIntent,
+): RuntimeContextIntent => ({
+  provider: runtime.provider,
+  config: normalizeRuntimeConfig(runtime.config),
+  // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.8
+  journal: [...localJsonlJournal],
+})
+
+export const local = {
+  jsonl: (config: RuntimeConfig): PublicLaunchRuntimeIntent => ({
+    provider: "local-process",
+    config: normalizeRuntimeConfig(config),
+  }),
+}
+
 export const RuntimeContextSchema = Schema.Struct({
   contextId: Schema.String,
   createdAt: Schema.String,
@@ -119,3 +145,49 @@ export const RuntimeJournalEventSchema = Schema.Union(
   RuntimeOutputStderrJournalEventSchema,
 )
 export type RuntimeJournalEvent = Schema.Schema.Type<typeof RuntimeJournalEventSchema>
+
+export type RuntimeRunStatusParams = {
+  readonly contextId: string
+  readonly activityAttempt: number
+  readonly provider: RuntimeContext["runtime"]["provider"]
+}
+
+const nowIso = (): string => new Date().toISOString()
+
+export const runtimeRunId = (
+  contextId: string,
+  activityAttempt: number,
+): string => `${contextId}:activity-attempt:${activityAttempt}`
+
+export const runtimeRunEventId = (
+  contextId: string,
+  activityAttempt: number,
+  status: string,
+): string => `${runtimeRunId(contextId, activityAttempt)}:${status}`
+
+export const runtimeOutputRowId = (
+  contextId: string,
+  activityAttempt: number,
+  target: string,
+  sequence: number,
+): string => `${runtimeRunId(contextId, activityAttempt)}:${target}:${sequence}`
+
+export const makeRuntimeRunEvent = (
+  params: RuntimeRunStatusParams & {
+    readonly status: RuntimeRunEvent["status"]
+    readonly exitCode?: number
+    readonly signal?: string
+    readonly message?: string
+  },
+): RuntimeRunEvent => ({
+  runEventId: runtimeRunEventId(params.contextId, params.activityAttempt, params.status),
+  runId: runtimeRunId(params.contextId, params.activityAttempt),
+  contextId: params.contextId,
+  activityAttempt: params.activityAttempt,
+  status: params.status,
+  at: nowIso(),
+  provider: params.provider,
+  ...(params.exitCode === undefined ? {} : { exitCode: params.exitCode }),
+  ...(params.signal === undefined ? {} : { signal: params.signal }),
+  ...(params.message === undefined ? {} : { message: params.message }),
+})
