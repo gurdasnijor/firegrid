@@ -59,6 +59,27 @@ const legacyDurableAgentSubstrateImportPatterns = [
       "repos/** is read-only vendored reference material. Import from real package deps (effect, @effect/*) resolved through node_modules; see AGENTS.md.",
   },
 ]
+const upstreamDurableStreamsImportPatterns = [
+  {
+    group: [
+      "@durable-streams/*",
+      "@durable-streams/*/*",
+    ],
+    message:
+      "firegrid-architecture-boundary.DEPENDENCY_GRAPH.7: product/runtime/client/protocol source must not import upstream Durable Streams packages directly; use DurableTable, effect-durable-streams, or a documented infrastructure boundary.",
+  },
+]
+const historicalFiregridDurableStreamsImportPatterns = [
+  {
+    group: [
+      "@firegrid/durable-streams",
+      "@firegrid/durable-streams/*",
+      "@firegrid/durable-streams/*/*",
+    ],
+    message:
+      "firegrid-architecture-boundary.DEPENDENCY_GRAPH.9: do not import the historical @firegrid/durable-streams package; use DurableTable for durable state or effect-durable-streams for raw fact streams.",
+  },
+]
 const tsOnly = (configs) =>
   configs.map((config) => ({
     ...config,
@@ -564,6 +585,8 @@ export default tseslint.config(
   {
     files: ["packages/**/src/**/*.ts", "apps/**/src/**/*.ts"],
     ignores: [
+      "packages/effect-durable-operators/src/**/*.ts",
+      "packages/effect-durable-streams/src/**/*.ts",
       "packages/**/src/__tests__/**/*.ts",
       "apps/**/src/__tests__/**/*.ts",
       "packages/**/*.test.ts",
@@ -576,6 +599,33 @@ export default tseslint.config(
       "no-restricted-syntax": [
         "warn",
         ...effectDebtGuardrails,
+      ],
+    },
+  },
+  {
+    files: [
+      "packages/**/src/**/*.ts",
+      "packages/**/src/**/*.tsx",
+      "apps/**/src/**/*.ts",
+      "apps/**/src/**/*.tsx",
+    ],
+    ignores: [
+      "packages/effect-durable-operators/src/**/*.ts",
+      "packages/effect-durable-streams/src/**/*.ts",
+      "packages/**/src/__tests__/**/*.ts",
+      "apps/**/src/__tests__/**/*.ts",
+      "packages/**/*.test.ts",
+      "apps/**/*.test.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            ...upstreamDurableStreamsImportPatterns,
+            ...historicalFiregridDurableStreamsImportPatterns,
+          ],
+        },
       ],
     },
   },
@@ -648,6 +698,8 @@ export default tseslint.config(
           ],
           patterns: [
             ...legacyDurableAgentSubstrateImportPatterns,
+            ...upstreamDurableStreamsImportPatterns,
+            ...historicalFiregridDurableStreamsImportPatterns,
             {
               group: [
                 "apps/*",
@@ -693,6 +745,8 @@ export default tseslint.config(
           ],
           patterns: [
             ...legacyDurableAgentSubstrateImportPatterns,
+            ...upstreamDurableStreamsImportPatterns,
+            ...historicalFiregridDurableStreamsImportPatterns,
             {
               group: [
                 "apps/*",
@@ -734,6 +788,8 @@ export default tseslint.config(
           ],
           patterns: [
             ...legacyDurableAgentSubstrateImportPatterns,
+            ...upstreamDurableStreamsImportPatterns,
+            ...historicalFiregridDurableStreamsImportPatterns,
             {
               group: [
                 "packages/*",
@@ -778,6 +834,8 @@ export default tseslint.config(
           ],
           patterns: [
             ...legacyDurableAgentSubstrateImportPatterns,
+            ...upstreamDurableStreamsImportPatterns,
+            ...historicalFiregridDurableStreamsImportPatterns,
             {
               group: [
                 "apps/*",
@@ -876,6 +934,8 @@ export default tseslint.config(
           ],
           patterns: [
             ...legacyDurableAgentSubstrateImportPatterns,
+            ...upstreamDurableStreamsImportPatterns,
+            ...historicalFiregridDurableStreamsImportPatterns,
             {
               group: [
                 "apps/*",
@@ -907,6 +967,30 @@ export default tseslint.config(
             "ImportDeclaration[source.value='@firegrid/substrate'] > ImportDefaultSpecifier",
           message:
             "EventStream materializer must not use a default import from @firegrid/substrate.",
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      "packages/protocol/src/**/*.ts",
+      "apps/flamecast/src/**/*.ts",
+      "apps/flamecast/src/**/*.tsx",
+    ],
+    ignores: [
+      "packages/**/src/__tests__/**/*.ts",
+      "apps/**/src/__tests__/**/*.ts",
+      "packages/**/*.test.ts",
+      "apps/**/*.test.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            ...upstreamDurableStreamsImportPatterns,
+            ...historicalFiregridDurableStreamsImportPatterns,
+          ],
         },
       ],
     },
