@@ -572,6 +572,12 @@ describe("DurableTable", () => {
 
           expect(table.executions.collection.toArray.map(row => row.executionId))
             .toEqual(["exec-readonly"])
+          expect(table.executions.collection.map(row => row.executionId))
+            .toEqual(["exec-readonly"])
+          expect(Array.from(table.executions.collection.state.values()).map(row =>
+            row.executionId,
+          ))
+            .toEqual(["exec-readonly"])
 
           const initialChanges: Array<string> = []
           const sub = table.executions.collection.subscribeChanges(
@@ -592,6 +598,14 @@ describe("DurableTable", () => {
               payload: {},
               status: "started",
             })
+          }).toThrow(/read-only/)
+          expect(() => {
+            table.executions.collection.update("exec-readonly", (draft) => {
+              draft.status = "completed"
+            })
+          }).toThrow(/read-only/)
+          expect(() => {
+            table.executions.collection.delete("exec-readonly")
           }).toThrow(/read-only/)
 
           const bypassed = yield* table.executions.get("exec-bypass")
