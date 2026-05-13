@@ -10,6 +10,7 @@ components:
       2: Stored activity results and deferred exits are treated as opaque encoded @effect/workflow values whose schemas remain owned by @effect/workflow.
       3: Workflow definitions remain process-local and are re-registered before persisted executions are resumed.
       4: The Durable Streams workflow engine exposes a ClusterWorkflowEngine-shaped integration pattern with a `make` constructor and `layer` installer for the `WorkflowEngine` service.
+      5: Executions, activities, deferred results, activity claims, and workflow clock wakeups are declared as a runtime-owned DurableTable rather than a custom workflow state store.
 
   VALIDATION:
     requirements:
@@ -20,6 +21,7 @@ components:
       5: A reconstructed engine does not resume a persisted execution until the workflow definition has been re-registered in that process.
       6: Concurrent workers racing the same execution activity produce one durable activity claim and run the activity body once for the claimed attempt.
       7: A worker may take over a previously claimed activity only after durable stale-owner evidence, lease expiry, or an explicit replacement-claim policy authorizes the retry.
+      8: Workflow engine tests inspect persisted workflow rows through the production DurableTable declaration instead of a test-only state store facade.
 
 constraints:
   RUNTIME_BOUNDARY:
@@ -30,3 +32,6 @@ constraints:
       1-note: Deprecated because the public durable-clock surface was removed after call-site audit showed no production users and durable timing moved into workflow execution.
       2: Distributed-worker race semantics are reported separately from replay and persistence semantics.
       3: Firegrid runtime does not keep a public durable-clock package surface while workflow execution owns durable timing.
+      4: The workflow engine does not expose makeWorkflowStateStore, WorkflowStateStore, createStateSchema, createStreamDB, or manual State Protocol event builders as a retained runtime state layer.
+      5: If activity claim fencing requires a non-table primitive, that primitive is isolated to claim ownership only and is not used for executions, activities, deferred results, or clock wakeups.
+      6: Activity claim fencing uses an isolated deterministic raw DurableStream producer identity for the claim key and writes a State Protocol-compatible insert event so concurrent workers cannot append duplicate claim rows for the same activity attempt.

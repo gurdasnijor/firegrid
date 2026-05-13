@@ -1,18 +1,23 @@
 # SDD: Effect Durable Operators
 
-**Status:** proposed
-**Scope:** new higher-level package proposal
+**Status:** accepted for DurableTable v0; historical DurableConsumer and DurableProjection sections below are superseded
+**Scope:** higher-level DurableTable package surface
 **Primary consumers:** Firegrid runtime today; reusable durable Effect programs
 later
-**Depends on:** `effect-durable-streams`, `effect-durable-streams-state`, `@durable-streams/state`
+**Depends on:** `@durable-streams/client`, `@durable-streams/state`, `@tanstack/db`, Effect
 
 ## Problem
 
-`effect-durable-streams` gives Firegrid an Effect-native durable append/read
-primitive. `effect-durable-streams-state` gives Firegrid an Effect-native
-State Protocol materialization primitive. Those packages should stay focused.
+`DurableTable` gives Firegrid an Effect service-tag table facade over
+`@durable-streams/state`. Raw durable append/read programs use
+`effect-durable-streams` directly at the few boundaries that need retained-log
+IO. State Protocol table semantics stay with `DurableTable`; runtime, client,
+protocol, app, and scenario source should not construct `createStateSchema` or
+`createStreamDB` surfaces directly for ordinary table/state behavior.
 
-The missing layer is the recurring application pattern above them:
+DurableConsumer and DurableProjection were investigated as possible next layers.
+They are not part of the current package surface. The recurring application
+pattern remains useful as design context:
 
 ```txt
 durable facts
@@ -73,17 +78,13 @@ Effect programs:
 packages/effect-durable-operators/
   src/
     DurableTable.ts
-    DurableConsumer.ts
-    DurableProjection.ts
     index.ts
 ```
 
 This package composes:
 
-- `effect-durable-streams` for typed durable append/read/live streams;
-- `effect-durable-streams-state` for Effect-native State Protocol primitives;
 - `@durable-streams/state` for `createStreamDB` and TanStack DB collections;
-- Effect `Stream` and `Sink` for processing.
+- Effect `Schema`, `Layer`, `Scope`, and `Stream` primitives.
 
 It must not import Firegrid runtime, protocol, client, provider, workflow, or
 scenario modules.
@@ -917,17 +918,13 @@ packages/effect-durable-operators/
     DurableProjection.ts
     index.ts
   test/
-    durable-consumer.test.ts
     durable-table.test.ts
-    firegrid-shaped-consumer.test.ts
 ```
 
 Dependencies:
 
 - `effect`
-- `@effect/platform` only if needed by tests or adapters
-- `effect-durable-streams`
-- `effect-durable-streams-state`
+- `@durable-streams/client`
 - `@durable-streams/state`
 - `@tanstack/db`
 
@@ -941,9 +938,9 @@ Forbidden dependencies:
 - `@firegrid/durable-streams`
 - scenarios/apps packages
 
-`@firegrid/durable-streams` is Firegrid's substrate adapter package. This
-operators package should use upstream `@durable-streams/state` directly for the
-table facade and should not depend on Firegrid runtime substrate adapters.
+`@firegrid/durable-streams` has been deleted. This operators package uses
+upstream `@durable-streams/state` directly for the table facade and must not
+depend on Firegrid runtime substrate adapters.
 
 ## Tracer Proposal
 

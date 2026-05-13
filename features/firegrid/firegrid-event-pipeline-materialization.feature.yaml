@@ -1,42 +1,95 @@
 feature:
   name: firegrid-event-pipeline-materialization
   product: firegrid
-  description: Provide a common Effect service and layer pipeline for projecting runtime-output events into pluggable sinks.
+  description: Keep runtime-output projection as owner-local Effect code over raw facts, DurableTable, and provider-owned Materialize outputs without preserving a generic event-pipeline framework.
 
 components:
   PIPELINE:
     requirements:
-      1: An event pipeline composes an event source, event projector, and event sink as replaceable Effect services.
-      2: The event pipeline reads accepted runtime-output events from a source, projects them, writes projected events to a sink, and returns a summary.
-      3: The event pipeline does not import runtime control-plane modules or workflow-engine internals.
-      4: Session projection helpers expose EventPipeline layers and return EventPipeline summaries without legacy materializer wrapper types.
-      5: Session and query-engine projection paths expose production composition surfaces that assemble EventPipeline services; scenario code proves those surfaces by invoking them rather than reconstructing private wiring.
+      1:
+        requirement: An event pipeline composes an event source, event projector, and event sink as replaceable Effect services.
+        deprecated: true
+      1-note: Deprecated. Session projection now uses plain Effect code over DurableStream reads and DurableTable writes, and Materialize is provider-owned.
+      2:
+        requirement: Session projection reads accepted runtime-output events, projects them, writes projected events through DurableTable, and returns a summary.
+        deprecated: true
+      2-note: Deprecated. Runtime no longer owns a universal session/message projection; product/provider-owned projections may read raw runtime-output facts and write owner-local DurableTables.
+      3: Product/provider projection code does not import runtime control-plane modules or workflow-engine internals.
+      4:
+        requirement: Session projection helpers expose EventPipeline layers and return EventPipeline summaries without legacy materializer wrapper types.
+        deprecated: true
+      4-note: Deprecated. The EventPipeline service/layer abstraction was deleted with the generic materialization framework.
+      5:
+        requirement: Session and Materialize projection paths expose production composition surfaces that scenario code invokes directly rather than reconstructing private wiring.
+        deprecated: true
+      5-note: Deprecated. Product-owned DurableTable projections must expose production composition in the owning product/provider package; the Materialize branch is deleted in this cleanup.
+      6: Runtime does not expose a public `@firegrid/runtime/materialization` subpath, EventSource/EventSink/EventPipeline abstraction, raw-fold strategy, or State Protocol writer layer for ordinary table behavior.
 
   SOURCE:
     requirements:
-      1: A runtime-output event source reads retained `RuntimeJournalEvent` rows from a Durable Streams data-plane journal.
-      2: A runtime-output event source supports context filtering and the documented runtime-output cursor.
+      1:
+        requirement: Session projection reads retained `RuntimeJournalEvent` rows from a Durable Streams data-plane journal through effect-durable-streams.
+        deprecated: true
+      1-note: Deprecated as a runtime-owned session projection. Owner-local product/provider projections may read retained runtime-output facts through effect-durable-streams.
+      2:
+        requirement: Session projection supports context filtering and the documented runtime-output cursor without exposing an EventSource-shaped abstraction.
+        deprecated: true
+      2-note: Deprecated with the runtime-owned session projection surface.
+      3: Runtime-output fact reads that remain in production code are private/local Effect Stream or collect/read programs over effect-durable-streams, not public source-helper objects.
 
   PROJECTOR:
     requirements:
-      1: An event projector is a provider/user-defined pure interpretation layer over accepted source events.
-      2: Event projectors expose stable `name` and `version` fields for idempotency and migration.
-      3: Event projectors do not write to streams, query engines, workflow state, or live process resources.
-      4: Event projector results are tagged as projected, ignored, or failed so successful projected events are never mixed with projector failures.
+      1:
+        requirement: The session projector is a pure interpretation layer over accepted runtime-output events.
+        deprecated: true
+      1-note: Deprecated. Runtime does not own a universal assistant-message/session taxonomy.
+      2:
+        requirement: Event projectors expose stable `name` and `version` fields for idempotency and migration.
+        deprecated: true
+      2-note: Deprecated with the generic projector framework.
+      3:
+        requirement: Event projectors do not write to streams, query engines, workflow state, or live process resources.
+        deprecated: true
+      3-note: Deprecated with the generic projector framework; equivalent purity rules belong to any future product-owned projection.
+      4:
+        requirement: Session projector results are tagged as projected, ignored, or failed so successful projected events are never mixed with projector failures.
+        deprecated: true
+      4-note: Deprecated with the runtime-owned demo projector.
+      5: Runtime does not fabricate generic assistant message/session IDs or parse provider stdout payloads as universal session semantics.
 
   SINK:
     requirements:
-      1: Event sinks are replaceable Effect services selected by the host or scenario.
-      2: A State Protocol event sink writes session projection changes to a Durable Streams State Protocol stream.
-      3: A Materialize event sink ingests runtime-output or projected events into Materialize without becoming source of truth.
+      1:
+        requirement: Event sinks are replaceable Effect services selected by the host or scenario.
+        deprecated: true
+      1-note: Deprecated. DurableTable table writes are direct generated facade calls and Materialize is provider-owned.
+      2:
+        requirement: A State Protocol event sink writes session projection changes to a Durable Streams State Protocol stream.
+        deprecated: true
+      2-note: Deprecated. Ordinary table projection state now writes through DurableTable generated facades; the generic State Protocol writer plane was removed.
+      3:
+        requirement: A Materialize provider ingests runtime-output facts into Materialize without becoming source of truth or a generic event sink framework.
+        deprecated: true
+      3-note: Deprecated. Runtime no longer exposes a Materialize provider in this cleanup.
+      4:
+        requirement: Session projection table writes use a runtime-owned DurableTable declaration rather than manual State Protocol writer/schema layers.
+        deprecated: true
+      4-note: Deprecated. Runtime-owned session projection was deleted; future real session/message projections must be owned by the product/provider that owns the taxonomy and written through owner-local DurableTable declarations.
+      5: Ordinary table projection writes use DurableTable generated facades directly, not manual State Protocol writers, state-schema files, or generated event helpers in runtime code.
 
 constraints:
   BOUNDARY:
     requirements:
       1: Durable Streams runtime-output rows remain the source of truth; event sinks are derived outputs.
       2: The runtime-output writer is not an event projector or sink; it only journals live runtime facts.
-      3: State Protocol and Materialize implementations must sit behind the common event sink interface.
-      4: Materialize provisioning and querying live in MaterializeProvider; Materialize is not exposed as an event-pipeline engine.
+      3:
+        requirement: State Protocol and Materialize implementations must sit behind the common event sink interface.
+        deprecated: true
+      3-note: Deprecated. DurableTable owns ordinary table state; Materialize remains a provider-specific derived output path.
+      4:
+        requirement: Materialize provisioning and querying live in MaterializeProvider; Materialize is not exposed as an event-pipeline engine.
+        deprecated: true
+      4-note: Deprecated because the Materialize provider was deleted.
 
   INVARIANTS:
     requirements:

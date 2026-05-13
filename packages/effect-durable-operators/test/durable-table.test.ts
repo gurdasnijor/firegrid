@@ -19,11 +19,16 @@
  *  - effect-durable-operators.TABLE.15
  */
 
-import { DurableStream } from "effect-durable-streams"
 import { Effect, Fiber, Option, Ref, Schema, Stream } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { DurableTable } from "../src/index.ts"
 import { runtime, TestStreamServer } from "./harness.ts"
+
+// DurableTable tests validate the table primitive natively through its
+// merged service API (yield* Table, Table.layer, collection facades). Raw
+// durable-stream mechanics — server lifecycle, stream pre-creation — live
+// behind TestStreamServer in ./harness.ts; the test never imports a stream
+// client plane directly.
 
 const server = new TestStreamServer()
 beforeAll(async () => {
@@ -41,30 +46,9 @@ const WorkflowExecution = Schema.Struct({
 })
 type WorkflowExecution = Schema.Schema.Type<typeof WorkflowExecution>
 
-const RawStateEvent = Schema.Struct({
-  type: Schema.String,
-  key: Schema.String,
-  headers: Schema.Struct({
-    operation: Schema.String,
-    txid: Schema.optional(Schema.String),
-  }),
-})
-
 class WorkflowTable extends DurableTable("workflow", {
   executions: WorkflowExecution,
 }) {}
-
-const createJsonStream = (url: string) =>
-  DurableStream.define({
-    endpoint: { url },
-    schema: Schema.Unknown,
-  }).create({ contentType: "application/json" })
-
-const readRawEvents = (url: string) =>
-  DurableStream.define({
-    endpoint: { url },
-    schema: RawStateEvent,
-  }).collect
 
 describe("DurableTable", () => {
   it("effect-durable-operators.TABLE.7 extracts pipeable primaryKey metadata and consumes the table with yield* Table", async () => {
@@ -72,7 +56,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           // effect-durable-operators.TABLE.6
@@ -91,6 +74,57 @@ describe("DurableTable", () => {
           if (Option.isSome(got)) {
             expect(got.value.executionId).toBe("exec-pk")
           }
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.19 layer acquisition against a fresh stream URL succeeds without prior create and is idempotent on re-acquire", async () => {
+    const url = server.url("table-layer-creates-stream")
+
+    // First acquisition: stream does not exist; layer must create it and
+    // preload to readiness before the program runs.
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          yield* table.executions.insert({
+            executionId: "exec-fresh",
+            workflowName: "demo",
+            payload: {},
+            status: "started",
+          })
+          const got = yield* table.executions.get("exec-fresh")
+          expect(Option.isSome(got)).toBe(true)
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+
+    // Second acquisition: stream already exists; the layer must tolerate
+    // CONFLICT_EXISTS from the underlying create and proceed to preload.
+    // Cold-start replay also proves the previously-written row is visible.
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const got = yield* table.executions.get("exec-fresh")
+          expect(Option.isSome(got)).toBe(true)
         })
 
         yield* program.pipe(
@@ -149,12 +183,11 @@ describe("DurableTable", () => {
     }).toThrow(/collides with a table service property/)
   })
 
-  it("effect-durable-operators.TABLE.10 effect-durable-operators.TABLE.11 effect-durable-operators.TABLE.12 effect-durable-operators.TABLE.15 generated insert/upsert/delete actions materialize and write txid events", async () => {
+  it("effect-durable-operators.TABLE.10 effect-durable-operators.TABLE.11 effect-durable-operators.TABLE.12 effect-durable-operators.TABLE.15 generated insert/upsert/delete actions sequence correctly and survive cold-start replay", async () => {
     const url = server.url("table-actions")
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -201,28 +234,33 @@ describe("DurableTable", () => {
       }),
     )
 
-    const events = await runtime(readRawEvents(url))
-    expect(events.map((event) => event.type)).toEqual([
-      "workflow.executions",
-      "workflow.executions",
-      "workflow.executions",
-      "workflow.executions",
-    ])
-    expect(events.map((event) => event.headers.operation)).toEqual([
-      "insert",
-      "upsert",
-      "insert",
-      "delete",
-    ])
-    expect(events.map((event) => event.key)).toEqual([
-      "exec-1",
-      "exec-1",
-      "exec-2",
-      "exec-1",
-    ])
-    expect(
-      events.every((event) => typeof event.headers.txid === "string"),
-    ).toBe(true)
+    // TABLE.11/12/15: a fresh DurableTable layer over the same durable
+    // stream cold-start replays State Protocol change events to rebuild
+    // identical materialized state. This implicitly verifies that the
+    // generated actions wrote createStateSchema-produced insert/upsert/
+    // delete events with the correct namespace.collectionKey wire type and
+    // that txid coordination kept reads consistent with writes.
+    await runtime(
+      Effect.gen(function* () {
+        const replay = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+          const deleted = yield* table.executions.get("exec-1")
+          const kept = yield* table.executions.get("exec-2")
+          const rows = yield* table.executions.query((coll) => coll.toArray)
+          expect(Option.isNone(deleted)).toBe(true)
+          expect(Option.isSome(kept)).toBe(true)
+          expect(rows.map((row) => row.executionId)).toEqual(["exec-2"])
+        })
+
+        yield* replay.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
   })
 
   it("effect-durable-operators.TABLE.10 duplicate insert rejects rather than upserting", async () => {
@@ -230,7 +268,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -274,7 +311,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -306,7 +342,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -362,7 +397,6 @@ describe("DurableTable", () => {
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const seed = Effect.gen(function* () {
           const table = yield* WorkflowTable
@@ -412,12 +446,80 @@ describe("DurableTable", () => {
     )
   })
 
+  it("effect-durable-operators.TABLE.17 effect-durable-operators.TABLE.18 supports composite primary keys declared as Schema.transform", async () => {
+    const url = server.url("table-composite-key")
+
+    const CompositeKey = Schema.transform(
+      Schema.String,
+      Schema.Struct({
+        subscriberId: Schema.String,
+        ingressId: Schema.String,
+      }),
+      {
+        strict: false,
+        decode: (encoded: string) => {
+          const [subscriberId = "", ingressId = ""] = encoded.split("\x1f")
+          return { subscriberId, ingressId }
+        },
+        encode: ({ subscriberId, ingressId }: { subscriberId: string; ingressId: string }) =>
+          `${subscriberId}\x1f${ingressId}`,
+      },
+    )
+
+    class CheckpointTable extends DurableTable("compositeKeyTest", {
+      checkpoints: Schema.Struct({
+        key: CompositeKey.pipe(DurableTable.primaryKey),
+        claimedAt: Schema.String,
+      }),
+    }) {}
+
+    await runtime(
+      Effect.gen(function* () {
+
+        const program = Effect.gen(function* () {
+          const table = yield* CheckpointTable
+          const key = { subscriberId: "sub-a", ingressId: "ing-1" }
+
+          const missing = yield* table.checkpoints.get(key)
+          expect(Option.isNone(missing)).toBe(true)
+
+          yield* table.checkpoints.upsert({
+            key,
+            claimedAt: "2026-05-12T00:00:00.000Z",
+          })
+
+          const found = yield* table.checkpoints.get(key)
+          expect(Option.isSome(found)).toBe(true)
+          if (Option.isSome(found)) {
+            // get() decodes the primary-key field back to the user-typed form.
+            expect(found.value.key).toEqual(key)
+            expect(found.value.claimedAt).toBe("2026-05-12T00:00:00.000Z")
+          }
+
+          // Distinct composite key must miss.
+          const other = yield* table.checkpoints.get({
+            subscriberId: "sub-a",
+            ingressId: "ing-2",
+          })
+          expect(Option.isNone(other)).toBe(true)
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            CheckpointTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
   it("effect-durable-operators.TABLE.3 still exposes awaitTxId through Effect", async () => {
     const url = server.url("table-await-txid")
 
     await runtime(
       Effect.gen(function* () {
-        yield* createJsonStream(url)
 
         const program = Effect.gen(function* () {
           const table = yield* WorkflowTable

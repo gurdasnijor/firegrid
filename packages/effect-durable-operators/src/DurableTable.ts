@@ -24,6 +24,13 @@
  *  - effect-durable-operators.TABLE.14 — no package-owned append helper path
  *  - effect-durable-operators.TABLE.15 — change events come from
  *    createStateSchema collection helpers
+ *  - effect-durable-operators.TABLE.16 — primaryKey wraps the field schema
+ *    with a Schema.transform so its encoded form is a string; the package's
+ *    primary-key annotation is preserved for AST discovery
+ *  - effect-durable-operators.TABLE.17 — composite primary keys are declared
+ *    as Schema.transform schemas; no runtime separator concatenation
+ *  - effect-durable-operators.TABLE.18 — primary-key values are encoded
+ *    through the field schema (Schema.encodeSync); no string-coercion helper
  */
 
 import type { DurableStreamOptions } from "@durable-streams/client"
@@ -56,8 +63,8 @@ const primaryKeyAnnotationId = Symbol.for(
 )
 declare const primaryKeyTypeId: unique symbol
 
-interface PrimaryKeyField<Key> {
-  readonly [primaryKeyTypeId]: Key
+interface PrimaryKeyField<DecodedKey> {
+  readonly [primaryKeyTypeId]: DecodedKey
 }
 
 // `Schema.Struct<any>` is the practical top type for Struct schemas here:
@@ -82,7 +89,7 @@ type PrimaryKeyNameOf<S> = {
 
 export type PrimaryKeyOf<S extends StructSchema> =
   PrimaryKeyNameOf<S> extends keyof FieldsOf<S>
-    ? Extract<Schema.Schema.Type<FieldsOf<S>[PrimaryKeyNameOf<S>]>, string | number>
+    ? Schema.Schema.Type<FieldsOf<S>[PrimaryKeyNameOf<S>]>
     : never
 
 export interface LayerOptions {
@@ -90,7 +97,7 @@ export interface LayerOptions {
   readonly txTimeoutMs?: number
 }
 
-export interface CollectionFacade<Row extends object, Key extends string | number> {
+export interface CollectionFacade<Row extends object, Key> {
   readonly insert: (row: Row) => Effect.Effect<void, DurableTableError>
   readonly upsert: (row: Row) => Effect.Effect<void, DurableTableError>
   readonly delete: (key: Key) => Effect.Effect<void, DurableTableError>
@@ -118,16 +125,19 @@ export type DurableTableService<Schemas extends TableSchemas<Schemas>> = {
   ) => Effect.Effect<void, DurableTableError>
 }
 
-export type DurableTableTagClass<Schemas extends TableSchemas<Schemas>> =
+// `Self` is bound to the resulting tag class so consumers' Effects that
+// `yield* MyTable` get a precise requirements channel instead of `unknown`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type DurableTableTagClass<Schemas extends TableSchemas<Schemas>, Self = any> =
   Context.TagClass<
-    unknown,
+    Self,
     string,
     DurableTableService<Schemas>
   > & {
     readonly namespace: string
     readonly layer: (
       options: LayerOptions,
-    ) => Layer.Layer<unknown, DurableTableError>
+    ) => Layer.Layer<Self, DurableTableError>
   }
 
 type CompiledCollection = {
@@ -135,6 +145,8 @@ type CompiledCollection = {
   readonly durableType: string
   readonly primaryKey: string
   readonly schema: StructSchema
+  readonly encodePrimaryKey: (decoded: unknown) => string
+  readonly decodePrimaryKey: (encoded: string) => unknown
 }
 
 type CompiledTable<Schemas extends TableSchemas<Schemas>> = {
@@ -158,13 +170,39 @@ type TableActionMap = TableStreamDB["actions"]
 
 const reservedFacadeProperties = new Set(["awaitTxId"])
 
-const keyString = (value: string | number): string => String(value)
-
+/**
+ * effect-durable-operators.TABLE.16
+ *
+ * `primaryKey` wraps the underlying field schema with a `Schema.transform`
+ * whose encoded form is a string, then attaches the package-owned annotation
+ * used for AST-level primary-key discovery.
+ *
+ * - The pipeable form is the primary path: `Schema.String.pipe(primaryKey)`.
+ * - For non-string-decoded primary keys, the user composes a Schema.transform
+ *   themselves (e.g., for composite keys) and pipes it through `primaryKey`.
+ *   The package never concatenates key parts at runtime.
+ */
 const primaryKey = <S extends Schema.Schema.Any>(
   schema: S,
-): S & PrimaryKeyField<Schema.Schema.Type<S>> =>
-  schema.annotations({ [primaryKeyAnnotationId]: true }) as S &
+): Schema.transform<typeof Schema.String, S> &
+  PrimaryKeyField<Schema.Schema.Type<S>> => {
+  // The transform threads the inner schema's encoded representation through
+  // a `Schema.String` outer schema. For inner schemas whose encoded form is
+  // already string (Schema.String, branded strings, or user-supplied
+  // composite-key Schema.transform), the threading is identity. For inner
+  // schemas whose encoded form is non-string, the value is coerced via
+  // String(...) at encode time so the durable wire form is always a string.
+  const transformed = Schema.transform(Schema.String, schema, {
+    strict: false,
+    decode: (_fromA: string, fromI: string): unknown => fromI,
+    encode: (toI: unknown, _toA: unknown): string =>
+      typeof toI === "string" ? toI : String(toI),
+  })
+  return transformed.annotations({
+    [primaryKeyAnnotationId]: true,
+  }) as Schema.transform<typeof Schema.String, S> &
     PrimaryKeyField<Schema.Schema.Type<S>>
+}
 
 const raise = (message: string): never => {
   throw new Error(message)
@@ -178,6 +216,18 @@ const actionName = (
   operation: GeneratedOperation,
 ): string => `${collectionKey}.${operation}`
 
+const requireString = (
+  collection: CompiledCollection,
+  value: unknown,
+): string => {
+  if (typeof value !== "string") {
+    return raise(
+      `DurableTable("${collection.durableType}") primary-key field "${collection.primaryKey}" must encode to a string; got ${typeof value}`,
+    )
+  }
+  return value
+}
+
 const compileTable = <const Schemas extends TableSchemas<Schemas>>(
   namespace: string,
   schemas: Schemas,
@@ -190,30 +240,36 @@ const compileTable = <const Schemas extends TableSchemas<Schemas>>(
       )
     }
 
-    const primaryKeys = Object.entries(schema.fields)
-      .filter(([, fieldSchema]) =>
-        isPrimaryKeyField(fieldSchema as Schema.Schema.Any),
-      )
-      .map(([field]) => field)
+    const fieldEntries = Object.entries(schema.fields) as Array<
+      readonly [string, Schema.Schema.Any]
+    >
+    const primaryKeyEntries = fieldEntries.filter(([, fieldSchema]) =>
+      isPrimaryKeyField(fieldSchema))
 
-    if (primaryKeys.length !== 1) {
+    if (primaryKeyEntries.length !== 1) {
       return raise(
-        `DurableTable("${namespace}").${collectionKey} must declare exactly one DurableTable.primaryKey field; found ${primaryKeys.length}`,
+        `DurableTable("${namespace}").${collectionKey} must declare exactly one DurableTable.primaryKey field; found ${primaryKeyEntries.length}`,
       )
     }
 
-    const primaryKeyName = primaryKeys[0]
-    if (primaryKeyName === undefined) {
-      return raise(
-        `DurableTable("${namespace}").${collectionKey} did not produce a primary key`,
-      )
-    }
+    const [primaryKeyName, primaryKeyFieldSchema] = primaryKeyEntries[0]!
+    const fieldSchema = primaryKeyFieldSchema as Schema.Schema<unknown, unknown, never>
+    // effect-durable-operators.TABLE.18
+    // Capture encode/decode closures so action paths can run them in plain
+    // promise contexts without needing Effect or per-call schema resolution.
+    const encodeFn = Schema.encodeSync(fieldSchema)
+    const decodeFn = Schema.decodeSync(fieldSchema)
 
     return {
       collectionKey,
       durableType: `${namespace}.${collectionKey}`,
       primaryKey: primaryKeyName,
       schema,
+      encodePrimaryKey: (value: unknown) => {
+        const encoded = encodeFn(value)
+        return typeof encoded === "string" ? encoded : String(encoded)
+      },
+      decodePrimaryKey: (encoded: string) => decodeFn(encoded),
     } satisfies CompiledCollection
   })
 
@@ -244,15 +300,27 @@ const makeStateSchema = (
   table: CompiledTable<AnyTableSchemas>,
 ): StateSchemaWithHelpers => createStateSchema(makeStateDefinition(table))
 
-const collectionKeyValue = <Row extends object>(
+/**
+ * effect-durable-operators.TABLE.18
+ *
+ * Returns a row whose primary-key field has been pre-encoded to its string
+ * wire form. @durable-streams/state's TanStack DB wiring uses
+ * `String(row[primaryKey])` to derive the collection index key; replacing the
+ * field's decoded value with the schema-encoded string keeps composite-key
+ * lookups consistent with the durable wire format.
+ */
+const encodeRowForStore = (
   collection: CompiledCollection,
-  row: Row,
-): string =>
-  keyString(
-    (row as Record<string, string | number>)[collection.primaryKey] as
-      | string
-      | number,
+  row: object,
+): { encoded: object; encodedKey: string } => {
+  const decoded = (row as Record<string, unknown>)[collection.primaryKey]
+  const encodedKey = requireString(
+    collection,
+    collection.encodePrimaryKey(decoded),
   )
+  const encoded = { ...row, [collection.primaryKey]: encodedKey }
+  return { encoded, encodedKey }
+}
 
 const makeActionDefinitions = (
   table: CompiledTable<AnyTableSchemas>,
@@ -267,12 +335,14 @@ const makeActionDefinitions = (
 
         actions[actionName(collection.collectionKey, "insert")] = {
           onMutate: (params: unknown) => {
-            coll.insert(params as object)
+            const { encoded } = encodeRowForStore(collection, params as object)
+            coll.insert(encoded)
           },
           mutationFn: async (params: unknown) => {
+            const { encoded } = encodeRowForStore(collection, params as object)
             const txid = crypto.randomUUID()
             const event = helpers.insert({
-              value: params,
+              value: encoded,
               headers: { txid },
             })
             // effect-durable-operators.TABLE.11
@@ -285,20 +355,23 @@ const makeActionDefinitions = (
 
         actions[actionName(collection.collectionKey, "upsert")] = {
           onMutate: (params: unknown) => {
-            const row = params as object
-            const key = collectionKeyValue(collection, row)
-            if (coll.get(key) === undefined) {
-              coll.insert(row)
+            const { encoded, encodedKey } = encodeRowForStore(
+              collection,
+              params as object,
+            )
+            if (coll.get(encodedKey) === undefined) {
+              coll.insert(encoded)
             } else {
-              coll.update(key, (draft) => {
-                Object.assign(draft, row)
+              coll.update(encodedKey, (draft) => {
+                Object.assign(draft, encoded)
               })
             }
           },
           mutationFn: async (params: unknown) => {
+            const { encoded } = encodeRowForStore(collection, params as object)
             const txid = crypto.randomUUID()
             const event = helpers.upsert({
-              value: params,
+              value: encoded,
               headers: { txid },
             })
             // effect-durable-operators.TABLE.15
@@ -309,16 +382,22 @@ const makeActionDefinitions = (
 
         actions[actionName(collection.collectionKey, "delete")] = {
           onMutate: (params: unknown) => {
-            const key = keyString(params as string | number)
-            if (coll.get(key) !== undefined) {
-              coll.delete(key)
+            const encodedKey = requireString(
+              collection,
+              collection.encodePrimaryKey(params),
+            )
+            if (coll.get(encodedKey) !== undefined) {
+              coll.delete(encodedKey)
             }
           },
           mutationFn: async (params: unknown) => {
-            const key = keyString(params as string | number)
+            const encodedKey = requireString(
+              collection,
+              collection.encodePrimaryKey(params),
+            )
             const txid = crypto.randomUUID()
             const event = helpers.delete({
-              key,
+              key: encodedKey,
               headers: { txid },
             })
             // effect-durable-operators.TABLE.15
@@ -349,66 +428,91 @@ const runAction = (
     catch: (cause) => new DurableTableError({ table: tableName, cause }),
   }).pipe(Effect.asVoid)
 
-const makeFacade = <Row extends object, Key extends string | number>(options: {
+/**
+ * effect-durable-operators.TABLE.18
+ *
+ * On read, the stored row carries the encoded-string primary-key value. To
+ * preserve the user-facing row type (whose primary-key field is the decoded
+ * form), decode the field back before returning to callers.
+ */
+const decodeRowForRead = <Row extends object>(
+  collection: CompiledCollection,
+  stored: Row,
+): Row => {
+  const encoded = (stored as Record<string, unknown>)[collection.primaryKey]
+  if (typeof encoded !== "string") return stored
+  const decoded = collection.decodePrimaryKey(encoded)
+  return { ...stored, [collection.primaryKey]: decoded }
+}
+
+const makeFacade = <Row extends object, Key>(options: {
   readonly tableName: string
-  readonly collectionKey: string
-  readonly collection: TanStackCollection<Row, string>
+  readonly collection: CompiledCollection
+  readonly tanstackCollection: TanStackCollection<Row, string>
   readonly actions: TableActionMap
-}): CollectionFacade<Row, Key> => ({
-  insert: (row) =>
-    runAction(
-      options.tableName,
-      options.actions,
-      actionName(options.collectionKey, "insert"),
-      row,
-    ),
-  upsert: (row) =>
-    runAction(
-      options.tableName,
-      options.actions,
-      actionName(options.collectionKey, "upsert"),
-      row,
-    ),
-  delete: (key) =>
-    runAction(
-      options.tableName,
-      options.actions,
-      actionName(options.collectionKey, "delete"),
-      key,
-    ),
-  get: (key) =>
-    Effect.try({
-      try: () => {
-        const value = options.collection.get(keyString(key))
-        return value === undefined ? Option.none<Row>() : Option.some(value)
-      },
-      catch: (cause) =>
-        new DurableTableError({ table: options.tableName, cause }),
-    }),
-  query: (build) =>
-    Effect.try({
-      try: () => build(options.collection),
-      catch: (cause) =>
-        new DurableTableError({ table: options.tableName, cause }),
-    }),
-  subscribe: <A>(subscribe: (
-    coll: TanStackCollection<Row, string>,
-    emit: (value: A) => void,
-  ) => () => void) =>
-    Stream.async<A, DurableTableError>((emit) => {
-      let unsubscribe: (() => void) | undefined
-      try {
-        unsubscribe = subscribe(options.collection, (value) => {
-          void emit.single(value)
+}): CollectionFacade<Row, Key> => {
+  const { collection, tanstackCollection, tableName, actions } = options
+  const encodeKey = (key: unknown): string =>
+    requireString(collection, collection.encodePrimaryKey(key))
+  return {
+    insert: (row) =>
+      runAction(
+        tableName,
+        actions,
+        actionName(collection.collectionKey, "insert"),
+        row,
+      ),
+    upsert: (row) =>
+      runAction(
+        tableName,
+        actions,
+        actionName(collection.collectionKey, "upsert"),
+        row,
+      ),
+    delete: (key) =>
+      runAction(
+        tableName,
+        actions,
+        actionName(collection.collectionKey, "delete"),
+        key,
+      ),
+    get: (key) =>
+      Effect.try({
+        try: () => {
+          const encoded = encodeKey(key)
+          const value = tanstackCollection.get(encoded)
+          return value === undefined
+            ? Option.none<Row>()
+            : Option.some(decodeRowForRead(collection, value))
+        },
+        catch: (cause) => new DurableTableError({ table: tableName, cause }),
+      }),
+    query: (build) =>
+      Effect.try({
+        try: () => build(tanstackCollection),
+        catch: (cause) => new DurableTableError({ table: tableName, cause }),
+      }),
+    subscribe: <A>(
+      subscribe: (
+        coll: TanStackCollection<Row, string>,
+        emit: (value: A) => void,
+      ) => () => void,
+    ) =>
+      Stream.async<A, DurableTableError>((emit) => {
+        let unsubscribe: (() => void) | undefined
+        try {
+          unsubscribe = subscribe(tanstackCollection, (value) => {
+            void emit.single(value)
+          })
+        } catch (cause) {
+          void emit.fail(new DurableTableError({ table: tableName, cause }))
+        }
+        return Effect.sync(() => {
+          if (unsubscribe !== undefined) unsubscribe()
         })
-      } catch (cause) {
-        void emit.fail(new DurableTableError({ table: options.tableName, cause }))
-      }
-      return Effect.sync(() => {
-        if (unsubscribe !== undefined) unsubscribe()
-      })
-    }),
-})
+      }),
+  }
+}
 
 const makeService = <Schemas extends TableSchemas<Schemas>>(
   table: CompiledTable<Schemas>,
@@ -440,6 +544,38 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
         new DurableTableError({ table: table.namespace, cause }),
     }).pipe(
       Effect.tap((db) =>
+        // Ensure the backing durable stream exists before preload. Calling
+        // .create() against an already-existing stream returns a typed
+        // CONFLICT_EXISTS error from @durable-streams/client; we tolerate
+        // that path so DurableTable.layer is idempotent across acquisitions
+        // against the same URL.
+        Effect.tryPromise({
+          try: async () => {
+            try {
+              const createOpts: { contentType?: string } = {}
+              if (options.streamOptions.contentType !== undefined) {
+                createOpts.contentType = options.streamOptions.contentType
+              }
+              await db.stream.create(createOpts)
+            } catch (cause) {
+              if (
+                typeof cause === "object" &&
+                cause !== null &&
+                "code" in cause &&
+                (cause).code === "CONFLICT_EXISTS"
+              ) {
+                // Stream already exists with compatible configuration; the
+                // server returns CONFLICT_EXISTS and we proceed to preload.
+                return
+              }
+              throw cause
+            }
+          },
+          catch: (cause) =>
+            new DurableTableError({ table: table.namespace, cause }),
+        }),
+      ),
+      Effect.tap((db) =>
         Effect.tryPromise({
           try: () => db.preload(),
           catch: (cause) =>
@@ -458,8 +594,8 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
             ...facades,
             [collection.collectionKey]: makeFacade({
               tableName: `${table.namespace}.${collection.collectionKey}`,
-              collectionKey: collection.collectionKey,
-              collection: coll,
+              collection,
+              tanstackCollection: coll,
               actions,
             }),
           }
@@ -486,26 +622,32 @@ const defineDurableTable = <const Schemas extends TableSchemas<Schemas>>(
   schemas: Schemas,
 ): DurableTableTagClass<Schemas> => {
   const table = compileTable(namespace, schemas)
+  const tagKey = `effect-durable-operators/DurableTable/${namespace}`
 
-  const Base = Context.Tag(
-    `effect-durable-operators/DurableTable/${namespace}`,
-  )<unknown, DurableTableService<Schemas>>()
-
-  class DurableTableTag extends Base {
+  // Self-reference: the class is its own Identifier so `yield* MyTable`
+  // produces R = MyTable rather than R = unknown. The forward reference
+  // to `DurableTableTag` inside the Context.Tag generics is the canonical
+  // Effect pattern and works because class declarations are hoisted.
+  class DurableTableTag extends Context.Tag(tagKey)<
+    DurableTableTag,
+    DurableTableService<Schemas>
+  >() {
     static readonly namespace = namespace
 
     static layer(
-      this: Context.Tag<unknown, DurableTableService<Schemas>>,
+      this: Context.Tag<DurableTableTag, DurableTableService<Schemas>>,
       options: LayerOptions,
     ) {
       return Layer.scoped(
         this,
-        makeService(table, options).pipe(Effect.map((service) => this.of(service))),
+        makeService(table, options).pipe(
+          Effect.map((service) => this.of(service)),
+        ),
       )
     }
   }
 
-  return DurableTableTag as DurableTableTagClass<Schemas>
+  return DurableTableTag as unknown as DurableTableTagClass<Schemas>
 }
 
 export const DurableTable = Object.assign(defineDurableTable, {

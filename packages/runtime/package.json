@@ -9,29 +9,9 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./materialization": {
-      "types": "./src/materialization/index.ts",
-      "default": "./src/materialization/index.ts"
-    },
-    "./materialization/core": {
-      "types": "./src/materialization/core/index.ts",
-      "default": "./src/materialization/core/index.ts"
-    },
-    "./materialization/raw-fold": {
-      "types": "./src/materialization/raw-fold/index.ts",
-      "default": "./src/materialization/raw-fold/index.ts"
-    },
-    "./materialization/state-protocol": {
-      "types": "./src/materialization/state-protocol/index.ts",
-      "default": "./src/materialization/state-protocol/index.ts"
-    },
-    "./runtime-ingress": {
-      "types": "./src/runtime-ingress/index.ts",
-      "default": "./src/runtime-ingress/index.ts"
-    },
-    "./materialization/materialize": {
-      "types": "./src/materialization/materialize/index.ts",
-      "default": "./src/materialization/materialize/index.ts"
+    "./workflow-engine": {
+      "types": "./src/workflow-engine/index.ts",
+      "default": "./src/workflow-engine/index.ts"
     }
   },
   "bin": {
@@ -57,16 +37,14 @@
     "@effect/platform": "^0.96.0",
     "@effect/platform-node": "^0.106.0",
     "@effect/rpc": "0.75.1",
-    "@effect/sql": "0.51.1",
-    "@effect/sql-pg": "0.52.1",
     "@effect/workflow": "0.18.1",
-    "@firegrid/durable-streams": "workspace:*",
     "@firegrid/protocol": "workspace:*",
     "effect-durable-operators": "workspace:*",
     "effect-durable-streams": "workspace:*",
     "effect": "^3.18.0"
   },
   "devDependencies": {
+    "@durable-streams/server": "^0.3.1",
     "@types/node": "^22.10.0",
     "tsx": "^4.20.4",
     "typescript": "^5.7.0",

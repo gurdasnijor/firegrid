@@ -109,7 +109,7 @@ The current pattern, repeated ~96 times: each `it()` body builds its layer inlin
 )
 ```
 
-Because `streamUrl` differs per test (`freshStreamUrl(...)` returns a fresh `${counter}` URL — `helpers.ts:29-32`), a *fully* shared layer is not viable; but a **factory** that returns a composed `Layer` would dedupe the `ProjectionLive + WorkClaimLive + DurableWaitsLive + currentWorkContextLayer` boilerplate that recurs across at least `facade-launch-dispatch.test.ts:243`, `facade-prompt-await.test.ts`, `facade-required-action.test.ts`, `facade-tool-execution.test.ts`, `integrated-path.test.ts`, and `choreography-service.test.ts`. The skill's `it.layer` pattern (lines 524-603) handles this naturally:
+Because `streamUrl` differs per test (older helpers generated a fresh counter URL), a *fully* shared layer is not viable; but a **factory** that returns a composed `Layer` would dedupe the `ProjectionLive + WorkClaimLive + DurableWaitsLive + currentWorkContextLayer` boilerplate that recurs across at least `facade-launch-dispatch.test.ts:243`, `facade-prompt-await.test.ts`, `facade-required-action.test.ts`, `facade-tool-execution.test.ts`, `integrated-path.test.ts`, and `choreography-service.test.ts`. The skill's `it.layer` pattern (lines 524-603) handles this naturally:
 
 ```ts
 const TestSubstrate = (url: string) =>
@@ -121,7 +121,7 @@ layer(TestSubstrate(url))("operator behavior", (it) => {
 })
 ```
 
-The win is twofold: (1) the layer is built once per `describe` block, not once per `it`, and (2) the test-vs-prod boundary is documented in one place. There is one implementation friction: the `freshStreamUrl` is currently called *inside* each `it` via `seedReadyRun`/`createSubstrateStream`. Moving it to the `describe` scope means each block gets one stream rather than one per assertion — fine for most tests, but a non-trivial refactor.
+The win is twofold: (1) the layer is built once per `describe` block, not once per `it`, and (2) the test-vs-prod boundary is documented in one place. There is one implementation friction: older per-test URL generation happened *inside* each `it` via `seedReadyRun`/`createSubstrateStream`. Moving it to the `describe` scope means each block gets one stream rather than one per assertion — fine for most tests, but a non-trivial refactor.
 
 ### 5. `Effect.runPromise` and the ESLint warn-source
 

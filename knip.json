@@ -53,17 +53,6 @@
         "src/**/*.ts",
         "test/**/*.ts"
       ]
-    },
-    "packages/effect-durable-streams-state": {
-      "entry": [
-        "src/index.ts",
-        "test/**/*.test.ts",
-        "test/**/*.bench.ts"
-      ],
-      "project": [
-        "src/**/*.ts",
-        "test/**/*.ts"
-      ]
     }
   },
   "ignore": [

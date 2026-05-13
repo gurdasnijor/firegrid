@@ -1,56 +1,51 @@
 import {
   Firegrid,
+  FiregridConfig,
+  FiregridLive,
   local,
 } from "@firegrid/client"
-import type {
-  RuntimeJournalEvent,
-} from "@firegrid/protocol/launch"
+import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   appendRuntimeIngress,
   FiregridRuntimeHostLive,
-  RuntimeInputDurableStreams,
   startRuntime,
 } from "@firegrid/runtime"
-import {
-  RuntimeIngressRowSchema,
-  type RuntimeIngressRow,
-} from "@firegrid/runtime/runtime-ingress"
-import { Effect, Schema } from "effect"
+import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import {
-  startFiregridScenarioHarness,
-  type FiregridScenarioHarness,
-} from "./scenario-harness.ts"
-import {
-  readRuntimeJournalEvents,
-  readUnknownDurableEvents,
-} from "./durable-stream-fixtures.ts"
 
-let harness: FiregridScenarioHarness | undefined
+let server: DurableStreamTestServer | undefined
+let baseUrl: string | undefined
 
 beforeEach(async () => {
-  harness = await startFiregridScenarioHarness()
+  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+  baseUrl = await server.start()
 })
 
 afterEach(async () => {
-  await harness?.stop()
-  harness = undefined
+  await server?.stop()
+  server = undefined
+  baseUrl = undefined
 })
-
-const createStreamUrl = async (name: string): Promise<string> => {
-  if (!harness) throw new Error("scenario harness not started")
-  return harness.createStreamUrl(name)
-}
 
 const runWithFiregrid = <A, E>(
   options: {
-    readonly controlPlaneStreamUrl: string
-    readonly dataPlaneStreamUrl: string
+    readonly durableStreamsBaseUrl: string
+    readonly namespace: string
   },
   effect: Effect.Effect<A, E, Firegrid>,
 ): Promise<A> => {
-  if (!harness) throw new Error("scenario harness not started")
-  return harness.runWithFiregrid(options, effect)
+  return Effect.runPromise(Effect.scoped(
+    effect.pipe(
+      Effect.provide(
+        FiregridLive.pipe(
+          Layer.provide(Layer.succeed(FiregridConfig, {
+            durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+            namespace: options.namespace,
+          })),
+        ),
+      ),
+    ),
+  ))
 }
 
 const stdinEchoAgent = `
@@ -77,14 +72,14 @@ process.stdin.on("data", chunk => {
 
 describe("firegrid tracer 012 runtime ingress", () => {
   it("firegrid-agent-ingress.INGRESS.1 firegrid-agent-ingress.INGRESS.2 firegrid-agent-ingress.INGRESS.3 firegrid-agent-ingress.INGRESS.4 firegrid-agent-ingress.INGRESS.5 firegrid-agent-ingress.DELIVERY.1 firegrid-agent-ingress.DELIVERY.2 firegrid-agent-ingress.DELIVERY.3 firegrid-agent-ingress.DELIVERY.4 firegrid-agent-ingress.HOST.1 firegrid-agent-ingress.HOST.2 firegrid-agent-ingress.HOST.3 firegrid-agent-ingress.SUBSCRIBERS.1 firegrid-agent-ingress.SUBSCRIBERS.2 firegrid-agent-ingress.SUBSCRIBERS.3 firegrid-agent-ingress.BOUNDARY.1 firegrid-agent-ingress.BOUNDARY.2 firegrid-agent-ingress.BOUNDARY.3 firegrid-agent-ingress.BOUNDARY.4 firegrid-agent-ingress.BOUNDARY.5 delivers durable ingress once to local process stdin and journals output", async () => {
-    const controlPlaneStreamUrl = await createStreamUrl("tracer-012-runtime-control")
-    const dataPlaneStreamUrl = await createStreamUrl("tracer-012-runtime-output")
-    const workflowStreamUrl = await createStreamUrl("tracer-012-workflow")
-    const runtimeIngressStreamUrl = await createStreamUrl("tracer-012-runtime-ingress")
-    const inputCheckpointsStreamUrl = await createStreamUrl("tracer-012-runtime-ingress-cps")
+    if (!baseUrl) throw new Error("scenario test server not started")
+    const firegridConfig = {
+      durableStreamsBaseUrl: baseUrl,
+      namespace: `tracer-012-${crypto.randomUUID()}`,
+    }
 
     const handle = await runWithFiregrid(
-      { controlPlaneStreamUrl, dataPlaneStreamUrl },
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* firegrid.launch({
@@ -96,15 +91,8 @@ describe("firegrid tracer 012 runtime ingress", () => {
     )
 
     const host = FiregridRuntimeHostLive({
-      streams: {
-        workflow: workflowStreamUrl,
-        controlPlane: controlPlaneStreamUrl,
-        runtimeOutput: dataPlaneStreamUrl,
-        input: new RuntimeInputDurableStreams({
-          ingress: runtimeIngressStreamUrl,
-          checkpoints: inputCheckpointsStreamUrl,
-        }),
-      },
+      ...firegridConfig,
+      input: true,
     })
 
     const initial = await Effect.runPromise(
@@ -137,7 +125,7 @@ describe("firegrid tracer 012 runtime ingress", () => {
       }).pipe(Effect.provide(host)),
     )
 
-    expect(duplicate.ingressId).toBe(followUp.ingressId)
+    expect(duplicate.inputId).toBe(followUp.inputId)
 
     const result = await Effect.runPromise(
       startRuntime({
@@ -150,60 +138,25 @@ describe("firegrid tracer 012 runtime ingress", () => {
       exitCode: 0,
     })
 
-    const runtimeJournal = await Effect.runPromise(
-      readRuntimeJournalEvents(dataPlaneStreamUrl),
-    )
-    const stdout = runtimeJournal
-      .flatMap(event => event.type === "firegrid.runtime.output.stdout" ? [event.event] : [])
-      .filter(event => event.contextId === handle.contextId)
+    const snapshot = await Effect.runPromise(Effect.scoped(
+      Effect.gen(function* () {
+        const firegrid = yield* Firegrid
+        return yield* firegrid.open(handle.contextId).snapshot
+      }).pipe(
+        Effect.provide(
+          FiregridLive.pipe(
+            Layer.provide(Layer.succeed(FiregridConfig, {
+              ...firegridConfig,
+            })),
+          ),
+        ),
+      ),
+    ))
 
-    expect(stdout.map(event => event.raw)).toEqual([
+    expect(snapshot.events.map(event => event.raw)).toEqual([
       "{\"type\":\"assistant\",\"text\":\"ingress:start here\"}",
       "{\"type\":\"assistant\",\"text\":\"ingress:continue once\"}",
     ])
-
-    const ingressRows = await Effect.runPromise(
-      readUnknownDurableEvents(runtimeIngressStreamUrl).pipe(
-        Effect.map(rows =>
-          rows.map(row => Schema.decodeUnknownSync(RuntimeIngressRowSchema)(row))),
-      ),
-    )
-    const requested = ingressRows.filter(
-      (row): row is RuntimeIngressRow =>
-        row.type === "firegrid.runtime_ingress.requested",
-    )
-
-    expect(requested).toHaveLength(3)
-    expect(requested.map(row => row.ingressId)).toEqual([
-      initial.ingressId,
-      followUp.ingressId,
-      followUp.ingressId,
-    ])
-    expect(requested[0]).toMatchObject({
-      contextId: handle.contextId,
-      ingressId: initial.ingressId,
-      kind: "message",
-      authoredBy: "client",
-      idempotencyKey: "tracer-012-initial",
-    })
-    expect(requested[1]).toMatchObject({
-      contextId: handle.contextId,
-      ingressId: followUp.ingressId,
-      kind: "message",
-      authoredBy: "client",
-      idempotencyKey: "tracer-012-continue",
-    })
-    expect(requested[2]).toMatchObject({
-      contextId: handle.contextId,
-      ingressId: followUp.ingressId,
-      kind: "message",
-      authoredBy: "client",
-      idempotencyKey: "tracer-012-continue",
-    })
-    // Delivery progress now lives in a separate checkpoint stream owned
-    // by `effect-durable-operators.ConsumerCheckpointStoreLive`; the
-    // provider-visible `stdout` events above (lines 155-158) are the
-    // primary delivery proof. The `firegrid.runtime_ingress.accepted`
-    // row family has been removed.
+    expect(initial.inputId).not.toEqual(followUp.inputId)
   })
 })

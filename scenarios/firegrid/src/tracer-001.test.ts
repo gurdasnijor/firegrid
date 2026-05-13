@@ -1,57 +1,66 @@
+import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   Firegrid,
+  FiregridConfig,
+  FiregridLive,
   local,
 } from "@firegrid/client"
 import {
   FiregridRuntimeHostLive,
   startRuntime,
 } from "@firegrid/runtime"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import {
-  startFiregridScenarioHarness,
-  type FiregridScenarioHarness,
-} from "./scenario-harness.ts"
 
-let harness: FiregridScenarioHarness | undefined
+let server: DurableStreamTestServer | undefined
+let baseUrl: string | undefined
 
 beforeEach(async () => {
-  harness = await startFiregridScenarioHarness()
+  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+  baseUrl = await server.start()
 })
 
 afterEach(async () => {
-  await harness?.stop()
-  harness = undefined
+  await server?.stop()
+  server = undefined
+  baseUrl = undefined
 })
-
-const createStreamUrl = async (name: string): Promise<string> => {
-  if (!harness) throw new Error("scenario harness not started")
-  return harness.createStreamUrl(name)
-}
 
 const runWithFiregrid = <A, E>(
   options: {
-    readonly controlPlaneStreamUrl: string
-    readonly dataPlaneStreamUrl: string
+    readonly durableStreamsBaseUrl: string
+    readonly namespace: string
   },
   effect: Effect.Effect<A, E, Firegrid>,
 ): Promise<A> => {
-  if (!harness) throw new Error("scenario harness not started")
-  return harness.runWithFiregrid(options, effect)
+  return Effect.runPromise(Effect.scoped(
+    effect.pipe(
+      Effect.provide(
+        FiregridLive.pipe(
+          Layer.provide(Layer.succeed(FiregridConfig, {
+            durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+            namespace: options.namespace,
+          })),
+        ),
+      ),
+    ),
+  ))
 }
 
 describe("firegrid tracer scenarios", () => {
   it("firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.10 starts from public launch and journals retained runtime events/logs", async () => {
-    const controlPlaneStreamUrl = await createStreamUrl("runtime-control")
-    const dataPlaneStreamUrl = await createStreamUrl("runtime-data")
-    const workflowStreamUrl = await createStreamUrl("workflow")
+    if (!baseUrl) throw new Error("scenario test server not started")
+    const firegridConfig = {
+      durableStreamsBaseUrl: baseUrl,
+      namespace: `tracer-001-${crypto.randomUUID()}`,
+    }
     const childCode = `
 console.log(JSON.stringify({ type: "assistant", text: "pong" }))
 console.error("diagnostic: client-to-runtime")
 `
 
     const handle = await runWithFiregrid(
-      { controlPlaneStreamUrl, dataPlaneStreamUrl },
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* firegrid.launch({
@@ -67,13 +76,7 @@ console.error("diagnostic: client-to-runtime")
         contextId: handle.contextId,
       }).pipe(
         // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.4
-        Effect.provide(FiregridRuntimeHostLive({
-          streams: {
-            workflow: workflowStreamUrl,
-            controlPlane: controlPlaneStreamUrl,
-            runtimeOutput: dataPlaneStreamUrl,
-          },
-        })),
+        Effect.provide(FiregridRuntimeHostLive(firegridConfig)),
       ),
     )
 
@@ -83,7 +86,7 @@ console.error("diagnostic: client-to-runtime")
     })
 
     const snapshot = await runWithFiregrid(
-      { controlPlaneStreamUrl, dataPlaneStreamUrl },
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* firegrid.open(handle.contextId).snapshot

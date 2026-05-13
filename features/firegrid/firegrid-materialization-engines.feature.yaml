@@ -1,44 +1,109 @@
 feature:
   name: firegrid-materialization-engines
   product: firegrid
-  description: Provide pluggable data-plane materialization engines for queryable projections without changing durable stream authority.
+  description: Provide provider-owned Materialize projections over runtime-output facts and owner-local DurableTable projections without preserving a generic materialization-engine framework.
 
 components:
   ENGINE:
     requirements:
-      1: A materialization engine consumes accepted runtime-output data-plane facts and creates queryable derived projections.
-      2: Materialization engines are replaceable provider services selected by the runtime host or scenario, not by browser clients.
-      3: Materialization engines expose a query surface and may expose a subscription surface when the provider supports it.
-      4: A reusable projection definition declares its source, projector, and query target independently of the selected materialization strategy.
-      5: The same projection definition can run through State Protocol and raw-fold strategies without changing the projector definition.
-      6: Strategy execution returns the common event pipeline summary used by production package code.
-      7: Projection target schemas, encoders, folds, and query adapters are owned by projection definitions or target descriptors, not hardcoded inside a strategy implementation.
-      8: Materialization production surfaces use a stable package or subpath namespace that does not expose stale runtime-internal control-plane or data-plane directory structure as the public abstraction.
+      1:
+        requirement: A materialization engine consumes accepted runtime-output data-plane facts and creates queryable derived projections.
+        deprecated: true
+      1-note: Deprecated. Generic materialization engines were removed; Materialize is a provider integration and ordinary table projections are owner-local DurableTable code.
+      2:
+        requirement: Materialization engines are replaceable provider services selected by the runtime host or scenario, not by browser clients.
+        deprecated: true
+      2-note: Deprecated. Generic engine selection was removed; DurableTable owns ordinary table state and Materialize is a provider integration.
+      3: Derived projection owners expose a query surface and may expose a subscription surface when the provider supports it; runtime does not provide a universal projection strategy layer.
+      4:
+        requirement: A reusable projection definition declares its source, projector, and query target independently of the selected materialization strategy.
+        deprecated: true
+      4-note: Deprecated. The reusable projection definition and strategy framework were removed with raw-fold and State Protocol strategies.
+      5:
+        requirement: The same projection definition can run through State Protocol and raw-fold strategies without changing the projector definition.
+        deprecated: true
+      5-note: Deprecated. The generic State Protocol and raw-fold strategies were removed; ordinary session projection state uses DurableTable directly.
+      6:
+        requirement: Session and Materialize projection execution returns a production summary with read, projected, ignored, failed, written, projector, and failure counts.
+        deprecated: true
+      6-note: Deprecated. The runtime-owned session projection and generic projection summary were deleted; provider/product projection summaries are owner-specific.
+      7: Projection row schemas, projection functions, and query adapters are owned by provider-specific or product-specific modules, not by a generic strategy implementation or runtime-owned session projection module.
+      8: Projection production surfaces use stable owner subpaths and do not expose `@firegrid/runtime/materialization`, `@firegrid/runtime/session-projection`, or stale runtime-internal control/data-plane directory structure as the public abstraction.
+      9: Runtime deletes MaterializationStrategy, EventSource, EventSink, EventPipeline, raw-fold, State Protocol strategy, and State Protocol writer surfaces for ordinary table behavior.
 
   STATE_PROTOCOL:
     requirements:
-      1: The State Protocol strategy writes projected session changes to a Durable Streams State Protocol stream behind the common strategy interface.
-      2: The State Protocol strategy consumes target-provided Durable State schema and query adapters so non-session projections can use the same strategy interface.
+      1:
+        requirement: The State Protocol strategy writes projected session changes to a Durable Streams State Protocol stream behind the common strategy interface.
+        deprecated: true
+      1-note: Deprecated. DurableTable generated facades now own session projection table writes.
+      2:
+        requirement: The State Protocol strategy consumes target-provided Durable State schema and query adapters so non-session projections can use the same strategy interface.
+        deprecated: true
+      2-note: Deprecated. Runtime no longer exposes a generic State Protocol strategy surface.
 
   RAW_FOLD:
     requirements:
-      1: The raw-fold strategy folds retained runtime-output facts in memory for local or test queryability without writing a derived stream.
-      2: The raw-fold strategy exposes typed query results for session projections.
+      1:
+        requirement: The raw-fold strategy folds retained runtime-output facts in memory for local or test queryability without writing a derived stream.
+        deprecated: true
+      1-note: Deprecated. This custom in-memory table predated DurableTable and was removed with the generic materialization strategy surface.
+      2:
+        requirement: The raw-fold strategy exposes typed query results for session projections.
+        deprecated: true
+      2-note: Deprecated. Session projection queryability is provided by DurableTable.
+
+  DURABLE_TABLE:
+    requirements:
+      1:
+        requirement: Session projection state is materialized with a runtime-owned DurableTable declaration and generated collection facades.
+        deprecated: true
+      1-note: Deprecated. Runtime-owned session/message semantics were removed; real product-owned session state must live in the product/provider that owns its taxonomy.
+      2:
+        requirement: Session projection DurableTable collections expose queryable session and message rows after replaying retained runtime-output facts.
+        deprecated: true
+      2-note: Deprecated with the runtime-owned demo session projection.
+      3: App-owned and product-owned state, including Flamecast turns/messages/webhooks/sessions, uses owner-local DurableTable declarations and generated facades.
 
   MATERIALIZE:
     requirements:
-      1: The Materialize engine provisions its SQL objects through the PostgreSQL wire protocol using Effect SQL.
-      2: The Materialize engine queries projection results through Effect SQL `SELECT` statements.
-      3: The Materialize engine exposes live result streams through Effect SQL `SUBSCRIBE` statements.
-      4: The first Materialize runtime-output projection uses a webhook JSON source for ingested runtime journal events.
-      5: Materialize remains a provider-backed derived output until it is wired behind the common strategy interface.
+      1:
+        requirement: The Materialize engine provisions its SQL objects through the PostgreSQL wire protocol using Effect SQL.
+        deprecated: true
+      1-note: Deprecated for this cleanup. The Materialize provider branch is deleted until a current production requirement reintroduces it as a separate external integration.
+      2:
+        requirement: The Materialize engine queries projection results through Effect SQL `SELECT` statements.
+        deprecated: true
+      2-note: Deprecated with MATERIALIZE.1.
+      3:
+        requirement: The Materialize engine exposes live result streams through Effect SQL `SUBSCRIBE` statements.
+        deprecated: true
+      3-note: Deprecated with MATERIALIZE.1.
+      4:
+        requirement: The first Materialize runtime-output projection uses a webhook JSON source for ingested runtime journal events.
+        deprecated: true
+      4-note: Deprecated with MATERIALIZE.1.
+      5:
+        requirement: Materialize remains a provider-backed derived runtime-output fact view and does not justify a generic EventSource/EventSink/MaterializationStrategy framework.
+        deprecated: true
+      5-note: Deprecated. Runtime retains no Materialize provider surface in this cleanup.
 
 constraints:
   BOUNDARY:
     requirements:
-      1: Durable Streams runtime-output rows remain the source of truth; Materialize projections are derived and rebuildable.
-      2: The Materialize provider does not import runtime control-plane modules or workflow-engine internals.
-      3: The Materialize provider does not define product-native session, permission, tool, prompt, or provider taxonomies.
-      4: Materialization strategy interfaces do not import runtime host or runtime control-plane modules.
-      5: Runtime host configuration may select a materialization strategy, but client launch requests do not select projection target schemas or query adapters.
-      6: Additional materialization strategies are not added behind a stale runtime-internal namespace until the staged namespace is either accepted in the target architecture or replaced by a stable materialization package/subpath.
+      1: Durable Streams runtime-output rows remain the source of truth; external projections are derived and rebuildable.
+      2:
+        requirement: The Materialize provider does not import runtime control-plane modules or workflow-engine internals.
+        deprecated: true
+      2-note: Deprecated because the Materialize provider was deleted.
+      3:
+        requirement: The Materialize provider does not define product-native session, permission, tool, prompt, or provider taxonomies.
+        deprecated: true
+      3-note: Deprecated because the Materialize provider was deleted.
+      4:
+        requirement: Materialization strategy interfaces do not import runtime host or runtime control-plane modules.
+        deprecated: true
+      4-note: Deprecated because the generic strategy interface was deleted.
+      5: Runtime host configuration and client launch requests do not select projection target schemas, query adapters, or materialization strategies.
+      6: Additional projection strategies are not added behind stale runtime-internal or generic materialization namespaces.
+      7: Runtime does not expose a Materialize provider subpath until a production-owned external read-model requirement exists.

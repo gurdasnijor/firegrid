@@ -1,7 +1,7 @@
 {
   "name": "effect-durable-operators",
   "version": "0.0.0",
-  "description": "Effect-native durable operators: DurableTable, DurableProjection, DurableConsumer over effect-durable-streams + @durable-streams/state.",
+  "description": "Effect-native DurableTable: ksql-inspired service-tag table over @durable-streams/state and @tanstack/db.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",
@@ -10,10 +10,6 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
-    },
-    "./electric": {
-      "types": "./src/electric.ts",
-      "default": "./src/electric.ts"
     }
   },
   "files": [
@@ -28,29 +24,22 @@
     "check": "pnpm run typecheck && pnpm run test",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:unit": "vitest run test/unit",
-    "test:conformance": "vitest run test/conformance",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
     "@durable-streams/client": "^0.2.3",
     "@durable-streams/state": "^0.2.5",
-    "@effect/platform": "^0.96.0",
     "@tanstack/db": "^0.5.33",
-    "effect": "^3.18.0",
-    "effect-durable-streams": "workspace:*"
+    "effect": "^3.18.0"
   },
   "devDependencies": {
     "@durable-streams/client": "^0.2.3",
     "@durable-streams/server": "^0.3.1",
     "@durable-streams/state": "^0.2.5",
     "@effect/platform": "^0.96.0",
-    "@electric-sql/client": "1.5.16",
-    "@electric-sql/d2ts": "0.1.8",
     "@tanstack/db": "^0.5.33",
     "@types/node": "^22.10.0",
     "effect": "^3.18.0",
-    "effect-durable-streams": "workspace:*",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   }

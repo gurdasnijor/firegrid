@@ -6,21 +6,27 @@ feature:
 components:
   INGRESS:
     requirements:
-      1: Runtime ingress is recorded as durable input facts with an input id, runtime context id, input kind, provider-neutral payload, author class, creation time, and caller metadata.
+      1: Runtime ingress is recorded as durable input table rows with an input id, runtime context id, input kind, provider-neutral payload, author class, creation time, status, optional sequence, and caller metadata.
       2: Initial prompts, follow-up prompts, steering inputs, scheduled prompts, required-action-derived inputs, and tool-authored spawn inputs use the same durable ingress model.
       3: Duplicate ingress writes with the same idempotency key do not create duplicate logical inputs for a runtime context.
-      4: Ingress ordering is derived from durable ingress order or an explicit durable input sequence, not wall-clock timestamps.
+      4: Ingress ordering is derived from explicit durable input sequence, not wall-clock timestamps or raw stream append order.
       5: Ingress author class distinguishes client-authored, workflow-authored, tool-authored, and system-authored facts without changing the provider delivery authority.
-      6: The canonical input surface is append-only durable facts; sending input does not synchronously invoke a workflow, operator, provider adapter, or RPC-style delivery method.
-      7: If the implementation keeps the `runtime_ingress` row family name, it documents whether that name is target vocabulary or a transitional implementation name for session input or prompt request facts.
+      6: The canonical input surface is a DurableTable input row; sending input does not synchronously invoke a workflow, operator, provider adapter, or RPC-style delivery method.
+      7:
+        requirement: If the implementation keeps the `runtime_ingress` row family name, it documents whether that name is target vocabulary or a transitional implementation name for session input or prompt request facts.
+        deprecated: true
+      7-note: Deprecated because runtime ingress is modeled as `firegrid.runtimeIngress.inputs` table rows, not raw `runtime_ingress.requested` facts.
+      8: Runtime ingress table schemas, public prompt schemas, deterministic id derivation, and trusted row construction live in one shared protocol module rather than split ids/rows wrapper modules.
+      9: Runtime ingress writers create pending input rows with deterministic input ids for idempotency and do not assign delivery sequence.
+      10: Runtime ingress sequencing flips pending inputs to sequenced rows with per-context sequence numbers before providers deliver them.
 
   DELIVERY:
     requirements:
-      1: Runtime providers consume durable ingress facts and translate them to provider-specific input protocols only at the live adapter boundary.
+      1: Runtime providers consume sequenced durable ingress table rows and translate them to provider-specific input protocols only at the live adapter boundary.
       2: Provider-specific stdin, ACP, Claude, chat, or tool protocol payloads are not the durable ingress authority.
-      3: Input delivery or consumption progress is recorded durably so restart/retry behavior does not depend on process-local cursors.
+      3: Input delivery or consumption progress is recorded in the runtime ingress DurableTable deliveries collection so restart/retry behavior does not depend on process-local cursors.
       4: Runtime output remains a separate durable journal; runtime ingress does not directly define session, transcript, or message projection schemas.
-      5: Provider-visible input delivery is driven by a runtime-host-owned stream loop that reads durable input facts, folds durable progress, performs the next valid adapter effect, and appends resulting durable progress or output facts.
+      5: Provider-visible input delivery is driven by a runtime-host-owned table loop that reads sequenced durable input rows, writes a delivery claim before provider emission, and does not use raw stream reducers or checkpoint services.
 
   HOST:
     requirements:
@@ -28,6 +34,9 @@ components:
       2: Client launch and prompt requests do not carry ingress stream URLs, workflow engine choices, materialization strategy, or provider registry configuration.
       3: Initial runtime input and later prompt requests exercise the same host-owned ingress path.
       4: Runtime host configuration may start long-running input dispatch loops, but callers do not invoke an individual input dispatcher or operator as a top-level control operation.
+      5: Runtime ingress append failures use a typed host operation error only where runtime code needs an operational error channel.
+      6: Runtime host owns ingress table topology as one DurableTable stream containing both input rows and delivery rows.
+      7: Runtime ingress table stream selection is derived by product composition from a Durable Streams service base URL plus namespace; clients and scenarios do not hand-wire runtime ingress table stream URLs.
 
   SUBSCRIBERS:
     requirements:
@@ -43,3 +52,6 @@ constraints:
       3: Required-action resolution may later produce runtime input, but required-action workflow authority remains separate from prompt ingress authority.
       4: Workflow-backed tools may later call the prompt/launch surface, but tool semantics do not define the prompt ingress substrate.
       5: Workflow-backed tools and required-action operators append durable ingress facts through the same host-owned prompt path as clients; they do not launch private workflow-specific prompt delivery paths.
+      6: Runtime ingress does not expose a runtime package re-export subpath for protocol-owned rows; runtime owns only host append behavior and provider delivery errors.
+      7: Runtime ingress implementation does not keep standalone wrapper files that only rename protocol exports, schema constructors, or host-local error helpers.
+      8: Runtime ingress implementation does not keep a raw append-only ingress stream, separate checkpoint stream, reducer, materializer, or checkpoint service for ordinary input/delivery table behavior.

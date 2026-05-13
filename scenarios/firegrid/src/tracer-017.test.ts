@@ -2,29 +2,20 @@
  * Tracer 017 — effect-durable-operators Firegrid proof.
  *
  * Implements:
- *  - effect-durable-operators.FIREGRID_PROOF.1 — runtime input fold owned
- *    by the generic operator package (DurableConsumer); legacy
- *    PendingRuntimeIngressState/foldRuntimeIngressProgress no longer
- *    referenced from packages/runtime/src
+ *  - effect-durable-operators.FIREGRID_PROOF.4 — runtime input fold replaced
+ *    by provider-owned DurableStream reads plus a DurableTable checkpoint
+ *    collection; legacy PendingRuntimeIngressState/foldRuntimeIngressProgress
+ *    no longer referenced from packages/runtime/src
  *  - effect-durable-operators.FIREGRID_PROOF.2 — uses production Firegrid
  *    surfaces only (Firegrid.launch / Firegrid.prompt /
  *    Firegrid.open(...).snapshot / FiregridRuntimeHostLive / startRuntime).
  *    NO shadow harnesses, NO product-shaped durable read helpers.
- *  - effect-durable-operators.FIREGRID_PROOF.3 — runtime input delivery
- *    uses the GENERIC `effect-durable-operators.ConsumerCheckpointStoreLive`
- *    backed by a separate `inputCheckpoints` stream URL wired through
- *    `FiregridRuntimeHostStreams.inputCheckpoints`. There is no
- *    Firegrid-specific checkpoint Layer; the generic operator package
- *    has no Firegrid imports.
  *  - effect-durable-operators.TRACER_017.5 — scenario E2E proves runtime
  *    input delivery still works through production surfaces after the
  *    refactor; duplicate idempotent prompts collapse at the provider.
  */
 
-import {
-  startDurableStreamsTestServer,
-  type DurableStreamsTestServerHandle,
-} from "@firegrid/durable-streams/test-utils"
+import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   Firegrid,
   FiregridConfig,
@@ -33,27 +24,24 @@ import {
 } from "@firegrid/client"
 import {
   FiregridRuntimeHostLive,
-  RuntimeInputDurableStreams,
   startRuntime,
 } from "@firegrid/runtime"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-let server: DurableStreamsTestServerHandle | undefined
+let server: DurableStreamTestServer | undefined
+let baseUrl: string | undefined
 
 beforeEach(async () => {
-  server = await startDurableStreamsTestServer()
+  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+  baseUrl = await server.start()
 })
 
 afterEach(async () => {
   await server?.stop()
   server = undefined
+  baseUrl = undefined
 })
-
-const createStreamUrl = async (name: string): Promise<string> => {
-  if (!server) throw new Error("durable streams test server not started")
-  return server.createStreamUrl(name)
-}
 
 const waitFor = async (
   check: () => Promise<boolean>,
@@ -68,7 +56,7 @@ const waitFor = async (
 // Local-process agent: echoes each received stdin line back as a JSONL
 // `{type:"assistant", text:"input:<line>"}` event, then exits after the
 // FIRST line. The single-shot exit is what lets us assert provider-visible
-// dedupe: if the DurableConsumer fold path duplicates a line, the second
+// dedupe: if the provider delivery checkpoint path duplicates a line, the second
 // shot would also be visible — but the agent has already exited, so
 // duplicates would surface as exit-failure or missing events.
 const liveStdinEchoAgent = `
@@ -95,23 +83,20 @@ process.stdin.on("data", chunk => {
 
 describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
   it(
-    "effect-durable-operators.FIREGRID_PROOF.1 effect-durable-operators.FIREGRID_PROOF.2 effect-durable-operators.TRACER_017.5 production surfaces still deliver prompt input once after the DurableConsumer refactor",
+    "effect-durable-operators.FIREGRID_PROOF.4 effect-durable-operators.FIREGRID_PROOF.2 effect-durable-operators.TRACER_017.5 production surfaces still deliver prompt input once after the DurableTable checkpoint refactor",
     async () => {
-      const controlPlaneStreamUrl = await createStreamUrl("tracer-017-runtime-control")
-      const dataPlaneStreamUrl = await createStreamUrl("tracer-017-runtime-output")
-      const workflowStreamUrl = await createStreamUrl("tracer-017-workflow")
-      const inputStreamUrl = await createStreamUrl("tracer-017-runtime-ingress")
-      const inputCheckpointsUrl = await createStreamUrl("tracer-017-input-checkpoints")
+      if (!baseUrl) throw new Error("durable streams test server not started")
+      const firegridConfig = {
+        durableStreamsBaseUrl: baseUrl,
+        namespace: `tracer-017-${crypto.randomUUID()}`,
+      }
 
       const firegridConfigLayer = Layer.succeed(FiregridConfig, {
-        runtimeStreamUrl: controlPlaneStreamUrl,
-        controlPlaneStreamUrl,
-        dataPlaneStreamUrl,
-        inputStreamUrl,
+        ...firegridConfig,
       })
 
       // Production launch surface — no shadow harness.
-      const handle = await Effect.runPromise(
+      const handle = await Effect.runPromise(Effect.scoped(
         Effect.gen(function* () {
           const firegrid = yield* Firegrid
           return yield* firegrid.launch({
@@ -122,25 +107,13 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
         }).pipe(
           Effect.provide(FiregridLive.pipe(Layer.provide(firegridConfigLayer))),
         ),
-      )
+      ))
 
       // Production host surface — runtime is responsible for plumbing
-      // ingress into the local-process stdin via DurableConsumer.
+      // ingress into the local-process stdin through provider-owned delivery.
       const host = FiregridRuntimeHostLive({
-        streams: {
-          workflow: workflowStreamUrl,
-          controlPlane: controlPlaneStreamUrl,
-          runtimeOutput: dataPlaneStreamUrl,
-          // Tagged input capability: ingress + checkpoints are one
-          // indivisible value, so half-configured ingress is
-          // unrepresentable. Generic effect-durable-operators owns
-          // delivery progress; no firegrid.runtime_ingress.accepted
-          // rows are written.
-          input: new RuntimeInputDurableStreams({
-            ingress: inputStreamUrl,
-            checkpoints: inputCheckpointsUrl,
-          }),
-        },
+        ...firegridConfig,
+        input: true,
       })
 
       const runtime = Effect.runPromise(
@@ -149,25 +122,25 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
         ),
       )
 
-      // Wait until the runtime has reported started — the DurableConsumer
-      // fold path inside local-process-stdin must be running.
+      // Wait until the runtime has reported started — the provider delivery
+      // path inside local-process-stdin must be running.
       await waitFor(async () => {
-        const snapshot = await Effect.runPromise(
+        const snapshot = await Effect.runPromise(Effect.scoped(
           Effect.gen(function* () {
             const firegrid = yield* Firegrid
             return yield* firegrid.open(handle.contextId).snapshot
           }).pipe(
             Effect.provide(FiregridLive.pipe(Layer.provide(firegridConfigLayer))),
           ),
-        )
+        ))
         return snapshot.status === "started"
       })
 
       // Send a prompt, then send a duplicate with the SAME idempotency key.
-      // The duplicate must collapse at the protocol layer (same ingressId)
-      // AND the AtMostOnce DurableConsumer policy must ensure the provider
+      // The duplicate must collapse at the protocol layer (same inputId)
+      // AND the provider-owned AtMostOnce checkpoint must ensure the provider
       // sees exactly one stdin chunk.
-      const prompt = await Effect.runPromise(
+      const prompt = await Effect.runPromise(Effect.scoped(
         Effect.gen(function* () {
           const firegrid = yield* Firegrid
           const first = yield* firegrid.prompt({
@@ -184,9 +157,9 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
         }).pipe(
           Effect.provide(FiregridLive.pipe(Layer.provide(firegridConfigLayer))),
         ),
-      )
+      ))
 
-      expect(prompt.duplicate.ingressId).toEqual(prompt.first.ingressId)
+      expect(prompt.duplicate.inputId).toEqual(prompt.first.inputId)
 
       const result = await runtime
       expect(result).toMatchObject({
@@ -198,14 +171,14 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
       // ONE assistant event from the first delivery. Any duplicate stdin
       // chunk would either appear as a second assistant row (visible here)
       // or exit-with-error (already asserted above).
-      const snapshot = await Effect.runPromise(
+      const snapshot = await Effect.runPromise(Effect.scoped(
         Effect.gen(function* () {
           const firegrid = yield* Firegrid
           return yield* firegrid.open(handle.contextId).snapshot
         }).pipe(
           Effect.provide(FiregridLive.pipe(Layer.provide(firegridConfigLayer))),
         ),
-      )
+      ))
 
       expect(snapshot.events.map((event) => event.raw)).toEqual([
         "{\"type\":\"assistant\",\"text\":\"input:continue live\"}",

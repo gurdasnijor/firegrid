@@ -1,63 +1,66 @@
+import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   Firegrid,
+  FiregridConfig,
+  FiregridLive,
   local,
 } from "@firegrid/client"
-import type {
-  RuntimeJournalEvent,
-} from "@firegrid/protocol/launch"
 import {
   FiregridRuntimeHostLive,
   startRuntime,
 } from "@firegrid/runtime"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import {
-  startFiregridScenarioHarness,
-  type FiregridScenarioHarness,
-} from "./scenario-harness.ts"
-import {
-  readRuntimeJournalEvents,
-} from "./durable-stream-fixtures.ts"
 
-let harness: FiregridScenarioHarness | undefined
+let server: DurableStreamTestServer | undefined
+let baseUrl: string | undefined
 
 beforeEach(async () => {
-  harness = await startFiregridScenarioHarness()
+  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+  baseUrl = await server.start()
 })
 
 afterEach(async () => {
-  await harness?.stop()
-  harness = undefined
+  await server?.stop()
+  server = undefined
+  baseUrl = undefined
 })
-
-const createStreamUrl = async (name: string): Promise<string> => {
-  if (!harness) throw new Error("scenario harness not started")
-  return harness.createStreamUrl(name)
-}
 
 const runWithFiregrid = <A, E>(
   options: {
-    readonly controlPlaneStreamUrl: string
-    readonly dataPlaneStreamUrl: string
+    readonly durableStreamsBaseUrl: string
+    readonly namespace: string
   },
   effect: Effect.Effect<A, E, Firegrid>,
 ): Promise<A> => {
-  if (!harness) throw new Error("scenario harness not started")
-  return harness.runWithFiregrid(options, effect)
+  return Effect.runPromise(Effect.scoped(
+    effect.pipe(
+      Effect.provide(
+        FiregridLive.pipe(
+          Layer.provide(Layer.succeed(FiregridConfig, {
+            durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+            namespace: options.namespace,
+          })),
+        ),
+      ),
+    ),
+  ))
 }
 
 describe("firegrid tracer 007 sandbox slot extraction", () => {
   it("firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1 firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.6 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.3 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.5 journals stdout stderr and exit through FiregridRuntimeHostLive", async () => {
-    const controlPlaneStreamUrl = await createStreamUrl("runtime-control")
-    const dataPlaneStreamUrl = await createStreamUrl("runtime-output")
-    const workflowStreamUrl = await createStreamUrl("workflow")
+    if (!baseUrl) throw new Error("scenario test server not started")
+    const firegridConfig = {
+      durableStreamsBaseUrl: baseUrl,
+      namespace: `tracer-007-${crypto.randomUUID()}`,
+    }
     const childCode = `
 console.log(JSON.stringify({ type: "assistant", text: "sandbox-slot-pong" }))
 console.error("diagnostic: sandbox-slot")
 `
 
     const handle = await runWithFiregrid(
-      { controlPlaneStreamUrl, dataPlaneStreamUrl },
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* firegrid.launch({
@@ -75,13 +78,7 @@ console.error("diagnostic: sandbox-slot")
         // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.4
         // firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1
         // The scenario provides only the production host root; sandbox wiring stays inside FiregridRuntimeHostLive.
-        Effect.provide(FiregridRuntimeHostLive({
-          streams: {
-            workflow: workflowStreamUrl,
-            controlPlane: controlPlaneStreamUrl,
-            runtimeOutput: dataPlaneStreamUrl,
-          },
-        })),
+        Effect.provide(FiregridRuntimeHostLive(firegridConfig)),
       ),
     )
 
@@ -91,7 +88,7 @@ console.error("diagnostic: sandbox-slot")
     })
 
     const snapshot = await runWithFiregrid(
-      { controlPlaneStreamUrl, dataPlaneStreamUrl },
+      firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
         return yield* firegrid.open(handle.contextId).snapshot
@@ -105,25 +102,15 @@ console.error("diagnostic: sandbox-slot")
       provider: "local-process",
     }))
 
-    const retainedJournal = await Effect.runPromise(
-      readRuntimeJournalEvents(dataPlaneStreamUrl),
-    )
-
-    expect(retainedJournal).toContainEqual(expect.objectContaining({
-      type: "firegrid.runtime.output.stdout",
-      event: expect.objectContaining({
-        contextId: handle.contextId,
-        source: "stdout",
-        raw: "{\"type\":\"assistant\",\"text\":\"sandbox-slot-pong\"}",
-      }),
+    expect(snapshot.events).toContainEqual(expect.objectContaining({
+      contextId: handle.contextId,
+      source: "stdout",
+      raw: "{\"type\":\"assistant\",\"text\":\"sandbox-slot-pong\"}",
     }))
-    expect(retainedJournal).toContainEqual(expect.objectContaining({
-      type: "firegrid.runtime.output.stderr",
-      log: expect.objectContaining({
-        contextId: handle.contextId,
-        source: "stderr",
-        raw: "diagnostic: sandbox-slot",
-      }),
+    expect(snapshot.logs).toContainEqual(expect.objectContaining({
+      contextId: handle.contextId,
+      source: "stderr",
+      raw: "diagnostic: sandbox-slot",
     }))
   })
 })

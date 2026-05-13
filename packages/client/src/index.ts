@@ -15,5 +15,5 @@ export {
 } from "./firegrid.ts"
 export type {
   PublicPromptRequest,
-  RuntimeIngressRequestedRow,
+  RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"

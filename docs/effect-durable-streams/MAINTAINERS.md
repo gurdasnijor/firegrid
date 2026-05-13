@@ -11,21 +11,21 @@ items; this doc explains *why* things are the way they are.
 
 ## 1. Scope and packages
 
-Two packages, both intended for independent npm publication (unscoped
-names, framed per [`docs/proposals/SDD_FIREGRID_WORKFLOW_REACTOR.md`](../proposals/SDD_FIREGRID_WORKFLOW_REACTOR.md)):
+One package remains intended for independent npm publication (unscoped
+name, framed per [`docs/proposals/SDD_FIREGRID_WORKFLOW_REACTOR.md`](../proposals/SDD_FIREGRID_WORKFLOW_REACTOR.md)):
 
 | Package | Purpose |
 |---|---|
 | `effect-durable-streams` | Protocol client for [Durable Streams](https://github.com/durable-streams/durable-streams). `Stream`-shaped reads, `Sink`-shaped writes, schema-validated decode/encode at the wire boundary, retries, live modes (SSE + long-poll), idempotent batched producer. |
-| `effect-durable-streams-state` | Multi-type collections with materialized `HashMap` views on top of the protocol client. Tagged `Insert`/`Update`/`Upsert`/`Delete` events, `Reset`/snapshot control messages, per-type schema validation. |
 
-The upstream reference is `@durable-streams/client` + `@durable-streams/state`.
-Our packages are protocol-compatible — they speak the same wire format
-against the same server — but the surface is Effect-shaped.
+The upstream reference is `@durable-streams/client`. This package is protocol-
+compatible — it speaks the same wire format against the same server — but the
+surface is Effect-shaped.
 
-`@firegrid/durable-streams` is a thin shim **already wired** over these
-packages (cutover landed in PR #151). Production runtime ingress and
-output already flow through this.
+State Protocol table semantics are not owned here. Use
+`effect-durable-operators` `DurableTable` at the package that owns the rows.
+Direct upstream `@durable-streams/state` usage belongs at the DurableTable
+implementation boundary, not in runtime/client/app/scenario source.
 
 ---
 
@@ -69,19 +69,6 @@ packages/effect-durable-streams/
         ├── snapshot-then-follow.bench.ts    ← snapshotThenFollow
         └── firegrid-payloads.bench.ts       ← Realistic Firegrid event shapes
 
-packages/effect-durable-streams-state/
-├── src/
-│   ├── State.ts              ← Public type definitions (State, Collection, Event tagged classes)
-│   ├── Store.ts              ← make() — multi-type container, ordered log, late-registration replay
-│   ├── Protocol.ts           ← Wire-format Schema (ChangeMessage / ControlMessage)
-│   ├── MaterializedState.ts  ← Pure data structure for "apply events to a Map" (no I/O)
-│   └── index.ts              ← Public entry point
-└── test/
-    └── conformance/
-        ├── state-smoke.test.ts             ← Basic + multi-type + late registration + replay ordering + schema validation
-        └── bench/
-            ├── harness.ts
-            └── state-replay.bench.ts
 ```
 
 ---
@@ -315,7 +302,6 @@ Registering a type with a schema that doesn't reference-equal the previously-reg
 
 ```ts
 import { DurableStream } from "effect-durable-streams"
-import { State, Protocol, MaterializedState } from "effect-durable-streams-state"
 ```
 
 `DurableStream.*` is the namespace re-exported from `namespace.ts`. Includes `define`, `head`, `read`, `collect`, `snapshotThenFollow`, `tail`, `append`, `producer`, `create`, `close`, `delete`, plus error classes and core types.
@@ -544,7 +530,7 @@ Build these when a real signal demands them:
 |---|---|
 | [#148](https://github.com/gurdasnijor/firegrid/pull/148) | Initial Phase 1 + Phase 2 ship. |
 | [#150](https://github.com/gurdasnijor/firegrid/pull/150) | PR #148 review correctness + eager-emit perf. Bounded producer queue, terminal-failure fast-fail, finalizer logging, retry-schedule fix, State materialization-failure surfacing, ordered-log replay, schema decode at boundaries, eager batch emission. |
-| [#151](https://github.com/gurdasnijor/firegrid/pull/151) | Cut over production streams (`@firegrid/durable-streams`) to the Effect-native API. |
+| [#151](https://github.com/gurdasnijor/firegrid/pull/151) | Cut over production streams to the Effect-native API. |
 | [#153](https://github.com/gurdasnijor/firegrid/pull/153) | Conformance hardening: 5xx/429 retry classifier, `Retry-After` parsing, SSE termination bug fix (`streamClosed:true` with no trailing data), `tail()` helper, upstream test ports (retry classification, onError contract, SSE edge cases, catchup→live determinism). |
 | [#155](https://github.com/gurdasnijor/firegrid/pull/155) | Append microtask collapse (4 microtasks/event → 1 via `MutableRef`) + tight bench harness. Worst-case bench gap 7× → 4.1×; `batch=1` now ~2× faster than ref. |
 | [#156](https://github.com/gurdasnijor/firegrid/pull/156) | DX polish: write paths map 410 → `Gone`, `HeadResult.cursor` exposed, per-call header overrides on `ReadOpts` / `AppendOpts` / `CreateOptions` / `CloseOptions`. |

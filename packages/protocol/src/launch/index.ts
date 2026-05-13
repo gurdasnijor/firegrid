@@ -15,6 +15,13 @@ export {
   RuntimeOutputStdoutJournalEventSchema,
   RuntimeProviderSchema,
   RuntimeRunEventSchema,
+  local,
+  localJsonlJournal,
+  makeRuntimeRunEvent,
+  normalizeRuntimeIntent,
+  runtimeOutputRowId,
+  runtimeRunEventId,
+  runtimeRunId,
   type PublicLaunchRuntimeIntent,
   type PublicLaunchRequest,
   type RuntimeConfig,
@@ -31,15 +38,11 @@ export {
   type RuntimeOutputStdoutJournalEvent,
   type RuntimeProvider,
   type RuntimeRunEvent,
+  type RuntimeRunStatusParams,
 } from "./schema.ts"
 export {
-  local,
-  localJsonlJournal,
-  normalizeRuntimeIntent,
-} from "./helpers.ts"
-export {
-  compareRuntimeOutputOrder,
-  isAfterRuntimeOutputCursor,
-  type RuntimeOutputCursor,
-} from "./cursor.ts"
-export { runtimeContextStateDescriptor } from "./state.ts"
+  RuntimeControlPlaneTable,
+  type RuntimeControlPlaneTableService,
+  type RuntimeContextRow,
+  type RuntimeRunEventRow,
+} from "./table.ts"
