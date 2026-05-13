@@ -19,6 +19,7 @@ import {
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
 import { Clock, Context, Data, Effect, Layer, Option, Schema, Stream } from "effect"
+import type { DurableTableHeaders } from "effect-durable-operators"
 
 export interface ClientOptions {
   readonly durableStreamsBaseUrl?: string
@@ -28,6 +29,7 @@ export interface ClientOptions {
   readonly dataPlaneStreamUrl?: string
   readonly inputStreamUrl?: string
   readonly contentType?: string
+  readonly headers?: DurableTableHeaders
   readonly txTimeoutMs?: number
 }
 
@@ -413,6 +415,7 @@ const configuredFiregridLayer = (
       streamOptions: {
         url: controlPlaneStreamUrl,
         contentType: cfg.contentType ?? "application/json",
+        ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
       },
       txTimeoutMs,
     })
@@ -427,6 +430,7 @@ const configuredFiregridLayer = (
           streamOptions: {
             url: inputTableStreamUrl,
             contentType: cfg.contentType ?? "application/json",
+            ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
           },
           txTimeoutMs,
         })),
@@ -438,6 +442,7 @@ const configuredFiregridLayer = (
           streamOptions: {
             url: outputTableStreamUrl,
             contentType: cfg.contentType ?? "application/json",
+            ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
           },
           txTimeoutMs,
         })),
@@ -461,6 +466,7 @@ const configuredFiregridDurableTablesLayer = (
         streamOptions: {
           url: streamUrls.runtimeControlPlaneTableUrl,
           contentType,
+          ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
         },
         txTimeoutMs,
       }),
@@ -468,6 +474,7 @@ const configuredFiregridDurableTablesLayer = (
         streamOptions: {
           url: streamUrls.runtimeIngressTableUrl,
           contentType,
+          ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
         },
         txTimeoutMs,
       }),
@@ -475,6 +482,7 @@ const configuredFiregridDurableTablesLayer = (
         streamOptions: {
           url: streamUrls.runtimeOutputTableUrl,
           contentType,
+          ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
         },
         txTimeoutMs,
       }),

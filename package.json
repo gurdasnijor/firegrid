@@ -16,6 +16,8 @@
     "effect:unpatch": "effect-language-service unpatch",
     "firegrid:host": "tsx src/index.ts",
     "firegrid:host:env": "node --env-file-if-exists=.env --import tsx src/index.ts",
+    "flamecast:dev": "pnpm --filter @firegrid/flamecast dev:local",
+    "flamecast:run": "pnpm --filter @firegrid/flamecast run:env",
     "format": "eslint . --fix",
     "lint": "eslint . --max-warnings 0 && node scripts/effect-native-production-cutover-check.mjs",
     "lint:dead": "node scripts/knip-check-baseline.mjs",

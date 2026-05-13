@@ -1,7 +1,8 @@
 import { NodeRuntime } from "@effect/platform-node"
 import { Firegrid, FiregridConfig, FiregridLive } from "@firegrid/client/firegrid"
 import { FiregridRuntimeHostLive, startRuntime } from "@firegrid/runtime/runtime-host"
-import { Config, Console, Effect, Layer, Stream } from "effect"
+import { Config, Console, Effect, Layer, Option, Redacted, Stream } from "effect"
+import type { DurableTableHeaders } from "effect-durable-operators"
 import { flamecastToyCreatedBy } from "../shared/agent.ts"
 
 const FlamecastToyHostConfig = Config.all({
@@ -11,6 +12,7 @@ const FlamecastToyHostConfig = Config.all({
   namespace: Config.string("FIREGRID_RUNTIME_NAMESPACE").pipe(
     Config.withDefault("flamecast-toy-local"),
   ),
+  token: Config.option(Config.redacted("FIREGRID_DURABLE_STREAMS_TOKEN")),
 })
 
 const contextStream = Stream.unwrap(
@@ -52,13 +54,20 @@ const flamecastToyHostProgram = Effect.gen(function* () {
 })
 
 const flamecastToyHostLayer = Layer.unwrapEffect(
-  Effect.map(FlamecastToyHostConfig, config =>
-    Layer.mergeAll(
+  Effect.map(FlamecastToyHostConfig, config => {
+    const headers = Option.match(config.token, {
+      onNone: () => undefined,
+      onSome: token => ({
+        Authorization: () => `Bearer ${Redacted.value(token)}`,
+      }) satisfies DurableTableHeaders,
+    })
+    return Layer.mergeAll(
       FiregridLive.pipe(
         Layer.provide(
           Layer.succeed(FiregridConfig, {
             durableStreamsBaseUrl: config.durableStreamsBaseUrl,
             namespace: config.namespace,
+            ...(headers === undefined ? {} : { headers }),
           }),
         ),
       ),
@@ -66,9 +75,10 @@ const flamecastToyHostLayer = Layer.unwrapEffect(
         durableStreamsBaseUrl: config.durableStreamsBaseUrl,
         namespace: config.namespace,
         input: true,
+        ...(headers === undefined ? {} : { headers }),
       }),
-    ),
-  ),
+    )
+  }),
 )
 
 export const runFlamecastToyHost = (): void => {

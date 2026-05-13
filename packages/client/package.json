@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@firegrid/protocol": "workspace:*",
+    "effect-durable-operators": "workspace:*",
     "effect": "^3.18.0"
   },
   "devDependencies": {

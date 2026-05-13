@@ -17,6 +17,7 @@ import {
   useDurableLiveQuery,
   useDurableTable,
 } from "effect-durable-operators/react"
+import type { DurableTableHeaders } from "effect-durable-operators"
 import { Effect, Fiber, Layer } from "effect"
 import {
   flamecastToyAgentSource,
@@ -29,10 +30,18 @@ const durableStreamsBaseUrl =
   import.meta.env["VITE_DURABLE_STREAMS_BASE_URL"] ?? "http://127.0.0.1:8080"
 const runtimeNamespace =
   import.meta.env["VITE_FIREGRID_RUNTIME_NAMESPACE"] ?? "flamecast-toy-local"
+const durableStreamsToken = import.meta.env["VITE_FIREGRID_DURABLE_STREAMS_TOKEN"]
+
+const headers = durableStreamsToken === undefined || durableStreamsToken.length === 0
+  ? undefined
+  : ({
+    Authorization: () => `Bearer ${durableStreamsToken}`,
+  }) satisfies DurableTableHeaders
 
 const firegridConfig = {
   durableStreamsBaseUrl,
   namespace: runtimeNamespace,
+  ...(headers === undefined ? {} : { headers }),
 }
 
 const FiregridBrowserConfigLive = Layer.succeed(FiregridConfig, firegridConfig)

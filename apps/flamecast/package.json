@@ -7,12 +7,15 @@
     "build": "vite build",
     "check": "pnpm run typecheck && pnpm run test && pnpm run build",
     "dev": "vite --host 127.0.0.1",
+    "dev:local": "tsx --tsconfig tsconfig.json src/dev-local.ts",
+    "run:env": "node --env-file-if-exists=../../.env --import tsx src/run.ts",
     "runtime": "tsx --tsconfig tsconfig.json src/runtime/main.ts",
     "runtime:env": "node --env-file-if-exists=.env --import tsx src/runtime/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@effect/platform": "^0.96.0",
     "@effect/platform-node": "^0.106.0",
     "@firegrid/client": "workspace:*",
     "@firegrid/runtime": "workspace:*",
@@ -24,6 +27,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@durable-streams/server": "^0.3.1",
     "@effect/vitest": "^0.29.0",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.18",
