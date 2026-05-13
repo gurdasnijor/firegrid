@@ -21,9 +21,18 @@
  *  - effect-durable-operators.TABLE.22
  */
 
-import { Effect, Fiber, Option, Ref, Schema, Stream } from "effect"
+import {
+  Effect,
+  Fiber,
+  Option,
+  ParseResult,
+  Ref,
+  Schema,
+  type SchemaAST,
+  Stream,
+} from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { DurableTable } from "../src/index.ts"
+import { DurableTable, DurableTableError } from "../src/index.ts"
 import { runtime, TestStreamServer } from "./harness.ts"
 
 // DurableTable tests validate the table primitive natively through its
@@ -615,6 +624,220 @@ describe("DurableTable", () => {
         yield* program.pipe(
           Effect.provide(
             WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.17 effect-durable-operators.TABLE.18 effect-durable-operators.TABLE.25 supports Schema.transformOrFail JSON-tuple composite keys across get/query/subscribe", async () => {
+    // Mirrors packages/runtime/src/durable-tools/internal/keys.ts WaitKeyEncoded:
+    // JSON-tuple composite key via Schema.transformOrFail with ParseResult.fail
+    // on malformed input. Historically KNOWN_ISSUES claimed `.get` missed rows
+    // for this schema flavor; this test pins behavior.
+    const url = server.url("table-composite-key-tofail")
+
+    const invalidTuple = (
+      ast: SchemaAST.AST,
+      encoded: string,
+      message: string,
+    ) => ParseResult.fail(new ParseResult.Type(ast, encoded, message))
+
+    const WaitKey = Schema.transformOrFail(
+      Schema.String,
+      Schema.Struct({
+        executionId: Schema.String,
+        name: Schema.String,
+      }),
+      {
+        strict: false,
+        decode: (encoded: string, _options, ast) => {
+          let parsed: unknown
+          try {
+            parsed = JSON.parse(encoded)
+          } catch {
+            return invalidTuple(ast, encoded, "WaitKey is not valid JSON")
+          }
+          if (!isUnknownArray(parsed) || parsed.length !== 2) {
+            return invalidTuple(ast, encoded, "WaitKey must be a 2-item JSON tuple")
+          }
+          const executionId = parsed[0]
+          const name = parsed[1]
+          if (typeof executionId !== "string" || typeof name !== "string") {
+            return invalidTuple(
+              ast,
+              encoded,
+              "WaitKey tuple must be [executionId, name] of strings",
+            )
+          }
+          return ParseResult.succeed({ executionId, name })
+        },
+        encode: ({ executionId, name }: { executionId: string; name: string }) =>
+          ParseResult.succeed(JSON.stringify([executionId, name])),
+      },
+    )
+
+    class WaitsTable extends DurableTable("compositeKeyTofail", {
+      waits: Schema.Struct({
+        waitKey: WaitKey.pipe(DurableTable.primaryKey),
+        deferredName: Schema.String,
+      }),
+    }) {}
+
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WaitsTable
+          const key = { executionId: "exec-1", name: "approval" }
+
+          yield* table.waits.upsert({ waitKey: key, deferredName: "approve" })
+
+          // .query.toArray must return the row, decoded
+          const rows = yield* table.waits.query((coll) => coll.toArray)
+          expect(rows).toHaveLength(1)
+          expect(rows[0]?.waitKey).toEqual(key)
+
+          // .get on the same key must find the row (the regression we are
+          // pinning: previously returned Option.none for transformOrFail keys)
+          const got = yield* table.waits.get(key)
+          expect(Option.isSome(got)).toBe(true)
+          if (Option.isSome(got)) {
+            expect(got.value.waitKey).toEqual(key)
+            expect(got.value.deferredName).toBe("approve")
+          }
+
+          // Distinct composite key must miss
+          const missing = yield* table.waits.get({
+            executionId: "exec-1",
+            name: "other",
+          })
+          expect(Option.isNone(missing)).toBe(true)
+
+          // Subscribe with initial state must surface decoded composite keys
+          const initial = yield* table.waits.subscribe((coll, emit) => {
+            const sub = coll.subscribeChanges(
+              (changes) => emit(changes.map((c) => c.value.waitKey)),
+              { includeInitialState: true },
+            )
+            return () => sub.unsubscribe()
+          }).pipe(Stream.runHead)
+          expect(Option.isSome(initial)).toBe(true)
+          if (Option.isSome(initial)) {
+            expect(initial.value).toEqual([key])
+          }
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WaitsTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.21 effect-durable-operators.TABLE.23 collection mutation rejection throws the typed DurableTableError directly (not a wrapped FiberFailure)", async () => {
+    const url = server.url("table-collection-throws-typed")
+
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+
+          yield* table.executions.upsert({
+            executionId: "exec-throw",
+            workflowName: "demo",
+            payload: {},
+            status: "started",
+          })
+
+          let caughtInsert: unknown
+          try {
+            table.executions.collection.insert({
+              executionId: "exec-bypass",
+              workflowName: "demo",
+              payload: {},
+              status: "started",
+            })
+          } catch (error) {
+            caughtInsert = error
+          }
+          expect(caughtInsert).toBeInstanceOf(DurableTableError)
+
+          let caughtUpdate: unknown
+          try {
+            table.executions.collection.update("exec-throw", (draft) => {
+              draft.status = "completed"
+            })
+          } catch (error) {
+            caughtUpdate = error
+          }
+          expect(caughtUpdate).toBeInstanceOf(DurableTableError)
+
+          let caughtDelete: unknown
+          try {
+            table.executions.collection.delete("exec-throw")
+          } catch (error) {
+            caughtDelete = error
+          }
+          expect(caughtDelete).toBeInstanceOf(DurableTableError)
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.18 effect-durable-operators.TABLE.24 fails loudly when a primary-key field encodes to a non-string value", async () => {
+    // A primary-key transform that decodes string but encodes to a number is
+    // a schema mistake; the package must reject it loudly rather than
+    // String(...)-coercing the wire form.
+    const NumericEncodedKey = Schema.transform(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      Schema.Any as unknown as Schema.Schema<string, any>,
+      Schema.String,
+      {
+        strict: false,
+        decode: (encoded: unknown) => String(encoded),
+        encode: (decoded: string) => Number(decoded) as unknown as string,
+      },
+    )
+
+    class BadKeyTable extends DurableTable("badKey", {
+      rows: Schema.Struct({
+        id: NumericEncodedKey.pipe(DurableTable.primaryKey),
+        value: Schema.String,
+      }),
+    }) {}
+
+    const url = server.url("table-bad-pk-encode")
+
+    await runtime(
+      Effect.gen(function* () {
+        const program = Effect.gen(function* () {
+          const table = yield* BadKeyTable
+          const result = yield* table.rows
+            .insert({ id: "123", value: "hello" })
+            .pipe(Effect.either)
+          expect(result._tag).toBe("Left")
+          if (result._tag === "Left") {
+            expect(result.left).toBeInstanceOf(DurableTableError)
+          }
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            BadKeyTable.layer({
               streamOptions: { url, contentType: "application/json" },
             }),
           ),

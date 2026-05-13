@@ -38,6 +38,9 @@ components:
       20: DurableTable exposes one public DurableTableHeaders type for request header passthrough so runtime and workflow table options share the same auth/header shape.
       21: DurableTable collection facades expose a read-only TanStack collection view for query engines and UI bindings; mutations through that view fail loudly so callers keep using DurableTable generated writes.
       22: DurableTable read-only collection views decode primary-key fields through the collection's primary-key schema before exposing rows to TanStack query, map, state, and subscription consumers.
+      23: DurableTable read-only collection view mutation rejection throws the typed DurableTableError directly at the synchronous TanStack boundary so callers can match `instanceof DurableTableError`; the package does not wrap synchronous failures in a FiberFailure.
+      24: DurableTable rejects primary-key encodings that produce a non-string wire value with a typed DurableTableError naming the durable type and field; the package contains no silent String(...) coercion for encoded primary keys.
+      25: DurableTable get/upsert/delete by composite primary key declared with Schema.transformOrFail (JSON-tuple encoded) returns the same decoded row as query.toArray on the same key.
 
   REACT:
     requirements:
@@ -45,6 +48,7 @@ components:
       2: The React provider acquires caller-supplied DurableTable layers once per React provider lifetime and releases their Effect Scope when the provider unmounts.
       3: React consumers can retrieve shared DurableTable services by table tag and bind TanStack useLiveQuery to the table collection views without app-local control-plane wrappers.
       4: React bindings surface loading and acquisition failures explicitly rather than silently creating per-render table layers.
+      5: React hook failure boundaries throw the original error object directly so React error boundaries observe the typed error rather than a FiberFailure wrapper.
 
   PROJECTION:
     requirements:

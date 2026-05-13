@@ -6,6 +6,7 @@
  *  - effect-durable-operators.REACT.2
  *  - effect-durable-operators.REACT.3
  *  - effect-durable-operators.REACT.4
+ *  - effect-durable-operators.REACT.5
  */
 
 import {
@@ -64,11 +65,13 @@ const DurableTableReactContext = createContext<DurableTableReactState | undefine
   undefined,
 )
 
-const failReactHook = (error: unknown): never =>
-  // React error boundary boundary: hooks must throw synchronously to surface
-  // provider acquisition failures and missing-provider misuse.
-  // eslint-disable-next-line no-restricted-syntax
-  Effect.runSync(Effect.fail(error))
+const failReactHook = (error: unknown): never => {
+  // effect-durable-operators.REACT.5
+  // React hooks throw synchronously to surface provider acquisition failures
+  // and missing-provider misuse. Throw the original error object directly so
+  // React error boundaries receive it, not a FiberFailure wrapper.
+  throw error
+}
 
 export interface DurableTableProviderProps<ROut, E> {
   readonly children?: ReactNode
