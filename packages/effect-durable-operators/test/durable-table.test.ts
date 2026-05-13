@@ -17,6 +17,8 @@
  *  - effect-durable-operators.TABLE.13
  *  - effect-durable-operators.TABLE.14
  *  - effect-durable-operators.TABLE.15
+ *  - effect-durable-operators.TABLE.21
+ *  - effect-durable-operators.TABLE.22
  */
 
 import { Effect, Fiber, Option, Ref, Schema, Stream } from "effect"
@@ -544,6 +546,61 @@ describe("DurableTable", () => {
         yield* program.pipe(
           Effect.provide(
             CheckpointTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.21 effect-durable-operators.TABLE.22 exposes a decoded read-only collection view", async () => {
+    const url = server.url("table-readonly-collection")
+
+    await runtime(
+      Effect.gen(function* () {
+
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+
+          yield* table.executions.upsert({
+            executionId: "exec-readonly",
+            workflowName: "demo",
+            payload: {},
+            status: "started",
+          })
+
+          expect(table.executions.collection.toArray.map(row => row.executionId))
+            .toEqual(["exec-readonly"])
+
+          const initialChanges: Array<string> = []
+          const sub = table.executions.collection.subscribeChanges(
+            changes => {
+              for (const change of changes) {
+                initialChanges.push(change.value.executionId)
+              }
+            },
+            { includeInitialState: true },
+          )
+          sub.unsubscribe()
+          expect(initialChanges).toEqual(["exec-readonly"])
+
+          expect(() => {
+            table.executions.collection.insert({
+              executionId: "exec-bypass",
+              workflowName: "demo",
+              payload: {},
+              status: "started",
+            })
+          }).toThrow(/read-only/)
+
+          const bypassed = yield* table.executions.get("exec-bypass")
+          expect(Option.isNone(bypassed)).toBe(true)
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
               streamOptions: { url, contentType: "application/json" },
             }),
           ),

@@ -17,6 +17,7 @@
 
 export { DurableTable } from "./DurableTable.ts"
 export type {
+  DurableTableCollection,
   CollectionFacade as DurableTableCollectionFacade,
   DurableTableHeaders,
   DurableTableService,

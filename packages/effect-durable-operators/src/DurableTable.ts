@@ -31,6 +31,10 @@
  *    as Schema.transform schemas; no runtime separator concatenation
  *  - effect-durable-operators.TABLE.18 — primary-key values are encoded
  *    through the field schema (Schema.encodeSync); no string-coercion helper
+ *  - effect-durable-operators.TABLE.21 — collection facades expose a
+ *    read-only TanStack collection view for query engines and UI bindings
+ *  - effect-durable-operators.TABLE.22 — read-only collection views decode
+ *    primary-key fields before exposing rows to query and subscription users
  */
 
 import type { DurableStreamOptions } from "@durable-streams/client"
@@ -104,7 +108,22 @@ export type DurableTableHeaders = Readonly<
   Record<string, string | (() => string | Promise<string>)>
 >
 
+export type DurableTableCollection<Row extends object> =
+  TanStackCollection<Row, string>
+
 export interface CollectionFacade<Row extends object, Key> {
+  /**
+   * Read-only TanStack collection view for query engines and UI bindings.
+   *
+   * effect-durable-operators.TABLE.21
+   * effect-durable-operators.TABLE.22
+   *
+   * This collection decodes DurableTable primary-key fields on reads and
+   * subscriptions. Data mutations through the collection view fail loudly;
+   * callers must use the generated DurableTable insert/upsert/delete actions
+   * so txid coordination and State Protocol event construction remain intact.
+   */
+  readonly collection: DurableTableCollection<Row>
   readonly insert: (row: Row) => Effect.Effect<void, DurableTableError>
   readonly upsert: (row: Row) => Effect.Effect<void, DurableTableError>
   readonly delete: (key: Key) => Effect.Effect<void, DurableTableError>
@@ -464,10 +483,25 @@ const decodeChangeForRead = <Row extends object>(
 })
 
 const makeReadableCollection = <Row extends object>(
+  tableName: string,
   collection: CompiledCollection,
   tanstackCollection: TanStackCollection<Row, string>,
 ): TanStackCollection<Row, string> => {
+  const rejectMutation = () =>
+    // Synchronous TanStack mutation boundary: collection views must fail
+    // immediately when callers bypass DurableTable generated writes.
+    // eslint-disable-next-line no-restricted-syntax
+    Effect.runSync(Effect.fail(new DurableTableError({
+      table: tableName,
+      cause: new Error(
+        "DurableTable collection views are read-only; use the generated insert/upsert/delete facade methods",
+      ),
+    })))
+
   const overrides = {
+    insert: rejectMutation,
+    update: rejectMutation,
+    delete: rejectMutation,
     get: (key: string) => {
       const row = tanstackCollection.get(key)
       return row === undefined ? undefined : decodeRowForRead(collection, row)
@@ -561,8 +595,13 @@ const makeFacade = <Row extends object, Key>(options: {
   const { collection, tanstackCollection, tableName, actions } = options
   const encodeKey = (key: unknown): string =>
     requireString(collection, collection.encodePrimaryKey(key))
-  const readableCollection = makeReadableCollection(collection, tanstackCollection)
+  const readableCollection = makeReadableCollection(
+    tableName,
+    collection,
+    tanstackCollection,
+  )
   return {
+    collection: readableCollection,
     insert: (row) =>
       runAction(
         tableName,

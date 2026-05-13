@@ -36,6 +36,15 @@ components:
       18: DurableTable encodes primary-key values via the primary-key field schema (Schema.encodeSync) for insert, upsert, delete, and get paths; the package contains no string-coercion key helper.
       19: DurableTable.layer acquisition ensures the backing durable stream exists before preload; callers do not pre-create the stream out of band, and acquisition is idempotent against an already-existing stream with compatible configuration.
       20: DurableTable exposes one public DurableTableHeaders type for request header passthrough so runtime and workflow table options share the same auth/header shape.
+      21: DurableTable collection facades expose a read-only TanStack collection view for query engines and UI bindings; mutations through that view fail loudly so callers keep using DurableTable generated writes.
+      22: DurableTable read-only collection views decode primary-key fields through the collection's primary-key schema before exposing rows to TanStack query, map, state, and subscription consumers.
+
+  REACT:
+    requirements:
+      1: The durable operators package exposes React bindings only from an optional react subpath; the public root does not import React or @tanstack/react-db.
+      2: The React provider acquires caller-supplied DurableTable layers once per React provider lifetime and releases their Effect Scope when the provider unmounts.
+      3: React consumers can retrieve shared DurableTable services by table tag and bind TanStack useLiveQuery to the table collection views without app-local control-plane wrappers.
+      4: React bindings surface loading and acquisition failures explicitly rather than silently creating per-render table layers.
 
   PROJECTION:
     requirements:
@@ -152,6 +161,7 @@ constraints:
       11: Ordinary retained table/state behavior in runtime, client, app, and scenario code is expressed through DurableTable declarations and generated facades rather than createStateSchema, createStreamDB, or manual State Protocol event builders.
       12: Browser and host code share one DurableTable declaration for a durable table shape; duplicate client/runtime table declarations for the same namespace are not allowed.
       13: Shared protocol/contract packages do not expose manual state descriptors or createStateSchema-style schema files for ordinary table behavior.
+      14: UI apps bind directly to shared DurableTable declarations through read-only table collection views and TanStack live queries; app-local APIs that duplicate Firegrid control-plane semantics are not the preferred pattern.
 
   TRACER_017:
     requirements:

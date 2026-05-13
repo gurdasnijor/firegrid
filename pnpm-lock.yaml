@@ -143,12 +143,21 @@ importers:
       '@tanstack/db':
         specifier: ^0.5.33
         version: 0.5.33(typescript@5.9.3)
+      '@tanstack/react-db':
+        specifier: 0.1.77
+        version: 0.1.77(react@18.3.1)(typescript@5.9.3)
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17
+      '@types/react':
+        specifier: ^18.3.28
+        version: 18.3.28
       effect:
         specifier: ^3.18.0
         version: 3.21.2
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
@@ -1405,6 +1414,11 @@ packages:
     resolution: {integrity: sha512-3PouiFjR4B6x1c969/Pl4ZIJleof1M0n6fNX8NRiC9Sqv1g06CVDlEaXUR4212ycGFyfq4q+t8Gi37Xy+z34iQ==}
     engines: {node: '>=18'}
 
+  '@tanstack/react-db@0.1.77':
+    resolution: {integrity: sha512-rN9UTE6LrmXrkeo5S1O6zE7altQhFIhWjF0Afbt42/GPsCUGH9sI0Ll24SpkpRsYSorGc06Z5r8LwhzcJvTmiQ==}
+    peerDependencies:
+      react: '>=16.8.0'
+
   '@ts-morph/common@0.29.0':
     resolution: {integrity: sha512-35oUmphHbJvQ/+UTwFNme/t2p3FoKiGJ5auTjjpNTop2dyREspirjMy82PLSC1pnDJ8ah1GU98hwpVt64YXQsg==}
 
@@ -2613,6 +2627,11 @@ packages:
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
 
+  use-sync-external-store@1.6.0:
+    resolution: {integrity: sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
   uuid@11.1.1:
     resolution: {integrity: sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ==}
     hasBin: true
@@ -3610,6 +3629,14 @@ snapshots:
       typescript: 5.9.3
 
   '@tanstack/pacer-lite@0.2.1': {}
+
+  '@tanstack/react-db@0.1.77(react@18.3.1)(typescript@5.9.3)':
+    dependencies:
+      '@tanstack/db': 0.5.33(typescript@5.9.3)
+      react: 18.3.1
+      use-sync-external-store: 1.6.0(react@18.3.1)
+    transitivePeerDependencies:
+      - typescript
 
   '@ts-morph/common@0.29.0':
     dependencies:
@@ -4987,6 +5014,10 @@ snapshots:
   uri-js@4.4.1:
     dependencies:
       punycode: 2.3.1
+
+  use-sync-external-store@1.6.0(react@18.3.1):
+    dependencies:
+      react: 18.3.1
 
   uuid@11.1.1: {}
 

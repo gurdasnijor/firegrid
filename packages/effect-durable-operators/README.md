@@ -22,6 +22,7 @@ The package intentionally exposes one durable state primitive:
 | `DurableTable.primaryKey` | Pipe-able Effect Schema field modifier for the collection key. |
 | `DurableTableError` | Typed error for table acquisition, reads, writes, and subscriptions. |
 | `DurableTableService` and related types | Type helpers for table services, rows, keys, and layer options. |
+| `effect-durable-operators/react` | Optional React bindings for scoped table acquisition and TanStack live queries. |
 
 The old generic consumer, projection, source adapter, checkpoint-store, and
 Electric adapter surfaces were removed. Callers now express those workflows as
@@ -88,6 +89,7 @@ Each collection exposes:
 | `get(key)` | Reads by primary key and returns `Option<Row>`. |
 | `query(fn)` | Runs `fn` against the underlying TanStack collection. |
 | `subscribe(fn)` | Builds an Effect Stream from the underlying TanStack collection subscription API. |
+| `collection` | Read-only TanStack collection view for query engines and UI bindings. |
 
 ## Primary Keys
 
@@ -197,6 +199,64 @@ const stream = table.executions.subscribe((coll, emit) => {
   return () => sub.unsubscribe()
 })
 ```
+
+The same decoded TanStack collection view is available as
+`table.executions.collection` for query engines such as `@tanstack/react-db`.
+It is intentionally read-only: calling `insert`, `update`, or `delete` on the
+collection view throws. Writes must use the DurableTable generated facade so
+State Protocol event construction, primary-key encoding, and txid coordination
+stay on the blessed path.
+
+```ts
+const rows = table.executions.collection.toArray
+```
+
+## React Live Queries
+
+React bindings are optional and live under the `react` subpath so the root
+package stays framework-free.
+
+```tsx
+import {
+  DurableTableProvider,
+  useDurableLiveQuery,
+  useDurableTable,
+} from "effect-durable-operators/react"
+import { eq } from "@tanstack/db"
+
+function Executions({ workflowName }: { workflowName: string }) {
+  const table = useDurableTable(WorkflowTable)
+  const { data = [] } = useDurableLiveQuery(
+    (q) =>
+      q
+        .from({ executions: table.executions.collection })
+        .where(({ executions }) =>
+          eq(executions.workflowName, workflowName)
+        ),
+    [workflowName],
+  )
+
+  return data
+}
+
+const app = (
+  <DurableTableProvider
+    layer={WorkflowTable.layer({
+      streamOptions: {
+        url: "https://durable-streams.example/v1/stream/workflow",
+        contentType: "application/json",
+      },
+    })}
+    tables={[WorkflowTable]}
+  >
+    <Executions workflowName="demo" />
+  </DurableTableProvider>
+)
+```
+
+`DurableTableProvider` builds the supplied Layer once for the provider
+lifetime and releases the backing Effect Scope on unmount. Do not acquire
+table layers inside individual components or route handlers.
 
 ## Writes
 
