@@ -2,7 +2,16 @@
 
 Date: 2026-05-13
 
-Status: Proposal, docs-only
+Status: Superseded for context ownership by
+`SDD_FIREGRID_WORKFLOW_DRIVEN_RUNTIME_PLANES.md`.
+
+Supersession note: this SDD's context-ownership dispatcher and
+`DurableKeyedMutex<contextId>` direction should not be implemented while the
+workflow-driven runtime proposal is active. Runtime context execution authority
+is expected to move into `RuntimeContextWorkflow(contextId)` and its
+`runRuntimeContext` activity. The host-presence, heartbeat, and liveness ideas
+in this document may still be useful later as observability/capacity concerns,
+but they are not the normal context execution fence.
 
 Scope: A product-neutral runtime host dispatcher for `@firegrid/runtime` that
 materializes runtime context work, publishes host liveness, claims eligible

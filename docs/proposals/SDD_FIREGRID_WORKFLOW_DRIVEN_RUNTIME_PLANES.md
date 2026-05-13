@@ -1011,6 +1011,11 @@ be able to prove:
 8. `wait_for`/clock behavior works inside both host and context workflows.
 9. Product session workflows compose with runtime context workflows without
    creating a third dispatch plane.
+10. Before using activity claims as a high-throughput runtime fence, an
+   activity-claim load test proves the expected concurrency and materialization
+   latency envelope for the target deployment. Exact numbers should come from
+   product scale assumptions before implementation; this is a hardening gate,
+   not a prerequisite for the first happy-path spike.
 
 ## Candidate Rollout
 
