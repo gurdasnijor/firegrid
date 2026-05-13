@@ -309,3 +309,77 @@ app packages. It also does not implement workflow suspension, durable clocks,
 required actions, prompt APIs, runtime hosts, or product session semantics.
 
 Those behaviors live above `DurableTable` in their owning packages.
+
+## Gotchas
+
+Some patterns are easy to get wrong on first contact. The full list of known
+bugs and workarounds is in [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md); the most
+common pitfalls:
+
+### `subscribe` requires the TanStack subscribe shape exactly
+
+`subscribe` adapts the TanStack collection subscription API into an Effect
+`Stream`. The callback you pass receives `(coll, emit)` and **must return the
+unsubscribe function** (not a `Promise`, not `void`):
+
+```ts
+table.executions.subscribe((coll, emit) => {
+  const sub = coll.subscribeChanges(
+    (changes) => changes.forEach((c) => {
+      if (c.value !== undefined && c.value !== null) emit(c.value)
+    }),
+    { includeInitialState: true },
+  )
+  return () => sub.unsubscribe()    // ← unsubscribe, returned synchronously
+})
+```
+
+If you want initial-state replay (the default for most reactive use cases),
+pass `{ includeInitialState: true }` to `subscribeChanges`. A separate
+snapshot-then-subscribe pattern is a race; don't reach for it.
+
+### Composite-key `.get` does not always find rows
+
+For collections whose primary key is declared via `Schema.transformOrFail` (a
+typed composite key encoded as a JSON tuple, the convention in
+`packages/protocol/src/launch/table.ts`), `.get(key)` may return `Option.none`
+for rows that `.query.toArray` returns correctly. This is a known bug —
+see [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md). The runtime workaround is a
+`.query.toArray.find(...)` scan:
+
+```ts
+const findByCompositeKey = (table, key) =>
+  Effect.map(
+    table.collection.query((coll) => coll.toArray),
+    (rows) => Option.fromNullable(rows.find((r) => deepEqual(r.id, key))),
+  )
+```
+
+Production code that depends on `.get` for composite keys should use this
+scan helper until the upstream `.get` path is fixed.
+
+### `awaitTxId` is intentional, not redundant
+
+Generated writes already attach a txid header and `await awaitTxId(txid)`
+internally before completing. That means: when the write `Effect` succeeds,
+the row is **both** durably appended **and** materialized in the local view.
+Downstream reads in the same `Effect` chain can see the write.
+
+Removing the `awaitTxId` step would force every later read to handle a
+"durably written but not yet materialized" intermediate state. Don't do
+that.
+
+### Layers are scope-managed; acquire once
+
+`DurableTable.layer(...)` creates the backing stream (or tolerates a
+compatible existing one), preloads retained state, and closes the
+materializer on scope close. Acquire it once at application/service/test
+scope. If you provide it inside a per-operation `Effect.scoped`, every row
+operation re-preloads the entire retained history. This is slow and wasteful.
+
+### `collection` is read-only by design
+
+`table.collection.toArray` and friends read fine, but `collection.insert /
+update / delete` throw. Writes must go through the generated facade so State
+Protocol event construction, txid coordination, and primary-key encoding
+remain on the blessed path.

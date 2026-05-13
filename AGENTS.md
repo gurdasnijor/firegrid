@@ -63,3 +63,78 @@ product changes.
 - VS Code excludes `repos/**` from search, file watching, and TypeScript /
   JavaScript auto-import suggestions so the upstream symbols never appear as
   import candidates while you write product code.
+
+## Worktrees and Lockfiles
+
+Each git worktree is its own pnpm workspace root because `pnpm-workspace.yaml`
+sits at the worktree root and `pnpm-lock.yaml` is checked in. That means:
+
+- `pnpm add` / `pnpm remove` from inside a worktree mutates **that worktree's**
+  `pnpm-lock.yaml`, not the main checkout's. The two trees can resolve
+  different transitive versions until you push and the lockfiles diverge in
+  history.
+- If a typecheck or test that passes on `main` starts failing inside a
+  worktree, first confirm the worktree lockfile matches main:
+  `md5 pnpm-lock.yaml <main-checkout-or-other-worktree>/pnpm-lock.yaml`.
+- To revert a stray lockfile mutation: `git restore pnpm-lock.yaml` then
+  `pnpm install --frozen-lockfile`.
+
+If the harness places you in a fresh worktree (`.claude/worktrees/<name>/`),
+the branch is auto-named `worktree-<name>`. Rename it before pushing if you
+want a more descriptive branch (`git branch -m worktree-foo opus/foo-pr1`).
+
+## Effect / `@effect/*` Version Pins
+
+`packages/runtime/src/workflow-engine/internal/engine-runtime.ts` is written
+against the API shapes of the currently-pinned `effect` (root) and
+`@effect/workflow` (runtime package). Minor version bumps have introduced
+typing regressions in the past — notably:
+
+- `effect` 3.18 → 3.21 changed inference around `Option.getOrUndefined` and
+  related helpers in ways that broke the workflow-engine adapter.
+- Adding `@effect/vitest` to a workspace package pulls in its own `effect`
+  range, which can elevate the resolved `effect` version repo-wide.
+
+Treat `effect`, `@effect/workflow`, `@effect/experimental`, `@effect/platform`,
+`@effect/rpc`, and `@effect/vitest` as version-coupled. Do not loosen ranges
+casually. Bumps land as **standalone PRs** that update the lockfile and any
+adapter code together, never bundled with product changes.
+
+## Preflight Before Pushing
+
+CI runs `lint`, `lint:dead`, `lint:dup`, `lint:deps`, `lint:effect-quality`,
+`lint:semgrep`, `lint:semgrep:test`, `typecheck`, and the full test suite. The
+root `package.json` chains all of these as `pnpm run verify`. Run it before
+pushing if you've touched code; CI feedback is slow and the Effect-quality
+metric in particular is easy to miss locally:
+
+```bash
+pnpm run verify
+```
+
+If you've only touched docs/specs:
+
+```bash
+pnpm run check:specs && pnpm run check:docs
+```
+
+The Effect-quality metric ratchet (`lint:effect-quality`) refuses regressions
+in counts like `forOfInPackageSourceCount`, `processEnvOutsideBinCount`, and
+`anyNoContextCastCount`. See `docs/contributing/effect-quality-metrics.md` for
+the full list, what each metric counts, and how to fix common regressions.
+
+## Coordinator Cadence via cmux
+
+Coordinator handoffs and review feedback for Firegrid agent work flow through
+a cmux surface in the team's workspace. To send the coordinator an update:
+
+```bash
+cmux list-pane-surfaces                # find the coordinator surface
+cmux send --surface surface:<n> 'message text'
+cmux send-key --surface surface:<n> Return
+```
+
+Use this for spec PR opens, implementation PR opens, CI status, and review
+responses. Don't broadcast every commit — coordinator updates are
+review-shaped, not progress-shaped. See `docs/contributing/acai-walkthrough.md`
+for the end-to-end review cadence Firegrid PRs follow.
