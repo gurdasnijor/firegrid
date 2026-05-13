@@ -138,6 +138,82 @@ collection re-applies defaults on read.
 
 ---
 
+## 4. Synchronous boundary failures currently throw `FiberFailure`
+
+**Status:** Open.
+
+### Symptom
+
+Some synchronous integration boundaries use:
+
+```ts
+Effect.runSync(Effect.fail(error))
+```
+
+Examples:
+
+- read-only `collection` mutation rejection in `DurableTable.ts`;
+- React hook failure boundaries in `react.ts`.
+
+This throws an Effect `FiberFailure` whose cause contains the original error,
+not the original error object itself. String matching tests still pass because
+the message appears in the fiber failure, but `instanceof DurableTableError`
+or direct error handling sees the wrapper.
+
+### Root cause
+
+These boundaries are synchronous callback / React hook boundaries, not Effect
+program boundaries. Running a failed Effect synchronously adds no useful
+semantics and changes the thrown value.
+
+### Workaround
+
+Consumers should not rely on `instanceof DurableTableError` for synchronous
+collection-view mutation failures until this is fixed.
+
+### Resolution plan
+
+Replace these with direct throws at the synchronous boundary:
+
+```ts
+throw error
+```
+
+Keep Effect failures for actual Effect-returning APIs.
+
+---
+
+## 5. Primary-key encode path silently stringifies non-string encoded values
+
+**Status:** Open.
+
+### Symptom
+
+`DurableTable.primaryKey` guarantees the durable key's encoded form should be
+a string, but the implementation currently includes a `String(...)` fallback
+for non-string encoded values. That can hide a schema mistake where a
+primary-key transform encodes to an object or number.
+
+### Root cause
+
+The runtime must hand a string key to the Durable Streams / TanStack DB
+boundary. The fallback was a permissive guard, but it weakens the schema-owned
+encoding contract.
+
+### Workaround
+
+Declare composite keys with `Schema.transform` / `Schema.transformOrFail`
+whose encoded side is `Schema.String`, and add tests that assert round-trip
+encoding for new key schemas.
+
+### Resolution plan
+
+Fail loudly when primary-key encoding produces a non-string value. The failure
+should happen at table construction or write-time as a typed
+`DurableTableError`, not through silent coercion.
+
+---
+
 ## How to add an entry to this file
 
 When you hit a `DurableTable` (or wider operators-package) bug that survives
