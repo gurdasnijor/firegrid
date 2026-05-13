@@ -6,6 +6,7 @@ export {
   FiregridRuntimeHostFromConfig,
   FiregridRuntimeHostLive,
   FiregridRuntimeHostWithWorkflowFromConfig,
+  FiregridRuntimeHostWithWorkflowFromConfigWithEnvPolicy,
   FiregridRuntimeHostWithWorkflowLive,
   RuntimeIngressError,
   RuntimeHostTopologyFromConfig,
@@ -15,6 +16,26 @@ export {
   type StartRuntimeOptions,
   type StartRuntimeResult,
 } from "./runtime-host/index.ts"
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
+export {
+  ResolveEnvBindingError,
+  RuntimeEnvResolverPolicy,
+  resolveSpawnEnvVars,
+  type EnvLookup,
+  type RuntimeEnvResolverPolicyValue,
+} from "./providers/sandboxes/secrets.ts"
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5..8
+export {
+  RunAuthorizedBindingSchema,
+  RunConfigSchema,
+  decodeRunConfig,
+  runConfigRequiresInput,
+  runConfigToIngressRequest,
+  runConfigToRuntimeContext,
+  type RunAuthorizedBinding,
+  type RunConfig,
+} from "./runtime-host/sync-run.ts"
 export {
   DurableStreamsWorkflowEngine,
   fireDueWorkflowClocks,

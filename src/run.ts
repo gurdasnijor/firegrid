@@ -5,21 +5,41 @@
  *
  *   pnpm firegrid:run -- node -e 'console.log(JSON.stringify({hello:"firegrid"}))'
  *
+ *   pnpm firegrid:run \
+ *     --secret-env ANTHROPIC_API_KEY \
+ *     --cwd /work/agent \
+ *     --prompt "summarize the diff" \
+ *     -- node agent.mjs
+ *
+ *   pnpm firegrid:run \
+ *     --secret-env ANTHROPIC_API_KEY=PARENT_ANTHROPIC_KEY \
+ *     -- node agent.mjs
+ *
+ * Flags (all map 1:1 to RunConfigSchema fields):
+ *   --secret-env NAME[=ENV_NAME]
+ *     1. Adds a binding `{ name, ref: "env:<envName>" }` to
+ *        RuntimeContext.runtime.config.envBindings.
+ *     2. Authorizes the runtime resolver pair (NAME, ENV_NAME) at
+ *        spawn time. The default runtime policy denies every env
+ *        binding; authorization is an explicit operator grant.
+ *   --cwd PATH
+ *     RuntimeContext.runtime.config.cwd. The local-process sandbox
+ *     spawns the child in this directory.
+ *   --prompt TEXT
+ *     Appends an initial RuntimeIngressTable input row (kind=message,
+ *     authoredBy=client) BEFORE startRuntime, and forces the runtime
+ *     host into inputEnabled=true so the workflow's stdin delivery
+ *     stream picks it up.
+ *
+ * Argv parsing is hand-rolled (the `--` split makes @effect/cli's
+ * positional handling awkward), but the parsed shape is decoded
+ * through `RunConfigSchema` so the durable row + ingress row + policy
+ * layer all read from one validated DTO. See ./run-config.ts.
+ *
  * Implements:
- *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1 — read argv after the
- *    "--" separator, build a RuntimeContext row, insert it into
- *    RuntimeControlPlaneTable, and call startRuntime(contextId).
- *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2 — block until
- *    startRuntime / RuntimeContextWorkflow returns and exit with the runtime
- *    execution exit code via NodeRuntime.runMain's teardown boundary.
- *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.3 — reuse
- *    FiregridRuntimeHostWithWorkflowFromConfig so the same control-plane,
- *    ingress, output, workflow engine, and local-process provider layers
- *    drive this entrypoint as drive normal runtime execution.
- *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.4 — secrets are taken
- *    only through the existing Effect Config / env-backed
- *    FIREGRID_DURABLE_STREAMS_TOKEN redacted config; this entrypoint adds no
- *    --token / --auth-token / --secret CLI flags.
+ *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1..6
+ *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 — --cwd
+ *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 — --prompt
  *  - firegrid-workflow-driven-runtime.VALIDATION.2 — see the runbook in
  *    docs/runbooks/firegrid-run-sync-mvp.md for the smoke command.
  */
@@ -27,83 +47,214 @@
 import { NodeRuntime } from "@effect/platform-node"
 import {
   RuntimeControlPlaneTable,
-  local,
-  normalizeRuntimeIntent,
-  type RuntimeContext,
+  type RuntimeEnvBinding,
 } from "@firegrid/protocol/launch"
-import { FiregridRuntimeHostWithWorkflowFromConfig } from "@firegrid/runtime"
-import { startRuntime } from "@firegrid/runtime/runtime-host"
-import { Cause, Clock, Console, Data, Effect, Exit } from "effect"
+import {
+  FiregridRuntimeHostWithWorkflowLive,
+  RuntimeEnvResolverPolicy,
+  RuntimeHostTopologyFromConfig,
+  appendRuntimeIngress,
+  decodeRunConfig,
+  runConfigRequiresInput,
+  runConfigToIngressRequest,
+  runConfigToRuntimeContext,
+  startRuntime,
+  type RunConfig,
+} from "@firegrid/runtime"
+import { Cause, Console, Data, Effect, Exit, Layer, ParseResult } from "effect"
 
 class FiregridRunUsageError extends Data.TaggedError("FiregridRunUsageError")<{
   readonly message: string
 }> {}
 
 const usage =
-  "firegrid:run requires `--` followed by an agent command. Example: pnpm firegrid:run -- node -e 'console.log(\"hello\")'"
+  "firegrid:run requires `--` followed by an agent command.\n" +
+  "Example: pnpm firegrid:run -- node -e 'console.log(\"hello\")'\n" +
+  "Optional flags (all values are env-var names, paths, or prompt text — never raw secrets):\n" +
+  "  --secret-env NAME[=ENV_NAME]  authorize and bind a host env var into the child\n" +
+  "  --cwd PATH                    spawn the child in PATH\n" +
+  "  --prompt TEXT                 deliver TEXT as the first RuntimeIngress input"
 
 // argv is read from the ambient `process` global. The lint guard bans
 // `import process from "node:process"`; the global is allowed and is what
 // NodeRuntime itself reads internally.
 const readArgv = Effect.sync(() => globalThis.process.argv.slice(2))
 
-const parseAgentCommand = (
-  argv: ReadonlyArray<string>,
-): Effect.Effect<ReadonlyArray<string>, FiregridRunUsageError> => {
-  const separatorIndex = argv.indexOf("--")
-  if (separatorIndex === -1) {
-    return Effect.fail(new FiregridRunUsageError({ message: usage }))
-  }
-  const before = argv.slice(0, separatorIndex)
-  if (before.length > 0) {
-    return Effect.fail(new FiregridRunUsageError({
-      message:
-        `firegrid:run does not accept arguments before "--" in this MVP. Got: ${
-          before.join(" ")
-        }. Configure the host through env (DURABLE_STREAMS_BASE_URL, FIREGRID_RUNTIME_NAMESPACE, FIREGRID_DURABLE_STREAMS_TOKEN).`,
-    }))
-  }
-  const after = argv.slice(separatorIndex + 1)
-  if (after.length === 0) {
-    return Effect.fail(new FiregridRunUsageError({
-      message:
-        "firegrid:run requires at least one argument after `--` (the agent command).",
-    }))
-  }
-  return Effect.succeed(after)
+interface RawRunConfig {
+  readonly agentArgv: ReadonlyArray<string>
+  readonly cwd?: string
+  readonly prompt?: string
+  readonly envBindings?: ReadonlyArray<RuntimeEnvBinding>
+  readonly authorizedBindings?: ReadonlyArray<readonly [string, string]>
 }
 
-const buildRuntimeContextRow = (
-  argv: ReadonlyArray<string>,
-): Effect.Effect<RuntimeContext> =>
-  Effect.map(Clock.currentTimeMillis, (millis): RuntimeContext => ({
-    contextId: `ctx_${crypto.randomUUID()}`,
-    createdAt: new Date(millis).toISOString(),
-    createdBy: "firegrid-run",
-    runtime: normalizeRuntimeIntent(local.jsonl({ argv: [...argv] })),
-  }))
+const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
-/**
- * firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1
- * firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2
- *
- * Build the row, append it through the same control-plane table the runtime
- * host owns, then call startRuntime and yield its exit code.
- *
- * The row insert lives at the caller — not inside startRuntime — so that
- * startRuntime stays a thin "start/resume by contextId" verb shared with
- * @firegrid/client.launch and any other launch path. See the design note in
- * the PR description.
- */
-const runWithLayer = (agentArgv: ReadonlyArray<string>) =>
+const usageError = (message: string): FiregridRunUsageError =>
+  new FiregridRunUsageError({ message })
+
+// Parse a single --secret-env value. Accepts:
+//   NAME          → binding { name: NAME, ref: env:NAME }
+//   NAME=ENV_NAME → binding { name: NAME, ref: env:ENV_NAME }
+// The flag never accepts a literal secret value; both halves are env var
+// identifiers only.
+const parseSecretEnvFlag = (
+  raw: string,
+): Effect.Effect<readonly [string, string], FiregridRunUsageError> => {
+  const equalsIndex = raw.indexOf("=")
+  const name = equalsIndex === -1 ? raw : raw.slice(0, equalsIndex)
+  const envName = equalsIndex === -1 ? raw : raw.slice(equalsIndex + 1)
+  if (!ENV_NAME_PATTERN.test(name)) {
+    return Effect.fail(usageError(
+      `--secret-env expects an env-var identifier, got "${name}". ` +
+        "Use --secret-env NAME or --secret-env NAME=ENV_NAME; values are never accepted on the command line.",
+    ))
+  }
+  if (!ENV_NAME_PATTERN.test(envName)) {
+    return Effect.fail(usageError(
+      `--secret-env right-hand side "${envName}" is not a valid env-var identifier. ` +
+        "--secret-env names host env vars; it does not accept secret values.",
+    ))
+  }
+  return Effect.succeed([name, envName] as const)
+}
+
+// Take an argv slice that's already had the `--` separator removed and
+// build the raw (pre-decode) RunConfig shape. Decoding through
+// RunConfigSchema is the next step.
+const parseCommand = (
+  argv: ReadonlyArray<string>,
+): Effect.Effect<RawRunConfig, FiregridRunUsageError> =>
+  Effect.gen(function* () {
+    const separatorIndex = argv.indexOf("--")
+    if (separatorIndex === -1) {
+      return yield* Effect.fail(usageError(usage))
+    }
+    const before = argv.slice(0, separatorIndex)
+    const after = argv.slice(separatorIndex + 1)
+    if (after.length === 0) {
+      return yield* Effect.fail(usageError(
+        "firegrid:run requires at least one argument after `--` (the agent command).",
+      ))
+    }
+
+    const envBindings: Array<RuntimeEnvBinding> = []
+    const authorizedBindings: Array<readonly [string, string]> = []
+    const seenTargets = new Set<string>()
+    let cwd: string | undefined
+    let prompt: string | undefined
+
+    const recordSecretEnv = (
+      pair: readonly [string, string],
+    ): Effect.Effect<void, FiregridRunUsageError> => {
+      const [name, envName] = pair
+      if (seenTargets.has(name)) {
+        return Effect.fail(usageError(
+          `--secret-env target ${name} was specified more than once; ` +
+            "each child env-var name may be authorized at most once per invocation.",
+        ))
+      }
+      seenTargets.add(name)
+      envBindings.push({ name, ref: `env:${envName}` })
+      authorizedBindings.push([name, envName])
+      return Effect.void
+    }
+
+    const requireFlagValue = (
+      flag: string,
+      value: string | undefined,
+    ): Effect.Effect<string, FiregridRunUsageError> =>
+      value === undefined
+        ? Effect.fail(usageError(`${flag} requires a value.`))
+        : Effect.succeed(value)
+
+    let index = 0
+    while (index < before.length) {
+      const token = before[index]!
+      if (token === "--secret-env") {
+        const value = yield* requireFlagValue("--secret-env", before[index + 1])
+        const pair = yield* parseSecretEnvFlag(value)
+        yield* recordSecretEnv(pair)
+        index += 2
+        continue
+      }
+      if (token.startsWith("--secret-env=")) {
+        const value = token.slice("--secret-env=".length)
+        const pair = yield* parseSecretEnvFlag(value)
+        yield* recordSecretEnv(pair)
+        index += 1
+        continue
+      }
+      if (token === "--cwd") {
+        if (cwd !== undefined) {
+          return yield* Effect.fail(usageError("--cwd was specified more than once."))
+        }
+        cwd = yield* requireFlagValue("--cwd", before[index + 1])
+        index += 2
+        continue
+      }
+      if (token.startsWith("--cwd=")) {
+        if (cwd !== undefined) {
+          return yield* Effect.fail(usageError("--cwd was specified more than once."))
+        }
+        cwd = token.slice("--cwd=".length)
+        index += 1
+        continue
+      }
+      if (token === "--prompt") {
+        if (prompt !== undefined) {
+          return yield* Effect.fail(usageError("--prompt was specified more than once."))
+        }
+        prompt = yield* requireFlagValue("--prompt", before[index + 1])
+        index += 2
+        continue
+      }
+      if (token.startsWith("--prompt=")) {
+        if (prompt !== undefined) {
+          return yield* Effect.fail(usageError("--prompt was specified more than once."))
+        }
+        prompt = token.slice("--prompt=".length)
+        index += 1
+        continue
+      }
+      return yield* Effect.fail(usageError(
+        `firegrid:run does not recognize the option "${token}" before "--". ` +
+          "Supported flags before \"--\": --secret-env NAME[=ENV_NAME], --cwd PATH, --prompt TEXT.",
+      ))
+    }
+
+    return {
+      agentArgv: after,
+      ...(cwd === undefined ? {} : { cwd }),
+      ...(prompt === undefined ? {} : { prompt }),
+      ...(envBindings.length === 0 ? {} : { envBindings }),
+      ...(authorizedBindings.length === 0 ? {} : { authorizedBindings }),
+    }
+  })
+
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 — cwd into the row
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 — prompt into ingress
+const runWithLayer = (config: RunConfig) =>
   Effect.gen(function* () {
     const control = yield* RuntimeControlPlaneTable
-    const context = yield* buildRuntimeContextRow(agentArgv)
-
+    const context = yield* runConfigToRuntimeContext(config)
     yield* control.contexts.upsert(context)
     yield* Console.log(
-      `firegrid:run: launched context ${context.contextId} (${agentArgv.join(" ")})`,
+      `firegrid:run: launched context ${context.contextId} (${config.agentArgv.join(" ")})`,
     )
+
+    const ingressRequest = runConfigToIngressRequest(config, context.contextId)
+    if (ingressRequest !== undefined) {
+      // appendRuntimeIngress fails loudly if the host config has
+      // inputEnabled=false; we enable it in envHostLayer below when the
+      // config carries a prompt, so this call is allowed.
+      yield* appendRuntimeIngress(ingressRequest)
+      yield* Console.log(
+        `firegrid:run: appended initial prompt input for ${context.contextId}`,
+      )
+    }
 
     const result = yield* startRuntime({ contextId: context.contextId })
 
@@ -116,34 +267,46 @@ const runWithLayer = (agentArgv: ReadonlyArray<string>) =>
     return result.exitCode
   })
 
-/**
- * firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.3
- *
- * Reuse the env-driven host layer so this entrypoint does not introduce a
- * second layer composition. Headers (auth) flow through
- * FIREGRID_DURABLE_STREAMS_TOKEN — see PHASE_2_SYNC_RUN.4.
- */
-const layer = FiregridRuntimeHostWithWorkflowFromConfig
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
+//
+// The env policy layer is constructed here, at the binary boundary, so
+// that globalThis.process.env reads never leak into library code. The
+// pair-based authorization map is derived from --secret-env flags
+// exclusively; nothing else can authorize an env-binding pair.
+const envPolicyLayer = (
+  authorizedBindings: ReadonlyArray<readonly [string, string]>,
+) =>
+  Layer.succeed(
+    RuntimeEnvResolverPolicy,
+    RuntimeEnvResolverPolicy.make({
+      authorizedBindings,
+      lookupEnv: (name: string) => globalThis.process.env[name],
+    }),
+  )
 
-/**
- * Argv parsing runs first — before layer construction — so a usage error
- * surfaces with exit 2 even when env-driven Config is missing. Layer
- * construction only happens once we have a real agent command to execute.
- *
- * Errors are mapped into the success channel as POSIX-style exit codes so
- * the teardown only has to translate `Exit<number, never>` → `onExit(code)`.
- *
- *   usage error           → exit 2 (POSIX convention for misuse)
- *   layer/runtime failure → exit 1 with the cause printed via Console.error
- *   child runtime exit    → that exit code (0 for success, anything else
- *                           for the agent command's own exit)
- */
+// Construct the host layer using the existing env-driven topology, then
+// overlay the env policy + a forced input flag when --prompt is given.
+// The "input forced" path is what unlocks RuntimeIngressTable.inputs
+// writes and stdin delivery for the sync-run scope.
+const envHostLayer = (config: RunConfig) =>
+  Layer.unwrapEffect(
+    Effect.map(RuntimeHostTopologyFromConfig, (topology) =>
+      FiregridRuntimeHostWithWorkflowLive(
+        runConfigRequiresInput(config) ? { ...topology, input: true } : topology,
+        envPolicyLayer(config.authorizedBindings ?? []),
+      )),
+  )
+
 const programWithExitCode: Effect.Effect<number, never, never> = Effect.gen(
   function* () {
     const argv = yield* readArgv
-    const agentArgv = yield* parseAgentCommand(argv)
-    return yield* runWithLayer(agentArgv).pipe(
-      Effect.provide(layer),
+    const raw = yield* parseCommand(argv)
+    const config = yield* decodeRunConfig(raw).pipe(
+      Effect.mapError((error) =>
+        usageError(`firegrid:run: invalid run-config: ${ParseResult.TreeFormatter.formatErrorSync(error)}`)),
+    )
+    return yield* runWithLayer(config).pipe(
+      Effect.provide(envHostLayer(config)),
       Effect.scoped,
     )
   },
@@ -156,15 +319,6 @@ const programWithExitCode: Effect.Effect<number, never, never> = Effect.gen(
     )),
 )
 
-/**
- * firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2
- *
- * Custom teardown is the @effect/platform-node entry boundary for arbitrary
- * exit codes. `Exit.match` dispatches on the Exit's tagged shape: success
- * carries the exit code as a number; failure mirrors the upstream
- * defaultTeardown semantic — interruption-only causes exit 0, everything
- * else exits 1.
- */
 function teardown<E, A>(
   exit: Exit.Exit<E, A>,
   onExit: (code: number) => void,

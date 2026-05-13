@@ -20,6 +20,7 @@ import { Clock, Config, Effect, Layer, Option, Redacted, Schema, Stream } from "
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {
   LocalProcessSandboxProvider,
+  RuntimeEnvResolverPolicy,
   commandForContext,
   localProcessStdinDelivery,
   streamSandboxProcess,
@@ -492,14 +493,22 @@ const runtimeContextWorkflowEngineLayer = (
 
 export const FiregridRuntimeHostLive = (
   options: RuntimeHostTopologyOptions,
+  // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
+  // Default policy denies every env binding ref. Callers that want to
+  // authorize specific host env vars (e.g. firegrid:run --secret-env)
+  // construct a populated policy at the binary boundary and pass it here;
+  // daemons that never see --secret-env stay locked down.
+  envPolicy: Layer.Layer<RuntimeEnvResolverPolicy> = RuntimeEnvResolverPolicy.denyAll,
 ) =>
   RuntimeContextWorkflowLayer.pipe(
     Layer.provideMerge(Layer.merge(runtimeHostBaseLayer(options), runtimeContextWorkflowEngineLayer(options))),
+    Layer.provideMerge(envPolicy),
   )
 
 export const FiregridRuntimeHostWithWorkflowLive = (
   options: RuntimeHostTopologyOptions,
-) => FiregridRuntimeHostLive(options)
+  envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
+) => FiregridRuntimeHostLive(options, envPolicy)
 
 export const RuntimeHostTopologyFromConfig = Config.all({
   durableStreamsBaseUrl: Config.string("DURABLE_STREAMS_BASE_URL"),
@@ -526,12 +535,25 @@ export const RuntimeHostTopologyFromConfig = Config.all({
 )
 
 export const FiregridRuntimeHostFromConfig = Layer.unwrapEffect(
-  Effect.map(RuntimeHostTopologyFromConfig, FiregridRuntimeHostLive),
+  Effect.map(RuntimeHostTopologyFromConfig, options => FiregridRuntimeHostLive(options)),
 )
 
 export const FiregridRuntimeHostWithWorkflowFromConfig = Layer.unwrapEffect(
-  Effect.map(RuntimeHostTopologyFromConfig, FiregridRuntimeHostWithWorkflowLive),
+  Effect.map(RuntimeHostTopologyFromConfig, options => FiregridRuntimeHostWithWorkflowLive(options)),
 )
+
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
+// Variant for callers that want to pass a non-default env resolver policy
+// (e.g. firegrid:run, whose --secret-env flag authorizes specific host env
+// vars). The policy is constructed at the binary boundary so that
+// globalThis.process.env reads stay outside library code.
+export const FiregridRuntimeHostWithWorkflowFromConfigWithEnvPolicy = (
+  envPolicy: Layer.Layer<RuntimeEnvResolverPolicy>,
+) =>
+  Layer.unwrapEffect(
+    Effect.map(RuntimeHostTopologyFromConfig, options =>
+      FiregridRuntimeHostWithWorkflowLive(options, envPolicy)),
+  )
 
 export const startRuntime = (
   options: StartRuntimeOptions,
