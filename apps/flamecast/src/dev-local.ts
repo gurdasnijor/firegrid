@@ -1,7 +1,6 @@
 import { Command } from "@effect/platform"
 import { CommandExecutor } from "@effect/platform/CommandExecutor"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
-import { DurableStreamTestServer } from "@durable-streams/server"
 import { Config, Console, Effect } from "effect"
 
 const DevLocalConfig = Config.all({
@@ -11,32 +10,15 @@ const DevLocalConfig = Config.all({
   vitePort: Config.integer("FLAMECAST_VITE_PORT").pipe(
     Config.withDefault(4441),
   ),
+  durableStreamsPort: Config.integer("DURABLE_STREAMS_PORT").pipe(
+    Config.withDefault(8080),
+  ),
 })
-
-const startProcess = (
-  name: string,
-  command: Command.Command,
-) =>
-  Effect.gen(function* () {
-    const executor = yield* CommandExecutor
-    const process = yield* executor.start(
-      command.pipe(
-        Command.stdin("inherit"),
-        Command.stdout("inherit"),
-        Command.stderr("inherit"),
-      ),
-    )
-    yield* Console.log(`${name} started`)
-    return process
-  })
 
 const program = Effect.gen(function* () {
   const config = yield* DevLocalConfig
-  const server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
-  const durableStreamsBaseUrl = yield* Effect.acquireRelease(
-    Effect.promise(() => server.start()),
-    () => Effect.promise(() => server.stop()).pipe(Effect.ignore),
-  )
+  const executor = yield* CommandExecutor
+  const durableStreamsBaseUrl = `http://127.0.0.1:${config.durableStreamsPort}`
   const env = {
     DURABLE_STREAMS_BASE_URL: durableStreamsBaseUrl,
     FIREGRID_RUNTIME_NAMESPACE: config.namespace,
@@ -44,21 +26,26 @@ const program = Effect.gen(function* () {
     VITE_FIREGRID_RUNTIME_NAMESPACE: config.namespace,
   }
 
+  yield* executor.start(
+    Command.make("tsx", "--tsconfig", "tsconfig.json", "scripts/dev-local-server.ts")
+      .pipe(Command.stdin("inherit"))
+      .pipe(Command.stdout("inherit"))
+      .pipe(Command.stderr("inherit"))
+      .pipe(Command.env({
+        DURABLE_STREAMS_PORT: String(config.durableStreamsPort),
+      })),
+  )
+
   yield* Console.log(`Durable Streams: ${durableStreamsBaseUrl}`)
-  yield* Console.log(`Flamecast UI:    Vite will print the local URL`)
   yield* Console.log("Press Ctrl-C to stop.")
 
-  yield* startProcess(
-    "Flamecast runtime",
-    Command.make("tsx", "--tsconfig", "tsconfig.json", "src/runtime/main.ts")
+  yield* executor.start(
+    Command.make("tsx", "--tsconfig", "tsconfig.json", "src/run.ts")
+      .pipe(Command.stdin("inherit"))
+      .pipe(Command.stdout("inherit"))
+      .pipe(Command.stderr("inherit"))
       .pipe(Command.env(env)),
-  ).pipe(Effect.forkScoped)
-
-  yield* startProcess(
-    "Flamecast UI",
-    Command.make("vite", "--host", "127.0.0.1", "--port", String(config.vitePort))
-      .pipe(Command.env(env)),
-  ).pipe(Effect.forkScoped)
+  )
 
   yield* Effect.never
 })

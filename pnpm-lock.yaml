@@ -136,9 +136,6 @@ importers:
       effect:
         specifier: ^3.18.0
         version: 3.21.2
-      effect-durable-operators:
-        specifier: workspace:*
-        version: link:../effect-durable-operators
     devDependencies:
       typescript:
         specifier: ^5.7.0

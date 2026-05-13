@@ -18,8 +18,8 @@ import {
   type PublicPromptRequest,
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
+import type { DurableTableHeaders } from "@firegrid/protocol"
 import { Clock, Context, Data, Effect, Layer, Option, Schema, Stream } from "effect"
-import type { DurableTableHeaders } from "effect-durable-operators"
 
 export interface ClientOptions {
   readonly durableStreamsBaseUrl?: string
