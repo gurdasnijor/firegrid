@@ -485,6 +485,299 @@ UI
 
 Product apps no longer implement a host watcher as application logic.
 
+## Production-Like Proposed Code Shape
+
+The target should look like a small refactor of the current files, not a new
+framework. These snippets are not intended to compile as-is, but they use the
+current APIs and module names where possible.
+
+### Runtime Host Composition
+
+`packages/runtime/src/runtime-host/index.ts` should mostly compose long-lived
+Layers and start the host workflow. It should stop containing process/session
+business logic.
+
+```ts
+export const FiregridRuntimeHostLive = (
+  options: RuntimeHostTopologyOptions,
+) => {
+  const urls = runtimeTableUrls(options)
+
+  return Layer.mergeAll(
+    Layer.succeed(RuntimeHostConfig, {
+      inputEnabled: options.input === true,
+      hostId: options.hostId,
+    }),
+    RuntimeControlPlaneTable.layer(tableLayer(urls.controlPlane, options)),
+    RuntimeIngressTable.layer(tableLayer(urls.ingress, options)),
+    RuntimeOutputTable.layer(tableLayer(urls.output, options)),
+    DurableStreamsWorkflowEngine.layer({
+      streamUrl: urls.workflow,
+      workerId: options.hostId,
+      ...(options.headers !== undefined ? { headers: options.headers } : {}),
+    }),
+    DurableToolsWaitForLive({
+      streamUrl: urls.durableTools,
+      ...(options.headers !== undefined ? { headers: options.headers } : {}),
+    }),
+    LocalProcessSandboxProvider.layer().pipe(
+      Layer.provide(NodeContext.layer),
+    ),
+    RuntimeContextWorkflowLayer,
+    HostWorkflowLayer,
+    RuntimeSourceCollectionsLayer,
+  )
+}
+```
+
+`RuntimeSourceCollectionsLayer` is where the host registers the table
+collections that `wait_for` can observe. The key point: source registration is
+composition, not a new polling service.
+
+```ts
+export const RuntimeSourceCollectionsLayer = Layer.scopedDiscard(
+  Effect.gen(function* () {
+    const sources = yield* SourceCollections
+    const control = yield* RuntimeControlPlaneTable
+
+    yield* sources.register(sourceCollectionHandle(
+      "runtime.contexts",
+      control.contexts,
+    ))
+  }),
+)
+```
+
+### Host Workflow
+
+There are two practical migration steps. The immediate step can make
+`startRuntime` a workflow entrypoint without adding host discovery. The later
+step adds `HostWorkflow` once the control-plane table has an explicit
+"eligible to run" state. That caveat matters because the current
+`RuntimeContext` row has no status field; `createdBy` alone is not enough to
+express "next unclaimed context" without repeatedly matching the same retained
+row.
+
+Immediate compatibility step:
+
+```ts
+export const startRuntime = (options: StartRuntimeOptions) =>
+  RuntimeContextWorkflow.execute(
+    { contextId: options.contextId },
+    {
+      executionId: `runtime-context:${options.contextId}`,
+      discard: false,
+    },
+  )
+```
+
+Later host-supervisor step, after adding a context lifecycle/requested field
+or an equivalent durable "runtime work" row:
+
+```ts
+const HostWorkflow = Workflow.make({
+  name: "firegrid.host",
+  payload: Schema.Struct({
+    hostId: Schema.String,
+    createdBy: Schema.optional(Schema.String),
+  }),
+  success: Schema.Void,
+  idempotencyKey: ({ hostId }) => `host:${hostId}`,
+})
+
+const HostWorkflowLayer = HostWorkflow.toLayer((payload) =>
+  Effect.gen(function* () {
+    let waitIndex = 0
+    while (true) {
+      const next = yield* WaitFor.match({
+        name: `next-runtime-context/${payload.hostId}/${waitIndex++}`,
+        source: "runtime.contexts",
+        trigger: [
+          { path: ["status"], equals: "requested" },
+          ...(payload.createdBy === undefined
+            ? []
+            : [{ path: ["createdBy"], equals: payload.createdBy }]),
+        ],
+        resultSchema: RuntimeContextSchema,
+      })
+
+      if (next._tag === "Timeout") continue
+
+      yield* RuntimeContextWorkflow.execute(
+        { contextId: next.row.contextId },
+        { executionId: `runtime-context:${next.row.contextId}`, discard: true },
+      )
+    }
+  }),
+)
+```
+
+This still depends on resolving the fire-and-forget question: current
+`execute(..., { discard: true })` joins until the child workflow suspends or
+finishes. If that is too coupled, the workflow engine needs a narrow
+`initiate/resume` operation that records/resumes the child execution without
+joining it.
+
+Until the control-plane table has an eligibility field, product code can still
+call `startRuntime(contextId)` after launch. The important simplification is
+that `startRuntime` delegates into `RuntimeContextWorkflow` instead of owning
+the local process.
+
+### Runtime Context Workflow
+
+The context workflow is where the current `startRuntime` lifecycle belongs.
+It owns durable lifecycle evidence and invokes one provider-session activity
+for the live attempt.
+
+```ts
+const RuntimeContextWorkflow = Workflow.make({
+  name: "firegrid.runtime-context",
+  payload: Schema.Struct({
+    contextId: Schema.String,
+  }),
+  success: Schema.Struct({
+    contextId: Schema.String,
+    activityAttempt: Schema.Number,
+    exitCode: Schema.Number,
+    signal: Schema.optional(Schema.String),
+  }),
+  idempotencyKey: ({ contextId }) => `runtime-context:${contextId}`,
+})
+
+const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer((payload) =>
+  Effect.gen(function* () {
+    const control = yield* RuntimeControlPlaneTable
+
+    const context = yield* control.contexts.get(payload.contextId).pipe(
+      Effect.flatMap(Option.match({
+        onNone: () => Effect.fail(new Error(`context not found: ${payload.contextId}`)),
+        onSome: Effect.succeed,
+      })),
+    )
+
+    const activityAttempt = yield* allocateRuntimeAttempt(context.contextId)
+
+    yield* writeRunStarted(context, activityAttempt)
+
+    const exit = yield* ProviderSessionActivity.execute({
+      context,
+      activityAttempt,
+    })
+
+    yield* writeRunExited(context, activityAttempt, exit)
+
+    return {
+      contextId: context.contextId,
+      activityAttempt,
+      ...exit,
+    }
+  }),
+)
+```
+
+Most of the current `startRuntime` code moves into small helpers used here:
+`allocateRuntimeAttempt`, `writeRunStarted`, and `writeRunExited`. Those
+helpers still use `RuntimeControlPlaneTable.runs`; the change is that they run
+inside a durable workflow execution instead of a top-level host function.
+
+### Provider Session Activity
+
+The provider-session activity is the answer to the "one activity per message"
+concern. It is one workflow activity per runtime attempt, and that activity
+owns the live process stream.
+
+```ts
+const ProviderSessionActivity = Activity.make({
+  name: "firegrid.runtime-context.provider-session",
+  success: Schema.Struct({
+    exitCode: Schema.Number,
+    signal: Schema.optional(Schema.String),
+  }),
+  execute: Effect.fn(function* (input: {
+    readonly context: RuntimeContext
+    readonly activityAttempt: number
+  }) {
+    return yield* runProviderSession(input.context, input.activityAttempt)
+  }),
+})
+```
+
+`runProviderSession` is intentionally close to today's `startRuntime` body:
+
+```ts
+const runProviderSession = (
+  context: RuntimeContext,
+  activityAttempt: number,
+) =>
+  Effect.gen(function* () {
+    const hostConfig = yield* RuntimeHostConfig
+    const ingressTable = yield* RuntimeIngressTable
+    const outputTable = yield* RuntimeOutputTable
+    const command = yield* commandForContext(context)
+
+    const stdin = hostConfig.inputEnabled
+      ? localProcessStdinDelivery({
+        contextId: context.contextId,
+        subscriberId: `runtime-context:${context.contextId}:attempt:${activityAttempt}:stdin`,
+      }).pipe(
+        Stream.provideService(RuntimeIngressTable, ingressTable),
+      )
+      : undefined
+
+    const writeOutputChunk = (
+      sequence: number,
+      chunk: Extract<ProcessOutputChunk, { readonly type: "output" }>,
+    ) =>
+      outputRowFromProcessChunk(context, activityAttempt, sequence, chunk).pipe(
+        Effect.flatMap(row =>
+          row.source === "stdout"
+            ? outputTable.events.upsert(row)
+            : outputTable.logs.upsert(row)),
+      )
+
+    return yield* streamSandboxProcess({
+      labels: { firegridRuntimeContextId: context.contextId },
+      ...(context.runtime.config.cwd === undefined
+        ? {}
+        : { workingDir: context.runtime.config.cwd }),
+      providerConfig: { contextId: context.contextId },
+      command: {
+        ...command,
+        ...(stdin === undefined ? {} : { stdin }),
+      },
+    }).pipe(
+      Stream.mapAccum(0, (sequence, chunk) => [
+        sequence + 1,
+        { sequence, chunk },
+      ] as const),
+      Stream.tap(({ sequence, chunk }) =>
+        chunk.type === "output"
+          ? writeOutputChunk(sequence, chunk)
+          : Effect.void),
+      Stream.filter((item): item is {
+        readonly sequence: number
+        readonly chunk: Extract<ProcessOutputChunk, { readonly type: "exit" }>
+      } => item.chunk.type === "exit"),
+      Stream.runHead,
+      Effect.flatMap(Option.match({
+        onNone: () => Effect.fail(new Error("process ended without exit")),
+        onSome: ({ chunk }) => Effect.succeed({
+          exitCode: chunk.exitCode,
+          ...(chunk.signal === undefined ? {} : { signal: chunk.signal }),
+        }),
+      })),
+    )
+  })
+```
+
+This sketch deliberately keeps `localProcessStdinDelivery` in the path. The
+workflow activity claim owns the process. `RuntimeIngressTable.deliveries`
+continues to own per-input "already emitted" evidence.
+
+That compatibility wrapper is the point where the current `runtime-host/index.ts` collapses: the
+host API no longer knows how to build stdin streams, write output chunks, or
+manage process exit. It only starts or resumes the context workflow.
+
 ## Effect On Existing Code
 
 ### `packages/runtime/src/workflow-engine/internal/engine-runtime.ts`
