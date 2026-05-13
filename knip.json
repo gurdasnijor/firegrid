@@ -3,7 +3,13 @@
   "workspaces": {
     ".": {
       "entry": [
-        "scripts/*.mjs"
+        "src/index.ts",
+        "src/host.ts",
+        "scripts/**/*.mjs"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "scripts/**/*.mjs"
       ]
     },
     "packages/client": {
@@ -25,12 +31,10 @@
     },
     "packages/runtime": {
       "entry": [
-        "src/index.ts",
-        "src/bin/firegrid.ts"
+        "src/index.ts"
       ],
       "project": [
-        "src/**/*.ts",
-        "bin/**/*.ts"
+        "src/**/*.ts"
       ]
     },
     "apps/flamecast": {

@@ -208,7 +208,7 @@ constraints:
   DEPENDS_ON:
     requirements:
       1: "`durable-records-and-projections.*` governs durable record authority, projection rebuild, materializer fold, and raw-row retention semantics."
-      2: "`firegrid-runtime-process.*` governs runtime package placement, Effect Platform process discipline, scoped runtime lifetimes, and binary attachment through `DURABLE_STREAMS_URL`."
+      2: "`firegrid-runtime-process.*` governs runtime package placement, Effect Platform process discipline, scoped runtime lifetimes, and root host attachment through `DURABLE_STREAMS_BASE_URL`."
       3: "`firegrid-client-projection-api.*` governs browser-safe projection observation and prevents client surfaces from gaining claim, completion, terminal, or runtime authority."
       4:
         requirement: "`firegrid-execution-plane-resources.*` governs resource identity, secret references, materialization facts, and local-to-remote handoff constraints consumed by launch resource planes."

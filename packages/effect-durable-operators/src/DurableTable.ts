@@ -100,6 +100,10 @@ export interface LayerOptions {
   readonly txTimeoutMs?: number
 }
 
+export type DurableTableHeaders = Readonly<
+  Record<string, string | (() => string | Promise<string>)>
+>
+
 export interface CollectionFacade<Row extends object, Key> {
   readonly insert: (row: Row) => Effect.Effect<void, DurableTableError>
   readonly upsert: (row: Row) => Effect.Effect<void, DurableTableError>

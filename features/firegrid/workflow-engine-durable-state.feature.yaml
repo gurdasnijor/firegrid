@@ -11,6 +11,7 @@ components:
       3: Workflow definitions remain process-local and are re-registered before persisted executions are resumed.
       4: The Durable Streams workflow engine exposes a ClusterWorkflowEngine-shaped integration pattern with a `make` constructor and `layer` installer for the `WorkflowEngine` service.
       5: Executions, activities, deferred results, activity claims, and workflow clock wakeups are declared as a runtime-owned DurableTable rather than a custom workflow state store.
+      6: WorkflowEngineDurableStateOptions accepts DurableTable request headers and passes them through to the workflow engine DurableTable layer.
 
   VALIDATION:
     requirements:

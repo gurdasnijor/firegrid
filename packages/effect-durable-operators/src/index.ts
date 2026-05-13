@@ -8,6 +8,8 @@
  *     insert/upsert/delete/get/query/subscribe facades over createStreamDB.
  *   - DurableTable.primaryKey: a Schema.transform/annotation helper that pins
  *     a struct field's encoded form to string and marks it for AST discovery.
+ *   - DurableTableHeaders: shared request header passthrough type for table
+ *     layer auth configuration.
  *   - DurableTableError: the typed error for the table primitive.
  *
  * See docs/proposals/SDD_EFFECT_DURABLE_OPERATORS.md.
@@ -16,6 +18,7 @@
 export { DurableTable } from "./DurableTable.ts"
 export type {
   CollectionFacade as DurableTableCollectionFacade,
+  DurableTableHeaders,
   DurableTableService,
   DurableTableTagClass,
   LayerOptions as DurableTableLayerOptions,

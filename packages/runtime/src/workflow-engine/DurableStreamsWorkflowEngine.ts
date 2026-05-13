@@ -28,6 +28,7 @@ export const make = (
       table,
       options.streamUrl,
       options.workerId ?? `worker-${crypto.randomUUID()}`,
+      options.headers,
     )
   }).pipe(
     Effect.provide(WorkflowEngineTable.layer(workflowEngineTableLayerOptions(options))),
@@ -46,6 +47,7 @@ const layer = (
         table,
         options.streamUrl,
         options.workerId ?? `worker-${crypto.randomUUID()}`,
+        options.headers,
       )
       return Context.make(WorkflowEngineTable, table).pipe(
         Context.add(WorkflowEngine.WorkflowEngine, engine),

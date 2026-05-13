@@ -2,7 +2,7 @@ import { Workflow, WorkflowEngine } from "@effect/workflow"
 import { FetchHttpClient } from "@effect/platform"
 import type { Scope } from "effect"
 import { Duration, Effect, Fiber, Option, Schema } from "effect"
-import { DurableTableError } from "effect-durable-operators"
+import { DurableTableError, type DurableTableHeaders } from "effect-durable-operators"
 import { DurableStream } from "effect-durable-streams"
 import {
   decodeWorkflowResult,
@@ -27,6 +27,7 @@ export const makeWorkflowEngine = (
   table: WorkflowEngineTableService,
   streamUrl: string,
   workerId: string,
+  headers: DurableTableHeaders | undefined,
 ): Effect.Effect<WorkflowEngine.WorkflowEngine["Type"]> =>
   Effect.gen(function* () {
     const workflows = new Map<string, {
@@ -45,7 +46,10 @@ export const makeWorkflowEngine = (
       // workflow-engine-durable-state.RUNTIME_BOUNDARY.5
       // workflow-engine-durable-state.RUNTIME_BOUNDARY.6
       DurableStream.define({
-        endpoint: { url: streamUrl },
+        endpoint: {
+          url: streamUrl,
+          ...(headers !== undefined ? { headers } : {}),
+        },
         schema: Schema.Unknown,
       }).producer({
         producerId: `firegrid.workflow.activityClaim:${row.claimKey}`,

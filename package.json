@@ -14,6 +14,8 @@
     "effect:diagnostics": "sh -c 'status=0; for f in packages/*/tsconfig.json apps/*/tsconfig.json scenarios/*/tsconfig.json; do [ -f \"$f\" ] || continue; echo \"== $f ==\"; effect-language-service diagnostics --project \"$f\" --format text || status=$?; done; exit \"$status\"'",
     "effect:patch": "effect-language-service patch",
     "effect:unpatch": "effect-language-service unpatch",
+    "firegrid:host": "tsx src/index.ts",
+    "firegrid:host:env": "node --env-file-if-exists=.env --import tsx src/index.ts",
     "format": "eslint . --fix",
     "lint": "eslint . --max-warnings 0 && node scripts/effect-native-production-cutover-check.mjs",
     "lint:dead": "node scripts/knip-check-baseline.mjs",
@@ -39,17 +41,24 @@
     "typecheck": "turbo run typecheck",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:effect-quality && pnpm run lint:semgrep:test && pnpm run lint:semgrep && pnpm run test"
   },
+  "dependencies": {
+    "@effect/platform-node": "^0.106.0",
+    "@firegrid/runtime": "workspace:*",
+    "effect": "^3.18.0"
+  },
   "devDependencies": {
     "@effect/eslint-plugin": "^0.3.2",
     "@effect/language-service": "^0.85.1",
     "@eslint/js": "^10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",
+    "@durable-streams/server": "^0.3.1",
     "dependency-cruiser": "^17.4.0",
     "eslint": "^10.3.0",
     "globals": "^17.6.0",
     "jscpd": "^4.0.9",
     "knip": "^6.11.0",
     "ts-morph": "^28.0.0",
+    "tsx": "^4.20.4",
     "turbo": "^2.5.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.2"
