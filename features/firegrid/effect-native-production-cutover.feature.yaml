@@ -6,7 +6,10 @@ feature:
 components:
   RUNTIME_IO:
     requirements:
-      1: Production runtime output writes use the Effect-native Durable Streams producer or Sink API.
+      1:
+        requirement: Production runtime output writes use the Effect-native Durable Streams producer or Sink API.
+        deprecated: true
+      1-note: Deprecated. Runtime output is now table-shaped durable state and writes through RuntimeOutputTable generated facades.
       2: Production runtime ingress reads and writes use the Effect-native Durable Streams read, collect, append, or producer APIs.
       3: Production runtime workflow code does not depend on RuntimeCaptureJournal service tags.
       4: Production runtime host wiring does not provide RuntimeCaptureJournalLive, RuntimeIngressLive, or RuntimeIngressUnavailableLive.
@@ -27,7 +30,10 @@ components:
 
   CLIENT_APP:
     requirements:
-      1: Firegrid client snapshot reads use the Effect-native Durable Streams API.
+      1:
+        requirement: Firegrid client snapshot reads use the Effect-native Durable Streams API.
+        deprecated: true
+      1-note: Deprecated. Firegrid client snapshot reads use RuntimeOutputTable for runtime output rows.
       2: Flamecast durable stream usage does not import legacy Firegrid durable-streams log or producer helper subpaths.
       3: Scenario setup and assertions use the Effect-native Durable Streams API except for durable-streams test infrastructure.
 

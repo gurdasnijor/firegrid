@@ -1,13 +1,10 @@
-import { FetchHttpClient } from "@effect/platform"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   local,
   normalizeRuntimeIntent,
-  RuntimeJournalEventSchema,
-  type RuntimeJournalEvent,
+  RuntimeOutputTable,
 } from "@firegrid/protocol/launch"
 import { Effect, Either, Option } from "effect"
-import { DurableStream } from "effect-durable-streams"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   startRuntime,
@@ -56,23 +53,12 @@ const appendRuntimeContext = (
     Effect.scoped,
   ))
 
-const readDataPlane = async (
-  streamUrl: string,
-): Promise<ReadonlyArray<RuntimeJournalEvent>> => {
-  return await Effect.runPromise(DurableStream.define({
-    endpoint: { url: streamUrl },
-    schema: RuntimeJournalEventSchema,
-  }).collect.pipe(
-    Effect.provide(FetchHttpClient.layer),
-  ))
-}
-
 describe("durable launch tracer bullet 001", () => {
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.7 firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.5 journals child JSONL stdout events and stderr logs durably", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-launcher-${crypto.randomUUID()}`
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const dataPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtimeOutput`
+    const outputTableStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtimeOutput`
     const childCode = `
 console.log(JSON.stringify({
   type: "assistant",
@@ -111,24 +97,35 @@ console.error("diagnostic: child stderr")
 
     const retained = await Effect.runPromise(Effect.gen(function* () {
       const table = yield* RuntimeControlPlaneTable
-      const dataPlane = yield* Effect.promise(() => readDataPlane(dataPlaneStreamUrl))
+      const outputTable = yield* RuntimeOutputTable
       const context = yield* table.contexts.get(contextId)
       const runs = yield* table.runs.query((coll) =>
         coll.toArray.filter(event => event.contextId === contextId),
       )
+      const events = yield* outputTable.events.query((coll) =>
+        coll.toArray
+          .filter(event => event.contextId === contextId)
+          .sort((left, right) => left.sequence - right.sequence),
+      )
+      const logs = yield* outputTable.logs.query((coll) =>
+        coll.toArray.filter(log => log.contextId === contextId),
+      )
       return {
         context,
         runs,
-        events: dataPlane
-          .flatMap(event => event.type === "firegrid.runtime.output.stdout" ? [event.event] : [])
-          .sort((left, right) => left.sequence - right.sequence),
-        logs: dataPlane
-          .flatMap(event => event.type === "firegrid.runtime.output.stderr" ? [event.log] : []),
+        events,
+        logs,
       }
     }).pipe(
       Effect.provide(RuntimeControlPlaneTable.layer({
         streamOptions: {
           url: controlPlaneStreamUrl,
+          contentType: "application/json",
+        },
+      })),
+      Effect.provide(RuntimeOutputTable.layer({
+        streamOptions: {
+          url: outputTableStreamUrl,
           contentType: "application/json",
         },
       })),

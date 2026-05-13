@@ -2,6 +2,7 @@ export {
   AppendError,
   Firegrid,
   FiregridConfig,
+  FiregridConfigError,
   FiregridLive,
   LaunchInputError,
   PreloadError,

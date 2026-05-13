@@ -3,7 +3,7 @@
     "extendsErrorCount": 0,
     "processEnvOutsideBinCount": 0,
     "throwOutsideBinScriptCount": 2,
-    "forOfInPackageSourceCount": 23,
+    "forOfInPackageSourceCount": 18,
     "anyNoContextCastCount": 0,
     "nodeCryptoImportCount": 0,
     "dataTaggedErrorDeclarationCount": 12,

@@ -46,7 +46,10 @@ import {
   type StreamDBWithActions,
   type StreamStateDefinition,
 } from "@durable-streams/state"
-import type { Collection as TanStackCollection } from "@tanstack/db"
+import type {
+  ChangeMessage,
+  Collection as TanStackCollection,
+} from "@tanstack/db"
 import {
   Context,
   Effect,
@@ -445,6 +448,106 @@ const decodeRowForRead = <Row extends object>(
   return { ...stored, [collection.primaryKey]: decoded }
 }
 
+const decodeChangeForRead = <Row extends object>(
+  collection: CompiledCollection,
+  change: ChangeMessage<Row>,
+): ChangeMessage<Row> => ({
+  ...change,
+  value: decodeRowForRead(collection, change.value),
+  ...(change.previousValue === undefined
+    ? {}
+    : { previousValue: decodeRowForRead(collection, change.previousValue) }),
+})
+
+const makeReadableCollection = <Row extends object>(
+  collection: CompiledCollection,
+  tanstackCollection: TanStackCollection<Row, string>,
+): TanStackCollection<Row, string> => {
+  const overrides = {
+    get: (key: string) => {
+      const row = tanstackCollection.get(key)
+      return row === undefined ? undefined : decodeRowForRead(collection, row)
+    },
+    values: () =>
+      Array.from(
+        tanstackCollection.values(),
+        row => decodeRowForRead(collection, row),
+      ).values(),
+    entries: () =>
+      Array.from(
+        tanstackCollection.entries(),
+        ([key, row]): [string, Row] => [
+          key,
+          decodeRowForRead(collection, row),
+        ],
+      ).values(),
+    [Symbol.iterator]: () => overrides.entries(),
+    forEach: (
+      callbackfn: (value: Row, key: string, index: number) => void,
+    ) => {
+      tanstackCollection.forEach((row, key, index) => {
+        callbackfn(decodeRowForRead(collection, row), key, index)
+      })
+    },
+    map: <A>(
+      callbackfn: (value: Row, key: string, index: number) => A,
+    ) =>
+      tanstackCollection.map((row, key, index) =>
+        callbackfn(decodeRowForRead(collection, row), key, index)),
+    toArrayWhenReady: () =>
+      tanstackCollection.toArrayWhenReady().then(rows =>
+        rows.map(row => decodeRowForRead(collection, row))),
+    stateWhenReady: () =>
+      tanstackCollection.stateWhenReady().then(state =>
+        new Map(Array.from(
+          state,
+          ([key, row]): [string, Row] => [
+            key,
+            decodeRowForRead(collection, row),
+          ],
+        ))),
+    currentStateAsChanges: (
+      ...args: Parameters<TanStackCollection<Row, string>["currentStateAsChanges"]>
+    ) => {
+      const changes = tanstackCollection.currentStateAsChanges(...args)
+      return changes?.map(change => decodeChangeForRead(collection, change))
+    },
+    subscribeChanges: (
+      callback: Parameters<TanStackCollection<Row, string>["subscribeChanges"]>[0],
+      options?: Parameters<TanStackCollection<Row, string>["subscribeChanges"]>[1],
+    ) =>
+      tanstackCollection.subscribeChanges(
+        changes => callback(changes.map(change =>
+          decodeChangeForRead(collection, change))),
+        options,
+      ),
+  }
+
+  return new Proxy(tanstackCollection, {
+    get(target, property, receiver) {
+      if (property === "toArray") {
+        return target.toArray.map(row => decodeRowForRead(collection, row))
+      }
+      if (property === "state") {
+        return new Map(Array.from(
+          target.state,
+          ([key, row]): [string, Row] => [
+            key,
+            decodeRowForRead(collection, row),
+          ],
+        ))
+      }
+      if (property in overrides) {
+        return overrides[property as keyof typeof overrides]
+      }
+      const value = Reflect.get(target, property, receiver) as unknown
+      if (typeof value !== "function") return value
+      const bound: unknown = value.bind(target)
+      return bound
+    },
+  })
+}
+
 const makeFacade = <Row extends object, Key>(options: {
   readonly tableName: string
   readonly collection: CompiledCollection
@@ -454,6 +557,7 @@ const makeFacade = <Row extends object, Key>(options: {
   const { collection, tanstackCollection, tableName, actions } = options
   const encodeKey = (key: unknown): string =>
     requireString(collection, collection.encodePrimaryKey(key))
+  const readableCollection = makeReadableCollection(collection, tanstackCollection)
   return {
     insert: (row) =>
       runAction(
@@ -489,7 +593,7 @@ const makeFacade = <Row extends object, Key>(options: {
       }),
     query: (build) =>
       Effect.try({
-        try: () => build(tanstackCollection),
+        try: () => build(readableCollection),
         catch: (cause) => new DurableTableError({ table: tableName, cause }),
       }),
     subscribe: <A>(
@@ -501,7 +605,7 @@ const makeFacade = <Row extends object, Key>(options: {
       Stream.async<A, DurableTableError>((emit) => {
         let unsubscribe: (() => void) | undefined
         try {
-          unsubscribe = subscribe(tanstackCollection, (value) => {
+          unsubscribe = subscribe(readableCollection, (value) => {
             void emit.single(value)
           })
         } catch (cause) {

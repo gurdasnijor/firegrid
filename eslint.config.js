@@ -39,6 +39,8 @@ const effectDebtGuardrails = [
 ]
 
 const restrictedInternalPackage = (name, message) => ({ name, message })
+const productImplementationDurableTableMessage =
+  "Consume declared DurableTable services; do not import the operators package in product implementation code."
 const legacyDurableAgentSubstrateImportPatterns = [
   {
     group: [
@@ -736,6 +738,10 @@ export default tseslint.config(
               "@firegrid/types",
               "Client should reuse substrate-owned schemas directly.",
             ),
+            restrictedInternalPackage(
+              "effect-durable-operators",
+              productImplementationDurableTableMessage,
+            ),
           ],
           patterns: [
             ...legacyDurableAgentSubstrateImportPatterns,
@@ -844,6 +850,30 @@ export default tseslint.config(
               message:
                 "firegrid-architecture-boundary.DEPENDENCY_GRAPH.6: reusable packages must not import workspace apps.",
             },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      "packages/runtime/src/runtime-host/**/*.ts",
+      "packages/runtime/src/providers/**/*.ts",
+      "packages/runtime/src/runtime-ingress/**/*.ts",
+    ],
+    ignores: [
+      "packages/**/src/__tests__/**/*.ts",
+      "packages/**/*.test.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            restrictedInternalPackage(
+              "effect-durable-operators",
+              productImplementationDurableTableMessage,
+            ),
           ],
         },
       ],

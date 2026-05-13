@@ -1,13 +1,9 @@
 # 012: Runtime Ingress Event Stream
 
-> **Historical note (as of tracer 017, PR #158):** the
-> `firegrid.runtime_ingress.accepted` row family referenced below has
-> been deleted. Runtime input delivery progress now lives in a
-> separate `effect-durable-operators.ConsumerCheckpointStore`-backed
-> `inputCheckpoints` stream (see
-> `docs/tracers/017-effect-durable-operators.md`). This tracer's prose
-> is preserved for historical record; the `runtime_ingress.requested`
-> public input fact remains valid.
+> **Historical note:** post-PR #166/#167 cleanup moved runtime ingress onto
+> `RuntimeIngressTable` and local-process provider subscription. There is no
+> standalone runtime-ingress delivery module, checkpoint service, polling
+> sequencer, or raw ingress stream in the runtime package.
 
 ## Objective
 
@@ -21,10 +17,10 @@ client or workflow ingress intent
   -> runtime adapter consumes ingress by runtime context
   -> adapter translates to provider-specific stdin/ACP/chat protocol
   -> delivery progress is durable
-  -> runtime output remains the separate durable response journal
+  -> runtime output remains the separate durable response table
 ```
 
-This is the input-side counterpart to tracer 001's runtime-output journaling.
+This is the input-side counterpart to tracer 001's runtime-output table rows.
 Without this tracer, Firegrid has durable output but no coherent durable input
 model beyond "whatever the local command happened to start with."
 
@@ -54,12 +50,10 @@ Current runtime execution starts from a runtime context and sandbox command:
 
 ```txt
 packages/runtime/src/runtime-host/index.ts
-packages/runtime/src/runtime-context/workflow.ts
 packages/runtime/src/providers/sandboxes/**
-packages/runtime/src/runtime-output/writer.ts
 ```
 
-Tracer 001 proves stdout/stderr become durable runtime-output facts. It does
+Tracer 001 proves stdout/stderr become durable runtime output rows. It does
 not prove a durable input stream or follow-up prompt path.
 
 Relevant ACIDs:
@@ -110,13 +104,11 @@ Minimum durable records:
 runtime_ingress.requested
 ```
 
-> **Updated post-tracer-017:** the original tracer prescribed a sibling
+> **Updated post-PR #167:** the original tracer prescribed a sibling
 > `runtime_ingress.accepted` row family for "subscriber progress for
-> accepted-for-dispatch input." That row family was deleted in tracer
-> 017. The authority-boundary requirement — *delivery progress must
-> not live only in a process-local variable* — is still in force, but
-> the substrate is now a separate `effect-durable-operators.ConsumerCheckpointStore`-backed
-> durable stream rather than a sibling row on the same stream.
+> accepted-for-dispatch input." Delivery progress now lives in the
+> `RuntimeIngressTable.deliveries` collection, and local-process stdin delivery
+> is driven from the provider-owned table subscription.
 
 The requested row should include at least:
 
@@ -193,7 +185,7 @@ The scenario should prove:
 append prompt input
   -> runtime adapter consumes it
   -> adapter writes it to the live provider protocol
-  -> provider output is captured in runtime-output journal
+  -> provider output is captured in RuntimeOutputTable
   -> duplicate prompt append with same idempotency key is not delivered twice
 ```
 
@@ -220,7 +212,6 @@ Primary:
 ```txt
 packages/runtime/src/runtime-ingress/**
 packages/runtime/src/runtime-host/**
-packages/runtime/src/runtime-context/**
 packages/runtime/src/index.ts
 features/firegrid/firegrid-agent-ingress.feature.yaml
 scenarios/firegrid/src/tracer-012*.test.ts
@@ -230,7 +221,7 @@ Likely integration touch:
 
 ```txt
 packages/runtime/src/providers/sandboxes/**
-packages/runtime/src/runtime-output/**
+packages/runtime/src/runtime-host/index.ts
 ```
 
 Avoid:
@@ -304,12 +295,10 @@ pnpm run lint:effect-quality
 
 - Current runtime host root:
   `packages/runtime/src/runtime-host/index.ts`
-- Current runtime workflow:
-  `packages/runtime/src/runtime-context/workflow.ts`
 - Current sandbox provider surface:
   `packages/runtime/src/providers/sandboxes/**`
-- Current runtime output writer:
-  `packages/runtime/src/runtime-output/writer.ts`
+- Current sandbox process/output path:
+  `packages/runtime/src/runtime-host/index.ts`
 - Durable Streams substrate wrapper:
   `packages/durable-streams/src/DurableStreamLog.ts`
 - ACP TypeScript stream reference:

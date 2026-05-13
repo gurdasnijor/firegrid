@@ -127,13 +127,12 @@ Graph reading summary:
 - `@firegrid/runtime` owns provider contracts under
   `packages/runtime/src/providers/**`; there are no runtime imports from
   separate sandbox provider packages.
-- The client graph shows `packages/client/src/firegrid.ts` importing the
-  `@firegrid/durable-streams` package root. Because the root re-exports
-  workflow-engine, producer, state, and log helpers, the graph expands from
-  client to several substrate modules. This is the clearest surprising edge.
+- The client graph shows `packages/client/src/firegrid.ts` importing protocol
+  table declarations and generated DurableTable facades rather than runtime
+  package code or raw durable-stream helpers.
 - The runtime detail graph shows expected internal coupling between
-  `runtime-context/workflow.ts`,
-  `runtime-output/writer.ts`, and `runtime-host/index.ts`.
+  `runtime-host/index.ts`, provider-owned sandbox streams, and sandbox
+  providers.
 - The runtime control/data graph script now tracks the runtime-context,
   runtime-output, materialization, and providers namespaces. Its artifact name
   remains historical until the graph scripts are renamed.
@@ -234,23 +233,28 @@ Lane B moved runtime context out of the stale `control-plane` directory. The
 remaining follow-up is only whether future host/program namespaces should be
 split further as runtime host configuration grows.
 
-### Runtime Output Journal
+### Runtime Output Rows
 
 Runtime stdout/stderr capture lives under:
 
 ```txt
-packages/runtime/src/runtime-output/writer.ts
+packages/runtime/src/runtime-host/index.ts
+packages/runtime/src/providers/sandboxes/process-stream.ts
 packages/protocol/src/launch/schema.ts
+packages/protocol/src/launch/table.ts
 ```
 
-The writer appends schema-validated raw runtime journal events through
-`openDurableStreamProducer`. It does not emit State Protocol changes for output
-facts. This aligns with:
+The runtime host consumes provider stdout/stderr chunks and writes
+schema-validated rows directly through `RuntimeOutputTable.events` and
+`RuntimeOutputTable.logs`. Provider code owns sandbox acquire/stream/release and
+does not import runtime output tables. There is no runtime-output writer service
+or raw producer journal in the runtime package. This aligns with:
 
 - `firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.1`
 - `firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.2`
 - `firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.3`
 - `firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.6`
+- `firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.7`
 - `firegrid-durable-launch-runtime-operator.STREAM_TRUTH_BOUNDARY.2`
 
 Current gap: runtime input/agent ingress is not symmetric with runtime output.
@@ -371,7 +375,7 @@ and Durable Streams State descriptor design.
 - public launch input decode/normalization;
 - app-facing `Firegrid.launch(...)`;
 - app-facing `Firegrid.open(contextId).snapshot`;
-- retained snapshot reads across control plane and runtime-output journal.
+- retained snapshot reads across control-plane rows and RuntimeOutputTable rows.
 
 `@firegrid/client` does not import runtime code. The main client concern is its
 broad root import from `@firegrid/durable-streams`.
@@ -533,7 +537,6 @@ Scenario files present:
 - `scenarios/firegrid/src/tracer-001.test.ts`
 - `scenarios/firegrid/src/tracer-002.test.ts`
 - `scenarios/firegrid/src/tracer-007.test.ts`
-- `scenarios/firegrid/src/tracer-009.test.ts`
 - `scenarios/firegrid/src/tracer-011.test.ts`
 
 Confirmed production-surface proofs:
@@ -630,11 +633,10 @@ Runtime graph:
 
 The runtime graph shows expected orchestration:
 
-- `runtime-host/index.ts` depends on runtime context workflow/service,
-  runtime-output writer, Durable Streams workflow engine, and sandbox local
-  process provider.
-- `runtime-context/workflow.ts` depends on the runtime provider sandbox
-  contract and runtime-output writer.
+- `runtime-host/index.ts` owns runtime host layer construction, context lookup,
+  run status rows, RuntimeOutputTable writes, and ingress appends.
+- `providers/sandboxes/process-stream.ts` owns sandbox acquire/stream/release
+  handling and returns provider process chunks.
 - materialization is internally cohesive but large; the detail graph is noisy
   because old `event-pipeline`, strategy, sink, provider, and projection target
   vocabulary coexist.

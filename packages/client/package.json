@@ -20,18 +20,14 @@
   "scripts": {
     "build": "tsc",
     "check": "pnpm run typecheck && pnpm run test",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/platform": "^0.96.0",
     "@firegrid/protocol": "workspace:*",
-    "effect": "^3.18.0",
-    "effect-durable-operators": "workspace:*",
-    "effect-durable-streams": "workspace:*"
+    "effect": "^3.18.0"
   },
   "devDependencies": {
-    "@durable-streams/server": "^0.3.1",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   }

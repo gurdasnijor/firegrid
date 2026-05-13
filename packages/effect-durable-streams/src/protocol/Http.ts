@@ -138,9 +138,7 @@ const parseRetryAfter = (raw: string | undefined): number | undefined => {
 // schedule forever every 3s. That's not what "exponential capped at 3s,
 // 4 retries" means.
 const defaultRetrySchedule = Schedule.exponential("100 millis").pipe(
-  // eslint-disable-next-line local/no-fixed-polling -- spaced is a per-step cap on exponential, not durable-runtime polling.
   Schedule.either(Schedule.spaced("3 seconds")),
-  // eslint-disable-next-line local/no-fixed-polling -- recurs is a retry count, not durable-runtime polling.
   Schedule.intersect(Schedule.recurs(4)),
 )
 

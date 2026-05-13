@@ -102,25 +102,13 @@ importers:
 
   packages/client:
     dependencies:
-      '@effect/platform':
-        specifier: ^0.96.0
-        version: 0.96.1(effect@3.21.2)
       '@firegrid/protocol':
         specifier: workspace:*
         version: link:../protocol
       effect:
         specifier: ^3.18.0
         version: 3.21.2
-      effect-durable-operators:
-        specifier: workspace:*
-        version: link:../effect-durable-operators
-      effect-durable-streams:
-        specifier: workspace:*
-        version: link:../effect-durable-streams
     devDependencies:
-      '@durable-streams/server':
-        specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

@@ -58,5 +58,6 @@ Current validation is protocol-level only:
 pnpm --filter @firegrid/protocol run test -- required-action
 ```
 
-The scenario file `scenarios/firegrid/src/tracer-009.test.ts` is skipped as a
-historical marker.
+The historical `scenarios/firegrid/src/tracer-009.test.ts` placeholder was
+removed after PR #166. Reintroduce a scenario only when generic wait/operator
+tooling owns a current production surface.

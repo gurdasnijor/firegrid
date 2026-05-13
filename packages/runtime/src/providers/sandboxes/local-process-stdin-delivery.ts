@@ -1,7 +1,7 @@
 /**
  * Local-process sandbox stdin delivery.
  *
- * Reads sequenced RuntimeIngressTable input rows for a given
+ * Subscribes to sequenced RuntimeIngressTable input rows for a given
  * `(contextId, subscriberId)` and translates them into encoded stdin chunks
  * for the local-process sandbox. Per-key delivery progress is recorded in the
  * same RuntimeIngressTable deliveries collection.
@@ -20,14 +20,19 @@
  *  - firegrid-agent-ingress.DELIVERY.1
  *  - firegrid-agent-ingress.DELIVERY.2
  *  - firegrid-agent-ingress.DELIVERY.3 — claim row is durable.
- *  - firegrid-agent-ingress.DELIVERY.5 — host-owned stream loop.
+ *  - firegrid-agent-ingress.DELIVERY.5 — provider-owned table subscription.
  */
 
 import {
   RuntimeIngressTable,
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Schema, Stream } from "effect"
+
+const nowIso = Clock.currentTimeMillis.pipe(
+  Effect.map(millis => new Date(millis).toISOString()),
+)
+
 export class LocalProcessStdinDeliveryError extends Schema.TaggedError<LocalProcessStdinDeliveryError>()(
   "LocalProcessStdinDeliveryError",
   {
@@ -112,6 +117,70 @@ interface LocalProcessStdinDeliveryOptions {
  * downstream. The `awaitTxId` step is intentional — do not remove it as
  * redundant.
  */
+const mapDeliveryError = (
+  options: LocalProcessStdinDeliveryOptions,
+) => (cause: unknown): LocalProcessStdinDeliveryError => {
+  if (
+    typeof cause === "object" &&
+    cause !== null &&
+    "_tag" in cause
+  ) {
+    const tag = (cause as { _tag: string })._tag
+    if (tag === "LocalProcessStdinDeliveryError") {
+      return cause as LocalProcessStdinDeliveryError
+    }
+    if (tag === "DurableTableError") {
+      return localProcessStdinDeliveryError(
+        "delivery-write",
+        "runtime input delivery table failure",
+        options.contextId,
+        undefined,
+        cause,
+      )
+    }
+  }
+  return localProcessStdinDeliveryError(
+    "delivery",
+    "runtime input stdin delivery failure",
+    options.contextId,
+    undefined,
+    cause,
+  )
+}
+
+const sequencedInputRows = (
+  table: RuntimeIngressTable["Type"],
+  contextId: string,
+): Stream.Stream<RuntimeIngressInputRow, LocalProcessStdinDeliveryError> =>
+  table.inputs.subscribe<RuntimeIngressInputRow>((coll, emit) => {
+    const sub = coll.subscribeChanges(
+      (changes) => {
+        const rows = changes
+          .flatMap(change => change.value === undefined || change.value === null ? [] : [change.value])
+          .filter(row =>
+            row.contextId === contextId &&
+            row.status === "sequenced" &&
+            row.sequence !== undefined,
+          )
+          .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
+        for (const row of rows) {
+          emit(row)
+        }
+      },
+      { includeInitialState: true },
+    )
+    return () => sub.unsubscribe()
+  }).pipe(
+    Stream.mapError(cause =>
+      localProcessStdinDeliveryError(
+        "delivery-subscribe",
+        "runtime input delivery subscription failure",
+        contextId,
+        undefined,
+        cause,
+      )),
+  )
+
 export const localProcessStdinDelivery = (
   options: LocalProcessStdinDeliveryOptions,
 ): Stream.Stream<
@@ -119,81 +188,45 @@ export const localProcessStdinDelivery = (
   LocalProcessStdinDeliveryError,
   RuntimeIngressTable
 > => {
-  const stream = Stream.repeatEffect(
-    Effect.gen(function* () {
-      const table = yield* RuntimeIngressTable
-      const candidates = yield* table.inputs.query((coll) =>
-        coll.toArray
-          .filter(row =>
-            row.contextId === options.contextId &&
-            row.status === "sequenced" &&
-            row.sequence !== undefined,
-          )
-          .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0)),
-      )
-      for (const row of candidates) {
-        const key = {
-          subscriberId: options.subscriberId,
-          inputId: row.inputId,
-        }
-        const existing = yield* table.deliveries.get(key)
-        if (
-          Option.isSome(existing) &&
-          existing.value.claimedAt !== undefined
-        ) {
-          continue
-        }
+  const stream = Stream.unwrap(
+    Effect.map(RuntimeIngressTable, table =>
+      sequencedInputRows(table, options.contextId).pipe(
+        Stream.mapEffect(row =>
+          Effect.gen(function* () {
+            const key = {
+              subscriberId: options.subscriberId,
+              inputId: row.inputId,
+            }
+            const existing = yield* table.deliveries.get(key)
+            if (
+              Option.isSome(existing) &&
+              existing.value.claimedAt !== undefined
+            ) {
+              return Option.none<Uint8Array>()
+            }
 
-        yield* table.deliveries.upsert({
-          key,
-          inputId: row.inputId,
-          contextId: row.contextId,
-          subscriberId: options.subscriberId,
-          claimedAt: new Date().toISOString(),
-        })
+            const claimedAt = yield* nowIso
+            yield* table.deliveries.upsert({
+              key,
+              inputId: row.inputId,
+              contextId: row.contextId,
+              subscriberId: options.subscriberId,
+              claimedAt,
+            })
 
-        if (options.onClaimedBeforeEmit !== undefined) {
-          yield* options.onClaimedBeforeEmit(row)
-        }
+            if (options.onClaimedBeforeEmit !== undefined) {
+              yield* options.onClaimedBeforeEmit(row)
+            }
 
-        return Option.some(
-          encoder.encode(`${providerInputFromIngress(row)}\n`),
-        )
-      }
-      yield* Effect.sleep("25 millis")
-      return Option.none<Uint8Array>()
-    }).pipe(
-      Effect.mapError((cause): LocalProcessStdinDeliveryError => {
-        if (
-          typeof cause === "object" &&
-          cause !== null &&
-          "_tag" in cause
-        ) {
-          const tag = (cause as { _tag: string })._tag
-          if (tag === "LocalProcessStdinDeliveryError") {
-            return cause as LocalProcessStdinDeliveryError
-          }
-          if (tag === "DurableTableError") {
-            return localProcessStdinDeliveryError(
-              "delivery-write",
-              "runtime input delivery table failure",
-              options.contextId,
-              undefined,
-              cause,
+            return Option.some(
+              encoder.encode(`${providerInputFromIngress(row)}\n`),
             )
-          }
-        }
-        return localProcessStdinDeliveryError(
-          "delivery",
-          "runtime input stdin delivery failure",
-          options.contextId,
-          undefined,
-          cause,
-        )
-      }),
+          }).pipe(
+            Effect.mapError(mapDeliveryError(options)),
+          )),
+        Stream.filterMap(value => value),
+      ),
     ),
-  ).pipe(
-    Stream.filterMap((value) => value),
   )
   return stream as Stream.Stream<
     Uint8Array,

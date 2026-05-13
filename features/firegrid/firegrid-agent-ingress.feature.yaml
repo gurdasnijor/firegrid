@@ -17,16 +17,19 @@ components:
         deprecated: true
       7-note: Deprecated because runtime ingress is modeled as `firegrid.runtimeIngress.inputs` table rows, not raw `runtime_ingress.requested` facts.
       8: Runtime ingress table schemas, public prompt schemas, deterministic id derivation, and trusted row construction live in one shared protocol module rather than split ids/rows wrapper modules.
-      9: Runtime ingress writers create pending input rows with deterministic input ids for idempotency and do not assign delivery sequence.
-      10: Runtime ingress sequencing flips pending inputs to sequenced rows with per-context sequence numbers before providers deliver them.
+      9: Runtime ingress writers create input rows with deterministic input ids for idempotency and explicit per-context sequence numbers at write time under a single-writer-per-context contract.
+      10:
+        requirement: Runtime ingress sequencing flips pending inputs to sequenced rows with per-context sequence numbers before providers deliver them.
+        deprecated: true
+      10-note: Deprecated because the standalone polling sequencer was removed; live ingress writers assign explicit sequence at the durable table write boundary.
 
   DELIVERY:
     requirements:
       1: Runtime providers consume sequenced durable ingress table rows and translate them to provider-specific input protocols only at the live adapter boundary.
       2: Provider-specific stdin, ACP, Claude, chat, or tool protocol payloads are not the durable ingress authority.
       3: Input delivery or consumption progress is recorded in the runtime ingress DurableTable deliveries collection so restart/retry behavior does not depend on process-local cursors.
-      4: Runtime output remains a separate durable journal; runtime ingress does not directly define session, transcript, or message projection schemas.
-      5: Provider-visible input delivery is driven by a runtime-host-owned table loop that reads sequenced durable input rows, writes a delivery claim before provider emission, and does not use raw stream reducers or checkpoint services.
+      4: Runtime output remains a separate durable table surface; runtime ingress does not directly define session, transcript, or message projection schemas.
+      5: Provider-visible input delivery is driven by provider-owned RuntimeIngressTable subscriptions that read sequenced durable input rows, write a delivery claim before provider emission, and do not use raw stream reducers, polling sequencers, or checkpoint services.
 
   HOST:
     requirements:
