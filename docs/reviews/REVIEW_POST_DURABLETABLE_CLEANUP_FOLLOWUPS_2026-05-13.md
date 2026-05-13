@@ -121,6 +121,32 @@ migration naturally makes the fix trivial.
 
 These belong in focused operators-package PRs.
 
+### DurableTable read surface is over-wide
+
+Current shape:
+
+- durable reads expose `get`
+- collection callbacks expose `query`
+- subscription callbacks expose `subscribe`
+- React/live-query consumers also need `.collection`
+
+The overlap is real: `query(coll => coll.toArray)` and
+`collection.toArray` are the same read capability, and most subscription
+call sites immediately reach for `collection.subscribeChanges`.
+
+Target:
+
+- decide whether `DurableTable` should expose TanStack's collection
+  surface directly or hide it behind Effect-shaped read helpers
+- do not keep both surfaces long-term unless there is a concrete caller
+  that needs both
+- if `.collection` remains, prefer a typed read-only subset over a
+  runtime Proxy when that preserves the React/live-query use case
+
+Do not fold this into the durable-concurrency primitive PR. It is a
+surface-area simplification in `effect-durable-operators`, independent
+from `insertIfAbsent`.
+
 ### Composite-key `.get` miss
 
 Tracked in:
@@ -154,6 +180,21 @@ error when a primary-key field does not encode to a string.
 and `onError` for the provider lifetime. Dynamic config changes require a
 React remount. Document that in the React subpath docs.
 
+### React bindings package boundary
+
+The React bindings currently live in `effect-durable-operators/react` with
+optional React / TanStack React peer dependencies. That is acceptable while
+Flamecast is the only consumer, but it is an integration boundary rather
+than the core durable table primitive.
+
+Target:
+
+- keep the current subpath until there is a second UI consumer or a package
+  publishing concern
+- if the binding grows, split it into a small React integration package
+  rather than adding more framework-specific subpaths to
+  `effect-durable-operators`
+
 ## Separate Workflow / Effect Follow-ups
 
 ### `DurableDeferred.raceAll` typing helper
@@ -174,10 +215,70 @@ Tests still use some async `it` + `Effect.runPromise` patterns because the
 Effect version bump was intentionally deferred. Migrate when `effect` /
 `@effect/workflow` / `@effect/vitest` are bumped together.
 
+## Runtime Surface-Area Follow-ups
+
+### Shared stream configuration
+
+Runtime layers still pass derived stream URLs around directly. That leaks
+table namespace details into host composition and makes URL/header
+construction drift-prone.
+
+Target:
+
+- introduce one runtime-owned configuration service for Durable Streams base
+  URL, namespace, and headers
+- let each table/engine layer derive its own stream URL from that service
+  and its own table namespace
+- do not add a new top-level package for this; keep it in runtime/root
+  composition
+
+### Runtime host entrypoint matrix
+
+There are still separate workflow / no-workflow and config / explicit-option
+entrypoints. If every production host now runs the workflow engine, collapse
+the no-workflow variants instead of maintaining a matrix that tests rarely
+exercise.
+
+Target:
+
+- keep the smallest production composition surface
+- remove standalone `make` helpers that no production code calls
+- keep test-only composition local to tests rather than public runtime API
+
+### Runtime ingress delivery rows in protocol
+
+`RuntimeIngressTable.inputs` is a protocol/client-runtime contract.
+`RuntimeIngressTable.deliveries` is provider delivery policy. It currently
+lives in protocol because it shares the ingress table stream.
+
+Target:
+
+- either move delivery rows to a runtime-private table when the extra stream
+  cost is acceptable; or
+- explicitly document this as a protocol boundary exception because delivery
+  rows need to share ordering / retention with ingress inputs
+
+Do not silently add more runtime-private collections to protocol.
+
+### Test harness duplication
+
+Several packages own small variants of "start a Durable Streams test server,
+mint a stream URL, provide platform layers, inspect a table". Consolidation
+may be useful once there is a third durable-tools consumer, but a shared
+test package should not hide product composition or reintroduce
+test-shaped abstractions as public API.
+
+Target:
+
+- prefer product-shaped tests first
+- consolidate only duplicated server lifecycle mechanics
+- no helper should pre-create streams behind a URL-minting API
+
 ## Lower-Priority Audits
 
 - Measure whether the `DurableTable.collection` Proxy is materially costly in
-  hot read/query paths before replacing it with a non-Proxy decoded view.
+  hot read/query paths before replacing it with a typed read-only subset or
+  non-Proxy decoded view.
 - Audit `effect-durable-streams.tail`; if only tests use it, either mark it
   experimental or retire it.
 
@@ -186,9 +287,13 @@ Effect version bump was intentionally deferred. Migrate when `effect` /
 1. Root-cause composite-key `.get`.
 2. Land `insertIfAbsent` with real server-side conditional append semantics.
 3. Implement `DurableClaim` and migrate activity claims + stdin delivery.
-4. Replace synchronous `Effect.runSync(Effect.fail(...))` boundary throws with
+4. Keep the durable-concurrency proposal to `DurableClaim` and
+   `DurableKeyedMutex`; durable semaphore variants need future concrete
+   call sites.
+5. Replace synchronous `Effect.runSync(Effect.fail(...))` boundary throws with
    direct throws.
-5. Wire `DurableToolsWaitForLive` and the workflow clock driver into runtime
+6. Rationalize the `DurableTable` read surface (`collection` vs
+   `query`/`subscribe`) in a focused operators PR.
+7. Wire `DurableToolsWaitForLive` and the workflow clock driver into runtime
    host composition.
-6. Fix stdin cold-start ordering before any multi-host rollout.
-
+8. Fix stdin cold-start ordering before any multi-host rollout.

@@ -118,16 +118,13 @@ primitives map to this SDD:
 |---|---|---|
 | Cross-host mutual exclusion: "one host runs each contextId" | `DurableKeyedMutex<contextId>` | The load-bearing dispatcher fence. Mutex-shaped (no capacity knob, one holder per key, release on entry-effect exit). Replaces the explicit `claims` / `claimOutcomes` row design described in earlier drafts of this SDD. |
 | Per-host process budget: "this host runs at most N concurrent contexts" | In-memory `Semaphore(N)` | In-process throttling. Doesn't need to be durable — only this host process consults it. |
-| Cluster-wide process budget (optional, future): "this Firegrid environment runs at most M concurrent contexts" | `DurableSemaphore` | Optional. Useful if external resource constraints (sandbox quotas, license limits) require a cluster-wide bound. Not blocking on. |
-| Cluster-wide fairness across workflows or capability classes (optional, future) | `DurablePartitionedSemaphore<workflowName>` or `<capabilityClass>` | Optional fairness layer on top of the cluster budget. "No single workflow monopolizes the host pool." Not blocking on. |
 | In-process duplicate suppression: "don't launch this contextId twice in this host process" | Optional `Set<contextId>` or per-key in-process latch | Belt-and-braces. The durable mutex is the load-bearing fence; the in-process guard is redundant correctness insurance for the same host process. |
 
 `DurableKeyedMutex<contextId>` is the **only required new primitive** for
-this dispatcher to be correct. The `DurableSemaphore` and
-`DurablePartitionedSemaphore` lines are documented here so the dispatcher
-SDD doesn't quietly bake in unbounded host concurrency assumptions — if
-product pressure introduces those layers later, they slot in at the
-documented seams.
+this dispatcher to be correct. Cluster-wide process budgets and fairness
+are deliberately out of this SDD until a product call site justifies a
+separate durable semaphore / fairness proposal. The dispatcher should use
+plain in-memory `Semaphore` for per-host process limits in the meantime.
 
 This SDD is the **first declared customer** of `DurableKeyedMutex`. The
 Flamecast toy host's in-process `Set<contextId>` becomes the second
@@ -439,18 +436,20 @@ Sequenced to land the durable-concurrency primitives once (in
 2. **Substrate primitive**: implement `DurableTable.insertIfAbsent` in
    `effect-durable-operators`. New spec ACID under
    `effect-durable-operators.TABLE.*`. Spec + impl PR.
-3. **Concurrency primitives**: implement `DurableKeyedMutex<K>` (the
-   required one for this SDD) plus optional `DurableSemaphore` and
-   `DurablePartitionedSemaphore<K>` in `effect-durable-operators`. New
-   feature spec or extension to `effect-durable-operators.feature.yaml`.
-4. **Migrate existing claim sites** to `DurableKeyedMutex` as a single
-   PR that proves the API against three real consumers:
+3. **Concurrency primitives**: implement `DurableClaim<K>` and
+   `DurableKeyedMutex<K>` in `effect-durable-operators`. New feature
+   spec or extension to `effect-durable-operators.feature.yaml`.
+4. **Migrate existing claim sites** to the appropriate primitive as a
+   single PR that proves the APIs against three real consumers:
    - Workflow activity claims
      (`packages/runtime/src/workflow-engine/internal/engine-runtime.ts:42-105`)
+     migrate to `DurableClaim`.
    - Runtime ingress stdin delivery
      (`packages/runtime/src/providers/sandboxes/local-process-stdin-delivery.ts`)
+     migrates to `DurableClaim`.
    - Flamecast toy host duplicate-suppression
      (`apps/flamecast/src/runtime/host.ts:35-54`)
+     migrates to `DurableKeyedMutex`.
 5. **Add `RuntimeHostTable` declarations** and a docs-backed feature
    spec for host descriptors, heartbeats, and host events. Note: the
    claims / claimOutcomes collections proposed in earlier drafts of this
@@ -508,4 +507,3 @@ fourth consumer, with the primitives already battle-tested.
   internal to `DurableKeyedMutex` and are not part of the dispatcher's row
   ownership at all. See the "own stream" recommendation above for where the
   mutex's backing stream lives.
-

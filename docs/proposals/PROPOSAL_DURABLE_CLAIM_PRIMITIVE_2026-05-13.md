@@ -11,33 +11,30 @@ coordinator review).
   currently forbids the fenced primitive these designs assume; this
   proposal recommends amending it.
 - Effect upstream:
-  [`Semaphore`](https://github.com/Effect-TS/effect/blob/main/packages/effect/src/Semaphore.ts),
-  [`PartitionedSemaphore`](https://github.com/Effect-TS/effect/blob/main/packages/effect/src/PartitionedSemaphore.ts).
+  [`Semaphore`](https://github.com/Effect-TS/effect/blob/main/packages/effect/src/Semaphore.ts).
 
 ## Summary
 
-Implement durable analogs of Effect's concurrency primitives, backed by the
-Firegrid durable substrate (`DurableTable` for state, a Durable Streams
-server-side conditional append for the cross-host fence). The public types
-are **interface-compatible** with the existing Effect primitives where the
-semantics match; new primitives are introduced only where existing
-interfaces don't fit.
+Implement the two durable concurrency primitives that have concrete
+day-one customers, backed by the Firegrid durable substrate (`DurableTable`
+for state, a Durable Streams server-side conditional append for the
+cross-host fence).
 
-Four primitives, in increasing order of distance from existing Effect
-contracts:
+The current proposal intentionally does **not** include durable semaphore
+variants. A `DurableSemaphore` or `DurablePartitionedSemaphore` may be
+useful later for cluster-wide budgets or fairness, but neither has a
+day-one product call site. They should be proposed when a real consumer
+defines the required capacity/fairness semantics.
 
-1. **`DurableSemaphore`** — implements Effect's `Semaphore` interface.
-   Total durable permit budget shared across all callers.
-2. **`DurablePartitionedSemaphore<K>`** — implements Effect's
-   `PartitionedSemaphore<K>` interface. Total durable budget, round-robin
-   fair across partition keys.
-3. **`DurableClaim<K>`** — new primitive. **Write-once,
-   never-released** claim-before-side-effect checkpoint. The AtMostOnce
-   pattern that scope-bound locks intentionally don't provide.
-4. **`DurableKeyedMutex<K>`** — new primitive. Scope-bound mutual
-   exclusion: one holder per key, release-on-exit. The
-   mutual-exclusion-with-release pattern that survives process death only
-   when paired with a separate stale-holder policy.
+Two primitives:
+
+1. **`DurableClaim<K>`** — **write-once, never-released**
+   claim-before-side-effect checkpoint. The AtMostOnce pattern that
+   scope-bound locks intentionally don't provide.
+2. **`DurableKeyedMutex<K>`** — scope-bound mutual exclusion: one holder
+   per key, release-on-exit. The mutual-exclusion-with-release pattern
+   that survives process death only when paired with a separate
+   stale-holder policy.
 
 **The split between `DurableClaim` and `DurableKeyedMutex` is
 load-bearing.** Release-on-exit mutual exclusion is *not* the same as a
@@ -63,101 +60,25 @@ The two primitives are designed together because they share the same
 underlying fence and the same set of stream/schema concerns; they are
 **not** type-compatible interchangeably.
 
-## Why the interface compatibility matters
+## Why these are not semaphores
 
-The interface contract is what makes the proposal land. Callers should be
-able to write:
+Effect's `Semaphore` and `PartitionedSemaphore` are capacity/fairness
+primitives. The codebase's current durable needs are different:
 
-```ts
-const sem: Semaphore.Semaphore = yield* DurableSemaphore.make({
-  permits: 100,
-  streamUrl: `${baseUrl}/v1/stream/firegrid.processBudget`,
-})
+- `DurableClaim<K>` is a permanent claim-before-side-effect checkpoint.
+- `DurableKeyedMutex<K>` is one-holder-per-key ownership with release.
 
-yield* sem.withPermits(1)(launchRuntimeProcess(contextId))
-```
+Neither lifecycle is modeled by `Semaphore` without misleading readers.
+Picking a misleading name — `DurablePartitionedSemaphore` for what's
+actually a keyed mutex — is the exact mistake that landed
+`DurableConsumer` and friends.
 
-…without learning new vocabulary, and without `withPermits` behavior
-diverging from what a reader expects from
-[`Effect.Semaphore`](https://effect.website/docs/concurrency/semaphore/).
-The only thing different from the in-memory version is the backing store
-and the cost profile (a write per acquire instead of an atomic counter
-decrement).
-
-When the existing Effect contract doesn't model the pattern (per-key
-mutual exclusion), we name the new primitive honestly rather than warping
-`PartitionedSemaphore` semantics. Picking a misleading name —
-`DurablePartitionedSemaphore` for what's actually a keyed mutex — is the
-exact mistake that landed `DurableConsumer` and friends.
+If product pressure later requires a cluster-wide process budget or
+cross-workflow fair sharing, that should be a separate proposal with
+concrete call sites. Plain in-memory `Semaphore` remains correct for
+per-host process budgets.
 
 ## The primitives
-
-### `DurableSemaphore` (Effect's `Semaphore` interface, durable backing)
-
-```ts
-import * as Semaphore from "effect/Semaphore"
-
-export const DurableSemaphore: {
-  readonly make: (options: {
-    readonly permits: number
-    readonly streamUrl: string
-    readonly contentType?: string
-  }) => Effect.Effect<Semaphore.Semaphore, DurableTableError, Scope.Scope>
-}
-```
-
-- Stores a single durable permits-table (rows: `{ permitId, holderId,
-  takenAt, releasedAt? }`).
-- `take(n)` writes `n` claim rows (or one row with `permits: n` —
-  implementation detail) and suspends durably if the materialized
-  outstanding count exceeds `permits - n`.
-- `release(n)` writes release rows; durably-suspended takers resume in
-  stream order.
-- `withPermits(n)(effect)` = scope-bound take + release-on-exit, matching
-  the in-memory contract: permits release on success, failure, *and*
-  interruption (the work didn't keep its slot).
-
-**Use cases:**
-
-- *Cross-host process budget.* "This Firegrid environment runs at most
-  100 concurrent runtime processes across all hosts." Today there is no
-  such bound — see "Cross-references" #3 below.
-
-### `DurablePartitionedSemaphore<K>` (Effect's interface, durable backing)
-
-```ts
-import * as PartitionedSemaphore from "effect/PartitionedSemaphore"
-
-export const DurablePartitionedSemaphore: {
-  readonly make: <K>(options: {
-    readonly permits: number
-    readonly streamUrl: string
-    readonly contentType?: string
-    readonly keySchema: Schema.Schema<K, string>
-  }) => Effect.Effect<
-    PartitionedSemaphore.PartitionedSemaphore<K>,
-    DurableTableError,
-    Scope.Scope
-  >
-}
-```
-
-- **Same semantics as the in-memory `PartitionedSemaphore`**: `permits` is
-  a **global** budget shared across all partition keys; partition key
-  determines round-robin fairness when permits are scarce. We don't
-  re-define the contract.
-- `keySchema` is required because the durable rows need a stable string
-  encoding of `K` (mirrors `DurableTable.primaryKey`'s
-  `Schema.transformOrFail` convention; see
-  `firegrid-durable-tools.BOUNDARIES.6`).
-
-**Use cases:**
-
-- *Fair cross-host process budget across workflows.* "At most 100
-  concurrent processes globally, distributed fairly across workflow names
-  so a single noisy workflow can't monopolize the pool."
-- *Fair process budget across capability classes.* Same shape with
-  `keySchema = capabilityClass` ("GPU contexts" vs "CPU contexts").
 
 ### `DurableClaim<K>` (new primitive — write-once, no release)
 
@@ -531,19 +452,17 @@ release-on-exit semantics, not write-once):
 |---|---|---|---|
 | Cross-host mutual exclusion ("one host runs each contextId") | `DurableKeyedMutex<contextId>` | n/a (keyed mutex isolates per key) | The load-bearing dispatcher fence. |
 | Per-host process budget ("this host runs at most 4 concurrent contexts") | `Semaphore` (in-memory) | n/a | In-process throttling. Doesn't need to be durable; only this host process sees it. |
-| Cluster-wide process budget ("this Firegrid environment runs at most 100 concurrent contexts") | `DurableSemaphore` | n/a | Optional. Useful if there's an external resource constraint (sandbox quotas, license limits). Not in the dispatcher SDD today. |
-| Cluster-wide fair share across workflows ("no single workflow monopolizes the pool") | `DurablePartitionedSemaphore<workflowName>` | `workflowName` | Optional. Fairness layer on top of the cluster budget. |
 | In-process duplicate suppression ("don't launch this contextId twice in this process") | Optional `Set<contextId>` or per-key in-process latch | n/a | Belt-and-braces; the durable mutex is the load-bearing fence. |
 
 The dispatcher's *required* dependency is `DurableKeyedMutex<contextId>`.
-`DurableSemaphore` and `DurablePartitionedSemaphore` are optional layers
-that the SDD can name as future-work without blocking on.
+Cluster-wide process budgets and fairness are deliberately out of this
+proposal until a product call site needs them.
 
 ## Implementation precondition: substrate fence
 
 ### What the fence has to be
 
-All four primitives need a **server-side conditional append** to be
+Both primitives need a **server-side conditional append** to be
 sound under raced acquirers across hosts. The fence cannot be a
 client-side "read-then-write" against `DurableTable.upsert`: two clients
 with stale local views can each observe "no claim row exists" and both
@@ -646,7 +565,8 @@ amendment.**
   append addressed by a deterministic producerId derived from the row's
   primary key (the same fence mechanism the activity-claim path uses
   today, lifted into a typed action).
-- Implement all four concurrency primitives over `insertIfAbsent`.
+- Implement `DurableClaim` and `DurableKeyedMutex` over
+  `insertIfAbsent`.
 - This is the **only** multi-host-correct implementation.
 
 **Recommended path:** **Path B is the only path for shipping the
@@ -677,25 +597,20 @@ wrapper" versions. Land Path B once; migrate consumers once.
    alongside. Day-one consumer: the dispatcher. The Flamecast toy host
    becomes the second consumer when its watcher moves into
    `@firegrid/runtime`.
-5. **Implement `DurableSemaphore` and `DurablePartitionedSemaphore<K>`**
-   alongside, since the implementation cost is incremental once the
-   underlying `insertIfAbsent` exists. No required day-one consumers;
-   these unlock optional future-work fairness layers in the dispatcher
-   SDD.
-6. **Migrate the two `DurableClaim` sites** (activity claims, ingress
+5. **Migrate the two `DurableClaim` sites** (activity claims, ingress
    stdin delivery). This validates the primitive against real call sites
    and removes the only raw-`DurableStream.producer.append` path in
    production runtime code.
-7. **Rewrite the dispatcher SDD's "Claim Lifecycle"** section to consume
+6. **Rewrite the dispatcher SDD's "Claim Lifecycle"** section to consume
    `DurableKeyedMutex` by name. The SDD shrinks substantially — most of
    the existing claim/release/expired/transferred row design becomes
    the mutex's implementation detail.
-8. **Implement the dispatcher** on `DurableKeyedMutex<contextId>`. Move
+7. **Implement the dispatcher** on `DurableKeyedMutex<contextId>`. Move
    Flamecast's host watcher into `@firegrid/runtime` and delete the
    in-process `Set<contextId>` (it becomes optional belt-and-braces;
    the durable mutex is the load-bearing fence).
 
-Steps 3–6 can be combined into one PR; the promotion bar to
+Steps 3–5 can be combined into one PR; the promotion bar to
 `effect-durable-operators` is met by the existing migrations, and
 landing the primitives in the same PR as the migrations proves the API
 shape against real call sites before the dispatcher consumes it.
@@ -708,11 +623,10 @@ shape against real call sites before the dispatcher consumes it.
 - This proposal does **not** unify `wait_for`'s wait/completion rows
   with claim semantics. Waits and completions are a durable rendezvous,
   not a claim-before-side-effect gate (see Cross-references #4).
-- This proposal does **not** add concurrency primitives outside the
-  four named. If a future product surface needs durable-fair queueing,
-  durable rate limiting, or durable circuit-breaking, those are
-  separate proposals against the Effect upstream equivalents
-  (`RateLimiter`, etc.).
+- This proposal does **not** add `DurableSemaphore`,
+  `DurablePartitionedSemaphore`, durable-fair queueing, durable rate
+  limiting, or durable circuit-breaking. Those require separate
+  proposals with concrete product call sites.
 - This proposal does **not** propose moving in-memory `Semaphore` /
   `PartitionedSemaphore` usage out of any existing call sites.
   Plain Effect primitives stay where they're correct (e.g., per-host
