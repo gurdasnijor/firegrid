@@ -113,7 +113,7 @@ Runtime-host's `runRuntimeContext` already spreads `...command` into
 merges `command.envVars` into the `Command.env(...)` call. **No
 `packages/runtime/src/runtime-host/**` edits required.**
 
-### 4. `firegrid:run` flag plumbing
+### 4. `firegrid:run` flag plumbing — built on `@effect/cli`
 
 **Naming rule:** flag names map 1-to-1 to launch-spec field paths, with
 nested fields delimited by `-`. So `RuntimeContextIntent.envBindings`
@@ -121,47 +121,118 @@ becomes `--env-bindings`, `RuntimeContextIntent.config.cwd` becomes
 `--config-cwd`, etc. No invented vocabulary; if you know the schema you
 know the flags.
 
-`envBindings` is `ReadonlyArray<{ name, ref }>`, so the flag is repeatable
-and its value uses `name=ref` form (the `ref` is written exactly as it is
-stored, including the resolution prefix):
+**Parser:** the current `src/run.ts` hand-rolls the argv → intent parser
+(custom `--` handling, manual usage-error messages, no help text, no
+completions). For this iteration we replace it with `@effect/cli`. We are
+already fully bought into Effect; `@effect/cli` is the right Effect tool
+for the job and removes the need to either build an AST traverser or
+maintain a bespoke parser.
+
+```ts
+import { Args, Command, Options } from "@effect/cli"
+import { NodeContext, NodeRuntime } from "@effect/platform-node"
+import { Effect, HashMap, Schema } from "effect"
+
+// One Options per launch-spec field. Names track schema field paths.
+const envBindings = Options.keyValueMap("env-bindings").pipe(
+  Options.optional,
+)
+
+// Repeated positional arg captures the agent command (everything after `--`).
+const agentArgv = Args.text({ name: "agent-argv" }).pipe(Args.repeated)
+
+const runCommand = Command.make(
+  "run",
+  { envBindings, agentArgv },
+  ({ envBindings, agentArgv }) =>
+    Effect.gen(function* () {
+      // Decode the parsed config through the schema. The schema is the
+      // single source of truth: a flag whose value violates the schema
+      // (bad ref shape, unknown provider, etc.) cannot reach the program.
+      const intent = yield* Schema.decodeUnknown(
+        PublicLaunchRuntimeIntentSchema,
+      )({
+        provider: "local-process",
+        config: { argv: [...agentArgv] },
+        envBindings: HashMap.toEntries(
+          Option.getOrElse(envBindings, () => HashMap.empty()),
+        ).map(([name, ref]) => ({ name, ref })),
+      })
+
+      // ... build RuntimeContext row, upsert, call startRuntime
+    }),
+)
+
+const cli = Command.run(runCommand, {
+  name: "firegrid run",
+  version: /* read from root package.json at build time */,
+})
+
+cli(globalThis.process.argv).pipe(
+  Effect.provide(FiregridRuntimeHostWithWorkflowFromConfig),
+  Effect.provide(NodeContext.layer),
+  NodeRuntime.runMain,
+)
+```
+
+**What `@effect/cli` gives us for free** (each was a hand-roll cost in
+the current MVP):
+
+| Capability | Today's MVP | With `@effect/cli` |
+|---|---|---|
+| `--env-bindings KEY=VALUE` (repeatable) | Would need custom array-of-pairs parser | `Options.keyValueMap("env-bindings")` → `HashMap<string,string>` |
+| Agent argv after `--` | Custom `argv.indexOf("--")` slicing | `Args.text(...).pipe(Args.repeated)` (the framework handles `--`) |
+| `--help` with proper formatting | Hand-written usage string | Auto-generated from Options/Args |
+| `--version` | Not implemented | Built-in |
+| Shell completions (`--completions zsh`) | Not implemented | Built-in |
+| Wizard mode (`--wizard`) | Not implemented | Built-in |
+| Type-checked option/arg shapes | Hand-validated | Inferred into the handler's config arg |
+| Subcommand structure (`firegrid run`, `firegrid host`) | Two separate scripts | One `Command.withSubcommands([...])` |
+| Validation error messages | `process.stderr.write` + exit 2 | `ValidationError` typed channel |
+
+**Schema validation still runs** — `Schema.decodeUnknown(PublicLaunchRuntimeIntentSchema)`
+inside the handler. `@effect/cli` ensures the input shape matches its
+Options/Args declarations; the schema enforces the durable contract
+(known refs, valid provider, etc.). Drift between flags and schema
+fields shows up as either a TypeScript error in the handler's object
+literal or a `ParseIssue` at runtime — both immediate and loud.
+
+**Examples (CLI surface unchanged from the previous iteration):**
 
 ```sh
-# Single binding (parent var name happens to match the binding name)
-pnpm firegrid:run \
+pnpm firegrid run \
   --env-bindings ANTHROPIC_API_KEY=env:ANTHROPIC_API_KEY \
   -- node agent.mjs
 
-# Rename: parent var name differs from the binding name
-pnpm firegrid:run \
+pnpm firegrid run \
   --env-bindings ANTHROPIC_API_KEY=env:PARENT_ANTHROPIC_KEY \
-  -- node agent.mjs
-
-# Repeated for multiple bindings
-pnpm firegrid:run \
-  --env-bindings ANTHROPIC_API_KEY=env:ANTHROPIC_API_KEY \
   --env-bindings GITHUB_TOKEN=env:GITHUB_TOKEN \
   -- node agent.mjs
 
-# Future ref shapes plug in without changing the flag surface
-pnpm firegrid:run \
-  --env-bindings DB_PASSWORD=secret:db/prod \
-  -- node agent.mjs
+# Free: built-in help
+pnpm firegrid run --help
+
+# Free: shell completions
+pnpm firegrid run --completions zsh
 ```
 
-`firegrid:run` parses `--env-bindings` flags before `--`, builds the
-`envBindings` array (one entry per flag occurrence), and attaches it to
-the `RuntimeContext` row at upsert time.
+**Naming note: `firegrid:run` → `firegrid run`.** As a side benefit of
+adopting `@effect/cli`, the colon-separated pnpm script
+(`pnpm firegrid:run -- ...`) becomes a real subcommand
+(`pnpm firegrid run ...`). The pnpm script can stay as an alias for
+ergonomics. Future verbs (`firegrid host`, `firegrid replay`, …) compose
+naturally as subcommands of one root.
 
 Schema-shaped flags reserved for future use under the same naming rule
 (out of scope for this proposal, but documented so the namespace stays
 coherent):
 
-| Schema path | Flag |
+| Schema path | Flag (Options shape) |
 |---|---|
-| `runtime.provider` | `--provider` (locked to `local-process` in v1) |
-| `runtime.config.cwd` | `--config-cwd` |
-| `runtime.envBindings[].{name,ref}` | `--env-bindings name=ref` (this proposal) |
-| `createdBy` | `--created-by` (currently hard-coded to `firegrid-run`) |
+| `runtime.provider` | `Options.choice("provider", ["local-process"])` (locked in v1) |
+| `runtime.config.cwd` | `Options.directory("config-cwd").pipe(Options.optional)` |
+| `runtime.envBindings[].{name,ref}` | `Options.keyValueMap("env-bindings")` (this proposal) |
+| `createdBy` | `Options.text("created-by").pipe(Options.optional)` |
 
 ### 5. Spec
 
@@ -227,30 +298,42 @@ toy local processes.
 ## Sequencing
 
 1. **PR #181 lands** (`firegrid:run -- <agent>` synchronous MVP).
-2. **This proposal → implementation PR** (~150-250 LOC):
-   - protocol schema additions (`RuntimeEnvBindingSchema`)
-   - resolver + tests in `packages/runtime/src/providers/sandboxes/`
-   - `commandForContext` extension
-   - `firegrid:run` `--secret-env` flag
-   - new ACID in `firegrid-workflow-driven-runtime.feature.yaml`
+2. **This proposal → implementation PR**:
+   - root: add `@effect/cli` dependency
+   - root: replace `src/run.ts`'s hand-rolled argv parsing with a
+     `Command.make("run", ...)` definition; keep the same teardown shape
+     for child exit-code propagation
+   - protocol: add `RuntimeEnvBindingSchema` and the optional
+     `envBindings` field on `RuntimeContextIntentSchema`
+   - providers/sandboxes: add `resolveSpawnEnvVars` + tests
+   - providers/sandboxes: extend `commandForContext` to return `envVars`
+   - features: append ACID `PHASE_2_SYNC_RUN.5`
 3. **Stdio passthrough mode** (separate PR, Zed-compat blocker #2):
-   - tee mode for `firegrid:run` so child stdin/stdout flow through to the
+   - tee mode for `firegrid run` so child stdin/stdout flow through to the
      parent terminal while the substrate continues to journal evidence.
 4. **Zed external-agent smoke** (validation milestone): configure a real
-   agent in Zed's `agent_servers` pointing at `pnpm firegrid:run -- <agent>`
-   with env bindings, verify the substrate captures every prompt/response
-   as durable evidence.
+   agent in Zed's `agent_servers` pointing at `pnpm firegrid run` with env
+   bindings, verify the substrate captures every prompt/response as
+   durable evidence.
 
 ## Validation plan
 
-- Unit: resolver covers (name = parent var), (rename), (missing parent env
-  → loud error), (duplicate binding → loud error), (unknown ref shape →
-  loud error).
-- Integration: `firegrid:run --secret-env FAKE_KEY -- node -e
+- **Unit (resolver):** covers (same name on both sides), (rename), (missing
+  parent env → loud error), (duplicate binding → loud error), (unknown ref
+  shape → loud error). All tests inject `lookupEnv` so they don't touch
+  real process env.
+- **Unit (parser):** `@effect/cli`'s own test suite already covers
+  argument/option parsing; we don't re-test the framework. We do add one
+  smoke test asserting the `runCommand` definition's parsed shape decodes
+  cleanly through `PublicLaunchRuntimeIntentSchema`.
+- **Integration:** `pnpm firegrid run
+  --env-bindings FAKE_KEY=env:FAKE_KEY -- node -e
   'console.log(process.env.FAKE_KEY)'` against a `DurableStreamTestServer`,
-  with `FAKE_KEY` set in the harness env, asserts the value reaches the
-  child but does **not** appear in the durable `RuntimeContext` row JSON.
-- Spec: ACID `firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5`
+  with `FAKE_KEY` set in the harness env, asserts:
+  - the value reaches the child (captured in `RuntimeOutputTable.events`),
+  - the value does **not** appear in the durable `RuntimeContext` row JSON
+    (only the binding `{ name, ref: "env:FAKE_KEY" }` is persisted).
+- **Spec:** ACID `firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5`
   referenced in the integration test and the resolver tests.
 
 ## Risks
@@ -259,10 +342,15 @@ toy local processes.
   so retained streams replay cleanly. Renaming the field later would break
   replay.
 - **Two launch normalization paths drift.** `@firegrid/client.launch` and
-  `firegrid:run` should converge on the same row constructor (the SDD
+  `firegrid run` should converge on the same row constructor (the SDD
   already calls this out). This proposal takes care to keep
   `normalizeRuntimeIntent` as the single normalization point — both paths
   go through it.
+- **`@effect/cli` argument-order discipline.** Per the framework's docs,
+  `Options` must precede positional `Args`. Standard Unix convention, but
+  a regression vs. the current MVP's "anything before `--`" tolerance.
+  Mitigated by the auto-generated `--help` output showing the right
+  invocation shape.
 - **Future `secret:` shapes.** v1 rejects unknown ref shapes loudly. When
   the second consumer needs `secret:` / `vault:`, the resolver gains a
   pluggable shape registry; the schema does not change.
