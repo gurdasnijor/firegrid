@@ -86,6 +86,8 @@ const localProcessStdinSubscriberId = "runtime-context:local-process:stdin"
 const runtimeContextWorkflowExecutionId = (contextId: string) =>
   `runtime-context:${contextId}`
 
+const runtimeExecutionClock = Clock.make()
+
 const outputRowFromProcessChunk = (
   context: RuntimeContext,
   activityAttempt: number,
@@ -388,6 +390,16 @@ const RuntimeContextWorkflow = Workflow.make({
   idempotencyKey: ({ contextId }) => runtimeContextWorkflowExecutionId(contextId),
 })
 
+const failAfterWritingRunFailed = (
+  context: RuntimeContext,
+  activityAttempt: number,
+) =>
+(error: RuntimeContextError) =>
+  Effect.gen(function* () {
+    yield* writeRunFailed(context, activityAttempt, error.message)
+    return yield* Effect.fail(error)
+  })
+
 const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(({ contextId }) =>
   Effect.gen(function* () {
     // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.2
@@ -395,18 +407,10 @@ const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(({ contextId 
     const activityAttempt = yield* allocateRuntimeActivityAttempt(context)
     yield* writeRunStarted(context, activityAttempt)
     const exit = yield* runRuntimeContextActivity(context, activityAttempt).pipe(
-      Effect.catchAll(error =>
-        writeRunFailed(context, activityAttempt, error.message).pipe(
-          Effect.zipRight(Effect.fail(error)),
-        ),
-      ),
+      Effect.catchAll(failAfterWritingRunFailed(context, activityAttempt)),
     )
     yield* writeRunExited(context, activityAttempt, exit).pipe(
-      Effect.catchAll(error =>
-        writeRunFailed(context, activityAttempt, error.message).pipe(
-          Effect.zipRight(Effect.fail(error)),
-        ),
-      ),
+      Effect.catchAll(failAfterWritingRunFailed(context, activityAttempt)),
     )
     return {
       contextId: context.contextId,
@@ -451,39 +455,51 @@ const runtimeHostLayerFromOptions = (
     ),
   )
 
-export const FiregridRuntimeHostLive = (
+const runtimeHostStreamUrls = (
   options: RuntimeHostTopologyOptions,
 ) => {
   const base = options.durableStreamsBaseUrl.replace(/\/+$/, "")
   const streamPrefix = base.includes("/v1/stream/")
     ? `${base}/`
     : `${base}/v1/stream/`
+  return {
+    controlPlaneTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtime`)}`,
+    ingressTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtimeIngress`)}`,
+    outputTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtimeOutput`)}`,
+    workflowTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.${WorkflowEngineTable.namespace}`)}`,
+  }
+}
+
+const runtimeHostBaseLayer = (
+  options: RuntimeHostTopologyOptions,
+) => {
+  const urls = runtimeHostStreamUrls(options)
   return runtimeHostLayerFromOptions({
     // firegrid-agent-ingress.HOST.7
     inputEnabled: options.input === true,
-  }, `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtime`)}`, `${streamPrefix}${
-    encodeURIComponent(`${options.namespace}.firegrid.runtimeIngress`)
-  }`, `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtimeOutput`)}`, options.headers)
+  }, urls.controlPlaneTableUrl, urls.ingressTableUrl, urls.outputTableUrl, options.headers)
 }
+
+const runtimeContextWorkflowEngineLayer = (
+  options: RuntimeHostTopologyOptions,
+) => {
+  const { workflowTableUrl } = runtimeHostStreamUrls(options)
+  return DurableStreamsWorkflowEngine.layer({
+    streamUrl: workflowTableUrl,
+    ...(options.headers !== undefined ? { headers: options.headers } : {}),
+  })
+}
+
+export const FiregridRuntimeHostLive = (
+  options: RuntimeHostTopologyOptions,
+) =>
+  RuntimeContextWorkflowLayer.pipe(
+    Layer.provideMerge(Layer.merge(runtimeHostBaseLayer(options), runtimeContextWorkflowEngineLayer(options))),
+  )
 
 export const FiregridRuntimeHostWithWorkflowLive = (
   options: RuntimeHostTopologyOptions,
-) => {
-  const base = options.durableStreamsBaseUrl.replace(/\/+$/, "")
-  const streamPrefix = base.includes("/v1/stream/")
-    ? `${base}/`
-    : `${base}/v1/stream/`
-  const runtimeHostLayer = FiregridRuntimeHostLive(options)
-  const workflowEngineLayer = (
-    DurableStreamsWorkflowEngine.layer({
-      streamUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.${WorkflowEngineTable.namespace}`)}`,
-      ...(options.headers !== undefined ? { headers: options.headers } : {}),
-    })
-  )
-  return RuntimeContextWorkflowLayer.pipe(
-    Layer.provideMerge(Layer.merge(runtimeHostLayer, workflowEngineLayer)),
-  )
-}
+) => FiregridRuntimeHostLive(options)
 
 export const RuntimeHostTopologyFromConfig = Config.all({
   durableStreamsBaseUrl: Config.string("DURABLE_STREAMS_BASE_URL"),
@@ -528,7 +544,9 @@ export const startRuntime = (
       payload: RuntimeContextWorkflowPayload.make({
         contextId: options.contextId,
       }),
-    }))
+    })).pipe(
+      Effect.withClock(runtimeExecutionClock),
+    )
 
 export const appendRuntimeIngress = (
   request: RuntimeIngressRequest,
