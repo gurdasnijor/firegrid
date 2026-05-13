@@ -17,11 +17,12 @@ components:
       1: The client package may depend on substrate but must not depend on runtime.
       2: The runtime package may depend on substrate but must not depend on client.
       3: The substrate package must not depend on client, runtime, lab, or product-specific runtime packages.
-      4: Browser lab code may depend on the client and Durable Streams client but must not import runtime or substrate packages.
+      4: Browser lab code may depend on the client package but must not import runtime, substrate, or upstream Durable Streams packages directly.
       5: Runtime process tooling may launch child processes but must not provide app-client capabilities from the runtime package.
       6: Reusable packages must not import workspace apps; standalone apps may depend downward on packages through public workspace package entrypoints.
-      7: Direct imports of the underlying Durable Streams packages are contained by the Firegrid durable-streams substrate package unless an app-specific exemption is documented and mechanically guarded.
+      7: Direct imports of the underlying Durable Streams packages are contained by explicitly designated infrastructure packages; runtime, client, protocol, app, and scenario source code use Firegrid-owned DurableTable or effect-durable-streams boundaries unless an exemption is documented and mechanically guarded.
       8: Browser-safe packages import only browser-safe substrate entrypoints and do not import broad roots that transitively expose workflow-engine, producer, server, Node platform, SQL, sandbox provider, or test utility modules.
+      9: Runtime, client, protocol, app, and scenario source code do not import the historical Firegrid durable-streams package; ordinary durable state uses DurableTable and raw fact streams use the retained Effect-native stream boundary.
 
   AUTHORITY:
     requirements:

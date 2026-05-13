@@ -1,201 +1,283 @@
 # Target Architecture: Managed-Agent Runtime Over Durable Facts
 
-**Status:** canonical target architecture. Promoted from "proposed fork"
-to canonical on 2026-05-12 (post tracer 017). The earlier
-`managed-agent-runtime-target.md` was deleted as part of the same
-cleanup — see `legacy-drift-inventory-2026-05-12.md` F12 for the
-rationale.
+**Status:** canonical target architecture. Promoted from "proposed fork" to
+canonical on 2026-05-12 and updated after the DurableTable surface cleanup on
+2026-05-13.
 
-**Last updated:** 2026-05-12
+**Last updated:** 2026-05-13
 
 Source material:
 
 - `docs/research/durable-execution-api-design-survey.md` (historical research)
 - `docs/proposals/SDD_EFFECT_NATIVE_DURABLE_STREAMS_PRODUCTION_CUTOVER.md`
-- `docs/tracers/010-workflow-backed-tools.md`
-- `docs/tracers/012-agent-ingress-prompt-stream.md` (historical — accepted-row family deleted in tracer 017)
-- `docs/tracers/013-reactive-workflow-operators.md`
-- `docs/tracers/016-session-plane-input-control-surface.md`
+- `docs/proposals/SDD_EFFECT_DURABLE_OPERATORS.md`
 - `docs/tracers/017-effect-durable-operators.md`
+- PR #166, "Collapse durable state surfaces onto DurableTable"
 
 ## Thesis
 
-Firegrid is a managed durable agent runtime whose runtime behavior is driven by
-durable facts. The target architecture is:
+Firegrid is a managed durable agent runtime whose behavior is driven by durable
+facts and durable table state.
+
+The target is not "many small durable abstractions." The target is a small set
+of blessed primitives:
+
+1. `DurableTable` for ordinary queryable durable state.
+2. `effect-durable-streams` for raw retained fact streams that are intentionally
+   append-only.
+3. Effect `Layer`, `Stream`, `Scope`, and service requirements for composition.
+4. `@effect/workflow` for workflow execution, activity replay, clocks, and
+   deferred resume.
+
+Everything else should be product-owned code that composes these primitives.
+Do not reintroduce broad generic surfaces just because a local workflow needs a
+few lines of policy.
+
+## Blessed Components
+
+### DurableTable
+
+`DurableTable` is the default for table-shaped durable state:
+
+- runtime control plane rows;
+- runtime ingress rows;
+- delivery/checkpoint/claim rows;
+- workflow executions, activities, deferreds, and clock wakeups;
+- app-owned state such as Flamecast turns/messages/sessions;
+- any read model that is queried, snapshotted, subscribed to, or keyed by
+  stable identity.
+
+Layers are provided at service or application scope, not per row operation.
+Code should use the service facade directly:
+
+```ts
+const table = yield* RuntimeIngressTable
+yield* table.inputs.upsert(row)
+const rows = yield* table.inputs.query((coll) => coll.toArray)
+```
+
+Do not wrap `DurableTable` with store services, materializer services,
+checkpoint-store services, or one-off helpers that only forward to
+`insert`/`upsert`/`get`/`query`.
+
+### effect-durable-streams
+
+`effect-durable-streams` remains the Effect-native raw Durable Streams boundary.
+Use it only for retained fact streams where the append-only log is the product
+semantics.
+
+The current accepted exception is runtime output: child-process stdout/stderr
+is still written as an append-only retained fact journal. That exception must
+remain isolated in the runtime output boundary. It must not justify raw stream
+reintroduction for runtime control plane, runtime ingress, delivery
+checkpointing, or ordinary app state.
+
+If runtime output becomes primarily a queried/snapshotted/subscribed state
+surface, it should move to `DurableTable` too.
+
+### Effect Layers
+
+Composition is an application or package entrypoint concern. Do not create a
+new top-level package just to hold "composition" helpers or URL-formatting
+topology.
+
+Use Effect layers to install:
+
+- durable table services;
+- sandbox providers;
+- workflow engine services;
+- runtime host config;
+- app-owned handlers.
+
+The top-level package APIs should remain domain/runtime primitives. Product
+composition belongs in a root app entrypoint, package-specific `Live` layer, or
+future root `src/` composition module if the repository needs one.
+
+## Current Package Shape
+
+The post-cleanup package map is:
 
 ```txt
-client or workflow intent
-  -> durable fact stream
-  -> named wait descriptor, durable time, or projection predicate
-  -> runtime-host-owned operator/dispatcher
-  -> @effect/workflow execution or resume
-  -> follow-up durable facts through existing authority surfaces
+packages/
+  effect-durable-streams/
+    src/
+      DurableStream.ts
+      Bound.ts
+      Reader.ts
+      Writer.ts
+
+  effect-durable-operators/
+    src/
+      DurableTable.ts
+
+  protocol/
+    src/
+      launch/            # shared launch/control-plane schemas + table
+      runtime-ingress/   # shared ingress/delivery schemas + table
+
+  runtime/
+    src/
+      runtime-host/      # runtime host layer/entrypoint
+      runtime-ingress/   # table delivery/sequencing owned by runtime
+      runtime-output/    # isolated raw retained output fact stream
+      workflow-engine/   # workflow table + Effect Workflow engine bridge
+      providers/
+        sandboxes/
+
+  client/
+    src/
+      firegrid.ts        # public client API over shared tables/fact streams
 ```
 
-The stream primitive at implementation boundaries is
-`effect-durable-streams`:
+Deleted and not part of the target:
 
-```ts
-const stream = DurableStream.define({
-  endpoint: { url: runtimeHostStreams.input.ingress },
-  schema: RuntimeIngressRowSchema,
-})
-
-yield* stream.append(row)
-yield* stream.read({ live: false }).pipe(...)
-yield* stream.producer({ producerId })
+```txt
+packages/durable-streams/
+packages/effect-durable-streams-state/
+packages/runtime/src/materialization/
+packages/runtime/src/runtime-context/
+packages/runtime/src/providers/materialize/
+packages/protocol/src/required-action/
+packages/protocol/src/session/
+packages/effect-durable-operators/src/DurableConsumer.ts
+packages/effect-durable-operators/src/DurableProjection.ts
+packages/effect-durable-operators/src/ConsumerSource.ts
+packages/effect-durable-operators/src/ConsumerCheckpointStore.ts
+packages/effect-durable-operators/src/electric.ts
+scenarios/firegrid/src/scenario-harness.ts
+scenarios/firegrid/src/durable-stream-fixtures.ts
 ```
 
-Firegrid-specific Durable Streams ownership is local to the package that needs
-it. Ordinary table-shaped state is declared with `DurableTable`; raw retained
-fact streams use `effect-durable-streams`. Test servers are private test
-support, not a public Firegrid wrapper. The old `@firegrid/durable-streams`
-wrapper package is deleted.
+Do not preserve these names by moving them into a different package.
 
-This target protects these invariants:
+## Protocol Package Boundary
 
-- `effect-native-production-cutover.RUNTIME_IO.1`
-- `effect-native-production-cutover.RUNTIME_IO.2`
-- `effect-native-production-cutover.GUARDRAILS.1`
-- `effect-native-production-cutover.GUARDRAILS.2`
-- `effect-durable-operators.FIREGRID_PROOF.1`
-- `effect-durable-operators.FIREGRID_PROOF.2`
-- `firegrid-platform-invariants.AUTHORITY.8`
-- `firegrid-agent-ingress.SUBSCRIBERS.1`
+`@firegrid/protocol` currently acts as the shared durable-contract package.
+The name may be revisited later, but the boundary is:
 
-## Core Model
+- public request schemas;
+- shared durable row schemas;
+- shared `DurableTable` declarations when browser/client and host both need
+  the same table contract;
+- stable ID/key constructors only when they encode durable product identity.
 
-### Durable Facts
+It must not own:
 
-A durable fact is a schema-owned row in a durable stream. It may be runtime
-input, runtime output, required-action request/resolution, scheduled work,
-spawn request, tool execution request, or operator progress.
+- Durable Streams server/client/state imports;
+- `createStateSchema` or `createStreamDB`;
+- deployment topology or URL derivation;
+- runtime provider delivery policy;
+- materialization strategies;
+- workflow engine state stores;
+- generic test helpers.
 
-Domain modules own:
+If a schema test only proves Effect Schema or DurableTable library behavior, it
+does not belong here. Keep protocol tests only when they prove Firegrid product
+contracts such as public launch redaction, deterministic idempotency IDs, or
+durable row ID conventions.
 
-- schema;
-- IDs and idempotency keys;
-- row constructors;
-- pure folds;
-- focused Effect programs where they encode domain behavior.
+## Runtime Control Plane
 
-They do not own generic log objects. Reading, appending, and producing rows use
-`DurableStream.define({ endpoint, schema })` directly.
+Runtime control plane is DurableTable-backed. It owns runtime context rows and
+run lifecycle rows.
 
-### Named Wait Descriptors
+Clients create contexts through `@firegrid/client`. Runtime hosts read contexts
+and write run status through the same shared table. There should be one table
+contract and one durable type convention, not client/runtime variants.
 
-A wait descriptor is durable data that says what a workflow or operator is
-waiting for:
+The runtime host must not wrap this table in a generic service that only
+renames table operations.
 
-```ts
-interface WaitDescriptor<Params> {
-  readonly waitId: string
-  readonly ownerId: string
-  readonly sourceId: string
-  readonly matcherId: string
-  readonly matcherVersion: number
-  readonly matcherParams: Params
-  readonly cursor?: DurableStream.Offset
-  readonly timeoutAt?: string
-  readonly idempotencyKey: string
-}
-```
+## Runtime Ingress
 
-Do not persist arbitrary JavaScript predicates. A host-owned matcher registry
-may turn `(matcherId, matcherVersion, matcherParams)` into a local predicate,
-but the durable row stores only data. If matcher code is unavailable or
-incompatible, the operator records a typed expected failure rather than
-silently skipping work.
+Runtime ingress is DurableTable-backed. The accepted v0 model is:
 
-### Runtime Operators And Dispatchers
+1. writers create pending input rows;
+2. the host/sequencer assigns explicit per-context sequence and marks rows
+   sequenced;
+3. providers read/query/subscribe sequenced rows;
+4. provider delivery writes claim rows before externally visible side effects.
 
-A runtime operator is a host-owned program that reacts to durable facts, durable
-time, or projection predicates and drives `@effect/workflow`.
+This table shape gives Firegrid:
 
-A dispatcher is the host-owned process that runs selected operators. It is not
-a client API and not a workflow-specific endpoint.
+- deterministic idempotency by input ID;
+- multi-writer safety by separating write intent from host sequencing;
+- query/subscription ergonomics through `DurableTable`;
+- delivery checkpoint state without a generic checkpoint store.
 
-```ts
-interface RuntimeOperator<Fact, Payload, Error, Requirements> {
-  readonly operatorId: string
-  readonly sourceId: string
-  readonly facts: Stream.Stream<Fact, Error, Requirements>
-  readonly select: (fact: Fact) => Option.Option<Payload>
-  readonly executionId: (payload: Payload) => string
-  readonly execute: (input: {
-    readonly payload: Payload
-    readonly executionId: string
-  }) => Effect.Effect<string, Error, WorkflowEngine.WorkflowEngine | Requirements>
-}
-```
+Do not reintroduce a raw runtime-ingress stream plus a reducer layer. If a
+future path needs strict global ordering, add an explicit sequence allocation
+design to the table model instead of relying on hidden stream append order.
 
-The snapshot-array `OperatorSource.scan` tracer proof is historical. Current
-operator sources should use `effect-durable-operators.ConsumerSource` so
-retained scans and live follow do not collapse into `collect -> array -> loop`
-unless the fold actually needs a retained snapshot.
+## Runtime Output
 
-### Workflow Waits
+Runtime output is currently the one raw retained fact-stream exception. The
+reason is append-only process telemetry: stdout/stderr chunks are written as
+facts in order by a scoped producer.
 
-Inside workflow handlers, use `@effect/workflow` primitives directly:
+This exception is under active architectural review. Any code that reads
+runtime output as state, snapshots it, queries it by context, or projects it
+into sessions is evidence that runtime output should become a `DurableTable`
+instead.
 
-- `Workflow.make` and `Workflow.toLayer` for durable workflow definitions;
-- `Activity` for side-effecting work;
-- `DurableClock` for durable sleeps/timers;
-- `DurableDeferred` for external durable resolution;
-- ordinary `Effect`, `Stream`, `Sink`, `Scope`, and `Layer`.
+The boundary rule is strict:
 
-External clients, tools, and agents do not call `workflow.execute` through a
-public Firegrid endpoint. They append facts. Operators react downstream.
+- raw output writer code may live only in `runtime-output/`;
+- runtime host may call that boundary but must not contain producer/mapping
+  ceremony itself;
+- runtime output must not become another service plane;
+- output table migration should be preferred once product semantics are
+  clearly table-shaped.
 
-## Host Config vs Client Request
+## Workflow Engine
 
-The runtime host owns stream topology, workflow engine selection,
-materialization strategy, provider wiring, operator set, and matcher registry.
+Workflow engine rows are mostly DurableTable-backed:
 
-```ts
-const RuntimeHostLive = FiregridRuntimeHostLive({
-  streams: {
-    workflow: env.FIREGRID_WORKFLOW_STREAM_URL,
-    controlPlane: env.FIREGRID_RUNTIME_CONTEXT_STREAM_URL,
-    runtimeOutput: env.FIREGRID_RUNTIME_OUTPUT_STREAM_URL,
-    // Tagged input capability: ingress + checkpoints are one
-    // indivisible value (`RuntimeInputDurableStreams`) so misconfigured
-    // half-state is unrepresentable. Omit `input` to start with no
-    // ingress (`runtimeInputDisabled`).
-    input: new RuntimeInputDurableStreams({
-      ingress: env.FIREGRID_RUNTIME_INGRESS_STREAM_URL,
-      checkpoints: env.FIREGRID_RUNTIME_INPUT_CHECKPOINTS_STREAM_URL,
-    }),
-    schedules: env.FIREGRID_SCHEDULE_STREAM_URL,
-  },
-  workflowEngine: DurableStreamsWorkflowEngine.layer({
-    streamUrl: env.FIREGRID_WORKFLOW_STREAM_URL,
-  }),
-  materialization: materializeStrategy({
-    connection: pgConfig,
-    projections: [sessionProjection(), requiredActionProjection()],
-  }),
-  operators: [
-    // Future generic effect-durable-operators consumers live here.
-    // Do not add required-action-specific mini roots.
-    runtimeIngressDeliveryOperator(),
-    scheduledPromptOperator(),
-    childSpawnOperator(),
-  ],
-  matchers: [
-    runtimeOutputJsonLineMatchers(),
-    requiredActionMatchers(),
-    sessionProjectionMatchers(),
-  ],
-  providers: {
-    sandboxes: [localProcessSandbox()],
-    runtimes: [stdioRuntime()],
-    tools: [workflowTools()],
-  },
-})
-```
+- executions;
+- activities;
+- deferreds;
+- clock wakeups;
+- activity claims as materialized rows.
 
-Client launch and prompt requests describe one agent or user intent:
+Activity claim fencing is the current tiny exception. The claim path uses a
+raw durable append because the current `DurableTable` facade does not expose
+the exact fenced/idempotent append semantics needed for raced worker claims.
+This exception is acceptable only while:
+
+- it is isolated inside workflow-engine internals;
+- it is documented near the claim code;
+- the raced-claim test proves one activity body run and one durable claim;
+- no general store/service wrapper is reintroduced around it.
+
+A future DurableTable extension for fenced append may remove this exception.
+
+## Runtime Host
+
+The runtime host is a composition/execution boundary, not a general durable
+state framework.
+
+It may:
+
+- derive product table/stream URLs from `durableStreamsBaseUrl + namespace`;
+- provide shared DurableTable layers once per runtime host lifetime;
+- provide the sandbox provider and workflow engine layer;
+- start a runtime for a context;
+- append runtime ingress through the ingress table when input is enabled.
+
+It should not:
+
+- contain row schemas that belong to shared contracts;
+- contain local-process-specific command derivation if that belongs with the
+  provider;
+- instantiate DurableTable layers per operation;
+- own output producer details directly;
+- own generic materialization or projection strategies;
+- expose a broad service if plain Effect functions over table/provider services
+  are sufficient.
+
+## Client Boundary
+
+Client launch and prompt APIs describe user or agent intent.
 
 ```ts
 const handle = yield* firegrid.launch({
@@ -206,491 +288,56 @@ const handle = yield* firegrid.launch({
 
 yield* firegrid.prompt({
   contextId: handle.contextId,
-  payload: { type: "text", text: "Continue with the next task." },
+  payload: { type: "text", text: "Continue." },
   idempotencyKey: "user:continue:1",
 })
 ```
 
-Clients do not pass stream URLs, workflow engine choices, materialization
-backend, operator registrations, matcher code, provider registries, or runtime
-host topology.
-
-## Target Package And Module Shape
-
-This target prefers bounded runtime modules and provider namespaces until a
-package extraction is earned. The generic durable-operator primitives
-(`DurableTable`) live **outside** the runtime package, in
-`effect-durable-operators`. Runtime code consumes it; it does not
-re-implement table/materialization machinery.
-
-```txt
-packages/
-  effect-durable-streams/
-    src/
-      DurableStream.ts
-      Reader.ts
-      Writer.ts
-      Bound.ts
-
-  effect-durable-operators/
-    src/
-      DurableTable.ts
-
-  protocol/
-    src/
-      launch/
-      runtime-context/
-      runtime-ingress/
-      runtime-output/
-      required-action/       # durable record schemas only
-      session/
-
-  runtime/
-    src/
-      runtime-host/
-        index.ts
-        input.ts                # RuntimeInputStreams tagged capability
-      runtime-context/
-        workflow.ts
-        service.ts
-        launcher.ts
-      runtime-ingress/
-        schema.ts
-        ids.ts
-        rows.ts
-        local-process-stdin.ts  # provider-owned raw fact read + DurableTable checkpoint
-      # runtime-operators/ and required-action/ runtime packages were deleted.
-      # Use DurableTable for ordinary table/checkpoint state and
-      # effect-durable-streams for raw fact reads/writes. Required-action row
-      # schemas stay in protocol until generic waits/operators prove a new
-      # production behavior through a non-required-action-specific surface.
-      scheduling/
-        schema.ts
-        rows.ts                 # raw schedule facts + workflow-owned DurableTable clock
-      spawn/
-        schema.ts
-        rows.ts                 # child terminals -> DurableTable
-      tools/
-        workflow-tools.ts
-      providers/
-        sandboxes/
-        materialize/
-        runtimes/
-        workspaces/
-        tools/
-        secrets/
-```
-
-### Existing-but-deprecated (active drift, not target shape)
-
-These modules existed before Lane A and were removed by the
-required-action/operator cleanup. They are NOT part of the target tree
-and must not be reintroduced when adding new runtime capabilities:
-
-```txt
-packages/runtime/src/
-  runtime-operators/        # bespoke DurableConsumer; deleted
-  required-action/          # workflow/service mini-plane; deleted
-  materialization/          # generic EventSource/EventSink/strategy plane; deleted
-  session-projection/       # runtime-owned demo session projector; deleted
-```
-
-A `runtime-waits/` directory has been proposed in earlier drafts but
-does not currently exist and is not part of the current target package tree.
-If durable waits need named runtime modules later, they should land as future
-generic wait/operator tooling built from `effect-durable-operators` and
-workflow primitives rather than as a required-action package replacement.
-
-Future extraction candidates:
-
-- sandbox providers, after a second provider creates reuse pressure;
-- projection/provider package extraction, after a second production consumer
-  creates reuse pressure;
-- wait/scheduling substrate, after named wait descriptors prove ownership;
-- tool provider packages, after workflow-backed tools prove the lowering.
-
-Do not create package families for every launch slot before current code forces
-the boundary.
-
-## Durable Affordances
-
-These APIs are exposed to workflows, tools, or managed-agent runtime code;
-external clients still append launch, prompt, or decision facts through public
-Firegrid surfaces and do not invoke private workflow handles.
-
-### `wait_for(trigger, timeout?)`
-
-Runtime capability API shape:
-
-```ts
-const event = yield* RuntimeWait.waitFor({
-  waitId: `wait:${contextId}:assistant-finished`,
-  trigger: RuntimeOutputTriggers.jsonLine({
-    contextId,
-    source: "stdout",
-    matcherId: "assistant.text.includes",
-    matcherVersion: 1,
-    params: { text: "done" },
-  }),
-  timeout: "5 minutes",
-  idempotencyKey: `assistant-finished:${contextId}`,
-})
-```
-
-Lowering:
-
-```txt
-wait_for(trigger, timeout)
-  -> append firegrid.wait.requested fact
-  -> runtime wait operator reads source durable stream
-  -> named matcher evaluates retained/live facts
-  -> append firegrid.wait.matched or firegrid.wait.timed_out
-  -> waiting workflow resumes through DurableDeferred or workflow resume
-```
-
-Implementation boundary:
-
-```ts
-const output = DurableStream.define({
-  endpoint: { url: runtimeHostStreams.runtimeOutput },
-  schema: RuntimeJournalEventSchema,
-})
-
-const match = output.read({ live: "long-poll", offset: trigger.cursor }).pipe(
-  Stream.filter(row => row.type === "firegrid.runtime.output.stdout"),
-  Stream.filter(row => row.event.contextId === trigger.contextId),
-  Stream.filterMap(row => matcher.match(row)),
-  Stream.runHead,
-)
-```
-
-Timeouts that are externally visible must produce durable terminal facts, not
-only in-memory failures.
-
-### Required-Action And User Approval Waits
-
-Runtime capability API shape:
-
-```ts
-const decision = yield* wait_for({
-  trigger: "required-action.resolved",
-  key: `ra:${contextId}:${toolCallId}`,
-  request: {
-    type: "firegrid.required_action.requested",
-    requiredActionId: `ra:${contextId}:${toolCallId}`,
-    runtimeContextId: contextId,
-    requestKind: "tool_approval",
-    subject: { type: "tool-call", id: toolCallId },
-    prompt: "Allow this tool call?",
-    expiresAt,
-  },
-})
-```
-
-Historical shape to avoid; this is not a current runtime API:
-
-```ts
-yield* RequiredAction.requestAndWait({
-  requiredActionId: `ra:${contextId}:${toolCallId}`,
-  runtimeContextId: contextId,
-  requestKind: "tool_approval",
-  subject: { type: "tool-call", id: toolCallId },
-  prompt: "Allow this tool call?",
-  expiresAt,
-})
-```
-
-Lowering:
-
-```txt
-wait_for(required-action descriptor)
-  -> append firegrid.required_action.requested
-  -> external resolver appends firegrid.required_action.resolved
-  -> generic wait/operator machinery observes resolution fact
-  -> workflow records/returns terminal decision through generic wait result
-```
-
-Implementation boundary:
-
-```ts
-// Future generic wait/operator pseudocode, not a current API.
-const requestFact = makeRequiredActionRequestedRow(request)
-yield* DurableStream.define({
-  endpoint: { url: runtimeHostStreams.requiredActionFacts },
-  schema: RequiredActionRowSchema,
-}).append(requestFact)
-
-const resolution = yield* wait_for({
-  source: "required-action",
-  key: requestFact.requiredActionId,
-  match: { type: "firegrid.required_action.resolved" },
-  timeout,
-})
-```
-
-Required actions are not a permissions provider, callback package, product UI,
-or workflow-specific launch endpoint.
-
-### `schedule_me(when, prompt)`
-
-Agent/tool/workflow-facing runtime capability shape:
-
-```ts
-yield* RuntimeSchedule.scheduleMe({
-  scheduleId: `schedule:${contextId}:follow-up`,
-  contextId,
-  when: "2026-05-11T18:00:00.000Z",
-  prompt: { type: "text", text: "Check deployment status." },
-  idempotencyKey: `follow-up:${contextId}:deployment`,
-})
-```
-
-Lowering:
-
-```txt
-schedule_me(when, prompt)
-  -> append firegrid.schedule.requested fact
-  -> schedule operator waits through durable time
-  -> operator appends runtime_ingress.requested via host ingress surface
-  -> provider adapter reads raw ingress facts through effect-durable-streams
-     and records delivery checkpoints in a provider-owned DurableTable before
-     bytes reach stdin
-```
-
-Implementation boundary:
-
-```ts
-const schedules = DurableStream.define({
-  endpoint: { url: runtimeHostStreams.schedules },
-  schema: RuntimeScheduleRowSchema,
-})
-
-yield* schedules.append(makeScheduleRequestedRow(request))
-
-yield* DurableClock.sleep({
-  name: `schedule:${request.scheduleId}`,
-  duration: millisUntil(request.when),
-})
-
-yield* appendRuntimeIngress({
-  contextId: request.contextId,
-  kind: "message",
-  authoredBy: "workflow",
-  payload: request.prompt,
-  idempotencyKey: request.idempotencyKey,
-})
-```
-
-### `spawn(agent, prompt)` And `spawn_all`
-
-Agent/tool/workflow-facing runtime capability shape:
-
-```ts
-const child = yield* RuntimeSpawn.spawn({
-  parentContextId,
-  childContextId: `ctx_child_${taskId}`,
-  runtime: local.jsonl({ argv: ["node", "child-agent.js"] }),
-  prompt: { type: "text", text: "Summarize these logs." },
-  idempotencyKey: `spawn:${parentContextId}:${taskId}`,
-})
-
-const result = yield* RuntimeSpawn.awaitCompletion({
-  childContextId: child.contextId,
-  timeout: "30 minutes",
-})
-```
-
-`spawn_all` is a fan-out over the same primitive:
-
-```ts
-const children = yield* Effect.forEach(tasks, task =>
-  RuntimeSpawn.spawn({
-    parentContextId,
-    childContextId: childContextIdFor(task),
-    runtime: task.runtime,
-    prompt: task.prompt,
-    idempotencyKey: `spawn:${parentContextId}:${task.id}`,
-  }),
-)
-
-const results = yield* Effect.forEach(children, child =>
-  RuntimeSpawn.awaitCompletion({ childContextId: child.contextId }),
-)
-```
-
-Lowering:
-
-```txt
-spawn(agent, prompt)
-  -> append child runtime-context/control fact through host runtime surface
-  -> append initial runtime_ingress.requested through host ingress surface
-  -> start child runtime through FiregridRuntimeHost
-  -> await child terminal run fact or session projection
-```
-
-Implementation boundary:
-
-```ts
-const control = DurableStream.define({
-  endpoint: { url: runtimeHostStreams.controlPlane },
-  schema: RuntimeControlPlaneRowSchema,
-})
-
-const terminal = control.read({ live: "long-poll" }).pipe(
-  Stream.filter(row => row.contextId === childContextId),
-  Stream.filter(isTerminalRuntimeState),
-  Stream.runHead,
-)
-```
-
-Child spawning must call the same runtime and ingress surfaces available to
-clients. It must not introduce a private workflow launch API.
-
-### `execute(tool/sandbox, input)`
-
-Agent/tool/workflow-facing runtime capability shape:
-
-```ts
-const output = yield* RuntimeExecute.execute({
-  executionId: `exec:${contextId}:${toolCallId}`,
-  contextId,
-  target: { kind: "tool", name: "filesystem.write" },
-  input: {
-    path: "README.md",
-    text: "Updated by agent.",
-  },
-  idempotencyKey: `tool:${toolCallId}`,
-})
-```
-
-Lowering:
-
-```txt
-execute(target, input)
-  -> append firegrid.execution.requested fact
-  -> execution operator claims/fences idempotency key
-  -> provider/tool/sandbox adapter performs live side effect
-  -> append firegrid.execution.completed or firegrid.execution.failed fact
-  -> waiting workflow resumes from durable result
-```
-
-Implementation boundary:
-
-```ts
-const executions = DurableStream.define({
-  endpoint: { url: runtimeHostStreams.executions },
-  schema: RuntimeExecutionRowSchema,
-})
-
-yield* executions.append(makeExecutionRequestedRow(request))
-
-yield* executions.read({ live: "long-poll" }).pipe(
-  Stream.filter(isTerminalExecutionFor(request.executionId)),
-  Stream.runHead,
-)
-```
-
-This is future work. It must not become a generic provider registry in the
-client launch request.
-
-## Materialization
-
-Materialization remains host-owned strategy and query infrastructure. It should
-not become the durable execution API.
-
-Target shape:
-
-```txt
-runtime-output fact stream
-  -> materialization EventSource
-  -> EventProjector
-  -> EventSink implementation
-  -> queryable projection
-```
-
-Materialize is an external derived output. DurableTable owns ordinary table
-state. Raw retained folds and State Protocol writer strategies are historical
-scaffolding, not durable truth. Durable Streams remain the source of runtime
-facts.
-
-## What Current Code Becomes Historical Baggage
-
-If this target is accepted, these items should be treated as cleanup candidates
-or historical scaffolding:
-
-- `packages/runtime/src/stream-native-runtime-loop/**`: DELETED in tracer 017
-  along with `docs/tracers/015-stream-native-runtime-loop-validation.md` and
-  `features/firegrid/stream-native-runtime-loop.feature.yaml`. Listed here
-  for historical reference; the surface no longer exists.
-- Snapshot-array `OperatorSource.scan` and `packages/runtime/src/runtime-operators/**`:
-  DELETED in the required-action/operator cleanup lane. Use
-  effect-durable-streams for raw facts and DurableTable for checkpoints/table
-  state.
-- `packages/runtime/src/required-action/**`, `RequiredActionsLive`,
-  `RequiredActionWorkflow`, `RequiredActionRuntimeLive`, and
-  `RequiredActionStateLive`: DELETED in the required-action cleanup lane.
-  Protocol record schemas remain; behavior is deferred to generic
-  wait/operator tooling.
-- `docs/proposals/SDD_EFFECT_NATIVE_DURABLE_STREAMS_PRODUCTION_CUTOVER.md`
-  examples that mention `runtime-ingress/stream.ts`,
-  `runtime-ingress/folds.ts`, or `runtime-output/stream.ts`: those were
-  mid-review helper shapes, not the final post-cutover target.
-- `docs/tracers/012-agent-ingress-prompt-stream.md` references to
-  `runtime-ingress/service.ts` or a service-backed ingress store: replace with
-  schema/ids/rows and host-owned direct DurableStream programs.
-- Any target-doc examples that imply `DurableStreamLog.layer`,
-  `RuntimeOutput.layer`, `RuntimeIngressLive`, or `RuntimeCaptureJournalLive`.
-
-## Decisions This Target Would Settle
-
-1. `effect-durable-streams` is the visible durable stream primitive at
-   implementation boundaries.
-2. Firegrid has no broad `@firegrid/durable-streams` substrate wrapper package.
-   Owners use `effect-durable-streams` for raw facts and `DurableTable` for
-   ordinary table-shaped state.
-3. Firegrid does not add `DurableLog` or `DurableLogWriter` object protocols.
-4. Clients and tools append durable facts; they do not launch private workflows.
-5. `wait_for`, `schedule_me`, `spawn`, `spawn_all`, and `execute` lower to
-   durable facts plus runtime-host-owned operators.
-6. Runtime host config owns topology, operators, matchers, workflow engine, and
-   providers; it does not select a generic materialization strategy.
-7. Client launch/prompt requests own only agent/user intent.
-8. Match predicates are named/versioned data plus params, not persisted code.
-9. Required actions are durable facts consumed by generic wait/operator
-   behavior, not a permissions provider package, callback plane, or
-   required-action-specific runtime service.
-
-## Decisions Still Open
-
-1. Where wait request/outcome row schemas live: protocol, runtime, or a future
-   wait package.
-2. Which generic wait/operator surface consumes required-action facts.
-3. How operator progress is represented durably for long-running live sources.
-4. How no-gap retained snapshot plus live follow is exposed for operator
-   sources when `snapshotThenFollow` is required.
-5. What matcher registry shape is safe for host config without becoming a
-   client provider registry.
-6. Whether timeout rows are universal for all waits or only required for waits
-   with externally visible behavior.
-7. How concurrency and rate-limit policy attach to `spawn_all` and `execute`.
-8. When materialization moves out of `@firegrid/runtime`, if ever.
-9. When provider namespaces graduate from runtime-internal modules to packages.
-
-## Next Architecture Tracers
-
-Run stabilization/design tracers before new feature expansion:
-
-1. **Durable Fact Wait Descriptor**: implement named matcher wait request and
-   outcome rows over runtime-output, with timeout and rescan idempotency.
-2. **Scheduled Runtime Ingress**: prove `schedule_me` appends durable schedule
-   facts and later appends runtime ingress through the host path.
-3. **Child Agent Spawn Lowering**: prove `spawn` creates a child runtime
-   context, appends initial ingress, starts the child through host surface, and
-   awaits durable completion.
-4. **Required-Action Generic Wait Proof**: rebuild required-action request and
-   resolution behavior through the accepted generic wait/operator substrate,
-   without reintroducing `RequiredActions` or a required-action-specific
-   workflow service.
-
-Every tracer above needs scenario-level E2E proof through production package
-surfaces per `firegrid-platform-invariants.PRODUCTION_SURFACE.5`.
+Clients should not choose workflow engines, provider registries,
+materialization strategies, operator sets, matcher code, or runtime host
+topology.
+
+For tests and local development, a product-level config such as
+`durableStreamsBaseUrl + namespace` is acceptable. Individual tests should not
+manually juggle table stream URLs when exercising table-backed Firegrid
+behavior.
+
+## Future Durable Capabilities
+
+Future agent capabilities should lower to durable facts and/or durable table
+rows through the existing primitives.
+
+Examples:
+
+- `wait_for(trigger, timeout?)` should create named wait descriptors and
+  outcome rows, then resume workflow-owned deferreds or executions.
+- `schedule_me(when, prompt)` should create schedule rows and later append
+  runtime ingress through the host ingress table.
+- `spawn(agent, prompt)` should create child runtime context rows and initial
+  ingress rows through the same client/host surfaces.
+- `execute(tool/sandbox, input)` should use explicit durable request/result
+  rows and provider-owned side-effect policy.
+
+Do not rebuild a required-action-specific service, callback package, runtime
+operator framework, materialization framework, or consumer/checkpoint package
+to implement these.
+
+## Guardrails For Review
+
+Reviewers should look for these smells:
+
+- direct `@durable-streams/*` imports outside blessed substrate packages or
+  test files;
+- new wrappers around `DurableTable` that only rename table operations;
+- `DurableTable.layer(...)` acquired per insert/get/query instead of per
+  service scope;
+- raw streams used for table-shaped state;
+- test helpers that hide product composition or stream ownership;
+- package creation for one function or one scenario;
+- protocol owning URL topology, runtime policy, or deployment concerns;
+- stale folders recreated under new names;
+- tests that verify library behavior rather than Firegrid semantics.
+
+The north star is smaller surface area: table state uses `DurableTable`, raw
+facts use `effect-durable-streams`, and product behavior is ordinary Effect
+code at the owning boundary.
