@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import {
   DurableTable,
+  type DurableTableHeaders,
   type DurableTableLayerOptions,
   type DurableTableService,
 } from "effect-durable-operators"
@@ -8,6 +9,7 @@ import {
 export interface WorkflowEngineDurableStateOptions {
   readonly streamUrl: string
   readonly contentType?: string
+  readonly headers?: DurableTableHeaders
   readonly workerId?: string
   readonly txTimeoutMs?: number
 }
@@ -83,6 +85,7 @@ export const workflowEngineTableLayerOptions = (
   streamOptions: {
     url: options.streamUrl,
     contentType: options.contentType ?? "application/json",
+    ...(options.headers !== undefined ? { headers: options.headers } : {}),
   },
   txTimeoutMs: options.txTimeoutMs ?? 2_000,
 })

@@ -5,7 +5,10 @@ export {
 export {
   FiregridRuntimeHostFromConfig,
   FiregridRuntimeHostLive,
+  FiregridRuntimeHostWithWorkflowFromConfig,
+  FiregridRuntimeHostWithWorkflowLive,
   RuntimeIngressError,
+  RuntimeHostTopologyFromConfig,
   appendRuntimeIngress,
   startRuntime,
   type RuntimeHostTopologyOptions,

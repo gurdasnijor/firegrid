@@ -71,9 +71,18 @@ components:
 
   BINARIES:
     requirements:
-      1: The primary runtime binary is named `firegrid`.
-      2: The short runtime binary alias is named `fg`.
-      3: The binary supports attached mode through an explicit stream URL.
+      1:
+        requirement: The primary runtime binary is named `firegrid`.
+        deprecated: true
+      1-note: Deprecated. The runtime package binary was removed; the repository host process starts through the root `pnpm firegrid:host` script.
+      2:
+        requirement: The short runtime binary alias is named `fg`.
+        deprecated: true
+      2-note: Deprecated with BINARIES.1; there is no short alias for the root host script.
+      3:
+        requirement: The binary supports attached mode through an explicit stream URL.
+        deprecated: true
+      3-note: Deprecated. Host attachment is environment-only through `DURABLE_STREAMS_BASE_URL`, namespace, input-enable, and auth token configuration.
       4:
         requirement: The binary supports embedded development mode.
         deprecated: true
@@ -82,10 +91,22 @@ components:
         requirement: The binary supports `firegrid dev -- <command...>` to run a child process with stream environment injected.
         deprecated: true
       5-note: Firegrid no longer provides child-process dev launchers; browser tooling receives stream configuration from its own environment.
-      6: Attached mode uses `DURABLE_STREAMS_URL` or an explicit CLI stream URL rather than Firegrid-specific stream URL environment variables.
+      6:
+        requirement: Attached mode uses `DURABLE_STREAMS_URL` or an explicit CLI stream URL rather than Firegrid-specific stream URL environment variables.
+        deprecated: true
+      6-note: Deprecated. The root host uses `DURABLE_STREAMS_BASE_URL` plus Firegrid-specific namespace/input/token environment variables and has no stream URL CLI flag.
       7: The binary does not start, stop, or supervise a Durable Streams server.
-      8: The binary rejects launcher subcommands and runs only as an attached runtime process.
-      9: The binary remains available as the runtime launch/config entrypoint for development and production attached configurations without depending on the removed durable-clock surface.
+      8:
+        requirement: The binary rejects launcher subcommands and runs only as an attached runtime process.
+        deprecated: true
+      8-note: Deprecated because the package binary is removed; launcher subcommands are absent rather than rejected.
+      9:
+        requirement: The binary remains available as the runtime launch/config entrypoint for development and production attached configurations without depending on the removed durable-clock surface.
+        deprecated: true
+      9-note: Deprecated. The root `firegrid:host` script is the repository host launch entrypoint.
+      10: The repository root exposes `pnpm firegrid:host` as the single Firegrid host launch command.
+      11: The root host command configures Durable Streams attachment only from environment variables and exposes no token, auth-token, stream-url, run, config, dev, or prod CLI surface.
+      12: The root host program is a long-running `Effect.never` process whose scoped runtime and workflow DurableTable layers shut down through NodeRuntime interruption on SIGINT or SIGTERM.
 
   DEV_ENV_INJECTION:
     requirements:
@@ -128,7 +149,11 @@ constraints:
       5:
         requirement: Embedded development topology is configured through the `firegrid dev` command and explicit CLI flags when needed, not broad environment variables.
         deprecated: true
-      6: Local development topology is configured outside Firegrid by running Durable Streams separately and attaching with `DURABLE_STREAMS_URL`.
+      6:
+        requirement: Local development topology is configured outside Firegrid by running Durable Streams separately and attaching with `DURABLE_STREAMS_URL`.
+        deprecated: true
+      6-note: Deprecated. The root host attaches through `DURABLE_STREAMS_BASE_URL`; Durable Streams still runs outside Firegrid.
+      7: Runtime host configuration reads `DURABLE_STREAMS_BASE_URL`, `FIREGRID_RUNTIME_NAMESPACE`, `FIREGRID_RUNTIME_INPUT_ENABLED`, and `FIREGRID_DURABLE_STREAMS_TOKEN` from environment configuration, with the token retained as redacted data until request-header construction.
 
   RUNTIME_HOT_PATH:
     requirements:

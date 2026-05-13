@@ -1,3 +1,5 @@
+import type { DurableTableHeaders } from "effect-durable-operators"
+
 export interface RuntimeHostConfigValue {
   readonly inputEnabled: boolean
 }
@@ -16,5 +18,6 @@ export interface StartRuntimeResult {
 export interface RuntimeHostTopologyOptions {
   readonly durableStreamsBaseUrl: string
   readonly namespace: string
+  readonly headers?: DurableTableHeaders
   readonly input?: boolean
 }

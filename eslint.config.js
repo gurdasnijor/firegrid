@@ -869,12 +869,21 @@ export default tseslint.config(
       "no-restricted-imports": [
         "error",
         {
-          paths: [
-            restrictedInternalPackage(
-              "effect-durable-operators",
-              productImplementationDurableTableMessage,
-            ),
-          ],
+          paths: [],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "ImportDeclaration[source.value='effect-durable-operators'][importKind!='type']",
+          message:
+            "Runtime host code may import only the DurableTableHeaders type from effect-durable-operators.",
+        },
+        {
+          selector:
+            "ImportDeclaration[source.value='effect-durable-operators'] ImportSpecifier[imported.name!='DurableTableHeaders']",
+          message:
+            "Runtime host code may import only the DurableTableHeaders type from effect-durable-operators.",
         },
       ],
     },

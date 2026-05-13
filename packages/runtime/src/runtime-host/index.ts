@@ -11,7 +11,8 @@ import {
   makeRuntimeIngressInputRow,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
-import { Clock, Config, Effect, Layer, Option, Stream } from "effect"
+import { Clock, Config, Effect, Layer, Option, Redacted, Stream } from "effect"
+import type { DurableTableHeaders } from "effect-durable-operators"
 import {
   LocalProcessSandboxProvider,
   commandForContext,
@@ -28,6 +29,10 @@ import {
   runtimeIngressError,
 } from "./errors.ts"
 import { RuntimeHostConfig } from "./config.ts"
+import {
+  DurableStreamsWorkflowEngine,
+  WorkflowEngineTable,
+} from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import type {
   RuntimeHostConfigValue,
   RuntimeHostTopologyOptions,
@@ -43,11 +48,6 @@ export type {
 export {
   RuntimeIngressError,
 }
-
-const trimRightSlash = (value: string): string => value.replace(/\/+$/, "")
-
-const encodeStreamName = (namespace: string, name: string): string =>
-  encodeURIComponent(`${namespace}.${name}`)
 
 type SequencedChunk = {
   readonly sequence: number
@@ -127,6 +127,7 @@ const runtimeHostLayerFromOptions = (
   controlPlaneTableUrl: string,
   ingressTableUrl: string,
   outputTableUrl: string,
+  headers: DurableTableHeaders | undefined,
 ) =>
   Layer.mergeAll(
     Layer.succeed(RuntimeHostConfig, options),
@@ -134,18 +135,21 @@ const runtimeHostLayerFromOptions = (
       streamOptions: {
         url: controlPlaneTableUrl,
         contentType: "application/json",
+        ...(headers !== undefined ? { headers } : {}),
       },
     }),
     RuntimeIngressTable.layer({
       streamOptions: {
         url: ingressTableUrl,
         contentType: "application/json",
+        ...(headers !== undefined ? { headers } : {}),
       },
     }),
     RuntimeOutputTable.layer({
       streamOptions: {
         url: outputTableUrl,
         contentType: "application/json",
+        ...(headers !== undefined ? { headers } : {}),
       },
     }),
     LocalProcessSandboxProvider.layer().pipe(
@@ -156,28 +160,64 @@ const runtimeHostLayerFromOptions = (
 export const FiregridRuntimeHostLive = (
   options: RuntimeHostTopologyOptions,
 ) => {
-  const baseUrl = trimRightSlash(options.durableStreamsBaseUrl)
-  const streamUrl = (name: string): string =>
-    `${baseUrl}/v1/stream/${encodeStreamName(options.namespace, name)}`
+  const base = options.durableStreamsBaseUrl.replace(/\/+$/, "")
+  const streamPrefix = base.includes("/v1/stream/")
+    ? `${base}/`
+    : `${base}/v1/stream/`
   return runtimeHostLayerFromOptions({
     // firegrid-agent-ingress.HOST.7
     inputEnabled: options.input === true,
-  }, streamUrl("firegrid.runtime"), streamUrl("firegrid.runtimeIngress"), streamUrl("firegrid.runtimeOutput"))
+  }, `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtime`)}`, `${streamPrefix}${
+    encodeURIComponent(`${options.namespace}.firegrid.runtimeIngress`)
+  }`, `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtimeOutput`)}`, options.headers)
 }
 
-export const FiregridRuntimeHostFromConfig = Layer.unwrapEffect(
-  Effect.gen(function* () {
-    const durableStreamsBaseUrl = yield* Config.string("DURABLE_STREAMS_BASE_URL")
-    const namespace = yield* Config.string("FIREGRID_RUNTIME_NAMESPACE")
-    const input = yield* Config.boolean("FIREGRID_RUNTIME_INPUT_ENABLED").pipe(
-      Config.withDefault(false),
-    )
-    return FiregridRuntimeHostLive({
+export const FiregridRuntimeHostWithWorkflowLive = (
+  options: RuntimeHostTopologyOptions,
+) => {
+  const base = options.durableStreamsBaseUrl.replace(/\/+$/, "")
+  const streamPrefix = base.includes("/v1/stream/")
+    ? `${base}/`
+    : `${base}/v1/stream/`
+  return Layer.mergeAll(
+    FiregridRuntimeHostLive(options),
+    DurableStreamsWorkflowEngine.layer({
+      streamUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.${WorkflowEngineTable.namespace}`)}`,
+      ...(options.headers !== undefined ? { headers: options.headers } : {}),
+    }),
+  )
+}
+
+export const RuntimeHostTopologyFromConfig = Config.all({
+  durableStreamsBaseUrl: Config.string("DURABLE_STREAMS_BASE_URL"),
+  namespace: Config.string("FIREGRID_RUNTIME_NAMESPACE"),
+  input: Config.boolean("FIREGRID_RUNTIME_INPUT_ENABLED").pipe(
+    Config.withDefault(false),
+  ),
+  token: Config.option(Config.redacted("FIREGRID_DURABLE_STREAMS_TOKEN")),
+}).pipe(
+  Config.map(({ durableStreamsBaseUrl, namespace, input, token }) => {
+    const headers = Option.match(token, {
+      onNone: () => undefined,
+      onSome: (redacted) => ({
+        Authorization: () => `Bearer ${Redacted.value(redacted)}`,
+      }) satisfies DurableTableHeaders,
+    })
+    return {
       durableStreamsBaseUrl,
       namespace,
       input,
-    })
+      ...(headers !== undefined ? { headers } : {}),
+    }
   }),
+)
+
+export const FiregridRuntimeHostFromConfig = Layer.unwrapEffect(
+  Effect.map(RuntimeHostTopologyFromConfig, FiregridRuntimeHostLive),
+)
+
+export const FiregridRuntimeHostWithWorkflowFromConfig = Layer.unwrapEffect(
+  Effect.map(RuntimeHostTopologyFromConfig, FiregridRuntimeHostWithWorkflowLive),
 )
 
 export const startRuntime = (

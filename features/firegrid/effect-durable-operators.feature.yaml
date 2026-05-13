@@ -35,6 +35,7 @@ components:
       17: DurableTable composite primary keys are declared as Schema.transform schemas; the DurableTable runtime does not concatenate or split key parts with package-local separator strings.
       18: DurableTable encodes primary-key values via the primary-key field schema (Schema.encodeSync) for insert, upsert, delete, and get paths; the package contains no string-coercion key helper.
       19: DurableTable.layer acquisition ensures the backing durable stream exists before preload; callers do not pre-create the stream out of band, and acquisition is idempotent against an already-existing stream with compatible configuration.
+      20: DurableTable exposes one public DurableTableHeaders type for request header passthrough so runtime and workflow table options share the same auth/header shape.
 
   PROJECTION:
     requirements:

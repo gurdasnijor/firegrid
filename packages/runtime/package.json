@@ -14,10 +14,6 @@
       "default": "./src/workflow-engine/index.ts"
     }
   },
-  "bin": {
-    "firegrid": "./dist/bin/firegrid.js",
-    "fg": "./dist/bin/firegrid.js"
-  },
   "files": [
     "dist",
     "README.md"
@@ -28,7 +24,6 @@
   "scripts": {
     "build": "tsc",
     "check": "pnpm run typecheck && pnpm run test",
-    "firegrid": "tsx ./bin/firegrid.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -44,9 +39,7 @@
     "effect": "^3.18.0"
   },
   "devDependencies": {
-    "@durable-streams/server": "^0.3.1",
     "@types/node": "^22.10.0",
-    "tsx": "^4.20.4",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   }

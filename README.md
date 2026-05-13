@@ -64,11 +64,25 @@ Generated artifacts:
 - [Runtime control/data module dependency graph](docs/dependency-graph-runtime-control-data-detail.mmd)
 - [Flamecast module-level dependency graph](docs/dependency-graph-flamecast-detail.mmd)
 
-## Run The Runtime
+## Run The Runtime Host
 
-Run the Firegrid runtime against an existing Durable Streams endpoint by setting
-`DURABLE_STREAMS_URL`:
+Run the Firegrid host against an existing Durable Streams base URL:
 
 ```sh
-DURABLE_STREAMS_URL=https://... pnpm --filter @firegrid/runtime run firegrid
+export DURABLE_STREAMS_BASE_URL="https://..."
+export FIREGRID_RUNTIME_NAMESPACE="firegrid-dev"
+export FIREGRID_RUNTIME_INPUT_ENABLED="false"
+export FIREGRID_DURABLE_STREAMS_TOKEN="<token when the endpoint requires auth>"
+
+pnpm firegrid:host
 ```
+
+For local smoke testing from a file:
+
+```sh
+cp .env.example .env
+pnpm firegrid:host:env
+```
+
+See [Electric Cloud runtime host](docs/runbooks/electric-cloud-runtime-host.md)
+for the Electric Cloud smoke flow.
