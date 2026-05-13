@@ -105,18 +105,18 @@ string, then pipe it through `DurableTable.primaryKey`.
 
 ```ts
 const DeliveryKey = Schema.transform(
+  Schema.String,
   Schema.Struct({
     subscriberId: Schema.String,
     inputId: Schema.String,
   }),
-  Schema.String,
   {
-    strict: true,
-    encode: ({ subscriberId, inputId }) => `${subscriberId}:${inputId}`,
+    strict: false,
     decode: (encoded) => {
       const [subscriberId = "", inputId = ""] = encoded.split(":")
       return { subscriberId, inputId }
     },
+    encode: ({ subscriberId, inputId }) => `${subscriberId}:${inputId}`,
   },
 )
 
