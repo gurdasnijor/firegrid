@@ -41,6 +41,8 @@ const effectDebtGuardrails = [
 const restrictedInternalPackage = (name, message) => ({ name, message })
 const productImplementationDurableTableMessage =
   "Consume declared DurableTable services; do not import the operators package in product implementation code."
+const nodeProcessImportMessage =
+  "Do not import node:process from product source; use @effect/platform / @effect/platform-node runtime boundaries instead."
 const legacyDurableAgentSubstrateImportPatterns = [
   {
     group: [
@@ -84,6 +86,7 @@ const tsOnly = (configs) =>
   configs.map((config) => ({
     ...config,
     files: [
+      "src/**/*.ts",
       "packages/**/*.ts",
       "packages/**/*.tsx",
       "apps/**/*.ts",
@@ -199,6 +202,31 @@ const hasNearbyAllowComment = (context, node, allowedTags) => {
 
 const local = {
   rules: {
+    "no-node-process-import": {
+      meta: {
+        type: "problem",
+        docs: {
+          description: "Disallow direct node:process imports from product source.",
+        },
+        schema: [],
+        messages: {
+          noNodeProcess: nodeProcessImportMessage,
+        },
+      },
+      create(context) {
+        const report = (node) => {
+          if (node?.source?.value === "node:process") {
+            context.report({ node, messageId: "noNodeProcess" })
+          }
+        }
+
+        return {
+          ImportDeclaration: report,
+          ExportAllDeclaration: report,
+          ExportNamedDeclaration: report,
+        }
+      },
+    },
     "relative-ts-extensions": {
       meta: {
         type: "problem",
@@ -509,6 +537,7 @@ export default tseslint.config(
   },
   {
     files: [
+      "src/**/*.ts",
       "packages/**/*.ts",
       "packages/**/*.tsx",
       "apps/**/*.ts",
@@ -556,6 +585,7 @@ export default tseslint.config(
       ],
       "@typescript-eslint/no-base-to-string": "warn",
       "local/relative-ts-extensions": "error",
+      "local/no-node-process-import": "error",
       "no-restricted-imports": [
         "error",
         {

@@ -1,5 +1,10 @@
 import { NodeContext } from "@effect/platform-node"
 import {
+  Activity,
+  Workflow,
+  WorkflowEngine,
+} from "@effect/workflow"
+import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   type RuntimeContext,
@@ -11,7 +16,7 @@ import {
   makeRuntimeIngressInputRow,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
-import { Clock, Config, Effect, Layer, Option, Redacted, Stream } from "effect"
+import { Clock, Config, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {
   LocalProcessSandboxProvider,
@@ -23,9 +28,9 @@ import {
 } from "../providers/sandboxes/index.ts"
 import {
   RuntimeIngressError,
+  RuntimeContextError,
   asRuntimeContextError,
   mapRuntimeContextError,
-  type RuntimeContextError,
   runtimeIngressError,
 } from "./errors.ts"
 import { RuntimeHostConfig } from "./config.ts"
@@ -56,11 +61,32 @@ type SequencedChunk = {
 
 type RuntimeOutputRow = RuntimeEventRow | RuntimeLogLineRow
 
+const RuntimeContextWorkflowPayload = Schema.Struct({
+  contextId: Schema.String,
+})
+
+const RuntimeExitEvidence = Schema.Struct({
+  exitCode: Schema.Number,
+  signal: Schema.optional(Schema.String),
+})
+
+const StartRuntimeResultSchema = Schema.Struct({
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  exitCode: Schema.Number,
+  signal: Schema.optional(Schema.String),
+})
+
 const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map(millis => new Date(millis).toISOString()),
 )
 
 const localProcessStdinSubscriberId = "runtime-context:local-process:stdin"
+
+const runtimeContextWorkflowExecutionId = (contextId: string) =>
+  `runtime-context:${contextId}`
+
+const runtimeExecutionClock = Clock.make()
 
 const outputRowFromProcessChunk = (
   context: RuntimeContext,
@@ -122,133 +148,47 @@ const outputRowFromProcessChunk = (
     ))
   })
 
-const runtimeHostLayerFromOptions = (
-  options: RuntimeHostConfigValue,
-  controlPlaneTableUrl: string,
-  ingressTableUrl: string,
-  outputTableUrl: string,
-  headers: DurableTableHeaders | undefined,
+const readRuntimeContext = (
+  contextId: string,
 ) =>
-  Layer.mergeAll(
-    Layer.succeed(RuntimeHostConfig, options),
-    RuntimeControlPlaneTable.layer({
-      streamOptions: {
-        url: controlPlaneTableUrl,
-        contentType: "application/json",
-        ...(headers !== undefined ? { headers } : {}),
-      },
-    }),
-    RuntimeIngressTable.layer({
-      streamOptions: {
-        url: ingressTableUrl,
-        contentType: "application/json",
-        ...(headers !== undefined ? { headers } : {}),
-      },
-    }),
-    RuntimeOutputTable.layer({
-      streamOptions: {
-        url: outputTableUrl,
-        contentType: "application/json",
-        ...(headers !== undefined ? { headers } : {}),
-      },
-    }),
-    LocalProcessSandboxProvider.layer().pipe(
-      Layer.provide(NodeContext.layer),
-    ),
-  )
-
-export const FiregridRuntimeHostLive = (
-  options: RuntimeHostTopologyOptions,
-) => {
-  const base = options.durableStreamsBaseUrl.replace(/\/+$/, "")
-  const streamPrefix = base.includes("/v1/stream/")
-    ? `${base}/`
-    : `${base}/v1/stream/`
-  return runtimeHostLayerFromOptions({
-    // firegrid-agent-ingress.HOST.7
-    inputEnabled: options.input === true,
-  }, `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtime`)}`, `${streamPrefix}${
-    encodeURIComponent(`${options.namespace}.firegrid.runtimeIngress`)
-  }`, `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtimeOutput`)}`, options.headers)
-}
-
-export const FiregridRuntimeHostWithWorkflowLive = (
-  options: RuntimeHostTopologyOptions,
-) => {
-  const base = options.durableStreamsBaseUrl.replace(/\/+$/, "")
-  const streamPrefix = base.includes("/v1/stream/")
-    ? `${base}/`
-    : `${base}/v1/stream/`
-  return Layer.mergeAll(
-    FiregridRuntimeHostLive(options),
-    DurableStreamsWorkflowEngine.layer({
-      streamUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.${WorkflowEngineTable.namespace}`)}`,
-      ...(options.headers !== undefined ? { headers: options.headers } : {}),
-    }),
-  )
-}
-
-export const RuntimeHostTopologyFromConfig = Config.all({
-  durableStreamsBaseUrl: Config.string("DURABLE_STREAMS_BASE_URL"),
-  namespace: Config.string("FIREGRID_RUNTIME_NAMESPACE"),
-  input: Config.boolean("FIREGRID_RUNTIME_INPUT_ENABLED").pipe(
-    Config.withDefault(false),
-  ),
-  token: Config.option(Config.redacted("FIREGRID_DURABLE_STREAMS_TOKEN")),
-}).pipe(
-  Config.map(({ durableStreamsBaseUrl, namespace, input, token }) => {
-    const headers = Option.match(token, {
-      onNone: () => undefined,
-      onSome: (redacted) => ({
-        Authorization: () => `Bearer ${Redacted.value(redacted)}`,
-      }) satisfies DurableTableHeaders,
-    })
-    return {
-      durableStreamsBaseUrl,
-      namespace,
-      input,
-      ...(headers !== undefined ? { headers } : {}),
-    }
-  }),
-)
-
-export const FiregridRuntimeHostFromConfig = Layer.unwrapEffect(
-  Effect.map(RuntimeHostTopologyFromConfig, FiregridRuntimeHostLive),
-)
-
-export const FiregridRuntimeHostWithWorkflowFromConfig = Layer.unwrapEffect(
-  Effect.map(RuntimeHostTopologyFromConfig, FiregridRuntimeHostWithWorkflowLive),
-)
-
-export const startRuntime = (
-  options: StartRuntimeOptions,
-) =>
-  // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.3
-  Effect.scoped(Effect.gen(function* () {
-    const hostConfig = yield* RuntimeHostConfig
+  Effect.gen(function* () {
     const table = yield* RuntimeControlPlaneTable
-    const maybeContext = yield* table.contexts.get(options.contextId).pipe(
+    const maybeContext = yield* table.contexts.get(contextId).pipe(
       mapRuntimeContextError(
         "runtime-control-plane.contexts.get",
         "failed to read runtime context row",
-        options.contextId,
+        contextId,
       ),
     )
-    const context = yield* Option.match(maybeContext, {
+    return yield* Option.match(maybeContext, {
       onNone: () =>
         Effect.fail(asRuntimeContextError(
           "runtime-control-plane.contexts.get",
-          `runtime context not found: ${options.contextId}`,
-          options.contextId,
+          `runtime context not found: ${contextId}`,
+          contextId,
         )),
       onSome: row => Effect.succeed(row),
     })
-    // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.7
-    const activityAttempt = yield* table.runs.query((coll) =>
-      coll.toArray
-        .filter(row => row.contextId === context.contextId)
-        .reduce((max, row) => Math.max(max, row.activityAttempt + 1), 1),
-    ).pipe(
+  })
+
+const allocateRuntimeActivityAttempt = (
+  context: RuntimeContext,
+) =>
+  // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.2
+  Effect.flatMap(RuntimeControlPlaneTable, table =>
+    table.runs.query((coll) => {
+      const rows = coll.toArray.filter(row => row.contextId === context.contextId)
+      const terminalAttempts = new Set(
+        rows
+          .filter(row => row.status === "exited" || row.status === "failed")
+          .map(row => row.activityAttempt),
+      )
+      const inProgress = rows
+        .filter(row => row.status === "started" && !terminalAttempts.has(row.activityAttempt))
+        .map(row => row.activityAttempt)
+        .sort((left, right) => left - right)[0]
+      return inProgress ?? rows.reduce((max, row) => Math.max(max, row.activityAttempt + 1), 1)
+    })).pipe(
       mapRuntimeContextError(
         "runtime-control-plane.runs.allocate-attempt",
         "failed to allocate runtime activity attempt",
@@ -256,7 +196,12 @@ export const startRuntime = (
       ),
     )
 
-    // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.7
+const writeRunStarted = (
+  context: RuntimeContext,
+  activityAttempt: number,
+) =>
+  Effect.gen(function* () {
+    const table = yield* RuntimeControlPlaneTable
     const startedAt = yield* nowIso
     yield* table.runs.upsert({
       runEventId: {
@@ -276,31 +221,75 @@ export const startRuntime = (
         context.contextId,
       ),
     )
+  })
 
-    const appendFailed = (message: string) =>
-      Effect.gen(function* () {
-        const failedAt = yield* nowIso
-        yield* table.runs.upsert({
-          runEventId: {
-            contextId: context.contextId,
-            activityAttempt,
-            status: "failed",
-          },
-          contextId: context.contextId,
-          activityAttempt,
-          status: "failed",
-          provider: context.runtime.provider,
-          message,
-          at: failedAt,
-        }).pipe(
-          mapRuntimeContextError(
-            "runtime-control-plane.runs.failed",
-            "failed to append runtime failed row",
-            context.contextId,
-          ),
-        )
-      })
+const writeRunExited = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  exit: Schema.Schema.Type<typeof RuntimeExitEvidence>,
+) =>
+  Effect.gen(function* () {
+    const table = yield* RuntimeControlPlaneTable
+    const exitedAt = yield* nowIso
+    yield* table.runs.upsert({
+      runEventId: {
+        contextId: context.contextId,
+        activityAttempt,
+        status: "exited",
+      },
+      contextId: context.contextId,
+      activityAttempt,
+      status: "exited",
+      provider: context.runtime.provider,
+      at: exitedAt,
+      exitCode: exit.exitCode,
+      ...(exit.signal === undefined ? {} : { signal: exit.signal }),
+    }).pipe(
+      mapRuntimeContextError(
+        "runtime-control-plane.runs.exited",
+        "failed to append runtime exited row",
+        context.contextId,
+      ),
+    )
+  })
 
+const writeRunFailed = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  message: string,
+) =>
+  Effect.gen(function* () {
+    const table = yield* RuntimeControlPlaneTable
+    const failedAt = yield* nowIso
+    yield* table.runs.upsert({
+      runEventId: {
+        contextId: context.contextId,
+        activityAttempt,
+        status: "failed",
+      },
+      contextId: context.contextId,
+      activityAttempt,
+      status: "failed",
+      provider: context.runtime.provider,
+      message,
+      at: failedAt,
+    }).pipe(
+      mapRuntimeContextError(
+        "runtime-control-plane.runs.failed",
+        "failed to append runtime failed row",
+        context.contextId,
+      ),
+    )
+  })
+
+const runRuntimeContext = (
+  context: RuntimeContext,
+  activityAttempt: number,
+) =>
+  // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.3
+  // firegrid-workflow-driven-runtime.BOUNDARIES.1
+  Effect.gen(function* () {
+    const hostConfig = yield* RuntimeHostConfig
     const outputTable = yield* RuntimeOutputTable
     const writeOutputChunk = (
       sequence: number,
@@ -325,6 +314,7 @@ export const startRuntime = (
         contextId: context.contextId,
         subscriberId: localProcessStdinSubscriberId,
       }).pipe(
+        // firegrid-workflow-driven-runtime.BOUNDARIES.5
         Stream.mapError(cause =>
           asRuntimeContextError(
             `runtime-ingress.${cause.op}`,
@@ -378,39 +368,185 @@ export const startRuntime = (
             ...(chunk.signal === undefined ? {} : { signal: chunk.signal }),
           }),
       })),
-      Effect.flatMap(exit =>
-        Effect.flatMap(nowIso, exitedAt =>
-          table.runs.upsert({
-            runEventId: {
-              contextId: context.contextId,
-              activityAttempt,
-              status: "exited",
-            },
-            contextId: context.contextId,
-            activityAttempt,
-            status: "exited",
-            provider: context.runtime.provider,
-            at: exitedAt,
-            exitCode: exit.exitCode,
-            ...(exit.signal === undefined ? {} : { signal: exit.signal }),
-          }).pipe(
-            mapRuntimeContextError(
-              "runtime-control-plane.runs.exited",
-              "failed to append runtime exited row",
-              context.contextId,
-            ),
-            Effect.as({
-              contextId: context.contextId,
-              activityAttempt,
-              exitCode: exit.exitCode,
-              ...(exit.signal === undefined ? {} : { signal: exit.signal }),
-            }),
-          ))),
-      Effect.catchAll(error =>
-        appendFailed(error.message).pipe(Effect.zipRight(Effect.fail(error))),
-      ),
     )
+  })
+
+const runRuntimeContextActivity = (
+  context: RuntimeContext,
+  activityAttempt: number,
+) =>
+  Activity.make({
+    name: "firegrid.runtime-context.run",
+    success: RuntimeExitEvidence,
+    error: RuntimeContextError,
+    execute: runRuntimeContext(context, activityAttempt),
+  })
+
+const RuntimeContextWorkflow = Workflow.make({
+  name: "firegrid.runtime-context",
+  payload: RuntimeContextWorkflowPayload,
+  success: StartRuntimeResultSchema,
+  error: RuntimeContextError,
+  idempotencyKey: ({ contextId }) => runtimeContextWorkflowExecutionId(contextId),
+})
+
+const failAfterWritingRunFailed = (
+  context: RuntimeContext,
+  activityAttempt: number,
+) =>
+(error: RuntimeContextError) =>
+  Effect.gen(function* () {
+    yield* writeRunFailed(context, activityAttempt, error.message)
+    return yield* Effect.fail(error)
+  })
+
+const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(({ contextId }) =>
+  Effect.gen(function* () {
+    // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.2
+    const context = yield* readRuntimeContext(contextId)
+    const activityAttempt = yield* allocateRuntimeActivityAttempt(context)
+    yield* writeRunStarted(context, activityAttempt)
+    const exit = yield* runRuntimeContextActivity(context, activityAttempt).pipe(
+      Effect.catchAll(failAfterWritingRunFailed(context, activityAttempt)),
+    )
+    yield* writeRunExited(context, activityAttempt, exit).pipe(
+      Effect.catchAll(failAfterWritingRunFailed(context, activityAttempt)),
+    )
+    return {
+      contextId: context.contextId,
+      activityAttempt,
+      exitCode: exit.exitCode,
+      ...(exit.signal === undefined ? {} : { signal: exit.signal }),
+    }
   }))
+
+const runtimeHostLayerFromOptions = (
+  options: RuntimeHostConfigValue,
+  controlPlaneTableUrl: string,
+  ingressTableUrl: string,
+  outputTableUrl: string,
+  headers: DurableTableHeaders | undefined,
+) =>
+  Layer.mergeAll(
+    Layer.succeed(RuntimeHostConfig, options),
+    RuntimeControlPlaneTable.layer({
+      streamOptions: {
+        url: controlPlaneTableUrl,
+        contentType: "application/json",
+        ...(headers !== undefined ? { headers } : {}),
+      },
+    }),
+    RuntimeIngressTable.layer({
+      streamOptions: {
+        url: ingressTableUrl,
+        contentType: "application/json",
+        ...(headers !== undefined ? { headers } : {}),
+      },
+    }),
+    RuntimeOutputTable.layer({
+      streamOptions: {
+        url: outputTableUrl,
+        contentType: "application/json",
+        ...(headers !== undefined ? { headers } : {}),
+      },
+    }),
+    LocalProcessSandboxProvider.layer().pipe(
+      Layer.provide(NodeContext.layer),
+    ),
+  )
+
+const runtimeHostStreamUrls = (
+  options: RuntimeHostTopologyOptions,
+) => {
+  const base = options.durableStreamsBaseUrl.replace(/\/+$/, "")
+  const streamPrefix = base.includes("/v1/stream/")
+    ? `${base}/`
+    : `${base}/v1/stream/`
+  return {
+    controlPlaneTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtime`)}`,
+    ingressTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtimeIngress`)}`,
+    outputTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtimeOutput`)}`,
+    workflowTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.${WorkflowEngineTable.namespace}`)}`,
+  }
+}
+
+const runtimeHostBaseLayer = (
+  options: RuntimeHostTopologyOptions,
+) => {
+  const urls = runtimeHostStreamUrls(options)
+  return runtimeHostLayerFromOptions({
+    // firegrid-agent-ingress.HOST.7
+    inputEnabled: options.input === true,
+  }, urls.controlPlaneTableUrl, urls.ingressTableUrl, urls.outputTableUrl, options.headers)
+}
+
+const runtimeContextWorkflowEngineLayer = (
+  options: RuntimeHostTopologyOptions,
+) => {
+  const { workflowTableUrl } = runtimeHostStreamUrls(options)
+  return DurableStreamsWorkflowEngine.layer({
+    streamUrl: workflowTableUrl,
+    ...(options.headers !== undefined ? { headers: options.headers } : {}),
+  })
+}
+
+export const FiregridRuntimeHostLive = (
+  options: RuntimeHostTopologyOptions,
+) =>
+  RuntimeContextWorkflowLayer.pipe(
+    Layer.provideMerge(Layer.merge(runtimeHostBaseLayer(options), runtimeContextWorkflowEngineLayer(options))),
+  )
+
+export const FiregridRuntimeHostWithWorkflowLive = (
+  options: RuntimeHostTopologyOptions,
+) => FiregridRuntimeHostLive(options)
+
+export const RuntimeHostTopologyFromConfig = Config.all({
+  durableStreamsBaseUrl: Config.string("DURABLE_STREAMS_BASE_URL"),
+  namespace: Config.string("FIREGRID_RUNTIME_NAMESPACE"),
+  input: Config.boolean("FIREGRID_RUNTIME_INPUT_ENABLED").pipe(
+    Config.withDefault(false),
+  ),
+  token: Config.option(Config.redacted("FIREGRID_DURABLE_STREAMS_TOKEN")),
+}).pipe(
+  Config.map(({ durableStreamsBaseUrl, namespace, input, token }) => {
+    const headers = Option.match(token, {
+      onNone: () => undefined,
+      onSome: (redacted) => ({
+        Authorization: () => `Bearer ${Redacted.value(redacted)}`,
+      }) satisfies DurableTableHeaders,
+    })
+    return {
+      durableStreamsBaseUrl,
+      namespace,
+      input,
+      ...(headers !== undefined ? { headers } : {}),
+    }
+  }),
+)
+
+export const FiregridRuntimeHostFromConfig = Layer.unwrapEffect(
+  Effect.map(RuntimeHostTopologyFromConfig, FiregridRuntimeHostLive),
+)
+
+export const FiregridRuntimeHostWithWorkflowFromConfig = Layer.unwrapEffect(
+  Effect.map(RuntimeHostTopologyFromConfig, FiregridRuntimeHostWithWorkflowLive),
+)
+
+export const startRuntime = (
+  options: StartRuntimeOptions,
+) =>
+  // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.1
+  // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.4
+  Effect.flatMap(WorkflowEngine.WorkflowEngine, engine =>
+    engine.execute(RuntimeContextWorkflow, {
+      executionId: runtimeContextWorkflowExecutionId(options.contextId),
+      payload: RuntimeContextWorkflowPayload.make({
+        contextId: options.contextId,
+      }),
+    })).pipe(
+      Effect.withClock(runtimeExecutionClock),
+    )
 
 export const appendRuntimeIngress = (
   request: RuntimeIngressRequest,
