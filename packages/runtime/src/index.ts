@@ -25,6 +25,17 @@ export {
   type EnvLookup,
   type RuntimeEnvResolverPolicyValue,
 } from "./providers/sandboxes/secrets.ts"
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5..8
+export {
+  RunAuthorizedBindingSchema,
+  RunConfigSchema,
+  decodeRunConfig,
+  runConfigRequiresInput,
+  runConfigToIngressRequest,
+  runConfigToRuntimeContext,
+  type RunAuthorizedBinding,
+  type RunConfig,
+} from "./runtime-host/sync-run.ts"
 export {
   DurableStreamsWorkflowEngine,
   fireDueWorkflowClocks,
