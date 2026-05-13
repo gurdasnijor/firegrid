@@ -1,45 +1,62 @@
-# effect-durable-streams
+# `effect-durable-streams`
 
-Effect-native client for the [Durable Streams Protocol](https://github.com/durable-streams/durable-streams/blob/main/PROTOCOL.md).
+Low-level Effect adapter for the
+[Durable Streams Protocol](https://github.com/durable-streams/durable-streams/blob/main/PROTOCOL.md).
 
-Reads are `Stream<A, ReadError, Scope>`. Writes are `Sink<void, A, never, WriteError, never>`. Schema validates at the wire boundary. Resources are scoped. Retries, tracing, and interruption come from `@effect/platform/HttpClient`.
+Most Firegrid state should use
+[`effect-durable-operators` `DurableTable`](../effect-durable-operators/README.md)
+instead. Use this package only when you intentionally need raw retained stream
+semantics, such as an append-only fact stream or a fenced append path that
+`DurableTable` does not expose.
 
-## Status
+## Public API
 
-Phase 1 implementation: catch-up + long-poll + SSE reads, one-shot append, idempotent producer, stream lifecycle (create/close/delete). Conformance-tested against the reference `@durable-streams/server`.
+```ts
+import { DurableStream } from "effect-durable-streams"
+```
 
-## Quick start
+`DurableStream.define(...)` returns a schema-bound stream facade with
+Effect-native operations:
+
+- `create`
+- `append`
+- `collect`
+- `read`
+- `producer`
+- `snapshotThenFollow`
+
+Reads are `Stream`s. Writes are `Effect`s or scoped producers. Schema
+validation happens at the wire boundary.
+
+## Example
 
 ```ts
 import { DurableStream } from "effect-durable-streams"
 import { Effect, Schema, Stream } from "effect"
 
-const ChatMessage = Schema.Struct({
+const Message = Schema.Struct({
   user: Schema.String,
   text: Schema.String,
 })
 
-const chat = DurableStream.define({
-  endpoint: { url: "https://streams.example.com/chat/room-1" },
-  schema: ChatMessage,
+const messages = DurableStream.define({
+  endpoint: { url: "https://streams.example.com/v1/stream/chat.room-1" },
+  schema: Message,
 })
 
-// Read live
-const program = Effect.gen(function* () {
-  yield* chat.read({ live: "sse" }).pipe(
-    Stream.tap((msg) => Effect.log(`${msg.user}: ${msg.text}`)),
-    Stream.runDrain,
-  )
-})
+const write = messages.append({ user: "alice", text: "hello" })
 
-// Produce
-const writes = Effect.gen(function* () {
-  const producer = yield* chat.producer({ producerId: "node-1", autoClaim: true })
-  yield* Stream.fromIterable([
-    { user: "alice", text: "hello" },
-    { user: "bob", text: "world" },
-  ]).pipe(Stream.run(producer))
-})
+const readLive = messages.read({ live: "sse" }).pipe(
+  Stream.tap((message) => Effect.log(`${message.user}: ${message.text}`)),
+  Stream.runDrain,
+)
 ```
 
-See `src/DurableStream.ts` for the full namespace.
+## When Not To Use This Package
+
+Do not build table state, checkpoints, projections, or app query surfaces on
+raw streams. Model those as owner-local `DurableTable` declarations and use
+the generated `insert`, `upsert`, `delete`, `get`, `query`, `subscribe`, and
+read-only TanStack collection views.
+
+This package remains as the narrow raw-stream escape hatch.
