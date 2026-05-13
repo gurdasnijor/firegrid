@@ -20,6 +20,7 @@ Related:
 - `docs/reviews/REVIEW_POST_DURABLETABLE_CLEANUP_FOLLOWUPS_2026-05-13.md`
 - `workflow-engine-durable-state.feature.yaml`
 - `firegrid-durable-tools.feature.yaml`
+- `firegrid-workflow-driven-runtime.feature.yaml`
 
 ## Thesis
 
@@ -75,8 +76,8 @@ This SDD separates durable planes by responsibility.
 |---|---|---|---|
 | Host plane | `HostWorkflow(hostId)` plus optional host evidence rows | Supervises a host process, advertises capability, observes eligible contexts, starts/resumes child context workflows | Own product-specific session semantics or perform side effects outside workflow activities |
 | Runtime context plane | `RuntimeContextWorkflow(contextId)` | Durable lifecycle of one launched runtime context | Depend on app-local watchers or in-memory sets for correctness |
-| Session plane | product/app workflow or child context workflow | Product-level conversation/session state, waits, tool decisions, child spawns | Recreate host dispatch or provider delivery policy |
-| Ingress plane | `RuntimeIngressTable` plus workflow activity/wait integration | User prompts and provider input intents | Emit bytes before durable claim/workflow activity coordination |
+| Session plane | product/app workflow or child context workflow | Product-level conversation/session state, waits, tool decisions, child spawns | Recreate host dispatch or runtime delivery policy |
+| Ingress plane | `RuntimeIngressTable` plus workflow activity/wait integration | User prompts and runtime input intents | Emit bytes before durable claim/workflow activity coordination |
 | Output plane | `RuntimeOutputTable` | User-visible runtime events/logs/output facts | Act as execution authority |
 | Workflow engine plane | `WorkflowEngineTable` | Orchestration state, deferreds, clocks, activity claims | Become a public substrate package or app-owned control plane |
 
@@ -121,7 +122,7 @@ Responsibilities:
 
 - read the context row by `contextId`;
 - record run started/exited/failed rows;
-- run the provider session through a workflow activity;
+- run the external runtime effects through a workflow activity;
 - complete when the runtime context reaches a terminal state;
 - resume safely after host restart.
 
@@ -135,42 +136,42 @@ workflowName = firegrid.runtimeContext
 This gives the durable workflow engine one stable key for the context's
 orchestration history.
 
-### Provider Session Activity
+### `runRuntimeContext` Activity
 
 The runtime-context workflow should **not** model every inbound message as a
 separate workflow activity. That would make chatty agent sessions pay activity
 claim/write overhead per prompt fragment or input row.
 
-The preferred activity granularity is one long-lived provider-session activity
-per runtime attempt:
+The preferred activity granularity is one long-lived `runRuntimeContext`
+activity per runtime attempt:
 
 ```txt
 RuntimeContextWorkflow(contextId)
   upsert run started evidence
-  run ProviderSessionActivity(contextId, attempt)
+  run runRuntimeContext(contextId, attempt)
   upsert run terminal evidence
 
-ProviderSessionActivity(contextId, attempt)
-  start provider process
+runRuntimeContext(contextId, attempt)
+  start the opaque execution target
   subscribe to RuntimeIngressTable.inputs
   deliver stdin bytes with per-input durable delivery checkpoints
   write RuntimeOutputTable rows with deterministic output keys
   observe process exit and return exit evidence
 ```
 
-That keeps the live provider process and its streaming IO inside the workflow
+That keeps the live execution target and its streaming IO inside the workflow
 activity fence, while keeping per-message delivery as an internal durable
 stream/checkpoint loop instead of a workflow activity per message.
 
-The activity claim gates the session activity itself: only one host runs the
-provider process for a given `(contextId, attempt)` at a time. The delivery
-checkpoint gates each input row inside that activity so a retry or restart can
-replay retained inputs without re-emitting bytes that were already durably
-claimed.
+The activity claim gates the `runRuntimeContext` effect itself: only one host
+performs the external runtime side effects for a given `(contextId, attempt)`
+at a time. The delivery checkpoint gates each input row inside that activity so
+a retry or restart can replay retained inputs without re-emitting bytes that
+were already durably claimed.
 
 This is a deliberate hybrid:
 
-- workflow activity claim = one-host-at-a-time process/session ownership;
+- workflow activity claim = one-host-at-a-time external runtime effects;
 - `RuntimeIngressTable.deliveries` = per-input AtMostOnce delivery evidence;
 - `RuntimeOutputTable` = deterministic output evidence written by the activity.
 
@@ -277,13 +278,13 @@ belongs in `WorkflowEngineTable.clockWakeups` through `DurableClock`.
 ### Ingress Semantics
 
 - User input rows are durable intent.
-- Provider byte emission is a live side effect and should be coordinated by the
-  context workflow.
-- The context workflow coordinates provider byte emission by running a
-  long-lived provider-session activity, not by starting one workflow activity
-  per input row.
+- Input emission to the opaque execution target is a live side effect and
+  should be coordinated by the context workflow.
+- The context workflow coordinates input emission by running a long-lived
+  `runRuntimeContext` activity, not by starting one workflow activity per input
+  row.
 - `RuntimeIngressTable.deliveries` remains the per-input delivery checkpoint
-  inside that provider-session activity. It is not a competing host-ownership
+  inside `runRuntimeContext`. It is not a competing host-ownership
   plane; it is message-level evidence used by the activity to survive replay
   and restart.
 
@@ -312,7 +313,7 @@ dispatcher/mutex direction.
 - Host evidence rows for observability, liveness, scheduling, and capacity.
 - `DurableClaim<K>` or `insertIfAbsent` for per-message delivery checkpoints
   and other non-workflow side effects if they still require multi-host fencing
-  beyond the provider-session activity claim.
+  beyond the `runRuntimeContext` activity claim.
 - A lightweight host workflow runner in the root/product composition.
 - A fire-and-forget workflow initiation API, because the host workflow must
   start/resume child workflows without awaiting their completion.
@@ -379,8 +380,9 @@ HostWorkflow(hostId)
 ```
 
 The host plane becomes a workflow supervisor. It can repeat observations and
-resume calls safely because those are orchestration effects, not provider side
-effects. The side-effect fence moves to `RuntimeContextWorkflow` activities.
+resume calls safely because those are orchestration effects, not external
+runtime side effects. The side-effect fence moves to
+`RuntimeContextWorkflow` activities.
 
 ### Runtime Context Plane
 
@@ -390,7 +392,7 @@ Current shape:
 app/runtime watcher
   startRuntime(contextId)
     owns context lifecycle directly
-    owns provider process lifecycle directly
+    owns external runtime side effects directly
     owns output writes directly
     owns stdin stream wiring directly
 ```
@@ -402,17 +404,17 @@ RuntimeContextWorkflow(contextId)
   read context row
   choose next attempt or reuse durable attempt state
   write run started evidence
-  run ProviderSessionActivity(contextId, attempt)
+  run runRuntimeContext(contextId, attempt)
   write run exited/failed evidence
 ```
 
-`ProviderSessionActivity` is the current `startRuntime` body narrowed to the
-actual live provider session:
+`runRuntimeContext` is the current `startRuntime` body narrowed to the
+external side effects needed to progress the context:
 
 ```txt
-ProviderSessionActivity(contextId, attempt)
+runRuntimeContext(contextId, attempt)
   build local-process command
-  start/get sandbox
+  start/get opaque execution target
   subscribe to RuntimeIngressTable.inputs for this context
   use RuntimeIngressTable.deliveries to skip already-emitted inputs
   emit stdin bytes
@@ -422,7 +424,7 @@ ProviderSessionActivity(contextId, attempt)
 ```
 
 This preserves the streaming process model. The activity boundary is the
-provider session, not every message.
+side-effectful context run, not every message.
 
 ### Ingress Plane
 
@@ -447,18 +449,19 @@ Target shape:
 ```txt
 appendRuntimeIngress(request)
   remains a user intent append
-  does not decide provider ownership
+  does not decide host or execution ownership
 
-ProviderSessionActivity(contextId, attempt)
-  owns the delivery loop for the live process
+runRuntimeContext(contextId, attempt)
+  owns the delivery loop for the live execution target
   uses delivery checkpoints per input row
   may use activity-attempt-scoped subscriber identity
 ```
 
 This means `RuntimeIngressTable.deliveries` remains message-level evidence, but
-it stops looking like a separate host ownership system. The provider-session
-activity claim answers "which host owns the process"; delivery rows answer
-"which inputs has that owned process already attempted to emit?"
+it stops looking like a separate host ownership system. The
+`runRuntimeContext` activity claim answers "which host is performing the
+external runtime effects"; delivery rows answer "which inputs has that activity
+already attempted to emit?"
 
 ### Output Plane
 
@@ -473,12 +476,12 @@ streamSandboxProcess(...)
 Target shape:
 
 ```txt
-ProviderSessionActivity(...)
+runRuntimeContext(...)
   output chunk -> deterministic RuntimeOutputTable row
 ```
 
 The write path can remain almost identical. The simplification is semantic:
-output rows are evidence produced by the session activity, not writes from a
+output rows are evidence produced by the run activity, not writes from a
 top-level host function that also owns lifecycle authority.
 
 ### Workflow Engine Plane
@@ -503,7 +506,7 @@ Target shape:
 WorkflowEngine.activityExecute(...)
   hardened activity claim fence
   if this worker won:
-    run ProviderSessionActivity or other activity
+    run runRuntimeContext or other activity
     write activity result
   else:
     suspend
@@ -548,8 +551,8 @@ current APIs and module names where possible.
 ### Runtime Host Composition
 
 `packages/runtime/src/runtime-host/index.ts` should mostly compose long-lived
-Layers and start the host workflow. It should stop containing process/session
-business logic.
+Layers and start the host workflow. It should stop containing runtime-context
+execution logic.
 
 ```ts
 export const FiregridRuntimeHostLive = (
@@ -695,7 +698,7 @@ firegrid run -- <agent command...>
   insert RuntimeControlPlaneTable.contexts[contextId]
   call startRuntime({ contextId })
   block until RuntimeContextWorkflow returns exit evidence
-  exit with the provider session's exit code
+  exit with the runtime-context run's exit code
 ```
 
 Production-like shape:
@@ -737,14 +740,14 @@ export const runSelectedAgent = (
 This is not the same as `HostWorkflow`. It is a synchronous convenience entry
 point over the same runtime context workflow. That makes it useful for local
 ACP/Zed-style testing: all Firegrid table, ingress, output, workflow, and
-provider layers are exercised, but the operator gets normal "run a command and
-wait for exit" ergonomics.
+local-process provider layers are exercised, but the operator gets normal "run
+a command and wait for exit" ergonomics.
 
 ### Runtime Context Workflow
 
 The context workflow is where the current `startRuntime` lifecycle belongs.
-It owns durable lifecycle evidence and invokes one provider-session activity
-for the live attempt.
+It owns durable lifecycle evidence and invokes `runRuntimeContext` for the
+live external effects.
 
 ```ts
 const RuntimeContextWorkflow = Workflow.make({
@@ -776,7 +779,7 @@ const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer((payload) =>
 
     yield* writeRunStarted(context, activityAttempt)
 
-    const exit = yield* ProviderSessionActivity.execute({
+    const exit = yield* runRuntimeContext.execute({
       context,
       activityAttempt,
     })
@@ -797,15 +800,15 @@ Most of the current `startRuntime` code moves into small helpers used here:
 helpers still use `RuntimeControlPlaneTable.runs`; the change is that they run
 inside a durable workflow execution instead of a top-level host function.
 
-### Provider Session Activity
+### `runRuntimeContext` Activity
 
-The provider-session activity is the answer to the "one activity per message"
-concern. It is one workflow activity per runtime attempt, and that activity
-owns the live process stream.
+`runRuntimeContext` is the answer to the "one activity per message" concern.
+It is one workflow activity per runtime attempt, and that activity performs
+the live external side effects required to progress the context.
 
 ```ts
-const ProviderSessionActivity = Activity.make({
-  name: "firegrid.runtime-context.provider-session",
+const runRuntimeContext = Activity.make({
+  name: "firegrid.runtime-context.run",
   success: Schema.Struct({
     exitCode: Schema.Number,
     signal: Schema.optional(Schema.String),
@@ -814,15 +817,16 @@ const ProviderSessionActivity = Activity.make({
     readonly context: RuntimeContext
     readonly activityAttempt: number
   }) {
-    return yield* runProviderSession(input.context, input.activityAttempt)
+    return yield* runRuntimeContextEffect(input.context, input.activityAttempt)
   }),
 })
 ```
 
-`runProviderSession` is intentionally close to today's `startRuntime` body:
+`runRuntimeContextEffect` is intentionally close to today's `startRuntime`
+body:
 
 ```ts
-const runProviderSession = (
+const runRuntimeContextEffect = (
   context: RuntimeContext,
   activityAttempt: number,
 ) =>
@@ -915,11 +919,11 @@ Near-term hardening may still be required:
 `startRuntime(contextId)` should stop being the public execution-authority
 operation. It should become either:
 
-- the implementation body of `ProviderSessionActivity`; or
+- the implementation body of `runRuntimeContext`; or
 - a small compatibility wrapper that starts/resumes
   `RuntimeContextWorkflow(contextId)`.
 
-The activity boundary is the provider session, not every individual message.
+The activity boundary is the runtime-context run, not every individual message.
 This preserves the existing streaming process model while moving the
 correctness fence to workflow activity ownership.
 
@@ -943,7 +947,7 @@ This reframing also narrows `packages/runtime/src/durable-tools`:
 - it remains the workflow-facing "await table condition" adapter;
 - it should not grow into host dispatch, runtime ownership, or process
   lifecycle management;
-- it should not own provider/session execution;
+- it should not own runtime-context execution;
 - it may be unused by the synchronous `firegrid run -- <agent>` path, because
   that path already has a selected context and can call `startRuntime`
   directly;
@@ -962,7 +966,7 @@ ownership should not be built there.
 1. **HostWorkflow identity.** Is it one workflow per physical host/process
    (`host:${hostId}`), one per namespace (`namespace:${namespace}:host`), or
    both? Recommendation for v0: one per physical host/process, because local
-   provider capabilities and process capacity are host-specific.
+   host capabilities and process capacity are host-specific.
 2. **Child workflow initiation.** What exact workflow-engine API starts or
    resumes `RuntimeContextWorkflow(contextId)` without joining it? The current
    `execute(..., { discard: true })` behavior should be checked; it must not
@@ -972,12 +976,13 @@ ownership should not be built there.
    must be hardened before this model becomes the runtime side-effect fence.
    Prefer event-driven materialization or a tighter internal fence over
    exposing a broad public conditional-write primitive.
-4. **Provider-session retry semantics.** If a host crashes mid-session before
-   the provider-session activity returns, how does another host resume?
+4. **Runtime-context run retry semantics.** If a host crashes while
+   `runRuntimeContext` is performing external side effects, how does another
+   host resume?
    v0 may require stable host identity so the same host can resume its own
    activity claim; multi-host takeover requires explicit stale-owner policy.
 5. **Ingress delivery checkpoints.** Does `RuntimeIngressTable.deliveries`
-   remain the message-level checkpoint inside the provider-session activity,
+   remain the message-level checkpoint inside `runRuntimeContext`,
    or is it replaced by a narrower activity-private delivery table?
 6. **Session boundary.** Which product session state is just UI/queryable
    DurableTable evidence, and which state needs workflow suspension?
@@ -1001,8 +1006,8 @@ be able to prove:
    locks.
 5. Ingress bytes are emitted only after durable workflow/activity coordination.
 6. Per-message ingress does not require one workflow activity per input row.
-7. Restart after a mid-session host crash either resumes under the same stable
-   host identity or refuses takeover with explicit durable evidence.
+7. Restart after a mid-run host crash either resumes under the same stable host
+   identity or refuses takeover with explicit durable evidence.
 8. `wait_for`/clock behavior works inside both host and context workflows.
 9. Product session workflows compose with runtime context workflows without
    creating a third dispatch plane.
@@ -1017,19 +1022,30 @@ be able to prove:
    workflow initiation.
 3. **DurableTable hardening.** Finish the current Phase 0 DurableTable
    hardening before any new table write primitive.
-4. **Host workflow spike.** Implement a narrow `HostWorkflow(hostId)` that
-   observes contexts and initiates `RuntimeContextWorkflow(contextId)` with no
-   app-local side effects.
-5. **Context workflow spike.** Move local-process start/run/output into one
-   provider-session activity per runtime attempt. Prove duplicate host resume
-   does not duplicate process start.
-6. **Ingress migration.** Keep per-message delivery inside the provider-session
-   activity using durable delivery checkpoints. Prove retained inputs replay
-   without duplicate stdin emission and without one workflow activity per
-   message.
-7. **Flamecast cleanup.** Delete app-local host watcher correctness logic and
-   consume the product host runner.
-8. **Revisit claims/mutexes.** Add `DurableClaim`, `DurableKeyedMutex`, or
+4. **Context workflow spike.** Implement
+   `firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.*`: make
+   `startRuntime(contextId)` delegate to `RuntimeContextWorkflow` and move
+   local-process start/run/output into `runRuntimeContext` for one runtime
+   attempt. Prove duplicate `startRuntime(contextId)` does not duplicate
+   process start.
+5. **Synchronous run spike.** Implement
+   `firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.*`: create one
+   `RuntimeContext` row from `firegrid run -- <agent command...>`, call
+   `startRuntime`, block for the workflow result, and exit with the runtime
+   exit code.
+6. **Activity-claim hardening.** Implement
+   `firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.*` before making
+   workflow activity claims the broad runtime side-effect fence.
+7. **Temporal workflow spike.** Implement
+   `firegrid-workflow-driven-runtime.PHASE_4_TEMPORAL_WORKFLOWS.*`: prove
+   `Schedule` policy plus `DurableClock.sleep` covers `sleep` and
+   `schedule_me` without a Firegrid timer table.
+8. **Host workflow spike.** Implement
+   `firegrid-workflow-driven-runtime.PHASE_5_HOST_WORKFLOW.*` only after the
+   control-plane table can express eligible work explicitly.
+9. **Flamecast cleanup.** Delete app-local host watcher correctness logic and
+   consume either the synchronous runner or the product host runner.
+10. **Revisit claims/mutexes.** Add `DurableClaim`, `DurableKeyedMutex`, or
    `insertIfAbsent` only for side effects that remain outside workflow
    activities and have concrete call sites.
 
