@@ -623,6 +623,69 @@ call `startRuntime(contextId)` after launch. The important simplification is
 that `startRuntime` delegates into `RuntimeContextWorkflow` instead of owning
 the local process.
 
+### Synchronous Run Mode
+
+The same immediate step supports a Fireline-style "boot one selected agent
+now" path without waiting for the full host-supervisor model.
+
+```sh
+firegrid run [firegrid host/runtime options] -- <agent command...>
+```
+
+The command should be product-shaped, not a second runtime design:
+
+```txt
+firegrid run -- <agent command...>
+  resolve Firegrid host config from Config/env plus non-secret flags
+  build a RuntimeContext row from the command after --
+  insert RuntimeControlPlaneTable.contexts[contextId]
+  call startRuntime({ contextId })
+  block until RuntimeContextWorkflow returns exit evidence
+  exit with the provider session's exit code
+```
+
+Production-like shape:
+
+```ts
+export const runSelectedAgent = (
+  request: {
+    readonly requestedBy?: string
+    readonly argv: ReadonlyArray<string>
+    readonly cwd?: string
+  },
+) =>
+  Effect.gen(function* () {
+    const control = yield* RuntimeControlPlaneTable
+    // Same row shape as @firegrid/client's launch normalization. A real
+    // implementation should extract the row constructor instead of creating a
+    // second launch normalization path.
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const createdAt = yield* Clock.currentTimeMillis.pipe(
+      Effect.map((millis) => new Date(millis).toISOString()),
+    )
+
+    yield* control.contexts.insert({
+      contextId,
+      createdAt,
+      ...(request.requestedBy === undefined
+        ? {}
+        : { createdBy: request.requestedBy }),
+      runtime: normalizeRuntimeIntent(local.jsonl({
+        argv: [...request.argv],
+        ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+      })),
+    })
+
+    return yield* startRuntime({ contextId })
+  })
+```
+
+This is not the same as `HostWorkflow`. It is a synchronous convenience entry
+point over the same runtime context workflow. That makes it useful for local
+ACP/Zed-style testing: all Firegrid table, ingress, output, workflow, and
+provider layers are exercised, but the operator gets normal "run a command and
+wait for exit" ergonomics.
+
 ### Runtime Context Workflow
 
 The context workflow is where the current `startRuntime` lifecycle belongs.
@@ -820,6 +883,23 @@ either:
 context workflow need durable waits over table changes. But `wait_for` should
 resolve existing workflow executions; it should not become a separate
 workflow-dispatch service.
+
+This reframing also narrows `packages/runtime/src/durable-tools`:
+
+- it remains the workflow-facing "await table condition" adapter;
+- it should not grow into host dispatch, runtime ownership, or process
+  lifecycle management;
+- it should not own provider/session execution;
+- it may be unused by the synchronous `firegrid run -- <agent>` path, because
+  that path already has a selected context and can call `startRuntime`
+  directly;
+- it becomes useful again for long-lived workflows that need to wait on
+  durable table changes, such as a future `HostWorkflow`, `schedule_me`, or
+  product session workflows.
+
+In other words, workflows make durable-tools smaller and more precise. The
+package is not redundant, but the parts that look like dispatch or ownership
+should not be built there.
 
 ## Open Design Questions
 
