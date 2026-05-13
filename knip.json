@@ -56,7 +56,8 @@
     }
   },
   "ignore": [
-    "semgrep-tests/**"
+    "semgrep-tests/**",
+    "repos/**"
   ],
   "ignoreDependencies": [
     "jscpd"

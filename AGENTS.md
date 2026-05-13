@@ -1,0 +1,65 @@
+# Agent Instructions
+
+## Vendored Reference Repositories
+
+This repository vendors selected upstream sources under `repos/` as read-only
+reference material via `git subtree --squash`. They are not part of the build
+graph and must not be imported from product code.
+
+Currently vendored:
+
+- `repos/effect/` — Effect-TS source repo (`Effect-TS/effect`, `main`,
+  squash-imported). See `repos/effect/AGENTS.md` and the package sources for
+  authoritative examples of idiomatic Effect APIs and patterns.
+
+### Rules
+
+Use vendored repositories as read-only reference material when working with
+related libraries. Prefer examples and patterns from the vendored source code
+over generated guesses or web search results. Do not edit files under `repos/`
+unless explicitly asked. Do not import from `repos/` — application code should
+continue importing from normal package dependencies (`effect`, `@effect/*`,
+etc.) resolved through `node_modules`.
+
+Before writing or modifying Effect code, read `@repos/effect/AGENTS.md` (the
+upstream Effect contributor guide). It encodes the code-style, naming, and
+"look at existing code to learn established patterns" expectations that the
+maintainers apply to the library itself, and those are the strongest available
+signal for what idiomatic Effect looks like. If/when this repository moves to
+a vendored Effect v4 subtree, also read `@repos/effect/LLMS.md`.
+
+When you need to confirm an Effect API signature, behavior, or idiom, read the
+relevant file under `repos/effect/packages/effect/src/` (or the appropriate
+sibling package) before relying on training knowledge or web search.
+
+### Optional: agent-patterns/
+
+You may distill recurring patterns you discover while reading `repos/effect`
+into focused notes under `agent-patterns/` (e.g. `agent-patterns/effect-schema.md`
+with constructors/combinators, encoding/decoding examples, transformation
+patterns, error-handling patterns). Do this on demand, when a pattern keeps
+recurring across product code — not speculatively. Keep each note short and
+link back to the canonical file in `repos/effect/`.
+
+### Updating the vendored Effect source
+
+```bash
+git subtree pull \
+  --prefix=repos/effect \
+  https://github.com/Effect-TS/effect.git \
+  main \
+  --squash
+```
+
+Run this as a standalone PR — never bundle a `repos/effect` refresh with
+product changes.
+
+### Why these files are excluded from tooling
+
+- ESLint ignores `repos/**` so vendored source does not pollute lint output and
+  cannot drift our rule set.
+- `no-restricted-imports` blocks `repos/**` paths so a stray import from
+  product code fails the build.
+- VS Code excludes `repos/**` from search, file watching, and TypeScript /
+  JavaScript auto-import suggestions so the upstream symbols never appear as
+  import candidates while you write product code.
