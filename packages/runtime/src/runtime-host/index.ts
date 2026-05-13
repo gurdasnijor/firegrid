@@ -1,4 +1,3 @@
-import type { HttpClient } from "@effect/platform"
 import { NodeContext } from "@effect/platform-node"
 import {
   RuntimeControlPlaneTable,
@@ -10,13 +9,11 @@ import {
 import {
   RuntimeIngressTable,
   makeRuntimeIngressInputRow,
-  type RuntimeIngressInputRow,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
-import { Config, Effect, Layer, Option, Stream } from "effect"
+import { Clock, Config, Effect, Layer, Option, Stream } from "effect"
 import {
   LocalProcessSandboxProvider,
-  type SandboxProvider,
   commandForContext,
   localProcessStdinDelivery,
   streamSandboxProcess,
@@ -35,7 +32,6 @@ import type {
   RuntimeHostConfigValue,
   RuntimeHostTopologyOptions,
   StartRuntimeOptions,
-  StartRuntimeResult,
 } from "./types.ts"
 
 export type {
@@ -60,7 +56,9 @@ type SequencedChunk = {
 
 type RuntimeOutputRow = RuntimeEventRow | RuntimeLogLineRow
 
-const nowIso = (): string => new Date().toISOString()
+const nowIso = Clock.currentTimeMillis.pipe(
+  Effect.map(millis => new Date(millis).toISOString()),
+)
 
 const localProcessStdinSubscriberId = "runtime-context:local-process:stdin"
 
@@ -69,59 +67,60 @@ const outputRowFromProcessChunk = (
   activityAttempt: number,
   sequence: number,
   chunk: Extract<ProcessOutputChunk, { readonly type: "output" }>,
-): Effect.Effect<RuntimeOutputRow, RuntimeContextError> => {
-  const rule = context.runtime.journal.find(candidate => candidate.source === chunk.channel)
-  if (rule === undefined) {
-    return Effect.fail(asRuntimeContextError(
-      "runtime-output.no-journal-rule",
-      `no runtime journal rule for ${chunk.channel}`,
+): Effect.Effect<RuntimeOutputRow, RuntimeContextError> =>
+  Effect.gen(function* () {
+    const rule = context.runtime.journal.find(candidate => candidate.source === chunk.channel)
+    if (rule === undefined) {
+      return yield* Effect.fail(asRuntimeContextError(
+        "runtime-output.no-journal-rule",
+        `no runtime journal rule for ${chunk.channel}`,
+        context.contextId,
+      ))
+    }
+
+    const receivedAt = yield* nowIso
+    if (rule.target === "events" && rule.format === "jsonl" && chunk.channel === "stdout") {
+      return {
+        eventId: {
+          contextId: context.contextId,
+          activityAttempt,
+          target: "events",
+          sequence,
+        },
+        contextId: context.contextId,
+        activityAttempt,
+        sequence,
+        source: "stdout",
+        format: "jsonl",
+        receivedAt,
+        raw: chunk.text,
+      }
+    }
+
+    if (rule.target === "logs" && rule.format === "text-lines" && chunk.channel === "stderr") {
+      return {
+        logLineId: {
+          contextId: context.contextId,
+          activityAttempt,
+          target: "logs",
+          sequence,
+        },
+        contextId: context.contextId,
+        activityAttempt,
+        sequence,
+        source: "stderr",
+        format: "text-lines",
+        receivedAt,
+        raw: chunk.text,
+      }
+    }
+
+    return yield* Effect.fail(asRuntimeContextError(
+      "runtime-output.invalid-journal-rule",
+      `unsupported runtime journal rule ${rule.source}:${rule.format}->${rule.target}`,
       context.contextId,
     ))
-  }
-
-  const receivedAt = nowIso()
-  if (rule.target === "events" && rule.format === "jsonl" && chunk.channel === "stdout") {
-    return Effect.succeed({
-      eventId: {
-        contextId: context.contextId,
-        activityAttempt,
-        target: "events",
-        sequence,
-      },
-      contextId: context.contextId,
-      activityAttempt,
-      sequence,
-      source: "stdout",
-      format: "jsonl",
-      receivedAt,
-      raw: chunk.text,
-    })
-  }
-
-  if (rule.target === "logs" && rule.format === "text-lines" && chunk.channel === "stderr") {
-    return Effect.succeed({
-      logLineId: {
-        contextId: context.contextId,
-        activityAttempt,
-        target: "logs",
-        sequence,
-      },
-      contextId: context.contextId,
-      activityAttempt,
-      sequence,
-      source: "stderr",
-      format: "text-lines",
-      receivedAt,
-      raw: chunk.text,
-    })
-  }
-
-  return Effect.fail(asRuntimeContextError(
-    "runtime-output.invalid-journal-rule",
-    `unsupported runtime journal rule ${rule.source}:${rule.format}->${rule.target}`,
-    context.contextId,
-  ))
-}
+  })
 
 const runtimeHostLayerFromOptions = (
   options: RuntimeHostConfigValue,
@@ -183,9 +182,9 @@ export const FiregridRuntimeHostFromConfig = Layer.unwrapEffect(
 
 export const startRuntime = (
   options: StartRuntimeOptions,
-): Effect.Effect<StartRuntimeResult, RuntimeContextError, RuntimeHostConfig | RuntimeControlPlaneTable | RuntimeIngressTable | RuntimeOutputTable | SandboxProvider | HttpClient.HttpClient> => {
+) =>
   // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.3
-  const program = Effect.scoped(Effect.gen(function* () {
+  Effect.scoped(Effect.gen(function* () {
     const hostConfig = yield* RuntimeHostConfig
     const table = yield* RuntimeControlPlaneTable
     const maybeContext = yield* table.contexts.get(options.contextId).pipe(
@@ -204,6 +203,7 @@ export const startRuntime = (
         )),
       onSome: row => Effect.succeed(row),
     })
+    // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.7
     const activityAttempt = yield* table.runs.query((coll) =>
       coll.toArray
         .filter(row => row.contextId === context.contextId)
@@ -217,6 +217,7 @@ export const startRuntime = (
     )
 
     // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.7
+    const startedAt = yield* nowIso
     yield* table.runs.upsert({
       runEventId: {
         contextId: context.contextId,
@@ -227,7 +228,7 @@ export const startRuntime = (
       activityAttempt,
       provider: context.runtime.provider,
       status: "started",
-      at: new Date().toISOString(),
+      at: startedAt,
     }).pipe(
       mapRuntimeContextError(
         "runtime-control-plane.runs.started",
@@ -237,25 +238,28 @@ export const startRuntime = (
     )
 
     const appendFailed = (message: string) =>
-      table.runs.upsert({
-        runEventId: {
+      Effect.gen(function* () {
+        const failedAt = yield* nowIso
+        yield* table.runs.upsert({
+          runEventId: {
+            contextId: context.contextId,
+            activityAttempt,
+            status: "failed",
+          },
           contextId: context.contextId,
           activityAttempt,
           status: "failed",
-        },
-        contextId: context.contextId,
-        activityAttempt,
-        provider: context.runtime.provider,
-        status: "failed",
-        message,
-        at: new Date().toISOString(),
-      }).pipe(
-        mapRuntimeContextError(
-          "runtime-control-plane.runs.failed",
-          "failed to append runtime failed row",
-          context.contextId,
-        ),
-      )
+          provider: context.runtime.provider,
+          message,
+          at: failedAt,
+        }).pipe(
+          mapRuntimeContextError(
+            "runtime-control-plane.runs.failed",
+            "failed to append runtime failed row",
+            context.contextId,
+          ),
+        )
+      })
 
     const outputTable = yield* RuntimeOutputTable
     const writeOutputChunk = (
@@ -335,48 +339,43 @@ export const startRuntime = (
           }),
       })),
       Effect.flatMap(exit =>
-        table.runs.upsert({
-          runEventId: {
+        Effect.flatMap(nowIso, exitedAt =>
+          table.runs.upsert({
+            runEventId: {
+              contextId: context.contextId,
+              activityAttempt,
+              status: "exited",
+            },
             contextId: context.contextId,
             activityAttempt,
             status: "exited",
-          },
-          contextId: context.contextId,
-          activityAttempt,
-          provider: context.runtime.provider,
-          status: "exited",
-          at: new Date().toISOString(),
-          exitCode: exit.exitCode,
-          ...(exit.signal === undefined ? {} : { signal: exit.signal }),
-        }).pipe(
-          mapRuntimeContextError(
-            "runtime-control-plane.runs.exited",
-            "failed to append runtime exited row",
-            context.contextId,
-          ),
-          Effect.as({
-            contextId: context.contextId,
-            activityAttempt,
+            provider: context.runtime.provider,
+            at: exitedAt,
             exitCode: exit.exitCode,
             ...(exit.signal === undefined ? {} : { signal: exit.signal }),
-          }),
-        )),
+          }).pipe(
+            mapRuntimeContextError(
+              "runtime-control-plane.runs.exited",
+              "failed to append runtime exited row",
+              context.contextId,
+            ),
+            Effect.as({
+              contextId: context.contextId,
+              activityAttempt,
+              exitCode: exit.exitCode,
+              ...(exit.signal === undefined ? {} : { signal: exit.signal }),
+            }),
+          ))),
       Effect.catchAll(error =>
         appendFailed(error.message).pipe(Effect.zipRight(Effect.fail(error))),
       ),
     )
   }))
-  return program as Effect.Effect<
-    StartRuntimeResult,
-    RuntimeContextError,
-    RuntimeHostConfig | RuntimeControlPlaneTable | RuntimeIngressTable | RuntimeOutputTable | SandboxProvider | HttpClient.HttpClient
-  >
-}
 
 export const appendRuntimeIngress = (
   request: RuntimeIngressRequest,
-): Effect.Effect<RuntimeIngressInputRow, RuntimeIngressError, RuntimeHostConfig | RuntimeIngressTable> => {
-  const program = Effect.gen(function* () {
+) =>
+  Effect.gen(function* () {
     const options = yield* RuntimeHostConfig
     if (!options.inputEnabled) {
       return yield* runtimeIngressError(
@@ -402,6 +401,7 @@ export const appendRuntimeIngress = (
       return existing.value
     }
 
+    // firegrid-agent-ingress.INGRESS.9
     const nextSequence = yield* table.inputs.query((coll) =>
       coll.toArray
         .filter(candidate => candidate.contextId === row.contextId)
@@ -424,7 +424,7 @@ export const appendRuntimeIngress = (
       ...row,
       status: "sequenced" as const,
       sequence: nextSequence,
-      sequencedAt: new Date().toISOString(),
+      sequencedAt: yield* nowIso,
     }
     // firegrid-agent-ingress.INGRESS.10
     yield* table.inputs.insert(sequenced).pipe(
@@ -439,5 +439,3 @@ export const appendRuntimeIngress = (
     )
     return sequenced
   })
-  return program as Effect.Effect<RuntimeIngressInputRow, RuntimeIngressError, RuntimeHostConfig | RuntimeIngressTable>
-}

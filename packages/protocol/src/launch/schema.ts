@@ -144,29 +144,3 @@ export const runtimeLogLineFields = {
 } as const
 export const RuntimeLogLineSchema = Schema.Struct(runtimeLogLineFields)
 export type RuntimeLogLine = Schema.Schema.Type<typeof RuntimeLogLineSchema>
-
-export const RuntimeOutputStdoutJournalEventSchema = Schema.Struct({
-  type: Schema.Literal("firegrid.runtime.output.stdout"),
-  id: Schema.String,
-  at: Schema.String,
-  event: RuntimeEventSchema,
-})
-export type RuntimeOutputStdoutJournalEvent = Schema.Schema.Type<
-  typeof RuntimeOutputStdoutJournalEventSchema
->
-
-export const RuntimeOutputStderrJournalEventSchema = Schema.Struct({
-  type: Schema.Literal("firegrid.runtime.output.stderr"),
-  id: Schema.String,
-  at: Schema.String,
-  log: RuntimeLogLineSchema,
-})
-export type RuntimeOutputStderrJournalEvent = Schema.Schema.Type<
-  typeof RuntimeOutputStderrJournalEventSchema
->
-
-export const RuntimeJournalEventSchema = Schema.Union(
-  RuntimeOutputStdoutJournalEventSchema,
-  RuntimeOutputStderrJournalEventSchema,
-)
-export type RuntimeJournalEvent = Schema.Schema.Type<typeof RuntimeJournalEventSchema>

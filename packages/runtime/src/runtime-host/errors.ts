@@ -23,12 +23,12 @@ export const asRuntimeContextError = (
     ...(cause === undefined ? {} : { cause }),
   })
 
-export const mapRuntimeContextError = (
+export const mapRuntimeContextError = <E>(
   op: string,
   message: string,
   contextId: string,
 ) =>
-  Effect.mapError((cause: unknown) =>
+  Effect.mapError((cause: E) =>
     asRuntimeContextError(op, message, contextId, cause))
 
 export class RuntimeIngressError extends Schema.TaggedError<RuntimeIngressError>()(

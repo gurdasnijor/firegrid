@@ -18,7 +18,7 @@ import {
   type PublicPromptRequest,
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Context, Data, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Data, Effect, Layer, Option, Schema } from "effect"
 
 export interface ClientOptions {
   readonly durableStreamsBaseUrl?: string
@@ -102,7 +102,11 @@ const compareJournalRows = (
 
 const makeContextId = (): string => `ctx_${crypto.randomUUID()}`
 
-interface FiregridClientDurableTopology {
+const nowIso = Clock.currentTimeMillis.pipe(
+  Effect.map(millis => new Date(millis).toISOString()),
+)
+
+interface FiregridClientStreamUrls {
   readonly runtimeControlPlaneTableUrl: string
   readonly runtimeIngressTableUrl: string
   readonly runtimeOutputTableUrl: string
@@ -113,9 +117,9 @@ const trimRightSlash = (value: string): string => value.replace(/\/+$/, "")
 const encodeStreamName = (namespace: string, name: string): string =>
   encodeURIComponent(`${namespace}.${name}`)
 
-const topologyFromConfig = (
+const streamUrlsFromConfig = (
   cfg: ClientOptions,
-): FiregridClientDurableTopology | undefined => {
+): FiregridClientStreamUrls | undefined => {
   if (cfg.durableStreamsBaseUrl === undefined || cfg.namespace === undefined) return undefined
   const baseUrl = trimRightSlash(cfg.durableStreamsBaseUrl)
   const namespace = cfg.namespace
@@ -132,9 +136,9 @@ const topologyFromConfig = (
 
 const requiredControlPlaneStreamUrl = (
   cfg: ClientOptions,
-  topology: FiregridClientDurableTopology | undefined,
+  streamUrls: FiregridClientStreamUrls | undefined,
 ): Effect.Effect<string, FiregridConfigError> => {
-  const url = cfg.controlPlaneStreamUrl ?? cfg.runtimeStreamUrl ?? topology?.runtimeControlPlaneTableUrl
+  const url = cfg.controlPlaneStreamUrl ?? cfg.runtimeStreamUrl ?? streamUrls?.runtimeControlPlaneTableUrl
   if (url === undefined) {
     return Effect.fail(new FiregridConfigError({
       cause: new Error("FiregridConfig requires durableStreamsBaseUrl + namespace or a runtime/control-plane stream URL"),
@@ -143,14 +147,17 @@ const requiredControlPlaneStreamUrl = (
   return Effect.succeed(url)
 }
 
-const normalizeLaunch = (request: PublicLaunchRequest): RuntimeContext => ({
-  // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.3
-  // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.7
-  contextId: makeContextId(),
-  createdAt: new Date().toISOString(),
-  ...(request.requestedBy === undefined ? {} : { createdBy: request.requestedBy }),
-  runtime: normalizeRuntimeIntent(request.runtime),
-})
+const normalizeLaunch = (
+  request: PublicLaunchRequest,
+): Effect.Effect<RuntimeContext> =>
+  Effect.map(nowIso, createdAt => ({
+    // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.3
+    // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.7
+    contextId: makeContextId(),
+    createdAt,
+    ...(request.requestedBy === undefined ? {} : { createdBy: request.requestedBy }),
+    runtime: normalizeRuntimeIntent(request.runtime),
+  }))
 
 const decodePublicLaunchRequest = (
   request: PublicLaunchRequest,
@@ -249,7 +256,7 @@ const make = (
         // firegrid-agent-ingress.INGRESS.9
         status: "sequenced" as const,
         sequence: nextSequence,
-        sequencedAt: new Date().toISOString(),
+        sequencedAt: yield* nowIso,
       }
       yield* ingress.value.inputs.insert(sequenced)
       return sequenced
@@ -290,7 +297,7 @@ const make = (
       // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1
       // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6
       const decoded = yield* decodePublicLaunchRequest(request)
-      const normalized = normalizeLaunch(decoded)
+      const normalized = yield* normalizeLaunch(decoded)
       yield* appendContext(normalized)
       return open(normalized.contextId)
     }),
@@ -308,8 +315,8 @@ const firegridServiceLayer = (
   cfg: ClientOptions,
   ingressConfigured: boolean,
   outputConfigured: boolean,
-): Layer.Layer<Firegrid, never, RuntimeControlPlaneTable | RuntimeIngressTable | RuntimeOutputTable> => {
-  const layer = Layer.scoped(
+) =>
+  Layer.scoped(
     Firegrid,
     Effect.gen(function* () {
       const ingress = ingressConfigured
@@ -321,17 +328,15 @@ const firegridServiceLayer = (
       return yield* make(cfg, ingress, output)
     }),
   )
-  return layer as Layer.Layer<Firegrid, never, RuntimeControlPlaneTable | RuntimeIngressTable | RuntimeOutputTable>
-}
 
 const configuredFiregridLayer = (
   cfg: ClientOptions,
 ): Effect.Effect<Layer.Layer<Firegrid, unknown>, FiregridConfigError> =>
   Effect.gen(function* () {
-  const topology = topologyFromConfig(cfg)
-  const controlPlaneStreamUrl = yield* requiredControlPlaneStreamUrl(cfg, topology)
-  const inputTableStreamUrl = cfg.inputStreamUrl ?? topology?.runtimeIngressTableUrl
-  const outputTableStreamUrl = cfg.dataPlaneStreamUrl ?? topology?.runtimeOutputTableUrl
+  const streamUrls = streamUrlsFromConfig(cfg)
+  const controlPlaneStreamUrl = yield* requiredControlPlaneStreamUrl(cfg, streamUrls)
+  const inputTableStreamUrl = cfg.inputStreamUrl ?? streamUrls?.runtimeIngressTableUrl
+  const outputTableStreamUrl = cfg.dataPlaneStreamUrl ?? streamUrls?.runtimeOutputTableUrl
   const txTimeoutMs = cfg.txTimeoutMs ?? 2_000
   const controlLayer = RuntimeControlPlaneTable.layer({
     streamOptions: {

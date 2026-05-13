@@ -17,7 +17,7 @@ components:
         deprecated: true
       7-note: Deprecated because runtime ingress is modeled as `firegrid.runtimeIngress.inputs` table rows, not raw `runtime_ingress.requested` facts.
       8: Runtime ingress table schemas, public prompt schemas, deterministic id derivation, and trusted row construction live in one shared protocol module rather than split ids/rows wrapper modules.
-      9: Runtime ingress writers create input rows with deterministic input ids for idempotency and explicit per-context sequence numbers at write time.
+      9: Runtime ingress writers create input rows with deterministic input ids for idempotency and explicit per-context sequence numbers at write time under a single-writer-per-context contract.
       10:
         requirement: Runtime ingress sequencing flips pending inputs to sequenced rows with per-context sequence numbers before providers deliver them.
         deprecated: true

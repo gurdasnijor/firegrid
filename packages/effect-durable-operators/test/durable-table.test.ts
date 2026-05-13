@@ -50,6 +50,9 @@ class WorkflowTable extends DurableTable("workflow", {
   executions: WorkflowExecution,
 }) {}
 
+const isUnknownArray = (value: unknown): value is ReadonlyArray<unknown> =>
+  Array.isArray(value)
+
 describe("DurableTable", () => {
   it("effect-durable-operators.TABLE.7 extracts pipeable primaryKey metadata and consumes the table with yield* Table", async () => {
     const url = server.url("table-primary-key")
@@ -446,7 +449,7 @@ describe("DurableTable", () => {
     )
   })
 
-  it("effect-durable-operators.TABLE.17 effect-durable-operators.TABLE.18 supports composite primary keys declared as Schema.transform", async () => {
+  it("effect-durable-operators.TABLE.17 effect-durable-operators.TABLE.18 supports decoded composite primary keys across get query and subscribe", async () => {
     const url = server.url("table-composite-key")
 
     const CompositeKey = Schema.transform(
@@ -458,11 +461,19 @@ describe("DurableTable", () => {
       {
         strict: false,
         decode: (encoded: string) => {
-          const [subscriberId = "", ingressId = ""] = encoded.split("\x1f")
+          const parsed: unknown = JSON.parse(encoded)
+          if (!isUnknownArray(parsed) || parsed.length !== 2) {
+            throw new Error("invalid composite key")
+          }
+          const subscriberId = parsed[0]
+          const ingressId = parsed[1]
+          if (typeof subscriberId !== "string" || typeof ingressId !== "string") {
+            throw new Error("invalid composite key")
+          }
           return { subscriberId, ingressId }
         },
         encode: ({ subscriberId, ingressId }: { subscriberId: string; ingressId: string }) =>
-          `${subscriberId}\x1f${ingressId}`,
+          JSON.stringify([subscriberId, ingressId]),
       },
     )
 
@@ -491,9 +502,35 @@ describe("DurableTable", () => {
           const found = yield* table.checkpoints.get(key)
           expect(Option.isSome(found)).toBe(true)
           if (Option.isSome(found)) {
-            // get() decodes the primary-key field back to the user-typed form.
             expect(found.value.key).toEqual(key)
             expect(found.value.claimedAt).toBe("2026-05-12T00:00:00.000Z")
+          }
+
+          const queried = yield* table.checkpoints.query((coll) => coll.toArray)
+          expect(queried).toHaveLength(1)
+          expect(queried[0]?.key).toEqual(key)
+          expect(typeof queried[0]?.key).toBe("object")
+
+          const stateRows = yield* table.checkpoints.query((coll) =>
+            Array.from(coll.state.values()))
+          expect(stateRows[0]?.key).toEqual(key)
+
+          const mapped = yield* table.checkpoints.query((coll) =>
+            coll.map(row => row.key))
+          expect(mapped).toEqual([key])
+
+          const initialChanges = yield* table.checkpoints.subscribe(
+            (coll, emit) => {
+              const sub = coll.subscribeChanges(
+                changes => emit(changes.map(change => change.value.key)),
+                { includeInitialState: true },
+              )
+              return () => sub.unsubscribe()
+            },
+          ).pipe(Stream.runHead)
+          expect(Option.isSome(initialChanges)).toBe(true)
+          if (Option.isSome(initialChanges)) {
+            expect(initialChanges.value).toEqual([key])
           }
 
           // Distinct composite key must miss.

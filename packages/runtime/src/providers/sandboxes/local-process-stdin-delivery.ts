@@ -27,7 +27,12 @@ import {
   RuntimeIngressTable,
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Option, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Schema, Stream } from "effect"
+
+const nowIso = Clock.currentTimeMillis.pipe(
+  Effect.map(millis => new Date(millis).toISOString()),
+)
+
 export class LocalProcessStdinDeliveryError extends Schema.TaggedError<LocalProcessStdinDeliveryError>()(
   "LocalProcessStdinDeliveryError",
   {
@@ -200,12 +205,13 @@ export const localProcessStdinDelivery = (
               return Option.none<Uint8Array>()
             }
 
+            const claimedAt = yield* nowIso
             yield* table.deliveries.upsert({
               key,
               inputId: row.inputId,
               contextId: row.contextId,
               subscriberId: options.subscriberId,
-              claimedAt: new Date().toISOString(),
+              claimedAt,
             })
 
             if (options.onClaimedBeforeEmit !== undefined) {

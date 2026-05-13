@@ -1,5 +1,6 @@
 import { DurableTable, type DurableTableService } from "effect-durable-operators"
-import { Schema } from "effect"
+import { ParseResult, Schema } from "effect"
+import type { Either, SchemaAST } from "effect"
 import {
   RuntimeContextIntentSchema,
   RuntimeOutputEventKeySchema,
@@ -11,61 +12,131 @@ import {
   type RuntimeContext,
 } from "./schema.ts"
 
-const KEY_SEPARATOR = "\x1f"
+const invalidPrimaryKey = (ast: SchemaAST.AST, encoded: string, message: string) =>
+  ParseResult.fail(new ParseResult.Type(ast, encoded, message))
 
-const RuntimeRunEventPrimaryKeySchema = Schema.transform(
+const isUnknownArray = (value: unknown): value is ReadonlyArray<unknown> =>
+  Array.isArray(value)
+
+const parsePrimaryKeyTuple = (
+  encoded: string,
+  arity: number,
+  ast: SchemaAST.AST,
+): Either.Either<ReadonlyArray<unknown>, ParseResult.ParseIssue> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(encoded)
+  } catch {
+    return invalidPrimaryKey(ast, encoded, "primary key is not valid JSON")
+  }
+  if (!isUnknownArray(parsed) || parsed.length !== arity) {
+    return invalidPrimaryKey(ast, encoded, `primary key must be a ${arity}-item JSON tuple`)
+  }
+  return ParseResult.succeed(parsed)
+}
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value)
+
+const decodeRuntimeOutputPrimaryKey = <Target extends "events" | "logs">(
+  encoded: string,
+  ast: SchemaAST.AST,
+  expectedTarget: Target,
+  message: string,
+) =>
+  ParseResult.flatMap(parsePrimaryKeyTuple(encoded, 4, ast), (parts) => {
+    const contextId = parts[0]
+    const activityAttempt = parts[1]
+    const target = parts[2]
+    const sequence = parts[3]
+    if (
+      typeof contextId !== "string" ||
+      !isFiniteNumber(activityAttempt) ||
+      target !== expectedTarget ||
+      !isFiniteNumber(sequence)
+    ) {
+      return invalidPrimaryKey(ast, encoded, message)
+    }
+    return ParseResult.succeed({
+      contextId,
+      activityAttempt,
+      target: expectedTarget,
+      sequence,
+    })
+  })
+
+const encodeRuntimeOutputPrimaryKey = (
+  key: {
+    readonly contextId: string
+    readonly activityAttempt: number
+    readonly target: "events" | "logs"
+    readonly sequence: number
+  },
+) =>
+  ParseResult.succeed(JSON.stringify([
+    key.contextId,
+    key.activityAttempt,
+    key.target,
+    key.sequence,
+  ]))
+
+const RuntimeRunEventPrimaryKeySchema = Schema.transformOrFail(
   Schema.String,
   RuntimeRunEventKeySchema,
   {
     strict: false,
-    decode: (encoded: string) => {
-      const [contextId = "", activityAttempt = "0", status = "started"] = encoded.split(KEY_SEPARATOR)
-      return {
-        contextId,
-        activityAttempt: Number(activityAttempt),
-        status: status as "started" | "exited" | "failed",
-      }
-    },
+    decode: (encoded: string, _options, ast) =>
+      ParseResult.flatMap(parsePrimaryKeyTuple(encoded, 3, ast), (parts) => {
+        const contextId = parts[0]
+        const activityAttempt = parts[1]
+        const status = parts[2]
+        if (
+          typeof contextId !== "string" ||
+          !isFiniteNumber(activityAttempt) ||
+          (status !== "started" && status !== "exited" && status !== "failed")
+        ) {
+          return invalidPrimaryKey(ast, encoded, "primary key tuple does not match RuntimeRunEventKey")
+        }
+        return ParseResult.succeed({
+          contextId,
+          activityAttempt,
+          status,
+        })
+      }),
     encode: ({ contextId, activityAttempt, status }) =>
-      [contextId, String(activityAttempt), status].join(KEY_SEPARATOR),
+      ParseResult.succeed(JSON.stringify([contextId, activityAttempt, status])),
   },
 )
 
-const RuntimeOutputEventPrimaryKeySchema = Schema.transform(
+const RuntimeOutputEventPrimaryKeySchema = Schema.transformOrFail(
   Schema.String,
   RuntimeOutputEventKeySchema,
   {
     strict: false,
-    decode: (encoded: string) => {
-      const [contextId = "", activityAttempt = "0", target = "events", sequence = "0"] = encoded.split(KEY_SEPARATOR)
-      return {
-        contextId,
-        activityAttempt: Number(activityAttempt),
-        target: target as "events",
-        sequence: Number(sequence),
-      }
-    },
-    encode: ({ contextId, activityAttempt, target, sequence }) =>
-      [contextId, String(activityAttempt), target, String(sequence)].join(KEY_SEPARATOR),
+    decode: (encoded: string, _options, ast) =>
+      decodeRuntimeOutputPrimaryKey(
+        encoded,
+        ast,
+        "events",
+        "primary key tuple does not match RuntimeOutputEventKey",
+      ),
+    encode: encodeRuntimeOutputPrimaryKey,
   },
 )
 
-const RuntimeOutputLogLinePrimaryKeySchema = Schema.transform(
+const RuntimeOutputLogLinePrimaryKeySchema = Schema.transformOrFail(
   Schema.String,
   RuntimeOutputLogLineKeySchema,
   {
     strict: false,
-    decode: (encoded: string) => {
-      const [contextId = "", activityAttempt = "0", target = "logs", sequence = "0"] = encoded.split(KEY_SEPARATOR)
-      return {
-        contextId,
-        activityAttempt: Number(activityAttempt),
-        target: target as "logs",
-        sequence: Number(sequence),
-      }
-    },
-    encode: ({ contextId, activityAttempt, target, sequence }) =>
-      [contextId, String(activityAttempt), target, String(sequence)].join(KEY_SEPARATOR),
+    decode: (encoded: string, _options, ast) =>
+      decodeRuntimeOutputPrimaryKey(
+        encoded,
+        ast,
+        "logs",
+        "primary key tuple does not match RuntimeOutputLogLineKey",
+      ),
+    encode: encodeRuntimeOutputPrimaryKey,
   },
 )
 

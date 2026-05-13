@@ -117,7 +117,7 @@ components:
       4: Scenario tracer 001 configures the production runtime host root and starts runtime context execution through exported @firegrid/runtime package code.
       5: The production runtime host root owns runtime control-plane rows, runtime-output table rows, and optional runtime input delivery topology without requiring workflow stream configuration.
       6: Runtime host configuration validates optional input topology at the host options boundary without exporting a separate input configuration module.
-      7: Runtime host v0 allocates a run activity attempt by reading existing run rows for the context and choosing max(activityAttempt)+1; strict concurrent allocation fencing is deferred to a future durable claim/append primitive.
+      7: Runtime host v0 allocates a run activity attempt under a single-writer-per-context contract by reading existing run rows for the context and choosing max(activityAttempt)+1; strict concurrent allocation fencing is deferred to a future durable claim/append primitive.
 
   JOURNAL_ROWS:
     requirements:

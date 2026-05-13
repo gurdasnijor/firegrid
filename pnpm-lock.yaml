@@ -109,9 +109,6 @@ importers:
         specifier: ^3.18.0
         version: 3.21.2
     devDependencies:
-      '@durable-streams/server':
-        specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
