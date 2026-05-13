@@ -115,19 +115,53 @@ merges `command.envVars` into the `Command.env(...)` call. **No
 
 ### 4. `firegrid:run` flag plumbing
 
+**Naming rule:** flag names map 1-to-1 to launch-spec field paths, with
+nested fields delimited by `-`. So `RuntimeContextIntent.envBindings`
+becomes `--env-bindings`, `RuntimeContextIntent.config.cwd` becomes
+`--config-cwd`, etc. No invented vocabulary; if you know the schema you
+know the flags.
+
+`envBindings` is `ReadonlyArray<{ name, ref }>`, so the flag is repeatable
+and its value uses `name=ref` form (the `ref` is written exactly as it is
+stored, including the resolution prefix):
+
 ```sh
-# Same name on both sides (most common case)
-pnpm firegrid:run --secret-env ANTHROPIC_API_KEY -- node agent.mjs
+# Single binding (parent var name happens to match the binding name)
+pnpm firegrid:run \
+  --env-bindings ANTHROPIC_API_KEY=env:ANTHROPIC_API_KEY \
+  -- node agent.mjs
 
-# Rename: parent has different var name than the binding
-pnpm firegrid:run --secret-env ANTHROPIC_API_KEY=PARENT_ANTHROPIC_KEY -- node agent.mjs
+# Rename: parent var name differs from the binding name
+pnpm firegrid:run \
+  --env-bindings ANTHROPIC_API_KEY=env:PARENT_ANTHROPIC_KEY \
+  -- node agent.mjs
 
-# Multiple flags allowed; bindings carried into the row
-pnpm firegrid:run --secret-env ANTHROPIC_API_KEY --secret-env GITHUB_TOKEN -- ...
+# Repeated for multiple bindings
+pnpm firegrid:run \
+  --env-bindings ANTHROPIC_API_KEY=env:ANTHROPIC_API_KEY \
+  --env-bindings GITHUB_TOKEN=env:GITHUB_TOKEN \
+  -- node agent.mjs
+
+# Future ref shapes plug in without changing the flag surface
+pnpm firegrid:run \
+  --env-bindings DB_PASSWORD=secret:db/prod \
+  -- node agent.mjs
 ```
 
-`firegrid:run` parses `--secret-env` flags before `--`, builds the
-`envBindings` array, attaches it to the `RuntimeContext` row at upsert time.
+`firegrid:run` parses `--env-bindings` flags before `--`, builds the
+`envBindings` array (one entry per flag occurrence), and attaches it to
+the `RuntimeContext` row at upsert time.
+
+Schema-shaped flags reserved for future use under the same naming rule
+(out of scope for this proposal, but documented so the namespace stays
+coherent):
+
+| Schema path | Flag |
+|---|---|
+| `runtime.provider` | `--provider` (locked to `local-process` in v1) |
+| `runtime.config.cwd` | `--config-cwd` |
+| `runtime.envBindings[].{name,ref}` | `--env-bindings name=ref` (this proposal) |
+| `createdBy` | `--created-by` (currently hard-coded to `firegrid-run`) |
 
 ### 5. Spec
 
@@ -221,9 +255,6 @@ toy local processes.
 
 ## Risks
 
-- **Naming churn.** `--secret-env` is one of several plausible flag names
-  (`--env-binding`, `--inject-env`, `--passthrough-env`). Pick once, stick
-  with it.
 - **Schema migration.** Adding `envBindings` is additive (optional field),
   so retained streams replay cleanly. Renaming the field later would break
   replay.
