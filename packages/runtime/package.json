@@ -12,6 +12,10 @@
     "./workflow-engine": {
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"
+    },
+    "./durable-tools": {
+      "types": "./src/durable-tools/index.ts",
+      "default": "./src/durable-tools/index.ts"
     }
   },
   "bin": {
@@ -39,9 +43,9 @@
     "@effect/rpc": "0.75.1",
     "@effect/workflow": "0.18.1",
     "@firegrid/protocol": "workspace:*",
+    "effect": "^3.18.0",
     "effect-durable-operators": "workspace:*",
-    "effect-durable-streams": "workspace:*",
-    "effect": "^3.18.0"
+    "effect-durable-streams": "workspace:*"
   },
   "devDependencies": {
     "@durable-streams/server": "^0.3.1",
