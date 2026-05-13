@@ -121,9 +121,7 @@ Responsibilities:
 
 - read the context row by `contextId`;
 - record run started/exited/failed rows;
-- start the provider process through a workflow activity;
-- deliver ingress to the provider through workflow activities or durable waits;
-- collect process output and write `RuntimeOutputTable` rows;
+- run the provider session through a workflow activity;
 - complete when the runtime context reaches a terminal state;
 - resume safely after host restart.
 
@@ -136,6 +134,49 @@ workflowName = firegrid.runtimeContext
 
 This gives the durable workflow engine one stable key for the context's
 orchestration history.
+
+### Provider Session Activity
+
+The runtime-context workflow should **not** model every inbound message as a
+separate workflow activity. That would make chatty agent sessions pay activity
+claim/write overhead per prompt fragment or input row.
+
+The preferred activity granularity is one long-lived provider-session activity
+per runtime attempt:
+
+```txt
+RuntimeContextWorkflow(contextId)
+  upsert run started evidence
+  run ProviderSessionActivity(contextId, attempt)
+  upsert run terminal evidence
+
+ProviderSessionActivity(contextId, attempt)
+  start provider process
+  subscribe to RuntimeIngressTable.inputs
+  deliver stdin bytes with per-input durable delivery checkpoints
+  write RuntimeOutputTable rows with deterministic output keys
+  observe process exit and return exit evidence
+```
+
+That keeps the live provider process and its streaming IO inside the workflow
+activity fence, while keeping per-message delivery as an internal durable
+stream/checkpoint loop instead of a workflow activity per message.
+
+The activity claim gates the session activity itself: only one host runs the
+provider process for a given `(contextId, attempt)` at a time. The delivery
+checkpoint gates each input row inside that activity so a retry or restart can
+replay retained inputs without re-emitting bytes that were already durably
+claimed.
+
+This is a deliberate hybrid:
+
+- workflow activity claim = one-host-at-a-time process/session ownership;
+- `RuntimeIngressTable.deliveries` = per-input AtMostOnce delivery evidence;
+- `RuntimeOutputTable` = deterministic output evidence written by the activity.
+
+The alternative "one delivery activity per input row" is not the default
+design. It may be useful for coarse tool calls, but it is too heavyweight for
+normal agent message streams.
 
 ### Session / Tool Workflows
 
@@ -184,9 +225,13 @@ workflow child execution, `wait_for`, `DurableClock`, and activities.
 - User input rows are durable intent.
 - Provider byte emission is a live side effect and should be coordinated by the
   context workflow.
-- The current `RuntimeIngressTable.deliveries` AtMostOnce claim remains a
-  valid v0 bridge, but the preferred long-term model is "context workflow
-  observes ingress and delivers input as an activity."
+- The context workflow coordinates provider byte emission by running a
+  long-lived provider-session activity, not by starting one workflow activity
+  per input row.
+- `RuntimeIngressTable.deliveries` remains the per-input delivery checkpoint
+  inside that provider-session activity. It is not a competing host-ownership
+  plane; it is message-level evidence used by the activity to survive replay
+  and restart.
 
 ### Output Semantics
 
@@ -211,8 +256,9 @@ dispatcher/mutex direction.
 
 - A hardened workflow activity-claim implementation.
 - Host evidence rows for observability, liveness, scheduling, and capacity.
-- `DurableClaim<K>` or `insertIfAbsent` for non-workflow side effects if a real
-  call site remains outside workflow activities.
+- `DurableClaim<K>` or `insertIfAbsent` for per-message delivery checkpoints
+  and other non-workflow side effects if they still require multi-host fencing
+  beyond the provider-session activity claim.
 - A lightweight host workflow runner in the root/product composition.
 - A fire-and-forget workflow initiation API, because the host workflow must
   start/resume child workflows without awaiting their completion.
@@ -237,9 +283,13 @@ Near-term hardening may still be required:
 `startRuntime(contextId)` should stop being the public execution-authority
 operation. It should become either:
 
-- an internal activity called by `RuntimeContextWorkflow`; or
+- the implementation body of `ProviderSessionActivity`; or
 - a small compatibility wrapper that starts/resumes
   `RuntimeContextWorkflow(contextId)`.
+
+The activity boundary is the provider session, not every individual message.
+This preserves the existing streaming process model while moving the
+correctness fence to workflow activity ownership.
 
 ### `apps/flamecast/src/runtime/host.ts`
 
@@ -266,15 +316,21 @@ workflow-dispatch service.
    resumes `RuntimeContextWorkflow(contextId)` without joining it? The current
    `execute(..., { discard: true })` behavior should be checked; it must not
    serialize host dispatch behind child completion.
-3. **Workflow activity claim hardening.** Can the current raw activity-claim
-   path be internalized without adding public `DurableTable.insertIfAbsent`?
-   If yes, do that before adding a generic table conditional write.
-4. **Ingress delivery.** Does provider stdin delivery become a context workflow
-   activity immediately, or does the current `RuntimeIngressTable.deliveries`
-   bridge stay until after the host workflow is running?
-5. **Session boundary.** Which product session state is just UI/queryable
+3. **Workflow activity claim hardening.** The activity-claim path is a
+   precondition, not a follow-up. The current raw producer and polling loop
+   must be hardened before this model becomes the runtime side-effect fence.
+   Prefer event-driven materialization or a tighter internal fence over
+   exposing a broad public conditional-write primitive.
+4. **Provider-session retry semantics.** If a host crashes mid-session before
+   the provider-session activity returns, how does another host resume?
+   v0 may require stable host identity so the same host can resume its own
+   activity claim; multi-host takeover requires explicit stale-owner policy.
+5. **Ingress delivery checkpoints.** Does `RuntimeIngressTable.deliveries`
+   remain the message-level checkpoint inside the provider-session activity,
+   or is it replaced by a narrower activity-private delivery table?
+6. **Session boundary.** Which product session state is just UI/queryable
    DurableTable evidence, and which state needs workflow suspension?
-6. **Host liveness.** What is the minimal host evidence needed before
+7. **Host liveness.** What is the minimal host evidence needed before
    multi-host scheduling? Heartbeats may be observability-only at first if
    workflow activity claims already fence side effects.
 
@@ -293,8 +349,11 @@ be able to prove:
 4. Runtime output and run rows remain user-visible evidence, not coordination
    locks.
 5. Ingress bytes are emitted only after durable workflow/activity coordination.
-6. `wait_for`/clock behavior works inside both host and context workflows.
-7. Product session workflows compose with runtime context workflows without
+6. Per-message ingress does not require one workflow activity per input row.
+7. Restart after a mid-session host crash either resumes under the same stable
+   host identity or refuses takeover with explicit durable evidence.
+8. `wait_for`/clock behavior works inside both host and context workflows.
+9. Product session workflows compose with runtime context workflows without
    creating a third dispatch plane.
 
 ## Candidate Rollout
@@ -310,11 +369,13 @@ be able to prove:
 4. **Host workflow spike.** Implement a narrow `HostWorkflow(hostId)` that
    observes contexts and initiates `RuntimeContextWorkflow(contextId)` with no
    app-local side effects.
-5. **Context workflow spike.** Move local-process start/run/output into
-   workflow activities. Prove duplicate host resume does not duplicate process
-   start.
-6. **Ingress migration.** Route prompt/input delivery through the context
-   workflow or explicitly document the retained `deliveries` bridge.
+5. **Context workflow spike.** Move local-process start/run/output into one
+   provider-session activity per runtime attempt. Prove duplicate host resume
+   does not duplicate process start.
+6. **Ingress migration.** Keep per-message delivery inside the provider-session
+   activity using durable delivery checkpoints. Prove retained inputs replay
+   without duplicate stdin emission and without one workflow activity per
+   message.
 7. **Flamecast cleanup.** Delete app-local host watcher correctness logic and
    consume the product host runner.
 8. **Revisit claims/mutexes.** Add `DurableClaim`, `DurableKeyedMutex`, or
@@ -332,4 +393,3 @@ be able to prove:
   still need idempotency or target-side fencing where appropriate.
 - This SDD does not implement `DurableClaim`, `DurableKeyedMutex`, or
   `DurableTable.insertIfAbsent`.
-
