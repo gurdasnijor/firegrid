@@ -228,6 +228,23 @@ Everything temporal should prefer `DurableClock` directly. Everything that
 starts or owns side effects should prefer workflow activities. Everything that
 spawns or aggregates work should prefer child workflows.
 
+Effect `Schedule` is still useful here, but as the expression language for
+recurrence/backoff/calendar policy, not as the durable sleeper by itself.
+`Schedule.driver(...).next(...)` stores its driver state in memory and sleeps
+through the normal Effect clock. Firegrid's durable shape should be:
+
+```txt
+Effect Schedule computes the next delay/deadline
+  -> Workflow persists the scheduling intent/state
+  -> DurableClock.sleep(...) durably suspends until that deadline
+  -> Workflow resumes and runs the next scheduled step
+```
+
+Do not use `effect/Scheduler` as the durable scheduling abstraction. That
+module is the runtime task scheduler for fiber execution (`scheduleTask`,
+`shouldYield`), not the product-level temporal model. Durable product time
+belongs in `WorkflowEngineTable.clockWakeups` through `DurableClock`.
+
 ## Durability Semantics By Plane
 
 ### Host Semantics
