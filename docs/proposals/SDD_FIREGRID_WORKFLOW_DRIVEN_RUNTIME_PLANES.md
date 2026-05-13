@@ -263,6 +263,228 @@ dispatcher/mutex direction.
 - A fire-and-forget workflow initiation API, because the host workflow must
   start/resume child workflows without awaiting their completion.
 
+## Current-To-Target Codepath Sketches
+
+These sketches are intentionally approximate. Their purpose is to show which
+current responsibilities move, not to specify final module names.
+
+### Host Plane
+
+Current shape in `packages/runtime/src/runtime-host/index.ts`:
+
+```txt
+FiregridRuntimeHostLive(options)
+  derive three table stream URLs
+  provide RuntimeControlPlaneTable
+  provide RuntimeIngressTable
+  provide RuntimeOutputTable
+  provide LocalProcessSandboxProvider
+
+FiregridRuntimeHostWithWorkflowLive(options)
+  provide FiregridRuntimeHostLive
+  provide DurableStreamsWorkflowEngine.layer
+
+external watcher / app host
+  watches contexts
+  calls startRuntime(contextId)
+```
+
+`startRuntime(contextId)` is currently the execution authority:
+
+```txt
+startRuntime(contextId)
+  read RuntimeControlPlaneTable.contexts[contextId]
+  allocate activityAttempt by querying runs
+  write run started
+  build local-process command
+  build stdin stream from RuntimeIngressTable.inputs + deliveries
+  stream sandbox process
+    for each output chunk:
+      write RuntimeOutputTable event/log row
+    on exit:
+      write run exited
+    on error:
+      write run failed
+```
+
+Target shape:
+
+```txt
+FiregridRuntimeHostLive(options)
+  provide shared runtime tables
+  provide workflow engine
+  provide durable-tools wait_for sources
+  provide sandbox provider
+  start/resume HostWorkflow(hostId)
+
+HostWorkflow(hostId)
+  wait_for eligible RuntimeContext rows
+  for each eligible context:
+    initiate RuntimeContextWorkflow(contextId)
+  never starts local processes directly
+```
+
+The host plane becomes a workflow supervisor. It can repeat observations and
+resume calls safely because those are orchestration effects, not provider side
+effects. The side-effect fence moves to `RuntimeContextWorkflow` activities.
+
+### Runtime Context Plane
+
+Current shape:
+
+```txt
+app/runtime watcher
+  startRuntime(contextId)
+    owns context lifecycle directly
+    owns provider process lifecycle directly
+    owns output writes directly
+    owns stdin stream wiring directly
+```
+
+Target shape:
+
+```txt
+RuntimeContextWorkflow(contextId)
+  read context row
+  choose next attempt or reuse durable attempt state
+  write run started evidence
+  run ProviderSessionActivity(contextId, attempt)
+  write run exited/failed evidence
+```
+
+`ProviderSessionActivity` is the current `startRuntime` body narrowed to the
+actual live provider session:
+
+```txt
+ProviderSessionActivity(contextId, attempt)
+  build local-process command
+  start/get sandbox
+  subscribe to RuntimeIngressTable.inputs for this context
+  use RuntimeIngressTable.deliveries to skip already-emitted inputs
+  emit stdin bytes
+  stream stdout/stderr/exit
+  write RuntimeOutputTable rows with deterministic keys
+  return exit evidence
+```
+
+This preserves the streaming process model. The activity boundary is the
+provider session, not every message.
+
+### Ingress Plane
+
+Current shape:
+
+```txt
+appendRuntimeIngress(request)
+  read existing input by inputId
+  allocate sequence by querying existing rows
+  insert sequenced RuntimeIngressTable.inputs row
+
+localProcessStdinDelivery(contextId, subscriberId)
+  subscribe to sequenced inputs
+  for each input:
+    read deliveries[key]
+    upsert delivery claim
+    emit bytes
+```
+
+Target shape:
+
+```txt
+appendRuntimeIngress(request)
+  remains a user intent append
+  does not decide provider ownership
+
+ProviderSessionActivity(contextId, attempt)
+  owns the delivery loop for the live process
+  uses delivery checkpoints per input row
+  may use activity-attempt-scoped subscriber identity
+```
+
+This means `RuntimeIngressTable.deliveries` remains message-level evidence, but
+it stops looking like a separate host ownership system. The provider-session
+activity claim answers "which host owns the process"; delivery rows answer
+"which inputs has that owned process already attempted to emit?"
+
+### Output Plane
+
+Current shape:
+
+```txt
+streamSandboxProcess(...)
+  output chunk -> outputRowFromProcessChunk(...)
+  outputTable.events/logs.upsert(...)
+```
+
+Target shape:
+
+```txt
+ProviderSessionActivity(...)
+  output chunk -> deterministic RuntimeOutputTable row
+```
+
+The write path can remain almost identical. The simplification is semantic:
+output rows are evidence produced by the session activity, not writes from a
+top-level host function that also owns lifecycle authority.
+
+### Workflow Engine Plane
+
+Current shape:
+
+```txt
+WorkflowEngine.activityExecute(...)
+  claimActivity(activityKey)
+    raw DurableStream producer append
+    wait/poll for activityClaims materialization
+  if this worker won:
+    run activity body
+    write activity result
+  else:
+    suspend
+```
+
+Target shape:
+
+```txt
+WorkflowEngine.activityExecute(...)
+  hardened activity claim fence
+  if this worker won:
+    run ProviderSessionActivity or other activity
+    write activity result
+  else:
+    suspend
+```
+
+The workflow engine plane becomes more important, not less. This SDD depends
+on hardening that activity-claim fence before making it the primary runtime
+side-effect boundary.
+
+### Product App Plane
+
+Current Flamecast toy shape:
+
+```txt
+app host
+  create Firegrid client
+  watch contexts where createdBy == flamecast-toy
+  keep in-memory Set<contextId>
+  call startRuntime(contextId)
+```
+
+Target shape:
+
+```txt
+app/root process
+  configure Firegrid runtime host
+  start HostWorkflow(hostId)
+
+UI
+  launch context through @firegrid/client
+  observe RuntimeControlPlaneTable / RuntimeOutputTable through live queries
+```
+
+Product apps no longer implement a host watcher as application logic.
+
 ## Effect On Existing Code
 
 ### `packages/runtime/src/workflow-engine/internal/engine-runtime.ts`
