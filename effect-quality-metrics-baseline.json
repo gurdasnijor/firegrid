@@ -2,7 +2,7 @@
   "metrics": {
     "extendsErrorCount": 0,
     "processEnvOutsideBinCount": 0,
-    "throwOutsideBinScriptCount": 2,
+    "throwOutsideBinScriptCount": 4,
     "forOfInPackageSourceCount": 18,
     "anyNoContextCastCount": 0,
     "nodeCryptoImportCount": 0,

@@ -35,6 +35,12 @@
  *    read-only TanStack collection view for query engines and UI bindings
  *  - effect-durable-operators.TABLE.22 — read-only collection views decode
  *    primary-key fields before exposing rows to query and subscription users
+ *  - effect-durable-operators.TABLE.23 — synchronous TanStack mutation
+ *    rejection throws DurableTableError directly (no FiberFailure wrap)
+ *  - effect-durable-operators.TABLE.24 — non-string encoded primary-key
+ *    values fail loudly with a typed DurableTableError; no String() fallback
+ *  - effect-durable-operators.TABLE.25 — get/upsert/delete agree with
+ *    query.toArray for Schema.transformOrFail JSON-tuple composite keys
  */
 
 import type { DurableStreamOptions } from "@durable-streams/client"
@@ -171,7 +177,10 @@ type CompiledCollection = {
   readonly durableType: string
   readonly primaryKey: string
   readonly schema: StructSchema
-  readonly encodePrimaryKey: (decoded: unknown) => string
+  // Returns the schema-encoded primary-key value as-is. Callers that need
+  // the durable-wire string form route through `requireString`, which
+  // raises a typed DurableTableError on non-string values.
+  readonly encodePrimaryKey: (decoded: unknown) => unknown
   readonly decodePrimaryKey: (encoded: string) => unknown
 }
 
@@ -215,14 +224,14 @@ const primaryKey = <S extends Schema.Schema.Any>(
   // The transform threads the inner schema's encoded representation through
   // a `Schema.String` outer schema. For inner schemas whose encoded form is
   // already string (Schema.String, branded strings, or user-supplied
-  // composite-key Schema.transform), the threading is identity. For inner
-  // schemas whose encoded form is non-string, the value is coerced via
-  // String(...) at encode time so the durable wire form is always a string.
+  // composite-key Schema.transform / Schema.transformOrFail), the threading
+  // is identity. Non-string encoded forms fall through to `requireString` at
+  // the action boundary, which raises a typed DurableTableError with the
+  // durable type + field name.
   const transformed = Schema.transform(Schema.String, schema, {
     strict: false,
     decode: (_fromA: string, fromI: string): unknown => fromI,
-    encode: (toI: unknown, _toA: unknown): string =>
-      typeof toI === "string" ? toI : String(toI),
+    encode: (toI: unknown, _toA: unknown): string => toI as string,
   })
   return transformed.annotations({
     [primaryKeyAnnotationId]: true,
@@ -242,6 +251,7 @@ const actionName = (
   operation: GeneratedOperation,
 ): string => `${collectionKey}.${operation}`
 
+// effect-durable-operators.TABLE.24
 const requireString = (
   collection: CompiledCollection,
   value: unknown,
@@ -291,10 +301,11 @@ const compileTable = <const Schemas extends TableSchemas<Schemas>>(
       durableType: `${namespace}.${collectionKey}`,
       primaryKey: primaryKeyName,
       schema,
-      encodePrimaryKey: (value: unknown) => {
-        const encoded = encodeFn(value)
-        return typeof encoded === "string" ? encoded : String(encoded)
-      },
+      // effect-durable-operators.TABLE.18 — primary-key values are encoded
+      // through the field schema as-is. Non-string encoded values are
+      // rejected by `requireString` at the action boundary; the package
+      // contains no String(...) coercion fallback.
+      encodePrimaryKey: (value: unknown) => encodeFn(value),
       decodePrimaryKey: (encoded: string) => decodeFn(encoded),
     } satisfies CompiledCollection
   })
@@ -487,16 +498,18 @@ const makeReadableCollection = <Row extends object>(
   collection: CompiledCollection,
   tanstackCollection: TanStackCollection<Row, string>,
 ): TanStackCollection<Row, string> => {
-  const rejectMutation = () =>
-    // Synchronous TanStack mutation boundary: collection views must fail
-    // immediately when callers bypass DurableTable generated writes.
-    // eslint-disable-next-line no-restricted-syntax
-    Effect.runSync(Effect.fail(new DurableTableError({
+  const rejectMutation = (): never => {
+    // effect-durable-operators.TABLE.23
+    // Synchronous TanStack mutation boundary: throw the typed error directly
+    // so callers can `instanceof DurableTableError` it. Wrapping in
+    // Effect.runSync(Effect.fail(...)) would re-package this as a FiberFailure.
+    throw new DurableTableError({
       table: tableName,
       cause: new Error(
         "DurableTable collection views are read-only; use the generated insert/upsert/delete facade methods",
       ),
-    })))
+    })
+  }
 
   const overrides = {
     insert: rejectMutation,

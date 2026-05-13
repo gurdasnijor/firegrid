@@ -338,26 +338,6 @@ If you want initial-state replay (the default for most reactive use cases),
 pass `{ includeInitialState: true }` to `subscribeChanges`. A separate
 snapshot-then-subscribe pattern is a race; don't reach for it.
 
-### Composite-key `.get` does not always find rows
-
-For collections whose primary key is declared via `Schema.transformOrFail` (a
-typed composite key encoded as a JSON tuple, the convention in
-`packages/protocol/src/launch/table.ts`), `.get(key)` may return `Option.none`
-for rows that `.query.toArray` returns correctly. This is a known bug —
-see [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md). The runtime workaround is a
-`.query.toArray.find(...)` scan:
-
-```ts
-const findByCompositeKey = (table, key) =>
-  Effect.map(
-    table.collection.query((coll) => coll.toArray),
-    (rows) => Option.fromNullable(rows.find((r) => deepEqual(r.id, key))),
-  )
-```
-
-Production code that depends on `.get` for composite keys should use this
-scan helper until the upstream `.get` path is fixed.
-
 ### `awaitTxId` is intentional, not redundant
 
 Generated writes already attach a txid header and `await awaitTxId(txid)`
