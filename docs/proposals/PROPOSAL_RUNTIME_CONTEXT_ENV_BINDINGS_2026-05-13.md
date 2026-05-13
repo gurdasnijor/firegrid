@@ -49,9 +49,19 @@ env at spawn time.
 
 ## Proposal
 
-Adapt the Fireline pattern to Firegrid's `RuntimeContext` plane.
+Adapt the Fireline pattern to Firegrid's `RuntimeContext` plane, placed
+**inside the provider config** so the existing provider-shaped pattern
+holds and future providers can model secret injection differently.
 
-### 1. Schema: append `envBindings` (durable, names + refs only)
+### 1. Schema: add `envBindings` to the provider's `config` block
+
+`RuntimeConfigSchema` is **already provider-shaped**: `argv`/`cwd` are
+local-process concepts. When `remote-firecracker` (or
+serverless-functions, K8s-pod, ...) lands, it will have its own config
+shape. Env-var injection is the local-process flavor of secret
+injection — other providers will use IAM roles, K8s `Secret` references,
+vault sidecars, instance metadata services, etc. So `envBindings` lives
+at `runtime.config.envBindings`, not at the top of `RuntimeContextIntent`.
 
 In `packages/protocol/src/launch/schema.ts`:
 
@@ -62,18 +72,41 @@ export const RuntimeEnvBindingSchema = Schema.Struct({
 })
 export type RuntimeEnvBinding = Schema.Schema.Type<typeof RuntimeEnvBindingSchema>
 
-export const RuntimeContextIntentSchema = Schema.Struct({
-  provider: RuntimeProviderSchema,
-  config:   RuntimeConfigSchema,
-  journal:  Schema.Array(RuntimeJournalRuleSchema),
+// Lives INSIDE RuntimeConfigSchema (the local-process config).
+// Other providers will gain their own secret-injection shapes inside
+// their own config schemas when they're added.
+export const RuntimeConfigSchema = Schema.Struct({
+  argv: Schema.Array(Schema.String),
+  cwd:  Schema.optional(Schema.String),
   envBindings: Schema.optional(Schema.Array(RuntimeEnvBindingSchema)),  // new
 })
 ```
 
-`PublicLaunchRuntimeIntentSchema` and `local.jsonl(...)` accept the same
-optional field; `normalizeRuntimeIntent` passes it through.
+`RuntimeContextIntentSchema` is unchanged — `envBindings` is reachable
+through the existing `config` field. `PublicLaunchRuntimeIntentSchema`
+and `local.jsonl(...)` accept the same optional field;
+`normalizeRuntimeIntent` passes it through.
 
-### 2. Resolver: `resolveSpawnEnvVars`
+**Why not top-level on `RuntimeContextIntent`?** That would imply every
+provider takes env vars, which is not true (IAM-role / K8s-secret /
+vault providers don't). It would also conflate the durable binding
+intent with the transient resolved values, which already have a
+provider-side home: `SandboxCommand.envVars: Record<string, string>`.
+Bindings are durable refs; the resolved map is what crosses the provider
+boundary. They live at different layers.
+
+### 2. Resolver: `resolveSpawnEnvVars` (lives at the provider boundary)
+
+The resolver is the **boundary translator** between the durable binding
+intent (refs) and the provider's spawn primitive (`envVars` map). It sits
+on the provider side of the host because:
+
+- it knows the provider's expected shape (a `Record<string, string>` for
+  process providers),
+- the resolution policy (env vs. vault vs. K8s secret) is a
+  provider-flavored concern, even though v1 only implements `env:`,
+- it stays out of the durable plane — only the bindings are persisted;
+  the resolver runs at activity execution time.
 
 In `packages/runtime/src/providers/sandboxes/secrets.ts`:
 
@@ -95,6 +128,11 @@ export const resolveSpawnEnvVars = (
 
 ### 3. Wire-through: extend `commandForContext`
 
+`commandForContext` is already the host→provider translator (it converts
+a durable `RuntimeContext` row into the `argv`/`cwd` shape `SandboxCommand`
+expects). It naturally extends to also produce the resolved `envVars`
+map — they all flow through the same boundary.
+
 `packages/runtime/src/providers/sandboxes/runtime-command.ts`:
 
 ```ts
@@ -102,16 +140,30 @@ return {
   argv: [...context.runtime.config.argv],
   ...(context.runtime.config.cwd === undefined ? {} : { cwd: context.runtime.config.cwd }),
   envVars: yield* resolveSpawnEnvVars(
-    context.runtime.envBindings ?? [],
+    context.runtime.config.envBindings ?? [],          // ← now nested under config
     name => globalThis.process.env[name],
   ),
 }
 ```
 
-Runtime-host's `runRuntimeContext` already spreads `...command` into
+The runtime-host's `runRuntimeContext` already spreads `...command` into
 `SandboxCommand`, and `LocalProcessSandboxProvider.buildCommand` already
 merges `command.envVars` into the `Command.env(...)` call. **No
 `packages/runtime/src/runtime-host/**` edits required.**
+
+End-to-end flow:
+
+```
+durable RuntimeContext.runtime.config.envBindings (refs only)
+      ↓ commandForContext
+{ argv, cwd?, envVars: Record<string, string> }   ← provider boundary
+      ↓ runRuntimeContext spreads into SandboxCommand
+SandboxCommand.envVars                            ← provider primitive
+      ↓ LocalProcessSandboxProvider.buildCommand
+Command.env({ ...config.envVars, ...command.envVars })
+      ↓
+spawned child process
+```
 
 ### 4. `firegrid:run` flag plumbing — built on `@effect/cli`
 
@@ -133,8 +185,10 @@ import { Args, Command, Options } from "@effect/cli"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { Effect, HashMap, Schema } from "effect"
 
-// One Options per launch-spec field. Names track schema field paths.
-const envBindings = Options.keyValueMap("env-bindings").pipe(
+// One Options per launch-spec field. Names track schema field paths;
+// since the field lives at `runtime.config.envBindings`, the flag is
+// `--config-env-bindings`.
+const configEnvBindings = Options.keyValueMap("config-env-bindings").pipe(
   Options.optional,
 )
 
@@ -143,8 +197,8 @@ const agentArgv = Args.text({ name: "agent-argv" }).pipe(Args.repeated)
 
 const runCommand = Command.make(
   "run",
-  { envBindings, agentArgv },
-  ({ envBindings, agentArgv }) =>
+  { configEnvBindings, agentArgv },
+  ({ configEnvBindings, agentArgv }) =>
     Effect.gen(function* () {
       // Decode the parsed config through the schema. The schema is the
       // single source of truth: a flag whose value violates the schema
@@ -153,10 +207,12 @@ const runCommand = Command.make(
         PublicLaunchRuntimeIntentSchema,
       )({
         provider: "local-process",
-        config: { argv: [...agentArgv] },
-        envBindings: HashMap.toEntries(
-          Option.getOrElse(envBindings, () => HashMap.empty()),
-        ).map(([name, ref]) => ({ name, ref })),
+        config: {
+          argv: [...agentArgv],
+          envBindings: HashMap.toEntries(
+            Option.getOrElse(configEnvBindings, () => HashMap.empty()),
+          ).map(([name, ref]) => ({ name, ref })),
+        },
       })
 
       // ... build RuntimeContext row, upsert, call startRuntime
@@ -180,7 +236,7 @@ the current MVP):
 
 | Capability | Today's MVP | With `@effect/cli` |
 |---|---|---|
-| `--env-bindings KEY=VALUE` (repeatable) | Would need custom array-of-pairs parser | `Options.keyValueMap("env-bindings")` → `HashMap<string,string>` |
+| `--config-env-bindings KEY=VALUE` (repeatable) | Would need custom array-of-pairs parser | `Options.keyValueMap("config-env-bindings")` → `HashMap<string,string>` |
 | Agent argv after `--` | Custom `argv.indexOf("--")` slicing | `Args.text(...).pipe(Args.repeated)` (the framework handles `--`) |
 | `--help` with proper formatting | Hand-written usage string | Auto-generated from Options/Args |
 | `--version` | Not implemented | Built-in |
@@ -197,16 +253,17 @@ Options/Args declarations; the schema enforces the durable contract
 fields shows up as either a TypeScript error in the handler's object
 literal or a `ParseIssue` at runtime — both immediate and loud.
 
-**Examples (CLI surface unchanged from the previous iteration):**
+**Examples** (the field moved into `runtime.config`, so the flag is now
+`--config-env-bindings` per the path-mapping rule):
 
 ```sh
 pnpm firegrid run \
-  --env-bindings ANTHROPIC_API_KEY=env:ANTHROPIC_API_KEY \
+  --config-env-bindings ANTHROPIC_API_KEY=env:ANTHROPIC_API_KEY \
   -- node agent.mjs
 
 pnpm firegrid run \
-  --env-bindings ANTHROPIC_API_KEY=env:PARENT_ANTHROPIC_KEY \
-  --env-bindings GITHUB_TOKEN=env:GITHUB_TOKEN \
+  --config-env-bindings ANTHROPIC_API_KEY=env:PARENT_ANTHROPIC_KEY \
+  --config-env-bindings GITHUB_TOKEN=env:GITHUB_TOKEN \
   -- node agent.mjs
 
 # Free: built-in help
@@ -231,8 +288,14 @@ coherent):
 |---|---|
 | `runtime.provider` | `Options.choice("provider", ["local-process"])` (locked in v1) |
 | `runtime.config.cwd` | `Options.directory("config-cwd").pipe(Options.optional)` |
-| `runtime.envBindings[].{name,ref}` | `Options.keyValueMap("env-bindings")` (this proposal) |
+| `runtime.config.envBindings[].{name,ref}` | `Options.keyValueMap("config-env-bindings")` (this proposal) |
 | `createdBy` | `Options.text("created-by").pipe(Options.optional)` |
+
+When future providers ship, their config-shaped flags follow the same
+rule: `runtime.config.image` for a future container provider becomes
+`--config-image`, etc. Provider discrimination at the schema level
+(tagged-union over `runtime.provider`) is a future refactor; for v1, the
+single-provider flat `RuntimeConfigSchema` is sufficient.
 
 ### 5. Spec
 
@@ -243,20 +306,24 @@ Append a new ACID to `firegrid-workflow-driven-runtime.feature.yaml`
 PHASE_2_SYNC_RUN:
   requirements:
     5: The synchronous run entrypoint can attach env bindings of shape
-       { name, ref: "env:VAR" } to the RuntimeContext row; the binding ref
-       is the only durably persisted form, and the resolved value is
-       sourced from the host process's env at spawn time and merged into
-       the local-process SandboxCommand without traversing the durable
-       plane.
+       { name, ref: "env:VAR" } to the local-process provider's
+       runtime.config.envBindings; the binding ref is the only durably
+       persisted form, and the resolved value is sourced from the host
+       process's env at spawn time and merged into the local-process
+       SandboxCommand.envVars without traversing the durable plane.
+       envBindings is a property of the local-process provider config,
+       not of the top-level runtime intent; future providers may model
+       secret injection differently in their own provider-config blocks.
 ```
 
 ## Mapping table
 
 | Fireline | Firegrid |
 |---|---|
-| `SecretsInjectionConfig.bindings` | `RuntimeContextIntent.envBindings` |
+| `SecretsInjectionConfig.bindings` | `RuntimeConfig.envBindings` (provider-shaped, inside `runtime.config`) |
 | `parse_credential_ref_shape("env:X")` | small Schema-shaped parser |
-| `resolve_spawn_env_vars_with(topology, lookup_env)` | `resolveSpawnEnvVars(bindings, lookupEnv)` |
+| `resolve_spawn_env_vars_with(topology, lookup_env)` | `resolveSpawnEnvVars(bindings, lookupEnv)` (provider-side) |
+| Spawn-time merge with parent env | `LocalProcessSandboxProvider.buildCommand`'s existing `Command.env({ ...config.envVars, ...command.envVars })` |
 | Loud error: missing parent env | typed `ResolveEnvBindingError` |
 | Loud error: duplicate target | typed `ResolveEnvBindingError` |
 | `secret:...` ref shape (out-of-scope here) | reserved; rejected loudly in v1 |
@@ -327,12 +394,13 @@ toy local processes.
   smoke test asserting the `runCommand` definition's parsed shape decodes
   cleanly through `PublicLaunchRuntimeIntentSchema`.
 - **Integration:** `pnpm firegrid run
-  --env-bindings FAKE_KEY=env:FAKE_KEY -- node -e
+  --config-env-bindings FAKE_KEY=env:FAKE_KEY -- node -e
   'console.log(process.env.FAKE_KEY)'` against a `DurableStreamTestServer`,
   with `FAKE_KEY` set in the harness env, asserts:
   - the value reaches the child (captured in `RuntimeOutputTable.events`),
   - the value does **not** appear in the durable `RuntimeContext` row JSON
-    (only the binding `{ name, ref: "env:FAKE_KEY" }` is persisted).
+    (only the binding `{ name, ref: "env:FAKE_KEY" }` is persisted, nested
+    under `runtime.config.envBindings`).
 - **Spec:** ACID `firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5`
   referenced in the integration test and the resolver tests.
 
