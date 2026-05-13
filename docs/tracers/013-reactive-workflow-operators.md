@@ -68,15 +68,12 @@ as historical decision log entries.
 The current proof lives in:
 
 - `packages/protocol/src/required-action/schema.test.ts`
-- `scenarios/firegrid/src/tracer-009.test.ts` is skipped because the runtime
-  workflow surface is historical.
-- `scenarios/firegrid/src/tracer-013.test.ts` is skipped because the tracer's
-  original surface is deprecated.
+- Historical `scenarios/firegrid/src/tracer-009.test.ts` and
+  `scenarios/firegrid/src/tracer-013.test.ts` placeholders were removed after
+  PR #166 because their original runtime-local surfaces are deprecated.
 
 Run:
 
 ```bash
 pnpm --filter @firegrid/runtime run test
-pnpm --filter @firegrid/scenario-firegrid test -- tracer-009
-pnpm --filter @firegrid/scenario-firegrid test -- tracer-013
 ```

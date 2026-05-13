@@ -93,14 +93,14 @@ components:
       4: The launch operator records run started, exited, and failed facts as durable runtime context control-plane rows for tracer 001.
       5: Process ids, child handles, stdio pipes, sockets, SDK clients, fibers, and filesystem handles are never durable authority.
       6: Process death does not make runtime event and log facts unavailable after those facts were durably journaled by Firegrid.
-      7: The tracer bullet launcher starts a local black-box command, consumes its live stdout and stderr chunks, and appends raw durable runtime output data-plane events itself.
+      7: The tracer bullet launcher starts a local black-box command, consumes its live stdout and stderr chunks, and writes durable runtime output data-plane rows itself.
       8:
         requirement: The launch workflow is declared with @effect/workflow and uses the runtime context id as its idempotency key.
         deprecated: true
       8-note: Deprecated. The runtime-context workflow mini-root was deleted; host code reads RuntimeControlPlaneTable directly and records run rows through the same table.
       9: Node-tier hosts consume tracer 001 runtime launch execution through declared @firegrid/runtime package exports, not source subpaths.
       10: A tracer 001 acceptance path starts with public Firegrid.launch, runs the runtime workflow with the returned runtime context id, and observes retained event and log rows from the configured data-plane stream.
-      11: Runtime context execution reads the shared RuntimeControlPlaneTable directly, invokes the configured sandbox provider, journals raw runtime output facts, and writes run status rows without a RuntimeControlPlane service wrapper or runtime-context workflow mini-root.
+      11: Runtime context execution reads the shared RuntimeControlPlaneTable directly, invokes the configured sandbox provider, writes runtime output table rows, and writes run status rows without a RuntimeControlPlane service wrapper or runtime-context workflow mini-root.
       12: Runtime control-plane table stream selection is derived by product composition from a Durable Streams service base URL plus namespace; launch clients and scenarios do not hand-wire runtime control table stream URLs.
 
   RUNTIME_HOST:
@@ -108,24 +108,26 @@ components:
       1:
         requirement: The production runtime host root owns stream topology for workflow state, runtime control-plane rows, and runtime-output journal rows.
         deprecated: true
-      1-note: Deprecated because runtime-context execution no longer uses a workflow mini-root; workflow-engine topology is owned by the workflow-engine package surface.
+      1-note: Deprecated because runtime-context execution no longer uses a workflow mini-root or raw runtime-output journal; workflow-engine topology is owned by the workflow-engine package surface.
       2:
         requirement: The production runtime host root owns workflow engine selection and worker identity for runtime context execution.
         deprecated: true
       2-note: Deprecated because runtime-context execution is direct table/fact orchestration and does not select a workflow engine.
       3: Runtime context start requests carry the context id only; host-owned stream URLs, workflow engine selection, worker identity, materialization backend, and provider wiring are not launch request fields.
       4: Scenario tracer 001 configures the production runtime host root and starts runtime context execution through exported @firegrid/runtime package code.
-      5: The production runtime host root owns runtime control-plane rows, runtime-output journal rows, and optional runtime input delivery topology without requiring workflow stream configuration.
+      5: The production runtime host root owns runtime control-plane rows, runtime-output table rows, and optional runtime input delivery topology without requiring workflow stream configuration.
       6: Runtime host configuration validates optional input topology at the host options boundary without exporting a separate input configuration module.
+      7: Runtime host v0 allocates a run activity attempt by reading existing run rows for the context and choosing max(activityAttempt)+1; strict concurrent allocation fencing is deferred to a future durable claim/append primitive.
 
   JOURNAL_ROWS:
     requirements:
-      1: Stdout chunks mapped to runtime events are appended as raw durable runtime output data-plane events before downstream consumers can observe provider content.
-      2: Stderr chunks mapped to runtime logs are appended as raw durable runtime output data-plane events before the process exit control-plane row is appended.
+      1: Stdout chunks mapped to runtime events are written as durable runtime output data-plane rows before downstream consumers can observe provider content.
+      2: Stderr chunks mapped to runtime logs are written as durable runtime output data-plane rows before the process exit control-plane row is appended.
       3: Runtime event JSONL journal events preserve the raw line without parsing or interpreting provider-specific schemas in the launcher.
       4: Process exited control-plane rows are appended only after prior emitted output chunks from the sandbox stream have been durably journaled.
-      5: Late consumers can read retained durable runtime output data-plane events after the launched process has exited.
-      6: Runtime output data-plane events include a durable per-attempt sequence so retained consumers do not rely on wall-clock timestamp ordering.
+      5: Late consumers can read retained durable runtime output data-plane rows after the launched process has exited.
+      6: Runtime output data-plane rows include a durable per-attempt sequence so retained consumers do not rely on wall-clock timestamp ordering.
+      7: Runtime output data-plane rows are stored in a shared RuntimeOutputTable with separate stdout event and stderr log collections keyed by schema-owned composite primary keys that include context id, activity attempt, target, and sequence.
 
   REMOTE_TRACER:
     requirements:
@@ -200,7 +202,7 @@ constraints:
   STREAM_TRUTH_BOUNDARY:
     requirements:
       1: Runtime context control-plane producers use Durable Streams State Protocol for context and run rows because workflow coordination queries those rows by runtime context id.
-      2: Runtime output data-plane producers append schema-validated facts to raw Durable Streams journals and do not emit Durable Streams State Protocol change messages for stdout, stderr, or provider output facts.
+      2: Runtime output data-plane producers write schema-validated stdout and stderr rows through RuntimeOutputTable generated facades rather than raw Durable Streams journals.
       3: Downstream session, permission, trace, and product projections consume data-plane facts and may emit Durable Streams State Protocol changes to their own projection streams.
 
   DEPENDS_ON:

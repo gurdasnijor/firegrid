@@ -1,5 +1,7 @@
 # Handoff: Ksql-Inspired Durable Operators API Exploration
 
+Status: Superseded by PR #166, "Collapse durable state surfaces onto DurableTable".
+
 Date: 2026-05-12
 Repo: `/Users/gnijor/gurdasnijor/firegrid`
 
@@ -448,4 +450,3 @@ and action layer:
 
 Do not preserve activity claims or legacy Firegrid service planes.
 ```
-

@@ -82,9 +82,15 @@ export const RuntimeContextSchema = Schema.Struct({
 })
 export type RuntimeContext = Schema.Schema.Type<typeof RuntimeContextSchema>
 
-export const RuntimeRunEventSchema = Schema.Struct({
-  runEventId: Schema.String,
-  runId: Schema.String,
+export const RuntimeRunEventKeySchema = Schema.Struct({
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  status: Schema.Literal("started", "exited", "failed"),
+})
+export type RuntimeRunEventKey = Schema.Schema.Type<typeof RuntimeRunEventKeySchema>
+
+export const runtimeRunEventFields = {
+  runEventId: RuntimeRunEventKeySchema,
   contextId: Schema.String,
   activityAttempt: Schema.Number,
   status: Schema.Literal("started", "exited", "failed"),
@@ -93,11 +99,20 @@ export const RuntimeRunEventSchema = Schema.Struct({
   exitCode: Schema.optional(Schema.Number),
   signal: Schema.optional(Schema.String),
   message: Schema.optional(Schema.String),
-})
+} as const
+export const RuntimeRunEventSchema = Schema.Struct(runtimeRunEventFields)
 export type RuntimeRunEvent = Schema.Schema.Type<typeof RuntimeRunEventSchema>
 
-export const RuntimeEventSchema = Schema.Struct({
-  eventId: Schema.String,
+export const RuntimeOutputEventKeySchema = Schema.Struct({
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  target: Schema.Literal("events"),
+  sequence: Schema.Number,
+})
+export type RuntimeOutputEventKey = Schema.Schema.Type<typeof RuntimeOutputEventKeySchema>
+
+export const runtimeEventFields = {
+  eventId: RuntimeOutputEventKeySchema,
   contextId: Schema.String,
   activityAttempt: Schema.Number,
   sequence: Schema.Number,
@@ -105,11 +120,20 @@ export const RuntimeEventSchema = Schema.Struct({
   format: Schema.Literal("jsonl"),
   receivedAt: Schema.String,
   raw: Schema.String,
-})
+} as const
+export const RuntimeEventSchema = Schema.Struct(runtimeEventFields)
 export type RuntimeEvent = Schema.Schema.Type<typeof RuntimeEventSchema>
 
-export const RuntimeLogLineSchema = Schema.Struct({
-  logLineId: Schema.String,
+export const RuntimeOutputLogLineKeySchema = Schema.Struct({
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  target: Schema.Literal("logs"),
+  sequence: Schema.Number,
+})
+export type RuntimeOutputLogLineKey = Schema.Schema.Type<typeof RuntimeOutputLogLineKeySchema>
+
+export const runtimeLogLineFields = {
+  logLineId: RuntimeOutputLogLineKeySchema,
   contextId: Schema.String,
   activityAttempt: Schema.Number,
   sequence: Schema.Number,
@@ -117,7 +141,8 @@ export const RuntimeLogLineSchema = Schema.Struct({
   format: Schema.Literal("text-lines"),
   receivedAt: Schema.String,
   raw: Schema.String,
-})
+} as const
+export const RuntimeLogLineSchema = Schema.Struct(runtimeLogLineFields)
 export type RuntimeLogLine = Schema.Schema.Type<typeof RuntimeLogLineSchema>
 
 export const RuntimeOutputStdoutJournalEventSchema = Schema.Struct({
@@ -145,49 +170,3 @@ export const RuntimeJournalEventSchema = Schema.Union(
   RuntimeOutputStderrJournalEventSchema,
 )
 export type RuntimeJournalEvent = Schema.Schema.Type<typeof RuntimeJournalEventSchema>
-
-export type RuntimeRunStatusParams = {
-  readonly contextId: string
-  readonly activityAttempt: number
-  readonly provider: RuntimeContext["runtime"]["provider"]
-}
-
-const nowIso = (): string => new Date().toISOString()
-
-export const runtimeRunId = (
-  contextId: string,
-  activityAttempt: number,
-): string => `${contextId}:activity-attempt:${activityAttempt}`
-
-export const runtimeRunEventId = (
-  contextId: string,
-  activityAttempt: number,
-  status: string,
-): string => `${runtimeRunId(contextId, activityAttempt)}:${status}`
-
-export const runtimeOutputRowId = (
-  contextId: string,
-  activityAttempt: number,
-  target: string,
-  sequence: number,
-): string => `${runtimeRunId(contextId, activityAttempt)}:${target}:${sequence}`
-
-export const makeRuntimeRunEvent = (
-  params: RuntimeRunStatusParams & {
-    readonly status: RuntimeRunEvent["status"]
-    readonly exitCode?: number
-    readonly signal?: string
-    readonly message?: string
-  },
-): RuntimeRunEvent => ({
-  runEventId: runtimeRunEventId(params.contextId, params.activityAttempt, params.status),
-  runId: runtimeRunId(params.contextId, params.activityAttempt),
-  contextId: params.contextId,
-  activityAttempt: params.activityAttempt,
-  status: params.status,
-  at: nowIso(),
-  provider: params.provider,
-  ...(params.exitCode === undefined ? {} : { exitCode: params.exitCode }),
-  ...(params.signal === undefined ? {} : { signal: params.signal }),
-  ...(params.message === undefined ? {} : { message: params.message }),
-})

@@ -2,11 +2,9 @@ import { Either, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   local,
-  makeRuntimeRunEvent,
   normalizeRuntimeIntent,
   PublicLaunchRequestSchema,
-  RuntimeJournalEventSchema,
-  runtimeOutputRowId,
+  RuntimeEventSchema,
 } from "./index.ts"
 
 describe("@firegrid/protocol launch schema", () => {
@@ -45,42 +43,24 @@ describe("@firegrid/protocol launch schema", () => {
   })
 
   it("firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.3 decodes runtime event rows without parsing provider JSON", () => {
-    const event = Schema.decodeUnknownSync(RuntimeJournalEventSchema)({
-      type: "firegrid.runtime.output.stdout",
-      id: "event-1",
-      at: "2026-05-07T00:00:00.000Z",
-      event: {
-        eventId: "event-1",
+    const event = Schema.decodeUnknownSync(RuntimeEventSchema)({
+      eventId: {
         contextId: "ctx-1",
         activityAttempt: 1,
+        target: "events",
         sequence: 0,
-        source: "stdout",
-        format: "jsonl",
-        receivedAt: "2026-05-07T00:00:00.000Z",
-        raw: "{\"type\":\"assistant\"}",
       },
+      contextId: "ctx-1",
+      activityAttempt: 1,
+      sequence: 0,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt: "2026-05-07T00:00:00.000Z",
+      raw: "{\"type\":\"assistant\"}",
     })
 
     expect(event).toMatchObject({
-      type: "firegrid.runtime.output.stdout",
-      event: {
-        raw: "{\"type\":\"assistant\"}",
-      },
+      raw: "{\"type\":\"assistant\"}",
     })
-  })
-
-  it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.4 colocates runtime row id construction with launch schemas", () => {
-    expect(makeRuntimeRunEvent({
-      contextId: "ctx-1",
-      activityAttempt: 1,
-      provider: "local-process",
-      status: "started",
-    })).toMatchObject({
-      runEventId: "ctx-1:activity-attempt:1:started",
-      runId: "ctx-1:activity-attempt:1",
-    })
-    expect(runtimeOutputRowId("ctx-1", 1, "events", 0)).toEqual(
-      "ctx-1:activity-attempt:1:events:0",
-    )
   })
 })

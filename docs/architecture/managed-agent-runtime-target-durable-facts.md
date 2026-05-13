@@ -48,13 +48,14 @@ yield* stream.producer({ producerId })
 
 Firegrid-specific Durable Streams ownership is local to the package that needs
 it. Ordinary table-shaped state is declared with `DurableTable`; raw retained
-fact streams use `effect-durable-streams`. Test servers are private test
-support, not a public Firegrid wrapper. The old `@firegrid/durable-streams`
-wrapper package is deleted.
+fact streams use `effect-durable-streams` only when append-only fact-log
+semantics are the product behavior. Runtime output is table-shaped state and
+uses `RuntimeOutputTable`. Test servers are private test support, not a public
+Firegrid wrapper. The old `@firegrid/durable-streams` wrapper package is
+deleted.
 
 This target protects these invariants:
 
-- `effect-native-production-cutover.RUNTIME_IO.1`
 - `effect-native-production-cutover.RUNTIME_IO.2`
 - `effect-native-production-cutover.GUARDRAILS.1`
 - `effect-native-production-cutover.GUARDRAILS.2`
@@ -67,9 +68,9 @@ This target protects these invariants:
 
 ### Durable Facts
 
-A durable fact is a schema-owned row in a durable stream. It may be runtime
-input, runtime output, required-action request/resolution, scheduled work,
-spawn request, tool execution request, or operator progress.
+A durable fact is a schema-owned row in a durable stream or durable table. It
+may be runtime input, runtime output, required-action request/resolution,
+scheduled work, spawn request, tool execution request, or operator progress.
 
 Domain modules own:
 
@@ -79,7 +80,8 @@ Domain modules own:
 - pure folds;
 - focused Effect programs where they encode domain behavior.
 
-They do not own generic log objects. Reading, appending, and producing rows use
+They do not own generic log objects. Table-shaped state uses `DurableTable`
+generated facades directly; append-only raw fact streams use
 `DurableStream.define({ endpoint, schema })` directly.
 
 ### Named Wait Descriptors
@@ -239,9 +241,7 @@ packages/
   protocol/
     src/
       launch/
-      runtime-context/
       runtime-ingress/
-      runtime-output/
       required-action/       # durable record schemas only
       session/
 
@@ -249,21 +249,15 @@ packages/
     src/
       runtime-host/
         index.ts
-        input.ts                # RuntimeInputStreams tagged capability
-      runtime-context/
-        workflow.ts
-        service.ts
-        launcher.ts
-      runtime-ingress/
-        schema.ts
-        ids.ts
-        rows.ts
-        local-process-stdin.ts  # provider-owned raw fact read + DurableTable checkpoint
+      providers/
+        sandboxes/
+          process-stream.ts     # provider lifecycle + ProcessOutputChunk stream
+          local-process-stdin-delivery.ts
       # runtime-operators/ and required-action/ runtime packages were deleted.
-      # Use DurableTable for ordinary table/checkpoint state and
-      # effect-durable-streams for raw fact reads/writes. Required-action row
-      # schemas stay in protocol until generic waits/operators prove a new
-      # production behavior through a non-required-action-specific surface.
+      # Use DurableTable for ordinary table/checkpoint/runtime output state.
+      # Required-action row schemas stay in protocol until generic waits/operators
+      # prove a new production behavior through a non-required-action-specific
+      # surface.
       scheduling/
         schema.ts
         rows.ts                 # raw schedule facts + workflow-owned DurableTable clock
@@ -351,14 +345,15 @@ wait_for(trigger, timeout)
 Implementation boundary:
 
 ```ts
-const output = DurableStream.define({
-  endpoint: { url: runtimeHostStreams.runtimeOutput },
-  schema: RuntimeJournalEventSchema,
-})
+const output = yield* RuntimeOutputTable
 
-const match = output.read({ live: "long-poll", offset: trigger.cursor }).pipe(
-  Stream.filter(row => row.type === "firegrid.runtime.output.stdout"),
-  Stream.filter(row => row.event.contextId === trigger.contextId),
+const match = output.events.subscribe((events, emit) => {
+  return events.subscribeChanges(() => {
+    for (const row of events.toArray) {
+      if (row.contextId === trigger.contextId) emit(row)
+    }
+  })
+}).pipe(
   Stream.filterMap(row => matcher.match(row)),
   Stream.runHead,
 )

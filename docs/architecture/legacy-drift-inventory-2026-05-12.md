@@ -122,15 +122,15 @@ generic wait/operator tooling over protocol-owned record schemas.
 mini-host: `DurableStreamsWorkflowEngine.layer` + `RequiredActionsLive`
 + `ReactiveWorkflowOperatorRuntimeLive` + `FetchHttpClient.layer`,
 distinct from `FiregridRuntimeHostLive`. Two production scenarios
-(`tracer-009.test.ts`, `tracer-013.test.ts`) consume it directly.
+(`tracer-009.test.ts`, `tracer-013.test.ts`) consumed it directly.
 
 Per the coordinator's "mini composition roots" warning, this is the
 exact pattern that pulls future tracers back into bespoke wiring rather
 than the host substrate.
 
-**Status:** Resolved by PR #161. `RequiredActionRuntimeLive` and the entire
-runtime required-action package were deleted; tracer-009/013 are historical
-markers.
+**Status:** Resolved by PR #161 and cleaned up after PR #166.
+`RequiredActionRuntimeLive` and the entire runtime required-action package were
+deleted; the tracer-009/013 placeholders were later removed.
 
 **Recommended follow-up:** Required-action behavior is deferred to generic
 wait/operator tooling. Do not replace the mini-root with another

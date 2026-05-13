@@ -1,5 +1,7 @@
 # Firegrid Handoff: Fresh Session For Wait / Control-Plane Ergonomics
 
+Status: Superseded by PR #166, "Collapse durable state surfaces onto DurableTable".
+
 Date: 2026-05-12
 Repo: `/Users/gnijor/gurdasnijor/firegrid`
 

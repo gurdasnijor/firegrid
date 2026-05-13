@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 
 export class RuntimeContextError extends Schema.TaggedError<RuntimeContextError>()(
   "RuntimeContextError",
@@ -22,6 +22,14 @@ export const asRuntimeContextError = (
     ...(contextId === undefined ? {} : { contextId }),
     ...(cause === undefined ? {} : { cause }),
   })
+
+export const mapRuntimeContextError = (
+  op: string,
+  message: string,
+  contextId: string,
+) =>
+  Effect.mapError((cause: unknown) =>
+    asRuntimeContextError(op, message, contextId, cause))
 
 export class RuntimeIngressError extends Schema.TaggedError<RuntimeIngressError>()(
   "RuntimeIngressError",

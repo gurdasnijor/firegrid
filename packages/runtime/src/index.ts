@@ -3,8 +3,8 @@ export {
   RuntimeContextError,
 } from "./runtime-host/errors.ts"
 export {
+  FiregridRuntimeHostFromConfig,
   FiregridRuntimeHostLive,
-  RuntimeHostConfig,
   RuntimeIngressError,
   appendRuntimeIngress,
   startRuntime,

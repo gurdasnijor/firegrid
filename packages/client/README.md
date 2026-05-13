@@ -11,7 +11,7 @@ import {
   FiregridLive,
   local,
 } from "@firegrid/client"
-import { Effect, Layer, Stream } from "effect"
+import { Effect, Layer } from "effect"
 
 const FiregridBrowserLive = FiregridLive.pipe(
   Layer.provide(
@@ -29,7 +29,7 @@ const program = Effect.gen(function* () {
     }),
   })
 
-  return yield* handle.changes.pipe(Stream.take(1), Stream.runCollect)
+  return yield* handle.snapshot
 }).pipe(Effect.provide(FiregridBrowserLive))
 ```
 

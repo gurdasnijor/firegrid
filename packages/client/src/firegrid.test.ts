@@ -1,8 +1,9 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
+  RuntimeOutputTable,
   type PublicLaunchRequest,
 } from "@firegrid/protocol/launch"
-import { Effect, Either, Layer, Stream } from "effect"
+import { Effect, Either, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   Firegrid,
@@ -44,6 +45,57 @@ const runWithFiregrid = <A, E>(
           ),
         ),
       ),
+    ),
+  )
+
+const appendRuntimeOutput = (
+  config: {
+    readonly durableStreamsBaseUrl: string
+    readonly namespace: string
+  },
+  contextId: string,
+): Promise<void> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const table = yield* RuntimeOutputTable
+      yield* table.events.upsert({
+        eventId: {
+          contextId,
+          activityAttempt: 1,
+          target: "events",
+          sequence: 0,
+        },
+        contextId,
+        activityAttempt: 1,
+        sequence: 0,
+        source: "stdout",
+        format: "jsonl",
+        receivedAt: "2026-05-13T00:00:00.000Z",
+        raw: "{\"type\":\"assistant\"}",
+      })
+      yield* table.logs.upsert({
+        logLineId: {
+          contextId,
+          activityAttempt: 1,
+          target: "logs",
+          sequence: 1,
+        },
+        contextId,
+        activityAttempt: 1,
+        sequence: 1,
+        source: "stderr",
+        format: "text-lines",
+        receivedAt: "2026-05-13T00:00:01.000Z",
+        raw: "diagnostic",
+      })
+    }).pipe(
+      Effect.provide(RuntimeOutputTable.layer({
+        streamOptions: {
+          url: `${config.durableStreamsBaseUrl}/v1/stream/${config.namespace}.firegrid.runtimeOutput`,
+          contentType: "application/json",
+        },
+      })),
+      Effect.scoped,
     ),
   )
 
@@ -117,31 +169,40 @@ describe("@firegrid/client", () => {
     expect(snapshot.logs).toEqual([])
   })
 
-  it("firegrid-durable-launch-runtime-operator.LAUNCH_HANDLE.5 exposes runtime context changes as a Stream", async () => {
+  it("firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.7 reads runtime output snapshots from RuntimeOutputTable", async () => {
     if (!baseUrl) throw new Error("server not started")
     const firegridConfig = {
       durableStreamsBaseUrl: baseUrl,
       namespace: `client-${crypto.randomUUID()}`,
     }
-
-    const snapshots = await runWithFiregrid(
+    const handle = await runWithFiregrid(
       firegridConfig,
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
-        const handle = yield* firegrid.launch({
+        return yield* firegrid.launch({
           runtime: local.jsonl({
             argv: ["node", "--version"],
           }),
         })
-        return yield* handle.changes.pipe(
-          Stream.take(1),
-          Stream.runCollect,
-          Effect.map(chunk => Array.from(chunk)),
-        )
       }),
     )
 
-    expect(snapshots[0]?.context?.runtime.config.argv).toEqual(["node", "--version"])
+    await appendRuntimeOutput(firegridConfig, handle.contextId)
+
+    const snapshot = await runWithFiregrid(
+      firegridConfig,
+      Effect.gen(function* () {
+        const firegrid = yield* Firegrid
+        return yield* firegrid.open(handle.contextId).snapshot
+      }),
+    )
+
+    expect(snapshot.events).toContainEqual(expect.objectContaining({
+      raw: "{\"type\":\"assistant\"}",
+    }))
+    expect(snapshot.logs).toContainEqual(expect.objectContaining({
+      raw: "diagnostic",
+    }))
   })
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 rejects malformed public launch input at the client boundary", async () => {
@@ -240,7 +301,8 @@ describe("@firegrid/client", () => {
     expect(result.duplicate.inputId).toEqual(result.first.inputId)
     expect(result.first).toMatchObject({
       contextId: "ctx_prompt",
-      status: "pending",
+      status: "sequenced",
+      sequence: 0,
       kind: "message",
       authoredBy: "client",
       idempotencyKey: "prompt-1",
