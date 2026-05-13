@@ -21,9 +21,25 @@ unless explicitly asked. Do not import from `repos/` — application code should
 continue importing from normal package dependencies (`effect`, `@effect/*`,
 etc.) resolved through `node_modules`.
 
+Before writing or modifying Effect code, read `@repos/effect/AGENTS.md` (the
+upstream Effect contributor guide). It encodes the code-style, naming, and
+"look at existing code to learn established patterns" expectations that the
+maintainers apply to the library itself, and those are the strongest available
+signal for what idiomatic Effect looks like. If/when this repository moves to
+a vendored Effect v4 subtree, also read `@repos/effect/LLMS.md`.
+
 When you need to confirm an Effect API signature, behavior, or idiom, read the
 relevant file under `repos/effect/packages/effect/src/` (or the appropriate
 sibling package) before relying on training knowledge or web search.
+
+### Optional: agent-patterns/
+
+You may distill recurring patterns you discover while reading `repos/effect`
+into focused notes under `agent-patterns/` (e.g. `agent-patterns/effect-schema.md`
+with constructors/combinators, encoding/decoding examples, transformation
+patterns, error-handling patterns). Do this on demand, when a pattern keeps
+recurring across product code — not speculatively. Keep each note short and
+link back to the canonical file in `repos/effect/`.
 
 ### Updating the vendored Effect source
 
