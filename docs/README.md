@@ -20,6 +20,7 @@ Read these first for the current shape of Firegrid:
 | Flamecast clean-room tracer over Firegrid | `proposals/SDD_FLAMECAST_FIREGRID_LAUNCH_TRACER.md` | `firegrid-durable-launch-runtime-operator` |
 | Flamecast replatforming research | `replatforming/README.md` | n/a |
 | Tooling, verification, and generated dependency evidence | `TOOLING.md` | `firegrid-remediation-hardening`, `firegrid-architecture-boundary`, `firegrid-package-migration` |
+| Agent development recommendations | `contributing/agent-development-recommendations-2026-05-13.md` | n/a |
 
 The current implementation shape is:
 
