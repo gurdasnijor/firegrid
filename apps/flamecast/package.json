@@ -8,19 +8,23 @@
     "check": "pnpm run typecheck && pnpm run test && pnpm run build",
     "dev": "vite --host 127.0.0.1",
     "runtime": "tsx --tsconfig tsconfig.json src/runtime/main.ts",
+    "runtime:env": "node --env-file-if-exists=.env --import tsx src/runtime/main.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@effect/platform": "^0.96.0",
-    "@effect/workflow": "0.18.1",
+    "@effect/platform-node": "^0.106.0",
+    "@firegrid/client": "workspace:*",
     "@firegrid/runtime": "workspace:*",
-    "effect": "^3.18.0",
+    "@tanstack/db": "^0.5.33",
+    "@tanstack/react-db": "0.1.77",
     "effect-durable-operators": "workspace:*",
+    "effect": "^3.18.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@effect/vitest": "^0.29.0",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",

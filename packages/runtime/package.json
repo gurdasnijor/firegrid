@@ -9,6 +9,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./runtime-host": {
+      "types": "./src/runtime-host/index.ts",
+      "default": "./src/runtime-host/index.ts"
+    },
     "./workflow-engine": {
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"

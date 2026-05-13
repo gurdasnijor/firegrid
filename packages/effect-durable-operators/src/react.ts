@@ -35,14 +35,28 @@ export {
 
 type DurableTableReactState =
   | {
-    readonly _tag: "Loading"
+    readonly status: "loading"
   }
   | {
-    readonly _tag: "Ready"
+    readonly status: "ready"
     readonly services: ReadonlyMap<string, unknown>
   }
   | {
-    readonly _tag: "Error"
+    readonly status: "error"
+    readonly error: unknown
+  }
+
+export type DurableTableProviderStatus =
+  | {
+    readonly status: "loading"
+    readonly error?: undefined
+  }
+  | {
+    readonly status: "ready"
+    readonly error?: undefined
+  }
+  | {
+    readonly status: "error"
     readonly error: unknown
   }
 
@@ -57,11 +71,12 @@ const failReactHook = (error: unknown): never =>
   Effect.runSync(Effect.fail(error))
 
 export interface DurableTableProviderProps<ROut, E> {
-  readonly children: ReactNode
+  readonly children?: ReactNode
   readonly fallback?: ReactNode
   readonly layer: Layer.Layer<ROut, E, never>
   readonly onError?: (error: unknown) => void
-  readonly tables: ReadonlyArray<Context.Tag<ROut, unknown>>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly tables: ReadonlyArray<Context.Tag<ROut, any>>
 }
 
 const closeScope = (scope: Scope.CloseableScope): void => {
@@ -72,7 +87,8 @@ const closeScope = (scope: Scope.CloseableScope): void => {
 
 const acquireServices = <ROut, E>(options: {
   readonly layer: Layer.Layer<ROut, E, never>
-  readonly tables: ReadonlyArray<Context.Tag<ROut, unknown>>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  readonly tables: ReadonlyArray<Context.Tag<ROut, any>>
 }): Effect.Effect<
   {
     readonly scope: Scope.CloseableScope
@@ -107,7 +123,12 @@ const acquireServices = <ROut, E>(options: {
 export function DurableTableProvider<ROut, E>(
   props: DurableTableProviderProps<ROut, E>,
 ): ReactNode {
-  const [state, setState] = useState<DurableTableReactState>({ _tag: "Loading" })
+  const [state, setState] = useState<DurableTableReactState>({ status: "loading" })
+  const [initialOptions] = useState(() => ({
+    layer: props.layer,
+    onError: props.onError,
+    tables: props.tables,
+  }))
 
   useEffect(() => {
     let active = true
@@ -117,8 +138,8 @@ export function DurableTableProvider<ROut, E>(
     // provider lifetime.
     // eslint-disable-next-line no-restricted-syntax
     void Effect.runPromise(acquireServices({
-      layer: props.layer,
-      tables: props.tables,
+      layer: initialOptions.layer,
+      tables: initialOptions.tables,
     })).then(
       ({ scope, services }) => {
         if (!active) {
@@ -126,12 +147,12 @@ export function DurableTableProvider<ROut, E>(
           return
         }
         acquiredScope = scope
-        setState({ _tag: "Ready", services })
+        setState({ status: "ready", services })
       },
       (error: unknown) => {
         if (!active) return
-        props.onError?.(error)
-        setState({ _tag: "Error", error })
+        initialOptions.onError?.(error)
+        setState({ status: "error", error })
       },
     )
 
@@ -141,25 +162,28 @@ export function DurableTableProvider<ROut, E>(
         closeScope(acquiredScope)
       }
     }
-  }, [props.layer, props.onError, props.tables])
-
-  if (state._tag === "Loading") {
-    return props.fallback ?? null
-  }
-  if (state._tag === "Error") {
-    return failReactHook(state.error)
-  }
+  }, [initialOptions])
 
   return createElement(
     DurableTableReactContext.Provider,
     { value: state },
-    props.children,
+    state.status === "loading" ? props.fallback ?? null : props.children,
   )
 }
 
-export function useDurableTableProviderStatus(): DurableTableReactState {
+/**
+ * effect-durable-operators.REACT.4
+ *
+ * Surfaces provider acquisition state without exposing the internal service
+ * map held by the provider.
+ */
+export function useDurableTableProviderStatus(): DurableTableProviderStatus {
   const state = useContext(DurableTableReactContext)
-  return state ?? { _tag: "Loading" }
+  if (state === undefined) return { status: "loading" }
+  if (state.status === "error") {
+    return { status: "error", error: state.error }
+  }
+  return { status: state.status }
 }
 
 /**
@@ -167,14 +191,15 @@ export function useDurableTableProviderStatus(): DurableTableReactState {
  *
  * Retrieves a shared DurableTable service acquired by DurableTableProvider.
  */
-export function useDurableTable<Tag extends Context.Tag<unknown, unknown>>(
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function useDurableTable<Tag extends Context.Tag<any, any>>(
   table: Tag,
 ): Context.Tag.Service<Tag> {
   const state = useContext(DurableTableReactContext)
-  if (state === undefined || state._tag === "Loading") {
+  if (state === undefined || state.status === "loading") {
     return failReactHook(new Error("DurableTableProvider is not ready"))
   }
-  if (state._tag === "Error") {
+  if (state.status === "error") {
     return failReactHook(state.error)
   }
 
