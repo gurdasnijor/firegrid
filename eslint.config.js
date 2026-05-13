@@ -48,6 +48,14 @@ const legacyDurableAgentSubstrateImportPatterns = [
     message:
       "firegrid-package-migration.COMPATIBILITY.1: active imports use Firegrid package names only.",
   },
+  {
+    group: [
+      "**/repos/*",
+      "**/repos/**",
+    ],
+    message:
+      "repos/** is read-only vendored reference material. Import from real package deps (effect, @effect/*) resolved through node_modules; see AGENTS.md.",
+  },
 ]
 const tsOnly = (configs) =>
   configs.map((config) => ({
@@ -464,6 +472,7 @@ export default tseslint.config(
       "coverage/**",
       "**/dist/**",
       ".worktrees/**",
+      "repos/**",
     ],
   },
   js.configs.recommended,
