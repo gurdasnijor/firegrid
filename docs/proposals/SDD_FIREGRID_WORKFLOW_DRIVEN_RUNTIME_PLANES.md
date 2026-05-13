@@ -191,6 +191,43 @@ Product sessions can either:
 The session plane should not create another host ownership model. It should use
 workflow child execution, `wait_for`, `DurableClock`, and activities.
 
+### Durable Wait / Trigger / Schedule Semantics
+
+A key proof for this proposal is whether it collapses the durable-tools design
+space onto workflow primitives instead of requiring parallel routers for every
+tool.
+
+The target mapping is:
+
+| Capability | Workflow-native shape | Extra table/router needed? |
+| --- | --- | --- |
+| `sleep(durationMs)` | `DurableClock.sleep(...)` inside the workflow | No |
+| `schedule_me(when, prompt)` | persist intent in workflow state, `DurableClock.sleep` until `when`, then append runtime input | No separate timer table |
+| `wait_for(trigger, timeoutMs?)` | race a table-match deferred against `DurableClock.sleep` | Only a table-trigger-to-deferred adapter |
+| `spawn(agent, prompt)` | child workflow execution + parent await/poll | No host dispatcher |
+| `spawn_all(tasks)` | N child workflow executions + workflow aggregation | No fanout service unless product evidence requires one |
+| `execute(sandbox, input)` | workflow activity around the external side effect | No separate claim path if the activity claim suffices |
+
+This is the strongest reason to prefer the workflow-driven model: durable
+time, suspension, replay, and child execution already exist in
+`@effect/workflow` and are backed by `WorkflowEngineTable`. Firegrid should not
+rebuild those semantics in `packages/runtime/src/durable-tools` unless a
+specific capability cannot be expressed through workflow primitives.
+
+Under this model, `packages/runtime/src/durable-tools` is provisional and
+small. Its only clear job is the bridge for table-trigger waits:
+
+```txt
+DurableTable source row matches trigger
+  -> router writes wait completion evidence
+  -> router resolves Workflow DurableDeferred
+  -> workflow resumes and decodes at the call site
+```
+
+Everything temporal should prefer `DurableClock` directly. Everything that
+starts or owns side effects should prefer workflow activities. Everything that
+spawns or aggregates work should prefer child workflows.
+
 ## Durability Semantics By Plane
 
 ### Host Semantics
@@ -879,8 +916,8 @@ either:
 
 ### Durable Tools
 
-`wait_for` becomes more important, not less. The host workflow and runtime
-context workflow need durable waits over table changes. But `wait_for` should
+`wait_for` is the one durable-tools capability that may remain because it
+bridges DurableTable changes into workflow deferred completion. It should
 resolve existing workflow executions; it should not become a separate
 workflow-dispatch service.
 
@@ -898,8 +935,10 @@ This reframing also narrows `packages/runtime/src/durable-tools`:
   product session workflows.
 
 In other words, workflows make durable-tools smaller and more precise. The
-package is not redundant, but the parts that look like dispatch or ownership
-should not be built there.
+package is provisional: if `wait_for` can be folded directly into workflow
+runtime helpers without a package-level router, delete the package rather than
+preserving it. The parts that look like dispatch, temporal scheduling, or
+ownership should not be built there.
 
 ## Open Design Questions
 
