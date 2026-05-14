@@ -6,7 +6,7 @@ import {
   local,
 } from "@firegrid/client"
 import {
-  FiregridRuntimeHostLive,
+  FiregridLocalHostLive,
   startRuntime,
 } from "@firegrid/runtime"
 import { Effect, Layer } from "effect"
@@ -26,27 +26,6 @@ afterEach(async () => {
   baseUrl = undefined
 })
 
-const runWithFiregrid = <A, E>(
-  options: {
-    readonly durableStreamsBaseUrl: string
-    readonly namespace: string
-  },
-  effect: Effect.Effect<A, E, Firegrid>,
-): Promise<A> => {
-  return Effect.runPromise(Effect.scoped(
-    effect.pipe(
-      Effect.provide(
-        FiregridLive.pipe(
-          Layer.provide(Layer.succeed(FiregridConfig, {
-            durableStreamsBaseUrl: options.durableStreamsBaseUrl,
-            namespace: options.namespace,
-          })),
-        ),
-      ),
-    ),
-  ))
-}
-
 describe("firegrid tracer scenarios", () => {
   it("firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.10 starts from public launch and journals retained runtime events/logs", async () => {
     if (!baseUrl) throw new Error("scenario test server not started")
@@ -59,47 +38,48 @@ console.log(JSON.stringify({ type: "assistant", text: "pong" }))
 console.error("diagnostic: client-to-runtime")
 `
 
-    const handle = await runWithFiregrid(
-      firegridConfig,
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
+    //
+    // The single production composition that owns `CurrentHostSession`
+    // and the workflow engine. Scenarios pass namespace + base URL;
+    // the helper resolves host authority internally. Launch /
+    // startRuntime / snapshot all execute inside this scope so they
+    // share one host session.
+    const hostLayer = FiregridLocalHostLive(firegridConfig)
+    const clientLayer = FiregridLive.pipe(
+      Layer.provide(Layer.succeed(FiregridConfig, firegridConfig)),
+    )
+
+    const result = await Effect.runPromise(Effect.scoped(
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
-        return yield* firegrid.launch({
+        const handle = yield* firegrid.launch({
           runtime: local.jsonl({
             argv: [process.execPath, "--input-type=module", "-e", childCode],
           }),
         })
-      }),
-    )
-
-    const result = await Effect.runPromise(
-      startRuntime({
-        contextId: handle.contextId,
+        const runResult = yield* startRuntime({ contextId: handle.contextId })
+        const snapshot = yield* firegrid.open(handle.contextId).snapshot
+        return { handle, runResult, snapshot }
       }).pipe(
-        // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.4
-        Effect.provide(FiregridRuntimeHostLive(firegridConfig)),
+        Effect.provide(clientLayer),
+        Effect.provide(hostLayer),
       ),
-    )
+    ))
 
-    expect(result).toMatchObject({
-      contextId: handle.contextId,
+    expect(result.runResult).toMatchObject({
+      contextId: result.handle.contextId,
       exitCode: 0,
     })
 
-    const snapshot = await runWithFiregrid(
-      firegridConfig,
-      Effect.gen(function* () {
-        const firegrid = yield* Firegrid
-        return yield* firegrid.open(handle.contextId).snapshot
-      }),
-    )
-
-    expect(snapshot.events).toContainEqual(expect.objectContaining({
-      contextId: handle.contextId,
+    expect(result.snapshot.events).toContainEqual(expect.objectContaining({
+      contextId: result.handle.contextId,
       source: "stdout",
       raw: "{\"type\":\"assistant\",\"text\":\"pong\"}",
     }))
-    expect(snapshot.logs).toContainEqual(expect.objectContaining({
-      contextId: handle.contextId,
+    expect(result.snapshot.logs).toContainEqual(expect.objectContaining({
+      contextId: result.handle.contextId,
       source: "stderr",
       raw: "diagnostic: client-to-runtime",
     }))

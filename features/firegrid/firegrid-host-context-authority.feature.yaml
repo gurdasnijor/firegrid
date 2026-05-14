@@ -1,0 +1,57 @@
+feature:
+  name: firegrid-host-context-authority
+  product: firegrid
+  description: Host-bound runtime context authority and host-owned stream routing for workflow clocks, prompt ingress, and host-local MCP tools.
+
+components:
+  RUNTIME_CONTEXT_HOST_AUTHORITY:
+    requirements:
+      1: RuntimeContext rows carry the host binding used for context routing, including hostId, host-owned streamPrefix, and boundAtMs.
+      2: New RuntimeContext rows are created with their host binding already filled in by the runtime host; V1 does not create an intermediate unbound context row.
+      3: hostId is stable across host restarts, while hostSessionId is per host process boot if a session row is materialized.
+      4: RuntimeContext.host is the durable context routing authority; Firegrid does not add a separate context placement table, host-directory placement table, or rebind operation for V1.
+
+  SCHEMA_STREAM_AUTHORITY:
+    requirements:
+      1: Host-owned stream prefixes are encoded from Effect Schema transforms or annotations on the durable authority row schemas, following the DurableTable.primaryKey pattern.
+      2: Runtime-host and workflow-engine layer constructors derive host-owned stream URLs internally from Durable Streams base URL, namespace, and schema-encoded host authority; callers do not pass prebuilt stream URLs.
+      3: Product code does not construct authority-bearing stream URLs with inline template literals or parallel key helpers.
+
+  EFFECT_SCOPED_CONTEXT:
+    requirements:
+      1: Runtime host code exposes CurrentHostSession and CurrentRuntimeContext as required Effect Context.Tag services for host-scope and request/workflow-scope authority; they do not have undefined defaults.
+      2: Host-owned long-lived layers read CurrentHostSession for host-owned workflow, durable-tools, ingress, and output topology.
+      3: Context-routed services either read CurrentRuntimeContext at method time or build fresh per-context layers inside the localized scope; shared layers do not capture the first runtime context across parallel fibers.
+
+  RUNTIME_CONTEXT_PRIMITIVES:
+    requirements:
+      1: findRuntimeContext and insertLocalRuntimeContext are domain operators over RuntimeControlPlaneTable; Firegrid does not add a mostly pass-through repository service over DurableTable for RuntimeContext rows.
+      2: requireLocalContext is a composable operator that combines findRuntimeContext with CurrentHostSession and fails before local host services are exposed when the context is owned by another host.
+      3: provideRuntimeContext provides a resolved RuntimeContext through CurrentRuntimeContext for the rest of the fiber; callers do not pass RuntimeContext through every host-owned layer constructor.
+      4: Context authority errors are declared as Schema.TaggedError classes and are constructed through their class constructors rather than by hand-writing payload objects.
+
+  PROMPT_ROUTING:
+    requirements:
+      1: Prompt append resolves RuntimeContext by contextId and writes to the ingress stream derived from RuntimeContext.host.
+      2: A host may append a prompt for a context bound to another host by writing to that context's owner ingress stream; prompt append is durable routing, not local process execution.
+      3: schedule_me appends delayed prompts through the same host-owned prompt append path after DurableClock.sleep; it does not use a private workflow prompt path.
+
+  MCP_CONTEXT_ROUTING:
+    requirements:
+      1: The host-local MCP route shape is /mcp/runtime-context/:contextId; contextId is not an agent-visible tool argument and is not host-process env config.
+      2: MCP tool catalog publication is identical across context paths; the path scopes execution authority, not the tool surface.
+      3: MCP tool execution requires the RuntimeContext host binding to name the local host before FiregridAgentToolContext and host services are provided.
+      4: MCP context authority failures are surfaced through Effect AI MCP JSON-RPC error semantics without custom tools/list or tools/call handlers.
+
+constraints:
+  HAPPY_PATH_SCOPE:
+    requirements:
+      1: The first host context authority slice is greenfield and may make backwards-incompatible changes to existing prototype rows and stream layouts.
+      2: Firegrid-specific host/context operator CLI, durable host directory visibility, automatic host failover, shard leases, ownership transfer, and production migration tooling are out of scope for the happy-path host authority implementation.
+
+  VALIDATION:
+    requirements:
+      1: A two-host smoke proves each host writes workflow rows and clock wakeups only to its own host-owned workflow stream.
+      2: A prompt-routing smoke proves a prompt submitted through host B for a context bound to host A is written to host A ingress.
+      3: A scoped-context test proves parallel fibers using different CurrentRuntimeContext values do not share or capture the wrong context-derived stream.
+      4: An MCP smoke proves tool calls for a locally bound context succeed and tool calls for a foreign context are rejected before tool execution.

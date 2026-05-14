@@ -29,7 +29,9 @@ import {
   RuntimeOutputTable,
   envBinding,
   local,
+  makeHostStreamPrefix,
   normalizeRuntimeIntent,
+  type HostId,
 } from "@firegrid/protocol/launch"
 import { Effect, Either, Layer, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -53,27 +55,38 @@ afterEach(async () => {
   baseUrl = undefined
 })
 
-const appendRuntimeContext = (
-  controlPlaneStreamUrl: string,
-  argv: ReadonlyArray<string>,
-  envBindings: ReadonlyArray<{ readonly name: string; readonly ref: string }>,
-): Promise<string> =>
+const appendRuntimeContext = (input: {
+  readonly controlPlaneStreamUrl: string
+  readonly argv: ReadonlyArray<string>
+  readonly envBindings: ReadonlyArray<{ readonly name: string; readonly ref: string }>
+  readonly hostId: HostId
+  readonly namespace: string
+}): Promise<string> =>
   Effect.runPromise(Effect.gen(function* () {
     const table = yield* RuntimeControlPlaneTable
     const contextId = `ctx_${crypto.randomUUID()}`
+    const streamPrefix = makeHostStreamPrefix({
+      namespace: input.namespace,
+      hostId: input.hostId,
+    })
     yield* table.contexts.upsert({
       contextId,
       createdAt: new Date().toISOString(),
       runtime: normalizeRuntimeIntent(local.jsonl({
-        argv: [...argv],
-        envBindings: envBindings.map(b => ({ name: b.name, ref: b.ref })),
+        argv: [...input.argv],
+        envBindings: input.envBindings.map(b => ({ name: b.name, ref: b.ref })),
       })),
+      host: {
+        hostId: input.hostId,
+        streamPrefix,
+        boundAtMs: Date.now(),
+      },
     })
     return contextId
   }).pipe(
     Effect.provide(RuntimeControlPlaneTable.layer({
       streamOptions: {
-        url: controlPlaneStreamUrl,
+        url: input.controlPlaneStreamUrl,
         contentType: "application/json",
       },
     })),
@@ -99,8 +112,10 @@ describe("runtime env bindings authority boundary", () => {
   it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 child receives resolved value (proved via digest probe) while durable row + output journal store no secret", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const outputTableStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtimeOutput`
+    const outputTableStreamUrl = `${baseUrl}/v1/stream/${streamPrefix}.runtimeOutput`
     const secretValue = `super-secret-${crypto.randomUUID()}`
     const expectedDigest = sha256Hex(secretValue)
 
@@ -120,16 +135,18 @@ if (value === undefined) {
 const digest = createHash("sha256").update(value).digest("hex")
 console.log(JSON.stringify({ type: "probe", digest }))
 `
-    const contextId = await appendRuntimeContext(
+    const contextId = await appendRuntimeContext({
       controlPlaneStreamUrl,
-      [process.execPath, "--input-type=module", "-e", childCode],
-      [envBinding("FAKE_AGENT_KEY", "PARENT_FAKE_AGENT_KEY")],
-    )
+      argv: [process.execPath, "--input-type=module", "-e", childCode],
+      envBindings: [envBinding("FAKE_AGENT_KEY", "PARENT_FAKE_AGENT_KEY")],
+      hostId,
+      namespace,
+    })
 
     const result = await Effect.runPromise(
       startRuntime({ contextId }).pipe(
         Effect.provide(FiregridRuntimeHostWithWorkflowLive(
-          { durableStreamsBaseUrl: baseUrl, namespace },
+          { durableStreamsBaseUrl: baseUrl, namespace, hostId },
           // Authorize the exact (target, source) pair the row uses. The
           // lookup is injected so the test never touches real process env.
           authorizingPolicy(
@@ -202,25 +219,29 @@ console.log(JSON.stringify({ type: "probe", digest }))
   it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 denies a row whose authorized pair does not match (no child spawn, no leak)", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-deny-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const outputTableStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtimeOutput`
+    const outputTableStreamUrl = `${baseUrl}/v1/stream/${streamPrefix}.runtimeOutput`
 
     // Simulate a malicious / untrusted upstream that writes a binding
     // asking for AWS_SECRET_ACCESS_KEY. The host's policy authorizes
     // a different (target, source) pair — so the resolver must refuse
     // before any spawn.
-    const contextId = await appendRuntimeContext(
+    const contextId = await appendRuntimeContext({
       controlPlaneStreamUrl,
-      [process.execPath, "--input-type=module", "-e", "process.exit(0)"],
-      [{ name: "X", ref: "env:AWS_SECRET_ACCESS_KEY" }],
-    )
+      argv: [process.execPath, "--input-type=module", "-e", "process.exit(0)"],
+      envBindings: [{ name: "X", ref: "env:AWS_SECRET_ACCESS_KEY" }],
+      hostId,
+      namespace,
+    })
 
     const awsSecret = `must-never-be-read-${crypto.randomUUID()}`
     const result = await Effect.runPromise(
       Effect.either(
         startRuntime({ contextId }).pipe(
           Effect.provide(FiregridRuntimeHostWithWorkflowLive(
-            { durableStreamsBaseUrl: baseUrl, namespace },
+            { durableStreamsBaseUrl: baseUrl, namespace, hostId },
             authorizingPolicy(
               [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
               { ANTHROPIC_API_KEY: "ok", AWS_SECRET_ACCESS_KEY: awsSecret },
@@ -277,8 +298,10 @@ console.log(JSON.stringify({ type: "probe", digest }))
   it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 rejects a row that smuggles an authorized source into an unapproved target (NODE_OPTIONS exfil)", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-target-mismatch-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const outputTableStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtimeOutput`
+    const outputTableStreamUrl = `${baseUrl}/v1/stream/${streamPrefix}.runtimeOutput`
 
     // Operator authorized (ANTHROPIC_API_KEY, ANTHROPIC_API_KEY). A
     // malicious / untrusted row asks for the same source env but routes
@@ -287,17 +310,19 @@ console.log(JSON.stringify({ type: "probe", digest }))
     // the resolver only gated by source env name. The pair-based
     // resolver must refuse.
     const apiKey = `would-be-injected-into-NODE_OPTIONS-${crypto.randomUUID()}`
-    const contextId = await appendRuntimeContext(
+    const contextId = await appendRuntimeContext({
       controlPlaneStreamUrl,
-      [process.execPath, "--input-type=module", "-e", "process.exit(0)"],
-      [{ name: "NODE_OPTIONS", ref: "env:ANTHROPIC_API_KEY" }],
-    )
+      argv: [process.execPath, "--input-type=module", "-e", "process.exit(0)"],
+      envBindings: [{ name: "NODE_OPTIONS", ref: "env:ANTHROPIC_API_KEY" }],
+      hostId,
+      namespace,
+    })
 
     const result = await Effect.runPromise(
       Effect.either(
         startRuntime({ contextId }).pipe(
           Effect.provide(FiregridRuntimeHostWithWorkflowLive(
-            { durableStreamsBaseUrl: baseUrl, namespace },
+            { durableStreamsBaseUrl: baseUrl, namespace, hostId },
             authorizingPolicy(
               [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
               { ANTHROPIC_API_KEY: apiKey },
@@ -352,13 +377,16 @@ console.log(JSON.stringify({ type: "probe", digest }))
   it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 default deny-all policy denies env bindings even with valid env values present", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-default-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
 
-    const contextId = await appendRuntimeContext(
+    const contextId = await appendRuntimeContext({
       controlPlaneStreamUrl,
-      [process.execPath, "--input-type=module", "-e", "process.exit(0)"],
-      [{ name: "FAKE_AGENT_KEY", ref: "env:FAKE_AGENT_KEY" }],
-    )
+      argv: [process.execPath, "--input-type=module", "-e", "process.exit(0)"],
+      envBindings: [{ name: "FAKE_AGENT_KEY", ref: "env:FAKE_AGENT_KEY" }],
+      hostId,
+      namespace,
+    })
 
     const result = await Effect.runPromise(
       Effect.either(
@@ -368,6 +396,7 @@ console.log(JSON.stringify({ type: "probe", digest }))
           Effect.provide(FiregridRuntimeHostWithWorkflowLive({
             durableStreamsBaseUrl: baseUrl,
             namespace,
+            hostId,
           })),
         ),
       ),

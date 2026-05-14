@@ -6,10 +6,10 @@ import {
   local,
 } from "@firegrid/client"
 import {
-  FiregridRuntimeHostLive,
+  FiregridLocalHostLive,
   startRuntime,
 } from "@firegrid/runtime"
-import { Effect, Layer } from "effect"
+import { Duration, Effect, Fiber, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 let server: DurableStreamTestServer | undefined
@@ -25,16 +25,6 @@ afterEach(async () => {
   server = undefined
   baseUrl = undefined
 })
-
-const waitFor = async (
-  check: () => Promise<boolean>,
-): Promise<void> => {
-  for (let index = 0; index < 100; index += 1) {
-    if (await check()) return
-    await new Promise(resolve => setTimeout(resolve, 25))
-  }
-  throw new Error("timed out waiting for runtime state")
-}
 
 const liveStdinEchoAgent = `
 let buffered = ""
@@ -66,57 +56,40 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
       namespace: `tracer-016-${crypto.randomUUID()}`,
     }
 
-    const handle = await Effect.runPromise(Effect.scoped(
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+    const hostLayer = FiregridLocalHostLive({
+      ...firegridConfig,
+      input: true,
+    })
+    const clientLayer = FiregridLive.pipe(
+      Layer.provide(Layer.succeed(FiregridConfig, firegridConfig)),
+    )
+
+    const result = await Effect.runPromise(Effect.scoped(
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
-        return yield* firegrid.launch({
+        const handle = yield* firegrid.launch({
           runtime: local.jsonl({
             argv: [process.execPath, "--input-type=module", "-e", liveStdinEchoAgent],
           }),
         })
-      }).pipe(
-        Effect.provide(
-          FiregridLive.pipe(
-            Layer.provide(Layer.succeed(FiregridConfig, {
-              ...firegridConfig,
-            })),
-          ),
-        ),
-      ),
-    ))
 
-    const host = FiregridRuntimeHostLive({
-      ...firegridConfig,
-      input: true,
-    })
+        // Fork the runtime so we can interact with it while it's
+        // alive (poll snapshot, send live prompt).
+        const runtimeFiber = yield* Effect.fork(
+          startRuntime({ contextId: handle.contextId }),
+        )
 
-    const runtime = Effect.runPromise(
-      startRuntime({ contextId: handle.contextId }).pipe(
-        Effect.provide(host),
-      ),
-    )
+        const waitForStarted = Effect.gen(function* () {
+          for (let index = 0; index < 100; index += 1) {
+            const snapshot = yield* firegrid.open(handle.contextId).snapshot
+            if (snapshot.status === "started") return
+            yield* Effect.sleep(Duration.millis(25))
+          }
+          return yield* Effect.die(new Error("timed out waiting for runtime started"))
+        })
+        yield* waitForStarted
 
-    await waitFor(async () => {
-      const snapshot = await Effect.runPromise(Effect.scoped(
-        Effect.gen(function* () {
-          const firegrid = yield* Firegrid
-          return yield* firegrid.open(handle.contextId).snapshot
-        }).pipe(
-          Effect.provide(
-            FiregridLive.pipe(
-              Layer.provide(Layer.succeed(FiregridConfig, {
-                ...firegridConfig,
-              })),
-            ),
-          ),
-        ),
-      ))
-      return snapshot.status === "started"
-    })
-
-    const prompt = await Effect.runPromise(Effect.scoped(
-      Effect.gen(function* () {
-        const firegrid = yield* Firegrid
         const first = yield* firegrid.prompt({
           contextId: handle.contextId,
           payload: [{ type: "text", text: "continue live" }],
@@ -127,42 +100,23 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
           payload: [{ type: "text", text: "continue live duplicate" }],
           idempotencyKey: "tracer-016-live-input",
         })
-        return { first, duplicate }
+
+        const runResult = yield* Fiber.join(runtimeFiber)
+        const snapshot = yield* firegrid.open(handle.contextId).snapshot
+        return { handle, first, duplicate, runResult, snapshot }
       }).pipe(
-        Effect.provide(
-          FiregridLive.pipe(
-            Layer.provide(Layer.succeed(FiregridConfig, {
-              ...firegridConfig,
-            })),
-          ),
-        ),
+        Effect.provide(clientLayer),
+        Effect.provide(hostLayer),
       ),
     ))
 
-    expect(prompt.duplicate.inputId).toEqual(prompt.first.inputId)
-
-    const result = await runtime
-    expect(result).toMatchObject({
-      contextId: handle.contextId,
+    expect(result.duplicate.inputId).toEqual(result.first.inputId)
+    expect(result.runResult).toMatchObject({
+      contextId: result.handle.contextId,
       exitCode: 0,
     })
 
-    const snapshot = await Effect.runPromise(Effect.scoped(
-      Effect.gen(function* () {
-        const firegrid = yield* Firegrid
-        return yield* firegrid.open(handle.contextId).snapshot
-      }).pipe(
-        Effect.provide(
-          FiregridLive.pipe(
-            Layer.provide(Layer.succeed(FiregridConfig, {
-              ...firegridConfig,
-            })),
-          ),
-        ),
-      ),
-    ))
-
-    expect(snapshot.events.map(event => event.raw)).toEqual([
+    expect(result.snapshot.events.map(event => event.raw)).toEqual([
       "{\"type\":\"assistant\",\"text\":\"input:continue live\"}",
     ])
   })

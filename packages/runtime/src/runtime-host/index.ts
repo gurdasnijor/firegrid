@@ -5,8 +5,12 @@ import {
   WorkflowEngine,
 } from "@effect/workflow"
 import {
+  HostIdSegmentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  makeHostSessionRow,
+  type HostId,
+  type HostSessionId,
   type RuntimeContext,
   type RuntimeEventRow,
   type RuntimeLogLineRow,
@@ -14,10 +18,18 @@ import {
 import {
   RuntimeIngressTable,
   makeRuntimeIngressInputRow,
+  nextRuntimeIngressSequence,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
 import { Clock, Config, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
+import {
+  CurrentHostSession,
+  hostOwnedStreamUrl,
+  requireLocalContext,
+  runtimeControlPlaneStreamUrl,
+} from "./host-context-authority.ts"
+import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
@@ -35,12 +47,8 @@ import {
   runtimeIngressError,
 } from "./errors.ts"
 import { RuntimeHostConfig } from "./config.ts"
-import {
-  DurableStreamsWorkflowEngine,
-  WorkflowEngineTable,
-} from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import type {
-  RuntimeHostConfigValue,
   RuntimeHostTopologyOptions,
   StartRuntimeOptions,
 } from "./types.ts"
@@ -50,6 +58,21 @@ export type {
   StartRuntimeOptions,
   StartRuntimeResult,
 } from "./types.ts"
+
+export {
+  ContextNotFound,
+  ContextNotLocal,
+  CurrentHostSession,
+  CurrentHostStopped,
+  CurrentRuntimeContext,
+  durableStreamUrl,
+  findRuntimeContext,
+  hostOwnedStreamUrl,
+  insertLocalRuntimeContext,
+  provideRuntimeContext,
+  requireLocalContext,
+  runtimeControlPlaneStreamUrl,
+} from "./host-context-authority.ts"
 
 export {
   RuntimeIngressError,
@@ -425,82 +448,138 @@ const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(({ contextId 
     }
   }))
 
-const runtimeHostLayerFromOptions = (
-  options: RuntimeHostConfigValue,
-  topology: RuntimeHostTopologyOptions,
-  controlPlaneTableUrl: string,
-  ingressTableUrl: string,
-  outputTableUrl: string,
-  headers: DurableTableHeaders | undefined,
+// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.1
+// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.2
+//
+// CurrentHostSession layer for the host scope. The session row carries
+// the schema-encoded stream prefix that host-owned ingress / output /
+// workflow layers read; long-lived layers see exactly one host
+// identity for their lifetime.
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+//
+// Host identity is required at the topology type, so this layer is
+// never asked to fabricate one. No env, disk, or random fallback —
+// the only sanctioned suppliers are direct callers passing
+// `options.hostId` and the `FiregridLocalHostLive` helper that
+// derives a deterministic per-namespace id.
+const currentHostSessionLayer = (
+  options: RuntimeHostTopologyOptions,
+) =>
+  Layer.effect(
+    CurrentHostSession,
+    Effect.gen(function* () {
+      const startedAtMs = yield* Clock.currentTimeMillis
+      const hostId = options.hostId as HostId
+      const hostSessionId = (options.hostSessionId
+        ?? `session-${crypto.randomUUID()}`) as HostSessionId
+      return makeHostSessionRow({
+        hostId,
+        hostSessionId,
+        namespace: options.namespace,
+        startedAtMs,
+      })
+    }),
+  )
+
+// Namespace-scoped infrastructure: control plane, host config, sandbox
+// provider. The RuntimeContext index stays at `{namespace}.firegrid.runtime`
+// so cross-host context lookup does not require a host directory.
+const namespaceScopedLayer = (
+  options: RuntimeHostTopologyOptions,
 ) =>
   Layer.mergeAll(
-    Layer.succeed(RuntimeHostConfig, options),
+    Layer.succeed(RuntimeHostConfig, {
+      // firegrid-agent-ingress.HOST.7
+      inputEnabled: options.input === true,
+    }),
     RuntimeControlPlaneTable.layer({
       streamOptions: {
-        url: controlPlaneTableUrl,
+        url: runtimeControlPlaneStreamUrl({
+          baseUrl: options.durableStreamsBaseUrl,
+          namespace: options.namespace,
+        }),
         contentType: "application/json",
-        ...(headers !== undefined ? { headers } : {}),
+        ...(options.headers !== undefined ? { headers: options.headers } : {}),
       },
     }),
-    RuntimeIngressTable.layer({
-      streamOptions: {
-        url: ingressTableUrl,
-        contentType: "application/json",
-        ...(headers !== undefined ? { headers } : {}),
-      },
-    }),
-    RuntimeOutputTable.layer({
-      streamOptions: {
-        url: outputTableUrl,
-        contentType: "application/json",
-        ...(headers !== undefined ? { headers } : {}),
-      },
-    }),
-    LocalProcessSandboxProvider.layer(topology.localProcessEnv).pipe(
+    LocalProcessSandboxProvider.layer(options.localProcessEnv).pipe(
       Layer.provide(NodeContext.layer),
     ),
   )
 
-const runtimeHostStreamUrls = (
-  options: RuntimeHostTopologyOptions,
-) => {
-  const base = options.durableStreamsBaseUrl.replace(/\/+$/, "")
-  const streamPrefix = base.includes("/v1/stream/")
-    ? `${base}/`
-    : `${base}/v1/stream/`
-  return {
-    controlPlaneTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtime`)}`,
-    ingressTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtimeIngress`)}`,
-    outputTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtimeOutput`)}`,
-    workflowTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.${WorkflowEngineTable.namespace}`)}`,
-  }
-}
-
-const runtimeHostBaseLayer = (
-  options: RuntimeHostTopologyOptions,
-) => {
-  const urls = runtimeHostStreamUrls(options)
-  return runtimeHostLayerFromOptions(
-    {
-      // firegrid-agent-ingress.HOST.7
-      inputEnabled: options.input === true,
-    },
-    options,
-    urls.controlPlaneTableUrl,
-    urls.ingressTableUrl,
-    urls.outputTableUrl,
-    options.headers,
+// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1
+// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
+// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3
+// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.2
+//
+// Host-owned operational tables. Each layer reads CurrentHostSession
+// at acquire time and routes its backing stream through the host's
+// schema-encoded prefix via `hostOwnedStreamUrl`. Stream URLs are
+// derived here, never composed from inline template literals at
+// layer call sites.
+const hostOwnedIngressLayer = (
+  options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
+) =>
+  Layer.unwrapEffect(
+    Effect.map(CurrentHostSession, (session) =>
+      RuntimeIngressTable.layer({
+        streamOptions: {
+          url: hostOwnedStreamUrl({
+            baseUrl: options.baseUrl,
+            prefix: session.streamPrefix,
+            segment: "runtimeIngress",
+          }),
+          contentType: "application/json",
+          ...(options.headers !== undefined ? { headers: options.headers } : {}),
+        },
+      })),
   )
-}
 
-const runtimeContextWorkflowEngineLayer = (
+const hostOwnedOutputLayer = (
+  options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
+) =>
+  Layer.unwrapEffect(
+    Effect.map(CurrentHostSession, (session) =>
+      RuntimeOutputTable.layer({
+        streamOptions: {
+          url: hostOwnedStreamUrl({
+            baseUrl: options.baseUrl,
+            prefix: session.streamPrefix,
+            segment: "runtimeOutput",
+          }),
+          contentType: "application/json",
+          ...(options.headers !== undefined ? { headers: options.headers } : {}),
+        },
+      })),
+  )
+
+const hostOwnedWorkflowEngineLayer = (
+  options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
+) =>
+  Layer.unwrapEffect(
+    Effect.map(CurrentHostSession, (session) =>
+      DurableStreamsWorkflowEngine.layer({
+        streamUrl: hostOwnedStreamUrl({
+          baseUrl: options.baseUrl,
+          prefix: session.streamPrefix,
+          segment: "workflow",
+        }),
+        ...(options.headers !== undefined ? { headers: options.headers } : {}),
+      })),
+  )
+
+const hostScopedLayer = (
   options: RuntimeHostTopologyOptions,
 ) => {
-  const { workflowTableUrl } = runtimeHostStreamUrls(options)
-  return DurableStreamsWorkflowEngine.layer({
-    streamUrl: workflowTableUrl,
+  const sharedOptions = {
+    baseUrl: options.durableStreamsBaseUrl,
     ...(options.headers !== undefined ? { headers: options.headers } : {}),
-  })
+  }
+  return Layer.mergeAll(
+    hostOwnedIngressLayer(sharedOptions),
+    hostOwnedOutputLayer(sharedOptions),
+    hostOwnedWorkflowEngineLayer(sharedOptions),
+  )
 }
 
 export const FiregridRuntimeHostLive = (
@@ -511,17 +590,85 @@ export const FiregridRuntimeHostLive = (
   // construct a populated policy at the binary boundary and pass it here;
   // daemons that never see --secret-env stay locked down.
   envPolicy: Layer.Layer<RuntimeEnvResolverPolicy> = RuntimeEnvResolverPolicy.denyAll,
-) =>
-  RuntimeContextWorkflowLayer.pipe(
-    Layer.provideMerge(Layer.merge(runtimeHostBaseLayer(options), runtimeContextWorkflowEngineLayer(options))),
+) => {
+  const session = currentHostSessionLayer(options)
+  const namespaceScoped = namespaceScopedLayer(options)
+  const hostScoped = hostScopedLayer(options)
+  return RuntimeContextWorkflowLayer.pipe(
+    Layer.provideMerge(hostScoped),
+    Layer.provideMerge(namespaceScoped),
+    Layer.provideMerge(session),
     Layer.provideMerge(envPolicy),
   )
+}
 
 export const FiregridRuntimeHostWithWorkflowLive = (
   options: RuntimeHostTopologyOptions,
   envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
 ) => FiregridRuntimeHostLive(options, envPolicy)
 
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.1
+//
+// Single production composition for a one-host-per-namespace local
+// runtime. The helper owns `CurrentHostSession` internally; callers
+// supply only the namespace + base URL + optional headers/input and
+// then talk to `Firegrid` / `startRuntime` through the normal public
+// surface. Host identity is derived deterministically from the
+// namespace, so every process composing this layer with the same
+// namespace converges on the same `hostId` — no env knob, no
+// filesystem state, no random fallback.
+//
+// Multi-host topologies (e.g. the two-host workflow stream isolation
+// unit test) bypass this helper and pass `hostId` to
+// `FiregridRuntimeHostWithWorkflowLive` at the programmatic test
+// composition boundary.
+//
+// `HostStreamPrefixPartsSchema` requires the hostId to be a single
+// dot-free segment; namespaces are allowed to contain dots, so the
+// derivation replaces `.` with `_` to keep the result schema-valid.
+// The derived id is decoded through `HostIdSegmentSchema` — which
+// shares its dot-free / non-empty invariants with the prefix
+// validator — so a future constraint change here fails loudly at
+// composition time rather than at table construction.
+const localHostIdForNamespace = (namespace: string): HostId => {
+  const sanitized = namespace.replaceAll(".", "_")
+  return Schema.decodeUnknownSync(HostIdSegmentSchema)(`${sanitized}-host`)
+}
+
+export const FiregridLocalHostLive = (
+  options: {
+    readonly durableStreamsBaseUrl: string
+    readonly namespace: string
+    readonly input?: boolean
+    readonly headers?: DurableTableHeaders
+    readonly localProcessEnv?: RuntimeHostTopologyOptions["localProcessEnv"]
+  },
+  envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
+) => {
+  const composed: RuntimeHostTopologyOptions = {
+    durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+    namespace: options.namespace,
+    hostId: localHostIdForNamespace(options.namespace),
+    ...(options.input === undefined ? {} : { input: options.input }),
+    ...(options.headers === undefined ? {} : { headers: options.headers }),
+    ...(options.localProcessEnv === undefined
+      ? {}
+      : { localProcessEnv: options.localProcessEnv }),
+  }
+  return FiregridRuntimeHostWithWorkflowLive(composed, envPolicy)
+}
+
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+//
+// RuntimeHostTopologyFromConfig reads only the base URL + namespace +
+// optional input / token from env. Host identity is NOT an env knob:
+// `FiregridRuntimeHostFromConfig` composes the resulting topology
+// through `FiregridLocalHostLive`, which owns CurrentHostSession
+// internally and derives the host id deterministically from the
+// namespace. Multi-host topologies bypass FromConfig entirely and
+// supply `hostId` at the programmatic composition boundary via
+// `FiregridRuntimeHostWithWorkflowLive`.
 export const RuntimeHostTopologyFromConfig = Config.all({
   durableStreamsBaseUrl: Config.string("DURABLE_STREAMS_BASE_URL"),
   namespace: Config.string("FIREGRID_RUNTIME_NAMESPACE"),
@@ -547,11 +694,11 @@ export const RuntimeHostTopologyFromConfig = Config.all({
 )
 
 export const FiregridRuntimeHostFromConfig = Layer.unwrapEffect(
-  Effect.map(RuntimeHostTopologyFromConfig, options => FiregridRuntimeHostLive(options)),
+  Effect.map(RuntimeHostTopologyFromConfig, options => FiregridLocalHostLive(options)),
 )
 
 export const FiregridRuntimeHostWithWorkflowFromConfig = Layer.unwrapEffect(
-  Effect.map(RuntimeHostTopologyFromConfig, options => FiregridRuntimeHostWithWorkflowLive(options)),
+  Effect.map(RuntimeHostTopologyFromConfig, options => FiregridLocalHostLive(options)),
 )
 
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
@@ -564,7 +711,7 @@ export const FiregridRuntimeHostWithWorkflowFromConfigWithEnvPolicy = (
 ) =>
   Layer.unwrapEffect(
     Effect.map(RuntimeHostTopologyFromConfig, options =>
-      FiregridRuntimeHostWithWorkflowLive(options, envPolicy)),
+      FiregridLocalHostLive(options, envPolicy)),
   )
 
 export const startRuntime = (
@@ -572,15 +719,26 @@ export const startRuntime = (
 ) =>
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.1
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.4
-  Effect.flatMap(WorkflowEngine.WorkflowEngine, engine =>
-    engine.execute(RuntimeContextWorkflow, {
+  // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
+  // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.4
+  //
+  // requireLocalContext runs before any host-owned services are
+  // touched, so a host cannot smuggle execution of a context whose
+  // RuntimeContext.host binding names another host. The check uses
+  // RuntimeControlPlaneTable + CurrentHostSession from this same host
+  // scope; it is not a tool-arg or env-var check.
+  Effect.gen(function* () {
+    yield* requireLocalContext(options.contextId)
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    return yield* executeRuntimeContextWorkflow(engine, RuntimeContextWorkflow, {
       executionId: runtimeContextWorkflowExecutionId(options.contextId),
       payload: RuntimeContextWorkflowPayload.make({
         contextId: options.contextId,
       }),
-    })).pipe(
-      Effect.withClock(runtimeExecutionClock),
-    )
+    })
+  }).pipe(
+    Effect.withClock(runtimeExecutionClock),
+  )
 
 export const appendRuntimeIngress = (
   request: RuntimeIngressRequest,
@@ -595,6 +753,23 @@ export const appendRuntimeIngress = (
         request.inputId,
       )
     }
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
+    //
+    // In Slice 2 the host-owned ingress table is the local host's.
+    // Cross-host prompt routing (writing to the owner host's ingress
+    // through resolved RuntimeContext.host) is Slice 3. Until then a
+    // foreign-context append would silently land on the wrong host's
+    // ingress, so the operator rejects it loudly.
+    yield* requireLocalContext(request.contextId).pipe(
+      Effect.mapError(cause =>
+        runtimeIngressError(
+          "append",
+          "runtime ingress append rejected by local-host authority",
+          request.contextId,
+          request.inputId,
+          cause,
+        )),
+    )
     const table = yield* RuntimeIngressTable
     const row = makeRuntimeIngressInputRow(request)
     const existing = yield* table.inputs.get(row.inputId).pipe(
@@ -611,16 +786,7 @@ export const appendRuntimeIngress = (
       return existing.value
     }
 
-    // firegrid-agent-ingress.INGRESS.9
-    const nextSequence = yield* table.inputs.query((coll) =>
-      coll.toArray
-        .filter(candidate => candidate.contextId === row.contextId)
-        .reduce(
-          (max, candidate) =>
-            candidate.sequence === undefined ? max : Math.max(max, candidate.sequence + 1),
-          0,
-        ),
-    ).pipe(
+    const nextSequence = yield* nextRuntimeIngressSequence(table, row.contextId).pipe(
       Effect.mapError(cause =>
         runtimeIngressError(
           "append",

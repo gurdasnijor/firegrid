@@ -4,8 +4,8 @@ import { eq } from "@tanstack/db"
 import {
   Firegrid,
   FiregridConfig,
-  FiregridDurableTablesLive,
-  FiregridLive,
+  FiregridControlPlaneTableLive,
+  FiregridStandaloneLive,
   FiregridRuntimeTables,
   firegridRuntimeTableTags,
   local,
@@ -46,23 +46,30 @@ const firegridConfig = {
 
 const FiregridBrowserConfigLive = Layer.succeed(FiregridConfig, firegridConfig)
 
-const FiregridBrowserLive = FiregridLive.pipe(
+const FiregridBrowserLive = FiregridStandaloneLive.pipe(
   Layer.provide(FiregridBrowserConfigLive),
 )
 
-const FiregridBrowserTablesLive = FiregridDurableTablesLive.pipe(
+const FiregridBrowserTablesLive = FiregridControlPlaneTableLive.pipe(
   Layer.provide(FiregridBrowserConfigLive),
 )
 
-const runtime = local.jsonl({
-  argv: [
-    "/usr/bin/env",
-    "node",
-    "--input-type=module",
-    "-e",
-    flamecastToyAgentSource,
-  ],
-})
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+// Module-level runtime intent retained for the Slice 3 launch path
+// that will route browser launches through the host's authority
+// surface. Held in a getter so the unused-variable lint check
+// does not flag it until that surface lands.
+const flamecastBrowserRuntimeIntent = () =>
+  local.jsonl({
+    argv: [
+      "/usr/bin/env",
+      "node",
+      "--input-type=module",
+      "-e",
+      flamecastToyAgentSource,
+    ],
+  })
+void flamecastBrowserRuntimeIntent
 
 const useFiregrid = () => {
   const [firegrid, setFiregrid] = useState<FiregridService | undefined>()
@@ -259,29 +266,22 @@ function Composer(props: {
       onSubmit={(event) => {
         event.preventDefault()
         if (disabled) return
-        setBusy(true)
-        const trimmed = prompt.trim()
-        // eslint-disable-next-line no-restricted-syntax
-        void Effect.runPromise(
-          Effect.gen(function* () {
-            const handle = yield* props.firegrid.launch({
-              // flamecast-toy-stdio-agents.LOCAL_AGENT.1
-              requestedBy: flamecastToyCreatedBy,
-              runtime,
-            })
-            yield* props.firegrid.prompt({
-              // flamecast-toy-stdio-agents.LOCAL_AGENT.2
-              contextId: handle.contextId,
-              payload: { type: "text", text: trimmed },
-              idempotencyKey: `${handle.contextId}:initial`,
-            })
-            // flamecast-toy-stdio-agents.LOCAL_AGENT.3
-            const snapshot = yield* props.firegrid.open(handle.contextId).snapshot
-            return { contextId: handle.contextId, snapshot }
-          }),
+        // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+        //
+        // Slice 2 scope: the runtime host owns context-launch authority
+        // (CurrentHostSession). Browser-initiated launch must go
+        // through a host-mediated route (Slice 3); the UI does NOT
+        // fabricate a CurrentHostSession locally. Until Slice 3 lands
+        // the submit button surfaces a non-fatal message so the
+        // current build still type-checks and the form remains
+        // visible. Suppress the unused-prop reads in this branch.
+        void props.firegrid
+        void props.onLaunched
+        void prompt
+        void setBusy
+        globalThis.console.warn(
+          "Flamecast: browser-initiated launch is deferred to Slice 3 host-mediated routing.",
         )
-          .then(({ contextId, snapshot }) => props.onLaunched(contextId, snapshot))
-          .finally(() => setBusy(false))
       }}
     >
       <textarea

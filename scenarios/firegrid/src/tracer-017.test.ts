@@ -23,10 +23,10 @@ import {
   local,
 } from "@firegrid/client"
 import {
-  FiregridRuntimeHostLive,
+  FiregridLocalHostLive,
   startRuntime,
 } from "@firegrid/runtime"
-import { Effect, Layer } from "effect"
+import { Duration, Effect, Fiber, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 let server: DurableStreamTestServer | undefined
@@ -42,16 +42,6 @@ afterEach(async () => {
   server = undefined
   baseUrl = undefined
 })
-
-const waitFor = async (
-  check: () => Promise<boolean>,
-): Promise<void> => {
-  for (let index = 0; index < 200; index += 1) {
-    if (await check()) return
-    await new Promise((resolve) => setTimeout(resolve, 25))
-  }
-  throw new Error("timed out waiting for runtime state")
-}
 
 // Local-process agent: echoes each received stdin line back as a JSONL
 // `{type:"assistant", text:"input:<line>"}` event, then exits after the
@@ -91,58 +81,45 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
         namespace: `tracer-017-${crypto.randomUUID()}`,
       }
 
-      const firegridConfigLayer = Layer.succeed(FiregridConfig, {
+      // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+      // Production host + client share one CurrentHostSession; the
+      // launch row's host binding matches the host scope that runs
+      // the agent.
+      const hostLayer = FiregridLocalHostLive({
         ...firegridConfig,
+        input: true,
       })
+      const clientLayer = FiregridLive.pipe(
+        Layer.provide(Layer.succeed(FiregridConfig, firegridConfig)),
+      )
 
-      // Production launch surface — no shadow harness.
-      const handle = await Effect.runPromise(Effect.scoped(
+      const result = await Effect.runPromise(Effect.scoped(
         Effect.gen(function* () {
           const firegrid = yield* Firegrid
-          return yield* firegrid.launch({
+          const handle = yield* firegrid.launch({
             runtime: local.jsonl({
               argv: [process.execPath, "--input-type=module", "-e", liveStdinEchoAgent],
             }),
           })
-        }).pipe(
-          Effect.provide(FiregridLive.pipe(Layer.provide(firegridConfigLayer))),
-        ),
-      ))
 
-      // Production host surface — runtime is responsible for plumbing
-      // ingress into the local-process stdin through provider-owned delivery.
-      const host = FiregridRuntimeHostLive({
-        ...firegridConfig,
-        input: true,
-      })
+          const runtimeFiber = yield* Effect.fork(
+            startRuntime({ contextId: handle.contextId }),
+          )
 
-      const runtime = Effect.runPromise(
-        startRuntime({ contextId: handle.contextId }).pipe(
-          Effect.provide(host),
-        ),
-      )
+          const waitForStarted = Effect.gen(function* () {
+            for (let index = 0; index < 200; index += 1) {
+              const snapshot = yield* firegrid.open(handle.contextId).snapshot
+              if (snapshot.status === "started") return
+              yield* Effect.sleep(Duration.millis(25))
+            }
+            return yield* Effect.die(new Error("timed out waiting for runtime started"))
+          })
+          yield* waitForStarted
 
-      // Wait until the runtime has reported started — the provider delivery
-      // path inside local-process-stdin must be running.
-      await waitFor(async () => {
-        const snapshot = await Effect.runPromise(Effect.scoped(
-          Effect.gen(function* () {
-            const firegrid = yield* Firegrid
-            return yield* firegrid.open(handle.contextId).snapshot
-          }).pipe(
-            Effect.provide(FiregridLive.pipe(Layer.provide(firegridConfigLayer))),
-          ),
-        ))
-        return snapshot.status === "started"
-      })
-
-      // Send a prompt, then send a duplicate with the SAME idempotency key.
-      // The duplicate must collapse at the protocol layer (same inputId)
-      // AND the provider-owned AtMostOnce checkpoint must ensure the provider
-      // sees exactly one stdin chunk.
-      const prompt = await Effect.runPromise(Effect.scoped(
-        Effect.gen(function* () {
-          const firegrid = yield* Firegrid
+          // Send a prompt, then a duplicate with the SAME idempotency key.
+          // The duplicate must collapse at the protocol layer (same
+          // inputId) AND the provider-owned AtMostOnce checkpoint must
+          // ensure the provider sees exactly one stdin chunk.
           const first = yield* firegrid.prompt({
             contextId: handle.contextId,
             payload: [{ type: "text", text: "continue live" }],
@@ -153,34 +130,27 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
             payload: [{ type: "text", text: "continue live duplicate" }],
             idempotencyKey: "tracer-017-live-input",
           })
-          return { first, duplicate }
+
+          const runResult = yield* Fiber.join(runtimeFiber)
+          const snapshot = yield* firegrid.open(handle.contextId).snapshot
+          return { handle, first, duplicate, runResult, snapshot }
         }).pipe(
-          Effect.provide(FiregridLive.pipe(Layer.provide(firegridConfigLayer))),
+          Effect.provide(clientLayer),
+          Effect.provide(hostLayer),
         ),
       ))
 
-      expect(prompt.duplicate.inputId).toEqual(prompt.first.inputId)
-
-      const result = await runtime
-      expect(result).toMatchObject({
-        contextId: handle.contextId,
+      expect(result.duplicate.inputId).toEqual(result.first.inputId)
+      expect(result.runResult).toMatchObject({
+        contextId: result.handle.contextId,
         exitCode: 0,
       })
 
-      // Production snapshot surface — the agent must have emitted EXACTLY
-      // ONE assistant event from the first delivery. Any duplicate stdin
-      // chunk would either appear as a second assistant row (visible here)
-      // or exit-with-error (already asserted above).
-      const snapshot = await Effect.runPromise(Effect.scoped(
-        Effect.gen(function* () {
-          const firegrid = yield* Firegrid
-          return yield* firegrid.open(handle.contextId).snapshot
-        }).pipe(
-          Effect.provide(FiregridLive.pipe(Layer.provide(firegridConfigLayer))),
-        ),
-      ))
-
-      expect(snapshot.events.map((event) => event.raw)).toEqual([
+      // The agent must have emitted EXACTLY ONE assistant event from
+      // the first delivery. Any duplicate stdin chunk would either
+      // appear as a second assistant row (visible here) or
+      // exit-with-error (already asserted above).
+      expect(result.snapshot.events.map((event) => event.raw)).toEqual([
         "{\"type\":\"assistant\",\"text\":\"input:continue live\"}",
       ])
     },

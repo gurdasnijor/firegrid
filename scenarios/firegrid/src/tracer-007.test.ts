@@ -6,7 +6,7 @@ import {
   local,
 } from "@firegrid/client"
 import {
-  FiregridRuntimeHostLive,
+  FiregridLocalHostLive,
   startRuntime,
 } from "@firegrid/runtime"
 import { Effect, Layer } from "effect"
@@ -26,27 +26,6 @@ afterEach(async () => {
   baseUrl = undefined
 })
 
-const runWithFiregrid = <A, E>(
-  options: {
-    readonly durableStreamsBaseUrl: string
-    readonly namespace: string
-  },
-  effect: Effect.Effect<A, E, Firegrid>,
-): Promise<A> => {
-  return Effect.runPromise(Effect.scoped(
-    effect.pipe(
-      Effect.provide(
-        FiregridLive.pipe(
-          Layer.provide(Layer.succeed(FiregridConfig, {
-            durableStreamsBaseUrl: options.durableStreamsBaseUrl,
-            namespace: options.namespace,
-          })),
-        ),
-      ),
-    ),
-  ))
-}
-
 describe("firegrid tracer 007 sandbox slot extraction", () => {
   it("firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1 firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.6 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.3 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.5 journals stdout stderr and exit through FiregridRuntimeHostLive", async () => {
     if (!baseUrl) throw new Error("scenario test server not started")
@@ -59,56 +38,48 @@ console.log(JSON.stringify({ type: "assistant", text: "sandbox-slot-pong" }))
 console.error("diagnostic: sandbox-slot")
 `
 
-    const handle = await runWithFiregrid(
-      firegridConfig,
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+    const hostLayer = FiregridLocalHostLive(firegridConfig)
+    const clientLayer = FiregridLive.pipe(
+      Layer.provide(Layer.succeed(FiregridConfig, firegridConfig)),
+    )
+
+    const result = await Effect.runPromise(Effect.scoped(
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
-        return yield* firegrid.launch({
+        const handle = yield* firegrid.launch({
           runtime: local.jsonl({
             argv: [process.execPath, "--input-type=module", "-e", childCode],
           }),
         })
-      }),
-    )
-
-    const runtime = await Effect.runPromise(
-      startRuntime({
-        contextId: handle.contextId,
+        const runResult = yield* startRuntime({ contextId: handle.contextId })
+        const snapshot = yield* firegrid.open(handle.contextId).snapshot
+        return { handle, runResult, snapshot }
       }).pipe(
-        // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.4
-        // firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1
-        // The scenario provides only the production host root; sandbox wiring stays inside FiregridRuntimeHostLive.
-        Effect.provide(FiregridRuntimeHostLive(firegridConfig)),
+        Effect.provide(clientLayer),
+        Effect.provide(hostLayer),
       ),
-    )
+    ))
 
-    expect(runtime).toMatchObject({
-      contextId: handle.contextId,
+    expect(result.runResult).toMatchObject({
+      contextId: result.handle.contextId,
       exitCode: 0,
     })
 
-    const snapshot = await runWithFiregrid(
-      firegridConfig,
-      Effect.gen(function* () {
-        const firegrid = yield* Firegrid
-        return yield* firegrid.open(handle.contextId).snapshot
-      }),
-    )
-
-    expect(snapshot.runs).toContainEqual(expect.objectContaining({
-      contextId: handle.contextId,
+    expect(result.snapshot.runs).toContainEqual(expect.objectContaining({
+      contextId: result.handle.contextId,
       status: "exited",
       exitCode: 0,
       provider: "local-process",
     }))
 
-    expect(snapshot.events).toContainEqual(expect.objectContaining({
-      contextId: handle.contextId,
+    expect(result.snapshot.events).toContainEqual(expect.objectContaining({
+      contextId: result.handle.contextId,
       source: "stdout",
       raw: "{\"type\":\"assistant\",\"text\":\"sandbox-slot-pong\"}",
     }))
-    expect(snapshot.logs).toContainEqual(expect.objectContaining({
-      contextId: handle.contextId,
+    expect(result.snapshot.logs).toContainEqual(expect.objectContaining({
+      contextId: result.handle.contextId,
       source: "stderr",
       raw: "diagnostic: sandbox-slot",
     }))

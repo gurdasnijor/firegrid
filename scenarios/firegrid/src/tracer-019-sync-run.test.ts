@@ -12,9 +12,9 @@
 
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
+  Firegrid,
   FiregridConfig,
-  FiregridDurableTablesLive,
-  FiregridRuntimeTables,
+  FiregridStandaloneLive,
 } from "@firegrid/client"
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
@@ -22,7 +22,7 @@ import { mkdtemp, realpath, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url))
@@ -195,6 +195,13 @@ const contextIdFromFiregridRun = (stdout: string): string => {
   return match[1]
 }
 
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
+//
+// Read durable state through the public client snapshot. The client
+// resolves the row's host binding internally and opens the host-owned
+// ingress / output streams per call; tests do not reconstruct any
+// host stream names.
 const queryDurableState = (
   options: {
     readonly durableStreamsBaseUrl: string
@@ -204,28 +211,11 @@ const queryDurableState = (
   },
 ) =>
   Effect.gen(function* () {
-    const control = yield* FiregridRuntimeTables.ControlPlane
-    const ingress = yield* FiregridRuntimeTables.Ingress
-    const output = yield* FiregridRuntimeTables.Output
-    const context = yield* control.contexts.get(options.contextId)
-    const inputs = yield* ingress.inputs.query((coll) =>
-      coll.toArray
-        .filter(row => row.contextId === options.contextId)
-        .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0)))
-    const runs = yield* control.runs.query((coll) =>
-      coll.toArray
-        .filter(row => row.contextId === options.contextId)
-        .sort((left, right) => left.activityAttempt - right.activityAttempt || left.at.localeCompare(right.at)))
-    const events = yield* output.events.query((coll) =>
-      coll.toArray
-        .filter(row => row.contextId === options.contextId)
-        .sort((left, right) => left.sequence - right.sequence))
-    const logs = yield* output.logs.query((coll) =>
-      coll.toArray.filter(row => row.contextId === options.contextId))
-    return { context, inputs, runs, events, logs }
+    const firegrid = yield* Firegrid
+    return yield* firegrid.open(options.contextId).snapshot
   }).pipe(
     Effect.provide(
-      FiregridDurableTablesLive.pipe(
+      FiregridStandaloneLive.pipe(
         Layer.provide(Layer.succeed(FiregridConfig, {
           durableStreamsBaseUrl: options.durableStreamsBaseUrl,
           namespace: options.namespace,
@@ -249,7 +239,8 @@ const assertSmokeDurableState = (
   config: SmokeConfig,
   contextId: string,
 ) => {
-  const context = Option.getOrThrow(retained.context)
+  expect(retained.context).toBeDefined()
+  const context = retained.context!
   expect(context.contextId).toBe(contextId)
   expect(context.createdBy).toBe("firegrid-run")
   expect(context.runtime.config.cwd).toBe(config.workdir)

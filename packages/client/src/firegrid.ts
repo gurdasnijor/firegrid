@@ -1,9 +1,27 @@
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
+// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
+// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
+// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.3
+//
+// Public Firegrid client. Host authority lives in @firegrid/protocol,
+// so the client reads `RuntimeContext.host` off durable rows and
+// resolves host-owned ingress / output tables per-call rather than at
+// layer-acquire time. Effect-typed: `launch` carries the
+// `CurrentHostSession + Clock` requirement on its method signature so
+// callers compose the client alongside a runtime host that provides
+// those services; read-only consumers (snapshot / watchContexts) do
+// not need a host session because the host id is read off the row.
+
 import {
   PublicLaunchRequestSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  hostOwnedStreamUrl,
+  insertLocalRuntimeContext,
   local,
-  normalizeRuntimeIntent,
+  runtimeControlPlaneStreamUrl,
+  type CurrentHostSession,
   type PublicLaunchRequest,
   type RuntimeContext,
   type RuntimeEventRow,
@@ -13,6 +31,7 @@ import {
 import {
   RuntimeIngressTable,
   makeRuntimeIngressInputRow,
+  nextRuntimeIngressSequence,
   promptToRuntimeIngressRequest,
   PublicPromptRequestSchema,
   type PublicPromptRequest,
@@ -26,8 +45,6 @@ export interface ClientOptions {
   readonly namespace?: string
   readonly runtimeStreamUrl?: string
   readonly controlPlaneStreamUrl?: string
-  readonly dataPlaneStreamUrl?: string
-  readonly inputStreamUrl?: string
   readonly contentType?: string
   readonly headers?: DurableTableHeaders
   readonly txTimeoutMs?: number
@@ -60,12 +77,17 @@ export class FiregridConfigError extends Schema.TaggedError<FiregridConfigError>
 
 export type PromptInputError = LaunchInputError
 
-export type FiregridError = PreloadError | LaunchInputError | AppendError | FiregridConfigError
+export type FiregridError =
+  | PreloadError
+  | LaunchInputError
+  | AppendError
+  | FiregridConfigError
 
 export interface RuntimeContextSnapshot {
   readonly contextId: string
   readonly context?: RuntimeContext
   readonly status?: RuntimeRunEventRow["status"]
+  readonly inputs: ReadonlyArray<RuntimeIngressInputRow>
   readonly runs: ReadonlyArray<RuntimeRunEventRow>
   readonly events: ReadonlyArray<RuntimeEventRow>
   readonly logs: ReadonlyArray<RuntimeLogLineRow>
@@ -77,7 +99,13 @@ export interface RuntimeContextHandle {
 }
 
 export interface FiregridService {
-  readonly launch: (request: PublicLaunchRequest) => Effect.Effect<RuntimeContextHandle, LaunchInputError | AppendError>
+  readonly launch: (
+    request: PublicLaunchRequest,
+  ) => Effect.Effect<
+    RuntimeContextHandle,
+    LaunchInputError | AppendError,
+    CurrentHostSession
+  >
   readonly prompt: (
     request: PublicPromptRequest,
   ) => Effect.Effect<RuntimeIngressInputRow, PromptInputError | AppendError>
@@ -129,90 +157,86 @@ const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map(millis => new Date(millis).toISOString()),
 )
 
-interface FiregridClientStreamUrls {
-  readonly runtimeControlPlaneTableUrl: string
-  readonly runtimeIngressTableUrl: string
-  readonly runtimeOutputTableUrl: string
+interface ResolvedConfig {
+  readonly baseUrl: string
+  readonly namespace: string | undefined
+  readonly controlPlaneStreamUrl: string
+  readonly contentType: string
+  readonly headers: DurableTableHeaders | undefined
+  readonly txTimeoutMs: number
 }
 
-const trimRightSlash = (value: string): string => value.replace(/\/+$/, "")
-
-const encodeStreamName = (namespace: string, name: string): string =>
-  encodeURIComponent(`${namespace}.${name}`)
-
-const streamUrlsFromConfig = (
+const resolveConfig = (
   cfg: ClientOptions,
-): FiregridClientStreamUrls | undefined => {
-  if (cfg.durableStreamsBaseUrl === undefined || cfg.namespace === undefined) return undefined
-  const baseUrl = trimRightSlash(cfg.durableStreamsBaseUrl)
-  const namespace = cfg.namespace
-  const streamPrefix = baseUrl.includes("/v1/stream/")
-    ? `${baseUrl}/`
-    : `${baseUrl}/v1/stream/`
-  const streamUrl = (name: string): string =>
-    `${streamPrefix}${encodeStreamName(namespace, name)}`
-  return {
-    // firegrid-durable-launch-runtime-operator.RUNTIME_HOST.12
-    runtimeControlPlaneTableUrl: streamUrl("firegrid.runtime"),
-    // firegrid-agent-ingress.HOST.7
-    runtimeIngressTableUrl: streamUrl("firegrid.runtimeIngress"),
-    runtimeOutputTableUrl: streamUrl("firegrid.runtimeOutput"),
-  }
-}
+): Effect.Effect<ResolvedConfig, FiregridConfigError> =>
+  Effect.gen(function* () {
+    const controlPlaneStreamUrl =
+      cfg.controlPlaneStreamUrl ??
+      cfg.runtimeStreamUrl ??
+      (cfg.durableStreamsBaseUrl !== undefined && cfg.namespace !== undefined
+        ? runtimeControlPlaneStreamUrl({
+          baseUrl: cfg.durableStreamsBaseUrl,
+          namespace: cfg.namespace,
+        })
+        : undefined)
 
-const requiredControlPlaneStreamUrl = (
-  cfg: ClientOptions,
-  streamUrls: FiregridClientStreamUrls | undefined,
-): Effect.Effect<string, FiregridConfigError> => {
-  const url = cfg.controlPlaneStreamUrl ?? cfg.runtimeStreamUrl ?? streamUrls?.runtimeControlPlaneTableUrl
-  if (url === undefined) {
-    return Effect.fail(new FiregridConfigError({
-      cause: new Error("FiregridConfig requires durableStreamsBaseUrl + namespace or a runtime/control-plane stream URL"),
-    }))
-  }
-  return Effect.succeed(url)
-}
+    if (controlPlaneStreamUrl === undefined) {
+      return yield* Effect.fail(new FiregridConfigError({
+        cause: new Error(
+          "FiregridConfig requires durableStreamsBaseUrl + namespace or a runtime/control-plane stream URL",
+        ),
+      }))
+    }
 
-const requiredRuntimeTableStreamUrls = (
-  cfg: ClientOptions,
-  streamUrls: FiregridClientStreamUrls | undefined,
-): Effect.Effect<FiregridClientStreamUrls, FiregridConfigError> => {
-  const runtimeControlPlaneTableUrl = cfg.controlPlaneStreamUrl ??
-    cfg.runtimeStreamUrl ??
-    streamUrls?.runtimeControlPlaneTableUrl
-  const runtimeIngressTableUrl = cfg.inputStreamUrl ??
-    streamUrls?.runtimeIngressTableUrl
-  const runtimeOutputTableUrl = cfg.dataPlaneStreamUrl ??
-    streamUrls?.runtimeOutputTableUrl
-
-  if (
-    runtimeControlPlaneTableUrl === undefined ||
-    runtimeIngressTableUrl === undefined ||
-    runtimeOutputTableUrl === undefined
-  ) {
-    return Effect.fail(new FiregridConfigError({
-      cause: new Error("Firegrid runtime tables require durableStreamsBaseUrl + namespace or explicit control/input/output stream URLs"),
-    }))
-  }
-
-  return Effect.succeed({
-    runtimeControlPlaneTableUrl,
-    runtimeIngressTableUrl,
-    runtimeOutputTableUrl,
+    return {
+      baseUrl: cfg.durableStreamsBaseUrl ?? "",
+      namespace: cfg.namespace,
+      controlPlaneStreamUrl,
+      contentType: cfg.contentType ?? "application/json",
+      headers: cfg.headers,
+      txTimeoutMs: cfg.txTimeoutMs ?? 2_000,
+    }
   })
-}
 
-const normalizeLaunch = (
-  request: PublicLaunchRequest,
-): Effect.Effect<RuntimeContext> =>
-  Effect.map(nowIso, createdAt => ({
-    // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.3
-    // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.7
-    contextId: makeContextId(),
-    createdAt,
-    ...(request.requestedBy === undefined ? {} : { createdBy: request.requestedBy }),
-    runtime: normalizeRuntimeIntent(request.runtime),
-  }))
+/**
+ * Build the stream options for a host-owned table layer scoped to a
+ * specific runtime context. The host stream prefix is read off the
+ * context row, so the URL is never composed at scenario sites.
+ *
+ * firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
+ */
+const hostOwnedStreamOptions = (
+  config: ResolvedConfig,
+  context: RuntimeContext,
+  segment: "runtimeIngress" | "runtimeOutput",
+) => ({
+  streamOptions: {
+    url: hostOwnedStreamUrl({
+      baseUrl: config.baseUrl,
+      prefix: context.host.streamPrefix,
+      segment,
+    }),
+    contentType: config.contentType,
+    ...(config.headers === undefined ? {} : { headers: config.headers }),
+  },
+  txTimeoutMs: config.txTimeoutMs,
+})
+
+const ingressLayerForContext = (
+  config: ResolvedConfig,
+  context: RuntimeContext,
+) =>
+  RuntimeIngressTable.layer(
+    hostOwnedStreamOptions(config, context, "runtimeIngress"),
+  )
+
+const outputLayerForContext = (
+  config: ResolvedConfig,
+  context: RuntimeContext,
+) =>
+  RuntimeOutputTable.layer(
+    hostOwnedStreamOptions(config, context, "runtimeOutput"),
+  )
 
 const decodePublicLaunchRequest = (
   request: PublicLaunchRequest,
@@ -230,265 +254,272 @@ const decodePublicPromptRequest = (
 
 const snapshotFromJournal = (
   contextId: string,
-  control: {
+  inputs: {
     readonly context?: RuntimeContext
     readonly runs: ReadonlyArray<RuntimeRunEventRow>
-  },
-  output: {
+    readonly ingressInputs: ReadonlyArray<RuntimeIngressInputRow>
     readonly events: ReadonlyArray<RuntimeEventRow>
     readonly logs: ReadonlyArray<RuntimeLogLineRow>
   },
 ): RuntimeContextSnapshot => {
-  const events = output.events
+  const events = inputs.events
     .filter(row => row.contextId === contextId)
     .sort(compareJournalRows)
-  const logs = output.logs
+  const logs = inputs.logs
     .filter(row => row.contextId === contextId)
     .sort(compareJournalRows)
-  const runs = [...control.runs].sort((left, right) => left.at.localeCompare(right.at))
+  const runs = [...inputs.runs].sort((left, right) =>
+    left.at.localeCompare(right.at))
+  const promptInputs = [...inputs.ingressInputs]
+    .filter(row => row.contextId === contextId)
+    .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
   const status = latestStatus(runs)
   return {
     contextId,
-    ...(control.context === undefined ? {} : { context: control.context }),
+    ...(inputs.context === undefined ? {} : { context: inputs.context }),
     ...(status === undefined ? {} : { status }),
+    inputs: promptInputs,
     runs,
     events,
     logs,
   }
 }
 
-const make = (
-  ingress: Option.Option<RuntimeIngressTable["Type"]>,
-  output: Option.Option<RuntimeOutputTable["Type"]>,
-) => Effect.gen(function* () {
-  const control = yield* RuntimeControlPlaneTable
+const make = (config: ResolvedConfig) =>
+  Effect.gen(function* () {
+    const control = yield* RuntimeControlPlaneTable
 
-  const readOutput = (): Effect.Effect<{
-    readonly events: ReadonlyArray<RuntimeEventRow>
-    readonly logs: ReadonlyArray<RuntimeLogLineRow>
-  }, PreloadError> =>
-    Option.match(output, {
-      onNone: () => Effect.succeed({ events: [], logs: [] }),
-      onSome: table =>
-        Effect.all({
-          // firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.7
-          events: table.events.query(coll => coll.toArray),
-          logs: table.logs.query(coll => coll.toArray),
-        }).pipe(
-          Effect.mapError(cause => new PreloadError({ cause })),
-        ),
-    })
-
-  const appendContext = (context: RuntimeContext): Effect.Effect<void, AppendError> =>
-    control.contexts.upsert(context).pipe(
-      Effect.mapError(cause => new AppendError({ contextId: context.contextId, cause })),
-    )
-
-  const appendPrompt = (
-    row: RuntimeIngressInputRow,
-  ): Effect.Effect<RuntimeIngressInputRow, AppendError> => {
-    if (Option.isNone(ingress)) {
-      return Effect.fail(new AppendError({
-        contextId: row.contextId,
-        cause: new Error("runtime ingress table is not configured"),
-      }))
-    }
-    return Effect.gen(function* () {
-      const existing = yield* ingress.value.inputs.get(row.inputId)
-      if (Option.isSome(existing)) return existing.value
-      const nextSequence = yield* ingress.value.inputs.query((coll) =>
-        coll.toArray
-          .filter(candidate => candidate.contextId === row.contextId)
-          .reduce(
-            (max, candidate) =>
-              candidate.sequence === undefined ? max : Math.max(max, candidate.sequence + 1),
-            0,
-          ),
-      )
-      const sequenced = {
-        ...row,
-        // firegrid-agent-ingress.INGRESS.9
-        status: "sequenced" as const,
-        sequence: nextSequence,
-        sequencedAt: yield* nowIso,
-      }
-      yield* ingress.value.inputs.insert(sequenced)
-      return sequenced
-    }).pipe(
-      Effect.mapError(cause => new AppendError({ contextId: row.contextId, cause })),
-    )
-  }
-
-  const readSnapshot = (
-    contextId: string,
-  ): Effect.Effect<RuntimeContextSnapshot, PreloadError> =>
-    Effect.gen(function* () {
-      const runtimeOutput = yield* readOutput()
-      const controlState = yield* Effect.gen(function* () {
-          const context = yield* control.contexts.get(contextId).pipe(
-            Effect.mapError(cause => new PreloadError({ cause })),
-          )
-          const runs = yield* control.runs.query((coll) =>
-            coll.toArray.filter(row => row.contextId === contextId),
-          )
-          return { context, runs }
-        }).pipe(
+    /**
+     * Resolve a context row from the namespace-scoped control plane.
+     * Read paths use this once and then dispatch to host-owned
+     * ingress / output streams; cross-host reads work uniformly
+     * because the host binding is on the row.
+     */
+    const resolveContext = (
+      contextId: string,
+    ): Effect.Effect<RuntimeContext | undefined, PreloadError> =>
+      control.contexts.get(contextId).pipe(
+        Effect.map(Option.getOrUndefined),
         Effect.mapError(cause => new PreloadError({ cause })),
       )
+
+    const readSnapshot = (
+      contextId: string,
+    ): Effect.Effect<RuntimeContextSnapshot, PreloadError> =>
+      Effect.gen(function* () {
+        const context = yield* resolveContext(contextId)
+        const runs = yield* control.runs.query((coll) =>
+          coll.toArray.filter(row => row.contextId === contextId)).pipe(
+            Effect.mapError(cause => new PreloadError({ cause })),
+          )
+
+        if (context === undefined) {
+          return snapshotFromJournal(contextId, {
+            runs,
+            ingressInputs: [],
+            events: [],
+            logs: [],
+          })
+        }
+
+        // firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
+        // Host-owned ingress and output tables are opened per snapshot
+        // using the context's host binding. The control plane stays
+        // namespace-scoped (the RuntimeContext index is global).
+        const hostOwned = yield* Effect.gen(function* () {
+          const ingressTable = yield* RuntimeIngressTable
+          const outputTable = yield* RuntimeOutputTable
+          const ingressInputs = yield* ingressTable.inputs.query((coll) =>
+            coll.toArray.filter(row => row.contextId === contextId))
+          const events = yield* outputTable.events.query((coll) =>
+            coll.toArray.filter(row => row.contextId === contextId))
+          const logs = yield* outputTable.logs.query((coll) =>
+            coll.toArray.filter(row => row.contextId === contextId))
+          return { ingressInputs, events, logs }
+        }).pipe(
+          Effect.provide(ingressLayerForContext(config, context)),
+          Effect.provide(outputLayerForContext(config, context)),
+          Effect.scoped,
+          Effect.mapError(cause => new PreloadError({ cause })),
+        )
+
         return snapshotFromJournal(contextId, {
-          ...(Option.isNone(controlState.context) ? {} : { context: controlState.context.value }),
-          runs: controlState.runs,
-        }, runtimeOutput)
+          context,
+          runs,
+          ingressInputs: hostOwned.ingressInputs,
+          events: hostOwned.events,
+          logs: hostOwned.logs,
+        })
+      })
+
+    const open = (contextId: string): RuntimeContextHandle => ({
+      contextId,
+      snapshot: readSnapshot(contextId),
     })
 
-  const open = (contextId: string): RuntimeContextHandle => ({
-    contextId,
-    snapshot: readSnapshot(contextId),
-  })
-
-  const watchContexts = (
-    predicate: (context: RuntimeContext) => boolean = () => true,
-  ): Stream.Stream<RuntimeContext, PreloadError> =>
-    control.contexts.subscribe<RuntimeContext>((coll, emit) => {
-      const sub = coll.subscribeChanges(
-        changes => {
-          for (const change of changes) {
-            if (change.value !== undefined && predicate(change.value)) {
-              emit(change.value)
+    const watchContexts = (
+      predicate: (context: RuntimeContext) => boolean = () => true,
+    ): Stream.Stream<RuntimeContext, PreloadError> =>
+      control.contexts.subscribe<RuntimeContext>((coll, emit) => {
+        const sub = coll.subscribeChanges(
+          changes => {
+            for (const change of changes) {
+              if (change.value !== undefined && predicate(change.value)) {
+                emit(change.value)
+              }
             }
+          },
+          { includeInitialState: true },
+        )
+        return () => sub.unsubscribe()
+      }).pipe(
+        Stream.mapError(cause => new PreloadError({ cause })),
+      )
+
+    const appendPrompt = (
+      contextId: string,
+      row: RuntimeIngressInputRow,
+    ): Effect.Effect<RuntimeIngressInputRow, AppendError> =>
+      Effect.gen(function* () {
+        const context = yield* resolveContext(contextId).pipe(
+          Effect.mapError(cause =>
+            new AppendError({ contextId, cause })),
+        )
+        if (context === undefined) {
+          return yield* Effect.fail(
+            new AppendError({
+              contextId,
+              cause: new Error(`runtime context ${contextId} not found`),
+            }),
+          )
+        }
+
+        return yield* Effect.gen(function* () {
+          const ingress = yield* RuntimeIngressTable
+          const existing = yield* ingress.inputs.get(row.inputId)
+          if (Option.isSome(existing)) return existing.value
+          // firegrid-agent-ingress.INGRESS.9
+          const nextSequence = yield* nextRuntimeIngressSequence(
+            ingress,
+            row.contextId,
+          )
+          const sequenced = {
+            ...row,
+            // firegrid-agent-ingress.INGRESS.9
+            status: "sequenced" as const,
+            sequence: nextSequence,
+            sequencedAt: yield* nowIso,
           }
-        },
-        { includeInitialState: true },
-      )
-      return () => sub.unsubscribe()
-    }).pipe(
-      Stream.mapError(cause => new PreloadError({ cause })),
-    )
+          yield* ingress.inputs.insert(sequenced)
+          return sequenced
+        }).pipe(
+          Effect.provide(ingressLayerForContext(config, context)),
+          Effect.scoped,
+          Effect.mapError(cause =>
+            new AppendError({ contextId, cause })),
+        )
+      })
 
-  return Firegrid.of({
-    launch: request => Effect.gen(function* () {
-      // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1
-      // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6
-      const decoded = yield* decodePublicLaunchRequest(request)
-      const normalized = yield* normalizeLaunch(decoded)
-      yield* appendContext(normalized)
-      return open(normalized.contextId)
-    }),
-    prompt: request => Effect.gen(function* () {
-      // firegrid-agent-ingress.INGRESS.6
-      const decoded = yield* decodePublicPromptRequest(request)
-      const row = makeRuntimeIngressInputRow(promptToRuntimeIngressRequest(decoded))
-      return yield* appendPrompt(row)
-    }),
-    open,
-    watchContexts,
-  })
-})
-
-const firegridServiceLayer = (
-  ingressConfigured: boolean,
-  outputConfigured: boolean,
-) =>
-  Layer.scoped(
-    Firegrid,
-    Effect.gen(function* () {
-      const ingress = ingressConfigured
-        ? Option.some(yield* RuntimeIngressTable)
-        : Option.none<RuntimeIngressTable["Type"]>()
-      const output = outputConfigured
-        ? Option.some(yield* RuntimeOutputTable)
-        : Option.none<RuntimeOutputTable["Type"]>()
-      return yield* make(ingress, output)
-    }),
-  )
-
-const configuredFiregridLayer = (
-  cfg: ClientOptions,
-): Effect.Effect<Layer.Layer<Firegrid, unknown>, FiregridConfigError> =>
-  Effect.gen(function* () {
-    const streamUrls = streamUrlsFromConfig(cfg)
-    const controlPlaneStreamUrl = yield* requiredControlPlaneStreamUrl(cfg, streamUrls)
-    const inputTableStreamUrl = cfg.inputStreamUrl ?? streamUrls?.runtimeIngressTableUrl
-    const outputTableStreamUrl = cfg.dataPlaneStreamUrl ?? streamUrls?.runtimeOutputTableUrl
-    const txTimeoutMs = cfg.txTimeoutMs ?? 2_000
-    const controlLayer = RuntimeControlPlaneTable.layer({
-      streamOptions: {
-        url: controlPlaneStreamUrl,
-        contentType: cfg.contentType ?? "application/json",
-        ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
-      },
-      txTimeoutMs,
+    return Firegrid.of({
+      launch: (request) => Effect.gen(function* () {
+        // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1
+        // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6
+        // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
+        //
+        // Routed through the shared `insertLocalRuntimeContext`
+        // primitive (from @firegrid/protocol). The method requires
+        // `CurrentHostSession` at the call site, so the launched row
+        // carries the same host binding the runtime host will
+        // recognize via `requireLocalContext`.
+        const decoded = yield* decodePublicLaunchRequest(request)
+        const intent = {
+          provider: "local-process" as const,
+          config: {
+            argv: [...decoded.runtime.config.argv],
+            ...(decoded.runtime.config.cwd === undefined
+              ? {}
+              : { cwd: decoded.runtime.config.cwd }),
+            ...(decoded.runtime.config.envBindings === undefined
+              ? {}
+              : {
+                envBindings: decoded.runtime.config.envBindings.map(b => ({
+                  name: b.name,
+                  ref: b.ref,
+                })),
+              }),
+          },
+          journal: [
+            { source: "stdout" as const, format: "jsonl" as const, target: "events" as const },
+            { source: "stderr" as const, format: "text-lines" as const, target: "logs" as const },
+          ],
+        }
+        const contextId = makeContextId()
+        const context = yield* insertLocalRuntimeContext(intent, {
+          contextId,
+          ...(decoded.requestedBy === undefined ? {} : { createdBy: decoded.requestedBy }),
+        }).pipe(
+          Effect.mapError(cause => new AppendError({ contextId, cause })),
+        )
+        return open(context.contextId)
+      }),
+      prompt: request => Effect.gen(function* () {
+        // firegrid-agent-ingress.INGRESS.6
+        const decoded = yield* decodePublicPromptRequest(request)
+        const row = makeRuntimeIngressInputRow(promptToRuntimeIngressRequest(decoded))
+        return yield* appendPrompt(decoded.contextId, row)
+      }),
+      open,
+      watchContexts,
     })
-    const service = firegridServiceLayer(
-      inputTableStreamUrl !== undefined,
-      outputTableStreamUrl !== undefined,
-    )
-    let provided = service.pipe(Layer.provide(controlLayer))
-    if (inputTableStreamUrl !== undefined) {
-      provided = provided.pipe(
-        Layer.provide(RuntimeIngressTable.layer({
-          streamOptions: {
-            url: inputTableStreamUrl,
-            contentType: cfg.contentType ?? "application/json",
-            ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
-          },
-          txTimeoutMs,
-        })),
-      )
-    }
-    if (outputTableStreamUrl !== undefined) {
-      provided = provided.pipe(
-        Layer.provide(RuntimeOutputTable.layer({
-          streamOptions: {
-            url: outputTableStreamUrl,
-            contentType: cfg.contentType ?? "application/json",
-            ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
-          },
-          txTimeoutMs,
-        })),
-      )
-    }
-    return provided
   })
 
-export const FiregridLive = Layer.unwrapEffect(
-  Effect.flatMap(FiregridConfig, configuredFiregridLayer),
-)
-
-const configuredFiregridDurableTablesLayer = (
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+//
+// Namespace-scoped control plane layer. Consumed by the Firegrid
+// client and host runtime; co-locating them on a single layer
+// instance gives both sides one materialized RuntimeContext index
+// so an `insertLocalRuntimeContext` write is observable from a
+// subsequent client `prompt` / `snapshot` without cross-instance
+// replication latency.
+const configuredFiregridControlPlaneLayer = (
   cfg: ClientOptions,
 ) =>
-  Effect.map(requiredRuntimeTableStreamUrls(cfg, streamUrlsFromConfig(cfg)), (streamUrls) => {
-    const txTimeoutMs = cfg.txTimeoutMs ?? 2_000
-    const contentType = cfg.contentType ?? "application/json"
-    return Layer.mergeAll(
-      RuntimeControlPlaneTable.layer({
-        streamOptions: {
-          url: streamUrls.runtimeControlPlaneTableUrl,
-          contentType,
-          ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
-        },
-        txTimeoutMs,
-      }),
-      RuntimeIngressTable.layer({
-        streamOptions: {
-          url: streamUrls.runtimeIngressTableUrl,
-          contentType,
-          ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
-        },
-        txTimeoutMs,
-      }),
-      RuntimeOutputTable.layer({
-        streamOptions: {
-          url: streamUrls.runtimeOutputTableUrl,
-          contentType,
-          ...(cfg.headers === undefined ? {} : { headers: cfg.headers }),
-        },
-        txTimeoutMs,
-      }),
-    )
-  })
+  Effect.map(resolveConfig(cfg), (resolved) =>
+    RuntimeControlPlaneTable.layer({
+      streamOptions: {
+        url: resolved.controlPlaneStreamUrl,
+        contentType: resolved.contentType,
+        ...(resolved.headers === undefined ? {} : { headers: resolved.headers }),
+      },
+      txTimeoutMs: resolved.txTimeoutMs,
+    }))
 
-export const FiregridDurableTablesLive = Layer.unwrapEffect(
-  Effect.flatMap(FiregridConfig, configuredFiregridDurableTablesLayer),
+export const FiregridControlPlaneTableLive = Layer.unwrapEffect(
+  Effect.flatMap(FiregridConfig, configuredFiregridControlPlaneLayer),
 )
+
+const firegridServiceLayer = Layer.scoped(
+  Firegrid,
+  Effect.flatMap(FiregridConfig, (cfg) =>
+    Effect.flatMap(resolveConfig(cfg), make)),
+)
+
+/**
+ * The Firegrid client service layer. Requires
+ * `RuntimeControlPlaneTable` from scope so it shares one materialized
+ * RuntimeContext index with the runtime host layer when both are
+ * composed in the same scope. Standalone consumers can fall back to
+ * `FiregridControlPlaneTableLive`.
+ */
+export const FiregridLive = firegridServiceLayer
+
+/**
+ * Standalone wiring: FiregridLive plus its own control-plane layer.
+ * Suitable for clients that do not also run a runtime host in
+ * process (e.g. a scenario that reads durable state through the
+ * snapshot surface only).
+ */
+export const FiregridStandaloneLive = FiregridLive.pipe(
+  Layer.provide(FiregridControlPlaneTableLive),
+)
+

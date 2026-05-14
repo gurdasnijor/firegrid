@@ -1,7 +1,7 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { assert, describe, it } from "@effect/vitest"
 import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client"
-import { FiregridRuntimeHostLive, startRuntime } from "@firegrid/runtime/runtime-host"
+import { FiregridLocalHostLive, startRuntime } from "@firegrid/runtime/runtime-host"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach } from "vitest"
 import {
@@ -26,20 +26,25 @@ afterEach(async () => {
 const layer = () => {
   if (baseUrl === undefined) throw new Error("server not started")
   const namespace = "flamecast-toy-test"
-  return Layer.mergeAll(
-    FiregridLive.pipe(
-      Layer.provide(
-        Layer.succeed(FiregridConfig, {
-          durableStreamsBaseUrl: baseUrl,
-          namespace,
-        }),
-      ),
-    ),
-    FiregridRuntimeHostLive({
+  // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+  //
+  // The runtime host layer provides RuntimeControlPlaneTable +
+  // CurrentHostSession to the client, so launch / prompt / snapshot
+  // share one materialized RuntimeContext index and one host id.
+  // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+  // FiregridLocalHostLive is the production composition that owns
+  // CurrentHostSession; scenarios pass namespace + base URL only.
+  const hostLayer = FiregridLocalHostLive({
+    durableStreamsBaseUrl: baseUrl,
+    namespace,
+    input: true,
+  })
+  return FiregridLive.pipe(
+    Layer.provide(Layer.succeed(FiregridConfig, {
       durableStreamsBaseUrl: baseUrl,
       namespace,
-      input: true,
-    }),
+    })),
+    Layer.provideMerge(hostLayer),
   )
 }
 

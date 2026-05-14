@@ -1,7 +1,7 @@
 import { NodeRuntime } from "@effect/platform-node"
 import { Firegrid, FiregridConfig, FiregridLive } from "@firegrid/client/firegrid"
 import {
-  FiregridRuntimeHostLive,
+  FiregridLocalHostLive,
   localProcessSpawnEnvFromHostEnv,
   startRuntime,
 } from "@firegrid/runtime/runtime-host"
@@ -65,23 +65,29 @@ const flamecastToyHostLayer = Layer.unwrapEffect(
         Authorization: () => `Bearer ${Redacted.value(token)}`,
       }) satisfies DurableTableHeaders,
     })
-    return Layer.mergeAll(
-      FiregridLive.pipe(
-        Layer.provide(
-          Layer.succeed(FiregridConfig, {
-            durableStreamsBaseUrl: config.durableStreamsBaseUrl,
-            namespace: config.namespace,
-            ...(headers === undefined ? {} : { headers }),
-          }),
-        ),
-      ),
-      FiregridRuntimeHostLive({
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+    // FiregridLocalHostLive owns CurrentHostSession; the flamecast toy
+    // host derives its identity deterministically from the namespace.
+    const hostLayer = FiregridLocalHostLive({
+      durableStreamsBaseUrl: config.durableStreamsBaseUrl,
+      namespace: config.namespace,
+      input: true,
+      ...(headers === undefined ? {} : { headers }),
+      localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
+    })
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+    //
+    // FiregridLive consumes RuntimeControlPlaneTable + CurrentHostSession
+    // from the runtime host layer so the client surface and the host
+    // share one materialized RuntimeContext index and one host session
+    // (matching `requireLocalContext`).
+    return FiregridLive.pipe(
+      Layer.provide(Layer.succeed(FiregridConfig, {
         durableStreamsBaseUrl: config.durableStreamsBaseUrl,
         namespace: config.namespace,
-        input: true,
         ...(headers === undefined ? {} : { headers }),
-        localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
-      }),
+      })),
+      Layer.provideMerge(hostLayer),
     )
   }),
 )

@@ -4,8 +4,10 @@ import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {
   local,
+  makeHostStreamPrefix,
   normalizeRuntimeIntent,
   RuntimeOutputTable,
+  type HostId,
 } from "@firegrid/protocol/launch"
 import { Effect, Either, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -31,25 +33,44 @@ afterEach(async () => {
   baseUrl = undefined
 })
 
-const appendRuntimeContext = (
-  controlPlaneStreamUrl: string,
-  argv: ReadonlyArray<string>,
-): Promise<string> =>
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
+//
+// Test fixture: pre-write a host-bound RuntimeContext row that the
+// runtime host will later look up. The hostId must match the hostId
+// the FiregridRuntimeHostWithWorkflowLive layer below is configured
+// with, otherwise the host would consider the context foreign and the
+// later operator surfaces (Slice 3/4) would reject the row.
+const appendRuntimeContext = (input: {
+  readonly controlPlaneStreamUrl: string
+  readonly argv: ReadonlyArray<string>
+  readonly hostId: HostId
+  readonly namespace: string
+}): Promise<string> =>
   Effect.runPromise(Effect.gen(function* () {
     const table = yield* RuntimeControlPlaneTable
     const contextId = `ctx_${crypto.randomUUID()}`
+    const streamPrefix = makeHostStreamPrefix({
+      namespace: input.namespace,
+      hostId: input.hostId,
+    })
     yield* table.contexts.upsert({
       contextId,
       createdAt: new Date().toISOString(),
       runtime: normalizeRuntimeIntent(local.jsonl({
-        argv: [...argv],
+        argv: [...input.argv],
       })),
+      host: {
+        hostId: input.hostId,
+        streamPrefix,
+        boundAtMs: Date.now(),
+      },
     })
     return contextId
   }).pipe(
     Effect.provide(RuntimeControlPlaneTable.layer({
       streamOptions: {
-        url: controlPlaneStreamUrl,
+        url: input.controlPlaneStreamUrl,
         contentType: "application/json",
       },
     })),
@@ -60,8 +81,10 @@ describe("durable launch tracer bullet 001", () => {
   it("firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.1 firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.2 firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.3 journals child JSONL stdout events and stderr logs durably through RuntimeContextWorkflow", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-launcher-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const outputTableStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtimeOutput`
+    const outputTableStreamUrl = `${baseUrl}/v1/stream/${streamPrefix}.runtimeOutput`
     const childCode = `
 console.log(JSON.stringify({
   type: "assistant",
@@ -74,10 +97,12 @@ console.log(JSON.stringify({
 console.log("{malformed")
 console.error("diagnostic: child stderr")
 `
-    const contextId = await appendRuntimeContext(
+    const contextId = await appendRuntimeContext({
       controlPlaneStreamUrl,
-      [process.execPath, "--input-type=module", "-e", childCode],
-    )
+      argv: [process.execPath, "--input-type=module", "-e", childCode],
+      hostId,
+      namespace,
+    })
 
     const result = await Effect.runPromise(
       startRuntime({
@@ -88,6 +113,7 @@ console.error("diagnostic: child stderr")
         Effect.provide(FiregridRuntimeHostWithWorkflowLive({
           durableStreamsBaseUrl: baseUrl,
           namespace,
+          hostId,
         })),
       ),
     )
@@ -172,11 +198,14 @@ console.error("diagnostic: child stderr")
   it("firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.2 records failed when local command streaming cannot start", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-launcher-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const contextId = await appendRuntimeContext(
+    const contextId = await appendRuntimeContext({
       controlPlaneStreamUrl,
-      [`missing-firegrid-command-${crypto.randomUUID()}`],
-    )
+      argv: [`missing-firegrid-command-${crypto.randomUUID()}`],
+      hostId,
+      namespace,
+    })
 
     const result = await Effect.runPromise(
       Effect.either(startRuntime({
@@ -185,6 +214,7 @@ console.error("diagnostic: child stderr")
         Effect.provide(FiregridRuntimeHostWithWorkflowLive({
           durableStreamsBaseUrl: baseUrl,
           namespace,
+          hostId,
         })),
       )),
     )
@@ -219,8 +249,10 @@ console.error("diagnostic: child stderr")
   it("firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.4 firegrid-workflow-driven-runtime.VALIDATION.1 does not duplicate external runtime execution for duplicate starts", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-launcher-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const outputTableStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtimeOutput`
+    const outputTableStreamUrl = `${baseUrl}/v1/stream/${streamPrefix}.runtimeOutput`
     const markerDir = join(tmpdir(), `firegrid-runtime-start-${crypto.randomUUID()}`)
     await mkdir(markerDir)
     const markerPath = join(markerDir, "starts.txt")
@@ -234,10 +266,12 @@ const starts = readFileSync(${JSON.stringify(markerPath)}, "utf8")
   .filter(Boolean)
 console.log(JSON.stringify({ type: "firegrid.process-start-marker", marker: ${JSON.stringify(marker)}, starts: starts.length }))
 `
-    const contextId = await appendRuntimeContext(
+    const contextId = await appendRuntimeContext({
       controlPlaneStreamUrl,
-      [process.execPath, "--input-type=module", "-e", childCode],
-    )
+      argv: [process.execPath, "--input-type=module", "-e", childCode],
+      hostId,
+      namespace,
+    })
 
     try {
       const [first, second] = await Promise.all([
@@ -246,6 +280,7 @@ console.log(JSON.stringify({ type: "firegrid.process-start-marker", marker: ${JS
             Effect.provide(FiregridRuntimeHostWithWorkflowLive({
               durableStreamsBaseUrl: baseUrl,
               namespace,
+              hostId,
             })),
           ),
         ),
@@ -254,6 +289,7 @@ console.log(JSON.stringify({ type: "firegrid.process-start-marker", marker: ${JS
             Effect.provide(FiregridRuntimeHostWithWorkflowLive({
               durableStreamsBaseUrl: baseUrl,
               namespace,
+              hostId,
             })),
           ),
         ),
