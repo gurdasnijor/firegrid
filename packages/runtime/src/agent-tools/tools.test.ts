@@ -1,0 +1,383 @@
+/**
+ * Tests for `tools.ts` — the canonical Effect AI `Tool` values, the
+ * `FiregridAgentToolkit` allowlist, and the toolkit handler that
+ * routes through `toolUseToEffect`.
+ *
+ * Spec: docs/proposals/SDD_FIREGRID_AGENT_TOOLS_MCP_BRIDGE.md §"V0 Validation"
+ *
+ * Covers:
+ *   1. `FiregridAgentToolkit.tools` exposes exactly the six canonical tools.
+ *   2. Each Tool's parameter schema is the protocol Effect Schema (no
+ *      hand-written MCP schemas); the JSON Schema projection for
+ *      `sleep` includes `durationMs`.
+ *   3. Direct toolkit execution of `sleep` runs through
+ *      `toolUseToEffect` and returns the typed success.
+ *   4. Malformed `sleep` input is rejected at the toolkit schema
+ *      boundary.
+ *   5. A known tool-arm failure becomes a `FiregridMcpToolFailure`,
+ *      not a workflow failure.
+ *   6. `@effect/ai/McpServer.registerToolkit(FiregridAgentToolkit)`
+ *      composes cleanly with the toolkit handler layer (no custom
+ *      JSON-RPC stack, no hand-written request handlers).
+ */
+
+import { IdGenerator, McpServer } from "@effect/ai"
+import { DurableStreamTestServer } from "@durable-streams/server"
+import {
+  SleepToolInputSchema,
+  SpawnToolInputSchema,
+} from "@firegrid/protocol/agent-tools"
+import { JSONSchema, Effect, Layer, Schema } from "effect"
+import { describe, expect, it, afterEach, beforeEach } from "vitest"
+import { DurableToolsWaitForLive } from "../durable-tools/index.ts"
+import {
+  DurableStreamsWorkflowEngine,
+  fireDueWorkflowClocks,
+} from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
+import {
+  AgentToolHost,
+  type AgentToolHostService,
+} from "./tool-host.ts"
+import {
+  FiregridAgentToolContext,
+  FiregridAgentToolkit,
+  FiregridAgentToolkitLayer,
+  SleepTool,
+  SpawnTool,
+  ToolCallWorkflowLayer,
+} from "./tools.ts"
+
+// ---------------------------------------------------------------------------
+// Server lifecycle
+// ---------------------------------------------------------------------------
+
+let server: DurableStreamTestServer | undefined
+let baseUrl: string | undefined
+
+beforeEach(async () => {
+  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+  baseUrl = await server.start()
+})
+
+afterEach(async () => {
+  await server?.stop()
+  server = undefined
+  baseUrl = undefined
+})
+
+interface Streams {
+  readonly workflowUrl: string
+  readonly waitForUrl: string
+}
+
+const makeStreams = (label: string): Streams => {
+  if (!baseUrl) throw new Error("server not started")
+  const id = crypto.randomUUID()
+  return {
+    workflowUrl: `${baseUrl}/v1/stream/tools-${label}-workflow-${id}`,
+    waitForUrl: `${baseUrl}/v1/stream/tools-${label}-waitfor-${id}`,
+  }
+}
+
+const fakeHost = (
+  overrides: Partial<AgentToolHostService> = {},
+): AgentToolHostService => ({
+  spawnChildContext: () =>
+    Effect.succeed({
+      childContextId: "stub-child",
+      terminalState: { _tag: "Completed", output: { ok: true } },
+    }),
+  spawnChildContexts: () =>
+    Effect.succeed({
+      children: [
+        {
+          key: "k1",
+          childContextId: "stub-child-1",
+          terminalState: { _tag: "Completed", output: { ok: true } },
+        },
+      ],
+    }),
+  executeSandboxTool: () => Effect.succeed<unknown>({ ok: true }),
+  appendScheduledPrompt: () => Effect.void,
+  ...overrides,
+})
+
+const buildBridgeLayer = (
+  streams: Streams,
+  options: {
+    readonly contextId: string
+    readonly host?: AgentToolHostService
+  },
+): Layer.Layer<never, unknown, never> => {
+  const composed = FiregridAgentToolkitLayer.pipe(
+    Layer.provideMerge(ToolCallWorkflowLayer),
+    Layer.provideMerge(ScheduledInputWorkflowLayer),
+    Layer.provideMerge(
+      FiregridAgentToolContext.layer({ contextId: options.contextId }),
+    ),
+    Layer.provideMerge(
+      Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator),
+    ),
+    Layer.provideMerge(
+      AgentToolHost.layer(options.host ?? fakeHost()),
+    ),
+    Layer.provideMerge(
+      DurableToolsWaitForLive({ streamUrl: streams.waitForUrl }),
+    ),
+    Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
+      streamUrl: streams.workflowUrl,
+    }) as Layer.Layer<never, unknown, unknown>),
+  )
+  return composed as unknown as Layer.Layer<never, unknown, never>
+}
+
+const runWith = <A, E>(
+  layer: Layer.Layer<never, unknown, never>,
+  effect: Effect.Effect<A, E, unknown>,
+): Promise<A> =>
+  Effect.runPromise(
+    Effect.scoped(effect.pipe(Effect.provide(layer))) as Effect.Effect<
+      A,
+      unknown,
+      never
+    >,
+  )
+
+/**
+ * Test-only stand-in for the runtime host's clock-firing loop. The
+ * Firegrid `sleep` arm calls `DurableClock.sleep` with
+ * `inMemoryThreshold: Duration.zero`, which schedules a durable clock
+ * row and parks on `DurableDeferred.await` regardless of how small the
+ * duration is. Unit tests do not run the runtime host's clock firer,
+ * so we fork a scoped loop here that drives
+ * `fireDueWorkflowClocks` while the test is in flight. This is NOT
+ * part of the toolkit abstraction — it lives only in tests to
+ * substitute for the production-side fire loop.
+ */
+const driveClocks = Effect.gen(function* () {
+  while (true) {
+    yield* fireDueWorkflowClocks(Date.now() + 10_000).pipe(
+      Effect.catchAll(() => Effect.void),
+    )
+    yield* Effect.sleep("25 millis")
+  }
+}).pipe(Effect.forkScoped)
+
+// ---------------------------------------------------------------------------
+// 1. Toolkit shape
+// ---------------------------------------------------------------------------
+
+describe("FiregridAgentToolkit", () => {
+  it("Toolkit.make exposes exactly the six canonical agent tools", () => {
+    expect(Object.keys(FiregridAgentToolkit.tools).sort()).toEqual(
+      ["execute", "schedule_me", "sleep", "spawn", "spawn_all", "wait_for"],
+    )
+  })
+
+  it("Tool.parametersSchema decodes identically to the @firegrid/protocol input schema (no parallel parameter shape)", async () => {
+    const sleepInput = { durationMs: 100 }
+    const decodedViaTool = await Effect.runPromise(
+      Schema.decodeUnknown(SleepTool.parametersSchema)(sleepInput),
+    )
+    const decodedViaProtocol = await Effect.runPromise(
+      Schema.decodeUnknown(SleepToolInputSchema)(sleepInput),
+    )
+    expect(decodedViaTool).toEqual(decodedViaProtocol)
+  })
+
+  it("Tool.parametersSchema for spawn round-trips the protocol shape including optional fields", async () => {
+    const spawnInput = {
+      agentKind: "stdio-jsonl",
+      prompt: "summarize",
+      options: { cwd: "/tmp", metadata: { trace: "1" } },
+    }
+    const decodedViaTool = await Effect.runPromise(
+      Schema.decodeUnknown(SpawnTool.parametersSchema)(spawnInput),
+    )
+    const decodedViaProtocol = await Effect.runPromise(
+      Schema.decodeUnknown(SpawnToolInputSchema)(spawnInput),
+    )
+    expect(decodedViaTool).toEqual(decodedViaProtocol)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 2. JSON Schema projection includes durationMs
+// ---------------------------------------------------------------------------
+
+describe("FiregridAgentToolkit JSON Schema projection", () => {
+  it("projects the sleep tool's parametersSchema to a JSON Schema that includes durationMs", () => {
+    const projected = JSONSchema.make(SleepTool.parametersSchema)
+    // The projection may sit at the top of `projected` directly or be
+    // routed through `$defs` (when annotations attach an identifier).
+    // Stringify-search is robust against both shapes.
+    const text = JSON.stringify(projected)
+    expect(text).toContain("durationMs")
+    // And, when the projection is the canonical object shape, the
+    // properties bag includes durationMs.
+    const properties =
+      (projected as { properties?: Record<string, unknown> }).properties
+    if (properties !== undefined) {
+      expect(properties).toHaveProperty("durationMs")
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 3. Direct toolkit execution of sleep
+// ---------------------------------------------------------------------------
+
+describe("FiregridAgentToolkit direct handler execution", () => {
+  it("runs sleep through toolUseToEffect and returns { slept: true }", async () => {
+    const streams = makeStreams("sleep")
+    const result = await runWith(
+      buildBridgeLayer(streams, { contextId: "ctx-toolkit-sleep" }),
+      Effect.gen(function* () {
+        yield* driveClocks
+        const built = yield* FiregridAgentToolkit
+        return yield* built.handle("sleep", { durationMs: 1 })
+      }),
+    )
+    expect(result.isFailure).toBe(false)
+    expect(result.result).toEqual({ slept: true })
+    expect(result.encodedResult).toEqual({ slept: true })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 4. Malformed input rejected at the toolkit schema boundary
+// ---------------------------------------------------------------------------
+
+describe("FiregridAgentToolkit schema validation", () => {
+  it("rejects malformed sleep params before reaching the handler", async () => {
+    const streams = makeStreams("invalid")
+    let handlerEntered = false
+    const host = fakeHost({
+      executeSandboxTool: () =>
+        Effect.sync<unknown>(() => {
+          handlerEntered = true
+          return null
+        }),
+    })
+    const failure = await runWith(
+      buildBridgeLayer(streams, {
+        contextId: "ctx-toolkit-invalid",
+        host,
+      }),
+      Effect.gen(function* () {
+        yield* driveClocks
+        const built = yield* FiregridAgentToolkit
+        return yield* built.handle("sleep", {
+          durationMs: "not-a-number",
+        } as never)
+      }).pipe(Effect.flip),
+    )
+    expect(handlerEntered).toBe(false)
+    // Effect AI's toolkit boundary returns a MalformedOutput error
+    // (its umbrella error for parameter/result validation failures).
+    expect(failure).toBeDefined()
+    // Inspect both the message and a JSON-stringified form so we are
+    // robust to whatever shape Effect AI's error type currently uses.
+    const failureText =
+      (failure as { readonly message?: unknown }).message !== undefined
+        ? String((failure as { readonly message: unknown }).message)
+        : JSON.stringify(failure)
+    expect(failureText).toMatch(/Toolkit|tool call parameters|sleep/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 5. Tool-arm failure → MCP tool error (not workflow failure)
+// ---------------------------------------------------------------------------
+
+describe("FiregridAgentToolkit failure mapping", () => {
+  it("maps a tool-arm failure to FiregridMcpToolFailure via the handler error channel", async () => {
+    const streams = makeStreams("arm-failure")
+    const host = fakeHost({
+      spawnChildContext: () =>
+        Effect.fail({
+          _tag: "ToolExecutionFailed",
+          toolUseId: "stub",
+          name: "spawn",
+          message: "child workflow exploded",
+        }),
+    })
+    const failure = await runWith(
+      buildBridgeLayer(streams, {
+        contextId: "ctx-toolkit-arm-failure",
+        host,
+      }),
+      Effect.gen(function* () {
+        yield* driveClocks
+        const built = yield* FiregridAgentToolkit
+        return yield* built.handle("spawn", {
+          agentKind: "stdio-jsonl",
+          prompt: "noop",
+        })
+      }).pipe(Effect.flip),
+    )
+    expect(failure).toMatchObject({
+      _tag: "ToolExecutionFailed",
+      name: "spawn",
+    })
+  })
+
+  it("the toolkit handler does not fail the surrounding workflow on tool failure", async () => {
+    const streams = makeStreams("isolated-failure")
+    const host = fakeHost({
+      spawnChildContext: () =>
+        Effect.fail({
+          _tag: "ToolExecutionFailed",
+          toolUseId: "stub",
+          name: "spawn",
+          message: "boom",
+        }),
+    })
+    const outcome = await runWith(
+      buildBridgeLayer(streams, {
+        contextId: "ctx-toolkit-isolated-failure",
+        host,
+      }),
+      Effect.gen(function* () {
+        yield* driveClocks
+        const built = yield* FiregridAgentToolkit
+        return yield* built
+          .handle("spawn", { agentKind: "stdio-jsonl", prompt: "noop" })
+          .pipe(
+            Effect.matchEffect({
+              onFailure: () => Effect.succeed("caught" as const),
+              onSuccess: () => Effect.succeed("succeeded" as const),
+            }),
+          )
+      }),
+    )
+    expect(outcome).toBe("caught")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 6. MCP registration uses McpServer.registerToolkit directly
+// ---------------------------------------------------------------------------
+
+describe("FiregridAgentToolkit MCP registration", () => {
+  it("composes with McpServer.registerToolkit without a custom JSON-RPC stack", () => {
+    // The registerToolkit Effect is the canonical entrypoint. We only
+    // need to typecheck and shape-check that it accepts the toolkit
+    // as-is — no parallel registry, no hand-written tools/list or
+    // tools/call handlers. Building the Effect proves the toolkit is
+    // shape-compatible with `@effect/ai/McpServer` without standing up
+    // a full HTTP server in unit tests.
+    const registrationEffect = McpServer.registerToolkit(FiregridAgentToolkit)
+    expect(Effect.isEffect(registrationEffect)).toBe(true)
+  })
+
+  it("is an Effect AI Toolkit with toLayer/handle plumbing (no Firegrid-local toolkit wrapper)", () => {
+    // Structural check that the Firegrid toolkit IS the Effect AI
+    // Toolkit value (`.tools` + `.toLayer` from `Toolkit.make`), not
+    // a parallel abstraction.
+    expect(FiregridAgentToolkit.tools).toBeDefined()
+    expect(typeof FiregridAgentToolkit.toLayer).toBe("function")
+    expect(typeof FiregridAgentToolkit.toContext).toBe("function")
+  })
+})

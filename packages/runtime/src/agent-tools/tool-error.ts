@@ -120,8 +120,8 @@ export const toolErrorResult = (error: ToolError): ToolResultEvent =>
 /**
  * Build the descriptor-lookup-failure ToolResult for an unknown tool
  * name. This is a distinct production result from `ToolInvalidInput`
- * (the codec emitted a name that is not in the descriptor manifest
- * `FiregridAgentTools`).
+ * (the codec emitted a name that is not in `FiregridAgentToolkit`'s
+ * Tool set).
  */
 export const unknownToolResult = (
   toolUseId: string,

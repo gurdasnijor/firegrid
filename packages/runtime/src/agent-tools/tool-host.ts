@@ -13,9 +13,9 @@
  *
  * This is NOT a dynamic registry — the interface is a small, static
  * service tag with one method per host-coupled tool family. New tools
- * still require a descriptor entry in `FiregridAgentTools` and a match
- * arm in `tool-use-to-effect.ts`. The Live `AgentToolHost` layer composes
- * runtime primitives; tests provide a stub layer.
+ * still require a `Tool.make(...)` entry in `FiregridAgentToolkit` and
+ * a matching arm in `tool-use-to-effect.ts`. The Live `AgentToolHost`
+ * layer composes runtime primitives; tests provide a stub layer.
  *
  * Implements:
  *  - agent-codec-runtime-tools.md/agent-tool-layer-phase-2 §"PR sequencing",

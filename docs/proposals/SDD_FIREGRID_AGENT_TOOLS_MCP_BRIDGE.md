@@ -4,29 +4,33 @@ Status: Draft
 
 ## Problem
 
-Firegrid now has the canonical agent tool contract:
+Firegrid is converging on one canonical agent tool contract:
 
 - `@firegrid/protocol/agent-tools` owns the Effect Schemas for tool inputs and
   outputs.
-- `@firegrid/runtime/agent-tools` owns `FiregridAgentTools`, the explicit
-  descriptor manifest.
-- `toolUseToEffect` lowers descriptor-backed `ToolUse` events to workflow
-  effects.
+- `@firegrid/runtime/agent-tools` owns explicit Effect AI `Tool` values and
+  `FiregridAgentToolkit`.
+- `toolUseToEffect` lowers toolkit-backed `ToolUse` events to workflow effects.
 
 MCP-capable agents still need a concrete way to discover and call those tools
-without a harness-specific adapter. The bridge must expose the same descriptors
-that `toolUseToEffect` implements, and it must not become a second tool registry
-or a custom JSON-RPC stack.
+without a harness-specific adapter. The bridge must expose the same schemas that
+`toolUseToEffect` implements, and it must not become a second tool registry or a
+custom JSON-RPC stack.
 
 ## Decision
 
-Build a thin Streamable HTTP MCP bridge in `packages/runtime/src/agent-tools`
-backed by `FiregridAgentTools` and `toolUseToEffect`.
+Build the bridge from Effect AI's `Tool`, `Toolkit`, and `McpServer` primitives.
 
-Use the official `@modelcontextprotocol/typescript-sdk` server primitives for
-MCP protocol handling. Firegrid provides MCP request handlers for `tools/list`
-and `tools/call`; the SDK owns JSON-RPC parsing, MCP lifecycle, protocol
-framing, and transport details. Do not write a custom JSON-RPC parser.
+`@effect/ai/McpServer.registerToolkit` is the protocol projection. It
+turns an Effect AI `Toolkit` into MCP `tools/list` and `tools/call` behavior,
+including JSON Schema projection from Effect Schema, structured content,
+`isError` results, and transport-pluggable MCP layers such as
+`McpServer.layerHttp` and `McpServer.layerStdio`.
+
+Do not build a custom JSON-RPC parser, a parallel descriptor manifest, a
+parallel MCP catalog, or hand-written `tools/list` / `tools/call` request
+handlers unless Effect AI's MCP layer proves to be missing a required
+capability.
 
 The bridge is a protocol projection:
 
@@ -34,177 +38,121 @@ The bridge is a protocol projection:
 - It does not define dynamic tool registration.
 - It does not expose arbitrary `@firegrid/protocol` schemas as tools.
 - It does not create a product-specific transport package.
-- It does not introduce substrate row families beyond the durable invocation and
-  result facts needed by the bridge's durable mode.
+- It does not introduce substrate row families in v0.
 
-This is governed by
-`firegrid-workflow-driven-runtime.AGENT_TOOL_BOUNDARIES.7`.
+This is governed by `firegrid-workflow-driven-runtime.AGENT_TOOL_BOUNDARIES.7`
+and `firegrid-workflow-driven-runtime.AGENT_TOOL_BOUNDARIES.8`.
 
-## Why SDK Server Primitives
+## Why Effect AI
 
-The MCP TypeScript SDK integration tests show two useful layers:
+Effect AI is the right integration point because it sits at the same abstraction
+level as Firegrid's tool contract:
 
-1. A protocol server/transport layer that handles JSON-RPC, initialization,
-   capabilities, request routing, cancellation, and streamable HTTP behavior.
-2. Higher-level helpers such as tool registration APIs that often assume a
-   library-specific schema representation.
-
-Firegrid should use the first layer. The descriptor manifest already has Effect
-Schema as the source of truth, so we should not re-author every tool in a second
-schema system just to call a high-level helper. Request handlers can return MCP
-tool descriptors projected from `FiregridAgentTools` and can route `tools/call`
-to `toolUseToEffect`.
+1. `Tool.make` defines a named tool from Effect Schema parameter, success, and
+   failure schemas.
+2. `Toolkit.make` collects those tools into one reusable manifest.
+3. `Toolkit.toLayer` installs handlers once.
+4. `McpServer.registerToolkit` projects the toolkit to MCP without a second
+   schema system or a Firegrid-owned JSON-RPC layer.
+5. The same toolkit can be used by MCP, in-process Effect AI tests, and future
+   provider-backed agent sessions.
 
 The implementation rule is:
 
-> Use the MCP SDK for protocol handling; use Firegrid's descriptor manifest for
-> tool schema and semantics.
+> Use Effect AI for tool definition, handler registration, and MCP projection;
+> use protocol-owned Effect Schemas for data shape; use an explicit
+> `Toolkit.make(...)` allowlist for authority; use `toolUseToEffect` for durable
+> workflow semantics.
 
-## Schema Projection
+The official MCP TypeScript SDK remains relevant as the ecosystem reference and
+possible escape hatch. It is not the first abstraction Firegrid should code
+against for v0.
 
-`descriptors.ts` is an explicit exposure manifest, not a second schema source.
-It selects which protocol-owned operations are safe and meaningful as
-agent-callable tools.
+## Schema Projection And Exposure
 
-`catalog.ts` projects those descriptors into MCP `Tool` records:
+The Effect AI `Tool` definitions are the exposure manifest. Firegrid should not
+maintain a separate `AgentToolDescriptor` registry if `Tool` already contains
+the same name, description, parameter schema, success schema, failure schema, and
+annotations.
 
-- `name` comes from the descriptor.
-- `description` comes from descriptor metadata.
-- `inputSchema` is generated from the descriptor's Effect Schema encoded shape
-  and annotations.
-- Output schemas are kept in the descriptor manifest for host-side validation and
-  documentation; MCP's basic `tools/list` shape does not need to expose every
-  output schema in v0.
+Each `Tool.make(...)` call is authored directly from protocol-owned schemas:
+
+- `name` is the canonical tool name (`sleep`, `wait_for`, etc.).
+- `description` is the agent-visible description.
+- `parameters` comes from the protocol-owned input Effect Schema.
+- `success` comes from the protocol-owned output Effect Schema.
+- `failure` is a small runtime-owned MCP-facing error schema.
+- MCP `inputSchema` is generated by `@effect/ai/McpServer` from the Tool's
+  Effect Schema AST and annotations.
 
 Do not reflect every schema in `@firegrid/protocol`. Protocol contains durable
 rows, launch records, ingress rows, and coordination facts. Reflection can
 derive a JSON shape, but it cannot decide exposure, authority, naming, or host
-lowering. `FiregridAgentTools` is the allowlist that prevents accidental schema
-exposure.
+lowering. `FiregridAgentToolkit = Toolkit.make(...)` is the allowlist that
+prevents accidental schema exposure.
 
-## Effect AI Toolkit As Integration Point
-
-Effect AI's `Tool` and `Toolkit` model is the right starting point for the
-in-process tool definition layer:
-
-- an Effect AI `Tool` corresponds to one Firegrid tool descriptor plus schemas;
-- an Effect AI `Toolkit` corresponds to the `FiregridAgentTools` manifest;
-- a tool parameter schema corresponds to the protocol-owned input schema;
-- a tool success schema corresponds to the protocol-owned output schema;
-- a toolkit handler corresponds to the `toolUseToEffect` lowering arm.
-
-The implementation should first verify dependency compatibility for
-`@effect/ai`. If it does not force an incompatible Effect bump, represent
-`FiregridAgentTools` as or project it to an Effect AI `Toolkit` before building
-the MCP bridge. This lets three surfaces share one Effect-native tool definition
-layer:
-
-1. MCP bridge catalog and `tools/call` handling.
-2. Workflow lowering tests for `toolUseToEffect`.
-3. In-process agent tests using Effect AI / `AiChat`-style execution.
-
-The Firegrid descriptor manifest remains the authority boundary. Effect AI is
-the integration model, not the schema authority. Protocol-owned Effect Schemas
-still define input and output shapes, and only descriptors explicitly listed in
-`FiregridAgentTools` are exposed.
+## Runtime Semantics
 
 Firegrid tools are durable runtime capabilities, not only model-provider tool
 calls. They carry workflow identity, replay safety, context routing, and host
 lowering semantics that are outside Effect AI's provider-agnostic LLM layer. The
-toolkit handler therefore lowers into workflow-backed `toolUseToEffect`, rather
-than bypassing workflow services.
+Effect AI tool handler therefore lowers into workflow-backed `toolUseToEffect`,
+rather than bypassing workflow services.
+
+The handler contract is:
+
+1. Receive typed parameters from Effect AI's toolkit validation.
+2. Build a normalized `ToolUse` event.
+3. Run `toolUseToEffect` with the current runtime context id.
+4. If `ToolResult.isError === false`, decode `ToolResult.content` against the
+   tool success schema and return that typed value.
+5. If `ToolResult.isError === true`, fail with the MCP-facing tool error schema.
+   Effect AI's MCP layer maps the failure to `CallToolResult.isError === true`.
+
+Tool failures are agent-visible results. They are not workflow failures.
 
 ## Rember Pattern To Copy
 
 `repos/rember-mcp` provides the concrete implementation pattern Firegrid should
-copy, adjusted for Firegrid's durable workflow requirements.
+copy, adjusted for the current Effect AI API and Firegrid's durable workflow
+requirements.
 
 The useful structure:
 
-1. Define each tool as a `Schema.TaggedRequest`.
-2. Build one toolkit with `AiToolkit.empty.add(ToolSchema)`.
-3. Implement handlers once with `toolkit.implement((handlers) =>
-   handlers.handle(...))`.
+1. Define tools from Effect Schema.
+2. Build one toolkit.
+3. Implement handlers once.
 4. Build the MCP server from the toolkit handlers, not from a parallel registry.
 5. Project each tool's Effect Schema AST into MCP `inputSchema`.
-6. Decode `tools/call` arguments by injecting the tagged request `_tag`.
-7. Invoke the toolkit handler.
-8. Encode the handler result through the tool's success schema.
-9. Convert expected failures and defects into MCP `isError: true` results.
-10. Test the same toolkit through an Effect AI / `AiChat` path so the MCP bridge
-    and model-facing tests share the same definitions.
+6. Invoke the toolkit handler for `tools/call`.
+7. Encode the handler result through the tool's success schema.
+8. Convert expected failures and defects into MCP `isError: true` results.
+9. Test the same toolkit through non-MCP Effect AI execution so the MCP bridge
+   and in-process agent tests share the same definitions.
 
-The Rember server uses the official MCP SDK's low-level `Server` and
-`setRequestHandler` APIs. That is the right level for Firegrid too: it avoids a
-custom JSON-RPC parser while still letting Firegrid project Effect Schemas
-directly instead of re-authoring tool schemas in a second DSL.
+Rember currently performs some of this manually with the official MCP SDK's
+low-level `Server` and `setRequestHandler` APIs. Firegrid should copy the
+structure, not the manual transport code: current Effect AI already exposes the
+transport-pluggable `McpServer` layer and `registerToolkit`, so Firegrid should
+start there.
 
 Firegrid differences from Rember:
 
-- Firegrid must use the canonical `FiregridAgentTools` allowlist and
+- Firegrid must use the canonical `FiregridAgentToolkit` allowlist and
   protocol-owned schemas rather than product-specific schemas.
-- Firegrid tool names are already canonical (`sleep`, `wait_for`, etc.); do not
-  rely on a PascalCase-to-snake_case conversion unless the Effect AI
-  `TaggedRequest` path requires an internal tag mapping.
-- Firegrid must not restrict MCP results to `Schema.String`; it should encode
-  structured tool results as JSON content or MCP structured content when
-  supported by the SDK version.
-- Firegrid `tools/call` handling must route through a workflow-backed runner that
-  calls `toolUseToEffect`; the toolkit handler must not bypass DurableClock,
-  workflow identity, or host seams.
-- Firegrid's first bridge should target Streamable HTTP MCP, not stdio-only MCP.
+- Firegrid tool names are already canonical (`sleep`, `wait_for`, etc.).
+- Firegrid must support structured tool results; no string-only result path.
+- Firegrid Effect AI tool handlers must route through a workflow-backed runner that
+  calls `toolUseToEffect`; they must not bypass DurableClock, workflow identity,
+  or host seams.
+- Firegrid's first bridge targets Streamable HTTP MCP through Effect AI's
+  transport-pluggable MCP layer, not stdio-only MCP.
 
-Dependency note: `@effect/ai` version compatibility must be checked before
-implementation. The current latest `@effect/ai` peer range may require an Effect
-version newer than this repo currently pins. If a compatible `@effect/ai` version
-cannot be used without a broader Effect bump, stop and decide whether to bump
-Effect first or land a narrow internal toolkit shape that mirrors the Rember
-pattern and can later be replaced by `@effect/ai`.
-
-## In-Process Effect AI Sandbox Provider
-
-An in-process sandbox provider is useful for validation and future codec work.
-It should live under `packages/runtime/src/providers`, not under the MCP bridge.
-
-Purpose:
-
-- Exercise the `SandboxProvider` and `AgentByteStream` boundary without spawning
-  a local process.
-- Avoid overfitting agent I/O and tool validation to
-  `providers/sandboxes/local-process.ts`.
-- Provide a convenient test host for Effect AI-style in-process agents and
-  deterministic tool-call scenarios.
-
-Suggested shape:
-
-```
-packages/runtime/src/providers/effect-ai/
-  effect-ai-sandbox.ts       // SandboxProvider implementation
-  README.md                  // public API, intended use, non-goals
-```
-
-The provider implements the existing `SandboxProviderService`:
-
-- `create` and `getOrCreate` return an in-process sandbox record;
-- `openBytePipe` returns an `AgentByteStream` backed by in-memory web streams;
-- `stream` and `execute` can be narrow convenience wrappers for tests;
-- filesystem upload/download, snapshots, GPU, and external process control are
-  unsupported unless a concrete consumer needs them.
-
-The in-process provider may use Effect AI services internally to model a test
-agent, but it must still present the same byte-stream contract as any other
-sandbox provider. That keeps runtime-context execution agnostic to whether the
-agent is a subprocess, a remote sandbox, or an in-process Effect program.
-
-This provider is not part of MCP bridge correctness. It is a de-risking tool:
-MCP bridge tests can use it when they need a stable in-process agent, while local
-process tests remain available for real subprocess behavior.
-
-## V0: Local Direct Bridge
+## V0: Effect AI Tools + Local MCP Layer
 
 The first implementation should prove that an MCP client can call Firegrid tools
-through the SDK server without adding the durable invocation/result stream path
-yet.
+through Effect AI's MCP server without adding durable invocation/result stream
+facts yet.
 
 ### Scope
 
@@ -212,21 +160,23 @@ Files:
 
 ```
 packages/runtime/src/agent-tools/
-  toolkit.ts             // FiregridAgentTools -> Effect AI Toolkit projection
-  mcp-bridge.ts          // SDK server wiring and tools/list + tools/call handlers
-  catalog.ts             // FiregridAgentTools -> MCP Tool projection
-  mcp-tool-call.ts       // ToolUse construction and MCP result formatting
+  tools.ts               // Tool.make(...) definitions + FiregridAgentToolkit
 ```
 
-The exact file split can change, but those three responsibilities should remain
-separate.
+No `catalog.ts`, no `mcp.ts` wrapper, and no hand-written MCP request handlers in
+v0. Runtime composition should call `McpServer.registerToolkit(
+FiregridAgentToolkit)` directly alongside the relevant transport layer. Add a
+small helper only after a real second call site needs the same composition.
 
 ### Request Flow
 
-1. MCP client calls `tools/list`.
-2. Bridge returns the projection of `FiregridAgentTools`.
-3. MCP client calls `tools/call` with a tool name and arguments.
-4. Bridge builds a normalized `ToolUse` event:
+1. Runtime startup registers `FiregridAgentToolkit` with `McpServer` directly.
+2. MCP client calls `tools/list`.
+3. Effect AI's MCP layer returns the toolkit projection.
+4. MCP client calls `tools/call` with a tool name and arguments.
+5. Effect AI validates parameters against the tool's Effect Schema and invokes
+   the tool handler installed by `Toolkit.toLayer`.
+6. The handler builds a normalized `ToolUse` event:
 
    ```ts
    {
@@ -237,19 +187,11 @@ separate.
    }
    ```
 
-5. Bridge executes the call through a workflow-backed runner that invokes
+7. The handler executes the call through a workflow-backed runner that invokes
    `toolUseToEffect`.
-6. Bridge converts the returned `ToolResult` event into an MCP `CallToolResult`.
-
-If `@effect/ai` compatibility is green, step 5 goes through the shared toolkit
-handler instead of duplicating dispatch inside the bridge. The toolkit handler
-still calls `toolUseToEffect`; it is an integration layer, not a new runtime
-semantics layer.
-
-The workflow-backed runner matters. `sleep`, `wait_for`, `schedule_me`, and
-spawn semantics depend on workflow services such as DurableClock and deterministic
-workflow identity. The bridge should not call `toolUseToEffect` as a plain
-process-local Effect outside a workflow execution.
+8. The handler returns the decoded success payload or fails with a runtime-owned
+   MCP tool error. Effect AI's MCP layer maps success to `isError:false` and
+   expected failures to `isError:true`.
 
 ### Deterministic Identity
 
@@ -259,19 +201,20 @@ process-local Effect outside a workflow execution.
 toolUseId = "mcp:" + sessionId + ":" + requestId
 ```
 
-If the SDK transport does not expose a durable MCP session id in the local test
-path, use a bridge-generated session id and the MCP JSON-RPC request id. The
-implementation should keep this logic in one helper so the durable path can
-replace it with the invocation row id.
+If the Effect AI local test path does not expose MCP session/request ids, use a
+bridge-generated session id and deterministic request sequence in one helper so
+the durable path can later replace it with the invocation row id.
 
 ### Result Mapping
 
-`ToolResult` maps to MCP `CallToolResult`:
+The toolkit handler maps `ToolResult` to Effect AI tool success/failure:
 
-- `isError` maps to MCP `isError`.
-- The Firegrid result payload is encoded as structured JSON when the SDK supports
-  structured content.
-- Otherwise, encode the JSON payload as a single text content item.
+- `ToolResult.isError === false` decodes against the tool's success schema and
+  returns that typed value.
+- `ToolResult.isError === true` fails with the runtime-owned MCP tool error
+  schema, preserving the structured Firegrid error payload.
+- `@effect/ai/McpServer` maps success or failure into MCP `CallToolResult`
+  content and `structuredContent`.
 
 Invalid tool names, invalid input, and arm failures stay successful MCP protocol
 responses with `isError: true`; they are not HTTP 500s and not MCP protocol
@@ -282,20 +225,17 @@ or bridge infrastructure failures.
 
 Required checks:
 
-1. `tools/list` returns exactly the six `FiregridAgentTools` descriptors.
-2. The listed schemas are generated from the protocol Effect Schemas and
-   descriptor annotations, not handwritten MCP schemas.
-3. `tools/call sleep` succeeds through the SDK client and returns the expected
-   `ToolResult` mapping.
-4. Malformed `sleep` input returns `isError: true`.
-5. Unknown tool name returns `isError: true`.
-6. The implementation uses MCP SDK server/transport primitives; tests should not
-   pass through a custom JSON-RPC parser.
-7. A Codex or MCP inspector smoke can be pointed at the local bridge URL and run
-   `tools/list` plus `sleep`.
-8. If `@effect/ai` is used, a unit test proves the MCP bridge and an Effect AI
-   chat/tool test consume the same toolkit definition, not duplicate tool
-   schemas.
+1. `FiregridAgentToolkit.tools` contains exactly the six canonical tools.
+2. Tool parameter schemas are generated from the protocol Effect Schemas and
+   Effect AI tool annotations, not handwritten MCP schemas.
+3. Direct toolkit execution of `sleep` succeeds through `toolUseToEffect`.
+4. Malformed `sleep` input is rejected by the toolkit / schema boundary.
+5. A known tool arm failure is returned as the runtime-owned MCP tool error.
+6. MCP registration uses `@effect/ai/McpServer.registerToolkit` directly; tests
+   should not pass through a custom JSON-RPC parser, hand-written MCP request
+   handler, or Firegrid-local toolkit wrapper.
+7. A local HTTP smoke can be pointed at the bridge URL and run `tools/list` plus
+   `sleep`.
 
 ## V1: Durable Indirect Bridge
 
@@ -348,7 +288,7 @@ fact rather than scheduling duplicate workflow work.
 5. `toolUseToEffect` produces a `ToolResult`.
 6. Consumer writes a result fact.
 7. Bridge responds to the original MCP call or lets the client resume/poll the
-   result depending on SDK transport support.
+   result depending on MCP transport support.
 
 The bridge may remain mostly stateless: durable rows provide replay, dedup, and
 recovery. In-memory request waiters are an optimization, not correctness state.
@@ -362,10 +302,9 @@ Required checks:
 2. If the bridge process crashes after writing the invocation fact but before the
    result is observed, a restarted runtime consumes the fact and writes the
    result.
-3. `tools/list` is served from the same descriptor projection used by v0.
-4. Direct path and durable indirect path produce the same `ToolUse` at
+3. Direct path and durable indirect path produce the same `ToolUse` at
    `toolUseToEffect` and the same `ToolResult` payload.
-5. Result facts contain no credentials, Durable Streams tokens, provider session
+4. Result facts contain no credentials, Durable Streams tokens, provider session
    handles, or sandbox handles.
 
 ## Authentication And Routing
@@ -374,8 +313,8 @@ V0 can run with local-only unauthenticated HTTP for development tests. Productio
 mode needs explicit auth before the bridge can be installed into real agents.
 
 The bridge must not put Durable Streams tokens or Firegrid host credentials in
-the visible MCP tool catalog. Credentials belong in the MCP client config,
-HTTP headers, signed URLs, or runtime-side bridge configuration.
+the visible MCP tool catalog. Credentials belong in MCP client config, HTTP
+headers, signed URLs, or runtime-side bridge configuration.
 
 The bridge needs a context routing rule. For the first durable implementation,
 prefer an explicit bridge instance scoped to one runtime context:
@@ -384,8 +323,8 @@ prefer an explicit bridge instance scoped to one runtime context:
 /mcp/runtime-context/:contextId
 ```
 
-That avoids accepting arbitrary `contextId` fields from agent tool arguments.
-The context id is bridge configuration, not an agent-visible tool input.
+That avoids accepting arbitrary `contextId` fields from agent tool arguments. The
+context id is bridge configuration, not an agent-visible tool input.
 
 Broader multi-context routing can be added later with signed invocation payloads
 or token-scoped context authorization.
@@ -394,10 +333,7 @@ or token-scoped context authorization.
 
 ```
 packages/runtime/src/agent-tools/
-  toolkit.ts             // FiregridAgentTools -> Effect AI Toolkit projection
-  catalog.ts              // descriptor manifest -> MCP tool projection
-  mcp-bridge.ts           // MCP SDK server + streamable HTTP transport wiring
-  mcp-tool-call.ts        // ToolUse construction + CallToolResult formatting
+  tools.ts               // Tool.make(...) definitions + FiregridAgentToolkit
   invocations-consumer.ts // V1 durable invocation consumer
   mcp-client.ts           // optional helper for codecs that bridge directly
 ```
@@ -416,78 +352,79 @@ themselves.
 - Per-agent descriptor variation.
 - Long-running per-context sidecar bridge as correctness state.
 - Browser/client API surface.
-- Implementing durable invocation/result rows in the first local smoke if the
-  SDK-backed `tools/list` and `sleep` proof is not yet green.
+- Implementing durable invocation/result rows in the first local smoke.
 
 ## Implementation Sequence
 
-1. Add `catalog.ts` projection tests over `FiregridAgentTools`.
-2. Check `@effect/ai` dependency compatibility. If compatible, add
-   `toolkit.ts` and prove `FiregridAgentTools` projects to one Effect AI
-   Toolkit consumed by both bridge tests and Effect AI-style tool tests. Follow
-   the `repos/rember-mcp` pattern: tagged request schemas, one toolkit, one
-   toolkit implementation, MCP handlers generated from that toolkit.
-3. Add an SDK-backed local `mcp-bridge.ts`.
-4. Prove `tools/list`, `sleep`, invalid input, and unknown tool through an SDK
-   client.
+1. Bump the Effect stack to the version required by `@effect/ai`.
+2. Add `tools.ts` and prove `FiregridAgentToolkit` is consumed by both MCP
+   registration and direct toolkit tests.
+3. Wire `McpServer.registerToolkit(FiregridAgentToolkit)` directly into the
+   local MCP runtime composition.
+4. Prove `tools/list`, `sleep`, invalid input, and unknown tool through the
+   Effect AI MCP layer.
 5. Add a Codex or MCP inspector local runbook and smoke.
 6. Add durable invocation/result facts and `invocations-consumer.ts`.
 7. Add restart and duplicate-invocation tests.
-8. Wire the bridge into the runtime host only after the local SDK proof and
+8. Wire the bridge into the runtime host only after the local Effect AI proof and
    durable indirect path are both green.
 
-The in-process Effect AI sandbox provider can run in parallel with steps 1-4.
-It is not on the bridge critical path, but it should be available before deeper
+The in-process Effect AI sandbox provider can run in parallel with steps 1-4. It
+is not on the bridge critical path, but it should be available before deeper
 codec and provider tests if local-process behavior starts obscuring agent
 protocol issues.
 
 ## Open Questions
 
-1. Which SDK HTTP transport shape fits this repo with the least dependency
-   weight: SDK-provided streamable HTTP transport directly, an Effect Platform
-   HTTP adapter, or a small Node HTTP wrapper around the SDK transport?
-2. Does the SDK expose structured content for `CallToolResult` in the version we
-   adopt, or should v0 encode all result payloads as JSON text content?
+1. What exact HTTP serving layer should runtime host use for local MCP smoke:
+   direct `McpServer.layerHttp`, a shared runtime HTTP router, or an
+   app-specific host route?
+2. Does Effect AI's MCP result mapping need Firegrid-specific customization for
+   long-running workflow tools, or are default `structuredContent` and JSON text
+   content sufficient for v0?
 3. Should long-running calls use MCP tasks/progress notifications in v1, or is a
    held `tools/call` response sufficient for the first durable path?
 4. Should catalog projection include output schemas as annotations even if MCP
    clients do not require them for `tools/list`?
 5. What is the first real agent smoke target: Codex CLI, Claude Code, ACP sample
    agent, or MCP inspector?
-6. If `@effect/ai` requires an Effect version bump, should the toolkit work wait
-   for that bump or should the MCP V0 bridge land with a small internal toolkit
-   shape that mirrors Effect AI and can be replaced later?
+6. Do we need a direct official MCP SDK client in tests, or is Effect AI
+   service-level testing sufficient until the local HTTP smoke is wired?
 
 ## Decision Log
 
-- **Why an MCP SDK server.** MCP has protocol details beyond `tools/list` and
-  `tools/call`: initialize, capabilities, request ids, cancellation, streamable
-  HTTP behavior, and error framing. The SDK should own that protocol surface.
+- **Why Effect AI `McpServer`, not a direct MCP SDK server.** MCP has protocol
+  details beyond `tools/list` and `tools/call`: initialize, capabilities,
+  request ids, cancellation, streamable HTTP behavior, and error framing. Effect
+  AI already exposes those protocol details through transport-pluggable MCP
+  layers while preserving Effect Schema tool definitions. Firegrid should code
+  against that Effect-native layer first.
 - **Why start from Effect AI Toolkit.** The toolkit is the shared integration
   point between MCP publication, unit tests, and in-process agents. Defining the
   tools once as a toolkit prevents the bridge and tests from growing parallel
   schema catalogs.
-- **Why copy the Rember MCP pattern.** Rember already demonstrates the practical
-  shape: Effect Schema tagged requests define tools, one AiToolkit collects them,
-  one toolkit implementation handles calls, the MCP SDK serves `tools/list` and
-  `tools/call`, and tests reuse the same toolkit through Effect AI chat. Firegrid
-  should copy that integration structure while replacing Rember's product handler
-  with workflow-backed `toolUseToEffect`.
-- **Why not the SDK's schema-first registration helpers by default.** Firegrid's
-  schema source of truth is Effect Schema in `@firegrid/protocol`. If a helper
-  requires re-authoring schemas in a second system, use lower-level SDK request
-  handlers instead.
-- **Why `descriptors.ts` remains explicit.** Schema reflection prevents drift,
-  but exposure is an authority decision. `FiregridAgentTools` is the allowlist.
+- **Why no Firegrid toolkit wrapper.** Effect AI already owns `Toolkit`.
+  Firegrid owns concrete `Tool` definitions, concrete handlers, and runtime
+  composition. A `toolkit.ts`-style abstraction or wrapper would just hide
+  `Toolkit.make`, `Toolkit.toLayer`, and `McpServer.registerToolkit` behind
+  another name.
+- **Why copy the Rember pattern structurally.** Rember demonstrates the
+  practical shape: Effect Schema defines tools, one toolkit collects them, one
+  implementation handles calls, and tests reuse that toolkit outside the MCP
+  transport. Firegrid should copy that structure while using current Effect AI
+  APIs and workflow-backed `toolUseToEffect`.
+- **Why no Firegrid-local toolkit clone.** Firegrid's schema source of truth is
+  Effect Schema in `@firegrid/protocol`, and Effect AI already consumes Effect
+  Schema directly. A local clone would recreate drift and make in-process agent
+  tests less representative.
+- **Why explicit Effect AI tools remain necessary.** Schema reflection prevents
+  drift, but exposure is an authority decision. `FiregridAgentToolkit` is the
+  allowlist.
 - **Why V0 is direct.** Before adding durable invocation/result facts, prove the
-  protocol and descriptor projection with a real MCP client. This keeps the first
-  failure surface small.
+  protocol and descriptor projection with a real MCP-shaped layer. This keeps
+  the first failure surface small.
 - **Why V1 is durable.** External agents and process restarts need invocation and
   result facts so tool calls are not lost if the bridge or runtime restarts.
 - **Why context routing is not a tool argument.** Agents should not choose which
   runtime context they control through tool input. Context routing belongs to
   bridge configuration and authorization.
-- **Why an in-process provider belongs under providers, not the bridge.** The
-  bridge is an MCP protocol projection. In-process agent execution is a sandbox
-  provider concern. Keeping it behind `SandboxProvider` proves the runtime is
-  not coupled to the local-process subprocess model.
