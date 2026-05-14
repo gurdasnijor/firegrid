@@ -53,6 +53,28 @@ pnpm firegrid:host
 See [Electric Cloud runtime host](docs/runbooks/electric-cloud-runtime-host.md)
 for the smoke runbook.
 
+Run one local-process agent synchronously through the same durable runtime path:
+
+```sh
+export DURABLE_STREAMS_BASE_URL="http://127.0.0.1:8080"
+export FIREGRID_RUNTIME_NAMESPACE="firegrid-run-dev"
+
+pnpm firegrid:run \
+  --cwd "$PWD" \
+  --prompt "hello from durable ingress" \
+  --secret-env CHILD_API_KEY=PARENT_API_KEY \
+  -- \
+  node agent.mjs
+```
+
+`firegrid:run` creates a `RuntimeContext` row, optionally appends the initial
+prompt through `RuntimeIngressTable`, calls `startRuntime(contextId)`, waits for
+the runtime workflow to finish, and exits with the child process exit code.
+`--secret-env` accepts env-var names only; it authorizes a specific
+child-env/host-env binding without writing the secret value into durable rows.
+See [Firegrid Run - Synchronous MVP](docs/runbooks/firegrid-run-sync-mvp.md) for
+local and Electric Cloud smoke commands.
+
 ## Flamecast Toy
 
 The fastest end-to-end product path is the Flamecast toy app:
