@@ -110,6 +110,8 @@ such as `PATH`, plus `SandboxConfig.envVars` and `SandboxCommand.envVars`.
 Unrelated host env vars, including `FIREGRID_DURABLE_STREAMS_TOKEN`, are not
 passed to the child unless explicitly bound. Child stdout/stderr are untrusted
 and journaled verbatim; a child that prints its own secret can still leak it.
+See [Runtime Environment Boundary](../../docs/architecture/runtime-env-boundary.md)
+for the boundary model.
 
 For Electric Cloud, use the same command shape with env-backed configuration:
 
@@ -124,6 +126,11 @@ pnpm firegrid:run --cwd "$PWD" --prompt "hello" -- node agent.mjs
 Use `pnpm firegrid:run:env` to load the root `.env` file. Do not pass tokens or
 secret values as CLI flags. The production-shaped smoke runbook is
 [Firegrid Run - Synchronous MVP](../../docs/runbooks/firegrid-run-sync-mvp.md).
+The short local smoke command is:
+
+```sh
+pnpm smoke:firegrid-run
+```
 
 ## Runtime With Workflow
 

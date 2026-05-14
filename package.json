@@ -18,6 +18,7 @@
     "firegrid:host:env": "node --env-file-if-exists=.env --import tsx src/index.ts",
     "firegrid:run": "tsx src/run.ts",
     "firegrid:run:env": "node --env-file-if-exists=.env --import tsx src/run.ts",
+    "smoke:firegrid-run": "pnpm --filter @firegrid/scenario-firegrid exec vitest run src/tracer-019-sync-run.test.ts",
     "flamecast:dev": "pnpm --filter @firegrid/flamecast dev:local",
     "flamecast:run": "pnpm --filter @firegrid/flamecast run:env",
     "format": "eslint . --fix",

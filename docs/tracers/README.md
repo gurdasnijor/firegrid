@@ -52,6 +52,7 @@ must make that dependency explicit.
 - [017: Effect Durable Operators](./017-effect-durable-operators.md)
 - [018: Cluster-Shaped Workflow Activity Ownership](./018-cluster-shaped-workflow-activity-ownership.md)
 - [019: Workflow-Driven Runtime Next Wave](./019-workflow-driven-runtime-next-wave.md)
+- [019 B/C: Sync-Run And Electric Smoke](./019-sync-run-electric-smoke.md)
 - [020: Verified Webhook Ingest To Durable Facts](./020-verified-webhook-ingest-to-durable-facts.md)
 
 ## Handoff

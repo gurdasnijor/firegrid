@@ -75,6 +75,10 @@ child-env/host-env binding without writing the secret value into durable rows.
 See [Firegrid Run - Synchronous MVP](docs/runbooks/firegrid-run-sync-mvp.md) for
 local and Electric Cloud smoke commands.
 
+For manual commands, `DURABLE_STREAMS_BASE_URL` must point at a running Durable
+Streams endpoint. The `smoke:firegrid-run` scenario starts its own local test
+server, so it does not require a separate server process.
+
 ## Flamecast Toy
 
 The fastest end-to-end product path is the Flamecast toy app:
@@ -98,12 +102,29 @@ Firegrid DurableTables with TanStack live queries. See
 | [`effect-durable-operators`](packages/effect-durable-operators/README.md) | `DurableTable` service-tag API and optional React live-query bindings. |
 | [`effect-durable-streams`](packages/effect-durable-streams/README.md) | Low-level Effect adapter for raw Durable Streams. |
 
+## Common Commands
+
+| Command | Purpose |
+| --- | --- |
+| `pnpm firegrid:host` | Run the Firegrid runtime host from environment config. |
+| `pnpm firegrid:host:env` | Run the host after loading root `.env`. |
+| `pnpm firegrid:run -- <agent>` | Launch one synchronous local-process runtime context. |
+| `pnpm firegrid:run:env -- <agent>` | Run the synchronous path after loading root `.env`. |
+| `pnpm smoke:firegrid-run` | Run the local Tracer 019 sync-run smoke with an in-process Durable Streams test server. |
+| `pnpm run check:docs` | Fast docs-only whitespace and conflict-marker check. |
+| `pnpm run check:specs` | Validate all Acai feature YAML files parse. |
+| `pnpm run typecheck` | Typecheck all workspace packages through Turbo. |
+| `pnpm run lint` | Run ESLint and production cutover checks. |
+| `pnpm verify` | Full ready-for-review gate. |
+
 ## Architecture Docs
 
 - [Durable Launch Runtime Operator](docs/proposals/SDD_FIREGRID_DURABLE_LAUNCH_RUNTIME_OPERATOR.md)
 - [Firegrid Agent Runtime Substrate](docs/proposals/SDD_FIREGRID_AGENT_RUNTIME_SUBSTRATE.md)
 - [Firegrid Durable Tools](docs/proposals/SDD_FIREGRID_DURABLE_TOOLS.md)
 - [DurableTable React Live Query](docs/proposals/SDD_DURABLE_TABLE_REACT_LIVE_QUERY.md)
+- [Runtime Environment Boundary](docs/architecture/runtime-env-boundary.md)
+- [Runbooks](docs/runbooks/README.md)
 - [Docs map](docs/README.md)
 
 Acai specs live under `features/`. Implementation work should update specs
