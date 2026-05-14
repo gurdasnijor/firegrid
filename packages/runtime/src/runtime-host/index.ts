@@ -457,24 +457,17 @@ const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(({ contextId 
 // identity for their lifetime.
 // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
 //
-// Host identity is explicit authority: it MUST come from the caller's
-// composition (programmatic topology supplied at the call site or by
-// a host-mediated authority surface). There is no random fallback,
-// no env knob, and no on-disk auto-provisioning — a missing host id
-// is a configuration error, not stateful local mutation.
+// Host identity is required at the topology type, so this layer is
+// never asked to fabricate one. No env, disk, or random fallback —
+// the only sanctioned suppliers are direct callers passing
+// `options.hostId` and the `FiregridLocalHostLive` helper that
+// derives a deterministic per-namespace id.
 const currentHostSessionLayer = (
   options: RuntimeHostTopologyOptions,
 ) =>
   Layer.effect(
     CurrentHostSession,
     Effect.gen(function* () {
-      if (options.hostId === undefined) {
-        return yield* Effect.die(
-          new Error(
-            "FiregridRuntimeHostLive requires options.hostId; the runtime host does not acquire identity from env or disk.",
-          ),
-        )
-      }
       const startedAtMs = yield* Clock.currentTimeMillis
       const hostId = options.hostId as HostId
       const hostSessionId = (options.hostSessionId
