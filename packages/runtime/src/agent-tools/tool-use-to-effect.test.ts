@@ -310,6 +310,90 @@ describe("toolUseToEffect — wait_for arm", () => {
     expect(result.content).toEqual({ matched: false, timedOut: true })
   })
 
+  it("rejects non-scalar whereFields predicates with ToolInvalidInput instead of matching every row", async () => {
+    const streams = makeStreams("waitfor-nonscalar")
+    let waitForCalled = false
+    const result = await runWith(
+      buildLayer(
+        streams,
+        AgentToolHost.layer(fakeHost()),
+      ),
+      Effect.gen(function* () {
+        // Register the source so wait_for would resolve if it ran.
+        // If the lowering accepted the non-scalar predicate, the empty
+        // FieldEqualsTrigger would match the very first row we upsert
+        // here; the test would race a match against the timeout.
+        yield* registerTestSource
+        yield* driveClocks
+        const fiber = yield* Effect.fork(
+          RunToolWorkflow.execute({
+            contextId: "ctx-wait-nonscalar",
+            event: {
+              _tag: "ToolUse" as const,
+              toolUseId: "tool-wait-nonscalar",
+              name: "wait_for",
+              input: {
+                eventQuery: {
+                  stream: "test-source",
+                  whereFields: {
+                    requestId: { value: "not-a-scalar" },
+                  },
+                },
+                timeoutMs: 200,
+              },
+            },
+          }),
+        )
+        const source = yield* TestSourceTable
+        // Insert an arbitrary row; this would satisfy an empty
+        // FieldEqualsTrigger (universal match) if the validation
+        // regressed.
+        yield* source.rows.upsert({
+          id: "should-not-match",
+          requestId: "rq-anything",
+          status: "ready",
+        } satisfies TestSourceRow)
+        waitForCalled = true
+        return yield* Fiber.join(fiber)
+      }),
+    )
+    expect(waitForCalled).toBe(true)
+    expect(result.isError).toBe(true)
+    expect(result.content).toMatchObject({
+      error: { _tag: "ToolInvalidInput", name: "wait_for" },
+    })
+  })
+
+  it("rejects an empty whereFields predicate set with ToolInvalidInput", async () => {
+    const streams = makeStreams("waitfor-empty")
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(fakeHost())),
+      Effect.gen(function* () {
+        yield* registerTestSource
+        yield* driveClocks
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-wait-empty",
+          event: {
+            _tag: "ToolUse" as const,
+            toolUseId: "tool-wait-empty",
+            name: "wait_for",
+            input: {
+              eventQuery: {
+                stream: "test-source",
+                whereFields: {},
+              },
+              timeoutMs: 100,
+            },
+          },
+        })
+      }),
+    )
+    expect(result.isError).toBe(true)
+    expect(result.content).toMatchObject({
+      error: { _tag: "ToolInvalidInput", name: "wait_for" },
+    })
+  })
+
   it("returns the matched variant when a row appears that matches the EventQuery", async () => {
     const streams = makeStreams("waitfor-match")
     const result = await runWith(

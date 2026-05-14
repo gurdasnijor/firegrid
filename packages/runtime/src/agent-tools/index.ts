@@ -11,6 +11,7 @@ export {
   FiregridAgentTools,
   firegridAgentToolCatalog,
   firegridAgentToolNames,
+  type FiregridAgentToolDescriptor,
   type FiregridAgentToolName,
 } from "./descriptors.ts"
 export {

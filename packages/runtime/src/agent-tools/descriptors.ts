@@ -33,10 +33,7 @@ import {
   WaitForToolInputSchema,
   WaitForToolOutputSchema,
 } from "@firegrid/protocol/agent-tools"
-import {
-  defineAgentTool,
-  type AgentToolDescriptor,
-} from "../agent-io/index.ts"
+import { defineAgentTool } from "../agent-io/index.ts"
 
 export const FiregridAgentTools = {
   sleep: defineAgentTool({
@@ -113,12 +110,6 @@ export const FiregridAgentTools = {
   }),
 } as const
 
-// `AgentToolDescriptor` is invariant in its I/O type parameters because
-// `Schema.Schema` itself is invariant. `satisfies Record<string,
-// AgentToolDescriptor<unknown, unknown>>` therefore cannot hold here; we
-// re-narrow with an `as` cast for catalog projection, which is the only
-// place a wider element type is required.
-
 /**
  * The canonical Firegrid agent-tool name set. Useful for codecs that
  * publish the catalog and want exhaustive type checking against the
@@ -126,18 +117,25 @@ export const FiregridAgentTools = {
  */
 export type FiregridAgentToolName = keyof typeof FiregridAgentTools
 
+/**
+ * The union of per-tool descriptor types in `FiregridAgentTools`. The
+ * union preserves each descriptor's concrete `inputSchema`/
+ * `outputSchema` types so catalog consumers can dispatch on `name`
+ * without losing schema variance. Widening to
+ * `AgentToolDescriptor<unknown, unknown>` (the type
+ * `AgentCodecOpenOptions.toolCatalog` accepts) is invariance-bound and
+ * lives at the codec boundary where the wiring happens — not in this
+ * manifest module.
+ */
+export type FiregridAgentToolDescriptor =
+  (typeof FiregridAgentTools)[FiregridAgentToolName]
+
 export const firegridAgentToolNames: ReadonlyArray<FiregridAgentToolName> =
   Object.keys(FiregridAgentTools) as ReadonlyArray<FiregridAgentToolName>
 
 /**
- * Ordered catalog projection. Codec `AgentCodecOpenOptions.toolCatalog`
- * receives a `ReadonlyArray<AgentToolDescriptor<unknown, unknown>>`, so
- * descriptor publication is ordered serialization rather than keyed
- * dispatch (Phase 1 PR 1).
+ * Ordered catalog projection. Iteration order matches
+ * `firegridAgentToolNames`.
  */
-export const firegridAgentToolCatalog: ReadonlyArray<
-  AgentToolDescriptor<unknown, unknown>
-> = firegridAgentToolNames.map(
-  (name) =>
-    FiregridAgentTools[name] as unknown as AgentToolDescriptor<unknown, unknown>,
-)
+export const firegridAgentToolCatalog: ReadonlyArray<FiregridAgentToolDescriptor> =
+  firegridAgentToolNames.map((name) => FiregridAgentTools[name])

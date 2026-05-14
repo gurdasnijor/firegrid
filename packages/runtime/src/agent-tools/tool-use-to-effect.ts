@@ -31,14 +31,21 @@
 import { DurableClock, type WorkflowEngine } from "@effect/workflow"
 import {
   type EventQuery,
+  type ExecuteToolInput,
   type ScheduleMeToolInput,
+  type SleepToolInput,
+  type SleepToolOutput,
+  type SpawnAllToolInput,
+  type SpawnAllToolOutput,
+  type SpawnToolInput,
+  type SpawnToolOutput,
+  type ScheduleMeToolOutput,
   type WaitForToolInput,
-  WaitForToolOutputSchema,
+  type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
 import {
   Duration,
   Effect,
-  Match,
   ParseResult,
   Schema,
   type Scope,
@@ -85,81 +92,126 @@ const isFieldEqualsScalar = (
   typeof value === "number" ||
   typeof value === "boolean"
 
+interface EventQueryAdapterFailure {
+  readonly key: string
+  readonly value: unknown
+}
+
+const describeNonScalarValue = (value: unknown): string => {
+  if (value === null) return "null"
+  if (Array.isArray(value)) return "array"
+  return typeof value
+}
+
 const eventQueryToTrigger = (
   query: EventQuery,
-): FieldEqualsTrigger =>
-  Object.entries(query.whereFields).flatMap(([key, value]) =>
-    isFieldEqualsScalar(value)
-      ? [{ path: [key], equals: value }]
-      : [],
-  )
+):
+  | { readonly _tag: "Ok"; readonly trigger: FieldEqualsTrigger }
+  | { readonly _tag: "NonScalar"; readonly failures: ReadonlyArray<EventQueryAdapterFailure> }
+  | { readonly _tag: "Empty" } => {
+  const entries = Object.entries(query.whereFields)
+  if (entries.length === 0) return { _tag: "Empty" }
+  const failures: Array<EventQueryAdapterFailure> = []
+  const trigger: Array<FieldEqualsTrigger[number]> = []
+  for (const [key, value] of entries) {
+    if (isFieldEqualsScalar(value)) {
+      trigger.push({ path: [key], equals: value })
+    } else {
+      failures.push({ key, value })
+    }
+  }
+  if (failures.length > 0) return { _tag: "NonScalar", failures }
+  return { _tag: "Ok", trigger }
+}
 
 // ---------------------------------------------------------------------------
 // Per-arm runners
+//
+// Each arm receives the typed decoded input from its descriptor's
+// `inputSchema` and returns the typed output that the descriptor's
+// `outputSchema` declares. TypeScript therefore checks the
+// schema-to-arm coupling at compile time: if a shared protocol schema
+// changes shape, the corresponding arm's body fails to compile rather
+// than silently passing the wrong payload to a primitive.
 // ---------------------------------------------------------------------------
 
 const runSleepTool = (
   toolUseId: string,
-  durationMs: number,
+  input: SleepToolInput,
 ): Effect.Effect<
-  ToolResultEvent,
+  SleepToolOutput,
   ToolError,
   WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
 > =>
   // firegrid-workflow-driven-runtime.PHASE_4_TEMPORAL_WORKFLOWS.1
   DurableClock.sleep({
     name: `tool:${toolUseId}`,
-    duration: Duration.millis(durationMs),
+    duration: Duration.millis(input.durationMs),
     inMemoryThreshold: Duration.zero,
-  }).pipe(Effect.as(toolResult(toolUseId, { slept: true as const })))
+  }).pipe(Effect.as<SleepToolOutput>({ slept: true }))
 
 const runWaitForTool = (
   toolUseId: string,
   input: WaitForToolInput,
 ): Effect.Effect<
-  ToolResultEvent,
+  WaitForToolOutput,
   ToolError,
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
   | DurableToolsTable
   | Scope.Scope
-> =>
-  WaitFor.match({
+> => {
+  // EventQuery's `whereFields` is typed `Record<string, unknown>` because
+  // schema-level scalar refinement would prevent codecs from publishing
+  // the JSON shape unchanged. We enforce scalar-only predicates here
+  // because the downstream FieldEqualsTrigger evaluator treats an empty
+  // trigger as a universal match — an agent emitting non-scalar values
+  // would otherwise see wait_for "match any row" instead of an
+  // invalid-input ToolResult.
+  const adapted = eventQueryToTrigger(input.eventQuery)
+  if (adapted._tag === "NonScalar") {
+    const summary = adapted.failures
+      .map((f) => `${f.key}=${describeNonScalarValue(f.value)}`)
+      .join(", ")
+    return Effect.fail({
+      _tag: "ToolInvalidInput",
+      toolUseId,
+      name: "wait_for",
+      reason:
+        `eventQuery.whereFields values must be string, number, or boolean (got non-scalar: ${summary})`,
+    })
+  }
+  if (adapted._tag === "Empty") {
+    return Effect.fail({
+      _tag: "ToolInvalidInput",
+      toolUseId,
+      name: "wait_for",
+      reason:
+        "eventQuery.whereFields must declare at least one predicate; empty predicate sets are rejected because they would match every row.",
+    })
+  }
+  return WaitFor.match({
     name: `tool:${toolUseId}`,
     source: input.eventQuery.stream,
-    trigger: eventQueryToTrigger(input.eventQuery),
-    ...(input.timeoutMs === undefined
-      ? {}
-      : { timeoutMs: input.timeoutMs }),
+    trigger: adapted.trigger,
+    ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
   }).pipe(
-    Effect.map((outcome) =>
+    Effect.map((outcome): WaitForToolOutput =>
       outcome._tag === "Match"
-        ? toolResult(toolUseId, {
-          matched: true as const,
-          event: outcome.row,
-        })
-        : toolResult(toolUseId, {
-          matched: false as const,
-          timedOut: true as const,
-        }),
+        ? { matched: true, event: outcome.row }
+        : { matched: false, timedOut: true },
     ),
     Effect.mapError((cause) =>
       toolExecutionFailed(toolUseId, "wait_for", cause),
     ),
   )
+}
 
 const runSpawnTool = (
   ctx: ToolLoweringContext,
   toolUseId: string,
-  input: {
-    readonly agentKind: string
-    readonly prompt: string
-    readonly options?: {
-      readonly cwd?: string
-      readonly metadata?: Record<string, string>
-    }
-  },
-): Effect.Effect<ToolResultEvent, ToolError, AgentToolHost> =>
+  input: SpawnToolInput,
+): Effect.Effect<SpawnToolOutput, ToolError, AgentToolHost> =>
   Effect.gen(function* () {
     const host = yield* AgentToolHost
     const { childContextId, terminalState } = yield* host.spawnChildContext({
@@ -169,24 +221,14 @@ const runSpawnTool = (
       prompt: input.prompt,
       ...(input.options === undefined ? {} : { spawnOptions: input.options }),
     })
-    return toolResult(toolUseId, { childContextId, terminalState })
+    return { childContextId, terminalState }
   })
 
 const runSpawnAllTool = (
   ctx: ToolLoweringContext,
   toolUseId: string,
-  input: {
-    readonly tasks: ReadonlyArray<{
-      readonly key?: string
-      readonly agentKind: string
-      readonly prompt: string
-      readonly options?: {
-        readonly cwd?: string
-        readonly metadata?: Record<string, string>
-      }
-    }>
-  },
-): Effect.Effect<ToolResultEvent, ToolError, AgentToolHost> =>
+  input: SpawnAllToolInput,
+): Effect.Effect<SpawnAllToolOutput, ToolError, AgentToolHost> =>
   Effect.gen(function* () {
     const host = yield* AgentToolHost
     const { children } = yield* host.spawnChildContexts({
@@ -194,7 +236,7 @@ const runSpawnAllTool = (
       toolUseId,
       tasks: input.tasks,
     })
-    return toolResult(toolUseId, { children })
+    return { children }
   })
 
 const scheduleIdFor = (
@@ -207,7 +249,7 @@ const runScheduleMeTool = (
   toolUseId: string,
   input: ScheduleMeToolInput,
 ): Effect.Effect<
-  ToolResultEvent,
+  ScheduleMeToolOutput,
   ToolError,
   WorkflowEngine.WorkflowEngine
 > => {
@@ -222,12 +264,7 @@ const runScheduleMeTool = (
     },
     { discard: true },
   ).pipe(
-    Effect.as(
-      toolResult(toolUseId, {
-        scheduled: true as const,
-        scheduleId,
-      }),
-    ),
+    Effect.as<ScheduleMeToolOutput>({ scheduled: true, scheduleId }),
     Effect.mapError((cause) =>
       toolExecutionFailed(toolUseId, "schedule_me", cause),
     ),
@@ -236,23 +273,19 @@ const runScheduleMeTool = (
 
 const runExecuteTool = (
   toolUseId: string,
-  input: {
-    readonly sandbox: { readonly providerName: string; readonly toolName: string }
-    readonly input: unknown
-  },
-): Effect.Effect<ToolResultEvent, ToolError, AgentToolHost> =>
+  input: ExecuteToolInput,
+): Effect.Effect<unknown, ToolError, AgentToolHost> =>
   Effect.gen(function* () {
     const host = yield* AgentToolHost
-    const output = yield* host.executeSandboxTool({
+    return yield* host.executeSandboxTool({
       toolUseId,
       sandbox: input.sandbox,
       input: input.input,
     })
-    return toolResult(toolUseId, output)
   })
 
 // ---------------------------------------------------------------------------
-// Dispatch
+// Typed descriptor-driven dispatch
 // ---------------------------------------------------------------------------
 
 type ToolEnvironment =
@@ -262,74 +295,54 @@ type ToolEnvironment =
   | Scope.Scope
   | AgentToolHost
 
-interface KnownInvocation {
-  readonly toolUseId: string
-  readonly name: keyof typeof FiregridAgentTools
-  readonly input: unknown
-}
-
-const runKnownTool = (
-  ctx: ToolLoweringContext,
-  invocation: KnownInvocation,
-): Effect.Effect<ToolResultEvent, ToolError, ToolEnvironment> =>
-  Match.value(invocation).pipe(
-    Match.when({ name: "sleep" }, ({ toolUseId, input }) =>
-      runSleepTool(toolUseId, (input as { durationMs: number }).durationMs),
-    ),
-    Match.when({ name: "wait_for" }, ({ toolUseId, input }) =>
-      runWaitForTool(toolUseId, input as WaitForToolInput),
-    ),
-    Match.when({ name: "spawn" }, ({ toolUseId, input }) =>
-      runSpawnTool(
-        ctx,
-        toolUseId,
-        input as Parameters<typeof runSpawnTool>[2],
-      ),
-    ),
-    Match.when({ name: "spawn_all" }, ({ toolUseId, input }) =>
-      runSpawnAllTool(
-        ctx,
-        toolUseId,
-        input as Parameters<typeof runSpawnAllTool>[2],
-      ),
-    ),
-    Match.when({ name: "schedule_me" }, ({ toolUseId, input }) =>
-      runScheduleMeTool(ctx, toolUseId, input as ScheduleMeToolInput),
-    ),
-    Match.when({ name: "execute" }, ({ toolUseId, input }) =>
-      runExecuteTool(
-        toolUseId,
-        input as Parameters<typeof runExecuteTool>[1],
-      ),
-    ),
-    Match.exhaustive,
+/**
+ * Decode `event.input` against the concrete descriptor's `inputSchema`,
+ * pass the typed result to the arm, wrap the arm's typed output in a
+ * `ToolResult` event, and catch every failure path into an
+ * `isError: true` event. The descriptor parameter binds I and O to the
+ * arm's parameter and result types — schema changes break the
+ * corresponding arm at compile time rather than hiding behind an `as`
+ * cast.
+ */
+const dispatchTool = <I, O, R>(
+  event: ToolUseEvent,
+  descriptor: AgentToolDescriptor<I, O>,
+  arm: (input: I) => Effect.Effect<O, ToolError, R>,
+): Effect.Effect<ToolResultEvent, never, R> =>
+  Schema.decodeUnknown(descriptor.inputSchema)(event.input).pipe(
+    Effect.matchEffect({
+      onFailure: (cause) => {
+        if (cause instanceof ParseResult.ParseError) {
+          return Effect.succeed(
+            toolErrorResult(
+              toolInvalidInputFromParseError(
+                event.toolUseId,
+                descriptor.name,
+                cause,
+              ),
+            ),
+          )
+        }
+        return Effect.succeed(
+          toolErrorResult(
+            toolExecutionFailed(event.toolUseId, descriptor.name, cause),
+          ),
+        )
+      },
+      onSuccess: (input) =>
+        arm(input).pipe(
+          Effect.map((output) => toolResult(event.toolUseId, output)),
+          Effect.catchAll((error) => Effect.succeed(toolErrorResult(error))),
+          Effect.catchAllDefect((defect) =>
+            Effect.succeed(
+              toolErrorResult(
+                toolExecutionFailed(event.toolUseId, descriptor.name, defect),
+              ),
+            ),
+          ),
+        ),
+    }),
   )
-
-// ---------------------------------------------------------------------------
-// Output-schema enforcement
-// ---------------------------------------------------------------------------
-
-const verifyOutputAgainstDescriptor = (
-  result: ToolResultEvent,
-  name: keyof typeof FiregridAgentTools,
-): Effect.Effect<ToolResultEvent, ToolError> => {
-  // ExecuteToolOutputSchema is `Schema.Unknown` — the sandbox provider's
-  // output shape is provider-specific and verified at the SandboxProvider
-  // boundary, not at the agent-tool descriptor boundary.
-  if (name === "execute") return Effect.succeed(result)
-  // wait_for output decoding needs the discriminator literal preserved; the
-  // shared schema handles that already.
-  void WaitForToolOutputSchema
-  const descriptor = FiregridAgentTools[
-    name
-  ] as unknown as AgentToolDescriptor<unknown, unknown>
-  return Schema.decodeUnknown(descriptor.outputSchema)(result.content).pipe(
-    Effect.as(result),
-    Effect.mapError((cause) =>
-      toolExecutionFailed(result.toolUseId, name, cause),
-    ),
-  )
-}
 
 // ---------------------------------------------------------------------------
 // Public entrypoint
@@ -341,6 +354,15 @@ const verifyOutputAgainstDescriptor = (
  * `ToolResult` events with `isError: true`. The outer error channel is
  * `never`: tool failures are NOT workflow failures.
  *
+ * Dispatch switches on `event.name` and looks up the concrete
+ * descriptor in `FiregridAgentTools` so each arm receives its decoded
+ * input typed by the descriptor's `inputSchema` and returns the typed
+ * output declared by the descriptor's `outputSchema` — no per-arm `as`
+ * casts. Adding a tool requires (a) a protocol Effect Schema, (b) a
+ * descriptor entry in `FiregridAgentTools`, and (c) a new `case` here
+ * pointing at a typed arm. Removing a tool requires removing the case
+ * (exhaustiveness is enforced via the `never`-typed default).
+ *
  * Implements:
  *  - agent-codec-runtime-tools.md/agent-tool-layer-phase-2 §"The function"
  *  - firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.3
@@ -350,43 +372,33 @@ export const toolUseToEffect = (
   ctx: ToolLoweringContext,
   event: ToolUseEvent,
 ): Effect.Effect<ToolResultEvent, never, ToolEnvironment> => {
-  const descriptor = (FiregridAgentTools as Record<
-    string,
-    AgentToolDescriptor<unknown, unknown>
-  >)[event.name]
-  if (descriptor === undefined) {
-    return Effect.succeed(unknownToolResult(event.toolUseId, event.name))
+  switch (event.name) {
+    case "sleep":
+      return dispatchTool(event, FiregridAgentTools.sleep, (input) =>
+        runSleepTool(event.toolUseId, input),
+      )
+    case "wait_for":
+      return dispatchTool(event, FiregridAgentTools.wait_for, (input) =>
+        runWaitForTool(event.toolUseId, input),
+      )
+    case "spawn":
+      return dispatchTool(event, FiregridAgentTools.spawn, (input) =>
+        runSpawnTool(ctx, event.toolUseId, input),
+      )
+    case "spawn_all":
+      return dispatchTool(event, FiregridAgentTools.spawn_all, (input) =>
+        runSpawnAllTool(ctx, event.toolUseId, input),
+      )
+    case "schedule_me":
+      return dispatchTool(event, FiregridAgentTools.schedule_me, (input) =>
+        runScheduleMeTool(ctx, event.toolUseId, input),
+      )
+    case "execute":
+      return dispatchTool(event, FiregridAgentTools.execute, (input) =>
+        runExecuteTool(event.toolUseId, input),
+      )
+    default:
+      return Effect.succeed(unknownToolResult(event.toolUseId, event.name))
   }
-  const name = descriptor.name as keyof typeof FiregridAgentTools
-  return Schema.decodeUnknown(descriptor.inputSchema)(event.input).pipe(
-    Effect.matchEffect({
-      onFailure: (cause) => {
-        if (cause instanceof ParseResult.ParseError) {
-          return Effect.succeed(
-            toolErrorResult(
-              toolInvalidInputFromParseError(event.toolUseId, name, cause),
-            ),
-          )
-        }
-        return Effect.succeed(
-          toolErrorResult(toolExecutionFailed(event.toolUseId, name, cause)),
-        )
-      },
-      onSuccess: (decoded) =>
-        runKnownTool(ctx, {
-          toolUseId: event.toolUseId,
-          name,
-          input: decoded,
-        }).pipe(
-          Effect.flatMap((result) => verifyOutputAgainstDescriptor(result, name)),
-          Effect.catchAll((error) => Effect.succeed(toolErrorResult(error))),
-          Effect.catchAllDefect((defect) =>
-            Effect.succeed(
-              toolErrorResult(toolExecutionFailed(event.toolUseId, name, defect)),
-            ),
-          ),
-        ),
-    }),
-  )
 }
 
