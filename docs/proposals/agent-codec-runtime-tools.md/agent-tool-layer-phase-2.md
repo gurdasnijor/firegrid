@@ -16,10 +16,15 @@ The premise: **agent tools have a published descriptor contract and a host-side 
 toolUseToEffect: (
   ctx: { contextId: string },
   event: Extract<AgentOutputEvent, { _tag: "ToolUse" }>,
-) => Effect.Effect<Extract<AgentInputEvent, { _tag: "ToolResult" }>, ToolError, R>
+) => Effect.Effect<Extract<AgentInputEvent, { _tag: "ToolResult" }>, never, R>
 ```
 
-Defined by looking up the descriptor for `event.name`, decoding `event.input` with that descriptor's `inputSchema`, then pattern matching on the canonical tool name. New tools require both a descriptor (public contract) and a match arm (host implementation).
+Defined by looking up the descriptor for `event.name`, decoding `event.input`
+with that descriptor's `inputSchema`, then pattern matching on the canonical
+tool name. Unknown tools, invalid inputs, and tool execution failures all become
+`ToolResult` events with `isError: true`; they do not fail the workflow. New
+tools require both a descriptor (public contract) and a match arm (host
+implementation).
 
 Phase 1 owns the event and descriptor types. Phase 2 owns the canonical Firegrid descriptor set and the lowering function.
 
@@ -81,6 +86,26 @@ export const FiregridAgentTools = {
 } as const
 ```
 
+The initial descriptors are:
+
+- `sleep`: input `{ durationMs: number }`, output `{ slept: true }`, stable.
+- `wait_for`: input `{ eventQuery: EventQuery; timeoutMs?: number }`, where
+  `EventQuery` starts as `{ stream: string; whereFields: Record<string, unknown> }`;
+  output `{ matched: true; event: unknown } | { matched: false; timedOut: true }`,
+  experimental until production validation.
+- `spawn`: input `{ agentKind: string; prompt: string; options?: SpawnOptions }`,
+  output `{ childContextId: string; terminalState: WorkflowTerminalState }`,
+  stable once Phase 1 child context execution is production-shaped.
+- `spawn_all`: input `{ tasks: SpawnTask[] }`, output
+  `{ children: { key: string; childContextId: string; terminalState: WorkflowTerminalState }[] }`,
+  experimental until fan-out limits are validated.
+- `schedule_me`: input `{ when: number; prompt: string }`, output
+  `{ scheduled: true; scheduleId: string }`, experimental until cancellation and
+  recurring schedule needs are clearer.
+- `execute`: input `{ sandbox: SandboxRef; input: unknown }`, output `unknown`
+  at the descriptor level with sandbox-specific runtime validation, stable for
+  activity-bounded sandbox calls.
+
 Descriptor fields do not include credentials, callback tokens, provider session
 tokens, Durable Streams URLs, sandbox handles, host ids, or transport refs.
 Those are host-side authority and codec/deployment configuration, not
@@ -94,34 +119,36 @@ import type { AgentInputEvent, AgentOutputEvent } from "@firegrid/runtime/agent-
 const toolUseToEffect = (
   ctx: { contextId: string },
   event: Extract<AgentOutputEvent, { _tag: "ToolUse" }>,
-): Effect.Effect<Extract<AgentInputEvent, { _tag: "ToolResult" }>, ToolError, WorkflowContext> =>
+): Effect.Effect<Extract<AgentInputEvent, { _tag: "ToolResult" }>, never, WorkflowContext> =>
   Effect.gen(function* () {
     const descriptor = FiregridAgentTools[event.name as keyof typeof FiregridAgentTools]
     if (descriptor === undefined) {
       return unknownToolResult(event.toolUseId, event.name)
     }
 
-    const input = yield* Schema.decodeUnknown(descriptor.inputSchema)(event.input).pipe(
-      Effect.mapError((cause) => new ToolInvalidInput({
-        toolUseId: event.toolUseId,
-        name: event.name,
-        cause,
-      })),
+    const decoded = yield* Schema.decodeUnknown(descriptor.inputSchema)(event.input).pipe(
+      Effect.either,
     )
+    if (decoded._tag === "Left") {
+      return invalidInputResult(event.toolUseId, event.name, decoded.left)
+    }
 
-    const result = yield* runKnownTool(ctx, {
+    return yield* runKnownTool(ctx, {
       toolUseId: event.toolUseId,
       name: descriptor.name,
-      input,
-    })
-
-    return yield* Schema.decodeUnknown(descriptor.outputSchema)(result.content).pipe(
-      Effect.as(result),
-      Effect.mapError((cause) => new ToolExecutionFailed({
-        toolUseId: event.toolUseId,
-        name: event.name,
-        cause,
-      })),
+      input: decoded.right,
+    }).pipe(
+      Effect.flatMap((result) =>
+        Schema.decodeUnknown(descriptor.outputSchema)(result.content).pipe(
+          Effect.as(result),
+          Effect.catchAll((cause) =>
+            Effect.succeed(toolExecutionFailedResult(event.toolUseId, event.name, cause))
+          ),
+        )
+      ),
+      Effect.catchAll((error) =>
+        Effect.succeed(toolErrorResult(event.toolUseId, event.name, error))
+      ),
     )
   })
 
@@ -208,9 +235,81 @@ That is the implementation shape. Descriptor lookup and Schema decoding are the 
 
 If the agent emits a `ToolUse` with a name not present in the descriptor set published for this runtime, `toolUseToEffect` returns a `ToolResult` with `isError: true` and an error message. The workflow doesn't fail; the agent receives a structured error and can choose to retry, escalate, or terminate.
 
+## Descriptor publication to codecs
+
+The descriptor set is read by Phase 1's codec layer at session-open time via
+`AgentCodecOpenOptions.toolCatalog`. The same descriptor instances are passed to
+every codec. There is no per-codec descriptor variation; only per-codec
+lowering.
+
+For MCP-capable agents, Firegrid publishes the descriptor set through a
+Streamable HTTP MCP tool bridge. The bridge is a thin HTTP handler over Durable
+Streams-backed catalog, invocation, and result streams:
+
+- catalog stream: durable source for MCP `tools/list`;
+- invocations stream: durable source for MCP `tools/call` requests;
+- results stream: durable source for invocation results and resumable delivery.
+
+The bridge URL must speak MCP's Streamable HTTP JSON-RPC protocol. A raw Durable
+Streams stream URL is not itself an MCP endpoint: Durable Streams provides
+append/read/live-tail HTTP primitives, while MCP clients expect JSON-RPC
+`initialize`, `tools/list`, `tools/call`, and session/lifecycle behavior at one
+endpoint. The bridge can be stateless and can be hosted as a product route or
+Worker backed by Durable Streams, but some handler must perform this protocol
+mapping.
+
+Codecs use the bridge as follows:
+
+- ACP: pass the bridge URL through `NewSessionRequest.mcpServers` when the ACP
+  agent supports MCP servers.
+- Claude Code / Codex / other CLI agents: write the agent's normal MCP config
+  pointing at the bridge URL, with credentials referenced through env/config.
+- HTTP-shaped model codecs: either pass the bridge URL through a native MCP
+  connector if the API supports one, or use `mcp-client.ts` to list tools,
+  append invocations, and subscribe for results while presenting native tool
+  schemas to the API.
+
+The match expression does not depend on which codec published the catalog or
+which transport produced the invocation. Phase 1 normalizes invocations to the
+same `ToolUse` event shape.
+
+Descriptor publication is bound by
+`firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.*`,
+`firegrid-scheduling-tool-bindings.IDENTICAL_DURABLE_LOWERING.*`,
+`firegrid-scheduling-tool-bindings.DURABLE_DESCRIPTOR_PUBLICATION.*`, and
+`firegrid-scheduling-tool-bindings.TOOL_BINDINGS.*`.
+
+## Invocation routing
+
+Tool invocations arrive at Firegrid through two paths:
+
+1. **Direct path**: a codec normalizes a protocol-specific tool call, such as
+   ACP `session/update tool_call` or stdio-jsonl `{"type":"tool_use",...}`, into
+   a `ToolUse` event delivered to the workflow body's
+   `consumeUntilTurnComplete` loop. This is used when the codec is in-process
+   with the workflow.
+2. **Indirect path**: an agent's MCP client calls the Firegrid Streamable HTTP
+   MCP bridge. The bridge records the invocation durably, then
+   `invocations-consumer.ts` subscribes to the invocation stream and routes the
+   invocation to the appropriate `RuntimeContextWorkflow` based on the
+   invocation payload.
+
+Both paths converge at `toolUseToEffect`. The function does not distinguish
+between them; by the time the host implementation runs, the invocation is a
+descriptor-backed `ToolUse` event.
+
+Result delivery follows the inverse path:
+
+- Direct invocations produce a `ToolResult` event that the codec encodes back
+  into the agent's wire format.
+- Indirect invocations produce a `ToolResult` row in the results stream; the MCP
+  bridge turns that row into the MCP `tools/call` response or streamed response.
+
 ## Tool error semantics
 
-Each tool arm returns `Effect<ToolResultEvent, ToolError, R>`. `ToolError` is a tagged union:
+Each tool arm may fail with `ToolError`, but `toolUseToEffect` catches that
+failure and returns a `ToolResult` with `isError: true`. `ToolError` is a tagged
+union:
 
 ```ts
 type ToolError =
@@ -219,7 +318,8 @@ type ToolError =
   | { _tag: "ToolCancelled"; toolUseId: string; name: string }
 ```
 
-The workflow body's outer loop catches `ToolError` and constructs a `ToolResult` event with `isError: true` and a structured error payload. From the codec's perspective, this is still a normal `ToolResult` — the codec encodes it according to its protocol's error-result shape.
+From the codec's perspective, this is still a normal `ToolResult` — the codec
+encodes it according to its protocol's error-result shape.
 
 Tool failures are not workflow failures. The workflow continues; the agent receives the error and decides how to respond.
 
@@ -231,14 +331,6 @@ Phase 1's workflow body has an outer loop that consumes `AgentOutputEvent`s from
 // Inside Phase 1's consumeUntilTurnComplete (paraphrased)
 Match.tag("ToolUse", event =>
   toolUseToEffect({ contextId }, event).pipe(
-    Effect.catchAll(error =>
-      Effect.succeed<ToolResultEvent>({
-        _tag: "ToolResult",
-        toolUseId: event.toolUseId,
-        content: { error: formatToolError(error) },
-        isError: true,
-      })
-    ),
     Effect.tap(toolResult => session.send(toolResult)),
     Effect.tap(toolResult => recordToolResultEvent(contextId, toolResult)),
     Effect.asVoid,
@@ -292,18 +384,25 @@ It sleeps until `dueAtMs`, then appends a runtime input row that the target cont
 
 ```
 packages/runtime/src/agent-tools/
-  tool-use-to-effect.ts        // toolUseToEffect match expression
-  tool-input-schemas.ts        // SleepInput, WaitForInput, SpawnInput, etc.
+  descriptors.ts               // FiregridAgentTools canonical descriptor set
+  tool-use-to-effect.ts        // toolUseToEffect + runToolArm match expression
   tool-error.ts                // ToolError ADT, formatToolError
   scheduled-input-workflow.ts  // ScheduledInputWorkflow + body
   activities/
     wait-for-match.ts          // waitForMatchActivity
     execute-sandbox-tool.ts    // executeSandboxToolActivity
     append-runtime-input.ts    // appendRuntimeInputActivity
+  catalog.ts                   // publishes FiregridAgentTools to catalog stream
+  invocations-consumer.ts      // indirect-path invocation consumer
+  mcp-client.ts                // helper for codecs that bridge directly
+  mcp-bridge.ts                // thin Streamable HTTP MCP handler backed by streams
   index.ts                     // exports
 ```
 
-`tool-use-to-effect.ts` is the load-bearing file. The match expression and its arms live there. Each tool input schema is a small Schema declaration; each activity is a small Effect function.
+`descriptors.ts` and `tool-use-to-effect.ts` are the load-bearing files.
+Descriptors are the public contract; the match expression and its arms are the
+host implementation. Each tool input/output schema is a small Schema
+declaration; each activity is a small Effect function.
 
 ## Validation
 
@@ -311,11 +410,26 @@ packages/runtime/src/agent-tools/
 
 For each tool arm:
 
-1. Happy-path execution produces the expected `ToolResultEvent`.
-2. Replay produces the same result without re-executing side effects.
-3. Cancellation propagates correctly through the workflow's interruption channel.
-4. Invalid input produces `ToolInvalidInput` error.
-5. Unknown tool names produce a `ToolResult` with `isError: true`; known tool names with invalid input produce `ToolInvalidInput`.
+1. Descriptor schema accepts valid inputs and rejects malformed inputs.
+2. Happy-path execution produces the expected `ToolResultEvent`.
+3. Replay produces the same result without re-executing side effects.
+4. Cancellation propagates correctly through the workflow's interruption channel.
+5. Invalid input produces `ToolInvalidInput` error.
+6. Unknown tool names produce a `ToolResult` with `isError: true`; known tool names with invalid input produce `ToolInvalidInput`.
+
+### Bridge and catalog tests
+
+1. Catalog stream publication: runtime startup writes exactly the
+   `FiregridAgentTools` descriptor set, with no credentials, transport URLs, or
+   secret-shaped fields in descriptor rows.
+2. MCP bridge conformance: a standard MCP client or inspector can call
+   `tools/list` and `tools/call` against the Streamable HTTP bridge URL.
+3. Indirect path round-trip: a test client calls or appends an invocation through
+   the bridge path; the runtime consumes it, executes it, and writes a result
+   that the client observes.
+4. Codec-agnostic invocation equivalence: the same logical invocation arriving
+   through a direct codec path and through the bridge path produces the same
+   `ToolUse` at `toolUseToEffect` and the same `ToolResult` shape.
 
 ### Integration tests
 
@@ -349,13 +463,20 @@ Scope:
 4. Implement `toolUseToEffect` with all six match arms and the unknown-tool branch.
 5. Implement the three activities (`waitForMatchActivity`, `executeSandboxToolActivity`, `appendRuntimeInputActivity`).
 6. Implement `ScheduledInputWorkflow`.
-7. Wire `toolUseToEffect` into Phase 1's `consumeUntilTurnComplete` `ToolUse` arm.
-8. Unit tests per descriptor and tool arm.
-9. Integration scenarios in `scenarios/firegrid/`.
-10. Update feature spec with new ACID identifiers.
-11. Update exports.
+7. Implement catalog publication to the tool bridge's catalog stream.
+8. Implement `invocations-consumer.ts` for the indirect path.
+9. Implement `mcp-client.ts` for codecs that bridge directly.
+10. Implement the thin Streamable HTTP MCP bridge handler backed by catalog,
+    invocations, and results streams.
+11. Wire `toolUseToEffect` into Phase 1's `consumeUntilTurnComplete` `ToolUse`
+    arm.
+12. Unit tests per descriptor and tool arm.
+13. Bridge/catalog tests.
+14. Integration scenarios in `scenarios/firegrid/`.
+15. Update feature spec with new ACID identifiers.
+16. Update exports.
 
-Estimated size: ~600 lines of production code, ~800 lines of test code.
+Estimated size: ~900 lines of production code, ~1100 lines of test code.
 
 ### Sequencing constraints
 
@@ -368,25 +489,30 @@ Estimated size: ~600 lines of production code, ~800 lines of test code.
 ```yaml
 PHASE_6_AGENT_TOOLS:
   requirements:
-    1: The Firegrid agent tool surface publishes a canonical descriptor set containing name, description, Effect Schema input schema, Effect Schema output schema, stability, and capability metadata for each supported tool.
-    2: toolUseToEffect lowers a descriptor-backed ToolUse event to an Effect producing a ToolResult event after validating input against the descriptor schema.
-    3: The host implementation uses a single Match expression over known tool names; each match arm composes existing workflow primitives.
-    4: sleep tool composes DurableClock.sleep; suspends the workflow for the requested duration.
-    5: wait_for tool composes waitForMatchActivity, optionally raced against DurableClock.sleep for timeout.
-    6: spawn tool composes Workflow.execute against RuntimeContextWorkflow with a deterministic child executionId derived from the parent contextId and the toolUseId.
-    7: spawn_all tool composes a fan-out of Workflow.execute calls; per-child executionId is deterministic from the parent context, the toolUseId, and either the task's key or its index.
-    8: schedule_me tool starts a ScheduledInputWorkflow with discard:true and returns immediately; the workflow sleeps until due then appends a runtime input via appendRuntimeInputActivity.
-    9: execute tool composes executeSandboxToolActivity over the SandboxProvider interface.
-    10: Each tool's execution identity is deterministic from the ToolUse event's toolUseId, ensuring idempotency under workflow replay.
-    11: Unknown tool names produce a ToolResult with isError:true; the workflow does not fail.
-    12: Known tool names with malformed input produce a ToolResult with isError:true through ToolInvalidInput rather than type casts.
-    13: Tool execution failures produce a ToolResult with isError:true and a structured error payload; the workflow continues consuming subsequent agent events.
+    1: FiregridAgentTools defines the canonical neutral descriptor set for the initial tools: sleep, wait_for, spawn, spawn_all, schedule_me, and execute.
+    2: Each descriptor contains name, description, Effect Schema input schema, Effect Schema output schema, stability, and capability metadata.
+    3: toolUseToEffect is the host-side lowering of FiregridAgentTools: it decodes incoming ToolUse inputs against the descriptor's inputSchema before dispatching to a match arm.
+    4: The match expression is the implementation; the descriptor set is the public contract. New tools require both a descriptor and a match arm; removing a tool requires deprecating the descriptor before removing the arm.
+    5: Unknown tool names produce a ToolResult with isError:true via descriptor lookup failure; the workflow does not fail.
+    6: Invalid tool inputs produce a ToolResult with isError:true and a structured validation error; the workflow does not fail.
+    7: Tool execution failures produce a ToolResult with isError:true and a structured error payload; the workflow does not fail.
+    8: sleep tool composes DurableClock.sleep; suspends the workflow for the requested duration.
+    9: wait_for tool composes waitForMatchActivity, optionally raced against DurableClock.sleep for timeout.
+    10: spawn tool composes Workflow.execute against RuntimeContextWorkflow with a deterministic child executionId derived from the parent contextId and the toolUseId.
+    11: spawn_all tool composes a fan-out of Workflow.execute calls; per-child executionId is deterministic from the parent context, the toolUseId, and either the task's key or its index.
+    12: schedule_me tool starts a ScheduledInputWorkflow with discard:true and returns immediately; the workflow sleeps until due then appends a runtime input via appendRuntimeInputActivity.
+    13: execute tool composes executeSandboxToolActivity over the SandboxProvider interface.
+    14: Each tool's execution identity is deterministic from the ToolUse event's toolUseId, ensuring idempotency under workflow replay.
+    15: The descriptor set is published to the Firegrid tool bridge's catalog stream at runtime startup; codecs read the same descriptor set via AgentCodecOpenOptions.toolCatalog.
+    16: Invocations arriving through the indirect MCP bridge path are routed by invocations-consumer.ts to the appropriate RuntimeContextWorkflow and converge with direct-path invocations at toolUseToEffect.
 
 BOUNDARIES:
   11: Agent tools are not a dynamic public registry; new tools require a descriptor contract change and a host lowering arm.
   12: Agent tool implementations introduce no new substrate modules; all six tools compose Phase 1 events with @effect/workflow primitives.
-  13: ToolUse wire parsing and ToolResult wire encoding are codec concerns (Phase 1); tool descriptor validation and semantics are workflow-body concerns (this SDD).
-  14: Runtime API calls and agent tool calls lower to the same durable workflow/table shapes.
+  13: ToolUse parsing and ToolResult encoding are codec concerns (Phase 1); descriptor publication and host-side lowering are workflow concerns (this SDD).
+  14: The match expression depends only on Phase 1's event types and the descriptor set; it does not depend on which codec produced an invocation or which transport delivered it.
+  15: A raw Durable Streams stream URL is not an MCP endpoint. MCP-capable agents use a Streamable HTTP MCP bridge handler backed by Durable Streams catalog, invocation, and result streams.
+  16: Runtime API calls and agent tool calls lower to the same durable workflow/table shapes.
 ```
 
 ## Open questions
@@ -403,9 +529,39 @@ BOUNDARIES:
 
 6. **Tool input schema validation location.** The default is descriptor lookup followed by `Schema.decodeUnknown` before lowering. If a codec also validates inputs before emitting `ToolUse`, the workflow still performs host-side validation because the descriptor contract is the authority.
 
+7. **`EventQuery` ownership.** Decide whether `EventQuery` should remain inline in
+   the `wait_for` descriptor or be promoted to a Phase 1 shared type that codecs
+   can use for autocomplete and richer agent-side catalog metadata.
+
 ## Decision log
 
+- **Why a public descriptor set rather than inline match arms as the contract.**
+  Tools are a published interface to agents. ACP, MCP-capable CLIs,
+  HTTP-shaped model codecs, and future codecs all need to know what tools exist
+  with identical semantics. An inline match expression is implementation code,
+  not a versionable public contract. The descriptor set is the artifact codecs
+  publish and the workflow implementation lowers.
 - **Why descriptors plus a single match expression, not a dynamic registry.** Tools are statically known to the runtime, but agents need a published contract. Descriptors are that contract; the match expression is the host implementation. A dynamic registry would add runtime registration semantics without changing the durable lowering model. New tools are PRs adding descriptors and match arms.
+- **Why descriptor-driven dispatch with `Schema.decodeUnknown`.** The
+  descriptor's `inputSchema` is the single source of truth for what each tool
+  accepts. Validating at the workflow boundary catches malformed agent inputs
+  before they reach implementation code, produces structured invalid-input
+  results, and removes ad-hoc casts from match arms.
+- **Why codecs depend on the descriptor set, not the other way around.** Phase 1
+  codecs need a descriptor catalog at session open to publish tools through
+  their protocol. Phase 2 defines the canonical descriptor instances. Runtime
+  wiring passes those instances into the codec; the descriptor module does not
+  import codec implementations.
+- **Why no MCP shim binary.** MCP-capable agents should use a Streamable HTTP MCP
+  bridge URL. The bridge is a thin HTTP handler backed by Durable Streams, so
+  there is no long-running stdio shim binary or per-context sidecar. The handler
+  still must speak MCP JSON-RPC; a raw Durable Streams stream URL only provides
+  append/read/live-tail primitives.
+- **Why MCP is the privileged indirect lowering target.** MCP is the closest
+  cross-vendor tool-server contract for agent runtimes. Lowering descriptors to
+  an MCP bridge covers ACP agents with `mcpServers`, MCP-capable CLIs, and APIs
+  with MCP connectors. Non-MCP codecs can still use `mcp-client.ts` internally
+  against the same bridge-backed streams and expose native tool schemas.
 - **Why deterministic IDs for replay safety.** Workflow engines replay arms during recovery; non-deterministic IDs would create orphan executions, duplicate side effects, or deferred-resolution mismatches. Deriving IDs from `toolUseId` (which is the codec's responsibility to make stable) gives idempotency and traceability.
 - **Why `DurableDeferred` is unused.** Working through each tool, the wait cases were cleaner as long-running activities. `DurableDeferred` would shine for cross-execution rendezvous (one workflow completes a deferred awaited by another), which none of these tools require.
 - **Why no Trigger/Target ADT, no dispatch abstraction, no CEL utility, no `runtime-scheduling` integration.** Prior design exploration considered all of these as substrates. Working through each tool against the actual execution environment showed they compose cleanly from `@effect/workflow` primitives plus the Phase 1 event types. None of the proposed substrates earned their cost.
@@ -419,10 +575,16 @@ No migration needed. This is net-new functionality. Agents whose `ToolUse` event
 
 ## Out of scope (named explicitly)
 
+- **Codec authoring SDK.** Codec implementations are internal-only for now.
+- **External-party agent tool registration.** Third parties cannot publish
+  descriptors into Firegrid's canonical catalog in this phase.
+- **Per-tenant or per-deployment descriptor variation.** All deployments expose
+  the same canonical descriptor set. Product flags and deployment-specific tool
+  surfaces compose with the descriptor contract later.
 - **CEL expression predicates** on `wait_for`. Adds `where?: CelExpression<boolean>` field; integrates via predicate composition. Lands separately if/when product surfaces a need.
 - **Async `execute`** variant. For sandbox tools that complete via callback rather than return. Composes with Phase 1's permission-request-shaped sync request/response pattern when needed.
 - **Cron-style scheduled tools.** Would compose `Schedule.cron` to compute next-fire times and a recurring-workflow pattern. Lives in its own module; not in `toolUseToEffect`.
-- **`cancel_schedule`, `cancel_wait`** tools. Compose with workflow interruption. Small additions when needed.
+- **`cancel_schedule`, `cancel_wait`** tools. Compose with workflow interruption. `cancel_schedule` would interrupt the `ScheduledInputWorkflow` by execution id, but is not one of the initial six tools.
 - **Tool result streaming.** All current tools return a single `ToolResult`. Streaming tool results (e.g., `execute` returning incremental output) is a Phase 1 protocol-level concern.
 - **Protocol-specific tool-catalog mounting.** ACP/MCP/Claude/Codex presentation is Phase 1 codec/deployment work. This SDD owns the neutral descriptor set and host lowering, not each protocol's mounting mechanics.
 - **Codec-specific tool semantics.** Some agents may emit `ToolUse` events with codec-specific quirks (ACP's `tool_call` vs `tool_call_update` status progression; OpenAI's parallel tool calls). The codec normalizes to a single `ToolUse` event per tool invocation. If multi-event tool lifecycles become necessary, the codec aggregates and emits one consolidated `ToolUse` per call.
