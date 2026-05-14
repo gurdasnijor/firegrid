@@ -6,8 +6,10 @@
  * (`RuntimeContextWorkflow`, wired in PR 2) consumes them without
  * knowing which protocol produced them.
  *
- * Phase 1 owns the event types; Phase 2 owns the canonical Firegrid
- * tool descriptors and the host-side lowering of `ToolUse` events.
+ * This module owns the normalized agent I/O event types. The agent
+ * tools layer (`packages/runtime/src/agent-tools`) owns the canonical
+ * `FiregridAgentToolkit` (`Toolkit.make` allowlist over Effect AI
+ * `Tool.make` values) and the host-side lowering of `ToolUse` events.
  *
  * Anchors:
  *   - firegrid-platform-invariants.AUTHORITY.4 (external decisions

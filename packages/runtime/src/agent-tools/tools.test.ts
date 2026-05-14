@@ -7,18 +7,19 @@
  *
  * Covers:
  *   1. `FiregridAgentToolkit.tools` exposes exactly the six canonical tools.
- *   2. Each Tool's parameter schema is the protocol Effect Schema (no
- *      hand-written MCP schemas); the JSON Schema projection for
- *      `sleep` includes `durationMs`.
+ *   2. Each Tool's parameter schema decodes identically to the
+ *      `@firegrid/protocol/agent-tools` Effect Schema — no parallel
+ *      parameter shape lives in this module.
  *   3. Direct toolkit execution of `sleep` runs through
  *      `toolUseToEffect` and returns the typed success.
- *   4. Malformed `sleep` input is rejected at the toolkit schema
- *      boundary.
+ *   4. Malformed `sleep` input is rejected at the toolkit / Schema
+ *      boundary before the common handler requests its first
+ *      dependency (`IdGenerator.generateId`).
  *   5. A known tool-arm failure becomes a `FiregridMcpToolFailure`,
  *      not a workflow failure.
  *   6. `@effect/ai/McpServer.registerToolkit(FiregridAgentToolkit)`
- *      composes cleanly with the toolkit handler layer (no custom
- *      JSON-RPC stack, no hand-written request handlers).
+ *      composes as an Effect (no custom JSON-RPC stack, no
+ *      hand-written request handlers, no Firegrid toolkit wrapper).
  */
 
 import { IdGenerator, McpServer } from "@effect/ai"
@@ -106,6 +107,7 @@ const buildBridgeLayer = (
   options: {
     readonly contextId: string
     readonly host?: AgentToolHostService
+    readonly idGenerator?: IdGenerator.Service
   },
 ): Layer.Layer<never, unknown, never> => {
   const composed = FiregridAgentToolkitLayer.pipe(
@@ -115,7 +117,10 @@ const buildBridgeLayer = (
       FiregridAgentToolContext.layer({ contextId: options.contextId }),
     ),
     Layer.provideMerge(
-      Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator),
+      Layer.succeed(
+        IdGenerator.IdGenerator,
+        options.idGenerator ?? IdGenerator.defaultIdGenerator,
+      ),
     ),
     Layer.provideMerge(
       AgentToolHost.layer(options.host ?? fakeHost()),
@@ -214,20 +219,29 @@ describe("FiregridAgentToolkit direct handler execution", () => {
 // ---------------------------------------------------------------------------
 
 describe("FiregridAgentToolkit schema validation", () => {
-  it("rejects malformed sleep params before reaching the handler", async () => {
+  it("rejects malformed sleep params at the Toolkit decode boundary, before the handler requests IdGenerator", async () => {
     const streams = makeStreams("invalid")
-    let handlerEntered = false
-    const host = fakeHost({
-      executeSandboxTool: () =>
-        Effect.sync<unknown>(() => {
-          handlerEntered = true
-          return null
+    // The common handler (`handleTool` in tools.ts) does
+    // `yield* IdGenerator.IdGenerator` as its first observable side
+    // effect. If the toolkit boundary correctly rejects malformed
+    // input via `Schema.decodeUnknown(parametersSchema)` *before* the
+    // handler runs, `generateId` is never called. Spying on the
+    // dependency the handler actually touches is the load-bearing
+    // assertion — instrumenting `AgentToolHost.executeSandboxTool`
+    // here would be vacuous (the `sleep` handler never reaches
+    // AgentToolHost).
+    let generateIdCalls = 0
+    const instrumentedIdGenerator: IdGenerator.Service = {
+      generateId: () =>
+        Effect.sync(() => {
+          generateIdCalls += 1
+          return "test-id"
         }),
-    })
+    }
     const failure = await runWith(
       buildBridgeLayer(streams, {
         contextId: "ctx-toolkit-invalid",
-        host,
+        idGenerator: instrumentedIdGenerator,
       }),
       Effect.gen(function* () {
         yield* driveClocks
@@ -237,12 +251,10 @@ describe("FiregridAgentToolkit schema validation", () => {
         } as never)
       }).pipe(Effect.flip),
     )
-    expect(handlerEntered).toBe(false)
-    // Effect AI's toolkit boundary returns a MalformedOutput error
-    // (its umbrella error for parameter/result validation failures).
+    expect(generateIdCalls).toBe(0)
+    // Effect AI's toolkit boundary returns a MalformedOutput-style
+    // umbrella error for parameter/result validation failures.
     expect(failure).toBeDefined()
-    // Inspect both the message and a JSON-stringified form so we are
-    // robust to whatever shape Effect AI's error type currently uses.
     const failureText =
       (failure as { readonly message?: unknown }).message !== undefined
         ? String((failure as { readonly message: unknown }).message)

@@ -148,11 +148,13 @@ Firegrid differences from Rember:
 - Firegrid's first bridge targets Streamable HTTP MCP through Effect AI's
   transport-pluggable MCP layer, not stdio-only MCP.
 
-## V0: Effect AI Tools + Local MCP Layer
+## V0: Effect AI Tools (In-Process)
 
-The first implementation should prove that an MCP client can call Firegrid tools
-through Effect AI's MCP server without adding durable invocation/result stream
-facts yet.
+The first implementation should prove the toolkit/handler path that an
+MCP server will later wrap: Tool definitions, the toolkit allowlist,
+the handler routing through `toolUseToEffect`, and the
+`McpServer.registerToolkit(FiregridAgentToolkit)` composition shape.
+A real MCP client + HTTP transport are part of V1, not V0.
 
 ### Scope
 
@@ -163,10 +165,13 @@ packages/runtime/src/agent-tools/
   tools.ts               // Tool.make(...) definitions + FiregridAgentToolkit
 ```
 
-No `catalog.ts`, no `mcp.ts` wrapper, and no hand-written MCP request handlers in
-v0. Runtime composition should call `McpServer.registerToolkit(
-FiregridAgentToolkit)` directly alongside the relevant transport layer. Add a
-small helper only after a real second call site needs the same composition.
+No `catalog.ts`, no `mcp.ts` wrapper, and no hand-written MCP request handlers
+in V0. V0 tests consume `FiregridAgentToolkit` through Effect AI's direct
+`built.handle(name, params)` path (same handler code an `McpServer` would
+invoke). V0 also asserts that
+`McpServer.registerToolkit(FiregridAgentToolkit)` composes as an Effect so
+the V1 HTTP wiring has a typechecked entrypoint. V0 does NOT stand up
+`McpServer.layerHttp` or a real MCP client transport; that is V1.
 
 ### Request Flow
 
@@ -244,14 +249,18 @@ Required checks:
    (the handler returns `{ slept: true }` after the workflow body runs
    `DurableClock.sleep`).
 4. Malformed `sleep` input is rejected by the toolkit / schema boundary
-   before the handler runs.
+   before the handler runs. Asserted by instrumenting the dependency the
+   common handler touches first (`IdGenerator.generateId`) and proving
+   it is never called for invalid input.
 5. A known tool arm failure is returned as the runtime-owned MCP tool error
    (`FiregridMcpToolFailure`) without failing the surrounding workflow.
 6. MCP registration uses `@effect/ai/McpServer.registerToolkit(
    FiregridAgentToolkit)` directly; tests must not pass through a custom
    JSON-RPC parser, a hand-written MCP request handler, or a Firegrid-local
-   toolkit wrapper. The toolkit value exposes Effect AI's `.tools` +
-   `.toLayer` + `.toContext` plumbing structurally.
+   toolkit wrapper. Asserted by composing `McpServer.registerToolkit(
+   FiregridAgentToolkit)` as an Effect; structural shape of the toolkit
+   value itself is not load-bearing for Firegrid (it is Effect AI's
+   contract).
 
 A local HTTP MCP smoke (`McpServer.layerHttp` + an MCP client over Streamable
 HTTP) is **not** part of V0 acceptance. The V0 path is in-process Effect AI

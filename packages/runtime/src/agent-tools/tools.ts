@@ -221,9 +221,12 @@ export const ExecuteTool = Tool.make("execute", {
 
 /**
  * Canonical Firegrid agent toolkit. The single source of truth for tool
- * exposure: codecs publish this set, MCP `tools/list` projects this set,
- * and the `toolUseToEffect` dispatcher looks up tool schemas through
- * `FiregridAgentToolkit.tools[name]`.
+ * exposure: codecs publish this set, MCP `tools/list` projects this
+ * set, and `toolUseToEffect` switches on `event.name` against the same
+ * `@firegrid/protocol/agent-tools` Effect Schemas these `Tool.make`
+ * values bind. The toolkit value and the lowering's name-switch share
+ * one schema source of truth (`@firegrid/protocol/agent-tools`); they
+ * do not maintain parallel registries.
  */
 export const FiregridAgentToolkit = Toolkit.make(
   SleepTool,
