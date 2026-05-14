@@ -4,7 +4,6 @@ export {
   FiregridConfig,
   FiregridConfigError,
   FiregridControlPlaneTableLive,
-  FiregridDurableTablesLive,
   FiregridLive,
   FiregridRuntimeTables,
   FiregridStandaloneLive,

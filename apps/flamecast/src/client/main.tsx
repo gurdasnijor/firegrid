@@ -4,7 +4,7 @@ import { eq } from "@tanstack/db"
 import {
   Firegrid,
   FiregridConfig,
-  FiregridDurableTablesLive,
+  FiregridControlPlaneTableLive,
   FiregridStandaloneLive,
   FiregridRuntimeTables,
   firegridRuntimeTableTags,
@@ -50,7 +50,7 @@ const FiregridBrowserLive = FiregridStandaloneLive.pipe(
   Layer.provide(FiregridBrowserConfigLive),
 )
 
-const FiregridBrowserTablesLive = FiregridDurableTablesLive.pipe(
+const FiregridBrowserTablesLive = FiregridControlPlaneTableLive.pipe(
   Layer.provide(FiregridBrowserConfigLive),
 )
 

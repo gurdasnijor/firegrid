@@ -537,16 +537,3 @@ export const FiregridStandaloneLive = FiregridLive.pipe(
   Layer.provide(FiregridControlPlaneTableLive),
 )
 
-/**
- * Re-exported for compatibility: a namespace-scoped raw-table layer
- * that exposes just the control plane (the RuntimeContext index).
- *
- * Host-owned ingress and output tables are intentionally NOT
- * available here in Slice 2: their URLs depend on the row's host
- * binding, so per-table acquisition must go through the
- * `Firegrid.open(contextId).snapshot` surface, which resolves
- * `RuntimeContext.host` before opening the right host-owned stream.
- *
- * firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
- */
-export const FiregridDurableTablesLive = FiregridControlPlaneTableLive
