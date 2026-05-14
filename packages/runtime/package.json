@@ -25,6 +25,10 @@
       "types": "./src/agent-io/index.ts",
       "default": "./src/agent-io/index.ts"
     },
+    "./agent-codecs": {
+      "types": "./src/agent-codecs/index.ts",
+      "default": "./src/agent-codecs/index.ts"
+    },
     "./agent-tools": {
       "types": "./src/agent-tools/index.ts",
       "default": "./src/agent-tools/index.ts"
