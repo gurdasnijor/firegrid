@@ -1,0 +1,30 @@
+feature:
+  name: firegrid-verified-webhook-ingest
+  product: firegrid
+  description: Prove a narrow product-owned webhook verifier and translator can turn authenticated external webhook requests into schema-owned DurableTable facts that existing durable wait surfaces can observe.
+
+components:
+  FACTS:
+    requirements:
+      1: Verified inbound webhook events are represented as schema-owned DurableTable rows in @firegrid/runtime, not as raw provider JSON appended directly to Durable Streams.
+      2: Each fact row is keyed by a deterministic composite key derived from source id and external event key.
+      3: The fact row preserves source-neutral fields for source id, external event key, optional external entity key, event type, receipt and verification timestamps, signature scheme, selected non-secret headers, payload hash, and the source-owned payload.
+
+  INGEST:
+    requirements:
+      1: The ingest adapter verifies HMAC over the raw request bytes before JSON parsing.
+      2: The ingest adapter decodes JSON only after signature verification succeeds.
+      3: The ingest adapter rejects requests whose payload does not provide a configured external event key.
+      4: The ingest adapter writes accepted facts through DurableTable.insertOrGet and acknowledges success only after the insert-or-duplicate result is durable and observable through the table layer.
+      5: A duplicate delivery with the same source id, external event key, and payload hash is accepted as duplicate success without creating a second logical fact.
+      6: A duplicate delivery with the same source id and external event key but a different payload hash is rejected as a conflict and does not overwrite the original fact.
+
+  WAIT_INTEGRATION:
+    requirements:
+      1: Verified webhook fact rows are shaped so a workflow or agent-visible wait_for call can observe them through SourceCollections using scalar field equality predicates.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: This tracer does not add a Firegrid-owned HTTP webhook service, callback URL minting, callback token issuance, provider event taxonomy, product-specific Linear client, or generic webhook product.
+      2: This tracer does not change runtime-host workflows, workflow-engine internals, prompt/session dispatch, DurableConsumer, DurableProjection, ConsumerSource, Source-style abstractions, or a new top-level package.

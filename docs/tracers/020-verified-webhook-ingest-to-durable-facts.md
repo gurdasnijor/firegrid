@@ -1,15 +1,16 @@
 # 020: Verified Webhook Ingest To Durable Facts
 
-Status: Spike output for Tracer G from
+Status: Implemented tracer proof for Tracer G from
 `docs/tracers/019-workflow-driven-runtime-next-wave.md`.
 
 This tracer answers how an external-style webhook becomes a schema-owned
-durable fact that `wait_for` can observe. It does not implement an adapter.
+durable fact that `wait_for` can observe. PR #187 now includes the tiny
+runtime-owned verifier/translator adapter and a scenario-level proof.
 
 ## Recommendation
 
-Use a tiny product-owned ingest adapter in front of Firegrid's DurableTable row
-write. Do not add a parallel Firegrid HTTP service.
+Use the tiny product-owned ingest adapter in front of Firegrid's DurableTable
+row write. Do not add a parallel Firegrid HTTP service.
 
 The adapter owns HTTP request parsing, raw-body HMAC verification, source
 configuration, and translation from provider JSON into one schema-owned durable
@@ -219,31 +220,35 @@ DurableTable collection with initial state included, evaluates scalar
 predicates, writes wait completion evidence, and completes the workflow deferred
 with the raw matched row. The call site decodes the row.
 
-## Proposed Acceptance Criteria
+## Executable Proof
 
-- `firegrid-tracer-g-webhook-ingest.INGEST.1`: A verified inbound HTTP
-  request is acknowledged only after one schema-owned DurableTable fact row is
-  inserted or recognized as a duplicate by primary key.
-- `firegrid-tracer-g-webhook-ingest.INGEST.2`: Invalid HMAC, missing required
-  event key, malformed JSON, and duplicate-different-payload conflict are
-  rejected before any successful fact overwrite.
-- `firegrid-tracer-g-webhook-ingest.INGEST.3`: The adapter writes through
-  DurableTable `insertOrGet` or generated State Protocol table helpers; it does
-  not raw-append provider JSON to Durable Streams.
-- `firegrid-tracer-g-webhook-ingest.IDEMPOTENCY.1`: Re-delivery with the same
-  source and external event key does not produce a second logical fact and does
-  not launch duplicate agent or workflow work.
-- `firegrid-tracer-g-webhook-ingest.WAIT.1`: A workflow or agent-visible
-  `wait_for` call can observe the durable fact through `SourceCollections`
-  without a new dispatcher or polling loop.
-- `firegrid-tracer-g-webhook-ingest.BOUNDARY.1`: Firegrid does not define a new
-  HTTP ingress service, product-specific Linear client, generic webhook server,
-  callback URL minting layer, or top-level package for this path.
+Implemented files:
 
-These ACIDs can either remain tracer-local or become a small future feature
-file. They do not require edits to
-`firegrid-workflow-driven-runtime.feature.yaml` or
-`firegrid-durable-tools.feature.yaml` for this spike.
+- `features/firegrid/firegrid-verified-webhook-ingest.feature.yaml`
+- `packages/runtime/src/verified-webhook-ingest/*`
+- `scenarios/firegrid/src/tracer-020-verified-webhook-ingest.test.ts`
+
+The scenario starts from webhook-shaped inputs: source id, HTTP-style headers,
+raw body bytes, and HMAC config. It proves:
+
+- HMAC is checked over raw bytes before JSON parse.
+- Valid JSON is translated into one `VerifiedWebhookFactTable` row.
+- The row is written through `DurableTable.insertOrGet`.
+- Same key plus same payload hash returns duplicate success.
+- Same key plus different payload hash is rejected without overwrite.
+- Invalid HMAC, malformed JSON, and missing event key do not insert a success
+  fact.
+
+`WaitFor.match` observation is shaped but not executed in this scenario. The
+fact table exposes scalar fields (`source`, `eventType`, `externalEntityKey`,
+`externalEventKey`) that satisfy
+`firegrid-durable-tools.SUBSCRIPTION.4`; wiring a workflow plus
+`SourceCollections.register(...)` is the next proof, not a new ingest boundary.
+
+## Acceptance Criteria
+
+The executable ACIDs live in
+`features/firegrid/firegrid-verified-webhook-ingest.feature.yaml`.
 
 ## Non-Goals
 

@@ -72,3 +72,20 @@ export {
   type WaitStatus,
   WaitStatusSchema,
 } from "./durable-tools/index.ts"
+export {
+  ingestVerifiedWebhook,
+  type VerifiedWebhookFact,
+  VerifiedWebhookFactKeyEncoded,
+  VerifiedWebhookFactKeySchema,
+  type VerifiedWebhookFactKey,
+  VerifiedWebhookFactSchema,
+  VerifiedWebhookFactTable,
+  type VerifiedWebhookFactTableOptions,
+  type VerifiedWebhookFactTableService,
+  type VerifiedWebhookHeaders,
+  type VerifiedWebhookIngestConfig,
+  VerifiedWebhookIngestError,
+  type VerifiedWebhookIngestRequest,
+  type VerifiedWebhookIngestResult,
+  verifiedWebhookFactTableLayerOptions,
+} from "./verified-webhook-ingest/index.ts"
