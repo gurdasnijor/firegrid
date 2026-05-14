@@ -15,6 +15,12 @@ assert durable outcomes. They do not own the only working Layer graph, stream
 topology, or provider wiring for the tracer path. This is governed by
 `firegrid-platform-invariants.PRODUCTION_SURFACE.*`.
 
+Package code is reserved for production architecture. Tracer experiments should
+not add modules under `packages/**` unless those modules are intended to survive
+as real public or internal production surfaces. If a tracer is only answering a
+question, keep the executable proof in `scenarios/**`, docs, or a disposable
+branch. Do not merge half-shaped package modules as tracer artifacts.
+
 Scenario-level end-to-end coverage is mandatory for every implemented tracer.
 Package/unit tests can prove internal contracts, but they do not complete a
 tracer unless a scenario also invokes the production surface and observes the
