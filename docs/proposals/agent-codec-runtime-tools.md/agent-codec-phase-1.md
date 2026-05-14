@@ -191,6 +191,11 @@ agent's protocol-specific catalog mechanism:
 - stdio-jsonl: a startup handshake or explicit introspection message if the
   codec supports tool catalogs.
 
+The runtime maintains the canonical descriptor set as a keyed manifest for
+lookup and exhaustive implementation. Codecs receive it as a read-only array in
+`AgentCodecOpenOptions.toolCatalog`, because catalog publication is ordered
+serialization rather than keyed dispatch.
+
 Codecs do not know tool semantics. They publish descriptors, validate or route
 incoming tool invocations against the descriptor catalog, and normalize accepted
 invocations to `ToolUse`. Phase 2 owns what the host does with that validated
@@ -204,8 +209,7 @@ Effect Schema and annotations.
 This descriptor layer is bound by
 `firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.*`,
 `firegrid-scheduling-tool-bindings.IDENTICAL_DURABLE_LOWERING.*`,
-`firegrid-scheduling-tool-bindings.DURABLE_DESCRIPTOR_PUBLICATION.*`, and
-`firegrid-scheduling-tool-bindings.TOOL_BINDINGS.*`.
+and `firegrid-scheduling-tool-bindings.DURABLE_DESCRIPTOR_PUBLICATION.*`.
 
 ### Capabilities
 

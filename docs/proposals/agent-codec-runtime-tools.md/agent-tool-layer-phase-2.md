@@ -207,7 +207,12 @@ const runKnownTool = (ctx, invocation) =>
   )
 ```
 
-That is the implementation shape. Descriptor lookup and Schema decoding are the boundary; the match expression lowers known, validated descriptor invocations to Effects.
+That is the implementation shape. Descriptor lookup and Schema decoding are the
+boundary; the match expression lowers known, validated descriptor invocations to
+Effects. The outer function's `never` error channel is intentional: each match
+arm may return a typed error channel, but `toolUseToEffect` must catch every arm
+failure and turn it into a `ToolResult` with `isError: true`. New arms must not
+use `Effect.orDie` or defects to satisfy the `never` channel.
 
 ## Per-tool semantics
 
@@ -304,8 +309,7 @@ same `ToolUse` event shape.
 Descriptor publication is bound by
 `firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.*`,
 `firegrid-scheduling-tool-bindings.IDENTICAL_DURABLE_LOWERING.*`,
-`firegrid-scheduling-tool-bindings.DURABLE_DESCRIPTOR_PUBLICATION.*`, and
-`firegrid-scheduling-tool-bindings.TOOL_BINDINGS.*`.
+and `firegrid-scheduling-tool-bindings.DURABLE_DESCRIPTOR_PUBLICATION.*`.
 
 ## Invocation routing
 
