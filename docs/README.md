@@ -17,6 +17,7 @@ Read these first for the current shape of Firegrid:
 | Durable launch runtime operator | `proposals/SDD_FIREGRID_DURABLE_LAUNCH_RUNTIME_OPERATOR.md` | `firegrid-durable-launch-runtime-operator`, `workflow-engine-durable-state` |
 | Product-neutral agent runtime substrate | `proposals/SDD_FIREGRID_AGENT_RUNTIME_SUBSTRATE.md` | `firegrid-agent-runtime-substrate`, `firegrid-platform-invariants` |
 | Workflow-driven runtime planes | `proposals/SDD_FIREGRID_WORKFLOW_DRIVEN_RUNTIME_PLANES.md` | `workflow-engine-durable-state`, `firegrid-durable-tools` |
+| Synchronous Firegrid run smoke | `runbooks/firegrid-run-sync-mvp.md` | `firegrid-workflow-driven-runtime` |
 | Runtime context eligibility model | `proposals/PROPOSAL_RUNTIME_CONTEXT_SCHEMA_ELIGIBILITY_MODEL_2026-05-13.md` | `firegrid-workflow-driven-runtime`, `firegrid-durable-launch-runtime-operator` |
 | Effect Workflow backed by Durable Streams State | `research/workflow-engine-integration.md` | `workflow-engine-durable-state` |
 | Flamecast clean-room tracer over Firegrid | `proposals/SDD_FLAMECAST_FIREGRID_LAUNCH_TRACER.md` | `firegrid-durable-launch-runtime-operator` |

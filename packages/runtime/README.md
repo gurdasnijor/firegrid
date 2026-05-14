@@ -71,6 +71,60 @@ pnpm firegrid:host
 `FIREGRID_DURABLE_STREAMS_TOKEN` is optional and is passed as a per-request
 Authorization header when present.
 
+## Synchronous Local Run
+
+Use `pnpm firegrid:run` to launch one local-process command through the durable
+runtime path and block for its exit code:
+
+```sh
+export DURABLE_STREAMS_BASE_URL="http://127.0.0.1:8080"
+export FIREGRID_RUNTIME_NAMESPACE="firegrid-run-dev"
+
+pnpm firegrid:run \
+  --cwd "$PWD" \
+  --prompt "summarize this workspace" \
+  --secret-env AGENT_API_KEY=PARENT_AGENT_API_KEY \
+  -- \
+  node agent.mjs
+```
+
+The command after `--` is the child process argv. The entrypoint creates a
+`RuntimeContext` row, appends the optional `--prompt` as a
+`RuntimeIngressTable.inputs` row before `startRuntime`, runs the context through
+`RuntimeContextWorkflow`, records runtime output in `RuntimeOutputTable`, and
+then exits with the child exit code.
+
+Flags:
+
+- `--cwd PATH` writes `RuntimeContext.runtime.config.cwd`; the local-process
+  provider spawns the child from that durable row value.
+- `--prompt TEXT` writes the first input to `RuntimeIngressTable`; stdin
+  delivery reads from durable ingress rather than bypassing it.
+- `--secret-env CHILD_ENV[=HOST_ENV]` authorizes one env binding. Both sides are
+  env-var names, never raw secret values. The durable row stores only
+  `{ name: "CHILD_ENV", ref: "env:HOST_ENV" }`, and the host resolves the value
+  at spawn time.
+
+The local-process child environment is allowlisted: a minimal process baseline
+such as `PATH`, plus `SandboxConfig.envVars` and `SandboxCommand.envVars`.
+Unrelated host env vars, including `FIREGRID_DURABLE_STREAMS_TOKEN`, are not
+passed to the child unless explicitly bound. Child stdout/stderr are untrusted
+and journaled verbatim; a child that prints its own secret can still leak it.
+
+For Electric Cloud, use the same command shape with env-backed configuration:
+
+```sh
+export DURABLE_STREAMS_BASE_URL="https://api.electric-sql.cloud/v1/stream/<service-id>"
+export FIREGRID_RUNTIME_NAMESPACE="firegrid-run-dev"
+export FIREGRID_DURABLE_STREAMS_TOKEN="<token>"
+
+pnpm firegrid:run --cwd "$PWD" --prompt "hello" -- node agent.mjs
+```
+
+Use `pnpm firegrid:run:env` to load the root `.env` file. Do not pass tokens or
+secret values as CLI flags. The production-shaped smoke runbook is
+[Firegrid Run - Synchronous MVP](../../docs/runbooks/firegrid-run-sync-mvp.md).
+
 ## Runtime With Workflow
 
 `FiregridRuntimeHostWithWorkflowLive` adds the durable workflow engine to the

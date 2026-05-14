@@ -54,6 +54,10 @@ export type {
 export {
   RuntimeIngressError,
 }
+export {
+  localProcessSpawnEnvFromHostEnv,
+  type LocalProcessSandboxProviderOptions,
+} from "../providers/sandboxes/local-process.ts"
 
 type SequencedChunk = {
   readonly sequence: number
@@ -423,6 +427,7 @@ const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(({ contextId 
 
 const runtimeHostLayerFromOptions = (
   options: RuntimeHostConfigValue,
+  topology: RuntimeHostTopologyOptions,
   controlPlaneTableUrl: string,
   ingressTableUrl: string,
   outputTableUrl: string,
@@ -451,7 +456,7 @@ const runtimeHostLayerFromOptions = (
         ...(headers !== undefined ? { headers } : {}),
       },
     }),
-    LocalProcessSandboxProvider.layer().pipe(
+    LocalProcessSandboxProvider.layer(topology.localProcessEnv).pipe(
       Layer.provide(NodeContext.layer),
     ),
   )
@@ -475,10 +480,17 @@ const runtimeHostBaseLayer = (
   options: RuntimeHostTopologyOptions,
 ) => {
   const urls = runtimeHostStreamUrls(options)
-  return runtimeHostLayerFromOptions({
-    // firegrid-agent-ingress.HOST.7
-    inputEnabled: options.input === true,
-  }, urls.controlPlaneTableUrl, urls.ingressTableUrl, urls.outputTableUrl, options.headers)
+  return runtimeHostLayerFromOptions(
+    {
+      // firegrid-agent-ingress.HOST.7
+      inputEnabled: options.input === true,
+    },
+    options,
+    urls.controlPlaneTableUrl,
+    urls.ingressTableUrl,
+    urls.outputTableUrl,
+    options.headers,
+  )
 }
 
 const runtimeContextWorkflowEngineLayer = (

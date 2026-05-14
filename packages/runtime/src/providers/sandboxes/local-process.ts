@@ -31,12 +31,40 @@ interface LocalProcessSandboxProviderHelper {
   readonly config: LocalProcessSandboxConfig
 }
 
+export interface LocalProcessSandboxProviderOptions {
+  readonly inheritedEnvKeys?: ReadonlyArray<string>
+  readonly baselineEnvVars?: Record<string, string>
+}
+
 export const localProcess = (
   config: LocalProcessSandboxConfig = {},
 ): LocalProcessSandboxProviderHelper => ({
   provider: providerName,
   config,
 })
+
+const LOCAL_PROCESS_BASELINE_ENV_NAMES = [
+  "PATH",
+  "Path",
+  "SystemRoot",
+  "WINDIR",
+  "PATHEXT",
+  "COMSPEC",
+] as const
+
+export const localProcessSpawnEnvFromHostEnv = (
+  env: Record<string, string | undefined>,
+): LocalProcessSandboxProviderOptions => {
+  const baselineEnvVars: Record<string, string> = {}
+  for (const name of LOCAL_PROCESS_BASELINE_ENV_NAMES) {
+    const value = env[name]
+    if (value !== undefined && value.length > 0) baselineEnvVars[name] = value
+  }
+  return {
+    inheritedEnvKeys: Object.keys(env),
+    baselineEnvVars,
+  }
+}
 
 const commandError = (
   op: string,
@@ -51,6 +79,7 @@ const commandError = (
   })
 
 const buildCommand = (
+  options: LocalProcessSandboxProviderOptions,
   config: SandboxConfig,
   command: SandboxCommand,
 ): Effect.Effect<Command.Command, SandboxProviderError> =>
@@ -59,8 +88,14 @@ const buildCommand = (
     if (executable === undefined) {
       return yield* commandError("buildCommand", "command argv is empty")
     }
+    const inheritedEnvUnset: Record<string, string | undefined> = Object.fromEntries(
+      (options.inheritedEnvKeys ?? []).map(key => [key, undefined]),
+    )
     let built = Command.make(executable, ...args).pipe(
+      // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5-1
       Command.env({
+        ...inheritedEnvUnset,
+        ...options.baselineEnvVars,
         ...config.envVars,
         ...command.envVars,
       }),
@@ -93,6 +128,7 @@ const unsupported = (
 
 const makeLocalProcessSandboxProvider = (
   commandExecutor: CommandExecutor,
+  options: LocalProcessSandboxProviderOptions = {},
 ): SandboxProviderService => {
   const sandboxes = new Map<string, SandboxConfig>()
 
@@ -123,7 +159,7 @@ const makeLocalProcessSandboxProvider = (
         if (config === undefined) {
           return yield* commandError("stream", `sandbox not found: ${sandbox.id}`)
         }
-        const built = yield* buildCommand(config, command)
+        const built = yield* buildCommand(options, config, command)
         const process = yield* commandExecutor.start(built).pipe(
           Effect.mapError(cause =>
             commandError("stream", "local process command failed to start", cause),
@@ -244,9 +280,13 @@ const makeLocalProcessSandboxProvider = (
 }
 
 export const LocalProcessSandboxProvider = {
-  layer: (): Layer.Layer<SandboxProvider, never, CommandExecutor> =>
+  layer: (
+    options: LocalProcessSandboxProviderOptions = {},
+  ): Layer.Layer<SandboxProvider, never, CommandExecutor> =>
     Layer.effect(
       SandboxProvider,
-      Effect.map(CommandExecutorTag, makeLocalProcessSandboxProvider),
+      Effect.map(CommandExecutorTag, commandExecutor =>
+        makeLocalProcessSandboxProvider(commandExecutor, options),
+      ),
     ),
 }

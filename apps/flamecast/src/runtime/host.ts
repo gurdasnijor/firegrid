@@ -1,6 +1,10 @@
 import { NodeRuntime } from "@effect/platform-node"
 import { Firegrid, FiregridConfig, FiregridLive } from "@firegrid/client/firegrid"
-import { FiregridRuntimeHostLive, startRuntime } from "@firegrid/runtime/runtime-host"
+import {
+  FiregridRuntimeHostLive,
+  localProcessSpawnEnvFromHostEnv,
+  startRuntime,
+} from "@firegrid/runtime/runtime-host"
 import { Config, Console, Effect, Layer, Option, Redacted, Stream } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { flamecastToyCreatedBy } from "../shared/agent.ts"
@@ -76,6 +80,7 @@ const flamecastToyHostLayer = Layer.unwrapEffect(
         namespace: config.namespace,
         input: true,
         ...(headers === undefined ? {} : { headers }),
+        localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
       }),
     )
   }),
