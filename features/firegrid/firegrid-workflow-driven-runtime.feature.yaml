@@ -57,6 +57,7 @@ components:
       11: "schedule_me starts a ScheduledInputWorkflow with discard true and returns scheduled true immediately; the ScheduledInputWorkflow body sleeps until the due timestamp on DurableClock and then appends a runtime-input row through the host-provided AgentToolHost.appendScheduledPrompt seam."
       12: "spawn, spawn_all, and execute lower onto host-provided AgentToolHost seams (spawnChildContext, spawnChildContexts, executeSandboxTool); the seams keep the lowering free of runtime-host imports while still composing the same Workflow.execute and SandboxProvider primitives at the Live layer."
       13: "A scheduled-input identity used by schedule_me is deterministic from contextId and toolUseId so workflow replay does not duplicate the scheduled prompt."
+      14: "When @effect/ai dependency compatibility is verified, FiregridAgentTools is represented as or projected to an AiToolkit/Toolkit so MCP bridge code, workflow lowering tests, and in-process agent tests share one Effect-native tool definition layer."
 
 constraints:
   BOUNDARIES:
@@ -82,3 +83,5 @@ constraints:
       4: "The match expression depends only on the Phase 1 agent-io event types and the descriptor manifest; it does not depend on which codec produced the invocation or which transport delivered it."
       5: "@firegrid/protocol owns the schema source of truth; only explicitly listed FiregridAgentTools descriptors are exposed to agents."
       6: "Runtime API calls and agent tool calls lower to the same durable workflow/table shapes; agent tools introduce no parallel run, claim, or completion record families."
+      7: "A runtime-owned Streamable HTTP MCP bridge may live under packages/runtime/src/agent-tools only as a protocol projection of FiregridAgentTools and toolUseToEffect; it does not define new tool schemas, dynamic tool registration, product-specific transports, substrate row families, or a custom JSON-RPC parser."
+      8: "AiToolkit/Toolkit, when used, is an integration and testing layer over the protocol-owned schemas and FiregridAgentTools allowlist; it is not a replacement schema authority and does not expose tools outside the manifest."
