@@ -1,5 +1,20 @@
 // firegrid-remediation-hardening.STATIC_QUALITY.10
 
+// ruleid: firegrid-no-filesystem-in-runtime-package
+import { readFileSync } from "node:fs"
+
+// ruleid: firegrid-no-filesystem-in-runtime-package
+import { homedir } from "node:os"
+
+// ruleid: firegrid-no-filesystem-in-runtime-package
+import { join } from "node:path"
+
+// ruleid: firegrid-no-filesystem-in-runtime-package
+import { FileSystem } from "@effect/platform"
+
+// ok: firegrid-no-filesystem-in-runtime-package
+import { Command } from "@effect/platform"
+
 // ruleid: firegrid-no-process-env-outside-bin
 const url = process.env.DURABLE_STREAMS_URL
 
@@ -67,6 +82,13 @@ declare const streamAuthority: unknown
 declare const ValidatedStreamAuthoritySchema: unknown
 declare const Clock: {
   currentTimeMillis: unknown
+}
+declare const Config: {
+  string: (name: string) => unknown
+  option: (config: unknown) => unknown
+}
+declare const importMeta: {
+  env: Record<string, string>
 }
 
 // ruleid: firegrid-no-date-now
@@ -167,6 +189,24 @@ const inlineDurableToolsHostStream = `${ns}.firegrid.host.${hostId}.durableTools
 
 // ok: firegrid-no-inline-stream-url-construction
 const encodedStreamName = encodeURIComponent(ns)
+
+// ruleid: firegrid-no-filesystem-in-runtime-package
+const requiredFileSystem = FileSystem.FileSystem
+
+// ok: firegrid-no-filesystem-in-runtime-package
+const commandModule = Command
+
+// ruleid: firegrid-no-host-id-env-authority
+const hostIdConfig = Config.string("FIREGRID_HOST_ID")
+
+// ruleid: firegrid-no-host-id-env-authority
+const optionalHostIdConfig = Config.option(Config.string("FIREGRID_HOST_ID"))
+
+// ruleid: firegrid-no-host-id-env-authority
+const viteHostId = import.meta.env["VITE_FIREGRID_HOST_ID"]
+
+// ok: firegrid-no-host-id-env-authority
+const runtimeNamespaceConfig = Config.string("FIREGRID_RUNTIME_NAMESPACE")
 
 // ruleid: firegrid-runtime-context-workflow-requires-local-authority
 const directRuntimeContextWorkflowExecution = engine.execute(RuntimeContextWorkflow, {
