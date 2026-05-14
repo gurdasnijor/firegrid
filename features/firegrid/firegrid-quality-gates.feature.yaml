@@ -1,0 +1,21 @@
+feature:
+  name: firegrid-quality-gates
+  product: firegrid
+  description: Make workspace quality ratchets discoverable and locally runnable before CI.
+
+components:
+  PREFLIGHT:
+    requirements:
+      1: The workspace exposes a single preflight command that runs the same quality gates developers normally need before opening or updating a PR.
+      2: The preflight command continues after individual gate failures and reports a final summary of every failing gate.
+
+  DOCS:
+    requirements:
+      1: Contributor documentation lists each quality gate, the script that runs it, what it forbids, and the canonical remediation path.
+      2: Contributor documentation lists Semgrep rule ids with severity, purpose, canonical replacement, and excluded paths.
+
+constraints:
+  SCOPE:
+    requirements:
+      1: This feature does not relax, remove, or rebaseline any quality ratchet.
+      2: This feature does not install Git hooks or change contributor machines automatically.

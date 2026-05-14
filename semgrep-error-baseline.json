@@ -7,16 +7,6 @@
     },
     {
       "ruleId": "firegrid-no-date-now",
-      "path": "packages/runtime/src/providers/sandboxes/local-process.ts",
-      "line": 308
-    },
-    {
-      "ruleId": "firegrid-no-date-now",
-      "path": "packages/runtime/src/providers/sandboxes/local-process.ts",
-      "line": 328
-    },
-    {
-      "ruleId": "firegrid-no-date-now",
       "path": "packages/runtime/src/workflow-engine/internal/engine-runtime.ts",
       "line": 210
     },
