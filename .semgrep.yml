@@ -332,6 +332,90 @@ rules:
       - pattern-regex: '\$\{[^}]+\}\.firegrid\.(runtime|workflow|runtimeIngress|runtimeOutput|durableTools|verifiedWebhook|agentTools)'
       - pattern-regex: '"firegrid\.(runtime|workflow|runtimeIngress|runtimeOutput|durableTools|verifiedWebhook|agentTools)"'
 
+  - id: firegrid-no-filesystem-in-runtime-package
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: runtime-authority
+      rationale: |
+        The runtime package must not persist authority or operational state on
+        the host filesystem. Runtime state belongs in durable streams, and host
+        identity must come from explicit host composition/configuration.
+      fix-hint: |
+        Remove filesystem access from packages/runtime/src. Pass explicit
+        configuration at the host boundary, or persist durable state through
+        Durable Streams.
+    paths:
+      include:
+        - "/packages/runtime/src/**/*.ts"
+        - "/packages/runtime/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+        - "/packages/runtime/src/bin/**"
+    message: |
+      packages/runtime source must not use the local filesystem. Host identity
+      and runtime state must be explicit config or Durable Streams state, never
+      files under $HOME/tmp/etc.
+    pattern-either:
+      - pattern-regex: 'from\s+["''](?:node:fs|node:fs/promises|fs|fs/promises)["'']'
+      - pattern-regex: 'from\s+["''](?:node:os|node:path|path)["'']'
+      - pattern-regex: 'import\s*\{[^}]*\bFileSystem\b[^}]*\}\s*from\s+["'']@effect/platform["'']'
+      - pattern-regex: 'import\s*\{[^}]*\b(?:FileSystem|NodeFileSystem)\b[^}]*\}\s*from\s+["'']@effect/platform-node["'']'
+      - pattern: require("node:fs")
+      - pattern: require("node:fs/promises")
+      - pattern: require("fs")
+      - pattern: require("fs/promises")
+      - pattern: FileSystem.FileSystem
+      - pattern: NodeFileSystem.layer
+
+  - id: firegrid-no-host-id-env-authority
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: runtime-authority
+      rationale: |
+        Host identity is durable runtime authority, not deployment environment
+        configuration. Adding FIREGRID_HOST_ID or app-side VITE_FIREGRID_HOST_ID
+        recreates implicit authority outside the host/context authority model.
+      fix-hint: |
+        Do not add host-id env knobs. Keep host identity explicit at the
+        authority/composition boundary until the durable host/session authority
+        primitive lands.
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/src/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Host identity must not be sourced from FIREGRID_HOST_ID/VITE_FIREGRID_HOST_ID
+      environment config. Model host authority explicitly instead of adding an
+      env knob.
+    pattern-either:
+      - pattern: Config.string("FIREGRID_HOST_ID")
+      - pattern: Config.option(Config.string("FIREGRID_HOST_ID"))
+      - pattern: process.env.FIREGRID_HOST_ID
+      - pattern: process.env["FIREGRID_HOST_ID"]
+      - pattern: globalThis.process.env.FIREGRID_HOST_ID
+      - pattern: globalThis.process.env["FIREGRID_HOST_ID"]
+      - pattern: import.meta.env.VITE_FIREGRID_HOST_ID
+      - pattern: import.meta.env["VITE_FIREGRID_HOST_ID"]
+
   - id: firegrid-runtime-context-workflow-requires-local-authority
     languages: [typescript]
     severity: ERROR
