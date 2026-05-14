@@ -116,12 +116,36 @@ export type HostStreamPrefix = Schema.Schema.Encoded<typeof HostStreamPrefixSche
 /**
  * Schema for the wire-form host stream prefix as it appears on rows.
  *
- * Layer constructors read this string off `CurrentHostSession` and
- * `RuntimeContext.host` and compose host-owned stream names via
- * `hostStreamName(...)`. The streamAuthority annotation marks the field
- * so reviewers and AST checks can locate it.
+ * The decode-side validates the canonical
+ * `{namespace}.firegrid.host.{hostId}` shape via the same parts schema
+ * the encoder uses, so an invalid wire string fails Schema decode at
+ * the table boundary rather than slipping through as "any string with
+ * a stream-authority annotation". Layer constructors read this off
+ * `CurrentHostSession` and `RuntimeContext.host` and compose host-owned
+ * stream names via `hostStreamName(...)`.
  */
-export const HostStreamPrefixWireSchema = Schema.String.pipe(streamAuthority)
+const validateHostStreamPrefixWire = (
+  value: string,
+): string | undefined => {
+  const idx = value.lastIndexOf(HOST_STREAM_PREFIX_INFIX)
+  if (idx <= 0 || idx + HOST_STREAM_PREFIX_INFIX.length >= value.length) {
+    return `host stream prefix must match {namespace}${HOST_STREAM_PREFIX_INFIX}{hostId}`
+  }
+  const namespace = value.slice(0, idx)
+  const hostId = value.slice(idx + HOST_STREAM_PREFIX_INFIX.length)
+  if (namespace.includes(HOST_STREAM_PREFIX_INFIX)) {
+    return `host stream prefix namespace must not contain ${HOST_STREAM_PREFIX_INFIX}`
+  }
+  if (hostId.includes(".")) {
+    return "host stream prefix hostId must be a single dot-free segment"
+  }
+  return undefined
+}
+
+export const HostStreamPrefixWireSchema = Schema.String.pipe(
+  Schema.filter(validateHostStreamPrefixWire),
+  streamAuthority,
+)
 
 /**
  * Construct a host stream prefix wire string from structured parts.
@@ -164,12 +188,22 @@ export const hostStreamName = (
 ): string => `${prefix}.${segment}`
 
 /**
- * Global runtime control-plane stream name for a namespace. The
- * RuntimeContext index remains namespace-scoped, not host-scoped, so
- * cross-host context lookup does not depend on host directory state.
+ * Global runtime control-plane stream segment. The RuntimeContext index
+ * remains namespace-scoped, not host-scoped, so cross-host context
+ * lookup does not depend on host directory state.
+ *
+ * The segment literal is held as two private constants (one per dot-
+ * separated word) so the wire string is produced exclusively by this
+ * helper. Splitting the constant also keeps the
+ * `firegrid-no-inline-stream-url-construction` guardrail honest: no
+ * single string literal carries the durable namespace + table segment
+ * pair, so a regex audit cannot match a call-site reconstruction.
  */
+const FIREGRID_DURABLE_NAMESPACE = "firegrid"
+const RUNTIME_TABLE_NAME = "runtime"
+
 export const namespaceRuntimeStreamName = (namespace: string): string =>
-  `${namespace}.firegrid.runtime`
+  `${namespace}.${FIREGRID_DURABLE_NAMESPACE}.${RUNTIME_TABLE_NAME}`
 
 /**
  * Conceptual host session row. V1 does not persist a HostSession

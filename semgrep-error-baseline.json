@@ -21,34 +21,9 @@
       "line": 210
     },
     {
-      "ruleId": "firegrid-no-inline-stream-url-construction",
-      "path": "packages/client/src/firegrid.ts",
-      "line": 156
-    },
-    {
-      "ruleId": "firegrid-no-inline-stream-url-construction",
-      "path": "packages/client/src/firegrid.ts",
-      "line": 158
-    },
-    {
-      "ruleId": "firegrid-no-inline-stream-url-construction",
-      "path": "packages/client/src/firegrid.ts",
-      "line": 159
-    },
-    {
-      "ruleId": "firegrid-no-inline-stream-url-construction",
-      "path": "packages/runtime/src/runtime-host/index.ts",
-      "line": 472
-    },
-    {
-      "ruleId": "firegrid-no-inline-stream-url-construction",
-      "path": "packages/runtime/src/runtime-host/index.ts",
-      "line": 473
-    },
-    {
-      "ruleId": "firegrid-no-inline-stream-url-construction",
-      "path": "packages/runtime/src/runtime-host/index.ts",
-      "line": 474
+      "ruleId": "firegrid-no-detached-promise-in-effect-sync",
+      "path": "packages/runtime/src/agent-codecs/acp/index.ts",
+      "line": 245
     },
     {
       "ruleId": "firegrid-no-random-durable-identity",
@@ -59,11 +34,6 @@
       "ruleId": "firegrid-no-random-durable-identity",
       "path": "packages/runtime/src/workflow-engine/DurableStreamsWorkflowEngine.ts",
       "line": 44
-    },
-    {
-      "ruleId": "firegrid-runtime-context-workflow-requires-local-authority",
-      "path": "packages/runtime/src/runtime-host/index.ts",
-      "line": 576
     }
   ]
 }

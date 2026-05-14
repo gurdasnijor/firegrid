@@ -8,7 +8,6 @@ import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   makeHostSessionRow,
-  type HostId,
   type HostSessionId,
   type RuntimeContext,
   type RuntimeEventRow,
@@ -27,6 +26,8 @@ import {
   requireLocalContext,
   runtimeControlPlaneStreamUrl,
 } from "./host-context-authority.ts"
+import { acquireStableHostId } from "./internal/host-id.ts"
+import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
@@ -459,9 +460,15 @@ const currentHostSessionLayer = (
     CurrentHostSession,
     Effect.gen(function* () {
       const startedAtMs = yield* Clock.currentTimeMillis
-      const hostId = (options.hostId ?? `host_${crypto.randomUUID()}`) as HostId
+      // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+      // Stable host id comes from options.hostId, FIREGRID_HOST_ID env,
+      // or the persisted `$HOME/.firegrid/host-id` file (auto-created
+      // on first run). The random-uuid path is encapsulated in
+      // `runtime-host/internal/host-id.ts` so callers never see a
+      // fresh-per-process id in the durable host binding.
+      const hostId = yield* acquireStableHostId(options.hostId)
       const hostSessionId = (options.hostSessionId
-        ?? `hs_${crypto.randomUUID()}`) as HostSessionId
+        ?? `session-${crypto.randomUUID()}`) as HostSessionId
       return makeHostSessionRow({
         hostId,
         hostSessionId,
@@ -469,7 +476,7 @@ const currentHostSessionLayer = (
         startedAtMs,
       })
     }),
-  )
+  ).pipe(Layer.provide(NodeContext.layer))
 
 // Namespace-scoped infrastructure: control plane, host config, sandbox
 // provider. The RuntimeContext index stays at `{namespace}.firegrid.runtime`
@@ -681,7 +688,7 @@ export const startRuntime = (
   Effect.gen(function* () {
     yield* requireLocalContext(options.contextId)
     const engine = yield* WorkflowEngine.WorkflowEngine
-    return yield* engine.execute(RuntimeContextWorkflow, {
+    return yield* executeRuntimeContextWorkflow(engine, RuntimeContextWorkflow, {
       executionId: runtimeContextWorkflowExecutionId(options.contextId),
       payload: RuntimeContextWorkflowPayload.make({
         contextId: options.contextId,

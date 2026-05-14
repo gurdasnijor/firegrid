@@ -21,6 +21,7 @@ import {
   hostStreamName,
   insertLocalRuntimeContext,
   local,
+  namespaceRuntimeStreamName,
   type HostStreamPrefix,
   type PublicLaunchRequest,
   type RuntimeContext,
@@ -183,7 +184,10 @@ const resolveConfig = (
       cfg.controlPlaneStreamUrl ??
       cfg.runtimeStreamUrl ??
       (cfg.durableStreamsBaseUrl !== undefined && cfg.namespace !== undefined
-        ? encodeStreamUrl(cfg.durableStreamsBaseUrl, `${cfg.namespace}.firegrid.runtime`)
+        ? encodeStreamUrl(
+          cfg.durableStreamsBaseUrl,
+          namespaceRuntimeStreamName(cfg.namespace),
+        )
         : undefined)
 
     if (controlPlaneStreamUrl === undefined) {

@@ -24,7 +24,7 @@ import {
   useDurableTable,
 } from "effect-durable-operators/react"
 import type { DurableTableHeaders } from "effect-durable-operators"
-import { Effect, Fiber, Layer } from "effect"
+import { Clock, Effect, Fiber, Layer } from "effect"
 import {
   flamecastToyAgentSource,
   flamecastToyCreatedBy,
@@ -274,32 +274,35 @@ function Composer(props: {
         // so the host can recognize the launched row via
         // `requireLocalContext`. Slice 3 replaces this with
         // host-mediated launch routing.
-        const browserHostSession = makeHostSessionRow({
-          hostId: (import.meta.env["VITE_FIREGRID_HOST_ID"] ?? "flamecast-toy-browser") as HostId,
-          hostSessionId: `flamecast-browser-${crypto.randomUUID()}` as HostSessionId,
-          namespace: runtimeNamespace,
-          startedAtMs: Date.now(),
-        })
         // eslint-disable-next-line no-restricted-syntax
         void Effect.runPromise(
           Effect.gen(function* () {
-            const handle = yield* props.firegrid.launch({
-              // flamecast-toy-stdio-agents.LOCAL_AGENT.1
-              requestedBy: flamecastToyCreatedBy,
-              runtime,
+            const startedAtMs = yield* Clock.currentTimeMillis
+            const browserHostSession = makeHostSessionRow({
+              hostId: (import.meta.env["VITE_FIREGRID_HOST_ID"] ?? "flamecast-toy-browser") as HostId,
+              hostSessionId: `flamecast-browser-${crypto.randomUUID()}` as HostSessionId,
+              namespace: runtimeNamespace,
+              startedAtMs,
             })
-            yield* props.firegrid.prompt({
-              // flamecast-toy-stdio-agents.LOCAL_AGENT.2
-              contextId: handle.contextId,
-              payload: { type: "text", text: trimmed },
-              idempotencyKey: `${handle.contextId}:initial`,
-            })
-            // flamecast-toy-stdio-agents.LOCAL_AGENT.3
-            const snapshot = yield* props.firegrid.open(handle.contextId).snapshot
-            return { contextId: handle.contextId, snapshot }
-          }).pipe(
-            Effect.provideService(CurrentHostSession, browserHostSession),
-          ),
+            return yield* Effect.gen(function* () {
+              const handle = yield* props.firegrid.launch({
+                // flamecast-toy-stdio-agents.LOCAL_AGENT.1
+                requestedBy: flamecastToyCreatedBy,
+                runtime,
+              })
+              yield* props.firegrid.prompt({
+                // flamecast-toy-stdio-agents.LOCAL_AGENT.2
+                contextId: handle.contextId,
+                payload: { type: "text", text: trimmed },
+                idempotencyKey: `${handle.contextId}:initial`,
+              })
+              // flamecast-toy-stdio-agents.LOCAL_AGENT.3
+              const snapshot = yield* props.firegrid.open(handle.contextId).snapshot
+              return { contextId: handle.contextId, snapshot }
+            }).pipe(
+              Effect.provideService(CurrentHostSession, browserHostSession),
+            )
+          }),
         )
           .then(({ contextId, snapshot }) => props.onLaunched(contextId, snapshot))
           .finally(() => setBusy(false))
