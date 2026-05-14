@@ -46,37 +46,74 @@ export const HostStreamSegmentSchema = Schema.Literal(
 export type HostStreamSegment = Schema.Schema.Type<typeof HostStreamSegmentSchema>
 
 /**
+ * Per-field invariants for the host stream prefix. Extracted so both
+ * the wire-form schema and the structured parts schema enforce the
+ * same authority constraints — encode and decode paths cannot drift.
+ */
+const namespaceInvariant = (value: string): string | undefined => {
+  if (value.length === 0) {
+    return "host stream prefix namespace must be non-empty"
+  }
+  if (value.includes(HOST_STREAM_PREFIX_INFIX)) {
+    return `host stream prefix namespace must not contain "${HOST_STREAM_PREFIX_INFIX}"`
+  }
+  return undefined
+}
+
+const hostIdSegmentInvariant = (value: string): string | undefined => {
+  if (value.length === 0) {
+    return "host stream prefix hostId must be non-empty"
+  }
+  if (value.includes(".")) {
+    return "host stream prefix hostId must be a single dot-free segment"
+  }
+  return undefined
+}
+
+/**
+ * Constrained host-id schema for the in-prefix host id segment. The
+ * dot-free / non-empty invariants live on the schema so encode-time
+ * misuse fails through the same path as decode-time validation, not
+ * only when the wire validator runs.
+ */
+export const HostIdSegmentSchema = HostIdSchema.pipe(
+  Schema.filter(hostIdSegmentInvariant),
+)
+export type HostIdSegment = Schema.Schema.Type<typeof HostIdSegmentSchema>
+
+/**
+ * Constrained namespace schema for the in-prefix namespace segment.
+ */
+const HostStreamPrefixNamespaceSchema = Schema.String.pipe(
+  Schema.filter(namespaceInvariant),
+)
+
+/**
  * `${namespace}.firegrid.host.${hostId}` wire form, validated +
  * branded. Single canonical authority declaration for the host stream
  * prefix: rows hold this branded string, layer constructors read it
  * off `CurrentHostSession`, and the `streamAuthority` annotation
  * marks the schema for AST discovery.
  *
- * Format constraints (single source — the filter):
+ * Format constraints (single source — the field invariants above):
  *  - the wire string MUST contain `.firegrid.host.` exactly once;
- *  - namespace (left of the infix) MUST be non-empty;
- *  - hostId (right of the infix) MUST be non-empty and dot-free so
- *    operational segments like `.workflow` cannot collide.
+ *  - namespace (left of the infix) MUST satisfy `namespaceInvariant`;
+ *  - hostId (right of the infix) MUST satisfy `hostIdSegmentInvariant`.
  */
 const validateHostStreamPrefixWire = (
   value: string,
 ): string | undefined => {
   const first = value.indexOf(HOST_STREAM_PREFIX_INFIX)
-  if (first <= 0) {
-    return `host stream prefix must contain "${HOST_STREAM_PREFIX_INFIX}" with a non-empty namespace prefix`
+  if (first < 0) {
+    return `host stream prefix must contain "${HOST_STREAM_PREFIX_INFIX}"`
   }
   const last = value.lastIndexOf(HOST_STREAM_PREFIX_INFIX)
   if (first !== last) {
     return `host stream prefix must contain "${HOST_STREAM_PREFIX_INFIX}" exactly once`
   }
+  const namespace = value.slice(0, first)
   const hostId = value.slice(last + HOST_STREAM_PREFIX_INFIX.length)
-  if (hostId.length === 0) {
-    return "host stream prefix hostId must be non-empty"
-  }
-  if (hostId.includes(".")) {
-    return "host stream prefix hostId must be a single dot-free segment"
-  }
-  return undefined
+  return namespaceInvariant(namespace) ?? hostIdSegmentInvariant(hostId)
 }
 
 export const HostStreamPrefixWireSchema = Schema.String.pipe(
@@ -87,8 +124,8 @@ export const HostStreamPrefixWireSchema = Schema.String.pipe(
 export type HostStreamPrefix = Schema.Schema.Type<typeof HostStreamPrefixWireSchema>
 
 const HostStreamPrefixPartsSchema = Schema.Struct({
-  namespace: Schema.String,
-  hostId: HostIdSchema,
+  namespace: HostStreamPrefixNamespaceSchema,
+  hostId: HostIdSegmentSchema,
 })
 type HostStreamPrefixParts = Schema.Schema.Type<typeof HostStreamPrefixPartsSchema>
 

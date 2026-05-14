@@ -61,6 +61,40 @@ describe("HostStreamPrefixSchema", () => {
     })
     expect(Either.isLeft(result)).toBe(true)
   })
+
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 encode rejects an empty namespace", () => {
+    const result = Schema.encodeUnknownEither(HostStreamPrefixSchema)({
+      namespace: "",
+      hostId: "host_abc",
+    })
+    expect(Either.isLeft(result)).toBe(true)
+  })
+
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 encode rejects a namespace containing the reserved infix", () => {
+    const result = Schema.encodeUnknownEither(HostStreamPrefixSchema)({
+      namespace: "ns.firegrid.host.evil",
+      hostId: "host_abc",
+    })
+    expect(Either.isLeft(result)).toBe(true)
+  })
+
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 encode rejects an empty hostId", () => {
+    const result = Schema.encodeUnknownEither(HostStreamPrefixSchema)({
+      namespace: "ns",
+      hostId: "",
+    })
+    expect(Either.isLeft(result)).toBe(true)
+  })
+
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1 accepts a dotted namespace and produces a schema-valid wire prefix", () => {
+    const prefix = makeHostStreamPrefix({
+      namespace: "ns.with.dots",
+      hostId: "host_abc" as HostId,
+    })
+    expect(prefix).toBe("ns.with.dots.firegrid.host.host_abc")
+    // Round-trips through the wire validator (no `Either.left`).
+    expect(Schema.decodeUnknownSync(HostStreamPrefixWireSchema)(prefix)).toBe(prefix)
+  })
 })
 
 describe("hostStreamName", () => {

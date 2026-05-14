@@ -5,7 +5,7 @@ import {
   WorkflowEngine,
 } from "@effect/workflow"
 import {
-  HostIdSchema,
+  HostIdSegmentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   makeHostSessionRow,
@@ -633,12 +633,13 @@ export const FiregridRuntimeHostWithWorkflowLive = (
 // `HostStreamPrefixPartsSchema` requires the hostId to be a single
 // dot-free segment; namespaces are allowed to contain dots, so the
 // derivation replaces `.` with `_` to keep the result schema-valid.
-// The derived id is decoded through `HostIdSchema` so any future
-// constraint changes surface as a loud failure here rather than
-// downstream at table construction.
+// The derived id is decoded through `HostIdSegmentSchema` — which
+// shares its dot-free / non-empty invariants with the prefix
+// validator — so a future constraint change here fails loudly at
+// composition time rather than at table construction.
 const localHostIdForNamespace = (namespace: string): HostId => {
   const sanitized = namespace.replaceAll(".", "_")
-  return Schema.decodeUnknownSync(HostIdSchema)(`${sanitized}-host`)
+  return Schema.decodeUnknownSync(HostIdSegmentSchema)(`${sanitized}-host`)
 }
 
 export const FiregridLocalHostLive = (

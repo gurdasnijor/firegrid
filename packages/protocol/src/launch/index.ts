@@ -42,6 +42,7 @@ export {
 export {
   DurableStreamUrlSchema,
   HostIdSchema,
+  HostIdSegmentSchema,
   HostSessionIdSchema,
   HostSessionRowSchema,
   HostStreamNameSchema,
@@ -60,6 +61,7 @@ export {
   runtimeControlPlaneStreamUrl,
   streamAuthority,
   type HostId,
+  type HostIdSegment,
   type HostSessionId,
   type HostSessionRow,
   type HostStreamPrefix,
