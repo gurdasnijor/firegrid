@@ -1,0 +1,29 @@
+feature:
+  name: firegrid-effect-ai-inprocess-provider
+  product: firegrid
+  description: In-process Effect AI sandbox provider that preserves Firegrid provider boundaries without launching external processes.
+
+components:
+  SANDBOX_PROVIDER:
+    requirements:
+      1: The Effect AI provider exposes a SandboxProvider implementation named effect-ai with create, find, getOrCreate, and destroy session identity semantics.
+      2: Created Effect AI sandboxes remain runtime-local in-memory session records keyed by sandbox id and labels, not durable records or host authority.
+      3: The provider capability flags advertise in-process text execution and streaming only, and do not claim file upload, interactive shell, GPU, snapshot, or byte-process support.
+      4: Empty-label find calls match no sandbox; getOrCreate with no labels creates a fresh sandbox.
+  EXECUTION:
+    requirements:
+      1: execute maps a SandboxCommand into an Effect AI LanguageModel.generateText call using real @effect/ai Prompt and LanguageModel contracts.
+      1-1: The command-to-prompt transform joins argv values with spaces, trims string stdin, appends it after a newline when present, and does not preserve argv boundaries.
+      2: stream maps Effect AI LanguageModel.streamText text deltas into stdout ProcessOutputChunk values and emits exactly one success exit chunk.
+      3: executeMany runs commands through the same execute path and preserves command ordering.
+      4: Unsupported file, byte-process, cwd, env, and shell-only operations fail explicitly with SandboxProviderError rather than faking process behavior.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: The provider uses injected Effect AI LanguageModel services or layers and never reads host filesystem, process env, or provider credentials.
+      2: The provider does not introduce Firegrid-local model, chat, or tool descriptor types that mirror @effect/ai contracts.
+  VALIDATION:
+    requirements:
+      1: Tests use an in-memory fake LanguageModel layer and no network model provider.
+      2: Tests prove create, find, getOrCreate, destroy, execute, stream, and unsupported operation behavior through SandboxProvider.
