@@ -118,7 +118,7 @@ export const toolErrorResult = (error: ToolError): ToolResultEvent =>
   )
 
 /**
- * Build the descriptor-lookup-failure ToolResult for an unknown tool
+ * Build the name-lookup-failure ToolResult for an unknown tool
  * name. This is a distinct production result from `ToolInvalidInput`
  * (the codec emitted a name that is not in `FiregridAgentToolkit`'s
  * Tool set).
@@ -142,8 +142,8 @@ export const unknownToolResult = (
 
 /**
  * Convenience: turn a `Schema.decodeUnknown` ParseError into the
- * `ToolInvalidInput` variant. Used by the lowering when descriptor
- * input validation fails.
+ * `ToolInvalidInput` variant. Used by the lowering when protocol
+ * input-schema validation fails.
  */
 export const toolInvalidInputFromParseError = (
   toolUseId: string,

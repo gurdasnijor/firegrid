@@ -2,8 +2,8 @@
  * Tests for `toolUseToEffect`.
  *
  * The lowering function:
- *   - looks up the descriptor in `FiregridAgentTools`,
- *   - decodes the input against `descriptor.inputSchema`,
+ *   - switches on `event.name` against the canonical tool names,
+ *   - decodes the input against the matching protocol Effect Schema,
  *   - dispatches to a match arm,
  *   - catches every failure and returns a `ToolResult` event with
  *     `isError: true`.
@@ -33,10 +33,8 @@ import {
   SourceCollections,
   sourceCollectionHandle,
 } from "../durable-tools/index.ts"
-import {
-  DurableStreamsWorkflowEngine,
-  fireDueWorkflowClocks,
-} from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { driveClocks } from "../test-helpers/durable-clock.ts"
+import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
 import {
   AgentToolHost,
@@ -187,15 +185,6 @@ const runWith = <A, E>(
     >,
   )
 
-const driveClocks = Effect.gen(function* () {
-  while (true) {
-    yield* fireDueWorkflowClocks(Date.now() + 10_000).pipe(
-      Effect.catchAll(() => Effect.void),
-    )
-    yield* Effect.sleep("20 millis")
-  }
-}).pipe(Effect.forkScoped)
-
 const registerTestSource = Effect.gen(function* () {
   const sources = yield* SourceCollections
   const table = yield* TestSourceTable
@@ -206,7 +195,7 @@ const registerTestSource = Effect.gen(function* () {
 // Descriptor-lookup tests (no workflow engine needed)
 // ---------------------------------------------------------------------------
 
-describe("toolUseToEffect — descriptor lookup", () => {
+describe("toolUseToEffect — name dispatch", () => {
   it("returns isError:true for an unknown tool without failing the workflow", async () => {
     const streams = makeStreams("unknown")
     const result = await runWith(

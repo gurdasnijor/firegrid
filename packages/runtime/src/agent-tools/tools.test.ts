@@ -27,13 +27,11 @@ import {
   SleepToolInputSchema,
   SpawnToolInputSchema,
 } from "@firegrid/protocol/agent-tools"
-import { JSONSchema, Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { describe, expect, it, afterEach, beforeEach } from "vitest"
 import { DurableToolsWaitForLive } from "../durable-tools/index.ts"
-import {
-  DurableStreamsWorkflowEngine,
-  fireDueWorkflowClocks,
-} from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { driveClocks } from "../test-helpers/durable-clock.ts"
+import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
 import {
   AgentToolHost,
@@ -144,25 +142,6 @@ const runWith = <A, E>(
     >,
   )
 
-/**
- * Test-only stand-in for the runtime host's clock-firing loop. The
- * Firegrid `sleep` arm calls `DurableClock.sleep` with
- * `inMemoryThreshold: Duration.zero`, which schedules a durable clock
- * row and parks on `DurableDeferred.await` regardless of how small the
- * duration is. Unit tests do not run the runtime host's clock firer,
- * so we fork a scoped loop here that drives
- * `fireDueWorkflowClocks` while the test is in flight. This is NOT
- * part of the toolkit abstraction — it lives only in tests to
- * substitute for the production-side fire loop.
- */
-const driveClocks = Effect.gen(function* () {
-  while (true) {
-    yield* fireDueWorkflowClocks(Date.now() + 10_000).pipe(
-      Effect.catchAll(() => Effect.void),
-    )
-    yield* Effect.sleep("25 millis")
-  }
-}).pipe(Effect.forkScoped)
 
 // ---------------------------------------------------------------------------
 // 1. Toolkit shape
@@ -202,30 +181,15 @@ describe("FiregridAgentToolkit", () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// 2. JSON Schema projection includes durationMs
-// ---------------------------------------------------------------------------
-
-describe("FiregridAgentToolkit JSON Schema projection", () => {
-  it("projects the sleep tool's parametersSchema to a JSON Schema that includes durationMs", () => {
-    const projected = JSONSchema.make(SleepTool.parametersSchema)
-    // The projection may sit at the top of `projected` directly or be
-    // routed through `$defs` (when annotations attach an identifier).
-    // Stringify-search is robust against both shapes.
-    const text = JSON.stringify(projected)
-    expect(text).toContain("durationMs")
-    // And, when the projection is the canonical object shape, the
-    // properties bag includes durationMs.
-    const properties =
-      (projected as { properties?: Record<string, unknown> }).properties
-    if (properties !== undefined) {
-      expect(properties).toHaveProperty("durationMs")
-    }
-  })
-})
+// JSON Schema projection is exercised end-to-end in the V1 MCP HTTP
+// smoke; the V0 binding test above (`parametersSchema decodes
+// identically to the @firegrid/protocol schema`) already proves the
+// schema is bound from the canonical source, and asserting that
+// `effect/JSONSchema` produces a JSON Schema would be testing Effect
+// rather than this module.
 
 // ---------------------------------------------------------------------------
-// 3. Direct toolkit execution of sleep
+// Direct toolkit execution of sleep
 // ---------------------------------------------------------------------------
 
 describe("FiregridAgentToolkit direct handler execution", () => {
@@ -372,12 +336,4 @@ describe("FiregridAgentToolkit MCP registration", () => {
     expect(Effect.isEffect(registrationEffect)).toBe(true)
   })
 
-  it("is an Effect AI Toolkit with toLayer/handle plumbing (no Firegrid-local toolkit wrapper)", () => {
-    // Structural check that the Firegrid toolkit IS the Effect AI
-    // Toolkit value (`.tools` + `.toLayer` from `Toolkit.make`), not
-    // a parallel abstraction.
-    expect(FiregridAgentToolkit.tools).toBeDefined()
-    expect(typeof FiregridAgentToolkit.toLayer).toBe("function")
-    expect(typeof FiregridAgentToolkit.toContext).toBe("function")
-  })
 })

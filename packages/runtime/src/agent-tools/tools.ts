@@ -52,7 +52,7 @@ import {
   type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
 import { Context, Effect, Layer, Schema } from "effect"
-import type { AgentOutputEvent } from "../agent-io/index.ts"
+import { ToolResultEventSchema } from "../agent-io/index.ts"
 import { ToolError } from "./tool-error.ts"
 import { toolUseToEffect } from "./tool-use-to-effect.ts"
 
@@ -125,6 +125,11 @@ const TOOL_USE_ID_PREFIX = "mcp"
  * Declaring these here surfaces them through `Tool.Requirements<T>` so
  * `Toolkit.toLayer` typechecks the handlers cleanly.
  */
+// Tried trimming to `[FiregridAgentToolContext, IdGenerator.IdGenerator]`
+// per review-step C; `Workflow.execute(ToolCallWorkflow, ...)` carries
+// `WorkflowEngine.WorkflowEngine` in its `R` channel, so the toolkit
+// handler's requirements include it and the tool must declare it. The
+// minimum surface that typechecks is the three services below.
 const FiregridToolDependencies: Array<
   | typeof FiregridAgentToolContext
   | typeof IdGenerator.IdGenerator
@@ -230,42 +235,22 @@ export const FiregridAgentToolkit = Toolkit.make(
 )
 
 // ---------------------------------------------------------------------------
-// Tool-call workflow — gives `toolUseToEffect` a workflow instance
+// Tool-call workflow — required only so `toolUseToEffect` runs inside a
+// `WorkflowEngine.WorkflowInstance`
 // ---------------------------------------------------------------------------
+//
+// `@effect/workflow`'s `DurableClock.sleep` (and therefore the `sleep` arm,
+// `WaitFor.match`, and any child workflow execution in `toolUseToEffect`)
+// requires the `WorkflowInstance` service in its `R` channel, and
+// `WorkflowInstance` is only produced inside a registered workflow body
+// (`Workflow.toLayer(...)`). The McpServer composition cannot construct
+// one on its own. This ephemeral per-call workflow exists solely to
+// satisfy that requirement — it is NOT an idempotency-as-replay-safety
+// layer in V0 (each MCP request generates a fresh `toolUseId`, so the
+// `idempotencyKey` is deterministic naming for the workflow engine's
+// state but does not produce cross-retry dedup). V1's
+// `AgentToolInvocationFact` is where durable retry identity belongs.
 
-type ToolUseEvent = Extract<AgentOutputEvent, { _tag: "ToolUse" }>
-
-const ToolResultEventSchema = Schema.TaggedStruct("ToolResult", {
-  toolUseId: Schema.String,
-  content: Schema.Unknown,
-  isError: Schema.Boolean,
-})
-
-const buildToolUseEvent = (
-  toolUseId: string,
-  name: string,
-  input: unknown,
-): ToolUseEvent => ({
-  _tag: "ToolUse" as const,
-  toolUseId,
-  name,
-  input,
-})
-
-/**
- * Ephemeral per-call workflow that lifts the toolkit-handler context up
- * into a workflow instance so `toolUseToEffect` can compose
- * `DurableClock.sleep`, durable-tools `WaitFor.match`, and child
- * workflow executions. `idempotencyKey` is the `toolUseId`, so
- * duplicate handler invocations with the same `toolUseId` deduplicate
- * at the workflow engine.
- *
- * The payload is a narrow tool-use shape rather than the full
- * `AgentOutputEvent` union, so the workflow body never has to defend
- * against non-ToolUse variants.
- *
- * Implements SDD §"Deterministic Identity".
- */
 export const ToolCallWorkflow = Workflow.make({
   name: "firegrid.agent-tool-call",
   payload: Schema.Struct({
@@ -278,17 +263,11 @@ export const ToolCallWorkflow = Workflow.make({
   idempotencyKey: ({ toolUseId }) => toolUseId,
 })
 
-/**
- * Layer that installs the `ToolCallWorkflow` body. Composition wires
- * `DurableToolsTable`, `AgentToolHost`, and the workflow engine itself
- * at the runtime-host level; the workflow body inherits them through
- * its `R` channel.
- */
 export const ToolCallWorkflowLayer = ToolCallWorkflow.toLayer(
   ({ contextId, toolUseId, toolName, input }) =>
     toolUseToEffect(
       { contextId },
-      buildToolUseEvent(toolUseId, toolName, input),
+      { _tag: "ToolUse", toolUseId, name: toolName, input },
     ),
 )
 
@@ -326,34 +305,20 @@ const handleTool = <Output>(toolName: string, params: unknown) =>
       const error = extractToolFailure(result.content)
       return yield* Effect.fail(error)
     }
-    // The toolkit re-validates this against the tool's success schema
-    // (`Schema.validate(Union(success, failure))`), so the cast at the
-    // handler boundary is defended by Effect AI's runtime validation
-    // step before the encoded value reaches the agent.
     return result.content as Output
   })
 
 /**
- * Pull a structured `ToolError` out of `ToolResult.content`.
- *
- * `toolUseToEffect`'s error path wraps the typed `ToolError` in
- * `{ error, message }`; `unknownToolResult` uses a `{ error: { _tag:
- * "UnknownTool", ... }, message }` shape. The unknown-tool case should
- * never reach an MCP handler (toolkit dispatch only invokes registered
- * names), but we map it to `ToolExecutionFailed` defensively so the
- * MCP-facing failure stays a valid `FiregridMcpToolFailure`.
+ * Pull a structured `ToolError` out of `ToolResult.content`. The
+ * unknown-tool case (`_tag: "UnknownTool"`) should never reach an MCP
+ * handler because toolkit dispatch only invokes registered names; if it
+ * does, map it to `ToolExecutionFailed` so the MCP-facing failure stays
+ * a valid `FiregridMcpToolFailure`.
  */
 const extractToolFailure = (content: unknown): FiregridMcpToolFailure => {
-  const fallback = (message: string): FiregridMcpToolFailure => ({
-    _tag: "ToolExecutionFailed",
-    toolUseId: "unknown",
-    name: "unknown",
-    message,
-  })
-  if (typeof content !== "object" || content === null) {
-    return fallback("Tool returned an unstructured error payload")
-  }
-  const record = content as Record<string, unknown>
+  const record = (typeof content === "object" && content !== null
+    ? content
+    : {}) as Record<string, unknown>
   const error = record.error
   if (
     typeof error === "object" &&
@@ -363,12 +328,15 @@ const extractToolFailure = (content: unknown): FiregridMcpToolFailure => {
   ) {
     return error as FiregridMcpToolFailure
   }
-  const message = record.message
-  return fallback(
-    typeof message === "string"
-      ? message
-      : "Tool returned an unstructured error payload",
-  )
+  return {
+    _tag: "ToolExecutionFailed",
+    toolUseId: "unknown",
+    name: "unknown",
+    message:
+      typeof record.message === "string"
+        ? record.message
+        : "Tool returned an unstructured error payload",
+  }
 }
 
 /**

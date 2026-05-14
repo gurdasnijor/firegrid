@@ -44,20 +44,21 @@ components:
 
   PHASE_6_AGENT_TOOLS:
     requirements:
-      1: "FiregridAgentTools defines the canonical neutral descriptor manifest for the initial tools sleep, wait_for, spawn, spawn_all, schedule_me, and execute."
-      2: "Each descriptor contains name, description, Effect Schema input schema, Effect Schema output schema, stability, and capability metadata; no descriptor field carries credentials, callback tokens, signing keys, provider session tokens, Durable Streams URLs, sandbox handles, host ids, or transport references."
-      3: "Descriptor input and output schemas are imported from @firegrid/protocol/agent-tools rather than duplicated in runtime descriptor or catalog code; protocol is the single Effect Schema source of truth."
-      4: "toolUseToEffect is the host-side lowering for FiregridAgentTools; it looks up the descriptor by ToolUse.name, decodes ToolUse.input against descriptor.inputSchema, and dispatches a validated invocation to an exhaustive match expression."
-      5: "The match expression is the implementation; the descriptor set is the public contract. Adding a tool requires a protocol Effect Schema, a descriptor entry, and a match arm. Removing a tool requires deprecating the descriptor before removing the arm."
-      6: "Unknown tool names produce a ToolResult input event with isError true via descriptor lookup failure; the workflow does not fail."
-      7: "Invalid tool inputs produce a ToolResult input event with isError true and a structured ToolInvalidInput error payload; the workflow does not fail."
+      1: "FiregridAgentToolkit is an Effect AI Toolkit (Toolkit.make over Tool.make values) that exposes exactly the canonical agent tools sleep, wait_for, spawn, spawn_all, schedule_me, and execute. Firegrid does not maintain a separate descriptor registry parallel to the toolkit."
+      2: "Each Tool.make value carries name, description, parameters Schema, success Schema, failure Schema, stability/capability annotations, and tool dependencies; no Tool field carries credentials, callback tokens, signing keys, provider session tokens, Durable Streams URLs, sandbox handles, host ids, or transport references."
+      3: "Tool parameter and success schemas are imported from @firegrid/protocol/agent-tools and attached to each Tool.make via setParameters/setSuccess rather than duplicated; protocol is the single Effect Schema source of truth."
+      4: "toolUseToEffect is the host-side lowering invoked from the toolkit handlers; it switches on ToolUse.name against the canonical protocol Effect Schemas, decodes ToolUse.input through each schema before dispatch, and routes each validated invocation to an exhaustive per-tool arm."
+      5: "The match expression is the implementation; FiregridAgentToolkit is the public exposure manifest. Adding a tool requires a protocol Effect Schema, a Tool.make entry inside Toolkit.make, and a new arm in toolUseToEffect. Removing a tool requires removing the Tool from FiregridAgentToolkit before removing the arm."
+      6: "Unknown tool names produce a ToolResult input event with isError true via the lowering's name-switch default; the workflow does not fail. Codecs that publish FiregridAgentToolkit will not deliver unknown names through the toolkit handle path itself."
+      7: "Invalid tool inputs produce a ToolResult input event with isError true and a structured ToolInvalidInput error payload; the workflow does not fail. At the toolkit handler boundary the same input is also rejected by Effect AI's Schema.decodeUnknown before the handler runs."
       8: "Tool execution failures (typed expected errors and defects raised inside an arm) produce a ToolResult input event with isError true and a structured ToolExecutionFailed payload; the workflow does not fail. Arms do not use Effect.orDie to satisfy the outer never error channel."
       9: "sleep composes DurableClock.sleep with a deterministic clock name derived from toolUseId; suspends the workflow for the requested duration."
-      10: "wait_for composes the durable-tools WaitFor.match surface, mapping the descriptor EventQuery to a FieldEquals trigger over the named source collection, optionally raced against DurableClock.sleep for the timeout variant."
+      10: "wait_for composes the durable-tools WaitFor.match surface, mapping EventQuery to a FieldEquals trigger over the named source collection, optionally raced against DurableClock.sleep for the timeout variant."
       11: "schedule_me starts a ScheduledInputWorkflow with discard true and returns scheduled true immediately; the ScheduledInputWorkflow body sleeps until the due timestamp on DurableClock and then appends a runtime-input row through the host-provided AgentToolHost.appendScheduledPrompt seam."
       12: "spawn, spawn_all, and execute lower onto host-provided AgentToolHost seams (spawnChildContext, spawnChildContexts, executeSandboxTool); the seams keep the lowering free of runtime-host imports while still composing the same Workflow.execute and SandboxProvider primitives at the Live layer."
       13: "A scheduled-input identity used by schedule_me is deterministic from contextId and toolUseId so workflow replay does not duplicate the scheduled prompt."
-      14: "When @effect/ai dependency compatibility is verified, FiregridAgentTools is represented as or projected to an AiToolkit/Toolkit so MCP bridge code, workflow lowering tests, and in-process agent tests share one Effect-native tool definition layer."
+      14: "Toolkit handlers (installed via FiregridAgentToolkit.toLayer) route each tool call through ToolCallWorkflow.execute so toolUseToEffect always runs inside a workflow instance and never bypasses DurableClock, workflow identity, or host seams. The runtime-owned MCP-facing failure is a small Effect Schema (FiregridMcpToolFailure) the handlers raise on the Effect error channel so @effect/ai/McpServer can map it to CallToolResult.isError true."
+      15: "The MCP projection uses @effect/ai/McpServer.registerToolkit(FiregridAgentToolkit) directly. Firegrid does not introduce a wrapper toolkit, a parallel descriptor catalog, a hand-written tools/list or tools/call handler, or a custom JSON-RPC parser."
 
 constraints:
   BOUNDARIES:
@@ -73,15 +74,15 @@ constraints:
       1: The first implementation phase must prove duplicate startRuntime(contextId) calls do not duplicate process start.
       2: The synchronous run phase must prove a real local-process command can be launched and observed through RuntimeOutputTable using the same runtime-context workflow path.
       3: A temporal workflow phase must prove DurableClock wakeup survives workflow-engine reconstruction before any Firegrid-owned schedule_me facade is accepted.
-      4: "PHASE_6_AGENT_TOOLS must prove descriptor schema round-trip for every tool, unknown-tool and invalid-input handling, per-arm dispatch under the workflow engine, and conversion of tool-arm failures into ToolResult input events with isError true without failing the workflow."
+      4: "PHASE_6_AGENT_TOOLS V0 must prove FiregridAgentToolkit.tools matches the canonical six, Tool.parametersSchema decodes identically to the @firegrid/protocol schema, direct toolkit execution of sleep runs through toolUseToEffect under the workflow engine, malformed inputs are rejected at the toolkit/schema boundary, tool-arm failures become FiregridMcpToolFailure without failing the workflow, and McpServer.registerToolkit(FiregridAgentToolkit) composes as an Effect without a custom JSON-RPC stack or wrapper toolkit. Local HTTP MCP smoke is V1 acceptance, not V0."
 
   AGENT_TOOL_BOUNDARIES:
     requirements:
-      1: "Agent tools are not a dynamic public registry; new tools require a descriptor contract change and a host lowering arm change."
+      1: "Agent tools are not a dynamic public registry; new tools require a Tool.make entry in FiregridAgentToolkit and a host lowering arm change."
       2: "Agent tool implementations introduce no new substrate modules; all six tools compose Phase 1 agent-io events with @effect/workflow primitives and existing durable-tools/sandbox-provider surfaces."
-      3: "ToolUse parsing and ToolResult encoding remain codec concerns (Phase 1 agent-io substrate); descriptor publication and host-side lowering are agent-tool concerns and live in packages/runtime/src/agent-tools."
-      4: "The match expression depends only on the Phase 1 agent-io event types and the descriptor manifest; it does not depend on which codec produced the invocation or which transport delivered it."
-      5: "@firegrid/protocol owns the schema source of truth; only explicitly listed FiregridAgentTools descriptors are exposed to agents."
+      3: "ToolUse parsing and ToolResult encoding remain codec concerns (Phase 1 agent-io substrate); Toolkit exposure and host-side lowering are agent-tool concerns and live in packages/runtime/src/agent-tools."
+      4: "The match expression depends only on the Phase 1 agent-io event types and the canonical protocol Effect Schemas; it does not depend on which codec produced the invocation or which transport delivered it."
+      5: "@firegrid/protocol owns the schema source of truth; only the Tool.make values listed in FiregridAgentToolkit are exposed to agents."
       6: "Runtime API calls and agent tool calls lower to the same durable workflow/table shapes; agent tools introduce no parallel run, claim, or completion record families."
-      7: "A runtime-owned Streamable HTTP MCP bridge may live under packages/runtime/src/agent-tools only as a protocol projection of FiregridAgentTools and toolUseToEffect; it does not define new tool schemas, dynamic tool registration, product-specific transports, substrate row families, or a custom JSON-RPC parser."
-      8: "AiToolkit/Toolkit, when used, is an integration and testing layer over the protocol-owned schemas and FiregridAgentTools allowlist; it is not a replacement schema authority and does not expose tools outside the manifest."
+      7: "A runtime-owned Streamable HTTP MCP bridge may live under packages/runtime/src/agent-tools only as @effect/ai/McpServer composition that calls registerToolkit(FiregridAgentToolkit) directly; it does not define new tool schemas, dynamic tool registration, a wrapper toolkit, a parallel descriptor catalog, product-specific transports, substrate row families, or a custom JSON-RPC parser."
+      8: "Effect AI Toolkit and McpServer are the integration layer for tool definition, handler registration, and MCP projection; Firegrid does not maintain a Firegrid-local toolkit clone, a Firegrid descriptor manifest, or hand-written tools/list and tools/call handlers."

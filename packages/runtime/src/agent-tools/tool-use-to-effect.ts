@@ -18,9 +18,10 @@
  *    `Effect.orDie` or defects to satisfy that constraint; they must
  *    return typed expected errors that the outer wrapper converts to a
  *    `ToolResult` event.
- *  - The descriptor set is the public contract. The match expression is
- *    the implementation. Adding a tool requires a protocol Effect Schema
- *    plus a descriptor plus a match arm.
+ *  - `FiregridAgentToolkit` (the Effect AI `Toolkit.make` allowlist in
+ *    `tools.ts`) is the public exposure contract. This `name`-switch
+ *    is the host implementation: a new tool requires a protocol Effect
+ *    Schema, a `Tool.make` entry in the toolkit, and a new arm here.
  *
  * Anchors:
  *  - firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.3
@@ -131,9 +132,9 @@ const eventQueryToTrigger = (
 // ---------------------------------------------------------------------------
 // Per-arm runners
 //
-// Each arm receives the typed decoded input from its descriptor's
-// `inputSchema` and returns the typed output that the descriptor's
-// `outputSchema` declares. TypeScript therefore checks the
+// Each arm receives the typed decoded input from its
+// `@firegrid/protocol/agent-tools` input schema and returns the typed
+// output that the same protocol module declares. TypeScript checks the
 // schema-to-arm coupling at compile time: if a shared protocol schema
 // changes shape, the corresponding arm's body fails to compile rather
 // than silently passing the wrong payload to a primitive.
@@ -289,7 +290,7 @@ const runExecuteTool = (
   })
 
 // ---------------------------------------------------------------------------
-// Typed descriptor-driven dispatch
+// Typed protocol-schema dispatch
 // ---------------------------------------------------------------------------
 
 type ToolEnvironment =
@@ -300,13 +301,13 @@ type ToolEnvironment =
   | AgentToolHost
 
 /**
- * Decode `event.input` against the concrete descriptor's `inputSchema`,
- * pass the typed result to the arm, wrap the arm's typed output in a
- * `ToolResult` event, and catch every failure path into an
- * `isError: true` event. The descriptor parameter binds I and O to the
- * arm's parameter and result types — schema changes break the
- * corresponding arm at compile time rather than hiding behind an `as`
- * cast.
+ * Decode `event.input` against the concrete `@firegrid/protocol`
+ * input Schema, pass the typed result to the arm, wrap the arm's
+ * typed output in a `ToolResult` event, and catch every failure path
+ * into an `isError: true` event. The schema parameter binds `I` and
+ * `O` to the arm's parameter and result types — schema changes break
+ * the corresponding arm at compile time rather than hiding behind an
+ * `as` cast.
  */
 const dispatchTool = <I, O, R>(
   event: ToolUseEvent,

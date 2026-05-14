@@ -193,17 +193,27 @@ small helper only after a real second call site needs the same composition.
    MCP tool error. Effect AI's MCP layer maps success to `isError:false` and
    expected failures to `isError:true`.
 
-### Deterministic Identity
+### Identity
 
-`toolUseId` must be stable for retry and replay. In v0:
+V0 tool calls are not idempotent across MCP retries. The toolkit
+handler generates a fresh `toolUseId` per invocation using Effect AI's
+`IdGenerator` (`"mcp:" + contextId + ":" + idGen`); this id is stable
+within one call (the workflow engine uses it as the `ToolCallWorkflow`
+`idempotencyKey`, which dedups *within* a single MCP request's
+workflow execution) but not across MCP-level retries.
 
-```
-toolUseId = "mcp:" + sessionId + ":" + requestId
-```
+Durable retry/replay identity arrives in V1 with `AgentToolInvocationFact`
+(see §"V1: Durable Indirect Bridge"). At that point the invocation
+fact's `invocationId` (deterministic from MCP `sessionId + requestId`
+or from the caller-provided invocation identity) replaces the
+`IdGenerator`-supplied suffix, and the bridge consults the existing
+fact row before scheduling new workflow work.
 
-If the Effect AI local test path does not expose MCP session/request ids, use a
-bridge-generated session id and deterministic request sequence in one helper so
-the durable path can later replace it with the invocation row id.
+Workflow-internal idempotency (e.g. `schedule_me`'s
+`schedule-me:${contextId}:${toolUseId}` `ScheduledInputWorkflow`
+identity) is still deterministic from the call's `toolUseId`, so
+within a single tool invocation the durable downstream workflows are
+not duplicated.
 
 ### Result Mapping
 
@@ -227,15 +237,30 @@ Required checks:
 
 1. `FiregridAgentToolkit.tools` contains exactly the six canonical tools.
 2. Tool parameter schemas are generated from the protocol Effect Schemas and
-   Effect AI tool annotations, not handwritten MCP schemas.
-3. Direct toolkit execution of `sleep` succeeds through `toolUseToEffect`.
-4. Malformed `sleep` input is rejected by the toolkit / schema boundary.
-5. A known tool arm failure is returned as the runtime-owned MCP tool error.
-6. MCP registration uses `@effect/ai/McpServer.registerToolkit` directly; tests
-   should not pass through a custom JSON-RPC parser, hand-written MCP request
-   handler, or Firegrid-local toolkit wrapper.
-7. A local HTTP smoke can be pointed at the bridge URL and run `tools/list` plus
-   `sleep`.
+   Effect AI tool annotations, not handwritten MCP schemas. Asserted by
+   decoding the same input through both `Tool.parametersSchema` and the
+   protocol `Schema.Struct` and comparing results.
+3. Direct toolkit execution of `sleep` succeeds through `toolUseToEffect`
+   (the handler returns `{ slept: true }` after the workflow body runs
+   `DurableClock.sleep`).
+4. Malformed `sleep` input is rejected by the toolkit / schema boundary
+   before the handler runs.
+5. A known tool arm failure is returned as the runtime-owned MCP tool error
+   (`FiregridMcpToolFailure`) without failing the surrounding workflow.
+6. MCP registration uses `@effect/ai/McpServer.registerToolkit(
+   FiregridAgentToolkit)` directly; tests must not pass through a custom
+   JSON-RPC parser, a hand-written MCP request handler, or a Firegrid-local
+   toolkit wrapper. The toolkit value exposes Effect AI's `.tools` +
+   `.toLayer` + `.toContext` plumbing structurally.
+
+A local HTTP MCP smoke (`McpServer.layerHttp` + an MCP client over Streamable
+HTTP) is **not** part of V0 acceptance. The V0 path is in-process Effect AI
+execution: it proves the same toolkit, schemas, handler routing, and
+McpServer-projection plumbing that the HTTP transport ultimately wraps,
+without standing up a Node HTTP server or an external SDK transport handshake.
+The HTTP smoke moves to V1 alongside durable invocation/result rows so the
+durable indirect path and the HTTP transport land together against a single
+acceptance surface.
 
 ## V1: Durable Indirect Bridge
 
@@ -356,23 +381,36 @@ themselves.
 
 ## Implementation Sequence
 
+V0 (in-process):
+
 1. Bump the Effect stack to the version required by `@effect/ai`.
-2. Add `tools.ts` and prove `FiregridAgentToolkit` is consumed by both MCP
-   registration and direct toolkit tests.
-3. Wire `McpServer.registerToolkit(FiregridAgentToolkit)` directly into the
-   local MCP runtime composition.
-4. Prove `tools/list`, `sleep`, invalid input, and unknown tool through the
-   Effect AI MCP layer.
-5. Add a Codex or MCP inspector local runbook and smoke.
+2. Add `tools.ts` and prove `FiregridAgentToolkit` is consumed by direct
+   in-process toolkit execution. `Toolkit.toLayer(...)` installs handlers
+   that route through `toolUseToEffect`; tests exercise the toolkit through
+   `built.handle(name, params)` so the same handler path that an MCP server
+   would invoke is covered without the HTTP transport.
+3. Prove `McpServer.registerToolkit(FiregridAgentToolkit)` composes against
+   the toolkit as an Effect, with the toolkit's structural Effect AI plumbing
+   (`.tools` + `.toLayer` + `.toContext`) — i.e. there is no Firegrid wrapper
+   and no custom JSON-RPC stack.
+
+V1 (durable indirect bridge + HTTP transport):
+
+4. Wire `McpServer.registerToolkit(FiregridAgentToolkit)` into the local MCP
+   runtime composition under `McpServer.layerHttp`. Prove `tools/list`,
+   `sleep`, invalid input, and unknown tool end-to-end through the Effect AI
+   MCP HTTP layer with a real MCP client (`@modelcontextprotocol/sdk`
+   Streamable HTTP transport or MCP inspector).
+5. Add a Codex or MCP inspector local runbook against the same bridge URL.
 6. Add durable invocation/result facts and `invocations-consumer.ts`.
 7. Add restart and duplicate-invocation tests.
-8. Wire the bridge into the runtime host only after the local Effect AI proof and
-   durable indirect path are both green.
+8. Wire the bridge into the runtime host only after the HTTP transport proof
+   and durable indirect path are both green.
 
-The in-process Effect AI sandbox provider can run in parallel with steps 1-4. It
-is not on the bridge critical path, but it should be available before deeper
-codec and provider tests if local-process behavior starts obscuring agent
-protocol issues.
+The in-process Effect AI sandbox provider can run in parallel with V0 steps.
+It is not on the bridge critical path, but it should be available before
+deeper codec and provider tests if local-process behavior starts obscuring
+agent protocol issues.
 
 ## Open Questions
 

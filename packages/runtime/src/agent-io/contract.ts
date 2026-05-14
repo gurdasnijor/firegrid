@@ -47,16 +47,25 @@ export const PermissionDecisionSchema = Schema.Union(
 )
 export type PermissionDecision = Schema.Schema.Type<typeof PermissionDecisionSchema>
 
+/**
+ * Schema for the `ToolResult` input event variant. Promoted to its
+ * own export so the agent-tools layer (and any future ToolResult
+ * producer) can reference one canonical schema instead of redeclaring
+ * the shape. The variant is still part of `AgentInputEventSchema`.
+ */
+export const ToolResultEventSchema = Schema.TaggedStruct("ToolResult", {
+  toolUseId: Schema.String,
+  content: Schema.Unknown,
+  isError: Schema.Boolean,
+})
+export type ToolResultEvent = Schema.Schema.Type<typeof ToolResultEventSchema>
+
 export const AgentInputEventSchema = Schema.Union(
   Schema.TaggedStruct("Prompt", {
     content: PromptContentSchema,
     correlationId: Schema.String,
   }),
-  Schema.TaggedStruct("ToolResult", {
-    toolUseId: Schema.String,
-    content: Schema.Unknown,
-    isError: Schema.Boolean,
-  }),
+  ToolResultEventSchema,
   Schema.TaggedStruct("PermissionResponse", {
     permissionRequestId: Schema.String,
     decision: PermissionDecisionSchema,

@@ -11,6 +11,7 @@ export {
   PromptContentSchema,
   PromptPartSchema,
   StopReasonSchema,
+  ToolResultEventSchema,
   type AgentCapabilities,
   type AgentInputEvent,
   type AgentOutputEvent,
@@ -20,6 +21,7 @@ export {
   type PromptContent,
   type PromptPart,
   type StopReason,
+  type ToolResultEvent,
 } from "./contract.ts"
 export {
   AgentCodecError,
