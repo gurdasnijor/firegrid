@@ -33,6 +33,7 @@
     "lint:semgrep": "node scripts/semgrep-check-baseline.mjs",
     "lint:semgrep:report": "semgrep --config .semgrep.yml packages apps",
     "lint:semgrep:test": "semgrep --test --config .semgrep.yml semgrep-tests/dup-detection.ts",
+    "preflight": "node scripts/preflight.mjs",
     "arch:deps": "pnpm run arch:deps:workspace && pnpm run arch:deps:client && pnpm run arch:deps:protocol && pnpm run arch:deps:runtime && pnpm run arch:deps:flamecast",
     "arch:deps:detail": "pnpm run arch:deps:workspace:detail && pnpm run arch:deps:runtime:detail && pnpm run arch:deps:flamecast:detail",
     "arch:deps:workspace": "depcruise --config .dependency-cruiser.cjs --exclude '(^|/)(.*\\.test\\.(ts|tsx|mts)|__tests__|dist|build|coverage)(/|$)' packages apps --output-type mermaid --collapse '^(packages|apps)/[^/]+/src/[^/]+' > docs/dependency-graph.mmd",
