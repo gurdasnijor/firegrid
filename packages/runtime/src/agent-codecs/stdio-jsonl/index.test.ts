@@ -60,7 +60,9 @@ const writeStdoutLine = (
   value: unknown,
 ) =>
   Effect.promise(() =>
-    writer.write(encoder.encode(`${JSON.stringify(value)}\n`),),
+    writer.write(
+      encoder.encode(`${JSON.stringify(value)}\n`),
+    ),
   )
 
 const readStdinLine = (
