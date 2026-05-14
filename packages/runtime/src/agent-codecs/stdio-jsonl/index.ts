@@ -241,7 +241,7 @@ const terminatedEvent = (
         ...(exit.exitCode === undefined ? {} : { exitCode: exit.exitCode }),
       })),
       Effect.mapError(cause =>
-        codecError("exit", "failed waiting for stdio-jsonl process exit", cause)
+        codecError("exit", "failed waiting for stdio-jsonl process exit", cause,),
       ),
     ),
   )
