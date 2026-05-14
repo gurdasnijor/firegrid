@@ -8,6 +8,7 @@ import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   makeHostSessionRow,
+  type HostId,
   type HostSessionId,
   type RuntimeContext,
   type RuntimeEventRow,
@@ -26,7 +27,6 @@ import {
   requireLocalContext,
   runtimeControlPlaneStreamUrl,
 } from "./host-context-authority.ts"
-import { acquireStableHostId } from "./internal/host-id.ts"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import {
   LocalProcessSandboxProvider,
@@ -453,20 +453,28 @@ const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(({ contextId 
 // the schema-encoded stream prefix that host-owned ingress / output /
 // workflow layers read; long-lived layers see exactly one host
 // identity for their lifetime.
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+//
+// Host identity is explicit authority: it MUST come from the caller's
+// composition (programmatic topology supplied at the call site or by
+// a host-mediated authority surface). There is no random fallback,
+// no env knob, and no on-disk auto-provisioning — a missing host id
+// is a configuration error, not stateful local mutation.
 const currentHostSessionLayer = (
   options: RuntimeHostTopologyOptions,
 ) =>
   Layer.effect(
     CurrentHostSession,
     Effect.gen(function* () {
+      if (options.hostId === undefined) {
+        return yield* Effect.die(
+          new Error(
+            "FiregridRuntimeHostLive requires options.hostId; the runtime host does not acquire identity from env or disk.",
+          ),
+        )
+      }
       const startedAtMs = yield* Clock.currentTimeMillis
-      // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
-      // Stable host id comes from options.hostId, FIREGRID_HOST_ID env,
-      // or the persisted `$HOME/.firegrid/host-id` file (auto-created
-      // on first run). The random-uuid path is encapsulated in
-      // `runtime-host/internal/host-id.ts` so callers never see a
-      // fresh-per-process id in the durable host binding.
-      const hostId = yield* acquireStableHostId(options.hostId)
+      const hostId = options.hostId as HostId
       const hostSessionId = (options.hostSessionId
         ?? `session-${crypto.randomUUID()}`) as HostSessionId
       return makeHostSessionRow({
@@ -476,7 +484,7 @@ const currentHostSessionLayer = (
         startedAtMs,
       })
     }),
-  ).pipe(Layer.provide(NodeContext.layer))
+  )
 
 // Namespace-scoped infrastructure: control plane, host config, sandbox
 // provider. The RuntimeContext index stays at `{namespace}.firegrid.runtime`
@@ -606,28 +614,24 @@ export const FiregridRuntimeHostWithWorkflowLive = (
 
 // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
 //
-// FIREGRID_HOST_ID is the stable host identity — a restarted host
-// adopts the same stream prefix and reconciles its own pending
-// workflow clocks. When omitted V1 falls back to a fresh
-// `host_<uuid>` per process, which is fine for short-lived smokes
-// but means scheduled work does not survive restart. Operators
-// should set FIREGRID_HOST_ID to a stable value (e.g. derived from
-// a local host file or platform identity) for durable deployments.
-//
-// FIREGRID_HOST_SESSION_ID is per-process by design — even with a
-// stable hostId, sessions can be distinguished for liveness work.
-// V1 generates a fresh session id when omitted.
+// RuntimeHostTopologyFromConfig intentionally does NOT acquire host
+// identity from env or from disk. Host authority is a primitive of
+// the host-context-authority design (a `CurrentHostSession` row
+// supplied through `options.hostId` at the programmatic composition
+// boundary); deployment plumbing does not own it. Until the
+// host-mediated authority surface lands, the FromConfig path
+// produces a topology without `hostId`, and `currentHostSessionLayer`
+// dies loudly when constructed. Operators who need to run the host
+// today wire `FiregridRuntimeHostLive({ ..., hostId })` directly.
 export const RuntimeHostTopologyFromConfig = Config.all({
   durableStreamsBaseUrl: Config.string("DURABLE_STREAMS_BASE_URL"),
   namespace: Config.string("FIREGRID_RUNTIME_NAMESPACE"),
   input: Config.boolean("FIREGRID_RUNTIME_INPUT_ENABLED").pipe(
     Config.withDefault(false),
   ),
-  hostId: Config.option(Config.string("FIREGRID_HOST_ID")),
-  hostSessionId: Config.option(Config.string("FIREGRID_HOST_SESSION_ID")),
   token: Config.option(Config.redacted("FIREGRID_DURABLE_STREAMS_TOKEN")),
 }).pipe(
-  Config.map(({ durableStreamsBaseUrl, namespace, input, hostId, hostSessionId, token }) => {
+  Config.map(({ durableStreamsBaseUrl, namespace, input, token }) => {
     const headers = Option.match(token, {
       onNone: () => undefined,
       onSome: (redacted) => ({
@@ -638,14 +642,6 @@ export const RuntimeHostTopologyFromConfig = Config.all({
       durableStreamsBaseUrl,
       namespace,
       input,
-      ...Option.match(hostId, {
-        onNone: () => ({}),
-        onSome: (value) => ({ hostId: value }),
-      }),
-      ...Option.match(hostSessionId, {
-        onNone: () => ({}),
-        onSome: (value) => ({ hostSessionId: value }),
-      }),
       ...(headers !== undefined ? { headers } : {}),
     }
   }),

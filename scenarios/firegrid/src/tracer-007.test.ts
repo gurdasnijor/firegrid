@@ -29,9 +29,11 @@ afterEach(async () => {
 describe("firegrid tracer 007 sandbox slot extraction", () => {
   it("firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1 firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.6 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.3 firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.5 journals stdout stderr and exit through FiregridRuntimeHostLive", async () => {
     if (!baseUrl) throw new Error("scenario test server not started")
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
     const firegridConfig = {
       durableStreamsBaseUrl: baseUrl,
       namespace: `tracer-007-${crypto.randomUUID()}`,
+      hostId: `tracer-007-${crypto.randomUUID()}`,
     }
     const childCode = `
 console.log(JSON.stringify({ type: "assistant", text: "sandbox-slot-pong" }))

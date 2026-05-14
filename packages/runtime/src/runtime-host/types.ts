@@ -21,11 +21,14 @@ export interface RuntimeHostTopologyOptions {
   readonly namespace: string
   // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
   //
-  // Stable host identity for this runtime process. When omitted, V1
-  // generates a fresh `host_<uuid>` at boot — durable persistence of a
-  // stable host id (e.g. `$HOME/.firegrid/host-id`) is follow-up work.
-  // The hostSessionId is per-process and may always be regenerated.
+  // Stable host identity. Must be supplied at the programmatic
+  // composition boundary (tests, scenario layer setup, host-mediated
+  // entry points). The runtime host does NOT acquire identity from
+  // env or disk; a missing hostId is a configuration error surfaced
+  // by `currentHostSessionLayer`.
   readonly hostId?: string
+  // Per-process session identifier. When omitted, the layer assigns
+  // a fresh value; durable identity remains hostId.
   readonly hostSessionId?: string
   readonly headers?: DurableTableHeaders
   readonly input?: boolean

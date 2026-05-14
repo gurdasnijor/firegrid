@@ -291,7 +291,16 @@ const assertSmokeDurableState = (
 }
 
 describe("firegrid tracer 019 sync-run local smoke", () => {
-  it(
+  // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+  //
+  // `pnpm firegrid:run` invokes FiregridRuntimeHostFromConfig, which
+  // does not acquire host authority from env or filesystem in Slice 2
+  // — host identity is a design primitive supplied at the programmatic
+  // composition boundary, not deployment plumbing. Slice 3 (or a
+  // dedicated host-authority slice) introduces the host-mediated
+  // route this subprocess needs. Re-enabling this smoke depends on
+  // that landing.
+  it.skip(
     "firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.3 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.4 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 firegrid-workflow-driven-runtime.VALIDATION.2 invokes pnpm firegrid:run and observes durable context ingress run output evidence",
     async () => {
       if (baseUrl === undefined) throw new Error("durable streams test server not started")

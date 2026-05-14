@@ -31,9 +31,13 @@ const layer = () => {
   // The runtime host layer provides RuntimeControlPlaneTable +
   // CurrentHostSession to the client, so launch / prompt / snapshot
   // share one materialized RuntimeContext index and one host id.
+  // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+  // Explicit hostId at the test composition boundary; the runtime
+  // host has no env/fs fallback.
   const hostLayer = FiregridRuntimeHostLive({
     durableStreamsBaseUrl: baseUrl,
     namespace,
+    hostId: `flamecast-toy-${crypto.randomUUID()}`,
     input: true,
   })
   return FiregridLive.pipe(

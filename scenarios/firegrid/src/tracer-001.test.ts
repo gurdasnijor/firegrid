@@ -29,9 +29,16 @@ afterEach(async () => {
 describe("firegrid tracer scenarios", () => {
   it("firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.10 starts from public launch and journals retained runtime events/logs", async () => {
     if (!baseUrl) throw new Error("scenario test server not started")
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+    //
+    // Host identity is explicit at the programmatic test-composition
+    // boundary: the runtime host requires options.hostId, and there
+    // is no env/fs fallback. Slice 3 introduces host-mediated launch
+    // authority that obviates this scenario-level wiring.
     const firegridConfig = {
       durableStreamsBaseUrl: baseUrl,
       namespace: `tracer-001-${crypto.randomUUID()}`,
+      hostId: `tracer-001-${crypto.randomUUID()}`,
     }
     const childCode = `
 console.log(JSON.stringify({ type: "assistant", text: "pong" }))
