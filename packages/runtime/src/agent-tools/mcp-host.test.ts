@@ -18,22 +18,24 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import { HttpServer } from "@effect/platform"
 import {
   RuntimeControlPlaneTable,
+  type HostId,
   hostOwnedStreamUrl,
+  insertLocalRuntimeContext,
   local,
   makeHostStreamPrefix,
   normalizeRuntimeIntent,
-  type HostId,
 } from "@firegrid/protocol/launch"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { ConfigProvider, Effect, Either, Layer } from "effect"
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js"
+import { ConfigProvider, Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { firegridHostLayer } from "../../../../src/host.ts"
 import {
   FiregridRuntimeHostWithWorkflowLive,
 } from "../runtime-host/index.ts"
 import { WorkflowEngineTable } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
-import { FiregridMcpServerLayer } from "./mcp-host.ts"
+import { FiregridMcpServerLayer, runtimeContextMcpPath } from "./mcp-host.ts"
 
 let durableStreamServer: DurableStreamTestServer | undefined
 let durableStreamBaseUrl: string | undefined
@@ -171,6 +173,27 @@ const listToolNames = (client: Client) =>
     Effect.map((listed) => listed.tools.map((tool) => tool.name).sort()),
   )
 
+const assertInvalidParams = (error: unknown) => {
+  expect(error).toBeInstanceOf(McpError)
+  expect((error as McpError).code).toBe(ErrorCode.InvalidParams)
+}
+
+const captureCallToolRejection = (
+  call: () => Promise<unknown>,
+): Effect.Effect<unknown> =>
+  Effect.promise(async () => {
+    try {
+      return { _tag: "Resolved", result: await call() } as const
+    } catch (error) {
+      return { _tag: "Rejected", error } as const
+    }
+  }).pipe(
+    Effect.map((outcome) => {
+      expect(outcome._tag).toBe("Rejected")
+      return outcome._tag === "Rejected" ? outcome.error : outcome.result
+    }),
+  )
+
 const hostConfigProvider = (input: {
   readonly namespace: string
   readonly mcpEnabled: boolean
@@ -187,6 +210,12 @@ const hostConfigProvider = (input: {
 }
 
 describe("FiregridMcpServerLayer runtime-context routing", () => {
+  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1 appends the runtime-context route to the configured MCP path", () => {
+    expect(runtimeContextMcpPath("/mcp")).toBe("/mcp/runtime-context/:contextId")
+    expect(runtimeContextMcpPath("/mcp/")).toBe("/mcp/runtime-context/:contextId")
+    expect(runtimeContextMcpPath("*")).toBe("/runtime-context/:contextId")
+  })
+
   it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1 firegrid-host-context-authority.VALIDATION.4 drives tools/list and sleep for a local context through the real MCP SDK", async () => {
     if (!durableStreamBaseUrl) throw new Error("server not started")
     const namespace = `mcp-local-${crypto.randomUUID()}`
@@ -262,7 +291,7 @@ describe("FiregridMcpServerLayer runtime-context routing", () => {
     )
   })
 
-  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.3 firegrid-host-context-authority.MCP_CONTEXT_ROUTING.4 rejects a foreign-context tool call before workflow side effects", async () => {
+  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.3 firegrid-host-context-authority.MCP_CONTEXT_ROUTING.4 returns an MCP tool error for a foreign-context tool call before workflow side effects", async () => {
     if (!durableStreamBaseUrl) throw new Error("server not started")
     const namespace = `mcp-foreign-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
@@ -286,13 +315,11 @@ describe("FiregridMcpServerLayer runtime-context routing", () => {
             (client) =>
               Effect.gen(function* () {
                 expect(yield* listToolNames(client)).toEqual([...toolNames])
-                return yield* Effect.either(
-                  Effect.tryPromise(() =>
-                    client.callTool({
-                      name: "sleep",
-                      arguments: { durationMs: 1 },
-                    })),
-                )
+                return yield* Effect.tryPromise(() =>
+                  client.callTool({
+                    name: "sleep",
+                    arguments: { durationMs: 1 },
+                  }))
               }),
           )
         }).pipe(
@@ -301,16 +328,12 @@ describe("FiregridMcpServerLayer runtime-context routing", () => {
             namespace,
             hostId: hostA,
           })),
-        ) as Effect.Effect<Either.Either<unknown, unknown>, unknown, never>,
+        ),
       ),
     )
 
-    if (Either.isRight(result)) {
-      expect(result.right).toMatchObject({ isError: true })
-      expect(JSON.stringify(result.right)).toContain("ContextNotLocal")
-    } else {
-      expect(String(result.left)).toContain("ContextNotLocal")
-    }
+    expect(result.isError).toBe(true)
+    expect(JSON.stringify(result)).toContain("ContextNotLocal")
 
     const hostAExecutions = await Effect.runPromise(
       queryHostWorkflowExecutions({
@@ -320,6 +343,75 @@ describe("FiregridMcpServerLayer runtime-context routing", () => {
       }),
     )
     expect(hostAExecutions).toEqual([])
+  })
+
+  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.4 returns an MCP tool error for malformed route-based sleep input", async () => {
+    if (!durableStreamBaseUrl) throw new Error("server not started")
+    const namespace = `mcp-malformed-${crypto.randomUUID()}`
+    const hostId = `host_A_${crypto.randomUUID()}` as HostId
+    const contextId = await Effect.runPromise(
+      seedContext({ baseUrl: durableStreamBaseUrl, namespace, hostId }),
+    )
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const boundAddress = yield* HttpServer.addressFormattedWith(
+            (addr) => Effect.succeed(addr),
+          )
+          yield* withSdkClient(contextUrl(boundAddress, contextId), (client) =>
+            Effect.gen(function* () {
+              const result = yield* Effect.tryPromise(() =>
+                client.callTool({
+                  name: "sleep",
+                  arguments: { durationMs: "not-a-number" },
+                }))
+              expect(result.isError).toBe(true)
+              expect(JSON.stringify(result)).toContain("sleep")
+            }))
+        }).pipe(
+          Effect.provide(mcpLayer({
+            baseUrl: durableStreamBaseUrl,
+            namespace,
+            hostId,
+          })),
+        ),
+      ),
+    )
+  })
+
+  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.4 lets Effect AI reject unknown tools as InvalidParams", async () => {
+    if (!durableStreamBaseUrl) throw new Error("server not started")
+    const namespace = `mcp-unknown-${crypto.randomUUID()}`
+    const hostId = `host_A_${crypto.randomUUID()}` as HostId
+    const contextId = await Effect.runPromise(
+      seedContext({ baseUrl: durableStreamBaseUrl, namespace, hostId }),
+    )
+
+    const error = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const boundAddress = yield* HttpServer.addressFormattedWith(
+            (addr) => Effect.succeed(addr),
+          )
+          return yield* withSdkClient(contextUrl(boundAddress, contextId), (client) =>
+            captureCallToolRejection(() =>
+              client.callTool({
+                name: "definitely_not_a_firegrid_tool",
+                arguments: {},
+              })))
+        }).pipe(
+          Effect.provide(mcpLayer({
+            baseUrl: durableStreamBaseUrl,
+            namespace,
+            hostId,
+          })),
+        ),
+      ),
+    )
+
+    assertInvalidParams(error)
+    expect(String(error)).toContain("definitely_not_a_firegrid_tool")
   })
 
   it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1 leaves host composition buildable when MCP is disabled", async () => {
@@ -334,19 +426,38 @@ describe("FiregridMcpServerLayer runtime-context routing", () => {
   })
 
   it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1 mounts the localhost MCP server from normal host composition when enabled", async () => {
-    const address = await Effect.runPromise(
+    if (!durableStreamBaseUrl) throw new Error("server not started")
+    const namespace = `host-enabled-${crypto.randomUUID()}`
+
+    await Effect.runPromise(
       Effect.scoped(
-        HttpServer.addressFormattedWith((addr) => Effect.succeed(addr)).pipe(
+        Effect.gen(function* () {
+          const context = yield* insertLocalRuntimeContext(
+            normalizeRuntimeIntent(local.jsonl({
+              argv: [process.execPath, "-e", "process.exit(0)"],
+            })),
+            {
+              contextId: `ctx_${crypto.randomUUID()}`,
+              createdBy: "mcp-host-test",
+            },
+          )
+          const address = yield* HttpServer.addressFormattedWith(
+            (addr) => Effect.succeed(addr),
+          )
+          expect(address.startsWith("http://127.0.0.1:")).toBe(true)
+          yield* withSdkClient(contextUrl(address, context.contextId), (client) =>
+            Effect.gen(function* () {
+              expect(yield* listToolNames(client)).toEqual([...toolNames])
+            }))
+        }).pipe(
           Effect.provide(firegridHostLayer),
         ),
       ).pipe(
         Effect.withConfigProvider(hostConfigProvider({
-          namespace: `host-enabled-${crypto.randomUUID()}`,
+          namespace,
           mcpEnabled: true,
         })),
       ),
     )
-
-    expect(address.startsWith("http://127.0.0.1:")).toBe(true)
   })
 })
