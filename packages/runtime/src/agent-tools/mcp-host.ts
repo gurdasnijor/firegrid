@@ -17,29 +17,19 @@
  *  - firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.1..10
  *  - firegrid-workflow-driven-runtime.VALIDATION.5
  *
- * V1 routing scope:
- *  Effect AI's `McpServer.layerHttp` mounts the MCP endpoint at a
- *  single `HttpRouter.PathInput`; per-path service injection of a
- *  request-scoped `FiregridAgentToolContext` is not a first-class
- *  primitive on that layer today. Per the SDD's documented fallback,
- *  V1 ships a one-context-per-server-instance shape: the *caller*
- *  passes `contextId` as an explicit `FiregridMcpServerLayerOptions`
- *  field at compose time, the layer installs `FiregridAgentToolContext`
- *  once for the whole server, and context selection stays out of both
- *  agent-visible tool arguments *and* host-process env config.
- *  `FIREGRID_MCP_CONTEXT_ID` and similar env knobs are explicitly out
- *  of scope: runtime identity is durable / session / route state, not
- *  deployment topology. Host auto-mount of the layer in
- *  `src/host.ts` is deferred until either route-based
- *  `/mcp/runtime-context/:contextId` injection or a durable
- *  host/session/local-agent authority record lands; V1 only ships the
- *  composition primitive and its smoke.
+ * Runtime-context routing scope:
+ *  The listener mounts Effect AI's MCP HTTP protocol at
+ *  `/mcp/runtime-context/:contextId`. The route parameter is the
+ *  request authority; it is not an env var and not a tool argument.
+ *  Tool calls resolve that route value through `requireLocalContext`
+ *  before any workflow, sandbox, or host tool service is touched.
  */
 
 import { IdGenerator, McpServer } from "@effect/ai"
 import { HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
-import { Config, Layer, Logger } from "effect"
+import type { RuntimeControlPlaneTable } from "@firegrid/protocol/launch"
+import { Config, Effect, Layer, Logger, Option } from "effect"
 // The MCP HTTP server lifetime is Effect-owned via Layer.scopedDiscard
 // + McpServer.layerHttp + NodeHttpServer.layer and bound only to
 // loopback; `createServer` is the documented listener factory the
@@ -48,11 +38,15 @@ import { Config, Layer, Logger } from "effect"
 // durable-lint-allow-control-plane: @effect/platform-node NodeHttpServer.layer listener factory
 import { createServer } from "node:http"
 import { DurableToolsWaitForLive } from "../durable-tools/index.ts"
-import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
+import { RuntimeHostConfig } from "../runtime-host/config.ts"
 import {
-  AgentToolHost,
-  type AgentToolHostService,
-} from "./tool-host.ts"
+  ContextNotFound,
+  CurrentHostSession,
+  hostOwnedStreamUrl,
+  requireLocalContext,
+} from "../runtime-host/host-context-authority.ts"
+import { RuntimeHostAgentToolHostLive } from "../runtime-host/index.ts"
+import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
 import {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
@@ -65,19 +59,18 @@ import {
  * topology. Process/listener knobs only — no runtime identity.
  *
  * Defaults bind only to loopback (`127.0.0.1`) on an OS-chosen port
- * (`0`) at `/mcp`, and the server is OPT-IN — `FIREGRID_MCP_ENABLED`
+ * (`0`) under `/mcp`, and the server is OPT-IN — `FIREGRID_MCP_ENABLED`
  * defaults to `false` so existing host deployments are unaffected.
  *
  * The runtime `contextId` is durable/session state, not host-process
- * env. Static MCP routing belongs at the Layer-factory call site (the
- * caller passes `contextId` to `FiregridMcpServerLayer`); dynamic
- * per-request routing belongs in V2 (`/mcp/runtime-context/:contextId`
- * route-based `FiregridAgentToolContext` injection).
+ * env. MCP clients connect to `/mcp/runtime-context/:contextId`; the
+ * route value scopes execution authority without changing the tool
+ * catalog.
  *
  * The durable-streams base URL and runtime namespace are reused from
- * `RuntimeHostTopologyFromConfig` at the caller; the durable-tools
- * stream URL is derived from those alongside the runtime/workflow URLs
- * the host already mounts.
+ * `RuntimeHostTopologyFromConfig` at the caller. Durable-tools stream
+ * routing is derived from `CurrentHostSession` and protocol authority
+ * helpers alongside the runtime/workflow URLs the host already mounts.
  */
 export const FiregridMcpServerListenerConfig = Config.all({
   enabled: Config.boolean("FIREGRID_MCP_ENABLED").pipe(
@@ -97,31 +90,61 @@ export type FiregridMcpServerListenerConfig = Config.Config.Success<
 export interface FiregridMcpServerLayerOptions {
   readonly host: string
   readonly port: number
-  readonly path: HttpRouter.PathInput
-  readonly contextId: string
-  readonly agentToolsStreamUrl: string
   /**
-   * Required. The MCP toolkit advertises all six canonical tools
-   * (`sleep`, `wait_for`, `spawn`, `spawn_all`, `schedule_me`,
-   * `execute`); the `spawn` family and `execute` arms call the host
-   * directly, and `schedule_me` starts a `ScheduledInputWorkflow`
-   * with `discard: true` whose later prompt append is performed
-   * through `AgentToolHost.appendScheduledPrompt`. Passing a stub
-   * `appendScheduledPrompt` that returns `Effect.void` would make
-   * `schedule_me` quietly drop the future prompt while the agent
-   * sees a successful `{ scheduled: true }` result.
-   *
-   * V1 callers therefore wire a real `AgentToolHostService` at the
-   * compose site (or accept that any tool unsupported in the host
-   * — typically `spawn`/`spawn_all`/`execute` and `schedule_me` —
-   * must return a structured `FiregridMcpToolFailure` instead of
-   * silently succeeding). Tests use a test-local
-   * `AgentToolHostService` whose `appendScheduledPrompt` either
-   * records the call or fails explicitly; production callers wire
-   * the real host capability before exposing the toolkit over MCP.
+   * Base MCP path. The runtime context route is always appended as
+   * `/runtime-context/:contextId`.
    */
-  readonly agentToolHost: AgentToolHostService
+  readonly path: HttpRouter.PathInput
 }
+
+export const runtimeContextMcpPath = (
+  path: HttpRouter.PathInput,
+): HttpRouter.PathInput => {
+  if (path === "*") return "/runtime-context/:contextId"
+  const normalized = ensurePathInput(path).replace(/\/+$/, "")
+  return `${normalized}/runtime-context/:contextId` as HttpRouter.PathInput
+}
+
+const FiregridMcpRouteContextLayer = Layer.effect(
+  FiregridAgentToolContext,
+  Effect.gen(function* () {
+    const captured = yield* Effect.context<
+      CurrentHostSession | RuntimeHostConfig | RuntimeControlPlaneTable
+    >()
+    return {
+      // firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1
+      // firegrid-host-context-authority.MCP_CONTEXT_ROUTING.3
+      resolve: Effect.gen(function* () {
+        const params = yield* HttpRouter.params
+        const contextId = yield* Option.match(Option.fromNullable(params.contextId), {
+          onNone: () =>
+            Effect.fail(new ContextNotFound({ contextId: "<missing-mcp-route-context>" })),
+          onSome: Effect.succeed,
+        })
+        const runtimeContext = yield* requireLocalContext(contextId).pipe(
+          Effect.provide(captured),
+        )
+        return { contextId, runtimeContext }
+      }).pipe(
+        Effect.provide(captured),
+      ) as FiregridAgentToolContext["Type"]["resolve"],
+    }
+  }),
+)
+
+const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
+  Effect.gen(function* () {
+    const session = yield* CurrentHostSession
+    const config = yield* RuntimeHostConfig
+    return DurableToolsWaitForLive({
+      streamUrl: hostOwnedStreamUrl({
+        baseUrl: config.durableStreamsBaseUrl,
+        prefix: session.streamPrefix,
+        segment: "durableTools",
+      }),
+    })
+  }),
+)
 
 /**
  * The Firegrid MCP server Layer. Composes:
@@ -134,12 +157,10 @@ export interface FiregridMcpServerLayerOptions {
  *   - `FiregridAgentToolkitLayer` — toolkit handlers
  *   - `ToolCallWorkflowLayer` — gives the handlers a workflow instance
  *   - `ScheduledInputWorkflowLayer` — `schedule_me` child workflow
- *   - `FiregridAgentToolContext.layer({ contextId })` — bridge runtime
- *     context
+ *   - `FiregridAgentToolContext` — resolves route context at tool-call time
  *   - `IdGenerator.defaultIdGenerator`
- *   - `AgentToolHost.layer(...)` (V1 default returns
- *     ToolExecutionFailed for spawn/spawn_all/execute)
- *   - `DurableToolsWaitForLive({ streamUrl })` — `wait_for` arm
+ *   - `RuntimeHostAgentToolHostLive` — host-owned tool effects
+ *   - host-owned `DurableToolsWaitForLive` — `wait_for` arm
  *   - `McpServer.layerHttp({ path })` — JSON-RPC HTTP serialization
  *   - `NodeHttpServer.layer(createServer, { port, host })` — loopback
  *     binder
@@ -157,23 +178,17 @@ export const FiregridMcpServerLayer = (
     Layer.provide(FiregridAgentToolkitLayer),
     Layer.provide(ToolCallWorkflowLayer),
     Layer.provide(ScheduledInputWorkflowLayer),
-    Layer.provide(
-      FiregridAgentToolContext.layer({ contextId: options.contextId }),
-    ),
+    Layer.provide(FiregridMcpRouteContextLayer),
     Layer.provide(
       Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator),
     ),
-    Layer.provide(
-      AgentToolHost.layer(options.agentToolHost),
-    ),
-    Layer.provide(
-      DurableToolsWaitForLive({ streamUrl: options.agentToolsStreamUrl }),
-    ),
+    Layer.provide(RuntimeHostAgentToolHostLive),
+    Layer.provide(HostOwnedDurableToolsWaitForLive),
     Layer.provide(
       McpServer.layerHttp({
         name: "firegrid.agent-tools",
         version: "0.0.0",
-        path: options.path,
+        path: runtimeContextMcpPath(options.path),
       }),
     ),
     // `provideMerge` keeps the bound `HttpServer` service in the
@@ -190,43 +205,13 @@ export const FiregridMcpServerLayer = (
     Layer.provide(Logger.remove(Logger.defaultLogger)),
   )
 
-/**
- * Derive the durable-tools stream URL alongside the runtime/workflow
- * URLs the host already mounts. Callers compose this with their own
- * `RuntimeHostTopologyFromConfig` value to avoid a parallel base-URL
- * or namespace knob.
- */
-export const agentToolsStreamUrlFromTopology = (
-  durableStreamsBaseUrl: string,
-  namespace: string,
-): string => {
-  const base = durableStreamsBaseUrl.replace(/\/+$/, "")
-  const streamPrefix = base.includes("/v1/stream/")
-    ? `${base}/`
-    : `${base}/v1/stream/`
-  return `${streamPrefix}${encodeURIComponent(`${namespace}.firegrid.durableTools`)}`
-}
-
 export const ensurePathInput = (path: string): HttpRouter.PathInput => {
   if (path === "*") return path
   if (path.startsWith("/")) return path as HttpRouter.PathInput
   return `/${path}`
 }
 
-// `FiregridMcpServerFromConfig` (an unwrapEffect Layer that reads
-// listener config + topology + a contextId from env) is intentionally
-// NOT exported. Static MCP routing requires a runtime `contextId`,
-// which is durable/session state, not host-process env. The host-side
-// wiring lands once one of these is available:
-//   1. `/mcp/runtime-context/:contextId` route-based
-//      `FiregridAgentToolContext` injection through Effect AI's HTTP
-//      layer without a custom JSON-RPC handler; or
-//   2. A durable host/session/local-agent authority record in
-//      `runtime-host` / control-plane shape that maps to `contextId`.
-//
-// Note: V1 does not pass authenticated headers through to the
-// durable-tools wait stream. If `FIREGRID_DURABLE_STREAMS_TOKEN` is
-// in use, `wait_for` calls against an authenticated Durable Streams
-// backend will fail; `sleep` and `schedule_me` are unaffected.
-// Authenticated `DurableToolsTableOptions` is a follow-up (V2,
-// alongside the durable indirect bridge).
+// `FiregridMcpServerFromConfig` is intentionally not exported. The
+// host binary composes this layer with `FiregridMcpServerListenerConfig`
+// and `RuntimeHostTopologyFromConfig`; runtime identity still comes
+// only from `/mcp/runtime-context/:contextId`.

@@ -31,10 +31,10 @@ export {
   type FiregridMcpToolFailure,
 } from "./tools.ts"
 export {
-  agentToolsStreamUrlFromTopology,
   ensurePathInput,
   FiregridMcpServerLayer,
   FiregridMcpServerListenerConfig,
+  runtimeContextMcpPath,
   type FiregridMcpServerLayerOptions,
   type FiregridMcpServerListenerConfig as FiregridMcpServerListenerConfigType,
 } from "./mcp-host.ts"

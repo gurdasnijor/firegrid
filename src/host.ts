@@ -1,5 +1,10 @@
 import { NodeRuntime } from "@effect/platform-node"
 import {
+  FiregridMcpServerLayer,
+  FiregridMcpServerListenerConfig,
+  ensurePathInput,
+} from "@firegrid/runtime/agent-tools"
+import {
   FiregridLocalHostLive,
   RuntimeHostTopologyFromConfig,
   localProcessSpawnEnvFromHostEnv,
@@ -15,28 +20,29 @@ export const firegridHostProgram = Effect.never
 // which owns CurrentHostSession internally and derives a
 // deterministic host id from the namespace. No env/disk authority knob.
 export const firegridHostLayer = Layer.unwrapEffect(
-  Effect.map(RuntimeHostTopologyFromConfig, topology =>
-    FiregridLocalHostLive({
-      ...topology,
-      localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
+  Effect.map(
+    Effect.all({
+      topology: RuntimeHostTopologyFromConfig,
+      mcp: FiregridMcpServerListenerConfig,
     }),
+    ({ topology, mcp }) => {
+      const runtimeHost = FiregridLocalHostLive({
+        ...topology,
+        localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
+      })
+      if (!mcp.enabled) return runtimeHost
+      // firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1
+      // firegrid-host-context-authority.MCP_CONTEXT_ROUTING.2
+      return FiregridMcpServerLayer({
+        host: mcp.host,
+        port: mcp.port,
+        path: ensurePathInput(mcp.path),
+      }).pipe(
+        Layer.provideMerge(runtimeHost),
+      )
+    },
   ),
 )
-
-// Host-boot wiring for `@firegrid/runtime/agent-tools` `FiregridMcpServerLayer`
-// is intentionally deferred. Per the PR #194 follow-up review, the
-// runtime `contextId` is durable/session state, not host-process env,
-// so an env-driven `FiregridMcpServerFromConfig` would expand
-// deployment config with runtime identity at the wrong boundary. The
-// host-side wiring lands once one of these is available:
-//   - `/mcp/runtime-context/:contextId` route-based
-//     `FiregridAgentToolContext` injection through Effect AI's HTTP
-//     layer without a custom JSON-RPC handler; or
-//   - a durable host/session/local-agent authority record in
-//     `runtime-host` / control-plane shape that maps to `contextId`
-//     and supplies it to the MCP server layer.
-// Tests and downstream consumers compose `FiregridMcpServerLayer({
-// contextId, ... })` directly.
 
 export const runFiregridHost = (): void => {
   // firegrid-runtime-process.BINARIES.12
