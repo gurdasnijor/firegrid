@@ -158,6 +158,8 @@ Shape notes:
 - `externalEntityKey` is optional and useful for waits keyed by issue,
   repository, customer, task, or similar external entity identity.
 - `selectedHeaders` excludes signatures, auth headers, cookies, and secrets.
+  The adapter hard-filters common secret-bearing headers and the configured
+  signature header even when listed in `selectedHeaderNames`.
 - `payload` remains source-owned JSON. Firegrid does not model Linear fields.
 
 The composite primary key should follow
@@ -238,6 +240,10 @@ raw body bytes, and HMAC config. It proves:
 - Same key plus different payload hash is rejected without overwrite.
 - Invalid HMAC, malformed JSON, and missing event key do not insert a success
   fact.
+- Malformed JSON with an invalid signature fails at `webhook/verify`, proving
+  HMAC verification precedes JSON parsing.
+- Selected header capture excludes common secret-bearing headers and the
+  configured signature header.
 
 `WaitFor.match` observation is shaped but not executed in this scenario. The
 fact table exposes scalar fields (`source`, `eventType`, `externalEntityKey`,

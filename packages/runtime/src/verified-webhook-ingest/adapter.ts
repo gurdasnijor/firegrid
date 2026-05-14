@@ -8,6 +8,7 @@
  *  - firegrid-verified-webhook-ingest.INGEST.4
  *  - firegrid-verified-webhook-ingest.INGEST.5
  *  - firegrid-verified-webhook-ingest.INGEST.6
+ *  - firegrid-verified-webhook-ingest.INGEST.7
  *  - firegrid-verified-webhook-ingest.BOUNDARIES.1
  *  - firegrid-verified-webhook-ingest.BOUNDARIES.2
  */
@@ -79,6 +80,18 @@ const defaultSignatureHeaderName = "x-firegrid-signature-256"
 const defaultExternalEventKeyPath = ["id"] as const
 const defaultEventTypePath = ["type"] as const
 const signatureScheme = "hmac-sha256"
+const unsafeSelectedHeaderNames = new Set([
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "set-cookie",
+  "x-api-key",
+  "api-key",
+  "x-auth-token",
+  "x-access-token",
+  "x-csrf-token",
+  "x-xsrf-token",
+])
 
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()
@@ -240,12 +253,18 @@ const stringAtPath = (
 
 const selectedHeaders = (
   headers: Readonly<Record<string, string>>,
+  signatureHeaderName: string,
   names: ReadonlyArray<string> | undefined,
 ): Readonly<Record<string, string>> => {
   if (names === undefined) return {}
+  const unsafeNames = new Set([
+    ...unsafeSelectedHeaderNames,
+    headerKey(signatureHeaderName),
+  ])
   return Object.fromEntries(
     names.flatMap((name) => {
       const key = headerKey(name)
+      if (unsafeNames.has(key)) return []
       const value = headers[key]
       return value === undefined ? [] : [[key, value]]
     }),
@@ -286,7 +305,11 @@ const makeFact = (
     verifiedAt: timestamp,
     signatureScheme,
     payloadSha256,
-    selectedHeaders: selectedHeaders(headers, request.config.selectedHeaderNames),
+    selectedHeaders: selectedHeaders(
+      headers,
+      request.config.signatureHeaderName ?? defaultSignatureHeaderName,
+      request.config.selectedHeaderNames,
+    ),
     payload,
   })
 }

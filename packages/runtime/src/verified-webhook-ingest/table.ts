@@ -8,13 +8,19 @@
  *  - firegrid-verified-webhook-ingest.WAIT_INTEGRATION.1
  */
 
-import { DurableTable, type DurableTableService } from "effect-durable-operators"
+import {
+  DurableTable,
+  type DurableTableHeaders,
+  type DurableTableLayerOptions,
+  type DurableTableService,
+} from "effect-durable-operators"
 import { Schema } from "effect"
 import { VerifiedWebhookFactKeyEncoded } from "./keys.ts"
 
 export interface VerifiedWebhookFactTableOptions {
   readonly streamUrl: string
   readonly contentType?: string
+  readonly headers?: DurableTableHeaders
   readonly txTimeoutMs?: number
 }
 
@@ -51,10 +57,14 @@ export type VerifiedWebhookFactTableService = DurableTableService<
 
 export const verifiedWebhookFactTableLayerOptions = (
   options: VerifiedWebhookFactTableOptions,
-) => ({
-  streamOptions: {
-    url: options.streamUrl,
-    contentType: options.contentType ?? "application/json",
-  },
-  txTimeoutMs: options.txTimeoutMs ?? 2_000,
-})
+): DurableTableLayerOptions => {
+  const contentType = options.contentType ?? "application/json"
+  const streamOptions = options.headers === undefined
+    ? { url: options.streamUrl, contentType }
+    : { url: options.streamUrl, contentType, headers: options.headers }
+
+  return {
+    streamOptions,
+    txTimeoutMs: options.txTimeoutMs ?? 2_000,
+  }
+}

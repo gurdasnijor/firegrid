@@ -50,7 +50,13 @@ const config: VerifiedWebhookIngestConfig = {
   externalEventKeyPath: ["webhookId"],
   eventTypePath: ["type"],
   externalEntityKeyPath: ["data", "id"],
-  selectedHeaderNames: ["x-linear-delivery"],
+  selectedHeaderNames: [
+    "x-linear-delivery",
+    "x-linear-signature",
+    "authorization",
+    "cookie",
+    "x-api-key",
+  ],
 }
 
 const requestFor = (payload: unknown) => {
@@ -62,6 +68,9 @@ const requestFor = (payload: unknown) => {
     headers: {
       "x-linear-signature": `sha256=${signature}`,
       "x-linear-delivery": "delivery-1",
+      authorization: "Bearer must-not-store",
+      cookie: "session=must-not-store",
+      "x-api-key": "must-not-store",
     },
     receivedAt: "2026-05-13T12:00:00.000Z",
     config,
@@ -75,7 +84,8 @@ const rows = Effect.gen(function*() {
 
 const expectSingleOriginalFact = (facts: ReadonlyArray<VerifiedWebhookFact>) => {
   expect(facts).toHaveLength(1)
-  expect(facts[0]).toMatchObject({
+  const fact = facts[0]!
+  expect(fact).toMatchObject({
     factKey: [source, "evt-1"],
     source,
     externalEventKey: "evt-1",
@@ -92,6 +102,9 @@ const expectSingleOriginalFact = (facts: ReadonlyArray<VerifiedWebhookFact>) => 
         title: "Original",
       },
     },
+  })
+  expect(fact.selectedHeaders).toEqual({
+    "x-linear-delivery": "delivery-1",
   })
 }
 
@@ -124,6 +137,25 @@ describe("firegrid tracer 020 verified webhook ingest to durable facts", () => {
 
     await Effect.runPromise(Effect.scoped(
       Effect.gen(function*() {
+        const malformedBadSignature = yield* Effect.either(
+          ingestVerifiedWebhook({
+            source,
+            rawBody: encoder.encode("{"),
+            headers: {
+              "x-linear-signature": "sha256=00",
+            },
+            config,
+          }),
+        )
+        expect(Either.isLeft(malformedBadSignature)).toBe(true)
+        if (Either.isLeft(malformedBadSignature)) {
+          expect(malformedBadSignature.left).toMatchObject({
+            _tag: "VerifiedWebhookIngestError",
+            op: "webhook/verify",
+          })
+        }
+        expect(yield* rows).toEqual([])
+
         const inserted = yield* ingestVerifiedWebhook(requestFor(originalPayload))
         expect(inserted._tag).toBe("Inserted")
         expect(inserted.fact.factKey).toEqual([source, "evt-1"])
@@ -155,6 +187,12 @@ describe("firegrid tracer 020 verified webhook ingest to durable facts", () => {
           }),
         )
         expect(Either.isLeft(invalidSignature)).toBe(true)
+        if (Either.isLeft(invalidSignature)) {
+          expect(invalidSignature.left).toMatchObject({
+            _tag: "VerifiedWebhookIngestError",
+            op: "webhook/verify",
+          })
+        }
 
         const malformedRawBody = encoder.encode("{")
         const malformedSignature = createHmac("sha256", secret)
@@ -171,6 +209,12 @@ describe("firegrid tracer 020 verified webhook ingest to durable facts", () => {
           }),
         )
         expect(Either.isLeft(malformedJson)).toBe(true)
+        if (Either.isLeft(malformedJson)) {
+          expect(malformedJson.left).toMatchObject({
+            _tag: "VerifiedWebhookIngestError",
+            op: "webhook/decode-json",
+          })
+        }
 
         const missingEventKey = yield* Effect.either(
           ingestVerifiedWebhook(requestFor(missingEventKeyPayload)),
@@ -183,6 +227,9 @@ describe("firegrid tracer 020 verified webhook ingest to durable facts", () => {
           VerifiedWebhookFactTable.layer(
             verifiedWebhookFactTableLayerOptions({
               streamUrl: `${baseUrl}/v1/stream/tracer-020-${crypto.randomUUID()}`,
+              headers: {
+                authorization: () => "Bearer durable-streams-token",
+              },
             }),
           ),
         ),

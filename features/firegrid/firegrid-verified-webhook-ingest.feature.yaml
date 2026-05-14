@@ -18,6 +18,7 @@ components:
       4: The ingest adapter writes accepted facts through DurableTable.insertOrGet and acknowledges success only after the insert-or-duplicate result is durable and observable through the table layer.
       5: A duplicate delivery with the same source id, external event key, and payload hash is accepted as duplicate success without creating a second logical fact.
       6: A duplicate delivery with the same source id and external event key but a different payload hash is rejected as a conflict and does not overwrite the original fact.
+      7: Selected header capture excludes common secret-bearing headers and the configured signature header even when those names are requested by adapter config.
 
   WAIT_INTEGRATION:
     requirements:
