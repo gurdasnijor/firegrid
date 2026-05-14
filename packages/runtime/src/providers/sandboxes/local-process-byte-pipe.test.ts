@@ -100,4 +100,21 @@ describe("LocalProcessSandboxProvider.openBytePipe", () => {
     )
     expect(result).toBe(true)
   })
+
+  it("reports the child process exit code", async () => {
+    const exit = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const provider = yield* SandboxProvider
+          const sandbox = yield* provider.create({})
+          const bytes = yield* provider.openBytePipe(sandbox, {
+            argv: [process.execPath, "-e", "process.exit(7)"],
+          })
+          return yield* bytes.exit
+        }),
+      ).pipe(Effect.provide(Live)),
+    )
+
+    expect(exit).toEqual({ exitCode: 7 })
+  })
 })

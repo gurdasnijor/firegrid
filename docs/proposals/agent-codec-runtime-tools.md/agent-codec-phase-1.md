@@ -278,6 +278,7 @@ interface AgentByteStream {
   readonly stdin: Writable<Uint8Array>
   readonly stdout: Readable<Uint8Array>
   readonly stderr: Readable<Uint8Array>
+  readonly exit: Effect.Effect<{ readonly exitCode?: number; readonly signal?: string }, unknown>
 }
 
 interface AgentSession {
@@ -290,7 +291,7 @@ interface AgentSession {
 }
 ```
 
-`AgentByteStream` is the duplex interface the substrate provides — see "Byte-pipe SandboxProvider" below. The codec doesn't know whether the bytes are coming from a local process, a remote agent, or a websocket.
+`AgentByteStream` is the duplex interface the substrate provides — see "Byte-pipe SandboxProvider" below. The codec doesn't know whether the bytes are coming from a local process, a remote agent, or a websocket. The `exit` signal is the substrate lifecycle boundary codecs use to emit faithful `Terminated` events; stdout/stderr closure alone is not considered process termination evidence.
 
 `AgentCodecError` is a tagged union for codec-level failures (framing errors, protocol violations, unexpected EOF). The codec is responsible for distinguishing recoverable errors (`Error` output event with `recoverable: true`) from fatal ones (stream fails with `AgentCodecError`).
 

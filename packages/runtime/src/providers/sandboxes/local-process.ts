@@ -162,7 +162,13 @@ const makeAgentByteStreamFromProcess = (
     const stderr: ReadableStream<Uint8Array> = Stream.toReadableStreamRuntime(runtime)(
       process.stderr,
     ) as ReadableStream<Uint8Array>
-    return { stdin, stdout, stderr } satisfies AgentByteStream
+    const exit = process.exitCode.pipe(
+      Effect.map(exitCode => ({ exitCode: Number(exitCode) })),
+      Effect.mapError(cause =>
+        commandError("openBytePipe.exit", "local process failed while waiting for exit", cause),
+      ),
+    )
+    return { stdin, stdout, stderr, exit } satisfies AgentByteStream
   })
 
 const makeLocalProcessSandboxProvider = (

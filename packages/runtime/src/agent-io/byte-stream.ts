@@ -8,8 +8,17 @@
  * connection without changing the codec API.
  */
 
+import type { Effect } from "effect"
+
 export interface AgentByteStream {
   readonly stdin: WritableStream<Uint8Array>
   readonly stdout: ReadableStream<Uint8Array>
   readonly stderr: ReadableStream<Uint8Array>
+  readonly exit: Effect.Effect<
+    {
+      readonly exitCode?: number
+      readonly signal?: string
+    },
+    unknown
+  >
 }
