@@ -304,6 +304,14 @@ Parallelization:
 
 ## Tracer F: Agent-Facing Durable Tool Catalog
 
+Status: First vertical proof landed as Tracer 023
+(`docs/tracers/023-acp-agent-interface.md`). The remaining Tracer F bar
+— MCP-mounted neutral catalog, same-name collision policy, follow-up
+prompt ingress to a running ACP session, cancellation parity, and the
+SandboxProvider byte-pipe vs direct-spawn decision — is enumerated in
+that doc as follow-ups.
+
+
 Linked ACIDs:
 
 - `firegrid-workflow-driven-runtime.PHASE_4_TEMPORAL_WORKFLOWS.1`

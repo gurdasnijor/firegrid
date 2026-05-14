@@ -530,7 +530,7 @@ export default tseslint.config(
   // firegrid-remediation-hardening.STATIC_QUALITY.7
   ...tsOnly(tseslint.configs.recommendedTypeChecked),
   {
-    files: ["**/*.js"],
+    files: ["**/*.js", "**/*.mjs"],
     languageOptions: {
       globals: globals.node,
     },

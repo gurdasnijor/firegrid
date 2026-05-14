@@ -10,9 +10,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "0.21.0",
     "@firegrid/client": "workspace:*",
+    "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
-    "effect": "^3.18.0"
+    "effect": "^3.18.0",
+    "effect-durable-operators": "workspace:*",
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

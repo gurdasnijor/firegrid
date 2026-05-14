@@ -270,15 +270,27 @@ importers:
 
   scenarios/firegrid:
     dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 0.21.0
+        version: 0.21.0(zod@4.4.3)
       '@firegrid/client':
         specifier: workspace:*
         version: link:../../packages/client
+      '@firegrid/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@firegrid/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
       effect:
         specifier: ^3.18.0
         version: 3.21.2
+      effect-durable-operators:
+        specifier: workspace:*
+        version: link:../../packages/effect-durable-operators
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
@@ -291,6 +303,11 @@ importers:
         version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)
 
 packages:
+
+  '@agentclientprotocol/sdk@0.21.0':
+    resolution: {integrity: sha512-ONj+Q8qOdNQp5XbH5jnMwzT9IKZJsSN0p0lkceS4GtUtNOPVLpNzSS8gqQdGMKfBvA0ESbkL8BTaSN1Rc9miEw==}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
 
   '@babel/code-frame@7.29.0':
     resolution: {integrity: sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw==}
@@ -2809,6 +2826,10 @@ packages:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
+
+  '@agentclientprotocol/sdk@0.21.0(zod@4.4.3)':
+    dependencies:
+      zod: 4.4.3
 
   '@babel/code-frame@7.29.0':
     dependencies:
