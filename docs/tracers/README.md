@@ -45,6 +45,7 @@ must make that dependency explicit.
 - [016: Session Plane Input Control Surface](./016-session-plane-input-control-surface.md)
 - [017: Effect Durable Operators](./017-effect-durable-operators.md)
 - [018: Cluster-Shaped Workflow Activity Ownership](./018-cluster-shaped-workflow-activity-ownership.md)
+- [019: Workflow-Driven Runtime Next Wave](./019-workflow-driven-runtime-next-wave.md)
 - [020: Verified Webhook Ingest To Durable Facts](./020-verified-webhook-ingest-to-durable-facts.md)
 
 ## Handoff
@@ -58,6 +59,12 @@ must make that dependency explicit.
 - [Firegrid Runtime Package Has No Production Root](../proposals/SDD_FIREGRID_RUNTIME_PACKAGE_HAS_NO_PRODUCTION_ROOT.md)
 
 ## Sequence
+
+The current workflow-driven runtime sequence is captured in
+[019: Workflow-Driven Runtime Next Wave](./019-workflow-driven-runtime-next-wave.md).
+Use that document for near-term dispatch and parallelization. The historical
+sequence below records how the early tracer program evolved and should not be
+read as the current implementation order.
 
 ```txt
 Prerequisite
