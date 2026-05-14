@@ -34,6 +34,9 @@ components:
       2: schedule_me-style delayed self input is expressed as workflow state plus DurableClock.sleep followed by a runtime input append.
       3: Effect Schedule may be used to compute recurrence, backoff, or calendar policy, but DurableClock is the durable suspension primitive.
       4: effect/Scheduler is not used as Firegrid's durable scheduling abstraction.
+      5: Scheduled runtime input intent is recorded as a runtime-owned durable fact keyed by scheduleId before a temporal workflow appends runtime input.
+      6: ScheduleRuntimeInputWorkflow re-reads the scheduled input fact after its durable wakeup, appends exactly one RuntimeIngressTable input for a pending schedule, and records firedInputId on the scheduled fact.
+      7: scheduleRuntimeInput(scheduleId) is idempotent; duplicate calls start or resume the same schedule workflow without appending duplicate runtime input rows.
 
   PHASE_5_HOST_WORKFLOW:
     requirements:
@@ -49,6 +52,7 @@ constraints:
       3: packages/runtime/src/durable-tools is provisional and may only bridge DurableTable row matches into workflow deferred completion; it must not own host dispatch, runtime execution, temporal scheduling, or context ownership.
       4: The workflow-driven runtime model does not introduce a public executeByName, workflow-name registry, DurableConsumer, ConsumerSource, ConsumerCheckpointStore, or DurableProjection replacement.
       5: Per-message runtime input delivery is not modeled as one workflow activity per input row in the default runtime path.
+      6: Scheduled runtime input facts are product intent and fired evidence, not a Firegrid-owned timer table; due wakeups remain workflow clock wakeups.
 
   VALIDATION:
     requirements:

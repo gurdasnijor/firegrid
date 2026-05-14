@@ -20,6 +20,10 @@
     "./durable-tools": {
       "types": "./src/durable-tools/index.ts",
       "default": "./src/durable-tools/index.ts"
+    },
+    "./runtime-scheduled-input": {
+      "types": "./src/runtime-scheduled-input/index.ts",
+      "default": "./src/runtime-scheduled-input/index.ts"
     }
   },
   "files": [
