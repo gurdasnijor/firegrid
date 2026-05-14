@@ -21,14 +21,14 @@
 
 import { Workflow, DurableClock } from "@effect/workflow"
 import { Clock, Duration, Effect, Schema } from "effect"
-import { PromptContentSchema } from "../agent-io/index.ts"
+import { AgentPromptSchema } from "../agent-io/index.ts"
 import { AgentToolHost } from "./tool-host.ts"
 import { ToolExecutionFailedError } from "./tool-error.ts"
 
 export const ScheduledInputWorkflowPayload = Schema.Struct({
   contextId: Schema.String,
   dueAtMs: Schema.Number,
-  promptContent: PromptContentSchema,
+  prompt: AgentPromptSchema,
   inputId: Schema.String,
 })
 export type ScheduledInputWorkflowPayload = Schema.Schema.Type<
@@ -44,7 +44,7 @@ export const ScheduledInputWorkflow = Workflow.make({
 })
 
 export const ScheduledInputWorkflowLayer = ScheduledInputWorkflow.toLayer(
-  ({ contextId, dueAtMs, promptContent, inputId }) =>
+  ({ contextId, dueAtMs, prompt, inputId }) =>
     Effect.gen(function* () {
       const host = yield* AgentToolHost
       const now = yield* Clock.currentTimeMillis
@@ -56,7 +56,7 @@ export const ScheduledInputWorkflowLayer = ScheduledInputWorkflow.toLayer(
       yield* host.appendScheduledPrompt({
         contextId,
         inputId,
-        content: promptContent,
+        prompt,
       })
     }),
 )

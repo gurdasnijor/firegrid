@@ -1,5 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
-import { Effect, Queue, Stream } from "effect"
+import { IdGenerator, Prompt, Response } from "@effect/ai"
+import { Effect, Match, Queue, Ref, Runtime, Stream } from "effect"
 import type {
   AgentByteStream,
   AgentCapabilities,
@@ -35,6 +36,16 @@ const codecError = (op: string, message: string, cause?: unknown): AgentCodecErr
   })
 }
 
+const acpPromise = <A>(
+  op: string,
+  message: string,
+  evaluate: () => Promise<A>,
+): Effect.Effect<A, AgentCodecError> =>
+  Effect.tryPromise({
+    try: evaluate,
+    catch: cause => codecError(op, message, cause),
+  })
+
 const recoverableError = (message: string, cause?: unknown): AgentOutputEvent => {
   const eventCause = cause === undefined ? { message } : { message, cause }
   return {
@@ -44,36 +55,40 @@ const recoverableError = (message: string, cause?: unknown): AgentOutputEvent =>
   }
 }
 
-const mapStopReason = (stopReason: acp.StopReason): StopReason => {
-  switch (stopReason) {
-    case "end_turn":
-    case "cancelled":
-    case "max_tokens":
-      return stopReason
-    case "max_turn_requests":
-      return "max_tokens"
-    case "refusal":
-      return "error"
-  }
-}
+const mapStopReason = (stopReason: acp.StopReason): StopReason =>
+  Match.value(stopReason).pipe(
+    Match.when("end_turn", () => "stop" as const),
+    Match.when("cancelled", () => "other" as const),
+    Match.when("max_tokens", () => "length" as const),
+    Match.when("max_turn_requests", () => "length" as const),
+    Match.when("refusal", () => "error" as const),
+    Match.exhaustive,
+  )
+
+const promptUserParts = (
+  event: Extract<AgentInputEvent, { _tag: "Prompt" }>,
+): ReadonlyArray<Prompt.UserMessagePart> =>
+  event.prompt.content
+
+const mapUserPromptPart = (
+  part: Prompt.UserMessagePart,
+): Effect.Effect<acp.ContentBlock, AgentCodecError> =>
+  Match.value(part).pipe(
+    Match.when({ type: "text" }, text =>
+      Effect.succeed({
+        type: "text" as const,
+        text: text.text,
+      })),
+    Match.orElse(other =>
+      Effect.fail(
+        codecError("send", `ACP codec does not support ${other.type} prompt parts`),
+      )),
+  )
 
 const mapPromptContent = (
   event: Extract<AgentInputEvent, { _tag: "Prompt" }>,
 ): Effect.Effect<Array<acp.ContentBlock>, AgentCodecError> =>
-  Effect.forEach(event.content, part => {
-    switch (part._tag) {
-      case "Text":
-        return Effect.succeed<acp.ContentBlock>({
-          type: "text",
-          text: part.text,
-        })
-      case "Image":
-      case "Structured":
-        return Effect.fail(
-          codecError("send", `ACP codec does not support ${part._tag} prompt parts`),
-        )
-    }
-  })
+  Effect.forEach(promptUserParts(event), mapUserPromptPart)
 
 const mapPermissionOptions = (
   options: ReadonlyArray<acp.PermissionOption>,
@@ -87,19 +102,18 @@ const mapPermissionOptions = (
 const selectedOptionId = (
   decision: PermissionDecision,
   options: ReadonlyArray<acp.PermissionOption>,
-): string | undefined => {
-  switch (decision._tag) {
-    case "Allow":
-      return decision.optionId ??
+): string | undefined =>
+  Match.value(decision).pipe(
+    Match.tag("Allow", allow =>
+      allow.optionId ??
         options.find(option => option.kind === "allow_once" || option.kind === "allow_always")
-          ?.optionId
-    case "Deny":
-      return options.find(option => option.kind === "reject_once" || option.kind === "reject_always")
-        ?.optionId
-    case "Cancelled":
-      return undefined
-  }
-}
+          ?.optionId),
+    Match.tag("Deny", () =>
+      options.find(option => option.kind === "reject_once" || option.kind === "reject_always")
+        ?.optionId),
+    Match.tag("Cancelled", () => undefined),
+    Match.exhaustive,
+  )
 
 const permissionResponse = (
   decision: PermissionDecision,
@@ -123,32 +137,39 @@ const status = (
 
 const mapSessionUpdate = (
   params: acp.SessionNotification,
-): ReadonlyArray<AgentOutputEvent> => {
+  textDeltaId: (messageId: string | undefined) => Effect.Effect<string>,
+): Effect.Effect<ReadonlyArray<AgentOutputEvent>> => {
   const update = params.update
-  switch (update.sessionUpdate) {
-    case "agent_message_chunk": {
+  return Match.value(update).pipe(
+    Match.when({ sessionUpdate: "agent_message_chunk" }, update => {
       const content = update.content
       if (content.type !== "text") {
-        return [status("agent_message_chunk", update)]
+        return Effect.succeed([status("agent_message_chunk", update)])
       }
-      return [{
-        _tag: "TextChunk",
-        text: content.text,
-        messageId: update.messageId ?? params.sessionId,
-      }]
-    }
-    case "tool_call":
-      return [{
-        _tag: "ToolUse",
-        toolUseId: update.toolCallId,
-        name: update.title,
-        input: update.rawInput,
-      }]
-    case "tool_call_update":
-      return [status("tool_call_update", update)]
-    default:
-      return [status(update.sessionUpdate, update)]
-  }
+      return textDeltaId(update.messageId ?? undefined).pipe(
+        Effect.map(id => [{
+          _tag: "TextChunk" as const,
+          part: Response.textDeltaPart({
+            id,
+            delta: content.text,
+          }),
+        }]),
+      )
+    }),
+    Match.when({ sessionUpdate: "tool_call" }, update =>
+      Effect.succeed([{
+        _tag: "ToolUse" as const,
+        part: Prompt.toolCallPart({
+          id: update.toolCallId,
+          name: update.title,
+          params: update.rawInput,
+          providerExecuted: false,
+        }),
+      }])),
+    Match.when({ sessionUpdate: "tool_call_update" }, update =>
+      Effect.succeed([status("tool_call_update", update)])),
+    Match.orElse(update => Effect.succeed([status(update.sessionUpdate, update)])),
+  )
 }
 
 const terminatedEvent = (
@@ -173,9 +194,32 @@ export const AcpCodec: AgentCodec = {
   capabilities: AcpCapabilities,
   open: bytes =>
     Effect.gen(function*() {
+      const scope = yield* Effect.scope
+      const runtime = yield* Effect.runtime<never>()
+      const runPromise = Runtime.runPromise(runtime)
       const outputEvents = yield* Queue.unbounded<AgentOutputEvent>()
+      const currentTextDeltaId = yield* Ref.make<string | undefined>(undefined)
+      const emitEffect = (event: AgentOutputEvent): Effect.Effect<void> =>
+        Queue.offer(outputEvents, event).pipe(Effect.asVoid)
       const emit = (event: AgentOutputEvent): Promise<void> =>
-        Effect.runPromise(Queue.offer(outputEvents, event)).then(() => undefined)
+        runPromise(emitEffect(event))
+      const textDeltaId = (
+        messageId: string | undefined,
+      ): Effect.Effect<string> => {
+        if (messageId !== undefined) {
+          return Effect.succeed(messageId)
+        }
+        return Ref.get(currentTextDeltaId).pipe(
+          Effect.flatMap(existing => {
+            if (existing !== undefined) {
+              return Effect.succeed(existing)
+            }
+            return IdGenerator.defaultIdGenerator.generateId().pipe(
+              Effect.tap(id => Ref.set(currentTextDeltaId, id)),
+            )
+          }),
+        )
+      }
 
       const pendingPermissions = new Map<
         string,
@@ -185,126 +229,175 @@ export const AcpCodec: AgentCodec = {
         }
       >()
       let permissionCounter = 0
-      let sessionId = ""
 
-      const cancelPendingPermissions = () => {
+      const registerPermission = (
+        permissionRequestId: string,
+        entry: {
+          readonly options: ReadonlyArray<acp.PermissionOption>
+          readonly resolve: (response: acp.RequestPermissionResponse) => void
+        },
+      ): Effect.Effect<void> =>
+        Effect.sync(() => {
+          pendingPermissions.set(permissionRequestId, entry)
+        })
+
+      const takePermission = (
+        permissionRequestId: string,
+      ): Effect.Effect<
+        | {
+          readonly options: ReadonlyArray<acp.PermissionOption>
+          readonly resolve: (response: acp.RequestPermissionResponse) => void
+        }
+        | undefined
+      > =>
+        Effect.sync(() => {
+          const pending = pendingPermissions.get(permissionRequestId)
+          if (pending !== undefined) {
+            pendingPermissions.delete(permissionRequestId)
+          }
+          return pending
+        })
+
+      const cancelPendingPermissions = Effect.sync(() => {
         for (const { resolve } of pendingPermissions.values()) {
           resolve({ outcome: { outcome: "cancelled" } })
         }
         pendingPermissions.clear()
-      }
+      })
 
       const client: acp.Client = {
         requestPermission: async params => {
           const permissionRequestId = `permission-${++permissionCounter}`
+          let resolveResponse: (response: acp.RequestPermissionResponse) => void = () => {}
+          const response = new Promise<acp.RequestPermissionResponse>(resolve => {
+            resolveResponse = resolve
+          })
+          await runPromise(
+            registerPermission(permissionRequestId, {
+              options: params.options,
+              resolve: resolveResponse,
+            }),
+          )
           await emit({
             _tag: "PermissionRequest",
             permissionRequestId,
             toolUseId: params.toolCall.toolCallId,
             options: mapPermissionOptions(params.options),
           })
-          return await new Promise<acp.RequestPermissionResponse>(resolve => {
-            pendingPermissions.set(permissionRequestId, {
-              options: params.options,
-              resolve,
-            })
-          })
+          return await response
         },
         sessionUpdate: async params => {
-          for (const event of mapSessionUpdate(params)) {
-            await emit(event)
-          }
+          await runPromise(
+            mapSessionUpdate(params, textDeltaId).pipe(
+              Effect.flatMap(events => Effect.forEach(events, emitEffect, { discard: true })),
+            ),
+          )
         },
       }
 
       const stream = acp.ndJsonStream(bytes.stdin, bytes.stdout)
       const connection = new acp.ClientSideConnection(() => client, stream)
 
-      yield* Effect.tryPromise({
-        try: async () => {
-          await connection.initialize({
-            protocolVersion: acp.PROTOCOL_VERSION,
-            clientCapabilities: {},
-          })
-          const session = await connection.newSession({
-            cwd: process.cwd(),
-            mcpServers: [],
-          })
-          sessionId = session.sessionId
-        },
-        catch: cause =>
-          codecError("open", "failed to initialize ACP session", cause),
-      })
+      yield* acpPromise("initialize", "failed to initialize ACP connection", () =>
+        connection.initialize({
+          protocolVersion: acp.PROTOCOL_VERSION,
+          clientCapabilities: {},
+        }))
 
-      const send = (event: AgentInputEvent): Effect.Effect<void, AgentCodecError> => {
-        switch (event._tag) {
-          case "Prompt":
-            return mapPromptContent(event).pipe(
-              Effect.flatMap(prompt =>
-                Effect.sync(() => {
-                  void connection.prompt({
-                    sessionId,
-                    messageId: event.correlationId,
-                    prompt,
-                  }).then(response =>
-                    emit({
-                      _tag: "TurnComplete",
-                      stopReason: mapStopReason(response.stopReason),
-                      ...(response.userMessageId === undefined || response.userMessageId === null
-                        ? {}
-                        : { messageId: response.userMessageId }),
-                    }),
-                  ).catch(cause =>
-                    emit(recoverableError("ACP prompt failed", cause)),
-                  )
-                }),
-              ),
+      const session = yield* acpPromise("newSession", "failed to create ACP session", () =>
+        connection.newSession({
+          cwd: process.cwd(),
+          mcpServers: [],
+        }))
+      const sessionId = session.sessionId
+
+      const sendPrompt = (
+        event: Extract<AgentInputEvent, { _tag: "Prompt" }>,
+      ): Effect.Effect<void, AgentCodecError> =>
+        Effect.gen(function*() {
+          const prompt = yield* mapPromptContent(event)
+          yield* acpPromise("prompt", "ACP prompt failed", () =>
+            connection.prompt({
+              sessionId,
+              messageId: event.correlationId,
+              prompt,
+            })).pipe(
+              Effect.matchEffect({
+                onFailure: error =>
+                  Ref.set(currentTextDeltaId, undefined).pipe(
+                    Effect.zipRight(emitEffect(recoverableError("ACP prompt failed", error.cause))),
+                  ),
+                onSuccess: response =>
+                  Ref.set(currentTextDeltaId, undefined).pipe(
+                    Effect.zipRight(
+                      emitEffect({
+                        _tag: "TurnComplete",
+                        finishReason: mapStopReason(response.stopReason),
+                        ...(response.userMessageId === undefined || response.userMessageId === null
+                          ? {}
+                          : { messageId: response.userMessageId }),
+                      }),
+                    ),
+                  ),
+              }),
+              Effect.forkIn(scope),
             )
-          case "PermissionResponse": {
-            const pending = pendingPermissions.get(event.permissionRequestId)
-            if (pending === undefined) {
-              return Effect.fail(
-                codecError(
-                  "send",
-                  `unknown ACP permission request ${event.permissionRequestId}`,
-                ),
-              )
-            }
-            pendingPermissions.delete(event.permissionRequestId)
-            return Effect.sync(() => {
-              pending.resolve(permissionResponse(event.decision, pending.options))
-            })
-          }
-          case "Cancel":
-            return Effect.tryPromise({
-              try: async () => {
-                cancelPendingPermissions()
-                await connection.cancel({ sessionId })
-              },
-              catch: cause => codecError("send", "failed to cancel ACP session", cause),
-            })
-          case "Terminate":
-            return Effect.tryPromise({
-              try: async () => {
-                const writer = bytes.stdin.getWriter()
-                try {
-                  await writer.close()
-                } finally {
-                  writer.releaseLock()
-                }
-              },
-              catch: cause =>
-                codecError("send", "failed to terminate ACP byte stream", cause),
-            })
-          case "ToolResult":
-            return Effect.fail(
+        }).pipe(Effect.asVoid)
+
+      const sendPermissionResponse = (
+        event: Extract<AgentInputEvent, { _tag: "PermissionResponse" }>,
+      ): Effect.Effect<void, AgentCodecError> =>
+        Effect.gen(function*() {
+          const pending = yield* takePermission(event.permissionRequestId)
+          if (pending === undefined) {
+            return yield* Effect.fail(
               codecError(
                 "send",
-                "ACP ToolResult input is out-of-band for this codec slice",
+                `unknown ACP permission request ${event.permissionRequestId}`,
               ),
             )
-        }
-      }
+          }
+          yield* Effect.sync(() => {
+            pending.resolve(permissionResponse(event.decision, pending.options))
+          })
+        })
+
+      const sendCancel = (): Effect.Effect<void, AgentCodecError> =>
+        Effect.gen(function*() {
+          yield* cancelPendingPermissions
+          yield* acpPromise("cancel", "failed to cancel ACP session", () =>
+            connection.cancel({ sessionId }))
+        })
+
+      const sendTerminate = (): Effect.Effect<void, AgentCodecError> =>
+        Effect.acquireUseRelease(
+          Effect.sync(() => bytes.stdin.getWriter()),
+          writer =>
+            Effect.tryPromise({
+              try: () => writer.close(),
+              catch: cause =>
+                codecError("terminate", "failed to close ACP byte stream stdin", cause),
+            }),
+          writer => Effect.sync(() => writer.releaseLock()),
+        )
+
+      const sendToolResult = (): Effect.Effect<void, AgentCodecError> =>
+        Effect.fail(
+          codecError(
+            "send",
+            "ACP ToolResult input is out-of-band for this codec slice",
+          ),
+        )
+
+      const send = (event: AgentInputEvent): Effect.Effect<void, AgentCodecError> =>
+        Match.value(event).pipe(
+          Match.tag("Prompt", sendPrompt),
+          Match.tag("PermissionResponse", sendPermissionResponse),
+          Match.tag("Cancel", sendCancel),
+          Match.tag("Terminate", sendTerminate),
+          Match.tag("ToolResult", sendToolResult),
+          Match.exhaustive,
+        )
 
       const outputs = Stream.succeed<AgentOutputEvent>({
         _tag: "Ready",
@@ -313,6 +406,7 @@ export const AcpCodec: AgentCodec = {
         Stream.concat(
           Stream.fromQueue(outputEvents).pipe(
             Stream.merge(terminatedEvent(bytes)),
+            Stream.takeUntil(event => event._tag === "Terminated"),
           ),
         ),
       )

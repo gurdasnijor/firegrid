@@ -3,14 +3,14 @@
  * duplex byte stream and the normalized `AgentInputEvent`/
  * `AgentOutputEvent` channels that `RuntimeContextWorkflow` consumes.
  *
- * Phase 1 PR 1 defines the interface only. Concrete codecs
- * (`StdioJsonlCodec`, `AcpCodec`) land in subsequent PRs.
+ * Codecs receive Effect AI `Toolkit` metadata directly. Firegrid does not
+ * maintain a parallel descriptor/catalog shape for tools.
  */
 
+import type { Toolkit } from "@effect/ai"
 import { Schema, type Effect, type Scope, type Stream } from "effect"
 import type { AgentInputEvent, AgentOutputEvent, AgentCapabilities } from "./contract.ts"
 import type { AgentByteStream } from "./byte-stream.ts"
-import type { AgentToolDescriptor } from "./descriptor.ts"
 
 /**
  * Error category for codec-level failures: framing errors, protocol
@@ -18,6 +18,8 @@ import type { AgentToolDescriptor } from "./descriptor.ts"
  * responsible for distinguishing fatal failures (which fail the output
  * Stream with `AgentCodecError`) from recoverable ones (which surface
  * as `Error` output events).
+ * firegrid-agent-io-effect-ai-alignment.LOCAL_LIFECYCLE_EVENTS.2
+ * firegrid-agent-io-effect-ai-alignment.EFFECT_AI_BOUNDARIES.2
  */
 export class AgentCodecError extends Schema.TaggedError<AgentCodecError>()(
   "AgentCodecError",
@@ -30,7 +32,11 @@ export class AgentCodecError extends Schema.TaggedError<AgentCodecError>()(
 ) {}
 
 export interface AgentCodecOpenOptions {
-  readonly toolCatalog: ReadonlyArray<AgentToolDescriptor<unknown, unknown>>
+  // firegrid-agent-io-effect-ai-alignment.TOOLKIT_METADATA.1
+  // Optional for V1 codec slices that do not publish a tool catalog;
+  // catalog-publishing codecs should treat this as their Effect AI
+  // Toolkit source rather than introducing a Firegrid descriptor mirror.
+  readonly toolkit?: Toolkit.Any
 }
 
 export interface AgentSession {

@@ -1,4 +1,5 @@
-import { Chunk, Deferred, Effect, Fiber, Stream } from "effect"
+import { Prompt, Response } from "@effect/ai"
+import { Chunk, Deferred, Effect, Fiber, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import type {
   AgentByteStream,
@@ -43,7 +44,10 @@ const makeHarness = Effect.gen(function*() {
 })
 
 const openSession = (bytes: AgentByteStream) =>
-  StdioJsonlCodec.open(bytes, { toolCatalog: [] })
+  StdioJsonlCodec.open(bytes, {})
+
+const userMessage = (text: string): Prompt.UserMessage =>
+  Prompt.userMessage({ content: [Prompt.textPart({ text })] })
 
 const collectOutputs = (
   session: AgentSession,
@@ -106,7 +110,7 @@ describe("StdioJsonlCodec", () => {
           yield* session.send({
             _tag: "Prompt",
             correlationId: "prompt-1",
-            content: [{ _tag: "Text", text: "hello agent" }],
+            prompt: userMessage("hello agent"),
           })
           return yield* Fiber.join(line)
         }),
@@ -116,7 +120,9 @@ describe("StdioJsonlCodec", () => {
     expect(JSON.parse(line) as unknown).toEqual({
       type: "prompt",
       correlationId: "prompt-1",
-      content: [{ _tag: "Text", text: "hello agent" }],
+      prompt: Schema.encodeSync(Prompt.UserMessage)(
+        userMessage("hello agent"),
+      ),
     })
   })
 
@@ -139,8 +145,10 @@ describe("StdioJsonlCodec", () => {
 
     expect(events[1]).toEqual({
       _tag: "TextChunk",
-      text: "hello from stdout",
-      messageId: "m-1",
+      part: Response.textDeltaPart({
+        id: "m-1",
+        delta: "hello from stdout",
+      }),
     })
   })
 
@@ -164,9 +172,12 @@ describe("StdioJsonlCodec", () => {
 
     expect(events[1]).toEqual({
       _tag: "ToolUse",
-      toolUseId: "tool-1",
-      name: "lookup",
-      input: { query: "firegrid" },
+      part: Prompt.toolCallPart({
+        id: "tool-1",
+        name: "lookup",
+        params: { query: "firegrid" },
+        providerExecuted: false,
+      }),
     })
   })
 
@@ -179,9 +190,13 @@ describe("StdioJsonlCodec", () => {
           const line = yield* readStdinLine(harness.stdinReader).pipe(Effect.fork)
           yield* session.send({
             _tag: "ToolResult",
-            toolUseId: "tool-1",
-            content: { ok: true },
-            isError: false,
+            part: Prompt.toolResultPart({
+              id: "tool-1",
+              name: "lookup",
+              result: { ok: true },
+              isFailure: false,
+              providerExecuted: false,
+            }),
           })
           return yield* Fiber.join(line)
         }),
@@ -191,6 +206,7 @@ describe("StdioJsonlCodec", () => {
     expect(JSON.parse(line) as unknown).toEqual({
       type: "tool_result",
       toolUseId: "tool-1",
+      name: "lookup",
       content: { ok: true },
       isError: false,
     })
@@ -215,7 +231,7 @@ describe("StdioJsonlCodec", () => {
 
     expect(events[1]).toEqual({
       _tag: "TurnComplete",
-      stopReason: "end_turn",
+      finishReason: "stop",
       messageId: "m-1",
     })
   })
@@ -237,5 +253,34 @@ describe("StdioJsonlCodec", () => {
       _tag: "Terminated",
       exitCode: 0,
     } satisfies AgentOutputEvent)
+  })
+
+  it("completes the output stream after Terminated", async () => {
+    const events = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const harness = yield* makeHarness
+          const session = yield* openSession(harness.bytes)
+          const fiber = yield* session.outputs.pipe(
+            Stream.runCollect,
+            Effect.map(Chunk.toReadonlyArray),
+            Effect.fork,
+          )
+          yield* Deferred.succeed(harness.exit, { exitCode: 0 })
+          return yield* Fiber.join(fiber)
+        }),
+      ),
+    )
+
+    expect(events).toEqual([
+      {
+        _tag: "Ready",
+        capabilities: StdioJsonlCapabilities,
+      },
+      {
+        _tag: "Terminated",
+        exitCode: 0,
+      },
+    ])
   })
 })

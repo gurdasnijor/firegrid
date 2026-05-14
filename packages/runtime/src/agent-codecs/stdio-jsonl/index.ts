@@ -1,4 +1,5 @@
-import { Effect, Stream } from "effect"
+import { Prompt, Response } from "@effect/ai"
+import { Effect, Match, Schema, Stream } from "effect"
 import type {
   AgentByteStream,
   AgentCapabilities,
@@ -51,11 +52,30 @@ const asRecord = (value: unknown): Record<string, unknown> | undefined =>
     : undefined
 
 const isStopReason = (value: unknown): value is StopReason =>
-  value === "end_turn" ||
-  value === "tool_use" ||
-  value === "cancelled" ||
-  value === "max_tokens" ||
-  value === "error"
+  value === "stop" ||
+  value === "length" ||
+  value === "content-filter" ||
+  value === "tool-calls" ||
+  value === "error" ||
+  value === "pause" ||
+  value === "other" ||
+  value === "unknown"
+
+// Back-compat shim for early stdio-jsonl agents that emitted ACP/Firegrid
+// stopReason strings before this codec moved to Effect AI FinishReason.
+const FiregridLegacyStopReasonMap = {
+  end_turn: "stop",
+  tool_use: "tool-calls",
+  cancelled: "other",
+  max_tokens: "length",
+} as const satisfies Record<string, StopReason>
+
+const decodeFinishReason = (value: unknown): StopReason | undefined => {
+  if (typeof value === "string" && value in FiregridLegacyStopReasonMap) {
+    return FiregridLegacyStopReasonMap[value as keyof typeof FiregridLegacyStopReasonMap]
+  }
+  return isStopReason(value) ? value : undefined
+}
 
 const optionalString = (
   record: Record<string, unknown>,
@@ -74,8 +94,10 @@ const decodeTextChunk = (
   }
   return {
     _tag: "TextChunk",
-    text,
-    messageId: optionalString(record, "messageId") ?? "stdio-jsonl",
+    part: Response.textDeltaPart({
+      id: optionalString(record, "messageId") ?? "stdio-jsonl",
+      delta: text,
+    }),
   }
 }
 
@@ -92,26 +114,31 @@ const decodeToolUse = (
   }
   return {
     _tag: "ToolUse",
-    toolUseId,
-    name,
-    input: record["input"],
+    part: Prompt.toolCallPart({
+      id: toolUseId,
+      name,
+      params: record["input"],
+      providerExecuted: false,
+    }),
   }
 }
 
 const decodeTurnComplete = (
   record: Record<string, unknown>,
 ): AgentOutputEvent => {
-  const rawStopReason = record["stopReason"] ?? "end_turn"
-  if (!isStopReason(rawStopReason)) {
+  const finishReason = decodeFinishReason(
+    record["finishReason"] ?? record["stopReason"] ?? "stop",
+  )
+  if (finishReason === undefined) {
     return recoverableError(
-      "stdio-jsonl turn_complete event has unsupported stopReason",
+      "stdio-jsonl turn_complete event has unsupported finishReason",
       record,
     )
   }
   const messageId = optionalString(record, "messageId")
   return {
     _tag: "TurnComplete",
-    stopReason: rawStopReason,
+    finishReason,
     ...(messageId === undefined ? {} : { messageId }),
   }
 }
@@ -144,20 +171,15 @@ const decodeStdoutLine = (line: string): AgentOutputEvent => {
     return recoverableError("stdio-jsonl line must decode to an object", parsed)
   }
 
-  switch (record["type"]) {
-    case "text":
-    case "assistant":
-      return decodeTextChunk(record)
-    case "tool_use":
-      return decodeToolUse(record)
-    case "turn_complete":
-    case "end_turn":
-      return decodeTurnComplete(record)
-    case "status":
-      return decodeStatus(record)
-    default:
-      return recoverableError("unsupported stdio-jsonl event type", record)
-  }
+  return Match.value(record["type"]).pipe(
+    Match.when("text", () => decodeTextChunk(record)),
+    Match.when("assistant", () => decodeTextChunk(record)),
+    Match.when("tool_use", () => decodeToolUse(record)),
+    Match.when("turn_complete", () => decodeTurnComplete(record)),
+    Match.when("end_turn", () => decodeTurnComplete(record)),
+    Match.when("status", () => decodeStatus(record)),
+    Match.orElse(() => recoverableError("unsupported stdio-jsonl event type", record)),
+  )
 }
 
 const encodePrompt = (
@@ -165,33 +187,33 @@ const encodePrompt = (
 ) => ({
   type: "prompt" as const,
   correlationId: event.correlationId,
-  content: event.content,
+  prompt: Schema.encodeSync(Prompt.UserMessage)(event.prompt),
 })
 
 const encodeToolResult = (
   event: Extract<AgentInputEvent, { _tag: "ToolResult" }>,
 ) => ({
   type: "tool_result" as const,
-  toolUseId: event.toolUseId,
-  content: event.content,
-  isError: event.isError,
+  toolUseId: event.part.id,
+  name: event.part.name,
+  content: event.part.result,
+  isError: event.part.isFailure,
 })
 
 const encodeInputEvent = (
   event: AgentInputEvent,
 ): Effect.Effect<unknown, AgentCodecError> => {
-  switch (event._tag) {
-    case "Prompt":
-      return Effect.succeed(encodePrompt(event))
-    case "ToolResult":
-      return Effect.succeed(encodeToolResult(event))
-    case "PermissionResponse":
-    case "Cancel":
-    case "Terminate":
-      return Effect.fail(
-        codecError("send", `stdio-jsonl does not support ${event._tag} input`),
-      )
-  }
+  return Match.value(event).pipe(
+    Match.tag("Prompt", prompt => Effect.succeed(encodePrompt(prompt))),
+    Match.tag("ToolResult", toolResult => Effect.succeed(encodeToolResult(toolResult))),
+    Match.tag("PermissionResponse", unsupported =>
+      Effect.fail(codecError("send", `stdio-jsonl does not support ${unsupported._tag} input`))),
+    Match.tag("Cancel", unsupported =>
+      Effect.fail(codecError("send", `stdio-jsonl does not support ${unsupported._tag} input`))),
+    Match.tag("Terminate", unsupported =>
+      Effect.fail(codecError("send", `stdio-jsonl does not support ${unsupported._tag} input`))),
+    Match.exhaustive,
+  )
 }
 
 const writeJsonLine = (
@@ -258,7 +280,10 @@ const outputs = (
     capabilities: StdioJsonlCapabilities,
   }).pipe(
     Stream.concat(
-      stdoutEvents(bytes.stdout).pipe(Stream.merge(terminatedEvent(bytes))),
+      stdoutEvents(bytes.stdout).pipe(
+        Stream.merge(terminatedEvent(bytes)),
+        Stream.takeUntil(event => event._tag === "Terminated"),
+      ),
     ),
   )
 

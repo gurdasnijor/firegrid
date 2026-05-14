@@ -1,0 +1,40 @@
+feature:
+  name: firegrid-agent-io-effect-ai-alignment
+  product: firegrid
+  description: >
+    Align Firegrid agent I/O boundaries with Effect AI Prompt, Response,
+    Tool, Toolkit, IdGenerator, Model, and Chat contracts without duplicating
+    those semantics locally. Codec envelopes use codec-generic Effect AI
+    Prompt parts for normalized agent I/O; Response, Chat, and Model envelopes
+    belong at direct Effect AI model/provider invocation boundaries, not at
+    byte-codec framing boundaries.
+
+components:
+  TOOLKIT_METADATA:
+    requirements:
+      1: Agent codecs receive tool metadata through Effect AI Toolkit/Tool values; Firegrid does not maintain a parallel AgentToolDescriptor type, descriptor registry, or descriptor helper for codec catalog publication.
+      2: Codec catalog projection reads Effect AI Tool names, descriptions, parameter schemas, success schemas, failure schemas, and annotations from the Toolkit/Tool values.
+
+  DURABLE_PAYLOAD_ALIGNMENT:
+    requirements:
+      1: Prompt input payloads use Effect AI Prompt schemas or types where the payload represents a model/user prompt.
+      2: Tool-call output payloads use Effect AI Prompt ToolCallPart semantics, including id, name, params, and provider execution metadata where applicable.
+      3: Tool-result input payloads use Effect AI Prompt or Response ToolResultPart semantics, including id, name, result, isFailure, and provider execution metadata where applicable.
+
+  LOCAL_LIFECYCLE_EVENTS:
+    requirements:
+      1: Firegrid-local agent I/O remains limited to runtime lifecycle, control, permission, status, termination, and codec framing/error events that are not Effect AI model content.
+      2: Codec framing and protocol errors stay represented as Firegrid AgentCodecError or recoverable local Error output events, not as Effect AI model response envelopes.
+
+constraints:
+  EFFECT_AI_BOUNDARIES:
+    requirements:
+      1: IdGenerator is used at tool-call identity generation boundaries rather than replaced with Firegrid-local random id helpers.
+      2: Direct Effect AI model/provider failure mapping is deferred until Firegrid invokes an Effect AI LanguageModel directly; codec framing errors remain AgentCodecError.
+      3: Chat and Model are not used as durable event envelopes unless runtime code invokes an Effect AI LanguageModel directly.
+
+  VALIDATION:
+    requirements:
+      1: Tests prove codec open options accept an Effect AI Toolkit and project the underlying Tool metadata without AgentToolDescriptor.
+      2: Tests prove the retired AgentToolDescriptor surface is absent from runtime exports and codec open options.
+      3: Tests prove Prompt, ToolCallPart, and ToolResultPart payload alignment before old local prompt/tool payload shapes are removed.

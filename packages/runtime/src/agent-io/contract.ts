@@ -2,9 +2,11 @@
  * Normalized agent I/O event contract.
  *
  * Codecs translate per-protocol wire formats (ACP, stdio-jsonl, future)
- * into and out of these events. The supervising workflow body
- * (`RuntimeContextWorkflow`, wired in PR 2) consumes them without
- * knowing which protocol produced them.
+ * into and out of these events. Model-content payloads use Effect AI
+ * Prompt/Response contracts; Firegrid owns only lifecycle/control
+ * envelopes around the agent process.
+ * firegrid-agent-io-effect-ai-alignment.LOCAL_LIFECYCLE_EVENTS.1
+ * firegrid-agent-io-effect-ai-alignment.EFFECT_AI_BOUNDARIES.3
  *
  * This module owns the normalized agent I/O event types. The agent
  * tools layer (`packages/runtime/src/agent-tools`) owns the canonical
@@ -18,25 +20,24 @@
  *     (suspension/result vocabulary stays substrate-neutral).
  */
 
+import { Prompt, Response } from "@effect/ai"
 import { Schema } from "effect"
 
 // ---------------------------------------------------------------------------
-// Prompt content (input events)
+// Effect AI semantic payloads
 // ---------------------------------------------------------------------------
 
-export const PromptPartSchema = Schema.Union(
-  Schema.TaggedStruct("Text", { text: Schema.String }),
-  Schema.TaggedStruct("Image", {
-    mediaType: Schema.String,
-    // Codecs choose whether to ship raw bytes or a string-encoded form.
-    data: Schema.Union(Schema.Uint8ArrayFromSelf, Schema.String),
-  }),
-  Schema.TaggedStruct("Structured", { data: Schema.Unknown }),
-)
-export type PromptPart = Schema.Schema.Type<typeof PromptPartSchema>
+export const AgentPromptSchema = Prompt.UserMessage
+export type AgentPrompt = Prompt.UserMessage
 
-export const PromptContentSchema = Schema.Array(PromptPartSchema)
-export type PromptContent = Schema.Schema.Type<typeof PromptContentSchema>
+export const AgentTextDeltaPartSchema = Response.TextDeltaPart
+export type AgentTextDeltaPart = Response.TextDeltaPart
+
+export const AgentToolCallPartSchema = Prompt.ToolCallPart
+export type AgentToolCallPart = Prompt.ToolCallPart
+
+export const AgentToolResultPartSchema = Prompt.ToolResultPart
+export type AgentToolResultPart = Prompt.ToolResultPart
 
 // ---------------------------------------------------------------------------
 // Input events (workflow body -> codec)
@@ -56,15 +57,15 @@ export type PermissionDecision = Schema.Schema.Type<typeof PermissionDecisionSch
  * the shape. The variant is still part of `AgentInputEventSchema`.
  */
 export const ToolResultEventSchema = Schema.TaggedStruct("ToolResult", {
-  toolUseId: Schema.String,
-  content: Schema.Unknown,
-  isError: Schema.Boolean,
+  // firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.3
+  part: AgentToolResultPartSchema,
 })
 export type ToolResultEvent = Schema.Schema.Type<typeof ToolResultEventSchema>
 
 export const AgentInputEventSchema = Schema.Union(
   Schema.TaggedStruct("Prompt", {
-    content: PromptContentSchema,
+    // firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.1
+    prompt: AgentPromptSchema,
     correlationId: Schema.String,
   }),
   ToolResultEventSchema,
@@ -81,14 +82,8 @@ export type AgentInputEvent = Schema.Schema.Type<typeof AgentInputEventSchema>
 // Output events (codec -> workflow body)
 // ---------------------------------------------------------------------------
 
-export const StopReasonSchema = Schema.Literal(
-  "end_turn",
-  "tool_use",
-  "cancelled",
-  "max_tokens",
-  "error",
-)
-export type StopReason = Schema.Schema.Type<typeof StopReasonSchema>
+export const StopReasonSchema = Response.FinishReason
+export type StopReason = Response.FinishReason
 
 export const PermissionOptionKindSchema = Schema.Literal(
   "allow_once",
@@ -120,13 +115,11 @@ export type AgentCapabilities = Schema.Schema.Type<typeof AgentCapabilitiesSchem
 export const AgentOutputEventSchema = Schema.Union(
   Schema.TaggedStruct("Ready", { capabilities: AgentCapabilitiesSchema }),
   Schema.TaggedStruct("TextChunk", {
-    text: Schema.String,
-    messageId: Schema.String,
+    part: AgentTextDeltaPartSchema,
   }),
   Schema.TaggedStruct("ToolUse", {
-    toolUseId: Schema.String,
-    name: Schema.String,
-    input: Schema.Unknown,
+    // firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.2
+    part: AgentToolCallPartSchema,
   }),
   Schema.TaggedStruct("PermissionRequest", {
     permissionRequestId: Schema.String,
@@ -134,7 +127,7 @@ export const AgentOutputEventSchema = Schema.Union(
     options: Schema.Array(PermissionOptionSchema),
   }),
   Schema.TaggedStruct("TurnComplete", {
-    stopReason: StopReasonSchema,
+    finishReason: StopReasonSchema,
     messageId: Schema.optional(Schema.String),
   }),
   Schema.TaggedStruct("Status", {

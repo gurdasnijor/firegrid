@@ -31,7 +31,7 @@ import type {
   SpawnTask,
   WorkflowTerminalState,
 } from "@firegrid/protocol/agent-tools"
-import type { PromptContent } from "../agent-io/index.ts"
+import type { AgentPrompt } from "../agent-io/index.ts"
 import type { ToolExecutionFailedError } from "./tool-error.ts"
 
 export interface SpawnChildContextParams {
@@ -70,7 +70,7 @@ export interface ExecuteSandboxToolParams {
 export interface AppendScheduledPromptParams {
   readonly contextId: string
   readonly inputId: string
-  readonly content: PromptContent
+  readonly prompt: AgentPrompt
 }
 
 export interface AgentToolHostService {
@@ -95,7 +95,8 @@ export interface AgentToolHostService {
    * Activity-bounded sandbox-tool dispatch. The host resolves the
    * `SandboxRef.providerName` to a concrete `SandboxProvider` and shapes
    * the call. Returns the raw provider-defined output payload; the
-   * descriptor's `outputSchema` is `Schema.Unknown` at this layer.
+   * sandbox-neutral `execute` tool output is intentionally unknown at
+   * this layer.
    */
   readonly executeSandboxTool: (
     params: ExecuteSandboxToolParams,

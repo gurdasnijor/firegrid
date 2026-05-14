@@ -1,4 +1,5 @@
 import * as acp from "@agentclientprotocol/sdk"
+import { Prompt, Response } from "@effect/ai"
 import { Chunk, Deferred, Effect, Fiber, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import type {
@@ -260,7 +261,10 @@ const startAgent = <A extends acp.Agent>(
 }
 
 const openSession = (bytes: AgentByteStream) =>
-  AcpCodec.open(bytes, { toolCatalog: [] })
+  AcpCodec.open(bytes, {})
+
+const userMessage = (text: string): Prompt.UserMessage =>
+  Prompt.userMessage({ content: [Prompt.textPart({ text })] })
 
 const collectOutputs = (
   session: AgentSession,
@@ -304,7 +308,7 @@ describe("AcpCodec", () => {
           yield* session.send({
             _tag: "Prompt",
             correlationId: "prompt-1",
-            content: [{ _tag: "Text", text: "hello ACP" }],
+            prompt: userMessage("hello ACP"),
           })
           return yield* Fiber.join(fiber)
         }),
@@ -318,14 +322,19 @@ describe("AcpCodec", () => {
       },
       {
         _tag: "TextChunk",
-        text: "received: hello ACP",
-        messageId: "message-1",
+        part: Response.textDeltaPart({
+          id: "message-1",
+          delta: "received: hello ACP",
+        }),
       },
       {
         _tag: "ToolUse",
-        toolUseId: "tool-1",
-        name: "lookup",
-        input: { query: "hello ACP" },
+        part: Prompt.toolCallPart({
+          id: "tool-1",
+          name: "lookup",
+          params: { query: "hello ACP" },
+          providerExecuted: false,
+        }),
       },
       {
         _tag: "Status",
@@ -338,10 +347,34 @@ describe("AcpCodec", () => {
       },
       {
         _tag: "TurnComplete",
-        stopReason: "end_turn",
+        finishReason: "stop",
         messageId: "prompt-1",
       },
     ])
+  })
+
+  it("sends UserMessage content to ACP without role filtering at runtime", async () => {
+    const agent = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const harness = yield* makeHarness
+          const agent = startAgent(harness, connection => new FixtureAgent(connection))
+          const session = yield* openSession(harness.bytes)
+          yield* session.send({
+            _tag: "Prompt",
+            correlationId: "prompt-role-aware",
+            prompt: userMessage("latest user"),
+          })
+          yield* Effect.promise(() => agent.promptStarted)
+          return agent
+        }),
+      ),
+    )
+
+    expect(agent.prompts[0]?.prompt).toEqual([{
+      type: "text",
+      text: "latest user",
+    }])
   })
 
   it("maps SDK requestPermission to PermissionRequest and resolves PermissionResponse", async () => {
@@ -369,7 +402,7 @@ describe("AcpCodec", () => {
           yield* session.send({
             _tag: "Prompt",
             correlationId: "prompt-2",
-            content: [{ _tag: "Text", text: "edit config" }],
+            prompt: userMessage("edit config"),
           })
           return yield* Fiber.join(fiber)
         }),
@@ -378,9 +411,12 @@ describe("AcpCodec", () => {
 
     expect(events[1]).toEqual({
       _tag: "ToolUse",
-      toolUseId: "tool-permission",
-      name: "edit config",
-      input: { path: "config.json" },
+      part: Prompt.toolCallPart({
+        id: "tool-permission",
+        name: "edit config",
+        params: { path: "config.json" },
+        providerExecuted: false,
+      }),
     })
     expect(events[2]).toEqual({
       _tag: "PermissionRequest",
@@ -399,14 +435,15 @@ describe("AcpCodec", () => {
         },
       ],
     })
-    expect(events[3]).toEqual({
-      _tag: "TextChunk",
-      text: "selected",
-      messageId: "session-1",
-    })
+    expect(events[3]?._tag).toBe("TextChunk")
+    if (events[3]?._tag === "TextChunk") {
+      expect(events[3].part.id).toMatch(/^id_/)
+      expect(events[3].part.id).not.toBe("session-1")
+      expect(events[3].part.delta).toBe("selected")
+    }
     expect(events[4]).toEqual({
       _tag: "TurnComplete",
-      stopReason: "end_turn",
+      finishReason: "stop",
       messageId: "prompt-2",
     })
   })
@@ -422,7 +459,7 @@ describe("AcpCodec", () => {
           yield* session.send({
             _tag: "Prompt",
             correlationId: "prompt-3",
-            content: [{ _tag: "Text", text: "cancel me" }],
+            prompt: userMessage("cancel me"),
           })
           yield* Effect.promise(() => agent.promptStarted)
           yield* session.send({ _tag: "Cancel", reason: "test" })
@@ -433,7 +470,7 @@ describe("AcpCodec", () => {
 
     expect(events[1]).toEqual({
       _tag: "TurnComplete",
-      stopReason: "cancelled",
+      finishReason: "other",
       messageId: "prompt-3",
     })
   })
@@ -459,7 +496,7 @@ describe("AcpCodec", () => {
           yield* session.send({
             _tag: "Prompt",
             correlationId: "prompt-4",
-            content: [{ _tag: "Text", text: "edit config" }],
+            prompt: userMessage("edit config"),
           })
           return yield* Fiber.join(fiber)
         }),
@@ -468,9 +505,12 @@ describe("AcpCodec", () => {
 
     expect(events[1]).toEqual({
       _tag: "ToolUse",
-      toolUseId: "tool-permission",
-      name: "edit config",
-      input: { path: "config.json" },
+      part: Prompt.toolCallPart({
+        id: "tool-permission",
+        name: "edit config",
+        params: { path: "config.json" },
+        providerExecuted: false,
+      }),
     })
     expect(events[2]).toEqual({
       _tag: "PermissionRequest",
@@ -491,7 +531,7 @@ describe("AcpCodec", () => {
     })
     expect(events[3]).toEqual({
       _tag: "TurnComplete",
-      stopReason: "cancelled",
+      finishReason: "other",
       messageId: "prompt-4",
     })
   })
@@ -516,6 +556,36 @@ describe("AcpCodec", () => {
     } satisfies AgentOutputEvent)
   })
 
+  it("completes the output stream after Terminated", async () => {
+    const events = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const harness = yield* makeHarness
+          startAgent(harness, connection => new FixtureAgent(connection))
+          const session = yield* openSession(harness.bytes)
+          const fiber = yield* session.outputs.pipe(
+            Stream.runCollect,
+            Effect.map(Chunk.toReadonlyArray),
+            Effect.fork,
+          )
+          yield* Deferred.succeed(harness.exit, { exitCode: 0 })
+          return yield* Fiber.join(fiber)
+        }),
+      ),
+    )
+
+    expect(events).toEqual([
+      {
+        _tag: "Ready",
+        capabilities: AcpCapabilities,
+      },
+      {
+        _tag: "Terminated",
+        exitCode: 0,
+      },
+    ])
+  })
+
   it("rejects ToolResult input until ACP out-of-band tool results are specified", async () => {
     const result = await Effect.runPromise(
       Effect.scoped(
@@ -525,9 +595,13 @@ describe("AcpCodec", () => {
           const session = yield* openSession(harness.bytes)
           return yield* session.send({
             _tag: "ToolResult",
-            toolUseId: "tool-1",
-            content: { ok: true },
-            isError: false,
+            part: Prompt.toolResultPart({
+              id: "tool-1",
+              name: "lookup",
+              result: { ok: true },
+              isFailure: false,
+              providerExecuted: false,
+            }),
           }).pipe(Effect.either)
         }),
       ),
