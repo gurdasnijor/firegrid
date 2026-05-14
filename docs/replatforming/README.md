@@ -17,10 +17,12 @@ specs compose.
 2. `OWNERSHIP.md`: launch contract and ownership matrix.
 3. `DECISIONS.md`: stable planning decisions and ACID references.
 4. `GUARDRAILS.md`: hard review stops and dispatch rules.
-5. `litmus/LT-02-local-runtime-session-loop.md`: first product-shaped proof.
-6. `litmus/LT-01-local-to-remote-shift.md`: later handoff proof.
-7. `RISKS.md`: risk register and mitigation hooks.
-8. `litmus/harness.md`: validation harness expectations.
+5. `PRD_ALIGNMENT_ROADMAP_AUDIT.md`: Slice 2-safe roadmap work from the PRD
+   alignment audit.
+6. `litmus/LT-02-local-runtime-session-loop.md`: first product-shaped proof.
+7. `litmus/LT-01-local-to-remote-shift.md`: later handoff proof.
+8. `RISKS.md`: risk register and mitigation hooks.
+9. `litmus/harness.md`: validation harness expectations.
 
 ## Spec Authority
 
@@ -59,11 +61,16 @@ Shipped implementation proofs:
   descriptor-scoped read access, Schema-backed cursor/errors, and explicit
   low-level escape hatches.
 
-Active implementation PR:
+Active implementation PRs:
 
-- `#120` durable channel subscriber primitives. This is the current blocking
-  core Firegrid lane. Finish and merge it before dispatching another durable
-  delivery/subscriber lane.
+- `#198` host-context authority. This is the active authority lane; avoid
+  dispatching roadmap work that changes runtime context ownership, prompt
+  routing, or MCP context authority until those slices land.
+- `#202` Effect AI in-process provider. This validates local/in-process
+  provider behavior and should not be duplicated by the remote provider
+  substrate lane.
+- `#203` PRD alignment roadmap audit. This is docs-only coordinator guidance
+  for Slice 2-safe follow-up work.
 
 ## Dispatch Priority
 
@@ -78,23 +85,19 @@ Flamecast UI starts a session
   -> Flamecast UI remains the control surface
 ```
 
-Next execution order:
+Current execution order:
 
-1. Finish `#120` durable channel subscriber primitives.
-2. Implement runtime presence MVP:
-   - durable runtime/host/node public presence descriptor;
-   - runtime publisher Layer for startup, readiness, heartbeat, and retirement;
-   - projection/query selection by readiness, freshness, topology, and public
-     metadata;
-   - tests proving presence is advisory discovery, not a command bus, host
-     mesh, credential directory, or leader-election primitive.
-3. Wire runtime presence into the LT-02 chassis so the UI can select or display
-   a local runtime-backed provider through durable public presence.
-4. Implement claimed-intent transport for follow-up/prompt-like work:
-   intent -> claim -> side effect -> terminal, with Flamecast prompt/session
-   semantics staying outside Firegrid core.
-5. Return to execution-plane resources and ownership transfer only after the
-   local-runtime session loop and runtime presence path are stable.
+1. Finish host-context authority slices before work that depends on
+   `RuntimeContext.host`, prompt append routing, or MCP route/session authority.
+2. Finish the Effect AI in-process provider lane for local/in-process provider
+   coverage.
+3. Use `PRD_ALIGNMENT_ROADMAP_AUDIT.md` to dispatch independent follow-up work
+   that stays Slice 2-safe: remote provider substrate validation, app-owned
+   PermissionWait examples, env-backed secret resolution, ordering/provenance
+   contract tests, and reconciliation harnesses.
+4. Return to runtime presence, claimed-intent transport, execution-plane
+   resources, and ownership-transfer work only when their dependencies are
+   explicit and they do not collide with active host-context authority changes.
 
 Avoid:
 
