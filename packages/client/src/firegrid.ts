@@ -14,7 +14,6 @@
 // not need a host session because the host id is read off the row.
 
 import {
-  CurrentHostSession,
   PublicLaunchRequestSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
@@ -22,6 +21,7 @@ import {
   insertLocalRuntimeContext,
   local,
   namespaceRuntimeStreamName,
+  type CurrentHostSession,
   type HostStreamPrefix,
   type PublicLaunchRequest,
   type RuntimeContext,

@@ -613,6 +613,48 @@ export const FiregridRuntimeHostWithWorkflowLive = (
 ) => FiregridRuntimeHostLive(options, envPolicy)
 
 // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.1
+//
+// Single production composition for a one-host-per-namespace local
+// runtime. The helper owns `CurrentHostSession` internally; callers
+// supply only the namespace + base URL + optional headers/input and
+// then talk to `Firegrid` / `startRuntime` through the normal public
+// surface. Host identity is derived deterministically from the
+// namespace, so every process composing this layer with the same
+// namespace converges on the same `hostId` — no env knob, no
+// filesystem state, no random fallback.
+//
+// Multi-host topologies (e.g. the two-host workflow stream isolation
+// unit test) bypass this helper and pass `hostId` to
+// `FiregridRuntimeHostWithWorkflowLive` at the programmatic test
+// composition boundary.
+const localHostIdForNamespace = (namespace: string): string =>
+  `${namespace}-host`
+
+export const FiregridLocalHostLive = (
+  options: {
+    readonly durableStreamsBaseUrl: string
+    readonly namespace: string
+    readonly input?: boolean
+    readonly headers?: DurableTableHeaders
+    readonly localProcessEnv?: RuntimeHostTopologyOptions["localProcessEnv"]
+  },
+  envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
+) => {
+  const composed: RuntimeHostTopologyOptions = {
+    durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+    namespace: options.namespace,
+    hostId: localHostIdForNamespace(options.namespace),
+    ...(options.input === undefined ? {} : { input: options.input }),
+    ...(options.headers === undefined ? {} : { headers: options.headers }),
+    ...(options.localProcessEnv === undefined
+      ? {}
+      : { localProcessEnv: options.localProcessEnv }),
+  }
+  return FiregridRuntimeHostWithWorkflowLive(composed, envPolicy)
+}
+
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
 //
 // RuntimeHostTopologyFromConfig intentionally does NOT acquire host
 // identity from env or from disk. Host authority is a primitive of
@@ -648,11 +690,11 @@ export const RuntimeHostTopologyFromConfig = Config.all({
 )
 
 export const FiregridRuntimeHostFromConfig = Layer.unwrapEffect(
-  Effect.map(RuntimeHostTopologyFromConfig, options => FiregridRuntimeHostLive(options)),
+  Effect.map(RuntimeHostTopologyFromConfig, options => FiregridLocalHostLive(options)),
 )
 
 export const FiregridRuntimeHostWithWorkflowFromConfig = Layer.unwrapEffect(
-  Effect.map(RuntimeHostTopologyFromConfig, options => FiregridRuntimeHostWithWorkflowLive(options)),
+  Effect.map(RuntimeHostTopologyFromConfig, options => FiregridLocalHostLive(options)),
 )
 
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
@@ -665,7 +707,7 @@ export const FiregridRuntimeHostWithWorkflowFromConfigWithEnvPolicy = (
 ) =>
   Layer.unwrapEffect(
     Effect.map(RuntimeHostTopologyFromConfig, options =>
-      FiregridRuntimeHostWithWorkflowLive(options, envPolicy)),
+      FiregridLocalHostLive(options, envPolicy)),
   )
 
 export const startRuntime = (

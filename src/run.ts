@@ -47,7 +47,7 @@
 import { NodeRuntime } from "@effect/platform-node"
 import { type RuntimeEnvBinding } from "@firegrid/protocol/launch"
 import {
-  FiregridRuntimeHostWithWorkflowLive,
+  FiregridLocalHostLive,
   RuntimeEnvResolverPolicy,
   RuntimeHostTopologyFromConfig,
   appendRuntimeIngress,
@@ -300,7 +300,15 @@ const envPolicyLayer = (
 const envHostLayer = (config: RunConfig) =>
   Layer.unwrapEffect(
     Effect.map(RuntimeHostTopologyFromConfig, (topology) =>
-      FiregridRuntimeHostWithWorkflowLive(
+      // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+      // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+      //
+      // Compose firegrid:run on the production helper that owns
+      // `CurrentHostSession`; the FromConfig topology supplies base
+      // URL + namespace, the helper derives a deterministic
+      // per-namespace host id internally so launches insert under the
+      // same host the workflow then executes against.
+      FiregridLocalHostLive(
         {
           ...topology,
           ...(runConfigRequiresInput(config) ? { input: true } : {}),

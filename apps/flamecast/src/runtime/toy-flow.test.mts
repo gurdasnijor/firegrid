@@ -1,7 +1,7 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { assert, describe, it } from "@effect/vitest"
 import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client"
-import { FiregridRuntimeHostLive, startRuntime } from "@firegrid/runtime/runtime-host"
+import { FiregridLocalHostLive, startRuntime } from "@firegrid/runtime/runtime-host"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach } from "vitest"
 import {
@@ -31,13 +31,12 @@ const layer = () => {
   // The runtime host layer provides RuntimeControlPlaneTable +
   // CurrentHostSession to the client, so launch / prompt / snapshot
   // share one materialized RuntimeContext index and one host id.
-  // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
-  // Explicit hostId at the test composition boundary; the runtime
-  // host has no env/fs fallback.
-  const hostLayer = FiregridRuntimeHostLive({
+  // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+  // FiregridLocalHostLive is the production composition that owns
+  // CurrentHostSession; scenarios pass namespace + base URL only.
+  const hostLayer = FiregridLocalHostLive({
     durableStreamsBaseUrl: baseUrl,
     namespace,
-    hostId: `flamecast-toy-${crypto.randomUUID()}`,
     input: true,
   })
   return FiregridLive.pipe(

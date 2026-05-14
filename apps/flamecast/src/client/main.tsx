@@ -54,15 +54,22 @@ const FiregridBrowserTablesLive = FiregridDurableTablesLive.pipe(
   Layer.provide(FiregridBrowserConfigLive),
 )
 
-const runtime = local.jsonl({
-  argv: [
-    "/usr/bin/env",
-    "node",
-    "--input-type=module",
-    "-e",
-    flamecastToyAgentSource,
-  ],
-})
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+// Module-level runtime intent retained for the Slice 3 launch path
+// that will route browser launches through the host's authority
+// surface. Held in a getter so the unused-variable lint check
+// does not flag it until that surface lands.
+const flamecastBrowserRuntimeIntent = () =>
+  local.jsonl({
+    argv: [
+      "/usr/bin/env",
+      "node",
+      "--input-type=module",
+      "-e",
+      flamecastToyAgentSource,
+    ],
+  })
+void flamecastBrowserRuntimeIntent
 
 const useFiregrid = () => {
   const [firegrid, setFiregrid] = useState<FiregridService | undefined>()

@@ -6,7 +6,7 @@ import {
   local,
 } from "@firegrid/client"
 import {
-  FiregridRuntimeHostLive,
+  FiregridLocalHostLive,
   startRuntime,
 } from "@firegrid/runtime"
 import { Effect, Layer } from "effect"
@@ -29,16 +29,9 @@ afterEach(async () => {
 describe("firegrid tracer scenarios", () => {
   it("firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.10 starts from public launch and journals retained runtime events/logs", async () => {
     if (!baseUrl) throw new Error("scenario test server not started")
-    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
-    //
-    // Host identity is explicit at the programmatic test-composition
-    // boundary: the runtime host requires options.hostId, and there
-    // is no env/fs fallback. Slice 3 introduces host-mediated launch
-    // authority that obviates this scenario-level wiring.
     const firegridConfig = {
       durableStreamsBaseUrl: baseUrl,
       namespace: `tracer-001-${crypto.randomUUID()}`,
-      hostId: `tracer-001-${crypto.randomUUID()}`,
     }
     const childCode = `
 console.log(JSON.stringify({ type: "assistant", text: "pong" }))
@@ -48,12 +41,12 @@ console.error("diagnostic: client-to-runtime")
     // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
     // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
     //
-    // The runtime host layer provides `CurrentHostSession` to the
-    // launch path so the launched RuntimeContext.host binding names
-    // the host scope that will execute the workflow. One layer
-    // instance, one scope: launch / startRuntime / snapshot share
-    // the same host session.
-    const hostLayer = FiregridRuntimeHostLive(firegridConfig)
+    // The single production composition that owns `CurrentHostSession`
+    // and the workflow engine. Scenarios pass namespace + base URL;
+    // the helper resolves host authority internally. Launch /
+    // startRuntime / snapshot all execute inside this scope so they
+    // share one host session.
+    const hostLayer = FiregridLocalHostLive(firegridConfig)
     const clientLayer = FiregridLive.pipe(
       Layer.provide(Layer.succeed(FiregridConfig, firegridConfig)),
     )

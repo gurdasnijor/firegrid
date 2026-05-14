@@ -8,6 +8,7 @@ export {
   CurrentHostSession,
   CurrentHostStopped,
   CurrentRuntimeContext,
+  FiregridLocalHostLive,
   FiregridRuntimeHostFromConfig,
   FiregridRuntimeHostLive,
   FiregridRuntimeHostWithWorkflowFromConfig,

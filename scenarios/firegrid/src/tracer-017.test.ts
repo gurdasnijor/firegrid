@@ -23,7 +23,7 @@ import {
   local,
 } from "@firegrid/client"
 import {
-  FiregridRuntimeHostLive,
+  FiregridLocalHostLive,
   startRuntime,
 } from "@firegrid/runtime"
 import { Duration, Effect, Fiber, Layer } from "effect"
@@ -76,18 +76,16 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
     "effect-durable-operators.FIREGRID_PROOF.4 effect-durable-operators.FIREGRID_PROOF.2 effect-durable-operators.TRACER_017.5 production surfaces still deliver prompt input once after the DurableTable checkpoint refactor",
     async () => {
       if (!baseUrl) throw new Error("durable streams test server not started")
-      // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
       const firegridConfig = {
         durableStreamsBaseUrl: baseUrl,
         namespace: `tracer-017-${crypto.randomUUID()}`,
-        hostId: `tracer-017-${crypto.randomUUID()}`,
       }
 
       // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
       // Production host + client share one CurrentHostSession; the
       // launch row's host binding matches the host scope that runs
       // the agent.
-      const hostLayer = FiregridRuntimeHostLive({
+      const hostLayer = FiregridLocalHostLive({
         ...firegridConfig,
         input: true,
       })

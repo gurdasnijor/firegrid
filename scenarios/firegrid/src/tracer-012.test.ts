@@ -7,7 +7,7 @@ import {
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   appendRuntimeIngress,
-  FiregridRuntimeHostLive,
+  FiregridLocalHostLive,
   startRuntime,
 } from "@firegrid/runtime"
 import { Effect, Layer } from "effect"
@@ -52,15 +52,13 @@ process.stdin.on("data", chunk => {
 describe("firegrid tracer 012 runtime ingress", () => {
   it("firegrid-agent-ingress.INGRESS.1 firegrid-agent-ingress.INGRESS.2 firegrid-agent-ingress.INGRESS.3 firegrid-agent-ingress.INGRESS.4 firegrid-agent-ingress.INGRESS.5 firegrid-agent-ingress.DELIVERY.1 firegrid-agent-ingress.DELIVERY.2 firegrid-agent-ingress.DELIVERY.3 firegrid-agent-ingress.DELIVERY.4 firegrid-agent-ingress.HOST.1 firegrid-agent-ingress.HOST.2 firegrid-agent-ingress.HOST.3 firegrid-agent-ingress.SUBSCRIBERS.1 firegrid-agent-ingress.SUBSCRIBERS.2 firegrid-agent-ingress.SUBSCRIBERS.3 firegrid-agent-ingress.BOUNDARY.1 firegrid-agent-ingress.BOUNDARY.2 firegrid-agent-ingress.BOUNDARY.3 firegrid-agent-ingress.BOUNDARY.4 firegrid-agent-ingress.BOUNDARY.5 delivers durable ingress once to local process stdin and journals output", async () => {
     if (!baseUrl) throw new Error("scenario test server not started")
-    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
     const firegridConfig = {
       durableStreamsBaseUrl: baseUrl,
       namespace: `tracer-012-${crypto.randomUUID()}`,
-      hostId: `tracer-012-${crypto.randomUUID()}`,
     }
 
     // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
-    const hostLayer = FiregridRuntimeHostLive({
+    const hostLayer = FiregridLocalHostLive({
       ...firegridConfig,
       input: true,
     })

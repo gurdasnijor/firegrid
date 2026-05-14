@@ -6,7 +6,7 @@ import {
   local,
 } from "@firegrid/client"
 import {
-  FiregridRuntimeHostLive,
+  FiregridLocalHostLive,
   startRuntime,
 } from "@firegrid/runtime"
 import { Duration, Effect, Fiber, Layer } from "effect"
@@ -51,15 +51,13 @@ process.stdin.on("data", chunk => {
 describe("firegrid tracer 016 session-plane input control surface", () => {
   it("firegrid-agent-ingress.INGRESS.6 firegrid-agent-ingress.INGRESS.7 firegrid-agent-ingress.DELIVERY.5 firegrid-agent-ingress.HOST.4 appends prompt facts and host-owned runtime loop delivers live input once", async () => {
     if (!baseUrl) throw new Error("durable streams test server not started")
-    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
     const firegridConfig = {
       durableStreamsBaseUrl: baseUrl,
       namespace: `tracer-016-${crypto.randomUUID()}`,
-      hostId: `tracer-016-${crypto.randomUUID()}`,
     }
 
     // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
-    const hostLayer = FiregridRuntimeHostLive({
+    const hostLayer = FiregridLocalHostLive({
       ...firegridConfig,
       input: true,
     })
