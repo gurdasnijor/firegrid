@@ -30,11 +30,12 @@ This SDD defines that missing contract. The shape is borrowed from how editors h
 
 1. Define a small, stable, normalized event-stream contract between agent processes and `RuntimeContextWorkflow`.
 2. Define a small neutral agent-tool descriptor contract that every codec can publish through its protocol-specific mechanism.
-3. Define a codec interface that maps a duplex byte stream to and from those events. Each agent kind has one codec.
-4. Add a byte-pipe variant of `SandboxProvider` so agent processes can be launched through the runtime substrate, not bypassed.
-5. Wire `RuntimeContextWorkflow` to consume codec output as durable events.
-6. Provide an ACP codec as the first concrete implementation, replacing the scenario-owned adapter in tracer 023.
-7. Provide a stdio-jsonl codec preserving the existing local-process behavior under the new contract.
+3. Keep descriptor schemas rooted in shared `@firegrid/protocol` Effect Schemas, with catalog publication derived through schema projections rather than hand-written tool JSON.
+4. Define a codec interface that maps a duplex byte stream to and from those events. Each agent kind has one codec.
+5. Add a byte-pipe variant of `SandboxProvider` so agent processes can be launched through the runtime substrate, not bypassed.
+6. Wire `RuntimeContextWorkflow` to consume codec output as durable events.
+7. Provide an ACP codec as the first concrete implementation, replacing the scenario-owned adapter in tracer 023.
+8. Provide a stdio-jsonl codec preserving the existing local-process behavior under the new contract.
 
 ## Non-goals
 
@@ -42,6 +43,7 @@ This SDD defines that missing contract. The shape is borrowed from how editors h
 - No new public Firegrid wire protocol. ACP, MCP, vendor protocols stay external; codecs translate.
 - No implementation of the six Firegrid choreography tools. This SDD defines the neutral descriptor and publication contract that codecs consume; Phase 2 defines the tool semantics and workflow lowering.
 - No protocol-specific tool server implementation beyond the minimal codec proof. MCP servers for ACP, Claude/Codex tool config generation, and vendor-specific mounting can land incrementally after the descriptor contract exists.
+- No automatic exposure of every `@firegrid/protocol` schema as an agent tool. Tool exposure remains an explicit manifest decision.
 - No agent-process lifecycle policy (when to keep the process alive vs. exit-and-relaunch around suspensions). That decision lives in `RuntimeContextWorkflow` and is informed by the contract but not defined by it.
 - No `runtime-scheduling`, no agent-tool-surface implementation. Those are downstream of this work. The tool surface SDD lands after this one.
 
@@ -152,6 +154,29 @@ interface AgentToolCapabilities {
 }
 ```
 
+The schemas referenced by descriptors should come from shared protocol modules
+whenever the tool is a public Firegrid operation:
+
+```
+packages/protocol/src/agent-tools/schema.ts
+```
+
+For example, `SleepToolInputSchema`, `SpawnToolInputSchema`, and
+`ScheduleMeToolInputSchema` live in protocol and are imported by the runtime's
+descriptor manifest. This keeps client APIs, runtime validation, and
+agent-facing catalogs on the same Effect Schema source of truth.
+
+Effect Schema projections define which side of the schema is exposed:
+
+- `Schema.encodedSchema(descriptor.inputSchema)` is the JSON shape published to
+  agents and MCP/OpenAI/Claude-style catalogs.
+- `Schema.typeSchema(descriptor.inputSchema)` is the decoded runtime type that
+  tool implementations consume after validation.
+- `Schema.annotations` carry agent-visible descriptions, titles, examples, and
+  other catalog metadata when the schema itself is the best owner for that text.
+- `Schema.transform` / `Schema.transformOrFail` may keep ergonomic host-side
+  types while preserving a stable encoded wire shape.
+
 Descriptor values must not include credentials, callback tokens, signing keys,
 provider session tokens, Durable Streams URLs, sandbox handles, host ids, or
 transport references. Codecs may need protocol-local transport objects to expose
@@ -170,6 +195,11 @@ Codecs do not know tool semantics. They publish descriptors, validate or route
 incoming tool invocations against the descriptor catalog, and normalize accepted
 invocations to `ToolUse`. Phase 2 owns what the host does with that validated
 invocation.
+
+Codecs also do not hand-author tool JSON schemas. They consume catalog entries
+derived from descriptor schemas. Any codec-specific serialization, such as MCP
+`inputSchema` or OpenAI function-tool parameters, is a projection of the shared
+Effect Schema and annotations.
 
 This descriptor layer is bound by
 `firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.*`,
@@ -445,6 +475,14 @@ packages/runtime/src/
   runtime-context/           // (Phase 2 lives here, depends on agent-io)
 ```
 
+Shared agent-tool schemas live outside the runtime package:
+
+```
+packages/protocol/src/agent-tools/
+  schema.ts                  // shared Effect Schemas for tool inputs/outputs
+  index.ts                   // exports shared schemas and types
+```
+
 ## Validation
 
 ### Per-codec tests
@@ -465,6 +503,9 @@ For both codecs against the same workflow body:
 
 1. Run an end-to-end turn through `RuntimeContextWorkflow` with the codec selected; assert `RuntimeIngressTable` and `RuntimeOutputTable` rows match expected shape regardless of codec.
 2. The workflow body should be identical for both codecs (modulo capability differences). This is the proof that the contract abstracts correctly.
+3. Descriptor catalog entries are generated from shared protocol Effect Schemas
+   using encoded-schema projection and annotations; tests must not compare
+   against a separately hand-authored JSON Schema copy.
 
 ### Tracer 023 re-targeting
 
@@ -482,9 +523,12 @@ byte-pipe SandboxProvider, and `RuntimeContextWorkflow` integrate end-to-end.
 
 - `packages/runtime/src/agent-io/` with event types, neutral tool descriptor
   type, codec interface, registry
+- `packages/protocol/src/agent-tools/` with shared Effect Schemas for
+  descriptor inputs/outputs that are exposed to agents
 - `SandboxProvider.openBytePipe` API added
 - `LocalProcessSandboxProvider.openBytePipe` implemented
-- Unit tests for descriptor validation, the registry, and the byte-pipe wrapper
+- Unit tests for descriptor validation, schema projection, the registry, and the
+  byte-pipe wrapper
 - No codecs yet, no `RuntimeContextWorkflow` changes
 
 Lands as a foundation. ~400 lines of production code, ~300 of tests.
@@ -542,6 +586,16 @@ through the codec. The tool surface SDD's primitives (`DurableClock.sleep`,
 - **Why codecs own journaling under byte-pipe mode.** Bytes are opaque; only the codec knows how to write meaningful observation rows. Pushing journaling into the substrate would require the substrate to understand every protocol, which is exactly what this SDD avoids.
 - **Why no agent-side SDK.** The runtime is the integration point. Agents implement their existing protocols; codecs handle translation. Agents shipping a Firegrid SDK would be appropriate if Firegrid wanted to be an agent protocol — it doesn't.
 - **Why this is Phase 1 and the tool surface is Phase 2.** The tool surface SDD assumed parsed `ToolUse` events; this SDD produces them. Reversing the order would mean the tool surface SDD inventing a private event model in the workflow body, which is exactly the duplication this avoids.
+- **Why shared protocol schemas and explicit runtime descriptors.** Effect
+  Schemas for public tool inputs and outputs live in `@firegrid/protocol` so
+  clients, codecs, and runtime validation cannot drift. The runtime descriptor
+  manifest explicitly selects which schemas are exposed as tools and binds each
+  to a host-side lowering arm. Reflection over every protocol schema would expose
+  storage rows and internal facts that are not agent-callable operations.
+- **Why catalog JSON is generated from Effect Schema projections.** Agents see
+  encoded JSON shapes, while runtime code consumes decoded types. Using
+  `Schema.encodedSchema`, annotations, and transforms preserves that distinction
+  and avoids duplicating JSON Schema by hand in codec or catalog code.
 
 ## Migration
 
@@ -555,6 +609,8 @@ through the codec. The tool surface SDD's primitives (`DurableClock.sleep`,
 - **Implementation of Firegrid's six choreography tools.** Phase 1 defines the
   descriptor contract and codec publication boundary. Phase 2 defines the
   canonical Firegrid descriptor set and the workflow lowering for each tool.
+- **Automatic protocol-schema reflection.** `@firegrid/protocol` is the schema
+  source of truth, but only explicitly listed descriptors are exposed to agents.
 - **Protocol-specific production tool servers.** MCP servers for ACP and
   vendor-specific catalog/config generation can be implemented per codec or
   deployment profile. They must consume the neutral descriptor catalog rather
