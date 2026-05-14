@@ -92,7 +92,8 @@ export interface FiregridMcpServerLayerOptions {
   readonly port: number
   /**
    * Base MCP path. The runtime context route is always appended as
-   * `/runtime-context/:contextId`.
+   * `/runtime-context/:contextId`. Passing `*` means "mount without a
+   * configured base prefix"; it is not a catch-all route.
    */
   readonly path: HttpRouter.PathInput
 }
@@ -108,6 +109,11 @@ export const runtimeContextMcpPath = (
 const FiregridMcpRouteContextLayer = Layer.effect(
   FiregridAgentToolContext,
   Effect.gen(function* () {
+    // Capture only host-scope services here. `HttpRouter.params` is
+    // intentionally read inside `resolve`, so Effect AI's request
+    // fiber supplies the current `/runtime-context/:contextId` route
+    // parameter for each tools/call instead of memoizing one context
+    // into the shared MCP server layer.
     const captured = yield* Effect.context<
       CurrentHostSession | RuntimeHostConfig | RuntimeControlPlaneTable
     >()
