@@ -51,9 +51,11 @@ import {
   type SpawnToolOutput,
   type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
+import { type RuntimeContext } from "@firegrid/protocol/launch"
 import { Context, Effect, Layer, Schema } from "effect"
 import { ToolResultEventSchema } from "../agent-io/index.ts"
-import { ToolError } from "./tool-error.ts"
+import { provideRuntimeContext } from "../runtime-host/host-context-authority.ts"
+import { ToolError, toolExecutionFailed } from "./tool-error.ts"
 import { toolUseToEffect } from "./tool-use-to-effect.ts"
 
 // ---------------------------------------------------------------------------
@@ -94,13 +96,18 @@ export class FiregridAgentToolContext extends Context.Tag(
 )<
   FiregridAgentToolContext,
   {
-    readonly contextId: string
+    readonly resolve: Effect.Effect<{
+      readonly contextId: string
+      readonly runtimeContext?: RuntimeContext
+    }, unknown>
   }
 >() {
   static layer = (options: {
     readonly contextId: string
   }): Layer.Layer<FiregridAgentToolContext> =>
-    Layer.succeed(this, options)
+    Layer.succeed(this, {
+      resolve: Effect.succeed({ contextId: options.contextId }),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -307,13 +314,24 @@ const handleTool = <Output>(toolName: string, params: unknown) =>
     const ctx = yield* FiregridAgentToolContext
     const idGen = yield* IdGenerator.IdGenerator
     const idSuffix = yield* idGen.generateId()
-    const toolUseId = `${TOOL_USE_ID_PREFIX}:${ctx.contextId}:${idSuffix}`
-    const result = yield* ToolCallWorkflow.execute({
-      contextId: ctx.contextId,
+    const resolved = yield* ctx.resolve.pipe(
+      Effect.mapError(cause =>
+        toolExecutionFailed(
+          `${TOOL_USE_ID_PREFIX}:unrouted:${idSuffix}`,
+          toolName,
+          cause,
+        )),
+    )
+    const toolUseId = `${TOOL_USE_ID_PREFIX}:${resolved.contextId}:${idSuffix}`
+    const execute = ToolCallWorkflow.execute({
+      contextId: resolved.contextId,
       toolUseId,
       toolName,
       input: params,
     })
+    const result = yield* (resolved.runtimeContext === undefined
+      ? execute
+      : execute.pipe(provideRuntimeContext(resolved.runtimeContext)))
     if (result.part.isFailure) {
       const error = extractToolFailure(result.part.result)
       return yield* Effect.fail(error)

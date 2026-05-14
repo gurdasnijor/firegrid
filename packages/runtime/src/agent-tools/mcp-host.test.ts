@@ -1,90 +1,39 @@
 /**
- * V1 smoke for the host-owned localhost MCP HTTP server.
+ * Host-owned localhost MCP HTTP server smoke.
  *
- * Spins up `FiregridMcpServerLayer` over a Node HTTP server bound to
- * `127.0.0.1` on an OS-chosen port, then drives MCP `initialize`,
- * `tools/list`, and `tools/call` through `fetch` against the bound
- * URL. The fetch-based variant proves the V1 acceptance surface
- * end-to-end without standing up the official MCP SDK transport (the
- * real SDK client smoke is owned by a parallel worker; see
- * coordination notes alongside this PR).
+ * The tests drive the real MCP SDK over
+ * `/mcp/runtime-context/:contextId`, while Firegrid keeps protocol
+ * handling inside `McpServer.layerHttp` +
+ * `McpServer.registerToolkit(FiregridAgentToolkit)`.
  *
- * What this proves:
- *   - The bridge composes through `McpServer.registerToolkit(
- *     FiregridAgentToolkit)` and `McpServer.layerHttp` (no custom
- *     JSON-RPC stack, no wrapper toolkit, no manual `tools/list` or
- *     `tools/call` handler).
- *   - `tools/list` returns exactly the six canonical
- *     `FiregridAgentToolkit` tools.
- *   - `sleep` flows through `FiregridAgentToolkitLayer`,
- *     `ToolCallWorkflow.execute`, `toolUseToEffect`, and
- *     `DurableClock.sleep`.
- *   - Malformed input maps to `CallToolResult.isError === true`
- *     inside an HTTP 200 response — no HTTP 500, no custom protocol
- *     error.
- *   - Unknown tool name maps to a standard JSON-RPC `-32602` error
- *     code inside an HTTP 200 response — Effect AI's library default
- *     for unknown tools per MCP semantics — also not an HTTP 500 and
- *     not a Firegrid-custom protocol error.
- *
- * Spec: docs/proposals/SDD_FIREGRID_AGENT_TOOLS_MCP_BRIDGE.md §"V1: Host-Owned Localhost MCP Server"
- * ACIDs: firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.1..7
+ * ACIDs:
+ *  - firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1
+ *  - firegrid-host-context-authority.MCP_CONTEXT_ROUTING.2
+ *  - firegrid-host-context-authority.MCP_CONTEXT_ROUTING.3
+ *  - firegrid-host-context-authority.MCP_CONTEXT_ROUTING.4
+ *  - firegrid-host-context-authority.VALIDATION.4
  */
 
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { HttpServer } from "@effect/platform"
+import {
+  RuntimeControlPlaneTable,
+  hostOwnedStreamUrl,
+  local,
+  makeHostStreamPrefix,
+  normalizeRuntimeIntent,
+  type HostId,
+} from "@firegrid/protocol/launch"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js"
-import { Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Either, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
-import { type AgentToolHostService } from "./tool-host.ts"
-import { toolExecutionFailed } from "./tool-error.ts"
+import { firegridHostLayer } from "../../../../src/host.ts"
+import {
+  FiregridRuntimeHostWithWorkflowLive,
+} from "../runtime-host/index.ts"
+import { WorkflowEngineTable } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { FiregridMcpServerLayer } from "./mcp-host.ts"
-
-/**
- * Test-local `AgentToolHostService`. V1 production callers must supply
- * a real host capability — silently no-op'ing `appendScheduledPrompt`
- * would let `schedule_me` return `{ scheduled: true }` while the
- * scheduled prompt is dropped. This test host fails explicitly for
- * any tool that should not be exercised by the V1 smoke; the smoke
- * itself only drives `sleep`, malformed `sleep`, and unknown tool.
- */
-const testAgentToolHost: AgentToolHostService = {
-  spawnChildContext: ({ toolUseId }) =>
-    Effect.fail(
-      toolExecutionFailed(
-        toolUseId,
-        "spawn",
-        "spawn is not exercised by the V1 host-local MCP smoke",
-      ),
-    ),
-  spawnChildContexts: ({ toolUseId }) =>
-    Effect.fail(
-      toolExecutionFailed(
-        toolUseId,
-        "spawn_all",
-        "spawn_all is not exercised by the V1 host-local MCP smoke",
-      ),
-    ),
-  executeSandboxTool: ({ toolUseId }) =>
-    Effect.fail(
-      toolExecutionFailed(
-        toolUseId,
-        "execute",
-        "execute is not exercised by the V1 host-local MCP smoke",
-      ),
-    ),
-  appendScheduledPrompt: ({ inputId }) =>
-    Effect.fail(
-      toolExecutionFailed(
-        inputId,
-        "schedule_me",
-        "schedule_me is not exercised by the V1 host-local MCP smoke; if you reach this, the scheduled-input workflow body was invoked but the test host did not record the prompt",
-      ),
-    ),
-}
 
 let durableStreamServer: DurableStreamTestServer | undefined
 let durableStreamBaseUrl: string | undefined
@@ -103,298 +52,301 @@ afterEach(async () => {
   durableStreamBaseUrl = undefined
 })
 
-interface FetchedRpc {
-  readonly status: number
-  readonly contentType: string | null
-  readonly body: string
-}
+const toolNames = [
+  "execute",
+  "schedule_me",
+  "sleep",
+  "spawn",
+  "spawn_all",
+  "wait_for",
+] as const
 
-describe("FiregridMcpServerLayer V1 smoke", () => {
-  it(
-    "binds loopback HTTP and drives initialize + tools/list + sleep + malformed + unknown via JSON-RPC fetch",
-    { timeout: 20_000 },
-    async () => {
-      if (!durableStreamBaseUrl) throw new Error("server not started")
-      const streamId = crypto.randomUUID()
-      const workflowStreamUrl =
-        `${durableStreamBaseUrl}/v1/stream/mcp-host-smoke-workflow-${streamId}`
-      const agentToolsStreamUrl =
-        `${durableStreamBaseUrl}/v1/stream/mcp-host-smoke-tools-${streamId}`
-      // `Layer.provideMerge` keeps `WorkflowEngineTable` in the
-      // composed Layer's output so the MCP handler and workflow engine
-      // share the same durable scope.
-      const smokeLayer = FiregridMcpServerLayer({
-        host: "127.0.0.1",
-        port: 0,
-        path: "/mcp",
-        contextId: "ctx-mcp-host-smoke",
-        agentToolsStreamUrl,
-        agentToolHost: testAgentToolHost,
-      }).pipe(
-        Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
-          streamUrl: workflowStreamUrl,
-        })),
-      )
-
-      const result = await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const boundAddress = yield* HttpServer.addressFormattedWith(
-              (addr) => Effect.succeed(addr),
-            )
-            const url = new URL("/mcp", boundAddress)
-            const post = (
-              body: unknown,
-              timeout: `${number} seconds`,
-            ): Effect.Effect<FetchedRpc, unknown, never> =>
-              Effect.tryPromise(() =>
-                fetch(url, {
-                  method: "POST",
-                  headers: {
-                    "content-type": "application/json",
-                    accept: "application/json, text/event-stream",
-                  },
-                  body: JSON.stringify(body),
-                }).then(async (response): Promise<FetchedRpc> => ({
-                  status: response.status,
-                  contentType: response.headers.get("content-type"),
-                  body: await response.text(),
-                })),
-              ).pipe(Effect.timeout(timeout))
-
-            const init = yield* post(
-              {
-                jsonrpc: "2.0",
-                id: 1,
-                method: "initialize",
-                params: {
-                  protocolVersion: "2025-06-18",
-                  capabilities: {},
-                  clientInfo: {
-                    name: "firegrid-smoke",
-                    version: "0.0.0",
-                  },
-                },
-              },
-              "5 seconds",
-            )
-            const list = yield* post(
-              {
-                jsonrpc: "2.0",
-                id: 2,
-                method: "tools/list",
-                params: {},
-              },
-              "5 seconds",
-            )
-            const sleep = yield* post(
-              {
-                jsonrpc: "2.0",
-                id: 3,
-                method: "tools/call",
-                params: {
-                  name: "sleep",
-                  arguments: { durationMs: 1 },
-                },
-              },
-              "10 seconds",
-            )
-            const malformed = yield* post(
-              {
-                jsonrpc: "2.0",
-                id: 4,
-                method: "tools/call",
-                params: {
-                  name: "sleep",
-                  arguments: { durationMs: "not-a-number" },
-                },
-              },
-              "5 seconds",
-            )
-            const unknown = yield* post(
-              {
-                jsonrpc: "2.0",
-                id: 5,
-                method: "tools/call",
-                params: {
-                  name: "definitely_not_a_tool",
-                  arguments: {},
-                },
-              },
-              "5 seconds",
-            )
-            return {
-              boundAddress,
-              init,
-              list,
-              sleep,
-              malformed,
-              unknown,
-            }
-          }).pipe(
-            Effect.provide(smokeLayer),
-          ) as Effect.Effect<
-            {
-              boundAddress: string
-              init: FetchedRpc
-              list: FetchedRpc
-              sleep: FetchedRpc
-              malformed: FetchedRpc
-              unknown: FetchedRpc
-            },
-            unknown,
-            never
-          >,
-        ),
-      )
-
-      // PHASE_7_MCP_HOST_SERVER.2: bound only to loopback.
-      expect(result.boundAddress.startsWith("http://127.0.0.1:")).toBe(true)
-
-      // PHASE_7_MCP_HOST_SERVER.3: MCP `initialize` returns the
-      // server's identity, capabilities, and protocol version.
-      expect(result.init.status).toBe(200)
-      expect(result.init.body).toContain('"name":"firegrid.agent-tools"')
-      expect(result.init.body).toContain('"protocolVersion"')
-
-      // PHASE_7_MCP_HOST_SERVER.6: `tools/list` returns exactly the
-      // six canonical FiregridAgentToolkit tools.
-      expect(result.list.status).toBe(200)
-      for (const name of [
-        "sleep",
-        "wait_for",
-        "spawn",
-        "spawn_all",
-        "schedule_me",
-        "execute",
-      ]) {
-        expect(result.list.body).toContain(`"name":"${name}"`)
-      }
-
-      // PHASE_7_MCP_HOST_SERVER.6: `sleep` flows through the toolkit
-      // and `DurableClock.sleep`, returning a structured-content
-      // success.
-      expect(result.sleep.status).toBe(200)
-      expect(result.sleep.body).toContain('"structuredContent":{"slept":true}')
-      expect(result.sleep.body).toContain('"isError":false')
-
-      // PHASE_7_MCP_HOST_SERVER.6: malformed input is mapped to
-      // `CallToolResult.isError === true` inside an HTTP 200 success
-      // — not an HTTP 500 and not a custom protocol error.
-      expect(result.malformed.status).toBe(200)
-      expect(result.malformed.body).toContain('"isError":true')
-      expect(result.malformed.body).toContain("Failed to decode tool call")
-
-      // PHASE_7_MCP_HOST_SERVER.6 (library default): unknown tool
-      // names map to a standard JSON-RPC `-32602` error response
-      // (Effect AI's MCP library default for `tools/call` with a
-      // name not in the registered toolkit). Still HTTP 200, no
-      // Firegrid-custom protocol error, no wrapper toolkit.
-      expect(result.unknown.status).toBe(200)
-      expect(result.unknown.body).toContain('"code":-32602')
-      expect(result.unknown.body).toContain("not found")
-    },
+const seedContext = (input: {
+  readonly baseUrl: string
+  readonly namespace: string
+  readonly hostId: HostId
+}) =>
+  Effect.gen(function* () {
+    const table = yield* RuntimeControlPlaneTable
+    const contextId = `ctx_${crypto.randomUUID()}`
+    yield* table.contexts.upsert({
+      contextId,
+      createdAt: new Date().toISOString(),
+      runtime: normalizeRuntimeIntent(local.jsonl({
+        argv: [process.execPath, "-e", "process.exit(0)"],
+      })),
+      host: {
+        hostId: input.hostId,
+        streamPrefix: makeHostStreamPrefix({
+          namespace: input.namespace,
+          hostId: input.hostId,
+        }),
+        boundAtMs: Date.now(),
+      },
+    })
+    return contextId
+  }).pipe(
+    Effect.provide(RuntimeControlPlaneTable.layer({
+      streamOptions: {
+        url: `${input.baseUrl}/v1/stream/${input.namespace}.firegrid.runtime`,
+        contentType: "application/json",
+      },
+    })),
+    Effect.scoped,
   )
 
-  it(
-    "firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.6 drives tools/list and sleep through the real Streamable HTTP MCP SDK client",
-    { timeout: 30_000 },
-    async () => {
-      if (!durableStreamBaseUrl) throw new Error("server not started")
-      const streamId = crypto.randomUUID()
-      const workflowStreamUrl =
-        `${durableStreamBaseUrl}/v1/stream/mcp-host-sdk-workflow-${streamId}`
-      const agentToolsStreamUrl =
-        `${durableStreamBaseUrl}/v1/stream/mcp-host-sdk-tools-${streamId}`
-      const smokeLayer = FiregridMcpServerLayer({
-        host: "127.0.0.1",
-        port: 0,
-        path: "/mcp",
-        contextId: "ctx-mcp-host-sdk-smoke",
-        agentToolsStreamUrl,
-        agentToolHost: testAgentToolHost,
-      }).pipe(
-        Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
-          streamUrl: workflowStreamUrl,
-        })),
-      )
+const queryHostWorkflowExecutions = (input: {
+  readonly baseUrl: string
+  readonly namespace: string
+  readonly hostId: HostId
+}) =>
+  Effect.gen(function* () {
+    const table = yield* WorkflowEngineTable
+    const executions = yield* table.executions.query((coll) => coll.toArray)
+    return executions.map((row) => row.executionId)
+  }).pipe(
+    Effect.provide(WorkflowEngineTable.layer({
+      streamOptions: {
+        url: hostOwnedStreamUrl({
+          baseUrl: input.baseUrl,
+          prefix: makeHostStreamPrefix({
+            namespace: input.namespace,
+            hostId: input.hostId,
+          }),
+          segment: "workflow",
+        }),
+        contentType: "application/json",
+      },
+    })),
+    Effect.scoped,
+  )
 
-      await Effect.runPromise(
-        Effect.scoped(
-          Effect.gen(function* () {
-            const boundAddress = yield* HttpServer.addressFormattedWith(
-              (addr) => Effect.succeed(addr),
-            )
-            const transport = new StreamableHTTPClientTransport(
-              new URL("/mcp", boundAddress),
-            )
-            const client = new Client(
-              { name: "firegrid-host-smoke", version: "0.0.0" },
-              {},
-            )
+const mcpLayer = (input: {
+  readonly baseUrl: string
+  readonly namespace: string
+  readonly hostId: HostId
+}) =>
+  FiregridMcpServerLayer({
+    host: "127.0.0.1",
+    port: 0,
+    path: "/mcp",
+  }).pipe(
+    Layer.provideMerge(FiregridRuntimeHostWithWorkflowLive({
+      durableStreamsBaseUrl: input.baseUrl,
+      namespace: input.namespace,
+      hostId: input.hostId,
+      input: true,
+    })),
+  )
 
-            yield* Effect.acquireUseRelease(
-              Effect.tryPromise(() =>
-                client.connect(
-                  transport as unknown as Parameters<Client["connect"]>[0],
-                ),
-              ),
-              () =>
-                Effect.gen(function* () {
-                  const listed = yield* Effect.tryPromise(() => client.listTools())
-                  expect(listed.tools.map((tool) => tool.name).sort()).toEqual([
-                    "execute",
-                    "schedule_me",
-                    "sleep",
-                    "spawn",
-                    "spawn_all",
-                    "wait_for",
-                  ])
+const contextUrl = (
+  boundAddress: string,
+  contextId: string,
+) => new URL(`/mcp/runtime-context/${encodeURIComponent(contextId)}`, boundAddress)
 
-                  const sleepResult = yield* Effect.tryPromise(() =>
+const withSdkClient = <A>(
+  url: URL,
+  use: (client: Client) => Effect.Effect<A, unknown, never>,
+) => {
+  const transport = new StreamableHTTPClientTransport(url)
+  const client = new Client(
+    { name: "firegrid-host-context-smoke", version: "0.0.0" },
+    {},
+  )
+  return Effect.acquireUseRelease(
+    Effect.tryPromise(() =>
+      client.connect(
+        transport as unknown as Parameters<Client["connect"]>[0],
+      )).pipe(Effect.as(client)),
+    use,
+    () =>
+      Effect.tryPromise(() => client.close()).pipe(
+        Effect.catchAll(() => Effect.void),
+      ),
+  )
+}
+
+const listToolNames = (client: Client) =>
+  Effect.tryPromise(() => client.listTools()).pipe(
+    Effect.map((listed) => listed.tools.map((tool) => tool.name).sort()),
+  )
+
+const hostConfigProvider = (input: {
+  readonly namespace: string
+  readonly mcpEnabled: boolean
+}) => {
+  if (!durableStreamBaseUrl) throw new Error("server not started")
+  return ConfigProvider.fromMap(new Map([
+    ["DURABLE_STREAMS_BASE_URL", durableStreamBaseUrl],
+    ["FIREGRID_RUNTIME_NAMESPACE", input.namespace],
+    ["FIREGRID_MCP_ENABLED", String(input.mcpEnabled)],
+    ["FIREGRID_MCP_HOST", "127.0.0.1"],
+    ["FIREGRID_MCP_PORT", "0"],
+    ["FIREGRID_MCP_PATH", "/mcp"],
+  ]))
+}
+
+describe("FiregridMcpServerLayer runtime-context routing", () => {
+  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1 firegrid-host-context-authority.VALIDATION.4 drives tools/list and sleep for a local context through the real MCP SDK", async () => {
+    if (!durableStreamBaseUrl) throw new Error("server not started")
+    const namespace = `mcp-local-${crypto.randomUUID()}`
+    const hostId = `host_A_${crypto.randomUUID()}` as HostId
+    const contextId = await Effect.runPromise(
+      seedContext({ baseUrl: durableStreamBaseUrl, namespace, hostId }),
+    )
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const boundAddress = yield* HttpServer.addressFormattedWith(
+            (addr) => Effect.succeed(addr),
+          )
+          expect(boundAddress.startsWith("http://127.0.0.1:")).toBe(true)
+          yield* withSdkClient(contextUrl(boundAddress, contextId), (client) =>
+            Effect.gen(function* () {
+              expect(yield* listToolNames(client)).toEqual([...toolNames])
+              const sleepResult = yield* Effect.tryPromise(() =>
+                client.callTool({
+                  name: "sleep",
+                  arguments: { durationMs: 1 },
+                }))
+              expect(sleepResult.isError).toBeFalsy()
+              expect(sleepResult.structuredContent).toEqual({ slept: true })
+            }))
+        }).pipe(
+          Effect.provide(mcpLayer({
+            baseUrl: durableStreamBaseUrl,
+            namespace,
+            hostId,
+          })),
+        ),
+      ),
+    )
+  })
+
+  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.2 publishes the same canonical six-tool catalog across context paths", async () => {
+    if (!durableStreamBaseUrl) throw new Error("server not started")
+    const namespace = `mcp-catalog-${crypto.randomUUID()}`
+    const hostId = `host_A_${crypto.randomUUID()}` as HostId
+    const contextOne = await Effect.runPromise(
+      seedContext({ baseUrl: durableStreamBaseUrl, namespace, hostId }),
+    )
+    const contextTwo = await Effect.runPromise(
+      seedContext({ baseUrl: durableStreamBaseUrl, namespace, hostId }),
+    )
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const boundAddress = yield* HttpServer.addressFormattedWith(
+            (addr) => Effect.succeed(addr),
+          )
+          const first = yield* withSdkClient(
+            contextUrl(boundAddress, contextOne),
+            listToolNames,
+          )
+          const second = yield* withSdkClient(
+            contextUrl(boundAddress, contextTwo),
+            listToolNames,
+          )
+          expect(first).toEqual([...toolNames])
+          expect(second).toEqual(first)
+        }).pipe(
+          Effect.provide(mcpLayer({
+            baseUrl: durableStreamBaseUrl,
+            namespace,
+            hostId,
+          })),
+        ),
+      ),
+    )
+  })
+
+  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.3 firegrid-host-context-authority.MCP_CONTEXT_ROUTING.4 rejects a foreign-context tool call before workflow side effects", async () => {
+    if (!durableStreamBaseUrl) throw new Error("server not started")
+    const namespace = `mcp-foreign-${crypto.randomUUID()}`
+    const hostA = `host_A_${crypto.randomUUID()}` as HostId
+    const hostB = `host_B_${crypto.randomUUID()}` as HostId
+    const foreignContext = await Effect.runPromise(
+      seedContext({
+        baseUrl: durableStreamBaseUrl,
+        namespace,
+        hostId: hostB,
+      }),
+    )
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const boundAddress = yield* HttpServer.addressFormattedWith(
+            (addr) => Effect.succeed(addr),
+          )
+          return yield* withSdkClient(
+            contextUrl(boundAddress, foreignContext),
+            (client) =>
+              Effect.gen(function* () {
+                expect(yield* listToolNames(client)).toEqual([...toolNames])
+                return yield* Effect.either(
+                  Effect.tryPromise(() =>
                     client.callTool({
                       name: "sleep",
                       arguments: { durationMs: 1 },
-                    }),
-                  )
-                  expect(sleepResult.isError).toBeFalsy()
-                  expect(sleepResult.structuredContent).toEqual({ slept: true })
+                    })),
+                )
+              }),
+          )
+        }).pipe(
+          Effect.provide(mcpLayer({
+            baseUrl: durableStreamBaseUrl,
+            namespace,
+            hostId: hostA,
+          })),
+        ) as Effect.Effect<Either.Either<unknown, unknown>, unknown, never>,
+      ),
+    )
 
-                  const malformed = yield* Effect.tryPromise(() =>
-                    client.callTool({
-                      name: "sleep",
-                      arguments: { durationMs: "not-a-number" },
-                    }),
-                  )
-                  expect(malformed.isError).toBe(true)
-                  expect(malformed.structuredContent).toMatchObject({
-                    _tag: "MalformedOutput",
-                  })
+    if (Either.isRight(result)) {
+      expect(result.right).toMatchObject({ isError: true })
+      expect(JSON.stringify(result.right)).toContain("ContextNotLocal")
+    } else {
+      expect(String(result.left)).toContain("ContextNotLocal")
+    }
 
-                  const unknown = yield* Effect.tryPromise({
-                    try: () =>
-                      client.callTool({
-                        name: "definitely_not_a_tool",
-                        arguments: {},
-                      }),
-                    catch: error => error,
-                  }).pipe(Effect.flip)
-                  expect(unknown).toBeInstanceOf(McpError)
-                  expect((unknown as McpError).code).toBe(ErrorCode.InvalidParams)
-                  expect((unknown as Error).message).toContain(
-                    "Tool 'definitely_not_a_tool' not found",
-                  )
-                }),
-              () =>
-                Effect.tryPromise(() => client.close()).pipe(
-                  Effect.catchAll(() => Effect.void),
-                ),
-            )
-          }).pipe(
-            Effect.provide(smokeLayer),
-          ) as Effect.Effect<void, unknown, never>,
+    const hostAExecutions = await Effect.runPromise(
+      queryHostWorkflowExecutions({
+        baseUrl: durableStreamBaseUrl,
+        namespace,
+        hostId: hostA,
+      }),
+    )
+    expect(hostAExecutions).toEqual([])
+  })
+
+  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1 leaves host composition buildable when MCP is disabled", async () => {
+    await Effect.runPromise(
+      Effect.scoped(Layer.build(firegridHostLayer)).pipe(
+        Effect.withConfigProvider(hostConfigProvider({
+          namespace: `host-disabled-${crypto.randomUUID()}`,
+          mcpEnabled: false,
+        })),
+      ),
+    )
+  })
+
+  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1 mounts the localhost MCP server from normal host composition when enabled", async () => {
+    const address = await Effect.runPromise(
+      Effect.scoped(
+        HttpServer.addressFormattedWith((addr) => Effect.succeed(addr)).pipe(
+          Effect.provide(firegridHostLayer),
         ),
-      )
-    },
-  )
+      ).pipe(
+        Effect.withConfigProvider(hostConfigProvider({
+          namespace: `host-enabled-${crypto.randomUUID()}`,
+          mcpEnabled: true,
+        })),
+      ),
+    )
+
+    expect(address.startsWith("http://127.0.0.1:")).toBe(true)
+  })
 })
