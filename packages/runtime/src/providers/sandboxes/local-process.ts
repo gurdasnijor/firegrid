@@ -2,8 +2,10 @@ import { Command } from "@effect/platform"
 import {
   CommandExecutor as CommandExecutorTag,
   type CommandExecutor,
+  type Process,
 } from "@effect/platform/CommandExecutor"
-import { Effect, Layer, Stream } from "effect"
+import { Effect, Layer, Queue, Runtime, type Scope, Stream } from "effect"
+import type { AgentByteStream } from "../../agent-io/index.ts"
 import {
   defaultCapabilities,
   findRunningSandbox,
@@ -126,6 +128,49 @@ const unsupported = (
 ): Effect.Effect<void, SandboxProviderError> =>
   Effect.fail(commandError(op, `local process provider does not support ${op}`))
 
+// firegrid agent-io: convert an @effect/platform Process's Effect-shaped
+// stdio into the WHATWG web streams that codecs consume. stdout/stderr
+// are Effect Streams; we run them through Stream.toReadableStream.
+// stdin is an Effect Sink; we feed it from a Queue that backs a
+// WritableStream the caller writes into.
+const makeAgentByteStreamFromProcess = (
+  process: Process,
+): Effect.Effect<AgentByteStream, SandboxProviderError, Scope.Scope> =>
+  Effect.gen(function* () {
+    const runtime = yield* Effect.runtime<never>()
+    const runPromise = Runtime.runPromise(runtime)
+    const stdinQueue = yield* Queue.unbounded<Uint8Array>()
+    yield* Stream.fromQueue(stdinQueue, { shutdown: true }).pipe(
+      Stream.run(process.stdin),
+      Effect.ignore,
+      Effect.forkScoped,
+    )
+    const stdin: WritableStream<Uint8Array> = new WritableStream<Uint8Array>({
+      async write(chunk) {
+        await runPromise(Queue.offer(stdinQueue, chunk))
+      },
+      async close() {
+        await runPromise(Queue.shutdown(stdinQueue))
+      },
+      async abort() {
+        await runPromise(Queue.shutdown(stdinQueue))
+      },
+    })
+    const stdout: ReadableStream<Uint8Array> = Stream.toReadableStreamRuntime(runtime)(
+      process.stdout,
+    ) as ReadableStream<Uint8Array>
+    const stderr: ReadableStream<Uint8Array> = Stream.toReadableStreamRuntime(runtime)(
+      process.stderr,
+    ) as ReadableStream<Uint8Array>
+    const exit = process.exitCode.pipe(
+      Effect.map(exitCode => ({ exitCode: Number(exitCode) })),
+      Effect.mapError(cause =>
+        commandError("openBytePipe.exit", "local process failed while waiting for exit", cause),
+      ),
+    )
+    return { stdin, stdout, stderr, exit } satisfies AgentByteStream
+  })
+
 const makeLocalProcessSandboxProvider = (
   commandExecutor: CommandExecutor,
   options: LocalProcessSandboxProviderOptions = {},
@@ -218,6 +263,44 @@ const makeLocalProcessSandboxProvider = (
       }),
     )
 
+  // firegrid agent-io: byte-pipe variant.
+  //
+  // Launch the process and expose its stdio as web streams so codecs
+  // (ACP, future protocol-aware agents) can do byte-level framing
+  // without bypassing the SandboxProvider boundary. The line-split
+  // `stream` API stays for jsonl agents; the two methods coexist.
+  //
+  // Scope semantics: the returned `AgentByteStream` is tied to the
+  // caller's Scope through `Effect.acquireRelease`; closing the scope
+  // kills the launched process.
+  const openBytePipe = (
+    sandbox: Sandbox,
+    command: SandboxCommand,
+  ) =>
+    Effect.gen(function* () {
+      const config = sandboxes.get(sandbox.id)
+      if (config === undefined) {
+        return yield* commandError(
+          "openBytePipe",
+          `sandbox not found: ${sandbox.id}`,
+        )
+      }
+      const built = yield* buildCommand(options, config, command)
+      const process = yield* Effect.acquireRelease(
+        commandExecutor.start(built).pipe(
+          Effect.mapError(cause =>
+            commandError(
+              "openBytePipe",
+              "local process command failed to start",
+              cause,
+            ),
+          ),
+        ),
+        (p) => p.kill().pipe(Effect.ignore),
+      )
+      return yield* makeAgentByteStreamFromProcess(process)
+    })
+
   const execute = (
     sandbox: Sandbox,
     command: SandboxCommand,
@@ -273,6 +356,7 @@ const makeLocalProcessSandboxProvider = (
     executeMany: (sandbox, commands) =>
       Effect.forEach(commands, command => execute(sandbox, command)),
     stream,
+    openBytePipe,
     upload: (_sandbox, _localPath, _remotePath) => unsupported("upload"),
     download: (_sandbox, _remotePath, _localPath) => unsupported("download"),
     destroy: sandbox => Effect.sync(() => sandboxes.delete(sandbox.id)),

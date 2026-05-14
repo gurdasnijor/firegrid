@@ -1,5 +1,6 @@
-import type { Effect, Stream } from "effect"
+import type { Effect, Scope, Stream } from "effect"
 import { Context, Layer, Schema } from "effect"
+import type { AgentByteStream } from "../../agent-io/index.ts"
 
 type SandboxState =
   | "creating"
@@ -98,6 +99,19 @@ export interface SandboxProviderService {
     sandbox: Sandbox,
     command: SandboxCommand,
   ) => Stream.Stream<ProcessOutputChunk, SandboxProviderError>
+  // Byte-pipe variant: launch the process and expose its stdio as a
+  // duplex byte stream for codecs that need byte-level framing (ACP,
+  // future protocol-aware agents). The line-split `stream` API stays
+  // for jsonl agents; this method coexists with it.
+  //
+  // Scope semantics: closing the returned scope kills the launched
+  // process and releases the underlying transport. Codecs are
+  // responsible for emitting durable observations of the bytes
+  // flowing through.
+  readonly openBytePipe: (
+    sandbox: Sandbox,
+    command: SandboxCommand,
+  ) => Effect.Effect<AgentByteStream, SandboxProviderError, Scope.Scope>
   readonly upload: (sandbox: Sandbox, localPath: string, remotePath: string) => Effect.Effect<void, SandboxProviderError>
   readonly download: (sandbox: Sandbox, remotePath: string, localPath: string) => Effect.Effect<void, SandboxProviderError>
   readonly destroy: (sandbox: Sandbox) => Effect.Effect<boolean, SandboxProviderError>

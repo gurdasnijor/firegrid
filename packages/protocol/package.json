@@ -16,6 +16,10 @@
     "./runtime-ingress": {
       "types": "./src/runtime-ingress/index.ts",
       "default": "./src/runtime-ingress/index.ts"
+    },
+    "./agent-tools": {
+      "types": "./src/agent-tools/index.ts",
+      "default": "./src/agent-tools/index.ts"
     }
   },
   "files": [
