@@ -18,6 +18,7 @@ import {
 import {
   RuntimeIngressTable,
   makeRuntimeIngressInputRow,
+  nextRuntimeIngressSequence,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
 import { Clock, Config, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
@@ -792,16 +793,7 @@ export const appendRuntimeIngress = (
       return existing.value
     }
 
-    // firegrid-agent-ingress.INGRESS.9
-    const nextSequence = yield* table.inputs.query((coll) =>
-      coll.toArray
-        .filter(candidate => candidate.contextId === row.contextId)
-        .reduce(
-          (max, candidate) =>
-            candidate.sequence === undefined ? max : Math.max(max, candidate.sequence + 1),
-          0,
-        ),
-    ).pipe(
+    const nextSequence = yield* nextRuntimeIngressSequence(table, row.contextId).pipe(
       Effect.mapError(cause =>
         runtimeIngressError(
           "append",

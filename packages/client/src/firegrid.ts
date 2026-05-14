@@ -31,6 +31,7 @@ import {
 import {
   RuntimeIngressTable,
   makeRuntimeIngressInputRow,
+  nextRuntimeIngressSequence,
   promptToRuntimeIngressRequest,
   PublicPromptRequestSchema,
   type PublicPromptRequest,
@@ -198,53 +199,44 @@ const resolveConfig = (
   })
 
 /**
- * Build the host-owned RuntimeIngressTable layer for a specific
- * context. The host stream prefix is read off the context row by the
- * caller; this helper only wraps the per-call layer construction so
- * the URL is never composed at scenario sites.
+ * Build the stream options for a host-owned table layer scoped to a
+ * specific runtime context. The host stream prefix is read off the
+ * context row, so the URL is never composed at scenario sites.
  *
  * firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
  */
+const hostOwnedStreamOptions = (
+  config: ResolvedConfig,
+  context: RuntimeContext,
+  segment: "runtimeIngress" | "runtimeOutput",
+) => ({
+  streamOptions: {
+    url: hostOwnedStreamUrl({
+      baseUrl: config.baseUrl,
+      prefix: context.host.streamPrefix,
+      segment,
+    }),
+    contentType: config.contentType,
+    ...(config.headers === undefined ? {} : { headers: config.headers }),
+  },
+  txTimeoutMs: config.txTimeoutMs,
+})
+
 const ingressLayerForContext = (
   config: ResolvedConfig,
   context: RuntimeContext,
 ) =>
-  RuntimeIngressTable.layer({
-    streamOptions: {
-      url: hostOwnedStreamUrl({
-        baseUrl: config.baseUrl,
-        prefix: context.host.streamPrefix,
-        segment: "runtimeIngress",
-      }),
-      contentType: config.contentType,
-      ...(config.headers === undefined ? {} : { headers: config.headers }),
-    },
-    txTimeoutMs: config.txTimeoutMs,
-  })
+  RuntimeIngressTable.layer(
+    hostOwnedStreamOptions(config, context, "runtimeIngress"),
+  )
 
-/**
- * Build the host-owned RuntimeOutputTable layer for a specific
- * context. Read paths (`snapshot`) acquire and release this table
- * per call; preload cost is paid per snapshot.
- *
- * firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
- */
 const outputLayerForContext = (
   config: ResolvedConfig,
   context: RuntimeContext,
 ) =>
-  RuntimeOutputTable.layer({
-    streamOptions: {
-      url: hostOwnedStreamUrl({
-        baseUrl: config.baseUrl,
-        prefix: context.host.streamPrefix,
-        segment: "runtimeOutput",
-      }),
-      contentType: config.contentType,
-      ...(config.headers === undefined ? {} : { headers: config.headers }),
-    },
-    txTimeoutMs: config.txTimeoutMs,
-  })
+  RuntimeOutputTable.layer(
+    hostOwnedStreamOptions(config, context, "runtimeOutput"),
+  )
 
 const decodePublicLaunchRequest = (
   request: PublicLaunchRequest,
@@ -406,16 +398,10 @@ const make = (config: ResolvedConfig) =>
           const ingress = yield* RuntimeIngressTable
           const existing = yield* ingress.inputs.get(row.inputId)
           if (Option.isSome(existing)) return existing.value
-          const nextSequence = yield* ingress.inputs.query((coll) =>
-            coll.toArray
-              .filter(candidate => candidate.contextId === row.contextId)
-              .reduce(
-                (max, candidate) =>
-                  candidate.sequence === undefined
-                    ? max
-                    : Math.max(max, candidate.sequence + 1),
-                0,
-              ),
+          // firegrid-agent-ingress.INGRESS.9
+          const nextSequence = yield* nextRuntimeIngressSequence(
+            ingress,
+            row.contextId,
           )
           const sequenced = {
             ...row,

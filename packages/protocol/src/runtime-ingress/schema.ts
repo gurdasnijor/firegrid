@@ -166,3 +166,23 @@ export const makeRuntimeIngressInputRow = (
     ...(request.metadata === undefined ? {} : { metadata: request.metadata }),
   }
 }
+
+/**
+ * Single sanctioned query for the next ingress sequence number on a
+ * context. Both the runtime-host append path and the client
+ * `Firegrid.prompt` path call this so the logic lives in one place.
+ *
+ * firegrid-agent-ingress.INGRESS.9
+ */
+export const nextRuntimeIngressSequence = (
+  table: RuntimeIngressTableService,
+  contextId: string,
+) =>
+  table.inputs.query((coll) =>
+    coll.toArray
+      .filter(candidate => candidate.contextId === contextId)
+      .reduce(
+        (max, candidate) =>
+          candidate.sequence === undefined ? max : Math.max(max, candidate.sequence + 1),
+        0,
+      ))
