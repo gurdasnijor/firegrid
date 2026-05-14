@@ -1,4 +1,5 @@
 import type { DurableTableHeaders } from "effect-durable-operators"
+import type { LocalProcessSandboxProviderOptions } from "../providers/sandboxes/local-process.ts"
 
 export interface RuntimeHostConfigValue {
   readonly inputEnabled: boolean
@@ -20,4 +21,5 @@ export interface RuntimeHostTopologyOptions {
   readonly namespace: string
   readonly headers?: DurableTableHeaders
   readonly input?: boolean
+  readonly localProcessEnv?: LocalProcessSandboxProviderOptions
 }

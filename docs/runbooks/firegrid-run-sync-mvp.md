@@ -73,6 +73,10 @@ does not write resolved secret values into durable config or run evidence. Child
 stdout/stderr are still untrusted output and are journaled verbatim; a child that
 prints its own secret can leak it.
 
+The local-process child environment is allowlisted. The tracer fails if the
+child can read host-only `FIREGRID_TRACER_PARENT_SECRET` directly, while still
+requiring `CHILD_MARKER_SECRET` to be present through `--secret-env`.
+
 ## Minimal Manual Command
 
 ```sh
@@ -122,6 +126,8 @@ pnpm --filter @firegrid/scenario-firegrid exec vitest run src/tracer-019-sync-ru
 
 When `FIREGRID_ELECTRIC_SMOKE` is not `1`, or the Electric service URL/token are
 not present, the Electric scenario is skipped. The local smoke still runs.
+When it does run, the same probe also fails if the launched agent can read
+host-only `FIREGRID_DURABLE_STREAMS_TOKEN`.
 
 Manual Electric command shape:
 

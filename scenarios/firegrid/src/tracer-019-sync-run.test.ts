@@ -70,9 +70,11 @@ const sha256Hex = (value: string): string =>
 const syncRunProbe = `
 import { createHash } from "node:crypto"
 
-const [expectedCwd, expectedPromptDigest, expectedExitCodeRaw] = process.argv.slice(1)
+const [expectedCwd, expectedPromptDigest, expectedExitCodeRaw, expectTokenHiddenRaw] = process.argv.slice(1)
 const expectedExitCode = Number(expectedExitCodeRaw)
 const secret = process.env.CHILD_MARKER_SECRET
+const hostOnlySecret = process.env.FIREGRID_TRACER_PARENT_SECRET
+const durableStreamsToken = process.env.FIREGRID_DURABLE_STREAMS_TOKEN
 let buffered = ""
 const timeout = setTimeout(() => {
   process.stderr.write("timed out waiting for durable prompt ingress\\n")
@@ -90,6 +92,12 @@ if (process.cwd() !== expectedCwd) {
 }
 if (secret === undefined) {
   fail("missing CHILD_MARKER_SECRET", 22)
+}
+if (hostOnlySecret !== undefined) {
+  fail("host-only FIREGRID_TRACER_PARENT_SECRET leaked to child env", 25)
+}
+if (expectTokenHiddenRaw === "1" && durableStreamsToken !== undefined) {
+  fail("host-only FIREGRID_DURABLE_STREAMS_TOKEN leaked to child env", 26)
 }
 
 process.stdin.setEncoding("utf8")
@@ -116,6 +124,22 @@ process.stdin.on("data", chunk => {
 })
 `
 
+const firegridRunEnv = (config: SmokeConfig): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = {
+    ...globalThis.process.env,
+    DURABLE_STREAMS_BASE_URL: config.durableStreamsBaseUrl,
+    FIREGRID_RUNTIME_NAMESPACE: config.namespace,
+    FIREGRID_RUNTIME_INPUT_ENABLED: "false",
+    FIREGRID_TRACER_PARENT_SECRET: config.parentSecretValue,
+  }
+  if (config.token === undefined) {
+    delete env["FIREGRID_DURABLE_STREAMS_TOKEN"]
+  } else {
+    env["FIREGRID_DURABLE_STREAMS_TOKEN"] = config.token
+  }
+  return env
+}
+
 const invokeFiregridRun = (
   config: SmokeConfig,
 ): Promise<FiregridRunInvocation> =>
@@ -138,17 +162,11 @@ const invokeFiregridRun = (
         config.workdir,
         sha256Hex(config.prompt),
         String(config.expectedExitCode),
+        config.token === undefined ? "0" : "1",
       ],
       {
         cwd: repoRoot,
-        env: {
-          ...globalThis.process.env,
-          DURABLE_STREAMS_BASE_URL: config.durableStreamsBaseUrl,
-          FIREGRID_RUNTIME_NAMESPACE: config.namespace,
-          FIREGRID_RUNTIME_INPUT_ENABLED: "false",
-          FIREGRID_TRACER_PARENT_SECRET: config.parentSecretValue,
-          ...(config.token === undefined ? {} : { FIREGRID_DURABLE_STREAMS_TOKEN: config.token }),
-        },
+        env: firegridRunEnv(config),
         stdio: ["ignore", "pipe", "pipe"],
       },
     )

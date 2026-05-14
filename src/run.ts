@@ -55,6 +55,7 @@ import {
   RuntimeHostTopologyFromConfig,
   appendRuntimeIngress,
   decodeRunConfig,
+  localProcessSpawnEnvFromHostEnv,
   runConfigRequiresInput,
   runConfigToIngressRequest,
   runConfigToRuntimeContext,
@@ -292,7 +293,11 @@ const envHostLayer = (config: RunConfig) =>
   Layer.unwrapEffect(
     Effect.map(RuntimeHostTopologyFromConfig, (topology) =>
       FiregridRuntimeHostWithWorkflowLive(
-        runConfigRequiresInput(config) ? { ...topology, input: true } : topology,
+        {
+          ...topology,
+          ...(runConfigRequiresInput(config) ? { input: true } : {}),
+          localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
+        },
         envPolicyLayer(config.authorizedBindings ?? []),
       )),
   )

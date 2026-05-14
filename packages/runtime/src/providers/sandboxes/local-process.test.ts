@@ -7,6 +7,7 @@ import { Effect, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   localProcess,
+  localProcessSpawnEnvFromHostEnv,
   LocalProcessSandboxProvider,
 } from "./local-process.ts"
 
@@ -144,6 +145,57 @@ describe("runtime providers/sandboxes local-process", () => {
     }
   })
 
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5-1 allowlists child env to baseline plus SandboxCommand.envVars", async () => {
+    const parentOnlyKey = `FIREGRID_LOCAL_PROCESS_PARENT_ONLY_${crypto.randomUUID().replaceAll("-", "_")}`
+    const childOnlyValue = `child-${crypto.randomUUID()}`
+    globalThis.process.env[parentOnlyKey] = `parent-${crypto.randomUUID()}`
+    try {
+      const chunks = await Effect.runPromise(
+        Effect.gen(function* () {
+          const provider = yield* SandboxProvider
+          const sandbox = yield* provider.create({})
+          return yield* provider.stream(sandbox, {
+            argv: [
+              process.execPath,
+              "--input-type=module",
+              "-e",
+              "const [parentOnlyKey] = process.argv.slice(1); console.log(JSON.stringify({ parentOnly: process.env[parentOnlyKey], childOnly: process.env.CHILD_ONLY, hasPath: process.env.PATH !== undefined || process.env.Path !== undefined }))",
+              parentOnlyKey,
+            ],
+            envVars: { CHILD_ONLY: childOnlyValue },
+          }).pipe(
+            Stream.runCollect,
+            Effect.map(collected => Array.from(collected)),
+          )
+        }).pipe(
+          Effect.provide(
+            LocalProcessSandboxProvider.layer(
+              localProcessSpawnEnvFromHostEnv(globalThis.process.env),
+            ).pipe(Layer.provide(NodeContext.layer)),
+          ),
+        ),
+      )
+
+      const stdout = chunks.find(chunk =>
+        chunk.type === "output" && chunk.channel === "stdout",
+      )
+      expect(stdout).toMatchObject({
+        type: "output",
+        channel: "stdout",
+      })
+      if (stdout?.type !== "output") throw new Error("expected stdout output")
+      expect(JSON.parse(stdout.text)).toEqual({
+        childOnly: childOnlyValue,
+        hasPath: true,
+      })
+      expect(chunks).toContainEqual({
+        type: "exit",
+        exitCode: 0,
+      } satisfies ProcessOutputChunk)
+    } finally {
+      delete globalThis.process.env[parentOnlyKey]
+    }
+  })
 
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 sketches a provider helper without host stream or process authority", () => {
     expect(localProcess({
