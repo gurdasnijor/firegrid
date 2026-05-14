@@ -32,6 +32,10 @@
     "./agent-tools": {
       "types": "./src/agent-tools/index.ts",
       "default": "./src/agent-tools/index.ts"
+    },
+    "./providers/sandboxes": {
+      "types": "./src/providers/sandboxes/index.ts",
+      "default": "./src/providers/sandboxes/index.ts"
     }
   },
   "files": [
