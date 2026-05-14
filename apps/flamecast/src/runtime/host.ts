@@ -65,23 +65,26 @@ const flamecastToyHostLayer = Layer.unwrapEffect(
         Authorization: () => `Bearer ${Redacted.value(token)}`,
       }) satisfies DurableTableHeaders,
     })
-    return Layer.mergeAll(
-      FiregridLive.pipe(
-        Layer.provide(
-          Layer.succeed(FiregridConfig, {
-            durableStreamsBaseUrl: config.durableStreamsBaseUrl,
-            namespace: config.namespace,
-            ...(headers === undefined ? {} : { headers }),
-          }),
-        ),
-      ),
-      FiregridRuntimeHostLive({
+    const hostLayer = FiregridRuntimeHostLive({
+      durableStreamsBaseUrl: config.durableStreamsBaseUrl,
+      namespace: config.namespace,
+      input: true,
+      ...(headers === undefined ? {} : { headers }),
+      localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
+    })
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+    //
+    // FiregridLive consumes RuntimeControlPlaneTable + CurrentHostSession
+    // from the runtime host layer so the client surface and the host
+    // share one materialized RuntimeContext index and one host session
+    // (matching `requireLocalContext`).
+    return FiregridLive.pipe(
+      Layer.provide(Layer.succeed(FiregridConfig, {
         durableStreamsBaseUrl: config.durableStreamsBaseUrl,
         namespace: config.namespace,
-        input: true,
         ...(headers === undefined ? {} : { headers }),
-        localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
-      }),
+      })),
+      Layer.provideMerge(hostLayer),
     )
   }),
 )

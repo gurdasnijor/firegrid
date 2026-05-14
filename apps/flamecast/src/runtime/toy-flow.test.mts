@@ -26,20 +26,22 @@ afterEach(async () => {
 const layer = () => {
   if (baseUrl === undefined) throw new Error("server not started")
   const namespace = "flamecast-toy-test"
-  return Layer.mergeAll(
-    FiregridLive.pipe(
-      Layer.provide(
-        Layer.succeed(FiregridConfig, {
-          durableStreamsBaseUrl: baseUrl,
-          namespace,
-        }),
-      ),
-    ),
-    FiregridRuntimeHostLive({
+  // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+  //
+  // The runtime host layer provides RuntimeControlPlaneTable +
+  // CurrentHostSession to the client, so launch / prompt / snapshot
+  // share one materialized RuntimeContext index and one host id.
+  const hostLayer = FiregridRuntimeHostLive({
+    durableStreamsBaseUrl: baseUrl,
+    namespace,
+    input: true,
+  })
+  return FiregridLive.pipe(
+    Layer.provide(Layer.succeed(FiregridConfig, {
       durableStreamsBaseUrl: baseUrl,
       namespace,
-      input: true,
-    }),
+    })),
+    Layer.provideMerge(hostLayer),
   )
 }
 

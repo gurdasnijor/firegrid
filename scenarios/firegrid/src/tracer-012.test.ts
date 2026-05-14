@@ -27,27 +27,6 @@ afterEach(async () => {
   baseUrl = undefined
 })
 
-const runWithFiregrid = <A, E>(
-  options: {
-    readonly durableStreamsBaseUrl: string
-    readonly namespace: string
-  },
-  effect: Effect.Effect<A, E, Firegrid>,
-): Promise<A> => {
-  return Effect.runPromise(Effect.scoped(
-    effect.pipe(
-      Effect.provide(
-        FiregridLive.pipe(
-          Layer.provide(Layer.succeed(FiregridConfig, {
-            durableStreamsBaseUrl: options.durableStreamsBaseUrl,
-            namespace: options.namespace,
-          })),
-        ),
-      ),
-    ),
-  ))
-}
-
 const stdinEchoAgent = `
 let buffered = ""
 let count = 0
@@ -78,85 +57,67 @@ describe("firegrid tracer 012 runtime ingress", () => {
       namespace: `tracer-012-${crypto.randomUUID()}`,
     }
 
-    const handle = await runWithFiregrid(
-      firegridConfig,
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+    const hostLayer = FiregridRuntimeHostLive({
+      ...firegridConfig,
+      input: true,
+    })
+    const clientLayer = FiregridLive.pipe(
+      Layer.provide(Layer.succeed(FiregridConfig, firegridConfig)),
+    )
+
+    const result = await Effect.runPromise(Effect.scoped(
       Effect.gen(function* () {
         const firegrid = yield* Firegrid
-        return yield* firegrid.launch({
+        const handle = yield* firegrid.launch({
           runtime: local.jsonl({
             argv: [process.execPath, "--input-type=module", "-e", stdinEchoAgent],
           }),
         })
-      }),
-    )
 
-    const host = FiregridRuntimeHostLive({
-      ...firegridConfig,
-      input: true,
-    })
+        const initial = yield* appendRuntimeIngress({
+          contextId: handle.contextId,
+          kind: "message",
+          authoredBy: "client",
+          payload: [{ type: "text", text: "start here" }],
+          idempotencyKey: "tracer-012-initial",
+          metadata: { source: "scenario", phase: "initial" },
+        })
+        const followUp = yield* appendRuntimeIngress({
+          contextId: handle.contextId,
+          kind: "message",
+          authoredBy: "client",
+          payload: [{ type: "text", text: "continue once" }],
+          idempotencyKey: "tracer-012-continue",
+          metadata: { source: "scenario" },
+        })
+        const duplicate = yield* appendRuntimeIngress({
+          contextId: handle.contextId,
+          kind: "message",
+          authoredBy: "client",
+          payload: [{ type: "text", text: "continue once duplicate" }],
+          idempotencyKey: "tracer-012-continue",
+        })
 
-    const initial = await Effect.runPromise(
-      appendRuntimeIngress({
-        contextId: handle.contextId,
-        kind: "message",
-        authoredBy: "client",
-        payload: [{ type: "text", text: "start here" }],
-        idempotencyKey: "tracer-012-initial",
-        metadata: { source: "scenario", phase: "initial" },
-      }).pipe(Effect.provide(host)),
-    )
-    const followUp = await Effect.runPromise(
-      appendRuntimeIngress({
-        contextId: handle.contextId,
-        kind: "message",
-        authoredBy: "client",
-        payload: [{ type: "text", text: "continue once" }],
-        idempotencyKey: "tracer-012-continue",
-        metadata: { source: "scenario" },
-      }).pipe(Effect.provide(host)),
-    )
-    const duplicate = await Effect.runPromise(
-      appendRuntimeIngress({
-        contextId: handle.contextId,
-        kind: "message",
-        authoredBy: "client",
-        payload: [{ type: "text", text: "continue once duplicate" }],
-        idempotencyKey: "tracer-012-continue",
-      }).pipe(Effect.provide(host)),
-    )
-
-    expect(duplicate.inputId).toBe(followUp.inputId)
-
-    const result = await Effect.runPromise(
-      startRuntime({
-        contextId: handle.contextId,
-      }).pipe(Effect.provide(host)),
-    )
-
-    expect(result).toMatchObject({
-      contextId: handle.contextId,
-      exitCode: 0,
-    })
-
-    const snapshot = await Effect.runPromise(Effect.scoped(
-      Effect.gen(function* () {
-        const firegrid = yield* Firegrid
-        return yield* firegrid.open(handle.contextId).snapshot
+        const runResult = yield* startRuntime({ contextId: handle.contextId })
+        const snapshot = yield* firegrid.open(handle.contextId).snapshot
+        return { handle, initial, followUp, duplicate, runResult, snapshot }
       }).pipe(
-        Effect.provide(
-          FiregridLive.pipe(
-            Layer.provide(Layer.succeed(FiregridConfig, {
-              ...firegridConfig,
-            })),
-          ),
-        ),
+        Effect.provide(clientLayer),
+        Effect.provide(hostLayer),
       ),
     ))
 
-    expect(snapshot.events.map(event => event.raw)).toEqual([
+    expect(result.duplicate.inputId).toBe(result.followUp.inputId)
+    expect(result.runResult).toMatchObject({
+      contextId: result.handle.contextId,
+      exitCode: 0,
+    })
+
+    expect(result.snapshot.events.map(event => event.raw)).toEqual([
       "{\"type\":\"assistant\",\"text\":\"ingress:start here\"}",
       "{\"type\":\"assistant\",\"text\":\"ingress:continue once\"}",
     ])
-    expect(initial.inputId).not.toEqual(followUp.inputId)
+    expect(result.initial.inputId).not.toEqual(result.followUp.inputId)
   })
 })

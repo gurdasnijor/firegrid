@@ -5,13 +5,19 @@ import {
   Firegrid,
   FiregridConfig,
   FiregridDurableTablesLive,
-  FiregridLive,
+  FiregridStandaloneLive,
   FiregridRuntimeTables,
   firegridRuntimeTableTags,
   local,
   type FiregridService,
   type RuntimeContextSnapshot,
 } from "@firegrid/client/firegrid"
+import {
+  CurrentHostSession,
+  makeHostSessionRow,
+  type HostId,
+  type HostSessionId,
+} from "@firegrid/protocol/launch"
 import {
   DurableTableProvider,
   useDurableLiveQuery,
@@ -46,7 +52,7 @@ const firegridConfig = {
 
 const FiregridBrowserConfigLive = Layer.succeed(FiregridConfig, firegridConfig)
 
-const FiregridBrowserLive = FiregridLive.pipe(
+const FiregridBrowserLive = FiregridStandaloneLive.pipe(
   Layer.provide(FiregridBrowserConfigLive),
 )
 
@@ -261,6 +267,19 @@ function Composer(props: {
         if (disabled) return
         setBusy(true)
         const trimmed = prompt.trim()
+        // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+        // The browser does not run its own host scope. We pair the
+        // launch on a stable browser-side `CurrentHostSession` whose
+        // `hostId` matches FIREGRID_HOST_ID on the toy host process,
+        // so the host can recognize the launched row via
+        // `requireLocalContext`. Slice 3 replaces this with
+        // host-mediated launch routing.
+        const browserHostSession = makeHostSessionRow({
+          hostId: (import.meta.env["VITE_FIREGRID_HOST_ID"] ?? "flamecast-toy-browser") as HostId,
+          hostSessionId: `flamecast-browser-${crypto.randomUUID()}` as HostSessionId,
+          namespace: runtimeNamespace,
+          startedAtMs: Date.now(),
+        })
         // eslint-disable-next-line no-restricted-syntax
         void Effect.runPromise(
           Effect.gen(function* () {
@@ -278,7 +297,9 @@ function Composer(props: {
             // flamecast-toy-stdio-agents.LOCAL_AGENT.3
             const snapshot = yield* props.firegrid.open(handle.contextId).snapshot
             return { contextId: handle.contextId, snapshot }
-          }),
+          }).pipe(
+            Effect.provideService(CurrentHostSession, browserHostSession),
+          ),
         )
           .then(({ contextId, snapshot }) => props.onLaunched(contextId, snapshot))
           .finally(() => setBusy(false))

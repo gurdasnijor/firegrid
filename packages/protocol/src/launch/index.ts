@@ -62,6 +62,20 @@ export {
   type RuntimeContextHostBinding,
 } from "./authority.ts"
 export {
+  ContextNotFound,
+  ContextNotLocal,
+  CurrentHostSession,
+  CurrentHostStopped,
+  CurrentRuntimeContext,
+  durableStreamUrl,
+  findRuntimeContext,
+  hostOwnedStreamUrl,
+  insertLocalRuntimeContext,
+  provideRuntimeContext,
+  requireLocalContext,
+  runtimeControlPlaneStreamUrl,
+} from "./host-context-authority.ts"
+export {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   type RuntimeControlPlaneTableService,

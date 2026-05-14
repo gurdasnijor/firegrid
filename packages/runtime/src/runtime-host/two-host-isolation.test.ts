@@ -3,13 +3,16 @@
 // firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1
 // firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
 // firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.2
+// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
 // firegrid-host-context-authority.VALIDATION.1
 //
 // Two-host smoke: two FiregridRuntimeHostWithWorkflowLive layers in
 // the same namespace, each configured with a distinct hostId. Each
 // host runs its own runtime context end-to-end. We then verify that
 // workflow rows + clock wakeups appear in the **owning host's**
-// host-owned workflow stream and not in the other host's.
+// host-owned workflow stream and not in the other host's, and that
+// the local-authority gate rejects a cross-host startRuntime call
+// before any workflow/output rows are written.
 
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
@@ -19,7 +22,7 @@ import {
   normalizeRuntimeIntent,
   type HostId,
 } from "@firegrid/protocol/launch"
-import { Effect } from "effect"
+import { Effect, Either } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   FiregridRuntimeHostWithWorkflowLive,
@@ -168,6 +171,74 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
     // workflow rows.
     expect(resultA.executionIds).not.toContain(`runtime-context:${contextB}`)
     expect(resultB.executionIds).not.toContain(`runtime-context:${contextA}`)
+  })
+
+  it("firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2 startRuntime rejects a context bound to another host before any host-owned row is written", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const namespace = `two-host-foreign-${crypto.randomUUID()}`
+    const hostA = `host_A_${crypto.randomUUID()}` as HostId
+    const hostB = `host_B_${crypto.randomUUID()}` as HostId
+    const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
+
+    const contextA = await seedContext({
+      controlPlaneStreamUrl,
+      hostId: hostA,
+      namespace,
+      argv: [process.execPath, "-e", "process.exit(0)"],
+    })
+
+    // Host B tries to execute host A's context. The local-authority
+    // gate must reject before WorkflowEngine.execute runs, so no
+    // workflow row appears in host B's host-owned workflow stream
+    // and no run row is appended for contextA.
+    const result = await Effect.runPromise(
+      Effect.either(
+        startRuntime({ contextId: contextA }).pipe(
+          Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+            durableStreamsBaseUrl: baseUrl,
+            namespace,
+            hostId: hostB,
+          })),
+        ),
+      ),
+    )
+
+    expect(Either.isLeft(result)).toBe(true)
+    if (Either.isLeft(result)) {
+      expect(result.left).toMatchObject({
+        _tag: "ContextNotLocal",
+        contextId: contextA,
+        hostId: hostA,
+        currentHostId: hostB,
+      })
+    }
+
+    // Verify host B's workflow stream is empty: the gate fired
+    // before engine.execute, so no `runtime-context:contextA` row
+    // was inserted under host B's prefix.
+    const hostBState = await Effect.runPromise(
+      queryHostWorkflow({ baseUrl, namespace, hostId: hostB }),
+    )
+    expect(hostBState.executionIds).not.toContain(`runtime-context:${contextA}`)
+
+    // And no run rows for contextA appear in the namespace-scoped
+    // control plane: the gate runs before runs are written.
+    const runs = await Effect.runPromise(
+      Effect.gen(function* () {
+        const table = yield* RuntimeControlPlaneTable
+        return yield* table.runs.query((coll) =>
+          coll.toArray.filter((row) => row.contextId === contextA))
+      }).pipe(
+        Effect.provide(RuntimeControlPlaneTable.layer({
+          streamOptions: {
+            url: controlPlaneStreamUrl,
+            contentType: "application/json",
+          },
+        })),
+        Effect.scoped,
+      ),
+    )
+    expect(runs).toEqual([])
   })
 })
 

@@ -24,6 +24,7 @@ import type { DurableTableHeaders } from "effect-durable-operators"
 import {
   CurrentHostSession,
   hostOwnedStreamUrl,
+  requireLocalContext,
   runtimeControlPlaneStreamUrl,
 } from "./host-context-authority.ts"
 import {
@@ -596,15 +597,30 @@ export const FiregridRuntimeHostWithWorkflowLive = (
   envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
 ) => FiregridRuntimeHostLive(options, envPolicy)
 
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+//
+// FIREGRID_HOST_ID is the stable host identity — a restarted host
+// adopts the same stream prefix and reconciles its own pending
+// workflow clocks. When omitted V1 falls back to a fresh
+// `host_<uuid>` per process, which is fine for short-lived smokes
+// but means scheduled work does not survive restart. Operators
+// should set FIREGRID_HOST_ID to a stable value (e.g. derived from
+// a local host file or platform identity) for durable deployments.
+//
+// FIREGRID_HOST_SESSION_ID is per-process by design — even with a
+// stable hostId, sessions can be distinguished for liveness work.
+// V1 generates a fresh session id when omitted.
 export const RuntimeHostTopologyFromConfig = Config.all({
   durableStreamsBaseUrl: Config.string("DURABLE_STREAMS_BASE_URL"),
   namespace: Config.string("FIREGRID_RUNTIME_NAMESPACE"),
   input: Config.boolean("FIREGRID_RUNTIME_INPUT_ENABLED").pipe(
     Config.withDefault(false),
   ),
+  hostId: Config.option(Config.string("FIREGRID_HOST_ID")),
+  hostSessionId: Config.option(Config.string("FIREGRID_HOST_SESSION_ID")),
   token: Config.option(Config.redacted("FIREGRID_DURABLE_STREAMS_TOKEN")),
 }).pipe(
-  Config.map(({ durableStreamsBaseUrl, namespace, input, token }) => {
+  Config.map(({ durableStreamsBaseUrl, namespace, input, hostId, hostSessionId, token }) => {
     const headers = Option.match(token, {
       onNone: () => undefined,
       onSome: (redacted) => ({
@@ -615,6 +631,14 @@ export const RuntimeHostTopologyFromConfig = Config.all({
       durableStreamsBaseUrl,
       namespace,
       input,
+      ...Option.match(hostId, {
+        onNone: () => ({}),
+        onSome: (value) => ({ hostId: value }),
+      }),
+      ...Option.match(hostSessionId, {
+        onNone: () => ({}),
+        onSome: (value) => ({ hostSessionId: value }),
+      }),
       ...(headers !== undefined ? { headers } : {}),
     }
   }),
@@ -646,15 +670,26 @@ export const startRuntime = (
 ) =>
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.1
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.4
-  Effect.flatMap(WorkflowEngine.WorkflowEngine, engine =>
-    engine.execute(RuntimeContextWorkflow, {
+  // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
+  // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.4
+  //
+  // requireLocalContext runs before any host-owned services are
+  // touched, so a host cannot smuggle execution of a context whose
+  // RuntimeContext.host binding names another host. The check uses
+  // RuntimeControlPlaneTable + CurrentHostSession from this same host
+  // scope; it is not a tool-arg or env-var check.
+  Effect.gen(function* () {
+    yield* requireLocalContext(options.contextId)
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    return yield* engine.execute(RuntimeContextWorkflow, {
       executionId: runtimeContextWorkflowExecutionId(options.contextId),
       payload: RuntimeContextWorkflowPayload.make({
         contextId: options.contextId,
       }),
-    })).pipe(
-      Effect.withClock(runtimeExecutionClock),
-    )
+    })
+  }).pipe(
+    Effect.withClock(runtimeExecutionClock),
+  )
 
 export const appendRuntimeIngress = (
   request: RuntimeIngressRequest,
@@ -669,6 +704,23 @@ export const appendRuntimeIngress = (
         request.inputId,
       )
     }
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
+    //
+    // In Slice 2 the host-owned ingress table is the local host's.
+    // Cross-host prompt routing (writing to the owner host's ingress
+    // through resolved RuntimeContext.host) is Slice 3. Until then a
+    // foreign-context append would silently land on the wrong host's
+    // ingress, so the operator rejects it loudly.
+    yield* requireLocalContext(request.contextId).pipe(
+      Effect.mapError(cause =>
+        runtimeIngressError(
+          "append",
+          "runtime ingress append rejected by local-host authority",
+          request.contextId,
+          request.inputId,
+          cause,
+        )),
+    )
     const table = yield* RuntimeIngressTable
     const row = makeRuntimeIngressInputRow(request)
     const existing = yield* table.inputs.get(row.inputId).pipe(
