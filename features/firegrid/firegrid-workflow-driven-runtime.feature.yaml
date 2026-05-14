@@ -42,6 +42,22 @@ components:
       2: HostWorkflow does not use app-local in-memory sets as a correctness fence for context execution.
       3: HostWorkflow does not start child context workflows from retained context rows until the control-plane model can distinguish eligible work from already-observed context evidence.
 
+  PHASE_6_AGENT_TOOLS:
+    requirements:
+      1: "FiregridAgentTools defines the canonical neutral descriptor manifest for the initial tools sleep, wait_for, spawn, spawn_all, schedule_me, and execute."
+      2: "Each descriptor contains name, description, Effect Schema input schema, Effect Schema output schema, stability, and capability metadata; no descriptor field carries credentials, callback tokens, signing keys, provider session tokens, Durable Streams URLs, sandbox handles, host ids, or transport references."
+      3: "Descriptor input and output schemas are imported from @firegrid/protocol/agent-tools rather than duplicated in runtime descriptor or catalog code; protocol is the single Effect Schema source of truth."
+      4: "toolUseToEffect is the host-side lowering for FiregridAgentTools; it looks up the descriptor by ToolUse.name, decodes ToolUse.input against descriptor.inputSchema, and dispatches a validated invocation to an exhaustive match expression."
+      5: "The match expression is the implementation; the descriptor set is the public contract. Adding a tool requires a protocol Effect Schema, a descriptor entry, and a match arm. Removing a tool requires deprecating the descriptor before removing the arm."
+      6: "Unknown tool names produce a ToolResult input event with isError true via descriptor lookup failure; the workflow does not fail."
+      7: "Invalid tool inputs produce a ToolResult input event with isError true and a structured ToolInvalidInput error payload; the workflow does not fail."
+      8: "Tool execution failures (typed expected errors and defects raised inside an arm) produce a ToolResult input event with isError true and a structured ToolExecutionFailed payload; the workflow does not fail. Arms do not use Effect.orDie to satisfy the outer never error channel."
+      9: "sleep composes DurableClock.sleep with a deterministic clock name derived from toolUseId; suspends the workflow for the requested duration."
+      10: "wait_for composes the durable-tools WaitFor.match surface, mapping the descriptor EventQuery to a FieldEquals trigger over the named source collection, optionally raced against DurableClock.sleep for the timeout variant."
+      11: "schedule_me starts a ScheduledInputWorkflow with discard true and returns scheduled true immediately; the ScheduledInputWorkflow body sleeps until the due timestamp on DurableClock and then appends a runtime-input row through the host-provided AgentToolHost.appendScheduledPrompt seam."
+      12: "spawn, spawn_all, and execute lower onto host-provided AgentToolHost seams (spawnChildContext, spawnChildContexts, executeSandboxTool); the seams keep the lowering free of runtime-host imports while still composing the same Workflow.execute and SandboxProvider primitives at the Live layer."
+      13: "A scheduled-input identity used by schedule_me is deterministic from contextId and toolUseId so workflow replay does not duplicate the scheduled prompt."
+
 constraints:
   BOUNDARIES:
     requirements:
@@ -56,3 +72,13 @@ constraints:
       1: The first implementation phase must prove duplicate startRuntime(contextId) calls do not duplicate process start.
       2: The synchronous run phase must prove a real local-process command can be launched and observed through RuntimeOutputTable using the same runtime-context workflow path.
       3: A temporal workflow phase must prove DurableClock wakeup survives workflow-engine reconstruction before any Firegrid-owned schedule_me facade is accepted.
+      4: "PHASE_6_AGENT_TOOLS must prove descriptor schema round-trip for every tool, unknown-tool and invalid-input handling, per-arm dispatch under the workflow engine, and conversion of tool-arm failures into ToolResult input events with isError true without failing the workflow."
+
+  AGENT_TOOL_BOUNDARIES:
+    requirements:
+      1: "Agent tools are not a dynamic public registry; new tools require a descriptor contract change and a host lowering arm change."
+      2: "Agent tool implementations introduce no new substrate modules; all six tools compose Phase 1 agent-io events with @effect/workflow primitives and existing durable-tools/sandbox-provider surfaces."
+      3: "ToolUse parsing and ToolResult encoding remain codec concerns (Phase 1 agent-io substrate); descriptor publication and host-side lowering are agent-tool concerns and live in packages/runtime/src/agent-tools."
+      4: "The match expression depends only on the Phase 1 agent-io event types and the descriptor manifest; it does not depend on which codec produced the invocation or which transport delivered it."
+      5: "@firegrid/protocol owns the schema source of truth; only explicitly listed FiregridAgentTools descriptors are exposed to agents."
+      6: "Runtime API calls and agent tool calls lower to the same durable workflow/table shapes; agent tools introduce no parallel run, claim, or completion record families."

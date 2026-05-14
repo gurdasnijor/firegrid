@@ -24,6 +24,10 @@
     "./agent-io": {
       "types": "./src/agent-io/index.ts",
       "default": "./src/agent-io/index.ts"
+    },
+    "./agent-tools": {
+      "types": "./src/agent-tools/index.ts",
+      "default": "./src/agent-tools/index.ts"
     }
   },
   "files": [
