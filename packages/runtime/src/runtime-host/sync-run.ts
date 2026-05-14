@@ -28,11 +28,11 @@ import {
   RuntimeEnvBindingSchema,
   local,
   normalizeRuntimeIntent,
-  type RuntimeContext,
+  type RuntimeContextIntent,
   type RuntimeEnvBinding,
 } from "@firegrid/protocol/launch"
 import type { RuntimeIngressRequest } from "@firegrid/protocol/runtime-ingress"
-import { Clock, Effect, Schema } from "effect"
+import { Schema } from "effect"
 
 // POSIX-ish env-var identifier shape — same regex the resolver enforces,
 // duplicated locally so schema validation doesn't require pulling
@@ -78,23 +78,28 @@ export type RunConfig = Schema.Schema.Type<typeof RunConfigSchema>
 
 export const decodeRunConfig = Schema.decodeUnknown(RunConfigSchema)
 
-// Build the durable RuntimeContext row from the validated config.
-// Pure aside from the createdAt clock; no IO.
-export const runConfigToRuntimeContext = (
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
+// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
+//
+// Build the RuntimeContextIntent (the durable `runtime` block) from
+// the validated config. Pure; no IO. The durable row is built by
+// `insertLocalRuntimeContext`, which adds contextId, createdAt, and
+// the host binding from the CurrentHostSession in scope. Splitting
+// this here keeps the firegrid:run binary free of host-binding
+// plumbing — the intent is the thing the binary owns, the bound row
+// is the thing the host owns.
+export const runConfigToRuntimeContextIntent = (
   config: RunConfig,
-): Effect.Effect<RuntimeContext> =>
-  Effect.map(Clock.currentTimeMillis, (millis): RuntimeContext => ({
-    contextId: `ctx_${crypto.randomUUID()}`,
-    createdAt: new Date(millis).toISOString(),
-    createdBy: "firegrid-run",
-    runtime: normalizeRuntimeIntent(local.jsonl({
-      argv: [...config.agentArgv],
-      ...(config.cwd === undefined ? {} : { cwd: config.cwd }),
-      ...(config.envBindings === undefined
-        ? {}
-        : { envBindings: config.envBindings.map((b): RuntimeEnvBinding => ({ name: b.name, ref: b.ref })) }),
-    })),
+): RuntimeContextIntent =>
+  normalizeRuntimeIntent(local.jsonl({
+    argv: [...config.agentArgv],
+    ...(config.cwd === undefined ? {} : { cwd: config.cwd }),
+    ...(config.envBindings === undefined
+      ? {}
+      : { envBindings: config.envBindings.map((b): RuntimeEnvBinding => ({ name: b.name, ref: b.ref })) }),
   }))
+
+export const firegridRunCreatedBy = "firegrid-run"
 
 // Build the initial ingress request for the --prompt value, if any.
 // Returns undefined when the config carries no prompt so the caller can

@@ -1,4 +1,8 @@
 import { Schema } from "effect"
+import {
+  RuntimeContextHostBindingSchema,
+  type RuntimeContextHostBinding,
+} from "./authority.ts"
 
 export const RuntimeOutputSourceSchema = Schema.Literal("stdout", "stderr")
 export type RuntimeOutputSource = Schema.Schema.Type<typeof RuntimeOutputSourceSchema>
@@ -105,13 +109,45 @@ export const envBinding = (
   ref: `env:${envVarName}`,
 })
 
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.4
+//
+// RuntimeContext gains a required `host` binding: hostId, the
+// host-owned streamPrefix wire string, and the bind timestamp. The
+// binding is filled in by the runtime host at context-create time
+// (see `insertLocalRuntimeContext` in `@firegrid/runtime`); V1 does
+// not create an intermediate unbound context row, and the context row
+// itself is the durable context routing authority — no separate host
+// directory or context placement table.
 export const RuntimeContextSchema = Schema.Struct({
   contextId: Schema.String,
   createdAt: Schema.String,
   createdBy: Schema.optional(Schema.String),
   runtime: RuntimeContextIntentSchema,
+  host: RuntimeContextHostBindingSchema,
 })
 export type RuntimeContext = Schema.Schema.Type<typeof RuntimeContextSchema>
+
+/**
+ * Construct a RuntimeContext row with its host binding filled in from
+ * the current host session and the bind timestamp captured at create
+ * time. Centralizing the binding here keeps host-authority schema
+ * encoding next to the row schema rather than at call sites.
+ */
+export const makeRuntimeContext = (input: {
+  readonly contextId: string
+  readonly createdAtMs: number
+  readonly createdBy?: string
+  readonly runtime: RuntimeContextIntent
+  readonly host: RuntimeContextHostBinding
+}): RuntimeContext => ({
+  contextId: input.contextId,
+  createdAt: new Date(input.createdAtMs).toISOString(),
+  ...(input.createdBy === undefined ? {} : { createdBy: input.createdBy }),
+  runtime: input.runtime,
+  host: input.host,
+})
 
 export const RuntimeRunEventKeySchema = Schema.Struct({
   contextId: Schema.String,

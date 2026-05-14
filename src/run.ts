@@ -45,20 +45,19 @@
  */
 
 import { NodeRuntime } from "@effect/platform-node"
-import {
-  RuntimeControlPlaneTable,
-  type RuntimeEnvBinding,
-} from "@firegrid/protocol/launch"
+import { type RuntimeEnvBinding } from "@firegrid/protocol/launch"
 import {
   FiregridRuntimeHostWithWorkflowLive,
   RuntimeEnvResolverPolicy,
   RuntimeHostTopologyFromConfig,
   appendRuntimeIngress,
   decodeRunConfig,
+  firegridRunCreatedBy,
+  insertLocalRuntimeContext,
   localProcessSpawnEnvFromHostEnv,
   runConfigRequiresInput,
   runConfigToIngressRequest,
-  runConfigToRuntimeContext,
+  runConfigToRuntimeContextIntent,
   startRuntime,
   type RunConfig,
 } from "@firegrid/runtime"
@@ -239,9 +238,18 @@ const parseCommand = (
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 — prompt into ingress
 const runWithLayer = (config: RunConfig) =>
   Effect.gen(function* () {
-    const control = yield* RuntimeControlPlaneTable
-    const context = yield* runConfigToRuntimeContext(config)
-    yield* control.contexts.upsert(context)
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
+    //
+    // Build the runtime intent purely from the validated config; the
+    // host binding is filled in by `insertLocalRuntimeContext` from
+    // `CurrentHostSession` so the binary never threads host identity
+    // through its own helpers.
+    const intent = runConfigToRuntimeContextIntent(config)
+    const context = yield* insertLocalRuntimeContext(intent, {
+      contextId: `ctx_${crypto.randomUUID()}`,
+      createdBy: firegridRunCreatedBy,
+    })
     yield* Console.log(
       `firegrid:run: launched context ${context.contextId} (${config.agentArgv.join(" ")})`,
     )

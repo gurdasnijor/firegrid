@@ -20,20 +20,24 @@ import { join } from "node:path"
 import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  makeHostStreamPrefix,
+  type HostId,
 } from "@firegrid/protocol/launch"
 import { Effect, type Layer, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   FiregridRuntimeHostWithWorkflowLive,
   appendRuntimeIngress,
+  insertLocalRuntimeContext,
   startRuntime,
 } from "./index.ts"
 import {
   RuntimeEnvResolverPolicy,
 } from "../providers/sandboxes/secrets.ts"
 import {
+  firegridRunCreatedBy,
   runConfigToIngressRequest,
-  runConfigToRuntimeContext,
+  runConfigToRuntimeContextIntent,
   type RunConfig,
 } from "./sync-run.ts"
 
@@ -61,12 +65,15 @@ const denyAllPolicy = RuntimeEnvResolverPolicy.denyAll
 const runWithConfig = (
   config: RunConfig,
   namespace: string,
+  hostId: HostId,
   envPolicy: Layer.Layer<RuntimeEnvResolverPolicy> = denyAllPolicy,
 ) =>
   Effect.gen(function* () {
-    const control = yield* RuntimeControlPlaneTable
-    const context = yield* runConfigToRuntimeContext(config)
-    yield* control.contexts.upsert(context)
+    const intent = runConfigToRuntimeContextIntent(config)
+    const context = yield* insertLocalRuntimeContext(intent, {
+      contextId: `ctx_${crypto.randomUUID()}`,
+      createdBy: firegridRunCreatedBy,
+    })
     const ingressRequest = runConfigToIngressRequest(config, context.contextId)
     if (ingressRequest !== undefined) {
       yield* appendRuntimeIngress(ingressRequest)
@@ -78,6 +85,7 @@ const runWithConfig = (
       {
         durableStreamsBaseUrl: baseUrl!,
         namespace,
+        hostId,
         ...(config.prompt === undefined ? {} : { input: true }),
       },
       envPolicy,
@@ -85,7 +93,11 @@ const runWithConfig = (
     Effect.scoped,
   )
 
-const queryRuntimeState = (namespace: string, contextId: string) =>
+const queryRuntimeState = (
+  namespace: string,
+  hostId: HostId,
+  contextId: string,
+) =>
   Effect.gen(function* () {
     const control = yield* RuntimeControlPlaneTable
     const outputs = yield* RuntimeOutputTable
@@ -106,7 +118,7 @@ const queryRuntimeState = (namespace: string, contextId: string) =>
     })),
     Effect.provide(RuntimeOutputTable.layer({
       streamOptions: {
-        url: `${baseUrl!}/v1/stream/${namespace}.firegrid.runtimeOutput`,
+        url: `${baseUrl!}/v1/stream/${makeHostStreamPrefix({ namespace, hostId })}.runtimeOutput`,
         contentType: "application/json",
       },
     })),
@@ -134,6 +146,7 @@ describe("sync-run --cwd integration", () => {
     if (!baseUrl) throw new Error("server not started")
     if (workdir === undefined) throw new Error("workdir not created")
     const namespace = `sync-run-cwd-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
 
     // Child prints its own cwd as a JSON envelope so we observe it
     // through the runtime journal. The path is non-sensitive (it's a
@@ -147,11 +160,11 @@ console.log(JSON.stringify({ type: "probe", cwd: process.cwd() }))
     }
 
     const { contextId, result } = await Effect.runPromise(
-      runWithConfig(config, namespace),
+      runWithConfig(config, namespace, hostId),
     )
     expect(result).toMatchObject({ contextId, exitCode: 0 })
 
-    const retained = await Effect.runPromise(queryRuntimeState(namespace, contextId))
+    const retained = await Effect.runPromise(queryRuntimeState(namespace, hostId, contextId))
     const contextRow = Option.getOrThrow(retained.context)
     expect(contextRow.runtime.config.cwd).toBe(workdir)
 
@@ -165,6 +178,7 @@ describe("sync-run --prompt integration", () => {
   it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 appends a sequenced ingress row, delivers it to the child via stdin, and the child emits a digest of what it read", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `sync-run-prompt-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
     const prompt = `summarize-the-diff-${crypto.randomUUID()}`
     const expectedDigest = createHash("sha256").update(prompt).digest("hex")
 
@@ -194,11 +208,11 @@ process.stdin.on("data", chunk => {
     }
 
     const { contextId, result } = await Effect.runPromise(
-      runWithConfig(config, namespace),
+      runWithConfig(config, namespace, hostId),
     )
     expect(result).toMatchObject({ contextId, exitCode: 0 })
 
-    const retained = await Effect.runPromise(queryRuntimeState(namespace, contextId))
+    const retained = await Effect.runPromise(queryRuntimeState(namespace, hostId, contextId))
     expect(retained.events).toHaveLength(1)
     const parsed = JSON.parse(retained.events[0]!.raw) as {
       readonly type: string

@@ -11,7 +11,7 @@ import {
   decodeRunConfig,
   runConfigRequiresInput,
   runConfigToIngressRequest,
-  runConfigToRuntimeContext,
+  runConfigToRuntimeContextIntent,
   type RunConfig,
 } from "./sync-run.ts"
 
@@ -74,30 +74,30 @@ describe("RunConfig schema decoding", () => {
   })
 })
 
-describe("runConfigToRuntimeContext", () => {
-  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 threads --cwd into RuntimeContext.runtime.config.cwd", async () => {
-    const context = await Effect.runPromise(runConfigToRuntimeContext({
+describe("runConfigToRuntimeContextIntent", () => {
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 threads --cwd into RuntimeContextIntent.config.cwd", () => {
+    const intent = runConfigToRuntimeContextIntent({
       ...validBase,
       cwd: "/work/agent",
-    }))
-    expect(context.runtime.config.cwd).toBe("/work/agent")
-    expect(context.runtime.provider).toBe("local-process")
+    })
+    expect(intent.config.cwd).toBe("/work/agent")
+    expect(intent.provider).toBe("local-process")
   })
 
-  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 threads envBindings through the durable row", async () => {
-    const context = await Effect.runPromise(runConfigToRuntimeContext({
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 threads envBindings through the durable intent", () => {
+    const intent = runConfigToRuntimeContextIntent({
       ...validBase,
       envBindings: [{ name: "ANTHROPIC_API_KEY", ref: "env:PARENT_ANTHROPIC_KEY" }],
-    }))
-    expect(context.runtime.config.envBindings).toEqual([
+    })
+    expect(intent.config.envBindings).toEqual([
       { name: "ANTHROPIC_API_KEY", ref: "env:PARENT_ANTHROPIC_KEY" },
     ])
   })
 
-  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1 omits cwd/envBindings when not set", async () => {
-    const context = await Effect.runPromise(runConfigToRuntimeContext(validBase))
-    expect("cwd" in context.runtime.config).toBe(false)
-    expect("envBindings" in context.runtime.config).toBe(false)
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1 omits cwd/envBindings when not set", () => {
+    const intent = runConfigToRuntimeContextIntent(validBase)
+    expect("cwd" in intent.config).toBe(false)
+    expect("envBindings" in intent.config).toBe(false)
   })
 })
 

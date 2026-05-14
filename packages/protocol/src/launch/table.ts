@@ -11,6 +11,7 @@ import {
   runtimeRunEventFields,
   type RuntimeContext,
 } from "./schema.ts"
+import { RuntimeContextHostBindingSchema } from "./authority.ts"
 
 const invalidPrimaryKey = (ast: SchemaAST.AST, encoded: string, message: string) =>
   ParseResult.fail(new ParseResult.Type(ast, encoded, message))
@@ -140,11 +141,18 @@ const RuntimeOutputLogLinePrimaryKeySchema = Schema.transformOrFail(
   },
 )
 
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.4
+//
+// Durable RuntimeContext rows carry the host binding inline so context
+// lookup yields a row that is self-sufficient for prompt-routing and
+// MCP local-context checks without joining through a host directory.
 const RuntimeContextRowSchema = Schema.Struct({
   contextId: Schema.String.pipe(DurableTable.primaryKey),
   createdAt: Schema.String,
   createdBy: Schema.optional(Schema.String),
   runtime: RuntimeContextIntentSchema,
+  host: RuntimeContextHostBindingSchema,
 })
 
 const RuntimeRunEventRowSchema = Schema.Struct({

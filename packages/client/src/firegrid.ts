@@ -3,7 +3,9 @@ import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   local,
+  makeHostStreamPrefix,
   normalizeRuntimeIntent,
+  type HostId,
   type PublicLaunchRequest,
   type RuntimeContext,
   type RuntimeEventRow,
@@ -202,17 +204,39 @@ const requiredRuntimeTableStreamUrls = (
   })
 }
 
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
+//
+// Slice 2 compile-break fallout: every durable RuntimeContext row now
+// carries a host binding, but the client's direct `launch()` path
+// pre-dates the host-bound model. This synthesizes a placeholder
+// `firegrid-client-${rand}` host binding so the row remains
+// schema-valid and the existing client API keeps compiling. Slice 3
+// (prompt routing through RuntimeContext.host) will replace this
+// with the proper host-mediated launch path; until then, contexts
+// launched through this surface will be rejected by
+// `requireLocalContext` because no host runs as `firegrid-client-*`.
 const normalizeLaunch = (
   request: PublicLaunchRequest,
+  hostNamespace: string,
 ): Effect.Effect<RuntimeContext> =>
-  Effect.map(nowIso, createdAt => ({
-    // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.3
-    // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.7
-    contextId: makeContextId(),
-    createdAt,
-    ...(request.requestedBy === undefined ? {} : { createdBy: request.requestedBy }),
-    runtime: normalizeRuntimeIntent(request.runtime),
-  }))
+  Effect.map(Clock.currentTimeMillis, (createdAtMs) => {
+    const hostId = `firegrid-client-${crypto.randomUUID()}` as HostId
+    return {
+      contextId: makeContextId(),
+      createdAt: new Date(createdAtMs).toISOString(),
+      ...(request.requestedBy === undefined ? {} : { createdBy: request.requestedBy }),
+      runtime: normalizeRuntimeIntent(request.runtime),
+      host: {
+        hostId,
+        streamPrefix: makeHostStreamPrefix({
+          namespace: hostNamespace,
+          hostId,
+        }),
+        boundAtMs: createdAtMs,
+      },
+    }
+  })
 
 const decodePublicLaunchRequest = (
   request: PublicLaunchRequest,
@@ -260,6 +284,7 @@ const snapshotFromJournal = (
 const make = (
   ingress: Option.Option<RuntimeIngressTable["Type"]>,
   output: Option.Option<RuntimeOutputTable["Type"]>,
+  hostNamespace: string,
 ) => Effect.gen(function* () {
   const control = yield* RuntimeControlPlaneTable
 
@@ -370,7 +395,7 @@ const make = (
       // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1
       // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6
       const decoded = yield* decodePublicLaunchRequest(request)
-      const normalized = yield* normalizeLaunch(decoded)
+      const normalized = yield* normalizeLaunch(decoded, hostNamespace)
       yield* appendContext(normalized)
       return open(normalized.contextId)
     }),
@@ -388,6 +413,7 @@ const make = (
 const firegridServiceLayer = (
   ingressConfigured: boolean,
   outputConfigured: boolean,
+  hostNamespace: string,
 ) =>
   Layer.scoped(
     Firegrid,
@@ -398,7 +424,7 @@ const firegridServiceLayer = (
       const output = outputConfigured
         ? Option.some(yield* RuntimeOutputTable)
         : Option.none<RuntimeOutputTable["Type"]>()
-      return yield* make(ingress, output)
+      return yield* make(ingress, output, hostNamespace)
     }),
   )
 
@@ -422,6 +448,12 @@ const configuredFiregridLayer = (
     const service = firegridServiceLayer(
       inputTableStreamUrl !== undefined,
       outputTableStreamUrl !== undefined,
+      // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+      // Slice 2 fallback: client launches need a namespace to derive
+      // the placeholder host stream prefix; when the caller wires
+      // table URLs explicitly without supplying namespace, fall back
+      // to a sentinel so the row still validates.
+      cfg.namespace ?? "firegrid-client",
     )
     let provided = service.pipe(Layer.provide(controlLayer))
     if (inputTableStreamUrl !== undefined) {

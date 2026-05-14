@@ -7,6 +7,9 @@ import {
 import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  makeHostSessionRow,
+  type HostId,
+  type HostSessionId,
   type RuntimeContext,
   type RuntimeEventRow,
   type RuntimeLogLineRow,
@@ -18,6 +21,11 @@ import {
 } from "@firegrid/protocol/runtime-ingress"
 import { Clock, Config, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
+import {
+  CurrentHostSession,
+  hostOwnedStreamUrl,
+  runtimeControlPlaneStreamUrl,
+} from "./host-context-authority.ts"
 import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
@@ -35,12 +43,8 @@ import {
   runtimeIngressError,
 } from "./errors.ts"
 import { RuntimeHostConfig } from "./config.ts"
-import {
-  DurableStreamsWorkflowEngine,
-  WorkflowEngineTable,
-} from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import type {
-  RuntimeHostConfigValue,
   RuntimeHostTopologyOptions,
   StartRuntimeOptions,
 } from "./types.ts"
@@ -50,6 +54,21 @@ export type {
   StartRuntimeOptions,
   StartRuntimeResult,
 } from "./types.ts"
+
+export {
+  ContextNotFound,
+  ContextNotLocal,
+  CurrentHostSession,
+  CurrentHostStopped,
+  CurrentRuntimeContext,
+  durableStreamUrl,
+  findRuntimeContext,
+  hostOwnedStreamUrl,
+  insertLocalRuntimeContext,
+  provideRuntimeContext,
+  requireLocalContext,
+  runtimeControlPlaneStreamUrl,
+} from "./host-context-authority.ts"
 
 export {
   RuntimeIngressError,
@@ -425,82 +444,131 @@ const RuntimeContextWorkflowLayer = RuntimeContextWorkflow.toLayer(({ contextId 
     }
   }))
 
-const runtimeHostLayerFromOptions = (
-  options: RuntimeHostConfigValue,
-  topology: RuntimeHostTopologyOptions,
-  controlPlaneTableUrl: string,
-  ingressTableUrl: string,
-  outputTableUrl: string,
-  headers: DurableTableHeaders | undefined,
+// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.1
+// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.2
+//
+// CurrentHostSession layer for the host scope. The session row carries
+// the schema-encoded stream prefix that host-owned ingress / output /
+// workflow layers read; long-lived layers see exactly one host
+// identity for their lifetime.
+const currentHostSessionLayer = (
+  options: RuntimeHostTopologyOptions,
+) =>
+  Layer.effect(
+    CurrentHostSession,
+    Effect.gen(function* () {
+      const startedAtMs = yield* Clock.currentTimeMillis
+      const hostId = (options.hostId ?? `host_${crypto.randomUUID()}`) as HostId
+      const hostSessionId = (options.hostSessionId
+        ?? `hs_${crypto.randomUUID()}`) as HostSessionId
+      return makeHostSessionRow({
+        hostId,
+        hostSessionId,
+        namespace: options.namespace,
+        startedAtMs,
+      })
+    }),
+  )
+
+// Namespace-scoped infrastructure: control plane, host config, sandbox
+// provider. The RuntimeContext index stays at `{namespace}.firegrid.runtime`
+// so cross-host context lookup does not require a host directory.
+const namespaceScopedLayer = (
+  options: RuntimeHostTopologyOptions,
 ) =>
   Layer.mergeAll(
-    Layer.succeed(RuntimeHostConfig, options),
+    Layer.succeed(RuntimeHostConfig, {
+      // firegrid-agent-ingress.HOST.7
+      inputEnabled: options.input === true,
+    }),
     RuntimeControlPlaneTable.layer({
       streamOptions: {
-        url: controlPlaneTableUrl,
+        url: runtimeControlPlaneStreamUrl({
+          baseUrl: options.durableStreamsBaseUrl,
+          namespace: options.namespace,
+        }),
         contentType: "application/json",
-        ...(headers !== undefined ? { headers } : {}),
+        ...(options.headers !== undefined ? { headers: options.headers } : {}),
       },
     }),
-    RuntimeIngressTable.layer({
-      streamOptions: {
-        url: ingressTableUrl,
-        contentType: "application/json",
-        ...(headers !== undefined ? { headers } : {}),
-      },
-    }),
-    RuntimeOutputTable.layer({
-      streamOptions: {
-        url: outputTableUrl,
-        contentType: "application/json",
-        ...(headers !== undefined ? { headers } : {}),
-      },
-    }),
-    LocalProcessSandboxProvider.layer(topology.localProcessEnv).pipe(
+    LocalProcessSandboxProvider.layer(options.localProcessEnv).pipe(
       Layer.provide(NodeContext.layer),
     ),
   )
 
-const runtimeHostStreamUrls = (
-  options: RuntimeHostTopologyOptions,
-) => {
-  const base = options.durableStreamsBaseUrl.replace(/\/+$/, "")
-  const streamPrefix = base.includes("/v1/stream/")
-    ? `${base}/`
-    : `${base}/v1/stream/`
-  return {
-    controlPlaneTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtime`)}`,
-    ingressTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtimeIngress`)}`,
-    outputTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.firegrid.runtimeOutput`)}`,
-    workflowTableUrl: `${streamPrefix}${encodeURIComponent(`${options.namespace}.${WorkflowEngineTable.namespace}`)}`,
-  }
-}
-
-const runtimeHostBaseLayer = (
-  options: RuntimeHostTopologyOptions,
-) => {
-  const urls = runtimeHostStreamUrls(options)
-  return runtimeHostLayerFromOptions(
-    {
-      // firegrid-agent-ingress.HOST.7
-      inputEnabled: options.input === true,
-    },
-    options,
-    urls.controlPlaneTableUrl,
-    urls.ingressTableUrl,
-    urls.outputTableUrl,
-    options.headers,
+// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1
+// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
+// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3
+// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.2
+//
+// Host-owned operational tables. Each layer reads CurrentHostSession
+// at acquire time and routes its backing stream through the host's
+// schema-encoded prefix via `hostOwnedStreamUrl`. Stream URLs are
+// derived here, never composed from inline template literals at
+// layer call sites.
+const hostOwnedIngressLayer = (
+  options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
+) =>
+  Layer.unwrapEffect(
+    Effect.map(CurrentHostSession, (session) =>
+      RuntimeIngressTable.layer({
+        streamOptions: {
+          url: hostOwnedStreamUrl({
+            baseUrl: options.baseUrl,
+            prefix: session.streamPrefix,
+            segment: "runtimeIngress",
+          }),
+          contentType: "application/json",
+          ...(options.headers !== undefined ? { headers: options.headers } : {}),
+        },
+      })),
   )
-}
 
-const runtimeContextWorkflowEngineLayer = (
+const hostOwnedOutputLayer = (
+  options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
+) =>
+  Layer.unwrapEffect(
+    Effect.map(CurrentHostSession, (session) =>
+      RuntimeOutputTable.layer({
+        streamOptions: {
+          url: hostOwnedStreamUrl({
+            baseUrl: options.baseUrl,
+            prefix: session.streamPrefix,
+            segment: "runtimeOutput",
+          }),
+          contentType: "application/json",
+          ...(options.headers !== undefined ? { headers: options.headers } : {}),
+        },
+      })),
+  )
+
+const hostOwnedWorkflowEngineLayer = (
+  options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
+) =>
+  Layer.unwrapEffect(
+    Effect.map(CurrentHostSession, (session) =>
+      DurableStreamsWorkflowEngine.layer({
+        streamUrl: hostOwnedStreamUrl({
+          baseUrl: options.baseUrl,
+          prefix: session.streamPrefix,
+          segment: "workflow",
+        }),
+        ...(options.headers !== undefined ? { headers: options.headers } : {}),
+      })),
+  )
+
+const hostScopedLayer = (
   options: RuntimeHostTopologyOptions,
 ) => {
-  const { workflowTableUrl } = runtimeHostStreamUrls(options)
-  return DurableStreamsWorkflowEngine.layer({
-    streamUrl: workflowTableUrl,
+  const sharedOptions = {
+    baseUrl: options.durableStreamsBaseUrl,
     ...(options.headers !== undefined ? { headers: options.headers } : {}),
-  })
+  }
+  return Layer.mergeAll(
+    hostOwnedIngressLayer(sharedOptions),
+    hostOwnedOutputLayer(sharedOptions),
+    hostOwnedWorkflowEngineLayer(sharedOptions),
+  )
 }
 
 export const FiregridRuntimeHostLive = (
@@ -511,11 +579,17 @@ export const FiregridRuntimeHostLive = (
   // construct a populated policy at the binary boundary and pass it here;
   // daemons that never see --secret-env stay locked down.
   envPolicy: Layer.Layer<RuntimeEnvResolverPolicy> = RuntimeEnvResolverPolicy.denyAll,
-) =>
-  RuntimeContextWorkflowLayer.pipe(
-    Layer.provideMerge(Layer.merge(runtimeHostBaseLayer(options), runtimeContextWorkflowEngineLayer(options))),
+) => {
+  const session = currentHostSessionLayer(options)
+  const namespaceScoped = namespaceScopedLayer(options)
+  const hostScoped = hostScopedLayer(options)
+  return RuntimeContextWorkflowLayer.pipe(
+    Layer.provideMerge(hostScoped),
+    Layer.provideMerge(namespaceScoped),
+    Layer.provideMerge(session),
     Layer.provideMerge(envPolicy),
   )
+}
 
 export const FiregridRuntimeHostWithWorkflowLive = (
   options: RuntimeHostTopologyOptions,
