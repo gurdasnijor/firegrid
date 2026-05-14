@@ -12,7 +12,7 @@ exits with the runtime execution's exit code.
 The production-shaped tracer for this path is:
 
 ```sh
-pnpm --filter @firegrid/scenario-firegrid exec vitest run src/tracer-019-sync-run.test.ts
+pnpm smoke:firegrid-run
 ```
 
 That scenario starts a local Durable Streams test server, invokes the root
@@ -40,7 +40,7 @@ Or copy the root `.env.example` to `.env`, fill it in, and use
 The scenario-owned local smoke covers the full Tracer B path:
 
 ```sh
-pnpm --filter @firegrid/scenario-firegrid exec vitest run src/tracer-019-sync-run.test.ts
+pnpm smoke:firegrid-run
 ```
 
 It invokes the production root command with this shape:
@@ -121,7 +121,7 @@ export FIREGRID_ELECTRIC_SMOKE_NAMESPACE="tracer-019-sync-run-stable"
 Run:
 
 ```sh
-pnpm --filter @firegrid/scenario-firegrid exec vitest run src/tracer-019-sync-run.test.ts
+pnpm smoke:firegrid-run
 ```
 
 When `FIREGRID_ELECTRIC_SMOKE` is not `1`, or the Electric service URL/token are
