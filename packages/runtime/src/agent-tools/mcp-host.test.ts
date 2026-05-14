@@ -41,7 +41,52 @@ import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { driveClocks } from "../test-helpers/durable-clock.ts"
 import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { type AgentToolHostService } from "./tool-host.ts"
+import { toolExecutionFailed } from "./tool-error.ts"
 import { FiregridMcpServerLayer } from "./mcp-host.ts"
+
+/**
+ * Test-local `AgentToolHostService`. V1 production callers must supply
+ * a real host capability — silently no-op'ing `appendScheduledPrompt`
+ * would let `schedule_me` return `{ scheduled: true }` while the
+ * scheduled prompt is dropped. This test host fails explicitly for
+ * any tool that should not be exercised by the V1 smoke; the smoke
+ * itself only drives `sleep`, malformed `sleep`, and unknown tool.
+ */
+const testAgentToolHost: AgentToolHostService = {
+  spawnChildContext: ({ toolUseId }) =>
+    Effect.fail(
+      toolExecutionFailed(
+        toolUseId,
+        "spawn",
+        "spawn is not exercised by the V1 host-local MCP smoke",
+      ),
+    ),
+  spawnChildContexts: ({ toolUseId }) =>
+    Effect.fail(
+      toolExecutionFailed(
+        toolUseId,
+        "spawn_all",
+        "spawn_all is not exercised by the V1 host-local MCP smoke",
+      ),
+    ),
+  executeSandboxTool: ({ toolUseId }) =>
+    Effect.fail(
+      toolExecutionFailed(
+        toolUseId,
+        "execute",
+        "execute is not exercised by the V1 host-local MCP smoke",
+      ),
+    ),
+  appendScheduledPrompt: ({ inputId }) =>
+    Effect.fail(
+      toolExecutionFailed(
+        inputId,
+        "schedule_me",
+        "schedule_me is not exercised by the V1 host-local MCP smoke; if you reach this, the scheduled-input workflow body was invoked but the test host did not record the prompt",
+      ),
+    ),
+}
 
 let durableStreamServer: DurableStreamTestServer | undefined
 let durableStreamBaseUrl: string | undefined
@@ -86,6 +131,7 @@ describe("FiregridMcpServerLayer V1 smoke", () => {
         path: "/mcp",
         contextId: "ctx-mcp-host-smoke",
         agentToolsStreamUrl,
+        agentToolHost: testAgentToolHost,
       }).pipe(
         Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
           streamUrl: workflowStreamUrl,
@@ -269,6 +315,7 @@ describe("FiregridMcpServerLayer V1 smoke", () => {
         path: "/mcp",
         contextId: "ctx-mcp-host-sdk-smoke",
         agentToolsStreamUrl,
+        agentToolHost: testAgentToolHost,
       }).pipe(
         Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
           streamUrl: workflowStreamUrl,

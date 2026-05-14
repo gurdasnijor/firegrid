@@ -14,7 +14,7 @@
  *  - SDD_FIREGRID_AGENT_TOOLS_MCP_BRIDGE.md §"V1: Host-Owned Localhost MCP Server"
  *
  * Implements (feature spec):
- *  - firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.1..7
+ *  - firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.1..10
  *  - firegrid-workflow-driven-runtime.VALIDATION.5
  *
  * V1 routing scope:
@@ -22,18 +22,24 @@
  *  single `HttpRouter.PathInput`; per-path service injection of a
  *  request-scoped `FiregridAgentToolContext` is not a first-class
  *  primitive on that layer today. Per the SDD's documented fallback,
- *  V1 ships a one-context-per-server-instance shape: the host config
- *  supplies `FIREGRID_MCP_CONTEXT_ID`, the layer installs
- *  `FiregridAgentToolContext` once for the whole server, and context
- *  selection remains host configuration — never an agent-visible tool
- *  argument. Multi-context routing (`/mcp/runtime-context/:contextId`)
- *  lands as V2 host work.
+ *  V1 ships a one-context-per-server-instance shape: the *caller*
+ *  passes `contextId` as an explicit `FiregridMcpServerLayerOptions`
+ *  field at compose time, the layer installs `FiregridAgentToolContext`
+ *  once for the whole server, and context selection stays out of both
+ *  agent-visible tool arguments *and* host-process env config.
+ *  `FIREGRID_MCP_CONTEXT_ID` and similar env knobs are explicitly out
+ *  of scope: runtime identity is durable / session / route state, not
+ *  deployment topology. Host auto-mount of the layer in
+ *  `src/host.ts` is deferred until either route-based
+ *  `/mcp/runtime-context/:contextId` injection or a durable
+ *  host/session/local-agent authority record lands; V1 only ships the
+ *  composition primitive and its smoke.
  */
 
 import { IdGenerator, McpServer } from "@effect/ai"
 import { HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
-import { Config, Effect, Layer, Logger } from "effect"
+import { Config, Layer, Logger } from "effect"
 /* eslint-disable-next-line local/no-hidden-control-plane --
    the MCP HTTP server is an explicit, opt-in agent-facing surface
    bound only to loopback; the `node:http` listener factory is the
@@ -46,7 +52,6 @@ import {
   AgentToolHost,
   type AgentToolHostService,
 } from "./tool-host.ts"
-import { toolExecutionFailed } from "./tool-error.ts"
 import {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
@@ -88,55 +93,33 @@ export type FiregridMcpServerListenerConfig = Config.Config.Success<
   typeof FiregridMcpServerListenerConfig
 >
 
-/**
- * Default `AgentToolHost` for V1 host-local MCP. The `spawn`,
- * `spawn_all`, and `execute` arms route through `AgentToolHost`; until
- * the host wires real implementations (V2 work alongside the durable
- * indirect bridge), the V1 default returns a structured
- * `FiregridMcpToolFailure` so MCP `CallToolResult.isError` is `true`
- * for those tools rather than an HTTP error or a workflow failure.
- * `appendScheduledPrompt` is a no-op for the same reason; the
- * `ScheduledInputWorkflow` body still records the durable sleep
- * cleanly under replay.
- *
- * `sleep`, `wait_for`, and `schedule_me` do not route through
- * `AgentToolHost` and work end-to-end with this default.
- */
-export const defaultV1AgentToolHost: AgentToolHostService = {
-  spawnChildContext: ({ toolUseId }) =>
-    Effect.fail(
-      toolExecutionFailed(
-        toolUseId,
-        "spawn",
-        "spawn is not implemented in the V1 host-local MCP server",
-      ),
-    ),
-  spawnChildContexts: ({ toolUseId }) =>
-    Effect.fail(
-      toolExecutionFailed(
-        toolUseId,
-        "spawn_all",
-        "spawn_all is not implemented in the V1 host-local MCP server",
-      ),
-    ),
-  executeSandboxTool: ({ toolUseId }) =>
-    Effect.fail(
-      toolExecutionFailed(
-        toolUseId,
-        "execute",
-        "execute is not implemented in the V1 host-local MCP server",
-      ),
-    ),
-  appendScheduledPrompt: () => Effect.void,
-}
-
 export interface FiregridMcpServerLayerOptions {
   readonly host: string
   readonly port: number
   readonly path: HttpRouter.PathInput
   readonly contextId: string
   readonly agentToolsStreamUrl: string
-  readonly agentToolHost?: AgentToolHostService
+  /**
+   * Required. The MCP toolkit advertises all six canonical tools
+   * (`sleep`, `wait_for`, `spawn`, `spawn_all`, `schedule_me`,
+   * `execute`); the `spawn` family and `execute` arms call the host
+   * directly, and `schedule_me` starts a `ScheduledInputWorkflow`
+   * with `discard: true` whose later prompt append is performed
+   * through `AgentToolHost.appendScheduledPrompt`. Passing a stub
+   * `appendScheduledPrompt` that returns `Effect.void` would make
+   * `schedule_me` quietly drop the future prompt while the agent
+   * sees a successful `{ scheduled: true }` result.
+   *
+   * V1 callers therefore wire a real `AgentToolHostService` at the
+   * compose site (or accept that any tool unsupported in the host
+   * — typically `spawn`/`spawn_all`/`execute` and `schedule_me` —
+   * must return a structured `FiregridMcpToolFailure` instead of
+   * silently succeeding). Tests use a test-local
+   * `AgentToolHostService` whose `appendScheduledPrompt` either
+   * records the call or fails explicitly; production callers wire
+   * the real host capability before exposing the toolkit over MCP.
+   */
+  readonly agentToolHost: AgentToolHostService
 }
 
 /**
@@ -180,7 +163,7 @@ export const FiregridMcpServerLayer = (
       Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator),
     ),
     Layer.provide(
-      AgentToolHost.layer(options.agentToolHost ?? defaultV1AgentToolHost),
+      AgentToolHost.layer(options.agentToolHost),
     ),
     Layer.provide(
       DurableToolsWaitForLive({ streamUrl: options.agentToolsStreamUrl }),

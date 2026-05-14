@@ -32,7 +32,6 @@ export {
 } from "./tools.ts"
 export {
   agentToolsStreamUrlFromTopology,
-  defaultV1AgentToolHost,
   ensurePathInput,
   FiregridMcpServerLayer,
   FiregridMcpServerListenerConfig,
