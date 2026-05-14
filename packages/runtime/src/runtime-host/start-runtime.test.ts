@@ -1,5 +1,5 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { mkdir, readFile, rm } from "node:fs/promises"
+import { mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {
@@ -224,11 +224,15 @@ console.error("diagnostic: child stderr")
     const markerDir = join(tmpdir(), `firegrid-runtime-start-${crypto.randomUUID()}`)
     await mkdir(markerDir)
     const markerPath = join(markerDir, "starts.txt")
+    const marker = `runtime-start-${crypto.randomUUID()}`
     const childCode = `
-import { appendFileSync } from "node:fs"
-appendFileSync(${JSON.stringify(markerPath)}, "start\\n")
+import { appendFileSync, readFileSync } from "node:fs"
+appendFileSync(${JSON.stringify(markerPath)}, String(process.pid) + "\\n")
 await new Promise(resolve => setTimeout(resolve, 75))
-console.log(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "once" }] } }))
+const starts = readFileSync(${JSON.stringify(markerPath)}, "utf8")
+  .split("\\n")
+  .filter(Boolean)
+console.log(JSON.stringify({ type: "firegrid.process-start-marker", marker: ${JSON.stringify(marker)}, starts: starts.length }))
 `
     const contextId = await appendRuntimeContext(
       controlPlaneStreamUrl,
@@ -262,12 +266,12 @@ console.log(JSON.stringify({ type: "assistant", message: { content: [{ type: "te
       })
       expect(second).toEqual(first)
 
-      const marker = await readFile(markerPath, "utf8")
-      expect(marker.trim().split("\n")).toHaveLength(1)
-
       const retained = await Effect.runPromise(Effect.gen(function* () {
         const table = yield* RuntimeControlPlaneTable
         const outputTable = yield* RuntimeOutputTable
+        const contexts = yield* table.contexts.query((coll) =>
+          coll.toArray.filter(row => row.contextId === contextId),
+        )
         const runs = yield* table.runs.query((coll) =>
           coll.toArray.filter(event => event.contextId === contextId),
         )
@@ -275,6 +279,7 @@ console.log(JSON.stringify({ type: "assistant", message: { content: [{ type: "te
           coll.toArray.filter(event => event.contextId === contextId),
         )
         return {
+          contexts,
           runs,
           events,
         }
@@ -294,10 +299,27 @@ console.log(JSON.stringify({ type: "assistant", message: { content: [{ type: "te
         Effect.scoped,
       ))
 
-      expect(retained.runs.map(event => event.status)).toEqual(expect.arrayContaining(["started", "exited"]))
+      expect(retained.contexts).toHaveLength(1)
+      const startedRuns = retained.runs.filter(event => event.status === "started")
+      const terminalRuns = retained.runs.filter(event => event.status === "exited" || event.status === "failed")
+      expect(startedRuns).toHaveLength(1)
+      expect(terminalRuns).toHaveLength(1)
+      expect(terminalRuns[0]).toMatchObject({ status: "exited", exitCode: 0 })
       expect(retained.runs).toHaveLength(2)
       expect(new Set(retained.runs.map(event => event.activityAttempt))).toEqual(new Set([1]))
       expect(retained.events).toHaveLength(1)
+      const markerRows = retained.events
+        .map(event => JSON.parse(event.raw) as {
+          readonly marker?: string
+          readonly starts?: number
+          readonly type?: string
+        })
+        .filter(event => event.type === "firegrid.process-start-marker" && event.marker === marker)
+      expect(markerRows).toEqual([{
+        type: "firegrid.process-start-marker",
+        marker,
+        starts: 1,
+      }])
     } finally {
       await rm(markerDir, { recursive: true, force: true })
     }

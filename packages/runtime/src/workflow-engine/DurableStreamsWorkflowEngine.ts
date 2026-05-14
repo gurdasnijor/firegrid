@@ -26,9 +26,7 @@ export const make = (
     const table = yield* WorkflowEngineTable
     return yield* makeWorkflowEngine(
       table,
-      options.streamUrl,
       options.workerId ?? `worker-${crypto.randomUUID()}`,
-      options.headers,
     )
   }).pipe(
     Effect.provide(WorkflowEngineTable.layer(workflowEngineTableLayerOptions(options))),
@@ -45,9 +43,7 @@ const layer = (
       const table = yield* WorkflowEngineTable
       const engine = yield* makeWorkflowEngine(
         table,
-        options.streamUrl,
         options.workerId ?? `worker-${crypto.randomUUID()}`,
-        options.headers,
       )
       return Context.make(WorkflowEngineTable, table).pipe(
         Context.add(WorkflowEngine.WorkflowEngine, engine),

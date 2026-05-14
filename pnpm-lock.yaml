@@ -257,9 +257,6 @@ importers:
       effect-durable-operators:
         specifier: workspace:*
         version: link:../effect-durable-operators
-      effect-durable-streams:
-        specifier: workspace:*
-        version: link:../effect-durable-streams
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
