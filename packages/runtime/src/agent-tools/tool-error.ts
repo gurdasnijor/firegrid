@@ -15,6 +15,7 @@
  *    (typed expected results; retryable vs terminal failures)
  */
 
+import { Prompt } from "@effect/ai"
 import { ParseResult, Schema } from "effect"
 import type { AgentInputEvent } from "../agent-io/index.ts"
 
@@ -87,13 +88,18 @@ type ToolResultEvent = Extract<AgentInputEvent, { _tag: "ToolResult" }>
 
 const toolResultEvent = (
   toolUseId: string,
+  name: string,
   content: unknown,
   isError: boolean,
 ): ToolResultEvent => ({
   _tag: "ToolResult",
-  toolUseId,
-  content,
-  isError,
+  part: Prompt.toolResultPart({
+    id: toolUseId,
+    name,
+    result: content,
+    isFailure: isError,
+    providerExecuted: false,
+  }),
 })
 
 /**
@@ -102,8 +108,9 @@ const toolResultEvent = (
  */
 export const toolResult = (
   toolUseId: string,
+  name: string,
   content: unknown,
-): ToolResultEvent => toolResultEvent(toolUseId, content, false)
+): ToolResultEvent => toolResultEvent(toolUseId, name, content, false)
 
 /**
  * Build an `isError: true` `ToolResult` event with a structured error
@@ -113,6 +120,7 @@ export const toolResult = (
 export const toolErrorResult = (error: ToolError): ToolResultEvent =>
   toolResultEvent(
     error.toolUseId,
+    error.name,
     { error, message: formatToolError(error) },
     true,
   )
@@ -129,6 +137,7 @@ export const unknownToolResult = (
 ): ToolResultEvent =>
   toolResultEvent(
     toolUseId,
+    name,
     {
       error: {
         _tag: "UnknownTool" as const,

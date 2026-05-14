@@ -29,7 +29,7 @@
  *    schema source of truth in `@firegrid/protocol`)
  */
 
-import { IdGenerator, Tool, Toolkit } from "@effect/ai"
+import { IdGenerator, Prompt, Tool, Toolkit } from "@effect/ai"
 import { Workflow, WorkflowEngine } from "@effect/workflow"
 import {
   ExecuteToolInputSchema,
@@ -64,7 +64,7 @@ import { toolUseToEffect } from "./tool-use-to-effect.ts"
  * The runtime-owned MCP-facing tool failure schema. Reuses the existing
  * `ToolError` tagged union from `tool-error.ts` so the structured
  * payload an MCP client observes is the same shape direct codec callers
- * already see in `ToolResult.content.error`. `@effect/ai`'s MCP layer
+ * already see in `ToolResult.part.result.error`. `@effect/ai`'s MCP layer
  * maps a failed Effect AI tool handler to `CallToolResult.isError ===
  * true` with `structuredContent` set to this payload.
  *
@@ -222,7 +222,7 @@ export const ExecuteTool = Tool.make("execute", {
 /**
  * Canonical Firegrid agent toolkit. The single source of truth for tool
  * exposure: codecs publish this set, MCP `tools/list` projects this
- * set, and `toolUseToEffect` switches on `event.name` against the same
+ * set, and `toolUseToEffect` switches on `event.part.name` against the same
  * `@firegrid/protocol/agent-tools` Effect Schemas these `Tool.make`
  * values bind. The toolkit value and the lowering's name-switch share
  * one schema source of truth (`@firegrid/protocol/agent-tools`); they
@@ -270,7 +270,15 @@ export const ToolCallWorkflowLayer = ToolCallWorkflow.toLayer(
   ({ contextId, toolUseId, toolName, input }) =>
     toolUseToEffect(
       { contextId },
-      { _tag: "ToolUse", toolUseId, name: toolName, input },
+      {
+        _tag: "ToolUse",
+        part: Prompt.toolCallPart({
+          id: toolUseId,
+          name: toolName,
+          params: input,
+          providerExecuted: false,
+        }),
+      },
     ),
 )
 
@@ -279,13 +287,15 @@ export const ToolCallWorkflowLayer = ToolCallWorkflow.toLayer(
  * tool calls observe the same workflow identity, replay safety, and
  * host seams as direct codec paths.
  *
- *   1. Generate a non-durable `toolUseId` via `IdGenerator` (deterministic
+ *   1. Generate a non-durable `toolUseId` via `IdGenerator`.
+ *      firegrid-agent-io-effect-ai-alignment.EFFECT_AI_BOUNDARIES.1
+ *      Deterministic
  *      workflow identities still come from durable idempotency keys
  *      derived inside `toolUseToEffect`, e.g.,
  *      `schedule-me:${contextId}:${toolUseId}`).
  *   2. Build a normalized `ToolUse` event.
- *   3. Run `toolUseToEffect` and inspect `ToolResult.isError`.
- *   4. On success, return `ToolResult.content` typed against the tool
+ *   3. Run `toolUseToEffect` and inspect `ToolResult.part.isFailure`.
+ *   4. On success, return `ToolResult.part.result` typed against the tool
  *      success schema. The toolkit re-validates / encodes via
  *      `Schema.validate` + `Schema.encodeUnknown`.
  *   5. On error, fail with the structured `FiregridMcpToolFailure`
@@ -304,15 +314,15 @@ const handleTool = <Output>(toolName: string, params: unknown) =>
       toolName,
       input: params,
     })
-    if (result.isError) {
-      const error = extractToolFailure(result.content)
+    if (result.part.isFailure) {
+      const error = extractToolFailure(result.part.result)
       return yield* Effect.fail(error)
     }
-    return result.content as Output
+    return result.part.result as Output
   })
 
 /**
- * Pull a structured `ToolError` out of `ToolResult.content`. The
+ * Pull a structured `ToolError` out of `ToolResult.part.result`. The
  * unknown-tool case (`_tag: "UnknownTool"`) should never reach an MCP
  * handler because toolkit dispatch only invokes registered names; if it
  * does, map it to `ToolExecutionFailed` so the MCP-facing failure stays
@@ -364,4 +374,3 @@ export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer({
     handleTool<ScheduleMeToolOutput>("schedule_me", params),
   execute: (params) => handleTool<ExecuteToolOutput>("execute", params),
 })
-

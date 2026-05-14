@@ -3,41 +3,35 @@ export {
 } from "./byte-stream.ts"
 export {
   AgentCapabilitiesSchema,
+  AgentPromptSchema,
+  AgentTextDeltaPartSchema,
   AgentInputEventSchema,
   AgentOutputEventSchema,
+  AgentToolCallPartSchema,
+  AgentToolResultPartSchema,
   PermissionDecisionSchema,
   PermissionOptionKindSchema,
   PermissionOptionSchema,
-  PromptContentSchema,
-  PromptPartSchema,
   StopReasonSchema,
   ToolResultEventSchema,
   type AgentCapabilities,
+  type AgentPrompt,
+  type AgentTextDeltaPart,
   type AgentInputEvent,
   type AgentOutputEvent,
+  type AgentToolCallPart,
+  type AgentToolResultPart,
   type PermissionDecision,
   type PermissionOption,
   type PermissionOptionKind,
-  type PromptContent,
-  type PromptPart,
   type StopReason,
   type ToolResultEvent,
 } from "./contract.ts"
 export {
   AgentCodecError,
+  publishToolkitMetadata,
   type AgentCodec,
   type AgentCodecOpenOptions,
+  type AgentCodecPublishedToolMetadata,
   type AgentSession,
 } from "./codec.ts"
-export {
-  defineAgentTool,
-  type AgentToolCapabilities,
-  type AgentToolDescriptor,
-  type AgentToolStability,
-} from "./descriptor.ts"
-export {
-  makeCodecRegistry,
-  type CodecRegistry,
-  type CodecRegistryConflict,
-  type MakeCodecRegistryResult,
-} from "./registry.ts"

@@ -6,13 +6,14 @@
  * validate the event boundary at runtime.
  */
 
+import { Prompt } from "@effect/ai"
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
+  AgentPromptSchema,
   AgentCapabilitiesSchema,
   AgentInputEventSchema,
   AgentOutputEventSchema,
-  PromptContentSchema,
 } from "./contract.ts"
 
 const decodes = <A, I>(schema: Schema.Schema<A, I>, input: unknown): Promise<A> =>
@@ -21,27 +22,46 @@ const decodes = <A, I>(schema: Schema.Schema<A, I>, input: unknown): Promise<A> 
 const rejects = <A, I>(schema: Schema.Schema<A, I>, input: unknown): Promise<unknown> =>
   Effect.runPromise(Effect.flip(Schema.decodeUnknown(schema)(input)))
 
+const userMessage = (text: string): Prompt.UserMessage =>
+  Prompt.userMessage({ content: [Prompt.textPart({ text })] })
+
 describe("AgentInputEvent", () => {
-  it("decodes a Prompt input with text parts", async () => {
+  it("firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.1 decodes a Prompt input with Effect AI Prompt content", async () => {
     const decoded = await decodes(AgentInputEventSchema, {
       _tag: "Prompt",
-      content: [{ _tag: "Text", text: "hello" }],
+      prompt: Schema.encodeSync(Prompt.UserMessage)(
+        userMessage("hello"),
+      ),
       correlationId: "ingress-1",
     })
     expect(decoded._tag).toBe("Prompt")
   })
 
-  it("decodes a ToolResult with isError", async () => {
+  it("firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.1 rejects a full Prompt envelope instead of a UserMessage", async () => {
+    const error = await rejects(AgentInputEventSchema, {
+      _tag: "Prompt",
+      prompt: Schema.encodeSync(Prompt.Prompt)(Prompt.make("hello")),
+      correlationId: "ingress-1",
+    })
+    expect(error).toBeDefined()
+  })
+
+  it("firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.3 decodes a ToolResult with an Effect AI tool-result part", async () => {
     const decoded = await decodes(AgentInputEventSchema, {
       _tag: "ToolResult",
-      toolUseId: "tool-1",
-      content: { result: 42 },
-      isError: false,
+      part: {
+        type: "tool-result",
+        id: "tool-1",
+        name: "sleep",
+        result: { result: 42 },
+        isFailure: false,
+        providerExecuted: false,
+      },
     })
     expect(decoded._tag).toBe("ToolResult")
   })
 
-  it("decodes a PermissionResponse Allow", async () => {
+  it("firegrid-agent-io-effect-ai-alignment.LOCAL_LIFECYCLE_EVENTS.1 decodes a PermissionResponse Allow", async () => {
     const decoded = await decodes(AgentInputEventSchema, {
       _tag: "PermissionResponse",
       permissionRequestId: "perm-1",
@@ -60,7 +80,7 @@ describe("AgentInputEvent", () => {
 })
 
 describe("AgentOutputEvent", () => {
-  it("decodes a Ready event with full capabilities", async () => {
+  it("firegrid-agent-io-effect-ai-alignment.LOCAL_LIFECYCLE_EVENTS.1 decodes a Ready event with full capabilities", async () => {
     const decoded = await decodes(AgentOutputEventSchema, {
       _tag: "Ready",
       capabilities: {
@@ -77,20 +97,24 @@ describe("AgentOutputEvent", () => {
     expect(decoded._tag).toBe("Ready")
   })
 
-  it("decodes a ToolUse event", async () => {
+  it("firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.2 decodes a ToolUse event with an Effect AI tool-call part", async () => {
     const decoded = await decodes(AgentOutputEventSchema, {
       _tag: "ToolUse",
-      toolUseId: "tool-1",
-      name: "sleep",
-      input: { durationMs: 100 },
+      part: {
+        type: "tool-call",
+        id: "tool-1",
+        name: "sleep",
+        params: { durationMs: 100 },
+        providerExecuted: false,
+      },
     })
     expect(decoded._tag).toBe("ToolUse")
   })
 
-  it("decodes a TurnComplete with end_turn", async () => {
+  it("decodes a TurnComplete with Effect AI finish reason", async () => {
     const decoded = await decodes(AgentOutputEventSchema, {
       _tag: "TurnComplete",
-      stopReason: "end_turn",
+      finishReason: "stop",
     })
     expect(decoded._tag).toBe("TurnComplete")
   })
@@ -98,19 +122,21 @@ describe("AgentOutputEvent", () => {
   it("rejects an unknown stop reason", async () => {
     const error = await rejects(AgentOutputEventSchema, {
       _tag: "TurnComplete",
-      stopReason: "not-a-real-reason",
+      finishReason: "not-a-real-reason",
     })
     expect(error).toBeDefined()
   })
 })
 
 describe("prompt content", () => {
-  it("decodes mixed text/structured parts", async () => {
-    const decoded = await decodes(PromptContentSchema, [
-      { _tag: "Text", text: "summarize" },
-      { _tag: "Structured", data: { issueId: 1 } },
-    ])
-    expect(decoded).toHaveLength(2)
+  it("firegrid-agent-io-effect-ai-alignment.VALIDATION.3 decodes Effect AI UserMessage schema", async () => {
+    const decoded = await decodes(
+      AgentPromptSchema,
+      Schema.encodeSync(Prompt.UserMessage)(
+        userMessage("summarize"),
+      ),
+    )
+    expect(decoded.role).toBe("user")
   })
 })
 

@@ -3,8 +3,8 @@
  * agent tools.
  *
  * Given a Phase 1 `ToolUse` output event:
- *   1. Switch on `event.name` against the canonical tool name set.
- *   2. Decode `event.input` against the matching protocol Effect Schema
+ *   1. Switch on `event.part.name` against the canonical tool name set.
+ *   2. Decode `event.part.params` against the matching protocol Effect Schema
  *      from `@firegrid/protocol/agent-tools`.
  *   3. Dispatch the validated invocation to the matching arm.
  *   4. Catch every failure (unknown name, decode error, tool-arm error,
@@ -30,6 +30,7 @@
  */
 
 import { DurableClock, type WorkflowEngine } from "@effect/workflow"
+import { Prompt } from "@effect/ai"
 import {
   ExecuteToolInputSchema,
   ScheduleMeToolInputSchema,
@@ -60,7 +61,6 @@ import {
 import {
   type AgentInputEvent,
   type AgentOutputEvent,
-  type PromptContent,
 } from "../agent-io/index.ts"
 import {
   WaitFor,
@@ -259,12 +259,14 @@ const runScheduleMeTool = (
   WorkflowEngine.WorkflowEngine
 > => {
   const scheduleId = scheduleIdFor(ctx.contextId, toolUseId)
-  const content: PromptContent = [{ _tag: "Text", text: input.prompt }]
+  const prompt = Prompt.userMessage({
+    content: [Prompt.textPart({ text: input.prompt })],
+  })
   return ScheduledInputWorkflow.execute(
     {
       contextId: ctx.contextId,
       dueAtMs: input.when,
-      promptContent: content,
+      prompt,
       inputId: scheduleId,
     },
     { discard: true },
@@ -301,7 +303,7 @@ type ToolEnvironment =
   | AgentToolHost
 
 /**
- * Decode `event.input` against the concrete `@firegrid/protocol`
+ * Decode `event.part.params` against the concrete `@firegrid/protocol`
  * input Schema, pass the typed result to the arm, wrap the arm's
  * typed output in a `ToolResult` event, and catch every failure path
  * into an `isError: true` event. The schema parameter binds `I` and
@@ -309,21 +311,20 @@ type ToolEnvironment =
  * the corresponding arm at compile time rather than hiding behind an
  * `as` cast.
  */
-const dispatchTool = <I, O, R>(
+const dispatchTool = <I, Encoded, O, R>(
   event: ToolUseEvent,
   toolName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the encoded side is per-schema and orthogonal to dispatch.
-  parametersSchema: Schema.Schema<I, any>,
+  parametersSchema: Schema.Schema<I, Encoded>,
   arm: (input: I) => Effect.Effect<O, ToolError, R>,
 ): Effect.Effect<ToolResultEvent, never, R> =>
-  Schema.decodeUnknown(parametersSchema)(event.input).pipe(
+  Schema.decodeUnknown(parametersSchema)(event.part.params).pipe(
     Effect.matchEffect({
       onFailure: (cause) => {
         if (cause instanceof ParseResult.ParseError) {
           return Effect.succeed(
             toolErrorResult(
               toolInvalidInputFromParseError(
-                event.toolUseId,
+                event.part.id,
                 toolName,
                 cause,
               ),
@@ -332,18 +333,18 @@ const dispatchTool = <I, O, R>(
         }
         return Effect.succeed(
           toolErrorResult(
-            toolExecutionFailed(event.toolUseId, toolName, cause),
+            toolExecutionFailed(event.part.id, toolName, cause),
           ),
         )
       },
       onSuccess: (input) =>
         arm(input).pipe(
-          Effect.map((output) => toolResult(event.toolUseId, output)),
+          Effect.map((output) => toolResult(event.part.id, toolName, output)),
           Effect.catchAll((error) => Effect.succeed(toolErrorResult(error))),
           Effect.catchAllDefect((defect) =>
             Effect.succeed(
               toolErrorResult(
-                toolExecutionFailed(event.toolUseId, toolName, defect),
+                toolExecutionFailed(event.part.id, toolName, defect),
               ),
             ),
           ),
@@ -361,7 +362,7 @@ const dispatchTool = <I, O, R>(
  * `ToolResult` events with `isError: true`. The outer error channel is
  * `never`: tool failures are NOT workflow failures.
  *
- * Dispatch switches on `event.name` and decodes against the canonical
+   * Dispatch switches on `event.part.name` and decodes against the canonical
  * protocol input Schema for that name. Each arm receives the typed
  * decoded input from its `@firegrid/protocol/agent-tools` schema and
  * returns the typed output declared by the same protocol module — so a
@@ -380,39 +381,38 @@ export const toolUseToEffect = (
   ctx: ToolLoweringContext,
   event: ToolUseEvent,
 ): Effect.Effect<ToolResultEvent, never, ToolEnvironment> => {
-  switch (event.name) {
+  switch (event.part.name) {
     case "sleep":
       return dispatchTool(event, "sleep", SleepToolInputSchema, (input) =>
-        runSleepTool(event.toolUseId, input),
+        runSleepTool(event.part.id, input),
       )
     case "wait_for":
       return dispatchTool(event, "wait_for", WaitForToolInputSchema, (input) =>
-        runWaitForTool(event.toolUseId, input),
+        runWaitForTool(event.part.id, input),
       )
     case "spawn":
       return dispatchTool(event, "spawn", SpawnToolInputSchema, (input) =>
-        runSpawnTool(ctx, event.toolUseId, input),
+        runSpawnTool(ctx, event.part.id, input),
       )
     case "spawn_all":
       return dispatchTool(
         event,
         "spawn_all",
         SpawnAllToolInputSchema,
-        (input) => runSpawnAllTool(ctx, event.toolUseId, input),
+        (input) => runSpawnAllTool(ctx, event.part.id, input),
       )
     case "schedule_me":
       return dispatchTool(
         event,
         "schedule_me",
         ScheduleMeToolInputSchema,
-        (input) => runScheduleMeTool(ctx, event.toolUseId, input),
+        (input) => runScheduleMeTool(ctx, event.part.id, input),
       )
     case "execute":
       return dispatchTool(event, "execute", ExecuteToolInputSchema, (input) =>
-        runExecuteTool(event.toolUseId, input),
+        runExecuteTool(event.part.id, input),
       )
     default:
-      return Effect.succeed(unknownToolResult(event.toolUseId, event.name))
+      return Effect.succeed(unknownToolResult(event.part.id, event.part.name))
   }
 }
-

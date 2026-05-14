@@ -92,27 +92,31 @@ describe("formatToolError", () => {
 
 describe("ToolResult builders", () => {
   it("toolResult builds a non-error ToolResult event", () => {
-    expect(toolResult("t-1", { slept: true })).toEqual({
+    const result = toolResult("t-1", "sleep", { slept: true })
+    expect(result).toMatchObject({
       _tag: "ToolResult",
-      toolUseId: "t-1",
-      content: { slept: true },
-      isError: false,
+      part: {
+        id: "t-1",
+        name: "sleep",
+        result: { slept: true },
+        isFailure: false,
+      },
     })
   })
 
   it("unknownToolResult builds a structured error payload", () => {
     const result = unknownToolResult("t-1", "definitely_not_a_tool")
-    expect(result.isError).toBe(true)
-    expect(result.toolUseId).toBe("t-1")
-    expect(result.content).toMatchObject({
+    expect(result.part.isFailure).toBe(true)
+    expect(result.part.id).toBe("t-1")
+    expect(result.part.result).toMatchObject({
       error: { _tag: "UnknownTool", name: "definitely_not_a_tool" },
     })
   })
 
   it("toolErrorResult preserves the tagged error payload", () => {
     const result = toolErrorResult(toolExecutionFailed("t-1", "sleep", "boom"))
-    expect(result.isError).toBe(true)
-    const content = result.content as {
+    expect(result.part.isFailure).toBe(true)
+    const content = result.part.result as {
       readonly error: ToolError
       readonly message: string
     }

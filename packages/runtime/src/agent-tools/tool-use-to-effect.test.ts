@@ -22,12 +22,14 @@
  * follow-up PR).
  */
 
-import { Workflow } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
+import { Prompt } from "@effect/ai"
+import { Workflow } from "@effect/workflow"
 import { DurableTable } from "effect-durable-operators"
 import { Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import type { AgentOutputEvent } from "../agent-io/index.ts"
+import type { AgentOutputEvent, ToolResultEvent } from "../agent-io/index.ts"
+import { AgentToolCallPartSchema, ToolResultEventSchema } from "../agent-io/index.ts"
 import {
   DurableToolsWaitForLive,
   SourceCollections,
@@ -82,12 +84,23 @@ const makeStreams = (label: string): Streams => {
 
 type ToolUseEvent = Extract<AgentOutputEvent, { _tag: "ToolUse" }>
 
-const ToolResultSchema = Schema.Struct({
-  _tag: Schema.Literal("ToolResult"),
-  toolUseId: Schema.String,
-  content: Schema.Unknown,
-  isError: Schema.Boolean,
+const toolUse = (
+  toolUseId: string,
+  name: string,
+  params: unknown,
+): ToolUseEvent => ({
+  _tag: "ToolUse",
+  part: Prompt.toolCallPart({
+    id: toolUseId,
+    name,
+    params,
+    providerExecuted: false,
+  }),
 })
+
+const resultIsError = (result: ToolResultEvent): boolean => result.part.isFailure
+
+const resultContent = (result: ToolResultEvent): unknown => result.part.result
 
 const RunToolWorkflow = Workflow.make({
   name: "agent-tools-test-run",
@@ -95,18 +108,15 @@ const RunToolWorkflow = Workflow.make({
     contextId: Schema.String,
     event: Schema.Struct({
       _tag: Schema.Literal("ToolUse"),
-      toolUseId: Schema.String,
-      name: Schema.String,
-      input: Schema.Unknown,
+      part: AgentToolCallPartSchema,
     }),
   }),
-  success: ToolResultSchema,
-  idempotencyKey: ({ event }) => event.toolUseId,
+  success: ToolResultEventSchema,
+  idempotencyKey: ({ event }) => event.part.id,
 })
 
 const RunToolWorkflowLayer = RunToolWorkflow.toLayer(({ contextId, event }) =>
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- the schema's decoded type and the TaggedStruct ToolUseEvent type are structurally identical, but the cast pins the lower-bound expected by `toolUseToEffect` and stabilizes the inferred R channel here.
-  toolUseToEffect({ contextId }, event as ToolUseEvent),
+  toolUseToEffect({ contextId }, event),
 )
 
 const fakeHost = (
@@ -202,17 +212,12 @@ describe("toolUseToEffect — name dispatch", () => {
       Effect.gen(function* () {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-unknown",
-          event: {
-            _tag: "ToolUse" as const,
-            toolUseId: "tool-unknown",
-            name: "definitely_not_a_tool",
-            input: {},
-          },
+          event: toolUse("tool-unknown", "definitely_not_a_tool", {}),
         })
       }),
     )
-    expect(result.isError).toBe(true)
-    expect(result.content).toMatchObject({
+    expect(resultIsError(result)).toBe(true)
+    expect(resultContent(result)).toMatchObject({
       error: { _tag: "UnknownTool", name: "definitely_not_a_tool" },
     })
   })
@@ -224,17 +229,12 @@ describe("toolUseToEffect — name dispatch", () => {
       Effect.gen(function* () {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-invalid",
-          event: {
-            _tag: "ToolUse" as const,
-            toolUseId: "tool-invalid",
-            name: "sleep",
-            input: { durationMs: "not-a-number" },
-          },
+          event: toolUse("tool-invalid", "sleep", { durationMs: "not-a-number" }),
         })
       }),
     )
-    expect(result.isError).toBe(true)
-    expect(result.content).toMatchObject({
+    expect(resultIsError(result)).toBe(true)
+    expect(resultContent(result)).toMatchObject({
       error: { _tag: "ToolInvalidInput", name: "sleep" },
     })
   })
@@ -252,17 +252,12 @@ describe("toolUseToEffect — sleep arm", () => {
       Effect.gen(function* () {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-sleep",
-          event: {
-            _tag: "ToolUse" as const,
-            toolUseId: "tool-sleep",
-            name: "sleep",
-            input: { durationMs: 1 },
-          },
+          event: toolUse("tool-sleep", "sleep", { durationMs: 1 }),
         })
       }),
     )
-    expect(result.isError).toBe(false)
-    expect(result.content).toEqual({ slept: true })
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toEqual({ slept: true })
   })
 })
 
@@ -275,23 +270,18 @@ describe("toolUseToEffect — wait_for arm", () => {
         yield* registerTestSource
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-wait",
-          event: {
-            _tag: "ToolUse" as const,
-            toolUseId: "tool-wait",
-            name: "wait_for",
-            input: {
+          event: toolUse("tool-wait", "wait_for", {
               eventQuery: {
                 stream: "test-source",
                 whereFields: { requestId: "no-such-request" },
               },
               timeoutMs: 50,
-            },
-          },
+            }),
         })
       }),
     )
-    expect(result.isError).toBe(false)
-    expect(result.content).toEqual({ matched: false, timedOut: true })
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toEqual({ matched: false, timedOut: true })
   })
 
   it("rejects non-scalar whereFields predicates with ToolInvalidInput instead of matching every row", async () => {
@@ -311,11 +301,7 @@ describe("toolUseToEffect — wait_for arm", () => {
         const fiber = yield* Effect.fork(
           RunToolWorkflow.execute({
             contextId: "ctx-wait-nonscalar",
-            event: {
-              _tag: "ToolUse" as const,
-              toolUseId: "tool-wait-nonscalar",
-              name: "wait_for",
-              input: {
+            event: toolUse("tool-wait-nonscalar", "wait_for", {
                 eventQuery: {
                   stream: "test-source",
                   whereFields: {
@@ -323,8 +309,7 @@ describe("toolUseToEffect — wait_for arm", () => {
                   },
                 },
                 timeoutMs: 200,
-              },
-            },
+              }),
           }),
         )
         const source = yield* TestSourceTable
@@ -341,8 +326,8 @@ describe("toolUseToEffect — wait_for arm", () => {
       }),
     )
     expect(waitForCalled).toBe(true)
-    expect(result.isError).toBe(true)
-    expect(result.content).toMatchObject({
+    expect(resultIsError(result)).toBe(true)
+    expect(resultContent(result)).toMatchObject({
       error: { _tag: "ToolInvalidInput", name: "wait_for" },
     })
   })
@@ -355,23 +340,18 @@ describe("toolUseToEffect — wait_for arm", () => {
         yield* registerTestSource
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-wait-empty",
-          event: {
-            _tag: "ToolUse" as const,
-            toolUseId: "tool-wait-empty",
-            name: "wait_for",
-            input: {
+          event: toolUse("tool-wait-empty", "wait_for", {
               eventQuery: {
                 stream: "test-source",
                 whereFields: {},
               },
               timeoutMs: 100,
-            },
-          },
+            }),
         })
       }),
     )
-    expect(result.isError).toBe(true)
-    expect(result.content).toMatchObject({
+    expect(resultIsError(result)).toBe(true)
+    expect(resultContent(result)).toMatchObject({
       error: { _tag: "ToolInvalidInput", name: "wait_for" },
     })
   })
@@ -385,17 +365,12 @@ describe("toolUseToEffect — wait_for arm", () => {
         const fiber = yield* Effect.fork(
           RunToolWorkflow.execute({
             contextId: "ctx-wait-match",
-            event: {
-              _tag: "ToolUse" as const,
-              toolUseId: "tool-wait-match",
-              name: "wait_for",
-              input: {
+            event: toolUse("tool-wait-match", "wait_for", {
                 eventQuery: {
                   stream: "test-source",
                   whereFields: { requestId: "rq-1" },
                 },
-              },
-            },
+              }),
           }),
         )
         yield* Effect.sleep("60 millis")
@@ -408,8 +383,8 @@ describe("toolUseToEffect — wait_for arm", () => {
         return yield* Fiber.join(fiber)
       }),
     )
-    expect(result.isError).toBe(false)
-    expect(result.content).toMatchObject({
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toMatchObject({
       matched: true,
       event: { id: "row-1", requestId: "rq-1" },
     })
@@ -435,20 +410,15 @@ describe("toolUseToEffect — spawn arm", () => {
       Effect.gen(function* () {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-spawn",
-          event: {
-            _tag: "ToolUse" as const,
-            toolUseId: "tool-spawn",
-            name: "spawn",
-            input: {
+          event: toolUse("tool-spawn", "spawn", {
               agentKind: "stdio-jsonl",
               prompt: "summarize the issue",
-            },
-          },
+            }),
         })
       }),
     )
-    expect(result.isError).toBe(false)
-    expect(result.content).toMatchObject({
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toMatchObject({
       childContextId: "child-from-host",
       terminalState: { _tag: "Completed" },
     })
@@ -477,22 +447,17 @@ describe("toolUseToEffect — spawn_all arm", () => {
       Effect.gen(function* () {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-spawn-all",
-          event: {
-            _tag: "ToolUse" as const,
-            toolUseId: "tool-spawn-all",
-            name: "spawn_all",
-            input: {
+          event: toolUse("tool-spawn-all", "spawn_all", {
               tasks: [
                 { agentKind: "stdio-jsonl", prompt: "first", key: "alpha" },
                 { agentKind: "stdio-jsonl", prompt: "second" },
               ],
-            },
-          },
+            }),
         })
       }),
     )
-    expect(result.isError).toBe(false)
-    expect(result.content).toMatchObject({
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toMatchObject({
       children: [
         { key: "alpha", childContextId: "child-0" },
         { key: "1", childContextId: "child-1" },
@@ -506,10 +471,10 @@ describe("toolUseToEffect — schedule_me arm", () => {
     const streams = makeStreams("schedule-me")
     let promptObserved: string | undefined
     const host = fakeHost({
-      appendScheduledPrompt: ({ content }) =>
+      appendScheduledPrompt: ({ prompt }) =>
         Effect.sync(() => {
-          const first = content[0]
-          if (first?._tag === "Text") promptObserved = first.text
+          const firstPart = prompt.content[0]
+          if (firstPart?.type === "text") promptObserved = firstPart.text
         }),
     })
     const result = await runWith(
@@ -517,12 +482,7 @@ describe("toolUseToEffect — schedule_me arm", () => {
       Effect.gen(function* () {
         const out = yield* RunToolWorkflow.execute({
           contextId: "ctx-schedule",
-          event: {
-            _tag: "ToolUse" as const,
-            toolUseId: "tool-schedule",
-            name: "schedule_me",
-            input: { when: 0, prompt: "follow-up" },
-          },
+          event: toolUse("tool-schedule", "schedule_me", { when: 0, prompt: "follow-up" }),
         })
         // The ScheduledInputWorkflow is fire-and-forget (discard:true).
         // Give the engine a brief window to wake the when=0 sleep so we
@@ -532,8 +492,8 @@ describe("toolUseToEffect — schedule_me arm", () => {
         return out
       }),
     )
-    expect(result.isError).toBe(false)
-    const scheduledContent = result.content as {
+    expect(resultIsError(result)).toBe(false)
+    const scheduledContent = resultContent(result) as {
       readonly scheduled: true
       readonly scheduleId: string
     }
@@ -564,20 +524,15 @@ describe("toolUseToEffect — execute arm", () => {
       Effect.gen(function* () {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-execute",
-          event: {
-            _tag: "ToolUse" as const,
-            toolUseId: "tool-execute",
-            name: "execute",
-            input: {
+          event: toolUse("tool-execute", "execute", {
               sandbox: { providerName: "local", toolName: "shell" },
               input: { argv: ["echo", "hi"] },
-            },
-          },
+            }),
         })
       }),
     )
-    expect(result.isError).toBe(false)
-    expect(result.content).toMatchObject({ exitCode: 0, stdout: "done" })
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toMatchObject({ exitCode: 0, stdout: "done" })
     expect(observedInput).toMatchObject({ argv: ["echo", "hi"] })
   })
 })
@@ -598,17 +553,12 @@ describe("toolUseToEffect — failure semantics", () => {
       Effect.gen(function* () {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-fail",
-          event: {
-            _tag: "ToolUse" as const,
-            toolUseId: "tool-fail",
-            name: "spawn",
-            input: { agentKind: "stdio-jsonl", prompt: "noop" },
-          },
+          event: toolUse("tool-fail", "spawn", { agentKind: "stdio-jsonl", prompt: "noop" }),
         })
       }),
     )
-    expect(result.isError).toBe(true)
-    const failureContent = result.content as {
+    expect(resultIsError(result)).toBe(true)
+    const failureContent = resultContent(result) as {
       readonly error: { readonly _tag: string; readonly name: string }
       readonly message: string
     }
@@ -632,20 +582,15 @@ describe("toolUseToEffect — failure semantics", () => {
       Effect.gen(function* () {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-defect",
-          event: {
-            _tag: "ToolUse" as const,
-            toolUseId: "tool-defect",
-            name: "execute",
-            input: {
+          event: toolUse("tool-defect", "execute", {
               sandbox: { providerName: "local", toolName: "x" },
               input: {},
-            },
-          },
+            }),
         })
       }),
     )
-    expect(result.isError).toBe(true)
-    expect(result.content).toMatchObject({
+    expect(resultIsError(result)).toBe(true)
+    expect(resultContent(result)).toMatchObject({
       error: { _tag: "ToolExecutionFailed", name: "execute" },
     })
   })
