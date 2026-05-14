@@ -29,9 +29,7 @@ export {
 } from "./contract.ts"
 export {
   AgentCodecError,
-  publishToolkitMetadata,
   type AgentCodec,
   type AgentCodecOpenOptions,
-  type AgentCodecPublishedToolMetadata,
   type AgentSession,
 } from "./codec.ts"

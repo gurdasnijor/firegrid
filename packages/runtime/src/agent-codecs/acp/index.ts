@@ -268,14 +268,16 @@ export const AcpCodec: AgentCodec = {
       const client: acp.Client = {
         requestPermission: async params => {
           const permissionRequestId = `permission-${++permissionCounter}`
+          let resolveResponse: (response: acp.RequestPermissionResponse) => void = () => {}
           const response = new Promise<acp.RequestPermissionResponse>(resolve => {
-            void runPromise(
-              registerPermission(permissionRequestId, {
-                options: params.options,
-                resolve,
-              }),
-            )
+            resolveResponse = resolve
           })
+          await runPromise(
+            registerPermission(permissionRequestId, {
+              options: params.options,
+              resolve: resolveResponse,
+            }),
+          )
           await emit({
             _tag: "PermissionRequest",
             permissionRequestId,

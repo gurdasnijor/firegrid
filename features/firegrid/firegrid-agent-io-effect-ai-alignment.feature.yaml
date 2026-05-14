@@ -18,7 +18,7 @@ components:
   DURABLE_PAYLOAD_ALIGNMENT:
     requirements:
       1: Prompt input payloads use Effect AI Prompt schemas or types where the payload represents a model/user prompt.
-      2: Tool-call output payloads use Effect AI Response ToolCallPart semantics, including id, name, params, and provider execution metadata where applicable.
+      2: Tool-call output payloads use Effect AI Prompt ToolCallPart semantics, including id, name, params, and provider execution metadata where applicable.
       3: Tool-result input payloads use Effect AI Prompt or Response ToolResultPart semantics, including id, name, result, isFailure, and provider execution metadata where applicable.
 
   LOCAL_LIFECYCLE_EVENTS:

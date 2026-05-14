@@ -7,7 +7,7 @@
  * maintain a parallel descriptor/catalog shape for tools.
  */
 
-import type { Tool, Toolkit } from "@effect/ai"
+import type { Toolkit } from "@effect/ai"
 import { Schema, type Effect, type Scope, type Stream } from "effect"
 import type { AgentInputEvent, AgentOutputEvent, AgentCapabilities } from "./contract.ts"
 import type { AgentByteStream } from "./byte-stream.ts"
@@ -38,34 +38,6 @@ export interface AgentCodecOpenOptions {
   // Toolkit source rather than introducing a Firegrid descriptor mirror.
   readonly toolkit?: Toolkit.Any
 }
-
-export interface AgentCodecPublishedToolMetadataFor<ToolValue extends Tool.Any> {
-  readonly name: string
-  readonly description?: string | undefined
-  readonly parametersSchema: ToolValue["parametersSchema"]
-  readonly successSchema: ToolValue["successSchema"]
-  readonly failureSchema: ToolValue["failureSchema"]
-  readonly annotations: ToolValue["annotations"]
-}
-export type AgentCodecPublishedToolMetadata = AgentCodecPublishedToolMetadataFor<Tool.Any>
-
-type PublishedToolkitMetadata<Tools extends Record<string, Tool.Any>> = ReadonlyArray<
-  {
-    readonly [Name in keyof Tools]: AgentCodecPublishedToolMetadataFor<Tools[Name]>
-  }[keyof Tools]
->
-
-export const publishToolkitMetadata = <Tools extends Record<string, Tool.Any>>(
-  toolkit: Toolkit.Toolkit<Tools>,
-): PublishedToolkitMetadata<Tools> =>
-  Object.values(toolkit.tools).map((tool) => ({
-    name: tool.name,
-    ...(tool.description === undefined ? {} : { description: tool.description }),
-    parametersSchema: tool.parametersSchema,
-    successSchema: tool.successSchema,
-    failureSchema: tool.failureSchema,
-    annotations: tool.annotations,
-  }))
 
 export interface AgentSession {
   /** Push an input event. The codec encodes and writes to the agent. */

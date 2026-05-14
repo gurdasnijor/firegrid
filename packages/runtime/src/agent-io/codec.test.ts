@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest"
 import * as AgentIo from "./index.ts"
 import {
   type AgentCodecOpenOptions,
-  publishToolkitMetadata,
 } from "./codec.ts"
 
 const EchoTool = Tool.make("echo", {
@@ -33,22 +32,20 @@ describe("AgentCodecOpenOptions", () => {
   })
 
   it("firegrid-agent-io-effect-ai-alignment.TOOLKIT_METADATA.2 projects Effect AI Tool metadata without descriptors", async () => {
-    const published = publishToolkitMetadata(EchoToolkit)
-    expect(published).toHaveLength(1)
-    const [tool] = published
-    if (tool === undefined) {
-      throw new Error("expected echo tool metadata")
+    const { echo } = EchoToolkit.tools
+    if (echo === undefined) {
+      throw new Error("expected echo tool")
     }
 
-    expect(tool.name).toBe("echo")
-    expect(tool.description).toBe("Echo text.")
-    expect(tool.parametersSchema).toBe(EchoTool.parametersSchema)
-    expect(tool.successSchema).toBe(EchoTool.successSchema)
-    expect(tool.failureSchema).toBe(EchoTool.failureSchema)
-    expect(tool.annotations).toBeDefined()
+    expect(echo.name).toBe("echo")
+    expect(echo.description).toBe("Echo text.")
+    expect(echo.parametersSchema).toBe(EchoTool.parametersSchema)
+    expect(echo.successSchema).toBe(EchoTool.successSchema)
+    expect(echo.failureSchema).toBe(EchoTool.failureSchema)
+    expect(echo.annotations).toBeDefined()
 
-    const encodedFromPublished = await Effect.runPromise(
-      Schema.encodeUnknown(tool.parametersSchema)({
+    const encodedFromToolkit = await Effect.runPromise(
+      Schema.encodeUnknown(echo.parametersSchema)({
         text: "hello",
       }),
     )
@@ -57,7 +54,7 @@ describe("AgentCodecOpenOptions", () => {
         text: "hello",
       }),
     )
-    expect(encodedFromPublished).toEqual(encodedFromTool)
+    expect(encodedFromToolkit).toEqual(encodedFromTool)
   })
 
   it("firegrid-agent-io-effect-ai-alignment.VALIDATION.2 does not export the retired descriptor helper", () => {
