@@ -31,7 +31,6 @@ import {
 import { Effect, Layer, Schema } from "effect"
 import { describe, expect, it, afterEach, beforeEach } from "vitest"
 import { DurableToolsWaitForLive } from "../durable-tools/index.ts"
-import { driveClocks } from "../test-helpers/durable-clock.ts"
 import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
 import {
@@ -203,7 +202,6 @@ describe("FiregridAgentToolkit direct handler execution", () => {
     const result = await runWith(
       buildBridgeLayer(streams, { contextId: "ctx-toolkit-sleep" }),
       Effect.gen(function* () {
-        yield* driveClocks
         const built = yield* FiregridAgentToolkit
         return yield* built.handle("sleep", { durationMs: 1 })
       }),
@@ -244,7 +242,6 @@ describe("FiregridAgentToolkit schema validation", () => {
         idGenerator: instrumentedIdGenerator,
       }),
       Effect.gen(function* () {
-        yield* driveClocks
         const built = yield* FiregridAgentToolkit
         return yield* built.handle("sleep", {
           durationMs: "not-a-number",
@@ -285,7 +282,6 @@ describe("FiregridAgentToolkit failure mapping", () => {
         host,
       }),
       Effect.gen(function* () {
-        yield* driveClocks
         const built = yield* FiregridAgentToolkit
         return yield* built.handle("spawn", {
           agentKind: "stdio-jsonl",
@@ -316,7 +312,6 @@ describe("FiregridAgentToolkit failure mapping", () => {
         host,
       }),
       Effect.gen(function* () {
-        yield* driveClocks
         const built = yield* FiregridAgentToolkit
         return yield* built
           .handle("spawn", { agentKind: "stdio-jsonl", prompt: "noop" })

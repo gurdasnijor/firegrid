@@ -1,6 +1,5 @@
 export {
   DurableStreamsWorkflowEngine,
-  fireDueWorkflowClocks,
   make,
   type WorkflowActivityClaimRow,
   type WorkflowActivityRow,

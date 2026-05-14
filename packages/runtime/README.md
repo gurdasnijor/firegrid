@@ -15,10 +15,7 @@ import {
   startRuntime,
 } from "@firegrid/runtime/runtime-host"
 
-import {
-  DurableStreamsWorkflowEngine,
-  fireDueWorkflowClocks,
-} from "@firegrid/runtime/workflow-engine"
+import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 
 import {
   DurableToolsWaitForLive,

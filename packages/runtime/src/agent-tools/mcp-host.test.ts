@@ -18,8 +18,7 @@
  *     `FiregridAgentToolkit` tools.
  *   - `sleep` flows through `FiregridAgentToolkitLayer`,
  *     `ToolCallWorkflow.execute`, `toolUseToEffect`, and
- *     `DurableClock.sleep` (driven by the test's `driveClocks`
- *     stand-in for the host's clock-firing loop).
+ *     `DurableClock.sleep`.
  *   - Malformed input maps to `CallToolResult.isError === true`
  *     inside an HTTP 200 response — no HTTP 500, no custom protocol
  *     error.
@@ -39,7 +38,6 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { driveClocks } from "../test-helpers/durable-clock.ts"
 import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { type AgentToolHostService } from "./tool-host.ts"
 import { toolExecutionFailed } from "./tool-error.ts"
@@ -123,8 +121,8 @@ describe("FiregridMcpServerLayer V1 smoke", () => {
       const agentToolsStreamUrl =
         `${durableStreamBaseUrl}/v1/stream/mcp-host-smoke-tools-${streamId}`
       // `Layer.provideMerge` keeps `WorkflowEngineTable` in the
-      // composed Layer's output so `driveClocks` can fire wake-ups
-      // against the same engine instance the MCP handler parks on.
+      // composed Layer's output so the MCP handler and workflow engine
+      // share the same durable scope.
       const smokeLayer = FiregridMcpServerLayer({
         host: "127.0.0.1",
         port: 0,
@@ -135,13 +133,12 @@ describe("FiregridMcpServerLayer V1 smoke", () => {
       }).pipe(
         Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
           streamUrl: workflowStreamUrl,
-        }) as Layer.Layer<never, unknown, never>),
+        })),
       )
 
       const result = await Effect.runPromise(
         Effect.scoped(
           Effect.gen(function* () {
-            yield* driveClocks
             const boundAddress = yield* HttpServer.addressFormattedWith(
               (addr) => Effect.succeed(addr),
             )
@@ -319,13 +316,12 @@ describe("FiregridMcpServerLayer V1 smoke", () => {
       }).pipe(
         Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
           streamUrl: workflowStreamUrl,
-        }) as Layer.Layer<never, unknown, never>),
+        })),
       )
 
       await Effect.runPromise(
         Effect.scoped(
           Effect.gen(function* () {
-            yield* driveClocks
             const boundAddress = yield* HttpServer.addressFormattedWith(
               (addr) => Effect.succeed(addr),
             )

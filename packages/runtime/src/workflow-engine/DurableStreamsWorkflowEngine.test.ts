@@ -9,7 +9,6 @@ import { Duration, Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   DurableStreamsWorkflowEngine,
-  fireDueWorkflowClocks,
   type WorkflowEngineDurableStateOptions,
   WorkflowEngineTable,
   type WorkflowEngineTableService,
@@ -332,7 +331,7 @@ describe("durable workflow engine", () => {
     expect(result).toBe("approved")
   })
 
-  it("workflow-engine-durable-state.VALIDATION.3 and firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.5 persists a workflow DurableClock wakeup and fires it after engine reconstruction", async () => {
+  it("workflow-engine-durable-state.VALIDATION.3 and firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.5 persists a workflow DurableClock wakeup and fires it after engine reconstruction without an external clock driver", async () => {
     if (!baseUrl) throw new Error("server not started")
     const streamUrl = `${baseUrl}/v1/stream/workflow-clock-${crypto.randomUUID()}`
     const ClockWorkflow = Workflow.make({
@@ -345,7 +344,7 @@ describe("durable workflow engine", () => {
       Effect.gen(function* () {
         yield* DurableClock.sleep({
           name: "wake",
-          duration: Duration.millis(2),
+          duration: Duration.millis(200),
           inMemoryThreshold: Duration.zero,
         })
         return "awake"
@@ -363,13 +362,12 @@ describe("durable workflow engine", () => {
       ),
     )).toHaveLength(1)
 
+    await Effect.runPromise(Effect.sleep(Duration.millis(250)))
+
     const result = await runWith(
       { streamUrl },
       workflowLayer,
-      Effect.gen(function* () {
-        yield* fireDueWorkflowClocks(Date.now() + 10_000)
-        return yield* ClockWorkflow.execute({ id: "sleepy" })
-      }),
+      ClockWorkflow.execute({ id: "sleepy" }),
     )
 
     expect(result).toBe("awake")
@@ -453,7 +451,7 @@ describe("durable workflow engine", () => {
       Effect.gen(function* () {
         yield* DurableClock.sleep({
           name: "registration-wake",
-          duration: Duration.millis(2),
+          duration: Duration.millis(200),
           inMemoryThreshold: Duration.zero,
         })
         return "registered"
@@ -477,13 +475,12 @@ describe("durable workflow engine", () => {
       ),
     )).toHaveLength(1)
 
+    await Effect.runPromise(Effect.sleep(Duration.millis(250)))
+
     const result = await runWith(
       { streamUrl },
       workflowLayer,
-      Effect.gen(function* () {
-        yield* fireDueWorkflowClocks(Date.now() + 10_000)
-        return yield* ClockWorkflow.execute({ id: "registration" })
-      }),
+      ClockWorkflow.execute({ id: "registration" }),
     )
 
     expect(result).toBe("registered")

@@ -1,6 +1,6 @@
-import { Workflow, WorkflowEngine } from "@effect/workflow"
+import { DurableDeferred, Workflow, WorkflowEngine } from "@effect/workflow"
 import type { Scope } from "effect"
-import { Duration, Effect, Fiber, Match, Option } from "effect"
+import { Clock, Duration, Effect, Exit, Fiber, Match, Option } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
 import {
   decodeWorkflowResult,
@@ -10,6 +10,7 @@ import {
 } from "./codec.ts"
 import type {
   WorkflowActivityClaimRow,
+  WorkflowClockWakeupRow,
   WorkflowEngineTableService,
 } from "./table.ts"
 
@@ -24,8 +25,9 @@ const orDieTable = <A>(
 export const makeWorkflowEngine = (
   table: WorkflowEngineTableService,
   workerId: string,
-): Effect.Effect<WorkflowEngine.WorkflowEngine["Type"]> =>
+): Effect.Effect<WorkflowEngine.WorkflowEngine["Type"], never, Scope.Scope> =>
   Effect.gen(function* () {
+    const engineScope = yield* Effect.scope
     const workflows = new Map<string, {
       workflow: Workflow.Any
       execute: (
@@ -51,6 +53,41 @@ export const makeWorkflowEngine = (
           ),
         ),
       )
+
+    const fireClockWakeup = Effect.fnUntraced(function*(row: WorkflowClockWakeupRow) {
+      const current = yield* orDieTable(table.clockWakeups.get(row.clockKey).pipe(
+        Effect.map(Option.getOrUndefined),
+      ))
+      if (!current || current.status !== "pending") return
+      yield* orDieTable(table.clockWakeups.upsert({
+        ...current,
+        status: "fired",
+      }))
+      yield* engine.deferredDone(DurableDeferred.make(current.deferredName), {
+        workflowName: current.workflowName,
+        executionId: current.executionId,
+        deferredName: current.deferredName,
+        exit: Exit.void,
+      })
+    })
+
+    const scheduleClockWakeup = Effect.fnUntraced(function*(row: WorkflowClockWakeupRow) {
+      const nowMs = yield* Clock.currentTimeMillis
+      yield* fireClockWakeup(row).pipe(
+        Effect.delay(Duration.millis(Math.max(0, row.deadlineMs - nowMs))),
+        Effect.forkIn(engineScope),
+        Effect.asVoid,
+      )
+    })
+
+    const recoverPendingClockWakeups = Effect.gen(function* () {
+      const pending = yield* orDieTable(table.clockWakeups.query((coll) =>
+        coll.toArray.filter(row => row.status === "pending"),
+      ))
+      for (const row of pending) {
+        yield* scheduleClockWakeup(row)
+      }
+    })
 
     const resume = Effect.fnUntraced(function*(executionId: string) {
       const row = yield* orDieTable(table.executions.get(executionId).pipe(
@@ -229,19 +266,31 @@ export const makeWorkflowEngine = (
         }),
       scheduleClock: (workflow, options) =>
         Effect.gen(function* () {
+          // workflow-engine-durable-state.VALIDATION.3
           const key = `${options.executionId}/${options.clock.name}`
-          if (Option.isSome(yield* orDieTable(table.clockWakeups.get(key)))) return
-          yield* orDieTable(table.clockWakeups.upsert({
+          const nowMs = yield* Clock.currentTimeMillis
+          const row: WorkflowClockWakeupRow = {
             clockKey: key,
             workflowName: workflow.name,
             executionId: options.executionId,
             clockName: options.clock.name,
             deferredName: options.clock.deferred.name,
-            deadlineMs: Date.now() + Duration.toMillis(options.clock.duration),
+            deadlineMs: nowMs + Duration.toMillis(options.clock.duration),
             status: "pending",
-          }))
+          }
+          const result = yield* orDieTable(table.clockWakeups.insertOrGet(row))
+          yield* Match.value(result).pipe(
+            Match.tag("Inserted", () => scheduleClockWakeup(row)),
+            Match.tag("Found", ({ row: existing }) =>
+              existing.status === "pending" && existing.deadlineMs <= nowMs
+                ? scheduleClockWakeup(existing)
+                : Effect.void),
+            Match.exhaustive,
+          )
         }),
     })
+
+    yield* recoverPendingClockWakeups
 
     return engine
   })

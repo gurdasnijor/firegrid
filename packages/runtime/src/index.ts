@@ -40,7 +40,6 @@ export {
 } from "./runtime-host/sync-run.ts"
 export {
   DurableStreamsWorkflowEngine,
-  fireDueWorkflowClocks,
   type WorkflowEngineDurableStateOptions,
   WorkflowEngineTable,
   type WorkflowEngineTableService,

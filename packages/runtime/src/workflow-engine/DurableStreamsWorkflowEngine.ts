@@ -2,7 +2,6 @@ import { WorkflowEngine } from "@effect/workflow"
 import type { Scope } from "effect"
 import { Context, Effect, Layer } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
-import { fireDueWorkflowClocks } from "./internal/clock.ts"
 import { makeWorkflowEngine } from "./internal/engine-runtime.ts"
 import {
   type WorkflowEngineDurableStateOptions,
@@ -10,7 +9,6 @@ import {
   workflowEngineTableLayerOptions,
 } from "./internal/table.ts"
 
-export * from "./internal/clock.ts"
 export * from "./internal/table.ts"
 
 export const make = (
@@ -57,5 +55,3 @@ export const DurableStreamsWorkflowEngine = {
   make,
   layer,
 }
-
-export { fireDueWorkflowClocks }

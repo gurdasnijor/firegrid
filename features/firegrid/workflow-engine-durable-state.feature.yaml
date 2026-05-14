@@ -17,7 +17,7 @@ components:
     requirements:
       1: Re-executing the same workflow execution against the same durable state short-circuits a completed activity instead of running the activity body again.
       2: A DurableDeferred token can resolve a suspended workflow through the WorkflowEngine.Encoded deferredDone path.
-      3: A workflow DurableClock wakeup can be stored as durable state and later fired by a reconstructed engine.
+      3: A workflow DurableClock wakeup can be stored as durable state and later fired by a reconstructed engine through the engine's WorkflowEngine.scheduleClock implementation, without a host-level or test-level clock driver.
       4: Persisted workflow results, activity results, and deferred exits round-trip through the upstream @effect/workflow schemas instead of relying on process-local object prototypes.
       5: A reconstructed engine does not resume a persisted execution until the workflow definition has been re-registered in that process.
       6: Concurrent workers racing the same execution activity produce one durable activity claim and run the activity body once for the claimed attempt.

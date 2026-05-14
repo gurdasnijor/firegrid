@@ -17,10 +17,7 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import { Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
 import { DurableTable } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import {
-  DurableStreamsWorkflowEngine,
-  fireDueWorkflowClocks,
-} from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import {
   DurableToolsTable,
   DurableToolsWaitForLive,
@@ -168,20 +165,6 @@ const registerTaggedSource = Effect.gen(function*() {
 })
 
 const sleep = (millis: number) => Effect.sleep(`${millis} millis`)
-
-/**
- * Stand-in for the runtime host's clock-firing loop. Tests that use a
- * `timeoutMs` need this so the durable clock wakeup path can fire.
- */
-const driveClocks = Effect.gen(function*() {
-  while (true) {
-    yield* fireDueWorkflowClocks(Date.now()).pipe(
-      Effect.catchAll(() => Effect.void),
-    )
-    yield* Effect.sleep("25 millis")
-  }
-}).pipe(Effect.forkScoped)
-
 const TestRowResultSchema = TestRowSchema
 
 const TaggedResultUnion = Schema.Union(
@@ -232,7 +215,6 @@ describe("durable-tools wait_for", () => {
 
     const program = Effect.gen(function*() {
       yield* registerTestSource
-        yield* driveClocks
       const source = yield* TestSourceTable
       const fiber = yield* Effect.fork(Wf.execute({ id: "basic-1", requestId: "req-1" }))
       // Allow handler to suspend + router to attach before producing the row.
@@ -279,7 +261,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         yield* Wf.execute({ id: "restart-1", requestId: "req-2" }, { discard: true })
         yield* sleep(50)
         const table = yield* DurableToolsTable
@@ -294,7 +275,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         const source = yield* TestSourceTable
         const fiber = yield* Effect.fork(Wf.execute({ id: "restart-1", requestId: "req-2" }))
         yield* sleep(50)
@@ -335,7 +315,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         yield* Wf.execute({ id: "recovery-1", requestId: "req-3" }, { discard: true })
         yield* sleep(50)
       }),
@@ -379,7 +358,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         return yield* Wf.execute({ id: "recovery-1", requestId: "req-3" })
       }),
     )
@@ -410,7 +388,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         return yield* Wf.execute({ id: "timeout-1" })
       }),
     )
@@ -442,7 +419,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         const source = yield* TestSourceTable
         const fiber = yield* Effect.fork(Wf.execute({ id: "preempt-1", requestId: "req-4" }))
         yield* sleep(50)
@@ -483,7 +459,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         yield* Wf.execute({ id: "retired-1" }, { discard: true })
         yield* sleep(50)
         const table = yield* DurableToolsTable
@@ -530,7 +505,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         const source = yield* TestSourceTable
         // Pre-populate the source BEFORE starting the workflow.
         yield* source.rows.upsert({
@@ -575,7 +549,6 @@ describe("durable-tools wait_for", () => {
       buildTaggedLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTaggedSource
-        yield* driveClocks
         const source = yield* TaggedResultTable
         const fiber = yield* Effect.fork(Wf.execute({ id: "tagged-1", requestId: "req-7" }))
         yield* sleep(50)
@@ -615,7 +588,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         const source = yield* TestSourceTable
         const fiberA = yield* Effect.fork(Wf.execute({ id: "twin-a", requestId: "req-a" }))
         const fiberB = yield* Effect.fork(Wf.execute({ id: "twin-b", requestId: "req-b" }))
@@ -688,7 +660,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         const source = yield* TestSourceTable
         const fiber = yield* Effect.fork(Wf.execute({ id: "inspect-1", requestId: "req-8" }))
         yield* sleep(50)
@@ -736,7 +707,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         yield* Wf.execute(
           { id: "mid-crash-1", requestId: "req-mid" },
           { discard: true },
@@ -781,7 +751,6 @@ describe("durable-tools wait_for", () => {
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
         yield* registerTestSource
-        yield* driveClocks
         return yield* Wf.execute({ id: "mid-crash-1", requestId: "req-mid" })
       }),
     )
@@ -831,7 +800,6 @@ describe("durable-tools wait_for", () => {
     const result = await runWith(
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
-        yield* driveClocks
         // Start the workflow BEFORE registering the source. The router must
         // suspend the per-wait fiber on awaitHandle until register lands,
         // not silently drop the wait.

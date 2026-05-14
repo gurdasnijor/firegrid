@@ -33,7 +33,6 @@ import {
   SourceCollections,
   sourceCollectionHandle,
 } from "../durable-tools/index.ts"
-import { driveClocks } from "../test-helpers/durable-clock.ts"
 import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
 import {
@@ -201,7 +200,6 @@ describe("toolUseToEffect — name dispatch", () => {
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
       Effect.gen(function* () {
-        yield* driveClocks
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-unknown",
           event: {
@@ -224,7 +222,6 @@ describe("toolUseToEffect — name dispatch", () => {
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
       Effect.gen(function* () {
-        yield* driveClocks
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-invalid",
           event: {
@@ -253,7 +250,6 @@ describe("toolUseToEffect — sleep arm", () => {
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
       Effect.gen(function* () {
-        yield* driveClocks
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-sleep",
           event: {
@@ -277,7 +273,6 @@ describe("toolUseToEffect — wait_for arm", () => {
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
       Effect.gen(function* () {
         yield* registerTestSource
-        yield* driveClocks
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-wait",
           event: {
@@ -313,7 +308,6 @@ describe("toolUseToEffect — wait_for arm", () => {
         // FieldEqualsTrigger would match the very first row we upsert
         // here; the test would race a match against the timeout.
         yield* registerTestSource
-        yield* driveClocks
         const fiber = yield* Effect.fork(
           RunToolWorkflow.execute({
             contextId: "ctx-wait-nonscalar",
@@ -359,7 +353,6 @@ describe("toolUseToEffect — wait_for arm", () => {
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
       Effect.gen(function* () {
         yield* registerTestSource
-        yield* driveClocks
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-wait-empty",
           event: {
@@ -389,7 +382,6 @@ describe("toolUseToEffect — wait_for arm", () => {
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
       Effect.gen(function* () {
         yield* registerTestSource
-        yield* driveClocks
         const fiber = yield* Effect.fork(
           RunToolWorkflow.execute({
             contextId: "ctx-wait-match",
@@ -441,7 +433,6 @@ describe("toolUseToEffect — spawn arm", () => {
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
       Effect.gen(function* () {
-        yield* driveClocks
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-spawn",
           event: {
@@ -484,7 +475,6 @@ describe("toolUseToEffect — spawn_all arm", () => {
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
       Effect.gen(function* () {
-        yield* driveClocks
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-spawn-all",
           event: {
@@ -525,7 +515,6 @@ describe("toolUseToEffect — schedule_me arm", () => {
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
       Effect.gen(function* () {
-        yield* driveClocks
         const out = yield* RunToolWorkflow.execute({
           contextId: "ctx-schedule",
           event: {
@@ -573,7 +562,6 @@ describe("toolUseToEffect — execute arm", () => {
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
       Effect.gen(function* () {
-        yield* driveClocks
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-execute",
           event: {
@@ -608,7 +596,6 @@ describe("toolUseToEffect — failure semantics", () => {
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
       Effect.gen(function* () {
-        yield* driveClocks
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-fail",
           event: {
@@ -643,7 +630,6 @@ describe("toolUseToEffect — failure semantics", () => {
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(host)),
       Effect.gen(function* () {
-        yield* driveClocks
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-defect",
           event: {

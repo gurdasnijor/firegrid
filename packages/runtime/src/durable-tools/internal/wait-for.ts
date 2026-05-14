@@ -358,8 +358,7 @@ const matchOrTimeoutFlow = <A>(
       // while waiting for the deadline. An in-memory `Effect.sleep` would
       // pin the workflow fiber and prevent the engine from observing a
       // concurrent match-side `deferredDone` from the router until the
-      // sleep completes. The runtime host is responsible for driving
-      // `fireDueWorkflowClocks`. firegrid-durable-tools.TIMEOUT.1
+      // sleep completes. firegrid-durable-tools.TIMEOUT.1
       inMemoryThreshold: Duration.zero,
     }).pipe(
       Effect.zipRight(

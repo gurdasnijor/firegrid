@@ -138,10 +138,7 @@ races against `DurableClock.sleep`.
 ### Minimal example
 
 ```ts
-import {
-  DurableStreamsWorkflowEngine,
-  fireDueWorkflowClocks,
-} from "@firegrid/runtime/workflow-engine"
+import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import {
   DurableToolsWaitForLive,
   SourceCollections,
@@ -206,21 +203,10 @@ const registerSource = Effect.gen(function*() {
   yield* sources.register(sourceCollectionHandle("flamecast.turns", table.rows))
 })
 
-// 4. Drive the workflow clock so `timeoutMs` works (or any DurableClock
-//    sleep in your workflow body). In production this is the runtime
-//    host's responsibility.
-const driveClocks = Effect.gen(function*() {
-  while (true) {
-    yield* fireDueWorkflowClocks(Date.now()).pipe(Effect.catchAll(() => Effect.void))
-    yield* Effect.sleep("100 millis")
-  }
-}).pipe(Effect.forkScoped)
-
-// 5. Run.
+// 4. Run.
 await Effect.runPromise(Effect.scoped(
   Effect.gen(function*() {
     yield* registerSource
-    yield* driveClocks
     return yield* ApprovalWorkflow.execute({
       id: "approval-1",
       requestId: "req-123",
@@ -451,10 +437,9 @@ captures the Timeout marker without help from the router.
   registration works via `awaitHandle`, but starting workflows that wait
   on a source that's never registered will leave per-wait fibers
   suspended indefinitely.
-- **Drive `fireDueWorkflowClocks` somewhere.** Timeouts use
-  `DurableClock.sleep`, which persists clock wakeups; firing them is a
-  runtime-host concern, not a `durable-tools` concern. Tests fork a small
-  driver loop; production runtimes should too.
+- **Use a workflow engine that owns `scheduleClock`.** Timeouts use
+  `DurableClock.sleep`; the Durable Streams workflow engine persists and
+  fires wakeups through its `WorkflowEngine.scheduleClock` implementation.
 
 ---
 

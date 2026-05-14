@@ -91,7 +91,7 @@ not the default pattern for ordinary tool rows.
 
 | Tool | MVP backing | MVP status | Multi-worker note |
 | --- | --- | --- | --- |
-| `sleep(durationMs)` | `DurableClock.sleep` + `fireDueWorkflowClocks` over the existing `clockWakeups` DurableTable | Covered by existing workflow-clock path; no Firegrid-owned `sleep(durationMs)` facade in v0 | No side effect except clock resolution. |
+| `sleep(durationMs)` | `DurableClock.sleep` over the Durable Streams workflow engine's `WorkflowEngine.scheduleClock` implementation | Covered by existing workflow-clock path; no Firegrid-owned `sleep(durationMs)` facade in v0 | No side effect except clock resolution. |
 | `wait_for(trigger, timeoutMs?)` | Waits table + subscription router + workflow clock for timeout | In scope first; resolves a workflow-engine deferred on an already-running workflow execution | Trigger dispatch is idempotent by deterministic wait key. |
 | `schedule_me(when, prompt)` | Schedules table + workflow clock + runtime ingress table | In scope after `wait_for` | Appending the eventual prompt is a side effect; v0 assumes one scheduler. |
 | `spawn(agent, prompt)` | Child launch/context rows + parent wait row | Defer for MVP unless product needs it immediately | Needs claim-before-launch for multi-worker. |
@@ -288,7 +288,8 @@ Do not hide that future primitive inside a recreated `DurableConsumer`,
 ### Existing Coverage: Sleep
 
 Durable suspension via the workflow clock path is already proven end-to-end by
-`DurableClock.sleep` + `clockWakeups` DurableTable + `fireDueWorkflowClocks`.
+`DurableClock.sleep` + `clockWakeups` DurableTable + engine-owned
+`WorkflowEngine.scheduleClock` delivery.
 The product call sites that motivate durable-tools (Flamecast turn submission,
 Flamecast agent webhook acceptance, substrate use-case-1 result-by-requestId)
 all want a durable-row condition wait, not a duration wait. Therefore v0 does
@@ -379,8 +380,9 @@ Every PR that follows this SDD must satisfy:
    a workflow from an external row.
 4. Can workflow clock wakeups fully cover `sleep` and `schedule_me`, or do we
    need a separate timers table for observability and operator control?
-   **Resolved for v0:** the existing `clockWakeups` DurableTable +
-   `fireDueWorkflowClocks` cover both. No separate `ToolTimersTable` is added.
+   **Resolved for v0:** the existing `clockWakeups` DurableTable and
+   engine-owned `WorkflowEngine.scheduleClock` delivery cover both. No
+   separate `ToolTimersTable` is added.
 5. What is the first product tool we actually need for the MVP?
    **Resolved:** `wait_for`. Visible product pressure: the Flamecast runtime
    handler polls every 250 ms for `turns.status == "submitted"` and
