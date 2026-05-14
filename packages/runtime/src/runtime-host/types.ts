@@ -3,6 +3,8 @@ import type { LocalProcessSandboxProviderOptions } from "../providers/sandboxes/
 
 export interface RuntimeHostConfigValue {
   readonly inputEnabled: boolean
+  readonly durableStreamsBaseUrl: string
+  readonly headers?: DurableTableHeaders
 }
 
 export interface StartRuntimeOptions {

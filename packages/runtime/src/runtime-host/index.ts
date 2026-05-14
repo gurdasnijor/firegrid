@@ -25,7 +25,10 @@ import { Clock, Config, Effect, Layer, Option, Redacted, Schema, Stream } from "
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {
   CurrentHostSession,
+  CurrentRuntimeContext,
+  findRuntimeContext,
   hostOwnedStreamUrl,
+  provideRuntimeContext,
   requireLocalContext,
   runtimeControlPlaneStreamUrl,
 } from "./host-context-authority.ts"
@@ -52,6 +55,11 @@ import type {
   RuntimeHostTopologyOptions,
   StartRuntimeOptions,
 } from "./types.ts"
+import {
+  AgentToolHost,
+  type AgentToolHostService,
+} from "../agent-tools/tool-host.ts"
+import { toolExecutionFailed } from "../agent-tools/tool-error.ts"
 
 export type {
   RuntimeHostTopologyOptions,
@@ -491,6 +499,8 @@ const namespaceScopedLayer = (
     Layer.succeed(RuntimeHostConfig, {
       // firegrid-agent-ingress.HOST.7
       inputEnabled: options.input === true,
+      durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+      ...(options.headers !== undefined ? { headers: options.headers } : {}),
     }),
     RuntimeControlPlaneTable.layer({
       streamOptions: {
@@ -534,6 +544,25 @@ const hostOwnedIngressLayer = (
         },
       })),
   )
+
+const ownerIngressLayer = (
+  options: {
+    readonly baseUrl: string
+    readonly headers?: DurableTableHeaders
+    readonly context: RuntimeContext
+  },
+) =>
+  RuntimeIngressTable.layer({
+    streamOptions: {
+      url: hostOwnedStreamUrl({
+        baseUrl: options.baseUrl,
+        prefix: options.context.host.streamPrefix,
+        segment: "runtimeIngress",
+      }),
+      contentType: "application/json",
+      ...(options.headers !== undefined ? { headers: options.headers } : {}),
+    },
+  })
 
 const hostOwnedOutputLayer = (
   options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
@@ -744,34 +773,51 @@ export const appendRuntimeIngress = (
   request: RuntimeIngressRequest,
 ) =>
   Effect.gen(function* () {
-    const options = yield* RuntimeHostConfig
-    if (!options.inputEnabled) {
-      return yield* runtimeIngressError(
-        "append",
-        "runtime ingress table is not configured",
-        request.contextId,
-        request.inputId,
-      )
-    }
-    // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
+    // firegrid-host-context-authority.PROMPT_ROUTING.1
+    // firegrid-host-context-authority.PROMPT_ROUTING.2
     //
-    // In Slice 2 the host-owned ingress table is the local host's.
-    // Cross-host prompt routing (writing to the owner host's ingress
-    // through resolved RuntimeContext.host) is Slice 3. Until then a
-    // foreign-context append would silently land on the wrong host's
-    // ingress, so the operator rejects it loudly.
-    yield* requireLocalContext(request.contextId).pipe(
+    // Prompt append is durable routing, not local process execution.
+    // Resolve RuntimeContext through the namespace-scoped control
+    // plane, then open the owner host's ingress table from
+    // RuntimeContext.host. The caller never passes or constructs the
+    // owner ingress URL.
+    const context = yield* findRuntimeContext(request.contextId).pipe(
       Effect.mapError(cause =>
         runtimeIngressError(
           "append",
-          "runtime ingress append rejected by local-host authority",
+          "failed to resolve runtime context for ingress append",
           request.contextId,
           request.inputId,
           cause,
         )),
     )
+    const options = yield* RuntimeHostConfig
+    return yield* appendRuntimeIngressInCurrentContext(request).pipe(
+      provideRuntimeContext(context),
+      Effect.provide(ownerIngressLayer({
+        baseUrl: options.durableStreamsBaseUrl,
+        ...(options.headers !== undefined ? { headers: options.headers } : {}),
+        context,
+      })),
+      Effect.scoped,
+    )
+  })
+
+const appendRuntimeIngressInCurrentContext = (
+  request: RuntimeIngressRequest,
+) =>
+  Effect.gen(function* () {
+    const context = yield* CurrentRuntimeContext
     const table = yield* RuntimeIngressTable
     const row = makeRuntimeIngressInputRow(request)
+    if (row.contextId !== context.contextId) {
+      return yield* runtimeIngressError(
+        "append",
+        "runtime ingress request context does not match CurrentRuntimeContext",
+        row.contextId,
+        row.inputId,
+      )
+    }
     const existing = yield* table.inputs.get(row.inputId).pipe(
       Effect.mapError(cause =>
         runtimeIngressError(
@@ -815,3 +861,47 @@ export const appendRuntimeIngress = (
     )
     return sequenced
   })
+
+const unsupportedAgentTool = (
+  toolUseId: string,
+  name: string,
+) =>
+  Effect.fail(toolExecutionFailed(
+    toolUseId,
+    name,
+    new Error(`${name} is not wired by RuntimeHostAgentToolHostLive in this slice`),
+  ))
+
+const runtimeHostAgentToolHostService = (captured: {
+  readonly hostConfig: RuntimeHostConfig["Type"]
+  readonly controlPlane: RuntimeControlPlaneTable["Type"]
+}): AgentToolHostService => ({
+  spawnChildContext: ({ toolUseId }) => unsupportedAgentTool(toolUseId, "spawn"),
+  spawnChildContexts: ({ toolUseId }) => unsupportedAgentTool(toolUseId, "spawn_all"),
+  executeSandboxTool: ({ toolUseId }) => unsupportedAgentTool(toolUseId, "execute"),
+  appendScheduledPrompt: ({ contextId, inputId, prompt }) =>
+    // firegrid-host-context-authority.PROMPT_ROUTING.3
+    appendRuntimeIngress({
+      contextId,
+      inputId,
+      kind: "message",
+      authoredBy: "workflow",
+      payload: prompt,
+      idempotencyKey: inputId,
+    }).pipe(
+      Effect.provideService(RuntimeHostConfig, captured.hostConfig),
+      Effect.provideService(RuntimeControlPlaneTable, captured.controlPlane),
+      Effect.asVoid,
+      Effect.mapError(cause =>
+        toolExecutionFailed(inputId, "schedule_me", cause)),
+    ),
+})
+
+export const RuntimeHostAgentToolHostLive = Layer.effect(
+  AgentToolHost,
+  Effect.gen(function* () {
+    const hostConfig = yield* RuntimeHostConfig
+    const controlPlane = yield* RuntimeControlPlaneTable
+    return runtimeHostAgentToolHostService({ hostConfig, controlPlane })
+  }),
+)
