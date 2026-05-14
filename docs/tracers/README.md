@@ -47,6 +47,7 @@ must make that dependency explicit.
 - [018: Cluster-Shaped Workflow Activity Ownership](./018-cluster-shaped-workflow-activity-ownership.md)
 - [019: Workflow-Driven Runtime Next Wave](./019-workflow-driven-runtime-next-wave.md)
 - [020: Verified Webhook Ingest To Durable Facts](./020-verified-webhook-ingest-to-durable-facts.md)
+- [021: Follow-Up Prompt Ingress To A Running Context](./021-follow-up-prompt-ingress.md)
 
 ## Handoff
 
