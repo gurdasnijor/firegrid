@@ -147,6 +147,9 @@ Firegrid differences from Rember:
   or host seams.
 - Firegrid's first bridge targets Streamable HTTP MCP through Effect AI's
   transport-pluggable MCP layer, not stdio-only MCP.
+- Firegrid should copy Rember's process-lifecycle shape: launch the MCP server
+  as an Effect Layer under the owning Node runtime, not as a separately
+  supervised child process or a long-lived sidecar.
 
 ## V0: Effect AI Tools (In-Process)
 
@@ -207,8 +210,8 @@ within one call (the workflow engine uses it as the `ToolCallWorkflow`
 `idempotencyKey`, which dedups *within* a single MCP request's
 workflow execution) but not across MCP-level retries.
 
-Durable retry/replay identity arrives in V1 with `AgentToolInvocationFact`
-(see §"V1: Durable Indirect Bridge"). At that point the invocation
+Durable retry/replay identity arrives in V2 with `AgentToolInvocationFact`
+(see §"V2: Durable Indirect Bridge"). At that point the invocation
 fact's `invocationId` (deterministic from MCP `sessionId + requestId`
 or from the caller-provided invocation identity) replaces the
 `IdGenerator`-supplied suffix, and the bridge consults the existing
@@ -262,19 +265,137 @@ Required checks:
    value itself is not load-bearing for Firegrid (it is Effect AI's
    contract).
 
-A local HTTP MCP smoke (`McpServer.layerHttp` + an MCP client over Streamable
-HTTP) is **not** part of V0 acceptance. The V0 path is in-process Effect AI
-execution: it proves the same toolkit, schemas, handler routing, and
-McpServer-projection plumbing that the HTTP transport ultimately wraps,
-without standing up a Node HTTP server or an external SDK transport handshake.
-The HTTP smoke moves to V1 alongside durable invocation/result rows so the
-durable indirect path and the HTTP transport land together against a single
-acceptance surface.
+An HTTP MCP smoke (`McpServer.layerHttp` + an MCP client over Streamable HTTP)
+is **not** part of V0 acceptance. The V0 path is in-process Effect AI execution:
+it proves the same toolkit, schemas, handler routing, and McpServer-projection
+plumbing that the HTTP transport ultimately wraps, without standing up a Node
+HTTP server or an external SDK transport handshake.
 
-## V1: Durable Indirect Bridge
+## V1: Host-Owned Localhost MCP Server
 
-After V0 proves the MCP protocol shape, add durable invocation/result state. This
-is the production shape for external agents and cross-process routing.
+After V0 proves the toolkit and handler path, add the actual HTTP MCP server as
+part of the Firegrid host process. This is the first real server shape and the
+one host-local agents should use.
+
+### Process Ownership
+
+The MCP server is owned by the runtime host process:
+
+```text
+pnpm firegrid:host
+  -> NodeRuntime.runMain(...)
+  -> Effect scope / Layer launch
+  -> Firegrid runtime-host Layers
+  -> FiregridAgentToolkitLayer
+  -> McpServer.registerToolkit(FiregridAgentToolkit)
+  -> McpServer.layerHttp(...)
+  -> NodeHttpServer.layer(...127.0.0.1...)
+```
+
+The host process is the parent. There is no `firegrid:mcp` binary in V1, no
+child MCP process, no stdio shim, and no supervisor protocol. The HTTP listener
+is an Effect Layer in the host's scope. SIGINT/SIGTERM interrupt the host through
+`NodeRuntime.runMain`; scope finalization closes the MCP listener together with
+the runtime-host resources.
+
+This follows the useful Rember MCP lifecycle pattern (`Layer.launch(...)` under a
+Node runtime) while using Effect AI's `McpServer.layerHttp` instead of a
+Firegrid-owned request-handler stack.
+
+### Host Configuration
+
+The MCP server is opt-in host configuration. V1 binds only to loopback
+(`127.0.0.1`) for host-local agents launched by the same machine/user boundary.
+Env config is limited to **listener topology**:
+
+```text
+FIREGRID_MCP_ENABLED=false
+FIREGRID_MCP_HOST=127.0.0.1
+FIREGRID_MCP_PORT=0
+FIREGRID_MCP_PATH=/mcp
+```
+
+`FIREGRID_MCP_PORT=0` means the OS chooses a port. When the host wires the
+MCP server, it should log the effective URL and (when it launches a
+local-process agent) make that URL available through host-owned agent
+configuration. The URL is not a durable row and not part of the public client
+API.
+
+The runtime `contextId` is **not** host env. Context selection is durable /
+session / route state, not static process configuration. Static, single-tenant
+composition of `FiregridMcpServerLayer({ contextId, ... })` from a Layer-factory
+call site is the V1 boundary; reading `contextId` from env (e.g. a
+`FIREGRID_MCP_CONTEXT_ID` knob) expands deployment config with runtime identity
+at the wrong layer and is explicitly out of scope.
+
+### Routing
+
+V1 serves host-local agents only. Context selection is HTTP route / session
+state or durable host/session record, never a tool argument.
+
+The preferred first route shape is:
+
+```text
+/mcp/runtime-context/:contextId
+```
+
+The route installs `FiregridAgentToolContext` for the request before invoking
+the toolkit handler. Implementing this requires Effect AI's HTTP layer to
+inject per-route services into the toolkit handler context. If that proves
+non-trivial without a custom JSON-RPC handler, the acceptable durable-record
+fallback is a host/session/local-agent authority row in `runtime-host` /
+control-plane shape that maps to a `contextId`, supplied to
+`FiregridMcpServerLayer` at compose time.
+
+Until one of those lands, **host-boot wiring is deferred**:
+`FiregridMcpServerLayer({ contextId, ... })` ships as the composition primitive
+for tests and downstream consumers, and `src/host.ts` does not auto-mount the
+MCP server. The first PR to wire host boot must arrive with either route-based
+context injection or a durable host/session record — not an env-driven
+`contextId`.
+
+V1 does not support arbitrary remote agents, browser clients, or multi-tenant
+context routing. Binding to non-loopback interfaces, authentication, signed
+context authorization, and public endpoint discovery are later work.
+
+### V1 Validation
+
+Required checks:
+
+1. `FiregridMcpServerLayer({ host, port, path, contextId, agentToolsStreamUrl })`
+   composes and binds to loopback through `NodeHttpServer.layer` +
+   `McpServer.layerHttp` + `McpServer.registerToolkit(FiregridAgentToolkit)`.
+   Composition lifetime is managed by the consuming `Effect.scoped` /
+   `Layer.launch` scope; the layer does not install its own signal handler
+   or lifecycle manager.
+2. An MCP-shaped client (JSON-RPC over HTTP at the bound URL) can call
+   `initialize` and `tools/list` and observe exactly the six
+   `FiregridAgentToolkit` tools.
+3. The same client can call `sleep`; the request flows through
+   `McpServer.registerToolkit`, `FiregridAgentToolkitLayer`,
+   `ToolCallWorkflow.execute`, `toolUseToEffect`, and `DurableClock.sleep`.
+4. Malformed tool input maps to a `CallToolResult.isError === true` inside an
+   HTTP 200 response — no HTTP 500 and no Firegrid-custom protocol error.
+   Unknown tool names map to Effect AI's library-default JSON-RPC `-32602`
+   error response inside HTTP 200 (this is MCP's standard for an unrecognized
+   tool name; it is also not an HTTP 500 and not a Firegrid-custom error).
+5. The host-local MCP server does not expose Durable Streams tokens, provider
+   session handles, sandbox handles, or host credentials in `tools/list`,
+   structured content, logs, or generated agent config.
+6. No Firegrid-owned JSON-RPC parser, `tools/list` handler, `tools/call`
+   handler, wrapper toolkit, dynamic tool registry, or product-specific
+   transport package is introduced.
+7. Host-boot wiring (auto-mounting the MCP layer inside `src/host.ts` from
+   env config) is deferred until either route-based
+   `FiregridAgentToolContext` injection or a durable host/session record is
+   available (see §"Routing"); V1 ships the composition primitive and the
+   smoke, not the auto-mount.
+
+## V2: Durable Indirect Bridge
+
+After the host-owned localhost HTTP server is proven, add durable
+invocation/result state. This is the production shape for external agents,
+cross-process routing, retries, and restart recovery.
 
 ### Durable Facts
 
@@ -327,7 +448,7 @@ fact rather than scheduling duplicate workflow work.
 The bridge may remain mostly stateless: durable rows provide replay, dedup, and
 recovery. In-memory request waiters are an optimization, not correctness state.
 
-### V1 Validation
+### V2 Validation
 
 Required checks:
 
@@ -343,23 +464,16 @@ Required checks:
 
 ## Authentication And Routing
 
-V0 can run with local-only unauthenticated HTTP for development tests. Production
-mode needs explicit auth before the bridge can be installed into real agents.
+V1 is loopback-only and host-local. It may be unauthenticated because it is not a
+remote service boundary. Production remote mode needs explicit auth before the
+bridge can be installed into non-local agents.
 
 The bridge must not put Durable Streams tokens or Firegrid host credentials in
 the visible MCP tool catalog. Credentials belong in MCP client config, HTTP
 headers, signed URLs, or runtime-side bridge configuration.
 
-The bridge needs a context routing rule. For the first durable implementation,
-prefer an explicit bridge instance scoped to one runtime context:
-
-```
-/mcp/runtime-context/:contextId
-```
-
-That avoids accepting arbitrary `contextId` fields from agent tool arguments. The
-context id is bridge configuration, not an agent-visible tool input.
-
+The bridge must never put `contextId` in agent-visible tool input. Context id is
+bridge configuration, HTTP routing state, or token-scoped authorization state.
 Broader multi-context routing can be added later with signed invocation payloads
 or token-scoped context authorization.
 
@@ -368,7 +482,8 @@ or token-scoped context authorization.
 ```
 packages/runtime/src/agent-tools/
   tools.ts               // Tool.make(...) definitions + FiregridAgentToolkit
-  invocations-consumer.ts // V1 durable invocation consumer
+  mcp-host.ts            // V1 host-owned localhost MCP Layer composition
+  invocations-consumer.ts // V2 durable invocation consumer
   mcp-client.ts           // optional helper for codecs that bridge directly
 ```
 
@@ -386,7 +501,8 @@ themselves.
 - Per-agent descriptor variation.
 - Long-running per-context sidecar bridge as correctness state.
 - Browser/client API surface.
-- Implementing durable invocation/result rows in the first local smoke.
+- Separate MCP server process or stdio shim binary.
+- Implementing durable invocation/result rows in the first localhost server PR.
 
 ## Implementation Sequence
 
@@ -399,22 +515,29 @@ V0 (in-process):
    `built.handle(name, params)` so the same handler path that an MCP server
    would invoke is covered without the HTTP transport.
 3. Prove `McpServer.registerToolkit(FiregridAgentToolkit)` composes against
-   the toolkit as an Effect, with the toolkit's structural Effect AI plumbing
-   (`.tools` + `.toLayer` + `.toContext`) — i.e. there is no Firegrid wrapper
-   and no custom JSON-RPC stack.
+   the toolkit as an Effect. Firegrid acceptance does not assert private
+   toolkit structure; it asserts there is no Firegrid wrapper and no custom
+   JSON-RPC stack.
 
-V1 (durable indirect bridge + HTTP transport):
+V1 (host-owned localhost HTTP server):
 
 4. Wire `McpServer.registerToolkit(FiregridAgentToolkit)` into the local MCP
-   runtime composition under `McpServer.layerHttp`. Prove `tools/list`,
-   `sleep`, invalid input, and unknown tool end-to-end through the Effect AI
-   MCP HTTP layer with a real MCP client (`@modelcontextprotocol/sdk`
-   Streamable HTTP transport or MCP inspector).
-5. Add a Codex or MCP inspector local runbook against the same bridge URL.
-6. Add durable invocation/result facts and `invocations-consumer.ts`.
-7. Add restart and duplicate-invocation tests.
-8. Wire the bridge into the runtime host only after the HTTP transport proof
-   and durable indirect path are both green.
+   runtime composition under `McpServer.layerHttp`, provide
+   `NodeHttpServer.layer(...)`, and launch/build the Layer in the host's Effect
+   scope.
+5. Add host config for enabling the localhost server, loopback host, port, and
+   path. Keep default disabled until the smoke is reliable.
+6. Prove `tools/list`, `sleep`, invalid input, and unknown tool end-to-end
+   through the Effect AI MCP HTTP layer with a real MCP client
+   (`@modelcontextprotocol/sdk` Streamable HTTP transport or MCP inspector).
+7. Add a Codex or MCP inspector local runbook against the same bridge URL.
+
+V2 (durable indirect bridge):
+
+8. Add durable invocation/result facts and `invocations-consumer.ts`.
+9. Add restart and duplicate-invocation tests.
+10. Add remote/authenticated bridge support only after the localhost path and
+    durable indirect path are both green.
 
 The in-process Effect AI sandbox provider can run in parallel with V0 steps.
 It is not on the bridge critical path, but it should be available before
@@ -423,19 +546,16 @@ agent protocol issues.
 
 ## Open Questions
 
-1. What exact HTTP serving layer should runtime host use for local MCP smoke:
-   direct `McpServer.layerHttp`, a shared runtime HTTP router, or an
-   app-specific host route?
-2. Does Effect AI's MCP result mapping need Firegrid-specific customization for
+1. Does Effect AI's MCP result mapping need Firegrid-specific customization for
    long-running workflow tools, or are default `structuredContent` and JSON text
    content sufficient for v0?
-3. Should long-running calls use MCP tasks/progress notifications in v1, or is a
+2. Should long-running calls use MCP tasks/progress notifications in V2, or is a
    held `tools/call` response sufficient for the first durable path?
-4. Should catalog projection include output schemas as annotations even if MCP
+3. Should catalog projection include output schemas as annotations even if MCP
    clients do not require them for `tools/list`?
-5. What is the first real agent smoke target: Codex CLI, Claude Code, ACP sample
+4. What is the first real agent smoke target: Codex CLI, Claude Code, ACP sample
    agent, or MCP inspector?
-6. Do we need a direct official MCP SDK client in tests, or is Effect AI
+5. Do we need a direct official MCP SDK client in tests, or is Effect AI
    service-level testing sufficient until the local HTTP smoke is wired?
 
 ## Decision Log
@@ -468,9 +588,14 @@ agent protocol issues.
   drift, but exposure is an authority decision. `FiregridAgentToolkit` is the
   allowlist.
 - **Why V0 is direct.** Before adding durable invocation/result facts, prove the
-  protocol and descriptor projection with a real MCP-shaped layer. This keeps
-  the first failure surface small.
-- **Why V1 is durable.** External agents and process restarts need invocation and
+  toolkit, schema, handler, and MCP-registration shape without transport
+  lifecycle noise. This keeps the first failure surface small.
+- **Why V1 is host-owned localhost.** Host-local agents need a real MCP URL, but
+  they do not need another process owner. The host already owns the runtime
+  graph, workflow engine, clock firing, provider/sandbox seams, and child-agent
+  lifecycle. Launching the MCP server as an Effect Layer in the host scope keeps
+  startup, shutdown, logging, and failure semantics in one runtime.
+- **Why V2 is durable.** External agents and process restarts need invocation and
   result facts so tool calls are not lost if the bridge or runtime restarts.
 - **Why context routing is not a tool argument.** Agents should not choose which
   runtime context they control through tool input. Context routing belongs to
