@@ -1,9 +1,7 @@
 import { Workflow, WorkflowEngine } from "@effect/workflow"
-import { FetchHttpClient } from "@effect/platform"
 import type { Scope } from "effect"
-import { Duration, Effect, Fiber, Option, Schema } from "effect"
-import { DurableTableError, type DurableTableHeaders } from "effect-durable-operators"
-import { DurableStream } from "effect-durable-streams"
+import { Duration, Effect, Fiber, Match, Option } from "effect"
+import type { DurableTableError } from "effect-durable-operators"
 import {
   decodeWorkflowResult,
   encodeWorkflowResult,
@@ -25,9 +23,7 @@ const orDieTable = <A>(
 
 export const makeWorkflowEngine = (
   table: WorkflowEngineTableService,
-  streamUrl: string,
   workerId: string,
-  headers: DurableTableHeaders | undefined,
 ): Effect.Effect<WorkflowEngine.WorkflowEngine["Type"]> =>
   Effect.gen(function* () {
     const workflows = new Map<string, {
@@ -40,69 +36,21 @@ export const makeWorkflowEngine = (
     }>()
     const running = new Map<string, Fiber.RuntimeFiber<Workflow.Result<unknown, unknown>, never>>()
 
-    const appendActivityClaimInsert = (
-      row: WorkflowActivityClaimRow,
-    ) =>
-      // workflow-engine-durable-state.RUNTIME_BOUNDARY.5
-      // workflow-engine-durable-state.RUNTIME_BOUNDARY.6
-      DurableStream.define({
-        endpoint: {
-          url: streamUrl,
-          ...(headers !== undefined ? { headers } : {}),
-        },
-        schema: Schema.Unknown,
-      }).producer({
-        producerId: `firegrid.workflow.activityClaim:${row.claimKey}`,
-        lingerMs: 0,
-      }).pipe(
-        Effect.flatMap(producer =>
-          producer.append({
-            type: "firegrid.workflow.activityClaims",
-            key: row.claimKey,
-            value: row,
-            headers: {
-              operation: "insert",
-              txid: `firegrid.workflow.activityClaim:${row.claimKey}`,
-            },
-          }).pipe(Effect.zipRight(producer.flush)),
-        ),
-        Effect.provide(FetchHttpClient.layer),
-        Effect.scoped,
-      )
-
-    const waitForActivityClaim = (
-      claimKey: string,
-      remaining: number,
-    ): Effect.Effect<WorkflowActivityClaimRow | undefined, DurableTableError> =>
-      table.activityClaims.get(claimKey).pipe(
-        Effect.flatMap(existing => {
-          if (Option.isSome(existing) || remaining <= 0) {
-            return Effect.succeed(Option.getOrUndefined(existing))
-          }
-          return Effect.sleep("10 millis").pipe(
-            Effect.zipRight(waitForActivityClaim(claimKey, remaining - 1)),
-          )
-        }),
-      )
-
     const claimActivity = (row: WorkflowActivityClaimRow) =>
-      Effect.gen(function* () {
+      table.activityClaims.insertOrGet(row).pipe(
         // workflow-engine-durable-state.VALIDATION.6
         // workflow-engine-durable-state.RUNTIME_BOUNDARY.5
-        const existing = yield* table.activityClaims.get(row.claimKey).pipe(
-          Effect.map(Option.getOrUndefined),
-        )
-        if (existing !== undefined) return existing
-        yield* appendActivityClaimInsert(row).pipe(
-          Effect.mapError(cause => new DurableTableError({
-            table: "firegrid.workflow.activityClaims",
-            cause,
-          })),
-        )
-        const afterRace = yield* waitForActivityClaim(row.claimKey, 200)
-        if (afterRace !== undefined) return afterRace
-        return row
-      })
+        // firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.1
+        // firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.2
+        // firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.3
+        Effect.map(result =>
+          Match.value(result).pipe(
+            Match.tag("Inserted", () => row),
+            Match.tag("Found", ({ row: existing }) => existing),
+            Match.exhaustive,
+          ),
+        ),
+      )
 
     const resume = Effect.fnUntraced(function*(executionId: string) {
       const row = yield* orDieTable(table.executions.get(executionId).pipe(

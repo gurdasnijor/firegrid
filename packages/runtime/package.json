@@ -43,8 +43,7 @@
     "@effect/workflow": "0.18.1",
     "@firegrid/protocol": "workspace:*",
     "effect": "^3.18.0",
-    "effect-durable-operators": "workspace:*",
-    "effect-durable-streams": "workspace:*"
+    "effect-durable-operators": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -489,7 +489,7 @@ describe("durable workflow engine", () => {
     expect(result).toBe("registered")
   })
 
-  it("workflow-engine-durable-state.VALIDATION.6 claims a raced activity once across concurrent workers", async () => {
+  it("workflow-engine-durable-state.VALIDATION.6 firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.1 firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.2 firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.3 claims a raced activity once across concurrent workers", async () => {
     if (!baseUrl) throw new Error("server not started")
     const streamUrl = `${baseUrl}/v1/stream/workflow-activity-race-${crypto.randomUUID()}`
     let activityRuns = 0
@@ -536,5 +536,6 @@ describe("durable workflow engine", () => {
     expect(activityRuns).toBe(1)
     expect(claims).toHaveLength(1)
     expect(claims[0]?.claimKey).toContain("/race-once/")
+    expect(["worker-a", "worker-b"]).toContain(claims[0]?.workerId)
   })
 })
