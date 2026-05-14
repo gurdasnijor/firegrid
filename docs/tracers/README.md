@@ -45,6 +45,7 @@ must make that dependency explicit.
 - [016: Session Plane Input Control Surface](./016-session-plane-input-control-surface.md)
 - [017: Effect Durable Operators](./017-effect-durable-operators.md)
 - [018: Cluster-Shaped Workflow Activity Ownership](./018-cluster-shaped-workflow-activity-ownership.md)
+- [020: Verified Webhook Ingest To Durable Facts](./020-verified-webhook-ingest-to-durable-facts.md)
 
 ## Handoff
 
