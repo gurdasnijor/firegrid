@@ -75,6 +75,8 @@ export {
   WaitStatusSchema,
 } from "./durable-tools/index.ts"
 export {
+  AcpCapabilities,
+  AcpCodec,
   StdioJsonlCapabilities,
   StdioJsonlCodec,
 } from "./agent-codecs/index.ts"
