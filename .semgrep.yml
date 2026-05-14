@@ -24,4 +24,554 @@ rules:
       process.env reads belong at the binary entry boundary, scripts, or tests.
       In application code use Effect Config or accept configuration as an
       explicit parameter.
-    pattern: process.env.$ANY
+    pattern-either:
+      - pattern: process.env.$ANY
+      - pattern: process.env[$ANY]
+      - pattern: globalThis.process.env.$ANY
+      - pattern: globalThis.process.env[$ANY]
+
+  - id: firegrid-no-date-now
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-correctness
+      rationale: |
+        Date.now() is non-deterministic and not replay-safe. Inside Effect code,
+        workflow handlers, and durable-row construction, use Clock.currentTimeMillis
+        or accept a timestamp from the caller's Effect scope.
+      fix-hint: |
+        yield* Clock.currentTimeMillis
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+        - "/packages/*/src/bin/**"
+        - "/apps/*/src/bin/**"
+    message: |
+      Date.now() is not replay-safe. Use Clock.currentTimeMillis inside Effect
+      code or accept a timestamp resolved by the caller's Effect scope.
+    pattern: Date.now()
+
+  - id: firegrid-no-new-date-iso-in-library
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-correctness
+      rationale: |
+        new Date().toISOString() bypasses Clock and can introduce
+        non-determinism in durable rows or workflow-observable values.
+      fix-hint: |
+        Clock.currentTimeMillis.pipe(Effect.map(ms => new Date(ms).toISOString()))
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/__tests__/**"
+        - "/packages/*/src/bin/**"
+    message: |
+      new Date().toISOString() is not replay-safe in library code. Use
+      Clock.currentTimeMillis or accept a pre-resolved timestamp parameter.
+    pattern: new Date().toISOString()
+
+  - id: firegrid-no-effect-run-in-library
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-correctness
+      rationale: |
+        Effect.runPromise / Effect.runSync / Effect.runFork inside library code
+        starts a detached fiber that does not inherit the calling fiber's scope,
+        context, or supervisor. When bridging callback-shaped APIs, capture the
+        runtime once via Effect.runtime and use Runtime.runPromise(runtime).
+      fix-hint: |
+        const runtime = yield* Effect.runtime<never>()
+        const runPromise = Runtime.runPromise(runtime)
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+        - "/packages/*/src/bin/**"
+        - "/apps/*/src/bin/**"
+    message: |
+      Effect.runPromise/runSync/runFork inside library code starts a detached
+      fiber. Use Runtime.runPromise(yield* Effect.runtime<never>()) to bridge
+      callback APIs while preserving fiber context.
+    pattern-either:
+      - pattern: Effect.runPromise(...)
+      - pattern: Effect.runSync(...)
+      - pattern: Effect.runFork(...)
+      - pattern: Effect.runPromiseExit(...)
+      - pattern: Effect.runSyncExit(...)
+
+  - id: firegrid-no-manual-tagged-error-type
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-idioms
+      rationale: |
+        Manual tagged-error type aliases and interfaces reimplement
+        Data.TaggedError and Schema.TaggedError without yieldable errors,
+        instanceof support, Effect.catchTag narrowing, or Schema encoders.
+      fix-hint: |
+        class Foo extends Data.TaggedError("Foo")<{ ... }> {}
+        class Foo extends Schema.TaggedError<Foo>()("Foo", { ... }) {}
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      Tagged error declared as a type alias or interface. Use
+      Data.TaggedError or Schema.TaggedError instead.
+    pattern-regex: '\b(type|interface)\s+[A-Za-z0-9_]+\s*=?\s*\{[^}]*readonly\s+_tag\s*:\s*["''][A-Za-z0-9_.:-]+["'']'
+
+  - id: firegrid-no-inline-tagged-error-fail
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-idioms
+      rationale: |
+        Inline tagged-error objects duplicate tag strings across call sites and
+        can drift from canonical Data.TaggedError or Schema.TaggedError classes.
+      fix-hint: |
+        yield* new MyError({ ... })
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      Inline tagged-error object passed to Effect.fail. Use a Data.TaggedError
+      or Schema.TaggedError class instead.
+    pattern: 'Effect.fail({ _tag: "...", ... })'
+
+  - id: firegrid-prefer-match-tag-over-switch
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-idioms
+      rationale: |
+        switch (x._tag) does not enforce exhaustiveness without manual never
+        checks. Match.value(x).pipe(Match.tag(...), Match.exhaustive) does.
+      fix-hint: |
+        Match.value(event).pipe(
+          Match.tag("A", handleA),
+          Match.exhaustive,
+        )
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      Switching on _tag reimplements Match.tag. Use Match.value().pipe(
+      Match.tag(...), Match.exhaustive) for compile-time exhaustiveness.
+    pattern-regex: '\bswitch\s*\([^)]*\._tag\s*\)'
+
+  - id: firegrid-no-promise-chain-in-effect-code
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-idioms
+      rationale: |
+        Promise chains inside library code usually reimplement Effect.tryPromise
+        and Effect.matchEffect, and keep running outside the surrounding Effect
+        scope.
+      fix-hint: |
+        Effect.tryPromise({ try: () => somePromise(), catch: cause => ... })
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+        - "/packages/*/src/bin/**"
+        - "/apps/*/src/bin/**"
+        - "**/*.d.ts"
+    message: |
+      Promise-chain .then/.catch inside library code. Use Effect.tryPromise
+      for the boundary and Effect.matchEffect / Effect.flatMap / Effect.catchAll
+      for result handling.
+    patterns:
+      - pattern-not-inside: |
+          Effect.sync(() => {
+            ...
+          })
+      - pattern-either:
+          - pattern: $PROMISE.then(...).catch(...)
+          - pattern: $PROMISE.catch(...).then(...)
+
+  - id: firegrid-tryPromise-single-await
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-idioms
+      rationale: |
+        Multiple awaits inside one Effect.tryPromise body collapse distinct
+        failures into one catch block and weaken error attribution.
+      fix-hint: |
+        Split into one Effect.tryPromise per Promise and compose with Effect.gen.
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      Effect.tryPromise body contains multiple awaits. Split into one
+      tryPromise per Promise so errors are attributed to the right operation.
+    pattern: |
+      Effect.tryPromise({
+        try: async () => {
+          await $A
+          ...
+          await $B
+          ...
+        },
+        ...
+      })
+
+  - id: firegrid-no-inline-stream-url-construction
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: schema-authority
+      rationale: |
+        Authority-bearing stream names and URLs must be encoded from the
+        canonical schema that owns the authority instead of reconstructed with
+        inline strings at call sites.
+      fix-hint: |
+        Encode host/context stream authority through schema transforms or table
+        layer constructors.
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+        - "/packages/*/src/runtime-host/internal/**"
+        - "/packages/*/src/host-context-authority/**"
+        - "/packages/runtime/src/agent-tools/mcp-host.ts"
+        - "/packages/*/src/**/schema.ts"
+        - "/packages/*/src/**/table.ts"
+        - "/packages/runtime/src/workflow-engine/internal/table.ts"
+    message: |
+      Inline durable stream URL or namespace construction. Authority-bearing
+      strings must come from schema/table encoders, not call-site strings.
+    pattern-either:
+      - pattern-regex: '\$\{[^}]+\}\.firegrid\.host\.\$\{[^}]+\}\.(runtime|runtimeIngress|runtimeOutput|workflow|durableTools|verifiedWebhook|agentTools)'
+      - pattern-regex: '\$\{[^}]+\}\.firegrid\.(runtime|workflow|runtimeIngress|runtimeOutput|durableTools|verifiedWebhook|agentTools)'
+      - pattern-regex: '"firegrid\.(runtime|workflow|runtimeIngress|runtimeOutput|durableTools|verifiedWebhook|agentTools)"'
+
+  - id: firegrid-runtime-context-workflow-requires-local-authority
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: host-context-authority
+      rationale: |
+        RuntimeContextWorkflow execution is local host authority. Direct
+        WorkflowEngine.execute bypasses RuntimeContext.host ownership checks.
+    paths:
+      include:
+        - "/packages/runtime/src/**/*.ts"
+        - "/apps/*/src/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Direct RuntimeContextWorkflow execution bypasses local context authority.
+      Resolve through requireLocalContext before executing local host services.
+    pattern: $ENGINE.execute(RuntimeContextWorkflow, ...)
+
+  - id: firegrid-no-random-durable-identity
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: host-context-authority
+      rationale: |
+        Durable identity fields such as hostId and workerId must be stable
+        across process restarts. Random durable ids orphan host-owned streams,
+        workflow claims, clocks, and scheduled work.
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/src/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Durable identity generated from crypto.randomUUID(). Identity must come
+      from stable config/storage; only per-request txids and session-bound ids
+      may be random.
+    pattern-regex: '((hostId|workerId|durableExecutionId)\s*[:=]\s*crypto\.randomUUID\(\)|`(host|worker|durableExecution)[_-]\$\{crypto\.randomUUID\(\)\}`)'
+
+  - id: firegrid-no-raw-stream-authority-string-schema
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: schema-authority
+      rationale: |
+        Authority-bearing stream strings should decode through the canonical
+        schema transform, not accept any string with only an annotation.
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/__tests__/**"
+    message: |
+      Raw Schema.String annotated as stream authority accepts invalid authority
+      strings. Use the canonical transform/validated schema.
+    pattern: Schema.String.pipe(streamAuthority)
+
+  - id: firegrid-no-mutable-identity-let
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: identity-correctness
+      rationale: |
+        Placeholder identity values create a window where a valid-looking but
+        semantically invalid sessionId/contextId/hostId can be observed.
+      fix-hint: |
+        Sequence initialization so the identity is const before first use.
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      let declaration for an identity field initialized to a placeholder.
+      Sequence initialization so the identity is const before first use.
+    patterns:
+      - pattern-either:
+          - pattern: 'let $NAME: string = ""'
+          - pattern: 'let $NAME = ""'
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: '.*(sessionId|contextId|hostId).*'
+
+  - id: firegrid-fire-and-forget-promise-uses-fork
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-idioms
+      rationale: |
+        void-prefixed Promise work is fire-and-forget. Inside Effect scopes,
+        Effect.fork or Effect.forkScoped ties the work to parent fiber scope.
+      fix-hint: |
+        yield* effect.pipe(Effect.forkScoped)
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+        - "/packages/*/src/bin/**"
+        - "/apps/*/src/bin/**"
+    message: |
+      Fire-and-forget Promise with void prefix. Inside Effect scopes, use
+      Effect.fork or Effect.forkScoped.
+    patterns:
+      - pattern-not-inside: |
+          Effect.sync(() => {
+            ...
+          })
+      - pattern-either:
+          - pattern: void $PROMISE.then(...)
+          - pattern: void $PROMISE.then(...).catch(...)
+
+  - id: firegrid-no-detached-promise-in-effect-sync
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-idioms
+      rationale: |
+        Effect.sync(() => { void promise.then(...) }) launches Promise work that
+        escapes the Effect scope. Errors are unattributed and cancellation does
+        not propagate.
+      fix-hint: |
+        Effect.tryPromise({ try: () => promise, catch: cause => ... }).pipe(Effect.forkScoped)
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/__tests__/**"
+    message: |
+      Detached Promise inside Effect.sync escapes Effect scope. Use
+      Effect.tryPromise(...).pipe(Effect.forkScoped).
+    patterns:
+      - pattern-inside: |
+          Effect.sync(() => {
+            ...
+          })
+      - pattern-either:
+          - pattern: void $PROMISE.then(...)
+          - pattern: void $PROMISE.then(...).catch(...)
+
+  - id: firegrid-match-should-be-exhaustive
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-idioms
+      rationale: |
+        Match expressions should end with Match.exhaustive or Match.orElse so
+        unhandled cases cannot silently produce undefined.
+      fix-hint: |
+        Match.value(x).pipe(..., Match.exhaustive)
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+    message: |
+      Match expression does not end with Match.exhaustive or Match.orElse.
+    pattern-regex: 'Match\.value\([^)]*\)\.pipe\(\s*(?:[^()]|\([^)]*\)|\n)*Match\.tag\([^)]*\),\s*\)'
+
+  - id: firegrid-mutable-state-in-effect-gen
+    languages: [typescript]
+    severity: WARNING
+    metadata:
+      acid: firegrid-remediation-hardening.STATIC_QUALITY.13
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: effect-idioms
+      rationale: |
+        Direct Map mutation inside Effect.gen mixes mutable state with
+        effectful code. Prefer Effect.sync wrappers for visibility or Ref
+        state for fully Effect-managed mutation.
+      fix-hint: |
+        yield* Effect.sync(() => map.set(key, value))
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/packages/*/src/**/*.tsx"
+        - "/apps/*/src/**/*.ts"
+        - "/apps/*/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+    message: |
+      Direct mutable Map state mutation inside Effect.gen. Wrap in Effect.sync
+      for visibility, or use Ref<HashMap> for Effect-managed state.
+    patterns:
+      - pattern-inside: |
+          Effect.gen(function* () {
+            ...
+          })
+      - pattern-not-inside: Effect.sync(...)
+      - pattern-either:
+          - pattern: $MAP.set($K, $V)
+          - pattern: $MAP.delete($K)
+          - pattern: $MAP.clear()
+      - metavariable-regex:
+          metavariable: $MAP
+          regex: '^[a-z][A-Za-z0-9_]*(\.[a-z][A-Za-z0-9_]*)?$'
