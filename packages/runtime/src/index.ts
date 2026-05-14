@@ -27,6 +27,13 @@ export {
   type EnvLookup,
   type RuntimeEnvResolverPolicyValue,
 } from "./providers/sandboxes/secrets.ts"
+// firegrid-effect-ai-inprocess-provider.SANDBOX_PROVIDER.1
+export {
+  effectAi,
+  EffectAiSandboxProvider,
+  type EffectAiSandboxConfig,
+  type EffectAiSandboxProviderHelper,
+} from "./providers/sandboxes/effect-ai.ts"
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5..8
 export {
   RunAuthorizedBindingSchema,

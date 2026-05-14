@@ -7,17 +7,21 @@ import {
 import { Effect, Layer, Queue, Runtime, type Scope, Stream } from "effect"
 import type { AgentByteStream } from "../../agent-io/index.ts"
 import {
-  defaultCapabilities,
-  findRunningSandbox,
   type ExecutionResult,
   type ProcessOutputChunk,
   type Sandbox,
   type SandboxCommand,
   type SandboxConfig,
   SandboxProvider,
-  SandboxProviderError,
+  type SandboxProviderError,
   type SandboxProviderService,
 } from "./SandboxProvider.ts"
+import {
+  makeInMemorySandboxStore,
+  makeSandboxProviderService,
+  sandboxProviderError,
+  withExecutionDuration,
+} from "./internal-provider.ts"
 
 const providerName = "local-process"
 
@@ -73,12 +77,7 @@ const commandError = (
   message: string,
   cause?: unknown,
 ): SandboxProviderError =>
-  new SandboxProviderError({
-    provider: providerName,
-    op,
-    message,
-    ...(cause === undefined ? {} : { cause }),
-  })
+  sandboxProviderError(providerName, op, message, cause)
 
 const buildCommand = (
   options: LocalProcessSandboxProviderOptions,
@@ -109,24 +108,6 @@ const buildCommand = (
     if (cwd !== undefined) built = built.pipe(Command.workingDirectory(cwd))
     return built
   })
-
-const sandboxFromConfig = (
-  id: string,
-  config: SandboxConfig,
-): Sandbox => ({
-  id,
-  provider: providerName,
-  state: "running",
-  labels: config.labels ?? {},
-  createdAt: new Date().toISOString(),
-  connectionInfo: {},
-  metadata: {},
-})
-
-const unsupported = (
-  op: string,
-): Effect.Effect<void, SandboxProviderError> =>
-  Effect.fail(commandError(op, `local process provider does not support ${op}`))
 
 // firegrid agent-io: convert an @effect/platform Process's Effect-shaped
 // stdio into the WHATWG web streams that codecs consume. stdout/stderr
@@ -175,24 +156,7 @@ const makeLocalProcessSandboxProvider = (
   commandExecutor: CommandExecutor,
   options: LocalProcessSandboxProviderOptions = {},
 ): SandboxProviderService => {
-  const sandboxes = new Map<string, SandboxConfig>()
-
-  const create = (config: SandboxConfig) =>
-    Effect.sync(() => {
-      const id = `local-process:${crypto.randomUUID()}`
-      sandboxes.set(id, config)
-      return sandboxFromConfig(id, config)
-    })
-
-  const find = (labels: Record<string, string>) =>
-    Effect.sync(() =>
-      findRunningSandbox(
-        Array.from(sandboxes, ([id, config]) => sandboxFromConfig(id, config))
-          .filter(sandbox =>
-            Object.entries(labels).every(([key, value]) => sandbox.labels[key] === value),
-          ),
-      ),
-    )
+  const store = makeInMemorySandboxStore(providerName)
 
   const stream = (
     sandbox: Sandbox,
@@ -200,10 +164,7 @@ const makeLocalProcessSandboxProvider = (
   ): Stream.Stream<ProcessOutputChunk, SandboxProviderError> =>
     Stream.unwrapScoped(
       Effect.gen(function* () {
-        const config = sandboxes.get(sandbox.id)
-        if (config === undefined) {
-          return yield* commandError("stream", `sandbox not found: ${sandbox.id}`)
-        }
+        const config = yield* store.configFor(sandbox, "stream")
         const built = yield* buildCommand(options, config, command)
         const process = yield* commandExecutor.start(built).pipe(
           Effect.mapError(cause =>
@@ -278,13 +239,7 @@ const makeLocalProcessSandboxProvider = (
     command: SandboxCommand,
   ) =>
     Effect.gen(function* () {
-      const config = sandboxes.get(sandbox.id)
-      if (config === undefined) {
-        return yield* commandError(
-          "openBytePipe",
-          `sandbox not found: ${sandbox.id}`,
-        )
-      }
+      const config = yield* store.configFor(sandbox, "openBytePipe")
       const built = yield* buildCommand(options, config, command)
       const process = yield* Effect.acquireRelease(
         commandExecutor.start(built).pipe(
@@ -304,63 +259,44 @@ const makeLocalProcessSandboxProvider = (
   const execute = (
     sandbox: Sandbox,
     command: SandboxCommand,
-  ): Effect.Effect<ExecutionResult, SandboxProviderError> => {
-    const startedAt = Date.now()
-    const stdout: Array<string> = []
-    const stderr: Array<string> = []
-    let exitCode = 1
-    return stream(sandbox, command).pipe(
-      Stream.runForEach(chunk =>
-        Effect.sync(() => {
-          if (chunk.type === "exit") {
-            exitCode = chunk.exitCode
-          } else if (chunk.channel === "stdout") {
-            stdout.push(chunk.text)
-          } else {
-            stderr.push(chunk.text)
-          }
-        }),
-      ),
-      Effect.map(() => ({
+  ): Effect.Effect<ExecutionResult, SandboxProviderError> =>
+    withExecutionDuration(Effect.gen(function* () {
+      const stdout: Array<string> = []
+      const stderr: Array<string> = []
+      let exitCode = 1
+      yield* stream(sandbox, command).pipe(
+        Stream.runForEach(chunk =>
+          Effect.sync(() => {
+            if (chunk.type === "exit") {
+              exitCode = chunk.exitCode
+            } else if (chunk.channel === "stdout") {
+              stdout.push(chunk.text)
+            } else {
+              stderr.push(chunk.text)
+            }
+          }),
+        ),
+      )
+      return {
         exitCode,
         stdout: stdout.join("\n"),
         stderr: stderr.join("\n"),
-        durationMs: Date.now() - startedAt,
-        truncated: false,
-        timedOut: false,
-      })),
-    )
-  }
+      }
+    }))
 
-  return {
+  return makeSandboxProviderService({
     name: providerName,
     capabilities: {
-      ...defaultCapabilities,
       streaming: true,
     },
     // firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1
     // firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.4
     // firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.5
-    create,
-    getOrCreate: config =>
-      Effect.gen(function* () {
-        const labels = config.labels ?? {}
-        if (Object.keys(labels).length > 0) {
-          const existing = yield* find(labels)
-          if (existing !== undefined) return existing
-        }
-        return yield* create(config)
-      }),
-    find,
+    store,
     execute,
-    executeMany: (sandbox, commands) =>
-      Effect.forEach(commands, command => execute(sandbox, command)),
     stream,
     openBytePipe,
-    upload: (_sandbox, _localPath, _remotePath) => unsupported("upload"),
-    download: (_sandbox, _remotePath, _localPath) => unsupported("download"),
-    destroy: sandbox => Effect.sync(() => sandboxes.delete(sandbox.id)),
-  }
+  })
 }
 
 export const LocalProcessSandboxProvider = {
