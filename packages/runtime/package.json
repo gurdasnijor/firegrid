@@ -20,6 +20,10 @@
     "./durable-tools": {
       "types": "./src/durable-tools/index.ts",
       "default": "./src/durable-tools/index.ts"
+    },
+    "./agent-io": {
+      "types": "./src/agent-io/index.ts",
+      "default": "./src/agent-io/index.ts"
     }
   },
   "files": [
