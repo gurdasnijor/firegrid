@@ -49,14 +49,14 @@
     "@effect/platform-node": "^0.106.0",
     "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
-    "effect": "^3.18.0"
+    "effect": "^3.21.2"
   },
   "devDependencies": {
+    "@durable-streams/server": "^0.3.1",
     "@effect/eslint-plugin": "^0.3.2",
     "@effect/language-service": "^0.85.1",
     "@eslint/js": "^10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",
-    "@durable-streams/server": "^0.3.1",
     "dependency-cruiser": "^17.4.0",
     "eslint": "^10.3.0",
     "globals": "^17.6.0",

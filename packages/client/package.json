@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@firegrid/protocol": "workspace:*",
-    "effect": "^3.18.0"
+    "effect": "^3.21.2"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

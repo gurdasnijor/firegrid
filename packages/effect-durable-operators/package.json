@@ -53,12 +53,12 @@
   "devDependencies": {
     "@durable-streams/client": "^0.2.3",
     "@durable-streams/state": "^0.2.5",
-    "@effect/platform": "^0.96.0",
+    "@effect/platform": "^0.96.1",
     "@tanstack/db": "^0.5.33",
     "@tanstack/react-db": "0.1.77",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.28",
-    "effect": "^3.18.0",
+    "effect": "^3.21.2",
     "react": "^18.3.1",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"

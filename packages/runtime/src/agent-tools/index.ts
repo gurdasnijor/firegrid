@@ -1,19 +1,35 @@
 /**
  * `@firegrid/runtime/agent-tools`
  *
- * Canonical Firegrid agent-tool descriptor manifest plus host-side
- * lowering of `ToolUse` events to `ToolResult` events. The descriptor
- * set is the *public contract* codecs publish; the match expression in
- * `tool-use-to-effect.ts` is the host implementation.
+ * Canonical Firegrid agent tools as Effect AI `Tool` values collected
+ * with `Toolkit.make(...)` (`FiregridAgentToolkit`), plus the host-side
+ * lowering of `ToolUse` events to `ToolResult` events in
+ * `toolUseToEffect`.
+ *
+ * The toolkit is the public exposure manifest:
+ *   `McpServer.registerToolkit(FiregridAgentToolkit)` projects it to
+ *   MCP; downstream codecs read `Tool.name`, `Tool.description`,
+ *   `Tool.parametersSchema`, and `Tool.successSchema` directly.
+ *
+ * Schemas live in `@firegrid/protocol/agent-tools` and are imported
+ * once. There is no separate Firegrid descriptor registry.
  */
 
 export {
-  FiregridAgentTools,
-  firegridAgentToolCatalog,
-  firegridAgentToolNames,
-  type FiregridAgentToolDescriptor,
-  type FiregridAgentToolName,
-} from "./descriptors.ts"
+  ExecuteTool,
+  FiregridAgentToolContext,
+  FiregridAgentToolkit,
+  FiregridAgentToolkitLayer,
+  FiregridMcpToolFailureSchema,
+  ScheduleMeTool,
+  SleepTool,
+  SpawnAllTool,
+  SpawnTool,
+  ToolCallWorkflow,
+  ToolCallWorkflowLayer,
+  WaitForTool,
+  type FiregridMcpToolFailure,
+} from "./tools.ts"
 export {
   formatToolError,
   toolCancelled,

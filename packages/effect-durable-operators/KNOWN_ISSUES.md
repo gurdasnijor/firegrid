@@ -138,6 +138,42 @@ Pinned by effect-durable-operators.TABLE.24.
 
 ---
 
+## 6. Hand-rolled random IDs in Effect AI-facing code
+
+**Status:** Open guidance.
+
+### Symptom
+
+Runtime and test code that integrates with Effect AI or agent tools can drift
+into ad hoc `crypto.randomUUID()` / random string helpers for tool-call,
+session, or invocation IDs.
+
+### Why this is a problem
+
+Effect AI already provides `IdGenerator` as a service:
+
+- `repos/effect/packages/ai/ai/src/IdGenerator.ts`
+
+Using that service keeps ID generation injectable, testable, and consistent
+with Effect AI's tool/provider surface. Hand-rolled IDs make deterministic tests
+and workflow replay boundaries harder to reason about.
+
+### Workaround
+
+When adding new Effect AI-facing code, depend on `IdGenerator.IdGenerator` or
+provide an `IdGenerator.layer(...)` with the desired prefix. Keep deterministic
+workflow identities derived from durable event ids or idempotency keys; use
+`IdGenerator` for non-durable protocol/tool-call IDs that still need a common
+service.
+
+### Resolution plan
+
+Audit agent-tool and provider code as it moves to Effect AI. Replace local random
+helpers with `IdGenerator` where the id is not already a durable deterministic
+identity.
+
+---
+
 ## How to add an entry to this file
 
 When you hit a `DurableTable` (or wider operators-package) bug that survives

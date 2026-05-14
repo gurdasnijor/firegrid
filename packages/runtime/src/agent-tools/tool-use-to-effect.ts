@@ -3,13 +3,13 @@
  * agent tools.
  *
  * Given a Phase 1 `ToolUse` output event:
- *   1. Look up the descriptor in `FiregridAgentTools` by `event.name`.
- *   2. Decode `event.input` against `descriptor.inputSchema`.
- *   3. Dispatch the validated invocation to the matching arm via
- *      `Match.exhaustive`.
- *   4. Catch every failure (lookup miss, decode error, tool-arm error,
- *      output schema mismatch) and surface it as a `ToolResult` input
- *      event with `isError: true`.
+ *   1. Switch on `event.name` against the canonical tool name set.
+ *   2. Decode `event.input` against the matching protocol Effect Schema
+ *      from `@firegrid/protocol/agent-tools`.
+ *   3. Dispatch the validated invocation to the matching arm.
+ *   4. Catch every failure (unknown name, decode error, tool-arm error,
+ *      defect) and surface it as a `ToolResult` input event with
+ *      `isError: true`.
  *
  * Per `agent-codec-runtime-tools.md/agent-tool-layer-phase-2.md`:
  *  - Tool failures are NOT workflow failures — the agent receives a
@@ -18,9 +18,10 @@
  *    `Effect.orDie` or defects to satisfy that constraint; they must
  *    return typed expected errors that the outer wrapper converts to a
  *    `ToolResult` event.
- *  - The descriptor set is the public contract. The match expression is
- *    the implementation. Adding a tool requires a protocol Effect Schema
- *    plus a descriptor plus a match arm.
+ *  - `FiregridAgentToolkit` (the Effect AI `Toolkit.make` allowlist in
+ *    `tools.ts`) is the public exposure contract. This `name`-switch
+ *    is the host implementation: a new tool requires a protocol Effect
+ *    Schema, a `Tool.make` entry in the toolkit, and a new arm here.
  *
  * Anchors:
  *  - firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.3
@@ -30,16 +31,22 @@
 
 import { DurableClock, type WorkflowEngine } from "@effect/workflow"
 import {
+  ExecuteToolInputSchema,
+  ScheduleMeToolInputSchema,
+  SleepToolInputSchema,
+  SpawnAllToolInputSchema,
+  SpawnToolInputSchema,
+  WaitForToolInputSchema,
   type EventQuery,
   type ExecuteToolInput,
   type ScheduleMeToolInput,
+  type ScheduleMeToolOutput,
   type SleepToolInput,
   type SleepToolOutput,
   type SpawnAllToolInput,
   type SpawnAllToolOutput,
   type SpawnToolInput,
   type SpawnToolOutput,
-  type ScheduleMeToolOutput,
   type WaitForToolInput,
   type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
@@ -53,7 +60,6 @@ import {
 import {
   type AgentInputEvent,
   type AgentOutputEvent,
-  type AgentToolDescriptor,
   type PromptContent,
 } from "../agent-io/index.ts"
 import {
@@ -61,7 +67,6 @@ import {
   type DurableToolsTable,
   type FieldEqualsTrigger,
 } from "../durable-tools/index.ts"
-import { FiregridAgentTools } from "./descriptors.ts"
 import { ScheduledInputWorkflow } from "./scheduled-input-workflow.ts"
 import { AgentToolHost } from "./tool-host.ts"
 import {
@@ -127,9 +132,9 @@ const eventQueryToTrigger = (
 // ---------------------------------------------------------------------------
 // Per-arm runners
 //
-// Each arm receives the typed decoded input from its descriptor's
-// `inputSchema` and returns the typed output that the descriptor's
-// `outputSchema` declares. TypeScript therefore checks the
+// Each arm receives the typed decoded input from its
+// `@firegrid/protocol/agent-tools` input schema and returns the typed
+// output that the same protocol module declares. TypeScript checks the
 // schema-to-arm coupling at compile time: if a shared protocol schema
 // changes shape, the corresponding arm's body fails to compile rather
 // than silently passing the wrong payload to a primitive.
@@ -285,7 +290,7 @@ const runExecuteTool = (
   })
 
 // ---------------------------------------------------------------------------
-// Typed descriptor-driven dispatch
+// Typed protocol-schema dispatch
 // ---------------------------------------------------------------------------
 
 type ToolEnvironment =
@@ -296,20 +301,22 @@ type ToolEnvironment =
   | AgentToolHost
 
 /**
- * Decode `event.input` against the concrete descriptor's `inputSchema`,
- * pass the typed result to the arm, wrap the arm's typed output in a
- * `ToolResult` event, and catch every failure path into an
- * `isError: true` event. The descriptor parameter binds I and O to the
- * arm's parameter and result types — schema changes break the
- * corresponding arm at compile time rather than hiding behind an `as`
- * cast.
+ * Decode `event.input` against the concrete `@firegrid/protocol`
+ * input Schema, pass the typed result to the arm, wrap the arm's
+ * typed output in a `ToolResult` event, and catch every failure path
+ * into an `isError: true` event. The schema parameter binds `I` and
+ * `O` to the arm's parameter and result types — schema changes break
+ * the corresponding arm at compile time rather than hiding behind an
+ * `as` cast.
  */
 const dispatchTool = <I, O, R>(
   event: ToolUseEvent,
-  descriptor: AgentToolDescriptor<I, O>,
+  toolName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the encoded side is per-schema and orthogonal to dispatch.
+  parametersSchema: Schema.Schema<I, any>,
   arm: (input: I) => Effect.Effect<O, ToolError, R>,
 ): Effect.Effect<ToolResultEvent, never, R> =>
-  Schema.decodeUnknown(descriptor.inputSchema)(event.input).pipe(
+  Schema.decodeUnknown(parametersSchema)(event.input).pipe(
     Effect.matchEffect({
       onFailure: (cause) => {
         if (cause instanceof ParseResult.ParseError) {
@@ -317,7 +324,7 @@ const dispatchTool = <I, O, R>(
             toolErrorResult(
               toolInvalidInputFromParseError(
                 event.toolUseId,
-                descriptor.name,
+                toolName,
                 cause,
               ),
             ),
@@ -325,7 +332,7 @@ const dispatchTool = <I, O, R>(
         }
         return Effect.succeed(
           toolErrorResult(
-            toolExecutionFailed(event.toolUseId, descriptor.name, cause),
+            toolExecutionFailed(event.toolUseId, toolName, cause),
           ),
         )
       },
@@ -336,7 +343,7 @@ const dispatchTool = <I, O, R>(
           Effect.catchAllDefect((defect) =>
             Effect.succeed(
               toolErrorResult(
-                toolExecutionFailed(event.toolUseId, descriptor.name, defect),
+                toolExecutionFailed(event.toolUseId, toolName, defect),
               ),
             ),
           ),
@@ -354,17 +361,18 @@ const dispatchTool = <I, O, R>(
  * `ToolResult` events with `isError: true`. The outer error channel is
  * `never`: tool failures are NOT workflow failures.
  *
- * Dispatch switches on `event.name` and looks up the concrete
- * descriptor in `FiregridAgentTools` so each arm receives its decoded
- * input typed by the descriptor's `inputSchema` and returns the typed
- * output declared by the descriptor's `outputSchema` — no per-arm `as`
- * casts. Adding a tool requires (a) a protocol Effect Schema, (b) a
- * descriptor entry in `FiregridAgentTools`, and (c) a new `case` here
- * pointing at a typed arm. Removing a tool requires removing the case
- * (exhaustiveness is enforced via the `never`-typed default).
+ * Dispatch switches on `event.name` and decodes against the canonical
+ * protocol input Schema for that name. Each arm receives the typed
+ * decoded input from its `@firegrid/protocol/agent-tools` schema and
+ * returns the typed output declared by the same protocol module — so a
+ * future schema change breaks the corresponding arm at compile time
+ * rather than hiding behind an `as` cast. Adding a tool requires
+ * (a) a protocol Effect Schema, (b) a new `case` here pointing at a
+ * typed arm, and (c) a matching `Tool.make(...)` entry in
+ * `FiregridAgentToolkit` (the exposure manifest in `tools.ts`).
  *
  * Implements:
- *  - agent-codec-runtime-tools.md/agent-tool-layer-phase-2 §"The function"
+ *  - SDD_FIREGRID_AGENT_TOOLS_MCP_BRIDGE.md §"Runtime Semantics"
  *  - firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.3
  *  - firegrid-scheduling-tool-bindings.IDENTICAL_DURABLE_LOWERING.1
  */
@@ -374,27 +382,33 @@ export const toolUseToEffect = (
 ): Effect.Effect<ToolResultEvent, never, ToolEnvironment> => {
   switch (event.name) {
     case "sleep":
-      return dispatchTool(event, FiregridAgentTools.sleep, (input) =>
+      return dispatchTool(event, "sleep", SleepToolInputSchema, (input) =>
         runSleepTool(event.toolUseId, input),
       )
     case "wait_for":
-      return dispatchTool(event, FiregridAgentTools.wait_for, (input) =>
+      return dispatchTool(event, "wait_for", WaitForToolInputSchema, (input) =>
         runWaitForTool(event.toolUseId, input),
       )
     case "spawn":
-      return dispatchTool(event, FiregridAgentTools.spawn, (input) =>
+      return dispatchTool(event, "spawn", SpawnToolInputSchema, (input) =>
         runSpawnTool(ctx, event.toolUseId, input),
       )
     case "spawn_all":
-      return dispatchTool(event, FiregridAgentTools.spawn_all, (input) =>
-        runSpawnAllTool(ctx, event.toolUseId, input),
+      return dispatchTool(
+        event,
+        "spawn_all",
+        SpawnAllToolInputSchema,
+        (input) => runSpawnAllTool(ctx, event.toolUseId, input),
       )
     case "schedule_me":
-      return dispatchTool(event, FiregridAgentTools.schedule_me, (input) =>
-        runScheduleMeTool(ctx, event.toolUseId, input),
+      return dispatchTool(
+        event,
+        "schedule_me",
+        ScheduleMeToolInputSchema,
+        (input) => runScheduleMeTool(ctx, event.toolUseId, input),
       )
     case "execute":
-      return dispatchTool(event, FiregridAgentTools.execute, (input) =>
+      return dispatchTool(event, "execute", ExecuteToolInputSchema, (input) =>
         runExecuteTool(event.toolUseId, input),
       )
     default:

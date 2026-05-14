@@ -6,8 +6,10 @@
  * (`RuntimeContextWorkflow`, wired in PR 2) consumes them without
  * knowing which protocol produced them.
  *
- * Phase 1 owns the event types; Phase 2 owns the canonical Firegrid
- * tool descriptors and the host-side lowering of `ToolUse` events.
+ * This module owns the normalized agent I/O event types. The agent
+ * tools layer (`packages/runtime/src/agent-tools`) owns the canonical
+ * `FiregridAgentToolkit` (`Toolkit.make` allowlist over Effect AI
+ * `Tool.make` values) and the host-side lowering of `ToolUse` events.
  *
  * Anchors:
  *   - firegrid-platform-invariants.AUTHORITY.4 (external decisions
@@ -47,16 +49,25 @@ export const PermissionDecisionSchema = Schema.Union(
 )
 export type PermissionDecision = Schema.Schema.Type<typeof PermissionDecisionSchema>
 
+/**
+ * Schema for the `ToolResult` input event variant. Promoted to its
+ * own export so the agent-tools layer (and any future ToolResult
+ * producer) can reference one canonical schema instead of redeclaring
+ * the shape. The variant is still part of `AgentInputEventSchema`.
+ */
+export const ToolResultEventSchema = Schema.TaggedStruct("ToolResult", {
+  toolUseId: Schema.String,
+  content: Schema.Unknown,
+  isError: Schema.Boolean,
+})
+export type ToolResultEvent = Schema.Schema.Type<typeof ToolResultEventSchema>
+
 export const AgentInputEventSchema = Schema.Union(
   Schema.TaggedStruct("Prompt", {
     content: PromptContentSchema,
     correlationId: Schema.String,
   }),
-  Schema.TaggedStruct("ToolResult", {
-    toolUseId: Schema.String,
-    content: Schema.Unknown,
-    isError: Schema.Boolean,
-  }),
+  ToolResultEventSchema,
   Schema.TaggedStruct("PermissionResponse", {
     permissionRequestId: Schema.String,
     decision: PermissionDecisionSchema,

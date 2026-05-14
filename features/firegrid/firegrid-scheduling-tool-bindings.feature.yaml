@@ -66,11 +66,16 @@ constraints:
       1: Neutral tool binding descriptor types and handler signature types live on a curated `@firegrid/substrate` public surface accessible to runtime, server, and (read-only) browser code.
       2: Tool binding mount and execution Layers live on `@firegrid/runtime` and compose through `Firegrid.composeRuntime`; they do not appear in browser-safe `@firegrid/client` exports.
       3: Browser-safe tool binding descriptor read helpers, when added, live on `@firegrid/client` and use the projection-query read facade exclusively.
-      4: Agent-side adapter packages that convert tool bindings to MCP, ACP, OpenAI, Anthropic, or vendor wire protocols live downstream and are not published under `@firegrid/*`.
+      4:
+        requirement: Agent-side adapter packages that convert tool bindings to MCP, ACP, OpenAI, Anthropic, or vendor wire protocols live downstream and are not published under `@firegrid/*`.
+        deprecated: true
+      4-note: Superseded for the workflow-driven runtime agent-tools path by `firegrid-workflow-driven-runtime.AGENT_TOOL_BOUNDARIES.7`; the old rule still rejects downstream product-specific adapter packages inside `@firegrid/*`, but it does not forbid the runtime-owned MCP bridge that projects the canonical FiregridAgentTools descriptor set.
+      5: Runtime-owned bridges for FiregridAgentTools may live under `@firegrid/runtime` only when they are protocol projections of the canonical descriptor manifest and host lowering, not product-specific adapter packages or independent tool registries.
 
   NON_SCOPE:
     requirements:
       1: This spec does not define MCP, ACP, OpenAI, Anthropic, Flamecast, or other product tool schemas, transports, or wire protocol conversions.
+      1-note: Runtime-owned projection of canonical FiregridAgentTools descriptors to MCP is governed by `firegrid-workflow-driven-runtime.AGENT_TOOL_BOUNDARIES.7`, not by this older product-neutral scheduling-binding scope.
       2: This spec does not define provider tool taxonomies, sandbox execution, or browser tool surfaces.
       3: This spec does not define permission policy or permission gating; permission decisions remain product-owned and live in caller-owned rows.
       4: This spec does not define prompt text, prompt schemas, or prompt-as-tool dispatch; prompt transport lives in `firegrid-claimed-intent-transport.*`.

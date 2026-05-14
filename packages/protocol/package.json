@@ -36,8 +36,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "effect-durable-operators": "workspace:*",
-    "effect": "^3.18.0"
+    "effect": "^3.21.2",
+    "effect-durable-operators": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

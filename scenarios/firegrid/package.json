@@ -12,7 +12,7 @@
   "dependencies": {
     "@firegrid/client": "workspace:*",
     "@firegrid/runtime": "workspace:*",
-    "effect": "^3.18.0"
+    "effect": "^3.21.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
