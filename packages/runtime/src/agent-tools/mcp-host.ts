@@ -40,11 +40,12 @@ import { IdGenerator, McpServer } from "@effect/ai"
 import { HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
 import { Config, Layer, Logger } from "effect"
-/* eslint-disable-next-line local/no-hidden-control-plane --
-   the MCP HTTP server is an explicit, opt-in agent-facing surface
-   bound only to loopback; the `node:http` listener factory is the
-   documented entrypoint passed to `NodeHttpServer.layer` per
-   Effect Platform's example. */
+// The MCP HTTP server lifetime is Effect-owned via Layer.scopedDiscard
+// + McpServer.layerHttp + NodeHttpServer.layer and bound only to
+// loopback; `createServer` is the documented listener factory the
+// @effect/platform-node `NodeHttpServer.layer(createServer, ...)`
+// example accepts. Not a raw/custom HTTP server.
+// durable-lint-allow-control-plane: @effect/platform-node NodeHttpServer.layer listener factory
 import { createServer } from "node:http"
 import { DurableToolsWaitForLive } from "../durable-tools/index.ts"
 import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
