@@ -14,11 +14,7 @@
 import { Clock, Context, Effect, Option, Schema } from "effect"
 import {
   HostIdSchema,
-  hostStreamName,
-  namespaceRuntimeStreamName,
   type HostSessionRow,
-  type HostStreamPrefix,
-  type HostStreamSegment,
   type RuntimeContextHostBinding,
 } from "./authority.ts"
 import { makeRuntimeContext, type RuntimeContext, type RuntimeContextIntent } from "./schema.ts"
@@ -196,51 +192,9 @@ export const provideRuntimeContext =
   <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(Effect.provideService(CurrentRuntimeContext, runtimeContext))
 
-/**
- * Compose a Durable Streams URL for a stream name under the configured
- * base URL. The base URL may already include `/v1/stream/`; if it
- * does not, the conventional Electric Cloud path is appended. The
- * `streamName` argument MUST come from a sanctioned authority helper
- * (`namespaceRuntimeStreamName`, `hostStreamName`) — not from an
- * inline template literal at the call site.
- *
- * firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
- * firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3
- */
-export const durableStreamUrl = (
-  baseUrl: string,
-  streamName: string,
-): string => {
-  const trimmed = baseUrl.replace(/\/+$/, "")
-  const prefix = trimmed.includes("/v1/stream/")
-    ? `${trimmed}/`
-    : `${trimmed}/v1/stream/`
-  return `${prefix}${encodeURIComponent(streamName)}`
-}
-
-/**
- * Convenience accessor: the namespace-scoped runtime control-plane
- * stream URL (where the RuntimeContext index lives).
- *
- * firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
- */
-export const runtimeControlPlaneStreamUrl = (input: {
-  readonly baseUrl: string
-  readonly namespace: string
-}): string =>
-  durableStreamUrl(input.baseUrl, namespaceRuntimeStreamName(input.namespace))
-
-/**
- * Convenience accessor: a host-owned operational stream URL derived
- * from the host's schema-encoded stream prefix.
- *
- * firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1
- * firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
- * firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3
- */
-export const hostOwnedStreamUrl = (input: {
-  readonly baseUrl: string
-  readonly prefix: HostStreamPrefix
-  readonly segment: HostStreamSegment
-}): string =>
-  durableStreamUrl(input.baseUrl, hostStreamName(input.prefix, input.segment))
+// Durable stream URL composition (`durableStreamUrl`,
+// `runtimeControlPlaneStreamUrl`, `hostOwnedStreamUrl`) lives in
+// `./authority.ts` next to the canonical `DurableStreamUrlSchema` and
+// related authority schemas. The single source of serialization
+// means the public client (`@firegrid/client`) and the runtime host
+// import from one place.

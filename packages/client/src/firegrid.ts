@@ -17,12 +17,11 @@ import {
   PublicLaunchRequestSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
-  hostStreamName,
+  hostOwnedStreamUrl,
   insertLocalRuntimeContext,
   local,
-  namespaceRuntimeStreamName,
+  runtimeControlPlaneStreamUrl,
   type CurrentHostSession,
-  type HostStreamPrefix,
   type PublicLaunchRequest,
   type RuntimeContext,
   type RuntimeEventRow,
@@ -157,16 +156,6 @@ const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map(millis => new Date(millis).toISOString()),
 )
 
-const trimRightSlash = (value: string): string => value.replace(/\/+$/, "")
-
-const encodeStreamUrl = (baseUrl: string, streamName: string): string => {
-  const trimmed = trimRightSlash(baseUrl)
-  const prefix = trimmed.includes("/v1/stream/")
-    ? `${trimmed}/`
-    : `${trimmed}/v1/stream/`
-  return `${prefix}${encodeURIComponent(streamName)}`
-}
-
 interface ResolvedConfig {
   readonly baseUrl: string
   readonly namespace: string | undefined
@@ -184,10 +173,10 @@ const resolveConfig = (
       cfg.controlPlaneStreamUrl ??
       cfg.runtimeStreamUrl ??
       (cfg.durableStreamsBaseUrl !== undefined && cfg.namespace !== undefined
-        ? encodeStreamUrl(
-          cfg.durableStreamsBaseUrl,
-          namespaceRuntimeStreamName(cfg.namespace),
-        )
+        ? runtimeControlPlaneStreamUrl({
+          baseUrl: cfg.durableStreamsBaseUrl,
+          namespace: cfg.namespace,
+        })
         : undefined)
 
     if (controlPlaneStreamUrl === undefined) {
@@ -199,9 +188,7 @@ const resolveConfig = (
     }
 
     return {
-      baseUrl: cfg.durableStreamsBaseUrl === undefined
-        ? ""
-        : trimRightSlash(cfg.durableStreamsBaseUrl),
+      baseUrl: cfg.durableStreamsBaseUrl ?? "",
       namespace: cfg.namespace,
       controlPlaneStreamUrl,
       contentType: cfg.contentType ?? "application/json",
@@ -209,12 +196,6 @@ const resolveConfig = (
       txTimeoutMs: cfg.txTimeoutMs ?? 2_000,
     }
   })
-
-const hostOwnedStreamUrl = (
-  baseUrl: string,
-  prefix: HostStreamPrefix,
-  segment: "runtimeIngress" | "runtimeOutput",
-): string => encodeStreamUrl(baseUrl, hostStreamName(prefix, segment))
 
 /**
  * Build the host-owned RuntimeIngressTable layer for a specific
@@ -230,11 +211,11 @@ const ingressLayerForContext = (
 ) =>
   RuntimeIngressTable.layer({
     streamOptions: {
-      url: hostOwnedStreamUrl(
-        config.baseUrl,
-        context.host.streamPrefix,
-        "runtimeIngress",
-      ),
+      url: hostOwnedStreamUrl({
+        baseUrl: config.baseUrl,
+        prefix: context.host.streamPrefix,
+        segment: "runtimeIngress",
+      }),
       contentType: config.contentType,
       ...(config.headers === undefined ? {} : { headers: config.headers }),
     },
@@ -254,11 +235,11 @@ const outputLayerForContext = (
 ) =>
   RuntimeOutputTable.layer({
     streamOptions: {
-      url: hostOwnedStreamUrl(
-        config.baseUrl,
-        context.host.streamPrefix,
-        "runtimeOutput",
-      ),
+      url: hostOwnedStreamUrl({
+        baseUrl: config.baseUrl,
+        prefix: context.host.streamPrefix,
+        segment: "runtimeOutput",
+      }),
       contentType: config.contentType,
       ...(config.headers === undefined ? {} : { headers: config.headers }),
     },

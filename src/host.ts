@@ -1,6 +1,6 @@
 import { NodeRuntime } from "@effect/platform-node"
 import {
-  FiregridRuntimeHostWithWorkflowLive,
+  FiregridLocalHostLive,
   RuntimeHostTopologyFromConfig,
   localProcessSpawnEnvFromHostEnv,
 } from "@firegrid/runtime"
@@ -8,9 +8,15 @@ import { Console, Effect, Layer } from "effect"
 
 export const firegridHostProgram = Effect.never
 
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+//
+// The firegrid:host binary composes through FiregridLocalHostLive,
+// which owns CurrentHostSession internally and derives a
+// deterministic host id from the namespace. No env/disk authority knob.
 export const firegridHostLayer = Layer.unwrapEffect(
   Effect.map(RuntimeHostTopologyFromConfig, topology =>
-    FiregridRuntimeHostWithWorkflowLive({
+    FiregridLocalHostLive({
       ...topology,
       localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
     }),

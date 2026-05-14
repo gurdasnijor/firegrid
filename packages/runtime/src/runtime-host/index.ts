@@ -5,6 +5,7 @@ import {
   WorkflowEngine,
 } from "@effect/workflow"
 import {
+  HostIdSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   makeHostSessionRow,
@@ -628,8 +629,17 @@ export const FiregridRuntimeHostWithWorkflowLive = (
 // unit test) bypass this helper and pass `hostId` to
 // `FiregridRuntimeHostWithWorkflowLive` at the programmatic test
 // composition boundary.
-const localHostIdForNamespace = (namespace: string): string =>
-  `${namespace}-host`
+//
+// `HostStreamPrefixPartsSchema` requires the hostId to be a single
+// dot-free segment; namespaces are allowed to contain dots, so the
+// derivation replaces `.` with `_` to keep the result schema-valid.
+// The derived id is decoded through `HostIdSchema` so any future
+// constraint changes surface as a loud failure here rather than
+// downstream at table construction.
+const localHostIdForNamespace = (namespace: string): HostId => {
+  const sanitized = namespace.replaceAll(".", "_")
+  return Schema.decodeUnknownSync(HostIdSchema)(`${sanitized}-host`)
+}
 
 export const FiregridLocalHostLive = (
   options: {
@@ -656,15 +666,14 @@ export const FiregridLocalHostLive = (
 
 // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
 //
-// RuntimeHostTopologyFromConfig intentionally does NOT acquire host
-// identity from env or from disk. Host authority is a primitive of
-// the host-context-authority design (a `CurrentHostSession` row
-// supplied through `options.hostId` at the programmatic composition
-// boundary); deployment plumbing does not own it. Until the
-// host-mediated authority surface lands, the FromConfig path
-// produces a topology without `hostId`, and `currentHostSessionLayer`
-// dies loudly when constructed. Operators who need to run the host
-// today wire `FiregridRuntimeHostLive({ ..., hostId })` directly.
+// RuntimeHostTopologyFromConfig reads only the base URL + namespace +
+// optional input / token from env. Host identity is NOT an env knob:
+// `FiregridRuntimeHostFromConfig` composes the resulting topology
+// through `FiregridLocalHostLive`, which owns CurrentHostSession
+// internally and derives the host id deterministically from the
+// namespace. Multi-host topologies bypass FromConfig entirely and
+// supply `hostId` at the programmatic composition boundary via
+// `FiregridRuntimeHostWithWorkflowLive`.
 export const RuntimeHostTopologyFromConfig = Config.all({
   durableStreamsBaseUrl: Config.string("DURABLE_STREAMS_BASE_URL"),
   namespace: Config.string("FIREGRID_RUNTIME_NAMESPACE"),

@@ -24,6 +24,7 @@ import {
   RuntimeContextIntentSchema,
   local,
   makeHostSessionRow,
+  makeHostStreamPrefix,
   normalizeRuntimeIntent,
   type HostId,
   type HostSessionId,
@@ -209,13 +210,14 @@ describe("CurrentRuntimeContext fiber scoping", () => {
   it("firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.3 firegrid-host-context-authority.VALIDATION.3 parallel fibers see their own provided RuntimeContext", async () => {
     const namespace = "scoped-context-test"
     const hostId = "host_test" as HostId
+    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
     const contextOne: RuntimeContext = {
       contextId: "ctx_one",
       createdAt: "2026-05-14T00:00:00.000Z",
       runtime: sampleIntent,
       host: {
         hostId,
-        streamPrefix: `${namespace}.firegrid.host.${hostId}`,
+        streamPrefix,
         boundAtMs: 1,
       },
     }

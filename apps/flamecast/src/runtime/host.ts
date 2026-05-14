@@ -1,7 +1,7 @@
 import { NodeRuntime } from "@effect/platform-node"
 import { Firegrid, FiregridConfig, FiregridLive } from "@firegrid/client/firegrid"
 import {
-  FiregridRuntimeHostLive,
+  FiregridLocalHostLive,
   localProcessSpawnEnvFromHostEnv,
   startRuntime,
 } from "@firegrid/runtime/runtime-host"
@@ -65,7 +65,10 @@ const flamecastToyHostLayer = Layer.unwrapEffect(
         Authorization: () => `Bearer ${Redacted.value(token)}`,
       }) satisfies DurableTableHeaders,
     })
-    const hostLayer = FiregridRuntimeHostLive({
+    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+    // FiregridLocalHostLive owns CurrentHostSession; the flamecast toy
+    // host derives its identity deterministically from the namespace.
+    const hostLayer = FiregridLocalHostLive({
       durableStreamsBaseUrl: config.durableStreamsBaseUrl,
       namespace: config.namespace,
       input: true,

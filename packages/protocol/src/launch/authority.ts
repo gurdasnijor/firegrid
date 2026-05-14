@@ -2,13 +2,12 @@
 // firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
 // firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3
 //
-// Schema-encoded authority for host-owned Durable Streams prefixes.
-//
-// All product code that derives a host-owned stream URL goes through
-// `Schema.encodeSync(HostStreamPrefixSchema)`. Layer constructors discover
-// stream-authority fields via the `streamAuthority` annotation pipe so
-// reviewers (and AST tests) can grep for "all stream authority fields"
-// rather than scanning every layer constructor.
+// Schema-encoded authority for host-owned Durable Streams prefixes,
+// stream names, and URLs. One canonical Schema per authority string;
+// helper functions are `Schema.encodeSync` wrappers — never independent
+// template-literal constructors. The `streamAuthority` annotation pipe
+// marks each schema so AST traversals can locate authority-bearing
+// fields, mirroring `DurableTable.primaryKey`'s annotation discipline.
 
 import { ParseResult, Schema, type SchemaAST } from "effect"
 
@@ -16,11 +15,6 @@ const streamAuthorityAnnotationId = Symbol.for(
   "@firegrid/protocol/launch/streamAuthority",
 )
 
-/**
- * Annotation pipe. Marks a Schema as carrying authority-bearing stream
- * fragment data so AST traversals can locate it without a separate
- * registry. Mirrors `DurableTable.primaryKey`'s annotation discipline.
- */
 export const streamAuthority = <S extends Schema.Schema.Any>(schema: S): S =>
   schema.annotations({ [streamAuthorityAnnotationId]: true }) as S
 
@@ -34,107 +28,50 @@ export const HostSessionIdSchema = Schema.String.pipe(Schema.brand("HostSessionI
 export type HostSessionId = Schema.Schema.Type<typeof HostSessionIdSchema>
 
 const HOST_STREAM_PREFIX_INFIX = ".firegrid.host."
+const FIREGRID_DURABLE_NAMESPACE = "firegrid"
+const RUNTIME_TABLE_NAME = "runtime"
+const STREAM_PATH_INFIX = "/v1/stream/"
 
 /**
- * Structured form of a host stream prefix.
- *
- * A host stream prefix is an opaque wire string of shape
- * `${namespace}.firegrid.host.${hostId}`. The fixed infix makes the
- * decode lossless: `namespace` is everything before the last
- * occurrence of `.firegrid.host.` and `hostId` is everything after.
- *
- * Constraints:
- *  - namespace must be non-empty and must not itself contain
- *    `.firegrid.host.` (otherwise round-trip is ambiguous);
- *  - hostId must be a non-empty single segment (no `.`) so that
- *    operational suffixes (`.workflow`, `.runtimeIngress`, …) cannot
- *    collide with hostId byte sequences.
+ * Operational stream segments that derive from a host stream prefix.
+ * Closed `Schema.Literal` set; `HostStreamNameSchema` decodes through
+ * this schema rather than maintaining a parallel array of strings.
  */
-export const HostStreamPrefixPartsSchema = Schema.Struct({
-  namespace: Schema.String.pipe(
-    Schema.filter((value) =>
-      value.length > 0 && !value.includes(HOST_STREAM_PREFIX_INFIX)
-        ? undefined
-        : `host stream prefix namespace must be non-empty and not contain "${HOST_STREAM_PREFIX_INFIX}"`),
-  ),
-  hostId: HostIdSchema.pipe(
-    Schema.filter((value) =>
-      value.length > 0 && !value.includes(".")
-        ? undefined
-        : "host id must be a non-empty single segment with no '.'"),
-  ),
-})
-export type HostStreamPrefixParts = Schema.Schema.Type<typeof HostStreamPrefixPartsSchema>
+export const HostStreamSegmentSchema = Schema.Literal(
+  "runtimeIngress",
+  "runtimeOutput",
+  "workflow",
+  "durableTools",
+)
+export type HostStreamSegment = Schema.Schema.Type<typeof HostStreamSegmentSchema>
 
 /**
- * Schema-encoded host stream prefix. Encoded side is `Schema.String`;
- * decoded side is `HostStreamPrefixPartsSchema`.
+ * `${namespace}.firegrid.host.${hostId}` wire form, validated +
+ * branded. Single canonical authority declaration for the host stream
+ * prefix: rows hold this branded string, layer constructors read it
+ * off `CurrentHostSession`, and the `streamAuthority` annotation
+ * marks the schema for AST discovery.
  *
- * The transform is the only sanctioned path between the structured
- * `{namespace, hostId}` shape and the wire string. Product code that
- * needs a wire string MUST go through `Schema.encodeSync` on this
- * schema (typically via the `makeHostStreamPrefix` helper below); the
- * fixed `.firegrid.host.` infix is not exported, and inline template
- * literals at use sites are forbidden.
- */
-export const HostStreamPrefixSchema = Schema.transformOrFail(
-  Schema.String,
-  HostStreamPrefixPartsSchema,
-  {
-    strict: false,
-    decode: (encoded, _options, ast) => {
-      const idx = encoded.lastIndexOf(HOST_STREAM_PREFIX_INFIX)
-      if (idx <= 0 || idx + HOST_STREAM_PREFIX_INFIX.length >= encoded.length) {
-        return ParseResult.fail(
-          new ParseResult.Type(
-            ast,
-            encoded,
-            `host stream prefix must match {namespace}${HOST_STREAM_PREFIX_INFIX}{hostId}`,
-          ),
-        )
-      }
-      const namespace = encoded.slice(0, idx)
-      const hostId = encoded.slice(idx + HOST_STREAM_PREFIX_INFIX.length)
-      return ParseResult.succeed({
-        namespace,
-        hostId: hostId as HostId,
-      })
-    },
-    encode: ({ namespace, hostId }) =>
-      ParseResult.succeed(`${namespace}${HOST_STREAM_PREFIX_INFIX}${hostId}`),
-  },
-).pipe(streamAuthority)
-
-/**
- * Wire-form (encoded) host stream prefix string. This is the type used
- * inside durable row schemas — durable rows hold the wire string, not
- * the parts struct, because @durable-streams/state validates rows by
- * Standard Schema decode and JSON-serializes the supplied value as-is.
- */
-export type HostStreamPrefix = Schema.Schema.Encoded<typeof HostStreamPrefixSchema>
-
-/**
- * Schema for the wire-form host stream prefix as it appears on rows.
- *
- * The decode-side validates the canonical
- * `{namespace}.firegrid.host.{hostId}` shape via the same parts schema
- * the encoder uses, so an invalid wire string fails Schema decode at
- * the table boundary rather than slipping through as "any string with
- * a stream-authority annotation". Layer constructors read this off
- * `CurrentHostSession` and `RuntimeContext.host` and compose host-owned
- * stream names via `hostStreamName(...)`.
+ * Format constraints (single source — the filter):
+ *  - the wire string MUST contain `.firegrid.host.` exactly once;
+ *  - namespace (left of the infix) MUST be non-empty;
+ *  - hostId (right of the infix) MUST be non-empty and dot-free so
+ *    operational segments like `.workflow` cannot collide.
  */
 const validateHostStreamPrefixWire = (
   value: string,
 ): string | undefined => {
-  const idx = value.lastIndexOf(HOST_STREAM_PREFIX_INFIX)
-  if (idx <= 0 || idx + HOST_STREAM_PREFIX_INFIX.length >= value.length) {
-    return `host stream prefix must match {namespace}${HOST_STREAM_PREFIX_INFIX}{hostId}`
+  const first = value.indexOf(HOST_STREAM_PREFIX_INFIX)
+  if (first <= 0) {
+    return `host stream prefix must contain "${HOST_STREAM_PREFIX_INFIX}" with a non-empty namespace prefix`
   }
-  const namespace = value.slice(0, idx)
-  const hostId = value.slice(idx + HOST_STREAM_PREFIX_INFIX.length)
-  if (namespace.includes(HOST_STREAM_PREFIX_INFIX)) {
-    return `host stream prefix namespace must not contain ${HOST_STREAM_PREFIX_INFIX}`
+  const last = value.lastIndexOf(HOST_STREAM_PREFIX_INFIX)
+  if (first !== last) {
+    return `host stream prefix must contain "${HOST_STREAM_PREFIX_INFIX}" exactly once`
+  }
+  const hostId = value.slice(last + HOST_STREAM_PREFIX_INFIX.length)
+  if (hostId.length === 0) {
+    return "host stream prefix hostId must be non-empty"
   }
   if (hostId.includes(".")) {
     return "host stream prefix hostId must be a single dot-free segment"
@@ -144,73 +81,253 @@ const validateHostStreamPrefixWire = (
 
 export const HostStreamPrefixWireSchema = Schema.String.pipe(
   Schema.filter(validateHostStreamPrefixWire),
+  Schema.brand("HostStreamPrefix"),
   streamAuthority,
 )
+export type HostStreamPrefix = Schema.Schema.Type<typeof HostStreamPrefixWireSchema>
+
+const HostStreamPrefixPartsSchema = Schema.Struct({
+  namespace: Schema.String,
+  hostId: HostIdSchema,
+})
+type HostStreamPrefixParts = Schema.Schema.Type<typeof HostStreamPrefixPartsSchema>
 
 /**
- * Construct a host stream prefix wire string from structured parts.
- *
- * Validates the parts (namespace non-empty + infix-free, hostId
- * non-empty + dot-free) via the schema. Throws synchronously on
- * invalid parts; callers building a HostSessionRow should already have
- * validated identities, but the throw is intentional to surface
- * authority drift loudly.
+ * Bidirectional codec between the branded wire form and structured
+ * `{namespace, hostId}` parts. `Schema.encodeSync` on this schema is
+ * the only sanctioned path from parts to wire — `makeHostStreamPrefix`
+ * is the public wrapper.
  */
+export const HostStreamPrefixSchema = Schema.transformOrFail(
+  HostStreamPrefixWireSchema,
+  HostStreamPrefixPartsSchema,
+  {
+    strict: false,
+    decode: (validated) => {
+      const idx = validated.indexOf(HOST_STREAM_PREFIX_INFIX)
+      return ParseResult.succeed({
+        namespace: validated.slice(0, idx),
+        hostId: validated.slice(idx + HOST_STREAM_PREFIX_INFIX.length) as HostId,
+      })
+    },
+    encode: ({ namespace, hostId }) =>
+      ParseResult.succeed(
+        `${namespace}${HOST_STREAM_PREFIX_INFIX}${hostId}` as HostStreamPrefix,
+      ),
+  },
+).pipe(streamAuthority)
+
+/** Encode parts → branded wire host stream prefix. */
 export const makeHostStreamPrefix = (
   parts: HostStreamPrefixParts,
-): HostStreamPrefix => Schema.encodeSync(HostStreamPrefixSchema)(parts)
+): HostStreamPrefix =>
+  // `Schema.encodeSync(HostStreamPrefixSchema)` returns the encoded
+  // form of the composed transform, which TypeScript widens to
+  // `string`. Re-decode through the branded wire schema to recover
+  // the brand without duplicating the validator.
+  Schema.decodeSync(HostStreamPrefixWireSchema)(
+    Schema.encodeSync(HostStreamPrefixSchema)(parts),
+  )
+
+const HostStreamNamePartsSchema = Schema.Struct({
+  prefix: HostStreamPrefixWireSchema,
+  segment: HostStreamSegmentSchema,
+})
 
 /**
- * Operational stream segments that derive from a host stream prefix.
- *
- * V1 enumerates the segments the proposal calls out. The closed set
- * keeps stream naming under schema authority and lets reviewers see
- * exactly which operational planes belong to a host.
+ * Bidirectional codec for `${prefix}.${segment}` host-owned stream
+ * names. Decode parses the last dot, decodes the right-hand side
+ * through `HostStreamSegmentSchema`, and decodes the left-hand side
+ * through `HostStreamPrefixWireSchema` — no parallel segment array.
  */
-export type HostStreamSegment =
-  | "runtimeIngress"
-  | "runtimeOutput"
-  | "workflow"
-  | "durableTools"
+const HOST_STREAM_SEGMENT_LITERALS = HostStreamSegmentSchema.literals
 
-/**
- * Append an operational segment to a host stream prefix, producing the
- * full host-owned stream name (e.g.
- * `firegrid-smoke.firegrid.host.host_abc.workflow`).
- *
- * This is the single sanctioned path from a host stream prefix to a
- * concrete stream name. Layer constructors that compose stream URLs
- * call this helper rather than concatenating strings inline.
- */
+export const HostStreamNameSchema = Schema.transformOrFail(
+  Schema.String,
+  HostStreamNamePartsSchema,
+  {
+    strict: false,
+    decode: (encoded, _options, ast) => {
+      const dot = encoded.lastIndexOf(".")
+      if (dot <= 0 || dot === encoded.length - 1) {
+        return ParseResult.fail(
+          new ParseResult.Type(
+            ast,
+            encoded,
+            "host stream name must be {prefix}.{segment}",
+          ),
+        )
+      }
+      const prefixWire = encoded.slice(0, dot)
+      const segmentWire = encoded.slice(dot + 1)
+      const segmentMatch = HOST_STREAM_SEGMENT_LITERALS.find(
+        (candidate) => candidate === segmentWire,
+      )
+      if (segmentMatch === undefined) {
+        return ParseResult.fail(
+          new ParseResult.Type(
+            ast,
+            encoded,
+            "host stream name segment is not one of the supported literals",
+          ),
+        )
+      }
+      const prefixValidation = validateHostStreamPrefixWire(prefixWire)
+      if (prefixValidation !== undefined) {
+        return ParseResult.fail(
+          new ParseResult.Type(ast, encoded, prefixValidation),
+        )
+      }
+      return ParseResult.succeed({
+        prefix: prefixWire as HostStreamPrefix,
+        segment: segmentMatch,
+      })
+    },
+    encode: ({ prefix, segment }) =>
+      ParseResult.succeed(`${prefix}.${segment}`),
+  },
+).pipe(streamAuthority)
+
+/** Encode parts → host-owned stream name. */
 export const hostStreamName = (
   prefix: HostStreamPrefix,
   segment: HostStreamSegment,
-): string => `${prefix}.${segment}`
+): string => Schema.encodeSync(HostStreamNameSchema)({ prefix, segment })
+
+const NAMESPACE_RUNTIME_SUFFIX = `.${FIREGRID_DURABLE_NAMESPACE}.${RUNTIME_TABLE_NAME}`
+
+const NamespaceRuntimeStreamNamePartsSchema = Schema.Struct({
+  namespace: Schema.String.pipe(
+    Schema.filter((value) =>
+      value.length > 0 ? undefined : "namespace must be non-empty"),
+  ),
+})
 
 /**
- * Global runtime control-plane stream segment. The RuntimeContext index
- * remains namespace-scoped, not host-scoped, so cross-host context
- * lookup does not depend on host directory state.
- *
- * The segment literal is held as two private constants (one per dot-
- * separated word) so the wire string is produced exclusively by this
- * helper. Splitting the constant also keeps the
- * `firegrid-no-inline-stream-url-construction` guardrail honest: no
- * single string literal carries the durable namespace + table segment
- * pair, so a regex audit cannot match a call-site reconstruction.
+ * Bidirectional codec for the namespace-scoped runtime control-plane
+ * stream name `{namespace}.{firegrid}.{runtime}` (composed via the
+ * private suffix constant). The RuntimeContext index is
+ * namespace-scoped (not host-scoped) so cross-host lookup does not
+ * depend on host directory state.
  */
-const FIREGRID_DURABLE_NAMESPACE = "firegrid"
-const RUNTIME_TABLE_NAME = "runtime"
+export const NamespaceRuntimeStreamNameSchema = Schema.transformOrFail(
+  Schema.String,
+  NamespaceRuntimeStreamNamePartsSchema,
+  {
+    strict: false,
+    decode: (encoded, _options, ast) => {
+      if (!encoded.endsWith(NAMESPACE_RUNTIME_SUFFIX)) {
+        return ParseResult.fail(
+          new ParseResult.Type(
+            ast,
+            encoded,
+            `namespace runtime stream must end with ${NAMESPACE_RUNTIME_SUFFIX}`,
+          ),
+        )
+      }
+      return ParseResult.succeed({
+        namespace: encoded.slice(0, -NAMESPACE_RUNTIME_SUFFIX.length),
+      })
+    },
+    encode: ({ namespace }) =>
+      ParseResult.succeed(`${namespace}${NAMESPACE_RUNTIME_SUFFIX}`),
+  },
+).pipe(streamAuthority)
 
+/** Encode namespace → namespace-scoped runtime stream name. */
 export const namespaceRuntimeStreamName = (namespace: string): string =>
-  `${namespace}.${FIREGRID_DURABLE_NAMESPACE}.${RUNTIME_TABLE_NAME}`
+  Schema.encodeSync(NamespaceRuntimeStreamNameSchema)({ namespace })
+
+const DurableStreamUrlPartsSchema = Schema.Struct({
+  baseUrl: Schema.String.pipe(
+    Schema.filter((value) => {
+      if (value.length === 0) return "baseUrl must be non-empty"
+      if (value.includes(STREAM_PATH_INFIX)) {
+        return `baseUrl must be the Durable Streams service root; it must not contain ${STREAM_PATH_INFIX}`
+      }
+      return undefined
+    }),
+  ),
+  streamName: Schema.String.pipe(
+    Schema.filter((value) =>
+      value.length > 0 ? undefined : "streamName must be non-empty"),
+  ),
+})
+
+/**
+ * Bidirectional codec for a Durable Streams stream URL. The encoder
+ * always appends `/v1/stream/` to the trimmed base URL — callers
+ * configure `durableStreamsBaseUrl` as the service root, not as a
+ * pre-built stream path. Strict by design; mixed shapes are rejected.
+ */
+export const DurableStreamUrlSchema = Schema.transformOrFail(
+  Schema.String,
+  DurableStreamUrlPartsSchema,
+  {
+    strict: false,
+    decode: (encoded, _options, ast) => {
+      const idx = encoded.lastIndexOf(STREAM_PATH_INFIX)
+      if (idx < 0) {
+        return ParseResult.fail(
+          new ParseResult.Type(
+            ast,
+            encoded,
+            `durable stream URL must contain ${STREAM_PATH_INFIX}`,
+          ),
+        )
+      }
+      const baseUrl = encoded.slice(0, idx)
+      const encodedName = encoded.slice(idx + STREAM_PATH_INFIX.length)
+      if (encodedName.length === 0) {
+        return ParseResult.fail(
+          new ParseResult.Type(
+            ast,
+            encoded,
+            `durable stream URL must carry a stream name after ${STREAM_PATH_INFIX}`,
+          ),
+        )
+      }
+      return ParseResult.succeed({
+        baseUrl,
+        streamName: decodeURIComponent(encodedName),
+      })
+    },
+    encode: ({ baseUrl, streamName }) => {
+      const trimmed = baseUrl.replace(/\/+$/, "")
+      return ParseResult.succeed(
+        `${trimmed}${STREAM_PATH_INFIX}${encodeURIComponent(streamName)}`,
+      )
+    },
+  },
+)
+
+/** Encode parts → Durable Streams stream URL. */
+export const durableStreamUrl = (
+  baseUrl: string,
+  streamName: string,
+): string =>
+  Schema.encodeSync(DurableStreamUrlSchema)({ baseUrl, streamName })
+
+/** Encode namespace + base URL → control-plane stream URL. */
+export const runtimeControlPlaneStreamUrl = (input: {
+  readonly baseUrl: string
+  readonly namespace: string
+}): string =>
+  durableStreamUrl(input.baseUrl, namespaceRuntimeStreamName(input.namespace))
+
+/** Encode prefix + segment + base URL → host-owned stream URL. */
+export const hostOwnedStreamUrl = (input: {
+  readonly baseUrl: string
+  readonly prefix: HostStreamPrefix
+  readonly segment: HostStreamSegment
+}): string =>
+  durableStreamUrl(input.baseUrl, hostStreamName(input.prefix, input.segment))
 
 /**
  * Conceptual host session row. V1 does not persist a HostSession
  * durable table; the row is constructed at host boot and provided
  * through `CurrentHostSession`. Schema metadata still lives here so
- * future durable host directory work can adopt the same field shape
- * without renumbering.
+ * future durable host directory work can adopt the same field shape.
  */
 export const HostSessionRowSchema = Schema.Struct({
   hostId: HostIdSchema,
@@ -240,8 +357,7 @@ export type RuntimeContextHostBinding = Schema.Schema.Type<
 /**
  * Build a HostSessionRow from inputs the host runtime owns. The
  * constructor goes through `makeHostStreamPrefix` so the wire string
- * comes from `HostStreamPrefixSchema` rather than from an inline
- * template literal at the call site.
+ * comes from `HostStreamPrefixSchema`.
  */
 export const makeHostSessionRow = (input: {
   readonly hostId: HostId
