@@ -204,13 +204,6 @@ export type LaunchConfig = Schema.Schema.Type<typeof LaunchConfigSchema>
 
 export const decodeLaunchConfig = Schema.decodeUnknown(LaunchConfigSchema)
 
-// Compatibility names for existing runtime-host call sites.
-export const RunAuthorizedBindingSchema = LaunchAuthorizedBindingSchema
-export type RunAuthorizedBinding = LaunchAuthorizedBinding
-export const RunConfigSchema = LaunchConfigSchema
-export type RunConfig = LaunchConfig
-export const decodeRunConfig = decodeLaunchConfig
-
 export const injectLaunchMcpDeclaration = (
   config: LaunchConfig,
   declaration: McpServerDeclaration,

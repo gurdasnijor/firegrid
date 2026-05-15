@@ -25,25 +25,23 @@
 //     RunConfig without going through argv at all.
 
 import {
-  decodeRunConfig,
+  decodeLaunchConfig,
+  LaunchAuthorizedBindingSchema,
+  LaunchConfigSchema,
   local,
   normalizeRuntimeIntent,
-  RunAuthorizedBindingSchema,
-  RunConfigSchema,
   type RuntimeContextIntent,
   type RuntimeEnvBinding,
-  type RunAuthorizedBinding,
-  type RunConfig,
+  type LaunchAuthorizedBinding,
+  type LaunchConfig,
 } from "@firegrid/protocol/launch"
 import type { RuntimeIngressRequest } from "@firegrid/protocol/runtime-ingress"
 
-export {
-  decodeRunConfig,
-  RunAuthorizedBindingSchema,
-  RunConfigSchema,
-  type RunAuthorizedBinding,
-  type RunConfig,
-}
+export const RunAuthorizedBindingSchema = LaunchAuthorizedBindingSchema
+export type RunAuthorizedBinding = LaunchAuthorizedBinding
+export const RunConfigSchema = LaunchConfigSchema
+export type RunConfig = LaunchConfig
+export const decodeRunConfig = decodeLaunchConfig
 
 // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
 // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
