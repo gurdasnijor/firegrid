@@ -24,19 +24,19 @@ components:
 
   PLATFORM_PRIMITIVES:
     requirements:
-      1: The app uses RuntimeContext as the durable parent planner and delegated session identity, with external source key and provider correlation metadata attached to context/facts.
+      1: The app uses RuntimeContext as durable runtime identity for the planner and delegated sessions; external source keys and provider correlations live in app facts, prompts, runtime output, subscriber rows, or tool results unless an existing context row field supports them.
       2: RuntimeIngress and RuntimeOutput are the durable input/output planes for prompts, permission responses, agent output, tool calls, tool results, status, and terminal evidence.
       3: DurableTable facts plus SourceCollections registration expose Linear, GitHub, Slack, provider, and human decision rows to wait_for under an app-owned source name.
       4: RuntimeObservationSourceNames are used for runtime runs, output, ingress, and normalized agent-output observation rather than app-local process state.
 
   PARENT_RUN:
     requirements:
-      1: A factory trigger creates or loads one parent planner RuntimeContext by external source key, such as Linear issue id, ticket id, or correlation id, rather than creating competing parent runs on redelivery.
-      2: Parent and child relationships are carried as RuntimeContext metadata, prompts, durable facts, and tool result payloads; the app does not add a platform parent/child hierarchy beyond metadata and correlation.
+      1: A factory trigger creates or loads one durable factory-run subscriber identity by external work key, such as Linear issue id, ticket id, or correlation id, and resolves one planner contextId from it rather than creating competing factory runs on redelivery.
+      2: Parent/delegated-session correlation is carried through prompts, durable facts, subscriber rows, runtime output, and tool result payloads; the app does not add or require a platform parent/child hierarchy or new RuntimeContext metadata model.
 
   AUTONOMOUS_RUN:
     requirements:
-      1: Factory trigger handling creates or loads the parent planner context, persists the accepted provider fact, and starts the planner through runtime-host primitives without a coded phase chain.
+      1: Factory trigger handling creates or loads the durable factory-run subscriber identity and planner context, persists the accepted provider fact, and starts the planner through runtime-host primitives without a coded phase chain.
       2: The initial planner prompt includes parent context id, factory run key, source names, runtime observation source names, Linear issue fields, repository hint, provider capability names, and choreography operating rules.
       3: The initial planner prompt is designed to elicit plan approval waits or permission requests, session_new delegation, session_prompt follow-ups, wait_for over facts/runtime observations, schedule_me rechecks, and execute only for advertised capabilities.
 
@@ -49,12 +49,12 @@ components:
   PLANNER_RUNTIME:
     requirements:
       1: The parent planner is launched through RuntimeContext/control-plane primitives and normal runtime-host execution, not through a synchronous CLI run path, hook.new RPC chain, or custom factory workflow engine.
-      2: The planner receives enough prompt/context metadata to discover relevant fact source names, runtime observation source names, provider capability boundaries, and the external ticket/repository identity.
+      2: The planner receives enough prompt data and durable fact/runtime observation references to discover relevant fact source names, runtime observation source names, provider capability boundaries, and the external ticket/repository identity.
       3: Agent selection is whatever Firegrid can support for the slice; the app must not require a predetermined Flamecast runtime or direct Flamecast module dependency.
 
   SESSION_TOOLS:
     requirements:
-      1: Delegated implementation, review, or QA work is represented by session_new child RuntimeContext creation with parentSessionId, role, and correlation metadata when supplied.
+      1: Delegated implementation, review, or QA work is represented by session_new RuntimeContext creation with parent context and correlation values supplied through existing tool input, prompt, fact, subscriber, or output fields.
       2: Follow-up work uses session_prompt or host-owned runtime ingress to an existing RuntimeContext with idempotent input identity.
       3: The factory planner uses wait_for for human gates, provider facts, CI facts, runtime status, and child-session observations; schedule_me for future self rechecks; execute only for configured capability-backed provider or sandbox actions; sleep only for bounded backoff.
       4: spawn and spawn_all are not app-facing factory planner tools; parallel work is expressed as session_new child sessions with stable session identity.
@@ -62,7 +62,7 @@ components:
   WAIT_AND_PERMISSION:
     requirements:
       1: Human decisions and external status changes are waited on with wait_for over app fact sources or RuntimeObservationSourceNames rather than hidden callback markers, parked RPC URLs, or comment-walking routers.
-      2: ACP PermissionRequest output is observed through RuntimeObservationSourceNames.agentOutputEvents and resumed by writing a RuntimeIngress PermissionResponse to the same context.
+      2: ACP PermissionRequest output is observed through RuntimeObservationSourceNames.agentOutputEvents with durable display payload fields such as permissionRequestId, contextId, prompt/body, choices, requestedBy, and correlation; it is resumed by writing a RuntimeIngress PermissionResponse matched by contextId plus permissionRequestId.
       3: The first implementation proves at least one human-gate-shaped pause and resume path using durable state through a live/manual or env-gated provider/operator path rather than a fixture decision writer as acceptance proof.
 
   PROVIDER_SIDE_EFFECTS:
@@ -71,13 +71,14 @@ components:
       2: GitHub and Linear side effects such as PR lookup, comment upsert, CI status, PR close/merge, Linear activity/comment updates, and delegate assignment write durable evidence facts so retries and planner turns can observe prior effects.
       3: Provider idempotency mechanisms such as GitHub comment markers may be used inside provider adapters, but they are not Firegrid resume callbacks or hidden workflow control markers.
       4: Provider side effects feed back to the planner through DurableTable facts and runtime output observations, not hidden callback URLs, hidden Linear comments, or comment-walking routers.
+      5: Live execute-backed provider capabilities are prerequisites for planner-driven Linear/GitHub/Slack side effects; first-slice acceptance may omit execute side effects if those capabilities are not implemented and advertised.
 
   OBSERVATION:
     requirements:
       1: The app presents or tests durable observation from RuntimeOutputTable, RuntimeControlPlaneTable runs, runtime observation sources, and app fact tables so a user can inspect what happened and what is waiting.
       2: Terminal or waiting states are derived from durable observations and facts, not from in-memory process state.
       3: The first app slice exposes a JSON status API for run progress rather than leaving progress tracking implicit; a full UI is deferred.
-      4: The status API reports parent context, active/terminal child sessions, latest facts, runtime output/logs, permission requests, current waits, provider links, and blocked/error state from durable rows only.
+      4: The status API reports subscriber identity, planner context, active/terminal delegated sessions, latest facts, runtime output/logs, permission requests, current waits, provider links, and blocked/error state from durable rows only.
 
 constraints:
   BOUNDARIES:
@@ -85,9 +86,9 @@ constraints:
       1: The app does not introduce a custom workflow engine, factory orchestration runtime, createFunction-style SDK, hidden callback marker protocol, DurableConsumer revival, Source-style abstraction, or generic webhook server.
       2: The app does not depend on #229 sync CLI UX, Flamecast implementation modules, provider callback token issuance, or a product-specific transport.
       3: The app does not hard-code a platform-owned planner/implementer/reviewer/QA/deploy DAG; any first-slice scripted path is planner policy over durable facts and tools.
-      4: The app has no direct Flamecast dependency and no platform parent/child hierarchy beyond metadata and correlation.
+      4: The app has no direct Flamecast dependency and no platform parent/child hierarchy; relationships are represented through app-owned facts, prompts, subscriber rows, runtime output, tool results, and correlation values.
 
   VALIDATION:
     requirements:
-      1: The first implementation PR includes an explicit live/manual or env-gated smoke that drives a factory-style provider trigger into a parent planner RuntimeContext on hosted Electric/Durable Streams, observes durable runtime output or facts, and resumes at least one wait or permission gate.
+      1: The first implementation PR includes an explicit live/manual or env-gated smoke that drives a factory-style provider trigger into an accepted fact and durable factory-run subscriber identity on hosted Electric/Durable Streams, starts the planner context, observes planner output or a permission request, writes a durable human/provider decision through ingress or fact, and observes the next planner action.
       2: CI may run docs/spec and non-secret structural checks, but implementation acceptance documents the live smoke prerequisites and result without committing or echoing bearer tokens, webhook secrets, OAuth tokens, PATs, or generated secret values.

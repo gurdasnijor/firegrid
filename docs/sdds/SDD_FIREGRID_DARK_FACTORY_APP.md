@@ -129,7 +129,7 @@ serving one clear role:
 
 | Primitive | Factory role |
 | --- | --- |
-| `RuntimeContext` | Durable identity for the parent planner run and for any delegated implementer, reviewer, or QA sessions. The parent context metadata carries the external source key, Linear issue id, ticket id, repository hint, fact source name, and correlation ids. |
+| `RuntimeContext` | Durable runtime identity for the parent planner and delegated implementer, reviewer, or QA sessions. External source keys and correlations are stored in app facts, prompts, runtime output, subscriber rows, and tool results unless the existing context row already has a suitable field. |
 | `RuntimeIngress` | Durable input path into a running context. The app uses it for the initial planner prompt when needed, follow-up prompts, and ACP `PermissionResponse` messages that resume permission gates. |
 | `RuntimeOutput` | Durable output journal for planner and child-agent status, text, tool calls, permission requests, tool results, and terminal evidence. This replaces hidden callback markers as the source of truth for what the run is waiting on. |
 | `RuntimeObservationSourceNames` | Named wait/query surfaces for runtime runs, output events/logs, ingress inputs/deliveries, and normalized agent output events. The planner and app use these names with `wait_for` and status views. |
@@ -147,7 +147,8 @@ The app should not contain a `startSession -> implementAgent ->
 councilAndApproval -> deploy` function chain. Instead:
 
 1. Product adapters write facts and side-effect evidence.
-2. A parent planner context is inserted or loaded by external source key.
+2. One durable run/subscriber identity is inserted or loaded by external work
+   key, and that identity points at the planner `RuntimeContext`.
 3. The planner receives a prompt that describes available fact sources,
    provider capabilities, credentials boundaries, and Firegrid tools.
 4. The planner reads durable history and decides what to do next.
@@ -166,17 +167,22 @@ wait for CI based on observable state.
 
 ## Autonomous Planner Run
 
-### Parent Context Creation
+### Factory Run Identity And Planner Context Creation
 
 When a Linear/GitHub/webhook adapter accepts a factory trigger, the app must:
 
 1. Verify the provider input at the product-owned adapter boundary.
 2. Insert or load the external fact, such as `linear.issue.accepted`, using
    `{ source, externalEventKey }`.
-3. Create or load one parent planner `RuntimeContext` using a deterministic
-   app key derived from provider/source plus external entity id, for example
-   `linear.oauth:<issueId>`.
-4. Store the following metadata on the parent context or first fact:
+3. Create or load one durable factory-run subscriber row keyed by
+   `factoryRunKey = <source>:<externalEntityKey>`, for example
+   `linear.oauth:<issueId>`. That row stores the planner `contextId` once it
+   exists.
+4. Create or load the planner `RuntimeContext` referenced by that subscriber
+   row.
+5. Store the following correlation data in app facts, the subscriber row,
+   runtime output rows, prompts, and tool-result payloads. Only copy it into a
+   `RuntimeContext` row if the current schema already supports that field:
    - `factoryRunKey`;
    - `source`;
    - `externalEntityKey`;
@@ -188,13 +194,15 @@ When a Linear/GitHub/webhook adapter accepts a factory trigger, the app must:
    - `runtimeObservationSources`;
    - provider capability names available through `execute`;
    - hosted stream namespace/name, without auth token values.
-5. Start the parent context through normal runtime-host execution. The app may
+6. Start the parent context through normal runtime-host execution. The app may
    use an initial context prompt or append the prompt through `RuntimeIngress`,
    but the prompt must be durable and tied to the parent context id.
 
-The app must not create multiple parent planner contexts for the same provider
-entity on redelivery. Duplicate triggers load the same parent context and write
-additional idempotent facts or no-op evidence.
+The guarantee is external work key convergence: Linear/GitHub/provider
+redelivery for the same external work key must resolve to the same durable
+factory-run subscriber identity and planner `contextId`. It must not create
+competing factory runs. This is not a platform parent/child hierarchy; it is an
+app-owned idempotency and lookup contract over durable records.
 
 ### Initial Planner Prompt Shape
 
@@ -255,8 +263,8 @@ Required operating rules:
    PermissionRequest when available; otherwise wait for a durable
    human.* fact.
 3. Use session_new to create implementer, reviewer, and QA child sessions when
-   those phases are needed. Include parentSessionId/context metadata and the
-   Linear/GitHub correlation ids.
+   those phases are needed. Include the parent context id and Linear/GitHub
+   correlation ids in the prompt/tool input fields that exist today.
 4. Use session_prompt for follow-up work on an existing child session.
 5. Use schedule_me for future self rechecks, such as CI still pending.
 6. Use execute only for advertised provider/sandbox capabilities. Record or
@@ -372,6 +380,13 @@ must use configured credentials and real Linear/GitHub/Slack/provider modules;
 tests may avoid printing or asserting secret values, but they must not replace
 the app acceptance path with fake provider clients.
 
+Live planner-driven provider side effects through `execute` are a prerequisite
+for any first-slice acceptance that claims Linear/GitHub/Slack action support.
+If those capability-backed `execute` handlers are not implemented yet, the
+first slice must keep provider side effects out of the acceptance proof and
+limit itself to ingest, durable facts, planner output or permission request,
+decision resume, and observable next planner action.
+
 ## Runtime Observation
 
 The app should consume the merged runtime observation sources from #232:
@@ -422,6 +437,32 @@ appendRuntimeIngress({
 })
 ```
 
+### Permission Display And Resolution
+
+ACP `PermissionRequest` output is already durable as
+`firegrid.runtime.agent-output-events`. The human-facing approval payload lives
+in that durable output event and, when the app needs a provider-facing queue,
+in an app-owned fact that copies the display fields.
+
+The display payload must include:
+
+- `permissionRequestId`;
+- `contextId`;
+- `factoryRunKey`;
+- `correlationId`, if provided by the planner or app;
+- prompt/body text, including the plan or decision being approved;
+- choices/options with stable ids and labels;
+- requestedBy/source, such as planner context id or tool call id;
+- status (`requested`, `resolved`, `expired`, or `cancelled`) when projected
+  into app facts.
+
+`PermissionResponse` correlates by `contextId` plus `permissionRequestId` and
+is delivered through `RuntimeIngress` to the same context. If the app also
+writes a `human.*` fact for provider/operator visibility, that fact should use
+`externalEventKey = permissionRequestId` and `externalEntityKey =
+factoryRunKey` or the provider entity id. The fact is display/audit evidence;
+the runtime resume path remains `RuntimeIngress`.
+
 No permission table is required for the first app slice. If the product wants a
 human-facing queue, it can project permission requests from runtime output into
 app facts, but runtime resume remains `RuntimeIngress` to the context.
@@ -434,11 +475,11 @@ semantics in the planner prompt and status docs as follows:
 
 | Tool | Factory use |
 | --- | --- |
-| `session_new` | Primary delegation primitive. Use for implementer, reviewer, council member, QA, or repository-investigation child sessions. Inputs should include role, parent context/session id, Linear issue id, repo, branch, PR URL when known, and correlation id metadata. |
+| `session_new` | Primary delegation primitive. Use for implementer, reviewer, council member, QA, or repository-investigation child sessions. Inputs should include role, parent context/session id, Linear issue id, repo, branch, PR URL when known, and correlation ids in fields supported by the current session tool schema. |
 | `session_prompt` | Follow-up prompt to an existing child session, such as asking the implementer to address review feedback, asking QA to rerun with a specific preview URL, or asking a reviewer to re-check after a new commit. |
 | `wait_for` | Primary suspension primitive. Use for human approval facts, ACP permission output observations, GitHub PR/CI facts, Linear prompted/stop facts, child runtime status, provider side-effect facts, and runtime terminal evidence. |
 | `schedule_me` | Future self-prompt for bounded rechecks where an external event may not arrive, especially CI still pending, provider eventual consistency, or a reminder to inspect a stale child session. |
-| `execute` | Only for configured capability-backed provider or sandbox actions. Examples: GitHub PR lookup/comment/merge, Linear activity/comment/delegate update, Slack advisory post, or repository command execution when a sandbox capability exists. The planner must not assume arbitrary provider access unless the prompt advertises the capability. |
+| `execute` | Only for configured capability-backed provider or sandbox actions. Examples, once implemented and advertised: GitHub PR lookup/comment/merge, Linear activity/comment/delegate update, Slack advisory post, or repository command execution when a sandbox capability exists. The planner must not assume arbitrary provider access unless the prompt advertises the capability. |
 | `sleep` | Last-resort bounded backoff inside a running turn when no durable observation source exists. Prefer `wait_for` or `schedule_me` for long waits. |
 | `session_cancel` | Stop a child session when a human rejects the run, a duplicate child was created, the planner changes strategy, or a provider stop signal arrives. |
 | `session_close` | Close a child session after its result has been captured in durable output/facts or when the planner intentionally abandons that branch. |
@@ -456,9 +497,9 @@ The production-shaped flow is:
 1. A product-owned Linear/GitHub/webhook adapter receives and verifies input.
 2. The app writes or loads an external fact with deterministic source and
    external event key.
-3. The app creates or loads one parent planner `RuntimeContext` for the
-   external entity key, such as Linear issue id.
-4. The parent context is launched by the host/control-plane path:
+3. The app creates or loads one durable factory-run subscriber identity for
+   the external work key and resolves its planner `contextId`.
+4. The planner context is launched by the host/control-plane path:
    `insertLocalRuntimeContext` or `Firegrid.launch`, optional initial
    `appendRuntimeIngress`, and `startRuntime`.
 5. The planner receives the canonical Firegrid tools and app-specific
@@ -472,8 +513,8 @@ The production-shaped flow is:
    - as `RuntimeIngress` `PermissionResponse` for ACP permission requests; or
    - as an app-owned fact for generic human/external decisions.
 8. The planner resumes, delegates implementation/review/QA with Firegrid tools
-   as needed, and requests provider side effects through configured app
-   capabilities.
+   as needed, and requests provider side effects only through configured app
+   capabilities that are actually implemented and advertised.
 9. GitHub/Linear/Slack side effects emit durable facts so retries and future
    planner turns can inspect what already happened.
 10. The app derives status from durable observations, not from in-memory
@@ -527,8 +568,8 @@ and include:
 
 - parent context id, factory run key, source, external entity key, Linear
   identifier/url, repo, branch, and PR link when known;
-- active and terminal runtime contexts from `firegrid.runtime.runs`, including
-  child sessions and roles when metadata is present;
+- active and terminal runtime contexts from `firegrid.runtime.runs`, joined to
+  child role/correlation facts or tool results when present;
 - latest app facts from `darkFactory.facts`, grouped by provider/entity;
 - latest runtime output text/log excerpts from `firegrid.runtime.output.logs`;
 - structured agent output from `firegrid.runtime.agent-output-events`,
@@ -555,7 +596,8 @@ not the full factory product:
    ticket event, with live verification where the provider can deliver to the
    app route.
 2. The app writes `linear.issue.accepted` as a durable fact.
-3. The app creates or loads parent planner context for the Linear issue id.
+3. The app creates or loads one durable factory-run subscriber identity and
+   planner context for the Linear issue id.
 4. A real planner/agent backend supported by Firegrid starts and emits a
    plan-ready or permission-needed observation.
 5. The app/test observes the wait through
@@ -564,11 +606,12 @@ not the full factory product:
    runtime ingress or a provider-backed fact.
 7. The app resumes the planner by writing `PermissionResponse` ingress or a
    `human.plan.approved` fact.
-8. The planner emits a `session_new`, `session_prompt`, `wait_for`, or
-   side-effect intent through Firegrid tools.
-9. Runtime output/facts show durable evidence for parent context id, Linear
-   issue id, decision, delegated work or provider action, and waiting or
-   terminal status.
+8. The planner emits an observable next action, such as `session_new`,
+   `session_prompt`, `wait_for`, `schedule_me`, or an `execute` call only if
+   the required provider capability exists.
+9. Runtime output/facts show durable evidence for the subscriber identity,
+   planner context id, Linear issue id, decision, next planner action, and
+   waiting or terminal status.
 
 Later slices can add the full implementation/review/QA loop and perform
 CI-gated merge. Those slices must keep the same choreography rule: the planner
