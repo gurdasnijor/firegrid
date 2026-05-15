@@ -35,6 +35,12 @@ import {
 | `firegridRuntimeTableTags` | Table tag list for advanced compositions that provide all required table layers. |
 | `local` | Helper constructors for local-process runtime intents. |
 
+The client also re-exports session/runtime schemas and deterministic helpers
+needed by app code that is already working through the session facade, including
+`RuntimeConfigSchema`, runtime snapshot row schemas,
+`sessionContextIdForExternalKey`, and
+`runtimeIngressInputIdForIdempotencyKey`.
+
 ## Is It Browser Safe?
 
 The production client entrypoints are browser/edge safe:

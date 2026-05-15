@@ -3,7 +3,7 @@ import {
   RuntimeConfigSchema,
   type LaunchAuthorizedBinding,
   type RuntimeConfig,
-} from "@firegrid/protocol/launch"
+} from "@firegrid/client/firegrid"
 import { Schema } from "effect"
 
 export const defaultFactoryNamespace = "firegrid-factory"

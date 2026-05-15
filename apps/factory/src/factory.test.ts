@@ -1,7 +1,9 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { RuntimeOutputTable } from "@firegrid/protocol/launch"
-import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
-import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
+import {
+  FiregridRuntimeTables,
+  runtimeIngressInputIdForIdempotencyKey,
+  sessionContextIdForExternalKey,
+} from "@firegrid/client/firegrid"
 import { AgentOutputEventSchema, type AgentOutputEvent } from "@firegrid/runtime/agent-io"
 import { Effect, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -411,7 +413,7 @@ describe("dark factory P0 contracts", () => {
           planner: { argv: ["node", "planner.js"], agentProtocol: "stdio-jsonl" },
           providerCapabilities: [],
         })
-        const output = yield* RuntimeOutputTable
+        const output = yield* FiregridRuntimeTables.Output
         yield* output.events.upsert({
           eventId: {
             contextId: accepted.run.plannerContextId,

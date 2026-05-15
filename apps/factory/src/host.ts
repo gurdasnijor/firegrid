@@ -1,33 +1,25 @@
 import {
-  RuntimeEventSchema,
-  RuntimeLogLineSchema,
-  RuntimeRunEventSchema,
-  RuntimeConfigSchema,
-  durableStreamUrl,
-  type RuntimeConfig,
-  type RuntimeEvent,
-} from "@firegrid/protocol/launch"
-import {
-  FiregridRuntimeObservationSourceNames,
-} from "@firegrid/protocol/agent-tools"
-import {
-  RuntimeIngressInputRowSchema,
-} from "@firegrid/protocol/runtime-ingress"
-import {
-  type RuntimePermissionRequestObservation,
-} from "@firegrid/protocol/session-facade"
-import {
-  FiregridLocalHostLive,
-  RuntimeStartCapabilityLive,
-  localProcessSpawnEnvFromHostEnv,
-  type RuntimeHostTopologyOptions,
-} from "@firegrid/runtime/runtime-host"
-import {
   Firegrid,
   FiregridConfig,
   FiregridLive,
+  RuntimeConfigSchema,
+  RuntimeEventSchema,
+  RuntimeLogLineSchema,
+  RuntimeRunEventSchema,
+  RuntimeIngressInputRowSchema,
   type FiregridSessionHandle,
+  type RuntimeConfig,
+  type RuntimeEvent,
+  type RuntimePermissionRequestObservation,
 } from "@firegrid/client/firegrid"
+import {
+  FiregridLocalHostLive,
+  RuntimeObservationSourceNames,
+  RuntimeStartCapabilityLive,
+  durableStreamUrl,
+  localProcessSpawnEnvFromHostEnv,
+  type RuntimeHostTopologyOptions,
+} from "@firegrid/runtime/runtime-host"
 import {
   SourceCollections,
   sourceCollectionHandle,
@@ -671,4 +663,4 @@ export const waitForNextAgentOutput = (
     return yield* loop(decodedInput.timeoutMs)
   })
 
-export const RuntimeObservationSourceNames = FiregridRuntimeObservationSourceNames
+export { RuntimeObservationSourceNames }

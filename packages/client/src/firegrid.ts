@@ -243,6 +243,26 @@ export class Firegrid extends Context.Tag("@firegrid/client/Firegrid")<
 >() {}
 
 export { local }
+export {
+  LaunchAuthorizedBindingSchema,
+  RuntimeConfigSchema,
+  RuntimeEventSchema,
+  RuntimeLogLineSchema,
+  RuntimeRunEventSchema,
+  type LaunchAuthorizedBinding,
+  type RuntimeConfig,
+  type RuntimeEvent,
+  type RuntimeLogLine,
+  type RuntimeRunEvent,
+} from "@firegrid/protocol/launch"
+export {
+  RuntimeIngressInputRowSchema,
+  runtimeIngressInputIdForIdempotencyKey,
+} from "@firegrid/protocol/runtime-ingress"
+export {
+  sessionContextIdForExternalKey,
+  type RuntimePermissionRequestObservation,
+} from "@firegrid/protocol/session-facade"
 
 export const FiregridRuntimeTables = {
   ControlPlane: RuntimeControlPlaneTable,

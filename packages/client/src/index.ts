@@ -8,10 +8,17 @@ export {
   FiregridLive,
   FiregridRuntimeTables,
   FiregridStandaloneLive,
+  LaunchAuthorizedBindingSchema,
   LaunchInputError,
   PreloadError,
+  RuntimeConfigSchema,
+  RuntimeEventSchema,
+  RuntimeLogLineSchema,
+  RuntimeRunEventSchema,
   firegridRuntimeTableTags,
   local,
+  runtimeIngressInputIdForIdempotencyKey,
+  sessionContextIdForExternalKey,
   type ClientOptions,
   type FiregridError,
   type FiregridPermissionsClient,
@@ -21,13 +28,21 @@ export {
   type FiregridSessionWaitClient,
   type FiregridSessionsClient,
   type FiregridWaitClient,
+  type LaunchAuthorizedBinding,
   type PromptInputError,
+  type RuntimeConfig,
   type RuntimeContextHandle,
   type RuntimeContextSnapshot,
+  type RuntimeEvent,
+  type RuntimeLogLine,
+  type RuntimeRunEvent,
 } from "./firegrid.ts"
 export type {
   PublicPromptRequest,
   RuntimeIngressInputRow,
+} from "@firegrid/protocol/runtime-ingress"
+export {
+  RuntimeIngressInputRowSchema,
 } from "@firegrid/protocol/runtime-ingress"
 export type {
   FiregridSessionId,
