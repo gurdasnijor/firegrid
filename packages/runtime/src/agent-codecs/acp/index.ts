@@ -1,3 +1,22 @@
+/**
+ * Status: legacy.
+ *
+ * `AcpCodec` produces the Firegrid-shaped `AgentSession` /
+ * `AgentOutputEvent` surface from an ACP child process. New ACP
+ * work — including any runtime-host integration — should consume
+ * `AcpAgentAdapter` in `packages/runtime/src/agent-adapters/acp/`
+ * instead. That module exposes `@effect/ai` `LanguageModel.Service`
+ * and is the target end-state for ACP agent integration.
+ *
+ * Pure ACP <-> Effect AI mapping helpers (stop-reason mapping,
+ * user-message-part translation) are shared with the adapter via
+ * `./mapping.ts` so both modules stay in lock-step on the wire
+ * shape they agree on.
+ *
+ * See `docs/contributing/architecture-map.md` § "Codec vs Adapter"
+ * for the full status framing.
+ */
+
 import * as acp from "@agentclientprotocol/sdk"
 import { IdGenerator, Prompt, Response } from "@effect/ai"
 import { Effect, Match, Queue, Ref, Runtime, Stream } from "effect"

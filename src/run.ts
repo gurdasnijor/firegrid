@@ -12,6 +12,32 @@
  *   pnpm firegrid:run -- <agent>
  *   pnpm firegrid:start
  *
+ * Harness contract:
+ *
+ *   This file is the test/smoke harness for the entire product.
+ *   Scenarios under `scenarios/firegrid/` spawn `pnpm firegrid -- ...`
+ *   and assert on its stdout / exit code. They do not reach past the
+ *   CLI boundary into adapter / host / codec internals.
+ *
+ *   If a smoke needs behavior the CLI does not currently expose,
+ *   extend the CLI (and the launch schema it consumes) here — do
+ *   not duplicate the wiring in a scratch file or scenario. See
+ *   `docs/contributing/architecture-map.md` for the current
+ *   subcommand intent and the list of known CLI gaps before
+ *   extending.
+ *
+ * Subcommand intent (see architecture-map for the full matrix +
+ * gaps):
+ *
+ *   - `run` composes `FiregridLocalHostLive` only and drives the
+ *     runtime workflow. It does NOT start the MCP server and does
+ *     NOT thread `mcpServers` into the spawned agent's session.
+ *   - `start` composes `FiregridLocalHostLive + FiregridMcpServerLayer`,
+ *     seeds a `RuntimeContext`, and prints a `firegrid.start.ready`
+ *     JSON line with `mcpUrl`. It does NOT launch the agent argv
+ *     accepted after `--`; that argv is recorded into the context
+ *     intent for an external `startRuntime` caller.
+ *
  * Implements:
  *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1..6
  *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 — --cwd

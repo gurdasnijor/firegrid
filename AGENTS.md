@@ -1,5 +1,52 @@
 # Agent Instructions
 
+## The CLI Is The Harness
+
+Every Firegrid smoke goes through the unified CLI in `src/run.ts`:
+
+```
+pnpm firegrid -- run -- <agent argv>
+pnpm firegrid -- start [-- <agent argv>]
+```
+
+Scenarios under `scenarios/firegrid/` spawn the CLI and assert on its
+stdout / exit code. They do **not** instantiate `AcpAgentAdapter`,
+`AcpCodec`, `FiregridMcpServerLayer`, or any other adapter / host
+layer directly; they do not parse `firegrid.start.ready` JSON to wire
+something else around it; they do not spawn `npx ...` to talk a
+protocol that the CLI is supposed to own.
+
+If a smoke cannot be expressed through the CLI today, the missing
+piece is **product surface** — extend `src/run.ts` (and the launch
+schema it consumes), not the test code. Examples that have come up:
+
+- "the CLI should thread `mcpServers` into the spawned agent's
+  session" → extend `runCommand` and the agent-lowering path in
+  `src/run.ts`; do not duplicate that wiring in a scratch test
+- "the CLI should default-attach Firegrid MCP for ACP agents" →
+  launch normalization layer in `src/run.ts`; not a test fixture
+- "spawn an ACP agent and observe a tool call" → add the agent
+  intent to the launch schema and have `executeRun` drive it; do
+  not stand up a `child_process.spawn` harness in a test file
+
+Hard rules:
+
+- **No `scratch-*.ts` files** in any worktree. If you need throwaway
+  orchestration, extend the CLI. The CLI is reusable; a scratch
+  isn't.
+- **No `child_process.spawn` for product processes in test files.**
+  The exception is wrapping `pnpm firegrid -- ...` itself in a
+  scenario (see `scenarios/firegrid/src/tracer-019-sync-run.test.ts`
+  for the canonical shape).
+- **No private adapter wiring in tests.** Adapter and host layer
+  composition belongs in `src/run.ts` or `src/host.ts`. Tests treat
+  them as implementation details of the CLI surface.
+
+See `docs/contributing/architecture-map.md` for "where does X
+live" and the current list of known CLI gaps. Before extending
+the CLI for a new smoke, check that doc; the gap may already be
+tracked there with a recommended scope.
+
 ## Vendored Reference Repositories
 
 This repository vendors selected upstream sources under `repos/` as read-only
