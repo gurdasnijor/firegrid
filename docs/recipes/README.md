@@ -10,3 +10,4 @@ evidence, and avoid introducing new product behavior.
 ## Runtime Recipes
 
 - [Durable webhook facts and `wait_for`](durable-webhook-facts-and-wait-for.md)
+- [Runtime permission resume](runtime-permission-resume.md)
