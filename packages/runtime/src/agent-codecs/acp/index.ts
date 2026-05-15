@@ -9,9 +9,12 @@ import type {
   AgentOutputEvent,
   PermissionDecision,
   PermissionOption,
-  StopReason,
 } from "../../agent-io/index.ts"
 import { AgentCodecError } from "../../agent-io/index.ts"
+import {
+  acpStopReasonToFinishReason,
+  acpUserPromptPartToContentBlock,
+} from "./mapping.ts"
 
 const codec = "acp"
 
@@ -55,16 +58,6 @@ const recoverableError = (message: string, cause?: unknown): AgentOutputEvent =>
   }
 }
 
-const mapStopReason = (stopReason: acp.StopReason): StopReason =>
-  Match.value(stopReason).pipe(
-    Match.when("end_turn", () => "stop" as const),
-    Match.when("cancelled", () => "other" as const),
-    Match.when("max_tokens", () => "length" as const),
-    Match.when("max_turn_requests", () => "length" as const),
-    Match.when("refusal", () => "error" as const),
-    Match.exhaustive,
-  )
-
 const promptUserParts = (
   event: Extract<AgentInputEvent, { _tag: "Prompt" }>,
 ): ReadonlyArray<Prompt.UserMessagePart> =>
@@ -73,16 +66,10 @@ const promptUserParts = (
 const mapUserPromptPart = (
   part: Prompt.UserMessagePart,
 ): Effect.Effect<acp.ContentBlock, AgentCodecError> =>
-  Match.value(part).pipe(
-    Match.when({ type: "text" }, text =>
-      Effect.succeed({
-        type: "text" as const,
-        text: text.text,
-      })),
-    Match.orElse(other =>
-      Effect.fail(
-        codecError("send", `ACP codec does not support ${other.type} prompt parts`),
-      )),
+  acpUserPromptPartToContentBlock(part).pipe(
+    Effect.mapError(error =>
+      codecError("send", `ACP codec does not support ${error.partType} prompt parts`),
+    ),
   )
 
 const mapPromptContent = (
@@ -332,7 +319,7 @@ export const AcpCodec: AgentCodec = {
                     Effect.zipRight(
                       emitEffect({
                         _tag: "TurnComplete",
-                        finishReason: mapStopReason(response.stopReason),
+                        finishReason: acpStopReasonToFinishReason(response.stopReason),
                         ...(response.userMessageId === undefined || response.userMessageId === null
                           ? {}
                           : { messageId: response.userMessageId }),

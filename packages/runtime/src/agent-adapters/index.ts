@@ -23,3 +23,11 @@ export {
   AgentAdapterSelectionError,
   PermissionRequiredButNotHandled,
 } from "./errors.ts"
+export {
+  AcpAdapterCapabilities,
+  AcpAgentAdapter,
+  acpSessionUpdateToStreamParts,
+  acpStopReasonToFinishReason,
+  promptToAcpContent,
+  type AcpAgentAdapterOptions,
+} from "./acp/index.ts"

@@ -25,14 +25,32 @@ components:
       1: Firegrid adapter errors are Schema.TaggedError classes, not manual _tag object/type aliases.
       2: Firegrid adapter errors remain Firegrid-owned capability or selection errors and do not widen the LanguageModel.Service error channel.
 
+  ACP_ADAPTER:
+    requirements:
+      1: AcpAgentAdapter exposes @effect/ai LanguageModel.Service for an ACP agent connection without cloning model, tool, provider, or sandbox contracts.
+      2: AcpAgentAdapter acquires the ACP ClientSideConnection plus session over an existing AgentByteStream and reuses one session across multiple streamText calls.
+      3: AcpAgentAdapter streamText emits Response.textDeltaPart for ACP agent_message_chunk events and Response.toolCallPart for ACP tool_call events.
+      4: AcpAgentAdapter streamText emits Response.finishPart with a FinishReason derived from ACP stopReason at end of turn.
+      5: AcpAgentAdapter streamText and generateText with an Effect AI toolkit option fail explicitly with AiError.UnknownError whose cause is AdapterUnsupportedFeature; no Firegrid tool-result callbacks are added.
+      6: An ACP requestPermission during the base LanguageModel view fails the active stream with AiError.UnknownError whose cause is PermissionRequiredButNotHandled; permission is never auto-allowed.
+      7: AcpAgentAdapter generateText collects streamText into a LanguageModel.GenerateTextResponse, aggregating text deltas into text parts and propagating tool-call parts.
+      8: AcpAgentAdapter generateObject fails explicitly as unsupported in Slice 2 with AiError.UnknownError whose cause is AdapterUnsupportedFeature.
+      9: AcpAgentAdapter correlation reads CurrentAgentTurn when available; ACP PromptRequest.messageId and PromptResponse.userMessageId are not used for adapter correlation.
+
 constraints:
   BOUNDARIES:
     requirements:
       1: Slice 1 does not modify runtime-host workflow execution, runtime journaling, ACP codec behavior, SandboxProvider, or MCP routing.
       2: LanguageModel.Service is the base prompt/model contract; Firegrid does not define a parallel model interface or local tool registry in this slice.
+      3: Slice 2 does not modify runtime-host workflow execution, runtime journaling, ACP codec behavior, SandboxProvider, MCP routing, or CLI entrypoints; the existing AcpCodec stays exported.
 
   VALIDATION:
     requirements:
       1: Tests prove LanguageModelAdapter delegates to an injected fake LanguageModel.Service and does not require SandboxProvider.
       2: Tests prove CurrentAgentTurn can be provided and read through Effect context.
       3: Tests prove AgentAdapterRegistry can select an AgentAdapterService for a RuntimeContext shape without invoking runtime-host integration.
+      4: Tests prove AcpAgentAdapter streamText emits text-delta and tool-call stream parts plus a final finish part for an ACP fixture turn.
+      5: Tests prove AcpAgentAdapter generateText collects streamText into a GenerateTextResponse with aggregated text and propagated tool-call parts.
+      6: Tests prove AcpAgentAdapter reuses one ACP session across multiple consecutive streamText calls.
+      7: Tests prove AcpAgentAdapter streamText with an Effect AI toolkit option fails with AiError.UnknownError caused by AdapterUnsupportedFeature.
+      8: Tests prove AcpAgentAdapter streamText fails with AiError.UnknownError caused by PermissionRequiredButNotHandled when ACP issues requestPermission and no permission capability is installed.
