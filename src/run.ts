@@ -39,20 +39,23 @@ import { HttpServer } from "@effect/platform"
 import { NodeContext, NodeRuntime } from "@effect/platform-node"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import type { DurableTableHeaders } from "@firegrid/protocol"
-import { type RuntimeEnvBinding } from "@firegrid/protocol/launch"
+import {
+  decodeLaunchConfig,
+  firegridRuntimeContextMcpDeclaration,
+  injectLaunchMcpDeclaration,
+  type LaunchConfig,
+  type RuntimeEnvBinding,
+} from "@firegrid/protocol/launch"
 import {
   FiregridLocalHostLive,
   RuntimeEnvResolverPolicy,
   appendRuntimeIngress,
-  decodeRunConfig,
   firegridRunCreatedBy,
   insertLocalRuntimeContext,
   localProcessSpawnEnvFromHostEnv,
-  runConfigRequiresInput,
   runConfigToIngressRequest,
   runConfigToRuntimeContextIntent,
   startRuntime,
-  type RunConfig,
 } from "@firegrid/runtime"
 import {
   FiregridMcpServerLayer,
@@ -67,6 +70,7 @@ class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{
 
 interface RawRunConfig {
   readonly agentArgv: ReadonlyArray<string>
+  readonly agent?: string
   readonly cwd?: string
   readonly prompt?: string
   readonly envBindings?: ReadonlyArray<RuntimeEnvBinding>
@@ -83,7 +87,7 @@ interface StartConfig {
   readonly mcpHost: string
   readonly mcpPort: number
   readonly mcpPath: string
-  readonly runConfig: RunConfig
+  readonly runConfig: LaunchConfig
 }
 
 interface ReadyRecord {
@@ -142,6 +146,7 @@ const parseSecretEnvFlag = (
 const rawRunConfigFromCli = (
   input: {
     readonly agentArgv: ReadonlyArray<string>
+    readonly agent: Option.Option<string>
     readonly cwd: Option.Option<string>
     readonly prompt: Option.Option<string>
     readonly secretEnv: ReadonlyArray<string>
@@ -177,10 +182,12 @@ const rawRunConfigFromCli = (
     const agentArgv = input.agentArgv.length === 0
       ? [...noopAgentArgv]
       : [...input.agentArgv]
+    const agent = Option.getOrUndefined(input.agent)
     const cwd = Option.getOrUndefined(input.cwd)
     const prompt = Option.getOrUndefined(input.prompt)
     return {
       agentArgv,
+      ...(agent === undefined ? {} : { agent }),
       ...(cwd === undefined ? {} : { cwd }),
       ...(prompt === undefined ? {} : { prompt }),
       ...(envBindings.length === 0 ? {} : { envBindings }),
@@ -191,8 +198,8 @@ const rawRunConfigFromCli = (
 const decodeCliRunConfig = (
   raw: RawRunConfig,
   commandName: string,
-): Effect.Effect<RunConfig, FiregridCliUsageError> =>
-  decodeRunConfig(raw).pipe(
+): Effect.Effect<LaunchConfig, FiregridCliUsageError> =>
+  decodeLaunchConfig(raw).pipe(
     Effect.mapError((error) =>
       usageError(`${commandName}: invalid run-config: ${ParseResult.TreeFormatter.formatErrorSync(error)}`)),
   )
@@ -201,13 +208,13 @@ const decodeCliRunConfig = (
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8
-const executeRun = (config: RunConfig) =>
+const executeRun = (config: LaunchConfig, contextId: string) =>
   Effect.gen(function* () {
     // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
     // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
     const intent = runConfigToRuntimeContextIntent(config)
     const context = yield* insertLocalRuntimeContext(intent, {
-      contextId: `ctx_${crypto.randomUUID()}`,
+      contextId,
       createdBy: firegridRunCreatedBy,
     })
     yield* Console.log(
@@ -252,25 +259,6 @@ const envPolicyLayer = (
 // take over. This lets `pnpm firegrid -- run -- <agent>` succeed in
 // local dev without operators having to export
 // DURABLE_STREAMS_BASE_URL / FIREGRID_RUNTIME_NAMESPACE first.
-const runHostLayer = (
-  config: RunConfig,
-  durableStreams: DurableStreamsEndpoint,
-  namespace: string,
-) => {
-  const headers = durableTableHeadersFromEnv()
-  const inputFromEnv = globalThis.process.env["FIREGRID_RUNTIME_INPUT_ENABLED"] === "true"
-  return FiregridLocalHostLive(
-    {
-      durableStreamsBaseUrl: durableStreams.baseUrl,
-      namespace,
-      ...(inputFromEnv || runConfigRequiresInput(config) ? { input: true } : {}),
-      ...(headers === undefined ? {} : { headers }),
-      localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
-    },
-    envPolicyLayer(config.authorizedBindings ?? []),
-  )
-}
-
 const namespaceFromEnvOrDefault = (): string => {
   const fromEnv = globalThis.process.env["FIREGRID_RUNTIME_NAMESPACE"]
   return fromEnv === undefined || fromEnv.length === 0 ? defaultNamespace : fromEnv
@@ -350,18 +338,23 @@ const seedContextAndPrintReady = (
   config: StartConfig,
 ) =>
   Effect.gen(function* () {
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const address = yield* HttpServer.addressFormattedWith((addr) => Effect.succeed(addr))
+    const runConfig = injectLaunchMcpDeclaration(
+      config.runConfig,
+      firegridRuntimeContextMcpDeclaration(mcpUrl(address, config.mcpPath, contextId)),
+    )
     const context = yield* insertLocalRuntimeContext(
-      runConfigToRuntimeContextIntent(config.runConfig),
+      runConfigToRuntimeContextIntent(runConfig),
       {
-        contextId: `ctx_${crypto.randomUUID()}`,
+        contextId,
         createdBy: startCreatedBy,
       },
     )
-    const ingressRequest = runConfigToIngressRequest(config.runConfig, context.contextId)
+    const ingressRequest = runConfigToIngressRequest(runConfig, context.contextId)
     if (ingressRequest !== undefined) {
       yield* appendRuntimeIngress(ingressRequest)
     }
-    const address = yield* HttpServer.addressFormattedWith((addr) => Effect.succeed(addr))
     yield* printReadyRecord({
       address,
       config,
@@ -370,7 +363,7 @@ const seedContextAndPrintReady = (
     })
   })
 
-const hostAndMcpLayer = (
+const hostMcpLayer = (
   durableStreams: DurableStreamsEndpoint,
   config: StartConfig,
 ): Layer.Layer<HttpServer.HttpServer, unknown, never> =>
@@ -391,10 +384,6 @@ const hostAndMcpLayer = (
         },
         envPolicyLayer(config.runConfig.authorizedBindings ?? []),
       )),
-      Layer.tap((context) =>
-        seedContextAndPrintReady(durableStreams, config).pipe(
-          Effect.provide(context),
-        )),
     )
     // The workspace package export resolves at runtime through the source
     // export map; eslint's root project widens this composed layer. Keep the
@@ -402,7 +391,50 @@ const hostAndMcpLayer = (
     return layer as Layer.Layer<HttpServer.HttpServer, unknown, never>
   }
 
+const hostAndMcpLayer = (
+  durableStreams: DurableStreamsEndpoint,
+  config: StartConfig,
+): Layer.Layer<HttpServer.HttpServer, unknown, never> => {
+  const layer = hostMcpLayer(durableStreams, config).pipe(
+    Layer.tap((context) =>
+      seedContextAndPrintReady(durableStreams, config).pipe(
+        Effect.provide(context),
+      )),
+  )
+  return layer as Layer.Layer<HttpServer.HttpServer, unknown, never>
+}
+
+const runWithMcp = (
+  durableStreams: DurableStreamsEndpoint,
+  namespace: string,
+  config: LaunchConfig,
+) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const hostConfig: StartConfig = {
+        namespace,
+        mcpHost: defaultMcpHost,
+        mcpPort: defaultMcpPort,
+        mcpPath: defaultMcpPath,
+        runConfig: config,
+      }
+      const context = yield* Layer.build(hostMcpLayer(durableStreams, hostConfig))
+      const address = yield* HttpServer.addressFormattedWith((addr) => Effect.succeed(addr)).pipe(
+        Effect.provide(context),
+      )
+      const contextId = `ctx_${crypto.randomUUID()}`
+      const normalized = injectLaunchMcpDeclaration(
+        config,
+        firegridRuntimeContextMcpDeclaration(mcpUrl(address, hostConfig.mcpPath, contextId)),
+      )
+      return yield* executeRun(normalized, contextId).pipe(
+        Effect.provide(context),
+      )
+    }),
+  )
+
 const runArgv = Args.text({ name: "agent-argv" }).pipe(Args.repeated)
+const agentOption = Options.text("agent").pipe(Options.optional)
 const cwdOption = Options.text("cwd").pipe(Options.optional)
 const promptOption = Options.text("prompt").pipe(Options.optional)
 const secretEnvOption = Options.text("secret-env").pipe(Options.repeated)
@@ -410,15 +442,17 @@ const secretEnvOption = Options.text("secret-env").pipe(Options.repeated)
 const runCommand = Command.make(
   "run",
   {
+    agent: agentOption,
     cwd: cwdOption,
     prompt: promptOption,
     secretEnv: secretEnvOption,
     agentArgv: runArgv,
   },
-  ({ agentArgv, cwd, prompt, secretEnv }) =>
+  ({ agent, agentArgv, cwd, prompt, secretEnv }) =>
     Effect.gen(function* () {
       const raw = yield* rawRunConfigFromCli({
         agentArgv,
+        agent,
         cwd,
         prompt,
         secretEnv,
@@ -427,9 +461,7 @@ const runCommand = Command.make(
       const config = yield* decodeCliRunConfig(raw, "firegrid run")
       const durableStreams = yield* durableStreamsEndpoint
       const namespace = namespaceFromEnvOrDefault()
-      const exitCode = yield* executeRun(config).pipe(
-        Effect.provide(runHostLayer(config, durableStreams, namespace)),
-      )
+      const exitCode = yield* runWithMcp(durableStreams, namespace, config)
       yield* Effect.sync(() => {
         globalThis.process.exitCode = exitCode
       })
@@ -448,15 +480,17 @@ const startCommand = Command.make(
     mcpHost: mcpHostOption,
     mcpPort: mcpPortOption,
     mcpPath: mcpPathOption,
+    agent: agentOption,
     cwd: cwdOption,
     prompt: promptOption,
     secretEnv: secretEnvOption,
     agentArgv: runArgv,
   },
-  ({ agentArgv, cwd, mcpHost, mcpPath, mcpPort, namespace, prompt, secretEnv }) =>
+  ({ agent, agentArgv, cwd, mcpHost, mcpPath, mcpPort, namespace, prompt, secretEnv }) =>
     Effect.gen(function* () {
       const raw = yield* rawRunConfigFromCli({
         agentArgv,
+        agent,
         cwd,
         prompt,
         secretEnv,

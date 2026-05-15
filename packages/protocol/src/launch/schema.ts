@@ -19,6 +19,42 @@ export type RuntimeProvider = Schema.Schema.Type<typeof RuntimeProviderSchema>
 export const RuntimeAgentProtocolSchema = Schema.Literal("raw", "stdio-jsonl", "acp")
 export type RuntimeAgentProtocol = Schema.Schema.Type<typeof RuntimeAgentProtocolSchema>
 
+export const McpServerUrlDeclarationSchema = Schema.Struct({
+  type: Schema.Literal("url"),
+  url: Schema.String,
+  headers: Schema.optional(Schema.Record({
+    key: Schema.String,
+    value: Schema.String,
+  })),
+}).annotations({
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type McpServerUrlDeclaration = Schema.Schema.Type<typeof McpServerUrlDeclarationSchema>
+
+export const McpServerDeclarationSchema = Schema.Struct({
+  name: Schema.String.pipe(Schema.minLength(1)),
+  server: McpServerUrlDeclarationSchema,
+}).annotations({
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type McpServerDeclaration = Schema.Schema.Type<typeof McpServerDeclarationSchema>
+
+export const firegridRuntimeContextMcpName = "firegrid-runtime-context"
+
+export const firegridRuntimeContextMcpDeclaration = (
+  url: string,
+): McpServerDeclaration => ({
+  name: firegridRuntimeContextMcpName,
+  server: {
+    type: "url",
+    url,
+  },
+})
+
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
 //
 // Only the binding (name + ref) is durably persisted. The ref names a host
@@ -33,8 +69,10 @@ export type RuntimeEnvBinding = Schema.Schema.Type<typeof RuntimeEnvBindingSchem
 export const RuntimeConfigSchema = Schema.Struct({
   argv: Schema.Array(Schema.String),
   cwd: Schema.optional(Schema.String),
+  agent: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
   envBindings: Schema.optional(Schema.Array(RuntimeEnvBindingSchema)),
   agentProtocol: Schema.optional(RuntimeAgentProtocolSchema),
+  mcpServers: Schema.optional(Schema.Array(McpServerDeclarationSchema)),
 })
 export type RuntimeConfig = Schema.Schema.Type<typeof RuntimeConfigSchema>
 
@@ -71,6 +109,7 @@ export type PublicLaunchRequest = Schema.Schema.Type<typeof PublicLaunchRequestS
 const normalizeRuntimeConfig = (config: RuntimeConfig): RuntimeConfig => ({
   argv: [...config.argv],
   ...(config.cwd === undefined ? {} : { cwd: config.cwd }),
+  ...(config.agent === undefined ? {} : { agent: config.agent }),
   ...(config.envBindings === undefined ? {} : {
     envBindings: config.envBindings.map(binding => ({
       name: binding.name,
@@ -78,6 +117,18 @@ const normalizeRuntimeConfig = (config: RuntimeConfig): RuntimeConfig => ({
     })),
   }),
   ...(config.agentProtocol === undefined ? {} : { agentProtocol: config.agentProtocol }),
+  ...(config.mcpServers === undefined ? {} : {
+    mcpServers: config.mcpServers.map(declaration => ({
+      name: declaration.name,
+      server: {
+        type: declaration.server.type,
+        url: declaration.server.url,
+        ...(declaration.server.headers === undefined
+          ? {}
+          : { headers: { ...declaration.server.headers } }),
+      },
+    })),
+  }),
 })
 
 export const localJsonlJournal = [
@@ -112,6 +163,59 @@ export const envBinding = (
 ): RuntimeEnvBinding => ({
   name,
   ref: `env:${envVarName}`,
+})
+
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+const EnvVarName = Schema.String.pipe(
+  Schema.filter((value) =>
+    ENV_NAME_RE.test(value)
+      ? undefined
+      : `not a valid env-var identifier: ${value}`),
+)
+
+export const LaunchAuthorizedBindingSchema = Schema.Tuple(EnvVarName, EnvVarName)
+export type LaunchAuthorizedBinding = Schema.Schema.Type<typeof LaunchAuthorizedBindingSchema>
+
+export const LaunchConfigSchema = Schema.Struct({
+  // firegrid-local-mcp-run.LAUNCH_CONFIG.4
+  agentArgv: Schema.Array(Schema.String).pipe(
+    Schema.filter((argv) =>
+      argv.length > 0 ? undefined : "agentArgv must be non-empty"),
+  ),
+  cwd: Schema.optional(Schema.String.pipe(
+    Schema.filter((value) =>
+      value.length > 0 ? undefined : "cwd must be a non-empty path"),
+  )),
+  prompt: Schema.optional(Schema.String),
+  envBindings: Schema.optional(Schema.Array(RuntimeEnvBindingSchema)),
+  authorizedBindings: Schema.optional(Schema.Array(LaunchAuthorizedBindingSchema)),
+  // firegrid-local-mcp-run.LAUNCH_CONFIG.6
+  agent: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  agentProtocol: Schema.optional(RuntimeAgentProtocolSchema),
+  // firegrid-local-mcp-run.LAUNCH_CONFIG.1
+  mcpServers: Schema.optional(Schema.Array(McpServerDeclarationSchema)),
+}).annotations({
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type LaunchConfig = Schema.Schema.Type<typeof LaunchConfigSchema>
+
+export const decodeLaunchConfig = Schema.decodeUnknown(LaunchConfigSchema)
+
+export const injectLaunchMcpDeclaration = (
+  config: LaunchConfig,
+  declaration: McpServerDeclaration,
+): LaunchConfig => ({
+  ...config,
+  // firegrid-local-mcp-run.MCP_ROUTE.3
+  // firegrid-local-mcp-run.MCP_ROUTE.4
+  // firegrid-local-mcp-run.LAUNCH_CONFIG.5
+  mcpServers: [
+    declaration,
+    ...(config.mcpServers ?? []).filter(existing => existing.name !== declaration.name),
+  ],
 })
 
 // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1

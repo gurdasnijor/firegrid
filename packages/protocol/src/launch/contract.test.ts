@@ -1,8 +1,13 @@
-import { Either, Schema } from "effect"
+import { Effect, Either, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
+  decodeLaunchConfig,
   envBinding,
+  firegridRuntimeContextMcpDeclaration,
+  firegridRuntimeContextMcpName,
+  injectLaunchMcpDeclaration,
   local,
+  McpServerDeclarationSchema,
   normalizeRuntimeIntent,
   PublicLaunchRequestSchema,
   RuntimeEventSchema,
@@ -109,6 +114,76 @@ describe("@firegrid/protocol launch schema", () => {
     })
 
     expect(Either.isLeft(decoded)).toBe(true)
+  })
+
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.1 decodes Firegrid-neutral URL MCP declarations and rejects ACP-specific http lowering", () => {
+    const decoded = Schema.decodeUnknownEither(McpServerDeclarationSchema)({
+      name: "custom-tools",
+      server: {
+        type: "url",
+        url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
+        headers: { "x-test": "1" },
+      },
+    })
+    expect(Either.isRight(decoded)).toBe(true)
+
+    const acpLowered = Schema.decodeUnknownEither(McpServerDeclarationSchema)({
+      type: "http",
+      name: "custom-tools",
+      url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
+      headers: [],
+    })
+    expect(Either.isLeft(acpLowered)).toBe(true)
+  })
+
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.3 firegrid-local-mcp-run.LAUNCH_CONFIG.4 decodes CLI launch config in protocol", async () => {
+    const decoded = await Effect.runPromise(decodeLaunchConfig({
+      agent: "codex-acp",
+      agentArgv: ["npx", "-y", "@zed-industries/codex-acp@0.14.0"],
+      prompt: "summarize",
+    }))
+
+    expect(decoded).toMatchObject({
+      agent: "codex-acp",
+      agentArgv: ["npx", "-y", "@zed-industries/codex-acp@0.14.0"],
+      prompt: "summarize",
+    })
+  })
+
+  it("firegrid-local-mcp-run.MCP_ROUTE.3 firegrid-local-mcp-run.MCP_ROUTE.4 firegrid-local-mcp-run.LAUNCH_CONFIG.5 injects the generated runtime-context MCP declaration by default", async () => {
+    const decoded = await Effect.runPromise(decodeLaunchConfig({
+      agentArgv: ["node", "agent.mjs"],
+      mcpServers: [
+        {
+          name: "caller-tools",
+          server: {
+            type: "url",
+            url: "http://127.0.0.1:5555/mcp",
+          },
+        },
+      ],
+    }))
+    const normalized = injectLaunchMcpDeclaration(
+      decoded,
+      firegridRuntimeContextMcpDeclaration("http://127.0.0.1:54321/mcp/runtime-context/ctx_test"),
+    )
+
+    expect(normalized.mcpServers).toEqual([
+      {
+        name: firegridRuntimeContextMcpName,
+        server: {
+          type: "url",
+          url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
+        },
+      },
+      {
+        name: "caller-tools",
+        server: {
+          type: "url",
+          url: "http://127.0.0.1:5555/mcp",
+        },
+      },
+    ])
   })
 
   it("firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.3 decodes runtime event rows without parsing provider JSON", () => {
