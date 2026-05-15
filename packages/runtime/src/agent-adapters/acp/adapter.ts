@@ -46,6 +46,7 @@ type TurnSignal =
 
 interface TurnState {
   readonly queue: Queue.Queue<TurnSignal>
+  readonly turnId: string | undefined
 }
 
 const toolkitUnsupportedError = (method: "generateText" | "streamText"): AiError.UnknownError =>
@@ -72,13 +73,18 @@ const generateObjectUnsupportedError = (): AiError.UnknownError =>
   })
 
 // firegrid-effect-ai-native-agents.ACP_ADAPTER.6
-const permissionRequiredError = (toolCallId: string | undefined): AiError.UnknownError =>
+// firegrid-effect-ai-native-agents.ACP_ADAPTER.9
+const permissionRequiredError = (
+  toolCallId: string | undefined,
+  turnId: string | undefined,
+): AiError.UnknownError =>
   new AiError.UnknownError({
     module: MODULE,
     method: "streamText",
     description:
       "ACP requested permission but no PermissionedAdapter capability is installed",
     cause: new PermissionRequiredButNotHandled({
+      ...(turnId === undefined ? {} : { turnId }),
       ...(toolCallId === undefined ? {} : { toolCallId }),
       message:
         "ACP requestPermission rejected by the base LanguageModel view; permission is never auto-allowed",
@@ -192,10 +198,15 @@ const makeAcpAgentAdapter = (
 
     const client: acp.Client = {
       requestPermission: async params => {
+        const turn = await runPromise(Ref.get(currentTurnRef))
+        const turnId = Option.match(turn, {
+          onNone: () => undefined,
+          onSome: state => state.turnId,
+        })
         await runPromise(
           offerToCurrent({
             _tag: "Fail",
-            error: permissionRequiredError(params.toolCall.toolCallId),
+            error: permissionRequiredError(params.toolCall.toolCallId, turnId),
           }),
         )
         return { outcome: { outcome: "cancelled" } }
@@ -270,8 +281,20 @@ const makeAcpAgentAdapter = (
       rawInput: Prompt.RawInput,
     ): Effect.Effect<Queue.Queue<TurnSignal>, AiError.AiError, Scope.Scope> =>
       Effect.gen(function*() {
+        // firegrid-effect-ai-native-agents.ACP_ADAPTER.9
+        // CurrentAgentTurn is adapter-local correlation only. It is
+        // captured into TurnState so Firegrid-side observations (e.g.
+        // PermissionRequiredButNotHandled) can carry the active turnId,
+        // but it is NEVER sent on the ACP wire: PromptRequest.messageId
+        // and PromptResponse.userMessageId are non-spec echo fields and
+        // not a portable correlation contract.
+        const turnContext = yield* Effect.serviceOption(CurrentAgentTurn)
+        const turnId = Option.match(turnContext, {
+          onNone: () => undefined,
+          onSome: turn => turn.turnId,
+        })
         const queue = yield* Queue.unbounded<TurnSignal>()
-        yield* Ref.set(currentTurnRef, Option.some({ queue }))
+        yield* Ref.set(currentTurnRef, Option.some({ queue, turnId }))
         yield* Ref.set(textDeltaIdRef, undefined)
 
         const promptValue = Prompt.make(rawInput)
@@ -285,19 +308,11 @@ const makeAcpAgentAdapter = (
             })),
         )
 
-        // firegrid-effect-ai-native-agents.ACP_ADAPTER.9
-        const turnContext = yield* Effect.serviceOption(CurrentAgentTurn)
-        const correlationId = Option.match(turnContext, {
-          onNone: () => undefined,
-          onSome: turn => turn.turnId,
-        })
-
         const sendPrompt = Effect.tryPromise({
           try: () =>
             connection.prompt({
               sessionId,
               prompt: userContent,
-              ...(correlationId === undefined ? {} : { messageId: correlationId }),
             }),
           catch: promptFailedError,
         }).pipe(

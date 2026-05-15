@@ -12,6 +12,7 @@ import type { AgentByteStream } from "../../agent-io/index.ts"
 import {
   AdapterUnsupportedFeature,
   AgentAdapter,
+  CurrentAgentTurn,
   PermissionRequiredButNotHandled,
 } from "../index.ts"
 import { AcpAgentAdapter } from "./index.ts"
@@ -271,5 +272,62 @@ describe("AcpAgentAdapter", () => {
 
     expect(agent.prompts[0]?.messageId).toBeUndefined()
     expect(agent.prompts[0]?.prompt).toEqual([{ type: "text", text: "hi" }])
+  })
+
+  it("firegrid-effect-ai-native-agents.ACP_ADAPTER.9 keeps ACP PromptRequest.messageId undefined even when CurrentAgentTurn is provided", async () => {
+    const harness = await Effect.runPromise(makeHarness)
+    const agent = startAgent(harness, connection => new FixtureAgent(connection))
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const adapter = yield* AgentAdapter
+          yield* adapter.languageModel.streamText({ prompt: "hi-with-turn" }).pipe(
+            Stream.runDrain,
+            Effect.provideService(CurrentAgentTurn, {
+              turnId: "turn-correlated",
+              contextId: "ctx-correlated",
+            }),
+          )
+        }).pipe(Effect.provide(AcpAgentAdapter.layer({ bytes: harness.bytes }))),
+      ),
+    )
+
+    expect(agent.prompts[0]?.messageId).toBeUndefined()
+    expect(agent.prompts[0]?.prompt).toEqual([{ type: "text", text: "hi-with-turn" }])
+  })
+
+  it("firegrid-effect-ai-native-agents.ACP_ADAPTER.9 PermissionRequiredButNotHandled carries CurrentAgentTurn.turnId when available", async () => {
+    const harness = await Effect.runPromise(makeHarness)
+    startAgent(harness, connection => new PermissionFixtureAgent(connection))
+    const exit = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const adapter = yield* AgentAdapter
+          return yield* adapter.languageModel
+            .streamText({ prompt: "edit config" })
+            .pipe(
+              Stream.runDrain,
+              Effect.exit,
+              Effect.provideService(CurrentAgentTurn, {
+                turnId: "turn-perm",
+                contextId: "ctx-perm",
+              }),
+            )
+        }).pipe(Effect.provide(AcpAgentAdapter.layer({ bytes: harness.bytes }))),
+      ),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const error = exit.cause._tag === "Fail" ? exit.cause.error : undefined
+      expect(error).toBeInstanceOf(AiError.UnknownError)
+      if (error instanceof AiError.UnknownError) {
+        expect(error.cause).toBeInstanceOf(PermissionRequiredButNotHandled)
+        if (error.cause instanceof PermissionRequiredButNotHandled) {
+          expect(error.cause.turnId).toBe("turn-perm")
+          expect(error.cause.toolCallId).toBe("tool-permission")
+        }
+      }
+    }
   })
 })
