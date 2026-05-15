@@ -295,6 +295,7 @@ export const StdioJsonlCodec: AgentCodec = {
     _options: AgentCodecOpenOptions,
   ) =>
     Effect.succeed({
+      toolUseMode: "client_result_roundtrip",
       send: event => writeJsonLine(bytes.stdin, event),
       outputs: outputs(bytes),
     }),

@@ -80,12 +80,15 @@ import {
 } from "../agent-codecs/index.ts"
 import {
   AgentInputEventSchema,
-  AgentOutputEventSchema,
   type AgentCodec,
   type AgentByteStream,
   type AgentInputEvent,
   type AgentOutputEvent,
+  type AgentSession,
 } from "../agent-io/index.ts"
+import {
+  encodeRuntimeAgentOutputEnvelope,
+} from "../events/output.ts"
 
 export type {
   RuntimeHostTopologyOptions,
@@ -233,10 +236,6 @@ const codecForAgentProtocol = (
   }
 }
 
-const codecSupportsToolResultInput = (
-  protocol: Exclude<RuntimeAgentProtocol, "raw">,
-): boolean => protocol === "stdio-jsonl"
-
 const agentCodecSubscriberId = (
   protocol: Exclude<RuntimeAgentProtocol, "raw">,
 ) => `runtime-context:${protocol}:codec`
@@ -246,11 +245,7 @@ const runtimeOutputRawFromAgentEvent = (
   event: AgentOutputEvent,
 ): Effect.Effect<string, RuntimeContextError> =>
   Effect.try({
-    try: () =>
-      JSON.stringify({
-        type: "firegrid.agent-output",
-        event: Schema.encodeUnknownSync(AgentOutputEventSchema)(event),
-      }),
+    try: () => encodeRuntimeAgentOutputEnvelope(event),
     catch: cause =>
       asRuntimeContextError(
         "runtime-output.agent-event.encode",
@@ -516,14 +511,15 @@ const runtimeCodecToolLoweringLayer = () =>
 
 const handleAgentOutputEvent = (options: {
   readonly context: RuntimeContext
-  readonly protocol: Exclude<RuntimeAgentProtocol, "raw">
-  readonly session: { readonly send: (event: AgentInputEvent) => Effect.Effect<void, unknown> }
+  readonly session: Pick<AgentSession, "send" | "toolUseMode">
   readonly event: AgentOutputEvent
 }): Effect.Effect<void, RuntimeContextError, unknown> => {
   if (options.event._tag !== "ToolUse") return Effect.void
-  if (!codecSupportsToolResultInput(options.protocol)) return Effect.void
+  if (options.session.toolUseMode !== "client_result_roundtrip") return Effect.void
 
   // firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1
+  // firegrid-runtime-agent-event-pipeline.STAGES.3-8
+  // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.6
   return toolUseToEffect({ contextId: options.context.contextId }, options.event).pipe(
     Effect.flatMap(toolResult => options.session.send(toolResult)),
     Effect.provide(runtimeCodecToolLoweringLayer()),
@@ -642,7 +638,6 @@ const runCodecRuntimeContext = (options: {
       Stream.tap(({ event }) =>
         handleAgentOutputEvent({
           context: options.context,
-          protocol: options.protocol,
           session,
           event,
         })),

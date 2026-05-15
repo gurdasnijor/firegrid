@@ -7,8 +7,9 @@ import {
 } from "@firegrid/protocol/launch"
 import { Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { AgentOutputEventSchema, type AgentOutputEvent } from "../agent-io/index.ts"
+import { type AgentOutputEvent } from "../agent-io/index.ts"
 import { WaitFor, type WaitForOptions } from "../durable-tools/index.ts"
+import { encodeRuntimeAgentOutputEnvelope } from "../events/output.ts"
 import {
   FiregridRuntimeHostWithWorkflowLive,
   RuntimeObservationSourceNames,
@@ -53,10 +54,7 @@ const hostLayer = (input: {
   })
 
 const agentOutputRaw = (event: AgentOutputEvent): string =>
-  JSON.stringify({
-    type: "firegrid.agent-output",
-    event: Schema.encodeUnknownSync(AgentOutputEventSchema)(event),
-  })
+  encodeRuntimeAgentOutputEnvelope(event)
 
 const PermissionObservationSchema = Schema.Struct({
   contextId: Schema.String,

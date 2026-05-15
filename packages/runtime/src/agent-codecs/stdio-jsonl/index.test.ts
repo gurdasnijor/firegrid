@@ -81,18 +81,20 @@ const readStdinLine = (
   })
 
 describe("StdioJsonlCodec", () => {
-  it("emits Ready with stdio-jsonl capabilities on open", async () => {
-    const events = await Effect.runPromise(
+  it("firegrid-runtime-agent-event-pipeline.STAGES.3-8 firegrid-runtime-agent-event-pipeline.VALIDATION.2 reports client_result_roundtrip and emits Ready", async () => {
+    const result = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
           const harness = yield* makeHarness
           const session = yield* openSession(harness.bytes)
-          return yield* collectOutputs(session, 1)
+          const events = yield* collectOutputs(session, 1)
+          return { toolUseMode: session.toolUseMode, events }
         }),
       ),
     )
 
-    expect(events).toEqual([
+    expect(result.toolUseMode).toBe("client_result_roundtrip")
+    expect(result.events).toEqual([
       {
         _tag: "Ready",
         capabilities: StdioJsonlCapabilities,

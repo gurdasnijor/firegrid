@@ -15,16 +15,18 @@
 import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
-  type RuntimeEventRow,
 } from "@firegrid/protocol/launch"
 import { RuntimeIngressTable } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Either, Layer, Option, Schema, Stream } from "effect"
-import { AgentOutputEventSchema, type AgentOutputEvent } from "../agent-io/index.ts"
+import { Effect, Layer, Stream } from "effect"
 import {
   SourceCollections,
   type SourceCollectionHandle,
   sourceCollectionHandle,
 } from "../durable-tools/index.ts"
+import {
+  runtimeAgentOutputObservationFromRow,
+  type RuntimeAgentOutputObservation,
+} from "../events/output.ts"
 
 export const RuntimeObservationSourceNames = {
   runtimeRuns: "firegrid.runtime.runs",
@@ -38,63 +40,7 @@ export const RuntimeObservationSourceNames = {
 export type RuntimeObservationSourceName =
   typeof RuntimeObservationSourceNames[keyof typeof RuntimeObservationSourceNames]
 
-export interface RuntimeAgentOutputObservation {
-  readonly contextId: string
-  readonly activityAttempt: number
-  readonly sequence: number
-  readonly _tag: AgentOutputEvent["_tag"]
-  readonly event: AgentOutputEvent
-  readonly permissionRequestId?: string
-  readonly toolUseId?: string
-  readonly toolName?: string
-}
-
-const decodeAgentOutputWrapper = (
-  raw: string,
-): Option.Option<AgentOutputEvent> => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return Option.none()
-  }
-  if (typeof parsed !== "object" || parsed === null) return Option.none()
-  const record = parsed as { readonly type?: unknown; readonly event?: unknown }
-  if (record.type !== "firegrid.agent-output") return Option.none()
-  const decoded = Schema.decodeUnknownEither(AgentOutputEventSchema)(record.event)
-  return Either.isRight(decoded) ? Option.some(decoded.right) : Option.none()
-}
-
-const runtimeAgentOutputObservationFromRow = (
-  row: RuntimeEventRow,
-): Option.Option<RuntimeAgentOutputObservation> =>
-  Option.map(decodeAgentOutputWrapper(row.raw), (event) => {
-    const base = {
-      contextId: row.contextId,
-      activityAttempt: row.activityAttempt,
-      sequence: row.sequence,
-      _tag: event._tag,
-      event,
-    } satisfies Omit<
-      RuntimeAgentOutputObservation,
-      "permissionRequestId" | "toolUseId" | "toolName"
-    >
-    if (event._tag === "PermissionRequest") {
-      return {
-        ...base,
-        permissionRequestId: event.permissionRequestId,
-        toolUseId: event.toolUseId,
-      }
-    }
-    if (event._tag === "ToolUse") {
-      return {
-        ...base,
-        toolUseId: event.part.id,
-        toolName: event.part.name,
-      }
-    }
-    return base
-  })
+export type { RuntimeAgentOutputObservation }
 
 const runtimeAgentOutputCollection = (
   table: RuntimeOutputTable["Type"],

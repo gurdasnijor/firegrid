@@ -100,6 +100,13 @@ export const PermissionOptionSchema = Schema.Struct({
 })
 export type PermissionOption = Schema.Schema.Type<typeof PermissionOptionSchema>
 
+export const AgentToolUseModeSchema = Schema.Literal(
+  "observation_only",
+  "client_result_roundtrip",
+  "control_channel_request_response",
+)
+export type AgentToolUseMode = Schema.Schema.Type<typeof AgentToolUseModeSchema>
+
 export const AgentCapabilitiesSchema = Schema.Struct({
   streamingText: Schema.Boolean,
   tools: Schema.Boolean,

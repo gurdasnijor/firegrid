@@ -358,8 +358,8 @@ describe("AcpCodec", () => {
     ])
   })
 
-  it("maps SDK prompt, text, tool_call, tool_call_update, and completion events", async () => {
-    const events = await Effect.runPromise(
+  it("firegrid-runtime-agent-event-pipeline.STAGES.3-8 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7 firegrid-runtime-agent-event-pipeline.VALIDATION.6 reports observation_only and maps tool_call/tool_call_update as observations", async () => {
+    const result = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
           const harness = yield* makeHarness
@@ -371,12 +371,14 @@ describe("AcpCodec", () => {
             correlationId: "prompt-1",
             prompt: userMessage("hello ACP"),
           })
-          return yield* Fiber.join(fiber)
+          const events = yield* Fiber.join(fiber)
+          return { toolUseMode: session.toolUseMode, events }
         }),
       ),
     )
 
-    expect(events).toEqual([
+    expect(result.toolUseMode).toBe("observation_only")
+    expect(result.events).toEqual([
       {
         _tag: "Ready",
         capabilities: AcpCapabilities,
@@ -394,7 +396,7 @@ describe("AcpCodec", () => {
           id: "tool-1",
           name: "lookup",
           params: { query: "hello ACP" },
-          providerExecuted: false,
+          providerExecuted: true,
         }),
       },
       {
@@ -476,7 +478,7 @@ describe("AcpCodec", () => {
         id: "tool-permission",
         name: "edit config",
         params: { path: "config.json" },
-        providerExecuted: false,
+        providerExecuted: true,
       }),
     })
     expect(events[2]).toEqual({
@@ -570,7 +572,7 @@ describe("AcpCodec", () => {
         id: "tool-permission",
         name: "edit config",
         params: { path: "config.json" },
-        providerExecuted: false,
+        providerExecuted: true,
       }),
     })
     expect(events[2]).toEqual({
