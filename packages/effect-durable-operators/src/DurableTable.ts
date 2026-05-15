@@ -139,6 +139,13 @@ export interface CollectionFacade<Row extends object, Key> {
    * so txid coordination and State Protocol event construction remain intact.
    */
   readonly collection: DurableTableCollection<Row>
+  /**
+   * Current non-deleted rows plus live non-deleted row changes.
+   *
+   * effect-durable-operators.TABLE.28
+   * effect-durable-operators.TABLE.28-1
+   */
+  readonly rows: () => Stream.Stream<Row, DurableTableError>
   readonly insert: (row: Row) => Effect.Effect<void, DurableTableError>
   /**
    * Row-level insert-or-read by primary key.
@@ -731,6 +738,28 @@ const makeFacade = <Row extends object, Key>(options: {
   )
   return {
     collection: readableCollection,
+    rows: () =>
+      Stream.async<Row, DurableTableError>((emit) => {
+        let unsubscribe: (() => void) | undefined
+        try {
+          const sub = readableCollection.subscribeChanges(
+            (changes) => {
+              changes.forEach((change) => {
+                if (change.type === "delete") return
+                if (change.value === undefined || change.value === null) return
+                void emit.single(change.value)
+              })
+            },
+            { includeInitialState: true },
+          )
+          unsubscribe = () => sub.unsubscribe()
+        } catch (cause) {
+          void emit.fail(new DurableTableError({ table: tableName, cause }))
+        }
+        return Effect.sync(() => {
+          if (unsubscribe !== undefined) unsubscribe()
+        })
+      }),
     insert: (row) =>
       runAction(
         tableName,

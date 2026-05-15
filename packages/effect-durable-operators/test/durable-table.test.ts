@@ -20,9 +20,11 @@
  *  - effect-durable-operators.TABLE.21
  *  - effect-durable-operators.TABLE.22
  *  - effect-durable-operators.TABLE.26
+ *  - effect-durable-operators.TABLE.28
  */
 
 import {
+  Chunk,
   Effect,
   Fiber,
   Match,
@@ -801,6 +803,57 @@ describe("DurableTable", () => {
 
           const seen = yield* Ref.get(seenRef)
           expect(seen).toContain("exec-live")
+        })
+
+        yield* program.pipe(
+          Effect.provide(
+            WorkflowTable.layer({
+              streamOptions: { url, contentType: "application/json" },
+            }),
+          ),
+        )
+      }),
+    )
+  })
+
+  it("effect-durable-operators.TABLE.28, effect-durable-operators.TABLE.28-1 exposes rows as current plus live non-deleted row observations", async () => {
+    const url = server.url("table-rows")
+
+    await runtime(
+      Effect.gen(function* () {
+
+        const program = Effect.gen(function* () {
+          const table = yield* WorkflowTable
+
+          yield* table.executions.insert({
+            executionId: "exec-existing",
+            workflowName: "demo",
+            payload: { before: "subscribe" },
+            status: "started",
+          })
+
+          const fiber = yield* table.executions.rows().pipe(
+            Stream.take(2),
+            Stream.runCollect,
+            Effect.map(Chunk.toReadonlyArray),
+            Effect.fork,
+          )
+
+          yield* Effect.sleep("50 millis")
+          yield* table.executions.delete("exec-existing")
+          yield* Effect.sleep("50 millis")
+          yield* table.executions.upsert({
+            executionId: "exec-live-row",
+            workflowName: "demo",
+            payload: { after: "subscribe" },
+            status: "started",
+          })
+
+          const rows = yield* Fiber.join(fiber)
+          expect(rows.map(row => row.executionId)).toEqual([
+            "exec-existing",
+            "exec-live-row",
+          ])
         })
 
         yield* program.pipe(
