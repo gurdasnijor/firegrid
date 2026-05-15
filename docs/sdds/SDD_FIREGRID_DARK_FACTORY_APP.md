@@ -106,13 +106,14 @@ The app should follow existing workspace conventions: private package, local
 `tsconfig.json`, `src/` modules, focused tests, and root workspace inclusion
 through the existing `apps/*` pattern.
 
-The first app surface should be production-shaped even if tests use fixtures:
+The first app surface must be production-shaped:
 
 - a product-owned adapter boundary for Linear/GitHub/webhook events;
-- a Firegrid local host scope using `FiregridLocalHostLive`;
+- a Firegrid host scope using existing runtime host primitives;
+- configured hosted Electric/Durable Streams endpoint and auth headers;
 - app-owned DurableTable facts and SourceCollections registration;
 - provider adapter modules for Linear/GitHub/Slack side effects that read
-  configured credentials from the app environment;
+  configured credentials from the app environment or deployment secret store;
 - a parent planner `RuntimeContext` launch path through Firegrid runtime host
   primitives;
 - an observation surface built from app facts plus
@@ -168,9 +169,9 @@ for example `DarkFactoryFactTable.facts`, with a row shape:
 
 - deterministic key: `{ source, externalEventKey }`;
 - `source`: short producer/source id, such as `linear.oauth`,
-  `github.rest`, `human.linear-agent-session`, or `fixture`;
+  `github.rest`, `human.linear-agent-session`, or `provider.worker`;
 - `externalEventKey`: provider delivery id, Linear event id, GitHub event id,
-  permission id, PR marker key, or deterministic fixture event id;
+  permission id, PR marker key, or deterministic provider action key;
 - `externalEntityKey`: Linear issue id, GitHub PR id, context id, or parent
   session id;
 - `eventType`: source-specific but stable event kind;
@@ -223,9 +224,10 @@ the hidden marker itself is only a provider-side idempotency mechanism; it is
 not the Firegrid resume protocol.
 
 The planner chooses when to request these side effects through the Firegrid
-tool/capability surface available to the app. The first implementation may use
-fixture provider adapters in tests, but the production contract is configured
-credentials and real Linear/GitHub/Slack modules.
+tool/capability surface available to the app. The implementation acceptance
+must use configured credentials and real Linear/GitHub/Slack/provider modules;
+tests may avoid printing or asserting secret values, but they must not replace
+the app acceptance path with fake provider clients.
 
 ## Runtime Observation
 
@@ -316,13 +318,17 @@ The production-shaped flow is:
 The smallest useful implementation slice should prove the replacement shape,
 not the full factory product:
 
-1. A fixture or product-owned Linear-shaped event accepts ticket `DF-1`.
+1. A product-owned Linear webhook/ingest path accepts a real provider-shaped
+   ticket event, with live verification where the provider can deliver to the
+   app route.
 2. The app writes `linear.issue.accepted` as a durable fact.
 3. The app creates or loads parent planner context for the Linear issue id.
-4. The planner starts and emits a plan-ready or permission-needed observation.
+4. A real planner/agent backend supported by Firegrid starts and emits a
+   plan-ready or permission-needed observation.
 5. The app/test observes the wait through
    `RuntimeObservationSourceNames.agentOutputEvents` or `darkFactory.facts`.
-6. A fixture human approves or rejects the plan.
+6. A real human/provider decision path approves or rejects the plan through
+   runtime ingress or a provider-backed fact.
 7. The app resumes the planner by writing `PermissionResponse` ingress or a
    `human.plan.approved` fact.
 8. The planner emits a `session_new`, `session_prompt`, `wait_for`, or
@@ -331,36 +337,49 @@ not the full factory product:
    issue id, decision, delegated work or provider action, and waiting or
    terminal status.
 
-Later slices can make the provider adapters live against real Linear/GitHub
-credentials, add the implementation/review/QA loop, and perform CI-gated merge.
-Those slices must keep the same choreography rule: the planner decides the
-sequence, and code provides durable capabilities.
+Later slices can add the full implementation/review/QA loop and perform
+CI-gated merge. Those slices must keep the same choreography rule: the planner
+decides the sequence, and code provides durable capabilities.
 
-## Live Versus Mocked
+## Production Acceptance Substrate
 
-Live in the first implementation:
+The app acceptance path must be live against the production-shaped substrate:
 
-- Durable Streams or `DurableStreamTestServer`;
+- configured hosted Electric/Durable Streams endpoint and auth headers only;
 - app-owned DurableTable facts;
-- `FiregridLocalHostLive`;
 - `RuntimeContext` creation and `startRuntime`;
 - runtime observation sources from #232;
 - `wait_for` over runtime observation and app fact sources;
 - `RuntimeIngress` permission response delivery.
 
-Allowed fixtures/mocks:
+`DurableStreamTestServer` and local durable-stream substrates are valid for
+runtime package unit tests. They are not sufficient acceptance evidence for
+`apps/dark-factory`, because this app is intended to supersede the hosted
+`hooks/factory` product path.
 
-- fixture Linear/GitHub event input instead of a live webhook;
-- fixture human decision writer instead of a real product UI;
-- fixture provider adapters for tests, if real Linear/GitHub side effects are
-  unsafe in CI;
-- deterministic stdio-jsonl or ACP planner process instead of a real model;
-- child-session proof may use a fixture child agent command if real repository
-  mutation is not needed in the first PR.
+## Live Provider And Agent Requirements
 
-Production-facing, not mocked:
+The implementation acceptance must use:
 
-- the app boundary for configured Linear/GitHub/Slack credentials;
+- live Linear/GitHub/Slack/provider credentials supplied by env or secret
+  config;
+- a live provider webhook/ingest path where provider delivery is feasible;
+- real GitHub/Linear side-effect modules for the side effects the slice
+  exercises;
+- a real planner/agent backend selected from what Firegrid supports at
+  implementation time.
+
+The acceptance proof must not use:
+
+- fixture Linear/GitHub event payloads as the replacement for live provider
+  ingest;
+- deterministic fake planners as the planner acceptance proof;
+- local Durable Streams as the app acceptance substrate;
+- committed bearer tokens, webhook secrets, OAuth tokens, PATs, or generated
+  secret values.
+
+Still required:
+
 - idempotent fact insert/load behavior;
 - parent `RuntimeContext` identity;
 - host-owned ingress/output routing;

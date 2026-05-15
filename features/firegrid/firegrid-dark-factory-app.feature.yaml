@@ -7,14 +7,20 @@ components:
   APP_SURFACE:
     requirements:
       1: The first dark-factory app slice lives under apps/dark-factory and is wired as a workspace app rather than a top-level package, direct Flamecast dependency, or hook.new bundle.
-      2: The app exposes product-owned adapter entrypoints for Linear, GitHub, webhook, or fixture inputs and composes Firegrid runtime primitives directly; it does not use pnpm firegrid -- run as the core factory path.
+      2: The app exposes product-owned adapter entrypoints for Linear, GitHub, or webhook inputs and composes Firegrid runtime primitives directly; it does not use pnpm firegrid -- run as the core factory path.
       3: The app is framed as the Firegrid-powered replacement for the existing hooks/factory behavior, not as a generic demo app or Flamecast-adjacent prototype.
 
   EXTERNAL_FACTS:
     requirements:
       1: External Linear, GitHub, decision, PR, CI, and webhook-style inputs are represented as app-owned DurableTable facts with deterministic source plus external event keys so duplicate delivery resolves to the same durable fact.
-      2: Product-owned HTTP routes, workers, adapters, or fixtures capture raw provider input and write fact rows; Firegrid does not expose a provider webhook endpoint, callback URL product, or provider taxonomy for the app.
+      2: Product-owned HTTP routes, workers, or adapters capture raw provider input and write fact rows; Firegrid does not expose a provider webhook endpoint, callback URL product, or provider taxonomy for the app.
       3: The app registers its fact table collection under a short source name so wait_for can observe facts by top-level scalar fields such as source, externalEventKey, externalEntityKey, eventType, contextId, and correlationId.
+
+  HOSTED_SUBSTRATE:
+    requirements:
+      1: App acceptance runs against a configured hosted Electric/Durable Streams endpoint with auth headers; local DurableStreamTestServer is not accepted as apps/dark-factory replacement evidence.
+      2: Linear, GitHub, Slack, and provider credentials are supplied through env or deployment secret config and are never committed, logged as bearer values, or copied into docs/spec examples.
+      3: The accepted provider ingest proof uses a live provider webhook or live provider-shaped route delivery where feasible, not fixture Linear or GitHub event payloads as the replacement proof.
 
   PARENT_RUN:
     requirements:
@@ -25,7 +31,7 @@ components:
     requirements:
       1: The planner agent owns sequencing, branching, retries, and delegation by reading durable facts/runtime history and calling Firegrid tools; the app does not encode a deterministic planner/implementer/reviewer/QA/deploy DAG.
       2: Firegrid supplies durable primitives and observations through packages/runtime/src/agent-tools/tools.ts, including session_new, session_prompt, wait_for, schedule_me, and execute where supported by the runtime.
-      3: Any first-slice deterministic planner fixture is only a test/runtime substitute; it must preserve the same tool-driven choreography contract expected of a real planner agent.
+      3: The acceptance proof uses a real planner/agent backend selected from what Firegrid supports at implementation time; deterministic fake planners are not accepted as the factory replacement proof.
 
   PLANNER_RUNTIME:
     requirements:
@@ -42,7 +48,7 @@ components:
     requirements:
       1: Human decisions and external status changes are waited on with wait_for over app fact sources or RuntimeObservationSourceNames rather than hidden callback markers, parked RPC URLs, or comment-walking routers.
       2: ACP PermissionRequest output is observed through RuntimeObservationSourceNames.agentOutputEvents and resumed by writing a RuntimeIngress PermissionResponse to the same context.
-      3: The first implementation proves at least one human-gate-shaped pause and resume path using durable state; it may use a fixture decision writer instead of a real Linear or GitHub integration.
+      3: The first implementation proves at least one human-gate-shaped pause and resume path using durable state through a live/manual or env-gated provider/operator path rather than a fixture decision writer as acceptance proof.
 
   PROVIDER_SIDE_EFFECTS:
     requirements:
@@ -65,5 +71,5 @@ constraints:
 
   VALIDATION:
     requirements:
-      1: The first implementation PR includes a targeted scenario or app test that drives a factory-style trigger into a parent planner RuntimeContext, observes durable runtime output or facts, and resumes at least one wait or permission gate.
-      2: The first implementation PR documents which pieces are live and which are fixtures or mocks.
+      1: The first implementation PR includes an explicit live/manual or env-gated smoke that drives a factory-style provider trigger into a parent planner RuntimeContext on hosted Electric/Durable Streams, observes durable runtime output or facts, and resumes at least one wait or permission gate.
+      2: CI may run docs/spec and non-secret structural checks, but implementation acceptance documents the live smoke prerequisites and result without committing or echoing bearer tokens, webhook secrets, OAuth tokens, PATs, or generated secret values.
