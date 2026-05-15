@@ -492,9 +492,16 @@ appendRuntimeIngress({
 ### Permission Display And Resolution
 
 ACP `PermissionRequest` output is already durable as
-`firegrid.runtime.agent-output-events`. The human-facing approval payload lives
-in that durable output event and, when the app needs a provider-facing queue,
-in an app-owned fact that copies the display fields.
+`firegrid.runtime.agent-output-events`. The normalized runtime event is the
+resume anchor, not necessarily the complete product display payload. Today the
+runtime event is expected to carry the permission id, related tool id, and
+available options; richer display context may be supplied by app-owned facts
+or projection rows joined by `contextId` plus `permissionRequestId`.
+
+The app must not mutate the runtime permission event contract just to render
+product UI. If the product needs a provider-facing approval queue, it should
+project the runtime permission event into an app-owned fact that copies or
+adds the display fields.
 
 The display payload must include:
 
@@ -512,8 +519,9 @@ The display payload must include:
 is delivered through `RuntimeIngress` to the same context. If the app also
 writes a `human.*` fact for provider/operator visibility, that fact should use
 `externalEventKey = permissionRequestId` and `externalEntityKey =
-factoryRunKey` or the provider entity id. The fact is display/audit evidence;
-the runtime resume path remains `RuntimeIngress`.
+factoryRunKey` or the provider entity id. The fact is display/audit evidence
+and may carry product-specific prompt, correlation, requestedBy, or status
+fields; the runtime resume path remains `RuntimeIngress`.
 
 No permission table is required for the first app slice. If the product wants a
 human-facing queue, it can project permission requests from runtime output into
