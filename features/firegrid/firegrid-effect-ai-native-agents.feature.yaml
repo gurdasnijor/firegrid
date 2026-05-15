@@ -42,6 +42,10 @@ components:
       13: "AcpAgentAdapter holds the per-turn lock until ACP confirms the prompt has finalized: stream interruption sends connection.cancel({sessionId}), awaits the in-flight prompt fiber, and clears the current-turn ref before the lock is released, so a subsequent streamText cannot receive stale ACP updates from a prior turn."
       14: AcpAgentAdapter accepts optional ACP session setup through AcpAgentAdapterOptions.session (cwd, mcpServers) and forwards those values verbatim to connection.newSession; defaults remain cwd=process.cwd() and mcpServers=[]; there is no env coupling and no Firegrid-custom protocol for routing MCP servers to the spawned agent.
 
+  MCP_TRANSPORT_COMPAT:
+    requirements:
+      1: "FiregridMcpServerLayer inline-composes McpServer.layer + RpcServer.layerProtocolHttp with a non-framed application/json RpcSerialization that decodes normal JSON-RPC object POST bodies and unwraps exactly one collected response before delegating encode, so a single non-batch request receives a JSON-RPC object response instead of a batch array."
+
 constraints:
   BOUNDARIES:
     requirements:
@@ -64,3 +68,4 @@ constraints:
       11: Tests prove AcpAgentAdapter emits Response.toolCallPart with providerExecuted=true on ACP tool_call observations.
       12: "Tests prove AcpAgentAdapter sends connection.cancel to ACP on stream interruption and that a subsequent streamText call does not observe stale text-delta or tool-call updates from the prior interrupted turn."
       13: Tests prove AcpAgentAdapter forwards AcpAgentAdapterOptions.session (cwd, mcpServers) verbatim to ACP newSession and preserves the prior defaults when those fields are omitted.
+      14: Tests prove the FiregridMcpServerLayer POST initialize response on the MCP route is an unwrapped single JSON-RPC object (the on-the-wire body starts with `{`) rather than a JSON-RPC batch array (`[{...}]`), preserving the upstream Effect RPC route shape while making the response parseable by strict JSON-RPC 2.0 clients.

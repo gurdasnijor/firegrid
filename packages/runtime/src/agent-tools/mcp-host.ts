@@ -7,7 +7,7 @@
  * MCP HTTP listener is an Effect Layer in the host process's scope; it
  * starts and stops with `NodeRuntime.runMain`. There is no separate
  * `firegrid:mcp` binary, no stdio shim, no supervisor protocol, no
- * custom JSON-RPC stack, no wrapper toolkit, no manual `tools/list` or
+ * custom MCP router, no wrapper toolkit, no manual `tools/list` or
  * `tools/call` handler.
  *
  * Implements (SDD):
@@ -29,6 +29,7 @@ import { IdGenerator, McpServer } from "@effect/ai"
 import { HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
 import type { RuntimeControlPlaneTable } from "@firegrid/protocol/launch"
+import { RpcSerialization, RpcServer } from "@effect/rpc"
 import { Config, Effect, Layer, Logger, Option } from "effect"
 // The MCP HTTP server lifetime is Effect-owned via Layer.scopedDiscard
 // + McpServer.layerHttp + NodeHttpServer.layer and bound only to
@@ -167,13 +168,41 @@ const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
  *   - `IdGenerator.defaultIdGenerator`
  *   - `RuntimeHostAgentToolHostLive` — host-owned tool effects
  *   - host-owned `DurableToolsWaitForLive` — `wait_for` arm
- *   - `McpServer.layerHttp({ path })` — JSON-RPC HTTP serialization
+ *   - `McpServer.layer` + `RpcServer.layerProtocolHttp({ path })`
+ *     — Effect AI MCP handlers over JSON-RPC HTTP serialization
  *   - `NodeHttpServer.layer(createServer, { port, host })` — loopback
  *     binder
  *
  * Caller must still provide the `WorkflowEngine` (typically through
  * `FiregridRuntimeHostWithWorkflowLive`).
  */
+// firegrid-effect-ai-native-agents.MCP_TRANSPORT_COMPAT.1
+//
+// `RpcServer.layerProtocolHttp` collects non-framed HTTP responses into an
+// array before calling the serializer. Effect's default JSON-RPC serializer
+// therefore emits `[response]` even for one non-batch request. Keep normal
+// JSON-RPC request parsing, but unwrap exactly that one-response array so
+// strict single-message clients receive `{...}`.
+const firegridMcpJsonRpcSerialization = RpcSerialization.RpcSerialization.of({
+  contentType: "application/json",
+  includesFraming: false,
+  unsafeMake: () => {
+    const parser = RpcSerialization.jsonRpc().unsafeMake()
+    return {
+      decode: parser.decode,
+      encode: (response) =>
+        parser.encode(Array.isArray(response) && response.length === 1
+          ? response[0]
+          : response),
+    }
+  },
+})
+
+const firegridMcpRpcSerializationLayer = Layer.succeed(
+  RpcSerialization.RpcSerialization,
+  firegridMcpJsonRpcSerialization,
+)
+
 export const FiregridMcpServerLayer = (
   options: FiregridMcpServerLayerOptions,
 ) =>
@@ -190,12 +219,21 @@ export const FiregridMcpServerLayer = (
     ),
     Layer.provide(RuntimeHostAgentToolHostLive),
     Layer.provide(HostOwnedDurableToolsWaitForLive),
+    // firegrid-effect-ai-native-agents.MCP_TRANSPORT_COMPAT.1
+    //
+    // Inline-replicate `McpServer.layerHttp` here so we can keep
+    // `McpServer.layer + RpcServer.layerProtocolHttp` and only swap the
+    // non-framed JSON-RPC serializer for strict single-response clients.
     Layer.provide(
-      McpServer.layerHttp({
+      McpServer.layer({
         name: "firegrid.agent-tools",
         version: "0.0.0",
-        path: runtimeContextMcpPath(options.path),
-      }),
+      }).pipe(
+        Layer.provide(RpcServer.layerProtocolHttp({
+          path: runtimeContextMcpPath(options.path),
+        })),
+        Layer.provide(firegridMcpRpcSerializationLayer),
+      ),
     ),
     // `provideMerge` keeps the bound `HttpServer` service in the
     // output Layer so the host can log its address (or tests can
