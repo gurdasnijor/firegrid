@@ -22,10 +22,23 @@ components:
       2: Linear, GitHub, Slack, and provider credentials are supplied through env or deployment secret config and are never committed, logged as bearer values, or copied into docs/spec examples.
       3: The accepted provider ingest proof uses a live provider webhook or live provider-shaped route delivery where feasible, not fixture Linear or GitHub event payloads as the replacement proof.
 
+  PLATFORM_PRIMITIVES:
+    requirements:
+      1: The app uses RuntimeContext as the durable parent planner and delegated session identity, with external source key and provider correlation metadata attached to context/facts.
+      2: RuntimeIngress and RuntimeOutput are the durable input/output planes for prompts, permission responses, agent output, tool calls, tool results, status, and terminal evidence.
+      3: DurableTable facts plus SourceCollections registration expose Linear, GitHub, Slack, provider, and human decision rows to wait_for under an app-owned source name.
+      4: RuntimeObservationSourceNames are used for runtime runs, output, ingress, and normalized agent-output observation rather than app-local process state.
+
   PARENT_RUN:
     requirements:
       1: A factory trigger creates or loads one parent planner RuntimeContext by external source key, such as Linear issue id, ticket id, or correlation id, rather than creating competing parent runs on redelivery.
       2: Parent and child relationships are carried as RuntimeContext metadata, prompts, durable facts, and tool result payloads; the app does not add a platform parent/child hierarchy beyond metadata and correlation.
+
+  AUTONOMOUS_RUN:
+    requirements:
+      1: Factory trigger handling creates or loads the parent planner context, persists the accepted provider fact, and starts the planner through runtime-host primitives without a coded phase chain.
+      2: The initial planner prompt includes parent context id, factory run key, source names, runtime observation source names, Linear issue fields, repository hint, provider capability names, and choreography operating rules.
+      3: The initial planner prompt is designed to elicit plan approval waits or permission requests, session_new delegation, session_prompt follow-ups, wait_for over facts/runtime observations, schedule_me rechecks, and execute only for advertised capabilities.
 
   CHOREOGRAPHY:
     requirements:
@@ -43,6 +56,8 @@ components:
     requirements:
       1: Delegated implementation, review, or QA work is represented by session_new child RuntimeContext creation with parentSessionId, role, and correlation metadata when supplied.
       2: Follow-up work uses session_prompt or host-owned runtime ingress to an existing RuntimeContext with idempotent input identity.
+      3: The factory planner uses wait_for for human gates, provider facts, CI facts, runtime status, and child-session observations; schedule_me for future self rechecks; execute only for configured capability-backed provider or sandbox actions; sleep only for bounded backoff.
+      4: spawn and spawn_all are not app-facing factory planner tools; parallel work is expressed as session_new child sessions with stable session identity.
 
   WAIT_AND_PERMISSION:
     requirements:
@@ -55,11 +70,14 @@ components:
       1: Linear, GitHub, and Slack credentials and provider-specific setup are owned by the dark-factory app boundary, not by Firegrid runtime, DurableTable, or a generic provider registry.
       2: GitHub and Linear side effects such as PR lookup, comment upsert, CI status, PR close/merge, Linear activity/comment updates, and delegate assignment write durable evidence facts so retries and planner turns can observe prior effects.
       3: Provider idempotency mechanisms such as GitHub comment markers may be used inside provider adapters, but they are not Firegrid resume callbacks or hidden workflow control markers.
+      4: Provider side effects feed back to the planner through DurableTable facts and runtime output observations, not hidden callback URLs, hidden Linear comments, or comment-walking routers.
 
   OBSERVATION:
     requirements:
       1: The app presents or tests durable observation from RuntimeOutputTable, RuntimeControlPlaneTable runs, runtime observation sources, and app fact tables so a user can inspect what happened and what is waiting.
       2: Terminal or waiting states are derived from durable observations and facts, not from in-memory process state.
+      3: The first app slice exposes a JSON status API for run progress rather than leaving progress tracking implicit; a full UI is deferred.
+      4: The status API reports parent context, active/terminal child sessions, latest facts, runtime output/logs, permission requests, current waits, provider links, and blocked/error state from durable rows only.
 
 constraints:
   BOUNDARIES:

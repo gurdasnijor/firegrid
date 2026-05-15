@@ -122,6 +122,23 @@ The first app surface must be production-shaped:
 It must not depend on `pnpm firegrid -- run`; #229 is sync CLI UX and is not a
 factory app dependency.
 
+## Firegrid Platform Primitives Used
+
+The factory should be built from these Firegrid primitives, with each primitive
+serving one clear role:
+
+| Primitive | Factory role |
+| --- | --- |
+| `RuntimeContext` | Durable identity for the parent planner run and for any delegated implementer, reviewer, or QA sessions. The parent context metadata carries the external source key, Linear issue id, ticket id, repository hint, fact source name, and correlation ids. |
+| `RuntimeIngress` | Durable input path into a running context. The app uses it for the initial planner prompt when needed, follow-up prompts, and ACP `PermissionResponse` messages that resume permission gates. |
+| `RuntimeOutput` | Durable output journal for planner and child-agent status, text, tool calls, permission requests, tool results, and terminal evidence. This replaces hidden callback markers as the source of truth for what the run is waiting on. |
+| `RuntimeObservationSourceNames` | Named wait/query surfaces for runtime runs, output events/logs, ingress inputs/deliveries, and normalized agent output events. The planner and app use these names with `wait_for` and status views. |
+| DurableTable facts | App-owned durable table for Linear/GitHub/Slack/provider events, decisions, and side-effect evidence. Facts provide idempotency by source and external event key. |
+| `SourceCollections` / `wait_for` | Registration and matching path that lets agents wait on app facts and runtime observation rows without polling provider APIs directly. |
+| `FiregridAgentToolkit` tools | The agent-facing choreography surface. The planner decides sequence by calling `session_new`, `session_prompt`, `wait_for`, `schedule_me`, `execute`, `sleep`, `session_cancel`, and `session_close` where applicable. |
+| Provider adapters | App-owned Linear/GitHub/Slack modules that verify provider input, perform side effects with configured credentials, and write durable facts before or after those effects. |
+| Hosted Electric/Durable Streams | Production storage and live observation substrate for the app. The app acceptance path uses configured hosted stream URLs and auth headers, not local `DurableStreamTestServer`. |
+
 ## Choreography Contract
 
 The planner is the sequencer. Firegrid and the app provide durable primitives.
@@ -146,6 +163,132 @@ councilAndApproval -> deploy` function chain. Instead:
 This makes the system inspectable and adaptive: the agent can choose a shorter
 or longer path, retry differently, spawn additional review work, skip QA, or
 wait for CI based on observable state.
+
+## Autonomous Planner Run
+
+### Parent Context Creation
+
+When a Linear/GitHub/webhook adapter accepts a factory trigger, the app must:
+
+1. Verify the provider input at the product-owned adapter boundary.
+2. Insert or load the external fact, such as `linear.issue.accepted`, using
+   `{ source, externalEventKey }`.
+3. Create or load one parent planner `RuntimeContext` using a deterministic
+   app key derived from provider/source plus external entity id, for example
+   `linear.oauth:<issueId>`.
+4. Store the following metadata on the parent context or first fact:
+   - `factoryRunKey`;
+   - `source`;
+   - `externalEntityKey`;
+   - `linearIssueId`;
+   - `linearIdentifier`;
+   - `linearUrl`;
+   - `repoHint`;
+   - `factSourceName` (`darkFactory.facts`);
+   - `runtimeObservationSources`;
+   - provider capability names available through `execute`;
+   - hosted stream namespace/name, without auth token values.
+5. Start the parent context through normal runtime-host execution. The app may
+   use an initial context prompt or append the prompt through `RuntimeIngress`,
+   but the prompt must be durable and tied to the parent context id.
+
+The app must not create multiple parent planner contexts for the same provider
+entity on redelivery. Duplicate triggers load the same parent context and write
+additional idempotent facts or no-op evidence.
+
+### Initial Planner Prompt Shape
+
+The planner prompt is load-bearing. It is the product policy boundary that
+tells the model how to choreograph with Firegrid tools. The first
+implementation should generate a prompt with this shape:
+
+```text
+You are the Smithery dark-factory planner running on Firegrid.
+
+Goal:
+Turn the Linear issue below into a reviewed, permissioned engineering result.
+You own sequencing. There is no hidden workflow DAG. Decide the next action
+from durable facts, runtime history, repository state, and human decisions.
+
+Factory run:
+- parentContextId: <contextId>
+- factoryRunKey: <source>:<externalEntityKey>
+- factSource: darkFactory.facts
+- runtime sources:
+  - firegrid.runtime.runs
+  - firegrid.runtime.output.events
+  - firegrid.runtime.output.logs
+  - firegrid.runtime.ingress.inputs
+  - firegrid.runtime.ingress.deliveries
+  - firegrid.runtime.agent-output-events
+
+Linear issue:
+- issueId: <linearIssueId>
+- identifier: <linearIdentifier>
+- title: <title>
+- url: <linearUrl>
+- description:
+<description>
+
+Repository:
+- repoHint: <owner/repo or unknown>
+- deterministicBranch: factory/<linearIdentifier lowercased>
+
+Provider capabilities available through execute, if advertised:
+- linear.postActivity
+- linear.postComment
+- linear.setDelegate
+- github.findPrByHead
+- github.fetchPr
+- github.fetchPrDiff
+- github.upsertPrComment
+- github.fetchCiStatus
+- github.closePr
+- github.squashMergePr
+- slack.postMessage
+
+Required operating rules:
+1. Use wait_for over darkFactory.facts or Firegrid runtime observation sources
+   for human gates, CI/provider facts, child session status, and external
+   events. Do not rely on callback URLs or hidden comments for resume.
+2. Ask for human approval before implementation and before merge. Prefer ACP
+   PermissionRequest when available; otherwise wait for a durable
+   human.* fact.
+3. Use session_new to create implementer, reviewer, and QA child sessions when
+   those phases are needed. Include parentSessionId/context metadata and the
+   Linear/GitHub correlation ids.
+4. Use session_prompt for follow-up work on an existing child session.
+5. Use schedule_me for future self rechecks, such as CI still pending.
+6. Use execute only for advertised provider/sandbox capabilities. Record or
+   wait for durable facts that confirm side effects.
+7. Use bounded sleep only as local backoff when no durable event source exists.
+8. If blocked, emit a clear permission request or wait_for target describing
+   exactly what fact/input will resume the run.
+
+Start by:
+1. Inspecting the ticket and repository hint.
+2. Producing a concise implementation plan.
+3. Requesting plan approval, or waiting on a human.plan.approved /
+   human.plan.rejected fact if permission requests are unavailable.
+```
+
+The exact wording can evolve, but implementers should preserve the data
+sections and the operating rules. The prompt must include durable source names
+and enough provider/entity metadata for the planner to wait on facts without
+inventing source names.
+
+### Tool Calls The App Tries To Elicit
+
+The initial prompt should steer the planner toward these first calls:
+
+- `wait_for` or ACP permission request for plan approval;
+- `session_new` for implementation after plan approval;
+- `wait_for` on child runtime status or output after delegation;
+- `session_new` for reviewer/council and QA work when warranted;
+- `execute` for provider side effects only when the app has advertised a
+  matching capability;
+- `schedule_me` for CI/provider rechecks when an external fact has not arrived;
+- `wait_for` for merge approval and CI status before merge.
 
 ## Durable Fact Surface
 
@@ -283,6 +426,29 @@ No permission table is required for the first app slice. If the product wants a
 human-facing queue, it can project permission requests from runtime output into
 app facts, but runtime resume remains `RuntimeIngress` to the context.
 
+## Firegrid Tool Mapping
+
+The planner receives the canonical `FiregridAgentToolkit` surface from
+`packages/runtime/src/agent-tools/tools.ts`. The app should describe the tool
+semantics in the planner prompt and status docs as follows:
+
+| Tool | Factory use |
+| --- | --- |
+| `session_new` | Primary delegation primitive. Use for implementer, reviewer, council member, QA, or repository-investigation child sessions. Inputs should include role, parent context/session id, Linear issue id, repo, branch, PR URL when known, and correlation id metadata. |
+| `session_prompt` | Follow-up prompt to an existing child session, such as asking the implementer to address review feedback, asking QA to rerun with a specific preview URL, or asking a reviewer to re-check after a new commit. |
+| `wait_for` | Primary suspension primitive. Use for human approval facts, ACP permission output observations, GitHub PR/CI facts, Linear prompted/stop facts, child runtime status, provider side-effect facts, and runtime terminal evidence. |
+| `schedule_me` | Future self-prompt for bounded rechecks where an external event may not arrive, especially CI still pending, provider eventual consistency, or a reminder to inspect a stale child session. |
+| `execute` | Only for configured capability-backed provider or sandbox actions. Examples: GitHub PR lookup/comment/merge, Linear activity/comment/delegate update, Slack advisory post, or repository command execution when a sandbox capability exists. The planner must not assume arbitrary provider access unless the prompt advertises the capability. |
+| `sleep` | Last-resort bounded backoff inside a running turn when no durable observation source exists. Prefer `wait_for` or `schedule_me` for long waits. |
+| `session_cancel` | Stop a child session when a human rejects the run, a duplicate child was created, the planner changes strategy, or a provider stop signal arrives. |
+| `session_close` | Close a child session after its result has been captured in durable output/facts or when the planner intentionally abandons that branch. |
+| `spawn` | Not used as an app-facing factory primitive. The session-plane tools are the intended factory surface; lower-level spawn compatibility should not appear in planner prompts. |
+| `spawn_all` | Not used as an app-facing factory primitive. Parallel review/QA work should be expressed as multiple `session_new` calls so each child has a stable session identity and observable status. |
+
+This mapping is intentionally not a workflow. It tells the planner what tools
+mean; it does not prescribe an implementation/review/QA/deploy sequence in
+code.
+
 ## End-To-End Control Flow
 
 The production-shaped flow is:
@@ -312,6 +478,73 @@ The production-shaped flow is:
    planner turns can inspect what already happened.
 10. The app derives status from durable observations, not from in-memory
     process handles.
+
+## Provider Side Effects Feed Back Through Facts
+
+Provider adapters must not be hidden resume channels. Every provider side
+effect the planner might need to reason about should produce a durable fact
+that can be queried and waited on.
+
+Examples:
+
+- `linear.agent-session.prompted`: Linear user replied to the agent surface.
+  The app records the reply body, classified intent if available, session id,
+  issue id, and correlation id. If it resolves an ACP permission request, the
+  app also writes `RuntimeIngress` `PermissionResponse`.
+- `linear.agent-session.stop`: Linear stop signal was received. The app records
+  the stop fact, cancels/closes relevant runtime contexts when instructed, and
+  records cancellation output.
+- `github.pr.opened`: Implementer or provider action created/found a PR. The
+  fact includes repo, PR number, URL, head SHA, branch, and parent context id.
+- `github.pr.review_posted`: A reviewer/council comment was created or
+  updated. The fact key should be deterministic by repo, PR number, and marker
+  kind.
+- `github.ci.status`: CI was observed. The fact includes repo, PR number, SHA,
+  status, and source timestamp.
+- `github.pr.merged` / `github.pr.closed`: Merge or close happened. The fact
+  includes final PR status, SHA if merged, reviewer/decision correlation, and
+  provider response metadata.
+- `slack.notification.posted`: Advisory notification was sent. This is
+  observation-only and should not control resume.
+
+The planner waits on these facts through `darkFactory.facts`. Hidden callback
+URLs, hidden Linear comments, and comment-walking routers are not Firegrid
+control flow.
+
+## Progress Tracking Surface
+
+The first implementation should include an app-owned JSON status API, not a
+full UI. A UI can be added later on top of the same DurableTable/runtime
+collections.
+
+Minimum endpoints:
+
+- `GET /runs/:contextId`
+- `GET /runs/by-external/:source/:externalEntityKey`
+
+The response should be derived from hosted Durable Streams materialized rows
+and include:
+
+- parent context id, factory run key, source, external entity key, Linear
+  identifier/url, repo, branch, and PR link when known;
+- active and terminal runtime contexts from `firegrid.runtime.runs`, including
+  child sessions and roles when metadata is present;
+- latest app facts from `darkFactory.facts`, grouped by provider/entity;
+- latest runtime output text/log excerpts from `firegrid.runtime.output.logs`;
+- structured agent output from `firegrid.runtime.agent-output-events`,
+  including tool calls, tool results, permission requests, status, turn
+  completion, and termination;
+- current waits inferred from permission requests, scheduled self-prompts, and
+  planner/tool output;
+- current human-action items, including permission request id, prompt, choices,
+  context id, and resume path;
+- provider links to Linear issue, GitHub PR, GitHub comments/checks, and
+  advisory Slack message metadata when available;
+- last error or blocked reason, if any.
+
+The JSON API is the acceptance surface for progress in the first app slice.
+It must read durable rows/facts/output; it must not report state from in-memory
+process handles.
 
 ## Minimal Replacement Slice
 
