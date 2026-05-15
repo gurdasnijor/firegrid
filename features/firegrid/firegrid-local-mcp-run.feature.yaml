@@ -1,16 +1,16 @@
 feature:
   name: firegrid-local-mcp-run
   product: firegrid
-  description: A single local command that composes the runtime host, route-scoped MCP server, optional embedded Durable Streams, and a host-bound RuntimeContext for MCP inspector or client use.
+  description: A unified Firegrid CLI start subcommand that composes the runtime host, route-scoped MCP server, optional embedded Durable Streams, and a host-bound RuntimeContext for MCP inspector or client use.
 
 components:
   LOCAL_COMMAND:
     requirements:
-      1: The local MCP command starts from one public script and prints a structured ready record containing contextId and the route-scoped MCP URL.
-      2: The command keeps the host scope alive after printing the ready record so MCP Inspector or another client can connect to the printed URL.
-      3: The command is usable with no agent argv; in that mode it seeds a minimal no-op RuntimeContext through production primitives and prints the MCP URL.
-      4: Optional agent argv and run flags customize the seeded RuntimeContext intent; contextId is still produced by the command, not supplied by env.
-      5: The command is an MCP context bootstrap, not a synchronous run path; it creates a host-bound RuntimeContext for tool authority without automatically calling startRuntime.
+      1: The unified Firegrid CLI exposes a start subcommand from the primary run.ts entrypoint and prints a structured versioned ready record containing contextId and the route-scoped MCP URL.
+      2: The start subcommand keeps the host scope alive after printing the ready record so MCP Inspector or another client can connect to the printed URL.
+      3: The start subcommand is usable with no agent argv; in that mode it seeds a minimal no-op RuntimeContext through production primitives and prints the MCP URL.
+      4: Optional agent argv and run flags customize the seeded RuntimeContext intent; contextId is still produced by the start subcommand, not supplied by env.
+      5: The start subcommand is an MCP context bootstrap, not a synchronous run path; it creates a host-bound RuntimeContext for tool authority without automatically calling startRuntime.
 
   EMBEDDED_DURABLE_STREAMS:
     requirements:
@@ -37,5 +37,5 @@ constraints:
 
   VALIDATION:
     requirements:
-      1: A public-command smoke starts the local MCP command without DURABLE_STREAMS_BASE_URL, parses the ready record, connects with the real MCP SDK, lists the six canonical tools, and calls sleep successfully.
-      2: A public-command smoke with DURABLE_STREAMS_BASE_URL provided proves the command attaches to the configured endpoint instead of starting embedded Durable Streams.
+      1: A public-command smoke starts `pnpm firegrid -- start` without DURABLE_STREAMS_BASE_URL, parses the ready record, connects with the real MCP SDK, lists the six canonical tools, and calls sleep successfully.
+      2: A public-command smoke starts `pnpm firegrid -- start` with DURABLE_STREAMS_BASE_URL provided and proves the command attaches to the configured endpoint instead of starting embedded Durable Streams.

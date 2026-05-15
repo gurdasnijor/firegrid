@@ -38,7 +38,8 @@ const toolNames = [
 ] as const
 
 interface ReadyRecord {
-  readonly type: "firegrid.mcp.local.ready"
+  readonly type: "firegrid.start.ready"
+  readonly version: 1
   readonly contextId: string
   readonly mcpUrl: string
   readonly namespace: string
@@ -110,7 +111,8 @@ afterEach(async () => {
 
 const parseReadyRecord = (line: string): ReadyRecord => {
   const parsed = JSON.parse(line) as ReadyRecord
-  expect(parsed.type).toBe("firegrid.mcp.local.ready")
+  expect(parsed.type).toBe("firegrid.start.ready")
+  expect(parsed.version).toBe(1)
   expect(parsed.contextId.startsWith("ctx_")).toBe(true)
   expect(parsed.mcpUrl).toContain(`/mcp/runtime-context/${encodeURIComponent(parsed.contextId)}`)
   return parsed
@@ -127,7 +129,9 @@ const startLocalMcp = (
       "pnpm",
       [
         "--silent",
-        "firegrid:mcp:local",
+        "firegrid",
+        "--",
+        "start",
         "--namespace",
         input.namespace,
       ],
@@ -188,7 +192,7 @@ const startLocalMcp = (
       settled = true
       clearTimeout(timeout)
       reject(new Error(
-        `firegrid:mcp:local exited before ready record: code=${code} signal=${signal}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+        `firegrid start exited before ready record: code=${code} signal=${signal}\nstdout:\n${stdout}\nstderr:\n${stderr}`,
       ))
     })
   })

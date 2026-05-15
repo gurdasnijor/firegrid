@@ -3,7 +3,7 @@
  *
  * The local scenario invokes the production root script:
  *
- *   pnpm firegrid:run --cwd ... --prompt ... --secret-env ... -- <agent>
+ *   pnpm firegrid -- run --cwd ... --prompt ... --secret-env ... -- <agent>
  *
  * It then inspects the durable control, ingress, run, and output tables. The
  * Electric scenario uses the same command shape but is opt-in and credential
@@ -147,7 +147,9 @@ const invokeFiregridRun = (
     const child = spawn(
       "pnpm",
       [
-        "firegrid:run",
+        "firegrid",
+        "--",
+        "run",
         "--cwd",
         config.workdir,
         "--prompt",
@@ -190,7 +192,7 @@ const invokeFiregridRun = (
 const contextIdFromFiregridRun = (stdout: string): string => {
   const match = /firegrid:run: launched context (ctx_[^\s]+)/.exec(stdout)
   if (match?.[1] === undefined) {
-    throw new Error(`firegrid:run did not print a launched context id. stdout:\n${stdout}`)
+    throw new Error(`firegrid run did not print a launched context id. stdout:\n${stdout}`)
   }
   return match[1]
 }
@@ -292,7 +294,7 @@ const assertSmokeDurableState = (
 
 describe("firegrid tracer 019 sync-run local smoke", () => {
   it(
-    "firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.3 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.4 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 firegrid-workflow-driven-runtime.VALIDATION.2 invokes pnpm firegrid:run and observes durable context ingress run output evidence",
+    "firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.3 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.4 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 firegrid-workflow-driven-runtime.VALIDATION.2 invokes pnpm firegrid -- run and observes durable context ingress run output evidence",
     async () => {
       if (baseUrl === undefined) throw new Error("durable streams test server not started")
       if (workdir === undefined) throw new Error("workdir not created")
@@ -332,7 +334,7 @@ const electricIt = electricSmokeEnabled ? it : it.skip
 
 describe("firegrid tracer 019 Electric Cloud sync-run smoke", () => {
   electricIt(
-    "firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.3 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.4 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 firegrid-workflow-driven-runtime.VALIDATION.2 runs the same pnpm firegrid:run shape against Electric Cloud",
+    "firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.3 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.4 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 firegrid-workflow-driven-runtime.VALIDATION.2 runs the same pnpm firegrid -- run shape against Electric Cloud",
     async () => {
       if (workdir === undefined) throw new Error("workdir not created")
       const durableStreamsBaseUrl = globalThis.process.env["DURABLE_STREAMS_BASE_URL"]
