@@ -129,6 +129,50 @@ simulation with hosted DurableTable/Electric reads and real runtime/fact rows.
 It must not depend on `pnpm firegrid -- run`; #229 is sync CLI UX and is not a
 factory app dependency.
 
+## Product Boundary
+
+The factory app must expose Firegrid's durable substrate, not hide it behind a
+bespoke product HTTP server.
+
+The primary contract is:
+
+```txt
+provider/product adapter
+  -> durable fact / run row
+  -> planner RuntimeContext
+  -> RuntimeIngress / RuntimeOutput / runtime observation
+  -> app-owned fact or PermissionResponse
+```
+
+It is not:
+
+```txt
+custom /factory/triggers HTTP route
+custom /factory/runs HTTP route
+custom /factory/permissions/respond HTTP route
+  -> private server-side orchestration
+```
+
+Product-owned provider adapters may receive Linear, GitHub, Slack, or webhook
+HTTP requests at an outer product boundary. Their job is to verify provider
+input, map it into durable facts, and perform real provider side effects when
+configured. The Firegrid factory substrate itself should be expressed through
+DurableTable rows, runtime ingress, runtime output, runtime observation
+sources, and schema-projected tool/client/CLI surfaces.
+
+This distinction is load-bearing:
+
+- accepted work enters as durable facts, not as an app-private request queue;
+- run progress is read from durable facts and runtime observation, not from a
+  server-owned in-memory status model;
+- human decisions resume through app facts or `RuntimeIngress`
+  `PermissionResponse`, not a custom permission endpoint as the source of
+  truth;
+- a hosted smoke should prove durable writes/reads plus runtime
+  ingress/output directly;
+- app-specific HTTP routes can be added later as thin product adapters, but
+  they must not become the primary factory contract or a hidden orchestrator.
+
 ## Firegrid Platform Primitives Used
 
 The factory should be built from these Firegrid primitives, with each primitive
