@@ -10,6 +10,7 @@ import {
   type RuntimeAgentProtocol,
   type RuntimeEventRow,
 } from "@firegrid/protocol/launch"
+import { RuntimeIngressTable } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Fiber, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
@@ -103,6 +104,20 @@ const outputTableLayer = (input: {
     },
   })
 
+const ingressTableLayer = (input: {
+  readonly namespace: string
+  readonly hostId: HostId
+}) =>
+  RuntimeIngressTable.layer({
+    streamOptions: {
+      url: `${baseUrl!}/v1/stream/${makeHostStreamPrefix({
+        namespace: input.namespace,
+        hostId: input.hostId,
+      })}.runtimeIngress`,
+      contentType: "application/json",
+    },
+  })
+
 const queryRawEvents = (input: {
   readonly namespace: string
   readonly hostId: HostId
@@ -165,13 +180,17 @@ const waitForAgentEvent = (
   return loop(100)
 }
 
-const appendPrompt = (contextId: string, prompt: string) =>
+const appendPrompt = (
+  contextId: string,
+  prompt: string,
+  idempotencyKey = `runtime-codec-test:${contextId}:prompt`,
+) =>
   appendRuntimeIngress({
     contextId,
     kind: "message",
     authoredBy: "client",
     payload: prompt,
-    idempotencyKey: `runtime-codec-test:${contextId}:prompt`,
+    idempotencyKey,
   })
 
 describe("Runtime Codec Event Plane", () => {
@@ -250,6 +269,142 @@ for await (const line of rl) {
       event._tag === "TextChunk" && event.part.delta === "tool_result:true",
     )
     expect(toolResultChunk).toBeDefined()
+  }, 15_000)
+
+  it("firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1 firegrid-dark-factory-app.PLATFORM_PRIMITIVES.2 firegrid-dark-factory-app.SESSION_TOOLS.2 keeps one RuntimeContext alive for two RuntimeIngress turns and journals stateful output", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `runtime-codec-multiturn-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const childCode = `
+import readline from "node:readline"
+const rl = readline.createInterface({ input: process.stdin })
+const prompts = []
+const findText = (value) => {
+  if (typeof value === "string") return value
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findText(item)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+  if (typeof value === "object" && value !== null) {
+    if (typeof value.text === "string") return value.text
+    if ("content" in value) {
+      const found = findText(value.content)
+      if (found !== undefined) return found
+    }
+    for (const item of Object.values(value)) {
+      const found = findText(item)
+      if (found !== undefined) return found
+    }
+  }
+  return undefined
+}
+
+for await (const line of rl) {
+  const message = JSON.parse(line)
+  if (message.type !== "prompt") continue
+  const prompt = findText(message.prompt) ?? "<missing prompt>"
+  prompts.push(prompt)
+  if (prompts.length === 1) {
+    console.log(JSON.stringify({ type: "text", text: "turn1 accepted " + prompt, messageId: "turn-1" }))
+    console.log(JSON.stringify({ type: "turn_complete", finishReason: "stop", messageId: "turn-1" }))
+    continue
+  }
+  console.log(JSON.stringify({ type: "text", text: "turn2 saw prior=" + prompts[0] + "; current=" + prompt, messageId: "turn-2" }))
+  console.log(JSON.stringify({ type: "turn_complete", finishReason: "stop", messageId: "turn-2" }))
+  process.exit(0)
+}
+`
+    const contextId = await seedContext({
+      namespace,
+      hostId,
+      argv: [process.execPath, "--input-type=module", "-e", childCode],
+      agentProtocol: "stdio-jsonl",
+    })
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* appendPrompt(
+          contextId,
+          "alpha-turn-one",
+          `runtime-codec-test:${contextId}:prompt-1`,
+        )
+        const runtimeFiber = yield* startRuntime({ contextId }).pipe(Effect.fork)
+        const outputTable = yield* RuntimeOutputTable
+        const turnOne = yield* waitForAgentEvent(
+          outputTable,
+          contextId,
+          event =>
+            event._tag === "TextChunk" &&
+            event.part.delta === "turn1 accepted alpha-turn-one",
+        )
+        expect(turnOne).toMatchObject({ _tag: "TextChunk" })
+        yield* appendPrompt(
+          contextId,
+          "beta-turn-two",
+          `runtime-codec-test:${contextId}:prompt-2`,
+        )
+        return yield* Fiber.join(runtimeFiber)
+      }).pipe(
+        Effect.provide(hostLayer({ namespace, hostId })),
+        Effect.scoped,
+      ),
+    )
+
+    expect(result).toMatchObject({ contextId, exitCode: 0 })
+
+    const retained = await Effect.runPromise(Effect.gen(function* () {
+      const output = yield* RuntimeOutputTable
+      const ingress = yield* RuntimeIngressTable
+      const events = yield* output.events.query(coll =>
+        coll.toArray
+          .filter(row => row.contextId === contextId)
+          .sort((left, right) => left.sequence - right.sequence))
+      const inputs = yield* ingress.inputs.query(coll =>
+        coll.toArray
+          .filter(row => row.contextId === contextId)
+          .sort((left, right) =>
+            (left.sequence ?? Number.MAX_SAFE_INTEGER) -
+              (right.sequence ?? Number.MAX_SAFE_INTEGER)))
+      return { events, inputs }
+    }).pipe(
+      Effect.provide(outputTableLayer({ namespace, hostId })),
+      Effect.provide(ingressTableLayer({ namespace, hostId })),
+      Effect.scoped,
+    ))
+
+    expect(retained.inputs).toEqual([
+      expect.objectContaining({
+        contextId,
+        status: "sequenced",
+        sequence: 0,
+        payload: "alpha-turn-one",
+        idempotencyKey: `runtime-codec-test:${contextId}:prompt-1`,
+      }),
+      expect.objectContaining({
+        contextId,
+        status: "sequenced",
+        sequence: 1,
+        payload: "beta-turn-two",
+        idempotencyKey: `runtime-codec-test:${contextId}:prompt-2`,
+      }),
+    ])
+
+    const events = retained.events.flatMap(row => {
+      const event = decodeAgentEvent(row.raw)
+      return event === undefined ? [] : [event]
+    })
+    const textDeltas = events.flatMap(event =>
+      event._tag === "TextChunk" ? [event.part.delta] : [],
+    )
+    expect(textDeltas).toEqual(expect.arrayContaining([
+      "turn1 accepted alpha-turn-one",
+      "turn2 saw prior=alpha-turn-one; current=beta-turn-two",
+    ]))
+    expect(events.some(event => event._tag === "Terminated")).toBe(true)
+    expect(events.filter(event => event._tag === "TurnComplete")).toHaveLength(2)
   }, 15_000)
 
   it("firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1 journals ACP PermissionRequest and resumes it through RuntimeIngress PermissionResponse", async () => {
