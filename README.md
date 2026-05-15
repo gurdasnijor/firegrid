@@ -59,7 +59,7 @@ Run one local-process agent synchronously through the same durable runtime path:
 export DURABLE_STREAMS_BASE_URL="http://127.0.0.1:8080"
 export FIREGRID_RUNTIME_NAMESPACE="firegrid-run-dev"
 
-pnpm firegrid:run \
+pnpm firegrid -- run \
   --cwd "$PWD" \
   --prompt "hello from durable ingress" \
   --secret-env CHILD_API_KEY=PARENT_API_KEY \
@@ -67,7 +67,7 @@ pnpm firegrid:run \
   node agent.mjs
 ```
 
-`firegrid:run` creates a `RuntimeContext` row, optionally appends the initial
+`firegrid run` creates a `RuntimeContext` row, optionally appends the initial
 prompt through `RuntimeIngressTable`, calls `startRuntime(contextId)`, waits for
 the runtime workflow to finish, and exits with the child process exit code.
 `--secret-env` accepts env-var names only; it authorizes a specific
@@ -79,7 +79,7 @@ Start a local route-scoped MCP host and context for MCP Inspector or another
 client:
 
 ```sh
-pnpm firegrid:mcp:local
+pnpm firegrid -- start
 ```
 
 With no `DURABLE_STREAMS_BASE_URL`, this starts an embedded loopback Durable
@@ -121,9 +121,10 @@ Firegrid DurableTables with TanStack live queries. See
 | --- | --- |
 | `pnpm firegrid:host` | Run the Firegrid runtime host from environment config. |
 | `pnpm firegrid:host:env` | Run the host after loading root `.env`. |
-| `pnpm firegrid:mcp:local` | Start a local MCP host, seed a context, print the MCP URL, and stay alive. |
-| `pnpm firegrid:mcp:local:env` | Start the local MCP path after loading root `.env`. |
-| `pnpm firegrid:run -- <agent>` | Launch one synchronous local-process runtime context. |
+| `pnpm firegrid -- start` | Start a local host with MCP mounted, seed a context, print the MCP URL, and stay alive. |
+| `pnpm firegrid:start` | Compatibility script for `pnpm firegrid -- start`. |
+| `pnpm firegrid -- run -- <agent>` | Launch one synchronous local-process runtime context. |
+| `pnpm firegrid:run -- <agent>` | Compatibility script for `pnpm firegrid -- run -- <agent>`. |
 | `pnpm firegrid:run:env -- <agent>` | Run the synchronous path after loading root `.env`. |
 | `pnpm smoke:firegrid-run` | Run the local Tracer 019 sync-run smoke with an in-process Durable Streams test server. |
 | `pnpm run check:docs` | Fast docs-only whitespace and conflict-marker check. |
