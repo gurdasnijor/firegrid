@@ -209,14 +209,25 @@ describe("FiregridAgentToolkit", () => {
     expect(decodedViaTool).toEqual(decodedViaProtocol)
   })
 
-  it("firegrid-schema-projection-contract.TOOL_PROJECTION.1 projects tool schemas and descriptions from the schema catalog", () => {
-    const operation = FiregridAgentToolOperations.sessionPrompt
-    const tool = FiregridAgentToolkit.tools.session_prompt
+  it("firegrid-schema-projection-contract.TOOL_PROJECTION.1 firegrid-schema-projection-contract.TOOL_PROJECTION.3 projects every tool from the schema catalog", () => {
+    const projections = [
+      ["sleep", FiregridAgentToolkit.tools.sleep, FiregridAgentToolOperations.sleep],
+      ["wait_for", FiregridAgentToolkit.tools.wait_for, FiregridAgentToolOperations.waitFor],
+      ["session_new", FiregridAgentToolkit.tools.session_new, FiregridAgentToolOperations.sessionCreate],
+      ["session_prompt", FiregridAgentToolkit.tools.session_prompt, FiregridAgentToolOperations.sessionPrompt],
+      ["session_cancel", FiregridAgentToolkit.tools.session_cancel, FiregridAgentToolOperations.sessionCancel],
+      ["session_close", FiregridAgentToolkit.tools.session_close, FiregridAgentToolOperations.sessionClose],
+      ["schedule_me", FiregridAgentToolkit.tools.schedule_me, FiregridAgentToolOperations.scheduleMe],
+      ["execute", FiregridAgentToolkit.tools.execute, FiregridAgentToolOperations.execute],
+    ] as const
 
-    expect(tool.parametersSchema).toBe(operation.inputSchema)
-    expect(tool.successSchema).toBe(operation.outputSchema)
-    expect(tool.description).toBe(operation.description)
-    expect(tool.name).toBe(operation.metadata.toolName)
+    for (const [name, tool, operation] of projections) {
+      expect(tool.name).toBe(name)
+      expect(tool.name).toBe(operation.metadata.toolName)
+      expect(tool.parametersSchema).toBe(operation.inputSchema)
+      expect(tool.successSchema).toBe(operation.outputSchema)
+      expect(tool.description).toBe(operation.description)
+    }
   })
 })
 
