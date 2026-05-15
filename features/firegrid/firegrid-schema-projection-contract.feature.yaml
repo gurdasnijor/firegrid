@@ -22,6 +22,9 @@ components:
       1: The programmer-facing API stays in the single @firegrid/client package and exposes namespaces such as sessions, wait, and permissions.
       2: Client methods decode inputs through the same schema catalog and do not import @effect/ai Tool values, MCP server layers, or runtime-only handler dependencies.
       3: Client APIs use product-facing names such as sessions.create and sessions.prompt while preserving the same schema contract as agent tool projections.
+      4: The client exposes a durable session facade that can create or load a RuntimeContext-backed session by external key, append prompts with idempotency, read snapshots, wait for permission requests, and write permission responses without callers constructing RuntimeContext ids or RuntimeIngress input ids.
+      5: Starting a runtime from the client facade is expressed through a protocol-owned runtime-start capability supplied by host/runtime composition; packages/client must not import packages/runtime source or call startRuntime directly.
+      6: Client wait and permission helpers use protocol-owned runtime observation source names and protocol schemas so browser/app-facing code does not import runtime-host observation modules.
 
   CLI_PROJECTION:
     requirements:
@@ -35,3 +38,4 @@ constraints:
       2: This feature does not expose packages/runtime/src/agent-tools/tools.ts as the programmer-facing client API.
       3: This feature does not introduce packages/runtime/src/session-control or another runtime service layer unless repeated lowering code proves that abstraction is needed.
       4: This feature does not introduce a platform parent/child session hierarchy beyond RuntimeContext identity and explicit metadata.
+      5: The client package remains runtime-source-free; if an operation needs runtime-host authority, the dependency is represented as an Effect service/tag declared in protocol and provided by runtime-host or app composition.
