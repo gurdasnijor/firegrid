@@ -102,6 +102,25 @@ export {
   StdioJsonlCodec,
 } from "./agent-codecs/index.ts"
 export {
+  AdapterCancelled,
+  AgentAdapter,
+  AgentAdapterRegistry,
+  AdapterProtocolError,
+  AdapterSessionNotPromptable,
+  AdapterTerminated,
+  AdapterUnsupportedFeature,
+  CurrentAgentTurn,
+  AgentAdapterSelectionError,
+  LanguageModelAdapter,
+  LanguageModelAdapterCapabilities,
+  makeLanguageModelAdapter,
+  PermissionRequiredButNotHandled,
+  type AgentAdapterCapabilities,
+  type AgentAdapterRegistryService,
+  type AgentAdapterService,
+  type AgentTurn,
+} from "./agent-adapters/index.ts"
+export {
   ingestVerifiedWebhook,
   type VerifiedWebhookFact,
   VerifiedWebhookFactKeyEncoded,

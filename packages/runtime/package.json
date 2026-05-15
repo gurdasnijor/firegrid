@@ -29,6 +29,10 @@
       "types": "./src/agent-codecs/index.ts",
       "default": "./src/agent-codecs/index.ts"
     },
+    "./agent-adapters": {
+      "types": "./src/agent-adapters/index.ts",
+      "default": "./src/agent-adapters/index.ts"
+    },
     "./agent-tools": {
       "types": "./src/agent-tools/index.ts",
       "default": "./src/agent-tools/index.ts"
