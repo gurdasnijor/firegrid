@@ -224,6 +224,34 @@ const withMcpClient = async <A>(
   }
 }
 
+const postRawInitialize = async (mcpUrl: string): Promise<unknown> => {
+  const requestBody = JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-03-26",
+      capabilities: {},
+      clientInfo: { name: "firegrid-cli-transport-smoke", version: "0" },
+    },
+  })
+  expect(requestBody.includes("\n")).toBe(false)
+  const response = await fetch(mcpUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: requestBody,
+  })
+  expect(response.status).toBe(200)
+  expect(response.headers.get("content-type")).toBe("application/json")
+  const raw = (await response.text()).trim()
+  expect(raw.startsWith("{"), `expected a single JSON-RPC object on the wire, got: ${raw.slice(0, 200)}`).toBe(true)
+  expect(raw.startsWith("["), `expected NOT a JSON-RPC batch array on the wire, got: ${raw.slice(0, 200)}`).toBe(false)
+  return JSON.parse(raw)
+}
+
 const readDurableState = (options: {
   readonly durableStreamsBaseUrl: string
   readonly namespace: string
@@ -258,6 +286,7 @@ describe("tracer 021 local MCP run interface", () => {
     expect(localMcp.ready.namespace).toBe(namespace)
     expect(localMcp.ready.embeddedDurableStreams).toBe(true)
     expect(localMcp.ready.durableStreamsBaseUrl).toMatch(/^http:\/\/127\.0\.0\.1:/)
+    await postRawInitialize(localMcp.ready.mcpUrl)
     await withMcpClient(localMcp.ready.mcpUrl, async (client) => {
       const listed = await client.listTools()
       expect(listed.tools.map((tool) => tool.name).sort()).toEqual([...toolNames])

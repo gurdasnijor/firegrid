@@ -462,4 +462,64 @@ describe("FiregridMcpServerLayer runtime-context routing", () => {
       ),
     )
   })
+
+  it("firegrid-effect-ai-native-agents.MCP_TRANSPORT_COMPAT.1 firegrid-effect-ai-native-agents.VALIDATION.14 POST initialize returns an unwrapped single JSON-RPC object (not a JSON-RPC batch array) so strict clients can parse it", async () => {
+    if (!durableStreamBaseUrl) throw new Error("server not started")
+    const namespace = `mcp-transport-${crypto.randomUUID()}`
+    const hostId = `host_A_${crypto.randomUUID()}` as HostId
+    const contextId = await Effect.runPromise(
+      seedContext({ baseUrl: durableStreamBaseUrl, namespace, hostId }),
+    )
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const boundAddress = yield* HttpServer.addressFormattedWith(
+            (addr) => Effect.succeed(addr),
+          )
+          const url = contextUrl(boundAddress, contextId)
+
+          const requestBody = JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "initialize",
+            params: {
+              protocolVersion: "2025-03-26",
+              capabilities: {},
+              clientInfo: { name: "transport-compat-probe", version: "0" },
+            },
+          })
+          expect(requestBody.includes("\n")).toBe(false)
+          const postResponse = yield* Effect.tryPromise(() =>
+            fetch(url.toString(), {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                accept: "application/json, text/event-stream",
+              },
+              body: requestBody,
+            }))
+          expect(postResponse.status).toBe(200)
+          expect(postResponse.headers.get("content-type")).toBe("application/json")
+          const raw = (yield* Effect.tryPromise(() => postResponse.text())).trim()
+          expect(raw.startsWith("{"), `expected a single JSON-RPC object on the wire, got: ${raw.slice(0, 200)}`).toBe(true)
+          expect(raw.startsWith("["), `expected NOT a JSON-RPC batch array on the wire, got: ${raw.slice(0, 200)}`).toBe(false)
+          const body = JSON.parse(raw) as {
+            readonly jsonrpc: string
+            readonly id: number
+            readonly result: { readonly protocolVersion: string }
+          }
+          expect(body.jsonrpc).toBe("2.0")
+          expect(body.id).toBe(1)
+          expect(body.result.protocolVersion).toBe("2025-03-26")
+        }).pipe(
+          Effect.provide(mcpLayer({
+            baseUrl: durableStreamBaseUrl,
+            namespace,
+            hostId,
+          })),
+        ),
+      ),
+    )
+  })
 })
