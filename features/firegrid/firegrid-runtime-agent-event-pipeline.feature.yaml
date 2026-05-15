@@ -1,0 +1,97 @@
+feature:
+  name: firegrid-runtime-agent-event-pipeline
+  product: firegrid
+  description: Stage-disciplined runtime agent event pipeline with explicit write authorities per durable table family.
+
+components:
+  STAGES:
+    requirements:
+      1: Runtime agent execution is expressed as sources, codecs, transforms, authorities, subscribers, projections, tools, waits, and host wiring rather than one runtime-host aggregate root.
+      2: Sources acquire byte/process resources with scoped lifetime and do not decode protocols or write durable rows.
+      3: Codecs convert protocol sessions into AgentInputEvent and AgentOutputEvent flows and never write Firegrid durable rows directly.
+      3-1: The shared codec runtime owns bounded output queue construction for all codecs.
+      3-2: The shared codec runtime owns runtime-bound emit construction for all codecs.
+      3-3: The shared codec runtime owns fallback id generation for all codecs.
+      3-4: The shared codec runtime owns terminal event merging for all codecs.
+      3-5: The shared codec runtime owns send-side input dispatch scaffolding for all codecs.
+      3-6: The shared codec runtime owns common codec error mapping scaffolding for all codecs.
+      3-7: The codec contract exposes a toolUseMode capability flag used by the tool router subscription gate.
+      4: Transforms are pure stream operators over normalized events and own no resources or durable writes.
+      5: Projections are sibling views over codec sessions and do not sit downstream of RuntimeOutput.
+
+  AUTHORITIES:
+    requirements:
+      1: Every durable table family written by runtime code has exactly one runtime authority module that owns commits for that family.
+      2: RuntimeOutputJournal is the only runtime authority that writes RuntimeOutputTable.events and RuntimeOutputTable.logs.
+      3: RuntimeIngressAppender is the only runtime authority that writes sequenced RuntimeIngressTable.inputs rows.
+      4: RuntimeIngressDeliveryTracker is the only runtime authority that writes RuntimeIngressTable.deliveries rows.
+      4-1: RuntimeIngressDeliveryTracker is shared across raw stdin and codec delivery paths; subscriberId namespaces delivery claims by protocol and role.
+      4-2: RuntimeIngress delivery subscriber ids use the shape runtime-ingress:<protocol>:<role>.
+      5: RuntimeControlPlaneRecorder is the only runtime authority that writes RuntimeControlPlaneTable.contexts and RuntimeControlPlaneTable.runs lifecycle rows.
+      5-1: RuntimeControlPlaneRecorder owns local RuntimeContext insertion currently performed through host-context authority; host-context authority remains the read, validation, current-context, and stream URL derivation surface.
+      6: DurableWaitStore is the only runtime authority that writes durable wait rows and completions.
+      7: Authority modules may expose either Sink values for stream-terminal writes or Effect-returning command handlers for discrete commands.
+      8: Authority modules that own rows consumed by subscribers expose SourceCollectionHandle read surfaces for those rows.
+
+  TOOL_DISPATCH:
+    requirements:
+      1: ToolUse dispatch is driven from durable RuntimeOutput ToolUse observations rather than inline taps on the live codec output stream.
+      2: The tool router deduplicates dispatch by durable tool-use identity and does not append duplicate ToolResult rows for already-completed tool uses.
+      3: "ToolResult ingress rows produced by tool dispatch use deterministic idempotency keys of shape agent-tool-result:<contextId>:<activityAttempt>:<toolUseId>."
+      4: Tool dispatch writes explicit result, interruption, or error evidence for each dispatched ToolUse.
+      5: Tool dispatch is single-flight per contextId and activityAttempt in v1.
+      5-1: The tool router watches only the current running activityAttempt for a context and does not redispatch ToolUse rows from prior terminal attempts.
+      6: The v1 transactional cutover implements subscriber-based ToolUse to ToolResult round-trip for stdio-jsonl agent sessions.
+      7: ACP sessionUpdate.tool_call rows are durable observations, not dispatch candidates, and the tool router must not claim them.
+      8: ToolUse rows are decoded through a protocol/runtime event-output envelope helper shared by RuntimeOutputJournal and subscribers; subscribers do not parse RuntimeEventRow.raw ad hoc.
+      9: ACP file-system and terminal Client capabilities are out of scope for this event-pipeline cutover; advertising them requires separate resource-plane or middleware SDD/spec ACIDs.
+
+  INGREDIENTS:
+    requirements:
+      1: RuntimeIngress rows are decoded into AgentInputEvent values and sent to the active codec session by an ingress-delivery subscriber.
+      2: AgentOutputEvent values are transformed and committed through RuntimeOutputJournal before subscriber side effects depend on them.
+      3: RuntimeOutput ToolUse observations are routed to toolUseToEffect through a subscriber that appends responses through RuntimeIngressAppender.
+      4: RuntimeOutput PermissionRequest observations remain durable observations that are resumed by PermissionResponse ingress rows.
+      4-1: Permission waits observe RuntimeOutputJournal source-collection handles through wait_for or session.wait APIs rather than subscribing to codec internals.
+      4-2: PermissionResponse rows are appended only through RuntimeIngressAppender and delivered to the active codec by the ingress-delivery subscriber.
+      4-3: AcpCodec resolves pending ACP requestPermission promises from delivered PermissionResponse rows without making the tool router responsible for permission flow.
+      5: DurableTable remains the storage and live row observation primitive; this feature does not introduce a new fact/source storage abstraction.
+      6: RuntimeOutputJournal commits the Terminated event row before returning terminal exit evidence to host workflow handling.
+      7: The AgentToolHost service tag and interface remain with tool lowering, while the host-coupled live implementation lives under host wiring.
+
+  TRANSACTIONAL_CUTOVER:
+    requirements:
+      1: The implementation lands as one target-state cutover rather than a behavior-preserving split followed by separate semantic and directory-rename phases.
+      2: The new packages/runtime/src tree is organized by stage role and pins the directory rename in scope.
+      2-1: The file currently named host-context-authority.ts is renamed to host/authority-context.ts as part of the cutover.
+      3: The source tree reflects the target stage roles immediately and does not preserve open-ended compatibility aliases for prototype-internal runtime paths.
+      3-1: If a temporary compatibility export bridge is unavoidable during the cutover, a deletion ACID must be added and satisfied before this feature is complete.
+      4: The implementing PR description presents the target tree and ACID list as the review artifact.
+      5: The implementing PR description lists the SourceCollectionHandle read surfaces exposed by each authority.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: The runtime agent event pipeline does not change @firegrid/protocol durable row schemas.
+      2: The runtime agent event pipeline does not move app-owned DurableTable schemas, provider semantics, planner prompts, provider credentials, or UI read-model joins into runtime.
+      3: The runtime agent event pipeline does not make packages/client import runtime implementation modules.
+      4: Agent tool schema projection remains schema-owned and tool lowering remains host-authority backed.
+      5: App-owned DurableTable collections may be registered as wait sources, but Firegrid does not introduce a new provider fact table.
+
+  ENFORCEMENT:
+    requirements:
+      1: A canonical authority registry maps each runtime-written DurableTable collection family to its owning authority module.
+      2: Semgrep rejects direct insert, upsert, and delete calls against runtime-owned DurableTable collection facades outside the owning authority module and tests.
+      2-1: Semgrep allows calls to authority module methods and explicit test harness allowlist entries.
+      3: Subscribers consume durable seams through SourceCollections handles exposed by authority modules rather than directly calling DurableTable.rows on runtime-owned tables.
+
+  VALIDATION:
+    requirements:
+      1: The cutover proves existing raw local-process runtime behavior still journals stdout and stderr correctly.
+      2: The cutover proves stdio-jsonl codec runtime execution still handles Prompt, ToolUse, ToolResult, and Terminated events.
+      3: The cutover proves ACP PermissionRequest remains durably observable and resumable through RuntimeIngress PermissionResponse.
+      3-1: The cutover proves a wait_for or session.wait permission query resolves from RuntimeOutputJournal's decoded source-collection surface after a PermissionRequest row commits.
+      3-2: The cutover proves PermissionResponse ingress delivery resolves the pending ACP requestPermission promise for a live session.
+      4: The cutover proves duplicate startRuntime calls do not duplicate external runtime execution.
+      5: A test named firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.1 firegrid-runtime-agent-event-pipeline.VALIDATION.5 proves durable subscriber tool dispatch replays from committed RuntimeOutput ToolUse rows after restart or reconstruction.
+      6: The cutover proves ACP tool_call observations are journaled and not claimed by the tool router, while ACP PermissionRequest remains durably observable and resumable.
