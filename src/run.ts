@@ -43,7 +43,6 @@ import { type RuntimeEnvBinding } from "@firegrid/protocol/launch"
 import {
   FiregridLocalHostLive,
   RuntimeEnvResolverPolicy,
-  RuntimeHostTopologyFromConfig,
   appendRuntimeIngress,
   decodeRunConfig,
   firegridRunCreatedBy,
@@ -243,20 +242,39 @@ const envPolicyLayer = (
     }),
   )
 
-const envHostLayer = (config: RunConfig) =>
-  Layer.unwrapEffect(
-    Effect.map(RuntimeHostTopologyFromConfig, (topology) =>
-      // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
-      // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
-      FiregridLocalHostLive(
-        {
-          ...topology,
-          ...(runConfigRequiresInput(config) ? { input: true } : {}),
-          localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
-        },
-        envPolicyLayer(config.authorizedBindings ?? []),
-      )),
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
+// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
+//
+// Build the local host layer for `firegrid run`. The CLI mirrors the
+// `firegrid start` local-defaults strategy: `durableStreamsBaseUrl`
+// and `namespace` are taken from the env when supplied, otherwise the
+// embedded `DurableStreamTestServer` and `firegrid-local` defaults
+// take over. This lets `pnpm firegrid -- run -- <agent>` succeed in
+// local dev without operators having to export
+// DURABLE_STREAMS_BASE_URL / FIREGRID_RUNTIME_NAMESPACE first.
+const runHostLayer = (
+  config: RunConfig,
+  durableStreams: DurableStreamsEndpoint,
+  namespace: string,
+) => {
+  const headers = durableTableHeadersFromEnv()
+  const inputFromEnv = globalThis.process.env["FIREGRID_RUNTIME_INPUT_ENABLED"] === "true"
+  return FiregridLocalHostLive(
+    {
+      durableStreamsBaseUrl: durableStreams.baseUrl,
+      namespace,
+      ...(inputFromEnv || runConfigRequiresInput(config) ? { input: true } : {}),
+      ...(headers === undefined ? {} : { headers }),
+      localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
+    },
+    envPolicyLayer(config.authorizedBindings ?? []),
   )
+}
+
+const namespaceFromEnvOrDefault = (): string => {
+  const fromEnv = globalThis.process.env["FIREGRID_RUNTIME_NAMESPACE"]
+  return fromEnv === undefined || fromEnv.length === 0 ? defaultNamespace : fromEnv
+}
 
 const durableTableHeadersFromEnv = (): DurableTableHeaders | undefined => {
   const token = globalThis.process.env["FIREGRID_DURABLE_STREAMS_TOKEN"]
@@ -407,14 +425,15 @@ const runCommand = Command.make(
         allowEmptyAgentArgv: false,
       })
       const config = yield* decodeCliRunConfig(raw, "firegrid run")
+      const durableStreams = yield* durableStreamsEndpoint
+      const namespace = namespaceFromEnvOrDefault()
       const exitCode = yield* executeRun(config).pipe(
-        Effect.provide(envHostLayer(config)),
-        Effect.scoped,
+        Effect.provide(runHostLayer(config, durableStreams, namespace)),
       )
       yield* Effect.sync(() => {
         globalThis.process.exitCode = exitCode
       })
-    }),
+    }).pipe(Effect.scoped),
 )
 
 const namespaceOption = Options.text("namespace").pipe(Options.optional)
