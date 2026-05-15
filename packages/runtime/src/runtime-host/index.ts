@@ -1,3 +1,4 @@
+import { Prompt } from "@effect/ai"
 import { NodeContext } from "@effect/platform-node"
 import {
   Activity,
@@ -8,8 +9,11 @@ import {
   HostIdSegmentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  local,
   makeHostSessionRow,
+  normalizeRuntimeIntent,
   type HostId,
+  type HostSessionRow,
   type HostSessionId,
   type RuntimeContext,
   type RuntimeEventRow,
@@ -28,6 +32,7 @@ import {
   CurrentRuntimeContext,
   findRuntimeContext,
   hostOwnedStreamUrl,
+  insertLocalRuntimeContext,
   provideRuntimeContext,
   requireLocalContext,
   runtimeControlPlaneStreamUrl,
@@ -872,13 +877,110 @@ const unsupportedAgentTool = (
     new Error(`${name} is not wired by RuntimeHostAgentToolHostLive in this slice`),
   ))
 
+const childContextIdForToolUse = (
+  parentContextId: string,
+  toolUseId: string,
+) => {
+  const segment = `${parentContextId}-${toolUseId}`.replaceAll(
+    /[^A-Za-z0-9_-]/g,
+    "_",
+  )
+  return `ctx_${segment}`
+}
+
+const sessionNewInputIdForToolUse = (
+  childContextId: string,
+  toolUseId: string,
+) => `session-new:${childContextId}:${toolUseId}`
+
 const runtimeHostAgentToolHostService = (captured: {
   readonly hostConfig: RuntimeHostConfig["Type"]
   readonly controlPlane: RuntimeControlPlaneTable["Type"]
+  readonly hostSession: HostSessionRow
+  readonly workflowEngine: WorkflowEngine.WorkflowEngine["Type"]
 }): AgentToolHostService => ({
-  spawnChildContext: ({ toolUseId }) => unsupportedAgentTool(toolUseId, "spawn"),
+  spawnChildContext: ({
+    parentContextId,
+    toolUseId,
+    agentKind,
+    prompt,
+    spawnOptions,
+  }) =>
+    Effect.gen(function* () {
+      const childContextId = childContextIdForToolUse(parentContextId, toolUseId)
+      const intent = normalizeRuntimeIntent(local.jsonl({
+        argv: [agentKind],
+        ...(spawnOptions?.cwd === undefined ? {} : { cwd: spawnOptions.cwd }),
+      }))
+      // firegrid-factory-aligned-agent-tools.SESSION.1
+      // firegrid-factory-aligned-agent-tools.SESSION.6
+      yield* insertLocalRuntimeContext(intent, {
+        contextId: childContextId,
+        createdBy: `agent-tool:${parentContextId}`,
+      }).pipe(
+        Effect.provideService(RuntimeControlPlaneTable, captured.controlPlane),
+        Effect.provideService(CurrentHostSession, captured.hostSession),
+      )
+      const inputId = sessionNewInputIdForToolUse(childContextId, toolUseId)
+      yield* appendRuntimeIngress({
+        contextId: childContextId,
+        inputId,
+        kind: "message",
+        authoredBy: "workflow",
+        payload: Prompt.userMessage({
+          content: [Prompt.textPart({ text: prompt })],
+        }),
+        idempotencyKey: inputId,
+      }).pipe(
+        Effect.provideService(RuntimeHostConfig, captured.hostConfig),
+        Effect.provideService(RuntimeControlPlaneTable, captured.controlPlane),
+      )
+      yield* requireLocalContext(childContextId).pipe(
+        Effect.provideService(RuntimeControlPlaneTable, captured.controlPlane),
+        Effect.provideService(CurrentHostSession, captured.hostSession),
+      )
+      yield* executeRuntimeContextWorkflow(
+        captured.workflowEngine,
+        RuntimeContextWorkflow,
+        {
+          executionId: runtimeContextWorkflowExecutionId(childContextId),
+          payload: RuntimeContextWorkflowPayload.make({
+            contextId: childContextId,
+          }),
+          discard: true,
+        },
+      ).pipe(Effect.withClock(runtimeExecutionClock))
+      return {
+        childContextId,
+        status: "running" as const,
+      }
+    }).pipe(
+      Effect.mapError(cause => toolExecutionFailed(toolUseId, "session_new", cause)),
+    ),
   spawnChildContexts: ({ toolUseId }) => unsupportedAgentTool(toolUseId, "spawn_all"),
   executeSandboxTool: ({ toolUseId }) => unsupportedAgentTool(toolUseId, "execute"),
+  executeSessionCapability: ({ toolUseId }) =>
+    unsupportedAgentTool(toolUseId, "execute"),
+  appendSessionPrompt: ({ toolUseId, sessionId, inputId, prompt }) =>
+    // firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2
+    appendRuntimeIngress({
+      contextId: sessionId,
+      inputId,
+      kind: "message",
+      authoredBy: "workflow",
+      payload: prompt,
+      idempotencyKey: inputId,
+    }).pipe(
+      Effect.provideService(RuntimeHostConfig, captured.hostConfig),
+      Effect.provideService(RuntimeControlPlaneTable, captured.controlPlane),
+      Effect.asVoid,
+      Effect.mapError(cause =>
+        toolExecutionFailed(toolUseId, "session_prompt", cause)),
+    ),
+  cancelSession: ({ toolUseId }) =>
+    unsupportedAgentTool(toolUseId, "session_cancel"),
+  closeSession: ({ toolUseId }) =>
+    unsupportedAgentTool(toolUseId, "session_close"),
   appendScheduledPrompt: ({ contextId, inputId, prompt }) =>
     // firegrid-host-context-authority.PROMPT_ROUTING.3
     appendRuntimeIngress({
@@ -902,6 +1004,13 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
   Effect.gen(function* () {
     const hostConfig = yield* RuntimeHostConfig
     const controlPlane = yield* RuntimeControlPlaneTable
-    return runtimeHostAgentToolHostService({ hostConfig, controlPlane })
+    const hostSession = yield* CurrentHostSession
+    const workflowEngine = yield* WorkflowEngine.WorkflowEngine
+    return runtimeHostAgentToolHostService({
+      hostConfig,
+      controlPlane,
+      hostSession,
+      workflowEngine,
+    })
   }),
 )

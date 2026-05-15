@@ -138,6 +138,20 @@ const fakeHost = (
       ],
     }),
   executeSandboxTool: () => Effect.succeed<unknown>({ ok: true }),
+  executeSessionCapability: () => Effect.succeed<unknown>({ ok: true }),
+  appendSessionPrompt: () => Effect.void,
+  cancelSession: ({ toolUseId }) =>
+    Effect.fail(toolExecutionFailed(
+      toolUseId,
+      "session_cancel",
+      "session cancellation is not available in this test host",
+    )),
+  closeSession: ({ toolUseId }) =>
+    Effect.fail(toolExecutionFailed(
+      toolUseId,
+      "session_close",
+      "session close is not available in this test host",
+    )),
   appendScheduledPrompt: () => Effect.void,
   ...overrides,
 })
@@ -429,6 +443,132 @@ describe("toolUseToEffect — spawn arm", () => {
   })
 })
 
+describe("toolUseToEffect — session-plane arms", () => {
+  it("firegrid-factory-aligned-agent-tools.SESSION.6 lowers session_new through AgentToolHost.spawnChildContext", async () => {
+    const streams = makeStreams("session-new")
+    let observed: { agentKind: string; prompt: string } | undefined
+    const host = fakeHost({
+      spawnChildContext: ({ agentKind, prompt }) =>
+        Effect.sync(() => {
+          observed = { agentKind, prompt }
+          return {
+            childContextId: "ctx-child-session",
+            terminalState: { _tag: "Completed", output: { result: 42 } },
+          }
+        }),
+    })
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(host)),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-parent",
+          event: toolUse("tool-session-new", "session_new", {
+              agentKind: "stdio-jsonl",
+              prompt: "summarize the issue",
+              options: { metadata: { correlationId: "corr-1" } },
+            }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toMatchObject({
+      session: {
+        sessionId: "ctx-child-session",
+        contextId: "ctx-child-session",
+        status: "done",
+        metadata: { correlationId: "corr-1" },
+        terminalState: { _tag: "Completed" },
+      },
+    })
+    expect(observed).toEqual({
+      agentKind: "stdio-jsonl",
+      prompt: "summarize the issue",
+    })
+  })
+
+  it("firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2 lowers session_prompt to host-owned prompt append", async () => {
+    const streams = makeStreams("session-prompt")
+    let observed:
+      | { readonly sessionId: string; readonly inputId: string; readonly text: string }
+      | undefined
+    const host = fakeHost({
+      appendSessionPrompt: ({ sessionId, inputId, prompt }) =>
+        Effect.sync(() => {
+          const firstPart = prompt.content[0]
+          observed = {
+            sessionId,
+            inputId,
+            text: firstPart?.type === "text" ? firstPart.text : "",
+          }
+        }),
+    })
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(host)),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-parent",
+          event: toolUse("tool-session-prompt", "session_prompt", {
+              sessionId: "ctx-child-session",
+              inputId: "input-1",
+              prompt: "continue",
+            }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toEqual({
+      appended: true,
+      sessionId: "ctx-child-session",
+      inputId: "input-1",
+    })
+    expect(observed).toEqual({
+      sessionId: "ctx-child-session",
+      inputId: "input-1",
+      text: "continue",
+    })
+  })
+
+  it("session_cancel fails explicitly when the host has no cancel primitive", async () => {
+    const streams = makeStreams("session-cancel")
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(fakeHost())),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-parent",
+          event: toolUse("tool-session-cancel", "session_cancel", {
+              sessionId: "ctx-child-session",
+              reason: "stop",
+            }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(true)
+    expect(resultContent(result)).toMatchObject({
+      error: { _tag: "ToolExecutionFailed", name: "session_cancel" },
+    })
+  })
+
+  it("session_close fails explicitly when the host has no close primitive", async () => {
+    const streams = makeStreams("session-close")
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(fakeHost())),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-parent",
+          event: toolUse("tool-session-close", "session_close", {
+              sessionId: "ctx-child-session",
+              reason: "done",
+            }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(true)
+    expect(resultContent(result)).toMatchObject({
+      error: { _tag: "ToolExecutionFailed", name: "session_close" },
+    })
+  })
+})
+
 describe("toolUseToEffect — spawn_all arm", () => {
   it("routes to AgentToolHost.spawnChildContexts and emits aggregated children", async () => {
     const streams = makeStreams("spawnall")
@@ -534,6 +674,51 @@ describe("toolUseToEffect — execute arm", () => {
     expect(resultIsError(result)).toBe(false)
     expect(resultContent(result)).toMatchObject({ exitCode: 0, stdout: "done" })
     expect(observedInput).toMatchObject({ argv: ["echo", "hi"] })
+  })
+
+  it("firegrid-factory-aligned-agent-tools.CAPABILITY.2 routes session-bound capability input through AgentToolHost.executeSessionCapability", async () => {
+    const streams = makeStreams("execute-session-capability")
+    let observed:
+      | {
+        readonly sessionId: string
+        readonly kind: string
+        readonly name: string
+        readonly input: unknown
+      }
+      | undefined
+    const host = fakeHost({
+      executeSessionCapability: ({ sessionId, capability, input }) =>
+        Effect.sync(() => {
+          observed = {
+            sessionId,
+            kind: capability.kind,
+            name: capability.name,
+            input,
+          }
+          return { stdout: "ok" }
+        }),
+    })
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(host)),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-execute",
+          event: toolUse("tool-execute-session", "execute", {
+              sessionId: "ctx-child-session",
+              capability: { kind: "terminal", name: "primary" },
+              input: { command: "pwd" },
+            }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toMatchObject({ stdout: "ok" })
+    expect(observed).toMatchObject({
+      sessionId: "ctx-child-session",
+      kind: "terminal",
+      name: "primary",
+      input: { command: "pwd" },
+    })
   })
 })
 

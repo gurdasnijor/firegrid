@@ -8,9 +8,8 @@
  * derive agent-facing JSON catalogs from the same Effect Schemas
  * declared here.
  *
- * This module defines *only* the input and output shapes that Phase 2
- * will expose as the canonical six tools (sleep, wait_for, spawn,
- * spawn_all, schedule_me, execute). It does NOT:
+ * This module defines *only* the input and output shapes that the
+ * canonical Firegrid agent-tool surface exposes. It does NOT:
  *   - declare descriptors (Phase 2 owns the explicit exposure manifest),
  *   - declare match-arm lowering (Phase 2 owns toolUseToEffect),
  *   - reflect every protocol row family as a tool surface.
@@ -189,6 +188,141 @@ export const SpawnAllToolOutputSchema = Schema.Struct({
 export type SpawnAllToolOutput = Schema.Schema.Type<typeof SpawnAllToolOutputSchema>
 
 // ---------------------------------------------------------------------------
+// session plane
+// ---------------------------------------------------------------------------
+
+export const SessionStatusSchema = Schema.Literal(
+  "created",
+  "running",
+  "input_required",
+  "done",
+  "failed",
+  "aborted",
+  "idle",
+).annotations({
+  identifier: "firegrid.agentTool.sessionStatus",
+  title: "Session status",
+})
+export type SessionStatus = Schema.Schema.Type<typeof SessionStatusSchema>
+
+export const SessionHandleSchema = Schema.Struct({
+  sessionId: Schema.String.pipe(Schema.minLength(1)),
+  contextId: Schema.String.pipe(Schema.minLength(1)),
+  status: SessionStatusSchema,
+  metadata: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.String }),
+  ),
+  terminalState: Schema.optional(WorkflowTerminalStateSchema),
+}).annotations({
+  identifier: "firegrid.agentTool.sessionHandle",
+  title: "Session handle",
+  description:
+    "Agent-visible handle for a RuntimeContext-backed session. In v1, " +
+    "sessionId is the RuntimeContext contextId.",
+})
+export type SessionHandle = Schema.Schema.Type<typeof SessionHandleSchema>
+
+export const SessionNewToolInputSchema = Schema.Struct({
+  agentKind: Schema.String.pipe(Schema.minLength(1)),
+  prompt: Schema.String.pipe(Schema.minLength(1)),
+  options: Schema.optional(SpawnOptionsSchema),
+}).annotations({
+  identifier: "firegrid.agentTool.sessionNew.input",
+  title: "Session-new tool input",
+  description:
+    "Create a child RuntimeContext-backed session and return its session handle.",
+})
+export type SessionNewToolInput = Schema.Schema.Type<
+  typeof SessionNewToolInputSchema
+>
+
+export const SessionNewToolOutputSchema = Schema.Struct({
+  session: SessionHandleSchema,
+}).annotations({
+  identifier: "firegrid.agentTool.sessionNew.output",
+  title: "Session-new tool output",
+})
+export type SessionNewToolOutput = Schema.Schema.Type<
+  typeof SessionNewToolOutputSchema
+>
+
+export const SessionPromptToolInputSchema = Schema.Struct({
+  sessionId: Schema.String.pipe(Schema.minLength(1)),
+  prompt: Schema.String.pipe(Schema.minLength(1)),
+  inputId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  metadata: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.String }),
+  ),
+}).annotations({
+  identifier: "firegrid.agentTool.sessionPrompt.input",
+  title: "Session-prompt tool input",
+  description:
+    "Append a prompt to an existing RuntimeContext-backed session via host-owned ingress.",
+})
+export type SessionPromptToolInput = Schema.Schema.Type<
+  typeof SessionPromptToolInputSchema
+>
+
+export const SessionPromptToolOutputSchema = Schema.Struct({
+  appended: Schema.Literal(true),
+  sessionId: Schema.String.pipe(Schema.minLength(1)),
+  inputId: Schema.String.pipe(Schema.minLength(1)),
+}).annotations({
+  identifier: "firegrid.agentTool.sessionPrompt.output",
+  title: "Session-prompt tool output",
+})
+export type SessionPromptToolOutput = Schema.Schema.Type<
+  typeof SessionPromptToolOutputSchema
+>
+
+export const SessionCancelToolInputSchema = Schema.Struct({
+  sessionId: Schema.String.pipe(Schema.minLength(1)),
+  reason: Schema.optional(Schema.String),
+}).annotations({
+  identifier: "firegrid.agentTool.sessionCancel.input",
+  title: "Session-cancel tool input",
+  description:
+    "Request cancellation of an existing RuntimeContext-backed session.",
+})
+export type SessionCancelToolInput = Schema.Schema.Type<
+  typeof SessionCancelToolInputSchema
+>
+
+export const SessionCancelToolOutputSchema = Schema.Struct({
+  cancelled: Schema.Literal(true),
+  sessionId: Schema.String.pipe(Schema.minLength(1)),
+}).annotations({
+  identifier: "firegrid.agentTool.sessionCancel.output",
+  title: "Session-cancel tool output",
+})
+export type SessionCancelToolOutput = Schema.Schema.Type<
+  typeof SessionCancelToolOutputSchema
+>
+
+export const SessionCloseToolInputSchema = Schema.Struct({
+  sessionId: Schema.String.pipe(Schema.minLength(1)),
+  reason: Schema.optional(Schema.String),
+}).annotations({
+  identifier: "firegrid.agentTool.sessionClose.input",
+  title: "Session-close tool input",
+  description: "Request closure of an existing RuntimeContext-backed session.",
+})
+export type SessionCloseToolInput = Schema.Schema.Type<
+  typeof SessionCloseToolInputSchema
+>
+
+export const SessionCloseToolOutputSchema = Schema.Struct({
+  closed: Schema.Literal(true),
+  sessionId: Schema.String.pipe(Schema.minLength(1)),
+}).annotations({
+  identifier: "firegrid.agentTool.sessionClose.output",
+  title: "Session-close tool output",
+})
+export type SessionCloseToolOutput = Schema.Schema.Type<
+  typeof SessionCloseToolOutputSchema
+>
+
+// ---------------------------------------------------------------------------
 // schedule_me
 // ---------------------------------------------------------------------------
 
@@ -238,13 +372,56 @@ export const SandboxRefSchema = Schema.Struct({
 })
 export type SandboxRef = Schema.Schema.Type<typeof SandboxRefSchema>
 
-export const ExecuteToolInputSchema = Schema.Struct({
+export const LegacyExecuteToolInputSchema = Schema.Struct({
   sandbox: SandboxRefSchema,
+  input: Schema.Unknown,
+}).annotations({
+  identifier: "firegrid.agentTool.execute.legacyInput",
+  title: "Legacy execute tool input",
+  description:
+    "Invoke a SandboxProvider-backed tool by sandbox-neutral reference.",
+})
+export type LegacyExecuteToolInput = Schema.Schema.Type<
+  typeof LegacyExecuteToolInputSchema
+>
+
+export const SessionCapabilityRefSchema = Schema.Struct({
+  kind: Schema.Literal("filesystem", "terminal", "external"),
+  name: Schema.String.pipe(Schema.minLength(1)),
+}).annotations({
+  identifier: "firegrid.agentTool.sessionCapabilityRef",
+  title: "Session capability reference",
+  description:
+    "Agent-visible reference to a session-bound filesystem, terminal, or external-resource capability.",
+})
+export type SessionCapabilityRef = Schema.Schema.Type<
+  typeof SessionCapabilityRefSchema
+>
+
+export const SessionExecuteToolInputSchema = Schema.Struct({
+  sessionId: Schema.String.pipe(Schema.minLength(1)),
+  capability: SessionCapabilityRefSchema,
+  input: Schema.Unknown,
+}).annotations({
+  identifier: "firegrid.agentTool.execute.sessionInput",
+  title: "Session-bound execute tool input",
+  description:
+    "Invoke a capability scoped by session identity and host authority.",
+})
+export type SessionExecuteToolInput = Schema.Schema.Type<
+  typeof SessionExecuteToolInputSchema
+>
+
+export const ExecuteToolInputSchema = Schema.Struct({
+  sessionId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  capability: Schema.optional(SessionCapabilityRefSchema),
+  sandbox: Schema.optional(SandboxRefSchema),
   input: Schema.Unknown,
 }).annotations({
   identifier: "firegrid.agentTool.execute.input",
   title: "Execute tool input",
-  description: "Invoke a SandboxProvider-backed tool by sandbox-neutral reference.",
+  description:
+    "Invoke a session-bound capability, with a temporary compatibility bridge for legacy sandbox references.",
 })
 export type ExecuteToolInput = Schema.Schema.Type<typeof ExecuteToolInputSchema>
 

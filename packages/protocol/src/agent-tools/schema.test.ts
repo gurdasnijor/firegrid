@@ -1,9 +1,7 @@
 /**
  * Tests for shared agent-tool input/output schemas.
  *
- * These schemas are the source of truth for the six canonical Firegrid
- * agent tools' shapes. Phase 2 will build a keyed `FiregridAgentTools`
- * manifest on top of them.
+ * These schemas are the source of truth for Firegrid agent-tool shapes.
  */
 
 import { Effect, Schema } from "effect"
@@ -15,6 +13,15 @@ import {
   SandboxRefSchema,
   ScheduleMeToolInputSchema,
   ScheduleMeToolOutputSchema,
+  SessionCancelToolInputSchema,
+  SessionCancelToolOutputSchema,
+  SessionCloseToolInputSchema,
+  SessionCloseToolOutputSchema,
+  SessionHandleSchema,
+  SessionNewToolInputSchema,
+  SessionNewToolOutputSchema,
+  SessionPromptToolInputSchema,
+  SessionPromptToolOutputSchema,
   SleepToolInputSchema,
   SleepToolOutputSchema,
   SpawnAllToolInputSchema,
@@ -185,6 +192,76 @@ describe("agent-tool schemas — spawn_all", () => {
   })
 })
 
+describe("agent-tool schemas — session plane", () => {
+  it("firegrid-factory-aligned-agent-tools.SESSION.7 decodes a session handle", async () => {
+    const decoded = await decodes(SessionHandleSchema, {
+      sessionId: "ctx-child",
+      contextId: "ctx-child",
+      status: "done",
+      metadata: { correlationId: "corr-1" },
+      terminalState: { _tag: "Completed", output: { ok: true } },
+    })
+    expect(decoded.sessionId).toBe("ctx-child")
+    expect(decoded.contextId).toBe("ctx-child")
+  })
+
+  it("decodes session_new input and output", async () => {
+    const input = await decodes(SessionNewToolInputSchema, {
+      agentKind: "stdio-jsonl",
+      prompt: "start",
+      options: { metadata: { parent: "ctx-parent" } },
+    })
+    expect(input.agentKind).toBe("stdio-jsonl")
+    const output = await decodes(SessionNewToolOutputSchema, {
+      session: {
+        sessionId: "ctx-child",
+        contextId: "ctx-child",
+        status: "running",
+      },
+    })
+    expect(output.session.sessionId).toBe("ctx-child")
+  })
+
+  it("firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2 decodes session_prompt input and output", async () => {
+    const input = await decodes(SessionPromptToolInputSchema, {
+      sessionId: "ctx-child",
+      prompt: "continue",
+      inputId: "input-1",
+    })
+    expect(input.sessionId).toBe("ctx-child")
+    const output = await decodes(SessionPromptToolOutputSchema, {
+      appended: true,
+      sessionId: "ctx-child",
+      inputId: "input-1",
+    })
+    expect(output.appended).toBe(true)
+  })
+
+  it("decodes session_cancel and session_close shapes", async () => {
+    const cancel = await decodes(SessionCancelToolInputSchema, {
+      sessionId: "ctx-child",
+      reason: "stop",
+    })
+    expect(cancel.reason).toBe("stop")
+    const cancelOutput = await decodes(SessionCancelToolOutputSchema, {
+      cancelled: true,
+      sessionId: "ctx-child",
+    })
+    expect(cancelOutput.cancelled).toBe(true)
+
+    const close = await decodes(SessionCloseToolInputSchema, {
+      sessionId: "ctx-child",
+      reason: "done",
+    })
+    expect(close.reason).toBe("done")
+    const closeOutput = await decodes(SessionCloseToolOutputSchema, {
+      closed: true,
+      sessionId: "ctx-child",
+    })
+    expect(closeOutput.closed).toBe(true)
+  })
+})
+
 describe("agent-tool schemas — schedule_me", () => {
   it("requires a non-negative integer when", async () => {
     const decoded = await decodes(ScheduleMeToolInputSchema, {
@@ -212,12 +289,26 @@ describe("agent-tool schemas — schedule_me", () => {
 })
 
 describe("agent-tool schemas — execute", () => {
-  it("requires sandbox ref + arbitrary input", async () => {
+  it("accepts legacy sandbox ref + arbitrary input", async () => {
     const decoded = await decodes(ExecuteToolInputSchema, {
       sandbox: { providerName: "local-process", toolName: "shell" },
       input: { command: "echo" },
     })
-    expect(decoded.sandbox.providerName).toBe("local-process")
+    expect(decoded).toMatchObject({
+      sandbox: { providerName: "local-process", toolName: "shell" },
+    })
+  })
+
+  it("firegrid-factory-aligned-agent-tools.CAPABILITY.2 accepts session-bound capability input", async () => {
+    const decoded = await decodes(ExecuteToolInputSchema, {
+      sessionId: "ctx-child",
+      capability: { kind: "terminal", name: "primary" },
+      input: { command: "pwd" },
+    })
+    expect(decoded).toMatchObject({
+      sessionId: "ctx-child",
+      capability: { kind: "terminal", name: "primary" },
+    })
   })
 
   it("rejects empty provider or tool name", async () => {

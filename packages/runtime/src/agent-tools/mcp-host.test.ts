@@ -57,9 +57,11 @@ afterEach(async () => {
 const toolNames = [
   "execute",
   "schedule_me",
+  "session_cancel",
+  "session_close",
+  "session_new",
+  "session_prompt",
   "sleep",
-  "spawn",
-  "spawn_all",
   "wait_for",
 ] as const
 
@@ -253,7 +255,7 @@ describe("FiregridMcpServerLayer runtime-context routing", () => {
     )
   })
 
-  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.2 publishes the same canonical six-tool catalog across context paths", async () => {
+  it("firegrid-host-context-authority.MCP_CONTEXT_ROUTING.2 publishes the same canonical session-plane catalog across context paths", async () => {
     if (!durableStreamBaseUrl) throw new Error("server not started")
     const namespace = `mcp-catalog-${crypto.randomUUID()}`
     const hostId = `host_A_${crypto.randomUUID()}` as HostId
