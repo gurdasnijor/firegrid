@@ -1,0 +1,50 @@
+feature:
+  name: firegrid-zed-acp-stdio-external-agent
+  product: firegrid
+  description: Long-running ACP stdio external-agent process boundary for Zed and other ACP clients, distinct from Firegrid local MCP bootstrap and synchronous run.
+
+components:
+  PROCESS_BOUNDARY:
+    requirements:
+      1: The Zed external-agent path models a long-running ACP stdio agent process, not a one-shot prompt command.
+      2: The process boundary is compatible with the unified Firegrid CLI shape where start keeps host resources alive and run remains synchronous.
+      3: The command process speaks ACP JSON-RPC over stdin/stdout for its entire lifetime and exits only when the ACP client closes, cancels, or the process fails.
+      4: Zed is the ACP client and Firegrid is the launched ACP agent-side/server process for this boundary.
+
+  PROTOCOL_DISCIPLINE:
+    requirements:
+      1: ACP protocol frames are emitted only on stdout and non-protocol diagnostics are emitted only on stderr.
+      2: Ready records, host/MCP bootstrap records, and other Firegrid control-plane JSON must not be interleaved onto the ACP stdout stream.
+      3: Firegrid does not define a custom ACP dialect; it uses the public ACP SDK/protocol shapes for initialize, newSession, prompt, sessionUpdate, permission, cancel, and close behavior.
+
+  RUNTIME_CONTEXT_AUTHORITY:
+    requirements:
+      1: The long-running ACP stdio agent is bound to a RuntimeContext created or resolved by Firegrid host authority, not by caller-supplied stream URLs or env context ids.
+      2: ACP session identity is adapter/session-local and does not replace RuntimeContext.contextId as the durable Firegrid authority key.
+      3: RuntimeContext.envBindings remain durable references only; spawned ACP agents receive resolved secrets through the provider boundary, not durable secret values.
+
+  ACP_ADAPTER_ALIGNMENT:
+    requirements:
+      1: The future ACP stdio agent reuses the AgentAdapter foundation and ACP codec/SDK mapping knowledge instead of routing through SandboxProvider as a fake one-shot process.
+      2: CurrentAgentTurn is the Firegrid turn-correlation context for adapter-local prompt handling; ACP messageId/userMessageId echo behavior is not treated as Firegrid authority.
+      3: Permission requests surface through explicit ACP/adapter permission handling and are not auto-granted by the base model path.
+      4: The current AcpCodec ClientSideConnection implementation is not reused directly for Zed because it represents Firegrid-as-client to an ACP subprocess, the opposite ACP role.
+
+constraints:
+  MCP_BOUNDARY:
+    requirements:
+      1: The Zed ACP stdio path does not start or expose an MCP HTTP server as its transport.
+      2: Local MCP bootstrap remains a separate `firegrid start` control/tool route and is not renamed or generalized into an mcp-local ACP concept.
+      3: Sharing host/runtime context primitives with MCP is allowed; sharing MCP JSON-RPC routes, tool transport, or ready-record stdout semantics with ACP stdio is not.
+
+  NON_GOALS:
+    requirements:
+      1: This SDD does not implement runtime-host workflow integration, CLI entrypoint changes, ACP adapter code, MCP routing, or durable journaling changes.
+      2: This SDD does not specify one-shot prompt semantics for Zed external agents.
+      3: This SDD does not introduce a custom ACP protocol, host directory, or context placement state.
+
+  VALIDATION:
+    requirements:
+      1: A future spawned-process ACP smoke starts the Firegrid ACP stdio command, performs initialize and newSession through the real ACP TypeScript SDK, sends a prompt, observes sessionUpdate output, and shuts down cleanly.
+      2: The smoke proves stdout contains only ACP frames and stderr may contain diagnostics.
+      3: The smoke proves the spawned ACP process binds to a Firegrid RuntimeContext and does not require test-local stream URL wiring.
