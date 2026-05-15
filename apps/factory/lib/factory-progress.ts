@@ -1,132 +1,15 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import type { FactoryRunStatusView } from "../src/index.ts"
 
-export interface DarkFactoryRun {
-  readonly factoryRunKey: string
-  readonly subscriberId: string
-  readonly source: string
-  readonly externalEntityKey: string
-  readonly plannerContextId: string
-  readonly acceptedFactKey: readonly [string, string]
-  readonly status: "accepted" | "planner_started" | "waiting_permission" | "resumed" | "done" | "failed"
-  readonly createdAt: string
-  readonly updatedAt: string
-  readonly correlationId?: string
-  readonly repoHint?: string
-  readonly linearIssueId?: string
-  readonly linearIdentifier?: string
-  readonly linearUrl?: string
-  readonly lastPermissionRequestId?: string
-  readonly lastRuntimeSequence?: number
-}
+export type { FactoryRunStatusView } from "../src/index.ts"
 
-export interface DarkFactoryFact {
-  readonly factKey: readonly [string, string]
-  readonly source: string
-  readonly externalEventKey: string
-  readonly externalEntityKey: string
-  readonly eventType: string
-  readonly factoryRunKey?: string
-  readonly contextId?: string
-  readonly correlationId?: string
-  readonly createdAt: string
-  readonly payload: unknown
-}
-
-export interface RuntimeRunEventRow {
-  readonly runEventId: {
-    readonly contextId: string
-    readonly activityAttempt: number
-    readonly status: "started" | "exited" | "failed"
-  }
-  readonly contextId: string
-  readonly activityAttempt: number
-  readonly status: "started" | "exited" | "failed"
-  readonly at: string
-  readonly provider: string
-  readonly exitCode?: number
-  readonly signal?: string
-  readonly message?: string
-}
-
-export interface RuntimeEventRow {
-  readonly eventId: {
-    readonly contextId: string
-    readonly activityAttempt: number
-    readonly target: "events"
-    readonly sequence: number
-  }
-  readonly contextId: string
-  readonly activityAttempt: number
-  readonly sequence: number
-  readonly source: "stdout"
-  readonly format: "jsonl"
-  readonly receivedAt: string
-  readonly raw: string
-}
-
-export interface RuntimeLogLineRow {
-  readonly logLineId: {
-    readonly contextId: string
-    readonly activityAttempt: number
-    readonly target: "logs"
-    readonly sequence: number
-  }
-  readonly contextId: string
-  readonly activityAttempt: number
-  readonly sequence: number
-  readonly source: "stderr"
-  readonly format: "text-lines"
-  readonly receivedAt: string
-  readonly raw: string
-}
-
-export interface RuntimeIngressInputRow {
-  readonly inputId: string
-  readonly contextId: string
-  readonly sequence?: number
-  readonly status: "pending" | "sequenced" | "cancelled"
-  readonly kind: "message" | "control" | "tool_result" | "required_action_result"
-  readonly authoredBy: "client" | "workflow" | "tool" | "system"
-  readonly payload: unknown
-  readonly idempotencyKey?: string
-  readonly createdAt: string
-  readonly sequencedAt?: string
-  readonly metadata?: Readonly<Record<string, string>>
-}
-
-export interface FactoryPermissionOption {
-  readonly optionId: string
-  readonly kind: string
-  readonly name: string
-}
-
-export interface FactoryPermissionRequest {
-  readonly contextId: string
-  readonly activityAttempt: number
-  readonly sequence: number
-  readonly permissionRequestId: string
-  readonly toolUseId: string
-  readonly options: ReadonlyArray<FactoryPermissionOption>
-  readonly event: unknown
-}
-
-export interface FactoryRunStatusView {
-  readonly run: DarkFactoryRun
-  readonly facts: ReadonlyArray<DarkFactoryFact>
-  readonly runtimeRuns: ReadonlyArray<RuntimeRunEventRow>
-  readonly runtimeEvents: ReadonlyArray<RuntimeEventRow>
-  readonly runtimeLogs: ReadonlyArray<RuntimeLogLineRow>
-  readonly ingressInputs: ReadonlyArray<RuntimeIngressInputRow>
-  readonly permissions: ReadonlyArray<FactoryPermissionRequest>
-}
-
-export type FactoryProgressState =
+type FactoryProgressState =
   | { status: "idle"; data?: undefined; error?: undefined }
-  | { status: "loading"; data?: FactoryRunStatusView; error?: undefined }
+  | { status: "loading"; data?: FactoryRunStatusView | undefined; error?: undefined }
   | { status: "ready"; data: FactoryRunStatusView; error?: undefined }
-  | { status: "error"; data?: FactoryRunStatusView; error: string }
+  | { status: "error"; data?: FactoryRunStatusView | undefined; error: string }
 
 const refreshMs = 5_000
 
@@ -182,11 +65,12 @@ export function useFactoryRunStatus(factoryRunKey: string) {
       const data = await response.json() as FactoryRunStatusView
       setState({ status: "ready", data })
     } catch (error) {
-      setState(previous => ({
-        status: "error",
-        data: previous.data,
-        error: error instanceof Error ? error.message : "Factory run request failed",
-      }))
+      const message = error instanceof Error
+        ? error.message
+        : "Factory run request failed"
+      setState(previous => previous.data === undefined
+        ? { status: "error", error: message }
+        : { status: "error", data: previous.data, error: message })
     }
   }, [normalizedKey])
 
