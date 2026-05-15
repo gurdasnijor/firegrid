@@ -25,6 +25,7 @@
 import { IdGenerator, McpServer } from "@effect/ai"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
+  FiregridAgentToolOperations,
   SessionNewToolInputSchema,
   SleepToolInputSchema,
 } from "@firegrid/protocol/agent-tools"
@@ -206,6 +207,27 @@ describe("FiregridAgentToolkit", () => {
       Schema.decodeUnknown(SessionNewToolInputSchema)(sessionInput),
     )
     expect(decodedViaTool).toEqual(decodedViaProtocol)
+  })
+
+  it("firegrid-schema-projection-contract.TOOL_PROJECTION.1 firegrid-schema-projection-contract.TOOL_PROJECTION.3 projects every tool from the schema catalog", () => {
+    const projections = [
+      ["sleep", FiregridAgentToolkit.tools.sleep, FiregridAgentToolOperations.sleep],
+      ["wait_for", FiregridAgentToolkit.tools.wait_for, FiregridAgentToolOperations.waitFor],
+      ["session_new", FiregridAgentToolkit.tools.session_new, FiregridAgentToolOperations.sessionCreate],
+      ["session_prompt", FiregridAgentToolkit.tools.session_prompt, FiregridAgentToolOperations.sessionPrompt],
+      ["session_cancel", FiregridAgentToolkit.tools.session_cancel, FiregridAgentToolOperations.sessionCancel],
+      ["session_close", FiregridAgentToolkit.tools.session_close, FiregridAgentToolOperations.sessionClose],
+      ["schedule_me", FiregridAgentToolkit.tools.schedule_me, FiregridAgentToolOperations.scheduleMe],
+      ["execute", FiregridAgentToolkit.tools.execute, FiregridAgentToolOperations.execute],
+    ] as const
+
+    for (const [name, tool, operation] of projections) {
+      expect(tool.name).toBe(name)
+      expect(tool.name).toBe(operation.metadata.toolName)
+      expect(tool.parametersSchema).toBe(operation.inputSchema)
+      expect(tool.successSchema).toBe(operation.outputSchema)
+      expect(tool.description).toBe(operation.description)
+    }
   })
 })
 

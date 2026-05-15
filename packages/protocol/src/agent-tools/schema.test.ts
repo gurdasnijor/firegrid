@@ -4,12 +4,16 @@
  * These schemas are the source of truth for Firegrid agent-tool shapes.
  */
 
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   EventQuerySchema,
   ExecuteToolInputSchema,
   ExecuteToolOutputSchema,
+  FiregridAgentToolOperations,
+  getFiregridProjectionMetadata,
+  PermissionRespondInputSchema,
+  PermissionRespondOutputSchema,
   SandboxRefSchema,
   ScheduleMeToolInputSchema,
   ScheduleMeToolOutputSchema,
@@ -115,6 +119,52 @@ describe("agent-tool schemas — wait_for", () => {
       timedOut: true,
     })
     expect(decoded).toEqual({ matched: false, timedOut: true })
+  })
+})
+
+describe("schema projection metadata", () => {
+  it("firegrid-schema-projection-contract.SCHEMA_CATALOG.4 reads Firegrid projection metadata from Effect Schema annotations", () => {
+    const metadata = Option.getOrThrow(
+      getFiregridProjectionMetadata(SessionPromptToolInputSchema),
+    )
+    expect(metadata).toEqual({
+      operationId: "session.prompt",
+      toolName: "session_prompt",
+      clientName: "sessions.prompt",
+      cliName: "sessions prompt",
+    })
+  })
+
+  it("firegrid-schema-projection-contract.SCHEMA_CATALOG.2 keeps descriptions and examples on the operation entry", () => {
+    expect(FiregridAgentToolOperations.waitFor.description).toContain(
+      "Wait until a matching durable event appears",
+    )
+    expect(FiregridAgentToolOperations.waitFor.examples).toHaveLength(1)
+  })
+
+  it("firegrid-schema-projection-contract.SCHEMA_CATALOG.3 compatibility-exports existing schemas as catalog entries", () => {
+    expect(FiregridAgentToolOperations.sessionPrompt.inputSchema).toBe(
+      SessionPromptToolInputSchema,
+    )
+    expect(FiregridAgentToolOperations.sessionPrompt.outputSchema).toBe(
+      SessionPromptToolOutputSchema,
+    )
+  })
+
+  it("firegrid-schema-projection-contract.SCHEMA_CATALOG.1 includes permission response as a client-facing operation", async () => {
+    const input = await decodes(PermissionRespondInputSchema, {
+      contextId: "ctx-1",
+      permissionRequestId: "permission-1",
+      decision: { _tag: "Allow", optionId: "allow_once" },
+    })
+    expect(input.permissionRequestId).toBe("permission-1")
+    const output = await decodes(PermissionRespondOutputSchema, {
+      responded: true,
+      contextId: "ctx-1",
+      permissionRequestId: "permission-1",
+      inputId: "input-1",
+    })
+    expect(output.responded).toBe(true)
   })
 })
 
