@@ -176,7 +176,7 @@ describe("AcpAgentAdapter", () => {
         id: "tool-1",
         name: "lookup",
         params: { query: "hello ACP" },
-        providerExecuted: false,
+        providerExecuted: true,
       }),
       Response.finishPart({
         reason: "stop",
@@ -329,5 +329,122 @@ describe("AcpAgentAdapter", () => {
         }
       }
     }
+  })
+
+  it("firegrid-effect-ai-native-agents.ACP_ADAPTER.7 generateText content preserves text -> tool-call -> finish order (buffered text flushes before each non-text part)", async () => {
+    const harness = await Effect.runPromise(makeHarness)
+    startAgent(harness, connection => new FixtureAgent(connection))
+    const response = await runWithAdapter(harness, adapter =>
+      adapter.languageModel.generateText({ prompt: "ordered" }))
+
+    const types = response.content.map(part => part.type)
+    expect(types).toEqual(["text", "tool-call", "finish"])
+    expect(response.text).toBe("received: ordered")
+  })
+
+  it("firegrid-effect-ai-native-agents.ACP_ADAPTER.11 emits providerExecuted: true on ACP tool_call observations", async () => {
+    const harness = await Effect.runPromise(makeHarness)
+    startAgent(harness, connection => new FixtureAgent(connection))
+    const parts = await runWithAdapter(harness, adapter =>
+      adapter.languageModel.streamText({ prompt: "agent-executed" }).pipe(
+        Stream.runCollect,
+        Effect.map(Chunk.toReadonlyArray),
+      ))
+
+    const toolCall = (parts as ReadonlyArray<{ readonly type: string; readonly providerExecuted?: boolean }>)
+      .find(part => part.type === "tool-call")
+    expect(toolCall).toBeDefined()
+    expect(toolCall?.providerExecuted).toBe(true)
+  })
+
+  it("firegrid-effect-ai-native-agents.ACP_ADAPTER.10 rejects a multi-message prompt with AiError.MalformedInput caused by AdapterUnsupportedFeature(multi-message-prompt)", async () => {
+    const harness = await Effect.runPromise(makeHarness)
+    startAgent(harness, connection => new FixtureAgent(connection))
+    const exit = await runWithAdapter(harness, adapter =>
+      adapter.languageModel.streamText({
+        prompt: [
+          { role: "system", content: "you are helpful" },
+          { role: "user", content: [{ type: "text", text: "hi" }] },
+        ],
+      }).pipe(Stream.runDrain, Effect.exit))
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const error = exit.cause._tag === "Fail" ? exit.cause.error : undefined
+      expect(error).toBeInstanceOf(AiError.MalformedInput)
+      if (error instanceof AiError.MalformedInput) {
+        expect(error.cause).toBeInstanceOf(AdapterUnsupportedFeature)
+        if (error.cause instanceof AdapterUnsupportedFeature) {
+          expect(error.cause.feature).toBe("multi-message-prompt")
+        }
+      }
+    }
+  })
+
+  it("firegrid-effect-ai-native-agents.ACP_ADAPTER.10 rejects a non-user single-message prompt with AiError.MalformedInput caused by AdapterUnsupportedFeature(prompt-role:assistant)", async () => {
+    const harness = await Effect.runPromise(makeHarness)
+    startAgent(harness, connection => new FixtureAgent(connection))
+    const exit = await runWithAdapter(harness, adapter =>
+      adapter.languageModel.streamText({
+        prompt: [
+          { role: "assistant", content: [{ type: "text", text: "hi" }] },
+        ],
+      }).pipe(Stream.runDrain, Effect.exit))
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const error = exit.cause._tag === "Fail" ? exit.cause.error : undefined
+      expect(error).toBeInstanceOf(AiError.MalformedInput)
+      if (error instanceof AiError.MalformedInput) {
+        expect(error.cause).toBeInstanceOf(AdapterUnsupportedFeature)
+        if (error.cause instanceof AdapterUnsupportedFeature) {
+          expect(error.cause.feature).toBe("prompt-role:assistant")
+        }
+      }
+    }
+  })
+
+  it("firegrid-effect-ai-native-agents.ACP_ADAPTER.13 sends connection.cancel to ACP when a stream is interrupted before completion", async () => {
+    class CancelTrackingAgent extends FixtureAgent {
+      cancelCalls: number = 0
+      override async cancel(): Promise<void> {
+        this.cancelCalls += 1
+        return super.cancel()
+      }
+    }
+    const harness = await Effect.runPromise(makeHarness)
+    const agent = startAgent(harness, connection => new CancelTrackingAgent(connection))
+    await runWithAdapter(harness, adapter =>
+      adapter.languageModel.streamText({ prompt: "cancel-me" }).pipe(
+        Stream.take(1),
+        Stream.runDrain,
+      ))
+
+    expect(agent.cancelCalls).toBeGreaterThanOrEqual(1)
+  })
+
+  it("firegrid-effect-ai-native-agents.ACP_ADAPTER.13 a fresh stream after an interrupted prior stream does not receive stale ACP updates", async () => {
+    const harness = await Effect.runPromise(makeHarness)
+    startAgent(harness, connection => new FixtureAgent(connection))
+    const secondStreamParts = await runWithAdapter(harness, adapter =>
+      Effect.gen(function*() {
+        yield* adapter.languageModel.streamText({ prompt: "first" }).pipe(
+          Stream.take(1),
+          Stream.runDrain,
+        )
+        return yield* adapter.languageModel.streamText({ prompt: "second" }).pipe(
+          Stream.runCollect,
+          Effect.map(Chunk.toReadonlyArray),
+        )
+      }))
+
+    const deltas = secondStreamParts.filter(part => part.type === "text-delta") as ReadonlyArray<
+      Response.TextDeltaPart
+    >
+    expect(deltas.length).toBeGreaterThanOrEqual(1)
+    deltas.forEach(delta => {
+      expect(delta.delta).not.toContain("first")
+    })
+    expect(deltas.some(delta => delta.delta.includes("second"))).toBe(true)
   })
 })

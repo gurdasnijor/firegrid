@@ -36,6 +36,10 @@ components:
       7: AcpAgentAdapter generateText collects streamText into a LanguageModel.GenerateTextResponse, aggregating text deltas into text parts and propagating tool-call parts.
       8: AcpAgentAdapter generateObject fails explicitly as unsupported in Slice 2 with AiError.UnknownError whose cause is AdapterUnsupportedFeature.
       9: AcpAgentAdapter correlation reads CurrentAgentTurn when available; ACP PromptRequest.messageId and PromptResponse.userMessageId are not used for adapter correlation.
+      10: AcpAgentAdapter base LanguageModel view rejects prompts that contain zero messages, more than one message, or any non-user-role message; lossy multi-message translation is never produced.
+      11: AcpAgentAdapter maps ACP tool_call notifications to Response.toolCallPart with providerExecuted=true to reflect that ACP tool execution is owned by the agent, and documents the lossy ACP.title -> Effect AI tool name choice as the only available name source on ACP today.
+      12: AcpAgentAdapter requestPermission and sessionUpdate handlers swallow runPromise failures from a torn-down adapter scope and always reply to ACP so the agent does not hang.
+      13: "AcpAgentAdapter holds the per-turn lock until ACP confirms the prompt has finalized: stream interruption sends connection.cancel({sessionId}), awaits the in-flight prompt fiber, and clears the current-turn ref before the lock is released, so a subsequent streamText cannot receive stale ACP updates from a prior turn."
 
 constraints:
   BOUNDARIES:
@@ -54,3 +58,7 @@ constraints:
       6: Tests prove AcpAgentAdapter reuses one ACP session across multiple consecutive streamText calls.
       7: Tests prove AcpAgentAdapter streamText with an Effect AI toolkit option fails with AiError.UnknownError caused by AdapterUnsupportedFeature.
       8: Tests prove AcpAgentAdapter streamText fails with AiError.UnknownError caused by PermissionRequiredButNotHandled when ACP issues requestPermission and no permission capability is installed.
+      9: Tests prove AcpAgentAdapter generateText preserves the relative order of text, tool-call, and finish parts when ACP emits text-delta followed by tool-call followed by stopReason.
+      10: Tests prove AcpAgentAdapter rejects multi-message and non-user-role prompts with AiError.MalformedInput caused by AdapterUnsupportedFeature.
+      11: Tests prove AcpAgentAdapter emits Response.toolCallPart with providerExecuted=true on ACP tool_call observations.
+      12: "Tests prove AcpAgentAdapter sends connection.cancel to ACP on stream interruption and that a subsequent streamText call does not observe stale text-delta or tool-call updates from the prior interrupted turn."
