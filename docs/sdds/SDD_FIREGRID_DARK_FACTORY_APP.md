@@ -11,83 +11,180 @@ Related specs:
 
 Related source inputs:
 
-- `docs/sdds/SDD_FIREGRID_FACTORY_ALIGNED_AGENT_TOOL_WORKSTREAM.md`
+- `/Users/gnijor/smithery/internal-workflows/hooks/factory`
 - `/Users/gnijor/smithery/flamecast-agents/DARK_FACTORY_PROCESS_PRD.md`
-- `packages/runtime/src/runtime-host/observation-sources.ts`
+- `/Users/gnijor/gurdasnijor/fireline/vault/canon/concepts/choreography-vs-orchestration.md`
+- `docs/sdds/SDD_FIREGRID_FACTORY_ALIGNED_AGENT_TOOL_WORKSTREAM.md`
 - `packages/runtime/src/agent-tools/tools.ts`
+- `packages/runtime/src/runtime-host/observation-sources.ts`
 - `packages/runtime/src/verified-webhook-ingest/README.md`
 
 The recipes `docs/recipes/runtime-permission-resume.md` and
 `docs/recipes/durable-webhook-facts-and-wait-for.md` were requested as inputs
-but are not present on `origin/main` at the time of this draft. The design below
-uses the merged runtime observation sources from #232 and the existing verified
+but are not present on `origin/main` at the time of this draft. This SDD uses
+the merged runtime observation sources from #232 and the existing verified
 webhook ingest README instead.
 
 ## Purpose
 
-The dark factory app is the first production-shaped app demonstration for the
-factory workstream. It should show a ticket-like external trigger becoming one
-durable parent planner run, the planner using Firegrid tools to delegate or
-wait, human gates being explicit durable state, and progress being inspectable
-through DurableTable/runtime observation.
+`apps/dark-factory` is the Firegrid-powered replacement path for
+`/Users/gnijor/smithery/internal-workflows/hooks/factory`.
 
-This app is not a workflow product. The sequence is planner policy over
-Firegrid primitives, not a new platform DAG or hidden callback protocol.
+The current hook turns Linear issue transitions into a factory run, launches
+planning and implementation agents through Flamecast, uses Linear
+AgentSession activities for status and approval, runs a GitHub PR review/CI
+merge path, and relies on parked RPC callbacks plus hidden markers to resume
+human gates. The Firegrid app should preserve the product loop while replacing
+the hook.new orchestration chain with Firegrid primitives:
+
+- product-owned Linear, GitHub, Slack, and webhook adapters capture inputs and
+  perform provider side effects with configured credentials;
+- DurableTable facts hold external events, provider observations, decisions,
+  and side-effect evidence;
+- one parent planner `RuntimeContext` is created or loaded per external work
+  item, such as a Linear issue id;
+- the planner agent owns sequencing by reading durable history and calling
+  Firegrid tools such as `session_new`, `session_prompt`, `wait_for`,
+  `schedule_me`, and `execute`;
+- ACP permission requests and runtime output are durable observations, and
+  human decisions resume through runtime ingress or facts.
+
+This is choreography, not a Firegrid-authored orchestration DAG. The app may
+provide inputs, credentials, fact tables, provider adapters, and observation
+surfaces. It must not encode a deterministic planner -> implementer -> council
+-> QA -> deploy TypeScript workflow engine. The planner decides the next step
+from ticket state, repository state, prior facts, runtime output, and human
+decisions.
+
+## Current `hooks/factory` Behavior To Replace
+
+The existing hook has useful product behavior but the wrong substrate shape
+for Firegrid:
+
+- Trigger handling:
+  - Linear OAuth-app webhooks are HMAC verified with `Linear-Signature`.
+  - Issue `update` events trigger only when the ticket is assigned to the bot
+    or has the `factory` label, is in `state.type === "started"`, and the
+    update changed assignee, state, or labels.
+  - `create` and internal chatter are dropped to avoid double firing.
+- Idempotency and retries:
+  - Duplicate delivery is guarded by deterministic branch names,
+    existing-PR lookup, active Linear AgentSession lookup, and a post-create
+    race resolver.
+  - PR comments are upserted through hidden `factory-marker` comments.
+- Human gates:
+  - Linear AgentSession `elicitation` activities embed hidden
+    `factory-callback:<url>` markers.
+  - `AgentSessionEvent action=prompted` looks up the latest elicitation,
+    parses the marker, classifies approve/reject/modify/QA replies, and POSTs
+    back to the parked RPC URL.
+  - Stop signals reject the parked gate and abort an in-flight Flamecast
+    session by recovering an encoded Flamecast session id from an action
+    activity.
+- Agent work:
+  - Planning, implementation, and QA are dispatched as Claude ACP sessions on
+    Flamecast.
+  - A three-model council runs over the PR diff and posts a verdict.
+- Provider side effects:
+  - Linear AgentSession activities are used for thoughts, actions,
+    responses, elicitations, external links, delegate assignment, and fallback
+    comments.
+  - GitHub is used for PR lookup, diff fetch, comment upsert, CI status, PR
+    close, and squash merge.
+  - Slack is advisory only.
+
+The Firegrid replacement keeps the product loop and provider integrations, but
+replaces hidden callbacks and hand-authored cross-phase RPC sequencing with
+durable facts, runtime contexts, runtime ingress/output, and agent-chosen tool
+calls.
 
 ## Target Package
 
 Target location: `apps/dark-factory`.
 
-The app should follow the existing workspace app conventions used by
-`apps/flamecast`: private package, local `tsconfig.json`, `src/` modules,
-targeted tests, and root workspace inclusion through the existing `apps/*`
-pattern.
+The app should follow existing workspace conventions: private package, local
+`tsconfig.json`, `src/` modules, focused tests, and root workspace inclusion
+through the existing `apps/*` pattern.
 
-The first app surface should be host-plane/local-demo oriented:
+The first app surface should be production-shaped even if tests use fixtures:
 
-- a local/demo entrypoint that starts or attaches to Durable Streams;
+- a product-owned adapter boundary for Linear/GitHub/webhook events;
 - a Firegrid local host scope using `FiregridLocalHostLive`;
-- app-owned fact table composition;
-- a fixture route/function that simulates a product-owned external trigger;
-- a targeted test or scenario for the minimal sequence.
+- app-owned DurableTable facts and SourceCollections registration;
+- provider adapter modules for Linear/GitHub/Slack side effects that read
+  configured credentials from the app environment;
+- a parent planner `RuntimeContext` launch path through Firegrid runtime host
+  primitives;
+- an observation surface built from app facts plus
+  `RuntimeObservationSourceNames`.
 
 It must not depend on `pnpm firegrid -- run`; #229 is sync CLI UX and is not a
 factory app dependency.
 
+## Choreography Contract
+
+The planner is the sequencer. Firegrid and the app provide durable primitives.
+
+The app should not contain a `startSession -> implementAgent ->
+councilAndApproval -> deploy` function chain. Instead:
+
+1. Product adapters write facts and side-effect evidence.
+2. A parent planner context is inserted or loaded by external source key.
+3. The planner receives a prompt that describes available fact sources,
+   provider capabilities, credentials boundaries, and Firegrid tools.
+4. The planner reads durable history and decides what to do next.
+5. The planner delegates work with `session_new` / `session_prompt`, waits
+   with `wait_for`, schedules future self-prompts with `schedule_me`, and uses
+   app-provided execution/provider capabilities where available.
+6. Human gates are represented as ACP `PermissionRequest` output or app facts;
+   resolution resumes by `RuntimeIngress` `PermissionResponse` or by inserting
+   a matching fact.
+7. Terminal or waiting status is derived from durable observations, not from a
+   centralized in-memory coordinator loop.
+
+This makes the system inspectable and adaptive: the agent can choose a shorter
+or longer path, retry differently, spawn additional review work, skip QA, or
+wait for CI based on observable state.
+
 ## Durable Fact Surface
 
-External inputs are app-owned facts, not Firegrid-owned provider callbacks.
-Examples:
+External inputs are app-owned facts. Examples:
 
-- ticket accepted;
-- plan decision resolved;
-- PR opened;
-- review completed;
-- CI status observed;
-- merge decision resolved.
+- `linear.issue.accepted`
+- `linear.agent-session.prompted`
+- `linear.agent-session.stop`
+- `github.pr.opened`
+- `github.pr.review_posted`
+- `github.ci.status`
+- `github.pr.closed`
+- `github.pr.merged`
+- `human.plan.approved`
+- `human.plan.rejected`
+- `human.merge.approved`
+- `human.merge.rejected`
 
 The first implementation should define an app-owned `DurableTable` collection,
-for example `DarkFactoryFactTable.facts`, with a source-neutral row shape:
+for example `DarkFactoryFactTable.facts`, with a row shape:
 
 - deterministic key: `{ source, externalEventKey }`;
-- `source`: short producer/source id, such as `demo.ticket` or
-  `demo.human`;
-- `externalEventKey`: provider event id, delivery id, permission id, or
-  deterministic demo event id;
-- `externalEntityKey`: ticket id, PR id, context id, or parent session id;
-- `eventType`: product-neutral event kind, such as `ticket.accepted`,
-  `plan.approved`, `plan.rejected`, `ci.passed`;
+- `source`: short producer/source id, such as `linear.oauth`,
+  `github.rest`, `human.linear-agent-session`, or `fixture`;
+- `externalEventKey`: provider delivery id, Linear event id, GitHub event id,
+  permission id, PR marker key, or deterministic fixture event id;
+- `externalEntityKey`: Linear issue id, GitHub PR id, context id, or parent
+  session id;
+- `eventType`: source-specific but stable event kind;
 - `contextId` and `correlationId` when known;
-- `payload`: unknown/source-specific detail for inspection.
+- `payload`: source-specific detail for inspection.
 
 Duplicates use `DurableTable.insertOrGet` or deterministic primary keys. Same
-source and external event key resolves to the existing row. Conflict handling is
-app policy, but must not silently overwrite a different fact payload for the
-same external key.
+source and external event key resolves to the existing row. Conflict handling
+is app policy, but must not silently overwrite a different fact payload for
+the same external key.
 
-The fact collection should be registered with `SourceCollections` under a short
-source name such as `darkFactory.facts`. Agents can then call `wait_for` with
-top-level scalar fields:
+The fact collection should be registered with `SourceCollections` under a
+short source name such as `darkFactory.facts`. Agents can then call `wait_for`
+with top-level scalar fields:
 
 ```json
 {
@@ -95,12 +192,40 @@ top-level scalar fields:
     "stream": "darkFactory.facts",
     "whereFields": {
       "contextId": "ctx_...",
-      "eventType": "plan.approved",
-      "correlationId": "ticket-123-plan"
+      "eventType": "human.plan.approved",
+      "correlationId": "linear-issue-123-plan"
     }
   }
 }
 ```
+
+## Provider Side Effects
+
+Provider credentials and taxonomy are app-owned. Firegrid does not mint
+callback URLs, own Linear/GitHub webhook products, or define a provider event
+registry.
+
+The app should provide narrow adapter modules for the side effects the
+factory needs:
+
+- Linear: verify/capture events, create or update native agent-facing
+  surfaces where appropriate, post comments or activities, record prompted or
+  stop events as facts, and set issue delegate when configured.
+- GitHub: find existing PRs by deterministic branch, fetch PR metadata and
+  diff, upsert review/QA comments, read CI status, close rejected PRs, and
+  squash merge approved PRs.
+- Slack: advisory notification only.
+
+Each provider call should write durable evidence as a fact before or after the
+side effect as appropriate for idempotency. For example, a GitHub council
+comment upsert can use a deterministic marker key as `externalEventKey`, but
+the hidden marker itself is only a provider-side idempotency mechanism; it is
+not the Firegrid resume protocol.
+
+The planner chooses when to request these side effects through the Firegrid
+tool/capability surface available to the app. The first implementation may use
+fixture provider adapters in tests, but the production contract is configured
+credentials and real Linear/GitHub/Slack modules.
 
 ## Runtime Observation
 
@@ -158,51 +283,58 @@ app facts, but runtime resume remains `RuntimeIngress` to the context.
 
 ## End-To-End Control Flow
 
-The first production-shaped flow should be:
+The production-shaped flow is:
 
-1. A product-owned trigger function receives a ticket-like input.
-2. The app writes or loads a `ticket.accepted` fact using a deterministic
-   `{ source, externalEventKey }`.
-3. The app creates or loads one parent planner `RuntimeContext` for the ticket
-   external source key.
+1. A product-owned Linear/GitHub/webhook adapter receives and verifies input.
+2. The app writes or loads an external fact with deterministic source and
+   external event key.
+3. The app creates or loads one parent planner `RuntimeContext` for the
+   external entity key, such as Linear issue id.
 4. The parent context is launched by the host/control-plane path:
    `insertLocalRuntimeContext` or `Firegrid.launch`, optional initial
    `appendRuntimeIngress`, and `startRuntime`.
-5. The planner receives the canonical Firegrid tools and can call:
-   `session_new`, `session_prompt`, `wait_for`, `schedule_me`, and `execute`
-   where supported by the current runtime.
+5. The planner receives the canonical Firegrid tools and app-specific
+   capability instructions. It may call `session_new`, `session_prompt`,
+   `wait_for`, `schedule_me`, and `execute` where supported by the current
+   runtime.
 6. The planner asks for a human gate either by emitting an ACP
-   `PermissionRequest` or by waiting on an app fact such as `plan.approved`.
-7. The app or test fixture writes the decision:
+   `PermissionRequest` or by waiting on an app fact such as
+   `human.plan.approved`.
+7. The app or user writes the decision:
    - as `RuntimeIngress` `PermissionResponse` for ACP permission requests; or
-   - as an app-owned `DarkFactoryFactTable` fact for generic human/external
-     decisions.
-8. The planner resumes, optionally creates a child session with
-   `session_new`, and records or observes progress through runtime output,
-   runtime runs, ingress rows, and app facts.
-9. The app derives demo status from durable observations, not from in-memory
-   process handles.
+   - as an app-owned fact for generic human/external decisions.
+8. The planner resumes, delegates implementation/review/QA with Firegrid tools
+   as needed, and requests provider side effects through configured app
+   capabilities.
+9. GitHub/Linear/Slack side effects emit durable facts so retries and future
+   planner turns can inspect what already happened.
+10. The app derives status from durable observations, not from in-memory
+    process handles.
 
-## Minimal Demo Sequence
+## Minimal Replacement Slice
 
-The smallest useful demo sequence is:
+The smallest useful implementation slice should prove the replacement shape,
+not the full factory product:
 
-1. Fixture ticket `DF-1` is accepted.
-2. App creates or loads parent planner context for `demo.ticket:DF-1`.
-3. Planner starts and emits a plan-ready or permission-needed observation.
-4. App/test observes the wait through
+1. A fixture or product-owned Linear-shaped event accepts ticket `DF-1`.
+2. The app writes `linear.issue.accepted` as a durable fact.
+3. The app creates or loads parent planner context for the Linear issue id.
+4. The planner starts and emits a plan-ready or permission-needed observation.
+5. The app/test observes the wait through
    `RuntimeObservationSourceNames.agentOutputEvents` or `darkFactory.facts`.
-5. Fixture human approves the plan.
-6. App resumes the planner by writing `PermissionResponse` ingress or a
-   `plan.approved` fact.
-7. Planner emits a `session_new` tool call or a demo child-session intent.
-8. Runtime output/facts show enough durable evidence to inspect:
-   parent context id, ticket id, decision, child session/context id or mocked
-   child action, and terminal/waiting status.
+6. A fixture human approves or rejects the plan.
+7. The app resumes the planner by writing `PermissionResponse` ingress or a
+   `human.plan.approved` fact.
+8. The planner emits a `session_new`, `session_prompt`, `wait_for`, or
+   side-effect intent through Firegrid tools.
+9. Runtime output/facts show durable evidence for parent context id, Linear
+   issue id, decision, delegated work or provider action, and waiting or
+   terminal status.
 
-This is intentionally smaller than the full PRD path. It proves the shape:
-external input -> durable fact -> parent planner RuntimeContext -> tool/wait or
-permission gate -> durable resume -> durable observation.
+Later slices can make the provider adapters live against real Linear/GitHub
+credentials, add the implementation/review/QA loop, and perform CI-gated merge.
+Those slices must keep the same choreography rule: the planner decides the
+sequence, and code provides durable capabilities.
 
 ## Live Versus Mocked
 
@@ -218,76 +350,25 @@ Live in the first implementation:
 
 Allowed fixtures/mocks:
 
-- demo ticket input instead of real Linear;
+- fixture Linear/GitHub event input instead of a live webhook;
 - fixture human decision writer instead of a real product UI;
-- fixture PR/CI facts instead of GitHub/CI API calls;
+- fixture provider adapters for tests, if real Linear/GitHub side effects are
+  unsafe in CI;
 - deterministic stdio-jsonl or ACP planner process instead of a real model;
-- child-session proof may be a fixture child agent command if real repository
+- child-session proof may use a fixture child agent command if real repository
   mutation is not needed in the first PR.
 
-Not mocked:
+Production-facing, not mocked:
 
-- durable fact insert/load behavior;
+- the app boundary for configured Linear/GitHub/Slack credentials;
+- idempotent fact insert/load behavior;
 - parent `RuntimeContext` identity;
 - host-owned ingress/output routing;
 - `wait_for` source registration and matching;
-- permission resume through runtime ingress when the demo uses ACP
-  `PermissionRequest`.
+- permission resume through runtime ingress when ACP `PermissionRequest` is
+  used.
 
 ## Acceptance Criteria
 
-The implementation should satisfy these ACIDs:
-
-- `firegrid-dark-factory-app.APP_SURFACE.1`
-- `firegrid-dark-factory-app.APP_SURFACE.2`
-- `firegrid-dark-factory-app.EXTERNAL_FACTS.1`
-- `firegrid-dark-factory-app.EXTERNAL_FACTS.2`
-- `firegrid-dark-factory-app.EXTERNAL_FACTS.3`
-- `firegrid-dark-factory-app.PARENT_RUN.1`
-- `firegrid-dark-factory-app.PARENT_RUN.2`
-- `firegrid-dark-factory-app.PLANNER_RUNTIME.1`
-- `firegrid-dark-factory-app.PLANNER_RUNTIME.2`
-- `firegrid-dark-factory-app.PLANNER_RUNTIME.3`
-- `firegrid-dark-factory-app.SESSION_TOOLS.1`
-- `firegrid-dark-factory-app.SESSION_TOOLS.2`
-- `firegrid-dark-factory-app.WAIT_AND_PERMISSION.1`
-- `firegrid-dark-factory-app.WAIT_AND_PERMISSION.2`
-- `firegrid-dark-factory-app.WAIT_AND_PERMISSION.3`
-- `firegrid-dark-factory-app.OBSERVATION.1`
-- `firegrid-dark-factory-app.OBSERVATION.2`
-- `firegrid-dark-factory-app.BOUNDARIES.1`
-- `firegrid-dark-factory-app.BOUNDARIES.2`
-- `firegrid-dark-factory-app.BOUNDARIES.3`
-- `firegrid-dark-factory-app.VALIDATION.1`
-- `firegrid-dark-factory-app.VALIDATION.2`
-
-The first implementation PR should include a focused app test or scenario that
-references the relevant ACIDs in test names.
-
-## Non-Goals
-
-- No custom workflow engine.
-- No platform-authored factory DAG.
-- No parent/child platform hierarchy beyond metadata and correlation.
-- No hidden callback markers.
-- No Firegrid-owned Linear/GitHub/webhook product.
-- No Firegrid-owned provider HTTP endpoint or callback URL minting.
-- No dependence on #229 sync CLI UX.
-- No Flamecast implementation imports.
-- No product-specific transport or sidecar process.
-- No DurableConsumer/Projection/Source abstraction revival.
-- No real repo mutation, PR creation, CI polling, or merge in the first slice.
-
-## First Implementation Write Set
-
-Expected first code PR after this spec:
-
-- `apps/dark-factory/package.json`
-- `apps/dark-factory/tsconfig.json`
-- `apps/dark-factory/src/facts.ts`
-- `apps/dark-factory/src/demo.ts` or `src/main.ts`
-- `apps/dark-factory/src/dark-factory.test.ts`
-- optional `apps/dark-factory/README.md`
-
-The test should use the public/runtime primitives directly and should not shell
-out through `pnpm firegrid -- run`.
+The implementation should satisfy the ACIDs in
+`features/firegrid/firegrid-dark-factory-app.feature.yaml`.
