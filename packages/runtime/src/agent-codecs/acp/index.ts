@@ -5,6 +5,7 @@ import type {
   AgentByteStream,
   AgentCapabilities,
   AgentCodec,
+  AgentMcpServerDeclaration,
   AgentInputEvent,
   AgentOutputEvent,
   PermissionDecision,
@@ -85,6 +86,20 @@ const mapPermissionOptions = (
     kind: option.kind,
     name: option.name,
   }))
+
+const lowerMcpServerDeclaration = (
+  declaration: AgentMcpServerDeclaration,
+): acp.McpServer => ({
+  type: "http",
+  name: declaration.name,
+  url: declaration.server.url,
+  headers: declaration.server.headers === undefined
+    ? []
+    : declaration.server.headers.map(header => ({
+      name: header.name,
+      value: header.value,
+    })),
+})
 
 const selectedOptionId = (
   decision: PermissionDecision,
@@ -179,7 +194,7 @@ const terminatedEvent = (
 export const AcpCodec: AgentCodec = {
   kind: codec,
   capabilities: AcpCapabilities,
-  open: bytes =>
+  open: (bytes, options = {}) =>
     Effect.gen(function*() {
       const scope = yield* Effect.scope
       const runtime = yield* Effect.runtime<never>()
@@ -293,8 +308,8 @@ export const AcpCodec: AgentCodec = {
 
       const session = yield* acpPromise("newSession", "failed to create ACP session", () =>
         connection.newSession({
-          cwd: process.cwd(),
-          mcpServers: [],
+          cwd: options.session?.cwd ?? globalThis.process.cwd(),
+          mcpServers: (options.session?.mcpServers ?? []).map(lowerMcpServerDeclaration),
         }))
       const sessionId = session.sessionId
 

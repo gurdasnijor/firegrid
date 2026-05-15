@@ -30,6 +30,8 @@ export {
 export {
   AgentCodecError,
   type AgentCodec,
+  type AgentMcpServerDeclaration,
   type AgentCodecOpenOptions,
   type AgentSession,
+  type AgentSessionSetupOptions,
 } from "./codec.ts"
