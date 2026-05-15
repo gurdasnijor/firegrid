@@ -130,11 +130,23 @@ export type FactoryProgressState =
 
 const refreshMs = 5_000
 
-const factoryApiBaseUrl = () =>
-  process.env.NEXT_PUBLIC_FACTORY_API_BASE_URL?.replace(/\/$/, "") ?? ""
+const factoryProgressStatusUrlTemplate = () =>
+  process.env.NEXT_PUBLIC_FACTORY_PROGRESS_STATUS_URL_TEMPLATE?.trim()
 
-const statusEndpoint = (factoryRunKey: string) =>
-  `${factoryApiBaseUrl()}/factory/runs/${encodeURIComponent(factoryRunKey)}`
+const statusRequestUrl = (factoryRunKey: string): string => {
+  const template = factoryProgressStatusUrlTemplate()
+  if (template === undefined || template === "") {
+    throw new Error(
+      "No factory progress adapter is configured. Set NEXT_PUBLIC_FACTORY_PROGRESS_STATUS_URL_TEMPLATE.",
+    )
+  }
+  if (!template.includes("{factoryRunKey}")) {
+    throw new Error(
+      "Factory progress adapter URL template must include {factoryRunKey}.",
+    )
+  }
+  return template.replaceAll("{factoryRunKey}", encodeURIComponent(factoryRunKey))
+}
 
 const describeFetchError = async (response: Response) => {
   const body = await response.text().catch(() => "")
@@ -158,7 +170,7 @@ export function useFactoryRunStatus(factoryRunKey: string) {
       : { status: "loading" })
 
     try {
-      const response = await fetch(statusEndpoint(normalizedKey), {
+      const response = await fetch(statusRequestUrl(normalizedKey), {
         headers: { accept: "application/json" },
         cache: "no-store",
       })

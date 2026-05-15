@@ -439,7 +439,7 @@ export default function DarkFactoryPage() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">Dark Factory Progress</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Durable run status from the factory progress API.
+              Durable run status from the configured factory progress adapter.
             </p>
           </div>
           <div className="w-full lg:max-w-xl">
