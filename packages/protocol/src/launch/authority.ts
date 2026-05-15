@@ -30,7 +30,8 @@ export type HostSessionId = Schema.Schema.Type<typeof HostSessionIdSchema>
 const HOST_STREAM_PREFIX_INFIX = ".firegrid.host."
 const FIREGRID_DURABLE_NAMESPACE = "firegrid"
 const RUNTIME_TABLE_NAME = "runtime"
-const STREAM_PATH_INFIX = "/v1/stream/"
+const STREAM_COLLECTION_PATH = "/v1/stream"
+const STREAM_PATH_INFIX = `${STREAM_COLLECTION_PATH}/`
 
 /**
  * Operational stream segments that derive from a host stream prefix.
@@ -279,8 +280,8 @@ const DurableStreamUrlPartsSchema = Schema.Struct({
   baseUrl: Schema.String.pipe(
     Schema.filter((value) => {
       if (value.length === 0) return "baseUrl must be non-empty"
-      if (value.includes(STREAM_PATH_INFIX)) {
-        return `baseUrl must be the Durable Streams service root; it must not contain ${STREAM_PATH_INFIX}`
+      if (value.replace(/\/+$/, "").endsWith(STREAM_COLLECTION_PATH)) {
+        return `baseUrl must be the Durable Streams service root or an Electric service-scoped root; bare ${STREAM_COLLECTION_PATH} is not accepted`
       }
       return undefined
     }),
@@ -291,48 +292,62 @@ const DurableStreamUrlPartsSchema = Schema.Struct({
   ),
 })
 
+const decodeDurableStreamUrlParts = (
+  encoded: string,
+  ast: SchemaAST.AST,
+) => {
+  const idx = encoded.lastIndexOf(STREAM_PATH_INFIX)
+  if (idx < 0) {
+    return ParseResult.fail(
+      new ParseResult.Type(
+        ast,
+        encoded,
+        `durable stream URL must contain ${STREAM_PATH_INFIX}`,
+      ),
+    )
+  }
+  const path = encoded.slice(idx + STREAM_PATH_INFIX.length)
+  if (path.length === 0) {
+    return ParseResult.fail(
+      new ParseResult.Type(
+        ast,
+        encoded,
+        `durable stream URL must carry a stream name after ${STREAM_PATH_INFIX}`,
+      ),
+    )
+  }
+  const serviceSeparator = path.startsWith("svc-") ? path.indexOf("/") : -1
+  if (serviceSeparator > 0) {
+    return ParseResult.succeed({
+      baseUrl: encoded.slice(0, idx + STREAM_PATH_INFIX.length + serviceSeparator),
+      streamName: decodeURIComponent(path.slice(serviceSeparator + 1)),
+    })
+  }
+  return ParseResult.succeed({
+    baseUrl: encoded.slice(0, idx),
+    streamName: decodeURIComponent(path),
+  })
+}
+
 /**
  * Bidirectional codec for a Durable Streams stream URL. The encoder
- * always appends `/v1/stream/` to the trimmed base URL — callers
- * configure `durableStreamsBaseUrl` as the service root, not as a
- * pre-built stream path. Strict by design; mixed shapes are rejected.
+ * appends `/v1/stream/` to generic service roots and appends `/` to
+ * Electric Cloud service-scoped roots shaped as `/v1/stream/<service>`.
+ * Callers still configure a root, not a pre-built stream URL.
  */
 export const DurableStreamUrlSchema = Schema.transformOrFail(
   Schema.String,
   DurableStreamUrlPartsSchema,
   {
     strict: false,
-    decode: (encoded, _options, ast) => {
-      const idx = encoded.lastIndexOf(STREAM_PATH_INFIX)
-      if (idx < 0) {
-        return ParseResult.fail(
-          new ParseResult.Type(
-            ast,
-            encoded,
-            `durable stream URL must contain ${STREAM_PATH_INFIX}`,
-          ),
-        )
-      }
-      const baseUrl = encoded.slice(0, idx)
-      const encodedName = encoded.slice(idx + STREAM_PATH_INFIX.length)
-      if (encodedName.length === 0) {
-        return ParseResult.fail(
-          new ParseResult.Type(
-            ast,
-            encoded,
-            `durable stream URL must carry a stream name after ${STREAM_PATH_INFIX}`,
-          ),
-        )
-      }
-      return ParseResult.succeed({
-        baseUrl,
-        streamName: decodeURIComponent(encodedName),
-      })
-    },
+    decode: (encoded, _options, ast) => decodeDurableStreamUrlParts(encoded, ast),
     encode: ({ baseUrl, streamName }) => {
       const trimmed = baseUrl.replace(/\/+$/, "")
+      const separator = trimmed.includes(STREAM_PATH_INFIX)
+        ? "/"
+        : STREAM_PATH_INFIX
       return ParseResult.succeed(
-        `${trimmed}${STREAM_PATH_INFIX}${encodeURIComponent(streamName)}`,
+        `${trimmed}${separator}${encodeURIComponent(streamName)}`,
       )
     },
   },

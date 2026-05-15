@@ -222,7 +222,24 @@ describe("DurableStreamUrlSchema", () => {
     )
   })
 
-  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 rejects a base URL that already contains /v1/stream/", () => {
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.4 appends stream names to Electric service-scoped roots", () => {
+    expect(
+      durableStreamUrl(
+        "https://api.electric-sql.cloud/v1/stream/svc-example",
+        "ns.firegrid.runtime",
+      ),
+    ).toBe("https://api.electric-sql.cloud/v1/stream/svc-example/ns.firegrid.runtime")
+    expect(
+      Schema.decodeUnknownSync(DurableStreamUrlSchema)(
+        "https://api.electric-sql.cloud/v1/stream/svc-example/ns.firegrid.runtime",
+      ),
+    ).toEqual({
+      baseUrl: "https://api.electric-sql.cloud/v1/stream/svc-example",
+      streamName: "ns.firegrid.runtime",
+    })
+  })
+
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 rejects a bare /v1/stream base URL", () => {
     const result = Schema.encodeUnknownEither(DurableStreamUrlSchema)({
       baseUrl: "http://h/v1/stream/",
       streamName: "ns.firegrid.runtime",

@@ -46,6 +46,7 @@ components:
       3: Source collections are registered with the router by typed DurableTable facade reference; the registry does not accept raw Durable Streams URLs or @durable-streams/* client objects.
       4: The subscription router and source-collection registry are exposed as a composable runtime Layer (DurableToolsWaitForLive) intended for once-per-runtime-host composition alongside workflow-engine and ingress layers; consumers wire it through their runtime-host composition entrypoint.
       4-note: Initial wait_for iteration ships the Layer; FiregridRuntimeHostLive does not yet compose it because that host has no workflow-engine layer wired today. Wiring is a follow-up that lands together with workflow-engine integration into the host.
+      5: DurableToolsWaitForLive preserves Durable Streams auth headers when composed by a hosted runtime host so wait_for storage attaches to the same authenticated endpoint as runtime control, ingress, output, and workflow tables.
 
   SOURCE_COLLECTIONS:
     requirements:
