@@ -1,0 +1,24 @@
+{
+  "name": "@firegrid/factory",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke:hosted": "node --env-file-if-exists=../../.env --import tsx src/bin/live-smoke.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@effect/platform-node": "^0.106.0",
+    "@firegrid/protocol": "workspace:*",
+    "@firegrid/runtime": "workspace:*",
+    "effect": "^3.21.2",
+    "effect-durable-operators": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.20.4",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.0"
+  }
+}

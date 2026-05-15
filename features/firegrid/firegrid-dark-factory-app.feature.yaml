@@ -6,7 +6,7 @@ feature:
 components:
   APP_SURFACE:
     requirements:
-      1: The first factory app slice uses the apps/factory UI scaffold from PR #236 when available and is wired as a workspace app rather than a top-level package, direct Flamecast dependency, or hook.new bundle.
+      1: The first factory app slice is wired as apps/factory in the workspace and uses the PR #236 UI scaffold only when available; otherwise it proves the app substrate through hosted durable row writes/reads and runtime ingress/output without becoming a top-level package, direct Flamecast dependency, hook.new bundle, or Firegrid-owned app HTTP API.
       2: The app exposes product-owned adapter entrypoints for Linear, GitHub, or webhook inputs and composes Firegrid runtime primitives directly; it does not use pnpm firegrid -- run as the core factory path.
       3: The app is framed as the Firegrid-powered replacement for the existing hooks/factory behavior, not as a generic demo app or Flamecast-adjacent prototype.
 
@@ -20,7 +20,7 @@ components:
     requirements:
       1: App acceptance runs against a configured hosted Electric/Durable Streams endpoint with auth headers; local DurableStreamTestServer is not accepted as apps/factory replacement evidence.
       2: Linear, GitHub, Slack, and provider credentials are supplied through env or deployment secret config and are never committed, logged as bearer values, or copied into docs/spec examples.
-      3: The accepted provider ingest proof uses a live provider webhook or live provider-shaped route delivery where feasible, not fixture Linear or GitHub event payloads as the replacement proof.
+      3: The accepted provider ingest proof uses a live provider webhook or live provider-shaped route delivery where feasible; fixture-shaped provider payloads may exercise the accepted input shape only when the route writes hosted durable facts and does not simulate product progress.
 
   PLATFORM_PRIMITIVES:
     requirements:
@@ -62,7 +62,7 @@ components:
   WAIT_AND_PERMISSION:
     requirements:
       1: Human decisions and external status changes are waited on with wait_for over app fact sources or RuntimeObservationSourceNames rather than hidden callback markers, parked RPC URLs, or comment-walking routers.
-      2: ACP PermissionRequest output is observed through RuntimeObservationSourceNames.agentOutputEvents with durable display payload fields such as permissionRequestId, contextId, prompt/body, choices, requestedBy, and correlation; it is resumed by writing a RuntimeIngress PermissionResponse matched by contextId plus permissionRequestId.
+      2: ACP PermissionRequest output is observed through RuntimeObservationSourceNames.agentOutputEvents with runtime resume-anchor fields available today, including permissionRequestId, contextId, toolUseId, choices, and runtime sequence; richer product display fields such as factory-run correlation are joined from app-owned facts or projection rows, and resume writes RuntimeIngress PermissionResponse matched by contextId plus permissionRequestId.
       3: The first implementation proves at least one human-gate-shaped pause and resume path using durable state through a live/manual or env-gated provider/operator path rather than a fixture decision writer as acceptance proof.
 
   PROVIDER_SIDE_EFFECTS:
@@ -77,7 +77,7 @@ components:
     requirements:
       1: The app presents or tests durable observation from RuntimeOutputTable, RuntimeControlPlaneTable runs, runtime observation sources, and app fact tables so a user can inspect what happened and what is waiting.
       2: Terminal or waiting states are derived from durable observations and facts, not from in-memory process state.
-      3: The first app slice exposes run progress through the apps/factory UI scaffold, with optional JSON/read-model routes only as support for that UI.
+      3: The first app slice exposes run progress through the apps/factory UI scaffold when available, or through a read-model/programmer projection backed by hosted durable rows when the scaffold is unavailable.
       4: The progress UI reports subscriber identity, planner context, active/terminal delegated sessions, latest facts, runtime output/logs, permission requests, current waits, provider links, and blocked/error state from durable rows only.
       5: The client may reuse apps/flamecast DurableTableProvider, useDurableTable, and useDurableLiveQuery patterns for live watches, but it must not copy Flamecast host infrastructure, local launch process management, or browser-originated runtime authority.
       6: PR #236 simulation hooks and mock data are placeholders only and are not accepted as apps/factory replacement evidence.
@@ -85,7 +85,7 @@ components:
 constraints:
   BOUNDARIES:
     requirements:
-      1: The app does not introduce a custom workflow engine, factory orchestration runtime, createFunction-style SDK, hidden callback marker protocol, DurableConsumer revival, Source-style abstraction, or generic webhook server.
+      1: The app does not introduce a custom workflow engine, factory orchestration runtime, createFunction-style SDK, hidden callback marker protocol, DurableConsumer revival, Source-style abstraction, generic webhook server, or Firegrid-owned app-specific HTTP API wrapper.
       2: The app does not depend on #229 sync CLI UX, Flamecast implementation modules, provider callback token issuance, or a product-specific transport.
       3: The app does not hard-code a platform-owned planner/implementer/reviewer/QA/deploy DAG; any first-slice scripted path is planner policy over durable facts and tools.
       4: The app has no direct Flamecast dependency and no platform parent/child hierarchy; relationships are represented through app-owned facts, prompts, subscriber rows, runtime output, tool results, and correlation values.
