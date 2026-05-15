@@ -33,6 +33,8 @@ components:
       2: External facts carry source identity for dedupe, append in durable order, and represent permission waits with explicit permission_requested, permission_resolved, and cancellation or rejection facts rather than hidden callback markers.
       3:
         requirement: Permission facts use an explicit event shape; permission_requested includes permissionId, parentSessionId or contextId, kind, prompt, choices, correlationId, requestedBy, and expiry or status when needed; permission_resolved matches by permissionId and records the selected choice, rejection, cancellation, or expiry without hidden callbacks.
+      4: Runtime-host tool composition registers existing RuntimeOutputTable, RuntimeControlPlaneTable, and RuntimeIngressTable collections as wait_for source collections without adding a new permission table.
+      5: Runtime-output agent event observations expose decoded AgentOutputEvent metadata such as contextId, event tag, permissionRequestId, and toolUseId as scalar wait_for match fields while retaining RuntimeOutputTable as the durable fact store.
 
   PROMPT_DISPATCH:
     requirements:
@@ -43,6 +45,7 @@ components:
     requirements:
       1: Tool calls, tool results, child session/context ids, parent/correlation metadata, and ordered runtime facts are durable and queryable enough for a planner agent and product shell to inspect factory progress and choose the next action from history.
       2: Session handles and durable facts expose a status projection compatible with created, running, input_required, done, failed, aborted, and idle, and awaiting a child session is modeled as wait_for over those durable observations rather than blocking inside session creation.
+      3: Runtime terminal run evidence is wait_for-observable through RuntimeControlPlaneTable run rows keyed by contextId, status, and activityAttempt.
 
 constraints:
   BOUNDARY:

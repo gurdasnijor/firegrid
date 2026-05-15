@@ -47,6 +47,7 @@ import {
   requireLocalContext,
 } from "../runtime-host/host-context-authority.ts"
 import { RuntimeHostAgentToolHostLive } from "../runtime-host/index.ts"
+import { RuntimeObservationSourcesLive } from "../runtime-host/observation-sources.ts"
 import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
 import {
   FiregridAgentToolContext,
@@ -167,7 +168,8 @@ const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
  *   - `FiregridAgentToolContext` — resolves route context at tool-call time
  *   - `IdGenerator.defaultIdGenerator`
  *   - `RuntimeHostAgentToolHostLive` — host-owned tool effects
- *   - host-owned `DurableToolsWaitForLive` — `wait_for` arm
+ *   - host-owned `DurableToolsWaitForLive` + runtime observation sources —
+ *     `wait_for` arm
  *   - `McpServer.layer` + `RpcServer.layerProtocolHttp({ path })`
  *     — Effect AI MCP handlers over JSON-RPC HTTP serialization
  *   - `NodeHttpServer.layer(createServer, { port, host })` — loopback
@@ -218,7 +220,11 @@ export const FiregridMcpServerLayer = (
       Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator),
     ),
     Layer.provide(RuntimeHostAgentToolHostLive),
-    Layer.provide(HostOwnedDurableToolsWaitForLive),
+    Layer.provide(
+      RuntimeObservationSourcesLive.pipe(
+        Layer.provideMerge(HostOwnedDurableToolsWaitForLive),
+      ),
+    ),
     // firegrid-effect-ai-native-agents.MCP_TRANSPORT_COMPAT.1
     //
     // Inline-replicate `McpServer.layerHttp` here so we can keep

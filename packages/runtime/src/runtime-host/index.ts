@@ -72,6 +72,7 @@ import { ScheduledInputWorkflowLayer } from "../agent-tools/scheduled-input-work
 import { toolUseToEffect } from "../agent-tools/tool-use-to-effect.ts"
 import { toolExecutionFailed } from "../agent-tools/tool-error.ts"
 import { DurableToolsWaitForLive } from "../durable-tools/DurableToolsWaitFor.ts"
+import { RuntimeObservationSourcesLive } from "./observation-sources.ts"
 import {
   AcpCodec,
   StdioJsonlCodec,
@@ -105,6 +106,12 @@ export {
   requireLocalContext,
   runtimeControlPlaneStreamUrl,
 } from "./host-context-authority.ts"
+
+export {
+  RuntimeObservationSourceNames,
+  type RuntimeAgentOutputObservation,
+  type RuntimeObservationSourceName,
+} from "./observation-sources.ts"
 
 export {
   RuntimeIngressError,
@@ -499,11 +506,11 @@ const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
 )
 
 const runtimeCodecToolLoweringLayer = () =>
-  Layer.mergeAll(
+  RuntimeObservationSourcesLive.pipe(Layer.provideMerge(Layer.mergeAll(
     RuntimeHostAgentToolHostLive,
     ScheduledInputWorkflowLayer,
     HostOwnedDurableToolsWaitForLive,
-  )
+  )))
 
 const handleAgentOutputEvent = (options: {
   readonly context: RuntimeContext
@@ -1088,10 +1095,14 @@ const hostScopedLayer = (
     baseUrl: options.durableStreamsBaseUrl,
     ...(options.headers !== undefined ? { headers: options.headers } : {}),
   }
-  return Layer.mergeAll(
+  const hostTables = Layer.mergeAll(
     hostOwnedIngressLayer(sharedOptions),
     hostOwnedOutputLayer(sharedOptions),
     hostOwnedWorkflowEngineLayer(sharedOptions),
+  )
+  return RuntimeObservationSourcesLive.pipe(
+    Layer.provideMerge(HostOwnedDurableToolsWaitForLive),
+    Layer.provideMerge(hostTables),
   )
 }
 
