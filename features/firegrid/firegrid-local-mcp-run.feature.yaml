@@ -6,7 +6,7 @@ feature:
 components:
   LOCAL_COMMAND:
     requirements:
-      1: The unified Firegrid CLI exposes a start subcommand from the primary run.ts entrypoint and prints a structured ready record containing contextId and the route-scoped MCP URL.
+      1: The unified Firegrid CLI exposes a start subcommand from the primary run.ts entrypoint and prints a structured versioned ready record containing contextId and the route-scoped MCP URL.
       2: The start subcommand keeps the host scope alive after printing the ready record so MCP Inspector or another client can connect to the printed URL.
       3: The start subcommand is usable with no agent argv; in that mode it seeds a minimal no-op RuntimeContext through production primitives and prints the MCP URL.
       4: Optional agent argv and run flags customize the seeded RuntimeContext intent; contextId is still produced by the start subcommand, not supplied by env.

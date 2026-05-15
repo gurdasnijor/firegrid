@@ -87,6 +87,7 @@ ready record to stdout:
 ```json
 {
   "type": "firegrid.start.ready",
+  "version": 1,
   "contextId": "ctx_...",
   "mcpUrl": "http://127.0.0.1:49152/mcp/runtime-context/ctx_...",
   "namespace": "firegrid-local",

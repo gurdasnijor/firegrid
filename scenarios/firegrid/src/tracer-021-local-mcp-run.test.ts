@@ -39,6 +39,7 @@ const toolNames = [
 
 interface ReadyRecord {
   readonly type: "firegrid.start.ready"
+  readonly version: 1
   readonly contextId: string
   readonly mcpUrl: string
   readonly namespace: string
@@ -111,6 +112,7 @@ afterEach(async () => {
 const parseReadyRecord = (line: string): ReadyRecord => {
   const parsed = JSON.parse(line) as ReadyRecord
   expect(parsed.type).toBe("firegrid.start.ready")
+  expect(parsed.version).toBe(1)
   expect(parsed.contextId.startsWith("ctx_")).toBe(true)
   expect(parsed.mcpUrl).toContain(`/mcp/runtime-context/${encodeURIComponent(parsed.contextId)}`)
   return parsed

@@ -89,6 +89,7 @@ interface StartConfig {
 
 interface ReadyRecord {
   readonly type: "firegrid.start.ready"
+  readonly version: 1
   readonly contextId: string
   readonly mcpUrl: string
   readonly namespace: string
@@ -112,12 +113,6 @@ const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 const usageError = (message: string): FiregridCliUsageError =>
   new FiregridCliUsageError({ message })
-
-const optionValue = <A>(option: Option.Option<A>): A | undefined =>
-  Option.match(option, {
-    onNone: () => undefined,
-    onSome: (value) => value,
-  })
 
 // Parse a single --secret-env value. Accepts:
 //   NAME           -> binding { name: NAME, ref: env:NAME }
@@ -183,8 +178,8 @@ const rawRunConfigFromCli = (
     const agentArgv = input.agentArgv.length === 0
       ? [...noopAgentArgv]
       : [...input.agentArgv]
-    const cwd = optionValue(input.cwd)
-    const prompt = optionValue(input.prompt)
+    const cwd = Option.getOrUndefined(input.cwd)
+    const prompt = Option.getOrUndefined(input.prompt)
     return {
       agentArgv,
       ...(cwd === undefined ? {} : { cwd }),
@@ -207,7 +202,7 @@ const decodeCliRunConfig = (
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8
-const runWithLayer = (config: RunConfig) =>
+const executeRun = (config: RunConfig) =>
   Effect.gen(function* () {
     // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
     // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
@@ -303,6 +298,8 @@ const durableStreamsEndpoint = Effect.acquireRelease(
 )
 
 const mcpUrl = (address: string, path: string, contextId: string): string => {
+  // runtimeContextMcpPath returns the route template owned by the MCP host
+  // module; this CLI only substitutes the path authority value it just created.
   const mcpPath = runtimeContextMcpPath(ensurePathInput(path)).replace(
     ":contextId",
     encodeURIComponent(contextId),
@@ -320,6 +317,7 @@ const printReadyRecord = (
 ) => {
   const record: ReadyRecord = {
     type: "firegrid.start.ready",
+    version: 1,
     contextId: options.contextId,
     mcpUrl: mcpUrl(options.address, options.config.mcpPath, options.contextId),
     namespace: options.config.namespace,
@@ -381,11 +379,9 @@ const hostAndMcpLayer = (
         )),
     )
     // The workspace package export resolves at runtime through the source
-    // export map; eslint's root project sees the composed layer as
-    // `Layer<any, ..., never>` here, while this boundary pins the required
-    // no-environment shape before `Layer.launch`.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return layer
+    // export map; eslint's root project widens this composed layer. Keep the
+    // coercion explicit rather than hiding it behind no-unsafe-return.
+    return layer as Layer.Layer<HttpServer.HttpServer, unknown, never>
   }
 
 const runArgv = Args.text({ name: "agent-argv" }).pipe(Args.repeated)
@@ -411,7 +407,7 @@ const runCommand = Command.make(
         allowEmptyAgentArgv: false,
       })
       const config = yield* decodeCliRunConfig(raw, "firegrid run")
-      const exitCode = yield* runWithLayer(config).pipe(
+      const exitCode = yield* executeRun(config).pipe(
         Effect.provide(envHostLayer(config)),
         Effect.scoped,
       )
