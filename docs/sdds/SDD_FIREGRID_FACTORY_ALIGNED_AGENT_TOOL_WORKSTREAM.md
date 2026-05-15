@@ -145,8 +145,8 @@ Expected outcome:
 
 ACID: `firegrid-factory-aligned-agent-tools.SESSION.1`
 
-The planner must be able to create one child session and optionally await its
-terminal result. This is the most load-bearing choreography primitive for the
+The planner must be able to create one child session and receive a durable
+session handle. This is the most load-bearing choreography primitive for the
 factory: implementation, review, QA, and council work all reduce to child
 session work.
 
@@ -177,8 +177,8 @@ Required behavior:
 Expected outcome:
 
 - A planning agent can call a session creation tool with an agent selector,
-  prompt, and metadata, then receive a durable child session handle or terminal
-  status.
+  prompt, and metadata, then receive a durable child session handle. Terminal
+  completion is observed later through durable observations or `wait_for`.
 
 ### 2A. Parent Session Identity
 
@@ -205,6 +205,36 @@ Expected outcome:
 - One Linear ticket or equivalent external trigger maps to one durable
   Firegrid-backed parent run identity, with child work attached by metadata
   rather than hidden strings.
+
+### 2B. Idempotent Parent Run Create/Load
+
+ACID: `firegrid-factory-aligned-agent-tools.SESSION.5`
+
+External triggers for factory work are at-least-once. A Linear issue update,
+ticket event, webhook delivery, or product callback may be redelivered while
+the parent planning run already exists. Firegrid should create or load the
+same parent run from the external source key instead of creating competing
+parent contexts.
+
+Required behavior:
+
+- Parent run create/load accepts or derives an external source key containing
+  the provider or source identity plus an external id such as Linear issue id,
+  ticket id, or correlation id.
+- Duplicate external triggers with the same external source key resolve to the
+  same parent `RuntimeContext` and product session identity.
+- Child sessions, permission facts, wait facts, runtime output, and product
+  projection attach to that loaded parent identity.
+- A conflicting trigger for the same external source key does not overwrite the
+  existing parent run metadata silently.
+- No factory workflow product, hidden callback marker, or Flamecast-specific
+  role enum is introduced to enforce this idempotency.
+
+Expected outcome:
+
+- At-least-once external delivery for one ticket or correlation id resumes the
+  same Firegrid-backed parent run instead of splitting planner state across
+  duplicate parent sessions.
 
 ### 3. Session-Bound Client Capabilities
 
@@ -270,6 +300,11 @@ Required behavior:
 - Permission waits are represented as explicit facts/events such as
   `permission_requested`, `permission_resolved`, and cancellation/rejection
   variants, not hidden callback comments.
+- `permission_requested` records at least `permissionId`, `parentSessionId` or
+  `contextId`, `kind`, `prompt`, `choices`, `correlationId`, `requestedBy`, and
+  expiry or status when needed.
+- `permission_resolved` matches the request by `permissionId` and records the
+  selected choice, rejection, cancellation, or expiry.
 - Flamecast or another product shell can append/project facts without becoming
   the orchestrator or the execution wait substrate.
 
@@ -277,6 +312,29 @@ Expected outcome:
 
 - A planning agent can request a decision in ordinary language, then call
   `wait_for` against a durable fact query and continue from the result.
+
+### 4A. Permission Fact Shape
+
+ACID: `firegrid-factory-aligned-agent-tools.WAIT_FOR.3`
+
+Human gates should be ordinary durable facts, not a private callback protocol.
+The fact shape only needs enough structure for a planner, product shell, and
+human responder to correlate the request and resolution.
+
+Required behavior:
+
+- `permission_requested` includes `permissionId`, `parentSessionId` or
+  `contextId`, `kind`, `prompt`, `choices`, `correlationId`, `requestedBy`, and
+  expiry or status when needed.
+- `permission_resolved` matches the request by `permissionId`.
+- Resolution records the selected choice, rejection, cancellation, or expiry.
+- The permission facts remain source-neutral and product-projectable; they do
+  not introduce hidden callback markers or a factory workflow product.
+
+Expected outcome:
+
+- A planning agent can ask for a human decision, wait on `permissionId` or
+  correlation fields, and continue from the durable resolved fact.
 
 ### 5. Prompt Dispatch To Existing Contexts
 
@@ -415,13 +473,16 @@ Expected outcome:
 
 1. Continue ACP Adapter Proof.
 2. Wire live session creation backed by `spawnChildContext`.
-3. Wire minimal session-bound capabilities needed by the demo.
-4. Wire `session_prompt` only if the demo needs follow-up turns.
-5. Add or designate a durable fact source for approvals/replies/CI updates so
+3. Add or designate a durable fact source for approvals/replies/CI updates so
    `wait_for` can be used for human and external gates.
-6. Defer batch session creation until repeated `session_new` calls are
+4. If tonight includes human gates, wire permission facts and `wait_for`
+   observation in parallel with `session_new` rather than after capability or
+   prompt-dispatch work.
+5. Wire minimal session-bound capabilities needed by the demo.
+6. Wire `session_prompt` only if the demo needs follow-up turns.
+7. Defer batch session creation until repeated `session_new` calls are
    insufficient.
-7. Defer `session_cancel` / `session_abort` unless the demo has a direct stop
+8. Defer `session_cancel` / `session_abort` unless the demo has a direct stop
    requirement.
 
 ## Review Questions

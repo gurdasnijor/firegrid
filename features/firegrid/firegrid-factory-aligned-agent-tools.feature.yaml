@@ -14,6 +14,7 @@ components:
       2: Batch session creation is a generalized convenience over repeated single-session creation; when implemented, it uses the same child RuntimeContext path, preserves task keys, and returns every child session handle or terminal state.
       3: A parent factory run can be represented by planning RuntimeContext metadata, and child sessions carry explicit parentSessionId, role, and correlationId metadata when supplied.
       4: Session cancel and abort operations are deferred until needed; if exposed before real support exists, they fail explicitly rather than silently no-oping.
+      5: Parent factory run create/load is idempotent by an external source key containing provider or source identity plus external id such as issue id, ticket id, or correlation id; duplicate external triggers resolve to the same parent RuntimeContext and session identity rather than creating competing parent runs.
 
   CAPABILITY:
     requirements:
@@ -23,6 +24,8 @@ components:
     requirements:
       1: Human approvals, application replies, webhook deliveries, and external status changes can be represented as durable facts that wait_for can match by scalar fields such as contextId, kind, correlationId, and external id.
       2: External facts carry source identity for dedupe, append in durable order, and represent permission waits with explicit permission_requested, permission_resolved, and cancellation or rejection facts rather than hidden callback markers.
+      3:
+        requirement: Permission facts use an explicit event shape; permission_requested includes permissionId, parentSessionId or contextId, kind, prompt, choices, correlationId, requestedBy, and expiry or status when needed; permission_resolved matches by permissionId and records the selected choice, rejection, cancellation, or expiry without hidden callbacks.
 
   PROMPT_DISPATCH:
     requirements:
