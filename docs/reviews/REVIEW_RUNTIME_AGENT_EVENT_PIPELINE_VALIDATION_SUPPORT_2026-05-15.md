@@ -33,6 +33,8 @@ state before CA/CA2/CA3 target-tree patches land.
   `SourceCollectionHandle` surfaces. Keep semgrep enforcement behind stable
   authority paths in the implementation PR; docs/spec checks are reported
   passing in the lane.
+- PR #248 merged to `main` at `2c9a15bc9`; treat `toolUseMode` and shared
+  runtime output envelope support as landed baseline for the main cutover.
 - Rebaseline the checklist against the landed target tree before adding final
   tests. The most important files to inspect next are
   `packages/runtime/src/authorities/registry.ts`,
@@ -57,10 +59,10 @@ Classification:
 | Current gate | Terminal row-before-lifecycle evidence. | `firegrid-runtime-agent-event-pipeline.INGREDIENTS.2`, `firegrid-runtime-agent-event-pipeline.INGREDIENTS.6` | Add or preserve a journal-first terminal test: the `RuntimeOutput` `Terminated` row is committed before host workflow handling records exited/failed lifecycle evidence. Likely home: `packages/runtime/src/authorities/runtime-output-journal.test.ts` or host workflow handler tests. |
 | Current gate | Permission wait/resume remains durable and separate from tool routing. | `firegrid-runtime-agent-event-pipeline.INGREDIENTS.4`, `firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-1`, `firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-2`, `firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3`, `firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-4`, `firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-5`, `firegrid-runtime-agent-event-pipeline.VALIDATION.3`, `firegrid-runtime-agent-event-pipeline.VALIDATION.3-1`, `firegrid-runtime-agent-event-pipeline.VALIDATION.3-2` | Prove `PermissionRequest` commits to `RuntimeOutputJournal`, `wait_for` or `session.wait` resolves from the decoded source-collection handle, `PermissionResponse` appends through `RuntimeIngressAppender`, ingress delivery sends it to the live ACP codec, and the pending ACP request resolves without tool-router involvement. |
 | Current gate | Ingress delivery dedupe for raw and codec subscribers. | `firegrid-runtime-agent-event-pipeline.AUTHORITIES.4`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.4-1`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.4-2`, `firegrid-runtime-agent-event-pipeline.INGREDIENTS.1`, `firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-2` | Preserve claim-before-send semantics with delivery key `(subscriberId, inputId)`. Test raw stdin and codec delivery subscribers independently, with subscriber ids shaped `runtime-ingress:<protocol>:<role>`. |
-| Current gate | Authority write/read surface enforcement timing. | `firegrid-runtime-agent-event-pipeline.AUTHORITIES.1`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.2`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.3`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.4`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.5`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.6`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.8`, `firegrid-runtime-agent-event-pipeline.ENFORCEMENT.1`, `firegrid-runtime-agent-event-pipeline.ENFORCEMENT.2`, `firegrid-runtime-agent-event-pipeline.ENFORCEMENT.2-1`, `firegrid-runtime-agent-event-pipeline.ENFORCEMENT.3` | Before PR completion, confirm authority paths and registry are stable, then add the scoped semgrep rule. The rule should reject direct `.insert`, `.upsert`, and `.delete` against runtime-owned DurableTable facades outside owning authorities/tests, while allowing authority APIs and explicit test harnesses. Also confirm subscribers consume authority-exposed `SourceCollectionHandle` surfaces rather than direct runtime table `rows()` calls. |
+| Current gate | Authority write/read surface enforcement timing. | `firegrid-runtime-agent-event-pipeline.AUTHORITIES.1`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.2`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.3`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.4`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.5`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.5-1`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.6`, `firegrid-runtime-agent-event-pipeline.AUTHORITIES.8`, `firegrid-runtime-agent-event-pipeline.ENFORCEMENT.1`, `firegrid-runtime-agent-event-pipeline.ENFORCEMENT.2`, `firegrid-runtime-agent-event-pipeline.ENFORCEMENT.2-1`, `firegrid-runtime-agent-event-pipeline.ENFORCEMENT.3` | Before PR completion, confirm authority paths and registry are stable, then add the scoped semgrep rule. The rule should reject direct `.insert`, `.upsert`, and `.delete` against runtime-owned DurableTable facades outside owning authorities/tests, while allowing authority APIs and explicit test harnesses. Also confirm subscribers consume authority-exposed `SourceCollectionHandle` surfaces rather than direct runtime table `rows()` calls. Known residual: `packages/protocol/src/launch/host-context-authority.ts` exposes `insertLocalRuntimeContext`, which upserts `RuntimeControlPlaneTable.contexts`; shared cutover callers include `src/run.ts` and `packages/client/src/firegrid.ts`. Migrate that write path to `RuntimeControlPlaneRecorder` or add an explicit SDD carve-out/deletion ACID before final acceptance. |
 | Review checklist | Existing raw local-process behavior is preserved. | `firegrid-runtime-agent-event-pipeline.VALIDATION.1` | Keep the raw stdout/stderr journaling regression green after the target-tree move. Likely home: `packages/runtime/src/host/start-runtime.test.ts` or `packages/runtime/src/pipeline/runtime-execution.test.ts`. |
-| Review checklist | Stdio-jsonl advertises and exercises `client_result_roundtrip`. | `firegrid-runtime-agent-event-pipeline.STAGES.3-7`, `firegrid-runtime-agent-event-pipeline.STAGES.3-8`, `firegrid-runtime-agent-event-pipeline.VALIDATION.2` | Codec/session tests should assert `toolUseMode === "client_result_roundtrip"` and continue covering `Prompt`, `ToolUse`, `ToolResult`, and `Terminated`. |
-| Review checklist | Shared runtime output envelope helper is used by journal and subscribers. | `firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.8` | Unit-test the shared encode/decode helper and review that subscribers do not parse `RuntimeEventRow.raw` ad hoc. |
+| Review checklist | Stdio-jsonl advertises and exercises `client_result_roundtrip`. | `firegrid-runtime-agent-event-pipeline.STAGES.3-7`, `firegrid-runtime-agent-event-pipeline.STAGES.3-8`, `firegrid-runtime-agent-event-pipeline.VALIDATION.2` | Landed baseline via #248; keep codec/session tests green and continue covering `Prompt`, `ToolUse`, `ToolResult`, and `Terminated`. |
+| Review checklist | Shared runtime output envelope helper is used by journal and subscribers. | `firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.8` | Landed baseline via #248; review that journal and subscribers keep using the shared helper and do not reintroduce ad hoc `RuntimeEventRow.raw` parsing. |
 | Review checklist | Duplicate `startRuntime` still does not duplicate external execution. | `firegrid-runtime-agent-event-pipeline.VALIDATION.4` | Keep the existing duplicate-start regression green after host/pipeline extraction. |
 | Review checklist | PR description is review-ready. | `firegrid-runtime-agent-event-pipeline.TRANSACTIONAL_CUTOVER.4`, `firegrid-runtime-agent-event-pipeline.TRANSACTIONAL_CUTOVER.5` | PR body must include target tree, satisfied ACID list, authority registry table, `SourceCollectionHandle` read surfaces, validation commands, exact mode-name consistency, and compatibility export/deletion status. |
 | Follow-up | Compatibility export cleanup. | `firegrid-runtime-agent-event-pipeline.TRANSACTIONAL_CUTOVER.3`, `firegrid-runtime-agent-event-pipeline.TRANSACTIONAL_CUTOVER.3-1` | If old package subpaths or compatibility barrels remain, either remove them in the implementation PR or add a deletion ACID. Do not broaden the validation lane to solve unrelated app import cleanup. |
@@ -93,6 +95,12 @@ on runtime-owned DurableTable collection facades for:
 - `RuntimeControlPlaneTable.runs`
 - durable wait rows and completions
 
+Treat `packages/protocol/src/launch/host-context-authority.ts`
+`insertLocalRuntimeContext` as the known residual write-capable API for
+`RuntimeControlPlaneTable.contexts`; it needs migration to
+`RuntimeControlPlaneRecorder` or an explicit SDD carve-out/deletion ACID before
+final acceptance.
+
 Expected allowlist:
 
 - owning authority modules under `packages/runtime/src/authorities/**`;
@@ -117,17 +125,15 @@ The implementation PR should include:
 
 ## Coordinator Findings
 
-1. `firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.1` and
-   `firegrid-runtime-agent-event-pipeline.VALIDATION.5` are currently
-   untestable on this checkout because tool dispatch is still inline from live
-   codec output.
-2. `firegrid-runtime-agent-event-pipeline.VALIDATION.2`,
-   `firegrid-runtime-agent-event-pipeline.STAGES.3-7`, and
-   `firegrid-runtime-agent-event-pipeline.STAGES.3-8` need the `toolUseMode`
-   contract/session patch before final proof.
+1. Remaining current gates are durable `ToolUse` replay, journal-first terminal
+   ordering, ACP observation-only not claimed, permission resume, ingress
+   delivery dedupe, and authority write/read enforcement.
+2. `toolUseMode` and shared runtime output envelope support are landed baseline
+   after #248; keep them as review checks, not active scope expansion.
 3. Semgrep enforcement should wait until authority file paths are stable, then
    land as a scoped `.insert`/`.upsert`/`.delete` rule with explicit authority
-   and test allowlists.
+   and test allowlists. Include the residual protocol
+   `insertLocalRuntimeContext` control-plane write in the acceptance decision.
 4. Existing tests already provide useful migration anchors for raw journaling,
    stdio-jsonl prompt/tool/termination behavior, ACP permission resume, decoded
    permission observation via `wait_for`, and duplicate `startRuntime` starts.
