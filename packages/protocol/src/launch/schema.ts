@@ -1,8 +1,52 @@
-import { Schema } from "effect"
+import { Either, Schema, SchemaAST } from "effect"
 import {
   RuntimeContextHostBindingSchema,
   type RuntimeContextHostBinding,
 } from "./authority.ts"
+
+export interface LaunchCliHelpEntry {
+  readonly description: string
+  readonly examples: ReadonlyArray<string>
+  readonly defaultValue?: string
+}
+
+const readStringAnnotation = (
+  schema: { readonly ast: SchemaAST.AST },
+  annotationId: symbol,
+): string | undefined => {
+  const value = schema.ast.annotations[annotationId]
+  return typeof value === "string" ? value : undefined
+}
+
+const readExampleAnnotations = (
+  schema: { readonly ast: SchemaAST.AST },
+): ReadonlyArray<string> => {
+  const shellArg = (value: string): string =>
+    /^[A-Za-z0-9_./:@=-]+$/.test(value) ? value : JSON.stringify(value)
+  const examples = schema.ast.annotations[SchemaAST.ExamplesAnnotationId]
+  if (!Array.isArray(examples)) return []
+  return examples.map((example) => {
+    if (typeof example === "string") return example
+    if (Array.isArray(example) && example.every((part): part is string => typeof part === "string")) {
+      return example.map(shellArg).join(" ")
+    }
+    return JSON.stringify(example)
+  })
+}
+
+const cliHelpFromSchema = (
+  schema: { readonly ast: SchemaAST.AST },
+  fallback: LaunchCliHelpEntry,
+): LaunchCliHelpEntry => {
+  const description = readStringAnnotation(schema, SchemaAST.DescriptionAnnotationId) ?? fallback.description
+  const examples = readExampleAnnotations(schema)
+  const defaultValue = readStringAnnotation(schema, SchemaAST.DefaultAnnotationId) ?? fallback.defaultValue
+  return {
+    description,
+    examples: examples.length === 0 ? fallback.examples : examples,
+    ...(defaultValue === undefined ? {} : { defaultValue }),
+  }
+}
 
 export const RuntimeOutputSourceSchema = Schema.Literal("stdout", "stderr")
 export type RuntimeOutputSource = Schema.Schema.Type<typeof RuntimeOutputSourceSchema>
@@ -16,8 +60,57 @@ export type RuntimeJournalFormat = Schema.Schema.Type<typeof RuntimeJournalForma
 export const RuntimeProviderSchema = Schema.Literal("local-process")
 export type RuntimeProvider = Schema.Schema.Type<typeof RuntimeProviderSchema>
 
-export const RuntimeAgentProtocolSchema = Schema.Literal("raw", "stdio-jsonl", "acp")
+export const runtimeAgentProtocolValues = ["raw", "stdio-jsonl", "acp"] as const
+
+export const RuntimeAgentProtocolSchema = Schema.Literal(...runtimeAgentProtocolValues).annotations({
+  description: "Runtime codec used for the launched agent process.",
+  examples: ["raw", "stdio-jsonl", "acp"],
+  default: "raw",
+})
 export type RuntimeAgentProtocol = Schema.Schema.Type<typeof RuntimeAgentProtocolSchema>
+
+export const RuntimeArgvSchema = Schema.Array(Schema.String).annotations({
+  description: "Agent command and arguments after `--`.",
+  examples: [
+    ["node", "-e", "console.log('hello from firegrid')"],
+    ["npx", "-y", "@zed-industries/codex-acp@0.14.0"],
+  ],
+})
+
+const LaunchAgentArgvSchema = RuntimeArgvSchema.pipe(
+  Schema.filter((argv) =>
+    argv.length > 0 ? undefined : "agentArgv must be non-empty"),
+).annotations({
+  description: "Agent command and arguments after `--`; run requires at least one argument.",
+  examples: [
+    ["node", "-e", "console.log('hello from firegrid')"],
+    ["npx", "-y", "@zed-industries/codex-acp@0.14.0"],
+  ],
+})
+
+export const RuntimeCwdSchema = Schema.String.pipe(
+  Schema.filter((value) =>
+    value.length > 0 ? undefined : "cwd must be a non-empty path"),
+).annotations({
+  description: "Working directory for the launched agent process.",
+  examples: ["/Users/alice/project"],
+  default: "current working directory",
+})
+
+export const RuntimePromptSchema = Schema.String.annotations({
+  description: "Initial prompt appended to the RuntimeContext ingress before launch.",
+  examples: ["Summarize this repository and list next steps."],
+})
+
+export const RuntimeAgentSelectorSchema = Schema.String.pipe(Schema.minLength(1)).annotations({
+  description: "Opaque agent selector recorded in launch config for adapters and host policy.",
+  examples: ["local-shell", "codex-acp"],
+})
+
+export const LaunchSecretEnvCliValueSchema = Schema.String.annotations({
+  description: "Authorize one host env var for the launched process as NAME or NAME=HOST_ENV_NAME; literal secret values are never accepted.",
+  examples: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY=PARENT_OPENAI_API_KEY"],
+})
 
 export const McpServerUrlDeclarationSchema = Schema.Struct({
   type: Schema.Literal("url"),
@@ -67,9 +160,9 @@ export const RuntimeEnvBindingSchema = Schema.Struct({
 export type RuntimeEnvBinding = Schema.Schema.Type<typeof RuntimeEnvBindingSchema>
 
 export const RuntimeConfigSchema = Schema.Struct({
-  argv: Schema.Array(Schema.String),
-  cwd: Schema.optional(Schema.String),
-  agent: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  argv: RuntimeArgvSchema,
+  cwd: Schema.optional(RuntimeCwdSchema),
+  agent: Schema.optional(RuntimeAgentSelectorSchema),
   envBindings: Schema.optional(Schema.Array(RuntimeEnvBindingSchema)),
   agentProtocol: Schema.optional(RuntimeAgentProtocolSchema),
   mcpServers: Schema.optional(Schema.Array(McpServerDeclarationSchema)),
@@ -177,21 +270,51 @@ const EnvVarName = Schema.String.pipe(
 export const LaunchAuthorizedBindingSchema = Schema.Tuple(EnvVarName, EnvVarName)
 export type LaunchAuthorizedBinding = Schema.Schema.Type<typeof LaunchAuthorizedBindingSchema>
 
+export interface LaunchSecretEnvCliBinding {
+  readonly envBinding: RuntimeEnvBinding
+  readonly authorizedBinding: LaunchAuthorizedBinding
+}
+
+const decodeEnvVarName = Schema.decodeUnknownEither(EnvVarName)
+
+// firegrid-local-mcp-run.CLI_HELP.4
+//
+// Parse the public CLI spelling for secret env authorization. The durable
+// launch config stores only env refs; literal secret values never cross the
+// command line or durable schema boundary.
+export const decodeLaunchSecretEnvCliValue = (
+  raw: string,
+): Either.Either<LaunchSecretEnvCliBinding, string> => {
+  const equalsIndex = raw.indexOf("=")
+  const name = equalsIndex === -1 ? raw : raw.slice(0, equalsIndex)
+  const envName = equalsIndex === -1 ? raw : raw.slice(equalsIndex + 1)
+  if (Either.isLeft(decodeEnvVarName(name))) {
+    return Either.left(
+      `--secret-env expects an env-var identifier, got "${name}". ` +
+        "Use --secret-env NAME or --secret-env NAME=ENV_NAME; values are never accepted on the command line.",
+    )
+  }
+  if (Either.isLeft(decodeEnvVarName(envName))) {
+    return Either.left(
+      `--secret-env right-hand side "${envName}" is not a valid env-var identifier. ` +
+        "--secret-env names host env vars; it does not accept secret values.",
+    )
+  }
+  return Either.right({
+    envBinding: envBinding(name, envName),
+    authorizedBinding: [name, envName],
+  })
+}
+
 export const LaunchConfigSchema = Schema.Struct({
   // firegrid-local-mcp-run.LAUNCH_CONFIG.4
-  agentArgv: Schema.Array(Schema.String).pipe(
-    Schema.filter((argv) =>
-      argv.length > 0 ? undefined : "agentArgv must be non-empty"),
-  ),
-  cwd: Schema.optional(Schema.String.pipe(
-    Schema.filter((value) =>
-      value.length > 0 ? undefined : "cwd must be a non-empty path"),
-  )),
-  prompt: Schema.optional(Schema.String),
+  agentArgv: LaunchAgentArgvSchema,
+  cwd: Schema.optional(RuntimeCwdSchema),
+  prompt: Schema.optional(RuntimePromptSchema),
   envBindings: Schema.optional(Schema.Array(RuntimeEnvBindingSchema)),
   authorizedBindings: Schema.optional(Schema.Array(LaunchAuthorizedBindingSchema)),
   // firegrid-local-mcp-run.LAUNCH_CONFIG.6
-  agent: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  agent: Schema.optional(RuntimeAgentSelectorSchema),
   agentProtocol: Schema.optional(RuntimeAgentProtocolSchema),
   // firegrid-local-mcp-run.LAUNCH_CONFIG.1
   mcpServers: Schema.optional(Schema.Array(McpServerDeclarationSchema)),
@@ -201,6 +324,36 @@ export const LaunchConfigSchema = Schema.Struct({
   },
 })
 export type LaunchConfig = Schema.Schema.Type<typeof LaunchConfigSchema>
+
+// firegrid-local-mcp-run.CLI_HELP.4
+export const LaunchCliHelp = {
+  agentArgv: cliHelpFromSchema(LaunchAgentArgvSchema, {
+    description: "Agent command and arguments after `--`.",
+    examples: ["node -e 'console.log(\"hello\")'"],
+  }),
+  agent: cliHelpFromSchema(RuntimeAgentSelectorSchema, {
+    description: "Opaque agent selector recorded in launch config.",
+    examples: ["codex-acp"],
+  }),
+  agentProtocol: cliHelpFromSchema(RuntimeAgentProtocolSchema, {
+    description: "Runtime codec used for the launched agent process.",
+    examples: ["raw", "stdio-jsonl", "acp"],
+    defaultValue: "raw",
+  }),
+  cwd: cliHelpFromSchema(RuntimeCwdSchema, {
+    description: "Working directory for the launched agent process.",
+    examples: ["."],
+    defaultValue: "current working directory",
+  }),
+  prompt: cliHelpFromSchema(RuntimePromptSchema, {
+    description: "Initial prompt appended to RuntimeContext ingress before launch.",
+    examples: ["Summarize this repository."],
+  }),
+  secretEnv: cliHelpFromSchema(LaunchSecretEnvCliValueSchema, {
+    description: "Authorize one host env var for the launched process.",
+    examples: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY=PARENT_OPENAI_API_KEY"],
+  }),
+} as const
 
 export const decodeLaunchConfig = Schema.decodeUnknown(LaunchConfigSchema)
 

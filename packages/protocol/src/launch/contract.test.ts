@@ -2,14 +2,17 @@ import { Effect, Either, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   decodeLaunchConfig,
+  decodeLaunchSecretEnvCliValue,
   envBinding,
   firegridRuntimeContextMcpDeclaration,
   firegridRuntimeContextMcpName,
   injectLaunchMcpDeclaration,
+  LaunchCliHelp,
   local,
   McpServerDeclarationSchema,
   normalizeRuntimeIntent,
   PublicLaunchRequestSchema,
+  runtimeAgentProtocolValues,
   RuntimeEventSchema,
 } from "./index.ts"
 
@@ -79,6 +82,44 @@ describe("@firegrid/protocol launch schema", () => {
     })
   })
 
+  it("firegrid-local-mcp-run.CLI_HELP.4 decodes secret env CLI values through launch schema helpers", () => {
+    const direct = decodeLaunchSecretEnvCliValue("ANTHROPIC_API_KEY")
+    expect(Either.isRight(direct)).toBe(true)
+    if (Either.isRight(direct)) {
+      expect(direct.right).toEqual({
+        envBinding: {
+          name: "ANTHROPIC_API_KEY",
+          ref: "env:ANTHROPIC_API_KEY",
+        },
+        authorizedBinding: ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"],
+      })
+    }
+
+    const renamed = decodeLaunchSecretEnvCliValue("OPENAI_API_KEY=PARENT_OPENAI_API_KEY")
+    expect(Either.isRight(renamed)).toBe(true)
+    if (Either.isRight(renamed)) {
+      expect(renamed.right).toEqual({
+        envBinding: {
+          name: "OPENAI_API_KEY",
+          ref: "env:PARENT_OPENAI_API_KEY",
+        },
+        authorizedBinding: ["OPENAI_API_KEY", "PARENT_OPENAI_API_KEY"],
+      })
+    }
+
+    const invalidTarget = decodeLaunchSecretEnvCliValue("1BAD")
+    expect(Either.isLeft(invalidTarget)).toBe(true)
+    if (Either.isLeft(invalidTarget)) {
+      expect(invalidTarget.left).toContain("--secret-env expects an env-var identifier")
+    }
+
+    const invalidSource = decodeLaunchSecretEnvCliValue("OPENAI_API_KEY=not-valid")
+    expect(Either.isLeft(invalidSource)).toBe(true)
+    if (Either.isLeft(invalidSource)) {
+      expect(invalidSource.left).toContain("--secret-env right-hand side")
+    }
+  })
+
   it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 normalization preserves envBindings on the runtime intent", () => {
     const intent = normalizeRuntimeIntent(local.jsonl({
       argv: ["node", "agent.mjs"],
@@ -116,6 +157,15 @@ describe("@firegrid/protocol launch schema", () => {
     expect(Either.isLeft(decoded)).toBe(true)
   })
 
+  it("firegrid-local-mcp-run.CLI_HELP.4 exposes CLI help metadata from launch schema annotations", () => {
+    expect(runtimeAgentProtocolValues).toEqual(["raw", "stdio-jsonl", "acp"])
+    expect(LaunchCliHelp.agentArgv.description).toContain("Agent command")
+    expect(LaunchCliHelp.prompt.description).toContain("RuntimeContext ingress")
+    expect(LaunchCliHelp.agentProtocol.description).toContain("Runtime codec")
+    expect(LaunchCliHelp.agentProtocol.defaultValue).toBe("raw")
+    expect(LaunchCliHelp.secretEnv.examples).toContain("ANTHROPIC_API_KEY")
+  })
+
   it("firegrid-local-mcp-run.LAUNCH_CONFIG.1 decodes Firegrid-neutral URL MCP declarations and rejects ACP-specific http lowering", () => {
     const decoded = Schema.decodeUnknownEither(McpServerDeclarationSchema)({
       name: "custom-tools",
@@ -139,12 +189,14 @@ describe("@firegrid/protocol launch schema", () => {
   it("firegrid-local-mcp-run.LAUNCH_CONFIG.3 firegrid-local-mcp-run.LAUNCH_CONFIG.4 decodes CLI launch config in protocol", async () => {
     const decoded = await Effect.runPromise(decodeLaunchConfig({
       agent: "codex-acp",
+      agentProtocol: "acp",
       agentArgv: ["npx", "-y", "@zed-industries/codex-acp@0.14.0"],
       prompt: "summarize",
     }))
 
     expect(decoded).toMatchObject({
       agent: "codex-acp",
+      agentProtocol: "acp",
       agentArgv: ["npx", "-y", "@zed-industries/codex-acp@0.14.0"],
       prompt: "summarize",
     })
