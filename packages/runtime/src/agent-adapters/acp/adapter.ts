@@ -3,6 +3,7 @@ import { AiError, IdGenerator, LanguageModel, Prompt, Response } from "@effect/a
 import {
   Chunk,
   Effect,
+  Fiber,
   Layer,
   Option,
   Queue,
@@ -114,6 +115,13 @@ const cancelledError = (): AiError.UnknownError =>
   })
 
 // firegrid-effect-ai-native-agents.ACP_ADAPTER.7
+// Aggregate streaming text deltas into non-streaming text parts while
+// preserving the relative order between text runs, tool calls, and
+// finish. Buffered text MUST be flushed before any non-text-delta
+// part is appended; otherwise an ACP turn that streams
+// `text-delta -> tool-call -> finish` would surface as
+// `[tool-call, finish, text]` because buffered text would only flush
+// at end-of-array.
 const aggregateStreamPartsForGenerateText = (
   parts: ReadonlyArray<AcpStreamPart>,
 ): Array<AcpPart> => {
@@ -126,6 +134,9 @@ const aggregateStreamPartsForGenerateText = (
     }
     buffers.delete(id)
   }
+  const flushAll = (): void => {
+    Array.from(buffers.keys()).forEach(flushBuffer)
+  }
   parts.forEach(part => {
     if (part.type === "text-delta") {
       const existing = buffers.get(part.id) ?? ""
@@ -137,10 +148,11 @@ const aggregateStreamPartsForGenerateText = (
       return
     }
     if (part.type === "tool-call" || part.type === "finish") {
+      flushAll()
       out.push(part)
     }
   })
-  Array.from(buffers.keys()).forEach(flushBuffer)
+  flushAll()
   return out
 }
 
@@ -197,31 +209,50 @@ const makeAcpAgentAdapter = (
       )
 
     const client: acp.Client = {
+      // firegrid-effect-ai-native-agents.ACP_ADAPTER.6
+      // firegrid-effect-ai-native-agents.ACP_ADAPTER.12
+      //
+      // Defensive: ACP invokes this callback on its own event loop.
+      // If the adapter scope/runtime is already torn down, runPromise
+      // will throw; we still owe ACP a response so its prompt() call
+      // can resolve. Always reply `cancelled`, even when we cannot
+      // notify a (gone) turn queue.
       requestPermission: async params => {
-        const turn = await runPromise(Ref.get(currentTurnRef))
-        const turnId = Option.match(turn, {
-          onNone: () => undefined,
-          onSome: state => state.turnId,
-        })
-        await runPromise(
-          offerToCurrent({
-            _tag: "Fail",
-            error: permissionRequiredError(params.toolCall.toolCallId, turnId),
-          }),
-        )
+        try {
+          const turn = await runPromise(Ref.get(currentTurnRef))
+          const turnId = Option.match(turn, {
+            onNone: () => undefined,
+            onSome: state => state.turnId,
+          })
+          await runPromise(
+            offerToCurrent({
+              _tag: "Fail",
+              error: permissionRequiredError(params.toolCall.toolCallId, turnId),
+            }),
+          )
+        } catch {
+          // Adapter runtime is gone; nothing to notify. Fall through
+          // to the cancelled outcome so ACP does not hang.
+        }
         return { outcome: { outcome: "cancelled" } }
       },
       sessionUpdate: async params => {
-        await runPromise(
-          acpSessionUpdateToStreamParts(params, allocateTextDeltaId).pipe(
-            Effect.flatMap(parts =>
-              Effect.forEach(
-                parts,
-                part => offerToCurrent({ _tag: "Part", part }),
-                { discard: true },
-              )),
-          ),
-        )
+        try {
+          await runPromise(
+            acpSessionUpdateToStreamParts(params, allocateTextDeltaId).pipe(
+              Effect.flatMap(parts =>
+                Effect.forEach(
+                  parts,
+                  part => offerToCurrent({ _tag: "Part", part }),
+                  { discard: true },
+                )),
+            ),
+          )
+        } catch {
+          // Adapter runtime is gone; the update has no live consumer.
+          // ACP notifications are fire-and-forget, so swallowing
+          // here keeps ACP's event loop healthy.
+        }
       },
     }
 
@@ -273,10 +304,22 @@ const makeAcpAgentAdapter = (
     )
 
     // firegrid-effect-ai-native-agents.ACP_ADAPTER.2
-    // Each turn is a scoped resource: the lock + ref + spawned prompt
-    // fiber are tied to the stream's scope, so multi-turn calls
-    // serialize cleanly and a stream interruption tears down its
-    // turn before the next turn can acquire the lock.
+    // firegrid-effect-ai-native-agents.ACP_ADAPTER.13
+    //
+    // Each turn is a scoped resource. The prompt fiber is tracked
+    // explicitly so a stream-interruption teardown can:
+    //   1. send `connection.cancel({ sessionId })` to ACP, telling
+    //      the agent to abort the in-flight turn
+    //   2. await the prompt fiber via Fiber.await, ensuring the ACP
+    //      Promise has resolved (with stopReason "cancelled") before
+    //      the next turn can acquire the lock
+    //   3. clear `currentTurnRef` so late ACP callbacks cannot route
+    //      stale updates into a subsequent turn's queue
+    //
+    // The finalizer is added INSIDE the per-turn scope, while the
+    // turn-lock release is added by the outer caller; Effect runs
+    // scope finalizers LIFO, so cancel + await + clear-ref complete
+    // before the permit is released and the next turn can begin.
     const setupTurn = (
       rawInput: Prompt.RawInput,
     ): Effect.Effect<Queue.Queue<TurnSignal>, AiError.AiError, Scope.Scope> =>
@@ -327,7 +370,15 @@ const makeAcpAgentAdapter = (
           }),
         )
 
-        yield* Effect.forkScoped(sendPrompt)
+        const promptFiber = yield* Effect.fork(sendPrompt)
+
+        yield* Effect.addFinalizer(() =>
+          Effect.tryPromise(() => connection.cancel({ sessionId })).pipe(
+            Effect.ignore,
+            Effect.zipRight(Fiber.await(promptFiber).pipe(Effect.ignore)),
+            Effect.zipRight(Ref.set(currentTurnRef, Option.none())),
+          ),
+        )
 
         return queue
       })
@@ -355,7 +406,6 @@ const makeAcpAgentAdapter = (
           }
           return Effect.succeed(signal.part)
         }),
-        Stream.ensuring(Ref.set(currentTurnRef, Option.none())),
       )
 
     // firegrid-effect-ai-native-agents.ACP_ADAPTER.7
