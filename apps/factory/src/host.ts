@@ -14,6 +14,11 @@ import {
   RuntimeIngressInputRowSchema,
 } from "@firegrid/protocol/runtime-ingress"
 import {
+  FiregridSessionIdSchema,
+  type FiregridSessionId,
+  type RuntimePermissionRequestObservation,
+} from "@firegrid/protocol/session-facade"
+import {
   FiregridLocalHostLive,
   RuntimeStartCapabilityLive,
   localProcessSpawnEnvFromHostEnv,
@@ -84,6 +89,7 @@ export type AcceptFactoryTriggerResult = Schema.Schema.Type<
 >
 
 export const FactoryPermissionRequestSchema = Schema.Struct({
+  sessionId: FiregridSessionIdSchema,
   contextId: Schema.String,
   activityAttempt: Schema.Number,
   sequence: Schema.Number,
@@ -110,6 +116,7 @@ type FactoryPermissionObservation = Schema.Schema.Type<
 >
 
 export const FactoryRunStatusViewSchema = Schema.Struct({
+  plannerSessionId: FiregridSessionIdSchema,
   run: DarkFactoryRunSchema,
   facts: Schema.Array(DarkFactoryFactSchema),
   runtimeRuns: Schema.Array(RuntimeRunEventSchema),
@@ -124,11 +131,26 @@ export type FactoryRunStatusView = Schema.Schema.Type<
 
 export const PermissionResponseInputSchema = Schema.Struct({
   factoryRunKey: FactoryRunKeyStringSchema,
-  contextId: Schema.String,
+  sessionId: Schema.optional(FiregridSessionIdSchema),
+  contextId: Schema.optional(Schema.String),
   permissionRequestId: Schema.String,
   decision: PermissionDecisionSchema,
   correlationId: Schema.optional(Schema.String),
-})
+}).pipe(
+  Schema.filter(input => {
+    if (input.sessionId === undefined && input.contextId === undefined) {
+      return "sessionId or contextId is required"
+    }
+    if (
+      input.sessionId !== undefined &&
+      input.contextId !== undefined &&
+      input.sessionId !== input.contextId
+    ) {
+      return "sessionId and contextId must match in v1"
+    }
+    return undefined
+  }),
+)
 export type PermissionResponseInput = Schema.Schema.Type<
   typeof PermissionResponseInputSchema
 >
@@ -162,6 +184,8 @@ export type FactoryNextAgentOutputWaitOptions = Schema.Schema.Type<
 const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map(millis => new Date(millis).toISOString()),
 )
+
+const decodeSessionId = Schema.decodeSync(FiregridSessionIdSchema)
 
 export const darkFactoryStreamUrl = (input: {
   readonly baseUrl: string
@@ -239,6 +263,14 @@ const createOrLoadPlannerSession = (input: {
       runtime: plannerRuntime(input.planner),
       createdBy: `dark-factory:${input.factoryRunKey}`,
     })
+  })
+
+const attachPlannerSession = (
+  sessionId: FiregridSessionId | string,
+) =>
+  Effect.gen(function* () {
+    const firegrid = yield* Firegrid
+    return yield* firegrid.sessions.attach({ sessionId })
   })
 
 const acceptedFactFrom = (input: {
@@ -356,10 +388,11 @@ export const acceptFactoryTrigger = (
       factoryRunKey: identity.factoryRunKey,
       planner,
     })
+    const plannerSessionId = session.sessionId
     const fact = acceptedFactFrom({
       trigger,
       factoryRunKey: identity.factoryRunKey,
-      contextId: session.contextId,
+      contextId: plannerSessionId,
       createdAt,
     })
     const factResult = yield* table.facts.insertOrGet(fact)
@@ -372,7 +405,7 @@ export const acceptFactoryTrigger = (
       trigger,
       factoryRunKey: identity.factoryRunKey,
       subscriberId: identity.subscriberId,
-      contextId: session.contextId,
+      contextId: plannerSessionId,
       createdAt,
     })
     const runResult = yield* table.runs.insertOrGet(initialRun)
@@ -454,6 +487,7 @@ const permissionFromRow = (
   const event = decodeAgentOutputWrapper(row)
   if (event?._tag !== "PermissionRequest") return undefined
   return {
+    sessionId: decodeSessionId(row.contextId),
     contextId: row.contextId,
     activityAttempt: row.activityAttempt,
     sequence: row.sequence,
@@ -472,6 +506,7 @@ const permissionFromObservation = (
   const observation: FactoryPermissionObservation = decoded.right
   if (observation.event._tag !== "PermissionRequest") return Option.none()
   return Option.some({
+    sessionId: decodeSessionId(observation.contextId),
     contextId: observation.contextId,
     activityAttempt: observation.activityAttempt,
     sequence: observation.sequence,
@@ -481,6 +516,11 @@ const permissionFromObservation = (
     event: observation.event,
   })
 }
+
+const permissionFromSessionObservation = (
+  observation: RuntimePermissionRequestObservation,
+): Option.Option<FactoryPermissionRequest> =>
+  permissionFromObservation(observation)
 
 const sortRuntimeEvents = <Row extends { readonly sequence: number }>(
   rows: ReadonlyArray<Row>,
@@ -504,8 +544,8 @@ export const readFactoryRunStatus = (
           row.factoryRunKey === factoryRunKey ||
           row.externalEntityKey === run.externalEntityKey)
         .sort((left, right) => left.createdAt.localeCompare(right.createdAt)))
-    const firegrid = yield* Firegrid
-    const snapshot = yield* firegrid.open(run.plannerContextId).snapshot
+    const session = yield* attachPlannerSession(run.plannerContextId)
+    const snapshot = yield* session.snapshot()
     const runtimeRuns = [...snapshot.runs]
       .sort((left, right) => left.activityAttempt - right.activityAttempt)
     const runtimeEvents = sortRuntimeEvents(snapshot.events)
@@ -517,6 +557,7 @@ export const readFactoryRunStatus = (
       return permission === undefined ? [] : [permission]
     })
     return {
+      plannerSessionId: session.sessionId,
       run,
       facts,
       runtimeRuns,
@@ -535,9 +576,16 @@ export const respondToFactoryPermission = (
       input,
     )
     const decision = decodedInput.decision
+    const sessionId = decodedInput.sessionId ?? decodedInput.contextId
+    if (sessionId === undefined) {
+      return yield* Effect.fail(new Error("sessionId or contextId is required"))
+    }
     const table = yield* DarkFactoryTable
     const createdAt = yield* nowIso
-    const identity = permissionResolutionIdentityFor(decodedInput)
+    const identity = permissionResolutionIdentityFor({
+      contextId: sessionId,
+      permissionRequestId: decodedInput.permissionRequestId,
+    })
     const fact: DarkFactoryFact = {
       factKey: identity.factKey,
       source: "darkFactory.permission",
@@ -545,7 +593,7 @@ export const respondToFactoryPermission = (
       externalEntityKey: decodedInput.factoryRunKey,
       eventType: "permission.resolved",
       factoryRunKey: decodedInput.factoryRunKey,
-      contextId: decodedInput.contextId,
+      contextId: sessionId,
       ...(decodedInput.correlationId === undefined
         ? {}
         : { correlationId: decodedInput.correlationId }),
@@ -556,14 +604,13 @@ export const respondToFactoryPermission = (
       },
     }
     yield* table.facts.insertOrGet(fact)
-    const firegrid = yield* Firegrid
-    const response = yield* firegrid.permissions.respond({
-      contextId: decodedInput.contextId,
+    const session = yield* attachPlannerSession(sessionId)
+    const response = yield* session.permissions.respond({
       permissionRequestId: decodedInput.permissionRequestId,
       decision,
       idempotencyKey: identity.idempotencyKey,
     })
-    const snapshot = yield* firegrid.open(decodedInput.contextId).snapshot
+    const snapshot = yield* session.snapshot()
     const ingress = snapshot.inputs.find(inputRow =>
       inputRow.inputId === response.inputId)
     if (ingress === undefined) {
@@ -600,9 +647,9 @@ export const waitForPermissionRequest = (
         Effect.fail(new Error(`factory run not found: ${decodedInput.factoryRunKey}`)),
       onSome: Effect.succeed,
     })
-    const firegrid = yield* Firegrid
+    const session = yield* attachPlannerSession(run.plannerContextId)
     const findExisting = Effect.gen(function* () {
-      const snapshot = yield* firegrid.open(run.plannerContextId).snapshot
+      const snapshot = yield* session.snapshot()
       return Option.fromNullable(
         snapshot.events
           .flatMap(row => {
@@ -626,18 +673,12 @@ export const waitForPermissionRequest = (
           )
         }
         const waitMs = Math.min(remainingMs, 500)
-        const waited = yield* firegrid.wait.for({
-          eventQuery: {
-            stream: FiregridRuntimeObservationSourceNames.agentOutputEvents,
-            whereFields: {
-              contextId: run.plannerContextId,
-              _tag: "PermissionRequest",
-            },
-          },
+        const waited = yield* session.wait.forPermissionRequest({
+          afterSequence,
           timeoutMs: waitMs,
         })
         if (waited.matched) {
-          const permission = permissionFromObservation(waited.event)
+          const permission = permissionFromSessionObservation(waited.request)
           if (
             Option.isSome(permission) &&
             permission.value.contextId === run.plannerContextId &&

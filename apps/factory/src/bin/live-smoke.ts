@@ -102,6 +102,7 @@ const program = Effect.gen(function* () {
   yield* Console.log(JSON.stringify({
     step: "accepted",
     factoryRunKey: accepted.run.factoryRunKey,
+    plannerSessionId: accepted.run.plannerContextId,
     plannerContextId: accepted.run.plannerContextId,
     factInserted: accepted.factInserted,
     runInserted: accepted.runInserted,
@@ -113,6 +114,7 @@ const program = Effect.gen(function* () {
   })
   yield* Console.log(JSON.stringify({
     step: "permission_request",
+    sessionId: permission.sessionId,
     contextId: permission.contextId,
     permissionRequestId: permission.permissionRequestId,
     toolUseId: permission.toolUseId,
@@ -126,7 +128,7 @@ const program = Effect.gen(function* () {
   )
   yield* respondToFactoryPermission({
     factoryRunKey: accepted.run.factoryRunKey,
-    contextId: permission.contextId,
+    sessionId: permission.sessionId,
     permissionRequestId: permission.permissionRequestId,
     decision,
     ...(accepted.run.correlationId === undefined

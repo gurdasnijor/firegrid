@@ -63,9 +63,11 @@ pnpm --filter @firegrid/factory smoke:hosted \
 ```
 
 The smoke writes a hosted `darkFactory.facts` accepted trigger, creates/loads
-one durable factory-run row and planner `RuntimeContext`, starts the planner,
+one durable factory-run row and planner Firegrid session, starts the planner,
 observes a durable ACP `PermissionRequest`, writes a `PermissionResponse`
-through `RuntimeIngress`, and waits for the next planner output.
+through the scoped session facade, and waits for the next planner output. The
+reported `sessionId` is the app-facing id; existing durable rows still carry
+the same encoded value as `plannerContextId` or `contextId`.
 
 The smoke composes Firegrid host/runtime/table layers directly. It does not
 start an app-specific `/factory/*` HTTP API; product/provider routes belong at

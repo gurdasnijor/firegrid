@@ -1,7 +1,10 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { RuntimeOutputTable } from "@firegrid/protocol/launch"
 import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
-import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
+import {
+  FiregridSessionIdSchema,
+  sessionContextIdForExternalKey,
+} from "@firegrid/protocol/session-facade"
 import { AgentOutputEventSchema, type AgentOutputEvent } from "@firegrid/runtime/agent-io"
 import { Effect, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -18,6 +21,7 @@ import {
   acceptFactoryTrigger,
   readFactoryRunStatus,
   respondToFactoryPermission,
+  waitForPermissionRequest,
 } from "./host.ts"
 import {
   FactoryRunKeySchema,
@@ -209,12 +213,13 @@ describe("dark factory P0 contracts", () => {
   it("firegrid-dark-factory-app.WAIT_AND_PERMISSION.2 schema-decodes permission resume and read-model contracts", () => {
     const permissionInput = Schema.decodeUnknownSync(PermissionResponseInputSchema)({
       factoryRunKey: triggerFactoryRunKey,
-      contextId: triggerPlannerContextId,
+      sessionId: triggerPlannerContextId,
       permissionRequestId: "permission-1",
       decision: { _tag: "Allow", optionId: "allow" },
     })
     const permission = Schema.decodeUnknownSync(FactoryPermissionRequestSchema)({
-      contextId: permissionInput.contextId,
+      sessionId: permissionInput.sessionId,
+      contextId: permissionInput.sessionId,
       activityAttempt: 1,
       sequence: 2,
       permissionRequestId: permissionInput.permissionRequestId,
@@ -254,6 +259,7 @@ describe("dark factory P0 contracts", () => {
       updatedAt: "2026-05-15T00:00:00.000Z",
     }
     const view = Schema.decodeUnknownSync(FactoryRunStatusViewSchema)({
+      plannerSessionId: triggerPlannerContextId,
       run,
       facts: [],
       runtimeRuns: [],
@@ -323,6 +329,7 @@ describe("dark factory P0 contracts", () => {
       plannerContextId: triggerPlannerContextId,
       status: "accepted",
     })
+    expect(result.status.plannerSessionId).toBe(triggerPlannerContextId)
     expect(result.status.facts).toHaveLength(1)
     expect(result.status.ingressInputs).toHaveLength(1)
     expect(result.status.ingressInputs[0]).toMatchObject({
@@ -347,9 +354,12 @@ describe("dark factory P0 contracts", () => {
           planner: { argv: ["node", "planner.js"], agentProtocol: "stdio-jsonl" },
           providerCapabilities: [],
         })
+        const sessionId = Schema.decodeSync(FiregridSessionIdSchema)(
+          accepted.run.plannerContextId,
+        )
         const input = {
           factoryRunKey: accepted.run.factoryRunKey,
-          contextId: accepted.run.plannerContextId,
+          sessionId,
           permissionRequestId: "permission-1",
           decision: { _tag: "Allow" as const, optionId: "allow" },
           correlationId: trigger.correlationId,
@@ -402,7 +412,7 @@ describe("dark factory P0 contracts", () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `factory-output-${crypto.randomUUID()}`
 
-    const status = await runWithHost(
+    const result = await runWithHost(
       namespace,
       Effect.gen(function* () {
         const accepted = yield* acceptFactoryTrigger({
@@ -433,12 +443,20 @@ describe("dark factory P0 contracts", () => {
             ],
           }),
         })
-        return yield* readFactoryRunStatus(accepted.run.factoryRunKey)
+        const status = yield* readFactoryRunStatus(accepted.run.factoryRunKey)
+        const permission = yield* waitForPermissionRequest({
+          factoryRunKey: accepted.run.factoryRunKey,
+          afterSequence: 9,
+          timeoutMs: 1,
+        })
+        return { status, permission }
       }),
     )
 
+    const status = result.status
     expect(status.permissions).toHaveLength(1)
     expect(status.permissions[0]).toMatchObject({
+      sessionId: triggerPlannerContextId,
       contextId: triggerPlannerContextId,
       activityAttempt: 1,
       sequence: 10,
@@ -446,5 +464,11 @@ describe("dark factory P0 contracts", () => {
       toolUseId: "tool-permission",
     })
     expect(status.permissions[0]?.options[0]?.optionId).toBe("allow")
+    expect(result.permission).toMatchObject({
+      sessionId: triggerPlannerContextId,
+      contextId: triggerPlannerContextId,
+      sequence: 10,
+      permissionRequestId: "permission-1",
+    })
   })
 })
