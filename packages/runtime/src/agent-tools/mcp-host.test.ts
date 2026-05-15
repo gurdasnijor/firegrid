@@ -33,7 +33,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { firegridHostLayer } from "../../../../src/host.ts"
 import {
   FiregridRuntimeHostWithWorkflowLive,
-} from "../runtime-host/index.ts"
+} from "../host/index.ts"
 import { WorkflowEngineTable } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { FiregridMcpServerLayer, runtimeContextMcpPath } from "./mcp-host.ts"
 

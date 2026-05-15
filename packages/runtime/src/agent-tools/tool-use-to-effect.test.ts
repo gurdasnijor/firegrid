@@ -28,13 +28,13 @@ import { Workflow } from "@effect/workflow"
 import { DurableTable } from "effect-durable-operators"
 import { Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import type { AgentOutputEvent, ToolResultEvent } from "../agent-io/index.ts"
-import { AgentToolCallPartSchema, ToolResultEventSchema } from "../agent-io/index.ts"
+import type { AgentOutputEvent, ToolResultEvent } from "../events/index.ts"
+import { AgentToolCallPartSchema, ToolResultEventSchema } from "../events/index.ts"
 import {
   DurableToolsWaitForLive,
   SourceCollections,
   sourceCollectionHandle,
-} from "../durable-tools/index.ts"
+} from "../waits/index.ts"
 import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
 import {

@@ -74,12 +74,12 @@ import {
 import {
   type AgentInputEvent,
   type AgentOutputEvent,
-} from "../agent-io/index.ts"
+} from "../events/index.ts"
 import {
   WaitFor,
   type DurableToolsTable,
   type FieldEqualsTrigger,
-} from "../durable-tools/index.ts"
+} from "../waits/index.ts"
 import { ScheduledInputWorkflow } from "./scheduled-input-workflow.ts"
 import { AgentToolHost } from "./tool-host.ts"
 import {

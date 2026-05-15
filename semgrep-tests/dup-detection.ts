@@ -218,6 +218,23 @@ const otherWorkflowExecution = engine.execute(OtherWorkflow, {
   payload: {},
 })
 
+declare const runtimeOutputTable: {
+  readonly events: {
+    readonly upsert: (row: unknown) => unknown
+  }
+}
+type RuntimeIngressTable = {
+  readonly Type: unknown
+}
+
+// ruleid: firegrid-runtime-owned-table-writes-use-authorities
+const directRuntimeOutputWrite = runtimeOutputTable.events.upsert({})
+
+type RuntimeSubscriberWithTableFacade = {
+  // ruleid: firegrid-runtime-subscribers-transforms-no-table-facades
+  readonly table: RuntimeIngressTable["Type"]
+}
+
 // ruleid: firegrid-no-random-durable-identity
 const randomHostId = `host_${crypto.randomUUID()}`
 
@@ -326,6 +343,7 @@ export {
   exhaustiveMatch,
   focusedTryPromise,
   directRuntimeContextWorkflowExecution,
+  directRuntimeOutputWrite,
   globalDynamicEnv,
   globalEnv,
   inlineIngressUrl,
@@ -352,4 +370,8 @@ export {
   validatedStreamAuthoritySchema,
   visibleMutableState,
   wallClockMillis,
+}
+
+export type {
+  RuntimeSubscriberWithTableFacade,
 }

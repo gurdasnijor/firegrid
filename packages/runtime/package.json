@@ -10,24 +10,24 @@
       "default": "./src/index.ts"
     },
     "./runtime-host": {
-      "types": "./src/runtime-host/index.ts",
-      "default": "./src/runtime-host/index.ts"
+      "types": "./src/host/index.ts",
+      "default": "./src/host/index.ts"
     },
     "./workflow-engine": {
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"
     },
     "./durable-tools": {
-      "types": "./src/durable-tools/index.ts",
-      "default": "./src/durable-tools/index.ts"
+      "types": "./src/waits/index.ts",
+      "default": "./src/waits/index.ts"
     },
     "./agent-io": {
-      "types": "./src/agent-io/index.ts",
-      "default": "./src/agent-io/index.ts"
+      "types": "./src/events/index.ts",
+      "default": "./src/events/index.ts"
     },
     "./agent-codecs": {
-      "types": "./src/agent-codecs/index.ts",
-      "default": "./src/agent-codecs/index.ts"
+      "types": "./src/codecs/index.ts",
+      "default": "./src/codecs/index.ts"
     },
     "./agent-adapters": {
       "types": "./src/agent-adapters/index.ts",
@@ -38,8 +38,8 @@
       "default": "./src/agent-tools/index.ts"
     },
     "./providers/sandboxes": {
-      "types": "./src/providers/sandboxes/index.ts",
-      "default": "./src/providers/sandboxes/index.ts"
+      "types": "./src/sources/sandbox/index.ts",
+      "default": "./src/sources/sandbox/index.ts"
     }
   },
   "files": [

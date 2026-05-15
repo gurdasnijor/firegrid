@@ -1,6 +1,6 @@
 import type { RuntimeEventRow } from "@firegrid/protocol/launch"
 import { Either, Option, Schema } from "effect"
-import { AgentOutputEventSchema, type AgentOutputEvent } from "../agent-io/index.ts"
+import { AgentOutputEventSchema, type AgentOutputEvent } from "./contract.ts"
 
 export const RuntimeAgentOutputEnvelopeSchema = Schema.Struct({
   type: Schema.Literal("firegrid.agent-output"),

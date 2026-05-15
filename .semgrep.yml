@@ -440,6 +440,65 @@ rules:
       Resolve through requireLocalContext before executing local host services.
     pattern: $ENGINE.execute(RuntimeContextWorkflow, ...)
 
+  - id: firegrid-runtime-owned-table-writes-use-authorities
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-runtime-agent-event-pipeline.AUTHORITIES.1
+      quality-acid: firegrid-runtime-agent-event-pipeline.ENFORCEMENT.2
+      category: runtime-authority
+      rationale: |
+        Runtime-owned DurableTable writes must route through the authority
+        module for that table family so durable commits have one owner.
+      fix-hint: |
+        Use RuntimeOutputJournal, RuntimeIngressAppender,
+        RuntimeIngressDeliveryTracker, RuntimeControlPlaneRecorder, or
+        DurableWaitStore.
+    paths:
+      include:
+        - "/packages/runtime/src/**/*.ts"
+        - "/packages/runtime/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+        - "/packages/runtime/src/authorities/**"
+    message: |
+      Runtime-owned DurableTable writes must go through the owning runtime
+      authority module.
+    pattern-regex: '\.(contexts|runs|events|logs|inputs|deliveries|waits|completions)\.(insert|insertOrGet|upsert|delete)\s*\('
+
+  - id: firegrid-runtime-subscribers-transforms-no-table-facades
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-runtime-agent-event-pipeline.ENFORCEMENT.4
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: runtime-authority
+      rationale: |
+        Runtime subscribers and transforms should consume read surfaces and
+        authority command APIs. Accepting runtime table facades lets them become
+        hidden durable read/write owners.
+      fix-hint: |
+        Pass SourceCollectionHandle read surfaces plus narrow authority command
+        functions from host/pipeline composition.
+    paths:
+      include:
+        - "/packages/runtime/src/subscribers/**/*.ts"
+        - "/packages/runtime/src/transforms/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Subscribers and transforms must not accept runtime-owned DurableTable
+      facades. Use read/observation handles plus authority APIs.
+    pattern-regex: 'Runtime(?:ControlPlane|Output|Ingress)Table\[["'']Type["'']\]'
+
   - id: firegrid-factory-exported-contracts-use-schema
     languages: [typescript]
     severity: ERROR
