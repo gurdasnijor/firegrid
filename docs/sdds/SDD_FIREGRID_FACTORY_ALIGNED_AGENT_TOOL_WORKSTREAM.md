@@ -45,6 +45,10 @@ This follows the Fireline choreography lesson:
 - `/Users/gnijor/gurdasnijor/fireline/vault/canon/concepts/choreography-vs-orchestration.md`
 - `packages/runtime/src/agent-tools/tools.ts`
 - `packages/runtime/src/agent-tools/tool-use-to-effect.ts`
+- `packages/runtime/src/agent-io/contract.ts`
+- `packages/runtime/src/agent-io/codec.ts`
+- `packages/runtime/src/agent-codecs/acp/index.ts`
+- `packages/runtime/src/agent-codecs/stdio-jsonl/index.ts`
 - `packages/runtime/src/runtime-host/index.ts`
 - `features/firegrid/firegrid-workflow-driven-runtime.feature.yaml`
 
@@ -85,6 +89,21 @@ It also aligns with the current Flamecast SDK surface:
 
 The tool definitions and lowering should remain schema-owned and flow through
 Effect AI `Tool` / `Toolkit`.
+
+Firegrid also already has the protocol-neutral event contract for agent I/O:
+`AgentCodec` maps ACP, stdio-jsonl, and future wire formats into
+`AgentOutputEvent` / `AgentInputEvent`. `AcpCodec` can emit
+`PermissionRequest` events and accept `PermissionResponse` input; the
+stdio-jsonl codec can emit text, tool, status, error, completion, and
+termination events.
+
+The important runtime gap is not the lack of a durable journal. The runtime
+host already writes `ProcessOutputChunk` rows to `RuntimeOutputTable`. The gap
+is that the host does not yet select a codec, open the agent byte stream, and
+materialize decoded `AgentOutputEvent` values as structured durable output.
+Until that bridge exists, ACP permission requests are modeled in the codec
+surface but are not yet durable session-plane observations that a planner or
+product shell can wait on.
 
 The live host implementation is the gap:
 
@@ -140,6 +159,61 @@ Expected outcome:
 - ACP can present a `LanguageModel.Service` view.
 - Existing `AcpCodec` remains exported.
 - Runtime-host integration is still deferred.
+
+### 1A. Runtime Codec Event Plane
+
+ACID: `firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1`
+
+The factory path needs real agent protocol events to become durable session
+observations. This is especially important for permissions: `AcpCodec` already
+knows how to turn ACP `requestPermission` into an `AgentOutputEvent`, but the
+runtime host currently journals raw process output rather than decoded codec
+events.
+
+This slice connects existing primitives instead of introducing a new event
+system:
+
+- the launch contract selects the agent protocol or codec separately from the
+  process/sandbox backend;
+- runtime host starts the process through `SandboxProvider` as it does today;
+- for codec-backed launches, runtime host opens the selected `AgentCodec`
+  against the process byte stream;
+- prompt ingress, tool results, permission responses, cancellation, and
+  termination flow into `codec.send`;
+- decoded `AgentOutputEvent` values are journaled as structured durable runtime
+  output rows;
+- `ToolUse` events lower through the existing agent-tool path and write
+  `ToolResult` input back to the codec only for codecs that support
+  `ToolResult` input; ACP tool calls are journaled as observations until a real
+  ACP tool-result seam exists;
+- `PermissionRequest` events become durable observable state that products,
+  humans, or agents can resolve by writing `PermissionResponse` ingress;
+- raw process-output journaling remains available for plain local-process
+  compatibility.
+
+Expected outcome:
+
+- ACP permissions, tool calls, completion, and status updates are observable
+  through the same durable runtime/session history as local process output.
+- A planning agent can use `wait_for` over durable observations rather than
+  relying on hidden callback markers or protocol-specific side channels.
+- No Flamecast-specific permission table, custom ACP protocol, or new factory
+  orchestrator is introduced.
+
+Implementation boundary for the first slice:
+
+- add the minimal launch/runtime discriminator needed to choose raw process,
+  stdio-jsonl codec, or ACP codec execution;
+- keep the existing raw `streamSandboxProcess` path for raw local-process
+  commands;
+- add a codec-backed runtime path that opens process bytes, opens the selected
+  `AgentCodec`, forwards runtime ingress into `codec.send`, and journals
+  decoded `AgentOutputEvent` values;
+- route `ToolUse` through the existing agent-tool lowering only for codecs that
+  support `ToolResult` input; ACP `ToolUse` must not claim round-trip support
+  unless `AcpCodec.send(ToolResult)` is implemented;
+- do not delete `agent-adapters/acp`, remove `RuntimeContextWorkflow`, or
+  refactor host layer topology in this slice.
 
 ### 2. Session Creation Tool
 

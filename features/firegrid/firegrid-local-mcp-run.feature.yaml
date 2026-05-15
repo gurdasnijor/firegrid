@@ -1,7 +1,7 @@
 feature:
   name: firegrid-local-mcp-run
   product: firegrid
-  description: A unified Firegrid CLI start subcommand that composes the runtime host, route-scoped MCP server, optional embedded Durable Streams, and a host-bound RuntimeContext for MCP inspector or client use.
+  description: A unified Firegrid CLI run/start surface that composes the runtime host, route-scoped MCP server, optional embedded Durable Streams, and schema-owned RuntimeContext launch contract.
 
 components:
   LOCAL_COMMAND:
@@ -11,6 +11,12 @@ components:
       3: The start subcommand is usable with no agent argv; in that mode it seeds a minimal no-op RuntimeContext through production primitives and prints the MCP URL.
       4: Optional agent argv and run flags customize the seeded RuntimeContext intent; contextId is still produced by the start subcommand, not supplied by env.
       5: The start subcommand is an MCP context bootstrap, not a synchronous run path; it creates a host-bound RuntimeContext for tool authority without automatically calling startRuntime.
+
+  RUN_COMMAND:
+    requirements:
+      1: The unified Firegrid CLI exposes a synchronous run subcommand from the primary run.ts entrypoint that creates a host-bound RuntimeContext, starts runtime execution, waits for terminal evidence, and exits with the runtime exit code.
+      2: "The run subcommand has local-development parity with start: when DURABLE_STREAMS_BASE_URL is absent it can acquire an embedded loopback DurableStreamTestServer, and when the endpoint is provided it attaches to the configured endpoint."
+      3: "The run subcommand has host-authority parity with passive host mode: context creation, host binding, prompt ingress, MCP attachment, and runtime execution use the same production primitives as the host/control-event path."
 
   EMBEDDED_DURABLE_STREAMS:
     requirements:
@@ -22,6 +28,16 @@ components:
     requirements:
       1: The printed MCP URL has the route shape /mcp/runtime-context/:contextId by default.
       2: Tool catalog and execution are provided by FiregridMcpServerLayer and Effect AI McpServer composition; the local command does not implement JSON-RPC, tools/list, or tools/call.
+      3: Firegrid-launched agents receive the generated route-scoped Firegrid MCP server in their launch configuration by default when the selected adapter/backend supports MCP setup.
+      4: User-provided MCP servers are additive to Firegrid's generated runtime-context MCP server; callers do not need to pass Firegrid's own MCP URL explicitly.
+
+  LAUNCH_CONFIG:
+    requirements:
+      1: "CLI launch arguments and durable RuntimeContext launch ingress normalize through a shared schema-owned Firegrid-neutral MCP server declaration shaped as name plus server { type: url, url, headers? } before adapter-specific lowering."
+      2: "ACP-backed launches lower Firegrid-neutral MCP server declarations into ACP session setup shapes such as { type: http }, while CLI-backed launches lower the same declarations into that CLI/backend's native MCP setup surface."
+      3: The source of truth for launch parsing and validation is the schema family in packages/protocol/src/launch/schema.ts; src/run.ts must decode/validate CLI-derived launch input through those schemas instead of constructing an unchecked parallel shape.
+      4: CLI parsing remains a thin Effect CLI command layer over the protocol launch schemas; command options and positional argv are converted into schema input and then decoded/normalized through Effect Schema.
+      5: Firegrid's generated runtime-context MCP server is injected during launch normalization before adapter-specific lowering, leaving room for future non-ACP adapters without changing the public launch contract.
 
 constraints:
   EFFECT_COMPOSITION:

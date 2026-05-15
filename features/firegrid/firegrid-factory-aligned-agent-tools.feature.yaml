@@ -8,6 +8,10 @@ components:
     requirements:
       1: ACP adapter proof provides an Effect AI LanguageModel.Service view for ACP-backed agents while keeping AcpCodec exported and deferring runtime-host integration.
 
+  RUNTIME_CODEC:
+    requirements:
+      1: Runtime host integration consumes codec-backed AgentOutputEvent streams for ACP and stdio-jsonl launches, journals structured durable output rows, routes ToolUse through agent-tool lowering only for codecs that support ToolResult input, and represents PermissionRequest as durable observable state that can be matched or resumed through runtime ingress.
+
   SESSION:
     requirements:
       1: The live runtime host implementation exposes a session-plane child creation tool that creates a child RuntimeContext, propagates parent/correlation metadata, and returns a session-shaped handle with context authority, status, and projection metadata.
