@@ -1,9 +1,6 @@
-'use client'
+"use client"
 
-import { cn } from '@/lib/utils'
-import Link from 'next/link'
-import { Factory, Github, BookOpen, Settings } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Factory } from "lucide-react"
 
 export function Header() {
   return (
@@ -20,24 +17,6 @@ export function Header() {
             BETA
           </span>
         </div>
-
-        <nav className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" asChild>
-            <Link href="#">
-              <BookOpen className="w-4 h-4 mr-2" />
-              Docs
-            </Link>
-          </Button>
-          <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground" asChild>
-            <Link href="#">
-              <Github className="w-4 h-4 mr-2" />
-              GitHub
-            </Link>
-          </Button>
-          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
-            <Settings className="w-4 h-4" />
-          </Button>
-        </nav>
       </div>
     </header>
   )

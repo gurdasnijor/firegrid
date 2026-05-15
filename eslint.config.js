@@ -522,6 +522,8 @@ export default tseslint.config(
       "node_modules/**",
       "coverage/**",
       "**/dist/**",
+      "**/.next/**",
+      "apps/**/next-env.d.ts",
       ".worktrees/**",
       "repos/**",
     ],
