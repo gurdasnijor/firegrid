@@ -18,12 +18,8 @@ Related source inputs:
 - `packages/runtime/src/agent-tools/tools.ts`
 - `packages/runtime/src/runtime-host/observation-sources.ts`
 - `packages/runtime/src/verified-webhook-ingest/README.md`
-
-The recipes `docs/recipes/runtime-permission-resume.md` and
-`docs/recipes/durable-webhook-facts-and-wait-for.md` were requested as inputs
-but are not present on `origin/main` at the time of this draft. This SDD uses
-the merged runtime observation sources from #232 and the existing verified
-webhook ingest README instead.
+- `docs/recipes/runtime-permission-resume.md`
+- `docs/recipes/durable-webhook-facts-and-wait-for.md`
 
 ## Purpose
 
@@ -100,9 +96,12 @@ calls.
 
 ## Target Package
 
-Target location: `apps/factory`, using the UI scaffold from PR #236 when it
-lands. Earlier drafts used `apps/dark-factory`; implementation should avoid
-creating a second app shell if the scaffold is available.
+Target location: `apps/factory`, using the UI scaffold from PR #236 only when
+it is available and green. Earlier drafts used `apps/dark-factory`;
+implementation should avoid creating a second app shell if the scaffold is
+available. If the scaffold is absent, the first slice should still prove the
+app substrate through hosted durable row writes/reads and runtime
+ingress/output, not by inventing a Firegrid-owned app HTTP API.
 
 The app should follow existing workspace conventions: private package, local
 `tsconfig.json`, `src/` modules, focused tests, and root workspace inclusion
@@ -118,7 +117,7 @@ The first app surface must be production-shaped:
   configured credentials from the app environment or deployment secret store;
 - a parent planner `RuntimeContext` launch path through Firegrid runtime host
   primitives;
-- a live observation UI built from app facts plus
+- a live observation UI or read-model projection built from app facts plus
   `RuntimeObservationSourceNames`.
 
 The PR #236 scaffold is useful for visual structure: active agents, progress,
@@ -476,15 +475,10 @@ as:
 Permission resume writes ordinary runtime ingress:
 
 ```ts
-appendRuntimeIngress({
+yield* firegrid.permissions.respond({
   contextId,
-  kind: "control",
-  authoredBy: "client",
-  payload: {
-    _tag: "PermissionResponse",
-    permissionRequestId,
-    decision: { _tag: "Allow", optionId: "allow" },
-  },
+  permissionRequestId,
+  decision: { _tag: "Allow", optionId: "allow" },
   idempotencyKey: `dark-factory:permission:${contextId}:${permissionRequestId}`,
 })
 ```
@@ -508,8 +502,9 @@ The display payload must include:
 - `permissionRequestId`;
 - `contextId`;
 - `factoryRunKey`;
-- `correlationId`, if provided by the planner or app;
-- prompt/body text, including the plan or decision being approved;
+- `correlationId`, if provided by the planner or app fact;
+- prompt/body text only when the planner or app has persisted it in an
+  app-owned fact;
 - choices/options with stable ids and labels;
 - requestedBy/source, such as planner context id or tool call id;
 - status (`requested`, `resolved`, `expired`, or `cancelled`) when projected
@@ -559,9 +554,11 @@ The production-shaped flow is:
    external event key.
 3. The app creates or loads one durable factory-run subscriber identity for
    the external work key and resolves its planner `contextId`.
-4. The planner context is launched by the host/control-plane path:
-   `insertLocalRuntimeContext` or `Firegrid.launch`, optional initial
-   `appendRuntimeIngress`, and `startRuntime`.
+4. The planner context is launched through the client session facade composed
+   with the factory host: `firegrid.sessions.createOrLoad`, scoped
+   `session.prompt`, and `session.start`. That facade lowers to the
+   host/control-plane path without app code rebuilding RuntimeContext or
+   RuntimeIngress identity.
 5. The planner receives the canonical Firegrid tools and app-specific
    capability instructions. It may call `session_new`, `session_prompt`,
    `wait_for`, `schedule_me`, and `execute` where supported by the current
@@ -615,11 +612,12 @@ control flow.
 ## Progress Tracking Surface
 
 The first implementation should use the PR #236 `apps/factory` UI scaffold as
-the operator progress surface. A JSON/read-model route can support the UI if it
-is helpful, but the acceptance surface is the live app UI reading durable rows,
-not a standalone CLI or static simulation.
+the operator progress surface when that scaffold is available. If it is absent,
+the first slice should expose a read-model/programmer projection over durable
+rows and prove it through hosted smoke evidence. A standalone CLI simulation or
+custom Firegrid-owned `/factory/*` HTTP API is not sufficient app evidence.
 
-Minimum UI views:
+Minimum UI or read-model views:
 
 - run lookup by `contextId` and by external work key;
 - run summary;
@@ -721,8 +719,9 @@ The implementation acceptance must use:
 
 The acceptance proof must not use:
 
-- fixture Linear/GitHub event payloads as the replacement for live provider
-  ingest;
+- fixture Linear/GitHub event payloads as simulated product progress; a
+  fixture-shaped payload may exercise a live provider-shaped route when real
+  webhook delivery is unsafe;
 - deterministic fake planners as the planner acceptance proof;
 - local Durable Streams as the app acceptance substrate;
 - committed bearer tokens, webhook secrets, OAuth tokens, PATs, or generated
