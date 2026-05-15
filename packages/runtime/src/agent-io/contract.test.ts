@@ -14,6 +14,7 @@ import {
   AgentCapabilitiesSchema,
   AgentInputEventSchema,
   AgentOutputEventSchema,
+  AgentToolUseModeSchema,
 } from "./contract.ts"
 
 const decodes = <A, I>(schema: Schema.Schema<A, I>, input: unknown): Promise<A> =>
@@ -147,5 +148,17 @@ describe("AgentCapabilities", () => {
       // missing other fields
     })
     expect(error).toBeDefined()
+  })
+})
+
+describe("AgentToolUseMode", () => {
+  it("firegrid-runtime-agent-event-pipeline.STAGES.3-9 uses the exact protocol mode taxonomy names", async () => {
+    await expect(decodes(AgentToolUseModeSchema, "observation_only")).resolves
+      .toBe("observation_only")
+    await expect(decodes(AgentToolUseModeSchema, "client_result_roundtrip")).resolves
+      .toBe("client_result_roundtrip")
+    await expect(decodes(AgentToolUseModeSchema, "control_channel_request_response")).resolves
+      .toBe("control_channel_request_response")
+    await expect(rejects(AgentToolUseModeSchema, "client_result")).resolves.toBeDefined()
   })
 })

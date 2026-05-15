@@ -165,7 +165,7 @@ const mapSessionUpdate = (
           id: update.toolCallId,
           name: update.title,
           params: update.rawInput,
-          providerExecuted: false,
+          providerExecuted: true,
         }),
       }])),
     Match.when({ sessionUpdate: "tool_call_update" }, update =>
@@ -413,6 +413,10 @@ export const AcpCodec: AgentCodec = {
         ),
       )
 
-      return { send, outputs }
+      return {
+        toolUseMode: "observation_only",
+        send,
+        outputs,
+      }
     }),
 }

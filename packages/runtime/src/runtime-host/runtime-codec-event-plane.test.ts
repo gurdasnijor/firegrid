@@ -10,12 +10,10 @@ import {
   type RuntimeAgentProtocol,
   type RuntimeEventRow,
 } from "@firegrid/protocol/launch"
-import { Effect, Fiber, Schema } from "effect"
+import { Effect, Fiber, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import {
-  AgentOutputEventSchema,
-  type AgentOutputEvent,
-} from "../agent-io/index.ts"
+import { type AgentOutputEvent } from "../agent-io/index.ts"
+import { decodeRuntimeAgentOutputEnvelope } from "../events/output.ts"
 import {
   FiregridRuntimeHostWithWorkflowLive,
   appendRuntimeIngress,
@@ -120,10 +118,8 @@ const queryRawEvents = (input: {
   )
 
 const decodeAgentEvent = (raw: string): AgentOutputEvent | undefined => {
-  const decoded = Schema.decodeUnknownEither(AgentOutputEventSchema)(
-    (JSON.parse(raw) as { readonly event?: unknown }).event,
-  )
-  return decoded._tag === "Right" ? decoded.right : undefined
+  const decoded = decodeRuntimeAgentOutputEnvelope(raw)
+  return Option.isSome(decoded) ? decoded.value : undefined
 }
 
 const queryAgentEvents = (input: {
@@ -274,6 +270,25 @@ class Agent {
     return {}
   }
   async prompt(params) {
+    await this.connection.sessionUpdate({
+      sessionId: params.sessionId,
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-observed",
+        title: "sleep",
+        kind: "execute",
+        status: "completed",
+        rawInput: { durationMs: "not-a-number" },
+      },
+    })
+    await this.connection.sessionUpdate({
+      sessionId: params.sessionId,
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-observed",
+        status: "completed",
+      },
+    })
     const permission = await this.connection.requestPermission({
       sessionId: params.sessionId,
       toolCall: {
@@ -346,6 +361,17 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
 
     expect(result).toMatchObject({ contextId, exitCode: 0 })
     const events = await Effect.runPromise(queryAgentEvents({ namespace, hostId, contextId }))
+    const observedToolCall = events.find(event =>
+      event._tag === "ToolUse" && event.part.id === "tool-observed",
+    )
+    expect(observedToolCall).toBeDefined()
+    if (observedToolCall?._tag === "ToolUse") {
+      expect(observedToolCall.part.providerExecuted).toBe(true)
+    }
+    expect(events).toContainEqual(expect.objectContaining({
+      _tag: "Status",
+      kind: "tool_call_update",
+    }))
     expect(events).toContainEqual(expect.objectContaining({
       _tag: "PermissionRequest",
       permissionRequestId: "permission-1",

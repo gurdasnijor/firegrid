@@ -9,7 +9,12 @@
 
 import type { Toolkit } from "@effect/ai"
 import { Schema, type Effect, type Scope, type Stream } from "effect"
-import type { AgentInputEvent, AgentOutputEvent, AgentCapabilities } from "./contract.ts"
+import type {
+  AgentCapabilities,
+  AgentInputEvent,
+  AgentOutputEvent,
+  AgentToolUseMode,
+} from "./contract.ts"
 import type { AgentByteStream } from "./byte-stream.ts"
 
 /**
@@ -58,6 +63,11 @@ export interface AgentCodecOpenOptions {
 }
 
 export interface AgentSession {
+  /**
+   * firegrid-runtime-agent-event-pipeline.STAGES.3-7
+   * firegrid-runtime-agent-event-pipeline.STAGES.3-8
+   */
+  readonly toolUseMode: AgentToolUseMode
   /** Push an input event. The codec encodes and writes to the agent. */
   readonly send: (event: AgentInputEvent) => Effect.Effect<void, AgentCodecError>
   /**

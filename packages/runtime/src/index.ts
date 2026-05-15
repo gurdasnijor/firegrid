@@ -103,6 +103,14 @@ export {
   StdioJsonlCodec,
 } from "./agent-codecs/index.ts"
 export {
+  RuntimeAgentOutputEnvelopeSchema,
+  decodeRuntimeAgentOutputEnvelope,
+  encodeRuntimeAgentOutputEnvelope,
+  runtimeAgentOutputObservationFromRow,
+  type RuntimeAgentOutputEnvelope,
+  type RuntimeAgentOutputObservation,
+} from "./events/output.ts"
+export {
   AdapterCancelled,
   AgentAdapter,
   AgentAdapterRegistry,
