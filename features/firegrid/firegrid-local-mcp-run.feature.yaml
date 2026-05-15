@@ -38,6 +38,8 @@ components:
       3: The source of truth for launch parsing and validation is the schema family in packages/protocol/src/launch/schema.ts; src/run.ts must decode/validate CLI-derived launch input through those schemas instead of constructing an unchecked parallel shape.
       4: CLI parsing remains a thin Effect CLI command layer over the protocol launch schemas; command options and positional argv are converted into schema input and then decoded/normalized through Effect Schema.
       5: Firegrid's generated runtime-context MCP server is injected during launch normalization before adapter-specific lowering, leaving room for future non-ACP adapters without changing the public launch contract.
+      6: The run subcommand accepts an opaque --agent NAME selector and preserves it in the schema-decoded launch config without introducing an agent registry or ACP-specific public schema.
+      7: A public-command smoke scaffold covers the intended codex-acp launch shape with default Firegrid MCP attachment; full ACP execution may remain pending on the runtime codec integration lane.
 
 constraints:
   EFFECT_COMPOSITION:
@@ -55,3 +57,4 @@ constraints:
     requirements:
       1: A public-command smoke starts `pnpm firegrid -- start` without DURABLE_STREAMS_BASE_URL, parses the ready record, connects with the real MCP SDK, lists the six canonical tools, and calls sleep successfully.
       2: A public-command smoke starts `pnpm firegrid -- start` with DURABLE_STREAMS_BASE_URL provided and proves the command attaches to the configured endpoint instead of starting embedded Durable Streams.
+      3: A public-command smoke for `pnpm firegrid -- run --prompt TEXT --agent NAME -- <command>` proves the durable RuntimeContext row contains the default firegrid-runtime-context MCP declaration and preserves the opaque agent selector.

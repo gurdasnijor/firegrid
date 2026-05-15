@@ -25,58 +25,25 @@
 //     RunConfig without going through argv at all.
 
 import {
-  RuntimeEnvBindingSchema,
+  decodeRunConfig,
   local,
   normalizeRuntimeIntent,
+  RunAuthorizedBindingSchema,
+  RunConfigSchema,
   type RuntimeContextIntent,
   type RuntimeEnvBinding,
+  type RunAuthorizedBinding,
+  type RunConfig,
 } from "@firegrid/protocol/launch"
 import type { RuntimeIngressRequest } from "@firegrid/protocol/runtime-ingress"
-import { Schema } from "effect"
 
-// POSIX-ish env-var identifier shape — same regex the resolver enforces,
-// duplicated locally so schema validation doesn't require pulling
-// resolver internals into the protocol/CLI boundary.
-const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
-
-const EnvVarName = Schema.String.pipe(
-  Schema.filter((value) =>
-    ENV_NAME_RE.test(value)
-      ? undefined
-      : `not a valid env-var identifier: ${value}`),
-)
-
-// (childEnvVarName, hostEnvVarName) pair. Authorization is over the
-// exact pair so a row cannot route an authorized host env into an
-// unapproved child target.
-export const RunAuthorizedBindingSchema = Schema.Tuple(EnvVarName, EnvVarName)
-export type RunAuthorizedBinding = Schema.Schema.Type<typeof RunAuthorizedBindingSchema>
-
-export const RunConfigSchema = Schema.Struct({
-  // The agent command (everything after `--`). Non-empty.
-  agentArgv: Schema.Array(Schema.String).pipe(
-    Schema.filter((argv) =>
-      argv.length > 0 ? undefined : "agentArgv must be non-empty"),
-  ),
-  // RuntimeContext.runtime.config.cwd passthrough. Optional.
-  cwd: Schema.optional(Schema.String.pipe(
-    Schema.filter((value) =>
-      value.length > 0 ? undefined : "cwd must be a non-empty path"),
-  )),
-  // If present, written as an initial RuntimeIngressTable input row
-  // (kind: "message", authoredBy: "client") BEFORE startRuntime fires.
-  // Delivered to the child via the existing local-process stdin
-  // delivery — same path long-running runtimes use for live input.
-  prompt: Schema.optional(Schema.String),
-  // Durable env bindings persisted on RuntimeContext.runtime.config.envBindings.
-  envBindings: Schema.optional(Schema.Array(RuntimeEnvBindingSchema)),
-  // (target, source) pairs the runtime host has authorized for this
-  // invocation. Each entry corresponds to one --secret-env grant.
-  authorizedBindings: Schema.optional(Schema.Array(RunAuthorizedBindingSchema)),
-})
-export type RunConfig = Schema.Schema.Type<typeof RunConfigSchema>
-
-export const decodeRunConfig = Schema.decodeUnknown(RunConfigSchema)
+export {
+  decodeRunConfig,
+  RunAuthorizedBindingSchema,
+  RunConfigSchema,
+  type RunAuthorizedBinding,
+  type RunConfig,
+}
 
 // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
 // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
@@ -94,9 +61,12 @@ export const runConfigToRuntimeContextIntent = (
   normalizeRuntimeIntent(local.jsonl({
     argv: [...config.agentArgv],
     ...(config.cwd === undefined ? {} : { cwd: config.cwd }),
+    ...(config.agent === undefined ? {} : { agent: config.agent }),
+    ...(config.agentProtocol === undefined ? {} : { agentProtocol: config.agentProtocol }),
     ...(config.envBindings === undefined
       ? {}
       : { envBindings: config.envBindings.map((b): RuntimeEnvBinding => ({ name: b.name, ref: b.ref })) }),
+    ...(config.mcpServers === undefined ? {} : { mcpServers: [...config.mcpServers] }),
   }))
 
 export const firegridRunCreatedBy = "firegrid-run"

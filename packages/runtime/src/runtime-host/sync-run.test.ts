@@ -57,6 +57,14 @@ describe("RunConfig schema decoding", () => {
     expect(Either.isRight(decoded)).toBe(true)
   })
 
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.6 accepts an opaque --agent selector", () => {
+    const decoded = decode({
+      agentArgv: ["npx", "-y", "@zed-industries/codex-acp@0.14.0"],
+      agent: "codex-acp",
+    })
+    expect(Either.isRight(decoded)).toBe(true)
+  })
+
   it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 rejects an authorizedBindings pair whose target is not an env-var identifier", () => {
     const decoded = decode({
       agentArgv: ["node"],
@@ -98,6 +106,34 @@ describe("runConfigToRuntimeContextIntent", () => {
     const intent = runConfigToRuntimeContextIntent(validBase)
     expect("cwd" in intent.config).toBe(false)
     expect("envBindings" in intent.config).toBe(false)
+  })
+
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.5 firegrid-local-mcp-run.LAUNCH_CONFIG.6 threads agent and MCP declarations toward the runtime config", () => {
+    const intent = runConfigToRuntimeContextIntent({
+      ...validBase,
+      agent: "codex-acp",
+      agentProtocol: "acp",
+      mcpServers: [
+        {
+          name: "firegrid-runtime-context",
+          server: {
+            type: "url",
+            url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
+          },
+        },
+      ],
+    })
+    expect(intent.config.agent).toBe("codex-acp")
+    expect(intent.config.agentProtocol).toBe("acp")
+    expect(intent.config.mcpServers).toEqual([
+      {
+        name: "firegrid-runtime-context",
+        server: {
+          type: "url",
+          url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
+        },
+      },
+    ])
   })
 })
 
