@@ -1,50 +1,44 @@
 /**
- * Synchronous Firegrid run entrypoint (Phase 2 MVP).
+ * Unified Firegrid CLI entrypoint.
  *
  * Usage:
  *
- *   pnpm firegrid:run -- node -e 'console.log(JSON.stringify({hello:"firegrid"}))'
+ *   pnpm firegrid -- run -- node -e 'console.log(JSON.stringify({hello:"firegrid"}))'
+ *   pnpm firegrid -- start
+ *   pnpm firegrid -- start -- [agent command...]
  *
- *   pnpm firegrid:run \
- *     --secret-env ANTHROPIC_API_KEY \
- *     --cwd /work/agent \
- *     --prompt "summarize the diff" \
- *     -- node agent.mjs
+ * Compatibility scripts:
  *
- *   pnpm firegrid:run \
- *     --secret-env ANTHROPIC_API_KEY=PARENT_ANTHROPIC_KEY \
- *     -- node agent.mjs
- *
- * Flags (all map 1:1 to RunConfigSchema fields):
- *   --secret-env NAME[=ENV_NAME]
- *     1. Adds a binding `{ name, ref: "env:<envName>" }` to
- *        RuntimeContext.runtime.config.envBindings.
- *     2. Authorizes the runtime resolver pair (NAME, ENV_NAME) at
- *        spawn time. The default runtime policy denies every env
- *        binding; authorization is an explicit operator grant.
- *   --cwd PATH
- *     RuntimeContext.runtime.config.cwd. The local-process sandbox
- *     spawns the child in this directory.
- *   --prompt TEXT
- *     Appends an initial RuntimeIngressTable input row (kind=message,
- *     authoredBy=client) BEFORE startRuntime, and forces the runtime
- *     host into inputEnabled=true so the workflow's stdin delivery
- *     stream picks it up.
- *
- * Argv parsing is hand-rolled (the `--` split makes @effect/cli's
- * positional handling awkward), but the parsed shape is decoded
- * through `RunConfigSchema` so the durable row + ingress row + policy
- * layer all read from one validated DTO. See ./run-config.ts.
+ *   pnpm firegrid:run -- <agent>
+ *   pnpm firegrid:start
  *
  * Implements:
  *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1..6
  *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 — --cwd
  *  - firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 — --prompt
- *  - firegrid-workflow-driven-runtime.VALIDATION.2 — see the runbook in
- *    docs/runbooks/firegrid-run-sync-mvp.md for the smoke command.
+ *  - firegrid-workflow-driven-runtime.VALIDATION.2
+ *  - firegrid-local-mcp-run.LOCAL_COMMAND.1
+ *  - firegrid-local-mcp-run.LOCAL_COMMAND.2
+ *  - firegrid-local-mcp-run.LOCAL_COMMAND.3
+ *  - firegrid-local-mcp-run.LOCAL_COMMAND.4
+ *  - firegrid-local-mcp-run.LOCAL_COMMAND.5
+ *  - firegrid-local-mcp-run.EMBEDDED_DURABLE_STREAMS.1
+ *  - firegrid-local-mcp-run.EMBEDDED_DURABLE_STREAMS.2
+ *  - firegrid-local-mcp-run.EMBEDDED_DURABLE_STREAMS.3
+ *  - firegrid-local-mcp-run.MCP_ROUTE.1
+ *  - firegrid-local-mcp-run.MCP_ROUTE.2
+ *  - firegrid-local-mcp-run.EFFECT_COMPOSITION.1
+ *  - firegrid-local-mcp-run.EFFECT_COMPOSITION.2
+ *  - firegrid-local-mcp-run.EFFECT_COMPOSITION.3
+ *  - firegrid-local-mcp-run.AUTHORITY_BOUNDARY.1
+ *  - firegrid-local-mcp-run.AUTHORITY_BOUNDARY.2
  */
 
-import { NodeRuntime } from "@effect/platform-node"
+import { Args, Command, Options } from "@effect/cli"
+import { HttpServer } from "@effect/platform"
+import { NodeContext, NodeRuntime } from "@effect/platform-node"
+import { DurableStreamTestServer } from "@durable-streams/server"
+import type { DurableTableHeaders } from "@firegrid/protocol"
 import { type RuntimeEnvBinding } from "@firegrid/protocol/launch"
 import {
   FiregridLocalHostLive,
@@ -61,24 +55,16 @@ import {
   startRuntime,
   type RunConfig,
 } from "@firegrid/runtime"
-import { Cause, Console, Data, Effect, Exit, Layer, ParseResult } from "effect"
+import {
+  FiregridMcpServerLayer,
+  ensurePathInput,
+  runtimeContextMcpPath,
+} from "@firegrid/runtime/agent-tools"
+import { Cause, Console, Data, Effect, Exit, Layer, Option, ParseResult } from "effect"
 
-class FiregridRunUsageError extends Data.TaggedError("FiregridRunUsageError")<{
+class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{
   readonly message: string
 }> {}
-
-const usage =
-  "firegrid:run requires `--` followed by an agent command.\n" +
-  "Example: pnpm firegrid:run -- node -e 'console.log(\"hello\")'\n" +
-  "Optional flags (all values are env-var names, paths, or prompt text — never raw secrets):\n" +
-  "  --secret-env NAME[=ENV_NAME]  authorize and bind a host env var into the child\n" +
-  "  --cwd PATH                    spawn the child in PATH\n" +
-  "  --prompt TEXT                 deliver TEXT as the first RuntimeIngress input"
-
-// argv is read from the ambient `process` global. The lint guard bans
-// `import process from "node:process"`; the global is allowed and is what
-// NodeRuntime itself reads internally.
-const readArgv = Effect.sync(() => globalThis.process.argv.slice(2))
 
 interface RawRunConfig {
   readonly agentArgv: ReadonlyArray<string>
@@ -88,19 +74,59 @@ interface RawRunConfig {
   readonly authorizedBindings?: ReadonlyArray<readonly [string, string]>
 }
 
+interface DurableStreamsEndpoint {
+  readonly baseUrl: string
+  readonly embedded: boolean
+}
+
+interface StartConfig {
+  readonly namespace: string
+  readonly mcpHost: string
+  readonly mcpPort: number
+  readonly mcpPath: string
+  readonly runConfig: RunConfig
+}
+
+interface ReadyRecord {
+  readonly type: "firegrid.start.ready"
+  readonly contextId: string
+  readonly mcpUrl: string
+  readonly namespace: string
+  readonly durableStreamsBaseUrl: string
+  readonly embeddedDurableStreams: boolean
+}
+
+const noopAgentArgv = [
+  globalThis.process.execPath,
+  "-e",
+  "process.exit(0)",
+] as const
+
+const defaultNamespace = "firegrid-local"
+const defaultMcpHost = "127.0.0.1"
+const defaultMcpPort = 0
+const defaultMcpPath = "/mcp"
+const startCreatedBy = "firegrid:start"
+
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
-const usageError = (message: string): FiregridRunUsageError =>
-  new FiregridRunUsageError({ message })
+const usageError = (message: string): FiregridCliUsageError =>
+  new FiregridCliUsageError({ message })
+
+const optionValue = <A>(option: Option.Option<A>): A | undefined =>
+  Option.match(option, {
+    onNone: () => undefined,
+    onSome: (value) => value,
+  })
 
 // Parse a single --secret-env value. Accepts:
-//   NAME          → binding { name: NAME, ref: env:NAME }
-//   NAME=ENV_NAME → binding { name: NAME, ref: env:ENV_NAME }
-// The flag never accepts a literal secret value; both halves are env var
+//   NAME           -> binding { name: NAME, ref: env:NAME }
+//   NAME=ENV_NAME  -> binding { name: NAME, ref: env:ENV_NAME }
+// The flag never accepts a literal secret value; both halves are env-var
 // identifiers only.
 const parseSecretEnvFlag = (
   raw: string,
-): Effect.Effect<readonly [string, string], FiregridRunUsageError> => {
+): Effect.Effect<readonly [string, string], FiregridCliUsageError> => {
   const equalsIndex = raw.indexOf("=")
   const name = equalsIndex === -1 ? raw : raw.slice(0, equalsIndex)
   const envName = equalsIndex === -1 ? raw : raw.slice(equalsIndex + 1)
@@ -119,37 +145,31 @@ const parseSecretEnvFlag = (
   return Effect.succeed([name, envName] as const)
 }
 
-// Take an argv slice that's already had the `--` separator removed and
-// build the raw (pre-decode) RunConfig shape. Decoding through
-// RunConfigSchema is the next step.
-const parseCommand = (
-  argv: ReadonlyArray<string>,
-): Effect.Effect<RawRunConfig, FiregridRunUsageError> =>
+const rawRunConfigFromCli = (
+  input: {
+    readonly agentArgv: ReadonlyArray<string>
+    readonly cwd: Option.Option<string>
+    readonly prompt: Option.Option<string>
+    readonly secretEnv: ReadonlyArray<string>
+    readonly allowEmptyAgentArgv: boolean
+  },
+): Effect.Effect<RawRunConfig, FiregridCliUsageError> =>
   Effect.gen(function* () {
-    const separatorIndex = argv.indexOf("--")
-    if (separatorIndex === -1) {
-      return yield* Effect.fail(usageError(usage))
-    }
-    const before = argv.slice(0, separatorIndex)
-    const after = argv.slice(separatorIndex + 1)
-    if (after.length === 0) {
+    if (!input.allowEmptyAgentArgv && input.agentArgv.length === 0) {
       return yield* Effect.fail(usageError(
-        "firegrid:run requires at least one argument after `--` (the agent command).",
+        "firegrid run requires an agent command after `--`.\n" +
+          "Example: pnpm firegrid -- run -- node -e 'console.log(\"hello\")'",
       ))
     }
 
     const envBindings: Array<RuntimeEnvBinding> = []
     const authorizedBindings: Array<readonly [string, string]> = []
     const seenTargets = new Set<string>()
-    let cwd: string | undefined
-    let prompt: string | undefined
-
-    const recordSecretEnv = (
-      pair: readonly [string, string],
-    ): Effect.Effect<void, FiregridRunUsageError> => {
-      const [name, envName] = pair
+    let index = 0
+    while (index < input.secretEnv.length) {
+      const [name, envName] = yield* parseSecretEnvFlag(input.secretEnv[index]!)
       if (seenTargets.has(name)) {
-        return Effect.fail(usageError(
+        return yield* Effect.fail(usageError(
           `--secret-env target ${name} was specified more than once; ` +
             "each child env-var name may be authorized at most once per invocation.",
         ))
@@ -157,74 +177,16 @@ const parseCommand = (
       seenTargets.add(name)
       envBindings.push({ name, ref: `env:${envName}` })
       authorizedBindings.push([name, envName])
-      return Effect.void
+      index += 1
     }
 
-    const requireFlagValue = (
-      flag: string,
-      value: string | undefined,
-    ): Effect.Effect<string, FiregridRunUsageError> =>
-      value === undefined
-        ? Effect.fail(usageError(`${flag} requires a value.`))
-        : Effect.succeed(value)
-
-    let index = 0
-    while (index < before.length) {
-      const token = before[index]!
-      if (token === "--secret-env") {
-        const value = yield* requireFlagValue("--secret-env", before[index + 1])
-        const pair = yield* parseSecretEnvFlag(value)
-        yield* recordSecretEnv(pair)
-        index += 2
-        continue
-      }
-      if (token.startsWith("--secret-env=")) {
-        const value = token.slice("--secret-env=".length)
-        const pair = yield* parseSecretEnvFlag(value)
-        yield* recordSecretEnv(pair)
-        index += 1
-        continue
-      }
-      if (token === "--cwd") {
-        if (cwd !== undefined) {
-          return yield* Effect.fail(usageError("--cwd was specified more than once."))
-        }
-        cwd = yield* requireFlagValue("--cwd", before[index + 1])
-        index += 2
-        continue
-      }
-      if (token.startsWith("--cwd=")) {
-        if (cwd !== undefined) {
-          return yield* Effect.fail(usageError("--cwd was specified more than once."))
-        }
-        cwd = token.slice("--cwd=".length)
-        index += 1
-        continue
-      }
-      if (token === "--prompt") {
-        if (prompt !== undefined) {
-          return yield* Effect.fail(usageError("--prompt was specified more than once."))
-        }
-        prompt = yield* requireFlagValue("--prompt", before[index + 1])
-        index += 2
-        continue
-      }
-      if (token.startsWith("--prompt=")) {
-        if (prompt !== undefined) {
-          return yield* Effect.fail(usageError("--prompt was specified more than once."))
-        }
-        prompt = token.slice("--prompt=".length)
-        index += 1
-        continue
-      }
-      return yield* Effect.fail(usageError(
-        `firegrid:run does not recognize the option "${token}" before "--". ` +
-          "Supported flags before \"--\": --secret-env NAME[=ENV_NAME], --cwd PATH, --prompt TEXT.",
-      ))
-    }
-
+    const agentArgv = input.agentArgv.length === 0
+      ? [...noopAgentArgv]
+      : [...input.agentArgv]
+    const cwd = optionValue(input.cwd)
+    const prompt = optionValue(input.prompt)
     return {
-      agentArgv: after,
+      agentArgv,
       ...(cwd === undefined ? {} : { cwd }),
       ...(prompt === undefined ? {} : { prompt }),
       ...(envBindings.length === 0 ? {} : { envBindings }),
@@ -232,19 +194,23 @@ const parseCommand = (
     }
   })
 
+const decodeCliRunConfig = (
+  raw: RawRunConfig,
+  commandName: string,
+): Effect.Effect<RunConfig, FiregridCliUsageError> =>
+  decodeRunConfig(raw).pipe(
+    Effect.mapError((error) =>
+      usageError(`${commandName}: invalid run-config: ${ParseResult.TreeFormatter.formatErrorSync(error)}`)),
+  )
+
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2
-// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 — cwd into the row
-// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 — prompt into ingress
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7
+// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8
 const runWithLayer = (config: RunConfig) =>
   Effect.gen(function* () {
     // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
     // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
-    //
-    // Build the runtime intent purely from the validated config; the
-    // host binding is filled in by `insertLocalRuntimeContext` from
-    // `CurrentHostSession` so the binary never threads host identity
-    // through its own helpers.
     const intent = runConfigToRuntimeContextIntent(config)
     const context = yield* insertLocalRuntimeContext(intent, {
       contextId: `ctx_${crypto.randomUUID()}`,
@@ -256,9 +222,6 @@ const runWithLayer = (config: RunConfig) =>
 
     const ingressRequest = runConfigToIngressRequest(config, context.contextId)
     if (ingressRequest !== undefined) {
-      // appendRuntimeIngress fails loudly if the host config has
-      // inputEnabled=false; we enable it in envHostLayer below when the
-      // config carries a prompt, so this call is allowed.
       yield* appendRuntimeIngress(ingressRequest)
       yield* Console.log(
         `firegrid:run: appended initial prompt input for ${context.contextId}`,
@@ -266,22 +229,14 @@ const runWithLayer = (config: RunConfig) =>
     }
 
     const result = yield* startRuntime({ contextId: context.contextId })
-
     yield* Console.log(
       `firegrid:run: context ${context.contextId} exited (attempt ${result.activityAttempt}, exitCode ${result.exitCode}${
         result.signal === undefined ? "" : `, signal ${result.signal}`
       })`,
     )
-
     return result.exitCode
   })
 
-// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
-//
-// The env policy layer is constructed here, at the binary boundary, so
-// that globalThis.process.env reads never leak into library code. The
-// pair-based authorization map is derived from --secret-env flags
-// exclusively; nothing else can authorize an env-binding pair.
 const envPolicyLayer = (
   authorizedBindings: ReadonlyArray<readonly [string, string]>,
 ) =>
@@ -293,21 +248,11 @@ const envPolicyLayer = (
     }),
   )
 
-// Construct the host layer using the existing env-driven topology, then
-// overlay the env policy + a forced input flag when --prompt is given.
-// The "input forced" path is what unlocks RuntimeIngressTable.inputs
-// writes and stdin delivery for the sync-run scope.
 const envHostLayer = (config: RunConfig) =>
   Layer.unwrapEffect(
     Effect.map(RuntimeHostTopologyFromConfig, (topology) =>
       // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1
       // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3
-      //
-      // Compose firegrid:run on the production helper that owns
-      // `CurrentHostSession`; the FromConfig topology supplies base
-      // URL + namespace, the helper derives a deterministic
-      // per-namespace host id internally so launches insert under the
-      // same host the workflow then executes against.
       FiregridLocalHostLive(
         {
           ...topology,
@@ -318,25 +263,229 @@ const envHostLayer = (config: RunConfig) =>
       )),
   )
 
-const programWithExitCode: Effect.Effect<number, never, never> = Effect.gen(
-  function* () {
-    const argv = yield* readArgv
-    const raw = yield* parseCommand(argv)
-    const config = yield* decodeRunConfig(raw).pipe(
-      Effect.mapError((error) =>
-        usageError(`firegrid:run: invalid run-config: ${ParseResult.TreeFormatter.formatErrorSync(error)}`)),
-    )
-    return yield* runWithLayer(config).pipe(
-      Effect.provide(envHostLayer(config)),
-      Effect.scoped,
-    )
-  },
+const durableTableHeadersFromEnv = (): DurableTableHeaders | undefined => {
+  const token = globalThis.process.env["FIREGRID_DURABLE_STREAMS_TOKEN"]
+  return token === undefined || token.length === 0
+    ? undefined
+    : { Authorization: () => `Bearer ${token}` }
+}
+
+const durableStreamsEndpoint = Effect.acquireRelease(
+  Effect.tryPromise(async (): Promise<
+    DurableStreamsEndpoint & { readonly server?: DurableStreamTestServer }
+  > => {
+    const configured = globalThis.process.env["DURABLE_STREAMS_BASE_URL"]
+    if (configured !== undefined && configured.length > 0) {
+      return {
+        baseUrl: configured,
+        embedded: false,
+      }
+    }
+    const server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+    const baseUrl = await server.start()
+    return {
+      baseUrl,
+      embedded: true,
+      server,
+    }
+  }),
+  (endpoint) =>
+    endpoint.server === undefined
+      ? Effect.void
+      : Effect.promise(() => endpoint.server.stop()).pipe(
+        Effect.catchAll(() => Effect.void),
+      ),
 ).pipe(
-  Effect.catchTag("FiregridRunUsageError", (error) =>
-    Console.error(error.message).pipe(Effect.as(2))),
+  Effect.map((endpoint): DurableStreamsEndpoint => ({
+    baseUrl: endpoint.baseUrl,
+    embedded: endpoint.embedded,
+  })),
+)
+
+const mcpUrl = (address: string, path: string, contextId: string): string => {
+  const mcpPath = runtimeContextMcpPath(ensurePathInput(path)).replace(
+    ":contextId",
+    encodeURIComponent(contextId),
+  )
+  return new URL(mcpPath, address).toString()
+}
+
+const printReadyRecord = (
+  options: {
+    readonly address: string
+    readonly config: StartConfig
+    readonly contextId: string
+    readonly durableStreams: DurableStreamsEndpoint
+  },
+) => {
+  const record: ReadyRecord = {
+    type: "firegrid.start.ready",
+    contextId: options.contextId,
+    mcpUrl: mcpUrl(options.address, options.config.mcpPath, options.contextId),
+    namespace: options.config.namespace,
+    durableStreamsBaseUrl: options.durableStreams.baseUrl,
+    embeddedDurableStreams: options.durableStreams.embedded,
+  }
+  return Console.log(JSON.stringify(record))
+}
+
+const seedContextAndPrintReady = (
+  durableStreams: DurableStreamsEndpoint,
+  config: StartConfig,
+) =>
+  Effect.gen(function* () {
+    const context = yield* insertLocalRuntimeContext(
+      runConfigToRuntimeContextIntent(config.runConfig),
+      {
+        contextId: `ctx_${crypto.randomUUID()}`,
+        createdBy: startCreatedBy,
+      },
+    )
+    const ingressRequest = runConfigToIngressRequest(config.runConfig, context.contextId)
+    if (ingressRequest !== undefined) {
+      yield* appendRuntimeIngress(ingressRequest)
+    }
+    const address = yield* HttpServer.addressFormattedWith((addr) => Effect.succeed(addr))
+    yield* printReadyRecord({
+      address,
+      config,
+      contextId: context.contextId,
+      durableStreams,
+    })
+  })
+
+const hostAndMcpLayer = (
+  durableStreams: DurableStreamsEndpoint,
+  config: StartConfig,
+): Layer.Layer<HttpServer.HttpServer, unknown, never> =>
+  {
+    const headers = durableTableHeadersFromEnv()
+    const layer = FiregridMcpServerLayer({
+      host: config.mcpHost,
+      port: config.mcpPort,
+      path: ensurePathInput(config.mcpPath),
+    }).pipe(
+      Layer.provideMerge(FiregridLocalHostLive(
+        {
+          durableStreamsBaseUrl: durableStreams.baseUrl,
+          namespace: config.namespace,
+          input: true,
+          ...(headers === undefined ? {} : { headers }),
+          localProcessEnv: localProcessSpawnEnvFromHostEnv(globalThis.process.env),
+        },
+        envPolicyLayer(config.runConfig.authorizedBindings ?? []),
+      )),
+      Layer.tap((context) =>
+        seedContextAndPrintReady(durableStreams, config).pipe(
+          Effect.provide(context),
+        )),
+    )
+    // The workspace package export resolves at runtime through the source
+    // export map; eslint's root project sees the composed layer as
+    // `Layer<any, ..., never>` here, while this boundary pins the required
+    // no-environment shape before `Layer.launch`.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return layer
+  }
+
+const runArgv = Args.text({ name: "agent-argv" }).pipe(Args.repeated)
+const cwdOption = Options.text("cwd").pipe(Options.optional)
+const promptOption = Options.text("prompt").pipe(Options.optional)
+const secretEnvOption = Options.text("secret-env").pipe(Options.repeated)
+
+const runCommand = Command.make(
+  "run",
+  {
+    cwd: cwdOption,
+    prompt: promptOption,
+    secretEnv: secretEnvOption,
+    agentArgv: runArgv,
+  },
+  ({ agentArgv, cwd, prompt, secretEnv }) =>
+    Effect.gen(function* () {
+      const raw = yield* rawRunConfigFromCli({
+        agentArgv,
+        cwd,
+        prompt,
+        secretEnv,
+        allowEmptyAgentArgv: false,
+      })
+      const config = yield* decodeCliRunConfig(raw, "firegrid run")
+      const exitCode = yield* runWithLayer(config).pipe(
+        Effect.provide(envHostLayer(config)),
+        Effect.scoped,
+      )
+      yield* Effect.sync(() => {
+        globalThis.process.exitCode = exitCode
+      })
+    }),
+)
+
+const namespaceOption = Options.text("namespace").pipe(Options.optional)
+const mcpHostOption = Options.text("mcp-host").pipe(Options.withDefault(defaultMcpHost))
+const mcpPortOption = Options.integer("mcp-port").pipe(Options.withDefault(defaultMcpPort))
+const mcpPathOption = Options.text("mcp-path").pipe(Options.withDefault(defaultMcpPath))
+
+const startCommand = Command.make(
+  "start",
+  {
+    namespace: namespaceOption,
+    mcpHost: mcpHostOption,
+    mcpPort: mcpPortOption,
+    mcpPath: mcpPathOption,
+    cwd: cwdOption,
+    prompt: promptOption,
+    secretEnv: secretEnvOption,
+    agentArgv: runArgv,
+  },
+  ({ agentArgv, cwd, mcpHost, mcpPath, mcpPort, namespace, prompt, secretEnv }) =>
+    Effect.gen(function* () {
+      const raw = yield* rawRunConfigFromCli({
+        agentArgv,
+        cwd,
+        prompt,
+        secretEnv,
+        allowEmptyAgentArgv: true,
+      })
+      const runConfig = yield* decodeCliRunConfig(raw, "firegrid start")
+      const durableStreams = yield* durableStreamsEndpoint
+      const namespaceFromEnv = globalThis.process.env["FIREGRID_RUNTIME_NAMESPACE"]
+      const config: StartConfig = {
+        namespace: Option.getOrElse(namespace, () =>
+          namespaceFromEnv === undefined || namespaceFromEnv.length === 0
+            ? defaultNamespace
+            : namespaceFromEnv),
+        mcpHost,
+        mcpPort,
+        mcpPath,
+        runConfig,
+      }
+      yield* Layer.launch(hostAndMcpLayer(durableStreams, config))
+    }).pipe(Effect.scoped),
+)
+
+const rootCommand = Command.make("firegrid").pipe(
+  Command.withSubcommands([runCommand, startCommand]),
+)
+
+const cli = Command.run(rootCommand, {
+  name: "Firegrid CLI",
+  version: "0.0.0",
+})
+
+const program = cli(globalThis.process.argv).pipe(
+  Effect.provide(NodeContext.layer),
+  Effect.catchTag("FiregridCliUsageError", (error) =>
+    Console.error(error.message).pipe(
+      Effect.zipRight(Effect.sync(() => {
+        globalThis.process.exitCode = 2
+      })),
+    )),
   Effect.catchAllCause((cause) =>
-    Console.error(`firegrid:run failed: ${Cause.pretty(cause)}`).pipe(
-      Effect.as(1),
+    Console.error(`firegrid failed: ${Cause.pretty(cause)}`).pipe(
+      Effect.zipRight(Effect.sync(() => {
+        globalThis.process.exitCode = Cause.isInterruptedOnly(cause) ? 0 : 1
+      })),
     )),
 )
 
@@ -345,12 +494,12 @@ function teardown<E, A>(
   onExit: (code: number) => void,
 ): void {
   Exit.match(exit, {
-    onSuccess: (value) => onExit(typeof value === "number" ? value : 0),
+    onSuccess: () => onExit(globalThis.process.exitCode ?? 0),
     onFailure: (cause) => onExit(Cause.isInterruptedOnly(cause) ? 0 : 1),
   })
 }
 
-NodeRuntime.runMain(programWithExitCode, {
+NodeRuntime.runMain(program, {
   disableErrorReporting: true,
   teardown,
 })
