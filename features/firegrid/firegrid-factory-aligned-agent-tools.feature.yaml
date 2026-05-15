@@ -12,6 +12,7 @@ components:
     requirements:
       1: The live runtime host implementation exposes a session-plane child creation tool that creates a child RuntimeContext, propagates parent/correlation metadata, and returns a session-shaped handle with context authority and optional terminal state.
       2: Batch session creation is a generalized convenience over repeated single-session creation; when implemented, it uses the same child RuntimeContext path, preserves task keys, and returns every child session handle or terminal state.
+      3: A parent factory run can be represented by planning RuntimeContext metadata, and child sessions carry explicit parentSessionId, role, and correlationId metadata when supplied.
 
   CAPABILITY:
     requirements:
@@ -20,6 +21,7 @@ components:
   WAIT_FOR:
     requirements:
       1: Human approvals, application replies, webhook deliveries, and external status changes can be represented as durable facts that wait_for can match by scalar fields such as contextId, kind, correlationId, and external id.
+      2: External facts carry source identity for dedupe, append in durable order, and represent permission waits with explicit permission_requested, permission_resolved, and cancellation or rejection facts rather than hidden callback markers.
 
   PROMPT_DISPATCH:
     requirements:
@@ -27,10 +29,11 @@ components:
 
   OBSERVATION:
     requirements:
-      1: Tool calls, tool results, child session/context ids, and parent/correlation metadata are durable and queryable enough for a planner agent and product shell to inspect factory progress.
+      1: Tool calls, tool results, child session/context ids, parent/correlation metadata, and ordered runtime facts are durable and queryable enough for a planner agent and product shell to inspect factory progress and choose the next action from history.
 
 constraints:
   BOUNDARY:
     requirements:
       1: Firegrid does not add a factory-specific workflow product, orchestration runtime, hidden callback marker protocol, or hard-coded planner/implementer/QA/council sequence for the factory use case.
       2: Flamecast may project sessions, route external events, and display progress, but factory sequencing remains planner-driven through Firegrid agent tools.
+      3: Firegrid does not introduce hidden callback comments, string-encoded child session ids, or a broad Linear/GitHub webhook product as prerequisites for the first factory path.

@@ -23,6 +23,13 @@ observation. In this Firegrid workstream, that means:
   runtime ingress, durable tool calls, wait facts, and runtime output;
 - only product/API projection work should stay in Flamecast.
 
+The code-grounded factory requirements confirm the same split. The current
+hook.new implementation already depends on a durable parent run, child work
+linkage, ordered history, source-event dedupe, permission waits, external event
+append, and runtime-owned policy. Firegrid should provide the execution
+substrate pieces that let a planning agent use those primitives; Flamecast can
+project them as product sessions/events.
+
 This follows the Fireline choreography lesson:
 
 - durable primitives belong in the substrate;
@@ -34,6 +41,7 @@ This follows the Fireline choreography lesson:
 ## Source Inputs
 
 - `/Users/gnijor/smithery/flamecast-agents/DARK_FACTORY_PROCESS_PRD.md`
+- `/Users/gnijor/smithery/flamecast-agents/DARK_FACTORY_CODE_GROUNDED_REQUIREMENTS.md`
 - `/Users/gnijor/gurdasnijor/fireline/vault/canon/concepts/choreography-vs-orchestration.md`
 - `packages/runtime/src/agent-tools/tools.ts`
 - `packages/runtime/src/agent-tools/tool-use-to-effect.ts`
@@ -86,11 +94,13 @@ It is "wire the generic tool primitives the planning agent needs."
 
 | Dark factory process need | Firegrid primitive |
 | --- | --- |
+| One Linear ticket is one durable parent run | Parent session/context metadata on the planning `RuntimeContext` |
 | Planner studies ticket and repository context | Initial prompt plus session-bound filesystem/terminal/external facts |
 | Planner starts implementation/review/QA work | `session_new` / batch session creation, backed by host child-context launch |
 | Planner sends follow-up work | `session_prompt` or host/client prompt dispatch |
 | Planner waits for delegated work | session terminal result, session updates, or `wait_for` when work is event-driven |
 | Planner asks for human approval or clarification | `wait_for` over a durable decision/event source |
+| Linear/GitHub/user webhook redelivery | source-event ids on external facts for dedupe |
 | Planner resumes later | `schedule_me` |
 | Planner reads/writes repo files or runs commands | session-bound filesystem / terminal capabilities |
 | Planner checks CI, PR status, or external system state | `wait_for` over verified webhook facts, or explicitly bound session capability |
@@ -137,7 +147,9 @@ Required behavior:
 
 - The tool creates a child `RuntimeContext` as Firegrid's current durable
   session backing identity.
-- The child carries parent/correlation metadata from session metadata.
+- The child carries parent/correlation metadata from session metadata,
+  including fields such as `parentSessionId`, `role`, and `correlationId`
+  when supplied by the planning agent or product shell.
 - Child context identity is deterministic enough for workflow replay safety.
 - The tool returns a session-shaped handle containing at least `sessionId` and
   `contextId`; if configured to await terminal completion, it also returns
@@ -151,6 +163,32 @@ Expected outcome:
 - A planning agent can call a session creation tool with an agent selector,
   prompt, and metadata, then receive a durable child session handle or terminal
   result.
+
+### 2A. Parent Session Identity
+
+ACID: `firegrid-factory-aligned-agent-tools.SESSION.3`
+
+The factory run needs one durable parent session/context identity. In the
+current hook.new implementation, Linear `AgentSession` accidentally acts as
+that identity. Firegrid should make the parent identity explicit enough that
+child sessions, wait facts, external events, and product projections can attach
+to it without encoding ids in comments or callback markers.
+
+Required behavior:
+
+- The planning `RuntimeContext` can carry parent-run metadata such as external
+  ticket id, product session id, and correlation id.
+- Child session creation copies or references the parent identity explicitly.
+- The parent identity is queryable from runtime output/facts enough for
+  product projection.
+- No additional context placement table or workflow product is introduced for
+  this purpose.
+
+Expected outcome:
+
+- One Linear ticket or equivalent external trigger maps to one durable
+  Firegrid-backed parent run identity, with child work attached by metadata
+  rather than hidden strings.
 
 ### 3. Session-Bound Client Capabilities
 
@@ -197,13 +235,25 @@ Human approvals, Linear replies, CI updates, and webhook deliveries should
 arrive as durable facts that `wait_for` can match. Firegrid should not add a
 Flamecast-native wait loop for those decisions.
 
+The code-grounded factory requirements make this load-bearing: today's system
+uses parked hook.new RPCs, hidden callback markers, and Linear/GitHub ad hoc
+dedupe. The Firegrid-aligned replacement is explicit fact/event append with
+source ids and ordered observation.
+
 Required behavior:
 
 - There is a host-owned source collection suitable for app/user/external facts.
 - Facts have stable identifiers so duplicate webhook/input delivery is
   idempotent.
+- Facts carry source identity such as provider, delivery id, runtime source id,
+  external id, and parent/session correlation where available.
+- Fact append preserves a durable order visible to the planning agent and
+  product projection.
 - `wait_for` can match scalar fields such as `contextId`, `kind`,
   `correlationId`, and external ids.
+- Permission waits are represented as explicit facts/events such as
+  `permission_requested`, `permission_resolved`, and cancellation/rejection
+  variants, not hidden callback comments.
 - Flamecast or another product shell can append/project facts without becoming
   the orchestrator or the execution wait substrate.
 
@@ -271,6 +321,8 @@ Required behavior:
 - Tool calls and results are visible in runtime output/events.
 - Child session/context ids are returned and projectable.
 - Parent/child/correlation metadata is queryable enough for product projection.
+- Runtime output/facts provide ordered history sufficient for a planning agent
+  to decide the next action from prior state.
 - The agent can read enough prior context/output through existing tools or
   client APIs to avoid repeating work.
 - Flamecast can present product states such as `planning`,
@@ -291,6 +343,10 @@ Expected outcome:
 - No broad operator UI.
 - No generic webhook marketplace.
 - No hard-coded planner/implementer/QA/council sequence in TypeScript.
+- No hidden callback markers or string-encoded child session ids as a new
+  convention.
+- No broad Linear/GitHub webhook product before the first factory path; the
+  needed primitive is source-deduped event/fact append.
 
 ## Tonight-Oriented Dispatch Order
 
