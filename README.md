@@ -75,6 +75,19 @@ child-env/host-env binding without writing the secret value into durable rows.
 See [Firegrid Run - Synchronous MVP](docs/runbooks/firegrid-run-sync-mvp.md) for
 local and Electric Cloud smoke commands.
 
+Start a local route-scoped MCP host and context for MCP Inspector or another
+client:
+
+```sh
+pnpm firegrid:mcp:local
+```
+
+With no `DURABLE_STREAMS_BASE_URL`, this starts an embedded loopback Durable
+Streams test server, creates a host-bound no-op `RuntimeContext`, prints one
+JSON ready record with `contextId` and `mcpUrl`, and keeps the host scope alive.
+Pass optional run flags and `-- <agent command...>` only when you want a
+specific runtime intent in the seeded context.
+
 For manual commands, `DURABLE_STREAMS_BASE_URL` must point at a running Durable
 Streams endpoint. The `smoke:firegrid-run` scenario starts its own local test
 server, so it does not require a separate server process.
@@ -108,6 +121,8 @@ Firegrid DurableTables with TanStack live queries. See
 | --- | --- |
 | `pnpm firegrid:host` | Run the Firegrid runtime host from environment config. |
 | `pnpm firegrid:host:env` | Run the host after loading root `.env`. |
+| `pnpm firegrid:mcp:local` | Start a local MCP host, seed a context, print the MCP URL, and stay alive. |
+| `pnpm firegrid:mcp:local:env` | Start the local MCP path after loading root `.env`. |
 | `pnpm firegrid:run -- <agent>` | Launch one synchronous local-process runtime context. |
 | `pnpm firegrid:run:env -- <agent>` | Run the synchronous path after loading root `.env`. |
 | `pnpm smoke:firegrid-run` | Run the local Tracer 019 sync-run smoke with an in-process Durable Streams test server. |

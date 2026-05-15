@@ -16,6 +16,8 @@
     "effect:unpatch": "effect-language-service unpatch",
     "firegrid:host": "tsx src/index.ts",
     "firegrid:host:env": "node --env-file-if-exists=.env --import tsx src/index.ts",
+    "firegrid:mcp:local": "tsx src/mcp-local.ts",
+    "firegrid:mcp:local:env": "node --env-file-if-exists=.env --import tsx src/mcp-local.ts",
     "firegrid:run": "tsx src/run.ts",
     "firegrid:run:env": "node --env-file-if-exists=.env --import tsx src/run.ts",
     "smoke:firegrid-run": "pnpm --filter @firegrid/scenario-firegrid exec vitest run src/tracer-019-sync-run.test.ts",
@@ -49,6 +51,7 @@
     "verify": "pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:effect-quality && pnpm run lint:semgrep:test && pnpm run lint:semgrep && pnpm run test"
   },
   "dependencies": {
+    "@effect/platform": "^0.96.1",
     "@effect/platform-node": "^0.106.0",
     "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
