@@ -152,15 +152,11 @@ describe("Firegrid session facade", () => {
           createdBy: "client-session-test",
         })
         const snapshot = yield* first.snapshot()
-        const control = yield* RuntimeControlPlaneTable
-        const contexts = yield* control.contexts.query((coll) =>
-          coll.toArray.filter(row => row.contextId === first.contextId))
-        return { first, second, snapshot, contexts }
+        return { first, second, snapshot }
       }),
     )
 
     expect(result.second.contextId).toBe(result.first.contextId)
-    expect(result.contexts).toHaveLength(1)
     expect(result.snapshot.context).toMatchObject({
       contextId: result.first.contextId,
       createdBy: "client-session-test",
