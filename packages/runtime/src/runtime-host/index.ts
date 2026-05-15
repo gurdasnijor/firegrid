@@ -9,6 +9,7 @@ import {
   HostIdSegmentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  type RuntimeAgentProtocol,
   local,
   makeHostSessionRow,
   normalizeRuntimeIntent,
@@ -23,9 +24,10 @@ import {
   RuntimeIngressTable,
   makeRuntimeIngressInputRow,
   nextRuntimeIngressSequence,
+  type RuntimeIngressInputRow,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
-import { Clock, Config, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { Clock, Config, Effect, Either, Layer, Option, Redacted, Ref, Schema, Stream } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {
   CurrentHostSession,
@@ -41,6 +43,7 @@ import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.t
 import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
+  SandboxProvider,
   commandForContext,
   localProcessStdinDelivery,
   streamSandboxProcess,
@@ -64,7 +67,23 @@ import {
   AgentToolHost,
   type AgentToolHostService,
 } from "../agent-tools/tool-host.ts"
+import { FiregridAgentToolkit } from "../agent-tools/tools.ts"
+import { ScheduledInputWorkflowLayer } from "../agent-tools/scheduled-input-workflow.ts"
+import { toolUseToEffect } from "../agent-tools/tool-use-to-effect.ts"
 import { toolExecutionFailed } from "../agent-tools/tool-error.ts"
+import { DurableToolsWaitForLive } from "../durable-tools/DurableToolsWaitFor.ts"
+import {
+  AcpCodec,
+  StdioJsonlCodec,
+} from "../agent-codecs/index.ts"
+import {
+  AgentInputEventSchema,
+  AgentOutputEventSchema,
+  type AgentCodec,
+  type AgentByteStream,
+  type AgentInputEvent,
+  type AgentOutputEvent,
+} from "../agent-io/index.ts"
 
 export type {
   RuntimeHostTopologyOptions,
@@ -188,6 +207,455 @@ const outputRowFromProcessChunk = (
       context.contextId,
     ))
   })
+
+const agentProtocolForContext = (
+  context: RuntimeContext,
+): RuntimeAgentProtocol => context.runtime.config.agentProtocol ?? "raw"
+
+const codecForAgentProtocol = (
+  protocol: Exclude<RuntimeAgentProtocol, "raw">,
+): AgentCodec => {
+  switch (protocol) {
+    case "stdio-jsonl":
+      return StdioJsonlCodec
+    case "acp":
+      return AcpCodec
+    default:
+      return protocol satisfies never
+  }
+}
+
+const codecSupportsToolResultInput = (
+  protocol: Exclude<RuntimeAgentProtocol, "raw">,
+): boolean => protocol === "stdio-jsonl"
+
+const agentCodecSubscriberId = (
+  protocol: Exclude<RuntimeAgentProtocol, "raw">,
+) => `runtime-context:${protocol}:codec`
+
+const runtimeOutputRawFromAgentEvent = (
+  contextId: string,
+  event: AgentOutputEvent,
+): Effect.Effect<string, RuntimeContextError> =>
+  Effect.try({
+    try: () =>
+      JSON.stringify({
+        type: "firegrid.agent-output",
+        event: Schema.encodeUnknownSync(AgentOutputEventSchema)(event),
+      }),
+    catch: cause =>
+      asRuntimeContextError(
+        "runtime-output.agent-event.encode",
+        "failed to encode agent output event",
+        contextId,
+        cause,
+      ),
+  })
+
+const outputRowFromAgentEvent = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  sequence: number,
+  event: AgentOutputEvent,
+): Effect.Effect<RuntimeEventRow, RuntimeContextError> =>
+  Effect.gen(function* () {
+    const receivedAt = yield* nowIso
+    return {
+      eventId: {
+        contextId: context.contextId,
+        activityAttempt,
+        target: "events",
+        sequence,
+      },
+      contextId: context.contextId,
+      activityAttempt,
+      sequence,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt,
+      raw: yield* runtimeOutputRawFromAgentEvent(context.contextId, event),
+    }
+  })
+
+const logLineRowFromCodecStderr = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  sequence: number,
+  raw: string,
+): Effect.Effect<RuntimeLogLineRow, RuntimeContextError> =>
+  Effect.gen(function* () {
+    const receivedAt = yield* nowIso
+    return {
+      logLineId: {
+        contextId: context.contextId,
+        activityAttempt,
+        target: "logs",
+        sequence,
+      },
+      contextId: context.contextId,
+      activityAttempt,
+      sequence,
+      source: "stderr",
+      format: "text-lines",
+      receivedAt,
+      raw,
+    }
+  })
+
+const textFromIngressPayload = (payload: unknown): string | undefined => {
+  if (typeof payload === "string") return payload
+  if (typeof payload !== "object" || payload === null) return undefined
+  const record = payload as Record<string, unknown>
+  return record.type === "text" && typeof record.text === "string"
+    ? record.text
+    : undefined
+}
+
+const promptFromIngressPayload = (
+  row: RuntimeIngressInputRow,
+): Effect.Effect<AgentInputEvent, RuntimeContextError> => {
+  const text = textFromIngressPayload(row.payload)
+  if (text !== undefined) {
+    return Effect.succeed({
+      _tag: "Prompt",
+      correlationId: row.inputId,
+      prompt: Prompt.userMessage({
+        content: [Prompt.textPart({ text })],
+      }),
+    })
+  }
+  return Schema.decodeUnknown(Prompt.UserMessage)(row.payload).pipe(
+    Effect.map(prompt => ({
+      _tag: "Prompt" as const,
+      correlationId: row.inputId,
+      prompt,
+    })),
+    Effect.mapError(cause =>
+      asRuntimeContextError(
+        "runtime-ingress.codec.decode",
+        "runtime message ingress payload is not an AgentInputEvent, text payload, or Prompt.UserMessage",
+        row.contextId,
+        cause,
+      )),
+  )
+}
+
+const inputEventFromIngressRow = (
+  row: RuntimeIngressInputRow,
+): Effect.Effect<AgentInputEvent, RuntimeContextError> => {
+  const decoded = Schema.decodeUnknownEither(AgentInputEventSchema)(row.payload)
+  if (Either.isRight(decoded)) return Effect.succeed(decoded.right)
+
+  if (row.kind === "message") return promptFromIngressPayload(row)
+
+  if (row.kind === "tool_result") {
+    return Schema.decodeUnknown(Prompt.ToolResultPart)(row.payload).pipe(
+      Effect.map(part => ({ _tag: "ToolResult" as const, part })),
+      Effect.mapError(cause =>
+        asRuntimeContextError(
+          "runtime-ingress.codec.decode",
+          "runtime tool_result ingress payload is not an AgentInputEvent or Prompt.ToolResultPart",
+          row.contextId,
+          cause,
+        )),
+    )
+  }
+
+  return Effect.fail(asRuntimeContextError(
+    "runtime-ingress.codec.decode",
+    `runtime ${row.kind} ingress payload is not an AgentInputEvent`,
+    row.contextId,
+    decoded.left,
+  ))
+}
+
+const sequencedCodecIngressRows = (
+  table: RuntimeIngressTable["Type"],
+  contextId: string,
+): Stream.Stream<RuntimeIngressInputRow, RuntimeContextError> =>
+  table.inputs.rows().pipe(
+    Stream.filter(row =>
+      row.contextId === contextId &&
+      row.status === "sequenced" &&
+      row.sequence !== undefined,
+    ),
+    Stream.mapError(cause =>
+      asRuntimeContextError(
+        "runtime-ingress.codec.subscribe",
+        "failed to subscribe to runtime ingress rows",
+        contextId,
+        cause,
+      )),
+  )
+
+const agentCodecIngressDelivery = (
+  table: RuntimeIngressTable["Type"],
+  options: {
+  readonly contextId: string
+  readonly subscriberId: string
+},
+): Stream.Stream<AgentInputEvent, RuntimeContextError> =>
+  sequencedCodecIngressRows(table, options.contextId).pipe(
+    Stream.mapEffect(row =>
+      Effect.gen(function* () {
+        const key = {
+          subscriberId: options.subscriberId,
+          inputId: row.inputId,
+        }
+        const existing = yield* table.deliveries.get(key).pipe(
+          mapRuntimeContextError(
+            "runtime-ingress.codec.delivery.get",
+            "failed to read runtime codec delivery row",
+            options.contextId,
+          ),
+        )
+        if (
+          Option.isSome(existing) &&
+          existing.value.claimedAt !== undefined
+        ) {
+          return Option.none<AgentInputEvent>()
+        }
+
+        yield* table.deliveries.upsert({
+          key,
+          inputId: row.inputId,
+          contextId: row.contextId,
+          subscriberId: options.subscriberId,
+          claimedAt: yield* nowIso,
+        }).pipe(
+          mapRuntimeContextError(
+            "runtime-ingress.codec.delivery.claim",
+            "failed to claim runtime codec delivery row",
+            options.contextId,
+          ),
+        )
+
+        return Option.some(yield* inputEventFromIngressRow(row))
+      })),
+    Stream.filterMap(value => value),
+  )
+
+const codecStderrLines = (
+  contextId: string,
+  stderr: ReadableStream<Uint8Array>,
+): Stream.Stream<string, RuntimeContextError> =>
+  Stream.fromReadableStream({
+    evaluate: () => stderr,
+    onError: cause =>
+      asRuntimeContextError(
+        "sandbox.codec.stderr",
+        "failed reading codec process stderr",
+        contextId,
+        cause,
+      ),
+    releaseLockOnEnd: true,
+  }).pipe(
+    Stream.decodeText(),
+    Stream.splitLines,
+  )
+
+const writeCodecStderrLogs = (options: {
+  readonly context: RuntimeContext
+  readonly activityAttempt: number
+  readonly bytes: AgentByteStream
+  readonly outputTable: RuntimeOutputTable["Type"]
+}): Effect.Effect<void, RuntimeContextError> =>
+  Effect.gen(function* () {
+    const sequenceRef = yield* Ref.make(0)
+    yield* codecStderrLines(options.context.contextId, options.bytes.stderr).pipe(
+      Stream.mapEffect(line =>
+        Effect.gen(function* () {
+          const sequence = yield* Ref.getAndUpdate(sequenceRef, value => value + 1)
+          const row = yield* logLineRowFromCodecStderr(
+            options.context,
+            options.activityAttempt,
+            sequence,
+            line,
+          )
+          yield* options.outputTable.logs.upsert(row).pipe(
+            mapRuntimeContextError(
+              "runtime-output.codec.stderr.write",
+              "failed to write codec stderr runtime log row",
+              options.context.contextId,
+            ),
+          )
+        })),
+      Stream.runDrain,
+    )
+  })
+
+const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
+  Effect.gen(function* () {
+    const session = yield* CurrentHostSession
+    const config = yield* RuntimeHostConfig
+    return DurableToolsWaitForLive({
+      streamUrl: hostOwnedStreamUrl({
+        baseUrl: config.durableStreamsBaseUrl,
+        prefix: session.streamPrefix,
+        segment: "durableTools",
+      }),
+    })
+  }),
+)
+
+const runtimeCodecToolLoweringLayer = () =>
+  Layer.mergeAll(
+    RuntimeHostAgentToolHostLive,
+    ScheduledInputWorkflowLayer,
+    HostOwnedDurableToolsWaitForLive,
+  )
+
+const handleAgentOutputEvent = (options: {
+  readonly context: RuntimeContext
+  readonly protocol: Exclude<RuntimeAgentProtocol, "raw">
+  readonly session: { readonly send: (event: AgentInputEvent) => Effect.Effect<void, unknown> }
+  readonly event: AgentOutputEvent
+}): Effect.Effect<void, RuntimeContextError, unknown> => {
+  if (options.event._tag !== "ToolUse") return Effect.void
+  if (!codecSupportsToolResultInput(options.protocol)) return Effect.void
+
+  // firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1
+  return toolUseToEffect({ contextId: options.context.contextId }, options.event).pipe(
+    Effect.flatMap(toolResult => options.session.send(toolResult)),
+    Effect.provide(runtimeCodecToolLoweringLayer()),
+    Effect.mapError(cause =>
+      asRuntimeContextError(
+        "agent-codec.tool-result",
+        "failed to lower codec ToolUse or send ToolResult",
+        options.context.contextId,
+        cause,
+      )),
+  )
+}
+
+const runCodecRuntimeContext = (options: {
+  readonly context: RuntimeContext
+  readonly activityAttempt: number
+  readonly protocol: Exclude<RuntimeAgentProtocol, "raw">
+  readonly outputTable: RuntimeOutputTable["Type"]
+  readonly ingressTable: RuntimeIngressTable["Type"]
+}) =>
+  Effect.gen(function* () {
+    const codec = codecForAgentProtocol(options.protocol)
+    const command = yield* commandForContext(options.context)
+    const provider = yield* SandboxProvider
+    const sandbox = yield* provider.getOrCreate({
+      labels: {
+        firegridRuntimeContextId: options.context.contextId,
+      },
+      ...(options.context.runtime.config.cwd === undefined ? {} : {
+        workingDir: options.context.runtime.config.cwd,
+      }),
+      providerConfig: {
+        contextId: options.context.contextId,
+      },
+    }).pipe(
+      Effect.mapError((cause: SandboxProviderError) =>
+        asRuntimeContextError(
+          `sandbox.${cause.op}`,
+          cause.message,
+          options.context.contextId,
+          cause,
+        )),
+    )
+    const bytes = yield* provider.openBytePipe(sandbox, command).pipe(
+      Effect.mapError((cause: SandboxProviderError) =>
+        asRuntimeContextError(
+          `sandbox.${cause.op}`,
+          cause.message,
+          options.context.contextId,
+          cause,
+        )),
+    )
+    const session = yield* codec.open(bytes, {
+      toolkit: FiregridAgentToolkit,
+    }).pipe(
+      Effect.mapError(cause =>
+        asRuntimeContextError(
+          `agent-codec.${cause.op}`,
+          cause.message,
+          options.context.contextId,
+          cause,
+        )),
+    )
+
+    yield* writeCodecStderrLogs({
+      context: options.context,
+      activityAttempt: options.activityAttempt,
+      bytes,
+      outputTable: options.outputTable,
+    }).pipe(Effect.forkScoped)
+
+    yield* agentCodecIngressDelivery(options.ingressTable, {
+      contextId: options.context.contextId,
+      subscriberId: agentCodecSubscriberId(options.protocol),
+    }).pipe(
+      Stream.mapEffect(input =>
+        session.send(input).pipe(
+          Effect.mapError(cause =>
+            asRuntimeContextError(
+              "agent-codec.input.send",
+              "failed to send runtime ingress input to agent codec",
+              options.context.contextId,
+              cause,
+            )),
+        )),
+      Stream.runDrain,
+      Effect.forkScoped,
+    )
+
+    return yield* session.outputs.pipe(
+      Stream.mapError(cause =>
+        asRuntimeContextError(
+          `agent-codec.${cause.op}`,
+          cause.message,
+          options.context.contextId,
+          cause,
+        )),
+      Stream.mapAccum(0, (sequence, event) => [
+        sequence + 1,
+        { sequence, event },
+      ] as const),
+      Stream.tap(({ sequence, event }) =>
+        outputRowFromAgentEvent(
+          options.context,
+          options.activityAttempt,
+          sequence,
+          event,
+        ).pipe(
+          Effect.flatMap(row => options.outputTable.events.upsert(row)),
+          mapRuntimeContextError(
+            "runtime-output.codec.write",
+            "failed to write codec runtime output row",
+            options.context.contextId,
+          ),
+        )),
+      Stream.tap(({ event }) =>
+        handleAgentOutputEvent({
+          context: options.context,
+          protocol: options.protocol,
+          session,
+          event,
+        })),
+      Stream.filter((item): item is {
+        readonly sequence: number
+        readonly event: Extract<AgentOutputEvent, { readonly _tag: "Terminated" }>
+      } => item.event._tag === "Terminated"),
+      Stream.runHead,
+      Effect.flatMap(Option.match({
+        onNone: () =>
+          Effect.fail(asRuntimeContextError(
+            "agent-codec.outputs",
+            "codec output stream ended without a Terminated event",
+            options.context.contextId,
+          )),
+        onSome: ({ event }) =>
+          Effect.succeed({
+            exitCode: event.exitCode ?? 0,
+          }),
+      })),
+    )
+  }).pipe(Effect.scoped)
 
 const readRuntimeContext = (
   contextId: string,
@@ -348,8 +816,19 @@ const runRuntimeContext = (
         ),
       )
 
-    const command = yield* commandForContext(context)
     const ingressTable = yield* RuntimeIngressTable
+    const protocol = agentProtocolForContext(context)
+    if (protocol !== "raw") {
+      return yield* runCodecRuntimeContext({
+        context,
+        activityAttempt,
+        protocol,
+        outputTable,
+        ingressTable,
+      })
+    }
+
+    const command = yield* commandForContext(context)
     const stdin = hostConfig.inputEnabled
       ? localProcessStdinDelivery({
         contextId: context.contextId,
