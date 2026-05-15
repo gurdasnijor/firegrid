@@ -7,6 +7,7 @@ import {
   makeHostStreamPrefix,
   normalizeRuntimeIntent,
   RuntimeOutputTable,
+  RuntimeStartCapability,
   type HostId,
 } from "@firegrid/protocol/launch"
 import { Effect, Either, Option } from "effect"
@@ -14,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   startRuntime,
   FiregridRuntimeHostWithWorkflowLive,
+  RuntimeStartCapabilityLive,
 } from "../runtime-host/index.ts"
 import {
   RuntimeControlPlaneTable,
@@ -244,6 +246,39 @@ console.error("diagnostic: child stderr")
     ))
     expect(statuses).toEqual(expect.arrayContaining(["started", "failed"]))
     expect(statuses).toHaveLength(2)
+  })
+
+  it("firegrid-schema-projection-contract.CLIENT_PROJECTION.5 provides RuntimeStartCapability for client facade composition", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const namespace = `runtime-start-capability-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
+    const contextId = await appendRuntimeContext({
+      controlPlaneStreamUrl,
+      argv: [process.execPath, "--input-type=module", "-e", ""],
+      hostId,
+      namespace,
+    })
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const starter = yield* RuntimeStartCapability
+        return yield* starter.start({ contextId })
+      }).pipe(
+        Effect.provide(RuntimeStartCapabilityLive),
+        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+          durableStreamsBaseUrl: baseUrl,
+          namespace,
+          hostId,
+        })),
+      ),
+    )
+
+    expect(result).toMatchObject({
+      contextId,
+      activityAttempt: 1,
+      exitCode: 0,
+    })
   })
 
   it("firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.4 firegrid-workflow-driven-runtime.VALIDATION.1 does not duplicate external runtime execution for duplicate starts", async () => {

@@ -15,18 +15,23 @@
 
 import {
   PublicLaunchRequestSchema,
+  PublicLaunchRuntimeIntentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  RuntimeStartCapability,
   hostOwnedStreamUrl,
   insertLocalRuntimeContext,
   local,
+  normalizeRuntimeIntent,
   runtimeControlPlaneStreamUrl,
   type CurrentHostSession,
   type PublicLaunchRequest,
+  type PublicLaunchRuntimeIntent,
   type RuntimeContext,
   type RuntimeEventRow,
   type RuntimeLogLineRow,
   type RuntimeRunEventRow,
+  type RuntimeStartResult,
 } from "@firegrid/protocol/launch"
 import {
   FiregridAgentToolOperations,
@@ -51,6 +56,19 @@ import {
   type RuntimeIngressInputRow,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
+import {
+  SessionCreateOrLoadInputSchema,
+  SessionHandlePromptInputSchema,
+  SessionPermissionRequestWaitInputSchema,
+  SessionPermissionRespondInputSchema,
+  sessionContextIdForExternalKey,
+  type RuntimePermissionRequestObservation,
+  type SessionCreateOrLoadInput,
+  type SessionHandlePromptInput,
+  type SessionPermissionRequestWaitInput,
+  type SessionPermissionRequestWaitOutput,
+  type SessionPermissionRespondInput,
+} from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "@firegrid/protocol"
 import { Clock, Context, Data, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 
@@ -112,6 +130,39 @@ export interface RuntimeContextHandle {
   readonly snapshot: Effect.Effect<RuntimeContextSnapshot, PreloadError>
 }
 
+export interface FiregridSessionWaitClient {
+  readonly forPermissionRequest: (
+    request?: SessionPermissionRequestWaitInput,
+  ) => Effect.Effect<
+    SessionPermissionRequestWaitOutput,
+    LaunchInputError | PreloadError
+  >
+}
+
+export interface FiregridSessionPermissionsClient {
+  readonly respond: (
+    request: SessionPermissionRespondInput,
+  ) => Effect.Effect<
+    PermissionRespondOutput,
+    LaunchInputError | AppendError
+  >
+}
+
+export interface FiregridSessionHandle {
+  readonly contextId: string
+  readonly prompt: (
+    request: SessionHandlePromptInput,
+  ) => Effect.Effect<RuntimeIngressInputRow, PromptInputError | AppendError>
+  readonly start: () => Effect.Effect<
+    RuntimeStartResult,
+    unknown,
+    RuntimeStartCapability
+  >
+  readonly snapshot: () => Effect.Effect<RuntimeContextSnapshot, PreloadError>
+  readonly wait: FiregridSessionWaitClient
+  readonly permissions: FiregridSessionPermissionsClient
+}
+
 export const FiregridClientOperations = {
   sessions: {
     prompt: FiregridAgentToolOperations.sessionPrompt,
@@ -125,6 +176,13 @@ export const FiregridClientOperations = {
 } as const
 
 export interface FiregridSessionsClient {
+  readonly createOrLoad: (
+    request: SessionCreateOrLoadInput,
+  ) => Effect.Effect<
+    FiregridSessionHandle,
+    LaunchInputError | AppendError,
+    CurrentHostSession
+  >
   readonly prompt: (
     request: SessionPromptToolInput,
   ) => Effect.Effect<
@@ -298,6 +356,13 @@ const decodePublicLaunchRequest = (
     Effect.mapError(cause => new LaunchInputError({ cause })),
   )
 
+const decodePublicLaunchRuntimeIntent = (
+  request: PublicLaunchRuntimeIntent,
+): Effect.Effect<PublicLaunchRuntimeIntent, LaunchInputError> =>
+  Schema.decodeUnknown(PublicLaunchRuntimeIntentSchema, {
+    onExcessProperty: "error",
+  })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
 const decodePublicPromptRequest = (
   request: PublicPromptRequest,
 ): Effect.Effect<PublicPromptRequest, PromptInputError> =>
@@ -312,12 +377,42 @@ const decodeSessionPromptInput = (
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
+const decodeSessionCreateOrLoadInput = (
+  request: SessionCreateOrLoadInput,
+): Effect.Effect<SessionCreateOrLoadInput, LaunchInputError> =>
+  Schema.decodeUnknown(SessionCreateOrLoadInputSchema, {
+    onExcessProperty: "error",
+  })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
+const decodeSessionHandlePromptInput = (
+  request: SessionHandlePromptInput,
+): Effect.Effect<SessionHandlePromptInput, PromptInputError> =>
+  Schema.decodeUnknown(SessionHandlePromptInputSchema, {
+    onExcessProperty: "error",
+  })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
 const decodePermissionRespondInput = (
   request: PermissionRespondInput,
 ): Effect.Effect<PermissionRespondInput, LaunchInputError> =>
   Schema.decodeUnknown(PermissionRespondInputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
+const decodeSessionPermissionRespondInput = (
+  request: SessionPermissionRespondInput,
+): Effect.Effect<SessionPermissionRespondInput, LaunchInputError> =>
+  Schema.decodeUnknown(SessionPermissionRespondInputSchema, {
+    onExcessProperty: "error",
+  })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
+const decodeSessionPermissionRequestWaitInput = (
+  request: SessionPermissionRequestWaitInput | undefined,
+): Effect.Effect<SessionPermissionRequestWaitInput, LaunchInputError> =>
+  request === undefined
+    ? Effect.succeed({})
+    : Schema.decodeUnknown(SessionPermissionRequestWaitInputSchema, {
+      onExcessProperty: "error",
+    })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeWaitForInput = (
   request: WaitForToolInput,
@@ -460,6 +555,26 @@ const agentOutputObservationFromRow = (
   }
   return Option.some(base)
 }
+
+const permissionRequestObservationFromRow = (
+  row: RuntimeEventRow,
+): Option.Option<RuntimePermissionRequestObservation> =>
+  Option.flatMap(agentOutputObservationFromRow(row), (observation) => {
+    if (observation._tag !== "PermissionRequest") return Option.none()
+    if (typeof observation.permissionRequestId !== "string") return Option.none()
+    if (typeof observation.toolUseId !== "string") return Option.none()
+    if (!isRecord(observation.event)) return Option.none()
+    return Option.some({
+      source: FiregridRuntimeObservationSourceNames.agentOutputEvents,
+      contextId: row.contextId,
+      activityAttempt: row.activityAttempt,
+      sequence: row.sequence,
+      _tag: "PermissionRequest",
+      permissionRequestId: observation.permissionRequestId,
+      toolUseId: observation.toolUseId,
+      event: observation.event,
+    })
+  })
 
 const waitForFirstMatch = (
   stream: Stream.Stream<unknown, PreloadError>,
@@ -622,6 +737,135 @@ const make = (config: ResolvedConfig) =>
         )
       })
 
+    const waitForPermissionRequest = (
+      contextId: string,
+      request?: SessionPermissionRequestWaitInput,
+    ): Effect.Effect<
+      SessionPermissionRequestWaitOutput,
+      LaunchInputError | PreloadError
+    > =>
+      Effect.gen(function* () {
+        const input = yield* decodeSessionPermissionRequestWaitInput(request)
+        const context = yield* resolveContext(contextId)
+        if (context === undefined) {
+          return yield* Effect.fail(new PreloadError({
+            cause: new Error(`runtime context ${contextId} not found`),
+          }))
+        }
+        const run = Effect.gen(function* () {
+          const output = yield* RuntimeOutputTable
+          return yield* Stream.runHead(
+            output.events.rows().pipe(
+              Stream.mapError(cause => new PreloadError({ cause })),
+              Stream.filterMap(permissionRequestObservationFromRow),
+              Stream.filter(observation =>
+                observation.contextId === contextId &&
+                (input.afterSequence === undefined ||
+                  observation.sequence > input.afterSequence),
+              ),
+            ),
+          )
+        }).pipe(
+          Effect.provide(outputLayerForContext(config, context)),
+          Effect.scoped,
+          Effect.mapError(cause => new PreloadError({ cause })),
+        )
+        const awaited = input.timeoutMs === undefined
+          ? run
+          : Effect.raceFirst(
+            run,
+            Clock.sleep(Duration.millis(input.timeoutMs)).pipe(
+              Effect.as(Option.none<RuntimePermissionRequestObservation>()),
+            ),
+          )
+        const matched = yield* awaited
+        return Option.match(matched, {
+          onNone: () => ({ matched: false, timedOut: true }) as const,
+          onSome: request => ({ matched: true, request }) as const,
+        })
+      })
+
+    const makeSessionHandle = (contextId: string): FiregridSessionHandle => ({
+      contextId,
+      prompt: request =>
+        Effect.gen(function* () {
+          const decoded = yield* decodeSessionHandlePromptInput(request)
+          const row = makeRuntimeIngressInputRow({
+            contextId,
+            kind: "message",
+            authoredBy: "client",
+            payload: decoded.payload,
+            idempotencyKey: decoded.idempotencyKey,
+            ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
+          })
+          return yield* appendPrompt(contextId, row)
+        }),
+      start: () =>
+        Effect.gen(function* () {
+          const starter = yield* RuntimeStartCapability
+          return yield* starter.start({ contextId })
+        }),
+      snapshot: () => readSnapshot(contextId),
+      wait: {
+        forPermissionRequest: request =>
+          waitForPermissionRequest(contextId, request),
+      },
+      permissions: {
+        respond: request =>
+          Effect.gen(function* () {
+            const decoded = yield* decodeSessionPermissionRespondInput(request)
+            const row = makeRuntimeIngressInputRow({
+              contextId,
+              kind: "control",
+              authoredBy: "client",
+              payload: {
+                _tag: "PermissionResponse",
+                permissionRequestId: decoded.permissionRequestId,
+                decision: decoded.decision,
+              },
+              idempotencyKey:
+                decoded.idempotencyKey ??
+                `permission-response:${contextId}:${decoded.permissionRequestId}`,
+            })
+            const appended = yield* appendPrompt(contextId, row)
+            return {
+              responded: true,
+              contextId,
+              permissionRequestId: decoded.permissionRequestId,
+              inputId: appended.inputId,
+            }
+          }),
+      },
+    })
+
+    const createOrLoadSession = (
+      request: SessionCreateOrLoadInput,
+    ): Effect.Effect<
+      FiregridSessionHandle,
+      LaunchInputError | AppendError,
+      CurrentHostSession
+    > =>
+      Effect.gen(function* () {
+        const decoded = yield* decodeSessionCreateOrLoadInput(request)
+        const runtime = yield* decodePublicLaunchRuntimeIntent(decoded.runtime)
+        const contextId = sessionContextIdForExternalKey(decoded.externalKey)
+        const existing = yield* resolveContext(contextId).pipe(
+          Effect.mapError(cause =>
+            new AppendError({ contextId, cause })),
+        )
+        if (existing === undefined) {
+          yield* insertLocalRuntimeContext(normalizeRuntimeIntent(runtime), {
+            contextId,
+            ...(decoded.createdBy === undefined ? {} : { createdBy: decoded.createdBy }),
+          }).pipe(
+            Effect.provideService(RuntimeControlPlaneTable, control),
+            Effect.mapError(cause =>
+              new AppendError({ contextId, cause })),
+          )
+        }
+        return makeSessionHandle(contextId)
+      })
+
     const waitForControlRows = (
       input: WaitForToolInput,
     ): Effect.Effect<WaitForToolOutput, PreloadError> =>
@@ -774,6 +1018,7 @@ const make = (config: ResolvedConfig) =>
         return yield* appendPrompt(decoded.contextId, row)
       }),
       sessions: {
+        createOrLoad: createOrLoadSession,
         prompt: request => Effect.gen(function* () {
           const decoded = yield* decodeSessionPromptInput(request)
           const row = makeRuntimeIngressInputRow(

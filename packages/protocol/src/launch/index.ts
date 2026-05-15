@@ -104,6 +104,14 @@ export {
   requireLocalContext,
 } from "./host-context-authority.ts"
 export {
+  RuntimeStartCapability,
+  RuntimeStartOptionsSchema,
+  RuntimeStartResultSchema,
+  type RuntimeStartCapabilityService,
+  type RuntimeStartOptions,
+  type RuntimeStartResult,
+} from "./runtime-start.ts"
+export {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   type RuntimeControlPlaneTableService,

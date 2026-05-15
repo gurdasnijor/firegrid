@@ -26,6 +26,19 @@ components:
       5: Starting a runtime from the client facade is expressed through a protocol-owned runtime-start capability supplied by host/runtime composition; packages/client must not import packages/runtime source or call startRuntime directly.
       6: Client wait and permission helpers use protocol-owned runtime observation source names and protocol schemas so browser/app-facing code does not import runtime-host observation modules.
 
+  CLIENT_SESSION_FACADE:
+    requirements:
+      1: firegrid.sessions.createOrLoad decodes protocol-owned SessionCreateOrLoad input schemas, normalizes PublicLaunchRuntimeIntentSchema runtime config, derives contextId through the protocol external-key helper, and returns the same RuntimeContext handle for duplicate externalKey calls.
+      2: The external-key to contextId helper is protocol-owned, deterministic, collision-resistant for distinct canonical key tuples, and does not rely on app-local slug or separator joining policy.
+      3: createOrLoad writes or loads a host-bound RuntimeContext row through protocol host-authority primitives so apps do not reconstruct Firegrid runtime identity, host binding, journal, or launch normalization details.
+      4: The returned handle scopes prompt, start, snapshot, wait.forPermissionRequest, and permissions.respond to the durable contextId so callers do not restate RuntimeContext identity on every operation.
+      5: handle.prompt decodes protocol-owned scoped prompt input, appends a RuntimeIngress message row, keeps input idempotency deterministic from the caller supplied idempotencyKey, and preserves optional metadata on the durable ingress row.
+      6: handle.start delegates to protocol RuntimeStartCapability supplied by runtime-host or app composition; @firegrid/client remains runtime-source-free and does not call startRuntime directly.
+      7: handle.snapshot observes existing RuntimeControlPlane, RuntimeIngress, and RuntimeOutput DurableTable rows for the scoped RuntimeContext without app-local projection state.
+      8: handle.wait.forPermissionRequest observes protocol FiregridRuntimeObservationSourceNames.agentOutputEvents semantics over RuntimeOutput events, filters by scoped contextId plus optional afterSequence and timeoutMs, and returns the matching PermissionRequest observation without adding a permission table.
+      9: handle.permissions.respond decodes protocol-owned scoped permission response input and appends a RuntimeIngress PermissionResponse control row, deriving default idempotency inside the client helper from contextId plus permissionRequestId.
+      10: The facade does not import runtime agent Tool values, app-owned identity helpers, factory-specific code, scenario-side adapters, parent-child hierarchy, or provider-specific Firegrid substrate.
+
   CLI_PROJECTION:
     requirements:
       1: src/run.ts and future CLI commands project schema metadata into command args, validation, defaults, examples, and help text where applicable.
