@@ -14,8 +14,6 @@ import {
   RuntimeIngressInputRowSchema,
 } from "@firegrid/protocol/runtime-ingress"
 import {
-  FiregridSessionIdSchema,
-  type FiregridSessionId,
   type RuntimePermissionRequestObservation,
 } from "@firegrid/protocol/session-facade"
 import {
@@ -28,6 +26,7 @@ import {
   Firegrid,
   FiregridConfig,
   FiregridLive,
+  type FiregridSessionHandle,
 } from "@firegrid/client/firegrid"
 import {
   SourceCollections,
@@ -89,7 +88,6 @@ export type AcceptFactoryTriggerResult = Schema.Schema.Type<
 >
 
 export const FactoryPermissionRequestSchema = Schema.Struct({
-  sessionId: FiregridSessionIdSchema,
   contextId: Schema.String,
   activityAttempt: Schema.Number,
   sequence: Schema.Number,
@@ -102,21 +100,7 @@ export type FactoryPermissionRequest = Schema.Schema.Type<
   typeof FactoryPermissionRequestSchema
 >
 
-const FactoryPermissionObservationSchema = Schema.Struct({
-  contextId: Schema.String,
-  activityAttempt: Schema.Number,
-  sequence: Schema.Number,
-  _tag: Schema.Literal("PermissionRequest"),
-  permissionRequestId: Schema.String,
-  toolUseId: Schema.String,
-  event: AgentOutputEventSchema,
-})
-type FactoryPermissionObservation = Schema.Schema.Type<
-  typeof FactoryPermissionObservationSchema
->
-
 export const FactoryRunStatusViewSchema = Schema.Struct({
-  plannerSessionId: FiregridSessionIdSchema,
   run: DarkFactoryRunSchema,
   facts: Schema.Array(DarkFactoryFactSchema),
   runtimeRuns: Schema.Array(RuntimeRunEventSchema),
@@ -131,26 +115,12 @@ export type FactoryRunStatusView = Schema.Schema.Type<
 
 export const PermissionResponseInputSchema = Schema.Struct({
   factoryRunKey: FactoryRunKeyStringSchema,
-  sessionId: Schema.optional(FiregridSessionIdSchema),
+  sessionId: Schema.optional(Schema.String),
   contextId: Schema.optional(Schema.String),
   permissionRequestId: Schema.String,
   decision: PermissionDecisionSchema,
   correlationId: Schema.optional(Schema.String),
-}).pipe(
-  Schema.filter(input => {
-    if (input.sessionId === undefined && input.contextId === undefined) {
-      return "sessionId or contextId is required"
-    }
-    if (
-      input.sessionId !== undefined &&
-      input.contextId !== undefined &&
-      input.sessionId !== input.contextId
-    ) {
-      return "sessionId and contextId must match in v1"
-    }
-    return undefined
-  }),
-)
+})
 export type PermissionResponseInput = Schema.Schema.Type<
   typeof PermissionResponseInputSchema
 >
@@ -184,8 +154,6 @@ export type FactoryNextAgentOutputWaitOptions = Schema.Schema.Type<
 const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map(millis => new Date(millis).toISOString()),
 )
-
-const decodeSessionId = Schema.decodeSync(FiregridSessionIdSchema)
 
 export const darkFactoryStreamUrl = (input: {
   readonly baseUrl: string
@@ -265,9 +233,7 @@ const createOrLoadPlannerSession = (input: {
     })
   })
 
-const attachPlannerSession = (
-  sessionId: FiregridSessionId | string,
-) =>
+const attachPlannerSession = (sessionId: string) =>
   Effect.gen(function* () {
     const firegrid = yield* Firegrid
     return yield* firegrid.sessions.attach({ sessionId })
@@ -349,17 +315,13 @@ const appendInitialPlannerPrompt = (
   input: {
     readonly run: DarkFactoryRun
     readonly trigger: DarkFactoryTrigger
-    readonly planner: RuntimeConfig
+    readonly session: FiregridSessionHandle
     readonly providerCapabilities: ReadonlyArray<string>
   },
 ) => {
   const inputId = `dark-factory:planner:${input.run.factoryRunKey}:initial`
   return Effect.gen(function* () {
-    const session = yield* createOrLoadPlannerSession({
-      factoryRunKey: input.run.factoryRunKey,
-      planner: input.planner,
-    })
-    const row = yield* session.prompt({
+    const row = yield* input.session.prompt({
       idempotencyKey: inputId,
       payload: buildPlannerPrompt(input),
       metadata: {
@@ -426,7 +388,7 @@ export const acceptFactoryTrigger = (
     const initialInputId = yield* appendInitialPlannerPrompt({
       run,
       trigger,
-      planner,
+      session,
       providerCapabilities: decodedOptions.providerCapabilities ?? [],
     })
     return {
@@ -440,13 +402,9 @@ export const acceptFactoryTrigger = (
 
 export const startFactoryPlanner = (
   run: DarkFactoryRun,
-  planner: RuntimeConfig,
 ) =>
   Effect.gen(function* () {
-    const session = yield* createOrLoadPlannerSession({
-      factoryRunKey: run.factoryRunKey,
-      planner,
-    })
+    const session = yield* attachPlannerSession(run.plannerContextId)
     yield* upsertRunStatus(run, "planner_started")
     return yield* session.start()
   })
@@ -457,7 +415,7 @@ export const acceptAndStartFactoryTrigger = (
   Effect.gen(function* () {
     const accepted = yield* acceptFactoryTrigger(options)
     if (accepted.runInserted) {
-      yield* startFactoryPlanner(accepted.run, options.planner).pipe(
+      yield* startFactoryPlanner(accepted.run).pipe(
         Effect.catchAll(() => upsertRunStatus(accepted.run, "failed")),
         Effect.fork,
       )
@@ -487,7 +445,6 @@ const permissionFromRow = (
   const event = decodeAgentOutputWrapper(row)
   if (event?._tag !== "PermissionRequest") return undefined
   return {
-    sessionId: decodeSessionId(row.contextId),
     contextId: row.contextId,
     activityAttempt: row.activityAttempt,
     sequence: row.sequence,
@@ -499,28 +456,25 @@ const permissionFromRow = (
 }
 
 const permissionFromObservation = (
-  row: unknown,
+  observation: RuntimePermissionRequestObservation,
 ): Option.Option<FactoryPermissionRequest> => {
-  const decoded = Schema.decodeUnknownEither(FactoryPermissionObservationSchema)(row)
-  if (Either.isLeft(decoded)) return Option.none()
-  const observation: FactoryPermissionObservation = decoded.right
-  if (observation.event._tag !== "PermissionRequest") return Option.none()
+  const decoded = Schema.decodeUnknownEither(AgentOutputEventSchema)(
+    observation.event,
+  )
+  if (Either.isLeft(decoded) || decoded.right._tag !== "PermissionRequest") {
+    return Option.none()
+  }
+  const event = decoded.right
   return Option.some({
-    sessionId: decodeSessionId(observation.contextId),
     contextId: observation.contextId,
     activityAttempt: observation.activityAttempt,
     sequence: observation.sequence,
     permissionRequestId: observation.permissionRequestId,
     toolUseId: observation.toolUseId,
-    options: observation.event.options,
-    event: observation.event,
+    options: event.options,
+    event,
   })
 }
-
-const permissionFromSessionObservation = (
-  observation: RuntimePermissionRequestObservation,
-): Option.Option<FactoryPermissionRequest> =>
-  permissionFromObservation(observation)
 
 const sortRuntimeEvents = <Row extends { readonly sequence: number }>(
   rows: ReadonlyArray<Row>,
@@ -557,7 +511,6 @@ export const readFactoryRunStatus = (
       return permission === undefined ? [] : [permission]
     })
     return {
-      plannerSessionId: session.sessionId,
       run,
       facts,
       runtimeRuns,
@@ -678,7 +631,7 @@ export const waitForPermissionRequest = (
           timeoutMs: waitMs,
         })
         if (waited.matched) {
-          const permission = permissionFromSessionObservation(waited.request)
+          const permission = permissionFromObservation(waited.request)
           if (
             Option.isSome(permission) &&
             permission.value.contextId === run.plannerContextId &&
