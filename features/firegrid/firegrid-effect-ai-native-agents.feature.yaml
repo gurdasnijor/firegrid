@@ -1,0 +1,38 @@
+feature:
+  name: firegrid-effect-ai-native-agents
+  product: firegrid
+  description: Effect AI-native agent adapter foundations that expose upstream LanguageModel.Service without cloning model, tool, provider, or sandbox contracts.
+
+components:
+  CURRENT_TURN:
+    requirements:
+      1: CurrentAgentTurn carries adapter-local turn correlation through Effect context with a required turnId and optional contextId.
+      2: Agent adapter model calls do not add Firegrid-specific fields to LanguageModel request options.
+
+  ADAPTER_SURFACE:
+    requirements:
+      1: AgentAdapter exposes an upstream @effect/ai LanguageModel.Service plus a small additive capability summary.
+      2: AgentAdapter is not a SandboxProvider and does not provision process, filesystem, environment, container, or remote sandbox resources.
+      3: AgentAdapterRegistry defines the host selection shape as adapterFor(RuntimeContext) returning an AgentAdapterService without wiring runtime-host integration.
+
+  LANGUAGE_MODEL_ADAPTER:
+    requirements:
+      1: LanguageModelAdapter wraps an injected @effect/ai LanguageModel.Service as an AgentAdapter without changing generateText, generateObject, or streamText semantics.
+      2: LanguageModelAdapter advertises in-process streaming text and tool support, no multi-turn session ownership, and no permission-request capability.
+
+  ADAPTER_ERRORS:
+    requirements:
+      1: Firegrid adapter errors are Schema.TaggedError classes, not manual _tag object/type aliases.
+      2: Firegrid adapter errors remain Firegrid-owned capability or selection errors and do not widen the LanguageModel.Service error channel.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: Slice 1 does not modify runtime-host workflow execution, runtime journaling, ACP codec behavior, SandboxProvider, or MCP routing.
+      2: LanguageModel.Service is the base prompt/model contract; Firegrid does not define a parallel model interface or local tool registry in this slice.
+
+  VALIDATION:
+    requirements:
+      1: Tests prove LanguageModelAdapter delegates to an injected fake LanguageModel.Service and does not require SandboxProvider.
+      2: Tests prove CurrentAgentTurn can be provided and read through Effect context.
+      3: Tests prove AgentAdapterRegistry can select an AgentAdapterService for a RuntimeContext shape without invoking runtime-host integration.
