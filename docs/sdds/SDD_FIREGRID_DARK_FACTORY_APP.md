@@ -475,15 +475,10 @@ as:
 Permission resume writes ordinary runtime ingress:
 
 ```ts
-appendRuntimeIngress({
+yield* firegrid.permissions.respond({
   contextId,
-  kind: "control",
-  authoredBy: "client",
-  payload: {
-    _tag: "PermissionResponse",
-    permissionRequestId,
-    decision: { _tag: "Allow", optionId: "allow" },
-  },
+  permissionRequestId,
+  decision: { _tag: "Allow", optionId: "allow" },
   idempotencyKey: `dark-factory:permission:${contextId}:${permissionRequestId}`,
 })
 ```
@@ -559,9 +554,11 @@ The production-shaped flow is:
    external event key.
 3. The app creates or loads one durable factory-run subscriber identity for
    the external work key and resolves its planner `contextId`.
-4. The planner context is launched by the host/control-plane path:
-   `insertLocalRuntimeContext` or `Firegrid.launch`, optional initial
-   `appendRuntimeIngress`, and `startRuntime`.
+4. The planner context is launched through the client session facade composed
+   with the factory host: `firegrid.sessions.createOrLoad`, scoped
+   `session.prompt`, and `session.start`. That facade lowers to the
+   host/control-plane path without app code rebuilding RuntimeContext or
+   RuntimeIngress identity.
 5. The planner receives the canonical Firegrid tools and app-specific
    capability instructions. It may call `session_new`, `session_prompt`,
    `wait_for`, `schedule_me`, and `execute` where supported by the current

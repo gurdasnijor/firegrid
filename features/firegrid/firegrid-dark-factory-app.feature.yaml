@@ -36,7 +36,7 @@ components:
 
   AUTONOMOUS_RUN:
     requirements:
-      1: Factory trigger handling creates or loads the durable factory-run subscriber identity and planner context, persists the accepted provider fact, and starts the planner through runtime-host primitives without a coded phase chain.
+      1: Factory trigger handling creates or loads the durable factory-run subscriber identity and planner context through the Firegrid client session facade composed with the runtime host, persists the accepted provider fact, and starts the planner without a coded phase chain.
       2: The initial planner prompt includes parent context id, factory run key, source names, runtime observation source names, Linear issue fields, repository hint, provider capability names, and choreography operating rules.
       3: The initial planner prompt is designed to elicit plan approval waits or permission requests, session_new delegation, session_prompt follow-ups, wait_for over facts/runtime observations, schedule_me rechecks, and execute only for advertised capabilities.
 

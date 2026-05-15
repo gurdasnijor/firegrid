@@ -96,7 +96,6 @@ export const factoryRunIdentityFor = (input: {
   return {
     factoryRunKey,
     subscriberId: `dark-factory:${suffix}`,
-    plannerContextId: `ctx_factory_${suffix}`,
   }
 }
 
@@ -111,6 +110,6 @@ export const permissionResolutionIdentityFor = (input: {
   return {
     factKey: ["darkFactory.permission", externalEventKey] as const,
     externalEventKey,
-    inputId: `dark-factory:permission:${idSuffixFromCanonicalKey(externalEventKey)}`,
+    idempotencyKey: `dark-factory:permission:${idSuffixFromCanonicalKey(externalEventKey)}`,
   }
 }

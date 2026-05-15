@@ -1,28 +1,29 @@
 import {
-  RuntimeControlPlaneTable,
   RuntimeEventSchema,
   RuntimeLogLineSchema,
-  RuntimeOutputTable,
   RuntimeRunEventSchema,
   RuntimeConfigSchema,
   durableStreamUrl,
-  normalizeRuntimeIntent,
   type RuntimeConfig,
   type RuntimeEvent,
 } from "@firegrid/protocol/launch"
 import {
-  RuntimeIngressTable,
+  FiregridRuntimeObservationSourceNames,
+} from "@firegrid/protocol/agent-tools"
+import {
   RuntimeIngressInputRowSchema,
 } from "@firegrid/protocol/runtime-ingress"
 import {
   FiregridLocalHostLive,
-  RuntimeObservationSourceNames,
-  appendRuntimeIngress,
-  insertLocalRuntimeContext,
+  RuntimeStartCapabilityLive,
   localProcessSpawnEnvFromHostEnv,
-  startRuntime,
   type RuntimeHostTopologyOptions,
 } from "@firegrid/runtime/runtime-host"
+import {
+  Firegrid,
+  FiregridConfig,
+  FiregridLive,
+} from "@firegrid/client/firegrid"
 import {
   SourceCollections,
   sourceCollectionHandle,
@@ -34,7 +35,7 @@ import {
   PermissionOptionSchema,
   type AgentOutputEvent,
 } from "@firegrid/runtime/agent-io"
-import { Clock, Duration, Effect, Either, Layer, Match, Option, Schema, Stream } from "effect"
+import { Clock, Effect, Either, Layer, Match, Option, Schema } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {
   FactoryRunKeyStringSchema,
@@ -198,7 +199,18 @@ export const DarkFactoryHostLive = (
       ? {}
       : { localProcessEnv: config.localProcessEnv }),
   }, envPolicy)
-  return DarkFactorySourcesLive.pipe(
+  const client = FiregridLive.pipe(
+    Layer.provide(Layer.succeed(FiregridConfig, {
+      durableStreamsBaseUrl: config.durableStreamsBaseUrl,
+      namespace: config.namespace,
+      ...(config.headers === undefined ? {} : { headers: config.headers }),
+    })),
+  )
+  return Layer.mergeAll(
+    DarkFactorySourcesLive,
+    client,
+    RuntimeStartCapabilityLive,
+  ).pipe(
     Layer.provideMerge(appTable),
     Layer.provideMerge(host),
   )
@@ -206,10 +218,27 @@ export const DarkFactoryHostLive = (
 
 export const localProcessEnvFromRecord = localProcessSpawnEnvFromHostEnv
 
-const plannerIntent = (config: RuntimeConfig) =>
-  normalizeRuntimeIntent({
-    provider: "local-process",
-    config,
+const plannerRuntime = (config: RuntimeConfig) => ({
+  provider: "local-process" as const,
+  config,
+})
+
+const factoryRunSessionExternalKey = (factoryRunKey: string) => ({
+  source: "darkFactory.run",
+  id: factoryRunKey,
+})
+
+const createOrLoadPlannerSession = (input: {
+  readonly factoryRunKey: string
+  readonly planner: RuntimeConfig
+}) =>
+  Effect.gen(function* () {
+    const firegrid = yield* Firegrid
+    return yield* firegrid.sessions.createOrLoad({
+      externalKey: factoryRunSessionExternalKey(input.factoryRunKey),
+      runtime: plannerRuntime(input.planner),
+      createdBy: `dark-factory:${input.factoryRunKey}`,
+    })
   })
 
 const acceptedFactFrom = (input: {
@@ -288,23 +317,27 @@ const appendInitialPlannerPrompt = (
   input: {
     readonly run: DarkFactoryRun
     readonly trigger: DarkFactoryTrigger
+    readonly planner: RuntimeConfig
     readonly providerCapabilities: ReadonlyArray<string>
   },
 ) => {
   const inputId = `dark-factory:planner:${input.run.factoryRunKey}:initial`
-  return appendRuntimeIngress({
-    contextId: input.run.plannerContextId,
-    inputId,
-    kind: "message",
-    authoredBy: "client",
-    payload: buildPlannerPrompt(input),
-    idempotencyKey: inputId,
-    metadata: {
+  return Effect.gen(function* () {
+    const session = yield* createOrLoadPlannerSession({
       factoryRunKey: input.run.factoryRunKey,
-      source: input.run.source,
-      subscriberId: input.run.subscriberId,
-    },
-  }).pipe(Effect.as(inputId))
+      planner: input.planner,
+    })
+    const row = yield* session.prompt({
+      idempotencyKey: inputId,
+      payload: buildPlannerPrompt(input),
+      metadata: {
+        factoryRunKey: input.run.factoryRunKey,
+        source: input.run.source,
+        subscriberId: input.run.subscriberId,
+      },
+    })
+    return row.inputId
+  })
 }
 
 export const acceptFactoryTrigger = (
@@ -319,10 +352,14 @@ export const acceptFactoryTrigger = (
     const table = yield* DarkFactoryTable
     const createdAt = yield* nowIso
     const identity = factoryRunIdentityFor(trigger)
+    const session = yield* createOrLoadPlannerSession({
+      factoryRunKey: identity.factoryRunKey,
+      planner,
+    })
     const fact = acceptedFactFrom({
       trigger,
       factoryRunKey: identity.factoryRunKey,
-      contextId: identity.plannerContextId,
+      contextId: session.contextId,
       createdAt,
     })
     const factResult = yield* table.facts.insertOrGet(fact)
@@ -335,7 +372,7 @@ export const acceptFactoryTrigger = (
       trigger,
       factoryRunKey: identity.factoryRunKey,
       subscriberId: identity.subscriberId,
-      contextId: identity.plannerContextId,
+      contextId: session.contextId,
       createdAt,
     })
     const runResult = yield* table.runs.insertOrGet(initialRun)
@@ -353,15 +390,10 @@ export const acceptFactoryTrigger = (
       }
     }
 
-    // firegrid-dark-factory-app.PLATFORM_PRIMITIVES.1
-    // firegrid-dark-factory-app.AUTONOMOUS_RUN.1
-    yield* insertLocalRuntimeContext(plannerIntent(planner), {
-      contextId: run.plannerContextId,
-      createdBy: `dark-factory:${run.factoryRunKey}`,
-    })
     const initialInputId = yield* appendInitialPlannerPrompt({
       run,
       trigger,
+      planner,
       providerCapabilities: decodedOptions.providerCapabilities ?? [],
     })
     return {
@@ -375,10 +407,15 @@ export const acceptFactoryTrigger = (
 
 export const startFactoryPlanner = (
   run: DarkFactoryRun,
+  planner: RuntimeConfig,
 ) =>
   Effect.gen(function* () {
+    const session = yield* createOrLoadPlannerSession({
+      factoryRunKey: run.factoryRunKey,
+      planner,
+    })
     yield* upsertRunStatus(run, "planner_started")
-    return yield* startRuntime({ contextId: run.plannerContextId })
+    return yield* session.start()
   })
 
 export const acceptAndStartFactoryTrigger = (
@@ -387,7 +424,7 @@ export const acceptAndStartFactoryTrigger = (
   Effect.gen(function* () {
     const accepted = yield* acceptFactoryTrigger(options)
     if (accepted.runInserted) {
-      yield* startFactoryPlanner(accepted.run).pipe(
+      yield* startFactoryPlanner(accepted.run, options.planner).pipe(
         Effect.catchAll(() => upsertRunStatus(accepted.run, "failed")),
         Effect.fork,
       )
@@ -467,21 +504,14 @@ export const readFactoryRunStatus = (
           row.factoryRunKey === factoryRunKey ||
           row.externalEntityKey === run.externalEntityKey)
         .sort((left, right) => left.createdAt.localeCompare(right.createdAt)))
-    const control = yield* RuntimeControlPlaneTable
-    const runtimeRuns = yield* control.runs.query(coll =>
-      coll.toArray
-        .filter(row => row.contextId === run.plannerContextId)
-        .sort((left, right) => left.activityAttempt - right.activityAttempt))
-    const output = yield* RuntimeOutputTable
-    const runtimeEvents = sortRuntimeEvents(yield* output.events.query(coll =>
-      coll.toArray.filter(row => row.contextId === run.plannerContextId)))
-    const runtimeLogs = sortRuntimeEvents(yield* output.logs.query(coll =>
-      coll.toArray.filter(row => row.contextId === run.plannerContextId)))
-    const ingress = yield* RuntimeIngressTable
-    const ingressInputs = yield* ingress.inputs.query(coll =>
-      coll.toArray
-        .filter(row => row.contextId === run.plannerContextId)
-        .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0)))
+    const firegrid = yield* Firegrid
+    const snapshot = yield* firegrid.open(run.plannerContextId).snapshot
+    const runtimeRuns = [...snapshot.runs]
+      .sort((left, right) => left.activityAttempt - right.activityAttempt)
+    const runtimeEvents = sortRuntimeEvents(snapshot.events)
+    const runtimeLogs = sortRuntimeEvents(snapshot.logs)
+    const ingressInputs = [...snapshot.inputs]
+      .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
     const permissions = runtimeEvents.flatMap(row => {
       const permission = permissionFromRow(row)
       return permission === undefined ? [] : [permission]
@@ -526,22 +556,21 @@ export const respondToFactoryPermission = (
       },
     }
     yield* table.facts.insertOrGet(fact)
-    const ingress = yield* appendRuntimeIngress({
+    const firegrid = yield* Firegrid
+    const response = yield* firegrid.permissions.respond({
       contextId: decodedInput.contextId,
-      inputId: identity.inputId,
-      kind: "control",
-      authoredBy: "client",
-      payload: {
-        _tag: "PermissionResponse",
-        permissionRequestId: decodedInput.permissionRequestId,
-        decision,
-      },
-      idempotencyKey: identity.inputId,
-      metadata: {
-        factoryRunKey: decodedInput.factoryRunKey,
-        permissionRequestId: decodedInput.permissionRequestId,
-      },
+      permissionRequestId: decodedInput.permissionRequestId,
+      decision,
+      idempotencyKey: identity.idempotencyKey,
     })
+    const snapshot = yield* firegrid.open(decodedInput.contextId).snapshot
+    const ingress = snapshot.inputs.find(inputRow =>
+      inputRow.inputId === response.inputId)
+    if (ingress === undefined) {
+      return yield* Effect.fail(
+        new Error(`permission response ingress not found: ${response.inputId}`),
+      )
+    }
     const runOption = yield* table.runs.get(decodedInput.factoryRunKey)
     yield* Option.match(runOption, {
       onNone: () => Effect.void,
@@ -571,29 +600,55 @@ export const waitForPermissionRequest = (
         Effect.fail(new Error(`factory run not found: ${decodedInput.factoryRunKey}`)),
       onSome: Effect.succeed,
     })
-    const sources = yield* SourceCollections
-    const handle = yield* sources.awaitHandle(
-      RuntimeObservationSourceNames.agentOutputEvents,
-    )
-    const firstMatch = handle.subscribe().pipe(
-      Stream.filterMap(row =>
-        Option.filter(permissionFromObservation(row), permission =>
-          permission.contextId === run.plannerContextId &&
-          permission.sequence > afterSequence)),
-      Stream.runHead,
-    )
-    const awaited = Effect.raceFirst(
-      firstMatch,
-      Clock.sleep(Duration.millis(decodedInput.timeoutMs)).pipe(
-        Effect.as(Option.none<FactoryPermissionRequest>()),
-      ),
-    )
-    const result = yield* awaited
-    return yield* Option.match(result, {
-      onNone: () =>
-        Effect.fail(new Error(`timed out waiting for permission on ${decodedInput.factoryRunKey}`)),
-      onSome: Effect.succeed,
+    const firegrid = yield* Firegrid
+    const findExisting = Effect.gen(function* () {
+      const snapshot = yield* firegrid.open(run.plannerContextId).snapshot
+      return Option.fromNullable(
+        snapshot.events
+          .flatMap(row => {
+            const permission = permissionFromRow(row)
+            return permission === undefined ? [] : [permission]
+          })
+          .filter(permission => permission.sequence > afterSequence)
+          .sort((left, right) => left.sequence - right.sequence)
+          .at(0),
+      )
     })
+    const loop = (
+      remainingMs: number,
+    ): Effect.Effect<FactoryPermissionRequest, unknown, unknown> =>
+      Effect.gen(function* () {
+        const existing = yield* findExisting
+        if (Option.isSome(existing)) return existing.value
+        if (remainingMs <= 0) {
+          return yield* Effect.fail(
+            new Error(`timed out waiting for permission on ${decodedInput.factoryRunKey}`),
+          )
+        }
+        const waitMs = Math.min(remainingMs, 500)
+        const waited = yield* firegrid.wait.for({
+          eventQuery: {
+            stream: FiregridRuntimeObservationSourceNames.agentOutputEvents,
+            whereFields: {
+              contextId: run.plannerContextId,
+              _tag: "PermissionRequest",
+            },
+          },
+          timeoutMs: waitMs,
+        })
+        if (waited.matched) {
+          const permission = permissionFromObservation(waited.event)
+          if (
+            Option.isSome(permission) &&
+            permission.value.contextId === run.plannerContextId &&
+            permission.value.sequence > afterSequence
+          ) {
+            return permission.value
+          }
+        }
+        return yield* loop(remainingMs - waitMs)
+      })
+    return yield* loop(decodedInput.timeoutMs)
   })
 
 export const waitForNextAgentOutput = (
@@ -622,4 +677,4 @@ export const waitForNextAgentOutput = (
     return yield* loop(decodedInput.timeoutMs)
   })
 
-export { RuntimeObservationSourceNames }
+export const RuntimeObservationSourceNames = FiregridRuntimeObservationSourceNames

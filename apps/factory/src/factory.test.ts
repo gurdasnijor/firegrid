@@ -1,5 +1,7 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { RuntimeOutputTable } from "@firegrid/protocol/launch"
+import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
+import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
 import { AgentOutputEventSchema, type AgentOutputEvent } from "@firegrid/runtime/agent-io"
 import { Effect, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -65,7 +67,10 @@ const trigger: DarkFactoryTrigger = {
 
 const triggerIdentity = factoryRunIdentityFor(trigger)
 const triggerFactoryRunKey = triggerIdentity.factoryRunKey
-const triggerPlannerContextId = triggerIdentity.plannerContextId
+const triggerPlannerContextId = sessionContextIdForExternalKey({
+  source: "darkFactory.run",
+  id: triggerFactoryRunKey,
+})
 const triggerSubscriberId = triggerIdentity.subscriberId
 
 const hostLayer = (namespace: string) =>
@@ -99,7 +104,7 @@ describe("dark factory P0 contracts", () => {
       "issue-456",
     ])
     expect(identity.subscriberId).toMatch(/^dark-factory:/)
-    expect(identity.plannerContextId).toMatch(/^ctx_factory_/)
+    expect(triggerPlannerContextId).toMatch(/^ctx_ext_/)
   })
 
   it("firegrid-dark-factory-app.PARENT_RUN.1 canonical identities do not collide on colon or slug-like input", () => {
@@ -121,9 +126,21 @@ describe("dark factory P0 contracts", () => {
     })
 
     expect(colonLeft.factoryRunKey).not.toBe(colonRight.factoryRunKey)
-    expect(colonLeft.plannerContextId).not.toBe(colonRight.plannerContextId)
+    expect(sessionContextIdForExternalKey({
+      source: "darkFactory.run",
+      id: colonLeft.factoryRunKey,
+    })).not.toBe(sessionContextIdForExternalKey({
+      source: "darkFactory.run",
+      id: colonRight.factoryRunKey,
+    }))
     expect(slugLeft.factoryRunKey).not.toBe(slugRight.factoryRunKey)
-    expect(slugLeft.plannerContextId).not.toBe(slugRight.plannerContextId)
+    expect(sessionContextIdForExternalKey({
+      source: "darkFactory.run",
+      id: slugLeft.factoryRunKey,
+    })).not.toBe(sessionContextIdForExternalKey({
+      source: "darkFactory.run",
+      id: slugRight.factoryRunKey,
+    }))
   })
 
   it("firegrid-dark-factory-app.EXTERNAL_FACTS.1 decodes provider-shaped trigger input and composite fact keys", () => {
@@ -146,7 +163,7 @@ describe("dark factory P0 contracts", () => {
       subscriberId: triggerIdentity.subscriberId,
       source: trigger.source,
       externalEntityKey: trigger.externalEntityKey,
-      plannerContextId: triggerIdentity.plannerContextId,
+      plannerContextId: triggerPlannerContextId,
       acceptedFactKey: [trigger.source, trigger.externalEventKey],
       status: "accepted",
       createdAt: "2026-05-15T00:00:00.000Z",
@@ -186,7 +203,7 @@ describe("dark factory P0 contracts", () => {
       "darkFactory.permission",
       identity.externalEventKey,
     ])
-    expect(identity.inputId).toMatch(/^dark-factory:permission:/)
+    expect(identity.idempotencyKey).toMatch(/^dark-factory:permission:/)
   })
 
   it("firegrid-dark-factory-app.WAIT_AND_PERMISSION.2 schema-decodes permission resume and read-model contracts", () => {
@@ -230,7 +247,7 @@ describe("dark factory P0 contracts", () => {
       subscriberId: triggerIdentity.subscriberId,
       source: trigger.source,
       externalEntityKey: trigger.externalEntityKey,
-      plannerContextId: triggerIdentity.plannerContextId,
+      plannerContextId: triggerPlannerContextId,
       acceptedFactKey: [trigger.source, trigger.externalEventKey],
       status: "accepted",
       createdAt: "2026-05-15T00:00:00.000Z",
@@ -293,7 +310,10 @@ describe("dark factory P0 contracts", () => {
     expect(result.first.factInserted).toBe(true)
     expect(result.first.runInserted).toBe(true)
     expect(result.first.initialInputId).toBe(
-      `dark-factory:planner:${triggerFactoryRunKey}:initial`,
+      runtimeIngressInputIdForIdempotencyKey(
+        triggerPlannerContextId,
+        `dark-factory:planner:${triggerFactoryRunKey}:initial`,
+      ),
     )
     expect(result.second.runInserted).toBe(false)
     expect(result.second.initialInputId).toBeUndefined()
@@ -345,7 +365,10 @@ describe("dark factory P0 contracts", () => {
       contextId: triggerPlannerContextId,
       permissionRequestId: "permission-1",
     })
-    const inputId = permissionIdentity.inputId
+    const inputId = runtimeIngressInputIdForIdempotencyKey(
+      triggerPlannerContextId,
+      permissionIdentity.idempotencyKey,
+    )
     expect(result.first.input.inputId).toBe(inputId)
     expect(result.second.input.inputId).toBe(inputId)
     expect(result.status.facts.some(fact =>
@@ -360,7 +383,7 @@ describe("dark factory P0 contracts", () => {
       inputId,
       contextId: triggerPlannerContextId,
       authoredBy: "client",
-      idempotencyKey: inputId,
+      idempotencyKey: permissionIdentity.idempotencyKey,
       sequence: 1,
       status: "sequenced",
     })
