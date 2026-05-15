@@ -440,6 +440,38 @@ rules:
       Resolve through requireLocalContext before executing local host services.
     pattern: $ENGINE.execute(RuntimeContextWorkflow, ...)
 
+  - id: firegrid-factory-exported-contracts-use-schema
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-dark-factory-app.BOUNDARIES.1
+      quality-acid: firegrid-remediation-hardening.STATIC_QUALITY.6
+      category: schema-authority
+      rationale: |
+        Factory app contracts are product-facing durable rows, read models,
+        command/config inputs, and UI adapter payloads. Exported contracts must
+        be Effect Schema-backed so tools, clients, CLIs, docs, tests, and live
+        adapters serialize the same shape. Raw exported interfaces drift from
+        the Schema-first Firegrid contract.
+      fix-hint: |
+        export const FooSchema = Schema.Struct({ ... })
+        export type Foo = Schema.Schema.Type<typeof FooSchema>
+    paths:
+      include:
+        - "/apps/factory/src/**/*.ts"
+        - "/apps/factory/src/**/*.tsx"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/__tests__/**"
+        - "/apps/factory/src/bin/**"
+    message: |
+      Exported factory app contracts must be Effect Schema-backed. Use
+      Schema.Struct plus `Schema.Schema.Type<typeof XSchema>` instead of raw
+      exported interfaces or object-literal type aliases.
+    pattern-regex: '\bexport\s+(interface\s+[A-Za-z_$][A-Za-z0-9_$]*|type\s+[A-Za-z_$][A-Za-z0-9_$]*\s*=\s*\{)'
+
   - id: firegrid-no-random-durable-identity
     languages: [typescript]
     severity: ERROR

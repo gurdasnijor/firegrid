@@ -288,6 +288,28 @@ const visibleMutableState = Effect.gen(function* () {
   yield* Effect.sync(() => map.set("key", "value"))
 })
 
+// ruleid: firegrid-factory-exported-contracts-use-schema
+export interface FactoryRunStatusView {
+  readonly factoryRunKey: string
+}
+
+// ruleid: firegrid-factory-exported-contracts-use-schema
+export type FactoryPermissionRequest = {
+  readonly permissionRequestId: string
+}
+
+// ok: firegrid-factory-exported-contracts-use-schema
+interface InternalFactoryLayerOptions {
+  readonly streamPrefix: string
+}
+
+declare const FactoryRunStatusViewSchema: unknown
+
+// ok: firegrid-factory-exported-contracts-use-schema
+export type SchemaBackedFactoryRunStatusView = Schema.Schema.Type<
+  typeof FactoryRunStatusViewSchema
+>
+
 export {
   broadTryPromise,
   chainedPromise,
