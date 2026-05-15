@@ -26,6 +26,7 @@ interface Harness {
 
 class FixtureAgent implements acp.Agent {
   readonly prompts: Array<acp.PromptRequest> = []
+  readonly newSessionRequests: Array<acp.NewSessionRequest> = []
   protected readonly connection: acp.AgentSideConnection
 
   constructor(connection: acp.AgentSideConnection) {
@@ -41,7 +42,8 @@ class FixtureAgent implements acp.Agent {
     }
   }
 
-  async newSession(): Promise<acp.NewSessionResponse> {
+  async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
+    this.newSessionRequests.push(params)
     return { sessionId: "session-1" }
   }
 
@@ -446,5 +448,51 @@ describe("AcpAgentAdapter", () => {
       expect(delta.delta).not.toContain("first")
     })
     expect(deltas.some(delta => delta.delta.includes("second"))).toBe(true)
+  })
+
+  it("firegrid-effect-ai-native-agents.ACP_ADAPTER.14 by default sends cwd=process.cwd() and mcpServers=[] to ACP newSession", async () => {
+    const harness = await Effect.runPromise(makeHarness)
+    const agent = startAgent(harness, connection => new FixtureAgent(connection))
+    await runWithAdapter(harness, adapter =>
+      adapter.languageModel.streamText({ prompt: "hi" }).pipe(Stream.runDrain))
+
+    expect(agent.newSessionRequests).toHaveLength(1)
+    expect(agent.newSessionRequests[0]?.cwd).toBe(globalThis.process.cwd())
+    expect(agent.newSessionRequests[0]?.mcpServers).toEqual([])
+  })
+
+  it("firegrid-effect-ai-native-agents.ACP_ADAPTER.14 forwards caller-supplied session.cwd and session.mcpServers verbatim to ACP newSession", async () => {
+    const harness = await Effect.runPromise(makeHarness)
+    const agent = startAgent(harness, connection => new FixtureAgent(connection))
+    const customCwd = "/tmp/firegrid-acp-session-cwd"
+    const customMcpServers: ReadonlyArray<acp.McpServer> = [
+      {
+        type: "http",
+        name: "firegrid-runtime-context",
+        url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
+        headers: [],
+      },
+    ]
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const adapter = yield* AgentAdapter
+          yield* adapter.languageModel
+            .streamText({ prompt: "hi-with-session-setup" })
+            .pipe(Stream.runDrain)
+        }).pipe(
+          Effect.provide(
+            AcpAgentAdapter.layer({
+              bytes: harness.bytes,
+              session: { cwd: customCwd, mcpServers: customMcpServers },
+            }),
+          ),
+        ),
+      ),
+    )
+
+    expect(agent.newSessionRequests).toHaveLength(1)
+    expect(agent.newSessionRequests[0]?.cwd).toBe(customCwd)
+    expect(agent.newSessionRequests[0]?.mcpServers).toEqual(customMcpServers)
   })
 })
