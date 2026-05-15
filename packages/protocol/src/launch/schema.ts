@@ -16,6 +16,9 @@ export type RuntimeJournalFormat = Schema.Schema.Type<typeof RuntimeJournalForma
 export const RuntimeProviderSchema = Schema.Literal("local-process")
 export type RuntimeProvider = Schema.Schema.Type<typeof RuntimeProviderSchema>
 
+export const RuntimeAgentProtocolSchema = Schema.Literal("raw", "stdio-jsonl", "acp")
+export type RuntimeAgentProtocol = Schema.Schema.Type<typeof RuntimeAgentProtocolSchema>
+
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
 //
 // Only the binding (name + ref) is durably persisted. The ref names a host
@@ -31,6 +34,7 @@ export const RuntimeConfigSchema = Schema.Struct({
   argv: Schema.Array(Schema.String),
   cwd: Schema.optional(Schema.String),
   envBindings: Schema.optional(Schema.Array(RuntimeEnvBindingSchema)),
+  agentProtocol: Schema.optional(RuntimeAgentProtocolSchema),
 })
 export type RuntimeConfig = Schema.Schema.Type<typeof RuntimeConfigSchema>
 
@@ -73,6 +77,7 @@ const normalizeRuntimeConfig = (config: RuntimeConfig): RuntimeConfig => ({
       ref: binding.ref,
     })),
   }),
+  ...(config.agentProtocol === undefined ? {} : { agentProtocol: config.agentProtocol }),
 })
 
 export const localJsonlJournal = [

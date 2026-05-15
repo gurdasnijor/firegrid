@@ -82,6 +82,35 @@ describe("@firegrid/protocol launch schema", () => {
     expect(intent.config.envBindings).toEqual([{ name: "X", ref: "env:Y" }])
   })
 
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.3 firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1 decodes schema-owned runtime agent protocol selection", () => {
+    const decoded = Schema.decodeUnknownSync(PublicLaunchRequestSchema)({
+      runtime: {
+        provider: "local-process",
+        config: {
+          argv: ["node", "agent.mjs"],
+          agentProtocol: "stdio-jsonl",
+        },
+      },
+    })
+
+    expect(decoded.runtime.config.agentProtocol).toBe("stdio-jsonl")
+    expect(normalizeRuntimeIntent(decoded.runtime).config.agentProtocol).toBe("stdio-jsonl")
+  })
+
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.3 rejects unknown runtime agent protocols", () => {
+    const decoded = Schema.decodeUnknownEither(PublicLaunchRequestSchema)({
+      runtime: {
+        provider: "local-process",
+        config: {
+          argv: ["node", "agent.mjs"],
+          agentProtocol: "provider-config-hidden-codec",
+        },
+      },
+    })
+
+    expect(Either.isLeft(decoded)).toBe(true)
+  })
+
   it("firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.3 decodes runtime event rows without parsing provider JSON", () => {
     const event = Schema.decodeUnknownSync(RuntimeEventSchema)({
       eventId: {
