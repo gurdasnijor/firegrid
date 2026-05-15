@@ -5,6 +5,25 @@ import {
 } from "../agent-tools/schema.ts"
 import { PublicLaunchRuntimeIntentSchema } from "../launch/schema.ts"
 
+export const FiregridSessionIdSchema = Schema.String.pipe(
+  Schema.minLength(1),
+  Schema.brand("FiregridSessionId"),
+).annotations({
+  identifier: "firegrid.sessionId",
+  title: "Firegrid session id",
+  description:
+    "Public Firegrid session id. In v1 this is encoded exactly as RuntimeContext.contextId.",
+})
+export type FiregridSessionId = Schema.Schema.Type<typeof FiregridSessionIdSchema>
+
+export const RuntimeContextIdSchema = FiregridSessionIdSchema.annotations({
+  identifier: "firegrid.runtimeContext.contextId",
+  title: "Runtime context id",
+  description:
+    "Durable RuntimeContext id. Public client APIs expose the same encoded value as sessionId.",
+})
+export type RuntimeContextId = Schema.Schema.Type<typeof RuntimeContextIdSchema>
+
 export const SessionExternalKeySchema = Schema.Struct({
   source: Schema.String.pipe(Schema.minLength(1)),
   id: Schema.String.pipe(Schema.minLength(1)),
@@ -30,6 +49,28 @@ export const SessionCreateOrLoadInputSchema = Schema.Struct({
 })
 export type SessionCreateOrLoadInput = Schema.Schema.Type<
   typeof SessionCreateOrLoadInputSchema
+>
+
+export const SessionAttachInputSchema = Schema.Struct({
+  sessionId: FiregridSessionIdSchema.annotations({
+    title: "Session id",
+    description:
+      "Public Firegrid session id. In v1 this is the same encoded value as RuntimeContext.contextId.",
+  }),
+}).annotations({
+  identifier: "firegrid.operation.session.attach.input",
+  title: "Session attach input",
+  description:
+    "Create a scoped client handle for an existing RuntimeContext-backed Firegrid session id.",
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type SessionAttachDecodedInput = Schema.Schema.Type<
+  typeof SessionAttachInputSchema
+>
+export type SessionAttachInput = Schema.Schema.Encoded<
+  typeof SessionAttachInputSchema
 >
 
 export const SessionHandlePromptInputSchema = Schema.Struct({
@@ -160,7 +201,9 @@ const utf8ToBase64Url = (bytes: Uint8Array): string => {
 
 export const sessionContextIdForExternalKey = (
   externalKey: SessionExternalKey,
-): string => {
+): FiregridSessionId => {
   const canonical = JSON.stringify([externalKey.source, externalKey.id])
-  return `ctx_ext_${utf8ToBase64Url(new TextEncoder().encode(canonical))}`
+  return Schema.decodeSync(FiregridSessionIdSchema)(
+    `ctx_ext_${utf8ToBase64Url(new TextEncoder().encode(canonical))}`,
+  )
 }

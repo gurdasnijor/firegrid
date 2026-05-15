@@ -1,0 +1,45 @@
+feature:
+  name: firegrid-session-fact-client-surfaces
+  product: firegrid
+  description: Browser-safe client and protocol surfaces for Firegrid session identity, runtime output observations, and app-owned fact/evidence sources.
+
+components:
+  SESSION_IDENTITY:
+    requirements:
+      1: Firegrid public session ids are schema-defined values encoded exactly as RuntimeContext.contextId in v1, with Effect Schema annotations documenting the alias.
+      2: ACP wire-level session ids are not Firegrid public session ids; ACP-specific code uses a distinct acpSessionId name when both identities are in scope.
+      3: The session id alias does not introduce a new table, lookup service, placement record, or parent-child hierarchy.
+
+  CLIENT_SESSION:
+    requirements:
+      1: "@firegrid/client exposes a sessions.attach({ sessionId }) operation that returns the same scoped session handle shape as sessions.createOrLoad without requiring runtime config."
+      2: The attached handle scopes prompt, snapshot, wait.forPermissionRequest, permissions.respond, and start to the supplied session id.
+      3: The attached handle decodes inputs through protocol-owned schemas and keeps packages/client runtime-source-free.
+      4: createOrLoad exposes sessionId as the public handle identity while preserving contextId as a compatibility alias until existing callers migrate.
+      5: Literate session helper APIs hide host-owned stream routing and table selection while remaining thin schema-backed projections over durable RuntimeContext, RuntimeIngress, RuntimeOutput, and runtime run rows.
+
+  RUNTIME_OBSERVATION:
+    requirements:
+      1: Protocol-owned schemas define Firegrid runtime agent-output envelopes and normalized runtime agent-output observations without importing runtime codec implementations.
+      2: PermissionRequest observations expose sessionId, contextId compatibility field, activityAttempt, sequence, permissionRequestId, toolUseId, options, and protocol-safe raw event payload.
+      3: "@firegrid/client uses the protocol observation projection for snapshot and wait helpers so app code does not parse RuntimeOutput raw JSON wrappers."
+      4: Runtime-host observation sources and client observation helpers share the same protocol projection semantics.
+
+  FACT_SOURCES:
+    requirements:
+      1: Firegrid provides a schema-first descriptor or helper for app-owned fact sources over DurableTable collections with stable source name, row schema, key fields, and scalar wait fields.
+      2: Fact-source helpers do not create a Firegrid-native provider fact table; apps own row schema, payload, physical table layer, and product meaning.
+      3: Fact-source helpers make SourceCollections registration and wait_for scalar matching straightforward without provider-specific adapter code.
+
+  PROVIDER_EVIDENCE:
+    requirements:
+      1: Firegrid docs describe the provider evidence pattern as provider-verified input or fenced side effect producing an app-owned fact/evidence row that wait_for can observe.
+      2: Firegrid does not own provider clients, provider webhook endpoints, OAuth secrets, provider retry policy, or provider-specific idempotency marker syntax.
+      3: Optional capability descriptors, if added, are opaque names/descriptions/schema references and do not imply provider execution authority.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: This feature is bound by firegrid-platform-invariants.LOCALITY.1, firegrid-platform-invariants.LOCALITY.2, firegrid-platform-invariants.LOCALITY.3, and firegrid-platform-invariants.LOCALITY.4.
+      2: This feature does not move DarkFactoryTable, factory run statuses, planner prompt wording, provider credentials, provider semantics, or factory UI read-model joins into Firegrid.
+      3: This feature follows firegrid-schema-projection-contract by expressing new client/tool/CLI-relevant contracts through protocol-owned Effect Schemas and projection metadata.

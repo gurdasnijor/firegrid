@@ -57,11 +57,15 @@ import {
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
 import {
+  SessionAttachInputSchema,
   SessionCreateOrLoadInputSchema,
   SessionHandlePromptInputSchema,
   SessionPermissionRequestWaitInputSchema,
   SessionPermissionRespondInputSchema,
   sessionContextIdForExternalKey,
+  type FiregridSessionId,
+  type SessionAttachDecodedInput,
+  type SessionAttachInput,
   type RuntimePermissionRequestObservation,
   type SessionCreateOrLoadInput,
   type SessionHandlePromptInput,
@@ -149,6 +153,7 @@ export interface FiregridSessionPermissionsClient {
 }
 
 export interface FiregridSessionHandle {
+  readonly sessionId: FiregridSessionId
   readonly contextId: string
   readonly prompt: (
     request: SessionHandlePromptInput,
@@ -176,6 +181,12 @@ export const FiregridClientOperations = {
 } as const
 
 export interface FiregridSessionsClient {
+  readonly attach: (
+    request: SessionAttachInput,
+  ) => Effect.Effect<
+    FiregridSessionHandle,
+    LaunchInputError
+  >
   readonly createOrLoad: (
     request: SessionCreateOrLoadInput,
   ) => Effect.Effect<
@@ -381,6 +392,13 @@ const decodeSessionCreateOrLoadInput = (
   request: SessionCreateOrLoadInput,
 ): Effect.Effect<SessionCreateOrLoadInput, LaunchInputError> =>
   Schema.decodeUnknown(SessionCreateOrLoadInputSchema, {
+    onExcessProperty: "error",
+  })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
+const decodeSessionAttachInput = (
+  request: SessionAttachInput,
+): Effect.Effect<SessionAttachDecodedInput, LaunchInputError> =>
+  Schema.decodeUnknown(SessionAttachInputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
@@ -785,37 +803,42 @@ const make = (config: ResolvedConfig) =>
         })
       })
 
-    const makeSessionHandle = (contextId: string): FiregridSessionHandle => ({
-      contextId,
+    const makeSessionHandle = (
+      sessionId: FiregridSessionId,
+    ): FiregridSessionHandle => ({
+      // firegrid-session-fact-client-surfaces.SESSION_IDENTITY.1
+      // firegrid-session-fact-client-surfaces.CLIENT_SESSION.4
+      sessionId,
+      contextId: sessionId,
       prompt: request =>
         Effect.gen(function* () {
           const decoded = yield* decodeSessionHandlePromptInput(request)
           const row = makeRuntimeIngressInputRow({
-            contextId,
+            contextId: sessionId,
             kind: "message",
             authoredBy: "client",
             payload: decoded.payload,
             idempotencyKey: decoded.idempotencyKey,
             ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
           })
-          return yield* appendPrompt(contextId, row)
+          return yield* appendPrompt(sessionId, row)
         }),
       start: () =>
         Effect.gen(function* () {
           const starter = yield* RuntimeStartCapability
-          return yield* starter.start({ contextId })
+          return yield* starter.start({ contextId: sessionId })
         }),
-      snapshot: () => readSnapshot(contextId),
+      snapshot: () => readSnapshot(sessionId),
       wait: {
         forPermissionRequest: request =>
-          waitForPermissionRequest(contextId, request),
+          waitForPermissionRequest(sessionId, request),
       },
       permissions: {
         respond: request =>
           Effect.gen(function* () {
             const decoded = yield* decodeSessionPermissionRespondInput(request)
             const row = makeRuntimeIngressInputRow({
-              contextId,
+              contextId: sessionId,
               kind: "control",
               authoredBy: "client",
               payload: {
@@ -825,12 +848,12 @@ const make = (config: ResolvedConfig) =>
               },
               idempotencyKey:
                 decoded.idempotencyKey ??
-                `permission-response:${contextId}:${decoded.permissionRequestId}`,
+                `permission-response:${sessionId}:${decoded.permissionRequestId}`,
             })
-            const appended = yield* appendPrompt(contextId, row)
+            const appended = yield* appendPrompt(sessionId, row)
             return {
               responded: true,
-              contextId,
+              contextId: sessionId,
               permissionRequestId: decoded.permissionRequestId,
               inputId: appended.inputId,
             }
@@ -865,6 +888,14 @@ const make = (config: ResolvedConfig) =>
         }
         return makeSessionHandle(contextId)
       })
+
+    const attachSession = (
+      request: SessionAttachInput,
+    ): Effect.Effect<FiregridSessionHandle, LaunchInputError> =>
+      // firegrid-session-fact-client-surfaces.CLIENT_SESSION.1
+      // firegrid-session-fact-client-surfaces.SESSION_IDENTITY.3
+      Effect.map(decodeSessionAttachInput(request), decoded =>
+        makeSessionHandle(decoded.sessionId))
 
     const waitForControlRows = (
       input: WaitForToolInput,
@@ -1018,6 +1049,7 @@ const make = (config: ResolvedConfig) =>
         return yield* appendPrompt(decoded.contextId, row)
       }),
       sessions: {
+        attach: attachSession,
         createOrLoad: createOrLoadSession,
         prompt: request => Effect.gen(function* () {
           const decoded = yield* decodeSessionPromptInput(request)

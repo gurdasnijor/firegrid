@@ -93,6 +93,11 @@ The main app-facing surface is the session facade. It creates or loads a
 RuntimeContext from a caller-owned external key, appends prompts, reads durable
 snapshots, waits for permission requests, and writes permission responses.
 
+The public durable identity is `sessionId`. In v1, `sessionId` is encoded
+exactly as `RuntimeContext.contextId`; `contextId` remains on handles as a
+compatibility alias while app code migrates to the session vocabulary. This
+alias does not create a second table, lookup service, or parent/child hierarchy.
+
 ```ts
 import { Firegrid, local } from "@firegrid/client"
 import { Effect } from "effect"
@@ -119,6 +124,23 @@ export const createPlanner = Effect.gen(function*() {
 })
 ```
 
+When an app already knows the durable session id, attach to it without
+restating runtime config:
+
+```ts
+const session = yield* firegrid.sessions.attach({ sessionId })
+
+yield* session.prompt({
+  payload: { type: "text", text: "Continue from the latest provider fact." },
+  idempotencyKey: `${session.sessionId}:continue`,
+})
+
+const snapshot = yield* session.snapshot()
+```
+
+`sessions.attach` is a client handle operation. It does not start a runtime,
+load ACP history, replay a transcript, or allocate another durable identity.
+
 If the session is running and emits a permission request, the scoped handle keeps
 callers from restating RuntimeContext identity:
 
@@ -135,10 +157,16 @@ if (permission.matched) {
 }
 ```
 
-`session.start()` is intentionally different from prompt/snapshot/wait. It
-requires `RuntimeStartCapability`, which is supplied by runtime-host or app
-server composition. Browser code can hold and observe sessions, but it should
-not supervise local processes.
+`wait.forPermissionRequest` reads normalized PermissionRequest observations from
+the host-owned `RuntimeOutputTable.events` stream for the scoped session. The
+client resolves the session's RuntimeContext row first, then opens the correct
+host-owned output stream using that row's host binding. It returns either
+`{ matched: true, request }` or `{ matched: false, timedOut: true }`.
+
+`session.start()` is intentionally different from prompt/snapshot/wait/respond.
+It requires `RuntimeStartCapability`, which is supplied by runtime-host or app
+server composition. Browser code can attach to, prompt, snapshot, wait on, and
+respond to sessions, but it should not supervise local processes.
 
 ## Lower-Level Operations
 

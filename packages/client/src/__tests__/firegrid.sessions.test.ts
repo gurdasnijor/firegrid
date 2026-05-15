@@ -134,7 +134,7 @@ const appendAgentOutput = (
 }
 
 describe("Firegrid session facade", () => {
-  it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.1 createOrLoad is idempotent for duplicate externalKey", async () => {
+  it("firegrid-session-fact-client-surfaces.SESSION_IDENTITY.3 firegrid-session-fact-client-surfaces.CLIENT_SESSION.4 createOrLoad is idempotent and exposes sessionId with contextId alias", async () => {
     const fixture = makeFixture()
 
     const result = await runWithClient(
@@ -157,6 +157,8 @@ describe("Firegrid session facade", () => {
     )
 
     expect(result.second.contextId).toBe(result.first.contextId)
+    expect(result.first.sessionId).toBe(result.first.contextId)
+    expect(result.second.sessionId).toBe(result.first.sessionId)
     expect(result.snapshot.context).toMatchObject({
       contextId: result.first.contextId,
       createdBy: "client-session-test",
@@ -167,6 +169,74 @@ describe("Firegrid session facade", () => {
         },
       },
     })
+  })
+
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.1 firegrid-session-fact-client-surfaces.CLIENT_SESSION.2 firegrid-session-fact-client-surfaces.CLIENT_SESSION.3 attaches to an existing session id and scopes prompt, snapshot, wait, and permission response", async () => {
+    const fixture = makeFixture()
+
+    const result = await runWithClient(
+      fixture,
+      Effect.gen(function* () {
+        const firegrid = yield* Firegrid
+        const created = yield* firegrid.sessions.createOrLoad({
+          externalKey: { source: "linear", id: "LIN-attach" },
+          runtime: runtimeConfig(),
+        })
+        const attached = yield* firegrid.sessions.attach({
+          sessionId: created.sessionId,
+        })
+        const prompt = yield* attached.prompt({
+          payload: { text: "attached prompt" },
+          idempotencyKey: "attached-turn-1",
+        })
+        const waiting = yield* attached.wait.forPermissionRequest({
+          timeoutMs: 2_000,
+        }).pipe(Effect.fork)
+        yield* Effect.sleep("50 millis")
+        yield* appendAgentOutput(
+          fixture.hostSession,
+          attached.sessionId,
+          11,
+          {
+            _tag: "PermissionRequest",
+            permissionRequestId: "permission-attached",
+            toolUseId: "tool-attached",
+            options: [
+              { optionId: "allow", kind: "allow_once", name: "Allow" },
+            ],
+          },
+        )
+        const permission = yield* waiting.await
+        const response = yield* attached.permissions.respond({
+          permissionRequestId: "permission-attached",
+          decision: { _tag: "Allow", optionId: "allow" },
+        })
+        const snapshot = yield* attached.snapshot()
+        return { created, attached, prompt, permission, response, snapshot }
+      }),
+    )
+
+    expect(result.attached.sessionId).toBe(result.created.sessionId)
+    expect(result.attached.contextId).toBe(result.created.contextId)
+    expect(result.prompt.contextId).toBe(result.created.contextId)
+    expect(result.permission._tag).toBe("Success")
+    if (result.permission._tag !== "Success") return
+    expect(result.permission.value).toMatchObject({
+      matched: true,
+      request: {
+        contextId: result.created.contextId,
+        permissionRequestId: "permission-attached",
+      },
+    })
+    expect(result.response).toMatchObject({
+      responded: true,
+      contextId: result.created.contextId,
+      permissionRequestId: "permission-attached",
+    })
+    expect(result.snapshot.inputs.map(row => row.kind)).toEqual([
+      "message",
+      "control",
+    ])
   })
 
   it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.5 prompt appends idempotent RuntimeIngress rows", async () => {
@@ -293,7 +363,7 @@ describe("Firegrid session facade", () => {
     })
   })
 
-  it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.6 delegates start through the protocol capability", async () => {
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.2 delegates attached start through the server-provided protocol capability", async () => {
     const fixture = makeFixture()
 
     const result = await runWithClient(
@@ -304,7 +374,10 @@ describe("Firegrid session facade", () => {
           externalKey: { source: "linear", id: "LIN-start" },
           runtime: runtimeConfig(),
         })
-        return yield* session.start().pipe(
+        const attached = yield* firegrid.sessions.attach({
+          sessionId: session.sessionId,
+        })
+        return yield* attached.start().pipe(
           Effect.provideService(RuntimeStartCapability, {
             start: options =>
               Effect.succeed({

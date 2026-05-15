@@ -30,7 +30,10 @@ export type {
   RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
 export type {
+  FiregridSessionId,
+  RuntimeContextId,
   RuntimePermissionRequestObservation,
+  SessionAttachInput,
   SessionCreateOrLoadInput,
   SessionExternalKey,
   SessionHandlePromptInput,
