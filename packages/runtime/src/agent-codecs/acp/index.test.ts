@@ -4,6 +4,7 @@ import { Chunk, Deferred, Effect, Fiber, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import type {
   AgentByteStream,
+  AgentCodecOpenOptions,
   AgentOutputEvent,
   AgentSession,
 } from "../../agent-io/index.ts"
@@ -21,6 +22,7 @@ interface Harness {
 
 class FixtureAgent implements acp.Agent {
   readonly prompts: Array<acp.PromptRequest> = []
+  readonly newSessionRequests: Array<acp.NewSessionRequest> = []
   protected readonly connection: acp.AgentSideConnection
   private readonly cancelWaiters: Array<() => void> = []
 
@@ -45,7 +47,8 @@ class FixtureAgent implements acp.Agent {
     }
   }
 
-  async newSession(): Promise<acp.NewSessionResponse> {
+  async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
+    this.newSessionRequests.push(params)
     return { sessionId: "session-1" }
   }
 
@@ -260,8 +263,8 @@ const startAgent = <A extends acp.Agent>(
   return agent
 }
 
-const openSession = (bytes: AgentByteStream) =>
-  AcpCodec.open(bytes, {})
+const openSession = (bytes: AgentByteStream, options: AgentCodecOpenOptions = {}) =>
+  AcpCodec.open(bytes, options)
 
 const userMessage = (text: string): Prompt.UserMessage =>
   Prompt.userMessage({ content: [Prompt.textPart({ text })] })
@@ -293,6 +296,64 @@ describe("AcpCodec", () => {
       {
         _tag: "Ready",
         capabilities: AcpCapabilities,
+      },
+    ])
+  })
+
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.2 sends default cwd and empty mcpServers to ACP newSession", async () => {
+    const agent = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const harness = yield* makeHarness
+          const agent = startAgent(harness, connection => new FixtureAgent(connection))
+          yield* openSession(harness.bytes)
+          return agent
+        }),
+      ),
+    )
+
+    expect(agent.newSessionRequests).toHaveLength(1)
+    expect(agent.newSessionRequests[0]?.cwd).toBe(globalThis.process.cwd())
+    expect(agent.newSessionRequests[0]?.mcpServers).toEqual([])
+  })
+
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.1 lowers Firegrid-neutral MCP declarations to ACP newSession mcpServers", async () => {
+    const agent = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const harness = yield* makeHarness
+          const agent = startAgent(harness, connection => new FixtureAgent(connection))
+          yield* openSession(harness.bytes, {
+            session: {
+              cwd: "/tmp/firegrid-acp-codec-cwd",
+              mcpServers: [
+                {
+                  name: "firegrid-runtime-context",
+                  server: {
+                    type: "url",
+                    url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
+                    headers: [{ name: "authorization", value: "Bearer test" }],
+                  },
+                },
+              ],
+            },
+          })
+          return agent
+        }),
+      ),
+    )
+
+    expect(agent.newSessionRequests).toEqual([
+      {
+        cwd: "/tmp/firegrid-acp-codec-cwd",
+        mcpServers: [
+          {
+            type: "http",
+            name: "firegrid-runtime-context",
+            url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
+            headers: [{ name: "authorization", value: "Bearer test" }],
+          },
+        ],
       },
     ])
   })

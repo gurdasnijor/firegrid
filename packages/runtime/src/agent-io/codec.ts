@@ -31,12 +31,30 @@ export class AgentCodecError extends Schema.TaggedError<AgentCodecError>()(
   },
 ) {}
 
+export interface AgentMcpServerDeclaration {
+  readonly name: string
+  readonly server: {
+    readonly type: "url"
+    readonly url: string
+    readonly headers?: ReadonlyArray<{
+      readonly name: string
+      readonly value: string
+    }>
+  }
+}
+
+export interface AgentSessionSetupOptions {
+  readonly cwd?: string
+  readonly mcpServers?: ReadonlyArray<AgentMcpServerDeclaration>
+}
+
 export interface AgentCodecOpenOptions {
   // firegrid-agent-io-effect-ai-alignment.TOOLKIT_METADATA.1
   // Optional for V1 codec slices that do not publish a tool catalog;
   // catalog-publishing codecs should treat this as their Effect AI
   // Toolkit source rather than introducing a Firegrid descriptor mirror.
   readonly toolkit?: Toolkit.Any
+  readonly session?: AgentSessionSetupOptions
 }
 
 export interface AgentSession {
