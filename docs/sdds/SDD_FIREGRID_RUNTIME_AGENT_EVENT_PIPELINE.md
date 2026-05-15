@@ -57,6 +57,27 @@ downstream of `agent-adapters`.
 codec-backed agent as an Effect AI `LanguageModel.Service`, but they do not sit
 inside the durable runtime-host path.
 
+### Managed-Agent Vocabulary Alignment
+
+This SDD aligns with the managed-agent primitive vocabulary without copying an
+older Fireline implementation model:
+
+- `RuntimeContext`, `RuntimeIngress`, and `RuntimeOutput` describe the durable
+  session/event identity surface.
+- `Codecs.runtime.attach(...)` plus the active process/protocol loop is the
+  harness boundary that turns protocol effects into normalized events.
+- `Sources.sandbox(...)` acquires the live process/sandbox resource used by the
+  harness.
+- `RuntimeOutputJournal`, `RuntimeIngressAppender`, and the wait/tool
+  authorities make session progress replayable and observable.
+- `toolUseToEffect` and MCP/session tool exposure remain the Tools surface.
+
+The key RFC lesson carried into this SDD is identity vs. live ownership: a
+durable row may describe a session, context, sandbox, or resource, but it does
+not prove the current host owns a live handle. Runtime code must reacquire,
+reattach, reprovision, or terminalize at live boundaries according to explicit
+codec/provider semantics.
+
 ## Write Authority Principle
 
 The earlier "only sinks write rows" framing is too broad and too narrow.
@@ -221,6 +242,30 @@ preserve the stage roles:
 - projections expose sibling views of codec sessions;
 - host wires the pipeline into workflow execution and host authority.
 
+### Substrate vs. Composition
+
+The pipeline distinguishes two layers.
+
+Authorities, source-collection contracts, and the codec runtime are substrate.
+They define what writes a durable row, what reads a journal, and how protocol
+sessions become normalized event streams. Substrate is change-controlled,
+semgrep-enforced, and registered in the authority registry. Adding or modifying
+substrate requires SDD/spec revision.
+
+Subscribers, codec attachments, and routing components are composition. They
+are pluggable wiring on top of substrate and can be added, removed, or
+reconfigured without changing the authority registry. The permission-wait
+bridge, the tool router, the ingress-delivery subscriber, and the stderr journal
+are composition: they consume source-collection handles, route through chosen
+logic, and append through authorities.
+
+Composition is static, strongly typed pipeline wiring in this cutover. The
+invariant is narrow: when a component affects durable behavior, it must do so
+through source collections and authority APIs so its externally visible effects
+are durable, observable, and replay-safe. This SDD does not introduce dynamic
+middleware, a serializable topology specification, or user-authored runtime
+closures.
+
 `tools/lowering/tool-host.ts` contains the service tag/interface only. The
 host-coupled live implementation belongs under
 `host/agent-tool-host-live.ts`, because it fans out to
@@ -262,23 +307,48 @@ not construct their own output queues, ad hoc runtime emit bridges, fallback id
 generators, terminal merges, send-side dispatch loops, or duplicate error
 mapping scaffolds.
 
-The codec contract exposes capability flags used by pipeline routing. In v1 the
-load-bearing flag is:
+The codec contract exposes per-session capability flags used by pipeline
+routing. The load-bearing flag for tool-shaped output is:
 
 ```ts
-readonly toolUseMode: "client_result_roundtrip" | "observation_only"
+readonly toolUseMode:
+  | "observation_only"
+  | "client_result_roundtrip"
+  | "control_channel_request_response"
 ```
 
-This flag is read by the tool router at subscription time. The router claims
-`ToolUse` rows only for contexts whose active codec advertises
-`toolUseMode: "client_result_roundtrip"`; it does not claim rows from
-observation-only codecs and then fail later during send.
+This is per active session, not a static property of a codec class. The active
+codec session reports `toolUseMode` after protocol negotiation completes; the
+runtime does not infer it from codec class. For codecs with no negotiation
+phase, such as `stdio-jsonl`, the value is fixed at session construction. For
+codecs with negotiation, such as ACP, the value is set when capabilities
+exchange completes and remains stable for the session lifetime. The tool router
+reads it at subscription time and claims durable `ToolUse` rows only for
+sessions whose active mode is `client_result_roundtrip`; it does not claim rows
+from other modes and then fail later during send.
 
-`stdio-jsonl` uses `client_result_roundtrip` because Firegrid owns that wire
-format and defines `tool_use` output followed by `tool_result` input. `acp`
-uses `observation_only` because ACP `sessionUpdate.tool_call` is an
-observation of agent-side or MCP tool activity, not a request for Firegrid to
-execute a tool and inject a `ToolResult`.
+Mode definitions:
+
+- `observation_only`: tool-shaped events are durable telemetry. The router must
+  not claim them. Examples include ACP `sessionUpdate.tool_call`,
+  `codex exec --json`, and basic `claude -p --output-format stream-json`.
+- `client_result_roundtrip`: the active session has an explicit path from
+  normalized `ToolUse` output to host-produced `ToolResult` input. The v1
+  confirmed instance is Firegrid `stdio-jsonl`, where `tool_use` appears on
+  stdout and `tool_result` is sent on stdin.
+- `control_channel_request_response`: the protocol has request/response
+  methods with their own ids, responses, and capability negotiation. Examples
+  include ACP `session/request_permission`, ACP file/terminal Client
+  capabilities, and Codex app-server style control methods. These are not
+  modeled as subscriber-produced `ToolResult` ingress.
+
+Claude Code needs a hedge. `claude -p --output-format stream-json` is
+`observation_only`. Anthropic also documents streaming input surfaces, and
+community tooling has explored bidirectional stream-json/control paths, but the
+CLI stdin `tool_result` shape is not treated here as a stable Firegrid contract.
+When Anthropic documents a stable bidirectional protocol, a Claude Code codec
+can advertise whichever modes its launch flags support without changing this
+SDD.
 
 ### Transforms
 
@@ -484,11 +554,13 @@ ACP remains fully supported for:
 - PermissionRequest durable observation;
 - PermissionResponse ingress resume.
 
-ACP `sessionUpdate.tool_call` rows are modeled as durable observations in v1.
-They are not dispatch candidates. The tool router does not claim them, and no
-runtime-side subscriber is required to consume them in v1. They remain queryable
-through the `RuntimeOutputJournal` read/source-collection surface for UI,
-metrics, tracing, and future observation-consuming subscribers.
+ACP `sessionUpdate.tool_call` and `tool_call_update` rows are progress/result
+observations from the Agent to the Client. This is a deliberate ACP
+directionality contract, not a missing Firegrid dispatch path. They are not
+dispatch candidates. The tool router does not claim them, and no runtime-side
+subscriber is required to consume them in v1. They remain queryable through the
+`RuntimeOutputJournal` read/source-collection surface for UI, metrics, tracing,
+and future observation-consuming subscribers.
 
 ACP tool execution may flow through MCP servers supplied during ACP session
 setup, where MCP owns the request/result exchange. Agent-owned tools may also
@@ -506,10 +578,12 @@ ACP newSession.mcpServers
   -> Firegrid journals those observations
 ```
 
-ACP Client capabilities are another Agent-to-Client JSON-RPC pattern. Firegrid
-supports the permission capability because it maps directly to Firegrid's
-durable wait/resume model: `session/request_permission` becomes durable
-`PermissionRequest` output and resumes through `PermissionResponse` ingress.
+ACP Client capabilities are a `control_channel_request_response` pattern:
+Agent-to-Client JSON-RPC methods with their own ids, responses, and capability
+negotiation. Firegrid supports the permission capability because it maps
+directly to Firegrid's durable wait/resume model:
+`session/request_permission` becomes durable `PermissionRequest` output and
+resumes through `PermissionResponse` ingress.
 
 ACP file-system and terminal Client capabilities are different. They can be
 used by editor-style Clients whose buffer state, diff UI, terminal panels, or
@@ -626,6 +700,20 @@ sessions, `AcpCodec.send(PermissionResponse)` resolves the pending
 `session/request_permission` promise. For other codecs, permission input support
 is codec-specific, but the durable wait and ingress authority shape stays the
 same.
+
+The permission-wait bridge is the v1 instance of the general
+`control_channel_request_response` capability pattern. Each such capability is
+a subscriber that consumes an observation source from `RuntimeOutputJournal`,
+routes through a durable wait or backend source, and appends evidence through
+`RuntimeIngressAppender`. The active codec resolves the protocol-specific
+request from the delivered response. Future capability bridges, such as ACP
+file/terminal handlers or Codex app-server dynamic tool methods, do not require
+new substrate authorities by default; they compose on the substrate this SDD
+defines. The substrate guarantee for capability bridges is: an observation
+source on `RuntimeOutputJournal`, durable wait through `DurableWaitStore`,
+evidence append through `RuntimeIngressAppender`, and ingress delivery to the
+active codec. A capability that fits this shape composes; a capability that does
+not fit this shape requires substrate revision through a new SDD.
 
 If the Agent process dies after the `PermissionRequest` row is committed but
 before the response is delivered, the committed request remains observable. A
@@ -761,6 +849,9 @@ The PR description should include:
 - the authority registry table;
 - the source-collection handles each authority exposes;
 - validation commands;
+- confirmation that the SDD prose, feature ACIDs, and codec contract type use
+  the identical mode names `observation_only`, `client_result_roundtrip`, and
+  `control_channel_request_response`;
 - confirmation that no temporary compatibility export bridge remains, or the
   deletion ACID that gates completion.
 
@@ -790,15 +881,36 @@ the hot path while preserving journal-first ordering.
 
 ## Outside V1
 
-The v1 cutover does not implement ACP file-system or terminal Client
-capability handlers. That is a scope decision for this pipeline SDD, not a
-rejection of Firegrid's managed-agent direction. Firegrid is expected to grow a
-resource plane for mounted resources, remote hands, secrets mediation, audit,
-approval, and budget concerns. Those are orthogonal pipeline components and
-authorities, not part of the Agent event-journal cutover.
+The runtime event pipeline does not define the resource plane the Agent process
+executes against. In v1 the resource plane is degenerate: the OS cwd/sandbox
+Firegrid launched the process with, with no pre-launch source materialization
+and no ACP file/terminal interception.
 
-Until that resource-plane SDD exists, the launched Agent process owns normal
-filesystem and shell access inside its cwd/sandbox.
+Future Firegrid resource-plane work has two complementary halves:
+
+1. Pre-launch resource materialization. Sources such as local paths, git refs,
+   object-store refs, or secrets are made available at chosen paths before
+   runtime launch. Shell-based agent tools read these through normal OS calls.
+   This half is launch-spec substrate: it changes what the Agent process can
+   see at start, not how the pipeline observes events. It composes with this SDD
+   by changing `RuntimeContext` launch parameters, not by adding pipeline
+   stages. Durable resource records describe what should be mounted or was made
+   available; they are not the live filesystem, container, VM, or provider
+   handle.
+2. Runtime-time Client capability interception. ACP `fs/*` and `terminal/*`
+   requests, and future analogous capability methods, route through pluggable
+   backend components that durably journal operations as evidence. This half is
+   composition over the existing pipeline: each capability bridge consumes a
+   journal source, routes through a chosen backend, and appends evidence through
+   the appropriate authority. It does not require new substrate authorities by
+   default; `RuntimeOutputJournal` and `RuntimeIngressAppender` are the
+   journaling targets.
+
+Both halves are orthogonal to this event-pipeline cutover. The pipeline's
+authority pattern and source-collection contract are the substrate those
+features will compose on top of. The future resource-plane SDD can decide
+whether it needs serializable middleware/topology specs, stable component
+identity, ordering, credential references, or other authoring constraints.
 
 This is distinct from stdio-jsonl, which remains the v1 protocol for Firegrid
 client-executed `ToolUse -> ToolResult` round-trip.
