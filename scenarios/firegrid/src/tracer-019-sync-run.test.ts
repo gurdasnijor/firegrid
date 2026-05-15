@@ -325,6 +325,52 @@ describe("firegrid tracer 019 sync-run local smoke", () => {
   )
 })
 
+describe("firegrid tracer 019 sync-run CLI local defaults", () => {
+  it(
+    "firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.9 pnpm firegrid -- run -- <node -e ...> succeeds with no DURABLE_STREAMS_BASE_URL or FIREGRID_RUNTIME_NAMESPACE in env",
+    async () => {
+      const env: NodeJS.ProcessEnv = { ...globalThis.process.env }
+      delete env["DURABLE_STREAMS_BASE_URL"]
+      delete env["FIREGRID_RUNTIME_NAMESPACE"]
+      delete env["FIREGRID_DURABLE_STREAMS_TOKEN"]
+
+      const run = await new Promise<FiregridRunInvocation>((resolve, reject) => {
+        const child = spawn(
+          "pnpm",
+          [
+            "firegrid",
+            "--",
+            "run",
+            "--",
+            globalThis.process.execPath,
+            "-e",
+            "console.log('child-ran'); process.exit(0)",
+          ],
+          { cwd: repoRoot, env, stdio: ["ignore", "pipe", "pipe"] },
+        )
+        let stdout = ""
+        let stderr = ""
+        child.stdout.setEncoding("utf8")
+        child.stderr.setEncoding("utf8")
+        child.stdout.on("data", chunk => { stdout += chunk })
+        child.stderr.on("data", chunk => { stderr += chunk })
+        child.on("error", reject)
+        child.on("close", (status, signal) => {
+          resolve({ status, signal, stdout, stderr })
+        })
+      })
+
+      expect(run.signal).toBeNull()
+      expect(run.status, `stdout:\n${run.stdout}\nstderr:\n${run.stderr}`).toBe(0)
+      expect(run.stdout).toMatch(/firegrid:run: launched context ctx_/)
+      expect(run.stdout).toContain("child-ran")
+      expect(run.stderr).not.toMatch(/Missing data at DURABLE_STREAMS_BASE_URL/)
+      expect(run.stderr).not.toMatch(/Missing data at FIREGRID_RUNTIME_NAMESPACE/)
+    },
+    60_000,
+  )
+})
+
 const electricSmokeEnabled =
   globalThis.process.env["FIREGRID_ELECTRIC_SMOKE"] === "1" &&
   globalThis.process.env["DURABLE_STREAMS_BASE_URL"] !== undefined &&
