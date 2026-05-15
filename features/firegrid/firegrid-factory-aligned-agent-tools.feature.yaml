@@ -1,0 +1,36 @@
+feature:
+  name: firegrid-factory-aligned-agent-tools
+  product: firegrid
+  description: Firegrid agent-tool primitives needed for planner-driven factory choreography without adding a factory orchestration runtime.
+
+components:
+  ADAPTER:
+    requirements:
+      1: ACP adapter proof provides an Effect AI LanguageModel.Service view for ACP-backed agents while keeping AcpCodec exported and deferring runtime-host integration.
+
+  SESSION:
+    requirements:
+      1: The live runtime host implementation exposes a session-plane child creation tool that creates a child RuntimeContext, propagates parent/correlation metadata, and returns a session-shaped handle with context authority and optional terminal state.
+      2: Batch session creation is a generalized convenience over repeated single-session creation; when implemented, it uses the same child RuntimeContext path, preserves task keys, and returns every child session handle or terminal state.
+
+  CAPABILITY:
+    requirements:
+      1: Session-bound filesystem, terminal, and external-resource capabilities are declared for the session, scoped by session identity and host authority, keep credentials host-side, and return capability output or a structured tool failure.
+
+  WAIT_FOR:
+    requirements:
+      1: Human approvals, application replies, webhook deliveries, and external status changes can be represented as durable facts that wait_for can match by scalar fields such as contextId, kind, correlationId, and external id.
+
+  PROMPT_DISPATCH:
+    requirements:
+      1: Prompt dispatch to an existing session or runtime context, if exposed to agents, uses host-owned runtime ingress with explicit context authority, correlation metadata, and idempotent input identity.
+
+  OBSERVATION:
+    requirements:
+      1: Tool calls, tool results, child session/context ids, and parent/correlation metadata are durable and queryable enough for a planner agent and product shell to inspect factory progress.
+
+constraints:
+  BOUNDARY:
+    requirements:
+      1: Firegrid does not add a factory-specific workflow product, orchestration runtime, hidden callback marker protocol, or hard-coded planner/implementer/QA/council sequence for the factory use case.
+      2: Flamecast may project sessions, route external events, and display progress, but factory sequencing remains planner-driven through Firegrid agent tools.
