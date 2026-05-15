@@ -54,7 +54,10 @@ pnpm firegrid:start
 `run` preserves the synchronous run behavior: it requires an agent command,
 creates a RuntimeContext row, optionally appends the initial prompt input,
 calls `startRuntime`, waits for terminal evidence, and exits with the runtime
-exit code.
+exit code. It is not a separate harness or test-only runner. It should use the
+same host-bound RuntimeContext creation, prompt ingress, MCP attachment, and
+runtime execution primitives that passive host mode uses when it consumes
+control-plane launch events.
 
 `start` is an MCP context bootstrap. It does not call `startRuntime`. It creates
 a durable host-bound RuntimeContext because that row is the authority record
@@ -75,6 +78,30 @@ Shared useful flags:
 - `--mcp-host HOST`, default `127.0.0.1`.
 - `--mcp-port PORT`, default `0`.
 - `--mcp-path PATH`, default `/mcp`.
+
+When Firegrid launches an agent from this command family, the generated
+route-scoped Firegrid MCP server is part of the agent launch contract by
+default. The command should normalize the launch config to include a
+`firegrid-runtime-context` MCP server pointing at the generated `mcpUrl`, then
+let the selected adapter/backend lower that declaration into the agent's native
+setup surface. ACP agents receive it through ACP session setup. CLI agents may
+receive it through their native MCP configuration command, sandbox-local config,
+or environment/config files owned by the selected backend. The CLI should not
+require users to pass Firegrid's own MCP server explicitly.
+
+`src/run.ts` should remain a thin command-dispatch boundary. CLI options and
+positional argv should be converted into the launch input owned by
+`packages/protocol/src/launch/schema.ts`, then decoded and normalized through
+Effect Schema before any RuntimeContext row is created. This keeps the
+human-facing CLI, durable launch ingress, and test smoke path on one contract.
+The implementation should follow the established Effect patterns in
+`Schema.decodeUnknown` / transform-style decoding, and use `@effect/cli`
+only to collect command arguments, not as a second source of launch truth.
+When choosing the final command shape, cross-check the vendored Effect
+interfaces in `repos/effect/packages/effect/src/Schema.ts`,
+`repos/effect/packages/cli/src/Command.ts`, `repos/effect/packages/cli/README.md`,
+and `repos/effect/packages/platform/src/Command.ts`; product code must still
+import from package dependencies, not from `repos/`.
 
 If `DURABLE_STREAMS_BASE_URL` is set, `start` uses it. If it is absent, `start`
 acquires an embedded loopback `DurableStreamTestServer` as a scoped local
@@ -110,12 +137,21 @@ The implementation should reuse:
   construction.
 - Existing `firegrid run` config builders for RuntimeContext intent and
   optional prompt ingress.
+- A shared launch-config schema for Firegrid-neutral MCP server declarations,
+  so CLI arguments and durable RuntimeContext launch ingress normalize through
+  the same contract before adapter-specific lowering. The public declaration is
+  `name` plus `server: { type: "url"; url; headers? }`; ACP's
+  `{ type: "http" }` session setup shape is adapter lowering, not the launch
+  contract.
+- `packages/protocol/src/launch/schema.ts` as the schema-owned launch contract
+  for both CLI-derived and durable-ingress launch input.
 
 It should not introduce:
 
 - `FIREGRID_MCP_CONTEXT_ID`.
 - Host identity env vars.
 - A sidecar process model.
+- A CLI-only launch DTO that bypasses the protocol launch schemas.
 - Custom JSON-RPC, manual `tools/list`, or manual `tools/call`.
 - Manual host-owned Durable Streams URL construction.
 - A Firegrid-owned process supervisor.

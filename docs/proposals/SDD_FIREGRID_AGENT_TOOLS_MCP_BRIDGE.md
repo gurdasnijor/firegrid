@@ -321,6 +321,16 @@ local-process agent) make that URL available through host-owned agent
 configuration. The URL is not a durable row and not part of the public client
 API.
 
+Firegrid-launched agents should receive the route-scoped Firegrid MCP server by
+default when their selected launch adapter supports MCP setup. The shared launch
+contract is declarative: it carries MCP server references, including the
+host-derived `firegrid-runtime-context` server, and the selected backend lowers
+that declaration into its native setup mechanism. ACP adapters pass the server
+through ACP session setup; CLI adapters may run their native `mcp add` command,
+write sandbox-local config, or set process environment as appropriate. The
+agent-visible contract is the same in every case: Firegrid's own MCP server is
+available unless a later backend-specific policy explicitly disables it.
+
 The runtime `contextId` is **not** host env. Context selection is durable /
 session / route state, not static process configuration. Static, single-tenant
 composition of `FiregridMcpServerLayer({ contextId, ... })` from a Layer-factory
