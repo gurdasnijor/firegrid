@@ -9,6 +9,7 @@ import {
   HostIdSegmentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  RuntimeStartCapability,
   type RuntimeAgentProtocol,
   local,
   makeHostSessionRow,
@@ -1263,6 +1264,23 @@ export const startRuntime = (
   }).pipe(
     Effect.withClock(runtimeExecutionClock),
   )
+
+export const RuntimeStartCapabilityLive = Layer.effect(
+  RuntimeStartCapability,
+  Effect.gen(function* () {
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    const controlPlane = yield* RuntimeControlPlaneTable
+    const hostSession = yield* CurrentHostSession
+    return RuntimeStartCapability.of({
+      start: options =>
+        startRuntime(options).pipe(
+          Effect.provideService(WorkflowEngine.WorkflowEngine, engine),
+          Effect.provideService(RuntimeControlPlaneTable, controlPlane),
+          Effect.provideService(CurrentHostSession, hostSession),
+        ),
+    })
+  }),
+)
 
 export const appendRuntimeIngress = (
   request: RuntimeIngressRequest,

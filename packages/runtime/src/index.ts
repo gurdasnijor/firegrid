@@ -14,6 +14,7 @@ export {
   FiregridRuntimeHostWithWorkflowFromConfig,
   FiregridRuntimeHostWithWorkflowFromConfigWithEnvPolicy,
   FiregridRuntimeHostWithWorkflowLive,
+  RuntimeStartCapabilityLive,
   RuntimeIngressError,
   RuntimeHostAgentToolHostLive,
   RuntimeHostTopologyFromConfig,

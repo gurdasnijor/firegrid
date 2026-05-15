@@ -239,6 +239,41 @@ import `@effect/ai` `Tool` values, MCP server layers, or runtime-only handler
 dependencies. The client is one projection of the schema catalog, not a
 wrapper around the agent-tool catalog.
 
+For durable RuntimeContext-backed work, the client should expose a session
+facade that keeps low-level runtime identity and ingress details out of product
+apps:
+
+```ts
+const session = yield* firegrid.sessions.createOrLoad({
+  externalKey: { source: "linear", id: "LIN-123" },
+  runtime: { provider: "local-process", config },
+  createdBy: "dark-factory",
+})
+
+yield* session.prompt({
+  idempotencyKey: "initial",
+  payload,
+})
+
+yield* session.start()
+
+const permission = yield* session.wait.forPermissionRequest({ timeoutMs })
+yield* permission.respond({ decision })
+```
+
+This facade is still a projection over Firegrid primitives. It should hide
+deterministic `RuntimeContext` identity, `RuntimeIngress` input id construction,
+permission-response idempotency, and runtime-observation joins from callers.
+Product apps may still own product facts and read models, but they should not
+rebuild Firegrid session/ingress identity helpers.
+
+`packages/client` remains runtime-source-free. If a facade method actively
+starts a runtime, it must depend on a protocol-owned runtime-start
+capability/service supplied by host/runtime composition. The client package must
+not import `packages/runtime/src` or call `startRuntime` directly. Read and wait
+helpers should use protocol-owned runtime observation source names rather than
+runtime-host modules.
+
 The client projection should use product-facing names. For example:
 
 ```txt
@@ -273,10 +308,15 @@ schema-owned launch/control entries rather than private CLI-only types.
 - Client APIs are a projection, not a separate contract.
 - Runtime lowering stays in existing runtime modules until repeated projection
   code proves that a runtime service would remove real duplication.
+- Runtime-host active execution is injected into client facades through a
+  protocol-owned capability/service; `packages/client` does not import
+  runtime-host source.
 - Do not split `@firegrid/client` into multiple packages.
 - Do not introduce a platform parent/child session hierarchy beyond
   `RuntimeContext` identity and explicit metadata.
-- Do not block the dark-factory app on polished client ergonomics.
+- Dark-factory may depend on this facade for the first working app path because
+  it prevents product code from reimplementing runtime identity and ingress
+  details.
 
 ## First Implementation Slice
 
@@ -291,3 +331,8 @@ schema-owned launch/control entries rather than private CLI-only types.
 4. Add tests proving the same schema object or catalog entry feeds both the
    tool projection and client projection.
 5. Add examples showing one operation through both projections.
+
+The next implementation slice should add the durable session facade described
+above. Its `start` method should require the protocol runtime-start capability;
+the package-boundary rule is more important than making `packages/client`
+directly call runtime-host.

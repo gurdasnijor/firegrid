@@ -16,6 +16,9 @@ export {
   type FiregridError,
   type FiregridPermissionsClient,
   type FiregridService,
+  type FiregridSessionHandle,
+  type FiregridSessionPermissionsClient,
+  type FiregridSessionWaitClient,
   type FiregridSessionsClient,
   type FiregridWaitClient,
   type PromptInputError,
@@ -26,3 +29,12 @@ export type {
   PublicPromptRequest,
   RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
+export type {
+  RuntimePermissionRequestObservation,
+  SessionCreateOrLoadInput,
+  SessionExternalKey,
+  SessionHandlePromptInput,
+  SessionPermissionRequestWaitInput,
+  SessionPermissionRequestWaitOutput,
+  SessionPermissionRespondInput,
+} from "@firegrid/protocol/session-facade"

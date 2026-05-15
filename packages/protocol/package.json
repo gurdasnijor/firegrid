@@ -17,6 +17,10 @@
       "types": "./src/runtime-ingress/index.ts",
       "default": "./src/runtime-ingress/index.ts"
     },
+    "./session-facade": {
+      "types": "./src/session-facade/index.ts",
+      "default": "./src/session-facade/index.ts"
+    },
     "./agent-tools": {
       "types": "./src/agent-tools/index.ts",
       "default": "./src/agent-tools/index.ts"
