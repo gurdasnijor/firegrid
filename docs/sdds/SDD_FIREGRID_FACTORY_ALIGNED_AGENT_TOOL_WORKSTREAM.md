@@ -200,6 +200,50 @@ Expected outcome:
 - No Flamecast-specific permission table, custom ACP protocol, or new factory
   orchestrator is introduced.
 
+Wait source registration for this path uses existing host-owned tables:
+
+- `firegrid.runtime.runs` maps to `RuntimeControlPlaneTable.runs` and can be
+  matched by `contextId`, `status`, and `activityAttempt`.
+- `firegrid.runtime.output.events` maps to raw `RuntimeOutputTable.events`
+  rows.
+- `firegrid.runtime.output.logs` maps to `RuntimeOutputTable.logs` rows.
+- `firegrid.runtime.ingress.inputs` maps to `RuntimeIngressTable.inputs` rows.
+- `firegrid.runtime.ingress.deliveries` maps to
+  `RuntimeIngressTable.deliveries` rows.
+- `firegrid.runtime.agent-output-events` is a projection over
+  `RuntimeOutputTable.events` rows whose `raw` value is the existing
+  `firegrid.agent-output` wrapper. It exposes scalar fields such as
+  `contextId`, `_tag`, `permissionRequestId`, `toolUseId`, `toolName`,
+  `activityAttempt`, and `sequence` while returning the decoded
+  `AgentOutputEvent` under `event`.
+
+Concrete planner query shapes:
+
+```json
+{
+  "eventQuery": {
+    "stream": "firegrid.runtime.agent-output-events",
+    "whereFields": {
+      "contextId": "ctx_...",
+      "_tag": "PermissionRequest",
+      "permissionRequestId": "permission-1"
+    }
+  }
+}
+```
+
+```json
+{
+  "eventQuery": {
+    "stream": "firegrid.runtime.runs",
+    "whereFields": {
+      "contextId": "ctx_...",
+      "status": "exited"
+    }
+  }
+}
+```
+
 Implementation boundary for the first slice:
 
 - add the minimal launch/runtime discriminator needed to choose raw process,
