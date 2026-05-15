@@ -198,7 +198,7 @@ function RunOverview({ data }: { data: FactoryRunStatusView }) {
               <p className="mt-1 break-all font-mono text-xs">{run.subscriberId}</p>
             </div>
             <div>
-              <p className="text-xs uppercase tracking-wide text-muted-foreground">Planner Context</p>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Planner Session</p>
               <p className="mt-1 break-all font-mono text-xs">{run.plannerContextId}</p>
             </div>
             <div>
@@ -290,7 +290,7 @@ function FactsPanel({ data }: { data: FactoryRunStatusView }) {
             <Field label="Source" value={fact.source} />
             <Field label="External event" value={fact.externalEventKey} />
             <Field label="External entity" value={fact.externalEntityKey} />
-            <Field label="Context" value={fact.contextId ?? "Not reported"} />
+            <Field label="Session" value={fact.contextId ?? "Not reported"} />
             <Field label="Correlation" value={fact.correlationId ?? "Not reported"} />
           </div>
           <pre className="mt-3 max-h-28 overflow-auto rounded bg-secondary/50 p-2 text-xs">
@@ -308,21 +308,21 @@ function RuntimePanel({ data }: { data: FactoryRunStatusView }) {
       key: `run:${row.contextId}:${row.activityAttempt}:${row.status}`,
       at: row.at,
       label: `run ${row.status}`,
-      contextId: row.contextId,
+      sessionId: row.contextId,
       detail: row.message ?? row.provider,
     }))
     const events = data.runtimeEvents.map(row => ({
       key: `event:${row.contextId}:${row.activityAttempt}:${row.sequence}`,
       at: row.receivedAt,
       label: "runtime event",
-      contextId: row.contextId,
+      sessionId: row.contextId,
       detail: row.raw,
     }))
     const logs = data.runtimeLogs.map(row => ({
       key: `log:${row.contextId}:${row.activityAttempt}:${row.sequence}`,
       at: row.receivedAt,
       label: "runtime log",
-      contextId: row.contextId,
+      sessionId: row.contextId,
       detail: row.raw,
     }))
     return [...runs, ...events, ...logs].sort((left, right) => left.at.localeCompare(right.at)).reverse()
@@ -338,7 +338,7 @@ function RuntimePanel({ data }: { data: FactoryRunStatusView }) {
             <Badge variant="outline">{item.label}</Badge>
             <span className="text-xs text-muted-foreground">{formatTimestamp(item.at)}</span>
           </div>
-          <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{item.contextId}</p>
+          <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{item.sessionId}</p>
           <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-secondary/50 p-2 text-xs">
             {item.detail}
           </pre>
