@@ -27,6 +27,10 @@
  *  - firegrid-local-mcp-run.EMBEDDED_DURABLE_STREAMS.3
  *  - firegrid-local-mcp-run.MCP_ROUTE.1
  *  - firegrid-local-mcp-run.MCP_ROUTE.2
+ *  - firegrid-local-mcp-run.CLI_HELP.1
+ *  - firegrid-local-mcp-run.CLI_HELP.2
+ *  - firegrid-local-mcp-run.CLI_HELP.3
+ *  - firegrid-local-mcp-run.CLI_HELP.4
  *  - firegrid-local-mcp-run.EFFECT_COMPOSITION.1
  *  - firegrid-local-mcp-run.EFFECT_COMPOSITION.2
  *  - firegrid-local-mcp-run.EFFECT_COMPOSITION.3
@@ -41,9 +45,13 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import type { DurableTableHeaders } from "@firegrid/protocol"
 import {
   decodeLaunchConfig,
+  decodeLaunchSecretEnvCliValue,
   firegridRuntimeContextMcpDeclaration,
   injectLaunchMcpDeclaration,
+  LaunchCliHelp,
+  runtimeAgentProtocolValues,
   type LaunchConfig,
+  type RuntimeAgentProtocol,
   type RuntimeEnvBinding,
 } from "@firegrid/protocol/launch"
 import {
@@ -62,7 +70,7 @@ import {
   ensurePathInput,
   runtimeContextMcpPath,
 } from "@firegrid/runtime/agent-tools"
-import { Cause, Console, Data, Effect, Exit, Layer, Option, ParseResult } from "effect"
+import { Cause, Console, Data, Effect, Either, Exit, Layer, Option, ParseResult } from "effect"
 
 class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{
   readonly message: string
@@ -71,6 +79,7 @@ class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{
 interface RawRunConfig {
   readonly agentArgv: ReadonlyArray<string>
   readonly agent?: string
+  readonly agentProtocol?: RuntimeAgentProtocol
   readonly cwd?: string
   readonly prompt?: string
   readonly envBindings?: ReadonlyArray<RuntimeEnvBinding>
@@ -112,41 +121,14 @@ const defaultMcpPort = 0
 const defaultMcpPath = "/mcp"
 const startCreatedBy = "firegrid:start"
 
-const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
-
 const usageError = (message: string): FiregridCliUsageError =>
   new FiregridCliUsageError({ message })
-
-// Parse a single --secret-env value. Accepts:
-//   NAME           -> binding { name: NAME, ref: env:NAME }
-//   NAME=ENV_NAME  -> binding { name: NAME, ref: env:ENV_NAME }
-// The flag never accepts a literal secret value; both halves are env-var
-// identifiers only.
-const parseSecretEnvFlag = (
-  raw: string,
-): Effect.Effect<readonly [string, string], FiregridCliUsageError> => {
-  const equalsIndex = raw.indexOf("=")
-  const name = equalsIndex === -1 ? raw : raw.slice(0, equalsIndex)
-  const envName = equalsIndex === -1 ? raw : raw.slice(equalsIndex + 1)
-  if (!ENV_NAME_PATTERN.test(name)) {
-    return Effect.fail(usageError(
-      `--secret-env expects an env-var identifier, got "${name}". ` +
-        "Use --secret-env NAME or --secret-env NAME=ENV_NAME; values are never accepted on the command line.",
-    ))
-  }
-  if (!ENV_NAME_PATTERN.test(envName)) {
-    return Effect.fail(usageError(
-      `--secret-env right-hand side "${envName}" is not a valid env-var identifier. ` +
-        "--secret-env names host env vars; it does not accept secret values.",
-    ))
-  }
-  return Effect.succeed([name, envName] as const)
-}
 
 const rawRunConfigFromCli = (
   input: {
     readonly agentArgv: ReadonlyArray<string>
     readonly agent: Option.Option<string>
+    readonly agentProtocol: Option.Option<RuntimeAgentProtocol>
     readonly cwd: Option.Option<string>
     readonly prompt: Option.Option<string>
     readonly secretEnv: ReadonlyArray<string>
@@ -166,7 +148,12 @@ const rawRunConfigFromCli = (
     const seenTargets = new Set<string>()
     let index = 0
     while (index < input.secretEnv.length) {
-      const [name, envName] = yield* parseSecretEnvFlag(input.secretEnv[index]!)
+      const decoded = decodeLaunchSecretEnvCliValue(input.secretEnv[index]!)
+      if (Either.isLeft(decoded)) {
+        return yield* Effect.fail(usageError(decoded.left))
+      }
+      const { authorizedBinding, envBinding } = decoded.right
+      const [name] = authorizedBinding
       if (seenTargets.has(name)) {
         return yield* Effect.fail(usageError(
           `--secret-env target ${name} was specified more than once; ` +
@@ -174,8 +161,8 @@ const rawRunConfigFromCli = (
         ))
       }
       seenTargets.add(name)
-      envBindings.push({ name, ref: `env:${envName}` })
-      authorizedBindings.push([name, envName])
+      envBindings.push(envBinding)
+      authorizedBindings.push(authorizedBinding)
       index += 1
     }
 
@@ -183,11 +170,13 @@ const rawRunConfigFromCli = (
       ? [...noopAgentArgv]
       : [...input.agentArgv]
     const agent = Option.getOrUndefined(input.agent)
+    const agentProtocol = Option.getOrUndefined(input.agentProtocol)
     const cwd = Option.getOrUndefined(input.cwd)
     const prompt = Option.getOrUndefined(input.prompt)
     return {
       agentArgv,
       ...(agent === undefined ? {} : { agent }),
+      ...(agentProtocol === undefined ? {} : { agentProtocol }),
       ...(cwd === undefined ? {} : { cwd }),
       ...(prompt === undefined ? {} : { prompt }),
       ...(envBindings.length === 0 ? {} : { envBindings }),
@@ -433,26 +422,100 @@ const runWithMcp = (
     }),
   )
 
-const runArgv = Args.text({ name: "agent-argv" }).pipe(Args.repeated)
-const agentOption = Options.text("agent").pipe(Options.optional)
-const cwdOption = Options.text("cwd").pipe(Options.optional)
-const promptOption = Options.text("prompt").pipe(Options.optional)
-const secretEnvOption = Options.text("secret-env").pipe(Options.repeated)
+const helpWithDetails = (
+  help: {
+    readonly description: string
+    readonly examples: ReadonlyArray<string>
+    readonly defaultValue?: string
+  },
+): string => [
+  help.description,
+  help.defaultValue === undefined ? undefined : `Default: ${help.defaultValue}.`,
+  help.examples.length === 0 ? undefined : `Example: ${help.examples[0]}`,
+].filter((line): line is string => line !== undefined).join("\n")
+
+const rootHelp = `Run Firegrid agents or start a route-scoped local host/MCP server.
+
+Common workflows:
+  pnpm firegrid -- start
+  pnpm firegrid -- run --prompt "Summarize this repository" -- node agent.mjs
+  pnpm firegrid -- run --agent codex-acp --agent-protocol acp -- npx -y @zed-industries/codex-acp@0.14.0
+  pnpm firegrid -- run --secret-env ANTHROPIC_API_KEY -- node agent.mjs`
+
+const runHelp = `Run one agent command synchronously through a host-bound RuntimeContext.
+
+Firegrid injects the generated runtime-context MCP server by default before
+launch when the selected backend supports MCP setup.
+
+Examples:
+  pnpm firegrid -- run -- node -e 'console.log("hello from firegrid")'
+  pnpm firegrid -- run --prompt "Summarize this repository" -- node agent.mjs
+  pnpm firegrid -- run --agent codex-acp --agent-protocol acp -- npx -y @zed-industries/codex-acp@0.14.0
+  pnpm firegrid -- run --secret-env ANTHROPIC_API_KEY -- node agent.mjs`
+
+const startHelp = `Start a local Firegrid host and route-scoped MCP server.
+
+The command prints one JSON ready record of type firegrid.start.ready
+containing contextId, mcpUrl, namespace, durableStreamsBaseUrl, and
+embeddedDurableStreams, then keeps the host process alive for MCP clients.
+
+Examples:
+  pnpm firegrid -- start
+  pnpm firegrid -- start --namespace firegrid-local --mcp-port 3333
+  pnpm firegrid -- start --prompt "Wait for MCP input" -- node agent.mjs`
+
+const runArgv = Args.text({ name: "agent-argv" }).pipe(
+  Args.withDescription(helpWithDetails(LaunchCliHelp.agentArgv)),
+  Args.repeated,
+)
+const startArgv = Args.text({ name: "agent-argv" }).pipe(
+  Args.withDescription(
+    "Optional agent command and arguments to seed into the hosted RuntimeContext.\n" +
+      `Example: ${LaunchCliHelp.agentArgv.examples[0] ?? "node agent.mjs"}`,
+  ),
+  Args.repeated,
+)
+const agentOption = Options.text("agent").pipe(
+  Options.withPseudoName("NAME"),
+  Options.withDescription(helpWithDetails(LaunchCliHelp.agent)),
+  Options.optional,
+)
+const agentProtocolOption = Options.choice("agent-protocol", runtimeAgentProtocolValues).pipe(
+  Options.withDescription(helpWithDetails(LaunchCliHelp.agentProtocol)),
+  Options.optional,
+)
+const cwdOption = Options.text("cwd").pipe(
+  Options.withPseudoName("PATH"),
+  Options.withDescription(helpWithDetails(LaunchCliHelp.cwd)),
+  Options.optional,
+)
+const promptOption = Options.text("prompt").pipe(
+  Options.withPseudoName("TEXT"),
+  Options.withDescription(helpWithDetails(LaunchCliHelp.prompt)),
+  Options.optional,
+)
+const secretEnvOption = Options.text("secret-env").pipe(
+  Options.withPseudoName("NAME[=ENV_NAME]"),
+  Options.withDescription(helpWithDetails(LaunchCliHelp.secretEnv)),
+  Options.repeated,
+)
 
 const runCommand = Command.make(
   "run",
   {
     agent: agentOption,
+    agentProtocol: agentProtocolOption,
     cwd: cwdOption,
     prompt: promptOption,
     secretEnv: secretEnvOption,
     agentArgv: runArgv,
   },
-  ({ agent, agentArgv, cwd, prompt, secretEnv }) =>
+  ({ agent, agentArgv, agentProtocol, cwd, prompt, secretEnv }) =>
     Effect.gen(function* () {
       const raw = yield* rawRunConfigFromCli({
         agentArgv,
         agent,
+        agentProtocol,
         cwd,
         prompt,
         secretEnv,
@@ -466,12 +529,30 @@ const runCommand = Command.make(
         globalThis.process.exitCode = exitCode
       })
     }).pipe(Effect.scoped),
-)
+).pipe(Command.withDescription(runHelp))
 
-const namespaceOption = Options.text("namespace").pipe(Options.optional)
-const mcpHostOption = Options.text("mcp-host").pipe(Options.withDefault(defaultMcpHost))
-const mcpPortOption = Options.integer("mcp-port").pipe(Options.withDefault(defaultMcpPort))
-const mcpPathOption = Options.text("mcp-path").pipe(Options.withDefault(defaultMcpPath))
+const namespaceOption = Options.text("namespace").pipe(
+  Options.withPseudoName("NAME"),
+  Options.withDescription(
+    `Runtime namespace used for durable rows. Default: FIREGRID_RUNTIME_NAMESPACE or ${defaultNamespace}.`,
+  ),
+  Options.optional,
+)
+const mcpHostOption = Options.text("mcp-host").pipe(
+  Options.withPseudoName("HOST"),
+  Options.withDescription("Loopback interface or host address for the MCP HTTP listener."),
+  Options.withDefault(defaultMcpHost),
+)
+const mcpPortOption = Options.integer("mcp-port").pipe(
+  Options.withPseudoName("PORT"),
+  Options.withDescription("MCP HTTP listener port. Default 0 asks the OS for a free loopback port."),
+  Options.withDefault(defaultMcpPort),
+)
+const mcpPathOption = Options.text("mcp-path").pipe(
+  Options.withPseudoName("PATH"),
+  Options.withDescription("Base MCP route prefix; runtime contexts are served under /runtime-context/:contextId."),
+  Options.withDefault(defaultMcpPath),
+)
 
 const startCommand = Command.make(
   "start",
@@ -481,16 +562,18 @@ const startCommand = Command.make(
     mcpPort: mcpPortOption,
     mcpPath: mcpPathOption,
     agent: agentOption,
+    agentProtocol: agentProtocolOption,
     cwd: cwdOption,
     prompt: promptOption,
     secretEnv: secretEnvOption,
-    agentArgv: runArgv,
+    agentArgv: startArgv,
   },
-  ({ agent, agentArgv, cwd, mcpHost, mcpPath, mcpPort, namespace, prompt, secretEnv }) =>
+  ({ agent, agentArgv, agentProtocol, cwd, mcpHost, mcpPath, mcpPort, namespace, prompt, secretEnv }) =>
     Effect.gen(function* () {
       const raw = yield* rawRunConfigFromCli({
         agentArgv,
         agent,
+        agentProtocol,
         cwd,
         prompt,
         secretEnv,
@@ -511,9 +594,10 @@ const startCommand = Command.make(
       }
       yield* Layer.launch(hostAndMcpLayer(durableStreams, config))
     }).pipe(Effect.scoped),
-)
+).pipe(Command.withDescription(startHelp))
 
 const rootCommand = Command.make("firegrid").pipe(
+  Command.withDescription(rootHelp),
   Command.withSubcommands([runCommand, startCommand]),
 )
 

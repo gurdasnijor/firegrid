@@ -41,6 +41,14 @@ components:
       6: The run subcommand accepts an opaque --agent NAME selector and preserves it in the schema-decoded launch config without introducing an agent registry or ACP-specific public schema.
       7: A public-command smoke scaffold covers the intended codex-acp launch shape with default Firegrid MCP attachment; full ACP execution may remain pending on the runtime codec integration lane.
 
+  CLI_HELP:
+    requirements:
+      1: Root help for `pnpm firegrid --help` describes the run and start subcommands and includes common workflows for starting host/MCP, running a local command with a prompt, launching an ACP/codex agent with default Firegrid MCP, and passing secret env bindings.
+      2: Run help for `pnpm firegrid -- run --help` documents schema-backed launch inputs, including agent argv, prompt, cwd, opaque agent selector, agent protocol selection, and secret env bindings.
+      3: Start help for `pnpm firegrid -- start --help` documents host/MCP options, defaults, route-scoped ready-record output, and the optional launch config seeded for the hosted RuntimeContext.
+      4: CLI help and option text are generated from Effect CLI command definitions while shared launch-option descriptions/examples/default intent are sourced from annotations or metadata adjacent to packages/protocol/src/launch/schema.ts rather than a separate launch contract.
+      5: Focused help-content tests prove root, run, and start help include the supported workflows and schema-backed option descriptions.
+
 constraints:
   EFFECT_COMPOSITION:
     requirements:
