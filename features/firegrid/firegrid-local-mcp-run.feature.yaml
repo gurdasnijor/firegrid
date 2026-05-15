@@ -1,0 +1,41 @@
+feature:
+  name: firegrid-local-mcp-run
+  product: firegrid
+  description: A single local command that composes the runtime host, route-scoped MCP server, optional embedded Durable Streams, and a host-bound RuntimeContext for MCP inspector or client use.
+
+components:
+  LOCAL_COMMAND:
+    requirements:
+      1: The local MCP command starts from one public script and prints a structured ready record containing contextId and the route-scoped MCP URL.
+      2: The command keeps the host scope alive after printing the ready record so MCP Inspector or another client can connect to the printed URL.
+      3: The command is usable with no agent argv; in that mode it seeds a minimal no-op RuntimeContext through production primitives and prints the MCP URL.
+      4: Optional agent argv and run flags customize the seeded RuntimeContext intent; contextId is still produced by the command, not supplied by env.
+      5: The command is an MCP context bootstrap, not a synchronous run path; it creates a host-bound RuntimeContext for tool authority without automatically calling startRuntime.
+
+  EMBEDDED_DURABLE_STREAMS:
+    requirements:
+      1: When DURABLE_STREAMS_BASE_URL is provided, the command uses that endpoint through existing runtime topology config.
+      2: When DURABLE_STREAMS_BASE_URL is absent, the command starts an embedded loopback DurableStreamTestServer as a scoped resource and uses its base URL.
+      3: Embedded Durable Streams exists only for local developer use; production host commands still attach to an explicit Durable Streams endpoint.
+
+  MCP_ROUTE:
+    requirements:
+      1: The printed MCP URL has the route shape /mcp/runtime-context/:contextId by default.
+      2: Tool catalog and execution are provided by FiregridMcpServerLayer and Effect AI McpServer composition; the local command does not implement JSON-RPC, tools/list, or tools/call.
+
+constraints:
+  EFFECT_COMPOSITION:
+    requirements:
+      1: The command lifecycle is expressed with NodeRuntime.runMain plus Effect scoped/Layer composition; Firegrid does not add a custom process manager, sidecar service, or supervisor protocol.
+      2: The embedded DurableStreamTestServer lifecycle is acquired and released through Effect scope.
+      3: Runtime host and MCP server composition reuses FiregridLocalHostLive, insertLocalRuntimeContext, and FiregridMcpServerLayer.
+
+  AUTHORITY_BOUNDARY:
+    requirements:
+      1: The command does not add FIREGRID_MCP_CONTEXT_ID, host identity env vars, or any tool argument that supplies context authority.
+      2: The command does not construct host-owned Durable Streams URLs manually; host-owned stream routing remains inside existing runtime/protocol authority helpers.
+
+  VALIDATION:
+    requirements:
+      1: A public-command smoke starts the local MCP command without DURABLE_STREAMS_BASE_URL, parses the ready record, connects with the real MCP SDK, lists the six canonical tools, and calls sleep successfully.
+      2: A public-command smoke with DURABLE_STREAMS_BASE_URL provided proves the command attaches to the configured endpoint instead of starting embedded Durable Streams.
