@@ -164,6 +164,21 @@ export interface AcpAgentAdapterOptions {
    * connection.
    */
   readonly bytes: AgentByteStream
+
+  // firegrid-effect-ai-native-agents.ACP_ADAPTER.14
+  //
+  // Optional ACP session setup. Forwarded as-is to
+  // `connection.newSession(...)`. Callers that want to expose a
+  // Firegrid MCP runtime-context URL to the spawned agent supply it
+  // here through ACP's own `mcpServers` field — there is no env
+  // coupling and no Firegrid-custom protocol.
+  //
+  // Defaults preserve the prior behavior: `cwd` defaults to
+  // `globalThis.process.cwd()`, `mcpServers` defaults to `[]`.
+  readonly session?: {
+    readonly cwd?: string
+    readonly mcpServers?: ReadonlyArray<acp.McpServer>
+  }
 }
 
 // firegrid-effect-ai-native-agents.ACP_ADAPTER.1
@@ -276,12 +291,16 @@ const makeAcpAgentAdapter = (
       catch: acquireFailed("initialize", "ACP initialize failed"),
     })
 
+    // firegrid-effect-ai-native-agents.ACP_ADAPTER.14
+    const sessionSetup = options.session
+    const newSessionRequest: acp.NewSessionRequest = {
+      cwd: sessionSetup?.cwd ?? globalThis.process.cwd(),
+      mcpServers: sessionSetup?.mcpServers === undefined
+        ? []
+        : [...sessionSetup.mcpServers],
+    }
     const session = yield* Effect.tryPromise({
-      try: () =>
-        connection.newSession({
-          cwd: globalThis.process.cwd(),
-          mcpServers: [],
-        }),
+      try: () => connection.newSession(newSessionRequest),
       catch: acquireFailed("newSession", "ACP newSession failed"),
     })
     const sessionId = session.sessionId

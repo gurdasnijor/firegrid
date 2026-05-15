@@ -40,6 +40,7 @@ components:
       11: AcpAgentAdapter maps ACP tool_call notifications to Response.toolCallPart with providerExecuted=true to reflect that ACP tool execution is owned by the agent, and documents the lossy ACP.title -> Effect AI tool name choice as the only available name source on ACP today.
       12: AcpAgentAdapter requestPermission and sessionUpdate handlers swallow runPromise failures from a torn-down adapter scope and always reply to ACP so the agent does not hang.
       13: "AcpAgentAdapter holds the per-turn lock until ACP confirms the prompt has finalized: stream interruption sends connection.cancel({sessionId}), awaits the in-flight prompt fiber, and clears the current-turn ref before the lock is released, so a subsequent streamText cannot receive stale ACP updates from a prior turn."
+      14: AcpAgentAdapter accepts optional ACP session setup through AcpAgentAdapterOptions.session (cwd, mcpServers) and forwards those values verbatim to connection.newSession; defaults remain cwd=process.cwd() and mcpServers=[]; there is no env coupling and no Firegrid-custom protocol for routing MCP servers to the spawned agent.
 
 constraints:
   BOUNDARIES:
@@ -62,3 +63,4 @@ constraints:
       10: Tests prove AcpAgentAdapter rejects multi-message and non-user-role prompts with AiError.MalformedInput caused by AdapterUnsupportedFeature.
       11: Tests prove AcpAgentAdapter emits Response.toolCallPart with providerExecuted=true on ACP tool_call observations.
       12: "Tests prove AcpAgentAdapter sends connection.cancel to ACP on stream interruption and that a subsequent streamText call does not observe stale text-delta or tool-call updates from the prior interrupted turn."
+      13: Tests prove AcpAgentAdapter forwards AcpAgentAdapterOptions.session (cwd, mcpServers) verbatim to ACP newSession and preserves the prior defaults when those fields are omitted.
