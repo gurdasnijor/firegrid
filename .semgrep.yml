@@ -501,6 +501,150 @@ rules:
       facades. Use read/observation handles plus authority APIs.
     pattern-regex: 'Runtime(?:ControlPlane|Output|Ingress)Table\[["'']Type["'']\]'
 
+  - id: firegrid-runtime-no-exported-authority-singletons
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-runtime-agent-event-pipeline.AUTHORITIES.10
+      quality-acid: firegrid-runtime-agent-event-pipeline.AUTHORITIES.12
+      category: runtime-authority
+      rationale: |
+        Runtime authority modules expose split Effect Context.Tag capability
+        services. Exported module-singleton authority classes/objects recreate the
+        old bundled service surface and invite static command calls.
+      fix-hint: |
+        Export the split Context.Tag capabilities and their Layer provider. Keep
+        table helpers private to the provider module.
+    paths:
+      include:
+        - "/packages/runtime/src/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Runtime authority module-singleton class/object exported. Expose split Effect
+      Context.Tag capabilities and provider Layers instead.
+    pattern-regex: '\bexport\s+(?:class\s+(?:RuntimeOutputJournal|RuntimeIngressAppender|RuntimeIngressDeliveryTracker|RuntimeControlPlaneRecorder|DurableWaitStore|Runtime[A-Za-z0-9_]*Authority)\b|const\s+(?:RuntimeOutputJournal|RuntimeIngressAppender|RuntimeIngressDeliveryTracker|RuntimeControlPlaneRecorder|DurableWaitStore)\s*=)'
+
+  - id: firegrid-runtime-no-custom-authority-wrapper-types
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-runtime-agent-event-pipeline.AUTHORITIES.10
+      quality-acid: firegrid-runtime-agent-event-pipeline.AUTHORITIES.11
+      category: runtime-authority
+      rationale: |
+        Firegrid-specific RuntimeAuthority/RuntimeAuthorityCommand wrappers
+        duplicate existing Effect surfaces. Use Context.Tag services, Effect,
+        Stream, Sink, Queue.Enqueue, and SourceCollectionHandle directly.
+      fix-hint: |
+        Replace RuntimeAuthority* wrappers with split Context.Tag services and
+        stock Effect capability types.
+    paths:
+      include:
+        - "/packages/runtime/src/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Custom RuntimeAuthority wrapper type. Use stock Effect capability
+      surfaces directly.
+    pattern-regex: '\bRuntimeAuthority(?:Command|Read|Sink)?\b'
+
+  - id: firegrid-runtime-no-authority-static-helper-calls
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-runtime-agent-event-pipeline.AUTHORITIES.11
+      quality-acid: firegrid-runtime-agent-event-pipeline.AUTHORITIES.12
+      category: runtime-authority
+      rationale: |
+        Production runtime code should depend on Effect capability tags through
+        the requirement channel. Static table-taking helpers and .sources(table)
+        calls bypass the capability surface.
+      fix-hint: |
+        Yield the split Context.Tag service, Stream, Sink, Queue.Enqueue, or
+        narrow Effect capability. For wait_for registration, construct handles
+        from the provided Stream capability value.
+    paths:
+      include:
+        - "/packages/runtime/src/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Static runtime authority helper call. Use the split Effect capability tag
+      or a SourceCollectionHandle derived from a Stream capability.
+    pattern-regex: '\b(?:RuntimeOutputJournal|RuntimeIngressAppender|RuntimeIngressDeliveryTracker|RuntimeControlPlaneRecorder|DurableWaitStore)\.(?:sources|[A-Za-z0-9_]*(?:To|In|FromTable))\s*\('
+
+  - id: firegrid-runtime-no-table-type-parameters-outside-authorities
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-runtime-agent-event-pipeline.ENFORCEMENT.7
+      quality-acid: firegrid-runtime-agent-event-pipeline.AUTHORITIES.11
+      category: runtime-authority
+      rationale: |
+        Production runtime components that accept runtime-owned DurableTable
+        services can become hidden read/write owners. Table services should stay
+        inside the authority/provider internals that define capability tags.
+      fix-hint: |
+        Accept Stream/Sink/Queue.Enqueue/narrow Effect capability tags in the
+        Effect requirement channel, or keep the table parameter private to the
+        authority provider module.
+    paths:
+      include:
+        - "/packages/runtime/src/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+        - "/packages/runtime/src/authorities/**"
+        - "/packages/runtime/src/waits/internal/table.ts"
+    message: |
+      Runtime production component accepts a runtime-owned DurableTable service.
+      Use Effect capability tags instead.
+    pattern-regex: '(?:Runtime(?:ControlPlane|Output|Ingress)Table|DurableToolsTable)\[["'']Type["'']\]'
+
+  - id: firegrid-runtime-no-exported-authority-registry-api
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-runtime-agent-event-pipeline.AUTHORITIES.14
+      quality-acid: firegrid-runtime-agent-event-pipeline.ENFORCEMENT.7
+      category: runtime-authority
+      rationale: |
+        The runtime authority provider map is review/test metadata unless
+        production behavior requires dynamic lookup. Exporting RuntimeAuthority
+        registry APIs from production reintroduces a parallel registry surface.
+      fix-hint: |
+        Keep registry metadata in tests/review docs, or make production use the
+        actual Effect Context.Tag/Layer graph directly.
+    paths:
+      include:
+        - "/packages/runtime/src/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      RuntimeAuthorityRegistry production API exported. Keep review-only
+      registry metadata out of production exports.
+    pattern-regex: '\b(?:export\s+(?:const|interface|type)\s+RuntimeAuthorityRegistry\w*|RuntimeAuthorityRegistry(?:ByCapabilityTag|ByCollection|Entry)?\b)'
+
   - id: firegrid-factory-exported-contracts-use-schema
     languages: [typescript]
     severity: ERROR

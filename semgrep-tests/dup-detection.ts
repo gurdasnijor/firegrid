@@ -65,6 +65,9 @@ declare const Schema: {
     pipe: (annotation: unknown) => unknown
   }
 }
+declare const Context: {
+  Tag: (name: string) => unknown
+}
 declare const runtime: unknown
 declare const effect: unknown
 declare const promise: Promise<unknown>
@@ -226,12 +229,21 @@ declare const runtimeOutputTable: {
 type RuntimeIngressTable = {
   readonly Type: unknown
 }
+type RuntimeOutputTable = {
+  readonly Type: unknown
+}
+type RuntimeControlPlaneTable = {
+  readonly Type: unknown
+}
+type DurableToolsTable = {
+  readonly Type: unknown
+}
 
 // ruleid: firegrid-runtime-owned-table-writes-use-authorities
 const directRuntimeOutputWrite = runtimeOutputTable.events.upsert({})
 
 type RuntimeSubscriberWithTableFacade = {
-  // ruleid: firegrid-runtime-subscribers-transforms-no-table-facades
+  // ruleid: firegrid-runtime-subscribers-transforms-no-table-facades, firegrid-runtime-no-table-type-parameters-outside-authorities
   readonly table: RuntimeIngressTable["Type"]
 }
 
@@ -327,6 +339,137 @@ export type SchemaBackedFactoryRunStatusView = Schema.Schema.Type<
   typeof FactoryRunStatusViewSchema
 >
 
+// firegrid-runtime-agent-event-pipeline.AUTHORITIES.10-.14
+
+// ruleid: firegrid-runtime-no-exported-authority-singletons
+export class RuntimeOutputJournal extends Context.Tag("@firegrid/runtime/RuntimeOutputJournal")<
+  RuntimeOutputJournal,
+  never
+>() {
+  static readonly writeEventTo = () => undefined
+}
+
+// ruleid: firegrid-runtime-no-exported-authority-singletons
+export class RuntimeIngressAppender extends Context.Tag("@firegrid/runtime/RuntimeIngressAppender")<
+  RuntimeIngressAppender,
+  never
+>() {}
+
+// ruleid: firegrid-runtime-no-exported-authority-singletons
+export class RuntimeIngressDeliveryTracker extends Context.Tag("@firegrid/runtime/RuntimeIngressDeliveryTracker")<
+  RuntimeIngressDeliveryTracker,
+  never
+>() {}
+
+// ruleid: firegrid-runtime-no-exported-authority-singletons
+export class RuntimeControlPlaneRecorder extends Context.Tag("@firegrid/runtime/RuntimeControlPlaneRecorder")<
+  RuntimeControlPlaneRecorder,
+  never
+>() {}
+
+// ruleid: firegrid-runtime-no-exported-authority-singletons
+export class DurableWaitStore extends Context.Tag("@firegrid/runtime/DurableWaitStore")<
+  DurableWaitStore,
+  never
+>() {}
+
+// ruleid: firegrid-runtime-no-exported-authority-singletons
+export const RuntimeControlPlaneRecorder = {
+  recordStartedTo: () => undefined,
+} as const
+
+// ok: firegrid-runtime-no-exported-authority-singletons
+export class RuntimeEventAppendAndGet extends Context.Tag("@firegrid/runtime/RuntimeEventAppendAndGet")<
+  RuntimeEventAppendAndGet,
+  { readonly append: (row: unknown) => unknown }
+>() {}
+
+// ruleid: firegrid-runtime-no-custom-authority-wrapper-types
+type RuntimeAuthorityCommandFixture = RuntimeAuthorityCommand<unknown, unknown>
+
+// ruleid: firegrid-runtime-no-custom-authority-wrapper-types
+type RuntimeAuthorityFixture = RuntimeAuthority<unknown, unknown>
+
+// ruleid: firegrid-runtime-no-custom-authority-wrapper-types
+type RuntimeAuthorityReadFixture = RuntimeAuthorityRead
+
+// ruleid: firegrid-runtime-no-custom-authority-wrapper-types
+type RuntimeAuthoritySinkFixture = RuntimeAuthoritySink<unknown, unknown>
+
+// ok: firegrid-runtime-no-custom-authority-wrapper-types
+type RuntimeEventAppendAndGetFixture = { readonly append: (row: unknown) => unknown }
+
+declare const runtimeOutputJournal: {
+  readonly append: (row: unknown) => unknown
+}
+declare const RuntimeOutputJournalStatic: {
+  readonly writeEventTo: (table: unknown, row: unknown) => unknown
+  readonly sources: (table: unknown) => unknown
+}
+declare const RuntimeIngressAppenderStatic: {
+  readonly appendTo: (table: unknown, request: unknown) => unknown
+  readonly sources: (table: unknown) => unknown
+}
+declare const RuntimeIngressDeliveryTrackerStatic: {
+  readonly claimInputTo: (table: unknown, row: unknown) => unknown
+}
+declare const RuntimeControlPlaneRecorderStatic: {
+  readonly recordStartedTo: (table: unknown, row: unknown) => unknown
+}
+declare const DurableWaitStoreStatic: {
+  readonly findWaitIn: (table: unknown, key: unknown) => unknown
+}
+declare const table: unknown
+declare const row: unknown
+declare const request: unknown
+declare const waitKey: unknown
+
+// ruleid: firegrid-runtime-no-authority-static-helper-calls
+const staticOutputWrite = RuntimeOutputJournal.writeEventTo(table, row)
+
+// ruleid: firegrid-runtime-no-authority-static-helper-calls
+const staticSourceHandle = RuntimeIngressAppender.sources(table)
+
+// ruleid: firegrid-runtime-no-authority-static-helper-calls
+const staticDeliveryClaim = RuntimeIngressDeliveryTracker.claimInputTo(table, row)
+
+// ruleid: firegrid-runtime-no-authority-static-helper-calls
+const staticRunAppend = RuntimeControlPlaneRecorder.recordStartedTo(table, row)
+
+// ruleid: firegrid-runtime-no-authority-static-helper-calls
+const staticWaitRead = DurableWaitStore.findWaitIn(table, waitKey)
+
+// ok: firegrid-runtime-no-authority-static-helper-calls
+const capabilityAppend = runtimeOutputJournal.append(row)
+
+type HostOwnedRuntimeTableOptions = {
+  // ruleid: firegrid-runtime-subscribers-transforms-no-table-facades, firegrid-runtime-no-table-type-parameters-outside-authorities
+  readonly output: RuntimeOutputTable["Type"]
+  // ruleid: firegrid-runtime-subscribers-transforms-no-table-facades, firegrid-runtime-no-table-type-parameters-outside-authorities
+  readonly controlPlane: RuntimeControlPlaneTable["Type"]
+  // ruleid: firegrid-runtime-subscribers-transforms-no-table-facades, firegrid-runtime-no-table-type-parameters-outside-authorities
+  readonly ingress: RuntimeIngressTable["Type"]
+  // ruleid: firegrid-runtime-no-table-type-parameters-outside-authorities
+  readonly waits: DurableToolsTable["Type"]
+}
+
+type HostOwnedRuntimeCapabilities = {
+  // ok: firegrid-runtime-no-table-type-parameters-outside-authorities
+  readonly outputEvents: unknown
+}
+
+// ruleid: firegrid-runtime-no-exported-authority-registry-api
+export const RuntimeAuthorityRegistry = []
+
+// ruleid: firegrid-runtime-no-exported-authority-registry-api
+export const RuntimeAuthorityRegistryByCapabilityTag = new Map()
+
+// ruleid: firegrid-runtime-no-exported-authority-registry-api
+export const RuntimeAuthorityRegistryEntry = { capability: null as unknown }
+
+// ok: firegrid-runtime-no-exported-authority-registry-api
+const reviewOnlyAuthorityRegistry = []
+
 export {
   broadTryPromise,
   chainedPromise,
@@ -370,8 +513,16 @@ export {
   validatedStreamAuthoritySchema,
   visibleMutableState,
   wallClockMillis,
+  capabilityAppend,
+  staticDeliveryClaim,
+  staticOutputWrite,
+  staticRunAppend,
+  staticSourceHandle,
+  staticWaitRead,
 }
 
 export type {
+  HostOwnedRuntimeCapabilities,
+  HostOwnedRuntimeTableOptions,
   RuntimeSubscriberWithTableFacade,
 }
