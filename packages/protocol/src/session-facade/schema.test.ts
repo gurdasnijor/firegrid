@@ -1,12 +1,51 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Schema, SchemaAST } from "effect"
 import {
+  FiregridSessionIdSchema,
+  RuntimeContextIdSchema,
+  SessionAttachInputSchema,
   SessionCreateOrLoadInputSchema,
   SessionExternalKeySchema,
   sessionContextIdForExternalKey,
 } from "./schema.ts"
 
 describe("session facade protocol schema", () => {
+  it("firegrid-session-fact-client-surfaces.SESSION_IDENTITY.1 documents sessionId as the v1 RuntimeContext.contextId alias", () => {
+    const sessionId = Schema.decodeUnknownSync(FiregridSessionIdSchema)("ctx_123")
+    const runtimeContextId = Schema.decodeUnknownSync(RuntimeContextIdSchema)("ctx_123")
+
+    expect(sessionId).toBe("ctx_123")
+    expect(runtimeContextId).toBe(sessionId)
+    expect(
+      FiregridSessionIdSchema.ast.annotations[SchemaAST.IdentifierAnnotationId],
+    ).toBe("firegrid.sessionId")
+    expect(
+      FiregridSessionIdSchema.ast.annotations[SchemaAST.DescriptionAnnotationId],
+    ).toContain("RuntimeContext.contextId")
+    expect(
+      RuntimeContextIdSchema.ast.annotations[SchemaAST.DescriptionAnnotationId],
+    ).toContain("sessionId")
+  })
+
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.3 decodes attach input through the protocol schema", () => {
+    const decoded = Schema.decodeUnknownSync(SessionAttachInputSchema)({
+      sessionId: "ctx_attach",
+    })
+
+    expect(decoded.sessionId).toBe("ctx_attach")
+    expect(() =>
+      Schema.decodeUnknownSync(SessionAttachInputSchema)({
+        sessionId: "",
+      }),
+    ).toThrow()
+    expect(() =>
+      Schema.decodeUnknownSync(SessionAttachInputSchema)({
+        sessionId: "ctx_attach",
+        contextId: "ctx_attach",
+      }),
+    ).toThrow()
+  })
+
   it("firegrid-schema-projection-contract.CLIENT_PROJECTION.4 derives deterministic context ids from canonical external keys", () => {
     const externalKey = Schema.decodeUnknownSync(SessionExternalKeySchema)({
       source: "linear",
