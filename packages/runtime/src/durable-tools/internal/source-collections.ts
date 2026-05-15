@@ -1,16 +1,18 @@
 /**
  * Source-collection registry. Maps a `sourceName` (the value persisted on a
- * wait row) to the corresponding source DurableTable collection facade and
- * its `subscribeChanges` lifecycle.
+ * wait row) to the corresponding source DurableTable collection facade row
+ * observation stream.
  *
  * Implements:
  *  - firegrid-durable-tools.RUNTIME_BOUNDARY.3 — typed facade reference only;
  *    the registry does not accept raw Durable Streams URLs or
  *    `@durable-streams/*` client objects.
  *  - firegrid-durable-tools.SUBSCRIPTION.1 — each subscription is created via
- *    `subscribeChanges(..., { includeInitialState: true })` so initial state
- *    and live changes flow through one code path.
+ *    `DurableTableCollectionFacade.rows()` so initial state and live changes
+ *    flow through one code path.
  *  - firegrid-durable-tools.SUBSCRIPTION.2 — no snapshot-then-subscribe.
+ *  - firegrid-durable-tools.SOURCE_COLLECTIONS.1
+ *  - firegrid-durable-tools.SOURCE_COLLECTIONS.2
  */
 
 import {
@@ -28,7 +30,7 @@ import {
 
 /**
  * A registered source-collection handle. The handle owns its own
- * subscribeChanges plumbing; the router consumes the `subscribe()` stream
+ * row observation plumbing; the router consumes the `subscribe()` stream
  * without learning about the underlying TanStack collection.
  */
 export interface SourceCollectionHandle {
@@ -40,28 +42,14 @@ export interface SourceCollectionHandle {
  * firegrid-durable-tools.SUBSCRIPTION.1
  * firegrid-durable-tools.SUBSCRIPTION.2
  *
- * Build a SourceCollectionHandle from a DurableTable collection facade. The
- * resulting Stream emits each non-deleted row value once when the collection
- * is first observed (includeInitialState) and again whenever it changes.
+ * Build a SourceCollectionHandle from a DurableTable collection facade.
  */
 export const sourceCollectionHandle = <Row extends object, Key>(
   name: string,
   facade: DurableTableCollectionFacade<Row, Key>,
 ): SourceCollectionHandle => ({
   name,
-  subscribe: () =>
-    facade.subscribe<Row>((coll, emit) => {
-      const sub = coll.subscribeChanges(
-        (changes) => {
-          changes.forEach((change) => {
-            if (change.value === undefined || change.value === null) return
-            emit(change.value)
-          })
-        },
-        { includeInitialState: true },
-      )
-      return () => sub.unsubscribe()
-    }),
+  subscribe: () => facade.rows(),
 })
 
 export interface SourceCollectionsService {

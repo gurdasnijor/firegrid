@@ -16,7 +16,7 @@ components:
 
   SUBSCRIPTION:
     requirements:
-      1: The subscription router attaches to each active wait's declared source DurableTable collection through subscribeChanges with includeInitialState equal to true so initial state and live changes flow through a single match-evaluation code path.
+      1: The subscription router attaches to each active wait's declared source DurableTable collection through the collection facade's row observation stream so initial state and live changes flow through a single match-evaluation code path.
       2: The subscription router does not perform a snapshot query followed by a separate live subscribe.
       3: The subscription router evaluates the wait's trigger against each row change and, on match, writes a wait completion row recording the raw matched-row payload and completes the workflow-engine deferred with that raw payload; the router does not decode the payload against a call-site schema.
       4: Trigger expressivity for v0 is an AND of scalar field-equality predicates over decoded row paths, expressed as ReadonlyArray of { path, equals } where equals is a string, number, or boolean.
@@ -46,6 +46,15 @@ components:
       3: Source collections are registered with the router by typed DurableTable facade reference; the registry does not accept raw Durable Streams URLs or @durable-streams/* client objects.
       4: The subscription router and source-collection registry are exposed as a composable runtime Layer (DurableToolsWaitForLive) intended for once-per-runtime-host composition alongside workflow-engine and ingress layers; consumers wire it through their runtime-host composition entrypoint.
       4-note: Initial wait_for iteration ships the Layer; FiregridRuntimeHostLive does not yet compose it because that host has no workflow-engine layer wired today. Wiring is a follow-up that lands together with workflow-engine integration into the host.
+
+  SOURCE_COLLECTIONS:
+    requirements:
+      1: Runtime durable-tools registers DurableTable collection facades with SourceCollections under caller-chosen source names.
+      2: Source collection registration consumes the collection facade's row observation stream and does not accept, construct, or infer Durable Streams URLs.
+      3: Source names are caller- or product-chosen wait_for registry keys, not DurableTable namespaces, collection identifiers, provider names, or event taxonomy names.
+      4: The same DurableTable collection remains the durable fact store, live UI/query subscription surface, and wait_for observation surface; durable-tools does not introduce a separate projection or event-source abstraction.
+      5: Source collection registration is generic over DurableTable collection facades and does not add product-specific helpers such as VerifiedWebhookFactSource.layer.
+      6: VerifiedWebhookFactTable can be made observable by wait_for by composing its normal DurableTable.layer and registering its verifiedWebhookFacts collection under a short source name.
 
 constraints:
   PUBLIC_SURFACE:

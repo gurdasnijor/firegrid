@@ -52,6 +52,10 @@ components:
       26-8: insertOrGet is a row-level insert-or-read primitive, not a lock, claim, mutex, semaphore, lease, or general coordination primitive.
       26-9: insertOrGet consumers branch on Inserted versus Found with Match.value, Match.tag, and Match.exhaustive rather than manual discriminator switches.
       26-10: insertOrGet relies on a generic effect-durable-streams producer-fenced append classification to distinguish first append from duplicate append for the same primary key.
+      27: DurableTable.layer is the generic Durable Streams stream-options-to-table materialization boundary; callers provide streamOptions and receive typed table collection facades.
+      28: DurableTable collection facades are the shared durable fact and live observation surface for writes, queries, collection subscriptions, UI bindings, and downstream wait_for source registration.
+      28-1: Each DurableTable collection facade exposes a row observation stream that emits current non-deleted rows plus live non-deleted row changes using the collection's live subscription semantics.
+      29: effect-durable-operators does not register wait_for source names or import @firegrid/runtime; runtime-facing wait_for registration consumes DurableTable collection facades outside this package.
 
   REACT:
     requirements:
