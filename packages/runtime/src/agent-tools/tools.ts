@@ -32,26 +32,7 @@
 import { IdGenerator, Prompt, Tool, Toolkit } from "@effect/ai"
 import { Workflow, WorkflowEngine } from "@effect/workflow"
 import {
-  ExecuteToolInputSchema,
-  ExecuteToolOutputSchema,
-  ScheduleMeToolInputSchema,
-  ScheduleMeToolOutputSchema,
-  SessionCancelToolInputSchema,
-  SessionCancelToolOutputSchema,
-  SessionCloseToolInputSchema,
-  SessionCloseToolOutputSchema,
-  SessionNewToolInputSchema,
-  SessionNewToolOutputSchema,
-  SessionPromptToolInputSchema,
-  SessionPromptToolOutputSchema,
-  SleepToolInputSchema,
-  SleepToolOutputSchema,
-  SpawnAllToolInputSchema,
-  SpawnAllToolOutputSchema,
-  SpawnToolInputSchema,
-  SpawnToolOutputSchema,
-  WaitForToolInputSchema,
-  WaitForToolOutputSchema,
+  FiregridAgentToolOperations,
   type ExecuteToolOutput,
   type ScheduleMeToolOutput,
   type SessionCancelToolOutput,
@@ -157,16 +138,25 @@ const FiregridToolDependencies: Array<
   WorkflowEngine.WorkflowEngine,
 ]
 
+const operationToolName = <Name extends string>(
+  metadata: { readonly toolName?: string },
+  expected: Name,
+): Name => (metadata.toolName ?? expected) as Name
+
+const operationDescription = (
+  operation: { readonly description: string },
+): string => operation.description
+
 /**
  * `sleep` — durably suspend until a duration elapses.
  * Lowers onto `DurableClock.sleep` in `toolUseToEffect`.
  */
-export const SleepTool = Tool.make("sleep", {
-  description: "Durably suspend until a duration elapses.",
+export const SleepTool = Tool.make(operationToolName(FiregridAgentToolOperations.sleep.metadata, "sleep"), {
+  description: operationDescription(FiregridAgentToolOperations.sleep),
   dependencies: FiregridToolDependencies,
 })
-  .setParameters(SleepToolInputSchema)
-  .setSuccess(SleepToolOutputSchema)
+  .setParameters(FiregridAgentToolOperations.sleep.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.sleep.outputSchema)
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
@@ -174,13 +164,12 @@ export const SleepTool = Tool.make("sleep", {
  * Lowers onto the durable-tools `WaitFor.match` surface in
  * `toolUseToEffect`.
  */
-export const WaitForTool = Tool.make("wait_for", {
-  description:
-    "Wait until a matching durable event appears, optionally bounded by a timeout.",
+export const WaitForTool = Tool.make(operationToolName(FiregridAgentToolOperations.waitFor.metadata, "wait_for"), {
+  description: operationDescription(FiregridAgentToolOperations.waitFor),
   dependencies: FiregridToolDependencies,
 })
-  .setParameters(WaitForToolInputSchema)
-  .setSuccess(WaitForToolOutputSchema)
+  .setParameters(FiregridAgentToolOperations.waitFor.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.waitFor.outputSchema)
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
@@ -188,25 +177,24 @@ export const WaitForTool = Tool.make("wait_for", {
  * state. Lowers onto `AgentToolHost.spawnChildContext` in
  * `toolUseToEffect`.
  */
-export const SpawnTool = Tool.make("spawn", {
-  description:
-    "Run a child RuntimeContextWorkflow with the given prompt and await its terminal state.",
+export const SpawnTool = Tool.make(operationToolName(FiregridAgentToolOperations.spawn.metadata, "spawn"), {
+  description: operationDescription(FiregridAgentToolOperations.spawn),
   dependencies: FiregridToolDependencies,
 })
-  .setParameters(SpawnToolInputSchema)
-  .setSuccess(SpawnToolOutputSchema)
+  .setParameters(FiregridAgentToolOperations.spawn.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.spawn.outputSchema)
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
  * `spawn_all` — fan out child workflows and await every terminal state.
  * Lowers onto `AgentToolHost.spawnChildContexts` in `toolUseToEffect`.
  */
-export const SpawnAllTool = Tool.make("spawn_all", {
-  description: "Fan out child workflows; await every terminal state.",
+export const SpawnAllTool = Tool.make(operationToolName(FiregridAgentToolOperations.spawnAll.metadata, "spawn_all"), {
+  description: operationDescription(FiregridAgentToolOperations.spawnAll),
   dependencies: FiregridToolDependencies,
 })
-  .setParameters(SpawnAllToolInputSchema)
-  .setSuccess(SpawnAllToolOutputSchema)
+  .setParameters(FiregridAgentToolOperations.spawnAll.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.spawnAll.outputSchema)
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
@@ -214,48 +202,46 @@ export const SpawnAllTool = Tool.make("spawn_all", {
  * Lowers onto the internal `AgentToolHost.spawnChildContext` seam in
  * `toolUseToEffect`.
  */
-export const SessionNewTool = Tool.make("session_new", {
-  description:
-    "Create a child RuntimeContext-backed session and return its session handle.",
+export const SessionNewTool = Tool.make(operationToolName(FiregridAgentToolOperations.sessionCreate.metadata, "session_new"), {
+  description: operationDescription(FiregridAgentToolOperations.sessionCreate),
   dependencies: FiregridToolDependencies,
 })
-  .setParameters(SessionNewToolInputSchema)
-  .setSuccess(SessionNewToolOutputSchema)
+  .setParameters(FiregridAgentToolOperations.sessionCreate.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.sessionCreate.outputSchema)
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
  * `session_prompt` — append a prompt to an existing session using
  * host-owned runtime ingress.
  */
-export const SessionPromptTool = Tool.make("session_prompt", {
-  description: "Append a prompt to an existing RuntimeContext-backed session.",
+export const SessionPromptTool = Tool.make(operationToolName(FiregridAgentToolOperations.sessionPrompt.metadata, "session_prompt"), {
+  description: operationDescription(FiregridAgentToolOperations.sessionPrompt),
   dependencies: FiregridToolDependencies,
 })
-  .setParameters(SessionPromptToolInputSchema)
-  .setSuccess(SessionPromptToolOutputSchema)
+  .setParameters(FiregridAgentToolOperations.sessionPrompt.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.sessionPrompt.outputSchema)
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
  * `session_cancel` — request cancellation of an existing session.
  */
-export const SessionCancelTool = Tool.make("session_cancel", {
-  description:
-    "Request cancellation of an existing RuntimeContext-backed session.",
+export const SessionCancelTool = Tool.make(operationToolName(FiregridAgentToolOperations.sessionCancel.metadata, "session_cancel"), {
+  description: operationDescription(FiregridAgentToolOperations.sessionCancel),
   dependencies: FiregridToolDependencies,
 })
-  .setParameters(SessionCancelToolInputSchema)
-  .setSuccess(SessionCancelToolOutputSchema)
+  .setParameters(FiregridAgentToolOperations.sessionCancel.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.sessionCancel.outputSchema)
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
  * `session_close` — request closure of an existing session.
  */
-export const SessionCloseTool = Tool.make("session_close", {
-  description: "Request closure of an existing RuntimeContext-backed session.",
+export const SessionCloseTool = Tool.make(operationToolName(FiregridAgentToolOperations.sessionClose.metadata, "session_close"), {
+  description: operationDescription(FiregridAgentToolOperations.sessionClose),
   dependencies: FiregridToolDependencies,
 })
-  .setParameters(SessionCloseToolInputSchema)
-  .setSuccess(SessionCloseToolOutputSchema)
+  .setParameters(FiregridAgentToolOperations.sessionClose.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.sessionClose.outputSchema)
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
@@ -263,12 +249,12 @@ export const SessionCloseTool = Tool.make("session_close", {
  * Lowers onto `ScheduledInputWorkflow.execute({ discard: true })` in
  * `toolUseToEffect`.
  */
-export const ScheduleMeTool = Tool.make("schedule_me", {
-  description: "Schedule a future prompt to the same agent context.",
+export const ScheduleMeTool = Tool.make(operationToolName(FiregridAgentToolOperations.scheduleMe.metadata, "schedule_me"), {
+  description: operationDescription(FiregridAgentToolOperations.scheduleMe),
   dependencies: FiregridToolDependencies,
 })
-  .setParameters(ScheduleMeToolInputSchema)
-  .setSuccess(ScheduleMeToolOutputSchema)
+  .setParameters(FiregridAgentToolOperations.scheduleMe.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.scheduleMe.outputSchema)
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
@@ -276,14 +262,12 @@ export const ScheduleMeTool = Tool.make("schedule_me", {
  * reference. Lowers onto `AgentToolHost.executeSandboxTool` in
  * `toolUseToEffect`.
  */
-export const ExecuteTool = Tool.make("execute", {
-  description:
-    "Invoke a session-bound capability, with a temporary compatibility " +
-    "bridge for legacy sandbox references.",
+export const ExecuteTool = Tool.make(operationToolName(FiregridAgentToolOperations.execute.metadata, "execute"), {
+  description: operationDescription(FiregridAgentToolOperations.execute),
   dependencies: FiregridToolDependencies,
 })
-  .setParameters(ExecuteToolInputSchema)
-  .setSuccess(ExecuteToolOutputSchema)
+  .setParameters(FiregridAgentToolOperations.execute.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.execute.outputSchema)
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**

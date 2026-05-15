@@ -25,6 +25,7 @@
 import { IdGenerator, McpServer } from "@effect/ai"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
+  FiregridAgentToolOperations,
   SessionNewToolInputSchema,
   SleepToolInputSchema,
 } from "@firegrid/protocol/agent-tools"
@@ -206,6 +207,16 @@ describe("FiregridAgentToolkit", () => {
       Schema.decodeUnknown(SessionNewToolInputSchema)(sessionInput),
     )
     expect(decodedViaTool).toEqual(decodedViaProtocol)
+  })
+
+  it("firegrid-schema-projection-contract.TOOL_PROJECTION.1 projects tool schemas and descriptions from the schema catalog", () => {
+    const operation = FiregridAgentToolOperations.sessionPrompt
+    const tool = FiregridAgentToolkit.tools.session_prompt
+
+    expect(tool.parametersSchema).toBe(operation.inputSchema)
+    expect(tool.successSchema).toBe(operation.outputSchema)
+    expect(tool.description).toBe(operation.description)
+    expect(tool.name).toBe(operation.metadata.toolName)
   })
 })
 

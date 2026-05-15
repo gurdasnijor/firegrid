@@ -21,7 +21,88 @@
  *   - firegrid-platform-invariants.BOUNDARY.1
  */
 
-import { Schema } from "effect"
+import { Option, Schema, SchemaAST } from "effect"
+
+export interface FiregridProjectionMetadata {
+  readonly operationId: string
+  readonly toolName?: string
+  readonly clientName?: string
+  readonly cliName?: string
+}
+
+export interface FiregridOperationEntry<
+  InputSchema extends Schema.Schema.Any,
+  OutputSchema extends Schema.Schema.Any,
+> {
+  readonly inputSchema: InputSchema
+  readonly outputSchema: OutputSchema
+  readonly metadata: FiregridProjectionMetadata
+  readonly description: string
+  readonly examples: ReadonlyArray<unknown>
+}
+
+export const FiregridProjectionAnnotationId: unique symbol = Symbol.for(
+  "firegrid/annotation/Projection",
+)
+
+export const firegridProjection = (
+  metadata: FiregridProjectionMetadata,
+) => ({
+  [FiregridProjectionAnnotationId]: metadata,
+})
+
+export const getFiregridProjectionMetadata = (
+  schema: { readonly ast: SchemaAST.AST },
+): Option.Option<FiregridProjectionMetadata> =>
+  Option.fromNullable(
+    schema.ast.annotations[FiregridProjectionAnnotationId] as
+      | FiregridProjectionMetadata
+      | undefined,
+  )
+
+const annotationString = (
+  ast: SchemaAST.AST,
+  annotationId: symbol,
+): string | undefined => {
+  const value = ast.annotations[annotationId]
+  return typeof value === "string" ? value : undefined
+}
+
+const annotationExamples = (ast: SchemaAST.AST): ReadonlyArray<unknown> => {
+  const value = ast.annotations[SchemaAST.ExamplesAnnotationId]
+  return Array.isArray(value) ? value : []
+}
+
+export const defineFiregridOperation = <
+  InputSchema extends Schema.Schema.Any,
+  OutputSchema extends Schema.Schema.Any,
+>(
+  inputSchema: InputSchema,
+  outputSchema: OutputSchema,
+): FiregridOperationEntry<InputSchema, OutputSchema> => {
+  const metadata = Option.getOrThrow(getFiregridProjectionMetadata(inputSchema))
+  return {
+    inputSchema,
+    outputSchema,
+    metadata,
+    description:
+      annotationString(inputSchema.ast, SchemaAST.DescriptionAnnotationId) ??
+      metadata.operationId,
+    examples: annotationExamples(inputSchema.ast),
+  }
+}
+
+export const FiregridRuntimeObservationSourceNames = {
+  runtimeRuns: "firegrid.runtime.runs",
+  runtimeOutputEvents: "firegrid.runtime.output.events",
+  runtimeOutputLogs: "firegrid.runtime.output.logs",
+  runtimeIngressInputs: "firegrid.runtime.ingress.inputs",
+  runtimeIngressDeliveries: "firegrid.runtime.ingress.deliveries",
+  agentOutputEvents: "firegrid.runtime.agent-output-events",
+} as const
+
+export type FiregridRuntimeObservationSourceName =
+  typeof FiregridRuntimeObservationSourceNames[keyof typeof FiregridRuntimeObservationSourceNames]
 
 // ---------------------------------------------------------------------------
 // sleep
@@ -44,6 +125,11 @@ export const SleepToolInputSchema = Schema.Struct({
   identifier: "firegrid.agentTool.sleep.input",
   title: "Sleep tool input",
   description: "Durably suspend until a duration elapses.",
+  examples: [{ durationMs: 1_000 }],
+  ...firegridProjection({
+    operationId: "sleep",
+    toolName: "sleep",
+  }),
 })
 export type SleepToolInput = Schema.Schema.Type<typeof SleepToolInputSchema>
 
@@ -83,6 +169,23 @@ export const WaitForToolInputSchema = Schema.Struct({
   identifier: "firegrid.agentTool.waitFor.input",
   title: "Wait-for tool input",
   description: "Wait until a matching durable event appears, optionally bounded by a timeout.",
+  examples: [
+    {
+      eventQuery: {
+        stream: "firegrid.runtime.agent-output-events",
+        whereFields: {
+          contextId: "ctx_example",
+          _tag: "PermissionRequest",
+        },
+      },
+      timeoutMs: 30_000,
+    },
+  ],
+  ...firegridProjection({
+    operationId: "wait.for",
+    toolName: "wait_for",
+    clientName: "wait.for",
+  }),
 })
 export type WaitForToolInput = Schema.Schema.Type<typeof WaitForToolInputSchema>
 
@@ -124,6 +227,10 @@ export const SpawnToolInputSchema = Schema.Struct({
   identifier: "firegrid.agentTool.spawn.input",
   title: "Spawn tool input",
   description: "Run a child RuntimeContextWorkflow with the given prompt and await its terminal state.",
+  ...firegridProjection({
+    operationId: "session.spawnLegacy",
+    toolName: "spawn",
+  }),
 })
 export type SpawnToolInput = Schema.Schema.Type<typeof SpawnToolInputSchema>
 
@@ -169,6 +276,10 @@ export const SpawnAllToolInputSchema = Schema.Struct({
   identifier: "firegrid.agentTool.spawnAll.input",
   title: "Spawn-all tool input",
   description: "Fan out child workflows; await all terminal states.",
+  ...firegridProjection({
+    operationId: "session.spawnAllLegacy",
+    toolName: "spawn_all",
+  }),
 })
 export type SpawnAllToolInput = Schema.Schema.Type<typeof SpawnAllToolInputSchema>
 
@@ -231,6 +342,18 @@ export const SessionNewToolInputSchema = Schema.Struct({
   title: "Session-new tool input",
   description:
     "Create a child RuntimeContext-backed session and return its session handle.",
+  examples: [
+    {
+      agentKind: "codex-acp",
+      prompt: "Summarize the current task.",
+    },
+  ],
+  ...firegridProjection({
+    operationId: "session.create",
+    toolName: "session_new",
+    clientName: "sessions.create",
+    cliName: "sessions create",
+  }),
 })
 export type SessionNewToolInput = Schema.Schema.Type<
   typeof SessionNewToolInputSchema
@@ -258,6 +381,18 @@ export const SessionPromptToolInputSchema = Schema.Struct({
   title: "Session-prompt tool input",
   description:
     "Append a prompt to an existing RuntimeContext-backed session via host-owned ingress.",
+  examples: [
+    {
+      sessionId: "ctx_example",
+      prompt: "Continue with the accepted plan.",
+    },
+  ],
+  ...firegridProjection({
+    operationId: "session.prompt",
+    toolName: "session_prompt",
+    clientName: "sessions.prompt",
+    cliName: "sessions prompt",
+  }),
 })
 export type SessionPromptToolInput = Schema.Schema.Type<
   typeof SessionPromptToolInputSchema
@@ -275,6 +410,28 @@ export type SessionPromptToolOutput = Schema.Schema.Type<
   typeof SessionPromptToolOutputSchema
 >
 
+export const SessionStatusInputSchema = Schema.Struct({
+  sessionId: Schema.String.pipe(Schema.minLength(1)),
+}).annotations({
+  identifier: "firegrid.operation.session.status.input",
+  title: "Session status input",
+  description: "Read current observable status for a RuntimeContext-backed session.",
+  ...firegridProjection({
+    operationId: "session.status",
+    clientName: "sessions.status",
+    cliName: "sessions status",
+  }),
+})
+export type SessionStatusInput = Schema.Schema.Type<typeof SessionStatusInputSchema>
+
+export const SessionStatusOutputSchema = Schema.Struct({
+  session: SessionHandleSchema,
+}).annotations({
+  identifier: "firegrid.operation.session.status.output",
+  title: "Session status output",
+})
+export type SessionStatusOutput = Schema.Schema.Type<typeof SessionStatusOutputSchema>
+
 export const SessionCancelToolInputSchema = Schema.Struct({
   sessionId: Schema.String.pipe(Schema.minLength(1)),
   reason: Schema.optional(Schema.String),
@@ -283,6 +440,12 @@ export const SessionCancelToolInputSchema = Schema.Struct({
   title: "Session-cancel tool input",
   description:
     "Request cancellation of an existing RuntimeContext-backed session.",
+  ...firegridProjection({
+    operationId: "session.cancel",
+    toolName: "session_cancel",
+    clientName: "sessions.cancel",
+    cliName: "sessions cancel",
+  }),
 })
 export type SessionCancelToolInput = Schema.Schema.Type<
   typeof SessionCancelToolInputSchema
@@ -306,6 +469,12 @@ export const SessionCloseToolInputSchema = Schema.Struct({
   identifier: "firegrid.agentTool.sessionClose.input",
   title: "Session-close tool input",
   description: "Request closure of an existing RuntimeContext-backed session.",
+  ...firegridProjection({
+    operationId: "session.close",
+    toolName: "session_close",
+    clientName: "sessions.close",
+    cliName: "sessions close",
+  }),
 })
 export type SessionCloseToolInput = Schema.Schema.Type<
   typeof SessionCloseToolInputSchema
@@ -340,6 +509,10 @@ export const ScheduleMeToolInputSchema = Schema.Struct({
   identifier: "firegrid.agentTool.scheduleMe.input",
   title: "Schedule-me tool input",
   description: "Schedule a future prompt to the same agent context.",
+  ...firegridProjection({
+    operationId: "schedule.me",
+    toolName: "schedule_me",
+  }),
 })
 export type ScheduleMeToolInput = Schema.Schema.Type<typeof ScheduleMeToolInputSchema>
 
@@ -422,6 +595,10 @@ export const ExecuteToolInputSchema = Schema.Struct({
   title: "Execute tool input",
   description:
     "Invoke a session-bound capability, with a temporary compatibility bridge for legacy sandbox references.",
+  ...firegridProjection({
+    operationId: "capability.execute",
+    toolName: "execute",
+  }),
 })
 export type ExecuteToolInput = Schema.Schema.Type<typeof ExecuteToolInputSchema>
 
@@ -431,3 +608,77 @@ export const ExecuteToolOutputSchema = Schema.Unknown.annotations({
   description: "Sandbox-specific result payload; runtime validation lives at the SandboxProvider boundary.",
 })
 export type ExecuteToolOutput = Schema.Schema.Type<typeof ExecuteToolOutputSchema>
+
+// ---------------------------------------------------------------------------
+// permission response
+// ---------------------------------------------------------------------------
+
+export const PermissionDecisionSchema = Schema.Union(
+  Schema.Struct({
+    _tag: Schema.Literal("Allow"),
+    optionId: Schema.optional(Schema.String),
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Deny"),
+    reason: Schema.optional(Schema.String),
+  }),
+  Schema.Struct({ _tag: Schema.Literal("Cancelled") }),
+).annotations({
+  identifier: "firegrid.agentTool.permissionDecision",
+  title: "Permission decision",
+})
+export type PermissionDecision = Schema.Schema.Type<typeof PermissionDecisionSchema>
+
+export const PermissionRespondInputSchema = Schema.Struct({
+  contextId: Schema.String.pipe(Schema.minLength(1)),
+  permissionRequestId: Schema.String.pipe(Schema.minLength(1)),
+  decision: PermissionDecisionSchema,
+  idempotencyKey: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+}).annotations({
+  identifier: "firegrid.operation.permission.respond.input",
+  title: "Permission response input",
+  description:
+    "Append a permission response to a RuntimeContext-backed session ingress.",
+  examples: [
+    {
+      contextId: "ctx_example",
+      permissionRequestId: "permission-1",
+      decision: { _tag: "Allow", optionId: "allow_once" },
+    },
+  ],
+  ...firegridProjection({
+    operationId: "permission.respond",
+    clientName: "permissions.respond",
+  }),
+})
+export type PermissionRespondInput = Schema.Schema.Type<
+  typeof PermissionRespondInputSchema
+>
+
+export const PermissionRespondOutputSchema = Schema.Struct({
+  responded: Schema.Literal(true),
+  contextId: Schema.String.pipe(Schema.minLength(1)),
+  permissionRequestId: Schema.String.pipe(Schema.minLength(1)),
+  inputId: Schema.String.pipe(Schema.minLength(1)),
+}).annotations({
+  identifier: "firegrid.operation.permission.respond.output",
+  title: "Permission response output",
+})
+export type PermissionRespondOutput = Schema.Schema.Type<
+  typeof PermissionRespondOutputSchema
+>
+
+export const FiregridAgentToolOperations = {
+  sleep: defineFiregridOperation(SleepToolInputSchema, SleepToolOutputSchema),
+  waitFor: defineFiregridOperation(WaitForToolInputSchema, WaitForToolOutputSchema),
+  spawn: defineFiregridOperation(SpawnToolInputSchema, SpawnToolOutputSchema),
+  spawnAll: defineFiregridOperation(SpawnAllToolInputSchema, SpawnAllToolOutputSchema),
+  sessionCreate: defineFiregridOperation(SessionNewToolInputSchema, SessionNewToolOutputSchema),
+  sessionPrompt: defineFiregridOperation(SessionPromptToolInputSchema, SessionPromptToolOutputSchema),
+  sessionStatus: defineFiregridOperation(SessionStatusInputSchema, SessionStatusOutputSchema),
+  sessionCancel: defineFiregridOperation(SessionCancelToolInputSchema, SessionCancelToolOutputSchema),
+  sessionClose: defineFiregridOperation(SessionCloseToolInputSchema, SessionCloseToolOutputSchema),
+  scheduleMe: defineFiregridOperation(ScheduleMeToolInputSchema, ScheduleMeToolOutputSchema),
+  execute: defineFiregridOperation(ExecuteToolInputSchema, ExecuteToolOutputSchema),
+  permissionRespond: defineFiregridOperation(PermissionRespondInputSchema, PermissionRespondOutputSchema),
+} as const
