@@ -1,7 +1,7 @@
 feature:
   name: firegrid-verified-webhook-ingest
   product: firegrid
-  description: Prove a narrow product-owned webhook verifier and translator can turn authenticated external webhook requests into schema-owned DurableTable facts that existing durable wait surfaces can observe.
+  description: Production-shaped Firegrid surface for turning product-owned, verified webhook requests into durable facts that wait_for can observe without making Firegrid a webhook product.
 
 components:
   FACTS:
@@ -23,6 +23,16 @@ components:
   WAIT_INTEGRATION:
     requirements:
       1: Verified webhook fact rows are shaped so a workflow or agent-visible wait_for call can observe them through SourceCollections using scalar field equality predicates.
+      2: Firegrid exposes a stable source collection name for verified webhook facts, with firegrid.verifiedWebhooks as the default production source name.
+      3: Agents can wait on top-level scalar verified webhook fact fields including source, externalEventKey, externalEntityKey, and eventType.
+      4: Permission request and resolution events can use the verified webhook fact path when product routes emit source-neutral permission_requested or permission_resolved facts carrying permissionId, correlationId, and contextId or parentSessionId fields.
+
+  PRODUCTION_SURFACE:
+    requirements:
+      1: The production API keeps ingestVerifiedWebhook as the raw request verifier/translator and adds a VerifiedWebhookFactSource.layer helper that registers the verified fact table with SourceCollections rather than a Firegrid-owned HTTP service.
+      2: The first production source helper does not add a public source declaration type or scalar payload field projection; those remain follow-up schema/API slices.
+      3: The table/layer factory composes VerifiedWebhookFactTable with Durable Streams options, including authenticated headers when supplied by the host or product composition.
+      4: The wait_for registration helper registers VerifiedWebhookFactTable.verifiedWebhookFacts under the default source collection name or an explicit product-chosen alias without creating a provider registry.
 
 constraints:
   BOUNDARIES:
