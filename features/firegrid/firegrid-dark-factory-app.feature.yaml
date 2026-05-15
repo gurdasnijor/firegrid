@@ -1,0 +1,55 @@
+feature:
+  name: firegrid-dark-factory-app
+  product: firegrid
+  description: A production-shaped dark-factory app demo that uses Firegrid runtime, durable facts, agent tools, and runtime observation sources without introducing a factory workflow product.
+
+components:
+  APP_SURFACE:
+    requirements:
+      1: The first dark-factory app slice lives under apps/dark-factory and is wired as a workspace app rather than a top-level package or Flamecast dependency.
+      2: The app exposes a host-plane local/demo entrypoint that composes Firegrid runtime primitives directly; it does not use pnpm firegrid -- run as the core factory path.
+
+  EXTERNAL_FACTS:
+    requirements:
+      1: External ticket, decision, PR, CI, and webhook-style inputs are represented as app-owned DurableTable facts with deterministic source plus external event keys so duplicate delivery resolves to the same durable fact.
+      2: Product-owned HTTP routes or fixtures capture raw provider input and write fact rows; Firegrid does not expose a provider webhook endpoint, callback URL product, or provider taxonomy for the app.
+      3: The app registers its fact table collection under a short source name so wait_for can observe facts by top-level scalar fields such as source, externalEventKey, externalEntityKey, eventType, contextId, and correlationId.
+
+  PARENT_RUN:
+    requirements:
+      1: A factory trigger creates or loads one parent planner RuntimeContext by external source key, such as Linear issue id or demo ticket id, rather than creating competing parent runs on redelivery.
+      2: Parent and child relationships are carried as RuntimeContext metadata, prompts, durable facts, and tool result payloads; the app does not add a platform parent/child hierarchy beyond metadata and correlation.
+
+  PLANNER_RUNTIME:
+    requirements:
+      1: The parent planner is launched through RuntimeContext/control-plane primitives and normal runtime-host execution, not through a synchronous CLI run path or a custom factory workflow engine.
+      2: The planner receives the canonical Firegrid agent-tool surface and may use session_new, session_prompt, wait_for, schedule_me, and runtime observation sources to choose the next action.
+      3: The first demo may use a deterministic local stdio-jsonl or ACP fixture as the planner, but the control flow must remain compatible with a real planner agent process.
+
+  SESSION_TOOLS:
+    requirements:
+      1: Delegated implementation, review, or QA work is represented by session_new child RuntimeContext creation with parentSessionId, role, and correlation metadata when supplied.
+      2: Follow-up work uses session_prompt or host-owned runtime ingress to an existing RuntimeContext with idempotent input identity.
+
+  WAIT_AND_PERMISSION:
+    requirements:
+      1: Human decisions and external status changes are waited on with wait_for over app fact sources or RuntimeObservationSourceNames rather than hidden callback markers.
+      2: ACP PermissionRequest output is observed through RuntimeObservationSourceNames.agentOutputEvents and resumed by writing a RuntimeIngress PermissionResponse to the same context.
+      3: The first demo proves at least one human-gate-shaped pause and resume path using durable state; it may use a fixture decision writer instead of a real Linear or GitHub integration.
+
+  OBSERVATION:
+    requirements:
+      1: The app presents or tests durable observation from RuntimeOutputTable, RuntimeControlPlaneTable runs, runtime observation sources, and app fact tables so a user can inspect what happened and what is waiting.
+      2: Terminal or waiting states are derived from durable observations and facts, not from in-memory process state.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: The app does not introduce a custom workflow engine, factory orchestration runtime, hidden callback marker protocol, DurableConsumer revival, Source-style abstraction, or generic webhook server.
+      2: The app does not depend on #229 sync CLI UX, Flamecast implementation modules, Linear/GitHub clients, provider callback token issuance, or a product-specific transport.
+      3: The app does not hard-code a platform-owned planner/implementer/reviewer/QA DAG; any demo sequence is a fixture planner policy over durable facts and tools.
+
+  VALIDATION:
+    requirements:
+      1: The first implementation PR includes a targeted scenario or app test that drives a demo trigger into a parent planner RuntimeContext, observes durable runtime output or facts, and resumes at least one wait or permission gate.
+      2: The first implementation PR documents which pieces are live and which are fixtures or mocks.
