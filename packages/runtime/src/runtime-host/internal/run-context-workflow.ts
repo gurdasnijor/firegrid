@@ -8,24 +8,25 @@
 // under `runtime-host/internal/**` and is excluded from
 // `firegrid-runtime-context-workflow-requires-local-authority`.
 
-import type { Schema } from "effect"
-import type { Effect } from "effect"
 import type { Workflow, WorkflowEngine } from "@effect/workflow"
+import type { Effect, Schema } from "effect"
 
 export const executeRuntimeContextWorkflow = <
   Name extends string,
   Payload extends Workflow.AnyStructSchema,
   Success extends Schema.Schema.Any,
   Error extends Schema.Schema.All,
+  const Discard extends boolean = false,
 >(
   engine: WorkflowEngine.WorkflowEngine["Type"],
   workflow: Workflow.Workflow<Name, Payload, Success, Error>,
   options: {
     readonly executionId: string
     readonly payload: Payload["Type"]
+    readonly discard?: Discard | undefined
   },
 ): Effect.Effect<
-  Success["Type"],
+  Discard extends true ? string : Success["Type"],
   Error["Type"],
   Payload["Context"] | Success["Context"] | Error["Context"]
 > => engine.execute(workflow, options)

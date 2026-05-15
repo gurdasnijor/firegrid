@@ -36,6 +36,14 @@ import {
   ExecuteToolOutputSchema,
   ScheduleMeToolInputSchema,
   ScheduleMeToolOutputSchema,
+  SessionCancelToolInputSchema,
+  SessionCancelToolOutputSchema,
+  SessionCloseToolInputSchema,
+  SessionCloseToolOutputSchema,
+  SessionNewToolInputSchema,
+  SessionNewToolOutputSchema,
+  SessionPromptToolInputSchema,
+  SessionPromptToolOutputSchema,
   SleepToolInputSchema,
   SleepToolOutputSchema,
   SpawnAllToolInputSchema,
@@ -46,9 +54,11 @@ import {
   WaitForToolOutputSchema,
   type ExecuteToolOutput,
   type ScheduleMeToolOutput,
+  type SessionCancelToolOutput,
+  type SessionCloseToolOutput,
+  type SessionNewToolOutput,
+  type SessionPromptToolOutput,
   type SleepToolOutput,
-  type SpawnAllToolOutput,
-  type SpawnToolOutput,
   type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
 import { type RuntimeContext } from "@firegrid/protocol/launch"
@@ -200,6 +210,55 @@ export const SpawnAllTool = Tool.make("spawn_all", {
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
+ * `session_new` — create a child RuntimeContext-backed session.
+ * Lowers onto the internal `AgentToolHost.spawnChildContext` seam in
+ * `toolUseToEffect`.
+ */
+export const SessionNewTool = Tool.make("session_new", {
+  description:
+    "Create a child RuntimeContext-backed session and return its session handle.",
+  dependencies: FiregridToolDependencies,
+})
+  .setParameters(SessionNewToolInputSchema)
+  .setSuccess(SessionNewToolOutputSchema)
+  .setFailure(FiregridMcpToolFailureSchema)
+
+/**
+ * `session_prompt` — append a prompt to an existing session using
+ * host-owned runtime ingress.
+ */
+export const SessionPromptTool = Tool.make("session_prompt", {
+  description: "Append a prompt to an existing RuntimeContext-backed session.",
+  dependencies: FiregridToolDependencies,
+})
+  .setParameters(SessionPromptToolInputSchema)
+  .setSuccess(SessionPromptToolOutputSchema)
+  .setFailure(FiregridMcpToolFailureSchema)
+
+/**
+ * `session_cancel` — request cancellation of an existing session.
+ */
+export const SessionCancelTool = Tool.make("session_cancel", {
+  description:
+    "Request cancellation of an existing RuntimeContext-backed session.",
+  dependencies: FiregridToolDependencies,
+})
+  .setParameters(SessionCancelToolInputSchema)
+  .setSuccess(SessionCancelToolOutputSchema)
+  .setFailure(FiregridMcpToolFailureSchema)
+
+/**
+ * `session_close` — request closure of an existing session.
+ */
+export const SessionCloseTool = Tool.make("session_close", {
+  description: "Request closure of an existing RuntimeContext-backed session.",
+  dependencies: FiregridToolDependencies,
+})
+  .setParameters(SessionCloseToolInputSchema)
+  .setSuccess(SessionCloseToolOutputSchema)
+  .setFailure(FiregridMcpToolFailureSchema)
+
+/**
  * `schedule_me` — schedule a future prompt to the same agent context.
  * Lowers onto `ScheduledInputWorkflow.execute({ discard: true })` in
  * `toolUseToEffect`.
@@ -219,7 +278,8 @@ export const ScheduleMeTool = Tool.make("schedule_me", {
  */
 export const ExecuteTool = Tool.make("execute", {
   description:
-    "Invoke a SandboxProvider-backed tool by sandbox-neutral reference.",
+    "Invoke a session-bound capability, with a temporary compatibility " +
+    "bridge for legacy sandbox references.",
   dependencies: FiregridToolDependencies,
 })
   .setParameters(ExecuteToolInputSchema)
@@ -238,8 +298,10 @@ export const ExecuteTool = Tool.make("execute", {
 export const FiregridAgentToolkit = Toolkit.make(
   SleepTool,
   WaitForTool,
-  SpawnTool,
-  SpawnAllTool,
+  SessionNewTool,
+  SessionPromptTool,
+  SessionCancelTool,
+  SessionCloseTool,
   ScheduleMeTool,
   ExecuteTool,
 )
@@ -386,8 +448,14 @@ const extractToolFailure = (content: unknown): FiregridMcpToolFailure => {
 export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer({
   sleep: (params) => handleTool<SleepToolOutput>("sleep", params),
   wait_for: (params) => handleTool<WaitForToolOutput>("wait_for", params),
-  spawn: (params) => handleTool<SpawnToolOutput>("spawn", params),
-  spawn_all: (params) => handleTool<SpawnAllToolOutput>("spawn_all", params),
+  session_new: (params) =>
+    handleTool<SessionNewToolOutput>("session_new", params),
+  session_prompt: (params) =>
+    handleTool<SessionPromptToolOutput>("session_prompt", params),
+  session_cancel: (params) =>
+    handleTool<SessionCancelToolOutput>("session_cancel", params),
+  session_close: (params) =>
+    handleTool<SessionCloseToolOutput>("session_close", params),
   schedule_me: (params) =>
     handleTool<ScheduleMeToolOutput>("schedule_me", params),
   execute: (params) => handleTool<ExecuteToolOutput>("execute", params),

@@ -27,6 +27,8 @@
 import { Context, type Effect, Layer } from "effect"
 import type {
   SandboxRef,
+  SessionCapabilityRef,
+  SessionStatus,
   SpawnOptions,
   SpawnTask,
   WorkflowTerminalState,
@@ -44,7 +46,8 @@ export interface SpawnChildContextParams {
 
 export interface SpawnChildContextResult {
   readonly childContextId: string
-  readonly terminalState: WorkflowTerminalState
+  readonly status?: SessionStatus
+  readonly terminalState?: WorkflowTerminalState
 }
 
 export interface SpawnAllParams {
@@ -67,6 +70,26 @@ export interface ExecuteSandboxToolParams {
   readonly input: unknown
 }
 
+export interface ExecuteSessionCapabilityParams {
+  readonly toolUseId: string
+  readonly sessionId: string
+  readonly capability: SessionCapabilityRef
+  readonly input: unknown
+}
+
+export interface AppendSessionPromptParams {
+  readonly toolUseId: string
+  readonly sessionId: string
+  readonly inputId: string
+  readonly prompt: AgentPrompt
+}
+
+export interface SessionLifecycleParams {
+  readonly toolUseId: string
+  readonly sessionId: string
+  readonly reason?: string
+}
+
 export interface AppendScheduledPromptParams {
   readonly contextId: string
   readonly inputId: string
@@ -75,7 +98,7 @@ export interface AppendScheduledPromptParams {
 
 export interface AgentToolHostService {
   /**
-   * Run a child `RuntimeContextWorkflow` and await its terminal state.
+   * Create/start a child `RuntimeContextWorkflow` session.
    * The host derives the child's `contextId` deterministically from
    * `(parentContextId, toolUseId)` for replay-safety.
    */
@@ -101,6 +124,31 @@ export interface AgentToolHostService {
   readonly executeSandboxTool: (
     params: ExecuteSandboxToolParams,
   ) => Effect.Effect<unknown, ToolExecutionFailedError>
+
+  /**
+   * Session-bound capability dispatch. The host resolves the session id
+   * to the owning RuntimeContext before touching provider-local state.
+   */
+  readonly executeSessionCapability: (
+    params: ExecuteSessionCapabilityParams,
+  ) => Effect.Effect<unknown, ToolExecutionFailedError>
+
+  /**
+   * Append a prompt to an existing RuntimeContext-backed session. The
+   * host implementation must route through RuntimeContext.host-owned
+   * ingress instead of constructing stream URLs at the call site.
+   */
+  readonly appendSessionPrompt: (
+    params: AppendSessionPromptParams,
+  ) => Effect.Effect<void, ToolExecutionFailedError>
+
+  readonly cancelSession: (
+    params: SessionLifecycleParams,
+  ) => Effect.Effect<void, ToolExecutionFailedError>
+
+  readonly closeSession: (
+    params: SessionLifecycleParams,
+  ) => Effect.Effect<void, ToolExecutionFailedError>
 
   /**
    * Append a runtime-input row for a future-fired scheduled prompt.

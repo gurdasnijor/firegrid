@@ -19,8 +19,14 @@
  */
 
 import { DurableStreamTestServer } from "@durable-streams/server"
+import {
+  Firegrid,
+  FiregridConfig,
+  FiregridStandaloneLive,
+} from "@firegrid/client"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { Effect, Layer } from "effect"
 import { spawn, type ChildProcessByStdio } from "node:child_process"
 import type { Readable } from "node:stream"
 import { fileURLToPath } from "node:url"
@@ -31,9 +37,11 @@ const repoRoot = fileURLToPath(new URL("../../../", import.meta.url))
 const toolNames = [
   "execute",
   "schedule_me",
+  "session_cancel",
+  "session_close",
+  "session_new",
+  "session_prompt",
   "sleep",
-  "spawn",
-  "spawn_all",
   "wait_for",
 ] as const
 
@@ -216,8 +224,30 @@ const withMcpClient = async <A>(
   }
 }
 
+const readDurableState = (options: {
+  readonly durableStreamsBaseUrl: string
+  readonly namespace: string
+  readonly contextId: string
+}) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const firegrid = yield* Firegrid
+      return yield* firegrid.open(options.contextId).snapshot
+    }).pipe(
+      Effect.provide(
+        FiregridStandaloneLive.pipe(
+          Layer.provide(Layer.succeed(FiregridConfig, {
+            durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+            namespace: options.namespace,
+          })),
+        ),
+      ),
+      Effect.scoped,
+    ),
+  )
+
 describe("tracer 021 local MCP run interface", () => {
-  it("firegrid-local-mcp-run.VALIDATION.1 starts with no argv, embeds Durable Streams, lists tools, and calls sleep", async () => {
+  it("firegrid-local-mcp-run.VALIDATION.1 starts with no argv, embeds Durable Streams, lists tools, and calls session_new/session_prompt", async () => {
     const env = { ...globalThis.process.env }
     delete env["DURABLE_STREAMS_BASE_URL"]
     delete env["FIREGRID_DURABLE_STREAMS_TOKEN"]
@@ -237,10 +267,75 @@ describe("tracer 021 local MCP run interface", () => {
       })
       expect(result.isError).toBeFalsy()
       expect(result.structuredContent).toEqual({ slept: true })
+
+      const sessionNew = await client.callTool({
+        name: "session_new",
+        arguments: {
+          agentKind: "/usr/bin/true",
+          prompt: "ignored",
+          options: { metadata: { correlationId: "tracer-021" } },
+        },
+      })
+      expect(sessionNew.isError).toBeFalsy()
+      const session = (
+        sessionNew.structuredContent as {
+          readonly session?: {
+            readonly sessionId?: unknown
+            readonly contextId?: unknown
+            readonly status?: unknown
+          }
+        }
+      ).session
+      expect(session).toMatchObject({
+        status: "running",
+      })
+      if (typeof session?.sessionId !== "string") {
+        throw new Error("session_new did not return a string sessionId")
+      }
+      const sessionId = session.sessionId
+      expect(sessionId).toBe(session.contextId)
+
+      const sessionPrompt = await client.callTool({
+        name: "session_prompt",
+        arguments: {
+          sessionId,
+          inputId: "tracer-021-session-prompt",
+          prompt: "follow-up",
+        },
+      })
+      expect(sessionPrompt.isError).toBeFalsy()
+      expect(sessionPrompt.structuredContent).toMatchObject({
+        appended: true,
+        sessionId,
+        inputId: "tracer-021-session-prompt",
+      })
+
+      const childState = await readDurableState({
+        durableStreamsBaseUrl: localMcp.ready.durableStreamsBaseUrl,
+        namespace,
+        contextId: sessionId,
+      })
+      expect(childState.context?.contextId).toBe(sessionId)
+      expect(childState.inputs.map(input => ({
+        contextId: input.contextId,
+        authoredBy: input.authoredBy,
+        status: input.status,
+      }))).toEqual([
+        {
+          contextId: sessionId,
+          authoredBy: "workflow",
+          status: "sequenced",
+        },
+        {
+          contextId: sessionId,
+          authoredBy: "workflow",
+          status: "sequenced",
+        },
+      ])
     })
 
     expect(localMcp.stdout().trim().split("\n")).toHaveLength(1)
-  }, 15_000)
+  }, 25_000)
 
   it("firegrid-local-mcp-run.VALIDATION.2 attaches to configured Durable Streams instead of starting embedded streams", async () => {
     configuredServer = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })

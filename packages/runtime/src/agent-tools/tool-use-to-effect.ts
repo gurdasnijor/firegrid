@@ -34,6 +34,10 @@ import { Prompt } from "@effect/ai"
 import {
   ExecuteToolInputSchema,
   ScheduleMeToolInputSchema,
+  SessionCancelToolInputSchema,
+  SessionCloseToolInputSchema,
+  SessionNewToolInputSchema,
+  SessionPromptToolInputSchema,
   SleepToolInputSchema,
   SpawnAllToolInputSchema,
   SpawnToolInputSchema,
@@ -42,6 +46,15 @@ import {
   type ExecuteToolInput,
   type ScheduleMeToolInput,
   type ScheduleMeToolOutput,
+  type SessionCancelToolInput,
+  type SessionCancelToolOutput,
+  type SessionCloseToolInput,
+  type SessionCloseToolOutput,
+  type SessionNewToolInput,
+  type SessionNewToolOutput,
+  type SessionPromptToolInput,
+  type SessionPromptToolOutput,
+  type SessionStatus,
   type SleepToolInput,
   type SleepToolOutput,
   type SpawnAllToolInput,
@@ -218,15 +231,35 @@ const runSpawnTool = (
   input: SpawnToolInput,
 ): Effect.Effect<SpawnToolOutput, ToolError, AgentToolHost> =>
   Effect.gen(function* () {
+    const { childContextId, terminalState } = yield* runSpawnChildContext(
+      ctx,
+      toolUseId,
+      input,
+    )
+    if (terminalState === undefined) {
+      return yield* Effect.fail(toolExecutionFailed(
+        toolUseId,
+        "spawn",
+        "spawnChildContext did not return a terminal state",
+      ))
+    }
+    return { childContextId, terminalState }
+  })
+
+const runSpawnChildContext = (
+  ctx: ToolLoweringContext,
+  toolUseId: string,
+  input: SpawnToolInput | SessionNewToolInput,
+) =>
+  Effect.gen(function* () {
     const host = yield* AgentToolHost
-    const { childContextId, terminalState } = yield* host.spawnChildContext({
+    return yield* host.spawnChildContext({
       parentContextId: ctx.contextId,
       toolUseId,
       agentKind: input.agentKind,
       prompt: input.prompt,
       ...(input.options === undefined ? {} : { spawnOptions: input.options }),
     })
-    return { childContextId, terminalState }
   })
 
 const runSpawnAllTool = (
@@ -244,6 +277,111 @@ const runSpawnAllTool = (
     return { children }
   })
 
+const runSessionNewTool = (
+  ctx: ToolLoweringContext,
+  toolUseId: string,
+  input: SessionNewToolInput,
+): Effect.Effect<SessionNewToolOutput, ToolError, AgentToolHost> =>
+  Effect.gen(function* () {
+    const { childContextId, status, terminalState } = yield* runSpawnChildContext(
+      ctx,
+      toolUseId,
+      input,
+    )
+    return {
+      session: {
+        // firegrid-factory-aligned-agent-tools.SESSION.7
+        sessionId: childContextId,
+        contextId: childContextId,
+        status: status ?? statusFromTerminalState(terminalState),
+        metadata: {
+          parentSessionId: ctx.contextId,
+          ...(input.options?.metadata ?? {}),
+        },
+        ...(terminalState === undefined ? {} : { terminalState }),
+      },
+    }
+  })
+
+const statusFromTerminalState = (
+  terminalState: SpawnToolOutput["terminalState"] | undefined,
+): SessionStatus => {
+  if (terminalState === undefined) return "running"
+  switch (terminalState._tag) {
+    case "Completed":
+      return "done"
+    case "Failed":
+      return "failed"
+    case "Cancelled":
+      return "aborted"
+  }
+}
+
+const promptFromText = (text: string) =>
+  Prompt.userMessage({
+    content: [Prompt.textPart({ text })],
+  })
+
+const sessionPromptInputId = (
+  sessionId: string,
+  toolUseId: string,
+): string => `session-prompt:${sessionId}:${toolUseId}`
+
+const runSessionPromptTool = (
+  toolUseId: string,
+  input: SessionPromptToolInput,
+): Effect.Effect<SessionPromptToolOutput, ToolError, AgentToolHost> =>
+  Effect.gen(function* () {
+    const host = yield* AgentToolHost
+    const inputId =
+      input.inputId ?? sessionPromptInputId(input.sessionId, toolUseId)
+    yield* host.appendSessionPrompt({
+      toolUseId,
+      sessionId: input.sessionId,
+      inputId,
+      prompt: promptFromText(input.prompt),
+    })
+    return {
+      appended: true,
+      sessionId: input.sessionId,
+      inputId,
+    }
+  })
+
+const runSessionCancelTool = (
+  toolUseId: string,
+  input: SessionCancelToolInput,
+): Effect.Effect<SessionCancelToolOutput, ToolError, AgentToolHost> =>
+  runSessionLifecycleTool(toolUseId, input, "session_cancel").pipe(
+    Effect.as({ cancelled: true, sessionId: input.sessionId }),
+  )
+
+const runSessionCloseTool = (
+  toolUseId: string,
+  input: SessionCloseToolInput,
+): Effect.Effect<SessionCloseToolOutput, ToolError, AgentToolHost> =>
+  runSessionLifecycleTool(toolUseId, input, "session_close").pipe(
+    Effect.as({ closed: true, sessionId: input.sessionId }),
+  )
+
+const runSessionLifecycleTool = (
+  toolUseId: string,
+  input: SessionCancelToolInput | SessionCloseToolInput,
+  name: "session_cancel" | "session_close",
+): Effect.Effect<void, ToolError, AgentToolHost> =>
+  Effect.gen(function* () {
+    const host = yield* AgentToolHost
+    const params = {
+      toolUseId,
+      sessionId: input.sessionId,
+      ...(input.reason === undefined ? {} : { reason: input.reason }),
+    }
+    if (name === "session_cancel") {
+      return yield* host.cancelSession(params)
+    }
+    return yield* host.closeSession(params)
+  })
+
 const scheduleIdFor = (
   contextId: string,
   toolUseId: string,
@@ -259,9 +397,7 @@ const runScheduleMeTool = (
   WorkflowEngine.WorkflowEngine
 > => {
   const scheduleId = scheduleIdFor(ctx.contextId, toolUseId)
-  const prompt = Prompt.userMessage({
-    content: [Prompt.textPart({ text: input.prompt })],
-  })
+  const prompt = promptFromText(input.prompt)
   return ScheduledInputWorkflow.execute(
     {
       contextId: ctx.contextId,
@@ -284,6 +420,23 @@ const runExecuteTool = (
 ): Effect.Effect<unknown, ToolError, AgentToolHost> =>
   Effect.gen(function* () {
     const host = yield* AgentToolHost
+    if (input.sessionId !== undefined && input.capability !== undefined) {
+      return yield* host.executeSessionCapability({
+        toolUseId,
+        sessionId: input.sessionId,
+        capability: input.capability,
+        input: input.input,
+      })
+    }
+    if (input.sandbox === undefined) {
+      return yield* Effect.fail({
+        _tag: "ToolInvalidInput" as const,
+        toolUseId,
+        name: "execute",
+        reason:
+          "execute requires either sessionId + capability or a legacy sandbox reference.",
+      })
+    }
     return yield* host.executeSandboxTool({
       toolUseId,
       sandbox: input.sandbox,
@@ -400,6 +553,34 @@ export const toolUseToEffect = (
         "spawn_all",
         SpawnAllToolInputSchema,
         (input) => runSpawnAllTool(ctx, event.part.id, input),
+      )
+    case "session_new":
+      return dispatchTool(
+        event,
+        "session_new",
+        SessionNewToolInputSchema,
+        (input) => runSessionNewTool(ctx, event.part.id, input),
+      )
+    case "session_prompt":
+      return dispatchTool(
+        event,
+        "session_prompt",
+        SessionPromptToolInputSchema,
+        (input) => runSessionPromptTool(event.part.id, input),
+      )
+    case "session_cancel":
+      return dispatchTool(
+        event,
+        "session_cancel",
+        SessionCancelToolInputSchema,
+        (input) => runSessionCancelTool(event.part.id, input),
+      )
+    case "session_close":
+      return dispatchTool(
+        event,
+        "session_close",
+        SessionCloseToolInputSchema,
+        (input) => runSessionCloseTool(event.part.id, input),
       )
     case "schedule_me":
       return dispatchTool(

@@ -25,6 +25,7 @@ import {
 import { Clock, Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { ScheduledInputWorkflow, ScheduledInputWorkflowLayer } from "../agent-tools/index.ts"
+import { AgentToolHost } from "../agent-tools/tool-host.ts"
 import {
   FiregridRuntimeHostWithWorkflowLive,
   RuntimeHostAgentToolHostLive,
@@ -211,5 +212,104 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
       status: "sequenced",
     }])
     expect(hostBIngress).toEqual([])
+  })
+
+  it("firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2 session_prompt uses owner-host prompt append routing", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const namespace = `prompt-routing-session-${crypto.randomUUID()}`
+    const hostA = `host_A_${crypto.randomUUID()}` as HostId
+    const hostB = `host_B_${crypto.randomUUID()}` as HostId
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const inputId = "session-prompt:test"
+
+    await Effect.runPromise(
+      seedContext({ namespace, hostId: hostA, contextId }).pipe(
+        Effect.provide(controlPlaneLayer({ baseUrl, namespace })),
+        Effect.scoped,
+      ),
+    )
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const host = yield* AgentToolHost
+        yield* host.appendSessionPrompt({
+          toolUseId: "tool-session-prompt",
+          sessionId: contextId,
+          inputId,
+          prompt: Prompt.userMessage({
+            content: [Prompt.textPart({ text: "session follow-up" })],
+          }),
+        })
+      }).pipe(
+        Effect.provide(RuntimeHostAgentToolHostLive),
+        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+          durableStreamsBaseUrl: baseUrl,
+          namespace,
+          hostId: hostB,
+        })),
+      ),
+    )
+
+    const hostAIngress = await readHostIngress({ baseUrl, namespace, hostId: hostA })
+    const hostBIngress = await readHostIngress({ baseUrl, namespace, hostId: hostB })
+
+    expect(hostAIngress.map(row => ({
+      inputId: row.inputId,
+      authoredBy: row.authoredBy,
+      sequence: row.sequence,
+      status: row.status,
+    }))).toEqual([{
+      inputId,
+      authoredBy: "workflow",
+      sequence: 0,
+      status: "sequenced",
+    }])
+    expect(hostBIngress).toEqual([])
+  })
+
+  it("firegrid-factory-aligned-agent-tools.SESSION.1 starts a live session_new child without awaiting terminal completion", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const namespace = `session-new-live-${crypto.randomUUID()}`
+    const hostId = `host_A_${crypto.randomUUID()}` as HostId
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const host = yield* AgentToolHost
+        const session = yield* host.spawnChildContext({
+          parentContextId: "ctx-parent",
+          toolUseId: "tool-session-new-live",
+          agentKind: "/usr/bin/true",
+          prompt: "ignored",
+        })
+        const table = yield* RuntimeControlPlaneTable
+        const context = yield* table.contexts.get(session.childContextId)
+        return { session, context }
+      }).pipe(
+        Effect.provide(RuntimeHostAgentToolHostLive),
+        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+          durableStreamsBaseUrl: baseUrl,
+          namespace,
+          hostId,
+        })),
+        Effect.scoped,
+      ),
+    )
+
+    expect(result.session).toEqual({
+      childContextId: result.session.childContextId,
+      status: "running",
+    })
+    expect(result.context._tag).toBe("Some")
+
+    const hostIngress = await readHostIngress({ baseUrl, namespace, hostId })
+    expect(hostIngress.map(row => ({
+      contextId: row.contextId,
+      authoredBy: row.authoredBy,
+      status: row.status,
+    }))).toEqual([{
+      contextId: result.session.childContextId,
+      authoredBy: "workflow",
+      status: "sequenced",
+    }])
   })
 })

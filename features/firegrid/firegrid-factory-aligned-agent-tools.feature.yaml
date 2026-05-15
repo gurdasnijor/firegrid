@@ -15,10 +15,13 @@ components:
       3: A parent factory run can be represented by planning RuntimeContext metadata, and child sessions carry explicit parentSessionId, role, and correlationId metadata when supplied.
       4: Session cancel and abort operations are deferred until needed; if exposed before real support exists, they fail explicitly rather than silently no-oping.
       5: Parent factory run create/load is idempotent by an external source key containing provider or source identity plus external id such as issue id, ticket id, or correlation id; duplicate external triggers resolve to the same parent RuntimeContext and session identity rather than creating competing parent runs.
+      6: Public agent-tool exposure uses session_new, session_prompt, session_cancel, and session_close semantics; spawn and spawn_all remain host-internal lowering seams rather than the public session-plane abstraction.
+      7: The v1 session handle carries explicit context authority and uses the RuntimeContext contextId as the sessionId until a separate session registry is introduced.
 
   CAPABILITY:
     requirements:
       1: Session-bound filesystem, terminal, and external-resource capabilities are declared for the session, scoped by session identity and host authority, keep credentials host-side, and return capability output or a structured tool failure.
+      2: The execute tool accepts a session-bound capability invocation shape so ACP-aligned filesystem, terminal, and external-resource operations can be bridged without exposing raw provider credentials or process-local handles.
 
   WAIT_FOR:
     requirements:
@@ -30,6 +33,7 @@ components:
   PROMPT_DISPATCH:
     requirements:
       1: session_prompt or equivalent prompt dispatch to an existing session/runtime context, if exposed to agents, uses host-owned runtime ingress with explicit context authority, correlation metadata, and idempotent input identity.
+      2: session_prompt appends through the runtime-host prompt append path, resolving RuntimeContext.host before writing ingress, and never constructs host-owned stream URLs at the call site.
 
   OBSERVATION:
     requirements:
@@ -42,3 +46,4 @@ constraints:
       1: Firegrid does not add a factory-specific workflow product, orchestration runtime, hidden callback marker protocol, or hard-coded planner/implementer/QA/council sequence for the factory use case.
       2: Flamecast may project sessions, route external events, and display progress, but factory sequencing remains planner-driven through Firegrid agent tools.
       3: Firegrid does not introduce hidden callback comments, string-encoded child session ids, or a broad Linear/GitHub webhook product as prerequisites for the first factory path.
+      4: This workstream does not add MCP-specific custom protocols, one-shot ACP semantics, public batch/fanout session tools, or ACP adapter hardening; those remain separate surfaces.

@@ -6,7 +6,7 @@
  * Spec: docs/proposals/SDD_FIREGRID_AGENT_TOOLS_MCP_BRIDGE.md §"V0 Validation"
  *
  * Covers:
- *   1. `FiregridAgentToolkit.tools` exposes exactly the six canonical tools.
+ *   1. `FiregridAgentToolkit.tools` exposes the canonical public tools.
  *   2. Each Tool's parameter schema decodes identically to the
  *      `@firegrid/protocol/agent-tools` Effect Schema — no parallel
  *      parameter shape lives in this module.
@@ -25,8 +25,8 @@
 import { IdGenerator, McpServer } from "@effect/ai"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
+  SessionNewToolInputSchema,
   SleepToolInputSchema,
-  SpawnToolInputSchema,
 } from "@firegrid/protocol/agent-tools"
 import { Effect, Layer, Schema } from "effect"
 import { describe, expect, it, afterEach, beforeEach } from "vitest"
@@ -42,7 +42,6 @@ import {
   FiregridAgentToolkit,
   FiregridAgentToolkitLayer,
   SleepTool,
-  SpawnTool,
   ToolCallWorkflowLayer,
 } from "./tools.ts"
 
@@ -97,6 +96,20 @@ const fakeHost = (
       ],
     }),
   executeSandboxTool: () => Effect.succeed<unknown>({ ok: true }),
+  executeSessionCapability: () => Effect.succeed<unknown>({ ok: true }),
+  appendSessionPrompt: () => Effect.void,
+  cancelSession: () => Effect.fail({
+    _tag: "ToolExecutionFailed",
+    toolUseId: "stub",
+    name: "session_cancel",
+    message: "session_cancel is not available in this test host",
+  }),
+  closeSession: () => Effect.fail({
+    _tag: "ToolExecutionFailed",
+    toolUseId: "stub",
+    name: "session_close",
+    message: "session_close is not available in this test host",
+  }),
   appendScheduledPrompt: () => Effect.void,
   ...overrides,
 })
@@ -152,9 +165,18 @@ const runWith = <A, E>(
 // ---------------------------------------------------------------------------
 
 describe("FiregridAgentToolkit", () => {
-  it("Toolkit.make exposes exactly the six canonical agent tools", () => {
+  it("firegrid-factory-aligned-agent-tools.SESSION.6 exposes the session-plane tool catalog", () => {
     expect(Object.keys(FiregridAgentToolkit.tools).sort()).toEqual(
-      ["execute", "schedule_me", "sleep", "spawn", "spawn_all", "wait_for"],
+      [
+        "execute",
+        "schedule_me",
+        "session_cancel",
+        "session_close",
+        "session_new",
+        "session_prompt",
+        "sleep",
+        "wait_for",
+      ],
     )
   })
 
@@ -169,17 +191,19 @@ describe("FiregridAgentToolkit", () => {
     expect(decodedViaTool).toEqual(decodedViaProtocol)
   })
 
-  it("Tool.parametersSchema for spawn round-trips the protocol shape including optional fields", async () => {
-    const spawnInput = {
+  it("Tool.parametersSchema for session_new round-trips the protocol shape including optional fields", async () => {
+    const sessionInput = {
       agentKind: "stdio-jsonl",
       prompt: "summarize",
       options: { cwd: "/tmp", metadata: { trace: "1" } },
     }
     const decodedViaTool = await Effect.runPromise(
-      Schema.decodeUnknown(SpawnTool.parametersSchema)(spawnInput),
+      Schema.decodeUnknown(
+        FiregridAgentToolkit.tools.session_new.parametersSchema,
+      )(sessionInput),
     )
     const decodedViaProtocol = await Effect.runPromise(
-      Schema.decodeUnknown(SpawnToolInputSchema)(spawnInput),
+      Schema.decodeUnknown(SessionNewToolInputSchema)(sessionInput),
     )
     expect(decodedViaTool).toEqual(decodedViaProtocol)
   })
@@ -272,7 +296,7 @@ describe("FiregridAgentToolkit failure mapping", () => {
         Effect.fail({
           _tag: "ToolExecutionFailed",
           toolUseId: "stub",
-          name: "spawn",
+          name: "session_new",
           message: "child workflow exploded",
         }),
     })
@@ -283,7 +307,7 @@ describe("FiregridAgentToolkit failure mapping", () => {
       }),
       Effect.gen(function* () {
         const built = yield* FiregridAgentToolkit
-        return yield* built.handle("spawn", {
+        return yield* built.handle("session_new", {
           agentKind: "stdio-jsonl",
           prompt: "noop",
         })
@@ -291,7 +315,7 @@ describe("FiregridAgentToolkit failure mapping", () => {
     )
     expect(failure).toMatchObject({
       _tag: "ToolExecutionFailed",
-      name: "spawn",
+      name: "session_new",
     })
   })
 
@@ -302,7 +326,7 @@ describe("FiregridAgentToolkit failure mapping", () => {
         Effect.fail({
           _tag: "ToolExecutionFailed",
           toolUseId: "stub",
-          name: "spawn",
+          name: "session_new",
           message: "boom",
         }),
     })
@@ -314,7 +338,7 @@ describe("FiregridAgentToolkit failure mapping", () => {
       Effect.gen(function* () {
         const built = yield* FiregridAgentToolkit
         return yield* built
-          .handle("spawn", { agentKind: "stdio-jsonl", prompt: "noop" })
+          .handle("session_new", { agentKind: "stdio-jsonl", prompt: "noop" })
           .pipe(
             Effect.matchEffect({
               onFailure: () => Effect.succeed("caught" as const),
