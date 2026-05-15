@@ -9,6 +9,9 @@ Electric/Durable Streams evidence.
 Required environment:
 
 - `DURABLE_STREAMS_BASE_URL`
+  - generic Durable Streams root, for example `http://127.0.0.1:4437`
+  - or Electric Cloud service root, for example
+    `https://api.electric-sql.cloud/v1/stream/<service>`
 
 Optional:
 
@@ -54,7 +57,7 @@ Put the provider-shaped trigger in a JSON file:
 Run:
 
 ```sh
-pnpm --filter @firegrid/factory smoke:hosted -- \
+pnpm --filter @firegrid/factory smoke:hosted \
   --config ./factory.config.json \
   --trigger ./trigger.json
 ```

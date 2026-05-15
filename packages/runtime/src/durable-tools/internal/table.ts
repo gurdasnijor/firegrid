@@ -18,6 +18,7 @@
 import { Effect, Option, Schema } from "effect"
 import {
   DurableTable,
+  type DurableTableHeaders,
   type DurableTableLayerOptions,
   type DurableTableService,
 } from "effect-durable-operators"
@@ -30,6 +31,7 @@ import {
 
 export interface DurableToolsTableOptions {
   readonly streamUrl: string
+  readonly headers?: DurableTableHeaders
   readonly contentType?: string
   readonly txTimeoutMs?: number
 }
@@ -98,6 +100,7 @@ export const durableToolsTableLayerOptions = (
   streamOptions: {
     url: options.streamUrl,
     contentType: options.contentType ?? "application/json",
+    ...(options.headers === undefined ? {} : { headers: options.headers }),
   },
   txTimeoutMs: options.txTimeoutMs ?? 2_000,
 })

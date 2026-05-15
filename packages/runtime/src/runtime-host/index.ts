@@ -502,6 +502,7 @@ const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
         prefix: session.streamPrefix,
         segment: "durableTools",
       }),
+      ...(config.headers === undefined ? {} : { headers: config.headers }),
     })
   }),
 )

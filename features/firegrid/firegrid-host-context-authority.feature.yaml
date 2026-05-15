@@ -16,6 +16,7 @@ components:
       1: Host-owned stream prefixes are encoded from Effect Schema transforms or annotations on the durable authority row schemas, following the DurableTable.primaryKey pattern.
       2: Runtime-host and workflow-engine layer constructors derive host-owned stream URLs internally from Durable Streams base URL, namespace, and schema-encoded host authority; callers do not pass prebuilt stream URLs.
       3: Product code does not construct authority-bearing stream URLs with inline template literals or parallel key helpers.
+      4: Durable Streams URL authority accepts both generic Durable Streams service roots that append /v1/stream/<streamName> and Electric Cloud service-scoped roots shaped as /v1/stream/<service>, appending only /<streamName> for the latter.
 
   EFFECT_SCOPED_CONTEXT:
     requirements:
