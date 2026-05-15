@@ -6,7 +6,7 @@ feature:
 components:
   APP_SURFACE:
     requirements:
-      1: The first dark-factory app slice lives under apps/dark-factory and is wired as a workspace app rather than a top-level package, direct Flamecast dependency, or hook.new bundle.
+      1: The first factory app slice uses the apps/factory UI scaffold from PR #236 when available and is wired as a workspace app rather than a top-level package, direct Flamecast dependency, or hook.new bundle.
       2: The app exposes product-owned adapter entrypoints for Linear, GitHub, or webhook inputs and composes Firegrid runtime primitives directly; it does not use pnpm firegrid -- run as the core factory path.
       3: The app is framed as the Firegrid-powered replacement for the existing hooks/factory behavior, not as a generic demo app or Flamecast-adjacent prototype.
 
@@ -18,7 +18,7 @@ components:
 
   HOSTED_SUBSTRATE:
     requirements:
-      1: App acceptance runs against a configured hosted Electric/Durable Streams endpoint with auth headers; local DurableStreamTestServer is not accepted as apps/dark-factory replacement evidence.
+      1: App acceptance runs against a configured hosted Electric/Durable Streams endpoint with auth headers; local DurableStreamTestServer is not accepted as apps/factory replacement evidence.
       2: Linear, GitHub, Slack, and provider credentials are supplied through env or deployment secret config and are never committed, logged as bearer values, or copied into docs/spec examples.
       3: The accepted provider ingest proof uses a live provider webhook or live provider-shaped route delivery where feasible, not fixture Linear or GitHub event payloads as the replacement proof.
 
@@ -77,8 +77,10 @@ components:
     requirements:
       1: The app presents or tests durable observation from RuntimeOutputTable, RuntimeControlPlaneTable runs, runtime observation sources, and app fact tables so a user can inspect what happened and what is waiting.
       2: Terminal or waiting states are derived from durable observations and facts, not from in-memory process state.
-      3: The first app slice exposes a JSON status API for run progress rather than leaving progress tracking implicit; a full UI is deferred.
-      4: The status API reports subscriber identity, planner context, active/terminal delegated sessions, latest facts, runtime output/logs, permission requests, current waits, provider links, and blocked/error state from durable rows only.
+      3: The first app slice exposes run progress through the apps/factory UI scaffold, with optional JSON/read-model routes only as support for that UI.
+      4: The progress UI reports subscriber identity, planner context, active/terminal delegated sessions, latest facts, runtime output/logs, permission requests, current waits, provider links, and blocked/error state from durable rows only.
+      5: The client may reuse apps/flamecast DurableTableProvider, useDurableTable, and useDurableLiveQuery patterns for live watches, but it must not copy Flamecast host infrastructure, local launch process management, or browser-originated runtime authority.
+      6: PR #236 simulation hooks and mock data are placeholders only and are not accepted as apps/factory replacement evidence.
 
 constraints:
   BOUNDARIES:

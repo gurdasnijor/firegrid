@@ -27,7 +27,7 @@ webhook ingest README instead.
 
 ## Purpose
 
-`apps/dark-factory` is the Firegrid-powered replacement path for
+`apps/factory` is the Firegrid-powered replacement path for
 `/Users/gnijor/smithery/internal-workflows/hooks/factory`.
 
 The current hook turns Linear issue transitions into a factory run, launches
@@ -100,7 +100,9 @@ calls.
 
 ## Target Package
 
-Target location: `apps/dark-factory`.
+Target location: `apps/factory`, using the UI scaffold from PR #236 when it
+lands. Earlier drafts used `apps/dark-factory`; implementation should avoid
+creating a second app shell if the scaffold is available.
 
 The app should follow existing workspace conventions: private package, local
 `tsconfig.json`, `src/` modules, focused tests, and root workspace inclusion
@@ -116,8 +118,13 @@ The first app surface must be production-shaped:
   configured credentials from the app environment or deployment secret store;
 - a parent planner `RuntimeContext` launch path through Firegrid runtime host
   primitives;
-- an observation surface built from app facts plus
+- a live observation UI built from app facts plus
   `RuntimeObservationSourceNames`.
+
+The PR #236 scaffold is useful for visual structure: active agents, progress,
+message feed, graph, run summary, live indicator, and prompt entry. Its
+simulation hook and mock data are placeholders only. Acceptance must replace
+simulation with hosted DurableTable/Electric reads and real runtime/fact rows.
 
 It must not depend on `pnpm firegrid -- run`; #229 is sync CLI UX and is not a
 factory app dependency.
@@ -138,6 +145,7 @@ serving one clear role:
 | `FiregridAgentToolkit` tools | The agent-facing choreography surface. The planner decides sequence by calling `session_new`, `session_prompt`, `wait_for`, `schedule_me`, `execute`, `sleep`, `session_cancel`, and `session_close` where applicable. |
 | Provider adapters | App-owned Linear/GitHub/Slack modules that verify provider input, perform side effects with configured credentials, and write durable facts before or after those effects. |
 | Hosted Electric/Durable Streams | Production storage and live observation substrate for the app. The app acceptance path uses configured hosted stream URLs and auth headers, not local `DurableStreamTestServer`. |
+| React DurableTable live query hooks | Client observation shape for the app UI. Reuse the `DurableTableProvider`, `useDurableTable`, and `useDurableLiveQuery` pattern visible in `apps/flamecast/src/client/main.tsx`; do not copy Flamecast runtime host/process-launch infrastructure. |
 
 ## Choreography Contract
 
@@ -554,20 +562,27 @@ control flow.
 
 ## Progress Tracking Surface
 
-The first implementation should include an app-owned JSON status API, not a
-full UI. A UI can be added later on top of the same DurableTable/runtime
-collections.
+The first implementation should use the PR #236 `apps/factory` UI scaffold as
+the operator progress surface. A JSON/read-model route can support the UI if it
+is helpful, but the acceptance surface is the live app UI reading durable rows,
+not a standalone CLI or static simulation.
 
-Minimum endpoints:
+Minimum UI views:
 
-- `GET /runs/:contextId`
-- `GET /runs/by-external/:source/:externalEntityKey`
+- run lookup by `contextId` and by external work key;
+- run summary;
+- active/delegated agent list;
+- progress tracker;
+- runtime/fact message feed;
+- agent/session graph;
+- current waits and permission requests;
+- provider links to Linear/GitHub/Slack evidence.
 
-The response should be derived from hosted Durable Streams materialized rows
-and include:
+The UI should be derived from hosted Durable Streams materialized rows and
+include:
 
-- parent context id, factory run key, source, external entity key, Linear
-  identifier/url, repo, branch, and PR link when known;
+- subscriber identity, planner context id, factory run key, source, external
+  entity key, Linear identifier/url, repo, branch, and PR link when known;
 - active and terminal runtime contexts from `firegrid.runtime.runs`, joined to
   child role/correlation facts or tool results when present;
 - latest app facts from `darkFactory.facts`, grouped by provider/entity;
@@ -583,9 +598,16 @@ and include:
   advisory Slack message metadata when available;
 - last error or blocked reason, if any.
 
-The JSON API is the acceptance surface for progress in the first app slice.
-It must read durable rows/facts/output; it must not report state from in-memory
-process handles.
+The client should use DurableTable live subscriptions for current state. The
+Flamecast UI is a useful reference for `DurableTableProvider`,
+`useDurableTable`, and `useDurableLiveQuery` over runtime tables. Do not copy
+Flamecast host infra, local launch process management, or browser-originated
+runtime authority; the factory app should read hosted durable rows and call
+product-owned app routes for provider/operator actions.
+
+The UI must read durable rows/facts/output; it must not report state from
+in-memory timers, local process handles, the PR #236 simulation hook, or mock
+data.
 
 ## Minimal Replacement Slice
 
@@ -630,7 +652,7 @@ The app acceptance path must be live against the production-shaped substrate:
 
 `DurableStreamTestServer` and local durable-stream substrates are valid for
 runtime package unit tests. They are not sufficient acceptance evidence for
-`apps/dark-factory`, because this app is intended to supersede the hosted
+`apps/factory`, because this app is intended to supersede the hosted
 `hooks/factory` product path.
 
 ## Live Provider And Agent Requirements
