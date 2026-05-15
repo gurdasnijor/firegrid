@@ -1,0 +1,65 @@
+feature:
+  name: firegrid-runtime-host-modularity
+  product: firegrid
+  description: Clarify runtime-host boundaries by splitting the aggregate runtime-host root into focused modules without changing runtime execution semantics.
+
+components:
+  PUBLIC_SURFACE:
+    requirements:
+      1: packages/runtime/src/runtime-host/index.ts remains the public runtime-host import path and re-exports the existing runtime-host public API after modularization.
+      2: The first modularity pass does not remove compatibility exports such as FiregridRuntimeHostWithWorkflowLive or FiregridRuntimeHostWithWorkflowFromConfig.
+      3: Runtime-host modularity does not require existing runtime-host callers or tests to import private implementation modules directly.
+
+  EXECUTION:
+    requirements:
+      1: startRuntime(contextId) continues to start or resume RuntimeContextWorkflow keyed by contextId.
+      2: RuntimeContextWorkflow remains responsible for reading the RuntimeContext row, allocating the runtime activity attempt, writing started evidence, running one runtime activity, and writing terminal evidence.
+      3: Runtime host modularity does not replace workflow-backed runtime execution with an in-memory process map, host-local mutex, direct Effect fork, or non-workflow scheduler.
+
+  RAW_PROCESS:
+    requirements:
+      1: Raw local-process runtime execution remains the default path when RuntimeContext.runtime.config.agentProtocol is absent or raw.
+      2: Raw stdout and stderr chunks continue to journal through RuntimeOutputTable according to the RuntimeContext.runtime.journal rules.
+      3: RuntimeIngress stdin delivery for raw local-process execution remains gated by RuntimeHostConfig.inputEnabled.
+
+  CODEC_RUNTIME:
+    requirements:
+      1: Codec-backed runtime execution is isolated from raw-process execution and selects AcpCodec or StdioJsonlCodec from RuntimeContext.runtime.config.agentProtocol.
+      2: Codec-backed runtime execution continues to translate sequenced RuntimeIngress rows into AgentInputEvent values and deliver each input once per codec subscriber.
+      3: Codec-backed runtime execution continues to journal AgentOutputEvent values into RuntimeOutputTable as firegrid.agent-output event rows.
+      4: Codec-backed ToolUse lowering continues to call toolUseToEffect and send ToolResult back only for codecs that support ToolResult input.
+      5: ACP ToolUse remains observation-only until AcpCodec supports ToolResult input.
+
+  INGRESS:
+    requirements:
+      1: appendRuntimeIngress continues to resolve RuntimeContext through the namespace-scoped control plane before opening the owner host RuntimeIngressTable.
+      2: appendRuntimeIngress remains idempotent by inputId and assigns sequence numbers through the owner RuntimeIngressTable.
+      3: RuntimeIngress routing does not accept caller-supplied host-owned stream URLs or host ids as authority.
+
+  HOST_TOPOLOGY:
+    requirements:
+      1: Runtime-host layer topology keeps RuntimeControlPlaneTable namespace-scoped and RuntimeIngressTable, RuntimeOutputTable, workflow engine, durable tools, and observation sources host-owned.
+      2: Host-owned stream URLs are derived through hostOwnedStreamUrl from CurrentHostSession.streamPrefix rather than inline string templates.
+      3: FiregridLocalHostLive continues to derive host id deterministically from namespace.
+      4: RuntimeHostTopologyFromConfig continues to read Durable Streams endpoint, namespace, input flag, and optional token while keeping host identity out of env configuration.
+
+  AGENT_TOOL_HOST:
+    requirements:
+      1: RuntimeHostAgentToolHostLive remains the runtime-owned production implementation of AgentToolHost seams.
+      2: session_new continues to lower to child RuntimeContext creation, initial RuntimeIngress prompt append, and runtime workflow execution.
+      3: session_prompt and schedule_me continue to append through appendRuntimeIngress rather than constructing host-owned stream URLs at call sites.
+      4: Unsupported execute, cancel, close, and fanout seams continue to fail explicitly with typed tool execution failures until implemented.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: Runtime-host modularity introduces no new durable table family, app-owned fact table, provider registry, public workflow registry, MCP sidecar process, or product-specific runtime API.
+      2: Runtime-host modules may depend on protocol/runtime primitives, SandboxProvider, WorkflowEngine, AgentToolHost, and durable-tools, but packages/client must not import runtime-host implementation modules.
+      3: Agent tool schema projection remains in packages/runtime/src/agent-tools/tools.ts and host-side lowering shape remains in packages/runtime/src/agent-tools/tool-use-to-effect.ts; runtime-host only provides the live host authority behind those seams.
+      4: Product apps such as apps/factory keep provider facts, planner prompts, UI read-model joins, and provider side-effect policy outside runtime-host.
+
+  VALIDATION:
+    requirements:
+      1: A modularity PR must keep existing runtime-host start, prompt routing, env binding, codec event-plane, observation source, two-host isolation, and sync-run tests passing.
+      2: If a modularity PR changes runtime behavior, the relevant feature spec must be updated before implementation continues.
+      3: The modularity pass is accepted only when startRuntime, raw-process execution, codec execution, RuntimeIngress routing, host topology, and RuntimeHostAgentToolHostLive can be located in focused modules instead of a single aggregate root.
