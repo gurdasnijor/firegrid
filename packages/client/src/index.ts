@@ -19,7 +19,6 @@ export {
   type FiregridSessionPermissionsClient,
   type FiregridSessionWaitClient,
   type FiregridSessionsClient,
-  type FiregridWaitClient,
   type PromptInputError,
   type RuntimeContextHandle,
   type RuntimeContextSnapshot,
@@ -30,8 +29,6 @@ export {
   type PermissionRespondOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
-  type WaitForToolInput,
-  type WaitForToolOutput,
 } from "./operations.ts"
 export type {
   PublicPromptRequest,
