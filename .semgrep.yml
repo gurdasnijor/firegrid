@@ -640,7 +640,7 @@ rules:
     message: |
       Durable capability tag provided outside its authority module. Use the
       owning provider layer instead.
-    pattern-regex: 'Layer\.(?:succeed|effect)\s*\(\s*(?:RuntimeEventAppendAndGet|RuntimeAgentOutputSink|RuntimeOutputEvents|RuntimeAgentOutputEvents|RuntimeLogLineAppendAndGet|RuntimeLogLineSink|RuntimeOutputLogs|RuntimeIngressAppendAndGet|RuntimeIngressInputStream|RuntimeIngressDeliveryClaimAndComplete|RuntimeContextInsert|RuntimeContextRead|RuntimeRunAppendAndGet|DurableWaitForMatching)\b'
+    pattern-regex: 'Layer\.(?:succeed|effect)\s*\(\s*(?:RuntimeEventAppendAndGet|RuntimeAgentOutputSink|RuntimeOutputEvents|RuntimeAgentOutputEvents|RuntimeLogLineAppendAndGet|RuntimeLogLineSink|RuntimeOutputLogs|RuntimeIngressAppendAndGet|RuntimeIngressInputStream|RuntimeIngressDeliveryClaimAndComplete|RuntimeContextInsert|RuntimeContextRead|RuntimeRunAppendAndGet)\b'
 
   - id: firegrid-runtime-no-source-collection-handle-in-static-subscriber-contract
     languages: [typescript]

@@ -1,12 +1,9 @@
 export {
   DurableWaitAppendAndGet,
   DurableWaitCompletionAppendAndGet,
-  DurableWaitForMatching,
-  DurableWaitForMatchingLive,
   DurableWaitStoreLive,
   type DurableWaitAppendAndGetService,
   type DurableWaitCompletionAppendAndGetService,
-  type DurableWaitForMatchingService,
 } from "./durable-wait-store.ts"
 export {
   RuntimeControlPlaneRecorderLive,

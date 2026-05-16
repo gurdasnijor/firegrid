@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest"
 import {
-  DurableWaitForMatching,
   DurableWaitAppendAndGet,
   DurableWaitCompletionAppendAndGet,
   DurableWaitStoreLive,
@@ -35,7 +34,6 @@ import {
   RuntimeOutputLogs,
 } from "./runtime-output-journal.ts"
 import { RuntimeAuthoritySourceNames } from "./source-names.ts"
-import { DurableToolsWaitForLive } from "../waits/DurableToolsWaitFor.ts"
 
 const runtimeOutputEventsSources = [
   RuntimeAuthoritySourceNames.runtimeOutputEvents,
@@ -180,17 +178,33 @@ const providerEntries = [
     backingTable: "DurableToolsTable.completions",
     dynamicSourceCollections: durableWaitSources,
   },
-  {
-    capability: DurableWaitForMatching,
-    provider: DurableToolsWaitForLive,
-    backingTable: "DurableToolsTable",
-    dynamicSourceCollections: durableWaitSources,
-  },
 ] as const satisfies readonly TestProviderEntry[]
+
+const canonicalCapabilityTags = [
+  RuntimeEventAppendAndGet,
+  RuntimeAgentOutputRowSink,
+  RuntimeOutputEvents,
+  RuntimeAgentOutputEvents,
+  RuntimeLogLineAppendAndGet,
+  RuntimeLogLineSink,
+  RuntimeOutputLogs,
+  RuntimeIngressAppendAndGet,
+  RuntimeIngressInputStream,
+  RuntimeIngressDeliveryClaimAndComplete,
+  RuntimeIngressDeliveries,
+  RuntimeContextInsert,
+  RuntimeContextRead,
+  RuntimeContexts,
+  RuntimeRuns,
+  RuntimeRunAppendAndGet,
+  DurableWaitAppendAndGet,
+  DurableWaitCompletionAppendAndGet,
+] as const
 
 describe("runtime durable capability provider uniqueness", () => {
   it("firegrid-runtime-agent-event-pipeline.ENFORCEMENT.1 firegrid-runtime-agent-event-pipeline.ENFORCEMENT.5 firegrid-runtime-agent-event-pipeline.ENFORCEMENT.5-1 maps each durable capability tag value to one real provider layer value", () => {
     const tags = providerEntries.map(entry => entry.capability)
+    expect(tags).toEqual(canonicalCapabilityTags)
     expect(new Set(tags).size).toBe(tags.length)
 
     const outputSink = providerEntries.find(entry =>

@@ -17,10 +17,10 @@ import {
   LocalProcessStdinDeliveryError,
   localProcessStdinDelivery,
 } from "./local-process-stdin-delivery.ts"
-import { runtimeSubscriberId } from "../../events/index.ts"
 import {
   RuntimeIngressAppenderLayer,
   RuntimeIngressDeliveryTrackerLayer,
+  runtimeIngressSubscriberId,
 } from "../../authorities/index.ts"
 import type {
   RuntimeIngressAppendAndGet,
@@ -93,7 +93,7 @@ describe("localProcessStdinDelivery", () => {
     if (!baseUrl) throw new Error("server not started")
     const tableUrl = `${baseUrl}/v1/stream/runtime-ingress-atmost-${crypto.randomUUID()}.firegrid.runtimeIngress`
     const contextId = "ctx-am1"
-    const subscriberId = runtimeSubscriberId("runtime-context:local-process:stdin")
+    const subscriberId = runtimeIngressSubscriberId("raw", "stdin")
     const inputId = "input-1"
     const tableLayer = RuntimeIngressTable.layer({
       streamOptions: {
@@ -186,7 +186,7 @@ describe("localProcessStdinDelivery", () => {
     if (!baseUrl) throw new Error("server not started")
     const tableUrl = `${baseUrl}/v1/stream/runtime-ingress-happy-${crypto.randomUUID()}.firegrid.runtimeIngress`
     const contextId = "ctx-happy"
-    const subscriberId = runtimeSubscriberId("runtime-context:local-process:stdin")
+    const subscriberId = runtimeIngressSubscriberId("raw", "stdin")
     const inputId = "input-happy"
     const tableLayer = RuntimeIngressTable.layer({
       streamOptions: {
@@ -237,7 +237,7 @@ describe("localProcessStdinDelivery", () => {
     if (!baseUrl) throw new Error("server not started")
     const tableUrl = `${baseUrl}/v1/stream/runtime-ingress-order-${crypto.randomUUID()}.firegrid.runtimeIngress`
     const contextId = "ctx-order"
-    const subscriberId = runtimeSubscriberId("runtime-context:local-process:stdin")
+    const subscriberId = runtimeIngressSubscriberId("raw", "stdin")
     const tableLayer = RuntimeIngressTable.layer({
       streamOptions: {
         url: tableUrl,

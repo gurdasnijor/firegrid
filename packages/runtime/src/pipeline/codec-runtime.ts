@@ -3,7 +3,7 @@ import type {
   RuntimeContext,
   RuntimeEventRow,
 } from "@firegrid/protocol/launch"
-import { Clock, Effect, Option, Stream, type Layer } from "effect"
+import { Clock, Effect, Option, Ref, Stream, type Layer } from "effect"
 import { FiregridAgentToolkit } from "../agent-tools/tools.ts"
 import {
   RuntimeAgentOutputRowSink,
@@ -110,7 +110,7 @@ export const runCodecRuntimeEventPipeline = (options: {
   readonly context: RuntimeContext
   readonly activityAttempt: number
   readonly protocol: Exclude<RuntimeAgentProtocol, "raw">
-  readonly toolLoweringLayer: Layer.Layer<never, unknown, unknown>
+  readonly toolLoweringLayer: Layer.Layer<unknown, unknown, unknown>
 }) =>
   Effect.gen(function* () {
     const outputSink = yield* RuntimeAgentOutputRowSink
@@ -165,7 +165,11 @@ export const runCodecRuntimeEventPipeline = (options: {
       Effect.forkScoped,
     )
 
-    return yield* session.outputs.pipe(
+    const terminal = yield* Ref.make<Option.Option<
+      Extract<AgentOutputEvent, { readonly _tag: "Terminated" }>
+    >>(Option.none())
+
+    yield* session.outputs.pipe(
       Stream.mapError(cause =>
         asRuntimeContextError(
           `agent-codec.${cause.op}`,
@@ -177,25 +181,28 @@ export const runCodecRuntimeEventPipeline = (options: {
         sequence + 1,
         { sequence, event },
       ] as const),
-      Stream.tap(({ sequence, event }) =>
+      Stream.mapEffect(({ sequence, event }) =>
         outputRowFromAgentEvent(
           options.context,
           options.activityAttempt,
           sequence,
           event,
-        ).pipe(
-          Effect.flatMap(row => Stream.run(Stream.succeed(row), outputSink)),
-          mapRuntimeContextError(
-            "runtime-output.codec.write",
-            "failed to write codec runtime output row",
-            options.context.contextId,
-          ),
-        )),
-      Stream.filter((item): item is {
-        readonly sequence: number
-        readonly event: Extract<AgentOutputEvent, { readonly _tag: "Terminated" }>
-      } => item.event._tag === "Terminated"),
-      Stream.runHead,
+        ).pipe(Effect.map(row => ({ row, event })))),
+      Stream.takeUntil(({ event }) => event._tag === "Terminated"),
+      Stream.tap(({ event }) =>
+        event._tag === "Terminated"
+          ? Ref.set(terminal, Option.some(event))
+          : Effect.void),
+      Stream.map(({ row }) => row),
+      Stream.run(outputSink),
+      mapRuntimeContextError(
+        "runtime-output.codec.write",
+        "failed to write codec runtime output row",
+        options.context.contextId,
+      ),
+    )
+
+    return yield* Ref.get(terminal).pipe(
       Effect.flatMap(Option.match({
         onNone: () =>
           Effect.fail(asRuntimeContextError(
@@ -203,7 +210,7 @@ export const runCodecRuntimeEventPipeline = (options: {
             "codec output stream ended without a Terminated event",
             options.context.contextId,
           )),
-        onSome: ({ event }) =>
+        onSome: (event) =>
           Effect.succeed({
             exitCode: event.exitCode ?? 0,
           }),

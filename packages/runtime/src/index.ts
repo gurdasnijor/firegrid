@@ -63,8 +63,6 @@ export {
 export {
   DurableWaitAppendAndGet,
   DurableWaitCompletionAppendAndGet,
-  DurableWaitForMatching,
-  DurableWaitForMatchingLive,
   DurableWaitStoreLive,
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputRowSink,
@@ -94,7 +92,6 @@ export {
   type RuntimeAgentOutputObservation as RuntimeAuthorityAgentOutputObservation,
   type DurableWaitAppendAndGetService,
   type DurableWaitCompletionAppendAndGetService,
-  type DurableWaitForMatchingService,
   type RuntimeContextInsertService,
   type RuntimeContextReadService,
   type RuntimeAuthoritySourceName,

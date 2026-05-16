@@ -35,7 +35,9 @@ components:
       5: RuntimeControlPlaneRecorderLive is the only runtime provider layer for capability tags that write RuntimeControlPlaneTable.contexts and RuntimeControlPlaneTable.runs lifecycle rows.
       5-1: RuntimeControlPlaneRecorderLive owns local RuntimeContext insertion currently performed through host-context authority; host-context authority remains the read, validation, current-context, and stream URL derivation surface.
       6: DurableWaitStoreLive is the only runtime provider layer for capability tags that write durable wait rows and completions.
-      6-1: DurableWaitForMatching is provided by DurableWaitForMatchingLive from the authority provider module and is the runtime capability used by permission/capability bridges to wait for a matching row from a dynamic source registration.
+      6-1:
+        requirement: DurableWaitForMatching is deferred until a production permission/capability bridge needs a static matching capability beyond WaitFor.match and SourceCollections.
+        deprecated: true
       7: Authority layers may provide Queue.Enqueue capabilities for append-only writes, Sink values for stream-terminal writes, and narrow Effect-returning capabilities for command handlers that need committed rows or lookups.
       8: Authority layers that own rows consumed by subscribers expose static Stream observation tags for those rows and dynamic SourceCollectionHandle registrations only for wait_for/source lookup by name.
       9: Authority read surfaces are named and documented as static durable observation streams or dynamic source registrations rather than pipeline byte sources.
@@ -107,7 +109,7 @@ constraints:
       3: Subscribers consume durable seams through Stream capability tags or dynamic SourceCollectionHandle lookup rather than directly calling DurableTable.rows on runtime-owned tables.
       4: Subscribers and transforms do not accept runtime-owned DurableTable collection facades as inputs; production writes route through durable capability tags and production reads route through Stream capability tags or dynamic source registrations.
       5: Production runtime code has exactly one provider layer for each durable runtime capability tag expected by the canonical runtime-host layer composition.
-      5-1: Provider uniqueness is validated by a test against the canonical runtime-host layer composition; a future static lint may reuse the same Effect tag/layer graph as source of truth.
+      5-1: Provider uniqueness is validated by a test-local canonical durable capability tag list paired with actual Effect Context.Tag and Layer values, while Semgrep prevents production registry APIs and direct table-facade bypasses.
       6: Enforcement and review helpers inspect the Effect layer/tag graph or test-local metadata derived from those values rather than treating hand-maintained strings as the source of truth.
       7: Runtime production source does not export registry files or APIs whose only consumers are review tooling, documentation, or tests.
 

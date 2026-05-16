@@ -7,8 +7,6 @@ import {
   type WaitCompletionRow,
   type WaitRow,
 } from "../waits/internal/table.ts"
-import type { WaitForOutcome } from "../waits/internal/types.ts"
-import type { WaitForOptions } from "../waits/internal/wait-for.ts"
 
 export interface DurableWaitAppendAndGetService {
   readonly findWait: (
@@ -100,10 +98,6 @@ export class DurableWaitCompletionAppendAndGet extends Context.Tag(
   "@firegrid/runtime/DurableWaitCompletionAppendAndGet",
 )<DurableWaitCompletionAppendAndGet, DurableWaitCompletionAppendAndGetService>() {}
 
-export class DurableWaitForMatching extends Context.Tag(
-  "@firegrid/runtime/DurableWaitForMatching",
-)<DurableWaitForMatching, DurableWaitForMatchingService>() {}
-
 export const DurableWaitStoreLive = Layer.mergeAll(
   Layer.effect(
     DurableWaitAppendAndGet,
@@ -114,13 +108,3 @@ export const DurableWaitStoreLive = Layer.mergeAll(
     Effect.map(DurableToolsTable, waitCompletionAppendAndGetFromTable),
   ),
 )
-
-export interface DurableWaitForMatchingService {
-  readonly match: <A>(
-    options: WaitForOptions<A>,
-  ) => Effect.Effect<WaitForOutcome<A>, unknown, unknown>
-}
-
-export const DurableWaitForMatchingLive = (
-  service: DurableWaitForMatchingService,
-) => Layer.succeed(DurableWaitForMatching, service)

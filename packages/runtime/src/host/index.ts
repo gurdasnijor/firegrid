@@ -231,16 +231,16 @@ const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
   }),
 )
 
-const runtimeCodecToolLoweringLayer = (): Layer.Layer<never, unknown, unknown> =>
-  RuntimeObservationSourcesLive.pipe(Layer.provideMerge(Layer.mergeAll(
-    RuntimeHostAgentToolHostLive,
-    RuntimeControlPlaneRecorderLive,
-    RuntimeOutputJournalLayer,
-    RuntimeIngressInputStreamLayer,
-    RuntimeIngressDeliveryTrackerLayer,
-    ScheduledInputWorkflowLayer,
-    HostOwnedDurableToolsWaitForLive,
-  ))) as Layer.Layer<never, unknown, unknown>
+const runtimeCodecToolLoweringLayer = () =>
+  RuntimeObservationSourcesLive.pipe(
+    Layer.provideMerge(HostOwnedDurableToolsWaitForLive),
+    Layer.provideMerge(RuntimeOutputJournalLayer),
+    Layer.provideMerge(RuntimeControlPlaneRecorderLive),
+    Layer.provideMerge(RuntimeIngressInputStreamLayer),
+    Layer.provideMerge(RuntimeIngressDeliveryTrackerLayer),
+    Layer.provideMerge(ScheduledInputWorkflowLayer),
+    Layer.provideMerge(RuntimeHostAgentToolHostLive),
+  )
 
 const runCodecRuntimeContext = (options: {
   readonly context: RuntimeContext

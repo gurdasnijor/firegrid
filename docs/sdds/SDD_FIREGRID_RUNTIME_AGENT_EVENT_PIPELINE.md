@@ -910,51 +910,13 @@ This keeps permission semantics aligned with the rest of the pipeline:
 - delivery is the runtime ingress claim/completion capability;
 - codec-specific ACP promise resolution remains inside `AcpCodec`.
 
-The permission bridge is an ordinary pipeline subscriber. It consumes the
-`RuntimeAgentOutputEvents` stream capability, waits for or delegates to a
-human/product decision source, and appends the response through
-`RuntimeIngressAppendAndGet`. It does not talk to `AcpCodec` directly:
-
-```ts
-export const permissionWaitBridge = (options): Effect.Effect<
-  void,
-  PermissionBridgeError,
-  RuntimeAgentOutputEvents | DurableWaitForMatching | RuntimeIngressAppendAndGet
-> => Effect.gen(function*() {
-  const outputEvents = yield* RuntimeAgentOutputEvents
-  const waitFor = yield* DurableWaitForMatching
-  const appendIngress = yield* RuntimeIngressAppendAndGet
-
-  return yield* outputEvents.pipe(
-    Stream.filter((event) =>
-      event.contextId === options.contextId &&
-      event._tag === "PermissionRequest",
-    ),
-    Stream.mapEffect((permission) =>
-      waitFor.matching({
-        source: options.permissionDecisionSource,
-        whereFields: {
-          contextId: options.contextId,
-          permissionRequestId: permission.permissionRequestId,
-        },
-      }).pipe(Effect.flatMap((decision) =>
-        appendIngress.append({
-          contextId: options.contextId,
-          kind: "control",
-          payload: {
-            _tag: "PermissionResponse",
-            permissionRequestId: permission.permissionRequestId,
-            decision,
-          },
-          idempotencyKey:
-            `permission-response:${options.contextId}:${permission.permissionRequestId}`,
-        })
-      ))
-    ),
-    Stream.runDrain,
-  )
-})
-```
+The permission bridge can be an ordinary pipeline subscriber in a later slice:
+it will consume `RuntimeAgentOutputEvents`, wait for or delegate to a
+human/product decision source through the existing durable-tools `WaitFor.match`
+and `SourceCollections` surface, then append the response through
+`RuntimeIngressAppendAndGet`. This cutover does not add a speculative static
+matching capability tag; `firegrid-runtime-agent-event-pipeline.AUTHORITIES.6-1`
+is intentionally deferred until a production bridge needs one.
 
 The ingress-delivery subscriber shown in the runtime composition sketch is what
 later reads that `PermissionResponse` row and calls `session.send(...)`. For ACP
@@ -1027,7 +989,6 @@ RuntimeContextInsert -> RuntimeControlPlaneRecorderLive -> RuntimeControlPlaneTa
 RuntimeRunAppendAndGet -> RuntimeControlPlaneRecorderLive -> RuntimeControlPlaneTable.runs
 DurableWaitAppendAndGet -> DurableWaitStoreLive -> DurableTools wait rows
 DurableWaitCompletionAppendAndGet -> DurableWaitStoreLive -> DurableTools wait rows
-DurableWaitForMatching -> DurableWaitForMatchingLive -> DurableTools wait rows + registered source streams
 ```
 
 One layer constructor per table family may provide multiple tags. That grouping
@@ -1077,14 +1038,11 @@ Enforcement has two levels:
 1. Semgrep rejects direct `.insert`, `.upsert`, and `.delete` calls against
    runtime-owned DurableTable collection facades outside the layer that owns the
    corresponding capability tags, tests, and explicit app-owned table modules.
-2. Tests verify that every durable capability tag expected by the runtime host
-   has exactly one production provider layer in the canonical runtime-host layer
-   composition. A tag such as `RuntimeEventLog` has exactly one live provider in
-   runtime production code. The check must inspect actual Effect tag/layer
-   values or test-local metadata derived from those values; a production
-   registry file whose only consumer is tests/review is not allowed. If this
-   later becomes a static lint, the Effect layer graph remains the source of
-   truth.
+2. Tests verify a canonical durable capability tag list against actual Effect
+   `Context.Tag` and `Layer` values, while Semgrep blocks production registry
+   APIs and direct table-facade bypasses. A production registry file whose only
+   consumer is tests/review is not allowed. If this later becomes a static lint,
+   the Effect layer graph remains the source of truth.
 
 Calls to durable capability tags such as `RuntimeIngressAppendAndGet` or
 `RuntimeEventLog` are allowed. Test harness allowlists must be explicit;
