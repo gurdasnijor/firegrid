@@ -1,21 +1,16 @@
 /**
- * Codec contract — the protocol-aware layer between an agent process's
- * duplex byte stream and the normalized `AgentInputEvent`/
- * `AgentOutputEvent` channels that `RuntimeContextWorkflow` consumes.
- *
- * Codecs receive Effect AI `Toolkit` metadata directly. Firegrid does not
- * maintain a parallel descriptor/catalog shape for tools.
+ * Codec contract — protocol-aware scoped session providers between an agent
+ * process's duplex byte stream and normalized `AgentInputEvent` /
+ * `AgentOutputEvent` channels.
  */
 
-import type { Toolkit } from "@effect/ai"
-import { Schema, type Effect, type Scope, type Stream } from "effect"
+import { Context, Schema, type Effect, type Stream } from "effect"
 import type {
   AgentCapabilities,
   AgentInputEvent,
   AgentOutputEvent,
   AgentToolUseMode,
 } from "../events/contract.ts"
-import type { AgentByteStream } from "../sources/byte-stream.ts"
 
 /**
  * Error category for codec-level failures: framing errors, protocol
@@ -36,34 +31,15 @@ export class AgentCodecError extends Schema.TaggedError<AgentCodecError>()(
   },
 ) {}
 
-export interface AgentMcpServerDeclaration {
-  readonly name: string
-  readonly server: {
-    readonly type: "url"
-    readonly url: string
-    readonly headers?: ReadonlyArray<{
-      readonly name: string
-      readonly value: string
-    }>
-  }
+export interface AgentCodecMeta {
+  readonly kind: string
+  readonly capabilities: AgentCapabilities
 }
 
-export interface AgentSessionSetupOptions {
-  readonly cwd?: string
-  readonly mcpServers?: ReadonlyArray<AgentMcpServerDeclaration>
-}
-
-export interface AgentCodecOpenOptions {
-  // firegrid-agent-io-effect-ai-alignment.TOOLKIT_METADATA.1
-  // Optional for V1 codec slices that do not publish a tool catalog;
-  // catalog-publishing codecs should treat this as their Effect AI
-  // Toolkit source rather than introducing a Firegrid descriptor mirror.
-  readonly toolkit?: Toolkit.Any
-  readonly session?: AgentSessionSetupOptions
-}
-
-export interface AgentSession {
+export interface AgentSessionService {
+  readonly meta: AgentCodecMeta
   /**
+   * firegrid-runtime-boundary-reconciliation.CODEC_SESSION.2
    * firegrid-runtime-agent-event-pipeline.STAGES.3-7
    * firegrid-runtime-agent-event-pipeline.STAGES.3-8
    */
@@ -77,11 +53,7 @@ export interface AgentSession {
   readonly outputs: Stream.Stream<AgentOutputEvent, AgentCodecError>
 }
 
-export interface AgentCodec {
-  readonly kind: string
-  readonly capabilities: AgentCapabilities
-  readonly open: (
-    bytes: AgentByteStream,
-    options: AgentCodecOpenOptions,
-  ) => Effect.Effect<AgentSession, AgentCodecError, Scope.Scope>
-}
+export class AgentSession extends Context.Tag("@firegrid/runtime/AgentSession")<
+  AgentSession,
+  AgentSessionService
+>() {}

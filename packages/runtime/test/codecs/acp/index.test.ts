@@ -1,19 +1,15 @@
 import * as acp from "@agentclientprotocol/sdk"
-import { Prompt, Response, Tool, Toolkit } from "@effect/ai"
-import { Chunk, Deferred, Effect, Fiber, Schema, Stream } from "effect"
+import { IdGenerator, Prompt, Response } from "@effect/ai"
+import { Chunk, Context, Deferred, Effect, Fiber, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import type {
-  AgentOutputEvent,
-} from "../../../src/events/index.ts"
+import type { AgentOutputEvent } from "../../../src/events/index.ts"
 import type { AgentByteStream } from "../../../src/sources/byte-stream.ts"
-import type {
-  AgentCodecOpenOptions,
-  AgentSession,
-} from "../../../src/codecs/contract.ts"
 import {
   AcpCapabilities,
-  AcpCodec,
+  AcpSessionLive,
+  type AcpSessionOptions,
 } from "../../../src/codecs/acp/index.ts"
+import { AgentSession } from "../../../src/codecs/contract.ts"
 
 interface Harness {
   readonly bytes: AgentByteStream
@@ -265,26 +261,40 @@ const startAgent = <A extends acp.Agent>(
   return agent
 }
 
-const openSession = (bytes: AgentByteStream, options: AgentCodecOpenOptions = {}) =>
-  AcpCodec.open(bytes, options)
+const openSession = (
+  bytes: AgentByteStream,
+  options: AcpSessionOptions = {},
+  idGenerator: IdGenerator.Service = IdGenerator.defaultIdGenerator,
+) =>
+  Effect.gen(function*() {
+    const scope = yield* Effect.scope
+    const context = yield* Layer.buildWithScope(
+      AcpSessionLive(bytes, options).pipe(
+        Layer.provide(Layer.succeed(IdGenerator.IdGenerator, idGenerator)),
+      ),
+      scope,
+    )
+    return Context.get(context, AgentSession)
+  })
+
+type LiveAgentSession = Context.Tag.Service<typeof AgentSession>
+
+const deterministicIdGenerator = (): IdGenerator.Service => {
+  let next = 0
+  return {
+    generateId: () =>
+      Effect.sync(() => {
+        next += 1
+        return `test_${next}`
+      }),
+  }
+}
 
 const userMessage = (text: string): Prompt.UserMessage =>
   Prompt.userMessage({ content: [Prompt.textPart({ text })] })
 
-const EchoTool = Tool.make("echo", {
-  description: "Echo text.",
-})
-  .setParameters(Schema.Struct({
-    text: Schema.String,
-  }))
-  .setSuccess(Schema.Struct({
-    text: Schema.String,
-  }))
-
-const EchoToolkit = Toolkit.make(EchoTool)
-
 const collectOutputs = (
-  session: AgentSession,
+  session: LiveAgentSession,
   count: number,
 ) =>
   session.outputs.pipe(
@@ -293,20 +303,25 @@ const collectOutputs = (
     Effect.map(Chunk.toReadonlyArray),
   )
 
-describe("AcpCodec", () => {
-  it("emits Ready with ACP capabilities after SDK initialize/session setup", async () => {
+describe("AcpSessionLive", () => {
+  it("firegrid-runtime-boundary-reconciliation.CODEC_SESSION.1 firegrid-runtime-boundary-reconciliation.CODEC_SESSION.2 emits Ready with ACP capabilities after SDK initialize/session setup", async () => {
     const events = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
           const harness = yield* makeHarness
           startAgent(harness, connection => new FixtureAgent(connection))
           const session = yield* openSession(harness.bytes)
-          return yield* collectOutputs(session, 1)
+          const events = yield* collectOutputs(session, 1)
+          return { meta: session.meta, events }
         }),
       ),
     )
 
-    expect(events).toEqual([
+    expect(events.meta).toEqual({
+      kind: "acp",
+      capabilities: AcpCapabilities,
+    })
+    expect(events.events).toEqual([
       {
         _tag: "Ready",
         capabilities: AcpCapabilities,
@@ -331,27 +346,24 @@ describe("AcpCodec", () => {
     expect(agent.newSessionRequests[0]?.mcpServers).toEqual([])
   })
 
-  it("firegrid-local-mcp-run.LAUNCH_CONFIG.1 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9 lowers MCP declarations and ignores toolkit for ACP newSession", async () => {
+  it("firegrid-runtime-boundary-reconciliation.CODEC_SESSION.5 firegrid-local-mcp-run.LAUNCH_CONFIG.1 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9 lowers MCP declarations through ACP-specific session options", async () => {
     const agent = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
           const harness = yield* makeHarness
           const agent = startAgent(harness, connection => new FixtureAgent(connection))
           yield* openSession(harness.bytes, {
-            toolkit: EchoToolkit,
-            session: {
-              cwd: "/tmp/firegrid-acp-codec-cwd",
-              mcpServers: [
-                {
-                  name: "firegrid-runtime-context",
-                  server: {
-                    type: "url",
-                    url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
-                    headers: [{ name: "authorization", value: "Bearer test" }],
-                  },
+            cwd: "/tmp/firegrid-acp-codec-cwd",
+            mcpServers: [
+              {
+                name: "firegrid-runtime-context",
+                server: {
+                  type: "url",
+                  url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
+                  headers: [{ name: "authorization", value: "Bearer test" }],
                 },
-              ],
-            },
+              },
+            ],
           })
           return agent
         }),
@@ -373,7 +385,7 @@ describe("AcpCodec", () => {
     ])
   })
 
-  it("firegrid-runtime-agent-event-pipeline.STAGES.3-8 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7 firegrid-runtime-agent-event-pipeline.VALIDATION.6 reports observation_only and maps tool_call/tool_call_update as observations", async () => {
+  it("firegrid-runtime-boundary-reconciliation.CODEC_SESSION.8 firegrid-runtime-agent-event-pipeline.STAGES.3-8 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7 firegrid-runtime-agent-event-pipeline.VALIDATION.6 reports observation_only and maps tool_call/tool_call_update as observations", async () => {
     const result = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
@@ -455,13 +467,17 @@ describe("AcpCodec", () => {
     }])
   })
 
-  it("firegrid-runtime-agent-event-pipeline.STAGES.3-10 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3 maps requestPermission to a generated live-continuation id and rejects stale responses", async () => {
+  it("firegrid-runtime-boundary-reconciliation.CODEC_SESSION.6 firegrid-runtime-agent-event-pipeline.STAGES.3-10 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3 maps requestPermission to an injected generated live-continuation id and rejects stale responses", async () => {
     const result = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
           const harness = yield* makeHarness
           startAgent(harness, connection => new PermissionFixtureAgent(connection))
-          const session = yield* openSession(harness.bytes)
+          const session = yield* openSession(
+            harness.bytes,
+            {},
+            deterministicIdGenerator(),
+          )
           let permissionRequestId = ""
           const fiber = yield* session.outputs.pipe(
             Stream.take(5),
@@ -523,12 +539,10 @@ describe("AcpCodec", () => {
         },
       ],
     })
-    expect(result.permissionRequestId).toMatch(/^permission_id_[0-9A-Za-z]{16}$/)
-    expect(result.permissionRequestId).not.toBe("permission-1")
+    expect(result.permissionRequestId).toBe("permission_test_1")
     expect(result.events[3]?._tag).toBe("TextChunk")
     if (result.events[3]?._tag === "TextChunk") {
-      expect(result.events[3].part.id).toMatch(/^id_/)
-      expect(result.events[3].part.id).not.toBe("session-1")
+      expect(result.events[3].part.id).toBe("test_2")
       expect(result.events[3].part.delta).toBe("selected")
     }
     expect(result.events[4]).toEqual({

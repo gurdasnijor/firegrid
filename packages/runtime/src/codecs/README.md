@@ -1,8 +1,9 @@
 # Runtime Codecs
 
-`codecs/` normalizes protocol wire formats into runtime event shapes. Codecs
-know protocol negotiation, launch flags, message correlation, and how to send
-protocol-specific input back to an active agent session.
+`codecs/` provides scoped protocol sessions that normalize protocol wire
+formats into runtime event shapes. A codec module owns protocol negotiation,
+launch flags, message correlation, and protocol-specific input delivery for one
+active `AgentSession`.
 
 Some codecs are pure stream codecs: they translate byte frames to normalized
 events and encode normalized input back to frames without protocol-owned live
@@ -37,26 +38,25 @@ new live protocol continuation rather than resuming the old in-memory promise.
 Core shape:
 
 ```ts
-export interface AgentSession {
+export class AgentSession extends Context.Tag(
+  "@firegrid/runtime/AgentSession",
+)<AgentSession, {
+  readonly meta: AgentCodecMeta
   readonly toolUseMode: AgentToolUseMode
   readonly send: (event: AgentInputEvent) => Effect.Effect<void, AgentCodecError>
   readonly outputs: Stream.Stream<AgentOutputEvent, AgentCodecError>
-}
+}>() {}
 
-export interface AgentCodec {
-  readonly kind: string
-  readonly capabilities: AgentCapabilities
-  readonly open: (
-    bytes: AgentByteStream,
-    options: AgentCodecOpenOptions,
-  ) => Effect.Effect<AgentSession, AgentCodecError, Scope.Scope>
-}
+export const AcpSessionLive = (
+  bytes: AgentByteStream,
+  options: AcpSessionOptions,
+): Layer.Layer<AgentSession, AgentCodecError, IdGenerator.IdGenerator>
 ```
 
-The session is the active protocol capability. `send` is how runtime
-composition delivers normalized input back to the agent; `outputs` is how the
-pipeline observes normalized agent output. Durable routing is outside this
-interface.
+The `AgentSession` service is the active protocol capability. `send` is how
+runtime composition delivers normalized input back to the agent; `outputs` is
+how the pipeline observes normalized agent output. Durable routing is outside
+this interface.
 
 `toolUseMode` is per session:
 
@@ -65,11 +65,11 @@ interface.
 - `control_channel_request_response`: protocol requests use their own
   request/response path.
 
-ACP reports `observation_only` for tool calls. `AgentCodecOpenOptions.toolkit`
-is ignored by the ACP codec: ACP tool execution is supplied through
-`session.mcpServers`/MCP or by tools owned inside the ACP agent process, and ACP
-`sessionUpdate.tool_call` / `tool_call_update` events are observations. The ACP
-codec supports permission request/response as a live control-channel
+ACP reports `observation_only` for tool calls. ACP-specific launch state is
+explicit on `AcpSessionLive(bytes, options)`: ACP tool execution is supplied
+through `options.mcpServers`/MCP or by tools owned inside the ACP agent process,
+and ACP `sessionUpdate.tool_call` / `tool_call_update` events are observations.
+The ACP codec supports permission request/response as a live control-channel
 continuation, but it does not accept subscriber-produced `ToolResult` input.
 `firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7`
 `firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9`

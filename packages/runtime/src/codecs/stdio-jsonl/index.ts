@@ -1,5 +1,5 @@
 import { Prompt, Response } from "@effect/ai"
-import { Effect, Match, Schema, Stream } from "effect"
+import { Effect, Layer, Match, Schema, Stream } from "effect"
 import type {
   AgentCapabilities,
   AgentInputEvent,
@@ -7,11 +7,7 @@ import type {
   StopReason,
 } from "../../events/index.ts"
 import type { AgentByteStream } from "../../sources/byte-stream.ts"
-import type {
-  AgentCodec,
-  AgentCodecOpenOptions,
-} from "../contract.ts"
-import { AgentCodecError } from "../contract.ts"
+import { AgentCodecError, AgentSession } from "../contract.ts"
 
 const codec = "stdio-jsonl"
 const encoder = new TextEncoder()
@@ -289,16 +285,18 @@ const outputs = (
     ),
   )
 
-export const StdioJsonlCodec: AgentCodec = {
-  kind: codec,
-  capabilities: StdioJsonlCapabilities,
-  open: (
-    bytes: AgentByteStream,
-    _options: AgentCodecOpenOptions,
-  ) =>
+export const StdioJsonlSessionLive = (
+  bytes: AgentByteStream,
+): Layer.Layer<AgentSession> =>
+  Layer.scoped(
+    AgentSession,
     Effect.succeed({
+      meta: {
+        kind: codec,
+        capabilities: StdioJsonlCapabilities,
+      },
       toolUseMode: "client_result_roundtrip",
       send: event => writeJsonLine(bytes.stdin, event),
       outputs: outputs(bytes),
     }),
-}
+  )

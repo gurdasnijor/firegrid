@@ -1,6 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { IdGenerator, Prompt, Response } from "@effect/ai"
-import { Effect, Match, Queue, Ref, Runtime, Stream } from "effect"
+import { Effect, Layer, Match, Queue, Ref, Runtime, Stream } from "effect"
 import type {
   AgentCapabilities,
   AgentInputEvent,
@@ -9,17 +9,30 @@ import type {
   PermissionOption,
 } from "../../events/index.ts"
 import type { AgentByteStream } from "../../sources/byte-stream.ts"
-import type {
-  AgentCodec,
-  AgentMcpServerDeclaration,
-} from "../contract.ts"
-import { AgentCodecError } from "../contract.ts"
+import { AgentCodecError, AgentSession } from "../contract.ts"
 import {
   acpStopReasonToFinishReason,
   acpUserPromptPartToContentBlock,
 } from "./mapping.ts"
 
 const codec = "acp"
+
+export interface AcpMcpServerDeclaration {
+  readonly name: string
+  readonly server: {
+    readonly type: "url"
+    readonly url: string
+    readonly headers?: ReadonlyArray<{
+      readonly name: string
+      readonly value: string
+    }>
+  }
+}
+
+export interface AcpSessionOptions {
+  readonly cwd?: string
+  readonly mcpServers?: ReadonlyArray<AcpMcpServerDeclaration>
+}
 
 export const AcpCapabilities: AgentCapabilities = {
   streamingText: true,
@@ -90,7 +103,7 @@ const mapPermissionOptions = (
   }))
 
 const lowerMcpServerDeclaration = (
-  declaration: AgentMcpServerDeclaration,
+  declaration: AcpMcpServerDeclaration,
 ): acp.McpServer => ({
   type: "http",
   name: declaration.name,
@@ -130,8 +143,10 @@ const permissionResponse = (
   return { outcome: { outcome: "selected", optionId } }
 }
 
-const makePermissionRequestId: Effect.Effect<string> =
-  IdGenerator.defaultIdGenerator.generateId().pipe(
+const makePermissionRequestId = (
+  idGenerator: IdGenerator.Service,
+): Effect.Effect<string> =>
+  idGenerator.generateId().pipe(
     Effect.map(id => `permission_${id}`),
   )
 
@@ -198,12 +213,15 @@ const terminatedEvent = (
     Stream.fromEffect,
   )
 
-export const AcpCodec: AgentCodec = {
-  kind: codec,
-  capabilities: AcpCapabilities,
-  open: (bytes, options = {}) =>
+export const AcpSessionLive = (
+  bytes: AgentByteStream,
+  options: AcpSessionOptions = {},
+): Layer.Layer<AgentSession, AgentCodecError, IdGenerator.IdGenerator> =>
+  Layer.scoped(
+    AgentSession,
     Effect.gen(function*() {
       const scope = yield* Effect.scope
+      const idGenerator = yield* IdGenerator.IdGenerator
       const runtime = yield* Effect.runtime<never>()
       const runPromise = Runtime.runPromise(runtime)
       const outputEvents = yield* Queue.unbounded<AgentOutputEvent>()
@@ -223,7 +241,7 @@ export const AcpCodec: AgentCodec = {
             if (existing !== undefined) {
               return Effect.succeed(existing)
             }
-            return IdGenerator.defaultIdGenerator.generateId().pipe(
+            return idGenerator.generateId().pipe(
               Effect.tap(id => Ref.set(currentTextDeltaId, id)),
             )
           }),
@@ -235,6 +253,7 @@ export const AcpCodec: AgentCodec = {
         readonly resolve: (response: acp.RequestPermissionResponse) => void
       }
 
+      // firegrid-runtime-boundary-reconciliation.CODEC_SESSION.3
       // firegrid-runtime-agent-event-pipeline.STAGES.3-10
       // firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3
       // ACP requestPermission is a live protocol continuation, not durable
@@ -274,7 +293,7 @@ export const AcpCodec: AgentCodec = {
 
       const client: acp.Client = {
         requestPermission: async params => {
-          const permissionRequestId = await runPromise(makePermissionRequestId)
+          const permissionRequestId = await runPromise(makePermissionRequestId(idGenerator))
           let resolveResponse: (response: acp.RequestPermissionResponse) => void = () => {}
           const response = new Promise<acp.RequestPermissionResponse>(resolve => {
             resolveResponse = resolve
@@ -313,13 +332,13 @@ export const AcpCodec: AgentCodec = {
 
       const session = yield* acpPromise("newSession", "failed to create ACP session", () =>
         connection.newSession({
-          cwd: options.session?.cwd ?? globalThis.process.cwd(),
+          cwd: options.cwd ?? globalThis.process.cwd(),
           // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7
           // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9
-          // ACP does not consume AgentCodecOpenOptions.toolkit directly.
+          // ACP does not consume FiregridAgentToolkit directly.
           // Tool execution is owned by the ACP agent process or delegated
           // through ACP session.mcpServers/MCP.
-          mcpServers: (options.session?.mcpServers ?? []).map(lowerMcpServerDeclaration),
+          mcpServers: (options.mcpServers ?? []).map(lowerMcpServerDeclaration),
         }))
       const sessionId = session.sessionId
 
@@ -424,9 +443,13 @@ export const AcpCodec: AgentCodec = {
       )
 
       return {
+        meta: {
+          kind: codec,
+          capabilities: AcpCapabilities,
+        },
         toolUseMode: "observation_only",
         send,
         outputs,
       }
     }),
-}
+  )

@@ -23,19 +23,29 @@ Composition shape:
 
 ```ts
 Effect.scoped(Effect.gen(function* () {
-  const session = yield* codec.open(bytes, options)
+  const sessionLayer = selectSessionLayer(bytes, context.runtime.config.agentProtocol)
 
-  yield* Subscribers.ingressDelivery({ session }).pipe(Effect.forkScoped)
-  yield* Subscribers.toolRouter({
-    context,
-    activityAttempt,
-    toolUseMode: session.toolUseMode,
-  }).pipe(Effect.forkScoped)
+  yield* Effect.gen(function* () {
+    const session = yield* AgentSession
 
-  const outputSink = yield* RuntimeAgentOutputRowSink
-  yield* Stream.run(outputRows(session.outputs), outputSink)
+    yield* Subscribers.ingressDelivery({ send: session.send }).pipe(Effect.forkScoped)
+    yield* Subscribers.toolRouter({
+      context,
+      activityAttempt,
+      toolUseMode: session.toolUseMode,
+    }).pipe(Effect.forkScoped)
+
+    const outputSink = yield* RuntimeAgentOutputRowSink
+    yield* Stream.run(outputRows(session.outputs), outputSink)
+  }).pipe(Effect.provide(sessionLayer))
 }))
 ```
+
+`firegrid-runtime-boundary-reconciliation.CODEC_SESSION.1` and
+`firegrid-runtime-boundary-reconciliation.CODEC_SESSION.2` mean the pipeline
+selects a concrete scoped session `Layer` from the runtime protocol and then
+consumes the active `AgentSession` service from the Effect requirement channel.
+It should not accept or retain a codec object with an `open(...)` method.
 
 The pipeline wires live capabilities together. It should not make static
 decisions that belong to codec sessions, and it should not write durable rows

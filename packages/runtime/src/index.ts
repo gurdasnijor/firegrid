@@ -134,9 +134,11 @@ export {
 } from "./waits/index.ts"
 export {
   AcpCapabilities,
-  AcpCodec,
+  AcpSessionLive,
+  type AcpMcpServerDeclaration,
+  type AcpSessionOptions,
   StdioJsonlCapabilities,
-  StdioJsonlCodec,
+  StdioJsonlSessionLive,
 } from "./codecs/index.ts"
 export {
   RuntimeAgentOutputEnvelopeSchema,
