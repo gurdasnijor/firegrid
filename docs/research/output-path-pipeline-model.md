@@ -1,300 +1,368 @@
-# Research Plan: Output-Path Pipeline Model in `@firegrid/runtime`
+# Research / Spike Prompt: Radical Substrate Simplification for `@firegrid/runtime`
 
-## Context for the researcher
+## Premise
 
-You are auditing a subsystem inside `@firegrid/runtime`, Firegrid's stream-native agent runtime built on Effect-TS, `@effect/workflow`, and Durable Streams (via `effect-durable-operators`). The runtime hosts agent processes (raw local processes, ACP-protocol agents, stdio-jsonl agents) and journals their output as durable rows for downstream consumers (subscribers, the workflow engine, eventual SDK plane consumers).
+The durable substrate of `@firegrid/runtime` — the family of `Context.Tag`s, `Layer`s, and `DurableTable` instances that mediate writes to and reads from durable streams — has accumulated complexity that no local refactor can resolve. Multiple cleanup attempts (capability projection inlining, output-journal seam cleanup) have each produced plausible but incomplete answers because they're treating the symptom (Tag multiplication) rather than the cause (a multi-writer, multi-table durability model layered over data that is structurally single-writer-per-context).
 
-The subsystem has an articulated boundary model documented in `packages/runtime/src/agent-event-pipeline/`:
+This research is not a refactor scoping exercise. It is a **structural feasibility spike**: can the durable substrate be reorganized around a single primitive — a typed event log per runtime context — such that the current authority/subscriber/projection Tag taxonomy collapses to one appender, one log, and N derived projections per context?
 
-```
-sources → codecs → events → transforms → authorities ─┐
-                                                       │ (Stream capability tags)
-                                                       ▼
-                                                  subscribers ─┐
-                                                                │ (writes through authority tags)
-                                                                ▼
-                                                           authorities
-```
+The output of this research determines whether the next architectural move is a local cleanup (a few hundred lines, weeks) or a structural restructure (a few thousand lines, months). The wrong answer in either direction is expensive. The right answer is what the data supports.
 
-The model is documented in three READMEs (`agent-event-pipeline/README.md`, `agent-event-pipeline/authorities/README.md` — implied by file structure, and `agent-event-pipeline/subscribers/README.md`) and stated as:
+## The hypothesis to test
+
+**Every durable write in the current `@firegrid/runtime` codebase originates in the host process that owns the runtime context the write is about.** If this holds, multi-writer durability is being paid for without being used, and the substrate can be reorganized around single-writer-per-context streams with command-stream inversion for external producers.
+
+If this does *not* hold — if there exists a genuine, structurally necessary path where a process that does not own a context writes durably to that context's events — the table model is justified and the local cleanup is the right scope.
+
+## Context the researcher needs
+
+### What Firegrid is
+
+Firegrid is a stream-native agent runtime. A "runtime context" is one execution of an agent (raw local process, ACP-protocol agent, or stdio-jsonl agent). A "host" is a process that owns and runs one or more contexts. Hosts are identified by `hostId`; contexts are identified by `contextId` and have a `host` binding declaring which host owns them.
+
+Durable state lives on streams managed by `@durable-streams/client`. The package `effect-durable-operators` exposes `DurableTable`, a ksql-style materialized-table abstraction over a stream. Tables expose `insert`, `upsert`, `delete`, `get`, `rows()`, `insertOrGet` operations. Each table is backed by one stream.
+
+### What currently exists
+
+The runtime has **three durable tables**, each backed by its own stream, holding **six row families** across them:
+
+| Table | Stream type | Row families |
+|---|---|---|
+| `RuntimeOutputTable` | host-owned (`host-{X}.runtimeOutput`) | `events`, `logs` |
+| `RuntimeIngressTable` | host-owned (`host-{X}.runtimeIngress`) | `inputs`, `deliveries` |
+| `RuntimeControlPlaneTable` | namespace-scoped (`{namespace}.firegrid.runtime`) | `contexts`, `runs` |
+
+Plus per-context workflow engine streams (`host-{X}.context-{Y}.workflow`) and durable-tools streams (`host-{X}.durableTools`), which are workflow-engine infrastructure, not application data, and are out of scope for this spike except as caller-side context.
+
+The runtime exposes **capability Tags** organized as follows:
+
+- "Authorities" — `Context.Tag`s shaped as narrow write services (`{ append: (row) => Effect<row, E> }`, sometimes with multi-operation lifecycles like `claimInput`/`recordCompleted`).
+- "Read views" — `Context.Tag`s shaped as `Stream<Row, E>` derived from `table.X.rows()`.
+- "Derived views" — `Context.Tag`s shaped as `Sink<...>` or decoded/filtered `Stream<...>` over the read views. These are the locus of the current muddle.
+
+Five files declare authority-style Tags:
+- `packages/runtime/src/agent-event-pipeline/authorities/runtime-output-journal.ts`
+- `packages/runtime/src/agent-event-pipeline/authorities/runtime-ingress-appender.ts`
+- `packages/runtime/src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts`
+- `packages/runtime/src/authorities/runtime-control-plane-recorder.ts`
+- `packages/runtime/src/durable-tools/internal/durable-wait-store.ts` (durable-tools infrastructure; secondary scope)
+
+Subscriber files in `packages/runtime/src/agent-event-pipeline/subscribers/` consume read view Tags and write through authority Tags as scoped forked fibers.
+
+Composition in `packages/runtime/src/agent-event-pipeline/session-runtime.ts` and `packages/runtime/src/host/raw-process-runtime.ts` provisions layers and orchestrates the foreground codec output write loop.
+
+### The architectural rule the codebase aspires to
+
+From `agent-event-pipeline/subscribers/README.md`:
 
 > Subscribers depend on `Stream` capability tags, not table facades. Write through authority capability tags. Keep protocol-specific send behavior in codecs or active session capabilities.
 
-Two prior cleanup attempts have produced partial pictures:
+This rule is partially expressed in code. The drift between the rule and the implementation is the surface symptom of the deeper question this spike answers.
 
-1. **"Capability Projection Cleanup"** — proposed inlining single-use projection helpers (`projectStream`, `projectAppend`, `projectSink`) into call sites. Rejected after audit: the patterns being named are the standard `Layer.effect(Tag, Effect.map(TableTag, ...))` idiom over `DurableTable`'s existing `rows()` / `upsert(...)` surface, plus a missing `appendSink()` derived view that probably belongs upstream in `effect-durable-operators`.
+### Why local cleanup is insufficient
 
-2. **"Output Journal Seam Cleanup"** — proposed deleting derived-view tags (`RuntimeAgentOutputRowSink`, `RuntimeLogLineSink`, `RuntimeAgentOutputEvents`) from `runtime-output-journal.ts` and rewiring consumers to project locally from narrower tags. Partial — depended on assumptions about consumer counts and dataflow that haven't been fully traced.
+Prior cleanup proposals concluded:
 
-The shared concern is: **the file `packages/runtime/src/agent-event-pipeline/authorities/runtime-output-journal.ts` exports seven `Context.Tag` declarations of three structural shapes (`AppendAndGet`, `Sink`, `Stream`) for one underlying `RuntimeOutputTable`. Some are consumed, some appear dead. The Sink and decoded-Stream tags appear to be derived views of the AppendAndGet writes and the raw `events.rows()` reads, suggesting structural redundancy.**
+1. The derived-view Tags (Sinks, decoded streams) can be deleted; consumers project locally. **True, but treats the symptom.**
+2. The projection patterns can be inlined; helpers are single-use. **True, but cosmetic.**
+3. The authority taxonomy can be restated as "one write Tag plus one Stream Tag per row family." **True under the existing table model — but assumes the table model is the right primitive.**
 
-Adjacent to this, there are four other authority files with similar projection patterns (`runtime-ingress-appender.ts`, `runtime-ingress-delivery-tracker.ts`, `runtime-control-plane-recorder.ts`, `durable-tools/internal/durable-wait-store.ts`). They may or may not share the same redundancy pattern.
+The deeper question is whether the table model itself is the right primitive. If the data is structurally single-writer-per-context, the right primitive is a typed event log per context, not a table per row family across all contexts.
 
-Your job is **not** to propose a fix. Your job is to produce the data and the model needed to know whether a clean pipeline model is hiding underneath this complexity, and to make the cost-benefit of consolidation legible.
+Other systems have converged on single-writer-per-consistency-unit as the framework primitive:
 
-## Why this needs research, not a code review
+- **Temporal**: workflow is the consistency boundary; workflow history is single-writer.
+- **Restate**: virtual object instance is the consistency boundary.
+- **Flink**: operator partition is the consistency boundary.
+- **Event-sourcing**: aggregate is the consistency boundary.
 
-The existing analyses keep converging on plausible-but-incomplete answers because they each look at a slice:
+Firegrid currently has *no* single-writer boundary at the framework level. The producer-epoch fencing in `DurableTable.insertOrGet` defends against per-key collisions but does not impose a single-writer-per-context invariant. This may or may not be a problem the codebase actually needs to solve; that is what this spike determines.
 
-- File-local audits show duplicated patterns but don't trace where the duplications terminate.
-- Consumer-side traces miss dead exports.
-- Layering-rule analyses (the README pattern) miss that some "derived views" exist for ergonomic reasons (Sinks for `Stream.run`) that the rule doesn't address.
-- The plane-split SDD assumes certain tags survive as `@firegrid/host-sdk` exports, but no one has reconciled that list with actual current consumers.
+### What changing this would buy
 
-The risk of acting on partial pictures: deleting a Tag that's consumed by a test or by an unshipped SDK surface; inlining a pattern that has a real abstraction value at a boundary not visible in any single file; rewriting a Sink as an authority write that has subtly different scoping or error-channel semantics than `Stream.run(sink)`.
+If the spike confirms single-writer-per-context is structurally available, reorganizing around it produces:
 
-The research goal is to enumerate the data flows completely, then determine whether the seven-tag surface is structurally three (write-authority, read-stream, derived-view) and the derived-views can be folded without semantic loss.
+- One Tag per context for writes (`ContextEventAppender`), replacing 7+ Tags across 4 files.
+- One Tag per context for reads (`ContextEventLog`), replacing 5+ stream Tags.
+- N derived projections built locally at consumers from the event log, replacing 3+ decoded/Sink Tags.
+- Run lifecycle moves from the namespace-scoped control plane to the per-context log (it's per-context data).
+- Total ordering of all context events in one stream — no cross-table ordering reconstruction.
+- Single-writer guarantees as a structural property, not a discipline.
+- Per-context retention, replay, and isolation become natural at the stream layer.
 
-## What we already know
+The cost is a real architectural shift: building a typed-event-log abstraction over `DurableStream`, moving 6 row families into one event union schema, building materialized indexes for the point-lookup access patterns (idempotency checks), and inverting external-writer paths (CLI tools) to write to a command stream rather than appending to context streams directly.
 
-### Documented pattern (from `agent-event-pipeline/subscribers/README.md`)
+### What changing this would break
 
-Subscribers consume `Stream` capability tags, perform side effects through narrow durable write capabilities (`AppendAndGet`-shaped) or active codec/session capabilities. They are scoped fibers. They do not provide durable table layers. They do not access table facades directly.
+- Stream-creation overhead per context. Per-context streams are cheap to create (Durable Streams' idempotent `create` tolerates `CONFLICT_EXISTS`), but it's a per-context startup cost.
+- Cross-context queries become harder. "List all runs across all contexts on this host" today is a query against `RuntimeControlPlaneTable.runs`; tomorrow it's an enumeration over per-context streams (or a separate index).
+- `DurableTable` doesn't fit the event-log shape perfectly. The cleaner primitive is `DurableStream` directly with a thin typed-event wrapper.
+- Schema versioning gets stricter — the event union becomes the source-of-truth schema, and adding/changing variants needs explicit versioning.
 
-### Confirmed consumers (from files audited)
+## The questions this spike must answer
 
-| Tag | Confirmed consumer | File | Line shape |
-|---|---|---|---|
-| `RuntimeEventAppendAndGet` | `runRuntimeContext` (raw path) | `host/raw-process-runtime.ts` | `yield* RuntimeEventAppendAndGet` then `.append(row)` |
-| `RuntimeLogLineAppendAndGet` | `runRuntimeContext` (raw path) | `host/raw-process-runtime.ts` | `yield* RuntimeLogLineAppendAndGet` then `.append(row)` |
-| `RuntimeLogLineAppendAndGet` | `runStderrJournal` | `agent-event-pipeline/subscribers/stderr-journal.ts` | `yield* RuntimeLogLineAppendAndGet` then `.append(row)` |
-| `RuntimeAgentOutputRowSink` | `runCodecRuntimeEventPipeline` | `agent-event-pipeline/session-runtime.ts` | `Stream.run(outputSink)` |
-| `RuntimeAgentOutputEvents` | `runToolRouter` | `agent-event-pipeline/subscribers/tool-router.ts` | `yield* RuntimeAgentOutputEvents` then `.pipe(Stream.filter(...))` |
+These are the only questions that matter. Everything else is downstream of these.
 
-### Apparently unused (no consumer found in shared files)
+### Section 1: The single-writer hypothesis
 
-- `RuntimeLogLineSink`
-- `RuntimeOutputEvents`
-- `RuntimeOutputLogs`
+**Q1.1.** For every code path in `packages/runtime/src/**` that produces a durable write (any call that ultimately results in `table.insert`, `table.upsert`, `table.delete`, or `table.insertOrGet`), trace:
 
-### Layer provision points (confirmed)
+1. The originating function and file.
+2. The runtime context the write is about (the `contextId` field on the row, or the implicit context of the calling code).
+3. The process identity that runs that code path (the host process owning the context, vs. a different host, vs. an external CLI, vs. a workflow engine fiber).
+4. Whether the process identity matches the `hostId` field on the context's `host` binding.
 
-`RuntimeOutputJournalLayer` is provided in three places:
+**Output:** A table with one row per write site. Columns: `Write site (file:function) | Row family | Process identity | Context owner identity | Match`.
 
-1. `host/runtime-context-workflow.ts` — wraps the Activity execute.
-2. `host/raw-process-runtime.ts` — wraps `runCodecRuntimeContext` (likely redundant with #1, since the codec path runs inside the Activity).
-3. `host/runtime-substrate.ts` — merged into `HostRuntimeObservationSubstrateLive`.
+**Q1.2.** Identify every write site where the process identity does *not* match the context owner. For each:
 
-The relationship between #1, #2, and #3 has not been traced. There may be a legitimate reason for redundant provision, or this may be a layering accident.
+- Describe the scenario (what code calls this; under what conditions).
+- Assess whether the write could be inverted: would it be structurally possible for the originating process to send a *command* to the owning host, and have the owning host append the durable event?
+- Identify what changes would be required for the inversion (new IPC channel, command stream, request/response shape).
 
-### `DurableTable` surface (from `effect-durable-operators/src/DurableTable.ts`)
+**Output:** A list of write sites that violate single-writer-per-context, with an inversion assessment for each.
 
-Each `CollectionFacade<Row, Key>` from a `DurableTable` exposes:
+**Q1.3.** Specifically examine these known potential violators:
 
-- `rows(): Stream.Stream<Row, DurableTableError>` (per `TABLE.28`)
-- `upsert(row): Effect.Effect<void, DurableTableError>` (per `TABLE.11`)
-- `insert`, `insertOrGet`, `delete`, `get`, `query`, `subscribe`
-- **No** `appendSink()` or symmetric Sink-view of `upsert`
+- **External CLI ingress** (`firegrid:run --prompt`): when invoked from a different process than the host running the target context, does the CLI append directly to the context's ingress stream? Trace through `packages/runtime/src/host/commands.ts:appendRuntimeIngress` and `packages/runtime/src/host/commands.ts:appendRuntimeIngressToOwner`.
 
-This means: deriving a Stream view from `DurableTable` is a one-liner (`table.events.rows()`). Deriving a Sink view requires writing `Sink.forEach(row => table.events.upsert(row))` inline.
+- **Context insert from non-owning host**: the control plane (`RuntimeContextInsert.insertLocalContext`) creates context registry rows. Is this only ever called by the host that will own the context, or can host A register a context that host B will run?
 
-### The plane-split context
+- **Tool router producing ingress**: `runToolRouter` produces `tool_result` ingress rows. The tool router runs in the host process owning the context — but is the *target* context (where the ingress row lands) always the same as the host running the router?
 
-A separate SDD (`SDD_FIREGRID_HOST_SDK.md`) proposes splitting `@firegrid/runtime` into `@firegrid/runtime`, `@firegrid/host-sdk`, `@firegrid/client-sdk`, `@firegrid/cli` over 7 PRs. The output-path tags may be part of the SDK surface; the plane-split SDD assumes certain tags survive but does not enumerate them against current consumers. This research should not block on the plane split, but should produce data the plane split can use.
+- **Permission response paths** (ACP codec): permission responses originate as `PermissionResponse` agent input events. Where do they enter the system, and do they end up writing to the context they're for?
 
-## Research questions
+**Output:** A specific verdict for each of these four scenarios: single-writer-preservable / single-writer-violating / requires-inversion.
 
-These are the questions that, if answered, resolve whether a clean pipeline model exists underneath the current surface.
+### Section 2: The event union
 
-### Section A: Complete consumer enumeration
+**Q2.1.** Given the current six row families (`events`, `logs`, `inputs`, `deliveries`, `contexts`, `runs`), produce a draft typed event union that subsumes all of them. The union should:
 
-**A1.** For every `Context.Tag` exported by these files, list every consumer (production code, tests, type-only imports):
+- Use Effect Schema (`Schema.Union(Schema.TaggedStruct(...), ...)`).
+- Preserve every field currently on every row family.
+- Discriminate by `_tag`.
+- Identify which fields are common (`contextId`, sequence numbers, timestamps) and which are variant-specific.
 
-- `agent-event-pipeline/authorities/runtime-output-journal.ts`
-- `agent-event-pipeline/authorities/runtime-ingress-appender.ts`
-- `agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts`
-- `authorities/runtime-control-plane-recorder.ts`
-- `durable-tools/internal/durable-wait-store.ts`
+**Output:** A complete `Schema.Union` declaration in TypeScript, plus a comparison table showing which current row-family fields map to which event-variant fields, with justification for any field renames or restructurings.
 
-Method: search by Tag class name across `packages/runtime/**`, `packages/runtime/test/**`, `packages/host-sdk/**` (if exists), and any other in-monorepo consumers. Distinguish three consumption modes: (a) `yield*` in an Effect, (b) `Effect.provideService(Tag, ...)` or layer provision, (c) type-only re-export from a barrel.
+**Q2.2.** For each event variant in the proposed union, identify:
 
-Output: a table with columns `Tag | Consumer file | Consumption mode | Surrounding context (one-line)`.
+- The current write site(s) that would produce this event.
+- The current read site(s) (subscribers, queries) that would consume this event.
+- Whether the event is *per-context* (belongs on a per-context log) or *cross-context* (must stay in a namespace-scoped table).
 
-**A2.** For every `Layer` exported by those same files, list every place it is provided. Method: search for `provide(LayerName)`, `provideMerge(LayerName)`, `Layer.mergeAll(..., LayerName, ...)`, and similar. Identify when a layer is provided multiple times along the same effect chain (redundant provision).
+**Output:** Per-variant write/read provenance, with a verdict on whether each variant belongs in the per-context log or elsewhere.
 
-Output: a table with columns `Layer | Provision site | Effect/Layer chain it composes into | Notes (e.g., redundant)`.
+**Q2.3.** Examine the `contexts` row family specifically. The current `RuntimeContextRow` is a registry entry — host binding, namespace, context intent. It is queried *cross-context* (e.g., `readRuntimeContext(contextId)` looks up a context by id). It is updated by hosts other than the owning host (e.g., a CLI registers a context for a daemon to run).
 
-**A3.** Reverse direction: for every place a `Stream`, `Sink`, or `AppendAndGet`-shaped value is *consumed* in subscriber-style code (forked fibers, `Stream.run`, `Stream.runForEach`, `Stream.runDrain`), identify whether the source is (a) a capability Tag, (b) a locally-built Stream, or (c) a struct field on a Tag service (like `AgentSession.outputs`).
+Is the right model:
+- (a) Context registration stays in a namespace-scoped control-plane table; only context *history* moves to per-context logs.
+- (b) Context registration is itself an event on a namespace-scoped command stream; the control-plane table becomes a derived materialized view.
 
-Output: classification of every output-path consumption site by source kind.
+**Output:** A recommendation with rationale, plus an enumeration of which current write sites against `RuntimeControlPlaneTable.contexts` would change under each option.
 
-### Section B: The codec output write path
+### Section 3: The point-lookup access patterns
 
-**B1.** Trace the codec output write path end-to-end. Starting from `session.outputs` in `runCodecRuntimeEventPipeline`, document every transformation applied before durable write:
+**Q3.1.** Enumerate every current `table.X.get(key)` call site in `packages/runtime/src/**`. For each:
 
-- error mapping
-- sequencing (`Stream.mapAccum`)
-- row construction (`outputRowFromAgentEvent`)
-- terminal-event tracking (`Ref` set on `Terminated`)
-- Sink termination (`Stream.run(outputSink)`)
+- What is being looked up (which row family, which key)?
+- Why is the lookup happening (idempotency check, existence test, retrieval for read)?
+- Is the lookup on the "hot path" (every event, every request) or "cold path" (recovery, debugging)?
 
-For each step, identify whether the transformation is:
-- pure (could live in `transforms/`)
-- effectful but pipeline-local (must live in composition)
-- consuming a capability (could be factored as a subscriber if the input stream became a Tag)
+**Output:** A table of point-lookup sites with hot/cold classification.
 
-**B2.** Compare the codec output write path to `runStderrJournal`. Both consume a stream and write through an `AppendAndGet` authority. What are the structural differences?
+**Q3.2.** For each hot-path point-lookup site identified in Q3.1:
 
-- `runStderrJournal` takes `bytes: AgentByteStream` as a parameter (local stream, not a Tag).
-- The codec output path consumes `session.outputs` (local stream from the `AgentSession` service, not a separate Tag).
-- `runStderrJournal` writes through `RuntimeLogLineAppendAndGet.append` per-row using `Stream.mapEffect`.
-- The codec output path writes through `RuntimeAgentOutputRowSink` using `Stream.run`.
+- Determine whether a fold-based materialized index (`Map<key, event>` built by replaying the log) is performant enough at expected scale.
+- Determine whether a separate persistent index (e.g., a `DurableTable` storing `(key, eventId)` pairs alongside the event log) is necessary.
 
-Question: are these two paths the same pipeline pattern, expressed differently? Or are there semantic differences (error propagation, scoping, termination) that justify the different shapes?
+**Output:** A per-site recommendation: fold-based-index / persistent-index / no-index-needed-redesign-the-access.
 
-**B3.** What would change if `AgentSession.outputs` were exposed as a separate `Context.Tag` (`AgentSessionOutputs`)? Would the codec output write path become a true subscriber (`runCodecOutputJournal` consuming `AgentSessionOutputs`)? Trace the requirement-channel implications.
+**Q3.3.** Specifically examine these known hot-path lookups:
 
-### Section C: The decoded derived stream (`RuntimeAgentOutputEvents`)
+- **Ingress idempotency** (`RuntimeIngressAppendAndGet.append`): looks up `inputs.get(inputId)` before sequencing. Required for idempotent re-runs after restart.
 
-**C1.** `RuntimeAgentOutputEvents` is `RuntimeOutputEvents` with `Stream.map(runtimeAgentOutputObservationFromRow).pipe(Stream.filterMap(value => value))` applied. The transform lives in `events/output.ts`. The decoded shape is only consumed by `runToolRouter`.
+- **Delivery claim** (`RuntimeIngressDeliveryClaimAndComplete.claimInput`): looks up `deliveries.get(key)` before claiming. Required for at-most-once delivery semantics.
 
-Is there any value in the decoded Tag existing as a separate capability, vs. the router constructing the decoded stream locally from `RuntimeOutputEvents` plus the transform?
+- **Tool result deduplication** (`runToolRouter`): looks up `findInput(toolResultInputId)` before appending. Required to avoid duplicate tool result rows.
 
-Method: examine whether any future consumer (planned subscribers, SDK plane consumers, tests) needs the decoded shape pre-built. Check `firegrid-runtime-agent-event-pipeline.*` requirement IDs referenced in the codebase for any commitment to this Tag's existence.
+- **Context resolution** (`readRuntimeContext`): looks up `contexts.get(contextId)`. Required on every host-side operation that needs context metadata.
 
-**C2.** Is `RuntimeOutputEvents` (the *non*-decoded raw row Stream) actually unused, or is it consumed somewhere not yet identified? If unused: should it be deleted, or kept as a general capability for future consumers? If deleted, can the decoded shape be projected directly from `RuntimeOutputTable` inside the tool router, removing the need for both Tags?
+For each, determine whether the lookup pattern survives the restructure as-is, requires a materialized index, or can be redesigned out of the hot path entirely.
 
-### Section D: The Sink question
+**Output:** A specific verdict per lookup.
 
-**D1.** `RuntimeAgentOutputRowSink` is `Sink.forEach(row => table.events.upsert(row))`. `RuntimeLogLineSink` has the same shape over logs. The first is consumed once (`session-runtime.ts` `Stream.run(outputSink)`); the second has no known consumer.
+### Section 4: The codec session and workflow engine boundary
 
-Question 1: are Sinks the right shape for these capabilities, or are they a workaround for the absence of an `appendSink()` derived view on `DurableTable`?
+**Q4.1.** The `@effect/workflow` engine (used via `DurableStreamsWorkflowEngine`) has its own durability story. `runtime-context-workflow.ts` defines a `RuntimeContextWorkflow` with an activity that runs the codec. The workflow engine journals activity inputs/results to its own stream.
 
-Question 2: if the codec output path were rewritten as `Stream.runForEach(row => eventAppendAndGet.append(row))`, what changes? Specifically:
+Trace which writes to the proposed `ContextEventLog` would happen *inside* a workflow activity vs. *outside* (e.g., during host-side ingress append, where there's no active workflow). Identify any cross-cutting concerns (does the workflow engine need to observe events on the context log? Does the context log need to know about workflow attempts?).
 
-- error channel: `AppendAndGet.append` returns `Effect<Row, unknown>`; `Stream.run(Sink)` returns `Effect<void, StreamError | SinkError>`. Are the error types compatible?
-- scoping: `Sink.forEach` runs each effect in sequence within the consuming fiber. `Stream.runForEach(append)` does the same. Equivalent?
-- termination: how does `Stream.takeUntil(({ event }) => event._tag === "Terminated")` interact with each form?
+**Output:** A mapping of write sites to "inside-activity" vs. "outside-activity," with any cross-cutting concerns flagged.
 
-Question 3: if `effect-durable-operators` added `appendSink(): Sink.Sink<void, Row, never, DurableTableError>` as a derived view, would that change the answer? Specifically: would `RuntimeAgentOutputRowSink` become `Effect.map(RuntimeOutputTable, t => t.events.appendSink())`, eliminating the helper but keeping the Tag, or would the Tag still be redundant?
+**Q4.2.** The `AgentSession` Tag (in `agent-event-pipeline/codecs/contract.ts`) exposes `outputs: Stream<AgentOutputEvent, AgentCodecError>` as a struct field, not a separate Tag. The current codec output write loop in `session-runtime.ts` consumes this stream and writes through `RuntimeAgentOutputRowSink`.
 
-### Section E: Symmetry across the four other authority files
+Under the proposed model, would this loop write directly to `ContextEventAppender.append`, or would there be an intermediate codec-side transformation? Identify what changes about `AgentSession`'s shape (if anything) under the proposed model.
 
-**E1.** For each of `runtime-ingress-appender.ts`, `runtime-ingress-delivery-tracker.ts`, `runtime-control-plane-recorder.ts`, `durable-wait-store.ts`:
+**Output:** A revised shape for `AgentSession` if it changes, or a confirmation that it doesn't.
 
-- Enumerate the structural shapes of exported Tags: pure write (`AppendAndGet`), pure read (`Stream`), composed write (multi-source reads + Append), composed read (e.g., idempotent claim), Sink, derived/decoded Stream.
-- Identify which Tags are consumed by exactly one subscriber/composition site (candidates for inlining into the consumer).
-- Identify which Tags are consumed by multiple sites or planned-multi-site consumers (must remain as capabilities).
+**Q4.3.** Examine the ingress delivery subscriber (`runIngressDelivery`). It consumes `RuntimeIngressInputStream`, claims via `RuntimeIngressDeliveryClaimAndComplete`, and sends to `AgentSession.send`. Under the proposed model:
 
-**E2.** Compare the projection patterns across all five files. Are there cases where the same conceptual pattern (e.g., "Stream view of table X.rows()") is expressed differently in different files, suggesting an inconsistency rather than a justified divergence?
+- The subscriber consumes `ContextEventLog` filtered to `InputSequenced` events.
+- Claim becomes an `InputClaimed` event appended to the same log.
+- Completion becomes an `InputDelivered` event.
 
-**E3.** Are there cross-file patterns? For example: is there a "subscriber writes through one authority, observes another" pattern that recurs and could be factored?
+Is there any reordering or race condition introduced by collapsing all of these onto a single stream where they were on two streams before? Specifically: does total ordering across input/sequenced/claimed/delivered events on one stream change the at-most-once semantics?
 
-### Section F: The plane-split surface
+**Output:** A correctness assessment of the merged ordering. Identify any operations that today rely on independent ordering between the `inputs` and `deliveries` row families.
 
-**F1.** Read `SDD_FIREGRID_HOST_SDK.md` and identify which of the output-path Tags are mentioned as part of the `@firegrid/host-sdk` export surface. Compare against the consumer enumeration from Section A: is the plane-split SDD assuming Tags survive that have no current consumers? Is it forgetting Tags that have current consumers?
+### Section 5: The external writer / command stream
 
-**F2.** Does the plane-split SDD impose any constraints on the output-path Tag shape that this cleanup must preserve? For example: must `RuntimeEventAppendAndGet` remain in its current file path because the plane split moves files around it?
+**Q5.1.** If single-writer-per-context is structurally available, external writers (CLI, future SDK consumers, cross-host coordination) need a different ingress path. Three options:
 
-### Section G: The redundant `RuntimeOutputJournalLayer` provision
+- (a) **Command stream**: a namespace-scoped stream where external clients append commands (`RunPrompt`, `CreateContext`, etc.). Hosts subscribe and process commands for their owned contexts.
+- (b) **RPC to owning host**: external clients call a host-side endpoint that internally appends.
+- (c) **Hybrid**: command stream for cross-host / cross-process, direct append for in-process.
 
-**G1.** Trace the effect chain from `RuntimeContextWorkflowLayer` through `runRuntimeContext` to `runCodecRuntimeContext`. Confirm whether the `Effect.provide(RuntimeOutputJournalLayer)` inside `runCodecRuntimeContext` is genuinely redundant with the same provision at the `runRuntimeContextActivity` boundary, or whether there's a subtle scoping/`Layer.memoize` reason both are required.
+For each option, identify:
+- The current external-writer call sites that would need to change.
+- The new infrastructure required (stream, RPC framework, subscription mechanism).
+- Compatibility with the existing CLI shape (`firegrid:run --prompt` in particular).
 
-**G2.** Same question for `HostRuntimeObservationSubstrateLive` (in `runtime-substrate.ts`), which also merges `RuntimeOutputJournalLayer`. Where is `HostRuntimeObservationSubstrateLive` consumed, and does that consumption path also flow through `RuntimeContextWorkflowLayer`, or is it a separate chain (suggesting both provisions are needed for different paths)?
+**Output:** A per-option assessment, with a recommendation.
 
-### Section H: Error and scoping invariants
+**Q5.2.** Specifically examine the multi-host topology referenced in `packages/runtime/src/host/layers.ts`: the helper `FiregridLocalHostLive` derives a single-host-per-namespace identity; `FiregridRuntimeHostWithWorkflowLive` accepts explicit `hostId` for multi-host setups. Trace what cross-host writes exist in the current code (if any) and what the multi-host story is under the proposed single-writer-per-context model.
 
-**H1.** Document the error channel for each output-path consumer:
+**Output:** A clear statement of how multi-host setups change (or don't) under the proposed model.
 
-- `runRuntimeContext` raw path: `RuntimeContextError` after `mapRuntimeContextError`.
-- `runStderrJournal`: `RuntimeContextError`.
-- `runCodecRuntimeEventPipeline`'s `Stream.run(outputSink)` block: `RuntimeContextError` after `mapRuntimeContextError`.
-- `runToolRouter`: `RuntimeContextError`.
+### Section 6: The plane-split commitments
 
-Are these all reaching the authority through the same error-channel discipline? Is there any case where the current Sink/Stream Tag indirection is doing error-mapping work that a direct `AppendAndGet.append` call would skip?
+**Q6.1.** Read `docs/sdds/SDD_FIREGRID_HOST_SDK.md` (or wherever the plane split is documented) and enumerate every Tag, Layer, or capability that the SDK plane split commits to exposing in `@firegrid/host-sdk`, `@firegrid/client-sdk`, or `@firegrid/cli`.
 
-**H2.** Document the `Scope` boundaries. `RuntimeOutputJournalLayer` is layer-provided; its underlying `RuntimeOutputTable` is `Scope`-acquired. When the Sink Tag is consumed via `Stream.run(outputSink)`, the Sink closes over the table reference. If the Tag were removed and the consumer called `RuntimeEventAppendAndGet.append` directly, would the scope semantics be identical?
+Compare against the proposed reduced surface (one `ContextEventAppender`, one `ContextEventLog`, plus the control-plane registry). For each plane-split commitment:
 
-### Section I: Test coverage of the current surface
+- Does it survive the restructure as-is?
+- Does it survive in a different shape (and what's the migration)?
+- Is it deleted (and what replaces it)?
 
-**I1.** What tests, if any, exercise the output-path Tags directly? Categorize:
+**Output:** A reconciliation table mapping plane-split commitments to their fate under the restructure.
 
-- Tests that instantiate `RuntimeOutputJournalLayer` and yield specific Tags.
-- Tests that mock/fake specific Tags via `Layer.succeed(Tag, fake)`.
-- Integration tests that go through `startRuntime` and exercise the full chain.
+**Q6.2.** If the plane split is in flight, identify whether the restructure should:
 
-This determines the test refactoring cost of any consolidation. A Tag that's mocked in three integration tests is harder to delete than a Tag with no test consumers.
+- (a) **Block on the plane split landing**, then restructure on top.
+- (b) **Replace the plane split's assumed surface** with the restructured surface, requiring the plane split to be redrafted.
+- (c) **Run in parallel** with the plane split, with explicit coordination.
+
+**Output:** A sequencing recommendation with rationale.
+
+### Section 7: The `DurableTable` vs `DurableStream` boundary
+
+**Q7.1.** The current substrate uses `DurableTable` (from `effect-durable-operators`) as the primary durability primitive. A typed event log per context is more naturally expressed as a `DurableStream` with schema-encoded events.
+
+Two implementation options:
+
+- (a) **Keep `DurableTable`**: one collection per context, primary-keyed by event id, with a discriminated `_tag` field on the row schema. Use `rows()` for the log stream; use `get(eventId)` for point lookups.
+- (b) **Use `DurableStream` directly**: build a thin `ContextEventStream<Event>` wrapper that schema-encodes/decodes appends and reads. Materialized indexes live in separate `DurableTable`s as needed.
+
+For each option, evaluate:
+- Implementation cost (lines of new code).
+- Fit with `effect-durable-operators` requirements (`TABLE.1` through `TABLE.28`).
+- Whether it requires any upstream changes to `effect-durable-operators`.
+
+**Output:** A per-option evaluation, with a recommendation.
+
+**Q7.2.** Independent of which path is chosen in Q7.1: does the restructure require any net-new abstractions in `effect-durable-operators`, or does it work entirely with the existing surface?
+
+Specifically: is there a missing `appendSink()`, `appendEvent(typedEvent)`, or per-stream sequence-allocation primitive that would meaningfully simplify the wrapper?
+
+**Output:** A specific list of upstream changes that would simplify the restructure, with cost/benefit per change.
+
+### Section 8: Test surface
+
+**Q8.1.** Enumerate the tests in `packages/runtime/test/**` (or wherever runtime tests live) that:
+
+- Construct `RuntimeOutputTable`, `RuntimeIngressTable`, or `RuntimeControlPlaneTable` directly.
+- Mock specific authority Tags via `Layer.succeed(...)`.
+- Integration-test the full `startRuntime` path end-to-end.
+
+Categorize each test by what it would require to migrate under the restructure: trivial (same surface, different layer construction), moderate (some test logic refactor), substantial (rewritten against new primitives).
+
+**Output:** A test-migration cost estimate per category, plus an overall test-refactor scope.
+
+**Q8.2.** Identify any test that depends on cross-table ordering reconstruction (e.g., a test that asserts a run-started row was written before an output-events row by inspecting timestamps or sequences across tables). These tests would benefit from the restructure (total ordering becomes free) but may have implementation assumptions that don't transfer.
+
+**Output:** A list of cross-table-ordering-dependent tests with migration notes.
 
 ## Deliverables
 
-The research should produce:
+The spike should produce a single document with:
 
-### 1. Consumer enumeration table (Section A)
+### 1. Executive verdict (~1 page)
 
-A single Markdown table with one row per (Tag, consumer) pair across all five authority files, with columns:
+A direct answer to the load-bearing question:
 
-```
-Tag | Source file | Consumer file | Consumer kind (yield/provide/re-export) | Multiplicity (single/multi/none)
-```
+> Is single-writer-per-context structurally available in `@firegrid/runtime`'s current code?
 
-This is the load-bearing deliverable. Everything else is interpretation; this is data.
+If **yes**: a recommendation to proceed with the structural restructure, with a rough scope estimate (lines changed, files affected, weeks of work, test migration cost).
 
-### 2. Layer provision graph (Section A2 + G)
+If **no**: enumeration of the structural blockers, an assessment of whether they can be removed (and at what cost), and a fallback recommendation (local cleanup or different structural approach).
 
-A directed graph (Markdown is fine; Mermaid if helpful) showing which Layers provide which Tags, and which provision sites compose into which effect chains. Highlight redundant provisions.
+### 2. Findings tables
 
-### 3. Codec output path trace (Section B)
+The tables produced in Sections 1–8, in a "facts first" section that supports the verdict without interpretation. Reviewers should be able to disagree with the verdict but not with the data.
 
-A step-by-step walkthrough of the `runCodecRuntimeEventPipeline` output-write loop, with each transformation classified (pure / pipeline-local / capability-consuming) and a comparison to `runStderrJournal`.
+### 3. Proposed surface (if verdict is "yes")
 
-### 4. Sink semantic equivalence finding (Section D)
+A draft of the proposed reduced surface:
 
-A clear answer to: "if `RuntimeAgentOutputRowSink` were replaced by `Stream.runForEach(eventAppendAndGet.append)` at the one call site, would the resulting behavior be identical?" with citations to the error-channel, scoping, and termination evidence.
+- The event union schema (full TypeScript).
+- The `ContextEventAppender` Tag declaration.
+- The `ContextEventLog` Tag declaration.
+- Sketches of the migrated authority files (or their absence).
+- Sketches of the migrated subscriber files.
+- The proposed stream layout (per-context streams, control plane, command stream).
+- The proposed materialized indexes (which point lookups need them; how they're implemented).
 
-### 5. Plane-split reconciliation (Section F)
+This is a sketch, not a final design — it's enough for reviewers to assess whether the restructure produces the simplification claimed.
 
-A table comparing the plane-split SDD's claimed `@firegrid/host-sdk` exports against the actual consumer list. Flag mismatches in both directions.
+### 4. Migration sequencing (if verdict is "yes")
 
-### 6. Symmetry assessment (Section E)
+A proposed PR sequence:
 
-For each of the five authority files, a classification of every exported Tag as one of:
+- Which changes can land independently.
+- Which changes must land together.
+- Dependencies on the plane split.
+- Test migration interleaving.
+- Risk-staging (smallest reversible change first).
 
-- **Necessary**: multi-consumer or required-by-future-consumer capability.
-- **Single-consumer**: candidate for inlining into the unique consumer.
-- **Derived**: structurally a derived view of a more primitive Tag (Sink over `upsert`, decoded Stream over raw `rows()`); candidate for deletion if consumer projects locally.
-- **Dead**: no consumer in production, test, or plane-split SDK surface.
+### 5. Open questions
 
-### 7. Final assessment
-
-A short prose section answering:
-
-**Question 1.** Is there a single clean pipeline model hiding under the current surface? Specifically: does the data support reducing the seven output-path Tags to two `AppendAndGet` writes (events, logs) plus one `Stream` read (events) plus zero Sinks plus zero decoded views — with composition writing through `AppendAndGet` directly and the tool router projecting its decoded shape locally?
-
-If yes: what are the blockers to that reduction (test refactoring, plane-split commitments, future planned consumers)?
-
-If no: what is the smallest set of Tags that captures the actual capability surface, and why does each survivor justify its existence?
-
-**Question 2.** Does the symmetry across the other four authority files support generalizing the same reduction pattern, or does each file have file-specific reasons to keep its current shape?
-
-**Question 3.** Is there a candidate upstream change (e.g., `appendSink()` on `effect-durable-operators`) that, if made, would meaningfully simplify this cleanup? Or are all the relevant abstractions already in place at the right layer?
+Anything the spike could not resolve, with a clear statement of what would need to be true to resolve each open question (e.g., "needs a load test against a realistic event volume," "needs a decision on multi-host topology priority").
 
 ## Constraints
 
-- **Do not propose code changes.** Produce data and interpretation only. Code changes are a separate document.
-- **Do not assume the existing SDDs are correct.** If the consumer enumeration contradicts what the plane-split SDD assumes, flag the contradiction without resolving it.
-- **Do not optimize for a specific framing.** Both "everything is a derived view, collapse to AppendAndGet + Stream" and "the current surface reflects real distinctions, keep it" are valid conclusions if the data supports them.
-- **Quote file paths verbatim** when referencing files. The codebase has long paths and similar file names; precision matters.
-- **Cite specific lines or symbols** when claiming a consumer or non-consumer relationship. "No consumer found" is a claim about a search; describe the search.
+- **No new abstractions invented during the spike**. The spike's job is to determine what's there and what could be simpler. Inventing new abstractions to express what's there is the failure mode that produced the current state.
 
-## Method notes
+- **No advocacy**. Both "single-writer-per-context is structurally available; do the restructure" and "it isn't; do the local cleanup" are valid conclusions. The spike's value is in producing the data and a defensible verdict, not in selling a direction.
 
-- Use `grep` / `rg` over `packages/runtime/**` and any sibling packages for Tag class names. Tag classes are `Context.Tag("@firegrid/runtime/X")<X, ...>`. Search for both the class name and the string identifier.
-- Distinguish Tag class re-exports (in `index.ts` barrel files) from actual consumers.
-- `Effect.provideService` and `Layer.succeed(Tag, ...)` are provision sites; `yield* Tag` and `Effect.flatMap(Tag, ...)` are consumption sites.
-- For Stream-shaped Tags, also search for the Tag being passed to `Stream.provideService`.
-- Read tests in `packages/runtime/test/**`, `packages/runtime/src/**/*.test.ts`, and any `__tests__/` directories.
-- Check `host/index.ts` and similar barrel files for public re-exports that might constitute an external consumer surface.
+- **Trace, don't infer**. Every claim in the deliverables must be backed by a file and line reference, a test that exercises a path, or a documented requirement. Inferences from naming conventions are not findings.
+
+- **Time-box the spike**. The spike should take days, not weeks. If a question can't be answered in the time available, it goes in the open-questions section rather than being guessed at.
+
+- **Read `effect-durable-operators` directly**. The TABLE.* requirement comments in `packages/effect-durable-operators/src/DurableTable.ts` are the authoritative description of what that package guarantees. Assumptions about durability semantics must be checked against those comments.
+
+- **Read the existing READMEs critically**. The READMEs in `agent-event-pipeline/` and its subfolders describe an aspirational model. The spike's job is to determine whether the model is correct *and* whether the code reflects it. Both can be wrong independently.
 
 ## What success looks like
 
-After this research, the next document (the actual cleanup SDD or refactor PR plan) can be written from facts rather than inferences. Specifically:
+After this spike, the following can be decided with confidence:
 
-- Every Tag has a documented consumer list (including "none").
-- Every redundant Layer provision is either justified or flagged for removal.
-- The Sink-vs-direct-`append` question has a definitive answer, not a hand-wave about likely-equivalence.
-- The plane-split SDD's output-path commitments are reconciled with reality.
-- The symmetry question across the five authority files is answered with data, not by analogy from one file.
+1. **The architectural direction** for the next 1-3 months of substrate work — restructure or local cleanup.
+2. **The order** in which work can proceed without rework.
+3. **The risks** that determine whether the work is safe to start.
+4. **The constraints** the plane split must respect (or be replanned around).
+5. **The upstream changes** (if any) that should be proposed to `effect-durable-operators`.
 
-If the answer to "is there a single clean pipeline model" is yes, the data justifies the consolidation in a way reviewers can verify. If the answer is no, the survivors are each justified by named consumers and use cases.
+If the spike concludes the restructure is right, the next document is a structural SDD against the proposed surface. If the spike concludes the restructure is wrong, the next document is the local-cleanup SDD with restored confidence that the local cleanup is sufficient.
 
-Either outcome is acceptable. The unacceptable outcome is acting on partial data and discovering, mid-PR, that a "dead" Tag was actually consumed by a test, or that a "redundant" Layer provision was load-bearing for `Layer.memoize` reasons, or that the plane split was depending on a Tag shape we just deleted.
+The unacceptable outcome is starting either path without knowing which is right. The substrate's current state is unmanageable; another round of cleanup-by-abstraction will compound the problem. The spike is the gate that ensures the next move is the right one.
