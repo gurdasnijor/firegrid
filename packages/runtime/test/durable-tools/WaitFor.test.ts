@@ -27,7 +27,7 @@ import {
   type WaitForOutcome,
   WaitFor,
   WaitKeyEncoded,
-} from "../../src/waits/index.ts"
+} from "../../src/durable-tools/index.ts"
 
 /**
  * Workflow bodies declare `error: never`, but `WaitFor.match` can fail with

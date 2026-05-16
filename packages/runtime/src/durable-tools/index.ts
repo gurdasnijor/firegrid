@@ -9,12 +9,6 @@ export {
   type WaitCompletionRow,
   type WaitRow,
 } from "./internal/table.ts"
-export {
-  SourceCollections,
-  type SourceCollectionHandle,
-  type SourceCollectionsService,
-  sourceCollectionStreamHandle,
-} from "./internal/source-collections.ts"
 export { WaitFor, type WaitForOptions } from "./internal/wait-for.ts"
 export {
   DurableWaitCompletionRowLookup,
@@ -35,6 +29,10 @@ export {
   FieldEqualsTriggerSchema,
   type FieldEqualsPredicate,
   type FieldEqualsTrigger,
+  AgentOutputWaitSourceSchema,
+  RuntimeRunWaitSourceSchema,
+  RuntimeWaitSourceSchema,
+  type RuntimeWaitSource,
   type WaitForOutcome,
   WaitForError,
   WaitOutcomeKindSchema,

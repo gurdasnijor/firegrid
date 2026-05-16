@@ -13,7 +13,7 @@ import {
   encodeRuntimeAgentOutputEnvelope,
   type AgentOutputEvent,
 } from "../../src/agent-event-pipeline/events/index.ts"
-import { WaitFor, type WaitForOptions } from "../../src/waits/index.ts"
+import { WaitFor, type WaitForOptions } from "../../src/durable-tools/index.ts"
 import {
   FiregridRuntimeHostWithWorkflowLive,
   RuntimeHostAppSourceRegistrationsLive,

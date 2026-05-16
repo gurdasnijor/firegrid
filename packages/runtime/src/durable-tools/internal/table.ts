@@ -25,6 +25,7 @@ import {
 import { type WaitKey, WaitKeyEncoded } from "./keys.ts"
 import {
   FieldEqualsTriggerSchema,
+  RuntimeWaitSourceSchema,
   WaitOutcomeKindSchema,
   WaitStatusSchema,
 } from "./types.ts"
@@ -51,7 +52,7 @@ const WaitRowSchema = Schema.Struct({
   workflowName: Schema.String,
   executionId: Schema.String,
   deferredName: Schema.String,
-  sourceName: Schema.String,
+  source: RuntimeWaitSourceSchema,
   trigger: FieldEqualsTriggerSchema,
   status: WaitStatusSchema,
   createdAtMs: Schema.Number,

@@ -48,6 +48,7 @@ import {
 import {
   type FieldEqualsTrigger,
   FieldEqualsTriggerSchema,
+  type RuntimeWaitSource,
   type WaitForOutcome,
   type WaitForError,
   waitForError,
@@ -92,9 +93,10 @@ export interface WaitForOptions<A = unknown> {
    */
   readonly name: string
   /**
-   * Name of a registered source collection (see `SourceCollections`).
+   * Typed runtime wait source. Selects which runtime observation stream the
+   * router observes. firegrid-typed-wait-source-redesign.TYPED_SOURCES.1
    */
-  readonly source: string
+  readonly source: RuntimeWaitSource
   /**
    * AND-of-scalar-equality predicates over decoded row paths.
    *
@@ -292,7 +294,7 @@ const matchImpl = <A = unknown>(
       workflowName: instance.workflow.name,
       executionId: instance.executionId,
       deferredName,
-      sourceName: options.source,
+      source: options.source,
       trigger: options.trigger,
       status: "active",
       createdAtMs: nowMs,

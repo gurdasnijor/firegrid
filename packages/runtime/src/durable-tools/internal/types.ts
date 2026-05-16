@@ -29,6 +29,33 @@ export type FieldEqualsTrigger = Schema.Schema.Type<
 >
 
 /**
+ * firegrid-typed-wait-source-redesign.TYPED_SOURCES.1
+ * firegrid-typed-wait-source-redesign.TYPED_SOURCES.3
+ * firegrid-typed-wait-source-redesign.TYPED_SOURCES.6
+ *
+ * Schema-backed wait-source discriminator persisted on the wait row. The
+ * variant selects which runtime observation stream the router observes; the
+ * `FieldEqualsTrigger` value still decides which rows on that stream match.
+ * First supported set is `AgentOutput` and `RuntimeRun` only; `RuntimeContext`
+ * is deferred until a product flow needs context-state waiting.
+ */
+export const AgentOutputWaitSourceSchema = Schema.Struct({
+  _tag: Schema.Literal("AgentOutput"),
+})
+
+export const RuntimeRunWaitSourceSchema = Schema.Struct({
+  _tag: Schema.Literal("RuntimeRun"),
+})
+
+export const RuntimeWaitSourceSchema = Schema.Union(
+  AgentOutputWaitSourceSchema,
+  RuntimeRunWaitSourceSchema,
+)
+export type RuntimeWaitSource = Schema.Schema.Type<
+  typeof RuntimeWaitSourceSchema
+>
+
+/**
  * firegrid-durable-tools.LIFECYCLE.1
  *
  * v0 wait status enum. No `paused`.

@@ -25,16 +25,14 @@ import {
   Effect,
   Exit,
   Layer,
+  Match,
   Option,
   Ref,
   Schema,
   Stream,
 } from "effect"
 import { reconcileCompletions } from "./reconcile.ts"
-import {
-  SourceCollections,
-  type SourceCollectionHandle,
-} from "./source-collections.ts"
+import { RuntimeWaitStreams } from "./runtime-wait-streams.ts"
 import { type WaitRow } from "./table.ts"
 import {
   DurableWaitCompletionRowLookup,
@@ -44,8 +42,30 @@ import {
   DurableWaitRows,
   DurableWaitRowUpsert,
 } from "./durable-wait-store.ts"
-import { evaluateFieldEquals } from "./types.ts"
+import { evaluateFieldEquals, type RuntimeWaitSource } from "./types.ts"
 import { matchDeferredFor } from "./wait-for.ts"
+
+/**
+ * firegrid-typed-wait-source-redesign.TYPED_SOURCES.2
+ * firegrid-typed-wait-source-redesign.TYPED_SOURCES.3
+ *
+ * Select the concrete runtime observation stream for a persisted typed wait
+ * source. Adding a variant is one `Match.tag` arm plus one
+ * `RuntimeWaitStreams` field.
+ */
+const streamForSource = (
+  source: RuntimeWaitSource,
+): Effect.Effect<
+  Stream.Stream<unknown, unknown>,
+  never,
+  RuntimeWaitStreams
+> =>
+  Effect.map(RuntimeWaitStreams, (streams) =>
+    Match.value(source).pipe(
+      Match.tag("AgentOutput", () => streams.agentOutput),
+      Match.tag("RuntimeRun", () => streams.runtimeRun),
+      Match.exhaustive,
+    ))
 
 /**
  * firegrid-durable-tools.SUBSCRIPTION.3
@@ -114,13 +134,14 @@ const completeMatch = (
 /**
  * firegrid-durable-tools.SUBSCRIPTION.1/2
  *
- * Attach a single source subscription per (waitKey, sourceName). The handle's
- * `subscribe()` is the canonical includeInitialState stream — the router does
- * not perform any prior snapshot read.
+ * Attach a single subscription per (waitKey, source) to the typed runtime
+ * stream selected for the wait. The stream is the canonical
+ * includeInitialState observation — the router does not perform any prior
+ * snapshot read.
  */
 const attachWaitToSource = (
   wait: WaitRow,
-  handle: SourceCollectionHandle,
+  source: Stream.Stream<unknown, unknown>,
   waitLookup: DurableWaitRowLookup["Type"],
   waitUpsert: DurableWaitRowUpsert["Type"],
   completionLookup: DurableWaitCompletionRowLookup["Type"],
@@ -128,7 +149,7 @@ const attachWaitToSource = (
   engine: WorkflowEngine.WorkflowEngine["Type"],
 ) =>
   Effect.gen(function*() {
-    yield* handle.subscribe().pipe(
+    yield* source.pipe(
       Stream.runForEach((row) => {
         return completeMatch(
           wait,
@@ -169,7 +190,6 @@ const startRouter = Effect.gen(function*() {
   const completionLookup = yield* DurableWaitCompletionRowLookup
   const completionUpsert = yield* DurableWaitCompletionRowUpsert
   const completionRows = yield* DurableWaitCompletionRows
-  const sources = yield* SourceCollections
 
   // firegrid-durable-tools.WAIT_FOR.7
   yield* reconcileCompletions(
@@ -206,20 +226,20 @@ const startRouter = Effect.gen(function*() {
         )
         const set = yield* Ref.get(attached)
         if (set.has(encoded)) return
-        // Mark before the awaitHandle so concurrent emits of the same wait
-        // do not each fork a waiter. The awaiter resolves when the source
-        // registers; until then this per-wait fiber simply suspends inside
-        // the runtime-host scope.
+        // Mark before forking so concurrent emits of the same wait do not
+        // each fork a waiter. The typed source stream is always available
+        // through the router's Layer requirements; there is no registration
+        // rendezvous.
         yield* Ref.update(
           attached,
           (s) => new Set([...s, encoded]),
         )
         yield* Effect.forkScoped(
           Effect.gen(function*() {
-            const handle = yield* sources.awaitHandle(wait.sourceName)
+            const source = yield* streamForSource(wait.source)
             yield* attachWaitToSource(
               wait,
-              handle,
+              source,
               waitLookup,
               waitUpsert,
               completionLookup,
@@ -244,7 +264,7 @@ type WaitRouterRequirements =
   | DurableWaitRowLookup
   | DurableWaitRows
   | DurableWaitRowUpsert
-  | SourceCollections
+  | RuntimeWaitStreams
   | WorkflowEngine.WorkflowEngine
 
 /**
@@ -253,9 +273,14 @@ type WaitRouterRequirements =
  * firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.10
  * firegrid-durable-tools.SUBSCRIPTION.7
  * firegrid-durable-tools.RUNTIME_BOUNDARY.4
+ * firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
+ * firegrid-typed-wait-source-redesign.WAIT_ROUTER.2
+ * firegrid-typed-wait-source-redesign.WAIT_ROUTER.4
  *
  * Scoped subscriber driver. It provides no public service; the `never` output
- * channel makes the wait-router role visible in the Effect type.
+ * channel makes the wait-router role visible in the Effect type. Source
+ * selection is a typed `Match.value` over `RuntimeWaitStreams`, not a string
+ * registry lookup.
  */
 export const WaitRouterLive: Layer.Layer<
   never,

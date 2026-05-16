@@ -34,7 +34,7 @@ import {
   DurableToolsWaitForLive,
   SourceCollections,
   sourceCollectionStreamHandle,
-} from "../../src/waits/index.ts"
+} from "../../src/durable-tools/index.ts"
 import { DurableStreamsWorkflowEngine } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { ScheduledInputWorkflowLayer } from "../../src/agent-tools/scheduled-input-workflow.ts"
 import {

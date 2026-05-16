@@ -3,7 +3,7 @@ import {
   hostOwnedStreamUrl,
 } from "@firegrid/protocol/launch"
 import { Effect, Layer } from "effect"
-import { DurableToolsWaitForLive } from "../waits/DurableToolsWaitFor.ts"
+import { DurableToolsWaitForLive } from "../durable-tools/DurableToolsWaitFor.ts"
 import { RuntimeHostConfig } from "./config.ts"
 
 export const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(

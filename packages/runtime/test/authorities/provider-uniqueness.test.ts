@@ -7,7 +7,7 @@ import {
   DurableWaitRowLookup,
   DurableWaitRowUpsert,
   DurableWaitStoreLive,
-} from "../../src/waits/internal/durable-wait-store.ts"
+} from "../../src/durable-tools/internal/durable-wait-store.ts"
 import {
   RuntimeContextInsert,
   RuntimeContextRead,
