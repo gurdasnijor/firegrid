@@ -1,7 +1,7 @@
 // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.9
 export {
   RuntimeContextError,
-} from "./runtime-host/errors.ts"
+} from "./host/errors.ts"
 export {
   ContextNotFound,
   ContextNotLocal,
@@ -22,7 +22,6 @@ export {
   durableStreamUrl,
   findRuntimeContext,
   hostOwnedStreamUrl,
-  insertLocalRuntimeContext,
   localProcessSpawnEnvFromHostEnv,
   provideRuntimeContext,
   requireLocalContext,
@@ -32,7 +31,7 @@ export {
   type RuntimeHostTopologyOptions,
   type StartRuntimeOptions,
   type StartRuntimeResult,
-} from "./runtime-host/index.ts"
+} from "./host/index.ts"
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
 export {
@@ -41,14 +40,14 @@ export {
   resolveSpawnEnvVars,
   type EnvLookup,
   type RuntimeEnvResolverPolicyValue,
-} from "./providers/sandboxes/secrets.ts"
+} from "./sources/sandbox/secrets.ts"
 // firegrid-effect-ai-inprocess-provider.SANDBOX_PROVIDER.1
 export {
   effectAi,
   EffectAiSandboxProvider,
   type EffectAiSandboxConfig,
   type EffectAiSandboxProviderHelper,
-} from "./providers/sandboxes/effect-ai.ts"
+} from "./sources/sandbox/effect-ai.ts"
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5..8
 export {
   RunAuthorizedBindingSchema,
@@ -60,7 +59,44 @@ export {
   runConfigToRuntimeContextIntent,
   type RunAuthorizedBinding,
   type RunConfig,
-} from "./runtime-host/sync-run.ts"
+} from "./host/sync-run.ts"
+export {
+  DurableWaitAppendAndGet,
+  DurableWaitCompletionAppendAndGet,
+  DurableWaitStoreLive,
+  RuntimeAgentOutputEvents,
+  RuntimeAgentOutputRowSink,
+  RuntimeAuthoritySourceNames,
+  RuntimeControlPlaneRecorderLive,
+  RuntimeContexts,
+  RuntimeContextInsert,
+  RuntimeContextInsertLive,
+  RuntimeContextRead,
+  RuntimeEventAppendAndGet,
+  RuntimeIngressAppenderLayer,
+  RuntimeIngressAppendAndGet,
+  RuntimeIngressAppendContextMismatch,
+  RuntimeIngressDeliveryClaimAndComplete,
+  RuntimeIngressDeliveries,
+  RuntimeIngressDeliveryTrackerLayer,
+  RuntimeIngressInputStream,
+  RuntimeIngressInputStreamLayer,
+  RuntimeLogLineAppendAndGet,
+  RuntimeLogLineSink,
+  RuntimeOutputEvents,
+  RuntimeOutputJournalLayer,
+  RuntimeOutputLogs,
+  RuntimeRuns,
+  RuntimeRunAppendAndGet,
+  runtimeIngressSubscriberId,
+  type RuntimeAgentOutputObservation as RuntimeAuthorityAgentOutputObservation,
+  type DurableWaitAppendAndGetService,
+  type DurableWaitCompletionAppendAndGetService,
+  type RuntimeContextInsertService,
+  type RuntimeContextReadService,
+  type RuntimeAuthoritySourceName,
+  type RuntimeRunAppendAndGetService,
+} from "./authorities/index.ts"
 export {
   DurableStreamsWorkflowEngine,
   type WorkflowEngineDurableStateOptions,
@@ -81,7 +117,7 @@ export {
   SourceCollections,
   type SourceCollectionHandle,
   type SourceCollectionsService,
-  sourceCollectionHandle,
+  sourceCollectionStreamHandle,
   WaitFor,
   type WaitForOptions,
   type WaitForOutcome,
@@ -95,13 +131,13 @@ export {
   type WaitRow,
   type WaitStatus,
   WaitStatusSchema,
-} from "./durable-tools/index.ts"
+} from "./waits/index.ts"
 export {
   AcpCapabilities,
   AcpCodec,
   StdioJsonlCapabilities,
   StdioJsonlCodec,
-} from "./agent-codecs/index.ts"
+} from "./codecs/index.ts"
 export {
   RuntimeAgentOutputEnvelopeSchema,
   decodeRuntimeAgentOutputEnvelope,

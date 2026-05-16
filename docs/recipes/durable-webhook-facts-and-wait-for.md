@@ -53,11 +53,11 @@ Primary key: factKey = [source, externalEventKey]
 
 That same collection is the durable fact store, the live subscription surface,
 and the `wait_for` source. `SourceCollections` exposes its rows to the
-durable-tools router with `sourceCollectionHandle(...)`; no second queue or
+durable-tools router with `sourceCollectionStreamHandle(...)`; no second queue or
 provider-specific registry is needed.
 
 Today the ground-truth APIs are concrete and low-level: the product composes
-the table layer, runtime composition registers `sourceCollectionHandle`, and
+the table layer, runtime composition registers `sourceCollectionStreamHandle`, and
 callers use either the programmer-facing `WaitFor.match` API or the
 agent-facing `wait_for` tool. A future product/client API may wrap this wiring,
 but that ergonomic wrapper is not the current implementation surface.
@@ -107,7 +107,7 @@ scope that also provides `DurableToolsWaitForLive` and the workflow engine:
 import {
   SourceCollections,
   VerifiedWebhookFactTable,
-  sourceCollectionHandle,
+  sourceCollectionStreamHandle,
 } from "@firegrid/runtime"
 import { Effect } from "effect"
 
@@ -118,15 +118,15 @@ const registerVerifiedWebhookFacts = Effect.gen(function*() {
   const table = yield* VerifiedWebhookFactTable
 
   yield* sources.register(
-    sourceCollectionHandle(
+    sourceCollectionStreamHandle(
       verifiedWebhookFactsSource,
-      table.verifiedWebhookFacts,
+      table.verifiedWebhookFacts.rows(),
     ),
   )
 })
 ```
 
-`sourceCollectionHandle` consumes the collection facade's row observation
+`sourceCollectionStreamHandle` consumes the collection facade's row observation
 stream. The router receives initial state and live changes through one
 subscription path, so the wait path can match a fact that already exists or
 one that arrives later.

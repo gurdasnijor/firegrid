@@ -38,16 +38,16 @@ import { Config, Effect, Layer, Logger, Option } from "effect"
 // example accepts. Not a raw/custom HTTP server.
 // durable-lint-allow-control-plane: @effect/platform-node NodeHttpServer.layer listener factory
 import { createServer } from "node:http"
-import { DurableToolsWaitForLive } from "../durable-tools/index.ts"
-import { RuntimeHostConfig } from "../runtime-host/config.ts"
+import { DurableToolsWaitForLive } from "../waits/index.ts"
+import { RuntimeHostConfig } from "../host/config.ts"
 import {
   ContextNotFound,
   CurrentHostSession,
   hostOwnedStreamUrl,
   requireLocalContext,
-} from "../runtime-host/host-context-authority.ts"
-import { RuntimeHostAgentToolHostLive } from "../runtime-host/index.ts"
-import { RuntimeObservationSourcesLive } from "../runtime-host/observation-sources.ts"
+} from "../host/authority-context.ts"
+import { RuntimeHostAgentToolHostLive } from "../host/index.ts"
+import { RuntimeObservationSourcesLive } from "../host/observation-sources.ts"
 import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
 import {
   FiregridAgentToolContext,

@@ -1,7 +1,7 @@
 import { Prompt } from "@effect/ai"
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
-import { type AgentOutputEvent } from "../agent-io/index.ts"
+import { type AgentOutputEvent } from "./index.ts"
 import {
   decodeRuntimeAgentOutputEnvelope,
   encodeRuntimeAgentOutputEnvelope,

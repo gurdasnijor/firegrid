@@ -2,7 +2,7 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import { RuntimeOutputTable } from "@firegrid/protocol/launch"
 import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
 import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
-import { AgentOutputEventSchema, type AgentOutputEvent } from "@firegrid/runtime/agent-io"
+import { AgentOutputEventSchema, type AgentOutputEvent } from "@firegrid/runtime/events"
 import { Effect, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {

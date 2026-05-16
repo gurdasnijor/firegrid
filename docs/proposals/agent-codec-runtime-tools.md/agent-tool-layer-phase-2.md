@@ -142,7 +142,7 @@ input or output shape.
 ## The function
 
 ```ts
-import type { AgentInputEvent, AgentOutputEvent } from "@firegrid/runtime/agent-io"
+import type { AgentInputEvent, AgentOutputEvent } from "@firegrid/runtime/events"
 
 const toolUseToEffect = (
   ctx: { contextId: string },

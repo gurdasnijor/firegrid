@@ -74,12 +74,15 @@ import {
 import {
   type AgentInputEvent,
   type AgentOutputEvent,
-} from "../agent-io/index.ts"
+} from "../events/index.ts"
 import {
   WaitFor,
-  type DurableToolsTable,
   type FieldEqualsTrigger,
-} from "../durable-tools/index.ts"
+} from "../waits/index.ts"
+import type {
+  DurableWaitAppendAndGet,
+  DurableWaitCompletionAppendAndGet,
+} from "../authorities/index.ts"
 import { ScheduledInputWorkflow } from "./scheduled-input-workflow.ts"
 import { AgentToolHost } from "./tool-host.ts"
 import {
@@ -176,7 +179,8 @@ const runWaitForTool = (
   ToolError,
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
-  | DurableToolsTable
+  | DurableWaitAppendAndGet
+  | DurableWaitCompletionAppendAndGet
   | Scope.Scope
 > => {
   // EventQuery's `whereFields` is typed `Record<string, unknown>` because
@@ -451,7 +455,8 @@ const runExecuteTool = (
 type ToolEnvironment =
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
-  | DurableToolsTable
+  | DurableWaitAppendAndGet
+  | DurableWaitCompletionAppendAndGet
   | Scope.Scope
   | AgentToolHost
 

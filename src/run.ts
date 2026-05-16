@@ -57,9 +57,9 @@ import {
 import {
   FiregridLocalHostLive,
   RuntimeEnvResolverPolicy,
+  RuntimeContextInsert,
   appendRuntimeIngress,
   firegridRunCreatedBy,
-  insertLocalRuntimeContext,
   localProcessSpawnEnvFromHostEnv,
   runConfigToIngressRequest,
   runConfigToRuntimeContextIntent,
@@ -202,7 +202,8 @@ const executeRun = (config: LaunchConfig, contextId: string) =>
     // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
     // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
     const intent = runConfigToRuntimeContextIntent(config)
-    const context = yield* insertLocalRuntimeContext(intent, {
+    const contextInsert = yield* RuntimeContextInsert
+    const context = yield* contextInsert.insertLocalContext(intent, {
       contextId,
       createdBy: firegridRunCreatedBy,
     })
@@ -333,7 +334,8 @@ const seedContextAndPrintReady = (
       config.runConfig,
       firegridRuntimeContextMcpDeclaration(mcpUrl(address, config.mcpPath, contextId)),
     )
-    const context = yield* insertLocalRuntimeContext(
+    const contextInsert = yield* RuntimeContextInsert
+    const context = yield* contextInsert.insertLocalContext(
       runConfigToRuntimeContextIntent(runConfig),
       {
         contextId,

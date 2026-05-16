@@ -111,6 +111,28 @@ const hostBindingFromSession = (
   boundAtMs,
 })
 
+export const makeLocalRuntimeContextForHostSession = (
+  session: HostSessionRow,
+  intent: RuntimeContextIntent,
+  options: {
+    readonly contextId: string
+    readonly createdAtMs: number
+    readonly createdBy?: string
+  },
+) =>
+  Effect.gen(function* () {
+    if (session.status !== "running") {
+      return yield* Effect.fail(new CurrentHostStopped({ hostId: session.hostId }))
+    }
+    return makeRuntimeContext({
+      contextId: options.contextId,
+      createdAtMs: options.createdAtMs,
+      ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
+      runtime: intent,
+      host: hostBindingFromSession(session, options.createdAtMs),
+    })
+  })
+
 /**
  * Insert a host-bound RuntimeContext row.
  *
@@ -127,6 +149,8 @@ const hostBindingFromSession = (
  *
  * firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
  * firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
+ *
+ * @deprecated firegrid-runtime-agent-event-pipeline.TRANSACTIONAL_CUTOVER.3-2
  */
 export const insertLocalRuntimeContext = (
   intent: RuntimeContextIntent,
@@ -138,16 +162,10 @@ export const insertLocalRuntimeContext = (
   Effect.gen(function* () {
     const table = yield* RuntimeControlPlaneTable
     const session = yield* CurrentHostSession
-    if (session.status !== "running") {
-      return yield* Effect.fail(new CurrentHostStopped({ hostId: session.hostId }))
-    }
     const createdAtMs = yield* Clock.currentTimeMillis
-    const context = makeRuntimeContext({
-      contextId: options.contextId,
+    const context = yield* makeLocalRuntimeContextForHostSession(session, intent, {
+      ...options,
       createdAtMs,
-      ...(options.createdBy === undefined ? {} : { createdBy: options.createdBy }),
-      runtime: intent,
-      host: hostBindingFromSession(session, createdAtMs),
     })
     yield* table.contexts.upsert(context)
     return context

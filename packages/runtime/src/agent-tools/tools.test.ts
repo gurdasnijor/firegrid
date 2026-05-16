@@ -31,7 +31,7 @@ import {
 } from "@firegrid/protocol/agent-tools"
 import { Effect, Layer, Schema } from "effect"
 import { describe, expect, it, afterEach, beforeEach } from "vitest"
-import { DurableToolsWaitForLive } from "../durable-tools/index.ts"
+import { DurableToolsWaitForLive } from "../waits/index.ts"
 import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
 import {

@@ -9,7 +9,7 @@ import {
   waitForNextAgentOutput,
   waitForPermissionRequest,
 } from "../host.ts"
-import type { PermissionDecision } from "@firegrid/runtime/agent-io"
+import type { PermissionDecision } from "@firegrid/runtime/events"
 import { decodeFactoryConfig } from "../config.ts"
 import { DarkFactoryTriggerSchema } from "../tables.ts"
 import { factoryHostLayerFromConfig } from "./env.ts"

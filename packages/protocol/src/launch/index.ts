@@ -100,6 +100,7 @@ export {
   CurrentRuntimeContext,
   findRuntimeContext,
   insertLocalRuntimeContext,
+  makeLocalRuntimeContextForHostSession,
   provideRuntimeContext,
   requireLocalContext,
 } from "./host-context-authority.ts"
