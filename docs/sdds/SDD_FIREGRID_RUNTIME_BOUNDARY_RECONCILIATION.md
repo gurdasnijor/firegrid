@@ -73,6 +73,66 @@ have one primary role. If a module needs two roles, it should either be:
 This is intentionally stricter than "the code works today." The point is to
 prevent convenience modules from becoming hidden architecture.
 
+## Namespace Goal
+
+The post-`#250` tree is stage-disciplined but still flat. Clean pipeline
+components sit beside host orchestration, workflow-engine substrate, wait
+operators, tool surfaces, adapters, and verified ingest. That makes the root
+look broader than the actual runtime architecture and invites cross-boundary
+imports.
+
+The next namespace target is to group the agent event-pipeline stages under a
+single bounded context, leaving non-pipeline runtime concepts adjacent:
+
+```txt
+packages/runtime/src/
+  agent-event-pipeline/
+    authorities/
+      runtime-output-journal.ts
+      runtime-ingress-appender.ts
+      runtime-ingress-delivery-tracker.ts
+    codecs/
+    events/
+    pipeline/
+    sources/
+    subscribers/
+    transforms/
+
+  runtime-control-plane/
+    runtime-control-plane-recorder.ts
+    context.ts
+    runs.ts
+
+  host/
+    index.ts
+    layers.ts
+    commands.ts
+    runtime-context-workflow.ts
+    raw-process-runtime.ts
+    agent-tool-host-live.ts
+    config-live.ts
+
+  waits/
+  workflow-engine/
+  agent-tools/
+  agent-adapters/
+  verified-webhook-ingest/
+```
+
+The exact folder names can change, but the boundary is fixed:
+
+- agent event-pipeline namespace owns ingress/output event materialization,
+  protocol codecs, source acquisition for agent sessions, pure transforms, and
+  pipeline subscribers;
+- runtime control-plane namespace owns context/run lifecycle capabilities;
+- host namespace composes live host topology and command entrypoints;
+- waits, workflow-engine, tools, adapters, and verified ingest are adjacent
+  bounded contexts, not subfolders of the agent event pipeline.
+
+This namespacing should not be done as part of the first host extraction PR.
+The first PR should reduce `host/index.ts`. A later namespace PR can move files
+mechanically once the host split has made imports clearer.
+
 ## Boundary Exercise
 
 For every runtime folder or module, ask:
@@ -241,6 +301,9 @@ This inventory is the review checklist for the post-`#250` tree.
 | `agent-adapters/` | Projections/adapters over codec sessions | Acceptable sibling surface. Keep out of durable runtime pipeline. |
 | `workflow-engine/` | Workflow engine adapter/substrate | Separate substrate boundary. Do not fold into agent runtime pipeline. |
 | `verified-webhook-ingest/` | External ingress/source adapter | Separate ingest surface. Audit later for generic durable operator overlap. |
+
+This table describes the current flat tree. The namespace target above is the
+next cleanup once `host/index.ts` is split.
 
 ### `authorities/`
 
@@ -458,6 +521,8 @@ Post-`#250` target:
 - express the wait router as a subscriber driver, either under
   `subscribers/wait-router.ts` or as clearly named wait-internal subscriber
   implementation;
+- split wait row storage capabilities so the provider layer exposes row-level
+  operations, not wait lifecycle policy;
 - decide which pieces are generic durable operators and move them to
   `packages/effect-durable-operators`;
 - keep runtime `waits/` only as a Firegrid adapter if needed;
@@ -487,6 +552,69 @@ subscriber. It is an operator with a subscriber driver.
 Timeout ownership is intentionally left unchanged for the first reconciliation
 pass. Moving timeout resolution from `WaitFor.match` into the wait router would
 change restart and race semantics, so it requires separate ACIDs.
+
+## Wait Row Authority Is Not Wait Semantics
+
+`authorities/durable-wait-store.ts` is the main place where semantics can
+bleed. It should be a row authority over durable wait tables, not the owner of
+the wait lifecycle model.
+
+The target static split is row-level:
+
+```ts
+export class DurableWaitIntentLookup extends Context.Tag(
+  "@firegrid/runtime/DurableWaitIntentLookup",
+)<DurableWaitIntentLookup, {
+  readonly find: (key: WaitKey) => Effect.Effect<Option.Option<WaitRow>, E>
+}>() {}
+
+export class DurableWaitIntentUpsert extends Context.Tag(
+  "@firegrid/runtime/DurableWaitIntentUpsert",
+)<DurableWaitIntentUpsert, {
+  readonly upsert: (row: WaitRow) => Effect.Effect<void, E>
+}>() {}
+
+export class DurableWaitIntentRows extends Context.Tag(
+  "@firegrid/runtime/DurableWaitIntentRows",
+)<DurableWaitIntentRows, Stream.Stream<WaitRow, E>>() {}
+
+export class DurableWaitCompletionLookup extends Context.Tag(
+  "@firegrid/runtime/DurableWaitCompletionLookup",
+)<DurableWaitCompletionLookup, {
+  readonly find: (
+    key: WaitKey,
+  ) => Effect.Effect<Option.Option<WaitCompletionRow>, E>
+}>() {}
+
+export class DurableWaitCompletionUpsert extends Context.Tag(
+  "@firegrid/runtime/DurableWaitCompletionUpsert",
+)<DurableWaitCompletionUpsert, {
+  readonly upsert: (row: WaitCompletionRow) => Effect.Effect<void, E>
+}>() {}
+
+export class DurableWaitCompletionRows extends Context.Tag(
+  "@firegrid/runtime/DurableWaitCompletionRows",
+)<DurableWaitCompletionRows, Stream.Stream<WaitCompletionRow, E>>() {}
+```
+
+The provider layer may still be one `DurableWaitStoreLive` implementation
+backed by one `DurableToolsTable`, but callers should consume narrow row
+capabilities. The provider should not expose bundled services like "append and
+get" if the service also contains lookup, filtered active streams, and
+completion scans.
+
+Lifecycle language belongs outside the authority:
+
+- `WaitFor.match(...)` decides when to author an active wait row and how to
+  race timeout for the first reconciliation pass.
+- the wait router decides which wait rows are active by filtering
+  `DurableWaitIntentRows`.
+- the wait router writes match completions and flips the wait row status
+  through row upsert capabilities.
+- reconciliation reads completion rows and resumes workflow deferred state.
+
+In other words, the authority stores `WaitRow` and `WaitCompletionRow`.
+Operators and subscriber drivers interpret those rows.
 
 ## Why `waits/` May Belong In `effect-durable-operators`
 
