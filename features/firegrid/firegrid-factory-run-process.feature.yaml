@@ -24,7 +24,7 @@ components:
 
   RUN_PROCESS:
     requirements:
-      1: The factory replacement is an app-owned run process composed with shipped Firegrid runtime/client primitives, app facts/projections, and wait_for or future EventPlane/RunWait semantics; Firegrid does not own a factory workflow product.
+      1: The factory replacement is an app-owned run process composed with shipped Firegrid runtime/client primitives, app facts/projections, app-local projection waits, and future EventPlane/RunWait semantics; Firegrid does not own a factory workflow product.
       2: "The first run-process slice may preserve the PoC's useful path as a porting escape hatch: accepted ticket, planner session/run, planner completion wait, plan approval wait, implementer session/run, implementer completion wait, PR opened evidence, and user/provider notification evidence."
       3: The run process must make every side-effect boundary durable before waiting or dispatching the next phase.
       4: The run process may be deterministic for the first port of the PoC, but phase policy remains app-owned and must not be promoted into Firegrid runtime, client, or substrate packages.
@@ -33,19 +33,19 @@ components:
   CHOREOGRAPHY:
     requirements:
       1: The preferred factory shape lets the planner agent own sequencing, branching, retries, delegation, and recovery by reading durable facts/runtime observations and calling durable primitives.
-      2: Planner-owned sequencing uses wait_for, schedule_me, execute, session_new child sessions, session_prompt, sleep, and runtime observation where those primitives are available and advertised.
+      2: Planner-owned sequencing uses typed runtime wait_for, schedule_me, execute, session_new child sessions, session_prompt, sleep, and runtime observation where those primitives are available and advertised.
       3: Firegrid does not add a createFunction-style orchestration SDK, DAG framework, or hard-coded factory workflow product for planner, gate, implementer, review, QA, CI, or merge phases.
       4: "Observation is required for choreography: prompts, tool calls, waits, permission requests, child sessions, provider side effects, and terminal evidence must remain durable and queryable for humans and agents."
 
   PLANNER_AND_SESSIONS:
     requirements:
       1: Planner and implementer work are represented as runtime sessions or caller-owned provider sessions with durable requested, dispatched, output, terminal, and callback evidence.
-      2: Planner prompts include factoryRunKey, provider ticket fields, source names, available provider capabilities, required approval policy, and the exact durable rows or permission rows that can resume the run.
+      2: Planner prompts include factoryRunKey, provider ticket fields, app-owned projection names, typed runtime wait sources, available provider capabilities, required approval policy, and the exact durable rows or permission rows that can resume the run.
       3: Agent output and completion envelopes are normalized into caller-owned output or phase-completion rows before app projections or waits consume them.
 
   WAIT_AND_PERMISSION:
     requirements:
-      1: Planner completion, human gate resolution, implementer completion, provider status, and permission resolution waits are expressed as durable projection matches or wait_for source matches over caller-owned rows or runtime observation sources.
+      1: Planner completion, human gate resolution, implementer completion, provider status, and permission resolution waits are expressed as app-owned durable projection matches or typed runtime observation waits.
       2: Human approvals are represented by app-owned permission or gate rows plus resolution rows, with provider UI markers used only to route provider replies back into those rows.
       3: Stop/cancel signals write cancellation and provider-abort evidence rows and unblock the active run process through the same durable wait/resume path as normal human decisions.
 
@@ -58,8 +58,8 @@ components:
   SHIPPED_ALIGNMENT:
     requirements:
       1: The spec identifies which PoC behaviors are implementable today with the @firegrid/client session facade, including createOrLoad, prompt, start, snapshot, wait, and permissions.respond.
-      2: The spec identifies which PoC behaviors are implementable today with @firegrid/runtime/runtime-host, including local host composition, env resolver policy, and app source registration.
-      3: The spec identifies which PoC observations are implementable today with runtime agent-event-pipeline output and agentOutputs, WaitFor/source registrations, protocol session-facade schemas, and app-owned facts/projections.
+      2: The spec identifies which PoC behaviors are implementable today with @firegrid/runtime/runtime-host, including local host composition and env resolver policy.
+      3: The spec identifies which PoC observations are implementable today with runtime agent-event-pipeline output and agentOutputs, protocol session-facade schemas, typed runtime waits, and app-owned facts/projections.
       4: The spec identifies missing or not-yet-shipped pieces separately from shipped primitives, including provider adapters, hosted routes, provider side-effect capabilities, EventPlane migration, and full run-process orchestration.
 
   HOSTED_ACCEPTANCE:
@@ -72,7 +72,7 @@ constraints:
   BOUNDARIES:
     requirements:
       1: Firegrid-owned packages do not import or encode Linear, GitHub, Slack, Flamecast, Inngest, Claude model, PR, issue, planner, implementer, gate, or factory vocabulary as native runtime semantics.
-      2: Firegrid owns durable execution, runtime session hosting, RunWait or wait_for mechanics, source registration, schema projection rules, and runtime observation primitives only at product-neutral boundaries.
+      2: Firegrid owns durable execution, runtime session hosting, typed runtime wait_for mechanics, schema projection rules, and runtime observation primitives only at product-neutral boundaries.
       3: Apps/factory owns factory prompts, provider adapters, product facts, UI projections, run-process policy, provider callback routes, and provider-specific retry/idempotency rules.
       4: Firepixel is a separate system and may be used only as an analogy for caller-owned event planes and run processes; it is not the primary name, owner, or target package for this factory spec.
       5: The spec does not require moving apps/factory implementation to EventPlane in one PR; it defines the target and sequencing for a later implementation.
