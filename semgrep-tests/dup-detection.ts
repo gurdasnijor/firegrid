@@ -480,6 +480,27 @@ function* directHostSourceCollections() {
 // ruleid: firegrid-runtime-host-no-direct-source-collection-registration
 const directHostSourceHandle = sourceCollectionStreamHandle("firegrid.runtime.events", {})
 
+// ruleid: firegrid-runtime-no-host-internal-imports-outside-host
+import { startRuntime as importedHostCommand } from "./host/commands.ts"
+
+// ruleid: firegrid-runtime-no-host-internal-imports-outside-host
+export { FiregridRuntimeHostLive as exportedHostLayer } from "./host/layers.ts"
+
+// ruleid: firegrid-runtime-no-host-internal-imports-outside-host
+import type { StartRuntimeOptions as ImportedHostInternalType } from "./host/types.ts"
+
+// ok: firegrid-runtime-no-host-internal-imports-outside-host
+import { startRuntime as importedHostBarrelCommand } from "./host/index.ts"
+
+// ruleid: firegrid-runtime-no-runtime-errors-imports-outside-runtime
+import { RuntimeContextError as ImportedRuntimeContextError } from "./runtime-errors.ts"
+
+// ruleid: firegrid-runtime-no-runtime-errors-imports-outside-runtime
+export { RuntimeIngressError as ExportedRuntimeIngressError } from "@firegrid/runtime/internal/runtime-errors"
+
+// ok: firegrid-runtime-no-runtime-errors-imports-outside-runtime
+import { RuntimeContextError as PublicRuntimeContextError } from "@firegrid/runtime"
+
 const tableServiceBypass = Effect.gen(function* () {
   // ruleid: firegrid-runtime-no-table-service-yield-outside-providers
   const outputTable = yield* RuntimeOutputTable
@@ -595,13 +616,18 @@ export {
   directHostSourceHandle,
   duplicateIngressProvider,
   duplicateOutputProvider,
+  ExportedRuntimeIngressError,
+  exportedHostLayer,
   globalDynamicEnv,
   globalEnv,
   inlineIngressUrl,
   inlineDurableToolsHostStream,
   inlineRuntimeStream,
   inlineTaggedFail,
+  importedHostBarrelCommand,
+  importedHostCommand,
   ImportedSourceCollections,
+  ImportedRuntimeContextError,
   initializedContextId,
   matchedTaggedEvent,
   matchWithFallback,
@@ -612,6 +638,7 @@ export {
   ok2,
   otherWorkflowExecution,
   port,
+  PublicRuntimeContextError,
   randomContextId,
   randomHostId,
   randomHostSessionId,
@@ -636,6 +663,7 @@ export {
 export type {
   HostOwnedRuntimeCapabilities,
   HostOwnedRuntimeTableOptions,
+  ImportedHostInternalType,
   RuntimeSubscriberWithTableFacade,
   StaticSubscriberOptions,
   StaticSubscriberStreamOptions,

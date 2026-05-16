@@ -26,7 +26,7 @@
     "flamecast:dev": "pnpm --filter @firegrid/flamecast dev:local",
     "flamecast:run": "pnpm --filter @firegrid/flamecast run:env",
     "format": "eslint . --fix",
-    "lint": "eslint . --max-warnings 0 && node scripts/effect-native-production-cutover-check.mjs",
+    "lint": "eslint . --max-warnings 0 && node scripts/effect-native-production-cutover-check.mjs && node scripts/runtime-public-surface-check.mjs",
     "lint:dead": "node scripts/knip-check-baseline.mjs",
     "lint:dead:baseline": "node scripts/knip-update-baseline.mjs",
     "lint:deps": "depcruise --config .dependency-cruiser.cjs packages apps",

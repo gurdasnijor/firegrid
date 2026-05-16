@@ -210,6 +210,7 @@ packages/runtime/src/
   workflow-engine/
   agent-tools/
   agent-adapters/
+  source-registration/
   verified-webhook-ingest/
 ```
 
@@ -220,8 +221,11 @@ The exact folder names can change, but the boundary is fixed:
   transforms, and pipeline subscribers;
 - runtime control-plane namespace owns context/run lifecycle capabilities;
 - host namespace composes live host topology and command entrypoints;
-- waits, workflow-engine, tools, adapters, and verified ingest are adjacent
-  bounded contexts, not subfolders of the agent event pipeline.
+- source-registration owns provider/source registration layers for `wait_for`
+  visibility without host-only observation glue;
+- waits, workflow-engine, tools, adapters, source registration, and verified
+  ingest are adjacent bounded contexts, not subfolders of the agent event
+  pipeline.
 
 This namespacing should not be done as part of the first host extraction PR.
 The first PR should reduce `host/index.ts`. A later namespace PR can move files
@@ -434,6 +438,7 @@ This inventory is the review checklist for the post-`#250` tree.
 | `waits/` | Durable coordination operator | Mixed; wait row authority belongs with wait bounded context. | Owns row schema/source registry/router. | No |
 | `agent-tools/` | Runtime tool schemas, MCP exposure, and lowering | Mixed; MCP host couples to host authority. | Host/tool composition overlap. | Yes, via `host/` |
 | `agent-adapters/` | Projections/adapters over codec sessions | Acceptable sibling surface. Keep out of durable runtime pipeline. | Adapter projection only. | No |
+| `source-registration/` | Provider-owned source registration layers | Target shape after host observation glue extraction. | Registers named observation sources for `wait_for`. | No |
 | `workflow-engine/` | Workflow engine adapter/substrate | Separate substrate boundary. Do not fold into agent runtime pipeline. | Runtime substrate dependency. | No |
 | `verified-webhook-ingest/` | External ingress/source adapter | Separate ingest surface. Audit later for generic durable operator overlap. | Adjacent ingest surface. | No |
 

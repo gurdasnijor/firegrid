@@ -77,6 +77,10 @@ These are intentionally not agent event-pipeline stages:
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
 - `authorities/`: runtime control-plane lifecycle capabilities
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.2`).
+- `source-registration/`: provider-owned registration layers that expose
+  named observation sources to `wait_for` without making host enumerate every
+  runtime/read model source
+  (`firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.1`).
 
 This namespace move follows the host split and codec session Layer refactor
 (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.5`,

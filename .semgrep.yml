@@ -769,6 +769,66 @@ rules:
       - pattern: yield* SourceCollections
       - pattern: sourceCollectionStreamHandle(...)
 
+  - id: firegrid-runtime-no-host-internal-imports-outside-host
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.4
+      quality-acid: firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.6
+      category: runtime-boundary
+      rationale: |
+        Runtime host internals are composition implementation details. Runtime
+        production code outside host should import the host barrel or package
+        public runtime-host subpath so load-bearing surfaces remain explicit.
+      fix-hint: |
+        Import from packages/runtime/src/host/index.ts, @firegrid/runtime, or
+        @firegrid/runtime/runtime-host instead of a host implementation file.
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/apps/*/src/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+        - "/packages/runtime/src/host/**"
+    message: |
+      Direct import from a runtime host implementation file. Use the host barrel
+      or public runtime-host package subpath.
+    pattern-regex: '(?m)^\s*(?:import|export)(?:\s+type)?[^\n]*\sfrom\s*["''][^"'']*(?:^|/|\.{1,2}/)host/(?:agent-tool-host-live|commands|config|config-live|host-owned-durable-tools|internal/[^"'']*|layers|raw-process-runtime|runtime-context-workflow|runtime-substrate|sync-run|types)(?:\.ts)?["'']'
+
+  - id: firegrid-runtime-no-runtime-errors-imports-outside-runtime
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-runtime-boundary-reconciliation.CYCLE_BREAKING.2
+      quality-acid: firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.4
+      category: runtime-boundary
+      rationale: |
+        runtime-errors.ts is a runtime-internal module used to break host cycles.
+        External packages should consume public @firegrid/runtime exports instead
+        of importing the source file.
+      fix-hint: |
+        Import RuntimeContextError or public error exports from @firegrid/runtime
+        when they are intended API, or keep the usage inside packages/runtime/src.
+    paths:
+      include:
+        - "/packages/*/src/**/*.ts"
+        - "/apps/*/src/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+        - "/packages/runtime/src/**"
+    message: |
+      runtime-errors.ts is runtime-internal. External packages must use public
+      @firegrid/runtime exports.
+    pattern-regex: '(?m)^\s*(?:import|export)(?:\s+type)?[^\n]*\sfrom\s*["''](?:[^"'']*/runtime-errors(?:\.ts)?|packages/runtime/src/runtime-errors(?:\.ts)?|@firegrid/runtime/[^"'']*runtime-errors(?:\.ts)?)["'']'
+
   - id: firegrid-runtime-no-old-singleton-authority-tag-keys
     languages: [typescript]
     severity: ERROR

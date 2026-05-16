@@ -62,7 +62,7 @@ export {
   runConfigToRuntimeContextIntent,
   type RunAuthorizedBinding,
   type RunConfig,
-} from "./host/sync-run.ts"
+} from "./host/index.ts"
 export {
   RuntimeAuthoritySourceNames,
   RuntimeControlPlaneRecorderLive,
