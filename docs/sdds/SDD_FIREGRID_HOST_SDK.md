@@ -184,11 +184,15 @@ These contracts are the review bar for every SDK extraction PR:
 | Client SDK | Owns browser/app-safe session-plane bindings. It must not import runtime, host-sdk, cli, Node, MCP, platform-node, or Effect AI. |
 | Host SDK | Owns host-plane bindings and composition. It may import runtime and protocol. It must not import client-sdk. It returns protocol-shaped results where it needs to hand data to client-sdk. |
 | CLI | Owns command binding and process behavior. It may import host-sdk and client-sdk. No package may import cli. |
-| Integration packages | Own provider/webhook/agent adapter vocabulary. Runtime core must not own Linear, GitHub, Slack, provider, or webhook product semantics. |
+| Integration packages | Own provider/webhook/agent adapter vocabulary. They may depend on protocol schemas and expose Effect services/Layers. Runtime core and host-sdk core must not own Linear, GitHub, Slack, provider, or webhook product semantics. |
 | Product apps | Own prompts, product workflow policy, app facts, app projections, provider configuration, and UI read models. |
 
 Host-sdk and client-sdk are sibling projections over protocol. Product apps and
 cli compose both when both planes are needed.
+Integration packages are sibling adapters, not hidden host-sdk dependencies.
+The app or CLI composition root installs host-sdk, client-sdk, and integration
+Layers together. Host-sdk defines the host extension points; it does not import
+every provider package that might satisfy them.
 
 ## Package Graph Review
 
@@ -247,6 +251,21 @@ foundation.
 The package boundary must therefore be created by changing edges, not by
 adding package names.
 
+There is no separate "binding layer" package in the target graph. The binding
+packages are the external surfaces themselves:
+
+- `@firegrid/host-sdk` binds protocol operations and runtime substrate into a
+  host-process API;
+- `@firegrid/client-sdk` binds protocol operations into browser/app-safe
+  session methods;
+- `@firegrid/cli` binds protocol operations into commands;
+- integration packages bind provider-specific APIs into explicit Effect
+  services/Layers that a host composition root can install.
+
+Shared contracts live in `@firegrid/protocol`. Runtime remains the execution
+substrate. Adding a fourth generic binding package would collapse the
+environment-specific constraints this split is meant to make reviewable.
+
 The target graph is captured at `docs/dependency-graph-sdk-target.mmd`:
 
 ```mermaid
@@ -259,6 +278,7 @@ flowchart LR
   durable["effect-durable-operators<br/>DurableTable/operators"]
   streams["effect-durable-streams<br/>stream transport"]
   integrations["integration packages<br/>Linear/GitHub/Slack/providers"]
+  consumer["consumer composition root<br/>app or command process"]
 
   protocol --> durable
   runtime --> protocol
@@ -268,10 +288,13 @@ flowchart LR
   client --> streams
   host --> protocol
   host --> runtime
-  host --> integrations
   cli --> protocol
   cli --> host
   cli --> client
+  integrations --> protocol
+  consumer -.-> host
+  consumer -.-> client
+  consumer -.-> integrations
 ```
 
 Expected graph changes:
@@ -320,6 +343,10 @@ No edge should point between host-sdk and client-sdk in either direction. They
 are sibling projections over the same protocol catalog. Product apps compose
 both packages, and Effect requirements connect them through shared protocol
 services rather than package imports.
+No edge should point from host-sdk core to concrete provider integrations.
+Host-sdk may define extension points and helper constructors, but concrete
+Linear/GitHub/Slack/provider packages remain independently importable adapters
+installed by the composition root.
 
 ## Runtime Ownership Audit
 

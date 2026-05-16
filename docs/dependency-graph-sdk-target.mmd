@@ -8,6 +8,7 @@ cli["@firegrid/cli<br/>command binding"]
 durable["effect-durable-operators<br/>DurableTable/operators"]
 streams["effect-durable-streams<br/>stream transport"]
 integrations["integration packages<br/>Linear/GitHub/Slack/providers"]
+consumer["consumer composition root<br/>app or command process"]
 
 protocol --> durable
 runtime --> protocol
@@ -17,8 +18,10 @@ client --> durable
 client --> streams
 host --> protocol
 host --> runtime
-host --> integrations
 cli --> protocol
 cli --> host
 cli --> client
-
+integrations --> protocol
+consumer -.-> host
+consumer -.-> client
+consumer -.-> integrations

@@ -9,7 +9,7 @@ components:
       1: The Host SDK package exposes a product-neutral host-plane declaration API that lets an app name its host, configure durable storage, provide runtime environment policy, install runtime host layers, and expose host authority operations from one ordinary Effect layer.
       2: Host declarations are explicit values, not dynamic module discovery, package scanning, env-named host ids, or a Firegrid graph DSL.
       3: Host declarations compose app-configured integration adapters and app-owned DurableTable/EventPlane layers without importing product-specific workflow policy into runtime core.
-      4: Reusable integration adapters for systems such as Linear, GitHub, Slack, and agent providers may be delivered as separate Firegrid packages or app packages and installed through the Host SDK as explicit Layers or capability declarations.
+      4: Reusable integration adapters for systems such as Linear, GitHub, Slack, and agent providers may be delivered as separate Firegrid packages or app packages and installed alongside the Host SDK as explicit Layers or capability declarations.
 
   PACKAGE_BOUNDARIES:
     requirements:
@@ -74,7 +74,7 @@ components:
       1: apps/factory can express its host composition through the Host SDK while keeping Linear, GitHub, Slack, provider adapters, prompts, and factory projections app-owned.
       2: apps/factory can use the Host SDK to launch and observe planner sessions without using pnpm firegrid -- run as the factory product path.
       3: The Host SDK identifies any remaining unsupported production factory needs as explicit gaps instead of encouraging bespoke host.ts glue.
-      4: apps/factory can configure reusable Linear, GitHub, Slack, or agent-provider integrations through the Host SDK without those integrations becoming factory-specific runtime semantics.
+      4: apps/factory can configure reusable Linear, GitHub, Slack, or agent-provider integrations alongside the Host SDK without those integrations becoming factory-specific runtime semantics.
 
   APP_PROCESS_PRIMITIVES:
     requirements:
@@ -116,6 +116,8 @@ constraints:
       7: Binding modules must not import execution/substrate modules, and execution/substrate modules must not import binding modules to discover operations.
       8: "@firegrid/host-sdk and @firegrid/client-sdk are sibling projections over @firegrid/protocol; product apps and @firegrid/cli compose both packages when both planes are needed."
       9: "@firegrid/host-sdk returns protocol-shaped launch/session identity results rather than client-sdk-owned handles."
+      10: "@firegrid/host-sdk core must not import concrete provider integration packages such as Linear, GitHub, Slack, or agent providers; those adapters are installed by the app or CLI composition root."
+      11: "Integration packages may import @firegrid/protocol and expose Effect services or Layers that satisfy host-sdk extension points, but they must not become hidden runtime or host-sdk dependencies."
 
   VALIDATION:
     requirements:
