@@ -37,9 +37,9 @@ import { Effect, Either, Layer, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   FiregridRuntimeHostWithWorkflowLive,
+  RuntimeEnvResolverPolicy,
   startRuntime,
 } from "../../src/host/index.ts"
-import { RuntimeEnvResolverPolicy } from "../../src/agent-event-pipeline/sources/sandbox/secrets.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

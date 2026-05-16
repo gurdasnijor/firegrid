@@ -27,13 +27,11 @@ import { Effect, type Layer, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   FiregridRuntimeHostWithWorkflowLive,
+  RuntimeEnvResolverPolicy,
   appendRuntimeIngress,
   startRuntime,
 } from "../../src/host/index.ts"
 import { RuntimeContextInsert } from "../../src/authorities/index.ts"
-import {
-  RuntimeEnvResolverPolicy,
-} from "../../src/agent-event-pipeline/sources/sandbox/secrets.ts"
 import {
   firegridRunCreatedBy,
   runConfigToIngressRequest,

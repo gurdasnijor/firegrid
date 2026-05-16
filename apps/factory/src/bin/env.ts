@@ -1,4 +1,4 @@
-import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
+import { RuntimeEnvResolverPolicy } from "@firegrid/runtime/runtime-host"
 import { Config, Effect, Layer, Option, Redacted } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { defaultFactoryNamespace, authorizedBindingsFromPlanner, type FactoryConfig } from "../config.ts"

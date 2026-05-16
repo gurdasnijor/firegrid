@@ -30,6 +30,15 @@ export {
   type LocalProcessSandboxProviderOptions,
 } from "../agent-event-pipeline/sources/sandbox/local-process.ts"
 export {
+  RuntimeEnvResolverPolicy,
+  type RuntimeEnvResolverPolicyValue,
+} from "../agent-event-pipeline/sources/sandbox/secrets.ts"
+export {
+  registerRuntimeHostAppSource,
+  RuntimeHostAppSourceRegistrationsLive,
+  type RuntimeHostAppSourceRegistration,
+} from "../source-registration/app-source-registration.ts"
+export {
   appendRuntimeIngress,
   RuntimeStartCapabilityLive,
   startRuntime,
