@@ -20,6 +20,32 @@ ordinary Effect surfaces (`Context.Tag`, `Layer`, `Queue.Enqueue`, `Stream`,
 `Sink`, and narrow `Effect` services). Avoid adding Firegrid-specific wrapper
 types when an Effect surface already describes the role.
 
+## Effect-Native Type Shape
+
+The pipeline is intentionally built from small Effect traits:
+
+```ts
+// producer can only enqueue durable rows
+Context.Tag<RuntimeEventLog, Queue.Enqueue<RuntimeEventRow>>
+
+// observer can only subscribe to committed rows
+Context.Tag<RuntimeOutputEvents, Stream.Stream<RuntimeEventRow, E>>
+
+// richer command gets a named method, not a new framework
+Context.Tag<RuntimeEventAppendAndGet, {
+  readonly append: (row: RuntimeEventRow) => Effect.Effect<RuntimeEventRow, E>
+}>
+
+// drivers declare needs through the R channel
+Effect.Effect<void, ToolRouterError,
+  RuntimeAgentOutputEvents | RuntimeIngressAppendAndGet
+>
+```
+
+The tag name carries the durability promise; the service shape stays ordinary
+Effect. If code needs a second bespoke "runtime authority" or "runtime
+transform" abstraction, the boundary is probably misclassified.
+
 ## Load-Bearing Pipeline Folders
 
 | Folder | Role |

@@ -15,6 +15,24 @@ They should be ordinary functions over Effect streams or rows. If a transform
 needs durable writes, live process access, or host/session state, it belongs in
 a subscriber, source, codec, or pipeline composition module instead.
 
+Typical shape:
+
+```ts
+export const sequencedRuntimeIngressRowsForContext = <E, R>(
+  source: Stream.Stream<RuntimeIngressInputRow, E, R>,
+  contextId: string,
+): Stream.Stream<RuntimeIngressInputRow, E, R> =>
+  source.pipe(
+    Stream.filter(row => row.contextId === contextId),
+    orderSequencedRuntimeIngressRows,
+  )
+```
+
+The transform keeps the same error and requirement channels it received. That
+is the signal that it is pure stream shaping, not a subscriber or authority.
+When a transform needs to change channels substantially, first check whether it
+is really codec decoding or subscriber behavior.
+
 ## Boundary Rules
 
 - Prefer plain `Stream` functions; use `Channel` only when first-class channel

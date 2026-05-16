@@ -11,6 +11,29 @@ Use stock Effect surfaces:
 - observations: `Stream.Stream<Row, E, R>`;
 - lookups or committed-row writes: narrow object services returning `Effect`.
 
+Example shape:
+
+```ts
+export class RuntimeOutputEvents extends Context.Tag(
+  "@firegrid/runtime/RuntimeOutputEvents",
+)<RuntimeOutputEvents, Stream.Stream<RuntimeEventRow, DurableTableError>>() {}
+
+export class RuntimeAgentOutputRowSink extends Context.Tag(
+  "@firegrid/runtime/RuntimeAgentOutputRowSink",
+)<RuntimeAgentOutputRowSink, Sink.Sink<void, RuntimeEventRow, never, E>>() {}
+
+export class RuntimeEventAppendAndGet extends Context.Tag(
+  "@firegrid/runtime/RuntimeEventAppendAndGet",
+)<RuntimeEventAppendAndGet, {
+  readonly append: (row: RuntimeEventRow) => Effect.Effect<RuntimeEventRow, E>
+}>() {}
+```
+
+This mirrors Effect's own least-privilege split. A `Queue` value may support
+enqueue and dequeue, but producers should depend only on `Queue.Enqueue`. A
+runtime table layer may provide many tags, but consumers should request only the
+capability they need.
+
 ## Pipeline Fit
 
 Authorities sit at durable commit and replay points. `pipeline/` and
@@ -22,6 +45,22 @@ Dynamic `wait_for` source registration is separate from static subscriber
 reads. Static subscribers consume `Stream` capability tags through the Effect
 requirement channel. Dynamic wait lookup uses `SourceCollectionHandle`
 registrations that resolve to the same underlying durable streams.
+
+Provider layers group tags over the same table family:
+
+```ts
+export const RuntimeOutputJournalLayer: Layer.Layer<
+  | RuntimeEventAppendAndGet
+  | RuntimeAgentOutputRowSink
+  | RuntimeOutputEvents
+  | RuntimeAgentOutputEvents,
+  never,
+  RuntimeOutputTable
+>
+```
+
+The grouping is for construction only. Callers should not depend on a bundled
+"journal service."
 
 ## Boundary Rules
 

@@ -17,6 +17,37 @@ tables, subscriber dispatch, or host topology. Per-session capabilities such as
 `toolUseMode` are reported by the active codec session after construction or
 negotiation; callers should not infer them from codec class names.
 
+Core shape:
+
+```ts
+export interface AgentSession {
+  readonly toolUseMode: AgentToolUseMode
+  readonly send: (event: AgentInputEvent) => Effect.Effect<void, AgentCodecError>
+  readonly outputs: Stream.Stream<AgentOutputEvent, AgentCodecError>
+}
+
+export interface AgentCodec {
+  readonly kind: string
+  readonly capabilities: AgentCapabilities
+  readonly open: (
+    bytes: AgentByteStream,
+    options: AgentCodecOpenOptions,
+  ) => Effect.Effect<AgentSession, AgentCodecError, Scope.Scope>
+}
+```
+
+The session is the active protocol capability. `send` is how runtime
+composition delivers normalized input back to the agent; `outputs` is how the
+pipeline observes normalized agent output. Durable routing is outside this
+interface.
+
+`toolUseMode` is per session:
+
+- `observation_only`: tool-shaped output is telemetry only;
+- `client_result_roundtrip`: subscriber tool routing may claim `ToolUse` rows;
+- `control_channel_request_response`: protocol requests use their own
+  request/response path.
+
 ## Boundary Rules
 
 - Put wire-format parsing, encoding, and protocol session contracts here.
