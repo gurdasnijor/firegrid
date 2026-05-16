@@ -27,15 +27,17 @@ import type { RuntimeContextError } from "../runtime-errors.ts"
 import { RuntimeHostConfig } from "./config.ts"
 import {
   appendRuntimeIngressToOwner,
+} from "./commands.ts"
+import {
   readRuntimeContextWithHostSession,
   requireLocalRuntimeContextWithHostSession,
-} from "./commands.ts"
+  runtimeContextWorkflowExecutionId,
+  runtimeExecutionClock,
+} from "./internal/runtime-context-helpers.ts"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import {
   RuntimeContextWorkflow,
   RuntimeContextWorkflowPayload,
-  runtimeContextWorkflowExecutionId,
-  runtimeExecutionClock,
 } from "./runtime-context-workflow.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.3

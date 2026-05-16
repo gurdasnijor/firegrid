@@ -8,7 +8,7 @@ import {
 import { HostOwnedDurableToolsWaitForLive } from "./host-owned-durable-tools.ts"
 import { RuntimeObservationSourcesLive } from "./observation-sources.ts"
 
-// firegrid-runtime-boundary-reconciliation.HOST_SPLIT.4
+// firegrid-runtime-boundary-reconciliation.HOST_HARDENING.2
 // Shared host runtime observation substrate used by both host-scoped
 // composition and codec-path tool lowering.
 export const HostRuntimeObservationSubstrateLive = RuntimeObservationSourcesLive.pipe(
