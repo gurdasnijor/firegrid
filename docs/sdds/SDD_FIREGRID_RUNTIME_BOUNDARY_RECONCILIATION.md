@@ -171,6 +171,50 @@ Examples:
 These are not pipeline subscribers simply because they may internally use a
 subscriber-like router. The public role is the operator.
 
+Static shape:
+
+```ts
+const match: <A>(
+  options: WaitForOptions<A>,
+) => Effect.Effect<
+  WaitForOutcome<A>,
+  WaitForError | ParseResult.ParseError | DurableTableError,
+  | WorkflowEngine.WorkflowEngine
+  | WorkflowEngine.WorkflowInstance
+  | DurableWaitAppendAndGet
+  | DurableWaitCompletionAppendAndGet
+  | Scope.Scope
+>
+```
+
+The operator value returns an `Effect`. It may require durable capabilities,
+workflow services, and `Scope`, but it does not provide a long-lived service
+and does not acquire a source subscription by itself.
+
+### Subscriber Driver
+
+A scoped runtime driver that starts a long-lived observation worker. It is
+expressed as a `Layer` that provides no public service and consumes the
+capabilities it needs through the requirement channel.
+
+Static shape:
+
+```ts
+const WaitRouterLive: Layer.Layer<
+  never,
+  WaitRouterError,
+  | DurableWaitAppendAndGet
+  | DurableWaitCompletionAppendAndGet
+  | SourceCollections
+  | WorkflowEngine.WorkflowEngine
+>
+```
+
+This is the same Effect shape as `Layer.scopedDiscard(startRouter)`: the layer
+exists for its scoped fiber, not because callers should depend on a
+`WaitRouter` service. The output channel `never` is the static signal that the
+module is a driver/subscriber, not an operator API or capability provider.
+
 ### Generic Durable Operator
 
 A reusable durable operator that is not inherently Firegrid runtime vocabulary.
@@ -187,7 +231,7 @@ This inventory is the review checklist for the post-`#250` tree.
 | `authorities/` | Effect capability providers | Target shape. Keep provider layers and capability tags here. |
 | `events/` | Normalized runtime event contracts | Target shape. No storage or subscriber behavior. |
 | `transforms/` | Pure stream operators | Target shape. Plain functions over `Stream`; no transform framework. |
-| `subscribers/` | Runtime-host subscribers | Target shape for runtime event-pipeline subscribers only. |
+| `subscribers/` | Runtime-host subscriber drivers | Target shape for host-scoped durable observation workers, including agent pipeline subscribers and the wait router. |
 | `pipeline/` | Per-runtime event-loop composition | Target shape. Keep session-local composition here. |
 | `sources/` | Live process/resource acquisition | Mostly target shape. Keep durable writes out. |
 | `codecs/` | Protocol wire-format normalization | Target shape. Per-session capabilities belong here. |
@@ -256,8 +300,10 @@ Target:
   tool-result ingress;
 - do not own durable table providers or generic wait router internals.
 
-`waits/internal/subscription-router.ts` is subscriber-like, but its semantic
-owner is the durable wait operator, not the agent event pipeline.
+The wait router is also subscriber-shaped: it consumes active wait rows,
+attaches to named source streams, and writes completions. It can live under
+`subscribers/` if the folder is defined as host-scoped durable observation
+drivers rather than only agent event-pipeline subscribers.
 
 ### `pipeline/`
 
@@ -395,7 +441,7 @@ This folder still has a place, but not as a runtime pipeline stage.
 `wait_for` is workflow-visible durable suspension over dynamically registered
 observation streams. It is not itself an agent event subscriber. The public
 operator is `WaitFor.match(...)`; the subscription router is an implementation
-detail of the wait operator.
+detail that is subscriber-shaped.
 
 Current mixed roles:
 
@@ -408,21 +454,39 @@ Current mixed roles:
 
 Post-`#250` target:
 
+- keep `WaitFor.match(...)` as the operator API;
+- express the wait router as a subscriber driver, either under
+  `subscribers/wait-router.ts` or as clearly named wait-internal subscriber
+  implementation;
 - decide which pieces are generic durable operators and move them to
   `packages/effect-durable-operators`;
 - keep runtime `waits/` only as a Firegrid adapter if needed;
 - do not wrap `WaitFor.match` in speculative runtime capability tags unless a
   real production bridge consumes that service.
 
-## Why `waits/` Is Not `subscribers/`
+## Wait Operator And Subscriber Driver
 
-A subscriber is a runtime process that watches a durable stream and performs a
-side effect. `WaitFor.match(...)` is an operator called by workflow code to
-author durable wait intent and suspend until a completion.
+The right split is:
 
-The wait subscription router is subscriber-like internally, but moving it under
-`runtime/src/subscribers` would obscure the public semantic boundary: it is part
-of the durable wait operator, not part of the runtime agent event pipeline.
+- `WaitFor.match(...)` is the workflow/operator API. It writes durable wait
+  intent, suspends on workflow deferred state, and returns `Match | Timeout`.
+- the wait router is a subscriber driver. It watches active wait rows, looks up
+  registered source streams, matches rows against durable trigger data, writes
+  completions, and resumes workflow deferred state.
+
+The distinction is statically visible:
+
+- operator APIs are functions returning `Effect`;
+- subscriber drivers are scoped `Layer<never, E, R>` values that provide no
+  service and exist only to run host-scoped fibers.
+
+This lets the wait router share the same subscriber folder as tool routing and
+ingress delivery without pretending the whole `waits/` concept is a
+subscriber. It is an operator with a subscriber driver.
+
+Timeout ownership is intentionally left unchanged for the first reconciliation
+pass. Moving timeout resolution from `WaitFor.match` into the wait router would
+change restart and race semantics, so it requires separate ACIDs.
 
 ## Why `waits/` May Belong In `effect-durable-operators`
 

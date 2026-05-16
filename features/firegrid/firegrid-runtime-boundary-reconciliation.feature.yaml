@@ -12,6 +12,7 @@ components:
       4: Public runtime surfaces exist for production behavior, not only review metadata, tests, documentation, or compatibility aliases.
       5: The SDD includes a post-cutover inventory for each top-level packages/runtime/src folder and classifies older surfaces beside the pipeline tree.
       6: Runtime boundary reconciliation starts from semantic role and package ownership, not from preserving historical folder names.
+      7: "Operator APIs and subscriber drivers are distinguished with existing Effect shapes: operators are functions returning Effect, while subscriber drivers are scoped Layer values that provide no service."
 
   HOST_SPLIT:
     requirements:
@@ -34,9 +35,10 @@ components:
     requirements:
       1: The waits folder is classified as a durable coordination operator, not as an agent event pipeline subscriber.
       2: WaitFor.match remains an operator API that composes durable wait capabilities, workflow engine/deferred/clock semantics, and dynamic source lookup.
-      3: Wait subscription-router internals are treated as wait-operator implementation details unless a future SDD promotes them to a generic subscriber primitive.
+      3: The wait router is classified as a subscriber driver over active wait rows and registered source streams, while WaitFor.match remains the operator API.
       4: Runtime waits do not expose speculative capability tags or production surfaces that no production bridge consumes.
       5: Runtime waits consume durable wait row authority through split capability tags rather than owning runtime DurableTable writes directly.
+      6: The first wait-router reconciliation keeps timeout ownership unchanged; moving timeout resolution into the router requires separate ACIDs.
 
   EFFECT_DURABLE_OPERATORS:
     requirements:
