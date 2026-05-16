@@ -29,6 +29,7 @@ components:
       4: CLI bindings may project protocol operations into @effect/cli commands, flags, validation, help text, examples, local defaults, and Node-only process entrypoints.
       5: Binding packages must not define new operation contracts that are absent from the protocol catalog.
       6: Execution substrate code must not import host-sdk, client-sdk, or CLI binding modules to discover operations.
+      7: Production bindings do not depend on FiregridOperationEntry, defineFiregridOperation, or copied operation metadata objects; operation grouping is plain schema input/output values plus Schema annotations.
 
   CONFIGURATION:
     requirements:
@@ -111,9 +112,10 @@ constraints:
       5: Reverse-engineer apps/factory DarkFactoryTable into platform primitive requirements before declaring the factory product path production-ready.
       6: Prove the SDK split with one session-plane example, one host-plane entrypoint example, and one factory integration slice before retiring existing CLI scripts.
       7: Package-boundary PRs must not create public SDK packages that only re-export old mixed implementation files.
-      8: Add package graph guardrails before moving consumers to the new SDK package names.
-      9: Split binding modules from execution/substrate modules before publishing the package boundary that consumers will build against.
+      8: Add package graph guardrails in the transactional SDK cutover before moving consumers to the new SDK package names.
+      9: Split binding modules from execution/substrate modules in the same transactional SDK cutover that publishes the package boundary consumers will build against.
       10: Land the `RuntimeToolUseExecutor` seam before moving agent-tool bindings or MCP exposure out of runtime.
+      11: After the `RuntimeToolUseExecutor` seam lands, move host-sdk, client-sdk, CLI bindings, operation-entry deletion, static rules, and consumer import updates as one transaction rather than through long-lived partial package boundaries.
 
   PACKAGE_GRAPH:
     requirements:
