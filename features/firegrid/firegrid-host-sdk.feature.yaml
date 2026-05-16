@@ -36,6 +36,7 @@ components:
       2: Configuration distinguishes local-development conveniences such as embedded DurableStreamTestServer from production attached configuration; production host SDK examples require an explicit durable endpoint.
       3: Runtime retry, timeout, retention, and privacy-style options are only added when backed by current Firegrid substrate semantics; the SDK does not invent unsupported knobs for parity with other systems.
       4: Environment binding policy uses a named source map and explicit expose mapping from host variable names to child runtime variable names; launched local-process runtimes do not inherit ambient host environment by default.
+      5: Client/session launch requests may include protocol RuntimeConfig env binding refs, but they must not include secret values, process.env readers, or host environment exposure policy.
 
   RUNTIME_SESSION_SURFACE:
     requirements:

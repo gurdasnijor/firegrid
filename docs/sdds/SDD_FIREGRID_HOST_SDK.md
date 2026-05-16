@@ -514,6 +514,20 @@ import {
   FiregridHost,
   FiregridHostLive,
 } from "@firegrid/host-sdk"
+import {
+  envBinding,
+  type RuntimeConfig,
+} from "@firegrid/protocol/launch"
+
+const claudeAcpRuntime = {
+  argv: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
+  agent: "claude-acp",
+  agentProtocol: "acp",
+  cwd: process.cwd(),
+  envBindings: [
+    envBinding("ANTHROPIC_API_KEY"),
+  ],
+} satisfies RuntimeConfig
 
 const HostLive = FiregridHostLive({
   name: "product-host",
@@ -526,7 +540,6 @@ const HostLive = FiregridHostLive({
     source: process.env,
     expose: {
       ANTHROPIC_API_KEY: "ANTHROPIC_API_KEY",
-      OPENAI_API_KEY: "OPENAI_API_KEY",
     },
   },
   mcp: {
@@ -543,9 +556,9 @@ const program = Effect.gen(function* () {
     idempotencyKey: "session:demo",
     runtime: {
       provider: "local-process",
-      config: plannerConfig,
+      config: claudeAcpRuntime,
     },
-    prompt: initialPrompt,
+    prompt: "Plan the implementation for issue LIN-123.",
     start: true,
   })
 })
@@ -553,10 +566,32 @@ const program = Effect.gen(function* () {
 NodeRuntime.runMain(program.pipe(Effect.provide(HostLive), Effect.scoped))
 ```
 
-Client/session code is a separate sibling projection:
+The host is the only place that reads `process.env`. The `environment.expose`
+map authorizes which host env vars can be resolved for child runtime bindings.
+It does not put secret values into durable rows.
+
+Client/session code is a separate sibling projection. Server-side client code
+may request an actual ACP runtime config through protocol launch schemas, but
+it still passes only env binding refs. The host decides whether those refs are
+authorized, and `session.start()` requires host-side start authority in scope:
 
 ```ts
+import { Effect } from "effect"
 import { FiregridClientLive, FiregridSessions } from "@firegrid/client-sdk"
+import {
+  envBinding,
+  type RuntimeConfig,
+} from "@firegrid/protocol/launch"
+
+const claudeAcpRuntime = {
+  argv: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
+  agent: "claude-acp",
+  agentProtocol: "acp",
+  cwd: workspaceDir,
+  envBindings: [
+    envBinding("ANTHROPIC_API_KEY"),
+  ],
+} satisfies RuntimeConfig
 
 const ClientLive = FiregridClientLive({
   durableStreamsBaseUrl,
@@ -565,7 +600,24 @@ const ClientLive = FiregridClientLive({
 
 const program = Effect.gen(function* () {
   const sessions = yield* FiregridSessions
-  const session = yield* sessions.attach({ sessionId })
+  const session = yield* sessions.createOrLoad({
+    externalKey: { source: "linear.issue", id: "LIN-123" },
+    runtime: {
+      provider: "local-process",
+      config: claudeAcpRuntime,
+    },
+    createdBy: "factory",
+  })
+
+  yield* session.prompt({
+    payload: {
+      type: "text",
+      text: "Plan the implementation for issue LIN-123.",
+    },
+    idempotencyKey: "LIN-123:planner-prompt",
+  })
+
+  yield* session.start()
   return yield* session.wait.forAgentOutput({ timeoutMs: 120_000 })
 })
 ```
@@ -574,6 +626,9 @@ Product apps may compose `HostLive` and `ClientLive` in one process, but the
 packages remain independent. App-owned tables, provider adapters, and product
 projection waits are optional application layers, not prerequisites for using
 the Host SDK.
+Browser clients can use the same session API for attach, prompt, snapshot,
+typed waits, and permission responses, but they do not provide `process.env`,
+local-process spawn authority, or the host environment exposure policy.
 
 ## Host Declaration
 
