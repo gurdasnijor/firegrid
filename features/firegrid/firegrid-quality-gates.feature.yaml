@@ -16,7 +16,7 @@ components:
 
   TEST_LAYOUT:
     requirements:
-      1: Package production src trees do not contain package tests.
+      1: Production src trees do not contain tests, covering both the repo-root firegrid binary src tree and every workspace package src tree.
       2: Package tests live under sibling package test directories and still typecheck and run through package-local commands.
 
 constraints:
