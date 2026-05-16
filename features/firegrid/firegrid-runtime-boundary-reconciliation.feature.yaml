@@ -30,9 +30,17 @@ components:
       1: The first implementation PR after the SDD breaks folder-level cycles under packages/runtime/src before broader host extraction.
       2: RuntimeContextError and its constructors are moved out of host/errors.ts into a runtime-wide module.
       3: Events barrel compatibility re-exports of codec contracts and source byte streams are removed.
-      4: Host authority compatibility aliases are removed or inlined when they only re-export protocol launch authority behavior.
-      5: A dependency-cruiser or equivalent check prevents new folder-level cycles under packages/runtime/src.
+      4: Host authority compatibility aliases are removed rather than preserved as runtime production surfaces.
+      5: Dependency-cruiser enforces zero folder-level cycles under packages/runtime/src with a folder-scoped circular rule once PR 1 lands.
       6: Cycle-breaking work is behavior-preserving and downstream apps build unchanged.
+      7: PR 1 does not introduce a runtime folder-cycle baseline that preserves known debt.
+      8: The first implementation wave drops static-tooling accepted findings to zero for the gates it changes, including new architecture enforcement.
+
+  STATIC_ENFORCEMENT:
+    requirements:
+      1: Runtime boundary enforcement prefers hard zero-state checks over baselines that preserve known debt.
+      2: New dependency-cruiser architecture checks land only with the refactor that makes their accepted finding count zero.
+      3: Existing static tooling baselines are removed or reduced to zero as part of the first reconciliation wave rather than carried forward as accepted debt.
 
   HOST_SPLIT:
     requirements:
@@ -63,6 +71,7 @@ components:
       8: Active-wait filtering, match completion, timeout completion, and deferred reconciliation belong to the operator/subscriber driver layer, not the durable wait row provider.
       9: The wait row authority is moved into the wait bounded context before any package extraction to effect-durable-operators.
       10: The wait router is named as a wait-owned subscriber driver and is not relocated into the agent event-pipeline subscribers folder.
+      11: Exact wait row capability tag names are decided in the wait authority PR, constrained by row-level lookup, upsert, and stream semantics.
 
   SOURCE_REGISTRATION:
     requirements:

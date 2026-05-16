@@ -81,11 +81,11 @@ barrel. Remove the re-export, not the codec/event boundary.
 
 Three barrels carry most cross-folder/runtime import traffic:
 
-| Barrel | Role |
-| --- | --- |
-| `packages/runtime/src/authorities/index.ts` | Durable capability tags and provider layers. |
-| `packages/runtime/src/events/index.ts` | Runtime protocol/event vocabulary. |
-| `@firegrid/protocol/launch/index.ts` | Launch/runtime context authority surface. |
+| Barrel | Inbound importers | Role |
+| --- | ---: | --- |
+| `packages/runtime/src/events/index.ts` | 11 | Runtime protocol/event vocabulary. |
+| `packages/runtime/src/authorities/index.ts` | 8 | Durable capability tags and provider layers. |
+| `@firegrid/protocol/launch/index.ts` | 6 | Launch/runtime context authority surface. |
 
 Follow-up refactors should preserve those barrels as stable import surfaces
 unless the PR explicitly migrates all importers in the same change. Internal
@@ -166,7 +166,7 @@ packages/runtime/src/
       runtime-ingress-delivery-tracker.ts
     codecs/
     events/
-    pipeline/
+    session-runtime.ts
     sources/
     subscribers/
     transforms/
@@ -365,7 +365,7 @@ This inventory is the review checklist for the post-`#250` tree.
 | `events/` | Normalized runtime event contracts | Target after compatibility re-exports drop. | Busy event/protocol barrel. | Yes, with `codecs/` |
 | `transforms/` | Pure stream operators | Target shape. Plain functions over `Stream`; no transform framework. | Imports runtime errors from `host/`. | Yes, via `host/` |
 | `subscribers/` | Runtime-host subscriber drivers | Target for agent event-pipeline subscribers. | Imports runtime errors from `host/`. | Yes, via `host/` |
-| `pipeline/` | Per-runtime event-loop composition | Composition file, not a stage. | Pulls from many runtime folders. | Yes, with `host/` |
+| `pipeline/` | Per-runtime event-loop composition | Composition file, not a stage; to be inlined as `agent-event-pipeline/session-runtime.ts` in PR 6. | Pulls from many runtime folders. | Yes, with `host/` |
 | `sources/` | Live process/resource acquisition | Mostly target; env policy leaks to app consumers. | Imports runtime errors from `host/`. | Yes, via `host/` |
 | `codecs/` | Protocol wire-format normalization | Target shape; event barrel compatibility should drop. | Imported by `events/index.ts`. | Yes, with `events/` |
 | `host/` | Host topology and command entrypoints | Mixed; source of most cycles. | Owns shared runtime errors today. | Yes |
@@ -632,49 +632,13 @@ change restart and race semantics, so it requires separate ACIDs.
 bleed. It should be a row authority over durable wait tables, not the owner of
 the wait lifecycle model.
 
-The target static split is row-level:
-
-```ts
-export class DurableWaitIntentLookup extends Context.Tag(
-  "@firegrid/runtime/DurableWaitIntentLookup",
-)<DurableWaitIntentLookup, {
-  readonly find: (key: WaitKey) => Effect.Effect<Option.Option<WaitRow>, E>
-}>() {}
-
-export class DurableWaitIntentUpsert extends Context.Tag(
-  "@firegrid/runtime/DurableWaitIntentUpsert",
-)<DurableWaitIntentUpsert, {
-  readonly upsert: (row: WaitRow) => Effect.Effect<void, E>
-}>() {}
-
-export class DurableWaitIntentRows extends Context.Tag(
-  "@firegrid/runtime/DurableWaitIntentRows",
-)<DurableWaitIntentRows, Stream.Stream<WaitRow, E>>() {}
-
-export class DurableWaitCompletionLookup extends Context.Tag(
-  "@firegrid/runtime/DurableWaitCompletionLookup",
-)<DurableWaitCompletionLookup, {
-  readonly find: (
-    key: WaitKey,
-  ) => Effect.Effect<Option.Option<WaitCompletionRow>, E>
-}>() {}
-
-export class DurableWaitCompletionUpsert extends Context.Tag(
-  "@firegrid/runtime/DurableWaitCompletionUpsert",
-)<DurableWaitCompletionUpsert, {
-  readonly upsert: (row: WaitCompletionRow) => Effect.Effect<void, E>
-}>() {}
-
-export class DurableWaitCompletionRows extends Context.Tag(
-  "@firegrid/runtime/DurableWaitCompletionRows",
-)<DurableWaitCompletionRows, Stream.Stream<WaitCompletionRow, E>>() {}
-```
-
-The provider layer may still be one `DurableWaitStoreLive` implementation
-backed by one `DurableToolsTable`, but callers should consume narrow row
-capabilities. The provider should not expose bundled services like "append and
-get" if the service also contains lookup, filtered active streams, and
-completion scans.
+The target principle is row-level: lookup, upsert, and row-stream capabilities
+for `WaitRow` and `WaitCompletionRow`. The exact tag names belong to the wait
+authority PR, not to this boundary SDD. The provider layer may still be one
+implementation backed by one `DurableToolsTable`, but callers should consume
+narrow row capabilities. The provider should not expose bundled services like
+"append and get" if the service also contains lookup, filtered active streams,
+and completion scans.
 
 Lifecycle language belongs outside the authority:
 
@@ -745,26 +709,41 @@ semgrep behavior, but that metadata is not a runtime API.
 
 Work is sequenced so each PR is behavior-preserving and unlocks the next.
 
-### PR 1: Cycle-Breaking
+### PR 1: Cycle-Breaking And Static Baseline Zeroing
 
-Goal: zero folder-level cycles under `packages/runtime/src`.
+Goal: zero folder-level cycles under `packages/runtime/src` and zero accepted
+static-tooling debt for the gates touched by the reconciliation wave.
 
 1. Create `packages/runtime/src/runtime-errors.ts` and move
    `RuntimeContextError`, `asRuntimeContextError`, and
    `mapRuntimeContextError` out of `host/errors.ts`. Update internal importers.
 2. Remove `events/index.ts` re-exports of `codecs/contract.ts` and
    `sources/byte-stream.ts`. Internal callers import codec contracts from
-   `codecs/index.ts` and byte streams from `sources/byte-stream.ts`.
-3. Remove or inline `host/authority-context.ts` as a compatibility alias if it
-   is only re-exporting protocol launch authority behavior.
-4. Add a dependency-cruiser check, or equivalent, that fails on folder-level
-   cycles under `packages/runtime/src`.
+   `codecs/index.ts` and byte streams from `sources/byte-stream.ts`. If any app
+   imports codec or byte-stream symbols through `@firegrid/runtime/events`,
+   route those imports through target runtime barrels before removing the
+   re-export so app builds remain unchanged.
+3. Remove `host/authority-context.ts` as a runtime compatibility alias. Runtime
+   internals should import the real protocol launch authority surface or the
+   target runtime capability directly.
+4. Add a dependency-cruiser `scope: "folder"` circular rule for
+   `packages/runtime/src` after the cycle-breaking edits make the accepted
+   finding count zero. Do not add a baseline file or carve-out that preserves
+   the known post-`#250` cycles.
+5. Drop static-tooling baselines to zero for the gates touched by this wave.
+   That includes the new architecture enforcement and any existing lint gate
+   whose baseline would otherwise bless known debt.
 
 Acceptance:
 
 - zero folder cycles under `packages/runtime/src`;
+- dependency-cruiser enforces zero folder cycles directly, without a runtime
+  folder-cycle baseline;
 - the load-bearing barrels keep their intended public surfaces;
-- downstream apps build without changes.
+- downstream apps build without changes;
+- `packages/runtime/src/runtime-errors.ts` is the only new top-level runtime
+  file introduced by PR 1;
+- static-tooling accepted findings are zero for the gates this wave changes.
 
 ### PR 2: Host Extraction
 
@@ -794,6 +773,12 @@ also construct the corresponding `SourceCollectionHandle` registrations needed
 for dynamic `wait_for` lookup. Host composition should merge provider layers;
 it should not know every source handle that must be registered.
 
+This may introduce an edge from authority provider code to the source-handle
+constructor surface. That edge is acceptable only because dynamic source
+registration is the bridge from static stream capabilities to `wait_for`
+lookup; it should not become a broader dependency from authorities to wait
+semantics.
+
 ### PR 4: Wait Authority Comes Home
 
 Goal: move the wait row authority next to the wait row schema.
@@ -803,14 +788,24 @@ split its services into row-level lookup/upsert/stream capabilities. This does
 not move waits to `effect-durable-operators` and does not change
 `WaitFor.match`.
 
-### PR 5: Wait Router Naming
+Target shape:
+
+- `WaitRow` lookup by key;
+- `WaitRow` upsert;
+- `WaitRow` stream;
+- `WaitCompletionRow` lookup by key;
+- `WaitCompletionRow` upsert;
+- `WaitCompletionRow` stream.
+
+### PR 5: Wait Router Subscriber-Driver Shape
 
 Goal: name the wait router as a subscriber driver without moving it into the
 agent event-pipeline subscriber folder.
 
 Rename `waits/internal/subscription-router.ts` to `waits/internal/router.ts`
-or `waits/internal/wait-router.ts`. Keep the static `Layer<never, E, R>` shape.
-Do not move timeout ownership into the router in this PR.
+or `waits/internal/wait-router.ts`, and make the driver shape explicit as a
+scoped `Layer<never, E, R>` that provides no public service. Do not move timeout
+ownership into the router in this PR.
 
 ### PR 6: Agent Event-Pipeline Namespace
 
@@ -834,8 +829,8 @@ agent-event-pipeline/
   session-runtime.ts
 ```
 
-`pipeline/` should shrink to a composition file or be renamed to reflect that
-role. A folder named `pipeline/` should not imply another runtime stage.
+`pipeline/` is removed as a stage-looking folder. Its current composition
+responsibility becomes `agent-event-pipeline/session-runtime.ts`.
 
 ### PR 7: Factory Consumer Audit
 
@@ -851,10 +846,15 @@ sandbox internals.
 Decide which `waits/` internals belong in `packages/effect-durable-operators`.
 Require a package-boundary SDD before any code moves.
 
+Draft this SDD when durable wait coordination is needed outside Firegrid
+runtime vocabulary, for example by another workflow product that can consume
+the same wait rows, completion rows, timeout, and source-matching primitives.
+
 ### PR 9: Public Surface Cleanup
 
-Enforce final exports after the layout reshuffles. Add semgrep or
-dependency-cruiser rules that fail on:
+Enforce final exports after the layout reshuffles. Use dependency-cruiser for
+directory/import-boundary rules and semgrep for code-pattern rules. The
+dependency-cruiser rules should fail on:
 
 - new folder-level cycles in `packages/runtime/src`;
 - direct imports from runtime host internals outside the host barrel;
@@ -871,8 +871,8 @@ source of operational architecture guidance.
 
 Every PR in the follow-up plan must satisfy:
 
-1. **No new folder cycles.** PR 1 establishes the baseline. PRs 2 onward must
-   not regress it.
+1. **No folder cycles.** PR 1 pays the folder-cycle debt down to zero and adds
+   a dependency-cruiser hard gate. PRs 2 onward must not regress it.
 2. **Load-bearing barrels are stable.** Internal layout can change; public
    imports through `authorities/index.ts`, `events/index.ts`, and
    `@firegrid/protocol/launch/index.ts` stay coherent unless a PR migrates all
@@ -885,6 +885,10 @@ Every PR in the follow-up plan must satisfy:
    downstream product imports.
 5. **Provider uniqueness is tested against real Effect values.** Keep
    test-local metadata and avoid production registries for review tooling.
+6. **No accepted-debt baselines.** New architecture enforcement lands with a
+   zero accepted-finding state. Existing static tooling baselines should be
+   removed or reduced to zero during the first reconciliation wave rather than
+   extended.
 
 ## Non-Goals
 
