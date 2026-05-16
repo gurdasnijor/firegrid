@@ -444,6 +444,21 @@ const permissionFromAgentOutput = (
     permissionFromObservation,
   )
 
+const attachPlannerSessionForRun = (
+  factoryRunKey: string,
+) =>
+  Effect.gen(function* () {
+    const table = yield* DarkFactoryTable
+    const runOption = yield* table.runs.get(factoryRunKey)
+    const run = yield* Option.match(runOption, {
+      onNone: () =>
+        Effect.fail(new Error(`factory run not found: ${factoryRunKey}`)),
+      onSome: Effect.succeed,
+    })
+    const session = yield* attachPlannerSession(run.plannerContextId)
+    return { run, session }
+  })
+
 const sortRuntimeEvents = <Row extends { readonly sequence: number }>(
   rows: ReadonlyArray<Row>,
 ): ReadonlyArray<Row> =>
@@ -453,20 +468,14 @@ export const readFactoryRunStatus = (
   factoryRunKey: string,
 ): Effect.Effect<FactoryRunStatusView, unknown, unknown> =>
   Effect.gen(function* () {
+    const { run, session } = yield* attachPlannerSessionForRun(factoryRunKey)
     const table = yield* DarkFactoryTable
-    const runOption = yield* table.runs.get(factoryRunKey)
-    const run = yield* Option.match(runOption, {
-      onNone: () =>
-        Effect.fail(new Error(`factory run not found: ${factoryRunKey}`)),
-      onSome: Effect.succeed,
-    })
     const facts = yield* table.facts.query(coll =>
       coll.toArray
         .filter(row =>
           row.factoryRunKey === factoryRunKey ||
           row.externalEntityKey === run.externalEntityKey)
         .sort((left, right) => left.createdAt.localeCompare(right.createdAt)))
-    const session = yield* attachPlannerSession(run.plannerContextId)
     const snapshot = yield* session.snapshot()
     const runtimeRuns = [...snapshot.runs]
       .sort((left, right) => left.activityAttempt - right.activityAttempt)
@@ -563,14 +572,9 @@ export const waitForPermissionRequest = (
       input,
     )
     const afterSequence = decodedInput.afterSequence ?? -1
-    const table = yield* DarkFactoryTable
-    const runOption = yield* table.runs.get(decodedInput.factoryRunKey)
-    const run = yield* Option.match(runOption, {
-      onNone: () =>
-        Effect.fail(new Error(`factory run not found: ${decodedInput.factoryRunKey}`)),
-      onSome: Effect.succeed,
-    })
-    const session = yield* attachPlannerSession(run.plannerContextId)
+    const { run, session } = yield* attachPlannerSessionForRun(
+      decodedInput.factoryRunKey,
+    )
     const findExisting = Effect.gen(function* () {
       const snapshot = yield* session.snapshot()
       return Option.fromNullable(
@@ -622,14 +626,9 @@ export const waitForNextAgentOutput = (
     const decodedInput = yield* Schema.decodeUnknown(FactoryNextAgentOutputWaitOptionsSchema)(
       input,
     )
-    const table = yield* DarkFactoryTable
-    const runOption = yield* table.runs.get(decodedInput.factoryRunKey)
-    const run = yield* Option.match(runOption, {
-      onNone: () =>
-        Effect.fail(new Error(`factory run not found: ${decodedInput.factoryRunKey}`)),
-      onSome: Effect.succeed,
-    })
-    const session = yield* attachPlannerSession(run.plannerContextId)
+    const { session } = yield* attachPlannerSessionForRun(
+      decodedInput.factoryRunKey,
+    )
     const loop = (
       remainingMs: number,
     ): Effect.Effect<RuntimeAgentOutputObservation, unknown, unknown> =>

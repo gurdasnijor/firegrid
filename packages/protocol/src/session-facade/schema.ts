@@ -94,14 +94,18 @@ export type SessionHandlePromptInput = Schema.Schema.Type<
   typeof SessionHandlePromptInputSchema
 >
 
-export const SessionPermissionRequestWaitInputSchema = Schema.Struct({
+const SessionWaitInputFields = {
   afterSequence: Schema.optional(
     Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
   ),
   timeoutMs: Schema.optional(
     Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
   ),
-}).annotations({
+} as const
+
+export const SessionPermissionRequestWaitInputSchema = Schema.Struct(
+  SessionWaitInputFields,
+).annotations({
   identifier: "firegrid.operation.session.waitForPermissionRequest.input",
   title: "Session permission request wait input",
   description:
@@ -114,14 +118,9 @@ export type SessionPermissionRequestWaitInput = Schema.Schema.Type<
   typeof SessionPermissionRequestWaitInputSchema
 >
 
-export const SessionAgentOutputWaitInputSchema = Schema.Struct({
-  afterSequence: Schema.optional(
-    Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
-  ),
-  timeoutMs: Schema.optional(
-    Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
-  ),
-}).annotations({
+export const SessionAgentOutputWaitInputSchema = Schema.Struct(
+  SessionWaitInputFields,
+).annotations({
   identifier: "firegrid.operation.session.waitForAgentOutput.input",
   title: "Session agent-output wait input",
   description:
@@ -174,6 +173,9 @@ export const RuntimeAgentOutputEnvelopeSchema = Schema.Struct({
 export type RuntimeAgentOutputEnvelope = Schema.Schema.Type<
   typeof RuntimeAgentOutputEnvelopeSchema
 >
+const RuntimeAgentOutputEnvelopeJsonSchema = Schema.parseJson(
+  RuntimeAgentOutputEnvelopeSchema,
+)
 
 export const RuntimePermissionOptionSchema = Schema.Struct({
   optionId: Schema.String.pipe(Schema.minLength(1)),
@@ -204,7 +206,7 @@ const RuntimeToolUseEventSchema = Schema.Struct({
   }),
 })
 
-export const RuntimeAgentOutputObservationSchema = Schema.Struct({
+const RuntimeAgentOutputObservationBaseFields = {
   source: Schema.Literal(FiregridRuntimeObservationSourceNames.agentOutputEvents),
   sessionId: FiregridSessionIdSchema,
   contextId: RuntimeContextIdSchema,
@@ -213,8 +215,12 @@ export const RuntimeAgentOutputObservationSchema = Schema.Struct({
     Schema.greaterThanOrEqualTo(1),
   ),
   sequence: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
-  _tag: Schema.String.pipe(Schema.minLength(1)),
   event: RuntimeAgentOutputEventPayloadSchema,
+} as const
+
+export const RuntimeAgentOutputObservationSchema = Schema.Struct({
+  ...RuntimeAgentOutputObservationBaseFields,
+  _tag: Schema.String.pipe(Schema.minLength(1)),
   permissionRequestId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
   toolUseId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
   toolName: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
@@ -233,19 +239,11 @@ export type RuntimeAgentOutputObservation = Schema.Schema.Type<
 >
 
 export const RuntimePermissionRequestObservationSchema = Schema.Struct({
-  source: Schema.Literal(FiregridRuntimeObservationSourceNames.agentOutputEvents),
-  sessionId: FiregridSessionIdSchema,
-  contextId: RuntimeContextIdSchema,
-  activityAttempt: Schema.Number.pipe(
-    Schema.int(),
-    Schema.greaterThanOrEqualTo(1),
-  ),
-  sequence: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
+  ...RuntimeAgentOutputObservationBaseFields,
   _tag: Schema.Literal("PermissionRequest"),
   permissionRequestId: Schema.String.pipe(Schema.minLength(1)),
   toolUseId: Schema.String.pipe(Schema.minLength(1)),
   options: Schema.Array(RuntimePermissionOptionSchema),
-  event: RuntimeAgentOutputEventPayloadSchema,
 }).annotations({
   identifier: "firegrid.operation.session.permissionRequestObservation",
   title: "Runtime permission request observation",
@@ -325,23 +323,18 @@ const runtimeAgentOutputContextIds = (
 export const encodeRuntimeAgentOutputEnvelope = (
   event: RuntimeAgentOutputEventPayload,
 ): string =>
-  JSON.stringify(Schema.encodeUnknownSync(RuntimeAgentOutputEnvelopeSchema)({
+  Schema.encodeSync(RuntimeAgentOutputEnvelopeJsonSchema)({
     type: "firegrid.agent-output",
     event,
-  }))
+  })
 
 export const decodeRuntimeAgentOutputEnvelope = (
   raw: string,
-): Option.Option<RuntimeAgentOutputEventPayload> => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return Option.none()
-  }
-  const decoded = Schema.decodeUnknownEither(RuntimeAgentOutputEnvelopeSchema)(parsed)
-  return Either.isRight(decoded) ? Option.some(decoded.right.event) : Option.none()
-}
+): Option.Option<RuntimeAgentOutputEventPayload> =>
+  Option.map(
+    Schema.decodeUnknownOption(RuntimeAgentOutputEnvelopeJsonSchema)(raw),
+    envelope => envelope.event,
+  )
 
 export const runtimeAgentOutputObservationFromRow = (
   row: RuntimeEventRow,
