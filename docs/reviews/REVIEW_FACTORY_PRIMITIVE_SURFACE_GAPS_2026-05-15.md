@@ -7,13 +7,15 @@ Scope: PR #256, `apps/factory/**`, current `@firegrid/client/firegrid` and
 
 ## Summary
 
-PR #256 leaves factory able to build the core runtime flow from current public
+PR #256 left factory able to build the core runtime flow from current public
 primitives: public client sessions, public runtime host layers, durable source
-registration, and protocol-owned runtime observation source names. The remaining
-glue in `apps/factory/src/host.ts` is mostly app read-model assembly and
-factory product semantics. The one useful public-surface gap is a client-facing
-normalized runtime output observation surface so apps do not parse raw runtime
-event envelopes.
+registration, and protocol-owned runtime observation source names. After PR #264
+and the runtime boundary PR9 work, factory consumes normalized agent-output
+observations through the client/session surface and consumes env policy plus
+app-owned source registration through `@firegrid/runtime/runtime-host`.
+
+The remaining glue in `apps/factory/src/host.ts` is app read-model assembly and
+factory product semantics.
 
 ## What Builds Cleanly Today
 
@@ -34,11 +36,11 @@ event envelopes.
   composes them in `DarkFactoryHostLive` (`apps/factory/src/host.ts:171`). The
   package root also exports these host/config primitives
   (`packages/runtime/src/index.ts:5`).
-- App-owned durable facts can be registered as observation read surfaces with
-  the existing durable-tools API. Factory registers `darkFactory.facts` with
-  `SourceCollections` and `sourceCollectionStreamHandle`
-  (`apps/factory/src/host.ts:28`, `apps/factory/src/host.ts:161`), matching the
-  public durable-tools exports (`packages/runtime/src/index.ts:106`).
+- Env binding policy and app-owned durable fact source registration are covered
+  by runtime-host exports. Factory imports `RuntimeEnvResolverPolicy` and
+  `registerRuntimeHostAppSource` from `@firegrid/runtime/runtime-host`, so it no
+  longer reaches into `@firegrid/runtime/sources/sandbox` or
+  `@firegrid/runtime/durable-tools` for production composition.
 - Runtime observation source names are no longer an app-local compatibility
   re-export. Factory prompt construction now imports
   `FiregridRuntimeObservationSourceNames` from protocol agent tools
@@ -54,23 +56,15 @@ event envelopes.
   concerns.
 - `readFactoryRunStatus` builds a factory-specific status view by joining
   factory facts and runs with a client runtime snapshot, sorting runtime rows,
-  and deriving permission requests from output rows
-  (`apps/factory/src/host.ts:481`). That read model is app-owned, but the raw
-  output parsing inside it is the clearest primitive gap.
-- `decodeAgentOutputWrapper` and `permissionFromRow` parse `RuntimeEvent.raw`
-  JSON envelopes in app code to recover normalized agent output and permission
-  requests (`apps/factory/src/host.ts:423`, `apps/factory/src/host.ts:439`).
-  Runtime already exports envelope helpers and observation conversion from
-  `@firegrid/runtime/events` (`packages/runtime/src/index.ts:141`), but those
-  are not surfaced through the browser-safe client snapshot.
+  and deriving permission requests from normalized `snapshot.agentOutputs`
+  (`apps/factory/src/host.ts:481`). That read model is app-owned.
 - `waitForPermissionRequest` must check existing snapshot rows, then loop
   through `session.wait.forPermissionRequest` in small timeout slices
   (`apps/factory/src/host.ts:585`). The existing client wait primitive is useful
   for one durable permission wait; the extra loop is factory's
   existing-first/status-view behavior.
-- `waitForNextAgentOutput` polls the factory status read model for new runtime
-  output (`apps/factory/src/host.ts:645`). That would be simpler with a client
-  wait/stream primitive for normalized output observations.
+- `waitForNextAgentOutput` uses the client `session.wait.forAgentOutput`
+  primitive for normalized output observations.
 - `respondToFactoryPermission` coordinates an app fact write, the client
   permission response, a snapshot lookup for the response input row, and a
   factory run status update (`apps/factory/src/host.ts:521`). The Firegrid
@@ -79,7 +73,7 @@ event envelopes.
 
 ## Missing Public Primitives
 
-### Add Client Primitive: Normalized Output Observations
+### Resolved Client Primitive: Normalized Output Observations
 
 Desired package/subpath: `@firegrid/client/firegrid`.
 
@@ -103,20 +97,16 @@ interface FiregridSessionWaitClient {
 }
 ```
 
-Why current surfaces are insufficient: `RuntimeContextSnapshot` currently
-exposes raw `events` rows (`packages/client/src/firegrid.ts:122`), so factory
-has to parse `RuntimeEvent.raw` and know the `firegrid.agent-output` envelope
-shape (`apps/factory/src/host.ts:423`). Runtime has the normalization helpers
-(`packages/runtime/src/index.ts:141`), but apps should not need runtime event
-envelope parsing to build a browser-safe status view from the client.
+This is now covered by `RuntimeContextSnapshot.agentOutputs` and
+`session.wait.forAgentOutput`.
 
-### No New Runtime Host/Config Primitive Recommended
+### Runtime Host/Config Primitive Added For PR9
 
 Factory's host layer remains local because it combines Firegrid runtime host
 configuration with `DarkFactoryTable` and `darkFactory.facts`
-(`apps/factory/src/host.ts:171`). Existing runtime-host and durable-tools
-exports are enough for this composition (`packages/runtime/src/index.ts:5`,
-`packages/runtime/src/index.ts:106`).
+(`apps/factory/src/host.ts:171`). PR9 adds the narrow runtime-host
+app-source-registration surface so factory does not import wait internals for
+that composition.
 
 ## App-Owned Semantics
 
@@ -150,12 +140,7 @@ Do not move these into `@firegrid/client` or `@firegrid/runtime`:
 
 ## Recommendation
 
-Add one future client primitive for normalized runtime output observations on
-`@firegrid/client/firegrid`. Keep it browser-safe and runtime-source-free by
-projecting the existing protocol/runtime output schema into the client snapshot
-and wait API, rather than exposing raw runtime event envelope parsing to apps.
-
-Do not add a runtime host/config primitive for factory yet. Retire only the raw
-agent-output envelope parsing and polling glue once the client observation
-primitive exists. Keep identity, tables, prompts, provider/product vocabulary,
-and UI status assembly in `apps/factory`.
+Keep identity, tables, prompts, provider/product vocabulary, and UI status
+assembly in `apps/factory`. Factory should use `@firegrid/client/firegrid` for
+session semantics and `@firegrid/runtime/runtime-host` for embedded host/config
+composition.

@@ -966,10 +966,23 @@ responsibility becomes `agent-event-pipeline/session-runtime.ts`.
 
 Goal: narrow `apps/factory` to public client and runtime host/config surfaces.
 
-Factory currently reaches into event and source/env-policy internals. Permission
-observations should come from the client/session surface when possible, and env
-policy should be available through a runtime host/config surface rather than
-sandbox internals.
+Factory consumer cleanup lands after the runtime-internal cycle, host,
+host-hardening, codec-session, namespace, and source-registration cleanup
+(`firegrid-runtime-boundary-reconciliation.SEQUENCING.7`). Factory should use
+the client/session surface for normalized permission and agent-output
+observations, and runtime host/config surfaces for embedded host composition.
+
+The app-owned `darkFactory.facts` wait source is registered through a
+runtime-host app-source registration helper rather than importing wait/source
+internals directly. Env binding policy is consumed through
+`@firegrid/runtime/runtime-host`, not the sandbox source package. This keeps
+load-bearing barrels explicit for the app audit
+(`firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.6`) and confines the
+expected downstream app import churn to this PR
+(`firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.7`).
+
+`apps/flamecast` remains on its existing single host-entrypoint runtime import
+pattern (`firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.8`).
 
 ### PR 10: Durable Wait Extraction SDD
 

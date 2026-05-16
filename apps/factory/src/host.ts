@@ -22,8 +22,10 @@ import {
 } from "@firegrid/protocol/agent-tools"
 import {
   FiregridLocalHostLive,
+  registerRuntimeHostAppSource,
   RuntimeStartCapabilityLive,
   localProcessSpawnEnvFromHostEnv,
+  type RuntimeEnvResolverPolicy,
   type RuntimeHostTopologyOptions,
 } from "@firegrid/runtime/runtime-host"
 import {
@@ -32,11 +34,6 @@ import {
   FiregridLive,
   type FiregridSessionHandle,
 } from "@firegrid/client/firegrid"
-import {
-  SourceCollections,
-  sourceCollectionStreamHandle,
-} from "@firegrid/runtime/durable-tools"
-import type { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import { Clock, Effect, Layer, Match, Option, Schema } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {
@@ -162,11 +159,11 @@ export const darkFactoryStreamUrl = (input: {
 
 export const DarkFactorySourcesLive = Layer.scopedDiscard(
   Effect.gen(function* () {
-    const sources = yield* SourceCollections
     const table = yield* DarkFactoryTable
-    yield* sources.register(
-      sourceCollectionStreamHandle(darkFactoryFactsSourceName, table.facts.rows()),
-    )
+    yield* registerRuntimeHostAppSource({
+      name: darkFactoryFactsSourceName,
+      stream: table.facts.rows(),
+    })
   }),
 )
 

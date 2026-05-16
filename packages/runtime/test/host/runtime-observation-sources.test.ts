@@ -7,7 +7,7 @@ import {
   type HostId,
   type HostSessionId,
 } from "@firegrid/protocol/launch"
-import { Effect, Fiber, Layer, Schema } from "effect"
+import { Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   encodeRuntimeAgentOutputEnvelope,
@@ -16,6 +16,7 @@ import {
 import { WaitFor, type WaitForOptions } from "../../src/waits/index.ts"
 import {
   FiregridRuntimeHostWithWorkflowLive,
+  RuntimeHostAppSourceRegistrationsLive,
   RuntimeObservationSourceNames,
 } from "../../src/host/index.ts"
 
@@ -85,7 +86,68 @@ const RuntimeContextObservationSchema = Schema.Struct({
   createdBy: Schema.optional(Schema.String),
 })
 
+const AppFactObservationSchema = Schema.Struct({
+  factoryRunKey: Schema.String,
+  status: Schema.Literal("accepted"),
+})
+
 describe("runtime-host wait_for source registrations", () => {
+  it("firegrid-runtime-boundary-reconciliation.ROLE_MODEL.4 firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.6 firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.7 registers app-owned wait sources through the runtime-host surface", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `runtime-observation-app-source-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+
+    const Wf = Workflow.make({
+      name: "runtime-observation-app-source",
+      payload: Schema.Struct({ id: Schema.String, factoryRunKey: Schema.String }),
+      success: AppFactObservationSchema,
+      idempotencyKey: p => p.id,
+    })
+
+    const workflowLayer = Wf.toLayer(payload =>
+      Effect.gen(function* () {
+        const outcome = yield* waitForOrDie({
+          name: "factory-run-accepted",
+          source: "darkFactory.facts",
+          trigger: [
+            { path: ["factoryRunKey"], equals: payload.factoryRunKey },
+          ],
+          resultSchema: AppFactObservationSchema,
+        })
+        if (outcome._tag !== "Match") throw new Error("expected Match")
+        return outcome.row
+      }))
+
+    const hostWithAppSource = RuntimeHostAppSourceRegistrationsLive([
+      {
+        name: "darkFactory.facts",
+        stream: Stream.make({
+          factoryRunKey: "factory-run-1",
+          status: "accepted",
+        }),
+      },
+    ]).pipe(
+      Layer.provideMerge(hostLayer({ namespace, hostId })),
+    )
+
+    const layer = workflowLayer.pipe(
+      Layer.provideMerge(hostWithAppSource),
+    ) as Layer.Layer<never, unknown, never>
+
+    const result = await runWith(
+      layer,
+      Wf.execute({
+        id: "factory-run-accepted",
+        factoryRunKey: "factory-run-1",
+      }),
+    )
+
+    expect(result).toEqual({
+      factoryRunKey: "factory-run-1",
+      status: "accepted",
+    })
+  })
+
   it("firegrid-factory-aligned-agent-tools.WAIT_FOR.4, WAIT_FOR.5 observes RuntimeOutput PermissionRequest by contextId and permissionRequestId", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-observation-permission-${crypto.randomUUID()}`

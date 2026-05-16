@@ -24,10 +24,15 @@ export {
   hostOwnedStreamUrl,
   localProcessSpawnEnvFromHostEnv,
   provideRuntimeContext,
+  registerRuntimeHostAppSource,
   requireLocalContext,
   runtimeControlPlaneStreamUrl,
+  RuntimeEnvResolverPolicy,
+  RuntimeHostAppSourceRegistrationsLive,
   startRuntime,
   type LocalProcessSandboxProviderOptions,
+  type RuntimeEnvResolverPolicyValue,
+  type RuntimeHostAppSourceRegistration,
   type RuntimeHostTopologyOptions,
   type StartRuntimeOptions,
   type StartRuntimeResult,
@@ -36,10 +41,8 @@ export {
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
 export {
   ResolveEnvBindingError,
-  RuntimeEnvResolverPolicy,
   resolveSpawnEnvVars,
   type EnvLookup,
-  type RuntimeEnvResolverPolicyValue,
 } from "./agent-event-pipeline/sources/sandbox/secrets.ts"
 // firegrid-effect-ai-inprocess-provider.SANDBOX_PROVIDER.1
 export {
