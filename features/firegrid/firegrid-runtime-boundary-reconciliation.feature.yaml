@@ -59,6 +59,15 @@ components:
       5: The host split is behavior-preserving and validated by existing runtime host, prompt-routing, sync-run, two-host isolation, and codec event-plane tests.
       6: Host split runs after cycle-breaking and does not move waits internals or package boundaries.
 
+  HOST_HARDENING:
+    requirements:
+      1: Host composition hardening runs after the mechanical host split and does not introduce new public host exports.
+      2: Host topology and codec-path tool lowering share one host runtime-observation/tool substrate layer instead of maintaining parallel provideMerge chains.
+      3: Codec-path tool lowering preserves the pre-split host-coupled tool-host capabilities unless an explicit behavior change lands with tests and ACIDs.
+      4: Local runtime-context ownership checks used by startRuntime, RuntimeStartCapabilityLive, and host-coupled tool services are factored through one host-internal helper.
+      5: Runtime context workflow modules export workflow definitions and layers, while reusable execution-id, clock, and context-read helpers live in a host-internal helper module when sibling files need them.
+      6: Host hardening remains behavior-preserving and is validated by runtime host, prompt-routing, sync-run, two-host isolation, and codec event-plane tests.
+
   CODEC_SESSION:
     requirements:
       1: Runtime protocol implementations provide scoped AgentSession services through Effect Layer constructors rather than active object-with-open-method codec values.
@@ -135,5 +144,6 @@ constraints:
       2: Cycle-breaking lands before host/index extraction.
       3: Generic durable wait extraction requires a separate package-boundary design before code moves into effect-durable-operators.
       4: The reconciliation work does not re-open accepted event-pipeline behavior unless validation finds a correctness bug.
-      5: Codec session Layer refactoring happens after host/index extraction and before the agent event-pipeline namespace move.
-      6: Factory consumer cleanup happens after runtime-internal cycle, host, codec-session, namespace, and source-registration cleanup.
+      5: Host composition hardening happens after host/index extraction and before codec session Layer refactoring.
+      6: Codec session Layer refactoring happens after host composition hardening and before the agent event-pipeline namespace move.
+      7: Factory consumer cleanup happens after runtime-internal cycle, host, host-hardening, codec-session, namespace, and source-registration cleanup.

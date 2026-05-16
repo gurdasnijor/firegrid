@@ -830,7 +830,38 @@ Target extraction:
 PR 1 is a prerequisite. Extraction is cleaner once host no longer owns shared
 runtime error types.
 
-### PR 3: Codec Sessions As Effect Layers
+### PR 3: Host Composition Hardening
+
+Goal: pay down the role seams made visible by the host extraction without
+changing runtime behavior.
+
+The host split moves the old `host/index.ts` responsibilities into focused
+files. The next cleanup should remove duplicated host composition logic and
+shared helper leakage that would otherwise drift across those files.
+
+Target shape:
+
+- a shared host runtime-observation/tool substrate layer is the single source
+  for the `RuntimeObservationSourcesLive` + durable runtime capability stack
+  used by both host topology and codec-path tool lowering;
+- codec-path tool lowering preserves the same host-coupled tool-host
+  capabilities as the pre-split host unless an explicit behavior change lands
+  with tests and ACIDs;
+- local-context ownership checks are factored behind one host-internal helper
+  consumed by `startRuntime`, `RuntimeStartCapabilityLive`, and host-coupled
+  tool services;
+- `runtime-context-workflow.ts` exports workflow definitions and the workflow
+  layer, while shared execution-id/clock/context-read helpers move to a host
+  internal helper module if they are needed by sibling files;
+- `agent-tool-host-live.ts` may keep host-captured capability values, but
+  follow-up refactors should reduce module-level `captured` helper plumbing
+  when it can be expressed directly inside the `Layer.effect` construction.
+
+This is intentionally after PR 2. PR 2 proves the mechanical split; this PR
+uses the new file boundaries to remove duplicated composition chains and shared
+utility drift. It should not introduce new public host exports.
+
+### PR 4: Codec Sessions As Effect Layers
 
 Goal: replace the hand-rolled `AgentCodec` object/open-method contract with
 Effect-native scoped session providers.
@@ -858,7 +889,7 @@ Do not add a codec registry in this PR. The runtime currently selects one
 session layer from the runtime context protocol. A registry becomes justified
 only when codec discovery is dynamic or externally extensible.
 
-### PR 4: Source Registration Ownership
+### PR 5: Source Registration Ownership
 
 Goal: eliminate `host/observation-sources.ts` as standalone glue.
 
@@ -873,7 +904,7 @@ registration is the bridge from static stream capabilities to `wait_for`
 lookup; it should not become a broader dependency from authorities to wait
 semantics.
 
-### PR 5: Wait Authority Comes Home
+### PR 6: Wait Authority Comes Home
 
 Goal: move the wait row authority next to the wait row schema.
 
@@ -891,7 +922,7 @@ Target shape:
 - `WaitCompletionRow` upsert;
 - `WaitCompletionRow` stream.
 
-### PR 6: Wait Router Subscriber-Driver Shape
+### PR 7: Wait Router Subscriber-Driver Shape
 
 Goal: name the wait router as a subscriber driver without moving it into the
 agent event-pipeline subscriber folder.
@@ -901,7 +932,7 @@ or `waits/internal/wait-router.ts`, and make the driver shape explicit as a
 scoped `Layer<never, E, R>` that provides no public service. Do not move timeout
 ownership into the router in this PR.
 
-### PR 7: Agent Event-Pipeline Namespace
+### PR 8: Agent Event-Pipeline Namespace
 
 Goal: mechanically namespace clean event-pipeline pieces away from host,
 workflow-engine, waits, tools, adapters, and verified ingest.
@@ -926,7 +957,7 @@ agent-event-pipeline/
 `pipeline/` is removed as a stage-looking folder. Its current composition
 responsibility becomes `agent-event-pipeline/session-runtime.ts`.
 
-### PR 8: Factory Consumer Audit
+### PR 9: Factory Consumer Audit
 
 Goal: narrow `apps/factory` to public client and runtime host/config surfaces.
 
@@ -935,7 +966,7 @@ observations should come from the client/session surface when possible, and env
 policy should be available through a runtime host/config surface rather than
 sandbox internals.
 
-### PR 9: Durable Wait Extraction SDD
+### PR 10: Durable Wait Extraction SDD
 
 Decide which `waits/` internals belong in `packages/effect-durable-operators`.
 Require a package-boundary SDD before any code moves.
@@ -944,7 +975,7 @@ Draft this SDD when durable wait coordination is needed outside Firegrid
 runtime vocabulary, for example by another workflow product that can consume
 the same wait rows, completion rows, timeout, and source-matching primitives.
 
-### PR 10: Public Surface Cleanup
+### PR 11: Public Surface Cleanup
 
 Enforce final exports after the layout reshuffles. Use dependency-cruiser for
 directory/import-boundary rules and semgrep for code-pattern rules. The
@@ -955,7 +986,7 @@ dependency-cruiser rules should fail on:
 - direct imports of `runtime-errors.ts` from outside `@firegrid/runtime`;
 - top-level runtime folders without a documented role in this SDD.
 
-### PR 11: Docs Consolidation
+### PR 12: Docs Consolidation
 
 Move stable architecture guidance into `packages/runtime/ARCHITECTURE.md` once
 the post-`#250` refactors land. Keep SDDs as decision records, not the only
@@ -974,7 +1005,7 @@ Every PR in the follow-up plan must satisfy:
 3. **No new Firegrid abstractions.** Effect's `Context.Tag`, `Layer`,
    `Queue.Enqueue`, `Stream`, `Sink`, and narrow `Effect` services cover the
    roles this SDD defines.
-4. **Apps build unchanged until the app audit.** PRs 1 through 7 are
+4. **Apps build unchanged until the app audit.** PRs 1 through 8 are
    runtime-internal. Factory's surface audit is the first PR expected to touch
    downstream product imports.
 5. **Provider uniqueness is tested against real Effect values.** Keep
