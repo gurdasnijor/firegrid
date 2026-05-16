@@ -91,6 +91,7 @@ packages/runtime/src/agent-tools/
 
 packages/client/src/
   firegrid.ts           # schema -> user-facing client object
+  operations.ts         # protocol operation catalog -> client projection
   sessions.ts           # schema -> sessions namespace helpers, if split helps
 
 src/
@@ -281,6 +282,12 @@ operation id: session.prompt
 tool name:    session_prompt
 client API:   firegrid.sessions.prompt(...)
 ```
+
+The client operation catalog lives in protocol session-facade schemas and is
+re-exported from `@firegrid/client`. It may compatibility-reuse existing
+agent-tool schemas for operations whose protocol shape already exists there,
+but client decoders should import the client operation catalog rather than the
+runtime agent-tool operation catalog.
 
 ## Client Read Projection
 

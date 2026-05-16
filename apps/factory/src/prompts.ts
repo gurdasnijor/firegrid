@@ -1,4 +1,4 @@
-import { FiregridRuntimeObservationSourceNames } from "@firegrid/protocol/agent-tools"
+import { FiregridRuntimeObservationSourceNames } from "@firegrid/protocol/session-facade"
 import { Schema } from "effect"
 import {
   DarkFactoryRunSchema,

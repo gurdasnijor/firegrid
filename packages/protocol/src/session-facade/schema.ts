@@ -5,6 +5,7 @@ import {
   PermissionDecisionSchema,
 } from "../agent-tools/schema.ts"
 import { PublicLaunchRuntimeIntentSchema } from "../launch/schema.ts"
+import { firegridProjection } from "../operations/schema.ts"
 
 export const FiregridSessionIdSchema = Schema.String.pipe(
   Schema.minLength(1),
@@ -44,6 +45,10 @@ export const SessionCreateOrLoadInputSchema = Schema.Struct({
   title: "Session create-or-load input",
   description:
     "Create or load a RuntimeContext-backed session from a caller-owned external key.",
+  ...firegridProjection({
+    operationId: "session.createOrLoad",
+    clientName: "sessions.createOrLoad",
+  }),
   parseOptions: {
     onExcessProperty: "error",
   },
@@ -63,6 +68,10 @@ export const SessionAttachInputSchema = Schema.Struct({
   title: "Session attach input",
   description:
     "Create a scoped client handle for an existing RuntimeContext-backed Firegrid session id.",
+  ...firegridProjection({
+    operationId: "session.attach",
+    clientName: "sessions.attach",
+  }),
   parseOptions: {
     onExcessProperty: "error",
   },
@@ -72,6 +81,22 @@ export type SessionAttachDecodedInput = Schema.Schema.Type<
 >
 export type SessionAttachInput = Schema.Schema.Encoded<
   typeof SessionAttachInputSchema
+>
+
+export const SessionHandleReferenceSchema = Schema.Struct({
+  sessionId: FiregridSessionIdSchema,
+  contextId: RuntimeContextIdSchema,
+}).annotations({
+  identifier: "firegrid.operation.session.handleReference",
+  title: "Session handle reference",
+  description:
+    "Serializable identity fields for a RuntimeContext-backed session handle.",
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type SessionHandleReference = Schema.Schema.Type<
+  typeof SessionHandleReferenceSchema
 >
 
 export const SessionHandlePromptInputSchema = Schema.Struct({
@@ -86,6 +111,10 @@ export const SessionHandlePromptInputSchema = Schema.Struct({
   title: "Scoped session prompt input",
   description:
     "Append a prompt to a RuntimeContext-backed session without restating the context id.",
+  ...firegridProjection({
+    operationId: "session.prompt.scoped",
+    clientName: "session.prompt",
+  }),
   parseOptions: {
     onExcessProperty: "error",
   },
@@ -110,6 +139,10 @@ export const SessionPermissionRequestWaitInputSchema = Schema.Struct(
   title: "Session permission request wait input",
   description:
     "Wait for a PermissionRequest observation in the scoped RuntimeContext output.",
+  ...firegridProjection({
+    operationId: "session.wait.forPermissionRequest",
+    clientName: "session.wait.forPermissionRequest",
+  }),
   parseOptions: {
     onExcessProperty: "error",
   },
@@ -125,6 +158,10 @@ export const SessionAgentOutputWaitInputSchema = Schema.Struct(
   title: "Session agent-output wait input",
   description:
     "Wait for a normalized agent-output observation in the scoped RuntimeContext output.",
+  ...firegridProjection({
+    operationId: "session.wait.forAgentOutput",
+    clientName: "session.wait.forAgentOutput",
+  }),
   parseOptions: {
     onExcessProperty: "error",
   },
@@ -142,6 +179,10 @@ export const SessionPermissionRespondInputSchema = Schema.Struct({
   title: "Scoped session permission response input",
   description:
     "Append a PermissionResponse to the scoped RuntimeContext without restating the context id.",
+  ...firegridProjection({
+    operationId: "permission.respond.scoped",
+    clientName: "session.permissions.respond",
+  }),
   parseOptions: {
     onExcessProperty: "error",
   },

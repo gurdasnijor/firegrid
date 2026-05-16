@@ -34,18 +34,14 @@ import {
   type RuntimeStartResult,
 } from "@firegrid/protocol/launch"
 import {
-  FiregridAgentToolOperations,
   FiregridRuntimeObservationSourceNames,
-  PermissionRespondInputSchema,
-  SessionPromptToolInputSchema,
-  WaitForToolInputSchema,
   type PermissionRespondInput,
   type PermissionRespondOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
   type WaitForToolInput,
   type WaitForToolOutput,
-} from "@firegrid/protocol/agent-tools"
+} from "@firegrid/protocol/session-facade"
 import {
   RuntimeIngressTable,
   makeRuntimeIngressInputRow,
@@ -57,12 +53,6 @@ import {
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
 import {
-  SessionAttachInputSchema,
-  SessionAgentOutputWaitInputSchema,
-  SessionCreateOrLoadInputSchema,
-  SessionHandlePromptInputSchema,
-  SessionPermissionRequestWaitInputSchema,
-  SessionPermissionRespondInputSchema,
   runtimeAgentOutputObservationFromRow,
   runtimePermissionRequestObservationFromAgentOutput,
   sessionContextIdForExternalKey,
@@ -80,6 +70,7 @@ import {
 } from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "@firegrid/protocol"
 import { Clock, Context, Data, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
+import { FiregridClientOperations } from "./operations.ts"
 
 export type {
   RuntimeAgentOutputObservation,
@@ -87,6 +78,7 @@ export type {
   SessionAgentOutputWaitInput,
   SessionAgentOutputWaitOutput,
 } from "@firegrid/protocol/session-facade"
+export { FiregridClientOperations } from "./operations.ts"
 
 export interface ClientOptions {
   readonly durableStreamsBaseUrl?: string
@@ -186,18 +178,6 @@ export interface FiregridSessionHandle {
   readonly wait: FiregridSessionWaitClient
   readonly permissions: FiregridSessionPermissionsClient
 }
-
-export const FiregridClientOperations = {
-  sessions: {
-    prompt: FiregridAgentToolOperations.sessionPrompt,
-  },
-  wait: {
-    for: FiregridAgentToolOperations.waitFor,
-  },
-  permissions: {
-    respond: FiregridAgentToolOperations.permissionRespond,
-  },
-} as const
 
 export interface FiregridSessionsClient {
   readonly attach: (
@@ -403,42 +383,42 @@ const decodePublicPromptRequest = (
 const decodeSessionPromptInput = (
   request: SessionPromptToolInput,
 ): Effect.Effect<SessionPromptToolInput, PromptInputError> =>
-  Schema.decodeUnknown(SessionPromptToolInputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.sessions.prompt.inputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionCreateOrLoadInput = (
   request: SessionCreateOrLoadInput,
 ): Effect.Effect<SessionCreateOrLoadInput, LaunchInputError> =>
-  Schema.decodeUnknown(SessionCreateOrLoadInputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.sessions.createOrLoad.inputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionAttachInput = (
   request: SessionAttachInput,
 ): Effect.Effect<SessionAttachDecodedInput, LaunchInputError> =>
-  Schema.decodeUnknown(SessionAttachInputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.sessions.attach.inputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionHandlePromptInput = (
   request: SessionHandlePromptInput,
 ): Effect.Effect<SessionHandlePromptInput, PromptInputError> =>
-  Schema.decodeUnknown(SessionHandlePromptInputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.sessions.promptScoped.inputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodePermissionRespondInput = (
   request: PermissionRespondInput,
 ): Effect.Effect<PermissionRespondInput, LaunchInputError> =>
-  Schema.decodeUnknown(PermissionRespondInputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.permissions.respond.inputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeSessionPermissionRespondInput = (
   request: SessionPermissionRespondInput,
 ): Effect.Effect<SessionPermissionRespondInput, LaunchInputError> =>
-  Schema.decodeUnknown(SessionPermissionRespondInputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.permissions.respondScoped.inputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
@@ -447,7 +427,7 @@ const decodeSessionPermissionRequestWaitInput = (
 ): Effect.Effect<SessionPermissionRequestWaitInput, LaunchInputError> =>
   request === undefined
     ? Effect.succeed({})
-    : Schema.decodeUnknown(SessionPermissionRequestWaitInputSchema, {
+    : Schema.decodeUnknown(FiregridClientOperations.wait.forPermissionRequest.inputSchema, {
       onExcessProperty: "error",
     })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
@@ -456,14 +436,14 @@ const decodeSessionAgentOutputWaitInput = (
 ): Effect.Effect<SessionAgentOutputWaitInput, LaunchInputError> =>
   request === undefined
     ? Effect.succeed({})
-    : Schema.decodeUnknown(SessionAgentOutputWaitInputSchema, {
+    : Schema.decodeUnknown(FiregridClientOperations.wait.forAgentOutput.inputSchema, {
       onExcessProperty: "error",
     })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
 const decodeWaitForInput = (
   request: WaitForToolInput,
 ): Effect.Effect<WaitForToolInput, LaunchInputError> =>
-  Schema.decodeUnknown(WaitForToolInputSchema, {
+  Schema.decodeUnknown(FiregridClientOperations.wait.for.inputSchema, {
     onExcessProperty: "error",
   })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 

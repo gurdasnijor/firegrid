@@ -16,6 +16,7 @@ import {
   Firegrid,
   FiregridConfig,
   FiregridControlPlaneTableLive,
+  FiregridClientOperations,
   FiregridLive,
   FiregridStandaloneLive,
   FiregridRuntimeTables,
@@ -31,6 +32,7 @@ import {
 | `FiregridLive` | Client service layer. It expects a `RuntimeControlPlaneTable` in scope so it can share the same materialized context index as a host in the same process. |
 | `FiregridStandaloneLive` | `FiregridLive` plus its own control-plane table layer. Use this for browser/edge readers or server code that is not also composing the runtime host in-process. |
 | `FiregridControlPlaneTableLive` | Layer for the namespace-scoped runtime control-plane table. This is the browser-live table layer that can be safely shared with React table providers. |
+| `FiregridClientOperations` | Protocol-backed operation catalog for client projections. Client decoders use these schema entries rather than a client-local contract or the runtime agent-tool projection. |
 | `FiregridRuntimeTables` | DurableTable tag map for `ControlPlane`, `Ingress`, and `Output`. Ingress and output are host-owned tables, so generic browser code usually reaches them through `snapshot()` rather than a single static provider layer. |
 | `firegridRuntimeTableTags` | Table tag list for advanced compositions that provide all required table layers. |
 | `local` | Helper constructors for local-process runtime intents. |
@@ -92,6 +94,8 @@ Layer.succeed(FiregridConfig, {
 The main app-facing surface is the session facade. It creates or loads a
 RuntimeContext from a caller-owned external key, appends prompts, reads durable
 snapshots, waits for permission requests, and writes permission responses.
+Its inputs are decoded through protocol-owned session operation schemas exposed
+by `FiregridClientOperations`.
 
 The public durable identity is `sessionId`. In v1, `sessionId` is encoded
 exactly as `RuntimeContext.contextId`; `contextId` remains on handles as a

@@ -13,13 +13,11 @@ import {
   RuntimeAgentOutputEventPayloadSchema,
   RuntimeAgentOutputObservationSchema,
   RuntimePermissionOptionSchema,
+  PermissionDecisionSchema,
   runtimePermissionRequestObservationFromAgentOutput,
   type RuntimeAgentOutputObservation,
   type RuntimePermissionRequestObservation,
 } from "@firegrid/protocol/session-facade"
-import {
-  PermissionDecisionSchema,
-} from "@firegrid/protocol/agent-tools"
 import {
   FiregridLocalHostLive,
   registerRuntimeHostAppSource,
