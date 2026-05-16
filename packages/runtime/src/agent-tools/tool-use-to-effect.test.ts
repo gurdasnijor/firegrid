@@ -33,7 +33,7 @@ import { AgentToolCallPartSchema, ToolResultEventSchema } from "../events/index.
 import {
   DurableToolsWaitForLive,
   SourceCollections,
-  sourceCollectionHandle,
+  sourceCollectionStreamHandle,
 } from "../waits/index.ts"
 import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
@@ -211,7 +211,7 @@ const runWith = <A, E>(
 const registerTestSource = Effect.gen(function* () {
   const sources = yield* SourceCollections
   const table = yield* TestSourceTable
-  yield* sources.register(sourceCollectionHandle("test-source", table.rows))
+  yield* sources.register(sourceCollectionStreamHandle("test-source", table.rows.rows()))
 })
 
 // ---------------------------------------------------------------------------

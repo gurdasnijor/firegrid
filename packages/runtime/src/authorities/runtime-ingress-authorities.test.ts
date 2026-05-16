@@ -64,7 +64,7 @@ describe("runtime ingress authorities", () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const appender = yield* RuntimeIngressAppendAndGet
-        yield* RuntimeIngressInputStream
+        const _ingressInputs = yield* RuntimeIngressInputStream
         const firstRow = yield* appender.append(first)
         const duplicate = yield* appender.append(first)
         const secondRow = yield* appender.append(second)
@@ -106,7 +106,7 @@ describe("runtime ingress authorities", () => {
       Effect.gen(function* () {
         const appender = yield* RuntimeIngressAppendAndGet
         const tracker = yield* RuntimeIngressDeliveryClaimAndComplete
-        yield* RuntimeIngressDeliveries
+        const _ingressDeliveries = yield* RuntimeIngressDeliveries
         const row = yield* appender.append(request)
         const first = yield* tracker.claimInput(row, {
           subscriberId,

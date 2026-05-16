@@ -30,7 +30,7 @@ import {
 } from "@firegrid/client/firegrid"
 import {
   SourceCollections,
-  sourceCollectionHandle,
+  sourceCollectionStreamHandle,
 } from "@firegrid/runtime/durable-tools"
 import type { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import {
@@ -166,7 +166,7 @@ export const DarkFactorySourcesLive = Layer.scopedDiscard(
     const sources = yield* SourceCollections
     const table = yield* DarkFactoryTable
     yield* sources.register(
-      sourceCollectionHandle(darkFactoryFactsSourceName, table.facts),
+      sourceCollectionStreamHandle(darkFactoryFactsSourceName, table.facts.rows()),
     )
   }),
 )

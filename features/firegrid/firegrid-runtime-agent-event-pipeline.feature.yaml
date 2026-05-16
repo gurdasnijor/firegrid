@@ -35,7 +35,7 @@ components:
       5: RuntimeControlPlaneRecorderLive is the only runtime provider layer for capability tags that write RuntimeControlPlaneTable.contexts and RuntimeControlPlaneTable.runs lifecycle rows.
       5-1: RuntimeControlPlaneRecorderLive owns local RuntimeContext insertion currently performed through host-context authority; host-context authority remains the read, validation, current-context, and stream URL derivation surface.
       6: DurableWaitStoreLive is the only runtime provider layer for capability tags that write durable wait rows and completions.
-      6-1: DurableWaitForMatching is provided by DurableWaitStoreLive and is the runtime capability used by permission/capability bridges to wait for a matching row from a dynamic source registration.
+      6-1: DurableWaitForMatching is provided by DurableWaitForMatchingLive from the authority provider module and is the runtime capability used by permission/capability bridges to wait for a matching row from a dynamic source registration.
       7: Authority layers may provide Queue.Enqueue capabilities for append-only writes, Sink values for stream-terminal writes, and narrow Effect-returning capabilities for command handlers that need committed rows or lookups.
       8: Authority layers that own rows consumed by subscribers expose static Stream observation tags for those rows and dynamic SourceCollectionHandle registrations only for wait_for/source lookup by name.
       9: Authority read surfaces are named and documented as static durable observation streams or dynamic source registrations rather than pipeline byte sources.

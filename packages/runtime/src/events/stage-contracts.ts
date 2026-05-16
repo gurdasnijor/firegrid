@@ -1,9 +1,4 @@
-import { Schema, type Stream } from "effect"
-
-// firegrid-runtime-agent-event-pipeline.STAGES.7
-export type RuntimeTransform<Input, Output, Error = never, Requirements = never> = (
-  input: Stream.Stream<Input, Error, Requirements>,
-) => Stream.Stream<Output, Error, Requirements>
+import { Schema } from "effect"
 
 // firegrid-runtime-agent-event-pipeline.STAGES.8
 export const RuntimeSubscriberIdSchema = Schema.String.pipe(

@@ -22,7 +22,7 @@ import {
   DurableToolsTable,
   DurableToolsWaitForLive,
   SourceCollections,
-  sourceCollectionHandle,
+  sourceCollectionStreamHandle,
   type WaitForOptions,
   type WaitForOutcome,
   WaitFor,
@@ -153,14 +153,14 @@ const runWith = <A, E>(
 const registerTestSource = Effect.gen(function*() {
   const sources = yield* SourceCollections
   const table = yield* TestSourceTable
-  yield* sources.register(sourceCollectionHandle("test-source", table.rows))
+  yield* sources.register(sourceCollectionStreamHandle("test-source", table.rows.rows()))
 })
 
 const registerTaggedSource = Effect.gen(function*() {
   const sources = yield* SourceCollections
   const table = yield* TaggedResultTable
   yield* sources.register(
-    sourceCollectionHandle("tagged-source", table.rows),
+    sourceCollectionStreamHandle("tagged-source", table.rows.rows()),
   )
 })
 

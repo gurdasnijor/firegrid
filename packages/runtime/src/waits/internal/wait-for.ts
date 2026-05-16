@@ -39,7 +39,10 @@ import {
 } from "effect"
 import { type DurableTableError } from "effect-durable-operators"
 import { type WaitRow } from "./table.ts"
-import { DurableWaitStore } from "../../authorities/index.ts"
+import {
+  DurableWaitAppendAndGet,
+  DurableWaitCompletionAppendAndGet,
+} from "../../authorities/index.ts"
 import {
   type FieldEqualsTrigger,
   FieldEqualsTriggerSchema,
@@ -116,7 +119,7 @@ export interface WaitForOptions<A = unknown> {
 const upsertActiveWait = (
   waitName: string,
   row: WaitRow,
-  store: DurableWaitStore["Type"],
+  store: DurableWaitAppendAndGet["Type"],
 ) =>
   Effect.gen(function*() {
     const existing = yield* Effect.mapError(
@@ -144,7 +147,9 @@ const upsertActiveWait = (
 const writeTimeoutCompletion = (
   waitName: string,
   waitKey: { readonly executionId: string; readonly name: string },
-  store: DurableWaitStore["Type"],
+  store:
+    & DurableWaitAppendAndGet["Type"]
+    & DurableWaitCompletionAppendAndGet["Type"],
 ) =>
   Effect.gen(function*() {
     const existing = yield* Effect.mapError(
@@ -242,7 +247,8 @@ type MatchImplResult<A> = Effect.Effect<
   WaitForError | ParseResult.ParseError | DurableTableError,
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
-  | DurableWaitStore
+  | DurableWaitAppendAndGet
+  | DurableWaitCompletionAppendAndGet
   | Scope.Scope
 >
 
@@ -251,7 +257,9 @@ const matchImpl = <A = unknown>(
 ): MatchImplResult<A> =>
   Effect.gen(function*() {
     const instance = yield* WorkflowEngine.WorkflowInstance
-    const store = yield* DurableWaitStore
+    const waits = yield* DurableWaitAppendAndGet
+    const completions = yield* DurableWaitCompletionAppendAndGet
+    const store = { ...waits, ...completions }
     const waitKey = {
       executionId: instance.executionId,
       name: options.name,
@@ -313,7 +321,9 @@ const matchOnlyFlow = <A>(
 const matchOrTimeoutFlow = <A>(
   options: WaitForOptions<A>,
   matchDeferred: ReturnType<typeof matchDeferredFor>,
-  store: DurableWaitStore["Type"],
+  store:
+    & DurableWaitAppendAndGet["Type"]
+    & DurableWaitCompletionAppendAndGet["Type"],
   waitKey: { readonly executionId: string; readonly name: string },
 ): Effect.Effect<
   WaitForOutcome<A>,

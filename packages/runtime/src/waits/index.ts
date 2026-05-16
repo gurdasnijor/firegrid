@@ -13,7 +13,7 @@ export {
   SourceCollections,
   type SourceCollectionHandle,
   type SourceCollectionsService,
-  sourceCollectionHandle,
+  sourceCollectionStreamHandle,
 } from "./internal/source-collections.ts"
 export { WaitFor, type WaitForOptions } from "./internal/wait-for.ts"
 export {

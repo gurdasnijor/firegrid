@@ -1,7 +1,11 @@
 export {
+  DurableWaitAppendAndGet,
+  DurableWaitCompletionAppendAndGet,
   DurableWaitForMatching,
-  DurableWaitStore,
+  DurableWaitForMatchingLive,
   DurableWaitStoreLive,
+  type DurableWaitAppendAndGetService,
+  type DurableWaitCompletionAppendAndGetService,
   type DurableWaitForMatchingService,
 } from "./durable-wait-store.ts"
 export {

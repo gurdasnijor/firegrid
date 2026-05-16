@@ -454,7 +454,8 @@ rules:
         Use the owning runtime authority capability tag, such as
         RuntimeEventAppendAndGet, RuntimeIngressAppendAndGet,
         RuntimeIngressDeliveryClaimAndComplete, RuntimeContextInsert,
-        RuntimeRunAppendAndGet, or DurableWaitStore.
+        RuntimeRunAppendAndGet, DurableWaitAppendAndGet, or
+        DurableWaitCompletionAppendAndGet.
     paths:
       include:
         - "/packages/runtime/src/**/*.ts"

@@ -7,7 +7,6 @@ import { Effect, Either, Schema, Stream } from "effect"
 import {
   AgentInputEventSchema,
   type AgentInputEvent,
-  type RuntimeTransform,
 } from "../events/index.ts"
 import {
   mapRuntimeContextError,
@@ -116,7 +115,7 @@ interface SequencedIngressOrderState {
   readonly pending: Map<number, RuntimeIngressInputRow>
 }
 
-export const orderSequencedRuntimeIngressRows = <Error, Requirements>(
+const orderSequencedRuntimeIngressRows = <Error, Requirements>(
   rows: Stream.Stream<RuntimeIngressInputRow, Error, Requirements>,
 ): Stream.Stream<RuntimeIngressInputRow, Error, Requirements> =>
   rows.pipe(
@@ -161,7 +160,9 @@ export const sequencedRuntimeIngressRowsForContext = <Error, Requirements>(
 
 export const runtimeIngressRowsToAgentInputEvents = (
   contextId: string,
-): RuntimeTransform<ClaimedRuntimeIngressRow, ClaimedAgentInputEvent, RuntimeContextError> =>
+): (
+  rows: Stream.Stream<ClaimedRuntimeIngressRow, RuntimeContextError>,
+) => Stream.Stream<ClaimedAgentInputEvent, RuntimeContextError> =>
   rows =>
     rows.pipe(
       Stream.mapEffect(({ row, delivery }) =>

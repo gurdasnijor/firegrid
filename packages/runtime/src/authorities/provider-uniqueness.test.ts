@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
   DurableWaitForMatching,
-  DurableWaitStore,
+  DurableWaitAppendAndGet,
+  DurableWaitCompletionAppendAndGet,
   DurableWaitStoreLive,
 } from "./durable-wait-store.ts"
 import {
@@ -168,9 +169,15 @@ const providerEntries = [
     dynamicSourceCollections: runtimeControlPlaneSources,
   },
   {
-    capability: DurableWaitStore,
+    capability: DurableWaitAppendAndGet,
     provider: DurableWaitStoreLive,
-    backingTable: "DurableToolsTable",
+    backingTable: "DurableToolsTable.waits",
+    dynamicSourceCollections: durableWaitSources,
+  },
+  {
+    capability: DurableWaitCompletionAppendAndGet,
+    provider: DurableWaitStoreLive,
+    backingTable: "DurableToolsTable.completions",
     dynamicSourceCollections: durableWaitSources,
   },
   {

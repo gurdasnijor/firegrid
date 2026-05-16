@@ -18,7 +18,7 @@ source layer. It is a Firegrid-agnostic row observation stream on each
 DurableTable collection facade:
 
 ```txt
-DurableTable collection -> rows() -> sourceCollectionHandle(name, collection) -> wait_for
+DurableTable collection -> rows() -> sourceCollectionStreamHandle(name, rows) -> wait_for
 ```
 
 Verified webhooks should consume this generic collection registration path.
@@ -64,8 +64,8 @@ the same TanStack collection subscription semantics DurableTable already wraps.
 It is just the common row-observation case of the existing generic
 `subscribe(...)` hook.
 
-Runtime durable-tools can then simplify `sourceCollectionHandle(name, facade)`
-to consume `facade.rows()` directly. If a product wants layer-shaped
+Runtime durable-tools can register row streams with
+`sourceCollectionStreamHandle(name, facade.rows())`. If a product wants layer-shaped
 registration, it can still call `SourceCollections.register(...)` inside its
 own Layer; no new public layer helper is needed unless implementation proves it
 removes real code.
@@ -98,9 +98,9 @@ const registerVerifiedWebhookFacts = Effect.gen(function* () {
   const sources = yield* SourceCollections
   const table = yield* VerifiedWebhookFactTable
   yield* sources.register(
-    sourceCollectionHandle(
+    sourceCollectionStreamHandle(
       "firegrid.verifiedWebhooks",
-      table.verifiedWebhookFacts,
+      table.verifiedWebhookFacts.rows(),
     ),
   )
 })
@@ -168,7 +168,7 @@ Permission facts can use existing top-level fields by mapping:
 `@firegrid/runtime` durable-tools owns:
 
 - `SourceCollections`;
-- `sourceCollectionHandle`;
+- `sourceCollectionStreamHandle`;
 - `WaitFor.match` over registered source names.
 
 Product/runtime composition owns:
@@ -180,14 +180,14 @@ Product/runtime composition owns:
 ## Minimal Implementation Slice
 
 1. Add `rows()` to `DurableTable` collection facades.
-2. Update `sourceCollectionHandle(name, facade)` to consume `facade.rows()`.
+2. Register source collections with `sourceCollectionStreamHandle(name, facade.rows())`.
 3. Add a focused DurableTable test proving `rows()` emits an existing row and a
    later live row without emitting deleted rows.
 4. Keep existing durable-tools tests as coverage for
-   `sourceCollectionHandle(...) -> WaitFor.match`.
+   `sourceCollectionStreamHandle(...) -> WaitFor.match`.
 5. Add a follow-up verified-webhook tracer or focused runtime test:
    - compose `VerifiedWebhookFactTable.layer(...)`;
-   - register `sourceCollectionHandle("firegrid.verifiedWebhooks", table.verifiedWebhookFacts)`;
+   - register `sourceCollectionStreamHandle("firegrid.verifiedWebhooks", table.verifiedWebhookFacts.rows())`;
    - call `ingestVerifiedWebhook`;
    - prove `WaitFor.match` observes the persisted fact.
 

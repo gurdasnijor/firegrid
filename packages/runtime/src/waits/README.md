@@ -63,7 +63,7 @@ races against `DurableClock.sleep`.
 | `DurableToolsTable` / `DurableToolsTableService` / `DurableToolsTableOptions` | The DurableTable declaration. Most callers do not need this — the public `DurableToolsWaitForLive` Layer provides it. |
 | `SourceCollections` (`Context.Tag`) / `SourceCollectionsService` | The source-collection registry service tag. |
 | `SourceCollectionHandle` | What you register. Has `{ name, subscribe: () => Stream<unknown, DurableTableError> }`. |
-| `sourceCollectionHandle(name, facade)` | Helper that builds a handle from any `DurableTableCollectionFacade`. |
+| `sourceCollectionStreamHandle(name, stream)` | Helper that builds a handle from a row observation `Stream`. |
 | `DurableToolsWaitForLive({ streamUrl })` | The composite Layer to install once per runtime host. |
 | `DurableToolsWaitForLayerOptions` | The layer options type (`= DurableToolsTableOptions`). |
 
@@ -143,7 +143,7 @@ import {
   DurableToolsWaitForLive,
   SourceCollections,
   WaitFor,
-  sourceCollectionHandle,
+  sourceCollectionStreamHandle,
 } from "@firegrid/runtime/durable-tools"
 import { DurableTable } from "effect-durable-operators"
 import { Effect, Layer, Schema } from "effect"
@@ -200,7 +200,9 @@ const runtime = workflowLayer.pipe(
 const registerSource = Effect.gen(function*() {
   const sources = yield* SourceCollections
   const table = yield* TurnsTable
-  yield* sources.register(sourceCollectionHandle("flamecast.turns", table.rows))
+  yield* sources.register(
+    sourceCollectionStreamHandle("flamecast.turns", table.rows.rows()),
+  )
 })
 
 // 4. Run.
@@ -335,10 +337,10 @@ if (wait !== undefined) {
 ## Source-collection contract
 
 The router only knows about `SourceCollectionHandle`. The helper
-`sourceCollectionHandle(name, facade)` wraps any `DurableTable` collection
-into a handle whose `subscribe()` calls `subscribeChanges(..., {
-includeInitialState: true })` once per attached wait. No
-snapshot-then-subscribe; no per-call layer acquisition.
+`sourceCollectionStreamHandle(name, stream)` wraps a row observation `Stream`
+into a handle whose `subscribe()` returns the same stream shape used by
+`DurableTable` collection `rows()`. No snapshot-then-subscribe; no per-call
+layer acquisition.
 
 The registry is rendezvous-style: `awaitHandle(name)` suspends until
 `register(handle)` lands. This means:
@@ -646,11 +648,11 @@ TanStack-DB collection subscribers.
 
 ### Adding a new source type
 
-Any `DurableTableCollectionFacade<Row, Key>` works with
-`sourceCollectionHandle(name, facade)`. For non-DurableTable sources
-(e.g., raw Durable Streams or external event sources), build a handle
-manually — only `{ name, subscribe }` is required. The `subscribe()`
-stream must emit decoded row values; the router does not decode.
+Any `DurableTableCollectionFacade<Row, Key>` can expose its observation stream
+through `sourceCollectionStreamHandle(name, facade.rows())`. For non-DurableTable
+sources (e.g., raw Durable Streams or external event sources), build a handle
+manually — only `{ name, subscribe }` is required. The `subscribe()` stream must
+emit decoded row values; the router does not decode.
 
 ### Migration path to it.effect
 

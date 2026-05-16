@@ -15,7 +15,6 @@
  *  - firegrid-durable-tools.SOURCE_COLLECTIONS.2
  */
 
-import { type DurableTableCollectionFacade } from "effect-durable-operators"
 import {
   Context,
   Deferred,
@@ -38,17 +37,7 @@ export interface SourceCollectionHandle {
 /**
  * firegrid-durable-tools.SUBSCRIPTION.1
  * firegrid-durable-tools.SUBSCRIPTION.2
- *
- * Build a SourceCollectionHandle from a DurableTable collection facade.
  */
-export const sourceCollectionHandle = <Row extends object, Key>(
-  name: string,
-  facade: DurableTableCollectionFacade<Row, Key>,
-): SourceCollectionHandle => ({
-  name,
-  subscribe: () => facade.rows(),
-})
-
 export const sourceCollectionStreamHandle = (
   name: string,
   stream: Stream.Stream<unknown, unknown>,

@@ -36,7 +36,10 @@ import {
   type SourceCollectionHandle,
 } from "./source-collections.ts"
 import { type WaitRow } from "./table.ts"
-import { DurableWaitStore } from "../../authorities/index.ts"
+import {
+  DurableWaitAppendAndGet,
+  DurableWaitCompletionAppendAndGet,
+} from "../../authorities/index.ts"
 import { evaluateFieldEquals } from "./types.ts"
 import { matchDeferredFor } from "./wait-for.ts"
 
@@ -50,7 +53,9 @@ import { matchDeferredFor } from "./wait-for.ts"
 const completeMatch = (
   wait: WaitRow,
   row: unknown,
-  waitStore: DurableWaitStore["Type"],
+  waitStore:
+    & DurableWaitAppendAndGet["Type"]
+    & DurableWaitCompletionAppendAndGet["Type"],
   engine: WorkflowEngine.WorkflowEngine["Type"],
 ) =>
   Effect.gen(function*() {
@@ -111,7 +116,9 @@ const completeMatch = (
 const attachWaitToSource = (
   wait: WaitRow,
   handle: SourceCollectionHandle,
-  waitStore: DurableWaitStore["Type"],
+  waitStore:
+    & DurableWaitAppendAndGet["Type"]
+    & DurableWaitCompletionAppendAndGet["Type"],
   engine: WorkflowEngine.WorkflowEngine["Type"],
 ) =>
   Effect.gen(function*() {
@@ -142,7 +149,9 @@ const attachWaitToSource = (
  */
 const startRouter = Effect.gen(function*() {
   const engine = yield* WorkflowEngine.WorkflowEngine
-  const waitStore = yield* DurableWaitStore
+  const waits = yield* DurableWaitAppendAndGet
+  const completions = yield* DurableWaitCompletionAppendAndGet
+  const waitStore = { ...waits, ...completions }
   const sources = yield* SourceCollections
 
   // firegrid-durable-tools.WAIT_FOR.7
@@ -200,7 +209,7 @@ const startRouter = Effect.gen(function*() {
  * firegrid-durable-tools.SUBSCRIPTION.7
  * firegrid-durable-tools.RUNTIME_BOUNDARY.4
  *
- * Scoped runtime worker. Acquires `WorkflowEngine`, `DurableWaitStore`, and
- * `SourceCollections` and forks the router stream into the host scope.
+ * Scoped runtime worker. Acquires `WorkflowEngine`, durable wait capabilities,
+ * and `SourceCollections` and forks the router stream into the host scope.
  */
 export const SubscriptionRouterLive = Layer.scopedDiscard(startRouter)

@@ -136,9 +136,9 @@ composition can register the table collection with `SourceCollections`:
 const sources = yield* SourceCollections
 const table = yield* VerifiedWebhookFactTable
 yield* sources.register(
-  sourceCollectionHandle(
+  sourceCollectionStreamHandle(
     "firegrid.verifiedWebhook.verifiedWebhookFacts",
-    table.verifiedWebhookFacts,
+    table.verifiedWebhookFacts.rows(),
   ),
 )
 ```

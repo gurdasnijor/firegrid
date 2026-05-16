@@ -1027,7 +1027,7 @@ RuntimeContextInsert -> RuntimeControlPlaneRecorderLive -> RuntimeControlPlaneTa
 RuntimeRunAppendAndGet -> RuntimeControlPlaneRecorderLive -> RuntimeControlPlaneTable.runs
 DurableWaitAppendAndGet -> DurableWaitStoreLive -> DurableTools wait rows
 DurableWaitCompletionAppendAndGet -> DurableWaitStoreLive -> DurableTools wait rows
-DurableWaitForMatching -> DurableWaitStoreLive -> DurableTools wait rows + registered source streams
+DurableWaitForMatching -> DurableWaitForMatchingLive -> DurableTools wait rows + registered source streams
 ```
 
 One layer constructor per table family may provide multiple tags. That grouping
@@ -1109,7 +1109,9 @@ decisions, or evidence, it defines a DurableTable collection and registers that
 collection as a wait source:
 
 ```ts
-yield* sources.register(sourceCollectionHandle("darkFactory.events", table.events))
+yield* sources.register(
+  sourceCollectionStreamHandle("darkFactory.events", table.events.rows()),
+)
 ```
 
 Firegrid may provide helpers for this pattern later, but the primitive remains

@@ -597,9 +597,9 @@ export const RuntimeSourceCollectionsLayer = Layer.scopedDiscard(
     const sources = yield* SourceCollections
     const control = yield* RuntimeControlPlaneTable
 
-    yield* sources.register(sourceCollectionHandle(
+    yield* sources.register(sourceCollectionStreamHandle(
       "runtime.contexts",
-      control.contexts,
+      control.contexts.rows(),
     ))
   }),
 )

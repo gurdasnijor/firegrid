@@ -20,10 +20,15 @@
 import type { WorkflowEngine } from "@effect/workflow"
 import { Effect, Exit, Option } from "effect"
 import { matchDeferredFor } from "./wait-for.ts"
-import type { DurableWaitStore } from "../../authorities/index.ts"
+import type {
+  DurableWaitAppendAndGet,
+  DurableWaitCompletionAppendAndGet,
+} from "../../authorities/index.ts"
 
 export const reconcileCompletions = (
-  waitStore: DurableWaitStore["Type"],
+  waitStore:
+    & DurableWaitAppendAndGet["Type"]
+    & DurableWaitCompletionAppendAndGet["Type"],
   engine: WorkflowEngine.WorkflowEngine["Type"],
 ) =>
   Effect.gen(function*() {
