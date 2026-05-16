@@ -554,6 +554,7 @@ export const waitForPermissionRequest = (
       input,
     )
     const afterSequence = decodedInput.afterSequence ?? -1
+    const waitAfterSequence = decodedInput.afterSequence
     const { run, session } = yield* attachPlannerSessionForRun(
       decodedInput.factoryRunKey,
     )
@@ -583,7 +584,7 @@ export const waitForPermissionRequest = (
         }
         const waitMs = Math.min(remainingMs, 500)
         const waited = yield* session.wait.forPermissionRequest({
-          afterSequence,
+          ...(waitAfterSequence === undefined ? {} : { afterSequence: waitAfterSequence }),
           timeoutMs: waitMs,
         })
         if (waited.matched) {
