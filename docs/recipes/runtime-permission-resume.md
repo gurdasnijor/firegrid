@@ -115,14 +115,14 @@ input:
 ## Backing Evidence
 
 The runtime observation source proof lives in
-[`packages/runtime/src/runtime-host/runtime-observation-sources.test.ts`](../../packages/runtime/src/runtime-host/runtime-observation-sources.test.ts):
+[`packages/runtime/test/host/runtime-observation-sources.test.ts`](../../packages/runtime/test/host/runtime-observation-sources.test.ts):
 
 - Lines 84-155 prove `wait_for` can observe a runtime
   `PermissionRequest` through `RuntimeObservationSourceNames.agentOutputEvents`
   by matching `contextId`, `_tag`, and `permissionRequestId`.
 
 The end-to-end resume proof lives in
-[`packages/runtime/src/runtime-host/runtime-codec-event-plane.test.ts`](../../packages/runtime/src/runtime-host/runtime-codec-event-plane.test.ts):
+[`packages/runtime/test/host/runtime-codec-event-plane.test.ts`](../../packages/runtime/test/host/runtime-codec-event-plane.test.ts):
 
 - Lines 255-359 prove ACP `requestPermission` becomes durable runtime output,
   then a `RuntimeIngress` `PermissionResponse` resumes the agent and the turn
@@ -130,19 +130,21 @@ The end-to-end resume proof lives in
 
 The supporting implementation is:
 
-- [`packages/runtime/src/runtime-host/observation-sources.ts`](../../packages/runtime/src/runtime-host/observation-sources.ts)
-  lines 29-105: registers `RuntimeObservationSourceNames.agentOutputEvents`
-  and projects decoded agent-output rows with flattened permission fields.
-- [`packages/runtime/src/agent-codecs/acp/index.ts`](../../packages/runtime/src/agent-codecs/acp/index.ts)
-  lines 270-289: `AcpCodec` emits `PermissionRequest` and waits.
-- [`packages/runtime/src/agent-codecs/acp/index.ts`](../../packages/runtime/src/agent-codecs/acp/index.ts)
-  lines 349-365: `AcpCodec` accepts `PermissionResponse` and resolves the
+- [`packages/runtime/src/source-registration/runtime-output.ts`](../../packages/runtime/src/source-registration/runtime-output.ts)
+  registers `RuntimeObservationSourceNames.agentOutputEvents` from the
+  `RuntimeAgentOutputEvents` stream capability.
+- [`packages/runtime/src/events/output.ts`](../../packages/runtime/src/events/output.ts)
+  projects decoded agent-output rows with flattened permission fields.
+- [`packages/runtime/src/codecs/acp/index.ts`](../../packages/runtime/src/codecs/acp/index.ts)
+  emits `PermissionRequest` and waits.
+- [`packages/runtime/src/codecs/acp/index.ts`](../../packages/runtime/src/codecs/acp/index.ts)
+  accepts `PermissionResponse` and resolves the
   pending ACP request.
-- [`packages/runtime/src/runtime-host/index.ts`](../../packages/runtime/src/runtime-host/index.ts)
-  lines 236-278: runtime host encodes `AgentOutputEvent` rows into
+- [`packages/runtime/src/host/raw-process-runtime.ts`](../../packages/runtime/src/host/raw-process-runtime.ts):
+  runtime host encodes `AgentOutputEvent` rows into
   `RuntimeOutputTable.events`.
-- [`packages/runtime/src/runtime-host/index.ts`](../../packages/runtime/src/runtime-host/index.ts)
-  lines 343-347 and 589-605: runtime host decodes canonical
+- [`packages/runtime/src/host/raw-process-runtime.ts`](../../packages/runtime/src/host/raw-process-runtime.ts):
+  runtime host decodes canonical
   `AgentInputEvent` ingress and delivers it to `session.send`.
 
 ## Do Not Reimplement

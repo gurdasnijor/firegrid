@@ -842,7 +842,7 @@ shared helper leakage that would otherwise drift across those files.
 Target shape:
 
 - a shared host runtime-observation/tool substrate layer is the single source
-  for the `RuntimeObservationSourcesLive` + durable runtime capability stack
+  for the `RuntimeSourceRegistrationsLive` + durable runtime capability stack
   used by both host topology and codec-path tool lowering;
 - codec-path tool lowering preserves the same host-coupled tool-host
   capabilities as the pre-split host unless an explicit behavior change lands

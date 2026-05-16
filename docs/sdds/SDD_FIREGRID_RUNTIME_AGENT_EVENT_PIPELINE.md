@@ -219,10 +219,14 @@ packages/runtime/src/
     wait-for.ts
     source-collections.ts
 
+  source-registration/
+    runtime-control-plane.ts
+    runtime-ingress.ts
+    runtime-output.ts
+
   host/
     workflow-handler.ts
     authority-context.ts
-    observation-sources.ts
     config.ts
     errors.ts
     sync-run.ts
