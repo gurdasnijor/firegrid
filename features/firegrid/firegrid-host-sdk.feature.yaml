@@ -6,15 +6,15 @@ feature:
 components:
   HOST_DECLARATION:
     requirements:
-      1: The Host SDK package exposes a product-neutral host-plane declaration API that lets an app name its host, configure durable storage, provide runtime environment policy, install runtime host layers, and expose host authority operations from one ordinary Effect layer.
+      1: The Host SDK package exposes a product-neutral host-plane declaration API that lets an app name its host, configure durable storage, install agent provider implementations, provide provider environment policy, and run host authority programs from one ordinary Effect layer.
       2: Host declarations are explicit values, not dynamic module discovery, package scanning, env-named host ids, or a Firegrid graph DSL.
       3: Host declarations compose app-configured integration adapters and app-owned DurableTable/EventPlane layers without importing product-specific workflow policy into runtime core.
       4: Reusable integration adapters for systems such as Linear, GitHub, Slack, and agent providers may be delivered as separate Firegrid packages or app packages and installed alongside the Host SDK as explicit Layers or capability declarations.
 
   PACKAGE_BOUNDARIES:
     requirements:
-      1: "@firegrid/client-sdk owns the session plane: session handles, create/load/attach, prompt, start requests, snapshots, typed runtime waits, permission response inputs, and session-safe observation helpers."
-      2: "@firegrid/host-sdk owns the host plane: runtime host composition, launch substrate, local process env policy, MCP installation, host session identity, and host-side start/ingress authority wiring."
+      1: "@firegrid/client-sdk owns the session plane: agent-session launch intent, session handles, attach, prompt, snapshots, typed runtime waits, permission response inputs, and session-safe observation helpers."
+      2: "@firegrid/host-sdk owns the host plane: host composition, agent provider implementations, local process env policy, MCP installation, host session identity, and host-side execution authority wiring."
       3: "@firegrid/runtime remains the implementation package for agent-event-pipeline, workflow-engine integration, runtime authorities, durable-tools, codecs, and host internals; product apps should not import runtime implementation subpaths for normal behavior."
       4: "@firegrid/protocol remains the schema/operation catalog package shared by both SDKs and bindings."
       5: The SDK split includes an ownership audit of current runtime folders and classifies each as runtime substrate, host-plane adapter/binding, session-plane API, command binding, integration package, or generic durable operator candidate.
@@ -32,28 +32,30 @@ components:
 
   CONFIGURATION:
     requirements:
-      1: Host configuration accepts durableStreamsBaseUrl, namespace, optional DurableTable headers, input enablement, and an explicit environment binding policy through a typed object and through an env-backed layer constructor.
+      1: Host configuration accepts Durable Streams base URL, namespace, optional DurableTable headers, installed provider implementations, and explicit provider environment binding policy through a typed object and through an env-backed layer constructor.
       2: Configuration distinguishes local-development conveniences such as embedded DurableStreamTestServer from production attached configuration; production host SDK examples require an explicit durable endpoint.
       3: Runtime retry, timeout, retention, and privacy-style options are only added when backed by current Firegrid substrate semantics; the SDK does not invent unsupported knobs for parity with other systems.
-      4: Environment binding policy uses a named source map and explicit expose mapping from host variable names to child runtime variable names; launched local-process runtimes do not inherit ambient host environment by default.
+      4: Environment binding policy uses a named source map and explicit expose mapping from host variable names to child agent variable names; launched local-process agents do not inherit ambient host environment by default.
       5: Client/session launch requests may include protocol RuntimeConfig env binding refs, but they must not include secret values, process.env readers, or host environment exposure policy.
+      6: Agent provider choice, command, protocol, cwd, and env binding refs belong to the client/session launch intent; provider implementation availability and policy belong to host configuration.
 
   RUNTIME_SESSION_SURFACE:
     requirements:
-      1: The Client SDK exposes the session-plane service for createOrLoad, attach, prompt, start, snapshot, typed runtime waits, and permission response using the existing session facade and runtime host capabilities.
+      1: The Client SDK exposes the session-plane service for launching an agent session, attaching to an existing session, prompting, snapshotting, typed runtime waits, and permission response using protocol-owned session and launch schemas.
       2: Product apps do not call runtime internals, host-owned table helpers, raw RuntimeEvent.raw parsing, or src/run.ts helpers to perform normal session operations.
-      3: "Session operations preserve current authority requirements: creating local runtime contexts requires a host session, starting requires RuntimeStartCapability, and permission responses write through runtime ingress."
+      3: "Session launch writes durable intent and does not carry live process handles, provider SDK clients, raw secret values, host environment readers, or host execution policy."
+      4: "An optional idempotencyKey lets a product converge retries or repeated dispatches on one durable agent session; when omitted, Firegrid may allocate a fresh session identity."
 
   LAUNCH_SUBSTRATE:
     requirements:
-      1: The shared launch substrate currently embedded in src/run.ts is specified as reusable host SDK functionality for runtime-context insertion, optional initial prompt ingress, default Firegrid MCP attachment, and startRuntime execution.
+      1: The shared launch substrate currently embedded in src/run.ts is specified as reusable SDK functionality split between client-sdk durable agent-session intent authoring and host-sdk provider execution.
       2: The root CLI remains a binding over the same host SDK substrate; src/run.ts or @firegrid/cli owns argument parsing, process exit handling, help text, and local developer defaults only.
       3: Product app triggers remain app-owned durable facts or EventPlane rows; the host SDK may launch runtime contexts for those triggers but must not become a product trigger queue or factory-specific orchestrator.
 
   MCP_AND_TOOLS:
     requirements:
       1: The Host SDK lets apps explicitly install the host-owned route-scoped MCP server through FiregridMcpServerLayer when needed.
-      2: The default Firegrid MCP server declaration can be injected into launched runtime configs by the shared launch substrate when the selected protocol supports MCP setup.
+      2: The default Firegrid MCP server declaration can be injected into launched agent configs by the shared launch substrate when the selected protocol supports MCP setup.
       3: The SDK does not expose Durable Streams tokens, provider session handles, sandbox handles, host credentials, or runtime context authority as agent-visible tool arguments.
 
   AGENT_TOOL_BOUNDARY:
@@ -122,7 +124,7 @@ constraints:
 
   VALIDATION:
     requirements:
-      1: SDK implementation must include type-level examples or tests proving a product app can import only client-sdk and host-sdk public subpaths to compose a host, create/prompt/start a session, wait for typed runtime output, and respond to permission.
+      1: SDK implementation must include type-level examples or tests proving a product app can import only client-sdk and host-sdk public subpaths to compose a host, launch/prompt an agent session, wait for typed runtime output, and respond to permission.
       2: Host SDK implementation must keep existing firegrid run/start CLI tests green, proving src/run.ts remains a binding over the same behavior.
       3: Host SDK implementation must keep apps/factory typecheck/test green and remove any need for apps/factory to duplicate runtime launch substrate logic.
       4: Factory cutover validation must prove accepted trigger idempotency, run projection status, provider-effect evidence, permission evidence, and app projection waits through public platform primitives rather than bespoke host.ts-only helpers.

@@ -37,8 +37,8 @@ Today, the working pieces exist, but the composition story is split:
 - `src/host.ts` proves an env-driven passive host/MCP launcher;
 - `@firegrid/runtime/runtime-host` exports the runtime host Layers and
   commands, but that is still too implementation-facing for product apps;
-- `@firegrid/client/firegrid` exposes session create/load, prompt, start,
-  snapshot, typed waits, and permission response;
+- `@firegrid/client/firegrid` exposes the current session facade for
+  create/load, prompt, start, snapshot, typed waits, and permission response;
 - `apps/factory/src/host.ts` hand-composes all of the above with app-owned
   facts and projections.
 
@@ -164,8 +164,8 @@ The package split is semantic, not just browser versus Node.
 
 | Package | Plane | Owns | Must not own |
 | --- | --- | --- | --- |
-| `@firegrid/client-sdk` | Session plane | Session handles, create/load/attach, prompt, start requests, snapshots, typed runtime waits, permission response inputs, and session-safe observation helpers. | Host identity, host session authority, local process env policy, MCP listener installation, runtime table authority wiring. |
-| `@firegrid/host-sdk` | Host plane | Runtime host composition, launch substrate, local process env policy, MCP installation, host session identity, host-side start/ingress authority wiring, integration layer installation. | Product workflow policy, app facts, provider credentials hidden in runtime, session API definitions. |
+| `@firegrid/client-sdk` | Session plane | Agent-session launch intent, session handles, attach, prompt, snapshots, typed runtime waits, permission response inputs, and session-safe observation helpers. | Host identity, provider implementations, local process env policy, MCP listener installation, runtime table authority wiring. |
+| `@firegrid/host-sdk` | Host plane | Host composition, provider implementations, local process env policy, MCP installation, host session identity, host-side execution authority wiring, integration layer installation. | Product workflow policy, app facts, provider credentials hidden in runtime, session API definitions. |
 | `@firegrid/cli` | Command binding | `@effect/cli` command definitions, help text, flags, examples, local developer defaults, process exit behavior, and Node-only command execution wiring. | New operation contracts, browser/session SDK behavior, product workflow policy, hidden host composition not available through host-sdk. |
 | `@firegrid/runtime` | Runtime implementation | `agent-event-pipeline`, workflow-engine adapter, runtime authorities, durable-tools, codecs, host internals. | Normal product-app import path. |
 | `@firegrid/protocol` | Schema/operation catalog | Shared operation schemas, row schemas, runtime ingress/launch/session vocabulary. | Runtime execution or host composition. |
@@ -416,11 +416,11 @@ runtime boundary. The current folder contains four different roles:
 | `agent-tools/tool-use-to-effect.ts` and `scheduled-input-workflow.ts` | Validated operation input to Effect execution over workflow, durable wait, host operations, and runtime ingress. | Split. The operation executor belongs with host-sdk wiring; the runtime event pipeline keeps only the subscriber that consumes committed `ToolUse` observations and asks an executor capability for a `ToolResult`. |
 
 This is why `agent-tools/` is not a client-sdk concern. The client SDK exposes
-session-plane methods for app code: create/load, prompt, start, snapshot, typed
-waits, and permission responses. It may share the same protocol operation
-schemas, but it must not import Effect AI `Tool`, MCP server transport,
-workflow-engine services, host session authority, or runtime durable-tool
-execution.
+session-plane methods for app code: agent-session launch, attach, prompt,
+snapshot, typed waits, and permission responses. It may share the same protocol
+operation schemas, but it must not import Effect AI `Tool`, MCP server
+transport, workflow-engine services, host session authority, or runtime
+durable-tool execution.
 
 It is also why `agent-tools/` should not remain a runtime package as-is. Runtime
 owns durable observations and the agent event-pipeline subscriber that sees a
@@ -490,7 +490,7 @@ with execution:
 
 | Current surface | Proven behavior | Target |
 | --- | --- | --- |
-| `packages/client/src/firegrid.ts` | Session create/load, prompt, start, snapshot, typed waits, permission responses. | Split into client-sdk binding/projection modules plus client transport/session execution modules. |
+| `packages/client/src/firegrid.ts` | Session create/load, prompt, start, snapshot, typed waits, permission responses. | Split into client-sdk agent-session launch/handle bindings plus client transport/session execution modules. |
 | `packages/runtime/src/host` | Host-scoped runtime composition, start/ingress commands, env policy, local-process host wiring. | Move public host-plane composition to host-sdk; keep runtime-private authority plumbing in runtime. |
 | `packages/runtime/src/agent-tools` | Effect AI tools, MCP exposure, host tool capability, scheduled prompt workflow, ToolUse execution. | Split into protocol catalog, host-sdk bindings/executor, and runtime ToolUse subscriber seam. |
 | `src/run.ts` | CLI parsing, local dev defaults, launch substrate, MCP injection, RuntimeContext insertion, startRuntime, process exit behavior. | Move command binding to cli and launch substrate to host-sdk. |
@@ -500,98 +500,29 @@ the compatibility proof while these surfaces split.
 
 ## Target User Experience
 
-The desired shape is a host entrypoint that declares Firegrid host topology and
-installed Firegrid capabilities directly. The minimal host path should not
-require a product app to invent tables, provider adapters, intake routes, or
-projection waits before it can run a Firegrid host.
+The desired public vocabulary is **agent session**, not runtime. Runtime remains
+the implementation substrate. A user should be able to describe an agent,
+launch an agent session, and interact with the returned session handle.
 
-Host entrypoint sketch:
-
-```ts
-import { NodeRuntime } from "@effect/platform-node"
-import { Effect } from "effect"
-import {
-  FiregridHost,
-  FiregridHostLive,
-} from "@firegrid/host-sdk"
-import {
-  envBinding,
-  type RuntimeConfig,
-} from "@firegrid/protocol/launch"
-
-const claudeAcpRuntime = {
-  argv: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
-  agent: "claude-acp",
-  agentProtocol: "acp",
-  cwd: process.cwd(),
-  envBindings: [
-    envBinding("ANTHROPIC_API_KEY"),
-  ],
-} satisfies RuntimeConfig
-
-const HostLive = FiregridHostLive({
-  name: "product-host",
-  runtime: {
-    durableStreamsBaseUrl: process.env.DURABLE_STREAMS_BASE_URL!,
-    namespace: process.env.FIREGRID_RUNTIME_NAMESPACE!,
-    input: true,
-  },
-  environment: {
-    source: process.env,
-    expose: {
-      ANTHROPIC_API_KEY: "ANTHROPIC_API_KEY",
-    },
-  },
-  mcp: {
-    enabled: true,
-    host: "127.0.0.1",
-    port: 0,
-    path: "/mcp",
-  },
-})
-
-const program = Effect.gen(function* () {
-  const host = yield* FiregridHost
-  yield* host.launch({
-    idempotencyKey: "session:demo",
-    runtime: {
-      provider: "local-process",
-      config: claudeAcpRuntime,
-    },
-    prompt: "Plan the implementation for issue LIN-123.",
-    start: true,
-  })
-})
-
-NodeRuntime.runMain(program.pipe(Effect.provide(HostLive), Effect.scoped))
-```
-
-The host is the only place that reads `process.env`. The `environment.expose`
-map authorizes which host env vars can be resolved for child runtime bindings.
-It does not put secret values into durable rows.
-
-Client/session code is a separate sibling projection. Server-side client code
-may request an actual ACP runtime config through protocol launch schemas, but
-it still passes only env binding refs. The host decides whether those refs are
-authorized, and `session.start()` requires host-side start authority in scope:
+Client/session entrypoint sketch:
 
 ```ts
 import { Effect } from "effect"
-import { FiregridClientLive, FiregridSessions } from "@firegrid/client-sdk"
 import {
-  envBinding,
-  type RuntimeConfig,
-} from "@firegrid/protocol/launch"
+  Agent,
+  FiregridClientLive,
+  FiregridSessions,
+} from "@firegrid/client-sdk"
+import { envBinding } from "@firegrid/protocol/launch"
 
-const claudeAcpRuntime = {
-  argv: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
-  agent: "claude-acp",
-  agentProtocol: "acp",
+const claude = Agent.localProcess({
+  command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
+  protocol: "acp",
   cwd: workspaceDir,
-  envBindings: [
+  env: [
     envBinding("ANTHROPIC_API_KEY"),
   ],
-} satisfies RuntimeConfig
+})
 
 const ClientLive = FiregridClientLive({
   durableStreamsBaseUrl,
@@ -600,35 +531,93 @@ const ClientLive = FiregridClientLive({
 
 const program = Effect.gen(function* () {
   const sessions = yield* FiregridSessions
-  const session = yield* sessions.createOrLoad({
-    externalKey: { source: "linear.issue", id: "LIN-123" },
-    runtime: {
-      provider: "local-process",
-      config: claudeAcpRuntime,
-    },
-    createdBy: "factory",
+  const session = yield* sessions.launch({
+    agent: claude,
+    prompt: "Plan the implementation for LIN-123.",
   })
 
-  yield* session.prompt({
-    payload: {
-      type: "text",
-      text: "Plan the implementation for issue LIN-123.",
-    },
-    idempotencyKey: "LIN-123:planner-prompt",
-  })
-
-  yield* session.start()
+  yield* session.prompt("Now produce the first concrete implementation step.")
   return yield* session.wait.forAgentOutput({ timeoutMs: 120_000 })
 })
 ```
 
-Product apps may compose `HostLive` and `ClientLive` in one process, but the
-packages remain independent. App-owned tables, provider adapters, and product
-projection waits are optional application layers, not prerequisites for using
-the Host SDK.
-Browser clients can use the same session API for attach, prompt, snapshot,
-typed waits, and permission responses, but they do not provide `process.env`,
-local-process spawn authority, or the host environment exposure policy.
+`Agent.localProcess(...)` is a user-facing projection over the protocol launch
+schemas in `@firegrid/protocol/launch`. It lowers to the same durable shape as
+`PublicLaunchRuntimeIntent` / `RuntimeConfig`:
+
+```ts
+{
+  provider: "local-process",
+  config: {
+    argv: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
+    agent: "claude-acp",
+    agentProtocol: "acp",
+    cwd: workspaceDir,
+    envBindings: [envBinding("ANTHROPIC_API_KEY")],
+  },
+}
+```
+
+The optional idempotency path is separate from the happy path. A product uses it
+when it wants webhook retries, button double-clicks, or repeated job dispatches
+to converge on one durable agent session:
+
+```ts
+const session = yield* sessions.launch({
+  idempotencyKey: "linear.issue:LIN-123:planner",
+  agent: claude,
+  prompt: "Plan the implementation for LIN-123.",
+})
+```
+
+Firegrid can generate a fresh session id when `idempotencyKey` is absent. It
+cannot privately infer that two product events represent the same logical work
+item; that identity belongs to the caller.
+
+Host entrypoint sketch:
+
+```ts
+import { NodeRuntime } from "@effect/platform-node"
+import { Effect, Layer } from "effect"
+import {
+  FiregridHostLive,
+  LocalProcessProviderLive,
+} from "@firegrid/host-sdk"
+
+const HostLive = FiregridHostLive({
+  name: "product-host",
+  durableStreams: {
+    baseUrl: process.env.DURABLE_STREAMS_BASE_URL!,
+    namespace: process.env.FIREGRID_RUNTIME_NAMESPACE!,
+  },
+  providers: {
+    localProcess: LocalProcessProviderLive({
+      environment: {
+        source: process.env,
+        expose: {
+          ANTHROPIC_API_KEY: "ANTHROPIC_API_KEY",
+        },
+      },
+    }),
+  },
+  mcp: { enabled: true },
+})
+
+NodeRuntime.runMain(Layer.launch(HostLive))
+```
+
+The host does not predeclare `claude`. It installs provider implementations and
+policies that can satisfy durable agent-session intents. For `local-process`,
+the host owns process spawning and environment resolution. The session request
+contains only env refs such as `env:ANTHROPIC_API_KEY`; the host decides whether
+those refs are authorized and resolves the values at spawn time. Secret values
+do not enter durable rows.
+
+Product apps may run `HostLive` and `ClientLive` in one process, but the
+packages remain independent. Browser clients can launch sessions by appending
+the same durable agent-session intent when the product permits it; they still do
+not receive `process.env`, live process handles, provider SDK clients, or host
+environment exposure policy.
 
 ## Host Declaration
 
@@ -637,8 +626,8 @@ The Host SDK should expose a host declaration value:
 ```ts
 export interface FiregridHostOptions {
   readonly name: string
-  readonly runtime: RuntimeHostTopologyOptions
-  readonly environment?: FiregridHostEnvironmentOptions
+  readonly durableStreams: FiregridDurableStreamsOptions
+  readonly providers: FiregridHostProviderOptions
   readonly mcp?: FiregridHostMcpOptions
 }
 
@@ -646,42 +635,32 @@ export class FiregridHost extends Context.Tag(
   "@firegrid/host-sdk/FiregridHost",
 )<FiregridHost, FiregridHostService>() {}
 
+export interface FiregridHostService {
+  readonly health: Effect.Effect<FiregridHostHealth, FiregridHostError>
+}
+
 export const FiregridHostLive = (
   options: FiregridHostOptions,
-): Layer.Layer<
-  FiregridHost | RuntimeStartCapability,
-  FiregridHostError
->
+): Layer.Layer<FiregridHost, FiregridHostError>
 ```
 
-The host service should expose host-plane operations and provide the protocol
-and runtime capabilities that session-plane code needs. It should not import or
-provide `@firegrid/client-sdk` services. Session methods stay in
-`@firegrid/client-sdk`, and product apps compose both SDK Layers.
-
-```ts
-export interface FiregridHostLaunchResult {
-  readonly sessionId: SessionId
-  readonly contextId: string
-}
-
-export interface FiregridHostService {
-  readonly launch: (
-    request: FiregridHostLaunchRequest,
-  ) => Effect.Effect<FiregridHostLaunchResult, FiregridHostError>
-}
-```
-
-`launch` is a convenience over the same primitives an app can call manually:
+The host layer installs long-lived host-plane programs and capabilities. It
+does not expose the normal app launch API; agent-session launch lives in
+`@firegrid/client-sdk` and is expressed as durable intent. The host observes and
+executes those intents when its installed providers and policies can satisfy
+them.
 
 ```txt
-create/load RuntimeContext
-  -> inject default Firegrid MCP declaration when requested
-  -> append optional initial prompt
-  -> optionally start runtime
+client-sdk agent-session launch intent
+  -> durable control-plane row
+  -> host-sdk provider implementation claims/executes
+  -> runtime substrate records runs/output/ingress
+  -> client-sdk session handle observes snapshots/waits/permissions
 ```
 
-It is not a product trigger API.
+Host SDK services may still expose operational controls for host lifecycle,
+diagnostics, and provider health. They must not become product trigger APIs and
+must not return client-sdk-owned handles.
 
 ## Configuration
 
@@ -701,18 +680,17 @@ process entrypoints that want Effect Config/env-driven topology.
 Current required topology:
 
 ```ts
-interface FiregridHostRuntimeConfig {
-  readonly durableStreamsBaseUrl: string
+interface FiregridDurableStreamsOptions {
+  readonly baseUrl: string
   readonly namespace: string
   readonly headers?: DurableTableHeaders
-  readonly input?: boolean
   readonly hostId?: HostId
   readonly hostSessionId?: HostSessionId
 }
 ```
 
-Runtime child processes do not receive the ambient host environment. The Host
-SDK exposes an explicit environment binding policy:
+Agent child processes do not receive the ambient host environment. Provider
+implementations expose explicit environment binding policy:
 
 ```ts
 interface FiregridHostEnvironmentOptions {
@@ -724,7 +702,7 @@ interface FiregridHostEnvironmentOptions {
 `source` is the host-side environment map, commonly `process.env`.
 `expose` maps host variable names to child runtime variable names. For example,
 `{ ANTHROPIC_API_KEY: "ANTHROPIC_API_KEY" }` means the host may read
-`source.ANTHROPIC_API_KEY` and expose it to the launched local-process runtime
+`source.ANTHROPIC_API_KEY` and expose it to the launched local-process agent
 as `ANTHROPIC_API_KEY`.
 
 Current env-backed fields:
@@ -808,7 +786,7 @@ src/run.ts
 
 @firegrid/client-sdk
   session-plane SDK
-  create/load/prompt/start/snapshot/wait/permission response
+  agent-session launch/attach/prompt/snapshot/wait/permission response
 
 product app
   provider intake
