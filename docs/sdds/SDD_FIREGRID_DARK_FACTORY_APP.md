@@ -118,7 +118,7 @@ The first app surface must be production-shaped:
 - a parent planner `RuntimeContext` launch path through Firegrid runtime host
   primitives;
 - a live observation UI or read-model projection built from app facts plus
-  `RuntimeObservationSourceNames`.
+  `FiregridRuntimeObservationSourceNames`.
 
 The PR #236 scaffold is useful for visual structure: active agents, progress,
 message feed, graph, run summary, live indicator, and prompt entry. Its
@@ -182,7 +182,7 @@ serving one clear role:
 | `RuntimeContext` | Durable runtime identity for the parent planner and delegated implementer, reviewer, or QA sessions. External source keys and correlations are stored in app facts, prompts, runtime output, subscriber rows, and tool results unless the existing context row already has a suitable field. |
 | `RuntimeIngress` | Durable input path into a running context. The app uses it for the initial planner prompt when needed, follow-up prompts, and ACP `PermissionResponse` messages that resume permission gates. |
 | `RuntimeOutput` | Durable output journal for planner and child-agent status, text, tool calls, permission requests, tool results, and terminal evidence. This replaces hidden callback markers as the source of truth for what the run is waiting on. |
-| `RuntimeObservationSourceNames` | Named wait/query surfaces for runtime runs, output events/logs, ingress inputs/deliveries, and normalized agent output events. The planner and app use these names with `wait_for` and status views. |
+| `FiregridRuntimeObservationSourceNames` | Named wait/query surfaces for runtime runs, output events/logs, ingress inputs/deliveries, and normalized agent output events. The planner and app use these protocol-owned names with `wait_for` and status views. |
 | DurableTable facts | App-owned durable table for Linear/GitHub/Slack/provider events, decisions, and side-effect evidence. Facts provide idempotency by source and external event key. |
 | `SourceCollections` / `wait_for` | Registration and matching path that lets agents wait on app facts and runtime observation rows without polling provider APIs directly. |
 | `FiregridAgentToolkit` tools | The agent-facing choreography surface. The planner decides sequence by calling `session_new`, `session_prompt`, `wait_for`, `schedule_me`, `execute`, `sleep`, `session_cancel`, and `session_close` where applicable. |
@@ -442,21 +442,21 @@ decision resume, and observable next planner action.
 
 The app should consume the merged runtime observation sources from #232:
 
-- `RuntimeObservationSourceNames.runtimeRuns`
+- `FiregridRuntimeObservationSourceNames.runtimeRuns`
   (`firegrid.runtime.runs`);
-- `RuntimeObservationSourceNames.runtimeOutputEvents`
+- `FiregridRuntimeObservationSourceNames.runtimeOutputEvents`
   (`firegrid.runtime.output.events`);
-- `RuntimeObservationSourceNames.runtimeOutputLogs`
+- `FiregridRuntimeObservationSourceNames.runtimeOutputLogs`
   (`firegrid.runtime.output.logs`);
-- `RuntimeObservationSourceNames.runtimeIngressInputs`
+- `FiregridRuntimeObservationSourceNames.runtimeIngressInputs`
   (`firegrid.runtime.ingress.inputs`);
-- `RuntimeObservationSourceNames.runtimeIngressDeliveries`
+- `FiregridRuntimeObservationSourceNames.runtimeIngressDeliveries`
   (`firegrid.runtime.ingress.deliveries`);
-- `RuntimeObservationSourceNames.agentOutputEvents`
+- `FiregridRuntimeObservationSourceNames.agentOutputEvents`
   (`firegrid.runtime.agent-output-events`).
 
 For permission waits, the app should observe ACP permission requests through
-`RuntimeObservationSourceNames.agentOutputEvents`, matching scalar fields such
+`FiregridRuntimeObservationSourceNames.agentOutputEvents`, matching scalar fields such
 as:
 
 ```json
@@ -673,7 +673,7 @@ not the full factory product:
 4. A real planner/agent backend supported by Firegrid starts and emits a
    plan-ready or permission-needed observation.
 5. The app/test observes the wait through
-   `RuntimeObservationSourceNames.agentOutputEvents` or `darkFactory.facts`.
+   `FiregridRuntimeObservationSourceNames.agentOutputEvents` or `darkFactory.facts`.
 6. A real human/provider decision path approves or rejects the plan through
    runtime ingress or a provider-backed fact.
 7. The app resumes the planner by writing `PermissionResponse` ingress or a

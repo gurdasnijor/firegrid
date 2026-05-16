@@ -1,4 +1,4 @@
-import { RuntimeObservationSourceNames } from "@firegrid/runtime/runtime-host"
+import { FiregridRuntimeObservationSourceNames } from "@firegrid/protocol/agent-tools"
 import { Schema } from "effect"
 import {
   DarkFactoryRunSchema,
@@ -42,7 +42,7 @@ export const buildPlannerPrompt = (
     `Planner context id: ${decoded.run.plannerContextId}`,
     `Subscriber id: ${decoded.run.subscriberId}`,
     `Fact source: ${darkFactoryFactsSourceName}`,
-    `Runtime observation sources: ${Object.values(RuntimeObservationSourceNames).join(", ")}`,
+    `Runtime observation sources: ${Object.values(FiregridRuntimeObservationSourceNames).join(", ")}`,
     `External source: ${decoded.trigger.source}`,
     `External entity key: ${decoded.trigger.externalEntityKey}`,
     `External event key: ${decoded.trigger.externalEventKey}`,

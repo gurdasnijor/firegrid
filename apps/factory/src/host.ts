@@ -8,9 +8,6 @@ import {
   type RuntimeEvent,
 } from "@firegrid/protocol/launch"
 import {
-  FiregridRuntimeObservationSourceNames,
-} from "@firegrid/protocol/agent-tools"
-import {
   RuntimeIngressInputRowSchema,
 } from "@firegrid/protocol/runtime-ingress"
 import {
@@ -670,5 +667,3 @@ export const waitForNextAgentOutput = (
       })
     return yield* loop(decodedInput.timeoutMs)
   })
-
-export const RuntimeObservationSourceNames = FiregridRuntimeObservationSourceNames

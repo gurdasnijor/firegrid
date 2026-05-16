@@ -9,7 +9,6 @@ export {
   FactoryRunStatusViewSchema,
   PermissionResponseInputSchema,
   PermissionResponseResultSchema,
-  RuntimeObservationSourceNames,
   acceptAndStartFactoryTrigger,
   acceptFactoryTrigger,
   darkFactoryStreamUrl,
