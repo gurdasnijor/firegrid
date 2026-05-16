@@ -7,7 +7,7 @@ import { afterEach, beforeEach } from "vitest"
 import {
   flamecastToyAgentSource,
   flamecastToyCreatedBy,
-} from "../shared/agent.ts"
+} from "../../src/shared/agent.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
