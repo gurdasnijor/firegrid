@@ -1,82 +1,169 @@
 flowchart LR
 
 subgraph 0["packages"]
-subgraph 1["durable-streams"]
+subgraph 1["effect-durable-operators"]
 subgraph 2["src"]
-3["DurableStreamLog.ts"]
-4["DurableStreamProducer.ts"]
-5["DurableStreamsWorkflowEngine.ts"]
-subgraph 6["internal"]
-subgraph 7["workflow"]
-8["clock.ts"]
-9["codec.ts"]
-A["engine-runtime.ts"]
-B["state.ts"]
+3["DurableTable.ts"]
+4["Errors.ts"]
+5["index.ts"]
 end
 end
-C["log.ts"]
-D["producer.ts"]
-E["workflow-engine.ts"]
+subgraph 6["effect-durable-streams"]
+subgraph 7["src"]
+8["Bound.ts"]
+9["DurableStream.ts"]
+A["Reader.ts"]
+B["Writer.ts"]
+C["errors.ts"]
+D["index.ts"]
+subgraph E["internal"]
+F["schema.ts"]
+G["sse.ts"]
 end
-end
-subgraph F["protocol"]
-subgraph G["src"]
-subgraph H["launch"]
-I["cursor.ts"]
-J["helpers.ts"]
-K["index.ts"]
-L["schema.ts"]
-M["state.ts"]
-end
-subgraph N["required-action"]
-O["index.ts"]
-P["schema.ts"]
+H["namespace.ts"]
+subgraph I["protocol"]
+J["Http.ts"]
+K["Producer.ts"]
+L["Read.ts"]
+M["constants.ts"]
 end
 end
 end
-subgraph Q["runtime"]
-subgraph R["src"]
-S["index.ts"]
-T["materialization"]
-U["providers"]
-V["required-action"]
-W["runtime-context"]
-X["runtime-host"]
-Y["runtime-output"]
+subgraph N["protocol"]
+subgraph O["src"]
+subgraph P["agent-tools"]
+Q["index.ts"]
+R["schema.ts"]
+end
+subgraph S["launch"]
+T["authority.ts"]
+U["host-context-authority.ts"]
+V["index.ts"]
+W["runtime-start.ts"]
+X["schema.ts"]
+Y["table.ts"]
+end
+subgraph Z["runtime-ingress"]
+10["index.ts"]
+11["schema.ts"]
 end
 end
 end
-4-->3
-5-->8
-5-->A
-5-->B
+subgraph 12["runtime"]
+subgraph 13["src"]
+14["agent-adapters"]
+15["agent-tools"]
+16["authorities"]
+17["codecs"]
+18["events"]
+19["host"]
+1A["index.ts"]
+1B["pipeline"]
+1C["sources"]
+1D["subscribers"]
+1E["transforms"]
+1F["verified-webhook-ingest"]
+1G["waits"]
+1H["workflow-engine"]
+end
+end
+end
+3-->4
+3-->D
+5-->3
+5-->4
+8-->A
 8-->B
-A-->9
-A-->B
-C-->3
-D-->4
-E-->5
-K-->I
+A-->F
+A-->J
+A-->L
+B-->C
+B-->F
+B-->J
+B-->K
+D-->C
+D-->H
+F-->C
+G-->9
+G-->C
+G-->M
+G-->J
+H-->8
+H-->9
+H-->C
+H-->A
+H-->B
+J-->M
+K-->C
+K-->F
 K-->J
-K-->L
-K-->M
-M-->L
-O-->P
-S-->V
-S-->W
-S-->X
-T-->K
-T-->C
-T-->D
-V-->E
-V-->C
-V-->O
-W-->U
-W-->Y
-W-->K
-X-->U
-X-->W
-X-->Y
-X-->E
-Y-->D
-Y-->K
+L-->9
+L-->F
+L-->G
+L-->M
+L-->J
+Q-->R
+U-->T
+U-->X
+U-->Y
+V-->T
+V-->U
+V-->W
+V-->X
+V-->Y
+X-->T
+Y-->T
+Y-->X
+Y-->5
+10-->11
+11-->5
+14-->17
+15-->19
+15-->1G
+15-->18
+15-->Q
+16-->1G
+16-->V
+16-->10
+16-->18
+17-->18
+18-->17
+18-->1C
+19-->V
+19-->15
+19-->16
+19-->1B
+19-->1C
+19-->1G
+19-->1H
+19-->10
+1A-->14
+1A-->16
+1A-->17
+1A-->18
+1A-->19
+1A-->1C
+1A-->1F
+1A-->1G
+1A-->1H
+1B-->15
+1B-->16
+1B-->17
+1B-->18
+1B-->19
+1B-->1C
+1B-->1D
+1C-->16
+1C-->1E
+1C-->19
+1D-->16
+1D-->19
+1D-->1E
+1D-->15
+1D-->18
+1E-->18
+1E-->19
+1F-->5
+1G-->5
+1G-->16
+1H-->5

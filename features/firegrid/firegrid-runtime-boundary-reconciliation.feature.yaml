@@ -1,0 +1,119 @@
+feature:
+  name: firegrid-runtime-boundary-reconciliation
+  product: firegrid
+  description: Audit and reconcile the post-runtime-agent-event-pipeline runtime tree so modules align with semantic roles, Effect-native capabilities, and package boundaries before new features build on accidental layout.
+
+components:
+  ROLE_MODEL:
+    requirements:
+      1: "The post-cutover runtime tree classifies modules by semantic role before folder name: Effect capability provider, pure transform, runtime subscriber, protocol codec, host composition, workflow/operator primitive, or generic durable operator."
+      2: A module that contains more than one semantic role is marked for extraction or explicitly documented as a composition boundary.
+      3: Runtime code uses existing Effect surfaces for stage contracts where possible rather than Firegrid-specific wrapper aliases.
+      4: Public runtime surfaces exist for production behavior, not only review metadata, tests, documentation, or compatibility aliases.
+      5: The SDD includes a post-cutover inventory for each top-level packages/runtime/src folder and classifies older surfaces beside the pipeline tree.
+      6: Runtime boundary reconciliation starts from semantic role and package ownership, not from preserving historical folder names.
+      7: "Operator APIs and subscriber drivers are distinguished with existing Effect shapes: operators are functions returning Effect, while subscriber drivers are scoped Layer values that provide no service."
+      8: Clean agent event-pipeline stages are grouped under a dedicated namespace instead of remaining flat beside host, workflow-engine, waits, tools, adapters, and verified ingest.
+      9: Dependency graph evidence is used to prioritize boundary reconciliation work, especially folder-level cycles and hidden compatibility barrels.
+
+  NAMESPACE_BOUNDARY:
+    requirements:
+      1: The agent event-pipeline namespace owns ingress/output materialization, protocol codecs, agent session sources, pure transforms, pipeline subscribers, and per-session pipeline composition.
+      2: Runtime control-plane lifecycle capabilities are separated from the agent event-pipeline namespace.
+      3: Host topology and command entrypoints remain outside the agent event-pipeline namespace.
+      4: Waits, workflow-engine, agent-tools, agent-adapters, and verified-webhook-ingest remain adjacent bounded contexts rather than subfolders of the agent event pipeline.
+      5: Pipeline namespacing is a mechanical follow-up after host/index extraction, not part of the first host split PR.
+      6: The pipeline composition folder is treated as composition, not as a runtime stage.
+
+  CYCLE_BREAKING:
+    requirements:
+      1: The first implementation PR after the SDD breaks folder-level cycles under packages/runtime/src before broader host extraction.
+      2: RuntimeContextError and its constructors are moved out of host/errors.ts into a runtime-wide module.
+      3: Events barrel compatibility re-exports of codec contracts and source byte streams are removed.
+      4: Host authority compatibility aliases are removed rather than preserved as runtime production surfaces.
+      5: Dependency-cruiser enforces zero folder-level cycles under packages/runtime/src with a folder-scoped circular rule once PR 1 lands.
+      6: Cycle-breaking work is behavior-preserving and downstream apps build unchanged.
+      7: PR 1 does not introduce a runtime folder-cycle baseline that preserves known debt.
+      8: The first implementation wave drops static-tooling accepted findings to zero for the gates it changes, including new architecture enforcement.
+
+  STATIC_ENFORCEMENT:
+    requirements:
+      1: Runtime boundary enforcement prefers hard zero-state checks over baselines that preserve known debt.
+      2: New dependency-cruiser architecture checks land only with the refactor that makes their accepted finding count zero.
+      3: Existing static tooling baselines are removed or reduced to zero as part of the first reconciliation wave rather than carried forward as accepted debt.
+
+  HOST_SPLIT:
+    requirements:
+      1: The post-cutover host index is reduced to public entrypoint/barrel behavior while raw-process runtime execution moves to a dedicated host module.
+      2: Runtime context workflow/activity/run lifecycle wiring moves out of host/index into a dedicated host workflow module.
+      3: The host-coupled AgentToolHost live implementation moves out of host/index into a dedicated host module.
+      4: Host layer topology and config-derived host layers are separated from command handlers such as startRuntime and appendRuntimeIngress.
+      5: The host split is behavior-preserving and validated by existing runtime host, prompt-routing, sync-run, two-host isolation, and codec event-plane tests.
+      6: Host split runs after cycle-breaking and does not move waits internals or package boundaries.
+
+  TOOL_AND_ADAPTER_BOUNDARIES:
+    requirements:
+      1: Agent adapters are classified as sibling projections over codec sessions, not as stages inside the durable runtime event pipeline.
+      2: Agent adapters do not write runtime durable rows directly or own runtime pipeline lifecycle.
+      3: Agent tools are split conceptually into schema/catalog definitions, protocol-neutral lowering, MCP exposure, and host-coupled live services.
+      4: Wait-for tool lowering uses WaitFor.match rather than introducing a second wait abstraction.
+      5: MCP host exposure is treated as host/tool composition rather than a runtime event-pipeline subscriber.
+
+  WAITS_BOUNDARY:
+    requirements:
+      1: The waits folder is classified as a durable coordination operator, not as an agent event pipeline subscriber.
+      2: WaitFor.match remains an operator API that composes durable wait capabilities, workflow engine/deferred/clock semantics, and dynamic source lookup.
+      3: The wait router is classified as a subscriber driver over active wait rows and registered source streams, while WaitFor.match remains the operator API.
+      4: Runtime waits do not expose speculative capability tags or production surfaces that no production bridge consumes.
+      5: Runtime waits consume durable wait row authority through split capability tags rather than owning runtime DurableTable writes directly.
+      6: The first wait-router reconciliation keeps timeout ownership unchanged; moving timeout resolution into the router requires separate ACIDs.
+      7: Durable wait row authority exposes row-level lookup, upsert, and row-stream capabilities rather than bundled services that encode wait lifecycle policy.
+      8: Active-wait filtering, match completion, timeout completion, and deferred reconciliation belong to the operator/subscriber driver layer, not the durable wait row provider.
+      9: The wait row authority is moved into the wait bounded context before any package extraction to effect-durable-operators.
+      10: The wait router is named as a wait-owned subscriber driver and is not relocated into the agent event-pipeline subscribers folder.
+      11: Exact wait row capability tag names are decided in the wait authority PR, constrained by row-level lookup, upsert, and stream semantics.
+
+  SOURCE_REGISTRATION:
+    requirements:
+      1: SourceCollectionHandle registration is owned by provider/source-registration layers rather than host-only observation glue.
+      2: Host composition does not enumerate every authority stream that wait_for can observe.
+
+  EFFECT_DURABLE_OPERATORS:
+    requirements:
+      1: Generic durable wait lifecycle pieces are evaluated for extraction to packages/effect-durable-operators before being treated as permanent runtime concepts.
+      2: Candidate generic pieces include wait keys, wait rows, completion rows, timeout/race semantics, durable deferred/clock integration, and source-name matching when they can be expressed without Firegrid runtime vocabulary.
+      3: Firegrid runtime keeps source registrations, agent-tool bindings, runtime observation names, and host composition adapters that depend on Firegrid runtime vocabulary.
+      4: Moving wait internals to effect-durable-operators requires a separate SDD/spec and is not bundled with the runtime event pipeline cutover.
+
+  ADJACENT_SURFACES:
+    requirements:
+      1: Workflow-engine remains a substrate adapter boundary and is not folded into runtime host or runtime event-pipeline modules.
+      2: Verified webhook ingest remains an adjacent external ingress/source adapter until a separate SDD decides whether any pieces are generic durable operators.
+      3: Boundary reconciliation flags adjacent surfaces with generic durable-operator overlap without moving them opportunistically.
+
+  SOURCE_COLLECTIONS:
+    requirements:
+      1: Static runtime subscribers consume Stream capability tags through the Effect requirement channel.
+      2: Dynamic wait_for lookup consumes SourceCollectionHandle registrations by source name.
+      3: SourceCollectionHandle is not used as the universal static read-side abstraction for runtime subscribers.
+      4: Helpers that construct source handles directly from DurableTableCollectionFacade are internal to provider/operator boundaries or moved to a generic durable-operator package boundary.
+
+  PUBLIC_SURFACE:
+    requirements:
+      1: Production runtime code does not export registries whose only consumers are review tooling, documentation, or tests.
+      2: Production runtime code does not export singleton authority classes or table-taking helper APIs.
+      3: Runtime package exports do not preserve stale compatibility subpaths when downstream apps can import target primitives.
+      4: Semgrep and dependency-boundary rules are updated after boundary reconciliation to prevent regression into compatibility aliases or hidden table authority.
+      5: Public runtime exports are reviewed against the role inventory before each boundary reconciliation PR is accepted.
+      6: Load-bearing barrels remain stable unless a PR migrates all importers in the same change.
+      7: Runtime-internal PRs before the factory audit do not require downstream app import changes.
+      8: Flamecast keeps its single host-entrypoint runtime import pattern.
+
+constraints:
+  SEQUENCING:
+    requirements:
+      1: Boundary reconciliation starts after the runtime agent event pipeline cutover lands.
+      2: Cycle-breaking lands before host/index extraction.
+      3: Generic durable wait extraction requires a separate package-boundary design before code moves into effect-durable-operators.
+      4: The reconciliation work does not re-open accepted event-pipeline behavior unless validation finds a correctness bug.
+      5: Factory consumer cleanup happens after runtime-internal cycle, host, namespace, and source-registration cleanup.
