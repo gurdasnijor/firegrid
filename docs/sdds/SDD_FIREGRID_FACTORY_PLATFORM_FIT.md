@@ -196,6 +196,42 @@ because Linear webhooks and operator retries can redeliver the same logical
 work. It is not part of "launching an agent"; it is product-owned convergence
 for duplicate intake.
 
+This is the only app-authored sequencing in the happy path: accept external
+work, create or load the durable run identity, launch or attach the parent
+planner session, and prompt it with the observed facts and available tools.
+After that, the planner is the sequencer.
+
+Planner prompt shape:
+
+```text
+You are the factory planner for <factoryRunKey>.
+
+You own sequencing. There is no hidden TypeScript workflow chain.
+
+Durable context:
+- accepted trigger fact: <factKey>
+- factory run key: <factoryRunKey>
+- planner session: <sessionId>
+- product facts/projections: available through factory read tools
+- runtime/session observations: available through Firegrid tools
+
+Available Firegrid tools:
+- session_new: create child implementer/reviewer/QA sessions when useful
+- session_prompt: continue or redirect an existing child session
+- wait_for: wait on runtime-owned observations such as agent output,
+  permission requests, child session output, or runtime run state
+- schedule_me: ask your future self to re-check provider or CI state
+- execute: call app-installed provider capabilities such as GitHub PR open,
+  GitHub CI read, Linear comment, Linear status update, or Slack notify
+
+Rules:
+- Do not assume a fixed planner -> implementer -> review -> QA -> deploy DAG.
+- Read durable facts and session history before deciding the next action.
+- Emit permission requests for human gates.
+- Record provider side effects through the available execution capabilities.
+- Treat terminal/waiting status as derived from durable observations.
+```
+
 Factory read side:
 
 ```ts
@@ -210,41 +246,92 @@ export const readFactoryRun = (factoryRunKey: FactoryRunKey) =>
   })
 ```
 
-Factory provider effects:
+Factory provider capabilities are installed as tools/capabilities for the
+planner, not called by an app-authored phase chain. A provider adapter owns the
+side effect and receipt recording; the planner decides when to call it:
 
 ```ts
-export const openPullRequest = (request: FactoryPullRequestRequest) =>
-  Effect.gen(function* () {
+export const FactoryProviderToolsLive = makeFactoryTools({
+  githubOpenPullRequest: Effect.fn("github.openPullRequest")(function* (input) {
     const github = yield* GitHubIntegration
-    const receipt = yield* github.pullRequests.open(request)
-    return yield* recordProviderActionReceipt({
-      factoryRunKey: request.factoryRunKey,
+    const receipt = yield* github.pullRequests.open(input)
+    yield* recordProviderActionReceipt({
+      factoryRunKey: input.factoryRunKey,
       provider: "github",
       action: "pull_request.open",
       receipt,
     })
-  })
+    return receipt
+  }),
+  githubReadCi: Effect.fn("github.readCi")(function* (input) {
+    const github = yield* GitHubIntegration
+    const receipt = yield* github.checks.read(input)
+    yield* recordProviderActionReceipt({
+      factoryRunKey: input.factoryRunKey,
+      provider: "github",
+      action: "checks.read",
+      receipt,
+    })
+    return receipt
+  }),
+  linearComment: Effect.fn("linear.comment")(function* (input) {
+    const linear = yield* LinearIntegration
+    const receipt = yield* linear.comments.create(input)
+    yield* recordProviderActionReceipt({
+      factoryRunKey: input.factoryRunKey,
+      provider: "linear",
+      action: "comment.create",
+      receipt,
+    })
+    return receipt
+  }),
+})
 ```
 
-Factory waits:
+Those tools are mounted into the planner through the host-sdk agent-tool/MCP
+surface. The app does not call `githubOpenPullRequest` after a hard-coded
+`implementAgent` function returns. The planner calls the capability when its
+current durable context supports that next step.
+
+Factory waits are also planner-owned choreography decisions:
+
+```text
+Planner examples:
+- call session_new for an implementer;
+- wait_for that child session's output or terminal runtime state;
+- ask for human approval through ACP PermissionRequest;
+- after approval, call execute/github.openPullRequest;
+- schedule_me in 10 minutes if CI is still pending;
+- wait_for the next relevant runtime observation, or call an app fact/read
+  tool and schedule_me for a future recheck when the provider has not emitted
+  new evidence yet.
+```
+
+The app may still provide server/UI helpers over app-owned projections:
 
 ```ts
-const permission = yield* planner.wait.forPermissionRequest({
-  timeoutMs: 120_000,
-})
-
-yield* waitForFactoryProviderEffect({
-  factoryRunKey: run.factoryRunKey,
-  provider: "github",
-  action: "pull_request.open",
-  status: "completed",
-  timeoutMs: 300_000,
-})
+export const readLatestProviderEffect = (query: ProviderEffectQuery) =>
+  readFactoryTimeline(query.factoryRunKey).pipe(
+    Effect.map(timeline => timeline.providerEffects.find(matchesProviderEffect(query))),
+  )
 ```
 
-Runtime waits stay on runtime-owned session observations. Factory waits over
-factory facts/projections stay app-owned and do not go through runtime
-`wait_for`, SourceCollections, or runtime typed wait-source variants.
+That helper is a read model. It is not the factory sequencer.
+
+Choreography ownership:
+
+| Decision | Owner |
+| --- | --- |
+| Accept this provider webhook as work? | Product adapter / app policy. |
+| Reuse the existing planner session for this work key? | App idempotency row. |
+| What should happen after the planner reads the issue? | Planner agent. |
+| Should implementation, review, QA, or CI wait happen? | Planner agent. |
+| Which provider side effect is allowed and how is it executed? | Planner chooses; app-installed capability enforces credentials/policy and records receipt. |
+| Is the run waiting or terminal? | Derived read model over durable facts and runtime/session observations. |
+
+Runtime waits stay on runtime-owned session observations. Factory/product waits
+over factory facts/projections stay app-owned or planner-tool-owned and do not
+go through runtime SourceCollections or a centralized app coordinator loop.
 
 This target is materially smaller than current `DarkFactoryHostLive`:
 
@@ -254,7 +341,9 @@ This target is materially smaller than current `DarkFactoryHostLive`:
 - no duplicated local-process env resolver policy;
 - no factory-specific launch/start helper;
 - no requirement that the host process know which planner agent a product run
-  will choose.
+  will choose;
+- no app-authored planner -> implementer -> council -> QA -> deploy function
+  chain.
 
 ## Factory Table Reverse Engineering
 
@@ -336,7 +425,9 @@ product run is caller-owned state that may span multiple runtime sessions,
 provider callbacks, permissions, and side effects. It can be modeled today as
 an app-owned `DurableTable` read model linked to session-plane handles.
 
-The current projection helpers reinforce the same point:
+The current projection helpers reinforce the same point. They are app-local
+read-model helpers over durable evidence, not the driver for a product workflow
+chain:
 
 ```ts
 export const factoryPermissionProjectionFromFact = (fact: DarkFactoryFact) =>
@@ -344,11 +435,10 @@ export const factoryPermissionProjectionFromFact = (fact: DarkFactoryFact) =>
     ? decodePermissionResolution(fact.payload)
     : Option.none()
 
-export const waitForFactoryProviderEffect = (options) =>
+export const providerEffectProjectionStream = (options) =>
   DarkFactoryTable.facts.rows().pipe(
     Stream.filterMap(factoryProviderEffectProjectionFromFact),
     Stream.filter(/* factoryRunKey/effect/status */),
-    Stream.runHead,
   )
 ```
 
