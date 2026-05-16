@@ -3,18 +3,20 @@ import {
   Workflow,
 } from "@effect/workflow"
 import type { RuntimeContext } from "@firegrid/protocol/launch"
-import { Clock, Effect, Option, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import {
   RuntimeContextError,
-  asRuntimeContextError,
   mapRuntimeContextError,
 } from "../runtime-errors.ts"
 import {
-  RuntimeContextRead,
   RuntimeOutputJournalLayer,
   RuntimeRunAppendAndGet,
 } from "../authorities/index.ts"
 import { runRuntimeContext } from "./raw-process-runtime.ts"
+import {
+  readRuntimeContext,
+  runtimeContextWorkflowExecutionId,
+} from "./internal/runtime-context-helpers.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.2
 // RuntimeContextWorkflow owns workflow/activity/run lifecycle wiring only.
@@ -33,34 +35,6 @@ const StartRuntimeResultSchema = Schema.Struct({
   exitCode: Schema.Number,
   signal: Schema.optional(Schema.String),
 })
-
-export const runtimeContextWorkflowExecutionId = (contextId: string) =>
-  `runtime-context:${contextId}`
-
-export const runtimeExecutionClock = Clock.make()
-
-export const readRuntimeContext = (
-  contextId: string,
-) =>
-  Effect.gen(function* () {
-    const contextRead = yield* RuntimeContextRead
-    const maybeContext = yield* contextRead.readContext(contextId).pipe(
-      mapRuntimeContextError(
-        "runtime-control-plane.contexts.get",
-        "failed to read runtime context row",
-        contextId,
-      ),
-    )
-    return yield* Option.match(maybeContext, {
-      onNone: () =>
-        Effect.fail(asRuntimeContextError(
-          "runtime-control-plane.contexts.get",
-          `runtime context not found: ${contextId}`,
-          contextId,
-        )),
-      onSome: row => Effect.succeed(row),
-    })
-  })
 
 const allocateRuntimeActivityAttempt = (
   context: RuntimeContext,

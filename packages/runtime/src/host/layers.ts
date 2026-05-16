@@ -49,6 +49,7 @@ const runtimeHostAgentToolHostWithControlPlaneLive = (
 
 const runtimeCodecToolLoweringLayerLive = Layer.succeed(
   RuntimeCodecToolLoweringLayer,
+  // firegrid-runtime-boundary-reconciliation.HOST_HARDENING.3
   HostRuntimeObservationSubstrateLive.pipe(
     Layer.provideMerge(ScheduledInputWorkflowLayer),
     Layer.provideMerge(RuntimeHostAgentToolHostLive),

@@ -1,12 +1,10 @@
 import { WorkflowEngine } from "@effect/workflow"
 import {
-  ContextNotLocal,
   CurrentHostSession,
   RuntimeStartCapability,
   hostOwnedStreamUrl,
   provideRuntimeContext,
   requireLocalContext,
-  type HostSessionRow,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import {
@@ -21,13 +19,15 @@ import type { StartRuntimeOptions } from "./types.ts"
 import {
   RuntimeContextWorkflow,
   RuntimeContextWorkflowPayload,
-  readRuntimeContext,
-  runtimeContextWorkflowExecutionId,
-  runtimeExecutionClock,
 } from "./runtime-context-workflow.ts"
 import {
+  readRuntimeContext,
+  requireLocalRuntimeContextWithHostSession,
+  runtimeContextWorkflowExecutionId,
+  runtimeExecutionClock,
+} from "./internal/runtime-context-helpers.ts"
+import {
   RuntimeContextRead,
-  type RuntimeContextReadService,
   RuntimeIngressAppendAndGet,
   RuntimeIngressAppenderLayer,
 } from "../authorities/index.ts"
@@ -65,30 +65,6 @@ const executeRuntimeContextWorkflowForContextId = (
       contextId,
     }),
   })
-
-export const readRuntimeContextWithHostSession = (
-  contextRead: RuntimeContextReadService,
-  contextId: string,
-) =>
-  readRuntimeContext(contextId).pipe(
-    Effect.provideService(RuntimeContextRead, contextRead),
-  )
-
-export const requireLocalRuntimeContextWithHostSession = (
-  contextRead: RuntimeContextReadService,
-  hostSession: HostSessionRow,
-  contextId: string,
-) =>
-  readRuntimeContextWithHostSession(contextRead, contextId).pipe(
-    Effect.flatMap(context =>
-      context.host.hostId !== hostSession.hostId
-        ? Effect.fail(new ContextNotLocal({
-          contextId,
-          hostId: context.host.hostId,
-          currentHostId: hostSession.hostId,
-        }))
-        : Effect.succeed(context)),
-  )
 
 export const startRuntime = (
   options: StartRuntimeOptions,
