@@ -6,6 +6,9 @@ The runtime observes durable control-plane and ingress tables, starts sandbox
 providers, writes runtime output rows, owns the workflow engine, and exposes
 runtime-only durable tools.
 
+For the stable operational map of the runtime package, see
+[Runtime Architecture](ARCHITECTURE.md). The SDDs remain decision records.
+
 ## Public Subpaths
 
 ```ts
@@ -21,7 +24,7 @@ import {
   DurableToolsWaitForLive,
   WaitFor,
   SourceCollections,
-  sourceCollectionHandle,
+  sourceCollectionStreamHandle,
 } from "@firegrid/runtime/durable-tools"
 ```
 
@@ -154,7 +157,7 @@ source collection.
 
 Read the detailed durable-tools guide:
 
-- [durable-tools README](src/durable-tools/README.md)
+- [durable-tools README](src/waits/README.md)
 - [Durable tools SDD](../../docs/proposals/SDD_FIREGRID_DURABLE_TOOLS.md)
 
 ## Boundary Rules

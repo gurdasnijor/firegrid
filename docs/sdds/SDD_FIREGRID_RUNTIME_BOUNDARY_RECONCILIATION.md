@@ -1013,7 +1013,8 @@ dependency-cruiser rules should fail on:
 
 Move stable architecture guidance into `packages/runtime/ARCHITECTURE.md` once
 the post-`#250` refactors land. Keep SDDs as decision records, not the only
-source of operational architecture guidance.
+source of operational architecture guidance. The current operational guide is
+[`packages/runtime/ARCHITECTURE.md`](../../packages/runtime/ARCHITECTURE.md).
 
 ## Refactor Sequencing Invariants
 
