@@ -1,0 +1,87 @@
+feature:
+  name: firegrid-factory-run-process
+  product: firegrid
+  description: Reverse-engineer the working dark-factory runner PoC into Firegrid apps/factory run-process requirements without adding product semantics to Firegrid runtime.
+
+components:
+  POC_MAPPING:
+    requirements:
+      1: The implementation spec maps smithery-ai/internal-workflows#24 into Firegrid terms from the actual PR source, including Linear trigger intake, deterministic run identity, planner completion, human gate resolution, implementer completion, PR posting, and optional Slack notification.
+      2: The PoC's Inngest event names and waits are treated as evidence for the needed caller-owned run-process shape, not as Firegrid-owned event names, product row families, or required runtime dependencies.
+      3: Hidden Linear elicitation markers and Flamecast callback URLs may remain provider-adapter idempotency details during migration, but they are not the canonical Firegrid factory resume or wait contract.
+
+  EVENT_PLANE:
+    requirements:
+      1: Factory trigger, phase completion, human gate, provider side-effect, prompt, output, permission, and PR evidence rows are app-owned facts, projections, or future caller-owned EventPlane rows, not Firegrid-native substrate row families.
+      2: Event rows carry stable idempotency, causation, and correlation metadata so duplicate provider delivery resolves to the same projection state and does not create competing factory runs.
+      3: App projections expose factory run state, active waits, provider links, latest prompt/output rows, permission requests, and terminal status without requiring app code to read raw Durable Streams envelopes.
+
+  RUN_IDENTITY:
+    requirements:
+      1: A factory trigger creates or loads one factory run keyed by provider/source plus external entity id, with a deterministic app-owned run id for provider callbacks and a canonical Firegrid-compatible factoryRunKey for durable projections.
+      2: Provider delivery ids, Linear issue ids, callback phase ids, permission ids, and PR ids are retained as app-owned correlation fields and are not copied into new Firegrid RuntimeContext schema fields unless a public schema already owns them.
+      3: Redelivery of a Linear ticket trigger, Flamecast-style callback, human gate reply, or PR/provider event converges through app fact/projection state before the run process dispatches another side effect.
+
+  RUN_PROCESS:
+    requirements:
+      1: The factory replacement is an app-owned run process composed with shipped Firegrid runtime/client primitives, app facts/projections, and wait_for or future EventPlane/RunWait semantics; Firegrid does not own a factory workflow product.
+      2: "The first run-process slice may preserve the PoC's useful path as a porting escape hatch: accepted ticket, planner session/run, planner completion wait, plan approval wait, implementer session/run, implementer completion wait, PR opened evidence, and user/provider notification evidence."
+      3: The run process must make every side-effect boundary durable before waiting or dispatching the next phase.
+      4: The run process may be deterministic for the first port of the PoC, but phase policy remains app-owned and must not be promoted into Firegrid runtime, client, or substrate packages.
+      5: A code-authored phase chain is allowed only for PoC porting, compliance/debug/bootstrap needs, or provider-adapter normalization; it is not the preferred Firegrid agent-product shape.
+
+  CHOREOGRAPHY:
+    requirements:
+      1: The preferred factory shape lets the planner agent own sequencing, branching, retries, delegation, and recovery by reading durable facts/runtime observations and calling durable primitives.
+      2: Planner-owned sequencing uses wait_for, schedule_me, execute, session_new child sessions, session_prompt, sleep, and runtime observation where those primitives are available and advertised.
+      3: Firegrid does not add a createFunction-style orchestration SDK, DAG framework, or hard-coded factory workflow product for planner, gate, implementer, review, QA, CI, or merge phases.
+      4: "Observation is required for choreography: prompts, tool calls, waits, permission requests, child sessions, provider side effects, and terminal evidence must remain durable and queryable for humans and agents."
+
+  PLANNER_AND_SESSIONS:
+    requirements:
+      1: Planner and implementer work are represented as runtime sessions or caller-owned provider sessions with durable requested, dispatched, output, terminal, and callback evidence.
+      2: Planner prompts include factoryRunKey, provider ticket fields, source names, available provider capabilities, required approval policy, and the exact durable rows or permission rows that can resume the run.
+      3: Agent output and completion envelopes are normalized into caller-owned output or phase-completion rows before app projections or waits consume them.
+
+  WAIT_AND_PERMISSION:
+    requirements:
+      1: Planner completion, human gate resolution, implementer completion, provider status, and permission resolution waits are expressed as durable projection matches or wait_for source matches over caller-owned rows or runtime observation sources.
+      2: Human approvals are represented by app-owned permission or gate rows plus resolution rows, with provider UI markers used only to route provider replies back into those rows.
+      3: Stop/cancel signals write cancellation and provider-abort evidence rows and unblock the active run process through the same durable wait/resume path as normal human decisions.
+
+  PROVIDERS:
+    requirements:
+      1: Linear, GitHub, Slack, Flamecast, and model-provider credentials, payload verification, callback validation, API clients, and side-effect idempotency are app-owned adapter concerns.
+      2: Provider side effects such as Linear AgentSession creation, activity posting, delegate assignment, Flamecast dispatch/abort, PR link updates, GitHub status checks, merge operations, and Slack notifications write durable evidence rows.
+      3: Provider adapter rows may expose provider URLs and non-secret identifiers for UI and retry, but they must not persist bearer tokens, webhook secrets, API keys, or callback tokens.
+
+  SHIPPED_ALIGNMENT:
+    requirements:
+      1: The spec identifies which PoC behaviors are implementable today with the @firegrid/client session facade, including createOrLoad, prompt, start, snapshot, wait, and permissions.respond.
+      2: The spec identifies which PoC behaviors are implementable today with @firegrid/runtime/runtime-host, including local host composition, env resolver policy, and app source registration.
+      3: The spec identifies which PoC observations are implementable today with runtime agent-event-pipeline output and agentOutputs, WaitFor/source registrations, protocol session-facade schemas, and app-owned facts/projections.
+      4: The spec identifies missing or not-yet-shipped pieces separately from shipped primitives, including provider adapters, hosted routes, provider side-effect capabilities, EventPlane migration, and full run-process orchestration.
+
+  HOSTED_ACCEPTANCE:
+    requirements:
+      1: Acceptance for the first implementation proves the full ticket-to-PR-opened slice against a hosted Durable Streams or Electric endpoint with secrets supplied through environment or deployment configuration.
+      2: The hosted smoke records the accepted trigger, one planner dispatch/completion, one human gate request/resolution, one implementer dispatch/completion, and one PR-opened or PR-shaped result row in durable state.
+      3: The smoke can use live provider-shaped manual callbacks when full provider access is unavailable, but it must still exercise durable fact or EventPlane writes, waits, resume, projections, and runtime/session observation rather than fixture-only in-memory state.
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: Firegrid-owned packages do not import or encode Linear, GitHub, Slack, Flamecast, Inngest, Claude model, PR, issue, planner, implementer, gate, or factory vocabulary as native runtime semantics.
+      2: Firegrid owns durable execution, runtime session hosting, RunWait or wait_for mechanics, source registration, schema projection rules, and runtime observation primitives only at product-neutral boundaries.
+      3: Apps/factory owns factory prompts, provider adapters, product facts, UI projections, run-process policy, provider callback routes, and provider-specific retry/idempotency rules.
+      4: Firepixel is a separate system and may be used only as an analogy for caller-owned event planes and run processes; it is not the primary name, owner, or target package for this factory spec.
+      5: The spec does not require moving apps/factory implementation to EventPlane in one PR; it defines the target and sequencing for a later implementation.
+      6: Code-authored orchestration remains outside Firegrid-owned packages and must not become a public Firegrid factory workflow API.
+
+  SEQUENCING:
+    requirements:
+      1: Land this reverse-engineering SDD/spec before implementing factory run-process code.
+      2: Define app-owned fact or EventPlane schemas and projections before porting provider routes or run-process phases.
+      3: Prove trigger intake and projection idempotency before dispatching real planner or implementer side effects.
+      4: Prove wait/resume over durable rows before replacing hidden callback markers as the canonical control path.
+      5: Prefer planner-led choreography once durable primitives and observations are available; keep deterministic phase-chain code behind app-owned bootstrap, debug, compliance, or provider-adapter boundaries.
