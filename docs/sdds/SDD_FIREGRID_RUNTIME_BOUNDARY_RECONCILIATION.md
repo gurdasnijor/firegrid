@@ -135,6 +135,28 @@ lowest-risk change that unlocks cleaner host extraction. The waits extraction
 is design work first; do not move wait internals to another package until that
 package boundary is specified.
 
+## Runtime Test Layout
+
+`packages/runtime/src` is the production source tree. Runtime package tests
+currently live beside production modules under `packages/runtime/src/**/*.test.ts`,
+which makes source-boundary checks noisier and gives test-only imports the same
+folder-level graph weight as runtime implementation imports.
+
+The cycle-breaking PR also moves runtime tests to `packages/runtime/test/**`,
+mirroring source folders where practical:
+
+- tests that validate public runtime behavior should import through the public
+  package barrel or package subpath;
+- tests that validate internals may import the corresponding implementation via
+  `../src/...`;
+- `packages/runtime/tsconfig.json` includes both `src/**/*.ts` and
+  `test/**/*.ts`, so moved tests keep package-local typechecking;
+- after the move, no `packages/runtime/src/**/*.test.ts` or
+  `packages/runtime/src/**/*.spec.ts` files remain.
+
+This is a mechanical layout cleanup, not a behavior change. It should not move
+tests for other packages.
+
 ## Role Rule
 
 Folders are allowed to contain multiple files, but a production module should

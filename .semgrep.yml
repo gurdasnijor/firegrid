@@ -467,6 +467,7 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
+        - "/packages/runtime/src/waits/internal/durable-wait-store.ts"
     message: |
       Runtime-owned DurableTable writes must go through the owning runtime
       authority module.
@@ -784,6 +785,7 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
+        - "/packages/runtime/src/waits/internal/durable-wait-store.ts"
         - "/packages/runtime/src/waits/internal/table.ts"
     message: |
       Runtime production component accepts a runtime-owned DurableTable service.

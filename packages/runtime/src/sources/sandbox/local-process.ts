@@ -5,7 +5,7 @@ import {
   type Process,
 } from "@effect/platform/CommandExecutor"
 import { Effect, Layer, Queue, Runtime, type Scope, Stream } from "effect"
-import type { AgentByteStream } from "../../events/index.ts"
+import type { AgentByteStream } from "../byte-stream.ts"
 import {
   type ExecutionResult,
   type ProcessOutputChunk,

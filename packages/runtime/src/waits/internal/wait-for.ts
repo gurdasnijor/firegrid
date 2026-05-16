@@ -42,7 +42,7 @@ import { type WaitRow } from "./table.ts"
 import {
   DurableWaitAppendAndGet,
   DurableWaitCompletionAppendAndGet,
-} from "../../authorities/index.ts"
+} from "./durable-wait-store.ts"
 import {
   type FieldEqualsTrigger,
   FieldEqualsTriggerSchema,

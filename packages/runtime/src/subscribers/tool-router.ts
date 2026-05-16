@@ -14,7 +14,7 @@ import {
   asRuntimeContextError,
   mapRuntimeContextError,
   type RuntimeContextError,
-} from "../host/errors.ts"
+} from "../runtime-errors.ts"
 
 const toolResultInputId = (
   contextId: string,

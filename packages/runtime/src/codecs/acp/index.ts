@@ -2,16 +2,18 @@ import * as acp from "@agentclientprotocol/sdk"
 import { IdGenerator, Prompt, Response } from "@effect/ai"
 import { Effect, Match, Queue, Ref, Runtime, Stream } from "effect"
 import type {
-  AgentByteStream,
   AgentCapabilities,
-  AgentCodec,
-  AgentMcpServerDeclaration,
   AgentInputEvent,
   AgentOutputEvent,
   PermissionDecision,
   PermissionOption,
 } from "../../events/index.ts"
-import { AgentCodecError } from "../../events/index.ts"
+import type { AgentByteStream } from "../../sources/byte-stream.ts"
+import type {
+  AgentCodec,
+  AgentMcpServerDeclaration,
+} from "../contract.ts"
+import { AgentCodecError } from "../contract.ts"
 import {
   acpStopReasonToFinishReason,
   acpUserPromptPartToContentBlock,

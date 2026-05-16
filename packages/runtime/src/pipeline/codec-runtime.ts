@@ -13,15 +13,15 @@ import {
   StdioJsonlCodec,
 } from "../codecs/index.ts"
 import {
-  type AgentCodec,
   type AgentOutputEvent,
   encodeRuntimeAgentOutputEnvelope,
 } from "../events/index.ts"
+import type { AgentCodec } from "../codecs/index.ts"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
   type RuntimeContextError,
-} from "../host/errors.ts"
+} from "../runtime-errors.ts"
 import {
   SandboxProvider,
   commandForContext,

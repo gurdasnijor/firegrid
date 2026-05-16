@@ -28,7 +28,12 @@
 import { IdGenerator, McpServer } from "@effect/ai"
 import { HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
-import type { RuntimeControlPlaneTable } from "@firegrid/protocol/launch"
+import {
+  ContextNotFound,
+  requireLocalContext,
+  type CurrentHostSession,
+  type RuntimeControlPlaneTable,
+} from "@firegrid/protocol/launch"
 import { RpcSerialization, RpcServer } from "@effect/rpc"
 import { Config, Effect, Layer, Logger, Option } from "effect"
 // The MCP HTTP server lifetime is Effect-owned via Layer.scopedDiscard
@@ -38,16 +43,6 @@ import { Config, Effect, Layer, Logger, Option } from "effect"
 // example accepts. Not a raw/custom HTTP server.
 // durable-lint-allow-control-plane: @effect/platform-node NodeHttpServer.layer listener factory
 import { createServer } from "node:http"
-import { DurableToolsWaitForLive } from "../waits/index.ts"
-import { RuntimeHostConfig } from "../host/config.ts"
-import {
-  ContextNotFound,
-  CurrentHostSession,
-  hostOwnedStreamUrl,
-  requireLocalContext,
-} from "../host/authority-context.ts"
-import { RuntimeHostAgentToolHostLive } from "../host/index.ts"
-import { RuntimeObservationSourcesLive } from "../host/observation-sources.ts"
 import { ScheduledInputWorkflowLayer } from "./scheduled-input-workflow.ts"
 import {
   FiregridAgentToolContext,
@@ -117,7 +112,7 @@ const FiregridMcpRouteContextLayer = Layer.effect(
     // parameter for each tools/call instead of memoizing one context
     // into the shared MCP server layer.
     const captured = yield* Effect.context<
-      CurrentHostSession | RuntimeHostConfig | RuntimeControlPlaneTable
+      CurrentHostSession | RuntimeControlPlaneTable
     >()
     return {
       // firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1
@@ -140,21 +135,6 @@ const FiregridMcpRouteContextLayer = Layer.effect(
   }),
 )
 
-const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
-  Effect.gen(function* () {
-    const session = yield* CurrentHostSession
-    const config = yield* RuntimeHostConfig
-    return DurableToolsWaitForLive({
-      streamUrl: hostOwnedStreamUrl({
-        baseUrl: config.durableStreamsBaseUrl,
-        prefix: session.streamPrefix,
-        segment: "durableTools",
-      }),
-      ...(config.headers === undefined ? {} : { headers: config.headers }),
-    })
-  }),
-)
-
 /**
  * The Firegrid MCP server Layer. Composes:
  *
@@ -168,9 +148,8 @@ const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
  *   - `ScheduledInputWorkflowLayer` — `schedule_me` child workflow
  *   - `FiregridAgentToolContext` — resolves route context at tool-call time
  *   - `IdGenerator.defaultIdGenerator`
- *   - `RuntimeHostAgentToolHostLive` — host-owned tool effects
- *   - host-owned `DurableToolsWaitForLive` + runtime observation sources —
- *     `wait_for` arm
+ *   - host-provided AgentToolHost, durable wait_for, and runtime observation
+ *     services
  *   - `McpServer.layer` + `RpcServer.layerProtocolHttp({ path })`
  *     — Effect AI MCP handlers over JSON-RPC HTTP serialization
  *   - `NodeHttpServer.layer(createServer, { port, host })` — loopback
@@ -219,12 +198,6 @@ export const FiregridMcpServerLayer = (
     Layer.provide(FiregridMcpRouteContextLayer),
     Layer.provide(
       Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator),
-    ),
-    Layer.provide(RuntimeHostAgentToolHostLive),
-    Layer.provide(
-      RuntimeObservationSourcesLive.pipe(
-        Layer.provideMerge(HostOwnedDurableToolsWaitForLive),
-      ),
     ),
     // firegrid-effect-ai-native-agents.MCP_TRANSPORT_COMPAT.1
     //
