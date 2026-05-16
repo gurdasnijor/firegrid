@@ -1,49 +1,49 @@
+import { getFiregridProjectionMetadata } from "@firegrid/protocol/operations"
 import {
-  FiregridAgentToolOperations,
-  PermissionRespondInputSchema,
-  SessionPromptToolInputSchema,
-  WaitForToolInputSchema,
-} from "@firegrid/protocol/agent-tools"
+  SessionCreateOrLoadInputSchema,
+  SessionHandlePromptInputSchema,
+  SessionPermissionRespondInputSchema,
+} from "@firegrid/protocol/session-facade"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { FiregridClientOperations } from "../src/firegrid.ts"
+import { FiregridClientOperations } from "../src/operations.ts"
 
 describe("Firegrid client schema projection", () => {
-  it("firegrid-schema-projection-contract.CLIENT_PROJECTION.1 exposes namespaced client operations from the shared schema catalog", () => {
-    expect(FiregridClientOperations.sessions.prompt.inputSchema).toBe(
-      SessionPromptToolInputSchema,
+  it("firegrid-schema-projection-contract.CLIENT_PROJECTION.1 exposes namespaced client operations from the session schema catalog", () => {
+    expect(FiregridClientOperations.sessions.createOrLoad.inputSchema).toBe(
+      SessionCreateOrLoadInputSchema,
     )
-    expect(FiregridClientOperations.wait.for.inputSchema).toBe(
-      WaitForToolInputSchema,
+    expect(FiregridClientOperations.sessions.promptScoped.inputSchema).toBe(
+      SessionHandlePromptInputSchema,
     )
-    expect(FiregridClientOperations.permissions.respond.inputSchema).toBe(
-      PermissionRespondInputSchema,
-    )
-  })
-
-  it("firegrid-schema-projection-contract.CLIENT_PROJECTION.2 does not introduce a client-only input schema", () => {
-    expect(FiregridClientOperations.sessions.prompt).toBe(
-      FiregridAgentToolOperations.sessionPrompt,
-    )
-    expect(FiregridClientOperations.wait.for).toBe(
-      FiregridAgentToolOperations.waitFor,
-    )
-    expect(FiregridClientOperations.permissions.respond).toBe(
-      FiregridAgentToolOperations.permissionRespond,
+    expect(FiregridClientOperations.permissions.respondScoped.inputSchema).toBe(
+      SessionPermissionRespondInputSchema,
     )
   })
 
-  it("firegrid-schema-projection-contract.CLIENT_PROJECTION.3 decodes programmer-facing permission responses through the shared schema", () => {
+  it("firegrid-schema-projection-contract.SCHEMA_CATALOG.4 reads client projection metadata from Effect Schema annotations", () => {
+    expect(
+      getFiregridProjectionMetadata(
+        FiregridClientOperations.sessions.createOrLoad.inputSchema,
+      ),
+    ).toMatchObject({
+      _tag: "Some",
+      value: {
+        operationId: "session.createOrLoad",
+        clientName: "sessions.createOrLoad",
+      },
+    })
+  })
+
+  it("firegrid-schema-projection-contract.CLIENT_PROJECTION.2 decodes scoped programmer-facing permission responses through the session schema catalog", () => {
     const decoded = Schema.decodeUnknownSync(
-      FiregridClientOperations.permissions.respond.inputSchema,
+      FiregridClientOperations.permissions.respondScoped.inputSchema,
     )({
-      contextId: "ctx-1",
       permissionRequestId: "permission-1",
       decision: { _tag: "Deny", reason: "not approved" },
     })
 
     expect(decoded).toEqual({
-      contextId: "ctx-1",
       permissionRequestId: "permission-1",
       decision: { _tag: "Deny", reason: "not approved" },
     })

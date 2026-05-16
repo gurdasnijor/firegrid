@@ -4,7 +4,6 @@ export {
   FiregridConfig,
   FiregridConfigError,
   FiregridControlPlaneTableLive,
-  FiregridClientOperations,
   FiregridLive,
   FiregridRuntimeTables,
   FiregridStandaloneLive,
@@ -25,6 +24,15 @@ export {
   type RuntimeContextHandle,
   type RuntimeContextSnapshot,
 } from "./firegrid.ts"
+export {
+  FiregridClientOperations,
+  type PermissionRespondInput,
+  type PermissionRespondOutput,
+  type SessionPromptToolInput,
+  type SessionPromptToolOutput,
+  type WaitForToolInput,
+  type WaitForToolOutput,
+} from "./operations.ts"
 export type {
   PublicPromptRequest,
   RuntimeIngressInputRow,

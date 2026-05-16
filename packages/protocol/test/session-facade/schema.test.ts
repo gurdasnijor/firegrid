@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { Option, Schema, SchemaAST } from "effect"
 import {
+  PermissionRespondInputSchema,
+  SessionPromptToolInputSchema,
+  WaitForToolInputSchema,
+} from "../../src/agent-tools/schema.ts"
+import { getFiregridProjectionMetadata } from "../../src/operations/schema.ts"
+import { FiregridClientOperations } from "../../src/session-facade/operations.ts"
+import {
   RuntimeAgentOutputObservationSchema,
   RuntimePermissionRequestObservationSchema,
   FiregridSessionIdSchema,
@@ -90,6 +97,39 @@ describe("session facade protocol schema", () => {
       externalKey: { source: "linear", id: "LIN-123" },
       runtime: { provider: "local-process" },
       createdBy: "factory",
+    })
+  })
+
+  it("firegrid-schema-projection-contract.SCHEMA_CATALOG.1 firegrid-schema-projection-contract.SCHEMA_CATALOG.3 defines client operations from protocol schemas without copying agent-tool shapes", () => {
+    expect(FiregridClientOperations.sessions.createOrLoad.inputSchema).toBe(
+      SessionCreateOrLoadInputSchema,
+    )
+    expect(FiregridClientOperations.sessions.prompt.inputSchema).toBe(
+      SessionPromptToolInputSchema,
+    )
+    expect(FiregridClientOperations.wait.for.inputSchema).toBe(
+      WaitForToolInputSchema,
+    )
+    expect(FiregridClientOperations.permissions.respond.inputSchema).toBe(
+      PermissionRespondInputSchema,
+    )
+  })
+
+  it("firegrid-schema-projection-contract.SCHEMA_CATALOG.4 stores client projection metadata on session Effect Schemas", () => {
+    const createOrLoad = Option.getOrThrow(
+      getFiregridProjectionMetadata(SessionCreateOrLoadInputSchema),
+    )
+    const waitForAgentOutput = Option.getOrThrow(
+      getFiregridProjectionMetadata(SessionAgentOutputWaitInputSchema),
+    )
+
+    expect(createOrLoad).toEqual({
+      operationId: "session.createOrLoad",
+      clientName: "sessions.createOrLoad",
+    })
+    expect(waitForAgentOutput).toEqual({
+      operationId: "session.wait.forAgentOutput",
+      clientName: "session.wait.forAgentOutput",
     })
   })
 
