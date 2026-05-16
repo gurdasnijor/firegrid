@@ -1,6 +1,5 @@
 export {
   DarkFactoryHostLive,
-  DarkFactorySourcesLive,
   AcceptFactoryTriggerOptionsSchema,
   AcceptFactoryTriggerResultSchema,
   FactoryNextAgentOutputWaitOptionsSchema,
@@ -40,6 +39,34 @@ export {
   type PlannerPromptOptions,
 } from "./prompts.ts"
 export {
+  FactoryPermissionProjectionSchema,
+  FactoryPhaseProjectionSchema,
+  FactoryProviderEffectProjectionSchema,
+  FactoryRunProjectionSchema,
+  factoryPermissionProjectionFromFact,
+  factoryPhaseProjectionFromFact,
+  factoryProviderEffectProjectionFromFact,
+  type FactoryPermissionProjection,
+  type FactoryPhaseProjection,
+  type FactoryProviderEffectProjection,
+  type FactoryRunProjection,
+  type PermissionDecisionTag,
+} from "./projections.ts"
+export {
+  FactoryPermissionResolutionWaitOptionsSchema,
+  FactoryPhaseProjectionWaitOptionsSchema,
+  FactoryProviderEffectWaitOptionsSchema,
+  FactoryRunStatusWaitOptionsSchema,
+  waitForFactoryPermissionResolution,
+  waitForFactoryPhaseProjection,
+  waitForFactoryProviderEffect,
+  waitForFactoryRunStatus,
+  type FactoryPermissionResolutionWaitOptions,
+  type FactoryPhaseProjectionWaitOptions,
+  type FactoryProviderEffectWaitOptions,
+  type FactoryRunStatusWaitOptions,
+} from "./projection-waits.ts"
+export {
   DarkFactoryFactKeyEncoded,
   DarkFactoryFactKeySchema,
   DarkFactoryFactSchema,
@@ -47,7 +74,6 @@ export {
   DarkFactoryRunStatusSchema,
   DarkFactoryTable,
   DarkFactoryTriggerSchema,
-  darkFactoryFactsSourceName,
   darkFactoryTableLayerOptions,
   type DarkFactoryFact,
   type DarkFactoryFactKey,

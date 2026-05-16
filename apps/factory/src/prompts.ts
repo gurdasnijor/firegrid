@@ -1,9 +1,7 @@
-import { FiregridRuntimeObservationSourceNames } from "@firegrid/protocol/session-facade"
 import { Schema } from "effect"
 import {
   DarkFactoryRunSchema,
   DarkFactoryTriggerSchema,
-  darkFactoryFactsSourceName,
 } from "./tables.ts"
 
 export const PlannerPromptOptionsSchema = Schema.Struct({
@@ -41,8 +39,8 @@ export const buildPlannerPrompt = (
     `Factory run key: ${decoded.run.factoryRunKey}`,
     `Planner context id: ${decoded.run.plannerContextId}`,
     `Subscriber id: ${decoded.run.subscriberId}`,
-    `Fact source: ${darkFactoryFactsSourceName}`,
-    `Runtime observation sources: ${Object.values(FiregridRuntimeObservationSourceNames).join(", ")}`,
+    "Factory fact projections: app-owned run, phase, permission, provider-effect, and timeline rows.",
+    "Runtime waits: use typed agent output, runtime run, and permission request observations only when advertised by the host.",
     `External source: ${decoded.trigger.source}`,
     `External entity key: ${decoded.trigger.externalEntityKey}`,
     `External event key: ${decoded.trigger.externalEventKey}`,
@@ -55,9 +53,9 @@ export const buildPlannerPrompt = (
     "Advertised execute capabilities:",
     capabilities,
     "",
-    "Available Firegrid tools: session_new, session_prompt, wait_for, schedule_me, sleep, and execute only for advertised capabilities. session_cancel/session_close may fail explicitly when the host does not support them.",
+    "Available Firegrid tools: session_new, session_prompt, typed wait_for for runtime observations, schedule_me, sleep, and execute only for advertised capabilities. session_cancel/session_close may fail explicitly when the host does not support them.",
     "",
-    "Start by producing a concise plan and requesting human approval. Prefer an ACP permission request when your runtime supports it. Otherwise wait_for a durable human approval fact in darkFactory.facts.",
-    "When blocked, name the exact durable fact or PermissionResponse that will resume you. After approval, emit the next planner action before delegating work.",
+    "Start by producing a concise plan and requesting human approval. Prefer an ACP permission request when your runtime supports it.",
+    "When blocked, name the exact app-owned projection, runtime observation, or PermissionResponse that will resume you. After approval, emit the next planner action before delegating work.",
   ].join("\n")
 }

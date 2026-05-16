@@ -20,7 +20,6 @@ import {
 } from "@firegrid/protocol/session-facade"
 import {
   FiregridLocalHostLive,
-  registerRuntimeHostAppSource,
   RuntimeStartCapabilityLive,
   localProcessSpawnEnvFromHostEnv,
   type RuntimeEnvResolverPolicy,
@@ -45,7 +44,6 @@ import {
   DarkFactoryFactSchema,
   DarkFactoryRunSchema,
   DarkFactoryTriggerSchema,
-  darkFactoryFactsSourceName,
   darkFactoryTableLayerOptions,
   type DarkFactoryFact,
   type DarkFactoryRun,
@@ -155,16 +153,6 @@ export const darkFactoryStreamUrl = (input: {
 }): string =>
   durableStreamUrl(input.baseUrl, `${input.namespace}.darkFactory`)
 
-export const DarkFactorySourcesLive = Layer.scopedDiscard(
-  Effect.gen(function* () {
-    const table = yield* DarkFactoryTable
-    yield* registerRuntimeHostAppSource({
-      name: darkFactoryFactsSourceName,
-      stream: table.facts.rows(),
-    })
-  }),
-)
-
 export const DarkFactoryHostLive = (
   config: DarkFactoryHostConfig,
   envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
@@ -193,7 +181,6 @@ export const DarkFactoryHostLive = (
     })),
   )
   return Layer.mergeAll(
-    DarkFactorySourcesLive,
     client,
     RuntimeStartCapabilityLive,
   ).pipe(
@@ -567,6 +554,7 @@ export const waitForPermissionRequest = (
       input,
     )
     const afterSequence = decodedInput.afterSequence ?? -1
+    const waitAfterSequence = decodedInput.afterSequence
     const { run, session } = yield* attachPlannerSessionForRun(
       decodedInput.factoryRunKey,
     )
@@ -596,7 +584,7 @@ export const waitForPermissionRequest = (
         }
         const waitMs = Math.min(remainingMs, 500)
         const waited = yield* session.wait.forPermissionRequest({
-          afterSequence,
+          ...(waitAfterSequence === undefined ? {} : { afterSequence: waitAfterSequence }),
           timeoutMs: waitMs,
         })
         if (waited.matched) {
