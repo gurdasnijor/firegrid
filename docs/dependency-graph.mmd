@@ -1,99 +1,197 @@
 flowchart LR
 
 subgraph 0["apps"]
-subgraph 1["flamecast"]
+subgraph 1["factory"]
 subgraph 2["src"]
-3["client"]
-4["runtime"]
-5["shared"]
+3["bin"]
+4["config.ts"]
+5["host.ts"]
+6["identity.ts"]
+7["index.ts"]
+8["prompts.ts"]
+9["tables.ts"]
+end
+end
+subgraph A["flamecast"]
+subgraph B["src"]
+C["client"]
+D["dev-local.ts"]
+E["run.ts"]
+F["runtime"]
+G["shared"]
+H["vite-env.d.ts"]
 end
 end
 end
-subgraph 6["packages"]
-subgraph 7["client"]
-subgraph 8["src"]
-9["firegrid.ts"]
-A["index.ts"]
+subgraph I["packages"]
+subgraph J["client"]
+subgraph K["src"]
+L["firegrid.ts"]
+M["index.ts"]
 end
 end
-subgraph B["durable-streams"]
-subgraph C["src"]
-D["DurableState.ts"]
-E["DurableStreamLog.ts"]
-F["DurableStreamProducer.ts"]
-G["DurableStreamsWorkflowEngine.ts"]
-H["index.ts"]
-I["internal"]
-J["log.ts"]
-K["producer.ts"]
-L["state.ts"]
-M["test-utils.ts"]
-N["testing"]
-O["workflow-engine.ts"]
-end
-end
-subgraph P["protocol"]
-subgraph Q["src"]
+subgraph N["effect-durable-operators"]
+subgraph O["src"]
+P["DurableTable.ts"]
+Q["Errors.ts"]
 R["index.ts"]
-S["launch"]
-T["required-action"]
-U["session"]
+S["react.ts"]
 end
 end
-subgraph V["runtime"]
-subgraph W["src"]
-X["index.ts"]
-Y["materialization"]
-Z["providers"]
-10["required-action"]
-11["runtime-context"]
-12["runtime-host"]
-13["runtime-output"]
+subgraph T["effect-durable-streams"]
+subgraph U["src"]
+V["Bound.ts"]
+W["DurableStream.ts"]
+X["Reader.ts"]
+Y["Writer.ts"]
+Z["errors.ts"]
+10["index.ts"]
+11["internal"]
+12["namespace.ts"]
+13["protocol"]
+end
+end
+subgraph 14["protocol"]
+subgraph 15["src"]
+16["agent-tools"]
+17["index.ts"]
+18["launch"]
+19["runtime-ingress"]
+1A["session-facade"]
+end
+end
+subgraph 1B["runtime"]
+subgraph 1C["src"]
+1D["agent-adapters"]
+1E["agent-tools"]
+1F["authorities"]
+1G["codecs"]
+1H["events"]
+1I["host"]
+1J["index.ts"]
+1K["pipeline"]
+1L["sources"]
+1M["subscribers"]
+1N["transforms"]
+1O["verified-webhook-ingest"]
+1P["waits"]
+1Q["workflow-engine"]
 end
 end
 end
+3-->4
 3-->5
-4-->5
-4-->O
-4-->J
-4-->M
+3-->1L
+3-->9
+4-->18
+5-->6
+5-->8
+5-->9
 5-->L
-9-->J
-9-->L
-9-->S
-A-->9
-D-->S
-D-->U
-F-->E
-G-->I
-H-->D
-H-->E
-H-->F
-H-->G
-J-->E
-K-->F
-L-->D
-M-->N
-N-->E
-O-->G
-R-->S
-R-->T
-R-->U
-X-->10
+5-->16
+5-->18
+5-->19
+5-->1P
+5-->1H
+5-->1I
+7-->4
+7-->5
+7-->8
+7-->9
+8-->9
+8-->1I
+9-->6
+9-->R
+C-->G
+C-->L
+C-->S
+F-->G
+F-->L
+F-->1I
+L-->16
+L-->18
+L-->19
+L-->1A
+M-->L
+P-->Q
+P-->10
+R-->P
+R-->Q
+V-->X
+V-->Y
 X-->11
-X-->12
-Y-->S
-Y-->J
-Y-->K
-10-->O
-10-->J
-10-->T
+X-->13
+Y-->Z
+Y-->11
+Y-->13
+10-->Z
+10-->12
 11-->Z
+11-->W
 11-->13
-11-->S
+12-->V
+12-->W
 12-->Z
-12-->11
-12-->13
-12-->O
-13-->K
-13-->S
+12-->X
+12-->Y
+13-->W
+13-->11
+13-->Z
+17-->16
+17-->18
+17-->19
+17-->1A
+18-->R
+19-->R
+1A-->16
+1A-->18
+1D-->1G
+1E-->1H
+1E-->16
+1E-->1P
+1E-->1I
+1F-->1P
+1F-->18
+1F-->19
+1F-->1H
+1G-->1H
+1H-->1G
+1H-->1L
+1I-->1E
+1I-->1F
+1I-->1K
+1I-->1L
+1I-->1P
+1I-->1Q
+1I-->18
+1I-->19
+1J-->1D
+1J-->1F
+1J-->1G
+1J-->1H
+1J-->1I
+1J-->1L
+1J-->1O
+1J-->1P
+1J-->1Q
+1K-->1E
+1K-->1F
+1K-->1G
+1K-->1H
+1K-->1I
+1K-->1L
+1K-->1M
+1L-->1F
+1L-->1N
+1L-->1I
+1M-->1F
+1M-->1I
+1M-->1N
+1M-->1E
+1M-->1H
+1N-->1H
+1N-->1I
+1O-->R
+1P-->R
+1P-->1F
+1Q-->R
