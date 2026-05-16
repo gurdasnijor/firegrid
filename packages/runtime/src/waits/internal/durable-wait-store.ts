@@ -63,34 +63,12 @@ const upsertCompletionTo = (
 const waitRowsFrom = (
   table: DurableToolsTable["Type"],
 ): Stream.Stream<WaitRow, unknown> =>
-  table.waits.subscribe<WaitRow>((coll, emit) => {
-    const sub = coll.subscribeChanges(
-      (changes) => {
-        changes.forEach((change) => {
-          if (change.value === undefined || change.value === null) return
-          emit(change.value)
-        })
-      },
-      { includeInitialState: true },
-    )
-    return () => sub.unsubscribe()
-  })
+  table.waits.rows()
 
 const waitCompletionRowsFrom = (
   table: DurableToolsTable["Type"],
 ): Stream.Stream<WaitCompletionRow, unknown> =>
-  table.completions.subscribe<WaitCompletionRow>((coll, emit) => {
-    const sub = coll.subscribeChanges(
-      (changes) => {
-        changes.forEach((change) => {
-          if (change.value === undefined || change.value === null) return
-          emit(change.value)
-        })
-      },
-      { includeInitialState: true },
-    )
-    return () => sub.unsubscribe()
-  })
+  table.completions.rows()
 
 export class DurableWaitRowLookup extends Context.Tag(
   "@firegrid/runtime/DurableWaitRowLookup",
