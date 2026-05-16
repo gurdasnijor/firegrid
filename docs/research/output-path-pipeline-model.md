@@ -8,6 +8,54 @@ This research is not a refactor scoping exercise. It is a **structural feasibili
 
 The output of this research determines whether the next architectural move is a local cleanup (a few hundred lines, weeks) or a structural restructure (a few thousand lines, months). The wrong answer in either direction is expensive. The right answer is what the data supports.
 
+## Convergence protocol
+
+This spike must converge to one of three explicit models. Do not end with a
+bag of observations.
+
+| Model | Meaning | Next artifact |
+|---|---|---|
+| **Model A: Local cleanup** | The table-per-row-family substrate is justified. The problem is derived-view and Tag sprawl. | Local cleanup SDD for authority Tag reduction and Layer provision cleanup. |
+| **Model B: Context event log** | Single-writer-per-context is structurally available. Per-context typed logs plus indexes should replace most runtime durable tables. | Structural SDD for `ContextEventLog`, command stream, and index migration. |
+| **Model C: Hybrid** | Context-owned data can move to per-context logs, but namespace/control-plane data and some external writes must stay table/command-stream backed. | Hybrid SDD that names the exact split and forbids future ambiguity. |
+
+The researcher should recommend exactly one model, with a short "why the other
+two are wrong right now" section. If the data is incomplete, choose the safest
+model supported by the evidence and list missing evidence as open questions.
+Do not defer the model choice unless a named write path cannot be traced.
+
+### Decision gates
+
+Use these gates in order:
+
+1. **Writer identity gate.** If any unavoidable durable write about a context is
+   performed by a non-owning process and cannot be inverted through a command
+   stream or host RPC, Model B is invalid.
+2. **Control-plane gate.** If context registration or cross-context run listing
+   is a first-class query, it must remain namespace-scoped or become a
+   namespace-scoped command/index. Do not force it into a per-context log.
+3. **Lookup gate.** If hot-path point lookups cannot be served by a fold-based
+   or persistent index without weakening idempotency, the event-log model must
+   include those indexes explicitly. "Replay and hope" is not an answer.
+4. **Workflow gate.** If `@effect/workflow` durability already owns a lifecycle
+   event, do not duplicate it in the context log unless a current runtime
+   consumer needs that event outside workflow replay.
+5. **Plane-split gate.** If the Host SDK split needs a public surface before
+   the substrate can be replaced, name the compatibility surface. Do not let the
+   SDK split publish a shape that the substrate spike already proves wrong.
+
+### Required intermediate checkpoint
+
+Before drafting any final recommendation, produce a short checkpoint with:
+
+- the complete durable write-site table from Q1.1;
+- a verdict for the four known potential violators in Q1.3;
+- the complete point-lookup table from Q3.1;
+- a provisional model choice: A, B, or C.
+
+If the checkpoint cannot name a provisional model, stop and escalate the
+specific untraceable paths. Do not continue broad research.
+
 ## The hypothesis to test
 
 **Every durable write in the current `@firegrid/runtime` codebase originates in the host process that owns the runtime context the write is about.** If this holds, multi-writer durability is being paid for without being used, and the substrate can be reorganized around single-writer-per-context streams with command-stream inversion for external producers.
@@ -99,9 +147,138 @@ The cost is a real architectural shift: building a typed-event-log abstraction o
 - `DurableTable` doesn't fit the event-log shape perfectly. The cleaner primitive is `DurableStream` directly with a thin typed-event wrapper.
 - Schema versioning gets stricter — the event union becomes the source-of-truth schema, and adding/changing variants needs explicit versioning.
 
+## Candidate target surfaces
+
+These sketches are not commitments; they are the minimum concrete shapes the
+research must validate or reject.
+
+### Model A: local cleanup surface
+
+If the current table model survives, the workable model should be:
+
+```txt
+RuntimeOutputTable
+  events: append + rows
+  logs: append + rows
+
+RuntimeIngressTable
+  inputs: append/read + rows
+  deliveries: claim/complete + rows
+
+RuntimeControlPlaneTable
+  contexts: insert/read + rows
+  runs: append/read + rows
+```
+
+Derived Sinks and decoded Streams should be justified by multi-consumer demand
+or deleted. Subscribers should either consume raw Stream tags and project
+locally, or the model must explain why a derived Stream tag is a real boundary.
+
+### Model B: per-context event-log surface
+
+If single-writer-per-context holds, the workable model should look like:
+
+```ts
+export class ContextEventAppender extends Context.Tag(
+  "@firegrid/runtime/ContextEventAppender",
+)<ContextEventAppender, {
+  readonly append: (
+    event: RuntimeContextEventInput,
+  ) => Effect.Effect<RuntimeContextEvent, RuntimeContextEventError>
+}>() {}
+
+export class ContextEventLog extends Context.Tag(
+  "@firegrid/runtime/ContextEventLog",
+)<ContextEventLog, Stream.Stream<RuntimeContextEvent, RuntimeContextEventError>>() {}
+```
+
+The event union must make current ordering and idempotency semantics explicit.
+At minimum, the research should evaluate variants corresponding to:
+
+- context lifecycle/history;
+- run lifecycle;
+- agent output;
+- stdout/stderr log lines;
+- ingress input accepted/sequenced;
+- ingress delivery claimed/completed;
+- tool result input appended;
+- permission response input appended.
+
+Context registration may still remain in a namespace-scoped control-plane
+registry. Do not force registry data into a per-context log unless the write
+and read paths justify it.
+
+### Model C: hybrid surface
+
+If only some row families are context-owned, the workable model should name the
+split explicitly:
+
+```txt
+Namespace control plane
+  contexts registry
+  host/run indexes if required for listing
+  command stream for external or cross-host requests
+
+Per-context event log
+  ordered context-owned runtime history
+  derived projections and hot-path indexes
+
+Workflow engine streams
+  unchanged @effect/workflow durability
+```
+
+Hybrid is not a compromise bucket. It is valid only if each survivor outside
+the context log has a named query, writer, or ownership reason.
+
 ## The questions this spike must answer
 
 These are the only questions that matter. Everything else is downstream of these.
+
+## Data collection templates
+
+Use these table shapes in the deliverable. Adding columns is fine; removing
+these columns is not.
+
+### Durable write-site table
+
+```md
+| Write site | Current table/collection | Row family | Context id source | Running process | Owning host source | Match? | Invertible? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| `path.ts:function` | `RuntimeOutputTable.events` | `AgentOutput` | `context.contextId` | owning host activity | `context.host.hostId` | yes | n/a | ... |
+```
+
+Definitions:
+
+- **Running process** is the process/fiber that actually calls the durable
+  write, not the user who requested it.
+- **Owning host source** is the code path that proves which host owns the
+  context.
+- **Invertible** means a non-owning writer could instead emit a command that the
+  owning host consumes and appends.
+
+### Point-lookup table
+
+```md
+| Lookup site | Current table/collection | Key | Purpose | Hot/cold | Event-log replacement | Index needed? | Notes |
+|---|---|---|---|---|---|---|---|
+| `path.ts:function` | `RuntimeIngressTable.inputs` | `inputId` | ingress idempotency | hot | `InputSequenced` index by `inputId` | persistent | ... |
+```
+
+### Event-union mapping table
+
+```md
+| Current row family | Proposed event variant | Per-context? | Current write sites | Current read sites | Indexes |
+|---|---|---|---|---|---|
+| `RuntimeOutputTable.events` | `AgentOutputRecorded` | yes | ... | ... | by `eventId`, maybe by `sequence` |
+```
+
+### Plane-split reconciliation table
+
+```md
+| Host SDK / Client SDK commitment | Current symbol/path | Model A fate | Model B/C fate | Migration note |
+|---|---|---|---|---|
+| Runtime output observation | `RuntimeAgentOutputEvents` | project locally or keep narrow stream tag | derived from `ContextEventLog` | client surface remains `session.snapshot().agentOutputs` |
+```
 
 ### Section 1: The single-writer hypothesis
 
