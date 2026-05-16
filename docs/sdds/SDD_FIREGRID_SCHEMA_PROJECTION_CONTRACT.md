@@ -13,14 +13,19 @@ Related specs:
 Firegrid should converge on one simple contract model:
 
 ```txt
-Effect Schema catalog
-  -> agent/tool definitions
-  -> programmer client API
-  -> CLI args/help
+protocol operation catalog
+  -> bindings
+       -> agent tool binding
+       -> TypeScript SDK binding
+       -> CLI binding
+  -> execution
+       -> shared operation execution where the substrate is actually common
 ```
 
 The schema catalog is the product contract. Tools, client APIs, docs, and CLI
-commands are projections of that contract.
+commands are bindings of that contract. The bindings expose the same operation
+constraints to different touchpoints; execution turns a validated operation
+into concrete Firegrid substrate effects.
 
 This is deliberately not:
 
@@ -30,7 +35,7 @@ client API -> agent tools
 new service layer -> everything
 ```
 
-`packages/runtime/src/agent-tools/tools.ts` is one projection, not the source
+`packages/runtime/src/agent-tools/tools.ts` is one binding, not the source
 of truth. `packages/client` should not import `Tool.make(...)` values. The CLI
 should not invent a separate launch/control vocabulary. All surfaces should
 name and validate the same operations through the same Effect Schemas and
@@ -39,10 +44,10 @@ metadata.
 In other words:
 
 ```txt
-schema -> [tool, client api, cli args]
+schema -> [tool binding, client binding, cli binding]
 ```
 
-The projections may have different user-facing names, but they must not define
+The bindings may have different user-facing names, but they must not define
 different contracts.
 
 ## Shape
@@ -67,47 +72,111 @@ packages/protocol/src/control/schema.ts
 The important property is not the directory name. The important property is
 that every user-facing operation has one schema-owned definition.
 
-Existing files then project those schemas:
+Existing files should be refactored into binding surfaces and execution
+surfaces:
 
 ```txt
-schema catalog entry
-  -> packages/runtime/src/agent-tools/tools.ts
-  -> packages/client/src/firegrid.ts / packages/client/src/sessions.ts
-  -> src/run.ts
+protocol/
+  operation catalog
 
-runtime effectful lowering
-  -> packages/runtime/src/agent-tools/tool-use-to-effect.ts
-  -> packages/client/src/firegrid.ts transport/backend calls
-  -> src/run.ts command execution
+bindings/
+  agent-tools/       # operation catalog -> Effect AI Tool / Toolkit / MCP exposure
+  client/            # operation catalog -> TypeScript SDK shape
+  cli/               # operation catalog -> @effect/cli Command
 
+execution/
+  operations.ts      # validated operation input -> Effect over Firegrid substrate
 ```
 
-The projection files should be easy to identify:
+This is a semantic layout, not necessarily one published package. The binding
+surfaces have different runtime environments and dependencies:
+
+- agent-tool binding may depend on `@effect/ai`;
+- client binding must remain browser/app-safe and runtime-source-free;
+- CLI binding may depend on `@effect/cli`;
+- execution may depend on runtime host, waits, workflow engine, ingress,
+  durable tables through authority surfaces, and source registration when the
+  operation semantics require them.
+
+The physical files should make the split easy to audit:
 
 ```txt
 packages/runtime/src/agent-tools/
-  tools.ts              # schema -> Tool.make(...)
-  tool-use-to-effect.ts # tool call -> RuntimeContext/Ingress/WaitFor/etc.
+  binding.ts            # schema catalog -> Tool.make(...) / Toolkit
+  mcp.ts                # Toolkit exposure over MCP transport, if needed here
 
 packages/client/src/
-  firegrid.ts           # schema -> user-facing client object
-  operations.ts         # protocol operation catalog -> client projection
+  binding.ts            # schema catalog -> user-facing client object
+  operations.ts         # protocol operation catalog -> client binding helpers
   sessions.ts           # schema -> sessions namespace helpers, if split helps
 
-src/
-  run.ts                # schema -> CLI args/help/defaults, then execution
+packages/cli/src/
+  binding.ts            # schema catalog -> CLI args/help/defaults
+  run.ts                # command execution boundary
+
+packages/runtime/src/operations/
+  operations.ts         # common execution core where semantics are shared
+  agent-tool-events.ts  # ToolUse/ToolResult adapter, if still needed
 ```
 
-Do not add `packages/runtime/src/session-control/` as part of the default
-shape. Add a runtime service only if repeated implementation code proves a
-real abstraction is needed.
+The names are illustrative; the invariant is not. A binding file serializes
+schemas into a user-facing surface. An execution file performs effects against
+Firegrid substrate. A single source file should not do both.
+
+Do not add `packages/runtime/src/session-control/` as a parallel product API.
+If repeated execution code proves a real abstraction is needed, it should be
+the common operation execution surface above, not a second contract family.
 
 This distinction is load-bearing:
 
-- projection files are allowed to serialize schemas into a surface;
-- lowering files are allowed to perform effects;
-- schema files are not allowed to know about runtime lowering, MCP, HTTP
+- binding files are allowed to serialize schemas into a surface;
+- execution files are allowed to perform effects;
+- schema files are not allowed to know about runtime execution, MCP, HTTP
   transports, client environments, or CLI process execution.
+- binding files are not allowed to import substrate implementations they do
+  not execute themselves.
+
+## Transactional Binding Cutover
+
+Do not move this one binding at a time. The binding/execution split is only
+useful if the dependency boundary becomes visible everywhere at once. The
+acceptance target is
+`firegrid-schema-projection-contract.BINDING_EXECUTION_SPLIT.1` through
+`firegrid-schema-projection-contract.BINDING_EXECUTION_SPLIT.5`. The
+implementation cutover should be transactional:
+
+1. prove feasibility with dependency analysis and browser-safety checks;
+2. introduce the operation catalog entries needed by all three bindings;
+3. move agent-tool, client, and CLI binding code to binding-owned files;
+4. move shared operation execution out of binding files where the runtime
+   substrate is common;
+5. add static rules that prevent bindings from importing execution/substrate
+   internals and prevent execution code from importing binding modules;
+6. update examples, tests, and package exports in the same PR.
+
+The transaction can still preserve public import paths through package barrels,
+but not through compatibility files that keep the old mixed layout alive. If a
+consumer breaks because it imported a mixed implementation file, migrate the
+consumer to the target binding or execution surface.
+
+Feasibility must be validated before the implementation PR starts:
+
+| Current surface | Binding dependencies | Execution/substrate dependencies | Feasibility read |
+| --- | --- | --- | --- |
+| `packages/runtime/src/agent-tools/tools.ts` | `@effect/ai`, protocol operation schemas | currently also imports workflow services and `toolUseToEffect` | Split is feasible only if `Tool.make(...)` / `Toolkit.make(...)` move away from `ToolCallWorkflow` execution wiring. |
+| `packages/runtime/src/agent-tools/tool-use-to-effect.ts` | none required after the split | `@effect/workflow`, waits, runtime events, `AgentToolHost`, scheduled workflow | Strong candidate for the common runtime operation execution core, with a `ToolUse` adapter at the edge. |
+| `packages/client/src/firegrid.ts` | protocol operation schemas, Effect `Context`/`Effect`/`Stream` | durable-stream table access through protocol tables and protocol runtime-start capability | Browser-safe if it continues to import only protocol/effect packages and no runtime package. Split binding helpers from transport execution inside `@firegrid/client`. |
+| `src/run.ts` | `@effect/cli`, protocol launch/session schemas | Node process/env, embedded durable-streams server, runtime host, MCP server | Must move to a CLI package or CLI folder with binding and execution separated; CLI binding can be shared, execution stays Node-only. |
+
+Browser-safety checks for the binding layer:
+
+- `packages/client/**/binding*` must not import `@firegrid/runtime`,
+  `@effect/ai`, `@effect/cli`, `@effect/platform-node`, or `node:*`;
+- agent-tool binding may import `@effect/ai` but not waits, host, workflow
+  engine, durable-table facades, or runtime execution modules;
+- CLI binding may import `@effect/cli` but not `@effect/platform-node`,
+  `node:*`, durable-stream server setup, or runtime host execution modules;
+- execution modules must not import client binding or CLI binding modules.
 
 ## Schema Catalog
 
@@ -162,13 +231,13 @@ schema AST:
 - examples;
 - notes for CLI or agent help only when needed.
 
-The schema entry is the thing that projections serialize from:
+The schema entry is the thing that bindings serialize from:
 
-- tool projection serializes the input/output schemas into Effect AI tool
+- tool binding serializes the input/output schemas into Effect AI tool
   parameters, result schemas, descriptions, and examples;
-- client projection serializes the same schemas into input validation and
+- client binding serializes the same schemas into input validation and
   typed method signatures;
-- CLI projection serializes the same schemas and metadata into command args,
+- CLI binding serializes the same schemas and metadata into command args,
   option parsing, validation, help, and examples.
 
 Initial operation entries should cover:
@@ -189,10 +258,9 @@ If an operation needs both input and output schemas, a tiny helper may pair
 them for import ergonomics, but the helper should not become the metadata
 source of truth. The metadata should remain on the schemas through annotations.
 
-## Agent Tool Projection
+## Agent Tool Binding
 
-`packages/runtime/src/agent-tools/tools.ts` should project catalog entries into
-Effect AI tools:
+The agent tool binding projects catalog entries into Effect AI tools:
 
 ```txt
 SessionCreate.input  -> Tool.make("session_new").setParameters(...)
@@ -200,12 +268,13 @@ SessionCreate.output -> .setSuccess(...)
 SessionCreate.description -> tool description
 ```
 
-The runtime handler keeps using `tool-use-to-effect.ts` for lowering. The
-near-term goal is to remove schema/description drift, not to introduce a new
-runtime service abstraction.
+The runtime execution path stays separate. The near-term goal is to remove
+schema/description drift and make it statically impossible for the tool binding
+to import runtime substrate.
 
-`tool-use-to-effect.ts` remains the place where agent tool calls turn into
-Firegrid primitives such as:
+The existing `tool-use-to-effect.ts` code is the best candidate for the common
+operation execution core because it already turns validated operation-shaped
+inputs into Firegrid primitives such as:
 
 - `insertLocalRuntimeContext`;
 - `appendRuntimeIngress`;
@@ -214,7 +283,13 @@ Firegrid primitives such as:
 - host-authority checks;
 - provider/capability execution where available.
 
-## Client Projection
+The transaction should split the Effect AI `Tool.make(...)` binding from
+`ToolCallWorkflow`, `ScheduledInputWorkflow`, `AgentToolHost`, and runtime
+wait/host/workflow execution. A `ToolUse` / `ToolResult` adapter may remain at
+the edge so agent events can call the common operation executor without making
+the executor agent-tool-specific.
+
+## Client Binding
 
 The published package remains one package:
 
@@ -237,7 +312,7 @@ firegrid.permissions.respond(...)
 
 Client methods decode inputs through the same schema catalog. They do not
 import `@effect/ai` `Tool` values, MCP server layers, or runtime-only handler
-dependencies. The client is one projection of the schema catalog, not a
+dependencies. The client is one binding of the schema catalog, not a
 wrapper around the agent-tool catalog.
 
 For durable RuntimeContext-backed work, the client should expose a session
@@ -262,7 +337,7 @@ const permission = yield* session.wait.forPermissionRequest({ timeoutMs })
 yield* permission.respond({ decision })
 ```
 
-This facade is still a projection over Firegrid primitives. It should hide
+This facade is still a binding over Firegrid primitives. It should hide
 deterministic `RuntimeContext` identity, `RuntimeIngress` input id construction,
 permission-response idempotency, and runtime-observation joins from callers.
 Product apps may still own product facts and read models, but they should not
@@ -275,7 +350,7 @@ not import `packages/runtime/src` or call `startRuntime` directly. Read and wait
 helpers should use protocol-owned runtime observation source names rather than
 runtime-host modules.
 
-The client projection should use product-facing names. For example:
+The client binding should use product-facing names. For example:
 
 ```txt
 operation id: session.prompt
@@ -289,9 +364,9 @@ agent-tool schemas for operations whose protocol shape already exists there,
 but client decoders should import the client operation catalog rather than the
 runtime agent-tool operation catalog.
 
-## Client Read Projection
+## Client Read Binding
 
-The same projection rule applies to read-side data. Operation schemas project
+The same binding rule applies to read-side data. Operation schemas project
 into methods; observation schemas project into snapshots, streams, and waits.
 
 Runtime output rows are storage/journal rows. Product apps should not parse
@@ -360,7 +435,7 @@ for (const output of snapshot.agentOutputs) {
 }
 ```
 
-For reactive or blocking UI flows, the same projection should be available as a
+For reactive or blocking UI flows, the same binding should be available as a
 session-scoped wait:
 
 ```ts
@@ -379,7 +454,7 @@ if (next.matched && next.output._tag === "PermissionRequest") {
 
 `forPermissionRequest(...)` remains useful as permission-specific sugar, but it
 should be implemented as a specialization of the same normalized agent-output
-projection rather than a separate raw-envelope parser.
+binding rather than a separate raw-envelope parser.
 
 This does not remove raw table access. `DurableTableProvider` and direct
 `RuntimeOutputTable` reads remain appropriate for inspectors, diagnostics, and
@@ -405,7 +480,7 @@ JSON.parse(row.raw)
 Schema.decodeUnknownEither(AgentOutputEventSchema)(parsed.event)
 ```
 
-## CLI Projection
+## CLI Binding
 
 The CLI can later project the same catalog into commands:
 
@@ -424,20 +499,28 @@ should be driven by schema catalog metadata wherever practical.
 the accepted values, validation, defaults, and examples should come from
 schema-owned launch/control entries rather than private CLI-only types.
 
+The binding and execution halves of `src/run.ts` should split transactionally.
+The binding half owns `Command`, `Options`, help text, defaults, examples, and
+schema-aligned decode errors. The execution half owns `process.env`,
+`process.argv`, embedded durable-streams startup, runtime host composition, MCP
+server startup, and command side effects.
+
 ## Boundary Rules
 
 - Schema catalog is source of truth for operation shapes and metadata.
-- Protocol observation schemas are source of truth for client read projections.
-- Agent tools are a projection, not the programmer API.
-- Client APIs are a projection, not a separate contract.
+- Protocol observation schemas are source of truth for client read bindings.
+- Agent tools are a binding, not the programmer API.
+- Client APIs are a binding, not a separate contract.
 - Client snapshots and waits return normalized protocol observations when the
   caller asks for Firegrid session semantics.
-- Runtime lowering stays in existing runtime modules until repeated projection
-  code proves that a runtime service would remove real duplication.
+- Common execution is introduced only where multiple bindings share the same
+  runtime substrate semantics.
 - Runtime-host active execution is injected into client facades through a
   protocol-owned capability/service; `packages/client` does not import
   runtime-host source.
 - Do not split `@firegrid/client` into multiple packages.
+- Do not publish one package that mixes browser-safe client code, Node CLI
+  code, MCP/Effect AI tooling, and runtime host execution.
 - Do not introduce a platform parent/child session hierarchy beyond
   `RuntimeContext` identity and explicit metadata.
 - Dark-factory may depend on this facade for the first working app path because
@@ -446,26 +529,35 @@ schema-owned launch/control entries rather than private CLI-only types.
 - Dark-factory and other product apps should not parse runtime output envelopes
   or import `@firegrid/runtime/events` to recover normalized agent output.
 
-## First Implementation Slice
+## Transactional Implementation Slice
 
-1. Add the schema catalog in `@firegrid/protocol`, initially by re-exporting
-   or aliasing existing `@firegrid/protocol/agent-tools` schemas where they
-   are already correct.
-2. Update `packages/runtime/src/agent-tools/tools.ts` to read schemas,
-   descriptions, and examples from catalog entries.
-3. Add a small `@firegrid/client` projection over `session.prompt`,
-   `wait.for`, and `permission.respond` first, because those lower directly to
-   existing primitives.
-4. Add tests proving the same schema object or catalog entry feeds both the
-   tool projection and client projection.
-5. Add examples showing one operation through both projections.
+This SDD no longer recommends an incremental "move one projection" path. The
+next implementation slice should be one binding-boundary cutover:
 
-The next implementation slice should add the durable session facade described
-above. Its `start` method should require the protocol runtime-start capability;
-the package-boundary rule is more important than making `packages/client`
-directly call runtime-host.
+1. Update or complete the protocol operation catalog in `@firegrid/protocol`,
+   reusing existing `@firegrid/protocol/agent-tools` and
+   `@firegrid/protocol/session-facade` schemas where they are already correct.
+2. Split agent-tool binding from runtime operation execution so Effect AI
+   `Tool.make(...)` definitions and `Toolkit.make(...)` do not import waits,
+   host, workflow engine, or tool-call execution.
+3. Split `@firegrid/client` binding helpers from durable transport execution
+   while keeping the package runtime-source-free.
+4. Move the root CLI into a CLI package or CLI folder and split command binding
+   from Node/runtime-host execution.
+5. Introduce common operation execution only for operations whose semantics are
+   identical across bindings, with `ToolUse` / `ToolResult`, client, and CLI
+   adapters at the edges.
+6. Add dependency-cruiser or semgrep rules for the browser-safety and import
+   direction checks listed above.
+7. Update public barrels, examples, tests, and docs in the same PR so no
+   long-lived compatibility surface keeps the old mixed files alive.
 
-The next read-side slice should add protocol-owned runtime agent-output
-observation schemas, project them into `RuntimeContextSnapshot.agentOutputs`,
-and add `session.wait.forAgentOutput(...)`. Dark Factory should then delete its
-raw `RuntimeEvent.raw` parser and consume the client projection instead.
+Acceptance should explicitly prove:
+
+- client binding files have no runtime, Node, CLI, or Effect AI imports;
+- agent-tool binding files have no wait, host, workflow-engine, durable-table,
+  or runtime execution imports;
+- CLI binding files have no Node/process/runtime-host imports;
+- execution files do not import client or CLI binding modules;
+- each operation's tool, client, and CLI binding points to the same protocol
+  operation entry.

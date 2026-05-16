@@ -1,7 +1,7 @@
 feature:
   name: firegrid-schema-projection-contract
   product: firegrid
-  description: Canonical Effect Schema operation entries are projected into agent tools, programmer client APIs, and CLI args/help.
+  description: Canonical Effect Schema operation entries are bound into agent tools, programmer client APIs, and CLI args/help without mixing those bindings with execution substrate.
 
 components:
   SCHEMA_CATALOG:
@@ -14,8 +14,9 @@ components:
   TOOL_PROJECTION:
     requirements:
       1: packages/runtime/src/agent-tools/tools.ts projects schema catalog entries into Effect AI Tool definitions.
-      2: packages/runtime/src/agent-tools/tool-use-to-effect.ts remains the runtime lowering path from tool calls to RuntimeContext, RuntimeIngress, RuntimeOutput, RuntimeObservationSourceNames, WaitFor.match, and host authority primitives.
+      2: Runtime tool-call execution remains the path from tool calls to RuntimeContext, RuntimeIngress, RuntimeOutput, RuntimeObservationSourceNames, WaitFor.match, and host authority primitives.
       3: Agent tool descriptions, parameter schemas, success schemas, and examples are derived from the schema catalog rather than duplicated in runtime tool code.
+      4: Agent tool binding files may import @effect/ai and protocol operation schemas, but must not import waits, host, workflow-engine, durable table facades, or runtime operation execution modules.
 
   CLIENT_PROJECTION:
     requirements:
@@ -52,12 +53,22 @@ components:
     requirements:
       1: src/run.ts and future CLI commands project schema metadata into command args, validation, defaults, examples, and help text where applicable.
       2: CLI parsing may use @effect/cli, but accepted values and validation are aligned with protocol schemas rather than private CLI-only contracts.
+      3: CLI binding files may import @effect/cli and protocol schemas, but Node process/env access, embedded durable-streams server setup, runtime-host composition, and MCP server startup stay in CLI execution files.
+
+  BINDING_EXECUTION_SPLIT:
+    requirements:
+      1: Agent-tool, TypeScript client, and CLI bindings are physically isolated from execution/substrate code so binding files serialize protocol schemas into user-facing surfaces and execution files perform Firegrid effects.
+      2: The binding/execution split is implemented transactionally across agent-tool, client, and CLI surfaces rather than through long-lived compatibility moves that keep mixed binding/execution files alive.
+      3: Shared operation execution is introduced only where multiple bindings have the same runtime substrate semantics; otherwise each binding delegates to its appropriate execution environment without redefining the operation contract.
+      4: Static validation prevents binding files from importing execution/substrate internals and prevents execution files from importing client or CLI binding modules.
+      5: Feasibility validation for the transactional cutover includes dependency analysis, browser-safety checks for client binding files, and package export checks before implementation begins.
 
 constraints:
   BOUNDARIES:
     requirements:
       1: This feature does not split @firegrid/client into many tiny published packages; subpath exports are allowed only as exports from the existing package.
       2: This feature does not expose packages/runtime/src/agent-tools/tools.ts as the programmer-facing client API.
-      3: This feature does not introduce packages/runtime/src/session-control or another runtime service layer unless repeated lowering code proves that abstraction is needed.
+      3: This feature does not introduce packages/runtime/src/session-control or another runtime service layer unless repeated execution code proves that abstraction is needed.
       4: This feature does not introduce a platform parent/child session hierarchy beyond RuntimeContext identity and explicit metadata.
       5: The client package remains runtime-source-free; if an operation needs runtime-host authority, the dependency is represented as an Effect service/tag declared in protocol and provided by runtime-host or app composition.
+      6: The binding/execution split does not require publishing one package that mixes browser-safe client code, Node CLI code, MCP/Effect AI tooling, and runtime host execution.
