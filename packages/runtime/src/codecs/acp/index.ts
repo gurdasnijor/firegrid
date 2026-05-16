@@ -130,6 +130,11 @@ const permissionResponse = (
   return { outcome: { outcome: "selected", optionId } }
 }
 
+const makePermissionRequestId: Effect.Effect<string> =
+  IdGenerator.defaultIdGenerator.generateId().pipe(
+    Effect.map(id => `permission_${id}`),
+  )
+
 const status = (
   kind: string,
   payload?: unknown,
@@ -225,53 +230,51 @@ export const AcpCodec: AgentCodec = {
         )
       }
 
-      const pendingPermissions = new Map<
+      type LivePermissionContinuation = {
+        readonly options: ReadonlyArray<acp.PermissionOption>
+        readonly resolve: (response: acp.RequestPermissionResponse) => void
+      }
+
+      // firegrid-runtime-agent-event-pipeline.STAGES.3-10
+      // firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3
+      // ACP requestPermission is a live protocol continuation, not durable
+      // permission state. If the ACP process/session dies after a
+      // PermissionRequest is journaled but before response delivery, the old
+      // promise cannot be resumed; replay must create a new live continuation.
+      const livePermissionContinuations = new Map<
         string,
-        {
-          readonly options: ReadonlyArray<acp.PermissionOption>
-          readonly resolve: (response: acp.RequestPermissionResponse) => void
-        }
+        LivePermissionContinuation
       >()
-      let permissionCounter = 0
 
       const registerPermission = (
         permissionRequestId: string,
-        entry: {
-          readonly options: ReadonlyArray<acp.PermissionOption>
-          readonly resolve: (response: acp.RequestPermissionResponse) => void
-        },
+        entry: LivePermissionContinuation,
       ): Effect.Effect<void> =>
         Effect.sync(() => {
-          pendingPermissions.set(permissionRequestId, entry)
+          livePermissionContinuations.set(permissionRequestId, entry)
         })
 
       const takePermission = (
         permissionRequestId: string,
-      ): Effect.Effect<
-        | {
-          readonly options: ReadonlyArray<acp.PermissionOption>
-          readonly resolve: (response: acp.RequestPermissionResponse) => void
-        }
-        | undefined
-      > =>
+      ): Effect.Effect<LivePermissionContinuation | undefined> =>
         Effect.sync(() => {
-          const pending = pendingPermissions.get(permissionRequestId)
+          const pending = livePermissionContinuations.get(permissionRequestId)
           if (pending !== undefined) {
-            pendingPermissions.delete(permissionRequestId)
+            livePermissionContinuations.delete(permissionRequestId)
           }
           return pending
         })
 
       const cancelPendingPermissions = Effect.sync(() => {
-        for (const { resolve } of pendingPermissions.values()) {
+        for (const { resolve } of livePermissionContinuations.values()) {
           resolve({ outcome: { outcome: "cancelled" } })
         }
-        pendingPermissions.clear()
+        livePermissionContinuations.clear()
       })
 
       const client: acp.Client = {
         requestPermission: async params => {
-          const permissionRequestId = `permission-${++permissionCounter}`
+          const permissionRequestId = await runPromise(makePermissionRequestId)
           let resolveResponse: (response: acp.RequestPermissionResponse) => void = () => {}
           const response = new Promise<acp.RequestPermissionResponse>(resolve => {
             resolveResponse = resolve
@@ -311,6 +314,11 @@ export const AcpCodec: AgentCodec = {
       const session = yield* acpPromise("newSession", "failed to create ACP session", () =>
         connection.newSession({
           cwd: options.session?.cwd ?? globalThis.process.cwd(),
+          // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7
+          // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9
+          // ACP does not consume AgentCodecOpenOptions.toolkit directly.
+          // Tool execution is owned by the ACP agent process or delegated
+          // through ACP session.mcpServers/MCP.
           mcpServers: (options.session?.mcpServers ?? []).map(lowerMcpServerDeclaration),
         }))
       const sessionId = session.sessionId

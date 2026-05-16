@@ -18,6 +18,7 @@ components:
       3-7: The codec contract exposes a toolUseMode capability flag used by the tool router subscription gate.
       3-8: Active codec sessions report a per-session toolUseMode after protocol negotiation or fixed construction; runtime does not infer the mode from codec class and the tool router gates only client_result_roundtrip sessions.
       3-9: The SDD classifies agent wire modes as observation_only, client_result_roundtrip, and control_channel_request_response; control-channel request/response is not subscriber-produced ToolResult ingress.
+      3-10: Stateful protocol-session codecs may own scoped live protocol connection, negotiation, in-memory correlation, and lifecycle state when required by the wire protocol, but durable evidence crosses the codec boundary only through AgentOutputEvent and AgentInputEvent, and live codec state does not survive session restart.
       4: Transforms are pure stream operators over normalized events and own no resources or durable writes.
       5: Projections are sibling views over codec sessions and do not sit downstream of RuntimeOutput.
       6: Pipeline sources, durable write capability tags, static Stream observation tags, and dynamic SourceCollectionHandle registrations remain directionally distinct; host observation wiring only registers dynamic read handles and does not introduce new write ownership.
