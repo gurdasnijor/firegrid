@@ -26,30 +26,10 @@ apps.
 ## Factory Fit
 
 Factory should be able to replace current `DarkFactoryHostLive` glue with
-host-plane and session-plane SDK imports:
-
-```ts
-const FactoryHostLive = FiregridHostLive({
-  name: "dark-factory",
-  runtime: {
-    durableStreamsBaseUrl: config.durableStreamsBaseUrl,
-    namespace: config.namespace,
-    headers: config.headers,
-    input: true,
-  },
-  envPolicy: envPolicyFromFactoryConfig(config),
-  localProcessEnv: config.localProcessEnv,
-}).pipe(
-  Layer.provideMerge(DarkFactoryTableLive),
-  Layer.provideMerge(
-    FiregridIntegrations.layer({
-      linear: { token: config.linearToken, workspaceId: config.linearWorkspaceId },
-      github: { token: config.githubToken, owner: config.githubOwner },
-      slack: { token: config.slackToken, channelId: config.slackChannelId },
-    }),
-  ),
-)
-```
+host-plane and session-plane SDK imports. The public API should make it obvious
+that the host installs provider/runtime/tool capabilities, the client/session
+plane launches or attaches agent sessions, and the planner agent decides the
+sequence through tools.
 
 Factory-specific code remains:
 
@@ -57,7 +37,7 @@ Factory-specific code remains:
 - factory run row;
 - planner prompt;
 - provider capabilities;
-- app projection waits;
+- app-owned wait/read bindings installed into the Firegrid tool surface;
 - provider policy and factory-specific side-effect decisions;
 - UI projections.
 
@@ -84,7 +64,8 @@ Firegrid Host SDK code becomes:
 - provider implementation installation;
 - environment and MCP policy;
 - host authority programs that execute durable agent-session intents;
-- explicit installation of reusable integration Layers.
+- explicit installation of reusable integration Layers and app-owned tool
+  bindings.
 
 ## Factory After Host SDK
 
@@ -99,7 +80,8 @@ product composition over public SDK surfaces:
 3. `@firegrid/client-sdk` for agent-session launch, prompt, snapshot, wait, and
    permission response;
 4. `@firegrid/host-sdk` for provider implementations, local-process env policy,
-   Firegrid MCP exposure, and execution of durable agent-session intents.
+   Firegrid MCP exposure, app-owned wait/read bindings, and execution of durable
+   agent-session intents.
 
 Factory host process:
 
@@ -116,6 +98,7 @@ import {
   LinearIntegrationLive,
   SlackIntegrationLive,
 } from "@firegrid/integrations"
+import { FactoryToolBindingsLive } from "./tool-bindings.ts"
 
 const FactoryHostLive = FiregridHostLive({
   name: "dark-factory",
@@ -140,16 +123,20 @@ const FactoryHostLive = FiregridHostLive({
   Layer.provideMerge(LinearIntegrationLive(config.linear)),
   Layer.provideMerge(GitHubIntegrationLive(config.github)),
   Layer.provideMerge(SlackIntegrationLive(config.slack)),
+  Layer.provideMerge(FactoryToolBindingsLive),
 )
 
 NodeRuntime.runMain(Layer.launch(FactoryHostLive))
 ```
 
-The host process does not name the planner agent. It only installs provider
-implementations and policy. The planner agent is selected when the factory run
-requests an agent session.
+The host provider configuration does not name the planner agent. It only
+installs provider implementations and policy. A product bootstrap or operator
+action may create the durable planner session, but trigger intake does not.
 
-Factory trigger intake:
+Factory planner bootstrap is not per trigger. The product should have a durable
+planner session identity, created by deploy/bootstrap or by an operator action,
+with a prompt that tells it to wait for accepted work facts and drive the run
+through tools. This is the only place the product chooses the planner agent:
 
 ```ts
 import { Effect } from "effect"
@@ -159,49 +146,74 @@ import {
 } from "@firegrid/client-sdk"
 import { envBinding } from "@firegrid/protocol/launch"
 
-const plannerAgent = Agent.localProcess({
+const factoryPlanner = Agent.localProcess({
   command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
   protocol: "acp",
-  cwd: trigger.workspaceDir,
+  cwd: config.workspaceDir,
   env: [envBinding("ANTHROPIC_API_KEY")],
 })
 
-export const acceptLinearIssue = (trigger: LinearIssueTrigger) =>
+export const ensureFactoryPlanner = Effect.gen(function* () {
+  const sessions = yield* FiregridSessions
+  return yield* sessions.launch({
+    idempotencyKey: "dark-factory:planner",
+    agent: factoryPlanner,
+    prompt: factoryPlannerPrompt(),
+  })
+})
+```
+
+The planner prompt, not a TypeScript function chain, tells the agent to use the
+Firegrid tool surface. `wait_for` is the important capability here: factory
+does not create a bespoke trigger coordinator when the planner can wait on
+app-projected facts and runtime observations through the same agent-facing
+tool:
+
+```text
+You are the factory planner.
+
+Use wait_for to wait for accepted work facts. When one arrives:
+1. call execute/factory.run.ensure to insert or load the durable run identity;
+2. read the accepted fact and run history;
+3. decide the next action;
+4. call session_new/session_prompt for delegated agent work when useful;
+5. call wait_for for child output, permission requests, CI/provider facts, or
+   runtime run state;
+6. call execute for installed provider capabilities only when the current
+   evidence justifies the side effect;
+7. call schedule_me for future rechecks.
+
+There is no hidden TypeScript planner -> implementer -> review -> deploy chain.
+```
+
+External trigger intake stays intentionally small:
+
+```ts
+export const ingestLinearIssue = (trigger: LinearIssueTrigger) =>
   Effect.gen(function* () {
-    const accepted = yield* insertOrGetAcceptedTriggerFact(trigger)
-    const run = yield* insertOrGetFactoryRun({
-      triggerFactKey: accepted.factKey,
-      providerEntityKey: trigger.issueKey,
+    return yield* insertOrGetAcceptedTriggerFact({
+      source: "linear",
+      externalEventKey: trigger.deliveryId,
+      externalEntityKey: trigger.issueId,
+      eventType: "linear.issue.accepted",
+      payload: trigger,
     })
-
-    const sessions = yield* FiregridSessions
-    const planner = yield* sessions.launch({
-      idempotencyKey: `${run.factoryRunKey}:planner`,
-      agent: plannerAgent,
-      prompt: plannerPromptFor(run, accepted),
-    })
-
-    yield* recordFactorySessionDispatched({
-      factoryRunKey: run.factoryRunKey,
-      sessionId: planner.sessionId,
-      role: "planner",
-    })
-
-    return { run, planner }
   })
 ```
 
-The `idempotencyKey` is optional in the generic SDK, but factory should use it
-because Linear webhooks and operator retries can redeliver the same logical
-work. It is not part of "launching an agent"; it is product-owned convergence
-for duplicate intake.
+This code verifies provider input and records durable evidence. It does not
+create the run, launch an implementer, wait for CI, or call GitHub. Those are
+planner decisions made through the agent tool surface after `wait_for` observes
+the accepted fact.
 
-This is the only app-authored sequencing in the happy path: accept external
-work, create or load the durable run identity, launch or attach the parent
-planner session, and prompt it with the observed facts and available tools.
-After that, the planner is the sequencer.
+The `idempotencyKey` remains useful, but on the long-lived planner session and
+on tool-authored child sessions. Duplicate provider deliveries converge through
+the accepted fact key and the planner's `execute/factory.run.ensure` tool, not
+through a bespoke server-side trigger workflow.
 
-Planner prompt shape:
+Per-work prompt context can be generated by the planner itself after
+`wait_for` observes an accepted fact and `execute/factory.run.ensure` returns
+the durable run identity:
 
 ```text
 You are the factory planner for <factoryRunKey>.
@@ -293,7 +305,9 @@ surface. The app does not call `githubOpenPullRequest` after a hard-coded
 `implementAgent` function returns. The planner calls the capability when its
 current durable context supports that next step.
 
-Factory waits are also planner-owned choreography decisions:
+Factory waits are also planner-owned choreography decisions. The app contributes
+wait/read bindings over app-owned rows; it does not run a shadow coordinator
+that watches those rows on behalf of the planner:
 
 ```text
 Planner examples:
@@ -302,9 +316,10 @@ Planner examples:
 - ask for human approval through ACP PermissionRequest;
 - after approval, call execute/github.openPullRequest;
 - schedule_me in 10 minutes if CI is still pending;
-- wait_for the next relevant runtime observation, or call an app fact/read
-  tool and schedule_me for a future recheck when the provider has not emitted
-  new evidence yet.
+- wait_for the next relevant runtime observation or app-owned fact projection;
+- call an app fact/read tool when it needs current state without suspending;
+- schedule_me for a future recheck when the provider has not emitted new
+  evidence yet.
 ```
 
 The app may still provide server/UI helpers over app-owned projections:
@@ -323,15 +338,18 @@ Choreography ownership:
 | Decision | Owner |
 | --- | --- |
 | Accept this provider webhook as work? | Product adapter / app policy. |
-| Reuse the existing planner session for this work key? | App idempotency row. |
-| What should happen after the planner reads the issue? | Planner agent. |
+| Deduplicate provider redelivery? | Product adapter fact idempotency. |
+| Keep the durable planner session alive? | Product bootstrap/operator action. Trigger intake does not launch it. |
+| Insert or load the durable run identity for an accepted fact? | Planner agent through `execute/factory.run.ensure`; the app-installed capability enforces idempotency and records the run row. |
+| What should happen after the planner observes accepted work? | Planner agent. |
 | Should implementation, review, QA, or CI wait happen? | Planner agent. |
 | Which provider side effect is allowed and how is it executed? | Planner chooses; app-installed capability enforces credentials/policy and records receipt. |
 | Is the run waiting or terminal? | Derived read model over durable facts and runtime/session observations. |
 
-Runtime waits stay on runtime-owned session observations. Factory/product waits
-over factory facts/projections stay app-owned or planner-tool-owned and do not
-go through runtime SourceCollections or a centralized app coordinator loop.
+Runtime waits stay on runtime-owned session observations. Factory/product fact
+observation is exposed to the planner through app-installed wait/read tool
+surfaces. It must not become a centralized app coordinator loop, a duplicate
+server-side `wait_for`, or a runtime SourceCollections revival.
 
 This target is materially smaller than current `DarkFactoryHostLive`:
 
@@ -425,8 +443,10 @@ product run is caller-owned state that may span multiple runtime sessions,
 provider callbacks, permissions, and side effects. It can be modeled today as
 an app-owned `DurableTable` read model linked to session-plane handles.
 
-The current projection helpers reinforce the same point. They are app-local
-read-model helpers over durable evidence, not the driver for a product workflow
+The current projection helpers reinforce the same point. They are pure
+read-model helpers over durable evidence. In the target, those projections are
+bound into the existing Firegrid tool surface for the planner and into
+server/UI read APIs for humans; they are not the driver for a product workflow
 chain:
 
 ```ts
@@ -447,12 +467,13 @@ These are app-local combinations of existing platform capabilities:
 1. `DurableTable` rows/streams for app facts and run records;
 2. pure schema-backed projections into typed read models;
 3. session-plane runtime observations from `@firegrid/client-sdk`;
-4. waits over app-owned projections, distinct from runtime typed waits.
+4. tool bindings over app-owned projections, mounted beside runtime typed
+   waits in the planner's agent-facing surface.
 
 Flamecast shows the read-side half of this through `DurableTableProvider`,
 `useDurableTable`, and `useDurableLiveQuery`. Factory shows the process-side
 half: durable trigger intake, idempotent run creation, session launch,
-permission evidence, provider-effect evidence, and projection waits.
+permission evidence, provider-effect evidence, and projection bindings.
 
 ## Concrete Semantics
 
@@ -480,12 +501,14 @@ That gives us clearer primitive names:
 - **provider action receipt**: typed record of an external side effect;
 - **gate record**: permission/human/policy decision state;
 - **timeline/read model**: product UI projection;
-- **read-model wait**: wait for one of those app-owned projections to satisfy a
-  predicate.
+- **tool-bound projection**: expose app-owned projections as planner tools for
+  waiting, reading, or executing app policy.
 
 These names are intentionally not Firegrid runtime names. They describe product
-state that may use Firegrid runtime sessions, but they do not become
-`RuntimeContext`, `RuntimeRun`, or runtime `wait_for` state.
+state that may use Firegrid runtime sessions. They should be projected into the
+agent tool surface when the planner needs them; they should not become
+`RuntimeContext`, `RuntimeRun`, runtime-owned rows, or a second hand-wired wait
+loop.
 
 ## Comparable Systems
 
@@ -571,22 +594,36 @@ An adapter can verify a webhook, call a provider API, and return typed evidence.
 The consuming app decides whether that evidence means "phase completed",
 "permission requested", "PR opened", or "terminal".
 
-### Read-Model Waits
+### Tool-Bound Projections
 
 Runtime typed waits observe runtime-owned streams. App projection waits observe
-app-owned rows:
+app-owned rows, but the planner should experience both through the tool
+surface. The target is a binding, not a copied waiting loop:
 
 ```ts
-const waitForReadModel = <Projection, Error, Requirements>(
-  stream: Stream.Stream<Projection, Error, Requirements>,
-  predicate: (projection: Projection) => boolean,
-  options: { readonly timeoutMs: number },
-): Effect.Effect<Projection, Error | TimeoutException, Requirements>
+const FactoryToolBindingsLive = FiregridToolBindings.fromAppProjections({
+  waitTargets: {
+    "factory.acceptedWork": acceptedWorkProjection,
+    "factory.providerEffect": providerEffectProjection,
+    "factory.permission": permissionProjection,
+  },
+  reads: {
+    "factory.timeline.read": readFactoryTimeline,
+  },
+  executes: {
+    "factory.run.ensure": ensureFactoryRun,
+    "github.openPullRequest": openPullRequestAndRecordReceipt,
+  },
+})
 ```
 
-This is just a generic stream helper if it graduates at all. It belongs in
-`effect-durable-operators` only if it remains generic over a provided stream
-and does not know Firegrid, factory, runtime sessions, or provider names.
+The exact host-sdk API can differ, but the constraint is not negotiable:
+factory should install projection and execution bindings into the existing
+agent-facing tool surface. It should not hand-write an app coordinator that
+observes tables and then calls client-sdk methods in a fixed order. If any
+generic stream waiting helper graduates, it belongs in `effect-durable-operators`
+only if it remains generic over a provided stream and does not know Firegrid,
+factory, runtime sessions, or provider names.
 
 ## Where The Primitives Belong
 
@@ -600,7 +637,7 @@ The likely split is:
 | Durable table declaration and live query | `effect-durable-operators` |
 | Work intake and evidence rows | app-owned `DurableTable` schemas |
 | Work-run records | app-owned `DurableTable` schemas linked to session-plane handles |
-| Generic wait over an explicit stream | maybe `effect-durable-operators`, only if it stays Firegrid-free |
+| Generic wait over an explicit stream | maybe `effect-durable-operators`, only if it stays Firegrid-free and is surfaced to agents through host-sdk bindings |
 | Linear/GitHub/Slack adapters | reusable integration packages, configured by the app |
 | Factory planner prompts, policy, statuses, and phase vocabulary | `apps/factory` |
 
@@ -620,7 +657,10 @@ This document should shrink as the platform improves:
   factory notes about raw runtime/session observation parsing.
 - When reusable integration packages exist for Linear, GitHub, Slack, or agent
   providers, remove factory notes about generic provider adapter mechanics.
+- When `@firegrid/host-sdk` exposes app projection bindings for the existing
+  tool surface, remove factory notes about hand-written projection tool
+  mechanics.
 - When `effect-durable-operators` exposes any generic app-owned projection wait
-  helper, remove factory notes about hand-written projection wait mechanics.
+  helper, remove factory notes about the underlying stream wait mechanics.
 - Keep only factory-owned policy, prompts, UI vocabulary, provider decisions,
   and product-specific read models.
