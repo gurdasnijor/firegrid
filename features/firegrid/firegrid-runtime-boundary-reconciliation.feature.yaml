@@ -6,7 +6,7 @@ feature:
 components:
   ROLE_MODEL:
     requirements:
-      1: "The post-cutover runtime tree classifies modules by semantic role before folder name: Effect capability provider, pure transform, runtime subscriber, protocol codec, host composition, workflow/operator primitive, or generic durable operator."
+      1: "The post-cutover runtime tree classifies modules by semantic role before folder name: Effect capability provider, pure transform, runtime subscriber, protocol session provider, host composition, workflow/operator primitive, or generic durable operator."
       2: A module that contains more than one semantic role is marked for extraction or explicitly documented as a composition boundary.
       3: Runtime code uses existing Effect surfaces for stage contracts where possible rather than Firegrid-specific wrapper aliases.
       4: Public runtime surfaces exist for production behavior, not only review metadata, tests, documentation, or compatibility aliases.
@@ -18,7 +18,7 @@ components:
 
   NAMESPACE_BOUNDARY:
     requirements:
-      1: The agent event-pipeline namespace owns ingress/output materialization, protocol codecs, agent session sources, pure transforms, pipeline subscribers, and per-session pipeline composition.
+      1: The agent event-pipeline namespace owns ingress/output materialization, protocol session providers, agent session sources, pure transforms, pipeline subscribers, and per-session pipeline composition.
       2: Runtime control-plane lifecycle capabilities are separated from the agent event-pipeline namespace.
       3: Host topology and command entrypoints remain outside the agent event-pipeline namespace.
       4: Waits, workflow-engine, agent-tools, agent-adapters, and verified-webhook-ingest remain adjacent bounded contexts rather than subfolders of the agent event pipeline.
@@ -58,6 +58,26 @@ components:
       4: Host layer topology and config-derived host layers are separated from command handlers such as startRuntime and appendRuntimeIngress.
       5: The host split is behavior-preserving and validated by existing runtime host, prompt-routing, sync-run, two-host isolation, and codec event-plane tests.
       6: Host split runs after cycle-breaking and does not move waits internals or package boundaries.
+
+  HOST_HARDENING:
+    requirements:
+      1: Host composition hardening runs after the mechanical host split and does not introduce new public host exports.
+      2: Host topology and codec-path tool lowering share one host runtime-observation/tool substrate layer instead of maintaining parallel provideMerge chains.
+      3: Codec-path tool lowering preserves the pre-split host-coupled tool-host capabilities unless an explicit behavior change lands with tests and ACIDs.
+      4: Local runtime-context ownership checks used by startRuntime, RuntimeStartCapabilityLive, and host-coupled tool services are factored through one host-internal helper.
+      5: Runtime context workflow modules export workflow definitions and layers, while reusable execution-id, clock, and context-read helpers live in a host-internal helper module when sibling files need them.
+      6: Host hardening remains behavior-preserving and is validated by runtime host, prompt-routing, sync-run, two-host isolation, and codec event-plane tests.
+
+  CODEC_SESSION:
+    requirements:
+      1: Runtime protocol implementations provide scoped AgentSession services through Effect Layer constructors rather than active object-with-open-method codec values.
+      2: AgentSession carries protocol/session metadata, per-session toolUseMode, send, and outputs as the active runtime surface consumed by the pipeline.
+      3: Stateful protocols may manage live RPC connections, negotiation, and in-memory continuation state inside the scoped session, but that state is not durable authority state and does not survive session restart.
+      4: Durable evidence from protocol sessions crosses the runtime boundary only as normalized AgentOutputEvent rows and AgentInputEvent delivery.
+      5: Codec-specific options are explicit on the concrete session-layer constructor; shared options fields exist only when every codec can state compatible semantics.
+      6: Protocol-session dependencies such as id generation enter through the Effect requirement channel rather than hidden module imports or local counters that become durable identifiers.
+      7: Runtime protocol selection remains direct session-layer selection from runtime context; no codec registry is introduced until dynamic codec discovery is required.
+      8: The codec session refactor is behavior-preserving for ACP observation_only mode and stdio-jsonl client_result_roundtrip mode.
 
   TOOL_AND_ADAPTER_BOUNDARIES:
     requirements:
@@ -124,4 +144,6 @@ constraints:
       2: Cycle-breaking lands before host/index extraction.
       3: Generic durable wait extraction requires a separate package-boundary design before code moves into effect-durable-operators.
       4: The reconciliation work does not re-open accepted event-pipeline behavior unless validation finds a correctness bug.
-      5: Factory consumer cleanup happens after runtime-internal cycle, host, namespace, and source-registration cleanup.
+      5: Host composition hardening happens after host/index extraction and before codec session Layer refactoring.
+      6: Codec session Layer refactoring happens after host composition hardening and before the agent event-pipeline namespace move.
+      7: Factory consumer cleanup happens after runtime-internal cycle, host, host-hardening, codec-session, namespace, and source-registration cleanup.
