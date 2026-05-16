@@ -1,0 +1,147 @@
+feature:
+  name: firegrid-host-sdk
+  product: firegrid
+  description: Product-app import and composition surfaces for the session plane, host plane, and command binding without reverse-engineering runtime internals or the root CLI.
+
+components:
+  HOST_DECLARATION:
+    requirements:
+      1: The Host SDK package exposes a product-neutral host-plane declaration API that lets an app configure durable storage, install agent provider implementations, provide provider environment policy, and run host authority programs from one ordinary Effect layer.
+      2: Host declarations are explicit values, not dynamic module discovery, package scanning, env-named host ids, or a Firegrid graph DSL.
+      3: Host declarations compose app-configured integration adapters and app-owned DurableTable/EventPlane layers without importing product-specific workflow policy into runtime core.
+      4: Reusable integration adapters for systems such as Linear, GitHub, Slack, and agent providers may be delivered as separate Firegrid packages or app packages and installed alongside the Host SDK as explicit Layers or capability declarations.
+
+  PACKAGE_BOUNDARIES:
+    requirements:
+      1: "@firegrid/client-sdk owns the session plane: agent-session launch intent, session handles, attach, prompt, snapshots, typed runtime waits, permission response inputs, and session-safe observation helpers."
+      2: "@firegrid/host-sdk owns the host plane: host composition, agent provider implementations, local process env policy, MCP installation, host session identity, and host-side execution authority wiring."
+      3: "@firegrid/runtime remains the implementation package for agent-event-pipeline, workflow-engine integration, runtime authorities, durable-tools, codecs, and host internals; product apps should not import runtime implementation subpaths for normal behavior."
+      4: "@firegrid/protocol remains the schema/operation catalog package shared by both SDKs and bindings."
+      5: The SDK split includes an ownership audit of current runtime folders and classifies each as runtime substrate, host-plane adapter/binding, session-plane API, command binding, integration package, or generic durable operator candidate.
+      6: Verified webhook ingest is classified as a tracer-era host/integration adapter candidate or retirement candidate, not runtime execution substrate; its SourceCollections-based wait integration is stale after typed runtime wait-source cutover.
+      7: "@firegrid/cli owns the command binding: @effect/cli command definitions, help text, flags, examples, local developer defaults, process exit behavior, and Node-only command execution wiring."
+
+  PROJECTION_BINDINGS:
+    requirements:
+      1: The protocol operation catalog is the source of truth for operations projected into host-sdk, client-sdk, and CLI bindings.
+      2: Host-sdk bindings may project protocol operations into Effect Layers, Effect AI Tool/Toolkit values, MCP exposure, and host integration installation.
+      3: Client-sdk bindings may project protocol operations into browser/app-safe TypeScript session methods, snapshot helpers, typed wait helpers, and permission response helpers.
+      4: CLI bindings may project protocol operations into @effect/cli commands, flags, validation, help text, examples, local defaults, and Node-only process entrypoints.
+      5: Binding packages must not define new operation contracts that are absent from the protocol catalog.
+      6: Execution substrate code must not import host-sdk, client-sdk, or CLI binding modules to discover operations.
+      7: Production bindings do not depend on FiregridOperationEntry, defineFiregridOperation, or copied operation metadata objects; operation grouping is plain schema input/output values plus Schema annotations.
+
+  CONFIGURATION:
+    requirements:
+      1: Host configuration accepts Durable Streams base URL, namespace, optional DurableTable headers, installed provider implementations, and explicit provider environment binding policy through a typed object and through an env-backed layer constructor.
+      2: Configuration distinguishes local-development conveniences such as embedded DurableStreamTestServer from production attached configuration; production host SDK examples require an explicit durable endpoint.
+      3: Runtime retry, timeout, retention, and privacy-style options are only added when backed by current Firegrid substrate semantics; the SDK does not invent unsupported knobs for parity with other systems.
+      4: Environment binding policy uses a named source map and explicit expose mapping from host variable names to child agent variable names; launched local-process agents do not inherit ambient host environment by default.
+      5: Client/session launch requests may include protocol RuntimeConfig env binding refs, but they must not include secret values, process.env readers, or host environment exposure policy.
+      6: Agent provider choice, command, protocol, cwd, and env binding refs belong to the protocol `PublicLaunchRuntimeIntent` supplied to the client/session create-or-load operation; provider implementation availability and policy belong to host configuration.
+
+  RUNTIME_SESSION_SURFACE:
+    requirements:
+      1: The Client SDK exposes the session-plane service for creating or loading an agent session, attaching to an existing session, prompting, snapshotting, typed runtime waits, and permission response using protocol-owned session and launch schemas.
+      2: Product apps do not call runtime internals, host-owned table helpers, raw RuntimeEvent.raw parsing, or src/run.ts helpers to perform normal session operations.
+      3: "Session launch writes durable intent and does not carry live process handles, provider SDK clients, raw secret values, host environment readers, or host execution policy."
+      4: "The `sessions.createOrLoad` operation uses caller-owned `externalKey` to converge retries or repeated dispatches on one durable agent session; Firegrid must not replace this with a second `idempotencyKey` spelling."
+
+  LAUNCH_SUBSTRATE:
+    requirements:
+      1: The shared launch substrate currently embedded in src/run.ts is specified as reusable SDK functionality split between client-sdk durable agent-session intent authoring and host-sdk provider execution.
+      2: The root CLI remains a binding over the same host SDK substrate; src/run.ts or @firegrid/cli owns argument parsing, process exit handling, help text, and local developer defaults only.
+      3: Product app triggers remain app-owned durable facts or EventPlane rows; the host SDK may launch runtime contexts for those triggers but must not become a product trigger queue or factory-specific orchestrator.
+
+  MCP_AND_TOOLS:
+    requirements:
+      1: The Host SDK lets apps explicitly install the host-owned route-scoped MCP server through FiregridMcpServerLayer when needed.
+      2: The default Firegrid MCP server declaration can be injected into launched agent configs by the shared launch substrate when the selected protocol supports MCP setup.
+      3: The SDK does not expose Durable Streams tokens, provider session handles, sandbox handles, host credentials, or runtime context authority as agent-visible tool arguments.
+
+  TOOL_EXECUTOR_SEAM:
+    requirements:
+      1: Runtime ToolUse routing depends on a narrow `RuntimeToolUseExecutor` capability instead of importing agent-tool execution or host-sdk bindings directly.
+      2: Host-sdk provides the live `RuntimeToolUseExecutor` layer using host-owned workflow, durable-tool, and agent-tool host capabilities.
+      3: The executor seam is the load-bearing dependency inversion that allows agent-tool bindings and MCP exposure to move out of runtime without creating a runtime-to-host-sdk dependency.
+
+  RUNTIME_CAPABILITY_PROJECTIONS:
+    requirements:
+      1: Runtime durable authority cleanup may introduce small projection helpers for stock Effect services such as append method services, Stream tags, and Sink tags over DurableTable collections.
+      2: Runtime durable authority cleanup must keep Context.Tag declarations hand-written and adjacent to domain service types; helpers may only name Layer projection patterns, not generate anonymous tag bundles.
+      3: Runtime durable authority cleanup must not introduce brand-typed Append/Read/Executor framework interfaces or a DurableRecordCapabilities factory that hides tag identities.
+      4: Runtime cross-record operations such as timestamped context insert, idempotent ingress delivery claim, and ToolUse execution remain ordinary Effect.gen compositions or explicit executor seams when they are not direct table projections.
+
+  AGENT_TOOL_BOUNDARY:
+    requirements:
+      1: "@firegrid/protocol owns the agent-tool operation catalog: tool names, input and output schemas, descriptions, and stable operation identifiers."
+      2: "@firegrid/host-sdk owns bindings from the protocol catalog to Effect AI Tool/Toolkit values and MCP exposure; product hosts explicitly install those bindings."
+      3: "@firegrid/host-sdk owns the host capability service required by agent tools, including child session creation, prompt append, lifecycle operations, scheduled prompt append, sandbox execution, and session capability execution."
+      4: "@firegrid/runtime owns only the committed ToolUse observation edge in the agent event pipeline; that subscriber invokes a narrow tool executor capability and writes ToolResult input through runtime ingress."
+      5: "@firegrid/client-sdk never imports Effect AI Tool, MCP transport, workflow-engine services, runtime durable-tools, or host authority surfaces for agent-tool execution."
+      6: Moving agent-tools out of runtime must split bindings from execution instead of moving the current mixed folder wholesale into another package.
+
+  OBSERVATION:
+    requirements:
+      1: SDK examples observe runtime state through client-sdk snapshots, session waits, typed runtime waits, or app-owned projections rather than host-owned table internals.
+      2: The SDK split defines how product apps combine app-owned facts/projections with session-plane snapshots to build live UI/status views.
+
+  PRODUCTION_APP_FIT:
+    requirements:
+      1: apps/factory can express its host composition through the Host SDK while keeping Linear, GitHub, Slack, provider adapters, prompts, and factory projections app-owned.
+      2: apps/factory can use the Host SDK to launch and observe planner sessions without using pnpm firegrid -- run as the factory product path.
+      3: The Host SDK identifies any remaining unsupported production factory needs as explicit gaps instead of encouraging bespoke host.ts glue.
+      4: apps/factory can configure reusable Linear, GitHub, Slack, or agent-provider integrations alongside the Host SDK without those integrations becoming factory-specific runtime semantics.
+
+  APP_PROCESS_PRIMITIVES:
+    requirements:
+      1: The SDK design maps app-owned intake and evidence rows to existing DurableTable/EventPlane-style app storage plus runtime session observations, instead of creating a second Firegrid event pipeline.
+      2: The SDK design maps app-owned product work projections to product read models over app storage and Firegrid session handles, instead of treating product work as RuntimeRun rows.
+      3: "The SDK design maps provider action receipts to reusable integration-adapter evidence: adapters may verify input, perform configured side effects, and return typed evidence rows, but product apps own policy and credentials."
+      4: The SDK design maps app-owned read-model waits to explicit Stream/DurableTable observation helpers, separate from runtime typed waits and without reintroducing arbitrary runtime SourceCollections.
+      5: "The SDK implementation plan must prefer existing primitives before proposing new package surface: agent-event-pipeline for runtime observations, client-sdk for sessions, effect-durable-operators for app tables/streams, and reusable integration packages for provider clients."
+
+constraints:
+  BOUNDARIES:
+    requirements:
+      1: The Host SDK does not introduce Firegrid-owned factory workflow policy, but it may compose reusable integration packages whose vocabulary belongs to their own adapter boundary and is configured by the consuming app.
+      2: The Host SDK does not reintroduce SourceCollections, arbitrary wait-source registries, dynamic runtime modules, or implicit subscriber/provider sets.
+      3: The Host SDK exports stable package subpaths; product app examples must not import from packages/runtime/src/host/* or other implementation paths.
+      4: "The Host SDK remains Effect-native: Context.Tag, Layer, Scope, Stream, Queue, Sink, and narrow service methods are the composition vocabulary."
+      5: Host-plane adapters may lower provider, agent, webhook, MCP, or Effect AI surfaces into runtime capabilities, but runtime core must not own those adapter vocabularies once a public host-sdk boundary exists.
+
+  SEQUENCING:
+    requirements:
+      1: Land the Host SDK SDD/spec before extracting code from src/run.ts or rewriting apps/factory host composition.
+      2: Refresh or supersede SDD_FIREGRID_RUNTIME_COMPOSITION_ERGONOMICS and SDD_FIREGRID_RUNTIME_HOST_MODULARITY as part of the Host SDK design.
+      3: Create client-sdk, host-sdk, and CLI binding package boundaries before changing factory production intake.
+      4: Implement behavior-preserving extraction of shared launch substrate into host-sdk before changing root CLI behavior.
+      5: Reverse-engineer apps/factory DarkFactoryTable into platform primitive requirements before declaring the factory product path production-ready.
+      6: Prove the SDK split with one session-plane example, one host-plane entrypoint example, and one factory integration slice before retiring existing CLI scripts.
+      7: Package-boundary PRs must not create public SDK packages that only re-export old mixed implementation files.
+      8: Add package graph guardrails in the transactional SDK cutover before moving consumers to the new SDK package names.
+      9: Split binding modules from execution/substrate modules in the same transactional SDK cutover that publishes the package boundary consumers will build against.
+      10: Land the `RuntimeToolUseExecutor` seam before moving agent-tool bindings or MCP exposure out of runtime.
+      11: After the `RuntimeToolUseExecutor` seam lands, move host-sdk, client-sdk, CLI bindings, operation-entry deletion, static rules, and consumer import updates as one transaction rather than through long-lived partial package boundaries.
+      12: Runtime durable authority projection-helper cleanup is optional follow-up work and must not block the RuntimeToolUseExecutor seam or transactional SDK plane cutover.
+
+  PACKAGE_GRAPH:
+    requirements:
+      1: Package dependency analysis for SDK boundary design excludes product apps; apps are validation consumers after the package graph is correct.
+      2: "@firegrid/runtime must not import @firegrid/client-sdk, @firegrid/host-sdk, or @firegrid/cli."
+      3: "@firegrid/client-sdk must not import @firegrid/runtime, @firegrid/host-sdk, @firegrid/cli, Node modules, Effect AI, MCP, or platform-node."
+      4: "@firegrid/host-sdk may import @firegrid/runtime and @firegrid/protocol, but must not import @firegrid/client-sdk."
+      5: "@firegrid/cli may import @firegrid/host-sdk and @firegrid/client-sdk, but no package may import @firegrid/cli."
+      6: Runtime ToolUse routing must depend on a narrow executor capability instead of importing host-sdk agent-tool bindings.
+      7: Binding modules must not import execution/substrate modules, and execution/substrate modules must not import binding modules to discover operations.
+      8: "@firegrid/host-sdk and @firegrid/client-sdk are sibling projections over @firegrid/protocol; product apps and @firegrid/cli compose both packages when both planes are needed."
+      9: "@firegrid/host-sdk returns protocol-shaped launch/session identity results rather than client-sdk-owned handles."
+      10: "@firegrid/host-sdk core must not import concrete provider integration packages such as Linear, GitHub, Slack, or agent providers; those adapters are installed by the app or CLI composition root."
+      11: "Integration packages may import @firegrid/protocol and expose Effect services or Layers that satisfy host-sdk extension points, but they must not become hidden runtime or host-sdk dependencies."
+
+  VALIDATION:
+    requirements:
+      1: SDK implementation must include type-level examples or tests proving a product app can import only client-sdk and host-sdk public subpaths to compose a host, launch/prompt an agent session, wait for typed runtime output, and respond to permission.
+      2: Host SDK implementation must keep existing firegrid run/start CLI tests green, proving src/run.ts remains a binding over the same behavior.
+      3: Host SDK implementation must keep apps/factory typecheck/test green and remove any need for apps/factory to duplicate runtime launch substrate logic.
+      4: Factory cutover validation must prove accepted trigger idempotency, product work projection status where needed, provider-effect evidence, permission evidence, and app projection waits through public platform primitives rather than bespoke host.ts-only helpers.

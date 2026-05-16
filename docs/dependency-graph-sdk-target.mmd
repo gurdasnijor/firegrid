@@ -1,0 +1,27 @@
+flowchart LR
+
+protocol["@firegrid/protocol<br/>schema + operation catalog"]
+runtime["@firegrid/runtime<br/>execution substrate"]
+client["@firegrid/client-sdk<br/>session-plane binding"]
+host["@firegrid/host-sdk<br/>host-plane binding"]
+cli["@firegrid/cli<br/>command binding"]
+durable["effect-durable-operators<br/>DurableTable/operators"]
+streams["effect-durable-streams<br/>stream transport"]
+integrations["integration packages<br/>Linear/GitHub/Slack/providers"]
+consumer["consumer composition root<br/>app or command process"]
+
+protocol --> durable
+runtime --> protocol
+runtime --> durable
+client --> protocol
+client --> durable
+client --> streams
+host --> protocol
+host --> runtime
+cli --> protocol
+cli --> host
+cli --> client
+integrations --> protocol
+consumer -.-> host
+consumer -.-> client
+consumer -.-> integrations

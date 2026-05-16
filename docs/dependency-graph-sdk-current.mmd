@@ -1,0 +1,130 @@
+flowchart LR
+
+subgraph 0["packages"]
+subgraph 1["client"]
+subgraph 2["src"]
+3["firegrid.ts"]
+4["index.ts"]
+5["operations.ts"]
+end
+end
+subgraph 6["effect-durable-operators"]
+subgraph 7["src"]
+8["DurableTable.ts"]
+9["Errors.ts"]
+A["index.ts"]
+B["react.ts"]
+end
+end
+subgraph C["effect-durable-streams"]
+subgraph D["src"]
+E["Bound.ts"]
+F["DurableStream.ts"]
+G["Reader.ts"]
+H["Writer.ts"]
+I["errors.ts"]
+J["index.ts"]
+K["internal"]
+L["namespace.ts"]
+M["protocol"]
+end
+end
+subgraph N["protocol"]
+subgraph O["src"]
+P["agent-tools"]
+Q["index.ts"]
+R["launch"]
+S["operations"]
+T["runtime-ingress"]
+U["session-facade"]
+end
+end
+subgraph V["runtime"]
+subgraph W["src"]
+X["agent-adapters"]
+Y["agent-event-pipeline"]
+Z["agent-tools"]
+10["authorities"]
+11["durable-tools"]
+12["host"]
+13["index.ts"]
+14["runtime-errors.ts"]
+15["verified-webhook-ingest"]
+16["workflow-engine"]
+end
+end
+end
+3-->5
+3-->R
+3-->T
+3-->U
+4-->3
+4-->5
+5-->U
+8-->9
+8-->J
+A-->8
+A-->9
+E-->G
+E-->H
+G-->K
+G-->M
+H-->I
+H-->K
+H-->M
+J-->I
+J-->L
+K-->I
+K-->F
+K-->M
+L-->E
+L-->F
+L-->I
+L-->G
+L-->H
+M-->F
+M-->K
+M-->I
+P-->S
+Q-->P
+Q-->R
+Q-->S
+Q-->T
+Q-->U
+R-->A
+T-->A
+U-->P
+U-->S
+U-->T
+U-->R
+X-->Y
+Y-->T
+Y-->R
+Y-->14
+Y-->Z
+Z-->11
+Z-->P
+Z-->Y
+Z-->R
+10-->R
+11-->A
+11-->Y
+11-->10
+12-->Z
+12-->10
+12-->14
+12-->R
+12-->Y
+12-->T
+12-->11
+12-->16
+13-->X
+13-->Y
+13-->10
+13-->11
+13-->12
+13-->14
+13-->15
+13-->16
+15-->A
+16-->A
