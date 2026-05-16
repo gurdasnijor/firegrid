@@ -65,8 +65,10 @@ These are intentionally not agent event-pipeline stages:
 
 - `host/`: runtime host topology and command entrypoints
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.3`).
-- `waits/`: durable coordination operator and wait-owned router
-  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
+- `durable-tools/`: durable coordination operator boundary — `WaitFor.match`,
+  typed `RuntimeWaitSource` selection, `RuntimeWaitStreams`, and the
+  wait-owned router. `wait_for` is the first durable tool
+  (`firegrid-typed-wait-source-redesign.CONTEXT.4`).
 - `workflow-engine/`: workflow substrate adapter
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
 - `agent-tools/`: tool schemas, lowering, MCP exposure, and host-coupled live
@@ -77,10 +79,6 @@ These are intentionally not agent event-pipeline stages:
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
 - `authorities/`: runtime control-plane lifecycle capabilities
   (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.2`).
-- `source-registration/`: provider-owned registration layers that expose
-  named observation sources to `wait_for` without making host enumerate every
-  runtime/read model source
-  (`firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.1`).
 
 This namespace move follows the host split and codec session Layer refactor
 (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.5`,

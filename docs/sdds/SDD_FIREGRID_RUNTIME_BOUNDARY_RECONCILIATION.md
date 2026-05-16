@@ -28,6 +28,14 @@ layout. During review we found repeated pressure points:
 - `waits/` is a distinct durable coordination operator, but it currently mixes
   operator API, wait table, source registry, subscription router, and runtime
   adapter concerns.
+
+> Superseded by `firegrid-typed-wait-source-redesign`: `waits/` has been
+> renamed to `durable-tools/`, the `SourceCollections` string source registry
+> and `source-registration/` are deleted, and `wait_for` now selects a typed
+> `RuntimeWaitSource` (`AgentOutput` | `RuntimeRun`) resolved from
+> `RuntimeWaitStreams`. References to `waits/` and source-registration below
+> are retained as historical reconciliation context. See
+> `docs/sdds/SDD_FIREGRID_TYPED_WAIT_SOURCE_REDESIGN.md`.
 - Authority/provider boundaries work best when expressed as ordinary Effect
   capabilities (`Context.Tag`, `Layer`, `Queue.Enqueue`, `Stream`, `Sink`,
   narrow `Effect` services), not as Firegrid-specific wrapper types or

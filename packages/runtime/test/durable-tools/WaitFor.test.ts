@@ -18,10 +18,7 @@ import { Effect, Exit, Fiber, Layer, Option, Schema, Stream } from "effect"
 import { DurableTable } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { DurableStreamsWorkflowEngine } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
-import {
-  RuntimeAgentOutputEvents,
-  type RuntimeAgentOutputObservation,
-} from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
+import { RuntimeAgentOutputEvents } from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
 import { RuntimeRuns } from "../../src/authorities/runtime-control-plane-recorder.ts"
 import {
   DurableToolsTable,
