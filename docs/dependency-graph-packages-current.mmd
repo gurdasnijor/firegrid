@@ -1,0 +1,14 @@
+flowchart LR
+
+subgraph 0["packages"]
+1["client"]
+2["effect-durable-operators"]
+3["effect-durable-streams"]
+4["protocol"]
+5["runtime"]
+end
+1-->4
+2-->3
+4-->2
+5-->4
+5-->2

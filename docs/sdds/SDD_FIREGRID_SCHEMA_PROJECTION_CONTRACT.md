@@ -50,6 +50,17 @@ schema -> [tool binding, client binding, cli binding]
 The bindings may have different user-facing names, but they must not define
 different contracts.
 
+The package-level shape is:
+
+| Binding | Target package | Projection |
+| --- | --- | --- |
+| Host/agent binding | `@firegrid/host-sdk` | Protocol operations to Effect AI `Tool`/`Toolkit`, route-scoped MCP exposure, host Layers, provider/webhook/agent adapter installation, and host-authority operation execution. |
+| Client binding | `@firegrid/client-sdk` | Protocol operations to browser/app-safe TypeScript session APIs, snapshots, typed waits, and permission response helpers. |
+| CLI binding | `@firegrid/cli` | Protocol operations to `@effect/cli` commands, flags, help, examples, local defaults, and Node-only process entrypoints. |
+
+`@firegrid/runtime` is not a binding package. It owns the execution substrate
+that bindings call into through explicit services and protocol schemas.
+
 ## Shape
 
 Prefer a small schema catalog over parallel package trees:
