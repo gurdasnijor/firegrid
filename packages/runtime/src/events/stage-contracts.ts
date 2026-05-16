@@ -1,30 +1,9 @@
-import { Schema, type Effect, type Sink, type Stream } from "effect"
-import type { SourceCollectionHandle } from "../waits/index.ts"
+import { Schema, type Stream } from "effect"
 
 // firegrid-runtime-agent-event-pipeline.STAGES.7
 export type RuntimeTransform<Input, Output, Error = never, Requirements = never> = (
   input: Stream.Stream<Input, Error, Requirements>,
 ) => Stream.Stream<Output, Error, Requirements>
-
-// firegrid-runtime-agent-event-pipeline.STAGES.7
-export type RuntimeAuthorityCommand<Input, Output, Error = never, Requirements = never> = (
-  input: Input,
-) => Effect.Effect<Output, Error, Requirements>
-
-// firegrid-runtime-agent-event-pipeline.AUTHORITIES.10
-// firegrid-runtime-agent-event-pipeline.AUTHORITIES.11
-export interface RuntimeAuthority<Write, Read> {
-  readonly write: Write
-  readonly read: Read
-}
-
-// firegrid-runtime-agent-event-pipeline.AUTHORITIES.10
-export type RuntimeAuthoritySink<Input, Output, Error = never, Requirements = never> =
-  Sink.Sink<Output, Input, never, Error, Requirements>
-
-// firegrid-runtime-agent-event-pipeline.AUTHORITIES.10
-// firegrid-runtime-agent-event-pipeline.AUTHORITIES.11
-export type RuntimeAuthorityRead = SourceCollectionHandle
 
 // firegrid-runtime-agent-event-pipeline.STAGES.8
 export const RuntimeSubscriberIdSchema = Schema.String.pipe(

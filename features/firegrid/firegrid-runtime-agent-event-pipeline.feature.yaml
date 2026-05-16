@@ -20,27 +20,30 @@ components:
       3-9: The SDD classifies agent wire modes as observation_only, client_result_roundtrip, and control_channel_request_response; control-channel request/response is not subscriber-produced ToolResult ingress.
       4: Transforms are pure stream operators over normalized events and own no resources or durable writes.
       5: Projections are sibling views over codec sessions and do not sit downstream of RuntimeOutput.
-      6: Pipeline sources, authority write APIs, and authority SourceCollectionHandle read surfaces remain directionally distinct; host observation wiring only registers read surfaces and does not introduce new write ownership.
-      7: Stage boundaries expose typed contracts that preserve directionality across folders; sources return streams, transforms are Stream-to-Stream operators, authorities expose write APIs plus read surfaces, subscribers consume read surfaces and authority APIs, and host/pipeline only composes those contracts.
+      6: Pipeline sources, durable write capability tags, static Stream observation tags, and dynamic SourceCollectionHandle registrations remain directionally distinct; host observation wiring only registers dynamic read handles and does not introduce new write ownership.
+      7: Stage boundaries expose typed contracts using existing Effect interfaces where possible; sources return Streams, transforms are Stream-to-Stream functions or Channels, durable table authorities provide Queue.Enqueue/Sink/Effect write tags plus Stream observation tags, subscribers consume capability tags, and host/pipeline only composes those contracts.
       8: Cross-stage routing identities use schema-owned branded types where practical instead of unstructured strings or numbers.
 
   AUTHORITIES:
     requirements:
       1: Every durable table family written by runtime code has exactly one runtime authority module that owns commits for that family.
-      2: RuntimeOutputJournal is the only runtime authority that writes RuntimeOutputTable.events and RuntimeOutputTable.logs.
-      3: RuntimeIngressAppender is the only runtime authority that writes sequenced RuntimeIngressTable.inputs rows.
-      4: RuntimeIngressDeliveryTracker is the only runtime authority that writes RuntimeIngressTable.deliveries rows.
-      4-1: RuntimeIngressDeliveryTracker is shared across raw stdin and codec delivery paths; subscriberId namespaces delivery claims by protocol and role.
+      2: RuntimeOutputJournalLive is the only runtime provider layer for capability tags that write RuntimeOutputTable.events and RuntimeOutputTable.logs.
+      3: RuntimeIngressAppenderLive is the only runtime provider layer for capability tags that write sequenced RuntimeIngressTable.inputs rows.
+      4: RuntimeIngressDeliveryTrackerLive is the only runtime provider layer for capability tags that write RuntimeIngressTable.deliveries rows.
+      4-1: RuntimeIngress delivery claim/complete capabilities are shared across raw stdin and codec delivery paths; subscriberId namespaces delivery claims by protocol and role.
       4-2: RuntimeIngress delivery subscriber ids use the shape runtime-ingress:<protocol>:<role>.
-      5: RuntimeControlPlaneRecorder is the only runtime authority that writes RuntimeControlPlaneTable.contexts and RuntimeControlPlaneTable.runs lifecycle rows.
-      5-1: RuntimeControlPlaneRecorder owns local RuntimeContext insertion currently performed through host-context authority; host-context authority remains the read, validation, current-context, and stream URL derivation surface.
-      6: DurableWaitStore is the only runtime authority that writes durable wait rows and completions.
-      7: Authority modules may expose either Sink values for stream-terminal writes or Effect-returning command handlers for discrete commands.
-      8: Authority modules that own rows consumed by subscribers expose SourceCollectionHandle read surfaces for those rows.
-      9: Authority SourceCollectionHandle read surfaces are named and documented as read or observation surfaces rather than pipeline byte sources.
-      10: Authority modules expose Effect Context.Tag services whose Service types extend explicit write and read capability interfaces, with implementations provided by Effect Layers, rather than unrelated ad hoc module object APIs.
-      11: Authority modules do not expose generic DurableTable CRUD facades; they expose domain write commands, optional stream-terminal sinks, and read or observation SourceCollectionHandle surfaces.
-      12: Runtime code depends on authority services or narrow capability subsets through the Effect requirement channel or typed function parameters, not on module-global authority singletons.
+      5: RuntimeControlPlaneRecorderLive is the only runtime provider layer for capability tags that write RuntimeControlPlaneTable.contexts and RuntimeControlPlaneTable.runs lifecycle rows.
+      5-1: RuntimeControlPlaneRecorderLive owns local RuntimeContext insertion currently performed through host-context authority; host-context authority remains the read, validation, current-context, and stream URL derivation surface.
+      6: DurableWaitStoreLive is the only runtime provider layer for capability tags that write durable wait rows and completions.
+      6-1: DurableWaitForMatching is provided by DurableWaitStoreLive and is the runtime capability used by permission/capability bridges to wait for a matching row from a dynamic source registration.
+      7: Authority layers may provide Queue.Enqueue capabilities for append-only writes, Sink values for stream-terminal writes, and narrow Effect-returning capabilities for command handlers that need committed rows or lookups.
+      8: Authority layers that own rows consumed by subscribers expose static Stream observation tags for those rows and dynamic SourceCollectionHandle registrations only for wait_for/source lookup by name.
+      9: Authority read surfaces are named and documented as static durable observation streams or dynamic source registrations rather than pipeline byte sources.
+      10: Authority layers expose split Effect Context.Tag capability services using stock Effect interfaces, with implementations provided by Effect Layers, rather than unrelated ad hoc module object APIs, generic RuntimeAuthority wrappers, or new DurableAppend/DurableObservation concepts.
+      11: Authority layers do not expose generic DurableTable CRUD facades; they expose Queue.Enqueue, Stream, Sink, and narrow Effect capabilities using Effect types directly.
+      12: Runtime code depends on durable capability tags through the Effect requirement channel or narrow typed parameters, not on module-global authority singletons or full services when a stock Effect capability is enough.
+      13: Authority layers that provide static Stream observation tags also construct corresponding dynamic SourceCollectionHandle registrations from those streams when wait_for lookup needs them.
+      14: A runtime authority provider map exists only when production runtime behavior needs it; otherwise provider uniqueness is verified by tests or docs against actual Effect Context.Tag and Layer values without exporting review-only runtime registry surface.
 
   TOOL_DISPATCH:
     requirements:
@@ -52,22 +55,25 @@ components:
       5-1: The tool router watches only the current running activityAttempt for a context and does not redispatch ToolUse rows from prior terminal attempts.
       6: The v1 transactional cutover implements subscriber-based ToolUse to ToolResult round-trip for active stdio-jsonl sessions whose per-session toolUseMode is client_result_roundtrip.
       7: ACP sessionUpdate.tool_call and tool_call_update rows are durable observations, not dispatch candidates, and the tool router must not claim them.
-      8: ToolUse rows are decoded through a protocol/runtime event-output envelope helper shared by RuntimeOutputJournal and subscribers; subscribers do not parse RuntimeEventRow.raw ad hoc.
+      8: ToolUse rows are decoded through a protocol/runtime event-output envelope helper shared by the output capability layer and subscribers; subscribers do not parse RuntimeEventRow.raw ad hoc.
       9: ACP MCP delegation and ACP Client capability methods are request/response control-channel paths; additional filesystem or terminal handlers require separate SDD/spec ACIDs for authority, journaling, idempotency, and sandbox policy.
 
   INGREDIENTS:
     requirements:
       1: RuntimeIngress rows are decoded into AgentInputEvent values and sent to the active codec session by an ingress-delivery subscriber.
-      2: AgentOutputEvent values are transformed and committed through RuntimeOutputJournal before subscriber side effects depend on them.
-      3: RuntimeOutput ToolUse observations are routed to toolUseToEffect through a subscriber that appends responses through RuntimeIngressAppender.
+      2: AgentOutputEvent values are transformed and committed through RuntimeAgentOutputRowSink before subscriber side effects depend on them.
+      3: RuntimeOutput ToolUse observations are routed to toolUseToEffect through a subscriber that appends responses through RuntimeIngressAppendAndGet.
       4: RuntimeOutput PermissionRequest observations remain durable observations that are resumed by PermissionResponse ingress rows.
-      4-1: Permission waits observe RuntimeOutputJournal read/observation SourceCollectionHandle surfaces through wait_for or session.wait APIs rather than subscribing to codec internals.
-      4-2: PermissionResponse rows are appended only through RuntimeIngressAppender and delivered to the active codec by the ingress-delivery subscriber.
+      4-1: Permission waits observe RuntimeAgentOutputEvents or its dynamic wait/source registration through wait_for or session.wait APIs rather than subscribing to codec internals.
+      4-2: PermissionResponse rows are appended only through RuntimeIngressAppendAndGet and delivered to the active codec by the ingress-delivery subscriber.
       4-3: AcpCodec resolves pending ACP requestPermission promises from delivered PermissionResponse rows without making the tool router responsible for permission flow.
       4-4: The permission-wait bridge is the v1 instance of the general control_channel_request_response capability bridge pattern.
-      4-5: Capability bridges compose only when they fit the substrate guarantee of RuntimeOutputJournal observation, DurableWaitStore wait, RuntimeIngressAppender evidence append, and ingress delivery to the active codec; other shapes require a new SDD.
+      4-5: Capability bridges compose only when they fit the substrate guarantee of a durable output Stream capability, durable wait capability, runtime ingress append capability, and ingress delivery to the active codec; other shapes require a new SDD.
       5: DurableTable remains the storage and live row observation primitive; this feature does not introduce a new fact/source storage abstraction.
-      6: RuntimeOutputJournal commits the Terminated event row before returning terminal exit evidence to host workflow handling.
+      6: Codec runtime commits the Terminated event row through RuntimeAgentOutputRowSink before returning terminal exit evidence to host workflow handling.
+      6-1:
+        requirement: Codec runtime fails with a named runtime output error when the output stream ends without a Terminated event.
+        deprecated: true
       7: The AgentToolHost service tag and interface remain with tool lowering, while the host-coupled live implementation lives under host wiring.
 
   TRANSACTIONAL_CUTOVER:
@@ -77,9 +83,9 @@ components:
       2-1: The file currently named host-context-authority.ts is renamed to host/authority-context.ts as part of the cutover.
       3: The source tree reflects the target stage roles immediately and does not preserve open-ended compatibility aliases for prototype-internal runtime paths.
       3-1: If a temporary compatibility export bridge is unavoidable during the cutover, a deletion ACID must be added and satisfied before this feature is complete.
-      3-2: The protocol insertLocalRuntimeContext helper is a deprecated browser-safe compatibility write path during the cutover; runtime host-facing exports and callsites route local context insertion through RuntimeControlPlaneRecorder, and replacing the client/protocol helper requires a follow-up browser-safe command authority.
+      3-2: The protocol insertLocalRuntimeContext helper is a deprecated browser-safe compatibility write path during the cutover; runtime host-facing exports and callsites route local context insertion through the runtime control-plane insert capability, and replacing the client/protocol helper requires a follow-up browser-safe command authority.
       4: The implementing PR description presents the target tree and ACID list as the review artifact.
-      5: The implementing PR description lists the read/observation SourceCollectionHandle surfaces exposed by each authority.
+      5: The implementing PR description lists durable capability tags with provider layers/backing tables and the dynamic SourceCollectionHandle registrations exposed for wait_for lookup.
 
 constraints:
   BOUNDARIES:
@@ -91,22 +97,26 @@ constraints:
       5: App-owned DurableTable collections may be registered as wait sources, but Firegrid does not introduce a new provider fact table.
       6: The runtime event pipeline does not define the resource plane; pre-launch resource materialization and runtime-time Client capability interception require separate SDD/spec work.
       7: Durable rows may describe sessions, contexts, resources, or sandboxes, but they do not prove live host ownership of process handles, filesystems, containers, provider sessions, or protocol connections.
-      8: Composition in this cutover is static, strongly typed pipeline wiring; behavior that affects durable state routes through read/observation SourceCollectionHandle surfaces and authority APIs so externally visible effects are durable, observable, and replay-safe.
+      8: Composition in this cutover is static, strongly typed pipeline wiring; behavior that affects durable state routes through durable capability tags or dynamic SourceCollectionHandle lookup so externally visible effects are durable, observable, and replay-safe.
 
   ENFORCEMENT:
     requirements:
-      1: A canonical authority registry maps each runtime-written DurableTable collection family to its owning authority module.
-      2: Semgrep rejects direct insert, upsert, and delete calls against runtime-owned DurableTable collection facades outside the owning authority module and tests.
-      2-1: Semgrep allows calls to authority module methods and explicit test harness allowlist entries.
-      3: Subscribers consume durable seams through read/observation SourceCollectionHandle surfaces exposed by authority modules rather than directly calling DurableTable.rows on runtime-owned tables.
-      4: Subscribers and transforms do not accept runtime-owned DurableTable collection facades as inputs; production writes route through authority APIs and production reads route through typed read/observation surfaces.
+      1: The canonical runtime-host Effect layer composition relates each durable runtime capability tag to exactly one provider layer and backing DurableTable collection family.
+      2: Semgrep rejects direct insert, upsert, and delete calls against runtime-owned DurableTable collection facades outside the provider layer for the corresponding durable capability tags and tests.
+      2-1: Semgrep allows calls to durable capability tags and explicit test harness allowlist entries.
+      3: Subscribers consume durable seams through Stream capability tags or dynamic SourceCollectionHandle lookup rather than directly calling DurableTable.rows on runtime-owned tables.
+      4: Subscribers and transforms do not accept runtime-owned DurableTable collection facades as inputs; production writes route through durable capability tags and production reads route through Stream capability tags or dynamic source registrations.
+      5: Production runtime code has exactly one provider layer for each durable runtime capability tag expected by the canonical runtime-host layer composition.
+      5-1: Provider uniqueness is validated by a test against the canonical runtime-host layer composition; a future static lint may reuse the same Effect tag/layer graph as source of truth.
+      6: Enforcement and review helpers inspect the Effect layer/tag graph or test-local metadata derived from those values rather than treating hand-maintained strings as the source of truth.
+      7: Runtime production source does not export registry files or APIs whose only consumers are review tooling, documentation, or tests.
 
   VALIDATION:
     requirements:
       1: The cutover proves existing raw local-process runtime behavior still journals stdout and stderr correctly.
       2: The cutover proves stdio-jsonl codec runtime execution advertises client_result_roundtrip and still handles Prompt, ToolUse, ToolResult, and Terminated events.
       3: The cutover proves ACP PermissionRequest remains durably observable and resumable through RuntimeIngress PermissionResponse.
-      3-1: The cutover proves a wait_for or session.wait permission query resolves from RuntimeOutputJournal's decoded read/observation SourceCollectionHandle surface after a PermissionRequest row commits.
+      3-1: The cutover proves a wait_for or session.wait permission query resolves from RuntimeAgentOutputEvents or its dynamic source registration after a PermissionRequest row commits.
       3-2: The cutover proves PermissionResponse ingress delivery resolves the pending ACP requestPermission promise for a live session.
       4: The cutover proves duplicate startRuntime calls do not duplicate external runtime execution.
       5: A test named firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.1 firegrid-runtime-agent-event-pipeline.VALIDATION.5 proves durable subscriber tool dispatch replays from committed RuntimeOutput ToolUse rows after restart or reconstruction.

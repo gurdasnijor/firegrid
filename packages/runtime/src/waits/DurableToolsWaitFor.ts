@@ -18,6 +18,11 @@ import {
 } from "./internal/table.ts"
 import { SourceCollectionsLive } from "./internal/source-collections.ts"
 import { SubscriptionRouterLive } from "./internal/subscription-router.ts"
+import { WaitFor } from "./internal/wait-for.ts"
+import {
+  DurableWaitForMatching,
+  DurableWaitStoreLive,
+} from "../authorities/durable-wait-store.ts"
 
 export type DurableToolsWaitForLayerOptions = DurableToolsTableOptions
 
@@ -31,10 +36,21 @@ export type DurableToolsWaitForLayerOptions = DurableToolsTableOptions
  */
 export const DurableToolsWaitForLive = (
   options: DurableToolsWaitForLayerOptions,
-) =>
-  SubscriptionRouterLive.pipe(
-    Layer.provideMerge(SourceCollectionsLive),
-    Layer.provideMerge(
-      DurableToolsTable.layer(durableToolsTableLayerOptions(options)),
-    ),
+) => {
+  const durableToolsTableLive = DurableToolsTable.layer(
+    durableToolsTableLayerOptions(options),
   )
+  const routerLive = SubscriptionRouterLive.pipe(
+    Layer.provide([DurableWaitStoreLive, SourceCollectionsLive]),
+  )
+  return Layer.mergeAll(
+    routerLive,
+    DurableWaitStoreLive,
+    SourceCollectionsLive,
+    Layer.succeed(DurableWaitForMatching, {
+      match: WaitFor.match,
+    }),
+  ).pipe(
+    Layer.provideMerge(durableToolsTableLive),
+  )
+}

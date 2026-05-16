@@ -1,4 +1,3 @@
-import { CurrentRuntimeContext } from "@firegrid/protocol/launch"
 import {
   RuntimeIngressTable,
   makeRuntimeIngressInputRow,
@@ -7,13 +6,7 @@ import {
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
-import {
-  type RuntimeAuthority,
-  type RuntimeAuthorityCommand,
-  type RuntimeAuthorityRead,
-} from "../events/index.ts"
-import { sourceCollectionHandle } from "../waits/internal/source-collections.ts"
-import { RuntimeAuthoritySourceNames } from "./source-names.ts"
+import type { Stream } from "effect"
 
 export class RuntimeIngressAppendContextMismatch extends Schema.TaggedError<RuntimeIngressAppendContextMismatch>()(
   "RuntimeIngressAppendContextMismatch",
@@ -24,23 +17,14 @@ export class RuntimeIngressAppendContextMismatch extends Schema.TaggedError<Runt
   },
 ) {}
 
-interface RuntimeIngressWrites {
-  readonly append: RuntimeAuthorityCommand<RuntimeIngressRequest, RuntimeIngressInputRow, unknown>
-  readonly findInput: RuntimeAuthorityCommand<string, Option.Option<RuntimeIngressInputRow>, unknown>
+interface RuntimeIngressAppendAndGetService {
+  readonly append: (
+    request: RuntimeIngressRequest,
+  ) => Effect.Effect<RuntimeIngressInputRow, unknown>
+  readonly findInput: (
+    inputId: string,
+  ) => Effect.Effect<Option.Option<RuntimeIngressInputRow>, unknown>
 }
-
-interface RuntimeIngressReads {
-  readonly inputs: RuntimeAuthorityRead
-}
-
-export type RuntimeIngressAuthorityService = RuntimeAuthority<
-  RuntimeIngressWrites,
-  RuntimeIngressReads
->
-
-export class RuntimeIngressAuthority extends Context.Tag(
-  "@firegrid/runtime/RuntimeIngressAuthority",
-)<RuntimeIngressAuthority, RuntimeIngressAuthorityService>() {}
 
 const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map(millis => new Date(millis).toISOString()),
@@ -83,57 +67,43 @@ const findInputTo = (
   inputId: string,
 ) => table.inputs.get(inputId)
 
-const findInput = (
-  inputId: string,
-) => Effect.flatMap(RuntimeIngressTable, table => findInputTo(table, inputId))
-
-const append = (
-  request: RuntimeIngressRequest,
-) =>
-  Effect.gen(function* () {
-    const context = yield* CurrentRuntimeContext
-    const table = yield* RuntimeIngressTable
-    return yield* appendTo(table, request, {
-      currentContextId: context.contextId,
-    })
-  })
-
-const sources = (
+const ingressInputStream = (
   table: RuntimeIngressTable["Type"],
-) => ({
-  inputs: sourceCollectionHandle(
-    RuntimeAuthoritySourceNames.runtimeIngressInputs,
-    table.inputs,
-  ),
-}) as const
+): Stream.Stream<RuntimeIngressInputRow, unknown> => table.inputs.rows()
 
-const authority = (
+const appendAndGetFromTable = (
   table: RuntimeIngressTable["Type"],
   options: {
     readonly currentContextId: string
   },
-): RuntimeIngressAuthorityService => ({
-  write: {
-    append: request => appendTo(table, request, options),
-    findInput: inputId => findInputTo(table, inputId),
-  },
-  read: sources(table),
+): RuntimeIngressAppendAndGetService => ({
+  append: request => appendTo(table, request, options),
+  findInput: inputId => findInputTo(table, inputId),
 })
 
-const layer = (options: {
+export class RuntimeIngressAppendAndGet extends Context.Tag(
+  "@firegrid/runtime/RuntimeIngressAppendAndGet",
+)<RuntimeIngressAppendAndGet, RuntimeIngressAppendAndGetService>() {}
+
+export class RuntimeIngressInputStream extends Context.Tag(
+  "@firegrid/runtime/RuntimeIngressInputStream",
+)<RuntimeIngressInputStream, Stream.Stream<RuntimeIngressInputRow, unknown>>() {}
+
+export const RuntimeIngressInputStreamLayer = Layer.effect(
+  RuntimeIngressInputStream,
+  Effect.map(RuntimeIngressTable, ingressInputStream),
+)
+
+export const RuntimeIngressAppenderLayer = (options: {
   readonly currentContextId: string
 }) =>
-  Layer.effect(
-    RuntimeIngressAuthority,
-    Effect.map(RuntimeIngressTable, table => authority(table, options)),
-  )
-
-export const RuntimeIngressAppender = {
-  authority,
-  layer,
-  append,
-  appendTo,
-  findInput,
-  findInputTo,
-  sources,
-} as const
+  Layer.mergeAll(
+    Layer.effect(
+      RuntimeIngressAppendAndGet,
+      Effect.map(RuntimeIngressTable, table => appendAndGetFromTable(table, options)),
+    ),
+    Layer.effect(
+      RuntimeIngressInputStream,
+      Effect.map(RuntimeIngressTable, ingressInputStream),
+    ),
+)

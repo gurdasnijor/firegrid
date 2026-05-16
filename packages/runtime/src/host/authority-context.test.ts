@@ -33,6 +33,10 @@ import {
 import { Effect, Either, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
+  RuntimeContextInsert,
+  RuntimeContextInsertLive,
+} from "../authorities/index.ts"
+import {
   ContextNotFound,
   ContextNotLocal,
   CurrentHostSession,
@@ -41,7 +45,6 @@ import {
   provideRuntimeContext,
   requireLocalContext,
 } from "./authority-context.ts"
-import { RuntimeControlPlaneRecorder } from "../authorities/runtime-control-plane-recorder.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -80,7 +83,17 @@ const sampleIntent = Schema.decodeUnknownSync(RuntimeContextIntentSchema)(
   normalizeRuntimeIntent(local.jsonl({ argv: ["node", "-e", "process.exit(0)"] })),
 )
 
-const insertLocalRuntimeContext = RuntimeControlPlaneRecorder.insertLocalContext
+const insertLocalRuntimeContext = (
+  intent: typeof sampleIntent,
+  options: {
+    readonly contextId: string
+    readonly createdBy?: string
+  },
+) =>
+  Effect.gen(function* () {
+    const contextInsert = yield* RuntimeContextInsert
+    return yield* contextInsert.insertLocalContext(intent, options)
+  })
 
 describe("insertLocalRuntimeContext", () => {
   it("firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2 fills the host binding from CurrentHostSession", async () => {
@@ -93,6 +106,7 @@ describe("insertLocalRuntimeContext", () => {
         contextId: `ctx_${crypto.randomUUID()}`,
         createdBy: "test",
       }).pipe(
+        Effect.provide(RuntimeContextInsertLive),
         Effect.provide(controlPlaneLayer(namespace)),
         Effect.provide(sessionLayer(namespace, hostId)),
         Effect.scoped,
@@ -117,6 +131,7 @@ describe("insertLocalRuntimeContext", () => {
         })
         return yield* findRuntimeContext(inserted.contextId)
       }).pipe(
+        Effect.provide(RuntimeContextInsertLive),
         Effect.provide(controlPlaneLayer(namespace)),
         Effect.provide(sessionLayer(namespace, hostId)),
         Effect.scoped,
@@ -157,6 +172,7 @@ describe("requireLocalContext", () => {
       insertLocalRuntimeContext(sampleIntent, {
         contextId: `ctx_${crypto.randomUUID()}`,
       }).pipe(
+        Effect.provide(RuntimeContextInsertLive),
         Effect.provide(controlPlaneLayer(namespace)),
         Effect.provide(sessionLayer(namespace, hostA)),
         Effect.scoped,
@@ -198,6 +214,7 @@ describe("requireLocalContext", () => {
         })
         return yield* requireLocalContext(inserted.contextId)
       }).pipe(
+        Effect.provide(RuntimeContextInsertLive),
         Effect.provide(controlPlaneLayer(namespace)),
         Effect.provide(sessionLayer(namespace, hostId)),
         Effect.scoped,

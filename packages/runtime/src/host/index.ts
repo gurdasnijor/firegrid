@@ -28,8 +28,8 @@ import {
 import { Clock, Config, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {
+  ContextNotLocal,
   CurrentHostSession,
-  findRuntimeContext,
   hostOwnedStreamUrl,
   provideRuntimeContext,
   requireLocalContext,
@@ -67,10 +67,19 @@ import { toolExecutionFailed } from "../agent-tools/tool-error.ts"
 import { DurableToolsWaitForLive } from "../waits/DurableToolsWaitFor.ts"
 import { RuntimeObservationSourcesLive } from "./observation-sources.ts"
 import {
-  RuntimeControlPlaneRecorder,
-  RuntimeIngressAppender,
-  RuntimeIngressDeliveryTracker,
-  RuntimeOutputJournal,
+  RuntimeContextInsert,
+  type RuntimeContextInsertService,
+  RuntimeContextRead,
+  type RuntimeContextReadService,
+  RuntimeControlPlaneRecorderLive,
+  RuntimeEventAppendAndGet,
+  RuntimeIngressAppendAndGet,
+  RuntimeIngressAppenderLayer,
+  RuntimeIngressInputStreamLayer,
+  RuntimeIngressDeliveryTrackerLayer,
+  RuntimeLogLineAppendAndGet,
+  RuntimeOutputJournalLayer,
+  RuntimeRunAppendAndGet,
   runtimeIngressSubscriberId,
 } from "../authorities/index.ts"
 import { runCodecRuntimeEventPipeline } from "../pipeline/index.ts"
@@ -94,10 +103,6 @@ export {
   requireLocalContext,
   runtimeControlPlaneStreamUrl,
 } from "./authority-context.ts"
-
-export {
-  insertLocalContext as insertLocalRuntimeContext,
-} from "../authorities/runtime-control-plane-recorder.ts"
 
 export {
   RuntimeObservationSourceNames,
@@ -229,6 +234,10 @@ const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
 const runtimeCodecToolLoweringLayer = (): Layer.Layer<never, unknown, unknown> =>
   RuntimeObservationSourcesLive.pipe(Layer.provideMerge(Layer.mergeAll(
     RuntimeHostAgentToolHostLive,
+    RuntimeControlPlaneRecorderLive,
+    RuntimeOutputJournalLayer,
+    RuntimeIngressInputStreamLayer,
+    RuntimeIngressDeliveryTrackerLayer,
     ScheduledInputWorkflowLayer,
     HostOwnedDurableToolsWaitForLive,
   ))) as Layer.Layer<never, unknown, unknown>
@@ -243,18 +252,19 @@ const runCodecRuntimeContext = (options: {
   protocol: options.protocol,
   toolLoweringLayer: runtimeCodecToolLoweringLayer(),
 }).pipe(
-  Effect.provide(RuntimeOutputJournal.layer),
-  Effect.provide(RuntimeIngressAppender.layer({
+  Effect.provide(RuntimeOutputJournalLayer),
+  Effect.provide(RuntimeIngressAppenderLayer({
     currentContextId: options.context.contextId,
   })),
-  Effect.provide(RuntimeIngressDeliveryTracker.layer),
+  Effect.provide(RuntimeIngressDeliveryTrackerLayer),
 )
 
 const readRuntimeContext = (
   contextId: string,
 ) =>
   Effect.gen(function* () {
-    const maybeContext = yield* RuntimeControlPlaneRecorder.readContext(contextId).pipe(
+    const contextRead = yield* RuntimeContextRead
+    const maybeContext = yield* contextRead.readContext(contextId).pipe(
       mapRuntimeContextError(
         "runtime-control-plane.contexts.get",
         "failed to read runtime context row",
@@ -276,7 +286,10 @@ const allocateRuntimeActivityAttempt = (
   context: RuntimeContext,
 ) =>
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.2
-  RuntimeControlPlaneRecorder.allocateActivityAttempt(context).pipe(
+  Effect.gen(function* () {
+    const runtimeRuns = yield* RuntimeRunAppendAndGet
+    return yield* runtimeRuns.allocateActivityAttempt(context)
+  }).pipe(
     mapRuntimeContextError(
       "runtime-control-plane.runs.allocate-attempt",
       "failed to allocate runtime activity attempt",
@@ -289,7 +302,8 @@ const writeRunStarted = (
   activityAttempt: number,
 ) =>
   Effect.gen(function* () {
-    yield* RuntimeControlPlaneRecorder.recordStarted(context, activityAttempt).pipe(
+    const runtimeRuns = yield* RuntimeRunAppendAndGet
+    yield* runtimeRuns.recordStarted(context, activityAttempt).pipe(
       mapRuntimeContextError(
         "runtime-control-plane.runs.started",
         "failed to append runtime started row",
@@ -304,7 +318,8 @@ const writeRunExited = (
   exit: Schema.Schema.Type<typeof RuntimeExitEvidence>,
 ) =>
   Effect.gen(function* () {
-    yield* RuntimeControlPlaneRecorder.recordExited(context, activityAttempt, exit).pipe(
+    const runtimeRuns = yield* RuntimeRunAppendAndGet
+    yield* runtimeRuns.recordExited(context, activityAttempt, exit).pipe(
       mapRuntimeContextError(
         "runtime-control-plane.runs.exited",
         "failed to append runtime exited row",
@@ -319,7 +334,8 @@ const writeRunFailed = (
   message: string,
 ) =>
   Effect.gen(function* () {
-    yield* RuntimeControlPlaneRecorder.recordFailed(context, activityAttempt, message).pipe(
+    const runtimeRuns = yield* RuntimeRunAppendAndGet
+    yield* runtimeRuns.recordFailed(context, activityAttempt, message).pipe(
       mapRuntimeContextError(
         "runtime-control-plane.runs.failed",
         "failed to append runtime failed row",
@@ -336,16 +352,19 @@ const runRuntimeContext = (
   // firegrid-workflow-driven-runtime.BOUNDARIES.1
   Effect.gen(function* () {
     const hostConfig = yield* RuntimeHostConfig
-    const outputTable = yield* RuntimeOutputTable
+    const appendEvent = yield* RuntimeEventAppendAndGet
+    const appendLog = yield* RuntimeLogLineAppendAndGet
     const writeOutputChunk = (
       sequence: number,
       chunk: Extract<ProcessOutputChunk, { readonly type: "output" }>,
     ) =>
       outputRowFromProcessChunk(context, activityAttempt, sequence, chunk).pipe(
-        Effect.flatMap(row =>
-          row.source === "stdout"
-            ? RuntimeOutputJournal.writeEventTo(outputTable, row)
-            : RuntimeOutputJournal.writeLogTo(outputTable, row)),
+        Effect.flatMap((row) => {
+          if (row.source === "stdout") {
+            return appendEvent.append(row).pipe(Effect.asVoid)
+          }
+          return appendLog.append(row).pipe(Effect.asVoid)
+        }),
         mapRuntimeContextError(
           "runtime-output.write",
           "failed to write runtime data-plane row",
@@ -377,6 +396,10 @@ const runRuntimeContext = (
             context.contextId,
             cause,
           )),
+        Stream.provideSomeLayer(RuntimeIngressAppenderLayer({
+          currentContextId: context.contextId,
+        })),
+        Stream.provideSomeLayer(RuntimeIngressDeliveryTrackerLayer),
         Stream.provideService(RuntimeIngressTable, ingressTable),
       )
       : undefined
@@ -434,7 +457,9 @@ const runRuntimeContextActivity = (
     name: "firegrid.runtime-context.run",
     success: RuntimeExitEvidence,
     error: RuntimeContextError,
-    execute: runRuntimeContext(context, activityAttempt),
+    execute: runRuntimeContext(context, activityAttempt).pipe(
+      Effect.provide(RuntimeOutputJournalLayer),
+    ),
   })
 
 const RuntimeContextWorkflow = Workflow.make({
@@ -630,6 +655,10 @@ const hostScopedLayer = (
   )
   return RuntimeObservationSourcesLive.pipe(
     Layer.provideMerge(HostOwnedDurableToolsWaitForLive),
+    Layer.provideMerge(RuntimeOutputJournalLayer),
+    Layer.provideMerge(RuntimeControlPlaneRecorderLive),
+    Layer.provideMerge(RuntimeIngressInputStreamLayer),
+    Layer.provideMerge(RuntimeIngressDeliveryTrackerLayer),
     Layer.provideMerge(hostTables),
   )
 }
@@ -647,6 +676,7 @@ export const FiregridRuntimeHostLive = (
   const namespaceScoped = namespaceScopedLayer(options)
   const hostScoped = hostScopedLayer(options)
   return RuntimeContextWorkflowLayer.pipe(
+    Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(hostScoped),
     Layer.provideMerge(namespaceScoped),
     Layer.provideMerge(session),
@@ -821,7 +851,7 @@ export const appendRuntimeIngress = (
     // plane, then open the owner host's ingress table from
     // RuntimeContext.host. The caller never passes or constructs the
     // owner ingress URL.
-    const context = yield* findRuntimeContext(request.contextId).pipe(
+    const context = yield* readRuntimeContext(request.contextId).pipe(
       Effect.mapError(cause =>
         runtimeIngressError(
           "append",
@@ -834,6 +864,9 @@ export const appendRuntimeIngress = (
     const options = yield* RuntimeHostConfig
     return yield* appendRuntimeIngressInCurrentContext(request).pipe(
       provideRuntimeContext(context),
+      Effect.provide(RuntimeIngressAppenderLayer({
+        currentContextId: context.contextId,
+      })),
       Effect.provide(ownerIngressLayer({
         baseUrl: options.durableStreamsBaseUrl,
         ...(options.headers !== undefined ? { headers: options.headers } : {}),
@@ -846,7 +879,10 @@ export const appendRuntimeIngress = (
 const appendRuntimeIngressInCurrentContext = (
   request: RuntimeIngressRequest,
 ) =>
-  RuntimeIngressAppender.append(request).pipe(
+  Effect.gen(function* () {
+    const appendIngress = yield* RuntimeIngressAppendAndGet
+    return yield* appendIngress.append(request)
+  }).pipe(
     Effect.mapError(cause =>
       runtimeIngressError(
         "append",
@@ -885,7 +921,8 @@ const sessionNewInputIdForToolUse = (
 
 const runtimeHostAgentToolHostService = (captured: {
   readonly hostConfig: RuntimeHostConfig["Type"]
-  readonly controlPlane: RuntimeControlPlaneTable["Type"]
+  readonly contextInsert: RuntimeContextInsertService
+  readonly contextRead: RuntimeContextReadService
   readonly hostSession: HostSessionRow
   readonly workflowEngine: WorkflowEngine.WorkflowEngine["Type"]
 }): AgentToolHostService => ({
@@ -904,15 +941,12 @@ const runtimeHostAgentToolHostService = (captured: {
       }))
       // firegrid-factory-aligned-agent-tools.SESSION.1
       // firegrid-factory-aligned-agent-tools.SESSION.6
-      yield* RuntimeControlPlaneRecorder.insertLocalContext(intent, {
+      yield* captured.contextInsert.insertLocalContext(intent, {
         contextId: childContextId,
         createdBy: `agent-tool:${parentContextId}`,
-      }).pipe(
-        Effect.provideService(RuntimeControlPlaneTable, captured.controlPlane),
-        Effect.provideService(CurrentHostSession, captured.hostSession),
-      )
+      })
       const inputId = sessionNewInputIdForToolUse(childContextId, toolUseId)
-      yield* appendRuntimeIngress({
+      yield* appendIngressWithHostCapabilities(captured, {
         contextId: childContextId,
         inputId,
         kind: "message",
@@ -921,14 +955,8 @@ const runtimeHostAgentToolHostService = (captured: {
           content: [Prompt.textPart({ text: prompt })],
         }),
         idempotencyKey: inputId,
-      }).pipe(
-        Effect.provideService(RuntimeHostConfig, captured.hostConfig),
-        Effect.provideService(RuntimeControlPlaneTable, captured.controlPlane),
-      )
-      yield* requireLocalContext(childContextId).pipe(
-        Effect.provideService(RuntimeControlPlaneTable, captured.controlPlane),
-        Effect.provideService(CurrentHostSession, captured.hostSession),
-      )
+      })
+      yield* requireLocalContextWithHostCapabilities(captured, childContextId)
       yield* executeRuntimeContextWorkflow(
         captured.workflowEngine,
         RuntimeContextWorkflow,
@@ -953,52 +981,122 @@ const runtimeHostAgentToolHostService = (captured: {
     unsupportedAgentTool(toolUseId, "execute"),
   appendSessionPrompt: ({ toolUseId, sessionId, inputId, prompt }) =>
     // firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2
-    appendRuntimeIngress({
+    appendIngressWithHostCapabilities(captured, {
       contextId: sessionId,
       inputId,
       kind: "message",
       authoredBy: "workflow",
       payload: prompt,
       idempotencyKey: inputId,
-    }).pipe(
-      Effect.provideService(RuntimeHostConfig, captured.hostConfig),
-      Effect.provideService(RuntimeControlPlaneTable, captured.controlPlane),
-      Effect.asVoid,
-      Effect.mapError(cause =>
-        toolExecutionFailed(toolUseId, "session_prompt", cause)),
-    ),
+    }).pipe(Effect.mapError(cause =>
+      toolExecutionFailed(toolUseId, "session_prompt", cause))),
   cancelSession: ({ toolUseId }) =>
     unsupportedAgentTool(toolUseId, "session_cancel"),
   closeSession: ({ toolUseId }) =>
     unsupportedAgentTool(toolUseId, "session_close"),
   appendScheduledPrompt: ({ contextId, inputId, prompt }) =>
     // firegrid-host-context-authority.PROMPT_ROUTING.3
-    appendRuntimeIngress({
+    appendIngressWithHostCapabilities(captured, {
       contextId,
       inputId,
       kind: "message",
       authoredBy: "workflow",
       payload: prompt,
       idempotencyKey: inputId,
-    }).pipe(
-      Effect.provideService(RuntimeHostConfig, captured.hostConfig),
-      Effect.provideService(RuntimeControlPlaneTable, captured.controlPlane),
-      Effect.asVoid,
-      Effect.mapError(cause =>
-        toolExecutionFailed(inputId, "schedule_me", cause)),
-    ),
+    }).pipe(Effect.mapError(cause =>
+      toolExecutionFailed(inputId, "schedule_me", cause))),
 })
+
+const readRuntimeContextWithHostCapabilities = (
+  captured: {
+    readonly contextRead: RuntimeContextReadService
+  },
+  contextId: string,
+): Effect.Effect<RuntimeContext, RuntimeContextError> =>
+  Effect.gen(function* () {
+    const maybeContext = yield* captured.contextRead.readContext(contextId).pipe(
+      mapRuntimeContextError(
+        "runtime-control-plane.contexts.get",
+        "failed to read runtime context row",
+        contextId,
+      ),
+    )
+    return yield* Option.match(maybeContext, {
+      onNone: () =>
+        Effect.fail(asRuntimeContextError(
+          "runtime-control-plane.contexts.get",
+          `runtime context not found: ${contextId}`,
+          contextId,
+        )),
+      onSome: row => Effect.succeed(row),
+    })
+  })
+
+const requireLocalContextWithHostCapabilities = (
+  captured: {
+    readonly contextRead: RuntimeContextReadService
+    readonly hostSession: HostSessionRow
+  },
+  contextId: string,
+): Effect.Effect<RuntimeContext, ContextNotLocal | RuntimeContextError> =>
+  readRuntimeContextWithHostCapabilities(captured, contextId).pipe(
+    Effect.flatMap(context =>
+      context.host.hostId !== captured.hostSession.hostId
+        ? Effect.fail(new ContextNotLocal({
+          contextId,
+          hostId: context.host.hostId,
+          currentHostId: captured.hostSession.hostId,
+        }))
+        : Effect.succeed(context)),
+  )
+
+const appendIngressWithHostCapabilities = (
+  captured: {
+    readonly hostConfig: RuntimeHostConfig["Type"]
+    readonly contextRead: RuntimeContextReadService
+  },
+  request: RuntimeIngressRequest,
+) =>
+  Effect.gen(function* () {
+    const context = yield* readRuntimeContextWithHostCapabilities(
+      captured,
+      request.contextId,
+    ).pipe(
+      Effect.mapError(cause =>
+        runtimeIngressError(
+          "append",
+          "failed to resolve runtime context for ingress append",
+          request.contextId,
+          request.inputId,
+          cause,
+        )),
+    )
+    return yield* appendRuntimeIngressInCurrentContext(request).pipe(
+      provideRuntimeContext(context),
+      Effect.provide(RuntimeIngressAppenderLayer({
+        currentContextId: context.contextId,
+      })),
+      Effect.provide(ownerIngressLayer({
+        baseUrl: captured.hostConfig.durableStreamsBaseUrl,
+        ...(captured.hostConfig.headers === undefined ? {} : { headers: captured.hostConfig.headers }),
+        context,
+      })),
+      Effect.scoped,
+    )
+  }).pipe(Effect.asVoid)
 
 export const RuntimeHostAgentToolHostLive = Layer.effect(
   AgentToolHost,
   Effect.gen(function* () {
     const hostConfig = yield* RuntimeHostConfig
-    const controlPlane = yield* RuntimeControlPlaneTable
+    const contextInsert = yield* RuntimeContextInsert
+    const contextRead = yield* RuntimeContextRead
     const hostSession = yield* CurrentHostSession
     const workflowEngine = yield* WorkflowEngine.WorkflowEngine
     return runtimeHostAgentToolHostService({
       hostConfig,
-      controlPlane,
+      contextInsert,
+      contextRead,
       hostSession,
       workflowEngine,
     })

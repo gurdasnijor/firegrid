@@ -21,11 +21,11 @@
       "types": "./src/waits/index.ts",
       "default": "./src/waits/index.ts"
     },
-    "./agent-io": {
+    "./events": {
       "types": "./src/events/index.ts",
       "default": "./src/events/index.ts"
     },
-    "./agent-codecs": {
+    "./codecs": {
       "types": "./src/codecs/index.ts",
       "default": "./src/codecs/index.ts"
     },
@@ -37,7 +37,7 @@
       "types": "./src/agent-tools/index.ts",
       "default": "./src/agent-tools/index.ts"
     },
-    "./providers/sandboxes": {
+    "./sources/sandbox": {
       "types": "./src/sources/sandbox/index.ts",
       "default": "./src/sources/sandbox/index.ts"
     }

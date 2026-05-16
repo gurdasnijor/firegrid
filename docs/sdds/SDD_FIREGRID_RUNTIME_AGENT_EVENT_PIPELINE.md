@@ -68,8 +68,8 @@ older Fireline implementation model:
   harness boundary that turns protocol effects into normalized events.
 - `Sources.sandbox(...)` acquires the live process/sandbox resource used by the
   harness.
-- `RuntimeOutputJournal`, `RuntimeIngressAppender`, and the wait/tool
-  authorities make session progress replayable and observable.
+- durable Effect capability tags and their providing layers make session
+  progress replayable and observable.
 - `toolUseToEffect` and MCP/session tool exposure remain the Tools surface.
 
 The key RFC lesson carried into this SDD is identity vs. live ownership: a
@@ -88,35 +88,35 @@ The target principle is:
 
 ```txt
 Transforms, subscribers, codecs, and projections never write durable rows
-directly. Each durable table family has exactly one authority module, and that
-module is the only code allowed to commit rows for that family.
+directly. Each durable table family has exactly one provider layer for the
+capability tags that commit rows for that family.
 ```
 
-Concrete authority modules:
+Concrete authority layers:
 
-- `RuntimeOutputJournal`
+- `RuntimeOutputJournalLive`
   - owns `RuntimeOutputTable.events`;
   - owns `RuntimeOutputTable.logs`;
-  - exposes stream-terminal sinks for `AgentOutputEvent` and stderr/log rows.
-- `RuntimeIngressAppender`
+  - provides event/log `Queue.Enqueue`, `Sink`, and `Stream` capabilities.
+- `RuntimeIngressAppenderLive`
   - owns sequenced `RuntimeIngressTable.inputs` writes;
-  - exposes command-handler methods such as `append(...)`.
-- `RuntimeIngressDeliveryTracker`
+  - provides append/lookup `Effect` capabilities and input observation streams.
+- `RuntimeIngressDeliveryTrackerLive`
   - owns `RuntimeIngressTable.deliveries`;
-  - exposes claim/record methods used by delivery subscribers.
-- `RuntimeControlPlaneRecorder`
+  - provides claim/complete `Effect` capabilities.
+- `RuntimeControlPlaneRecorderLive`
   - owns `RuntimeControlPlaneTable.contexts`;
   - owns `RuntimeControlPlaneTable.runs`;
-  - exposes context create/load and run lifecycle record methods.
-- `DurableWaitStore`
+  - provides context insert and run lifecycle `Effect` capabilities.
+- `DurableWaitStoreLive`
   - owns durable wait rows and completions.
 - App-owned `DurableTable` facades
   - owned by their app modules;
   - may expose their own app-level write authority if needed.
 
-Some authorities expose `Sink` values because they terminate streams. Some
-authorities expose `Effect`-returning command handlers because they handle
-discrete commands. Both are write authorities.
+Some capability tags expose `Sink` values because they terminate streams. Some
+expose `Effect`-returning functions because they handle discrete commands.
+Append-only fire-and-forget paths should use `Queue.Enqueue` where it fits.
 
 ## Transactional Cutover
 
@@ -190,7 +190,6 @@ packages/runtime/src/
     runtime-ingress-delivery-tracker.ts
     runtime-control-plane-recorder.ts
     durable-wait-store.ts
-    registry.ts
     README.md
 
   subscribers/
@@ -249,27 +248,32 @@ hide different directions of travel.
 
 - Pipeline sources are live byte/process acquisition stages under `sources/`.
   They acquire resources and emit bytes into codecs.
-- Authority writes are the durable commit points. Some are stream-terminal
-  `Sink`s, such as `RuntimeOutputJournal.agentOutputSink`; others are command
-  methods, such as `RuntimeIngressAppender.append(...)`.
-- Authority read/observation surfaces are `SourceCollectionHandle`s over rows
-  already committed by that authority. These are observation streams for
-  `wait_for`, subscribers, metrics, and UI read models. They are not pipeline
-  byte sources and they are not durable write sinks.
-- Host observation wiring only registers authority read surfaces with
+- Durable writes are commit capabilities. They are exposed through stock Effect
+  shapes: `Queue.Enqueue` for append-only fire-and-forget writes, `Sink` for
+  stream-terminal commits, and narrow `Effect` functions when the caller needs
+  a committed row, lookup, claim, or lifecycle transition.
+- Durable observations are static `Stream` capability tags over rows already
+  committed by the owning layer. They are not pipeline byte sources and they
+  are not durable write sinks.
+- Dynamic `wait_for` lookup uses `SourceCollectionHandle` as a named
+  registration handle that resolves to a durable stream at replay/runtime. It
+  is not the static read-side abstraction.
+- Host observation wiring only registers dynamic source handles with
   `SourceCollections`. It does not own writes and should not introduce a
   second name for the same pipeline role.
 
-The counterpart to a `RuntimeOutputJournal.sources(...).agentOutputEvents`
-handle is therefore not another module under host wiring. Its write counterpart
-is `RuntimeOutputJournal.writeEvent(...)` or
-`RuntimeOutputJournal.agentOutputSink`. Likewise, the counterpart to
-`RuntimeIngressAppender.sources(...).inputs` is
-`RuntimeIngressAppender.append(...)`.
+The runtime therefore has two read paths over the same durable rows. Static
+subscribers, such as the tool router and permission-wait bridge, consume
+`Stream` capability tags through the Effect requirement channel because they
+are wired at compose time. Dynamic `wait_for` lookup consumes
+`SourceCollectionHandle`s because workflows reference source collections by
+name at replay time.
 
-Use local names that keep this directionality visible, for example
-`runtimeOutputObservationSources` or `runtimeOutputReadSources`, not generic
-names like `outputSources` that can be confused with process/byte sources.
+Use local names that keep directionality visible, for example
+`runtimeAgentOutputEvents` for a static observation stream and
+`runtimeAgentOutputEventsRegistration` for a dynamic wait source registration,
+not generic names like `outputSources` that can be confused with process/byte
+sources.
 
 ### Type-Level Stage Contracts
 
@@ -286,10 +290,13 @@ The cutover should prefer these enforceable shapes:
   `toolUseMode`;
 - transforms expose pure `Stream -> Stream` operators and cannot require
   authority services;
-- authorities expose only their write APIs (`Sink` or command `Effect` methods)
-  and typed read/observation `SourceCollectionHandle` surfaces;
-- subscribers accept read/observation `SourceCollectionHandle` surfaces plus
-  authority APIs, not raw `DurableTable` collection facades;
+- durable table authorities are provided as Effect capability tags: static
+  write capabilities use `Queue.Enqueue`, `Sink`, or narrow `Effect` methods;
+  static observation capabilities use `Stream`;
+- subscribers consume static `Stream`/write capability tags through the Effect
+  requirement channel, not raw `DurableTable` collection facades;
+- dynamic `wait_for` source lookup uses `SourceCollectionHandle` as the named
+  registration handle, not as the universal read-side abstraction;
 - pipeline/host composition accepts these stage contracts and wires them
   together, but does not construct protocol rows or mutate table collections
   directly.
@@ -301,29 +308,57 @@ keys. The goal is not elaborate nominal typing everywhere; it is to make
 cross-stage routing bugs visible at compile time before semgrep has to catch
 them.
 
-`Stream`, `Sink`, and `Effect` types should encode directionality:
+The cutover should define at least these branded identities where they cross
+stage boundaries: `RuntimeContextId`, `RuntimeActivityAttempt`, `ToolUseId`,
+`PermissionRequestId`, `RuntimeSubscriberId`, `RuntimeAuthoritySourceName`, and
+`RuntimeIdempotencyKey`. Idempotency-key builders should decode/encode through
+schema-owned constructors rather than free-form string concatenation at call
+sites.
+
+`Stream`, `Sink`, `Queue.Enqueue`, `Effect`, `Layer`, and `Context.Tag` should
+encode directionality directly. Do not add Firegrid-specific aliases for
+shapes that Effect already names. Durability is an invariant carried by the
+tag and layer that provide the capability, not by inventing a parallel
+capability vocabulary.
 
 ```ts
-type RuntimeTransform<A, B, E = never, R = never> =
-  (input: Stream.Stream<A, E, R>) => Stream.Stream<B, E, R>
+const sequenceAndStamp = (
+  input: Stream.Stream<AgentOutputEvent, CodecError, CodecSession>,
+): Stream.Stream<RuntimeEventRow, RuntimeEventError, CodecSession> =>
+  input.pipe(Stream.mapEffect(/* ... */))
 
-type RuntimeAuthorityReadSurface<A> = SourceCollectionHandle
+export class RuntimeIngressAppendAndGet extends Context.Tag(
+  "@firegrid/runtime/RuntimeIngressAppendAndGet",
+)<RuntimeIngressAppendAndGet, {
+  readonly append: (
+    request: RuntimeIngressRequest,
+  ) => Effect.Effect<RuntimeIngressInputRow, RuntimeIngressAppendError>
+}>() {}
 
-type RuntimeAuthorityCommand<A, E, R> = (input: A) => Effect.Effect<unknown, E, R>
+export class RuntimeAgentOutputEvents extends Context.Tag(
+  "@firegrid/runtime/RuntimeAgentOutputEvents",
+)<RuntimeAgentOutputEvents, {
+  readonly stream:
+    Stream.Stream<RuntimeAgentOutputObservation, DurableTableError>
+}>() {}
 ```
 
-The concrete implementation can choose better local names, but the public shape
-must preserve the distinction: a read surface is not a source stage, a source
-stage is not a journal sink, and a subscriber cannot become a hidden durable
-writer by accepting a table facade.
+The public shape must preserve the distinction: a process/source stage is not a
+durable observation stream, an observation stream is not a journal sink, and a
+subscriber cannot become a hidden durable writer by accepting a table facade.
+If a transform is just a function from `Stream` to `Stream`, leave it as a
+function. If it needs to be a first-class pipeline value, use Effect's
+`Channel` rather than inventing a parallel transform abstraction.
 
 ### Substrate vs. Composition
 
 The pipeline distinguishes two layers.
 
-Authorities, source-collection contracts, and the codec runtime are substrate.
-They define what writes a durable row, what reads a journal, and how protocol
-sessions become normalized event streams. Substrate is change-controlled,
+Durable capability tags, their providing layers, dynamic source-collection
+registration, and the codec runtime are substrate. They define which Effect
+capabilities durably write rows, which capabilities replay committed rows, how
+dynamic `wait_for` lookup resolves named sources, and how protocol sessions
+become normalized event streams. Substrate is change-controlled,
 semgrep-enforced, and registered in the authority registry. Adding or modifying
 substrate requires SDD/spec revision.
 
@@ -331,22 +366,21 @@ Subscribers, codec attachments, and routing components are composition. They
 are pluggable wiring on top of substrate and can be added, removed, or
 reconfigured without changing the authority registry. The permission-wait
 bridge, the tool router, the ingress-delivery subscriber, and the stderr journal
-are composition: they consume read/observation `SourceCollectionHandle`
-surfaces, route through chosen logic, and append through authorities.
+are composition: they consume durable `Stream` capabilities, route through
+chosen logic, and append through durable write capabilities.
 
 Composition is static, strongly typed pipeline wiring in this cutover. The
 invariant is narrow: when a component affects durable behavior, it must do so
-through read/observation `SourceCollectionHandle` surfaces and authority APIs so
+through durable capability tags or dynamic `SourceCollectionHandle` lookup so
 its externally visible effects are durable, observable, and replay-safe. This
-SDD does not introduce dynamic
-middleware, a serializable topology specification, or user-authored runtime
-closures.
+SDD does not introduce dynamic middleware, a serializable topology
+specification, or user-authored runtime closures.
 
 `tools/lowering/tool-host.ts` contains the service tag/interface only. The
 host-coupled live implementation belongs under
 `host/agent-tool-host-live.ts`, because it fans out to
-`RuntimeControlPlaneRecorder`, `RuntimeIngressAppender`, workflow execution,
-and other host authorities.
+runtime control-plane, runtime ingress, workflow execution, and other durable
+capability tags.
 
 ## Lifecycle Discipline
 
@@ -438,328 +472,158 @@ Examples:
 - detect terminal events;
 - coalesce text deltas if needed.
 
-### Authorities
+### Durable Effect Capabilities
 
-Authorities are the only modules that write durable rows for their table
-family.
+Authorities are ownership rules and live layers, not a new type family. The
+typed runtime surface should be ordinary Effect capabilities behind
+`Context.Tag`s whose identity carries the durability promise.
 
-Authority modules are one concept, not five unrelated concepts named
-recorder/appender/tracker/journal/store. The implementation names may remain
-domain-specific, but the exported shape should follow Effect's service and
-capability pattern directly:
+A durable table authority is the only live layer that may provide the capability
+tags for its table family. For example, the runtime output layer owns the
+`RuntimeOutputTable.events/logs` storage and provides event/log append,
+observation, and sink capabilities. The word "journal" may remain as informal
+terminology for that layer, but there is no separate `Journal` or `Authority`
+type that callers depend on.
+
+The target shape is stock Effect interfaces:
 
 ```ts
-export class RuntimeOutputJournal extends Context.Tag(
-  "@firegrid/runtime/RuntimeOutputJournal",
-)<RuntimeOutputJournal, RuntimeOutputJournal.Service>() {}
+export class RuntimeEventLog extends Context.Tag(
+  "@firegrid/runtime/RuntimeEventLog",
+)<RuntimeEventLog, Queue.Enqueue<RuntimeEventRow>>() {}
 
-export namespace RuntimeOutputJournal {
-  export interface Service extends Write, Read {}
-}
+export class RuntimeEventAppendAndGet extends Context.Tag(
+  "@firegrid/runtime/RuntimeEventAppendAndGet",
+)<RuntimeEventAppendAndGet, {
+  readonly append: (
+    row: RuntimeEventRow,
+  ) => Effect.Effect<RuntimeEventRow, RuntimeOutputError>
+}>() {}
+
+export class RuntimeEventStream extends Context.Tag(
+  "@firegrid/runtime/RuntimeEventStream",
+)<RuntimeEventStream, Stream.Stream<RuntimeEventRow, DurableTableError>>() {}
+
+export class RuntimeLogLog extends Context.Tag(
+  "@firegrid/runtime/RuntimeLogLog",
+)<RuntimeLogLog, Queue.Enqueue<RuntimeLogLineRow>>() {}
+
+export class RuntimeLogStream extends Context.Tag(
+  "@firegrid/runtime/RuntimeLogStream",
+)<RuntimeLogStream, Stream.Stream<RuntimeLogLineRow, DurableTableError>>() {}
+
+export class RuntimeAgentOutputEvents extends Context.Tag(
+  "@firegrid/runtime/RuntimeAgentOutputEvents",
+)<RuntimeAgentOutputEvents, Stream.Stream<
+  RuntimeAgentOutputObservation,
+  DurableTableError
+>>() {}
+
+export class RuntimeAgentOutputRowSink extends Context.Tag(
+  "@firegrid/runtime/RuntimeAgentOutputRowSink",
+)<RuntimeAgentOutputRowSink, Sink.Sink<
+  void,
+  RuntimeEventRow,
+  never,
+  RuntimeOutputError
+>>() {}
+
+export const RuntimeOutputJournalLive: Layer.Layer<
+  | RuntimeEventLog
+  | RuntimeEventAppendAndGet
+  | RuntimeEventStream
+  | RuntimeAgentOutputEvents
+  | RuntimeLogLog
+  | RuntimeAgentOutputRowSink
+  | RuntimeLogStream,
+  never,
+  RuntimeOutputTable
+> = /* constructs all tags from RuntimeOutputTable */
 ```
-
-The table-backed implementation is a `Layer` that constructs the service from
-the underlying `DurableTable` services. Runtime code depends on the service
-through the Effect requirement channel or on a narrow structural capability
-interface passed as a typed parameter. It does not depend on module-global
-authority singletons and does not receive table facades.
 
 This mirrors Effect's own least-privilege interfaces. `Queue.Queue<A>` extends
 both `Queue.Enqueue<A>` and `Queue.Dequeue<A>`, while producers can depend only
-on `Enqueue` and consumers can depend only on `Dequeue`. Runtime authorities
-follow the same pattern: the full service composes write and read capabilities,
-while subscribers and transforms receive only the capability they need.
+on `Enqueue` and consumers can depend only on `Dequeue`. Runtime durability is
+orthogonal: `RuntimeEventLog` is still an `Enqueue`, but its tag/layer contract
+says `Queue.offer` commits durably.
 
-The shared vocabulary is intentionally thin and expressed in Effect types:
+Most write paths should use stock capabilities:
 
-```ts
-type RuntimeAuthorityCommand<Input, Output, Error, Requirements = never> =
-  (input: Input) => Effect.Effect<Output, Error, Requirements>
+- append-only fire-and-forget writes use `Queue.Enqueue<Row>`;
+- stream-terminal writes use `Sink.Sink<Out, In, L, E, R>`;
+- observation/replay uses `Stream.Stream<Row, E, R>`;
+- lookups use plain functions returning `Effect<Option<Row>, E, R>`.
 
-type RuntimeAuthoritySink<Input, Output, Error, Requirements = never> =
-  Sink.Sink<Output, Input, never, Error, Requirements>
+When callers need the committed row back after id assignment, timestamping, or
+canonical encoding, expose an explicit sibling capability such as
+`RuntimeEventAppendAndGet`. Do not stretch `Queue.Enqueue.offer` away from its
+standard `Effect<boolean>` shape.
 
-interface RuntimeAuthorityObservation<Row = unknown> {
-  readonly name: RuntimeAuthoritySourceName
-  readonly subscribe: () => Stream.Stream<Row, DurableTableError>
-}
-```
+Narrow `Effect` capability services use object-with-method services rather than
+function-as-service values. For example, callers use
+`(yield* RuntimeEventAppendAndGet).append(row)`. This follows the common Effect
+service convention and leaves room to add a sibling operation without changing
+the service value shape.
 
-Write capabilities expose domain commands as `Effect` methods and, when the
-authority terminates a stream, `Sink` values. Read capabilities expose named
-read/observation `SourceCollectionHandle`-like surfaces. Neither side exposes
-generic `DurableTable` CRUD.
-
-Concrete authorities specialize the capability pattern:
-
-```ts
-export class RuntimeOutputJournal extends Context.Tag(
-  "@firegrid/runtime/RuntimeOutputJournal",
-)<RuntimeOutputJournal, RuntimeOutputJournal.Service>() {}
-
-export namespace RuntimeOutputJournal {
-  export interface Service extends Write, Read {}
-
-  export interface Write {
-    readonly writeEvent: RuntimeAuthorityCommand<
-      RuntimeEventRow,
-      RuntimeEventRow,
-      RuntimeOutputError
-    >
-    readonly writeLog: RuntimeAuthorityCommand<
-      RuntimeLogLineRow,
-      RuntimeLogLineRow,
-      RuntimeOutputError
-    >
-    readonly agentOutputSink: RuntimeAuthoritySink<
-      RuntimeEventRow,
-      RuntimeTerminalEvidence,
-      RuntimeOutputError
-    >
-    readonly logSink: RuntimeAuthoritySink<
-      RuntimeLogLineRow,
-      void,
-      RuntimeOutputError
-    >
-  }
-
-  export interface Read {
-    readonly events: RuntimeAuthorityObservation<RuntimeEventRow>
-    readonly logs: RuntimeAuthorityObservation<RuntimeLogLineRow>
-    readonly agentOutputEvents:
-      RuntimeAuthorityObservation<RuntimeAgentOutputObservation>
-  }
-}
-
-export class RuntimeIngressAppender extends Context.Tag(
-  "@firegrid/runtime/RuntimeIngressAppender",
-)<RuntimeIngressAppender, RuntimeIngressAppender.Service>() {}
-
-export namespace RuntimeIngressAppender {
-  export interface Service extends Write, Read {}
-
-  export interface Write {
-    readonly append: RuntimeAuthorityCommand<
-      RuntimeIngressRequest,
-      RuntimeIngressInputRow,
-      RuntimeIngressAppendError
-    >
-    readonly findInput: RuntimeAuthorityCommand<
-      RuntimeIngressInputId,
-      Option.Option<RuntimeIngressInputRow>,
-      RuntimeIngressReadError
-    >
-  }
-
-  export interface Read {
-    readonly inputs: RuntimeAuthorityObservation<RuntimeIngressInputRow>
-  }
-}
-```
-
-Other authorities follow the same service/capability shape:
+Dynamic `wait_for` registration is the one place that needs a named handle.
+`SourceCollectionHandle` is the runtime lookup record for "find this durable
+stream later by source name." Static subscribers should consume `Stream`
+capabilities directly; `wait_for` and source registration use
+`SourceCollectionHandle` because they cross a dynamic name boundary:
 
 ```ts
-export namespace RuntimeIngressDeliveryTracker {
-  export interface Service extends Write, Read {}
+export class RuntimeIngressInputStream extends Context.Tag(
+  "@firegrid/runtime/RuntimeIngressInputStream",
+)<RuntimeIngressInputStream, Stream.Stream<
+  RuntimeIngressInputRow,
+  DurableTableError
+>>() {}
 
-  export interface Write {
-    readonly claimInput: (
-      row: RuntimeIngressInputRow,
-      options: { readonly subscriberId: RuntimeSubscriberId },
-    ) => Effect.Effect<
-      Option.Option<RuntimeIngressDeliveryRow>,
-      RuntimeIngressDeliveryError
-    >
-    readonly recordCompleted: RuntimeAuthorityCommand<
-      RuntimeIngressDeliveryRow,
-      RuntimeIngressDeliveryRow,
-      RuntimeIngressDeliveryError
-    >
-  }
-
-  export interface Read {
-    readonly deliveries:
-      RuntimeAuthorityObservation<RuntimeIngressDeliveryRow>
-  }
-}
-
-export namespace RuntimeControlPlaneRecorder {
-  export interface Service extends Write, Read {}
-
-  export interface Write {
-    readonly insertLocalContext: RuntimeAuthorityCommand<
-      RuntimeContextIntent,
-      RuntimeContext,
-      RuntimeControlPlaneError
-    >
-    readonly recordStarted: RuntimeAuthorityCommand<
-      RuntimeRunStart,
-      RuntimeRunRow,
-      RuntimeControlPlaneError
-    >
-    readonly recordExited: RuntimeAuthorityCommand<
-      RuntimeRunExit,
-      RuntimeRunRow,
-      RuntimeControlPlaneError
-    >
-    readonly recordFailed: RuntimeAuthorityCommand<
-      RuntimeRunFailure,
-      RuntimeRunRow,
-      RuntimeControlPlaneError
-    >
-  }
-
-  export interface Read {
-    readonly contexts: RuntimeAuthorityObservation<RuntimeContext>
-    readonly runs: RuntimeAuthorityObservation<RuntimeRunRow>
-  }
-}
-
-export namespace DurableWaitStore {
-  export interface Service extends Write, Read {}
-
-  export interface Write {
-    readonly upsertWait: RuntimeAuthorityCommand<
-      DurableWaitRow,
-      DurableWaitRow,
-      RuntimeWaitError
-    >
-    readonly upsertCompletion: RuntimeAuthorityCommand<
-      DurableWaitCompletionRow,
-      DurableWaitCompletionRow,
-      RuntimeWaitError
-    >
-  }
-
-  export interface Read {
-    readonly waits: RuntimeAuthorityObservation<DurableWaitRow>
-    readonly completions:
-      RuntimeAuthorityObservation<DurableWaitCompletionRow>
-  }
-}
+export const runtimeIngressInputSourceRegistration = (
+  stream: Stream.Stream<RuntimeIngressInputRow, DurableTableError>,
+): SourceCollectionHandle => ({
+  name: RuntimeAuthoritySourceNames.runtimeIngressInputs,
+  subscribe: () => stream,
+})
 ```
 
-The concrete code should not introduce a shared runtime object API that every
-authority must implement before there is a real generic operation to call.
-`RuntimeAuthorityCommand`, `RuntimeAuthoritySink`, and
-`RuntimeAuthorityObservation` are naming aids for the SDD and optional local
-type aliases; the load-bearing contract is the Effect service tag plus
-capability interfaces.
+The same provider layer that supplies a static `Stream` capability also
+constructs the corresponding `SourceCollectionHandle` from that stream. Static
+subscribers and dynamic `wait_for` lookup must resolve to the same underlying
+durable rows through one subscription mechanism per row family.
 
-Subscriber dependencies should be least-privilege. For example, a tool router
-that only observes output and appends ingress should be typed roughly as:
+Subscribers are functions that take session-specific parameters and return an
+`Effect` whose requirement channel declares durable capability tags:
 
 ```ts
-const runToolRouter = (
-  options: {
-    readonly output: RuntimeOutputJournal.Read
-    readonly ingress: RuntimeIngressAppender.Write
-    readonly waitStore: DurableWaitStore.Write
-  },
-) => Stream.runDrain(/* ... */)
+export const runToolRouter = (options): Effect.Effect<
+  void,
+  ToolRouterError,
+  | RuntimeAgentOutputEvents
+  | RuntimeIngressAppendAndGet
+  | DurableWaitAppendAndGet
+> => Effect.gen(function*() {
+  const outputEvents = yield* RuntimeAgentOutputEvents
+  const appendIngress = yield* RuntimeIngressAppendAndGet
+  const appendWait = yield* DurableWaitAppendAndGet
+  // ...
+})
 ```
 
-or equivalently as an `Effect` requiring narrow service tags if the
-implementation defines separate read/write tags. It should not accept
-`RuntimeOutputTable`, `RuntimeIngressTable`, or the full
-`RuntimeOutputJournal.Service` unless it truly needs the entire service.
-
-The old generic shape below is not the target:
-
-```ts
-interface RuntimeAuthority<Write, Read> {
-  readonly write: Write
-  readonly read: Read
-}
-
-type RuntimeOutputAuthority =
-  RuntimeAuthority<RuntimeOutputWrites, RuntimeOutputReads>
-
-interface RuntimeOutputWrites {
-  readonly writeEvent: RuntimeAuthorityCommand<RuntimeEventRow, RuntimeEventRow, RuntimeOutputError>
-  readonly writeLog: RuntimeAuthorityCommand<RuntimeLogLineRow, RuntimeLogLineRow, RuntimeOutputError>
-  readonly agentOutputSink: RuntimeAuthoritySink<RuntimeEventRow, RuntimeTerminalEvidence, RuntimeOutputError>
-  readonly logSink: RuntimeAuthoritySink<RuntimeLogLineRow, void, RuntimeOutputError>
-}
-
-interface RuntimeOutputReads {
-  readonly events: RuntimeAuthorityRead<RuntimeEventRow>
-  readonly logs: RuntimeAuthorityRead<RuntimeLogLineRow>
-  readonly agentOutputEvents: RuntimeAuthorityRead<RuntimeAgentOutputObservation>
-}
-
-type RuntimeOutputAuthority =
-  RuntimeAuthority<RuntimeOutputWrites, RuntimeOutputReads>
-
-interface RuntimeIngressWrites {
-  readonly append: RuntimeAuthorityCommand<RuntimeIngressRequest, RuntimeIngressInputRow, RuntimeIngressAppendError>
-  readonly findInput: RuntimeAuthorityCommand<RuntimeIngressInputId, Option.Option<RuntimeIngressInputRow>, RuntimeIngressReadError>
-}
-
-interface RuntimeIngressReads {
-  readonly inputs: RuntimeAuthorityRead<RuntimeIngressInputRow>
-}
-
-type RuntimeIngressAuthority =
-  RuntimeAuthority<RuntimeIngressWrites, RuntimeIngressReads>
-
-interface RuntimeIngressDeliveryWrites {
-  readonly claimInput: (
-    row: RuntimeIngressInputRow,
-    options: { readonly subscriberId: RuntimeSubscriberId },
-  ) => Effect.Effect<Option.Option<RuntimeIngressDeliveryRow>, RuntimeIngressDeliveryError>
-  readonly recordCompleted: RuntimeAuthorityCommand<RuntimeIngressDeliveryRow, RuntimeIngressDeliveryRow, RuntimeIngressDeliveryError>
-}
-
-interface RuntimeIngressDeliveryReads {
-  readonly deliveries: RuntimeAuthorityRead<RuntimeIngressDeliveryRow>
-}
-
-type RuntimeIngressDeliveryAuthority =
-  RuntimeAuthority<RuntimeIngressDeliveryWrites, RuntimeIngressDeliveryReads>
-
-interface RuntimeControlPlaneWrites {
-  readonly insertLocalContext: RuntimeAuthorityCommand<RuntimeContextIntent, RuntimeContext, RuntimeControlPlaneError>
-  readonly recordStarted: RuntimeAuthorityCommand<RuntimeRunStart, RuntimeRunRow, RuntimeControlPlaneError>
-  readonly recordExited: RuntimeAuthorityCommand<RuntimeRunExit, RuntimeRunRow, RuntimeControlPlaneError>
-  readonly recordFailed: RuntimeAuthorityCommand<RuntimeRunFailure, RuntimeRunRow, RuntimeControlPlaneError>
-}
-
-interface RuntimeControlPlaneReads {
-  readonly contexts: RuntimeAuthorityRead<RuntimeContext>
-  readonly runs: RuntimeAuthorityRead<RuntimeRunRow>
-}
-
-type RuntimeControlPlaneAuthority =
-  RuntimeAuthority<RuntimeControlPlaneWrites, RuntimeControlPlaneReads>
-
-interface RuntimeWaitWrites {
-  readonly upsertWait: RuntimeAuthorityCommand<DurableWaitRow, DurableWaitRow, RuntimeWaitError>
-  readonly upsertCompletion: RuntimeAuthorityCommand<DurableWaitCompletionRow, DurableWaitCompletionRow, RuntimeWaitError>
-}
-
-interface RuntimeWaitReads {
-  readonly waits: RuntimeAuthorityRead<DurableWaitRow>
-  readonly completions: RuntimeAuthorityRead<DurableWaitCompletionRow>
-}
-
-type RuntimeWaitAuthority =
-  RuntimeAuthority<RuntimeWaitWrites, RuntimeWaitReads>
-```
-
-That generic wrapper adds vocabulary without adding capability isolation. The
-target is closer to Effect's existing `Context.Tag` services and
-`Queue.Enqueue`/`Queue.Dequeue` split: domain service tags with narrow
-capability interfaces.
+Do not pass runtime-owned `DurableTable` facades to subscribers. Do not pass a
+module-shaped service when a stock Effect capability tag is enough. Do not
+introduce Firegrid-specific aliases such as `DurableAppend`,
+`DurableObservation`, `RuntimeAuthorityCommand`, `RuntimeAuthoritySink`, or
+`RuntimeAuthorityObservation`; use `Queue.Enqueue`, `Stream`, `Sink`, `Effect`,
+and `SourceCollectionHandle` directly.
 
 Examples:
 
 ```txt
-AgentOutputEvent stream -> RuntimeOutputJournal.agentOutputSink
-RuntimeIngressRequest   -> RuntimeIngressAppender.append(...)
-run lifecycle transition -> RuntimeControlPlaneRecorder.recordStarted(...)
-wait_for tool call -> DurableWaitStore.register(...)
+AgentOutputEvent stream -> RuntimeAgentOutputRowSink
+RuntimeIngressRequest   -> RuntimeIngressAppendAndGet
+run lifecycle transition -> RuntimeRunAppendAndGet
+wait_for tool call -> DurableWaitAppendAndGet
 ```
 
 This does not replace `DurableTable`. `DurableTable` remains the storage and
@@ -773,17 +637,16 @@ facade and violates this SDD.
 
 Subscribers read from durable seams and dispatch follow-up effects.
 
-Subscribers consume only through read/observation `SourceCollectionHandle`
-surfaces exposed by authority modules. They should not call
-`DurableTable.rows()` directly and should not reach into table collections owned
-by other authorities.
+Subscribers consume static durable observations through `Stream` capability
+tags and dynamic wait sources through `SourceCollectionHandle` lookup. They
+should not call `DurableTable.rows()` directly and should not reach into table
+collections owned by other authorities.
 
-Authority modules own both their write surface and their subscriber read
-surface. For example, `RuntimeOutputJournal` owns writes to
-`RuntimeOutputTable.events/logs` and exposes read/observation
-`SourceCollectionHandle` surfaces for runtime output observations. Host
-composition registers those handles with `SourceCollections`; subscribers await
-and consume the handles by name.
+Authority layers own both the write capabilities and the static/dynamic read
+capabilities for their table family. For example, the runtime output layer owns
+writes to `RuntimeOutputTable.events/logs`, provides `RuntimeEventStream` and
+`RuntimeAgentOutputEvents` stream tags, and registers the corresponding
+`SourceCollectionHandle`s for `wait_for` lookup.
 
 Per-dispatch tasks use `Stream.acquireRelease` or equivalent scoped resource
 lifetime so interruption, success, and failure are handled distinctly.
@@ -807,7 +670,7 @@ source bytes
   -> codec session
   -> subscribers for ingress/stderr/tool routing
   -> output transforms
-  -> RuntimeOutputJournal sink
+  -> RuntimeAgentOutputRowSink
 ```
 
 Sketch:
@@ -832,11 +695,13 @@ const runAgentSession = (options) =>
         contextId: options.context.contextId,
       }).pipe(Effect.forkScoped)
 
+      const outputSink = yield* RuntimeAgentOutputRowSink
+
       return yield* session.outputs.pipe(
         Transforms.codecOutputBuffer,
         Transforms.sequenceAndStamp(options.context, options.activityAttempt),
         Stream.ensuring(commitSessionCheckpoint(options.context)),
-        Stream.run(RuntimeOutputJournal.agentOutputSink),
+        Stream.run(outputSink),
       )
     }),
   )
@@ -853,10 +718,10 @@ behavioral change. The target behavior is:
 
 ```txt
 Agent emits ToolUse
-  -> RuntimeOutputJournal commits ToolUse row
+  -> RuntimeAgentOutputRowSink commits ToolUse row
   -> ToolRouter subscriber observes durable ToolUse row
   -> toolUseToEffect runs under workflow/tool authority
-  -> RuntimeIngressAppender appends ToolResult control/input row
+  -> RuntimeIngressAppendAndGet appends ToolResult control/input row
   -> IngressDelivery subscriber sends ToolResult back to codec if session alive
 ```
 
@@ -885,7 +750,7 @@ ToolUse rows and dispatch any missing results.
 
 ### ToolUse Envelope Decode
 
-`RuntimeOutputJournal` writes `RuntimeEventRow.raw` as the schema-encoded
+`RuntimeAgentOutputRowSink` writes `RuntimeEventRow.raw` as the schema-encoded
 Firegrid agent-output envelope:
 
 ```json
@@ -903,14 +768,14 @@ decodeRuntimeAgentOutputEnvelope(raw)
 runtimeAgentOutputObservationFromRow(row)
 ```
 
-`RuntimeOutputJournal` uses the encoder for writes and exposes decoded
-read/observation `SourceCollectionHandle` surfaces for subscribers. Subscribers
-do not parse raw JSON themselves.
+The output capability layer uses the encoder for writes and provides decoded
+static `RuntimeAgentOutputEvents` stream capability tags for subscribers.
+Subscribers do not parse raw JSON themselves.
 
 ### ToolResult Idempotency
 
-Subscriber-produced tool results append through `RuntimeIngressAppender` with
-this idempotency key:
+Subscriber-produced tool results append through `RuntimeIngressAppendAndGet`
+with this idempotency key:
 
 ```txt
 agent-tool-result:<contextId>:<activityAttempt>:<toolUseId>
@@ -949,8 +814,9 @@ observations from the Agent to the Client. This is a deliberate ACP
 directionality contract, not a missing Firegrid dispatch path. They are not
 dispatch candidates. The tool router does not claim them, and no runtime-side
 subscriber is required to consume them in v1. They remain queryable through the
-`RuntimeOutputJournal` read/observation `SourceCollectionHandle` surface for UI,
-metrics, tracing, and future observation-consuming subscribers.
+`RuntimeAgentOutputEvents` stream capability and its dynamic wait/source
+registration for UI, metrics, tracing, and future observation-consuming
+subscribers.
 
 ACP tool execution may flow through MCP servers supplied during ACP session
 setup, where MCP owns the request/result exchange. Agent-owned tools may also
@@ -1014,74 +880,80 @@ The durable path is:
 ```txt
 ACP Agent calls session/request_permission
   -> AcpCodec emits AgentOutputEvent.PermissionRequest
-  -> RuntimeOutputJournal commits the PermissionRequest row
-  -> RuntimeOutputJournal exposes a decoded permission observation source
-  -> wait_for / session.wait.forPermissionRequest matches that source
-  -> human/product/runtime writes a PermissionResponse through RuntimeIngressAppender
+  -> RuntimeAgentOutputRowSink commits the PermissionRequest row
+  -> RuntimeAgentOutputEvents exposes a decoded permission observation stream
+  -> wait_for / session.wait.forPermissionRequest matches that stream or its dynamic source registration
+  -> human/product/runtime writes a PermissionResponse through RuntimeIngressAppendAndGet
   -> IngressDelivery subscriber sends PermissionResponse to the active codec
   -> AcpCodec resolves the pending ACP requestPermission promise
   -> ACP Agent continues or rejects based on the selected decision
 ```
 
 `PermissionRequest` is durable because it is first committed to
-`RuntimeOutputTable.events`. `wait_for` observes it through the same
-`SourceCollections` read surface exposed by `RuntimeOutputJournal`; it must not
-parse raw output rows or subscribe to codec internals.
+`RuntimeOutputTable.events`. Static subscribers observe it through the
+`RuntimeAgentOutputEvents` stream capability. Dynamic `wait_for` observes the
+same rows through the `SourceCollectionHandle` registered by the output
+capability layer. Neither path parses raw output rows or subscribes to codec
+internals.
 
 `PermissionResponse` is durable because it is appended through
-`RuntimeIngressAppender` as a control input row. The ingress delivery subscriber
-is responsible for delivering that row to the active codec session and recording
-delivery evidence through `RuntimeIngressDeliveryTracker`.
+`RuntimeIngressAppendAndGet` as a control input row. The ingress delivery
+subscriber is responsible for delivering that row to the active codec session
+and recording delivery evidence through the runtime ingress delivery claim/
+completion capabilities.
 
 This keeps permission semantics aligned with the rest of the pipeline:
 
-- observation is output-journal authority;
-- waiting is durable wait authority over a source collection;
-- response is ingress-appender authority;
-- delivery is ingress-delivery authority;
+- observation is a durable output stream capability;
+- waiting is the durable wait capability over a dynamic source registration;
+- response is the runtime ingress append capability;
+- delivery is the runtime ingress claim/completion capability;
 - codec-specific ACP promise resolution remains inside `AcpCodec`.
 
 The permission bridge is an ordinary pipeline subscriber. It consumes the
-`RuntimeOutputJournal` permission observation source, waits for or delegates to
-a human/product decision source, and appends the response through
-`RuntimeIngressAppender`. It does not talk to `AcpCodec` directly:
+`RuntimeAgentOutputEvents` stream capability, waits for or delegates to a
+human/product decision source, and appends the response through
+`RuntimeIngressAppendAndGet`. It does not talk to `AcpCodec` directly:
 
 ```ts
-const permissionWaitBridge = (options) =>
-  SourceCollections.stream(
-    RuntimeOutputJournal.sources.agentOutputEvents,
-    {
-      whereFields: {
-        contextId: options.contextId,
-        _tag: "PermissionRequest",
-      },
-    },
-  ).pipe(
-    Stream.mapEffect(permission =>
-      DurableWaitStore.waitFor({
+export const permissionWaitBridge = (options): Effect.Effect<
+  void,
+  PermissionBridgeError,
+  RuntimeAgentOutputEvents | DurableWaitForMatching | RuntimeIngressAppendAndGet
+> => Effect.gen(function*() {
+  const outputEvents = yield* RuntimeAgentOutputEvents
+  const waitFor = yield* DurableWaitForMatching
+  const appendIngress = yield* RuntimeIngressAppendAndGet
+
+  return yield* outputEvents.pipe(
+    Stream.filter((event) =>
+      event.contextId === options.contextId &&
+      event._tag === "PermissionRequest",
+    ),
+    Stream.mapEffect((permission) =>
+      waitFor.matching({
         source: options.permissionDecisionSource,
         whereFields: {
           contextId: options.contextId,
           permissionRequestId: permission.permissionRequestId,
         },
-      }).pipe(
-        Effect.flatMap(decision =>
-          RuntimeIngressAppender.append({
-            contextId: options.contextId,
-            kind: "control",
-            payload: {
-              _tag: "PermissionResponse",
-              permissionRequestId: permission.permissionRequestId,
-              decision,
-            },
-            idempotencyKey:
-              `permission-response:${options.contextId}:${permission.permissionRequestId}`,
-          }),
-        ),
-      )
+      }).pipe(Effect.flatMap((decision) =>
+        appendIngress.append({
+          contextId: options.contextId,
+          kind: "control",
+          payload: {
+            _tag: "PermissionResponse",
+            permissionRequestId: permission.permissionRequestId,
+            decision,
+          },
+          idempotencyKey:
+            `permission-response:${options.contextId}:${permission.permissionRequestId}`,
+        })
+      ))
     ),
     Stream.runDrain,
   )
+})
 ```
 
 The ingress-delivery subscriber shown in the runtime composition sketch is what
@@ -1093,17 +965,17 @@ same.
 
 The permission-wait bridge is the v1 instance of the general
 `control_channel_request_response` capability pattern. Each such capability is
-a subscriber that consumes an observation source from `RuntimeOutputJournal`,
-routes through a durable wait or backend source, and appends evidence through
-`RuntimeIngressAppender`. The active codec resolves the protocol-specific
+a subscriber that consumes a durable output stream capability, routes through a
+durable wait or backend source, and appends evidence through the runtime ingress
+append capability. The active codec resolves the protocol-specific
 request from the delivered response. Future capability bridges, such as ACP
 file/terminal handlers or Codex app-server dynamic tool methods, do not require
 new substrate authorities by default; they compose on the substrate this SDD
-defines. The substrate guarantee for capability bridges is: an observation
-source on `RuntimeOutputJournal`, durable wait through `DurableWaitStore`,
-evidence append through `RuntimeIngressAppender`, and ingress delivery to the
-active codec. A capability that fits this shape composes; a capability that does
-not fit this shape requires substrate revision through a new SDD.
+defines. The substrate guarantee for capability bridges is: a static durable
+output stream capability, durable wait capability, runtime ingress append
+capability, and ingress delivery to the active codec. A capability that fits
+this shape composes; a capability that does not fit this shape requires
+substrate revision through a new SDD.
 
 If the Agent process dies after the `PermissionRequest` row is committed but
 before the response is delivered, the committed request remains observable. A
@@ -1112,33 +984,61 @@ re-associate the pending protocol request; otherwise the response remains
 durable ingress evidence for the terminated attempt. The event-pipeline cutover
 does not invent protocol-level rewind semantics for ACP.
 
-## Authority Registry And Enforcement
+## Authority Provider Map And Enforcement
 
-The table-to-authority mapping should live in one canonical file, for example:
+The capability-to-provider mapping must use Effect's existing layer and tag
+surfaces. It must not re-create a parallel registry as strings such as
+`capabilityTag: "RuntimeEventLog"` or `providerLayer:
+"RuntimeOutputJournalLive"`. Those string registries are less safe than the
+actual `Context.Tag` and `Layer` values, drift from the layer graph, and repeat
+the role already modeled by Effect's `Layer`/`Context.Tag` APIs.
+
+For the static runtime host composition, the canonical artifact is the Effect
+layer graph itself: one provider layer per table family, each providing the
+durable capability tags it owns. Runtime source files must not introduce or
+export a registry that exists only for review or documentation. If a provider
+map is not needed by production runtime behavior, it belongs in tests or docs
+only and must be derived from actual Effect tag/layer values rather than
+duplicated strings.
+
+If runtime code needs keyed lookup of provider layers, it should use Effect's
+`LayerMap` surface from `effect` instead of implementing a custom string map.
+`LayerMap` is for dynamic keyed layer lookup/caching; it is not required for
+ordinary static host composition. The important invariant is that the provider
+map is expressed in terms of existing Effect values, not a one-off Firegrid
+registry abstraction.
+
+The provider map documents which durable capability tags are provided by which
+layer and which table family backs each capability:
 
 ```txt
-packages/runtime/src/authorities/registry.ts
+RuntimeEventLog -> RuntimeOutputJournalLive -> RuntimeOutputTable.events
+RuntimeEventAppendAndGet -> RuntimeOutputJournalLive -> RuntimeOutputTable.events
+RuntimeEventStream -> RuntimeOutputJournalLive -> RuntimeOutputTable.events
+RuntimeAgentOutputEvents -> RuntimeOutputJournalLive -> RuntimeOutputTable.events
+RuntimeAgentOutputRowSink -> RuntimeOutputJournalLive -> RuntimeOutputTable.events
+RuntimeLogLog -> RuntimeOutputJournalLive -> RuntimeOutputTable.logs
+RuntimeLogStream -> RuntimeOutputJournalLive -> RuntimeOutputTable.logs
+RuntimeIngressAppendAndGet -> RuntimeIngressAppenderLive -> RuntimeIngressTable.inputs
+RuntimeIngressInputStream -> RuntimeIngressAppenderLive -> RuntimeIngressTable.inputs
+RuntimeIngressClaim -> RuntimeIngressDeliveryTrackerLive -> RuntimeIngressTable.deliveries
+RuntimeIngressDeliveryComplete -> RuntimeIngressDeliveryTrackerLive -> RuntimeIngressTable.deliveries
+RuntimeContextInsert -> RuntimeControlPlaneRecorderLive -> RuntimeControlPlaneTable.contexts
+RuntimeRunAppendAndGet -> RuntimeControlPlaneRecorderLive -> RuntimeControlPlaneTable.runs
+DurableWaitAppendAndGet -> DurableWaitStoreLive -> DurableTools wait rows
+DurableWaitCompletionAppendAndGet -> DurableWaitStoreLive -> DurableTools wait rows
+DurableWaitForMatching -> DurableWaitStoreLive -> DurableTools wait rows + registered source streams
 ```
 
-The registry documents which module owns writes for each table family:
+One layer constructor per table family may provide multiple tags. That grouping
+keeps composition readable while preserving least-privilege consumer types. The
+review artifact is not a new bundled service API; it is the list of tags each
+layer provides and the table collections backing them.
 
-```txt
-RuntimeOutputTable.events/logs -> authorities/runtime-output-journal.ts
-RuntimeIngressTable.inputs -> authorities/runtime-ingress-appender.ts
-RuntimeIngressTable.deliveries -> authorities/runtime-ingress-delivery-tracker.ts
-RuntimeControlPlaneTable.contexts/runs -> authorities/runtime-control-plane-recorder.ts
-DurableTools wait rows -> authorities/durable-wait-store.ts
-```
-
-Each authority declares both:
-
-- its write API; and
-- its read/observation `SourceCollectionHandle` API, when subscribers or
-  `wait_for` need to observe its rows.
-
-`RuntimeIngressDeliveryTracker` is a single authority for all
-`RuntimeIngressTable.deliveries` rows. Raw stdin delivery and each codec
-delivery path share the tracker; `subscriberId` is the namespace dimension.
+The runtime ingress delivery claim/complete capabilities share one provider
+layer for all `RuntimeIngressTable.deliveries` rows. Raw stdin delivery and each
+codec delivery path share the same underlying tracker; `subscriberId` is the
+namespace dimension.
 Subscriber ids use:
 
 ```txt
@@ -1155,32 +1055,41 @@ runtime-ingress:acp:codec
 
 The delivery dedupe key remains `(subscriberId, inputId)`.
 
-`RuntimeControlPlaneRecorder` owns both context insertion and run lifecycle
-rows. Runtime host-facing local `RuntimeContext` insertion moves under this
-recorder authority. Host-context authority remains the read/validation surface
+The runtime control-plane capability layer owns both context insertion and run
+lifecycle rows. Runtime host-facing local `RuntimeContext` insertion moves under
+this provider. Host-context authority remains the read/validation surface
 for `CurrentHostSession`, `CurrentRuntimeContext`, `requireLocalContext`, and
 stream URL derivation; runtime must not re-export its legacy context write
 helper.
 
 The protocol-level `insertLocalRuntimeContext` helper remains a deprecated
 browser-safe compatibility path during the cutover for callers that cannot
-import `@firegrid/runtime`. It is not a runtime write authority and is tracked
-by `firegrid-runtime-agent-event-pipeline.TRANSACTIONAL_CUTOVER.3-2` until a
-browser-safe command authority replaces it.
+import `@firegrid/runtime`. It is not a runtime capability provider and is
+tracked by `firegrid-runtime-agent-event-pipeline.TRANSACTIONAL_CUTOVER.3-2`
+until a browser-safe command authority replaces it.
 
 The file currently named `host-context-authority.ts` is renamed to
 `host/authority-context.ts` in the cutover so the name reflects its read and
 validation role rather than implying control-plane write ownership.
 
-Semgrep should reject direct `.insert`, `.upsert`, and `.delete` calls against
-DurableTable collection facades outside the owning authority module, tests, and
-explicit app-owned table modules.
+Enforcement has two levels:
 
-The semgrep rule fires on direct collection-facade mutation calls. Calls to
-authority methods such as `RuntimeIngressAppender.append(...)` or
-`RuntimeOutputJournal.writeEvent(...)` are allowed. Test harness allowlists must
-be explicit; harnesses that are exercising production behavior should use the
-authority APIs instead of direct table writes.
+1. Semgrep rejects direct `.insert`, `.upsert`, and `.delete` calls against
+   runtime-owned DurableTable collection facades outside the layer that owns the
+   corresponding capability tags, tests, and explicit app-owned table modules.
+2. Tests verify that every durable capability tag expected by the runtime host
+   has exactly one production provider layer in the canonical runtime-host layer
+   composition. A tag such as `RuntimeEventLog` has exactly one live provider in
+   runtime production code. The check must inspect actual Effect tag/layer
+   values or test-local metadata derived from those values; a production
+   registry file whose only consumer is tests/review is not allowed. If this
+   later becomes a static lint, the Effect layer graph remains the source of
+   truth.
+
+Calls to durable capability tags such as `RuntimeIngressAppendAndGet` or
+`RuntimeEventLog` are allowed. Test harness allowlists must be explicit;
+harnesses that are exercising production behavior should use the durable
+capability tags instead of direct table writes.
 
 The rule is not directory-name theater. It prevents transforms, codecs,
 projections, and subscribers from silently becoming durable write owners.
@@ -1234,7 +1143,7 @@ of partial diffs. Reviewers should start from:
 
 1. `packages/runtime/src/pipeline/README.md`;
 2. `packages/runtime/src/pipeline/compose.ts`;
-3. `packages/runtime/src/authorities/registry.ts`;
+3. the canonical runtime-host layer composition and authority provider tests;
 4. the stage README files;
 5. the ACID-linked tests.
 
@@ -1242,8 +1151,10 @@ The PR description should include:
 
 - the full target tree;
 - every satisfied ACID from `firegrid-runtime-agent-event-pipeline`;
-- the authority registry table;
-- the read/observation `SourceCollectionHandle` surfaces each authority exposes;
+- the durable capability registry table: tag, providing layer, and backing
+  table family;
+- the dynamic `SourceCollectionHandle` registrations exposed for `wait_for`
+  lookup;
 - validation commands;
 - confirmation that the SDD prose, feature ACIDs, and codec contract type use
   the identical mode names `observation_only`, `client_result_roundtrip`, and
@@ -1265,15 +1176,18 @@ The PR description should include:
 
 ## Terminal Events And Exit Evidence
 
-`RuntimeOutputJournal.agentOutputSink` returns a result that includes the
-decoded terminal event. It commits the `Terminated` event row before returning
-that result. `host/workflow-handler.ts` uses the sink result to call
-`RuntimeControlPlaneRecorder.recordExited(...)` or
-`recordFailed(...)`.
+`RuntimeAgentOutputRowSink` is the row-commit sink only. It commits each
+`RuntimeEventRow` before any subscriber side effect depends on that row.
+The codec runtime owns terminal detection over the same output stream: it
+writes every row through `RuntimeAgentOutputRowSink`, observes the
+`Terminated` event after the write effect completes, and only then returns
+terminal exit evidence to `RuntimeRunAppendAndGet`.
 
-The committed journal row remains the durable source of truth. The returned
-sink result is the in-process handoff that avoids re-reading the same row in
-the hot path while preserving journal-first ordering.
+If the codec output stream ends without a `Terminated` event, codec runtime
+fails with the named `agent-codec.outputs` runtime output error and host
+workflow handling records a failed run through the runtime run append
+capability. Keeping terminal aggregation in codec runtime avoids making a
+row sink parse protocol envelopes while preserving journal-first ordering.
 
 ## Outside V1
 
@@ -1297,15 +1211,15 @@ Future Firegrid resource-plane work has two complementary halves:
    requests, and future analogous capability methods, route through pluggable
    backend components that durably journal operations as evidence. This half is
    composition over the existing pipeline: each capability bridge consumes a
-   journal source, routes through a chosen backend, and appends evidence through
-   the appropriate authority. It does not require new substrate authorities by
-   default; `RuntimeOutputJournal` and `RuntimeIngressAppender` are the
-   journaling targets.
+   durable output stream capability, routes through a chosen backend, and
+   appends evidence through the appropriate durable write capability. It does
+   not require new substrate authorities by default; the output stream and
+   ingress append capability layers are the journaling targets.
 
 Both halves are orthogonal to this event-pipeline cutover. The pipeline's
-authority pattern and source-collection contract are the substrate those
-features will compose on top of. The future resource-plane SDD can decide
-whether it needs serializable middleware/topology specs, stable component
+durable capability tags and dynamic source-registration contract are the
+substrate those features will compose on top of. The future resource-plane SDD
+can decide whether it needs serializable middleware/topology specs, stable component
 identity, ordering, credential references, or other authoring constraints.
 
 This is distinct from stdio-jsonl, which remains the v1 protocol for Firegrid

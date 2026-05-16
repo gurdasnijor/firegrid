@@ -28,9 +28,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   FiregridRuntimeHostWithWorkflowLive,
   appendRuntimeIngress,
-  insertLocalRuntimeContext,
   startRuntime,
 } from "./index.ts"
+import { RuntimeContextInsert } from "../authorities/index.ts"
 import {
   RuntimeEnvResolverPolicy,
 } from "../sources/sandbox/secrets.ts"
@@ -70,7 +70,8 @@ const runWithConfig = (
 ) =>
   Effect.gen(function* () {
     const intent = runConfigToRuntimeContextIntent(config)
-    const context = yield* insertLocalRuntimeContext(intent, {
+    const contextInsert = yield* RuntimeContextInsert
+    const context = yield* contextInsert.insertLocalContext(intent, {
       contextId: `ctx_${crypto.randomUUID()}`,
       createdBy: firegridRunCreatedBy,
     })

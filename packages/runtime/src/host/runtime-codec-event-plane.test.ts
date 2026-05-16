@@ -267,6 +267,54 @@ for await (const line of rl) {
     expect(toolResultChunk).toBeDefined()
   }, 15_000)
 
+  it("firegrid-runtime-agent-event-pipeline.INGREDIENTS.6 commits Terminated before returning terminal exit evidence", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `runtime-codec-missing-terminal-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const childCode = `
+console.log(JSON.stringify({ type: "text", text: "before-terminal", messageId: "m1" }))
+`
+    const contextId = await seedContext({
+      namespace,
+      hostId,
+      argv: [process.execPath, "--input-type=module", "-e", childCode],
+      agentProtocol: "stdio-jsonl",
+    })
+
+    const result = await Effect.runPromise(
+      startRuntime({ contextId }).pipe(
+        Effect.provide(hostLayer({ namespace, hostId })),
+      ),
+    )
+
+    expect(result).toMatchObject({ contextId, exitCode: 0 })
+    const events = await Effect.runPromise(queryAgentEvents({ namespace, hostId, contextId }))
+    expect(events).toContainEqual(expect.objectContaining({ _tag: "Ready" }))
+    expect(events).toContainEqual(expect.objectContaining({ _tag: "TextChunk" }))
+    expect(events.at(-1)).toMatchObject({ _tag: "Terminated", exitCode: 0 })
+
+    const runs = await Effect.runPromise(Effect.gen(function* () {
+      const table = yield* RuntimeControlPlaneTable
+      return yield* table.runs.query(coll =>
+        coll.toArray
+          .filter(row => row.contextId === contextId)
+          .map(row => row.status),
+      )
+    }).pipe(
+      Effect.provide(RuntimeControlPlaneTable.layer({
+        streamOptions: {
+          url: runtimeControlPlaneStreamUrl({
+            baseUrl,
+            namespace,
+          }),
+          contentType: "application/json",
+        },
+      })),
+      Effect.scoped,
+    ))
+    expect(runs).toEqual(expect.arrayContaining(["started", "exited"]))
+  }, 15_000)
+
   it("firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1 journals ACP PermissionRequest and resumes it through RuntimeIngress PermissionResponse", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-codec-acp-${crypto.randomUUID()}`

@@ -3,6 +3,7 @@ import type {
   RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
 import { Effect, Ref, Stream } from "effect"
+import { RuntimeLogLineAppendAndGet } from "../authorities/index.ts"
 import type { AgentByteStream } from "../events/index.ts"
 import {
   asRuntimeContextError,
@@ -55,10 +56,10 @@ export const runStderrJournal = (options: {
   readonly context: RuntimeContext
   readonly activityAttempt: number
   readonly bytes: AgentByteStream
-  readonly writeLog: (row: RuntimeLogLineRow) => Effect.Effect<void, unknown>
   readonly nowIso: Effect.Effect<string>
-}): Effect.Effect<void, RuntimeContextError> =>
+}): Effect.Effect<void, RuntimeContextError, RuntimeLogLineAppendAndGet> =>
   Effect.gen(function* () {
+    const logLines = yield* RuntimeLogLineAppendAndGet
     const sequenceRef = yield* Ref.make(0)
     yield* codecStderrLines(options.context.contextId, options.bytes.stderr).pipe(
       Stream.mapEffect(line =>
@@ -72,7 +73,7 @@ export const runStderrJournal = (options: {
             raw: line,
             receivedAt,
           })
-          yield* options.writeLog(row).pipe(
+          yield* logLines.append(row).pipe(
             mapRuntimeContextError(
               "runtime-output.codec.stderr.write",
               "failed to write codec stderr runtime log row",

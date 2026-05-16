@@ -384,7 +384,7 @@ Acceptance:
 - runtime, client, and factory no longer duplicate JSON wrapper parsing;
 - permission observations expose top-level `options`;
 - factory can derive permission read models without importing
-  `@firegrid/runtime/agent-io`;
+  `@firegrid/runtime/events`;
 - `wait_for` over runtime agent-output observations keeps working.
 
 ### P1: App-Owned Fact Source Descriptor

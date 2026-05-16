@@ -451,9 +451,10 @@ rules:
         Runtime-owned DurableTable writes must route through the authority
         module for that table family so durable commits have one owner.
       fix-hint: |
-        Use RuntimeOutputJournal, RuntimeIngressAppender,
-        RuntimeIngressDeliveryTracker, RuntimeControlPlaneRecorder, or
-        DurableWaitStore.
+        Use the owning runtime authority capability tag, such as
+        RuntimeEventAppendAndGet, RuntimeIngressAppendAndGet,
+        RuntimeIngressDeliveryClaimAndComplete, RuntimeContextInsert,
+        RuntimeRunAppendAndGet, or DurableWaitStore.
     paths:
       include:
         - "/packages/runtime/src/**/*.ts"

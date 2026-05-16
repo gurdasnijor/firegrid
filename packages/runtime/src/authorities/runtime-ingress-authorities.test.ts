@@ -5,9 +5,15 @@ import {
 } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { RuntimeIngressAppender } from "./runtime-ingress-appender.ts"
 import {
-  RuntimeIngressDeliveryTracker,
+  RuntimeIngressAppendAndGet,
+  RuntimeIngressAppenderLayer,
+  RuntimeIngressInputStream,
+} from "./runtime-ingress-appender.ts"
+import {
+  RuntimeIngressDeliveries,
+  RuntimeIngressDeliveryClaimAndComplete,
+  RuntimeIngressDeliveryTrackerLayer,
   runtimeIngressSubscriberId,
 } from "./runtime-ingress-delivery-tracker.ts"
 import { RuntimeAuthoritySourceNames } from "./source-names.ts"
@@ -57,23 +63,19 @@ describe("runtime ingress authorities", () => {
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
-        const table = yield* RuntimeIngressTable
-        const firstRow = yield* RuntimeIngressAppender.appendTo(table, first, {
-          currentContextId: contextId,
-        })
-        const duplicate = yield* RuntimeIngressAppender.appendTo(table, first, {
-          currentContextId: contextId,
-        })
-        const secondRow = yield* RuntimeIngressAppender.appendTo(table, second, {
-          currentContextId: contextId,
-        })
+        const appender = yield* RuntimeIngressAppendAndGet
+        yield* RuntimeIngressInputStream
+        const firstRow = yield* appender.append(first)
+        const duplicate = yield* appender.append(first)
+        const secondRow = yield* appender.append(second)
         return {
           firstRow,
           duplicate,
           secondRow,
-          sourceName: RuntimeIngressAppender.sources(table).inputs.name,
+          sourceName: RuntimeAuthoritySourceNames.runtimeIngressInputs,
         }
       }).pipe(
+        Effect.provide(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
         Effect.provide(tableLayer(`runtime-ingress-appender-${crypto.randomUUID()}`)),
         Effect.scoped,
       ),
@@ -102,22 +104,24 @@ describe("runtime ingress authorities", () => {
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
-        const table = yield* RuntimeIngressTable
-        const row = yield* RuntimeIngressAppender.appendTo(table, request, {
-          currentContextId: contextId,
-        })
-        const first = yield* RuntimeIngressDeliveryTracker.claimInputTo(table, row, {
+        const appender = yield* RuntimeIngressAppendAndGet
+        const tracker = yield* RuntimeIngressDeliveryClaimAndComplete
+        yield* RuntimeIngressDeliveries
+        const row = yield* appender.append(request)
+        const first = yield* tracker.claimInput(row, {
           subscriberId,
         })
-        const second = yield* RuntimeIngressDeliveryTracker.claimInputTo(table, row, {
+        const second = yield* tracker.claimInput(row, {
           subscriberId,
         })
         return {
           first,
           second,
-          sourceName: RuntimeIngressDeliveryTracker.sources(table).deliveries.name,
+          sourceName: RuntimeAuthoritySourceNames.runtimeIngressDeliveries,
         }
       }).pipe(
+        Effect.provide(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
+        Effect.provide(RuntimeIngressDeliveryTrackerLayer),
         Effect.provide(tableLayer(`runtime-ingress-delivery-${crypto.randomUUID()}`)),
         Effect.scoped,
       ),

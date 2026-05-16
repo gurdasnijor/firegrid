@@ -146,6 +146,19 @@ export const orderSequencedRuntimeIngressRows = <Error, Requirements>(
     Stream.flatMap(rows => Stream.fromIterable(rows)),
   )
 
+export const sequencedRuntimeIngressRowsForContext = <Error, Requirements>(
+  source: Stream.Stream<RuntimeIngressInputRow, Error, Requirements>,
+  contextId: string,
+): Stream.Stream<RuntimeIngressInputRow, Error, Requirements> =>
+  source.pipe(
+    Stream.filter(row =>
+      row.contextId === contextId &&
+      row.status === "sequenced" &&
+      row.sequence !== undefined,
+    ),
+    orderSequencedRuntimeIngressRows,
+  )
+
 export const runtimeIngressRowsToAgentInputEvents = (
   contextId: string,
 ): RuntimeTransform<ClaimedRuntimeIngressRow, ClaimedAgentInputEvent, RuntimeContextError> =>

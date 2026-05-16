@@ -20,7 +20,6 @@ import {
   RuntimeControlPlaneTable,
   type HostId,
   hostOwnedStreamUrl,
-  insertLocalRuntimeContext,
   local,
   makeHostStreamPrefix,
   normalizeRuntimeIntent,
@@ -31,9 +30,8 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { firegridHostLayer } from "../../../../src/host.ts"
-import {
-  FiregridRuntimeHostWithWorkflowLive,
-} from "../host/index.ts"
+import { RuntimeContextInsert } from "../authorities/index.ts"
+import { FiregridRuntimeHostWithWorkflowLive } from "../host/index.ts"
 import { WorkflowEngineTable } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { FiregridMcpServerLayer, runtimeContextMcpPath } from "./mcp-host.ts"
 
@@ -434,7 +432,8 @@ describe("FiregridMcpServerLayer runtime-context routing", () => {
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
-          const context = yield* insertLocalRuntimeContext(
+          const contextInsert = yield* RuntimeContextInsert
+          const context = yield* contextInsert.insertLocalContext(
             normalizeRuntimeIntent(local.jsonl({
               argv: [process.execPath, "-e", "process.exit(0)"],
             })),

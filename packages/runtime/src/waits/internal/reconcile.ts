@@ -17,22 +17,20 @@
  * already-done deferreds itself.
  */
 
-import { type WorkflowEngine } from "@effect/workflow"
+import type { WorkflowEngine } from "@effect/workflow"
 import { Effect, Exit, Option } from "effect"
-import { type DurableToolsTable } from "./table.ts"
 import { matchDeferredFor } from "./wait-for.ts"
-import { DurableWaitStore } from "../../authorities/index.ts"
+import type { DurableWaitStore } from "../../authorities/index.ts"
 
 export const reconcileCompletions = (
-  table: DurableToolsTable["Type"],
+  waitStore: DurableWaitStore["Type"],
   engine: WorkflowEngine.WorkflowEngine["Type"],
 ) =>
   Effect.gen(function*() {
-    const completions = yield* table.completions.query((coll) =>
-      coll.toArray)
+    const completions = yield* waitStore.completions
     yield* Effect.forEach(completions, (completion) =>
       Effect.gen(function*() {
-        const waitOpt = yield* DurableWaitStore.findWaitIn(table, completion.waitKey)
+        const waitOpt = yield* waitStore.findWait(completion.waitKey)
         if (Option.isNone(waitOpt)) return
         const wait = waitOpt.value
         // Timeout completions are produced inside the workflow body's race
@@ -42,7 +40,7 @@ export const reconcileCompletions = (
         // If the wait row is still `active`, the router crashed between
         // completion-row write and wait-row flip; bridge by flipping here.
         if (wait.status === "active") {
-          yield* DurableWaitStore.upsertWaitTo(table, { ...wait, status: "completed" })
+          yield* waitStore.upsertWait({ ...wait, status: "completed" })
         }
         // Issue the deferredDone regardless of whether the wait row was
         // already `completed`. The engine's Option.isNone guard makes

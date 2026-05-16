@@ -1,7 +1,7 @@
 /**
  * Local-process sandbox stdin delivery.
  *
- * Subscribes to sequenced RuntimeIngressTable input rows for a given
+ * Subscribes to sequenced runtime ingress input rows for a given
  * `(contextId, subscriberId)` and translates them into encoded stdin chunks
  * for the local-process sandbox. Per-key delivery progress is recorded through
  * RuntimeIngressDeliveryTracker.
@@ -16,7 +16,7 @@
  *
  * Implements:
  *  - effect-durable-operators.FIREGRID_PROOF.4 — runtime input stdin delivery
- *    observes RuntimeIngressTable rows directly, not a generic consumer.
+ *    observes runtime ingress rows through a durable capability tag.
  *  - firegrid-agent-ingress.DELIVERY.1
  *  - firegrid-agent-ingress.DELIVERY.2
  *  - firegrid-agent-ingress.DELIVERY.3 — claim row is durable.
@@ -24,18 +24,16 @@
  */
 
 import {
-  RuntimeIngressTable,
-  RuntimeIngressInputRowSchema,
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Option, Schema, Stream } from "effect"
 import {
-  RuntimeIngressAppender,
-  RuntimeIngressDeliveryTracker,
+  RuntimeIngressDeliveryClaimAndComplete,
+  RuntimeIngressInputStream,
+  type RuntimeIngressDeliveryClaimAndCompleteService,
 } from "../../authorities/index.ts"
 import type { RuntimeSubscriberId } from "../../events/index.ts"
-import { orderSequencedRuntimeIngressRows } from "../../transforms/ingress-to-agent-input.ts"
-import type { SourceCollectionHandle } from "../../waits/index.ts"
+import { sequencedRuntimeIngressRowsForContext } from "../../transforms/ingress-to-agent-input.ts"
 
 export class LocalProcessStdinDeliveryError extends Schema.TaggedError<LocalProcessStdinDeliveryError>()(
   "LocalProcessStdinDeliveryError",
@@ -112,8 +110,8 @@ interface LocalProcessStdinDeliveryOptions {
 
 /**
  * Build a stdin source `Stream<Uint8Array, LocalProcessStdinDeliveryError>` for the
- * local-process sandbox. The returned Stream requires the RuntimeIngressTable
- * service.
+ * local-process sandbox. The returned Stream requires durable ingress
+ * capability tags, not RuntimeIngressTable facades.
  *
  * AtMostOnce semantic: the generated DurableTable `upsert` action attaches a
  * txid header and awaits `awaitTxId` before completing, so the claim is
@@ -153,27 +151,13 @@ const mapDeliveryError = (
 }
 
 const sequencedInputRows = (
-  source: SourceCollectionHandle,
+  source: Stream.Stream<RuntimeIngressInputRow, unknown>,
   contextId: string,
 ): Stream.Stream<RuntimeIngressInputRow, LocalProcessStdinDeliveryError> =>
-  source.subscribe().pipe(
-    Stream.mapEffect(row =>
-      Schema.decodeUnknown(RuntimeIngressInputRowSchema)(row).pipe(
-        Effect.mapError(cause =>
-          localProcessStdinDeliveryError(
-            "delivery-subscribe-decode",
-            "runtime input delivery source row decode failure",
-            contextId,
-            undefined,
-            cause,
-          )),
-      )),
-    Stream.filter(row =>
-      row.contextId === contextId &&
-      row.status === "sequenced" &&
-      row.sequence !== undefined,
-    ),
-    orderSequencedRuntimeIngressRows,
+  sequencedRuntimeIngressRowsForContext(
+    source,
+    contextId,
+  ).pipe(
     Stream.mapError(cause =>
       localProcessStdinDeliveryError(
         "delivery-subscribe",
@@ -189,17 +173,20 @@ export const localProcessStdinDelivery = (
 ): Stream.Stream<
   Uint8Array,
   LocalProcessStdinDeliveryError,
-  RuntimeIngressTable
+  RuntimeIngressInputStream | RuntimeIngressDeliveryClaimAndComplete
 > => {
   const stream = Stream.unwrap(
-    Effect.map(RuntimeIngressTable, table =>
-      sequencedInputRows(
-        RuntimeIngressAppender.sources(table).inputs,
+    Effect.gen(function* () {
+      const source = yield* RuntimeIngressInputStream
+      const deliveryTracker: RuntimeIngressDeliveryClaimAndCompleteService =
+        yield* RuntimeIngressDeliveryClaimAndComplete
+      return sequencedInputRows(
+        source,
         options.contextId,
       ).pipe(
         Stream.mapEffect(row =>
           Effect.gen(function* () {
-            const claimed = yield* RuntimeIngressDeliveryTracker.claimInputTo(table, row, {
+            const claimed = yield* deliveryTracker.claimInput(row, {
               subscriberId: options.subscriberId,
             })
             if (Option.isNone(claimed)) {
@@ -217,12 +204,8 @@ export const localProcessStdinDelivery = (
             Effect.mapError(mapDeliveryError(options)),
           )),
         Stream.filterMap(value => value),
-      ),
-    ),
+      )
+    }),
   )
-  return stream as Stream.Stream<
-    Uint8Array,
-    LocalProcessStdinDeliveryError,
-    RuntimeIngressTable
-  >
+  return stream
 }

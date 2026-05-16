@@ -6,9 +6,7 @@ import type {
 import { Clock, Effect, Option, Stream, type Layer } from "effect"
 import { FiregridAgentToolkit } from "../agent-tools/tools.ts"
 import {
-  RuntimeIngressAuthority,
-  RuntimeIngressDeliveryAuthority,
-  RuntimeOutputAuthority,
+  RuntimeAgentOutputRowSink,
 } from "../authorities/index.ts"
 import {
   AcpCodec,
@@ -115,9 +113,7 @@ export const runCodecRuntimeEventPipeline = (options: {
   readonly toolLoweringLayer: Layer.Layer<never, unknown, unknown>
 }) =>
   Effect.gen(function* () {
-    const ingressAuthority = yield* RuntimeIngressAuthority
-    const ingressDeliveryAuthority = yield* RuntimeIngressDeliveryAuthority
-    const outputAuthority = yield* RuntimeOutputAuthority
+    const outputSink = yield* RuntimeAgentOutputRowSink
     const codec = codecForAgentProtocol(options.protocol)
     const command = yield* commandForContext(options.context)
     const provider = yield* SandboxProvider
@@ -151,13 +147,10 @@ export const runCodecRuntimeEventPipeline = (options: {
       context: options.context,
       activityAttempt: options.activityAttempt,
       bytes,
-      writeLog: outputAuthority.write.writeLog,
       nowIso,
     }).pipe(Effect.forkScoped)
 
     yield* runIngressDelivery({
-      deliveryAuthority: ingressDeliveryAuthority.write,
-      source: ingressAuthority.read.inputs,
       contextId: options.context.contextId,
       subscriberId: agentCodecSubscriberId(options.protocol),
       send: session.send,
@@ -167,11 +160,6 @@ export const runCodecRuntimeEventPipeline = (options: {
       context: options.context,
       activityAttempt: options.activityAttempt,
       toolUseMode: session.toolUseMode,
-      source: outputAuthority.read.agentOutputEvents,
-      ingressAuthority: {
-        findInput: ingressAuthority.write.findInput,
-        append: ingressAuthority.write.append,
-      },
     }).pipe(
       Effect.provide(options.toolLoweringLayer),
       Effect.forkScoped,
@@ -196,8 +184,7 @@ export const runCodecRuntimeEventPipeline = (options: {
           sequence,
           event,
         ).pipe(
-          Effect.flatMap(row =>
-            outputAuthority.write.writeEvent(row)),
+          Effect.flatMap(row => Stream.run(Stream.succeed(row), outputSink)),
           mapRuntimeContextError(
             "runtime-output.codec.write",
             "failed to write codec runtime output row",

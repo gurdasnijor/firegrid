@@ -32,13 +32,13 @@ import {
   SourceCollections,
   sourceCollectionHandle,
 } from "@firegrid/runtime/durable-tools"
-import type { RuntimeEnvResolverPolicy } from "@firegrid/runtime/providers/sandboxes"
+import type { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
 import {
   AgentOutputEventSchema,
   PermissionDecisionSchema,
   PermissionOptionSchema,
   type AgentOutputEvent,
-} from "@firegrid/runtime/agent-io"
+} from "@firegrid/runtime/events"
 import { Clock, Effect, Either, Layer, Match, Option, Schema } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {

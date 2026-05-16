@@ -15,8 +15,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { AgentToolHost } from "../agent-tools/tool-host.ts"
 import { toolExecutionFailed } from "../agent-tools/tool-error.ts"
 import {
-  RuntimeIngressAppender,
-  RuntimeOutputJournal,
+  RuntimeIngressAppenderLayer,
+  RuntimeEventAppendAndGet,
+  RuntimeOutputJournalLayer,
 } from "../authorities/index.ts"
 import { encodeRuntimeAgentOutputEnvelope } from "../events/index.ts"
 import { runToolRouter } from "./tool-router.ts"
@@ -97,7 +98,7 @@ const committedToolUseRow = (input: {
 })
 
 const runWith = <A, E>(
-  layer: Layer.Layer<never, unknown, never>,
+  layer: Layer.Layer<unknown, unknown, unknown>,
   effect: Effect.Effect<A, E, unknown>,
 ): Promise<A> =>
   Effect.runPromise(
@@ -116,9 +117,17 @@ describe("runtime tool router subscriber", () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const streamId = `tool-router-replay-${crypto.randomUUID()}`
     const context = testContext(`ctx_${crypto.randomUUID()}`)
+    const outputCapabilities = RuntimeOutputJournalLayer.pipe(
+      Layer.provideMerge(outputTableLayer(streamId)),
+    )
+    const ingressCapabilities = RuntimeIngressAppenderLayer({
+      currentContextId: context.contextId,
+    }).pipe(
+      Layer.provideMerge(ingressTableLayer(streamId)),
+    )
     const layer = Layer.mergeAll(
-      outputTableLayer(streamId),
-      ingressTableLayer(streamId),
+      outputCapabilities,
+      ingressCapabilities,
       AgentToolHost.layer({
         spawnChildContext: unusedToolHostEffect,
         spawnChildContexts: unusedToolHostEffect,
@@ -129,15 +138,14 @@ describe("runtime tool router subscriber", () => {
         closeSession: unusedToolHostEffect,
         appendScheduledPrompt: unusedToolHostEffect,
       }),
-    ) as Layer.Layer<never, unknown, never>
+    )
 
     const result = await runWith(
       layer,
       Effect.gen(function* () {
-        const output = yield* RuntimeOutputTable
         const ingress = yield* RuntimeIngressTable
-        yield* RuntimeOutputJournal.writeEventTo(
-          output,
+        const appendEvent = yield* RuntimeEventAppendAndGet
+        yield* appendEvent.append(
           committedToolUseRow({
             context,
             activityAttempt: 1,
@@ -149,14 +157,6 @@ describe("runtime tool router subscriber", () => {
           context,
           activityAttempt: 1,
           toolUseMode: "client_result_roundtrip",
-          source: RuntimeOutputJournal.sources(output).agentOutputEvents,
-          ingressAuthority: {
-            findInput: inputId => ingress.inputs.get(inputId),
-            append: request =>
-              RuntimeIngressAppender.appendTo(ingress, request, {
-                currentContextId: context.contextId,
-              }),
-          },
         }).pipe(Effect.forkScoped)
         yield* Effect.sleep("100 millis")
         const first = yield* ingress.inputs.get(
@@ -167,14 +167,6 @@ describe("runtime tool router subscriber", () => {
           context,
           activityAttempt: 1,
           toolUseMode: "client_result_roundtrip",
-          source: RuntimeOutputJournal.sources(output).agentOutputEvents,
-          ingressAuthority: {
-            findInput: inputId => ingress.inputs.get(inputId),
-            append: request =>
-              RuntimeIngressAppender.appendTo(ingress, request, {
-                currentContextId: context.contextId,
-              }),
-          },
         }).pipe(Effect.forkScoped)
         yield* Effect.sleep("100 millis")
         yield* Fiber.interrupt(routerAfterReconstruction)

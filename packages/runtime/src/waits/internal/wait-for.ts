@@ -38,10 +38,7 @@ import {
   type Scope,
 } from "effect"
 import { type DurableTableError } from "effect-durable-operators"
-import {
-  DurableToolsTable,
-  type WaitRow,
-} from "./table.ts"
+import { type WaitRow } from "./table.ts"
 import { DurableWaitStore } from "../../authorities/index.ts"
 import {
   type FieldEqualsTrigger,
@@ -119,11 +116,11 @@ export interface WaitForOptions<A = unknown> {
 const upsertActiveWait = (
   waitName: string,
   row: WaitRow,
-  table: DurableToolsTable["Type"],
+  store: DurableWaitStore["Type"],
 ) =>
   Effect.gen(function*() {
     const existing = yield* Effect.mapError(
-      DurableWaitStore.findWaitIn(table, { executionId: row.executionId, name: waitName }),
+      store.findWait({ executionId: row.executionId, name: waitName }),
       (cause) =>
         waitForError({
           op: "wait-for/upsert",
@@ -133,7 +130,7 @@ const upsertActiveWait = (
         }),
     )
     if (Option.isSome(existing)) return existing.value
-    yield* Effect.mapError(DurableWaitStore.upsertWaitTo(table, row), (cause) =>
+    yield* Effect.mapError(store.upsertWait(row), (cause) =>
       waitForError({
         op: "wait-for/upsert",
         waitName,
@@ -147,11 +144,11 @@ const upsertActiveWait = (
 const writeTimeoutCompletion = (
   waitName: string,
   waitKey: { readonly executionId: string; readonly name: string },
-  table: DurableToolsTable["Type"],
+  store: DurableWaitStore["Type"],
 ) =>
   Effect.gen(function*() {
     const existing = yield* Effect.mapError(
-      DurableWaitStore.findWaitIn(table, waitKey),
+      store.findWait(waitKey),
       (cause) =>
         waitForError({
           op: "wait-for/timeout",
@@ -168,12 +165,7 @@ const writeTimeoutCompletion = (
     // will resolve the workflow; we should not overwrite the completion
     // record with a stale timeout.
     const existingCompletion = yield* Effect.mapError(
-      table.completions.query((coll) =>
-        coll.toArray.find(
-          (c) =>
-            c.waitKey.executionId === waitKey.executionId &&
-            c.waitKey.name === waitKey.name,
-        )),
+      store.findCompletion(waitKey),
       (cause) =>
         waitForError({
           op: "wait-for/timeout",
@@ -183,14 +175,14 @@ const writeTimeoutCompletion = (
         }),
     )
     if (
-      existingCompletion !== undefined &&
-      existingCompletion.outcome === "match"
+      Option.isSome(existingCompletion) &&
+      existingCompletion.value.outcome === "match"
     ) {
       return
     }
     const nowMs = yield* Clock.currentTimeMillis
     yield* Effect.mapError(
-      DurableWaitStore.upsertCompletionTo(table, {
+      store.upsertCompletion({
         waitKey,
         outcome: "timeout",
         completedAtMs: nowMs,
@@ -204,7 +196,7 @@ const writeTimeoutCompletion = (
         }),
     )
     yield* Effect.mapError(
-      DurableWaitStore.upsertWaitTo(table, { ...current, status: "timed_out" }),
+      store.upsertWait({ ...current, status: "timed_out" }),
       (cause) =>
         waitForError({
           op: "wait-for/timeout",
@@ -250,22 +242,16 @@ type MatchImplResult<A> = Effect.Effect<
   WaitForError | ParseResult.ParseError | DurableTableError,
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
-  | DurableToolsTable
+  | DurableWaitStore
   | Scope.Scope
 >
 
 const matchImpl = <A = unknown>(
   options: WaitForOptions<A>,
 ): MatchImplResult<A> =>
-  // `DurableDeferred.raceAll` in @effect/workflow surfaces `any` in its
-  // requirements channel via a generic-inference quirk on its array-tuple
-  // parameter; the gen body actually requires only the services declared on
-  // `MatchImplResult<A>`. Suppress no-unsafe-return narrowly rather than
-  // introduce an `as Effect.Effect<...>` assertion (forbidden by spec).
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   Effect.gen(function*() {
     const instance = yield* WorkflowEngine.WorkflowInstance
-    const table = yield* DurableToolsTable
+    const store = yield* DurableWaitStore
     const waitKey = {
       executionId: instance.executionId,
       name: options.name,
@@ -299,11 +285,11 @@ const matchImpl = <A = unknown>(
         ? {}
         : { deadlineMs: nowMs + options.timeoutMs }),
     }
-    yield* upsertActiveWait(options.name, baseRow, table)
+    yield* upsertActiveWait(options.name, baseRow, store)
     const matchDeferred = matchDeferredFor(deferredName)
     return options.timeoutMs === undefined
       ? yield* matchOnlyFlow(options, matchDeferred)
-      : yield* matchOrTimeoutFlow(options, matchDeferred, table, waitKey)
+      : yield* matchOrTimeoutFlow(options, matchDeferred, store, waitKey)
   })
 
 const matchOnlyFlow = <A>(
@@ -327,7 +313,7 @@ const matchOnlyFlow = <A>(
 const matchOrTimeoutFlow = <A>(
   options: WaitForOptions<A>,
   matchDeferred: ReturnType<typeof matchDeferredFor>,
-  table: DurableToolsTable["Type"],
+  store: DurableWaitStore["Type"],
   waitKey: { readonly executionId: string; readonly name: string },
 ): Effect.Effect<
   WaitForOutcome<A>,
@@ -362,7 +348,7 @@ const matchOrTimeoutFlow = <A>(
       inMemoryThreshold: Duration.zero,
     }).pipe(
       Effect.zipRight(
-        writeTimeoutCompletion(options.name, waitKey, table).pipe(
+        writeTimeoutCompletion(options.name, waitKey, store).pipe(
           Effect.orDie,
         ),
       ),

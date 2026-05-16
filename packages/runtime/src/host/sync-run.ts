@@ -48,8 +48,8 @@ export const decodeRunConfig = decodeLaunchConfig
 //
 // Build the RuntimeContextIntent (the durable `runtime` block) from
 // the validated config. Pure; no IO. The durable row is built by
-// `insertLocalRuntimeContext`, which adds contextId, createdAt, and
-// the host binding from the CurrentHostSession in scope. Splitting
+// `RuntimeContextInsert`, which adds contextId, createdAt, and the
+// host binding from the CurrentHostSession in scope. Splitting
 // this here keeps the firegrid:run binary free of host-binding
 // plumbing — the intent is the thing the binary owns, the bound row
 // is the thing the host owns.

@@ -13,23 +13,21 @@
  *  - firegrid-factory-aligned-agent-tools.OBSERVATION.3
  */
 
-import {
-  RuntimeControlPlaneTable,
-  RuntimeOutputTable,
-} from "@firegrid/protocol/launch"
-import { RuntimeIngressTable } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Layer } from "effect"
 import { SourceCollections } from "../waits/index.ts"
+import { sourceCollectionStreamHandle } from "../waits/internal/source-collections.ts"
 import {
   RuntimeAuthoritySourceNames as RuntimeObservationSourceNames,
   type RuntimeAuthoritySourceName as RuntimeObservationSourceName,
 } from "../authorities/source-names.ts"
 import {
-  RuntimeControlPlaneRecorder,
-  RuntimeIngressAppender,
-  RuntimeIngressDeliveryTracker,
-  RuntimeOutputJournal,
+  RuntimeAgentOutputEvents,
   type RuntimeAgentOutputObservation,
+  RuntimeIngressDeliveries,
+  RuntimeIngressInputStream,
+  RuntimeOutputEvents,
+  RuntimeOutputLogs,
+  RuntimeRuns,
 } from "../authorities/index.ts"
 
 export {
@@ -41,19 +39,36 @@ export {
 export const RuntimeObservationSourcesLive = Layer.scopedDiscard(
   Effect.gen(function* () {
     const sources = yield* SourceCollections
-    const controlPlane = yield* RuntimeControlPlaneTable
-    const output = yield* RuntimeOutputTable
-    const ingress = yield* RuntimeIngressTable
-    const controlPlaneReadSources = RuntimeControlPlaneRecorder.sources(controlPlane)
-    const runtimeOutputReadSources = RuntimeOutputJournal.sources(output)
-    const ingressInputReadSources = RuntimeIngressAppender.sources(ingress)
-    const ingressDeliveryReadSources = RuntimeIngressDeliveryTracker.sources(ingress)
+    const runtimeRuns = yield* RuntimeRuns
+    const runtimeOutputEvents = yield* RuntimeOutputEvents
+    const runtimeOutputLogs = yield* RuntimeOutputLogs
+    const ingressInputs = yield* RuntimeIngressInputStream
+    const ingressDeliveries = yield* RuntimeIngressDeliveries
+    const agentOutputEvents = yield* RuntimeAgentOutputEvents
 
-    yield* sources.register(controlPlaneReadSources.runs)
-    yield* sources.register(runtimeOutputReadSources.events)
-    yield* sources.register(runtimeOutputReadSources.logs)
-    yield* sources.register(ingressInputReadSources.inputs)
-    yield* sources.register(ingressDeliveryReadSources.deliveries)
-    yield* sources.register(runtimeOutputReadSources.agentOutputEvents)
+    yield* sources.register(sourceCollectionStreamHandle(
+      RuntimeObservationSourceNames.runtimeRuns,
+      runtimeRuns,
+    ))
+    yield* sources.register(sourceCollectionStreamHandle(
+      RuntimeObservationSourceNames.runtimeOutputEvents,
+      runtimeOutputEvents,
+    ))
+    yield* sources.register(sourceCollectionStreamHandle(
+      RuntimeObservationSourceNames.runtimeOutputLogs,
+      runtimeOutputLogs,
+    ))
+    yield* sources.register(sourceCollectionStreamHandle(
+      RuntimeObservationSourceNames.runtimeIngressInputs,
+      ingressInputs,
+    ))
+    yield* sources.register(sourceCollectionStreamHandle(
+      RuntimeObservationSourceNames.runtimeIngressDeliveries,
+      ingressDeliveries,
+    ))
+    yield* sources.register(sourceCollectionStreamHandle(
+      RuntimeObservationSourceNames.agentOutputEvents,
+      agentOutputEvents,
+    ))
   }),
 )

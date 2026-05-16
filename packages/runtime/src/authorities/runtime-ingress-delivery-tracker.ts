@@ -4,41 +4,26 @@ import {
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
 import { Context, Effect, Layer, Option } from "effect"
+import type { Stream } from "effect"
 import {
   runtimeSubscriberId as makeRuntimeSubscriberId,
-  type RuntimeAuthority,
-  type RuntimeAuthorityCommand,
-  type RuntimeAuthorityRead,
   type RuntimeSubscriberId,
 } from "../events/index.ts"
-import { sourceCollectionHandle } from "../waits/internal/source-collections.ts"
-import { RuntimeAuthoritySourceNames } from "./source-names.ts"
 import { authorityNowIso } from "./time.ts"
 
-interface RuntimeIngressDeliveryWrites {
+export interface RuntimeIngressDeliveryClaimAndCompleteService {
   readonly claimInput: (
     row: RuntimeIngressInputRow,
     options: {
       readonly subscriberId: RuntimeSubscriberId
     },
   ) => Effect.Effect<Option.Option<RuntimeIngressDeliveryRow>, unknown>
-  readonly recordCompleted: RuntimeAuthorityCommand<RuntimeIngressDeliveryRow, RuntimeIngressDeliveryRow, unknown>
+  readonly recordCompleted: (
+    delivery: RuntimeIngressDeliveryRow,
+  ) => Effect.Effect<RuntimeIngressDeliveryRow, unknown>
 }
 
-interface RuntimeIngressDeliveryReads {
-  readonly deliveries: RuntimeAuthorityRead
-}
-
-export type RuntimeIngressDeliveryAuthorityService = RuntimeAuthority<
-  RuntimeIngressDeliveryWrites,
-  RuntimeIngressDeliveryReads
->
-
-export class RuntimeIngressDeliveryAuthority extends Context.Tag(
-  "@firegrid/runtime/RuntimeIngressDeliveryAuthority",
-)<RuntimeIngressDeliveryAuthority, RuntimeIngressDeliveryAuthorityService>() {}
-
-export const runtimeIngressSubscriberId = (
+const runtimeIngressSubscriberId = (
   protocol: string,
   role: string,
 ): RuntimeSubscriberId => makeRuntimeSubscriberId(`runtime-ingress:${protocol}:${role}`)
@@ -74,14 +59,6 @@ const claimInputTo = (
     return Option.some(delivery)
   })
 
-const claimInput = (
-  row: RuntimeIngressInputRow,
-  options: {
-    readonly subscriberId: RuntimeSubscriberId
-  },
-) =>
-  Effect.flatMap(RuntimeIngressTable, table => claimInputTo(table, row, options))
-
 const recordCompletedTo = (
   table: RuntimeIngressTable["Type"],
   delivery: RuntimeIngressDeliveryRow,
@@ -95,42 +72,34 @@ const recordCompletedTo = (
     return completed
   })
 
-const recordCompleted = (
-  delivery: RuntimeIngressDeliveryRow,
-) =>
-  Effect.flatMap(RuntimeIngressTable, table => recordCompletedTo(table, delivery))
-
-const sources = (
+const runtimeIngressDeliveries = (
   table: RuntimeIngressTable["Type"],
-) => ({
-  deliveries: sourceCollectionHandle(
-    RuntimeAuthoritySourceNames.runtimeIngressDeliveries,
-    table.deliveries,
-  ),
-}) as const
+): Stream.Stream<RuntimeIngressDeliveryRow, unknown> => table.deliveries.rows()
 
-const authority = (
+const serviceFromTable = (
   table: RuntimeIngressTable["Type"],
-): RuntimeIngressDeliveryAuthorityService => ({
-  write: {
-    claimInput: (row, options) => claimInputTo(table, row, options),
-    recordCompleted: delivery => recordCompletedTo(table, delivery),
-  },
-  read: sources(table),
+): RuntimeIngressDeliveryClaimAndCompleteService => ({
+  claimInput: (row, options) => claimInputTo(table, row, options),
+  recordCompleted: delivery => recordCompletedTo(table, delivery),
 })
 
-const layer = Layer.effect(
-  RuntimeIngressDeliveryAuthority,
-  Effect.map(RuntimeIngressTable, authority),
+export class RuntimeIngressDeliveryClaimAndComplete extends Context.Tag(
+  "@firegrid/runtime/RuntimeIngressDeliveryClaimAndComplete",
+)<RuntimeIngressDeliveryClaimAndComplete, RuntimeIngressDeliveryClaimAndCompleteService>() {}
+
+export class RuntimeIngressDeliveries extends Context.Tag(
+  "@firegrid/runtime/RuntimeIngressDeliveries",
+)<RuntimeIngressDeliveries, Stream.Stream<RuntimeIngressDeliveryRow, unknown>>() {}
+
+export const RuntimeIngressDeliveryTrackerLayer = Layer.mergeAll(
+  Layer.effect(
+    RuntimeIngressDeliveryClaimAndComplete,
+    Effect.map(RuntimeIngressTable, serviceFromTable),
+  ),
+  Layer.effect(
+    RuntimeIngressDeliveries,
+    Effect.map(RuntimeIngressTable, runtimeIngressDeliveries),
+  ),
 )
 
-export const RuntimeIngressDeliveryTracker = {
-  authority,
-  layer,
-  claimInput,
-  claimInputTo,
-  recordCompleted,
-  recordCompletedTo,
-  runtimeIngressSubscriberId,
-  sources,
-} as const
+export { runtimeIngressSubscriberId }

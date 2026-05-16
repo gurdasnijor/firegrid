@@ -11,13 +11,22 @@ import {
   RuntimeIngressTable,
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Fiber, Option, Stream } from "effect"
+import { Effect, Fiber, Layer, Option, Stream } from "effect"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   LocalProcessStdinDeliveryError,
   localProcessStdinDelivery,
 } from "./local-process-stdin-delivery.ts"
 import { runtimeSubscriberId } from "../../events/index.ts"
+import {
+  RuntimeIngressAppenderLayer,
+  RuntimeIngressDeliveryTrackerLayer,
+} from "../../authorities/index.ts"
+import type {
+  RuntimeIngressAppendAndGet,
+  RuntimeIngressDeliveryClaimAndComplete,
+  RuntimeIngressInputStream,
+} from "../../authorities/index.ts"
 
 let server: DurableStreamTestServer
 let baseUrl: string | undefined
@@ -30,6 +39,11 @@ afterAll(async () => {
   await server.stop()
   baseUrl = undefined
 })
+
+const runScopedTestEffect = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+): Promise<A> =>
+  Effect.runPromise(effect as Effect.Effect<A, E, never>)
 
 const makeRow = (
   contextId: string,
@@ -48,6 +62,32 @@ const makeRow = (
   sequencedAt: "2026-05-12T00:00:01.000Z",
 })
 
+const deliveryLayer = (
+  tableLayer: Layer.Layer<RuntimeIngressTable, unknown>,
+  contextId: string,
+): Layer.Layer<
+  | RuntimeIngressTable
+  | RuntimeIngressAppendAndGet
+  | RuntimeIngressInputStream
+  | RuntimeIngressDeliveryClaimAndComplete,
+  unknown,
+  never
+> =>
+  RuntimeIngressDeliveryTrackerLayer.pipe(
+    Layer.provideMerge(
+      RuntimeIngressAppenderLayer({ currentContextId: contextId }).pipe(
+        Layer.provideMerge(tableLayer),
+      ),
+    ),
+  ) as unknown as Layer.Layer<
+    | RuntimeIngressTable
+    | RuntimeIngressAppendAndGet
+    | RuntimeIngressInputStream
+    | RuntimeIngressDeliveryClaimAndComplete,
+    unknown,
+    never
+  >
+
 describe("localProcessStdinDelivery", () => {
   it("effect-durable-operators.FIREGRID_PROOF.4 firegrid-agent-ingress.DELIVERY.3 AtMostOnce: failure between claim and byte emission durably skips the row on restart", async () => {
     if (!baseUrl) throw new Error("server not started")
@@ -62,7 +102,7 @@ describe("localProcessStdinDelivery", () => {
       },
     })
 
-    await Effect.runPromise(Effect.scoped(
+    await runScopedTestEffect(Effect.scoped(
       Effect.gen(function* () {
         const table = yield* RuntimeIngressTable
         yield* table.inputs.insert(makeRow(contextId, inputId, "hello-once"))
@@ -91,12 +131,15 @@ describe("localProcessStdinDelivery", () => {
           )
           expect(result._tag).toBe("Left")
         }).pipe(
-          Effect.provide(tableLayer),
+          // RuntimeIngressTable.layer currently widens its service type to any
+          // in tests; the target service is RuntimeIngressTable.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          Effect.provide(deliveryLayer(tableLayer, contextId)),
         ),
       ),
     )
 
-    const claimed = await Effect.runPromise(
+    const claimed = await runScopedTestEffect(
       Effect.scoped(
         Effect.gen(function* () {
           const table = yield* RuntimeIngressTable
@@ -127,7 +170,12 @@ describe("localProcessStdinDelivery", () => {
           yield* Effect.sleep("250 millis")
           yield* Fiber.interrupt(fiber)
           return chunks
-        }).pipe(Effect.provide(tableLayer)),
+        }).pipe(
+          // RuntimeIngressTable.layer currently widens its service type to any
+          // in tests; the target service is RuntimeIngressTable.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          Effect.provide(deliveryLayer(tableLayer, contextId)),
+        ),
       ),
     )
 
@@ -147,7 +195,7 @@ describe("localProcessStdinDelivery", () => {
       },
     })
 
-    await Effect.runPromise(Effect.scoped(
+    await runScopedTestEffect(Effect.scoped(
       Effect.gen(function* () {
         const table = yield* RuntimeIngressTable
         yield* table.inputs.insert(makeRow(contextId, inputId, "hello"))
@@ -173,7 +221,12 @@ describe("localProcessStdinDelivery", () => {
           yield* Effect.sleep("250 millis")
           yield* Fiber.interrupt(fiber)
           return collected
-        }).pipe(Effect.provide(tableLayer)),
+        }).pipe(
+          // RuntimeIngressTable.layer currently widens its service type to any
+          // in tests; the target service is RuntimeIngressTable.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          Effect.provide(deliveryLayer(tableLayer, contextId)),
+        ),
       ),
     )
 
@@ -192,7 +245,7 @@ describe("localProcessStdinDelivery", () => {
       },
     })
 
-    await Effect.runPromise(Effect.scoped(
+    await runScopedTestEffect(Effect.scoped(
       Effect.gen(function* () {
         const table = yield* RuntimeIngressTable
         yield* table.inputs.insert(makeRow(contextId, "input-continue", "continue", 1))
@@ -219,7 +272,12 @@ describe("localProcessStdinDelivery", () => {
           yield* Effect.sleep("250 millis")
           yield* Fiber.interrupt(fiber)
           return collected
-        }).pipe(Effect.provide(tableLayer)),
+        }).pipe(
+          // RuntimeIngressTable.layer currently widens its service type to any
+          // in tests; the target service is RuntimeIngressTable.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          Effect.provide(deliveryLayer(tableLayer, contextId)),
+        ),
       ),
     )
 

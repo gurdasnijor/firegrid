@@ -3,114 +3,124 @@ import {
   type RuntimeEventRow,
   type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
+import type { DurableTableError } from "effect-durable-operators"
 import { Context, Effect, Layer, Sink, Stream } from "effect"
 import {
+  type RuntimeAgentOutputObservation,
   runtimeAgentOutputObservationFromRow,
-  type RuntimeAuthority,
-  type RuntimeAuthorityCommand,
-  type RuntimeAuthorityRead,
-  type RuntimeAuthoritySink,
 } from "../events/index.ts"
-import {
-  sourceCollectionHandle,
-  type SourceCollectionHandle,
-} from "../waits/internal/source-collections.ts"
-import { RuntimeAuthoritySourceNames } from "./source-names.ts"
 
 export type { RuntimeAgentOutputObservation } from "../events/index.ts"
-interface RuntimeOutputWrites {
-  readonly writeEvent: RuntimeAuthorityCommand<RuntimeEventRow, void, unknown>
-  readonly writeLog: RuntimeAuthorityCommand<RuntimeLogLineRow, void, unknown>
-  readonly agentOutputSink: RuntimeAuthoritySink<RuntimeEventRow, void, unknown>
-  readonly logSink: RuntimeAuthoritySink<RuntimeLogLineRow, void, unknown>
+
+interface RuntimeEventAppendAndGetService {
+  readonly append: (
+    row: RuntimeEventRow,
+  ) => Effect.Effect<RuntimeEventRow, unknown>
 }
 
-interface RuntimeOutputReads {
-  readonly events: RuntimeAuthorityRead
-  readonly logs: RuntimeAuthorityRead
-  readonly agentOutputEvents: RuntimeAuthorityRead
+interface RuntimeLogLineAppendAndGetService {
+  readonly append: (
+    row: RuntimeLogLineRow,
+  ) => Effect.Effect<RuntimeLogLineRow, unknown>
 }
 
-type RuntimeOutputAuthorityService = RuntimeAuthority<RuntimeOutputWrites, RuntimeOutputReads>
-
-export class RuntimeOutputAuthority extends Context.Tag(
-  "@firegrid/runtime/RuntimeOutputAuthority",
-)<RuntimeOutputAuthority, RuntimeOutputAuthorityService>() {}
-
-const agentOutputCollection = (
+const runtimeOutputEvents = (
   table: RuntimeOutputTable["Type"],
-): SourceCollectionHandle => ({
-  name: RuntimeAuthoritySourceNames.agentOutputEvents,
-  subscribe: () =>
-    table.events.rows().pipe(
-      Stream.map(runtimeAgentOutputObservationFromRow),
-      Stream.filterMap(value => value),
-    ),
-})
+): Stream.Stream<RuntimeEventRow, DurableTableError> => table.events.rows()
+
+const runtimeOutputLogs = (
+  table: RuntimeOutputTable["Type"],
+): Stream.Stream<RuntimeLogLineRow, DurableTableError> => table.logs.rows()
+
+const runtimeAgentOutputEvents = (
+  table: RuntimeOutputTable["Type"],
+): Stream.Stream<RuntimeAgentOutputObservation, DurableTableError> =>
+  runtimeOutputEvents(table).pipe(
+    Stream.map(runtimeAgentOutputObservationFromRow),
+    Stream.filterMap(value => value),
+  )
 
 const writeEventTo = (
   table: RuntimeOutputTable["Type"],
   row: RuntimeEventRow,
 ) => table.events.upsert(row)
 
+const appendEventAndGetTo = (
+  table: RuntimeOutputTable["Type"],
+  row: RuntimeEventRow,
+) => writeEventTo(table, row).pipe(Effect.as(row))
+
 const writeLogTo = (
   table: RuntimeOutputTable["Type"],
   row: RuntimeLogLineRow,
 ) => table.logs.upsert(row)
 
-const writeEvent = (
-  row: RuntimeEventRow,
-) =>
-  Effect.flatMap(RuntimeOutputTable, table => writeEventTo(table, row))
-
-const writeLog = (
+const appendLogAndGetTo = (
+  table: RuntimeOutputTable["Type"],
   row: RuntimeLogLineRow,
-) =>
-  Effect.flatMap(RuntimeOutputTable, table => writeLogTo(table, row))
+) => writeLogTo(table, row).pipe(Effect.as(row))
 
-const agentOutputSink = Sink.forEach((row: RuntimeEventRow) => writeEvent(row))
+export class RuntimeEventAppendAndGet extends Context.Tag(
+  "@firegrid/runtime/RuntimeEventAppendAndGet",
+)<RuntimeEventAppendAndGet, RuntimeEventAppendAndGetService>() {}
 
-const logSink = Sink.forEach((row: RuntimeLogLineRow) => writeLog(row))
+export class RuntimeLogLineAppendAndGet extends Context.Tag(
+  "@firegrid/runtime/RuntimeLogLineAppendAndGet",
+)<RuntimeLogLineAppendAndGet, RuntimeLogLineAppendAndGetService>() {}
 
-const sources = (
-  table: RuntimeOutputTable["Type"],
-) => ({
-  events: sourceCollectionHandle(
-    RuntimeAuthoritySourceNames.runtimeOutputEvents,
-    table.events,
+export class RuntimeAgentOutputRowSink extends Context.Tag(
+  "@firegrid/runtime/RuntimeAgentOutputRowSink",
+)<RuntimeAgentOutputRowSink, Sink.Sink<void, RuntimeEventRow, never, unknown>>() {}
+
+export class RuntimeLogLineSink extends Context.Tag(
+  "@firegrid/runtime/RuntimeLogLineSink",
+)<RuntimeLogLineSink, Sink.Sink<void, RuntimeLogLineRow, never, unknown>>() {}
+
+export class RuntimeOutputEvents extends Context.Tag(
+  "@firegrid/runtime/RuntimeOutputEvents",
+)<RuntimeOutputEvents, Stream.Stream<RuntimeEventRow, DurableTableError>>() {}
+
+export class RuntimeOutputLogs extends Context.Tag(
+  "@firegrid/runtime/RuntimeOutputLogs",
+)<RuntimeOutputLogs, Stream.Stream<RuntimeLogLineRow, DurableTableError>>() {}
+
+export class RuntimeAgentOutputEvents extends Context.Tag(
+  "@firegrid/runtime/RuntimeAgentOutputEvents",
+)<RuntimeAgentOutputEvents, Stream.Stream<RuntimeAgentOutputObservation, DurableTableError>>() {}
+
+export const RuntimeOutputJournalLayer = Layer.mergeAll(
+  Layer.effect(
+    RuntimeEventAppendAndGet,
+    Effect.map(RuntimeOutputTable, table => ({
+      append: row => appendEventAndGetTo(table, row),
+    })),
   ),
-  logs: sourceCollectionHandle(
-    RuntimeAuthoritySourceNames.runtimeOutputLogs,
-    table.logs,
+  Layer.effect(
+    RuntimeLogLineAppendAndGet,
+    Effect.map(RuntimeOutputTable, table => ({
+      append: row => appendLogAndGetTo(table, row),
+    })),
   ),
-  agentOutputEvents: agentOutputCollection(table),
-}) as const
-
-const authority = (
-  table: RuntimeOutputTable["Type"],
-): RuntimeOutputAuthorityService => ({
-  write: {
-    writeEvent: row => writeEventTo(table, row),
-    writeLog: row => writeLogTo(table, row),
-    agentOutputSink: Sink.forEach((row: RuntimeEventRow) => writeEventTo(table, row)),
-    logSink: Sink.forEach((row: RuntimeLogLineRow) => writeLogTo(table, row)),
-  },
-  read: sources(table),
-})
-
-const layer = Layer.effect(
-  RuntimeOutputAuthority,
-  Effect.map(RuntimeOutputTable, authority),
+  Layer.effect(
+    RuntimeAgentOutputRowSink,
+    Effect.map(RuntimeOutputTable, table =>
+      Sink.forEach((row: RuntimeEventRow) => writeEventTo(table, row))),
+  ),
+  Layer.effect(
+    RuntimeLogLineSink,
+    Effect.map(RuntimeOutputTable, table =>
+      Sink.forEach((row: RuntimeLogLineRow) => writeLogTo(table, row))),
+  ),
+  Layer.effect(
+    RuntimeOutputEvents,
+    Effect.map(RuntimeOutputTable, runtimeOutputEvents),
+  ),
+  Layer.effect(
+    RuntimeOutputLogs,
+    Effect.map(RuntimeOutputTable, runtimeOutputLogs),
+  ),
+  Layer.effect(
+    RuntimeAgentOutputEvents,
+    Effect.map(RuntimeOutputTable, runtimeAgentOutputEvents),
+  ),
 )
-
-export const RuntimeOutputJournal = {
-  authority,
-  layer,
-  writeEvent,
-  writeEventTo,
-  writeLog,
-  writeLogTo,
-  agentOutputSink,
-  logSink,
-  sources,
-} as const

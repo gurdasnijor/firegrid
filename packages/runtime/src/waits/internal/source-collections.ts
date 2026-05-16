@@ -15,10 +15,7 @@
  *  - firegrid-durable-tools.SOURCE_COLLECTIONS.2
  */
 
-import {
-  type DurableTableCollectionFacade,
-  type DurableTableError,
-} from "effect-durable-operators"
+import { type DurableTableCollectionFacade } from "effect-durable-operators"
 import {
   Context,
   Deferred,
@@ -35,7 +32,7 @@ import {
  */
 export interface SourceCollectionHandle {
   readonly name: string
-  readonly subscribe: () => Stream.Stream<unknown, DurableTableError>
+  readonly subscribe: () => Stream.Stream<unknown, unknown>
 }
 
 /**
@@ -50,6 +47,14 @@ export const sourceCollectionHandle = <Row extends object, Key>(
 ): SourceCollectionHandle => ({
   name,
   subscribe: () => facade.rows(),
+})
+
+export const sourceCollectionStreamHandle = (
+  name: string,
+  stream: Stream.Stream<unknown, unknown>,
+): SourceCollectionHandle => ({
+  name,
+  subscribe: () => stream,
 })
 
 export interface SourceCollectionsService {
