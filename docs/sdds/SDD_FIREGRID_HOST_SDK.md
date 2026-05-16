@@ -318,6 +318,78 @@ in the host layer. Runtime sees only the narrow capability.
 The runtime by itself no longer dispatches tool calls. A host that wants agent
 tools provides `RuntimeToolUseExecutorLive` alongside the runtime substrate.
 
+## Runtime Capability Projection Cleanup
+
+The SDK split does not depend on runtime durable-authority cleanup, but the
+same audit exposed one runtime-internal simplification worth documenting so it
+does not become a new framework.
+
+Runtime authorities currently expose many hand-written `Context.Tag`s from one
+`DurableTable` family. For example, the runtime output authority provides
+append, sink, stream, and derived observation tags from `RuntimeOutputTable`.
+The visible repetition is the live-layer projection:
+
+```ts
+Layer.effect(Tag, Effect.map(TableTag, table => projector(table)))
+```
+
+Name that projection pattern directly. Do not replace the tags.
+
+Accepted helper shape:
+
+```ts
+export const projectAppend = (tag, tableTag, toAction) =>
+  Layer.effect(tag, Effect.map(tableTag, table => ({ append: toAction(table) })))
+
+export const projectStream = (tag, tableTag, toStream) =>
+  Layer.effect(tag, Effect.map(tableTag, toStream))
+
+export const projectSink = (tag, tableTag, toWrite) =>
+  Layer.effect(
+    tag,
+    Effect.map(tableTag, table => Sink.forEach(row => toWrite(table)(row))),
+  )
+```
+
+The real implementation should type these helpers precisely. The SDD-level
+rule is simpler: helpers name `Layer.effect(Tag, Effect.map(TableTag, ...))`.
+They do not generate tags, own service shapes, or create a Firegrid capability
+framework.
+
+This keeps the important part visible:
+
+```ts
+export class RuntimeOutputEvents extends Context.Tag(
+  "@firegrid/runtime/RuntimeOutputEvents",
+)<RuntimeOutputEvents, Stream.Stream<RuntimeEventRow, DurableTableError>>() {}
+
+export const RuntimeOutputJournalLayer = Layer.mergeAll(
+  projectStream(RuntimeOutputEvents, RuntimeOutputTable, table =>
+    table.events.rows()),
+  projectSink(RuntimeAgentOutputRowSink, RuntimeOutputTable, table =>
+    row => table.events.upsert(row)),
+)
+```
+
+Rejected alternatives:
+
+- **Brand-typed capability interfaces** such as `Append<A, E>` or
+  `Executor<In, Out, E, R>`. Firegrid's durable row capabilities do not use the
+  variance those brands provide, and the apparent executor cases are ordinary
+  Effect compositions: read clock plus append, read plus conditional append, or
+  cross-table `Effect.gen`.
+- **`DurableRecordCapabilities` factories** that return anonymous
+  `bundle.Append` / `bundle.Stream` / `bundle.Sink` tags. Those hide tag
+  identity, make go-to-definition and static rules worse, and do not fit
+  overlays such as `RuntimeAgentOutputEvents`, which derives observations from
+  output rows.
+
+Tags remain hand-written next to their domain service type. Direct table
+projections may use projection helpers. Operations that genuinely compose
+multiple capabilities stay as ordinary `Effect.gen` code. Long-lived drivers
+remain `Effect<void, E, R>` or `Layer.scopedDiscard`; they are roles, not new
+capability shapes.
+
 ## Plane Split Rules
 
 These rules must be enforced with dependency-cruiser, the existing client
@@ -332,6 +404,7 @@ boundary test, or a small static checker.
 | No package imports `@firegrid/cli`. | dependency-cruiser |
 | Runtime ToolUse routing depends on `RuntimeToolUseExecutor`, not host-sdk agent-tool bindings. | dependency-cruiser + runtime tests |
 | Production bindings do not import `FiregridOperationEntry` or `defineFiregridOperation`. | dependency-cruiser or semgrep |
+| Runtime durable authority cleanup does not introduce brand-typed capability frameworks or generated tag bundles. | review + optional semgrep |
 
 ## Plan
 
@@ -401,6 +474,24 @@ Scope: delete surfaces intentionally left until the transaction proves green.
 - Remove any deprecated runtime host or agent-tool package exports that were
   kept only to keep PR 2 reviewable.
 
+### Optional Follow-Up: Runtime Projection Helpers
+
+Scope: runtime-internal authority cleanup only.
+
+- Add typed `projectAppend`, `projectStream`, and `projectSink` helpers.
+- Apply them only to direct DurableTable-to-capability projections in runtime
+  output, ingress, ingress delivery, and control-plane authority files.
+- Keep tag declarations hand-written.
+- Keep timestamped insert, idempotent claim, cross-table operations, and
+  ToolUse execution as explicit `Effect.gen` compositions or executor seams.
+
+This follow-up satisfies
+`firegrid-host-sdk.RUNTIME_CAPABILITY_PROJECTIONS.1`,
+`firegrid-host-sdk.RUNTIME_CAPABILITY_PROJECTIONS.2`,
+`firegrid-host-sdk.RUNTIME_CAPABILITY_PROJECTIONS.3`, and
+`firegrid-host-sdk.RUNTIME_CAPABILITY_PROJECTIONS.4`. It must not block PR 1
+or PR 2.
+
 ## Acceptance
 
 - Dependency-cruiser reports zero SDK boundary violations.
@@ -431,6 +522,8 @@ Scope: delete surfaces intentionally left until the transaction proves green.
 - No dynamic provider registry. Providers are explicit Layers at the
   composition root.
 - No Firegrid-specific workflow DSL or operator framework.
+- No brand-typed runtime capability framework.
+- No durable-record factory that generates anonymous tag bundles.
 - No second event pipeline.
 - No browser-originated runtime authority.
 
