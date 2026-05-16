@@ -133,11 +133,11 @@ The supporting implementation is:
 - [`packages/runtime/src/source-registration/runtime-output.ts`](../../packages/runtime/src/source-registration/runtime-output.ts)
   registers `RuntimeObservationSourceNames.agentOutputEvents` from the
   `RuntimeAgentOutputEvents` stream capability.
-- [`packages/runtime/src/events/output.ts`](../../packages/runtime/src/events/output.ts)
+- [`packages/runtime/src/agent-event-pipeline/events/output.ts`](../../packages/runtime/src/agent-event-pipeline/events/output.ts)
   projects decoded agent-output rows with flattened permission fields.
-- [`packages/runtime/src/codecs/acp/index.ts`](../../packages/runtime/src/codecs/acp/index.ts)
+- [`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts`](../../packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts)
   emits `PermissionRequest` and waits.
-- [`packages/runtime/src/codecs/acp/index.ts`](../../packages/runtime/src/codecs/acp/index.ts)
+- [`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts`](../../packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts)
   accepts `PermissionResponse` and resolves the
   pending ACP request.
 - [`packages/runtime/src/host/raw-process-runtime.ts`](../../packages/runtime/src/host/raw-process-runtime.ts):

@@ -44,7 +44,7 @@ import {
 } from "@firegrid/protocol/agent-tools"
 import { provideRuntimeContext, type RuntimeContext } from "@firegrid/protocol/launch"
 import { Context, Effect, Layer, Schema } from "effect"
-import { ToolResultEventSchema } from "../events/index.ts"
+import { ToolResultEventSchema } from "../agent-event-pipeline/events/index.ts"
 import { ToolError, toolExecutionFailed } from "./tool-error.ts"
 import { toolUseToEffect } from "./tool-use-to-effect.ts"
 

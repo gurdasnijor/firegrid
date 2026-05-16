@@ -11,7 +11,7 @@ import {
 import {
   mapRuntimeContextError,
   type RuntimeContextError,
-} from "../runtime-errors.ts"
+} from "../../runtime-errors.ts"
 
 class RuntimeIngressAgentInputTransformError extends Schema.TaggedError<
   RuntimeIngressAgentInputTransformError

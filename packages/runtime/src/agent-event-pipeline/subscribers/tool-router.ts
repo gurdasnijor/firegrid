@@ -1,20 +1,18 @@
 import type { RuntimeContext } from "@firegrid/protocol/launch"
 import { Effect, Option, Stream } from "effect"
-import {
-  RuntimeAgentOutputEvents,
-  RuntimeIngressAppendAndGet,
-} from "../authorities/index.ts"
+import { RuntimeIngressAppendAndGet } from "../authorities/runtime-ingress-appender.ts"
+import { RuntimeAgentOutputEvents } from "../authorities/runtime-output-journal.ts"
 import {
   type RuntimeAgentOutputObservation,
   type AgentToolUseMode,
   runtimeIdempotencyKey,
 } from "../events/index.ts"
-import { toolUseToEffect } from "../agent-tools/tool-use-to-effect.ts"
+import { toolUseToEffect } from "../../agent-tools/tool-use-to-effect.ts"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
   type RuntimeContextError,
-} from "../runtime-errors.ts"
+} from "../../runtime-errors.ts"
 
 const toolResultInputId = (
   contextId: string,

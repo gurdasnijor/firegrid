@@ -28,8 +28,8 @@ import { Workflow } from "@effect/workflow"
 import { DurableTable } from "effect-durable-operators"
 import { Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import type { AgentOutputEvent, ToolResultEvent } from "../../src/events/index.ts"
-import { AgentToolCallPartSchema, ToolResultEventSchema } from "../../src/events/index.ts"
+import type { AgentOutputEvent, ToolResultEvent } from "../../src/agent-event-pipeline/events/index.ts"
+import { AgentToolCallPartSchema, ToolResultEventSchema } from "../../src/agent-event-pipeline/events/index.ts"
 import {
   DurableToolsWaitForLive,
   SourceCollections,

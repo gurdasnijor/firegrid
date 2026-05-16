@@ -1,6 +1,6 @@
 import type { RuntimeContext } from "@firegrid/protocol/launch"
 import { Effect } from "effect"
-import { asRuntimeContextError, type RuntimeContextError } from "../../runtime-errors.ts"
+import { asRuntimeContextError, type RuntimeContextError } from "../../../runtime-errors.ts"
 import {
   resolveSpawnEnvVars,
   type RuntimeEnvResolverPolicy,

@@ -16,17 +16,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import {
   LocalProcessStdinDeliveryError,
   localProcessStdinDelivery,
-} from "../../../src/sources/sandbox/local-process-stdin-delivery.ts"
+} from "../../../src/agent-event-pipeline/sources/sandbox/local-process-stdin-delivery.ts"
 import {
   RuntimeIngressAppenderLayer,
-  RuntimeIngressDeliveryTrackerLayer,
-  runtimeIngressSubscriberId,
-} from "../../../src/authorities/index.ts"
+} from "../../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
 import type {
   RuntimeIngressAppendAndGet,
-  RuntimeIngressDeliveryClaimAndComplete,
   RuntimeIngressInputStream,
-} from "../../../src/authorities/index.ts"
+} from "../../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
+import {
+  RuntimeIngressDeliveryTrackerLayer,
+  runtimeIngressSubscriberId,
+} from "../../../src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
+import type {
+  RuntimeIngressDeliveryClaimAndComplete,
+} from "../../../src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
 
 let server: DurableStreamTestServer
 let baseUrl: string | undefined

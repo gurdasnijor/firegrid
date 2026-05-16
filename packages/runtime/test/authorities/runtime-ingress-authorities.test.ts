@@ -9,13 +9,13 @@ import {
   RuntimeIngressAppendAndGet,
   RuntimeIngressAppenderLayer,
   RuntimeIngressInputStream,
-} from "../../src/authorities/runtime-ingress-appender.ts"
+} from "../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
 import {
   RuntimeIngressDeliveries,
   RuntimeIngressDeliveryClaimAndComplete,
   RuntimeIngressDeliveryTrackerLayer,
   runtimeIngressSubscriberId,
-} from "../../src/authorities/runtime-ingress-delivery-tracker.ts"
+} from "../../src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
 import { RuntimeAuthoritySourceNames } from "../../src/authorities/source-names.ts"
 
 let server: DurableStreamTestServer | undefined

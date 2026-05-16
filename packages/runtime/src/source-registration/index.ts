@@ -7,7 +7,7 @@ export {
   RuntimeAuthoritySourceNames as RuntimeObservationSourceNames,
   type RuntimeAuthoritySourceName as RuntimeObservationSourceName,
 } from "../authorities/source-names.ts"
-export type { RuntimeAgentOutputObservation } from "../authorities/runtime-output-journal.ts"
+export type { RuntimeAgentOutputObservation } from "../agent-event-pipeline/authorities/runtime-output-journal.ts"
 
 // firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.1
 // firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.2

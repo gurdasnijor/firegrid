@@ -12,7 +12,7 @@ import {
   type Scope,
   Stream,
 } from "effect"
-import type { AgentByteStream } from "../../sources/byte-stream.ts"
+import type { AgentByteStream } from "../../agent-event-pipeline/sources/byte-stream.ts"
 import { AgentAdapter, type AgentAdapterCapabilities, type AgentAdapterService } from "../AgentAdapter.ts"
 import { CurrentAgentTurn } from "../current-turn.ts"
 import {

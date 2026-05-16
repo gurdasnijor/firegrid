@@ -39,7 +39,7 @@ import {
   FiregridRuntimeHostWithWorkflowLive,
   startRuntime,
 } from "../../src/host/index.ts"
-import { RuntimeEnvResolverPolicy } from "../../src/sources/sandbox/secrets.ts"
+import { RuntimeEnvResolverPolicy } from "../../src/agent-event-pipeline/sources/sandbox/secrets.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

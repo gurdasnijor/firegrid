@@ -152,72 +152,53 @@ The runtime tree is organized by stage role before domain:
 
 ```txt
 packages/runtime/src/
-  pipeline/
-    compose.ts
-    stage.ts
+  agent-event-pipeline/
+    session-runtime.ts
     README.md
-
-  events/
-    input.ts
-    output.ts
-    capabilities.ts
-
-  sources/
-    byte-stream.ts
-    sandbox/
-      index.ts
-    README.md
-
-  codecs/
-    contract.ts
-    runtime.ts
-    acp/
-      index.ts
-      mapping.ts
-    stdio-jsonl/
-      index.ts
-    README.md
-
-  transforms/
-    sequence.ts
-    buffer.ts
-    terminal.ts
-    README.md
+    events/
+      contract.ts
+      output.ts
+      stage-contracts.ts
+      README.md
+    sources/
+      byte-stream.ts
+      sandbox/
+        index.ts
+      README.md
+    codecs/
+      contract.ts
+      acp/
+        index.ts
+        mapping.ts
+      stdio-jsonl/
+        index.ts
+      README.md
+    transforms/
+      ingress-to-agent-input.ts
+      README.md
+    authorities/
+      runtime-output-journal.ts
+      runtime-ingress-appender.ts
+      runtime-ingress-delivery-tracker.ts
+    subscribers/
+      ingress-delivery.ts
+      tool-router.ts
+      stderr-journal.ts
+      README.md
 
   authorities/
-    runtime-output-journal.ts
-    runtime-ingress-appender.ts
-    runtime-ingress-delivery-tracker.ts
     runtime-control-plane-recorder.ts
-    durable-wait-store.ts
+    source-names.ts
     README.md
 
-  subscribers/
-    ingress-delivery.ts
-    tool-router.ts
-    stderr-journal.ts
-    substrate/
-      wait-router.ts
-    README.md
-
-  projections/
-    from-codec-session.ts
-    language-model/
-      index.ts
-      acp.ts
-    README.md
-
-  tools/
-    schema/
-      toolkit.ts
-      tools.ts
-    lowering/
-      tool-use-to-effect.ts
-      tool-host.ts
-
+  agent-tools/
+  agent-adapters/
   waits/
-    wait-for.ts
-    source-collections.ts
+    internal/
+      wait-for.ts
+      wait-router.ts
+      durable-wait-store.ts
+      source-collections.ts
 
   source-registration/
     runtime-control-plane.ts
@@ -1105,8 +1086,8 @@ barrels.
 The implementing PR should be reviewed as a new target tree, not as a sequence
 of partial diffs. Reviewers should start from:
 
-1. `packages/runtime/src/pipeline/README.md`;
-2. `packages/runtime/src/pipeline/compose.ts`;
+1. `packages/runtime/src/agent-event-pipeline/README.md`;
+2. `packages/runtime/src/agent-event-pipeline/session-runtime.ts`;
 3. the canonical runtime-host layer composition and authority provider tests;
 4. the stage README files;
 5. the ACID-linked tests.

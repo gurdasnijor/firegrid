@@ -4,7 +4,7 @@ import {
   ResolveEnvBindingError,
   RuntimeEnvResolverPolicy,
   resolveSpawnEnvVars,
-} from "../../../src/sources/sandbox/secrets.ts"
+} from "../../../src/agent-event-pipeline/sources/sandbox/secrets.ts"
 
 const policyLayer = (
   authorized: ReadonlyArray<readonly [string, string]>,
