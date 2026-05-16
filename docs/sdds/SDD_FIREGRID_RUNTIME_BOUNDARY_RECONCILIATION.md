@@ -45,6 +45,79 @@ The goal of this SDD is to audit the post-`#250` runtime tree against the
 semantic boundaries we have drawn and define the next extraction plan before
 new features build on accidental folder boundaries.
 
+## Dependency Graph Evidence
+
+The boundary problems described above are visible in the generated dependency
+graphs:
+
+- `docs/dependency-graph-runtime.mmd`
+- `docs/dependency-graph-runtime-detail.mmd`
+- `docs/dependency-graph.mmd`
+
+### Folder-Level Cycles
+
+The post-`#250` runtime tree still has folder-level cycles. Most route through
+`host/`, which confirms that `host/index.ts` is not just large; it is also
+serving as a shared dependency source.
+
+| Cycle | Cause |
+| --- | --- |
+| `events/` <-> `codecs/` | `events/index.ts` re-exports codec contracts as compatibility surface from the `agent-io/` rename. |
+| `host/` <-> `pipeline/` | Pipeline code imports runtime context error/config types from `host/`; host imports the codec runtime pipeline. |
+| `host/` <-> `sources/` | Sandbox/source code imports `RuntimeContextError` from `host/`; host imports sandbox providers. |
+| `host/` <-> `subscribers/` | Subscribers import `RuntimeContextError` from `host/`; host composes subscribers. |
+| `host/` <-> `transforms/` | Transforms import `RuntimeContextError` from `host/`; host reaches transforms through pipeline composition. |
+| `host/` <-> `agent-tools/` | Agent-tool host/MCP code imports host authority helpers while host composes agent tools. |
+
+The repeated cause is `RuntimeContextError`, `asRuntimeContextError`, and
+`mapRuntimeContextError` living in `host/errors.ts`. Those are runtime-wide
+error helpers, not host topology. Moving them out first dissolves most of the
+cycles without changing behavior.
+
+The `events/` <-> `codecs/` cycle has a different cause: a compatibility
+barrel. Remove the re-export, not the codec/event boundary.
+
+### Load-Bearing Barrels
+
+Three barrels carry most cross-folder/runtime import traffic:
+
+| Barrel | Role |
+| --- | --- |
+| `packages/runtime/src/authorities/index.ts` | Durable capability tags and provider layers. |
+| `packages/runtime/src/events/index.ts` | Runtime protocol/event vocabulary. |
+| `@firegrid/protocol/launch/index.ts` | Launch/runtime context authority surface. |
+
+Follow-up refactors should preserve those barrels as stable import surfaces
+unless the PR explicitly migrates all importers in the same change. Internal
+layout can move more freely if these public surfaces stay coherent.
+
+### Consumer Shape
+
+The workspace graph shows uneven app consumption:
+
+| App | Runtime consumption pattern |
+| --- | --- |
+| `apps/flamecast` | Uses the runtime through the host entrypoint only. This is the clean consumer shape to preserve. |
+| `apps/factory` | Reaches into host, source/env policy, wait, and event surfaces. This confirms factory still needs a separate consumer-surface audit. |
+
+Factory reaching into `events/` for permission facts overlaps with
+`firegrid-session-fact-client-surfaces`: products should prefer the public
+client/session surface when the data is already normalized there. Factory
+reaching into `sources/` for `RuntimeEnvResolverPolicy` suggests env policy
+needs a runtime config/public host surface instead of sandbox-internal imports.
+
+### Hidden Folder Misplacements
+
+The graph also exposes two specific placement issues:
+
+- `authorities/durable-wait-store.ts` imports `waits/internal/table.ts`. The
+  wait row schema and the row authority are one bounded context split across
+  two folders for the #250 cutover.
+- `host/observation-sources.ts` pulls authority streams and wait source
+  registration together only to register `SourceCollectionHandle`s. This is
+  host-side glue for behavior that should be owned by provider/source
+  registration layers.
+
 ## Scope Decision
 
 This SDD is not a second event-pipeline rewrite. It is a post-`#250`
@@ -57,9 +130,9 @@ boundary reconciliation pass with three concrete outcomes:
 3. decide which `waits/` pieces are runtime-specific and which need a separate
    `effect-durable-operators` extraction SDD.
 
-The first implementation PR should be the host extraction because it is
-behavior-preserving and local to `packages/runtime`. The waits extraction is
-design work first; do not move wait internals to another package until that
+The first implementation PR should break folder cycles because it is the
+lowest-risk change that unlocks cleaner host extraction. The waits extraction
+is design work first; do not move wait internals to another package until that
 package boundary is specified.
 
 ## Role Rule
@@ -286,21 +359,21 @@ is a candidate for `packages/effect-durable-operators`.
 
 This inventory is the review checklist for the post-`#250` tree.
 
-| Path | Primary role | Boundary status |
-| --- | --- | --- |
-| `authorities/` | Effect capability providers | Target shape. Keep provider layers and capability tags here. |
-| `events/` | Normalized runtime event contracts | Target shape. No storage or subscriber behavior. |
-| `transforms/` | Pure stream operators | Target shape. Plain functions over `Stream`; no transform framework. |
-| `subscribers/` | Runtime-host subscriber drivers | Target shape for host-scoped durable observation workers, including agent pipeline subscribers and the wait router. |
-| `pipeline/` | Per-runtime event-loop composition | Target shape. Keep session-local composition here. |
-| `sources/` | Live process/resource acquisition | Mostly target shape. Keep durable writes out. |
-| `codecs/` | Protocol wire-format normalization | Target shape. Per-session capabilities belong here. |
-| `host/` | Host topology and command entrypoints | Mixed. Needs behavior-preserving extraction. |
-| `waits/` | Durable coordination operator | Mixed but not misplaced. Needs package-boundary design before extraction. |
-| `agent-tools/` | Runtime tool schemas, MCP exposure, and lowering | Mixed. Needs sub-boundary audit after host extraction. |
-| `agent-adapters/` | Projections/adapters over codec sessions | Acceptable sibling surface. Keep out of durable runtime pipeline. |
-| `workflow-engine/` | Workflow engine adapter/substrate | Separate substrate boundary. Do not fold into agent runtime pipeline. |
-| `verified-webhook-ingest/` | External ingress/source adapter | Separate ingest surface. Audit later for generic durable operator overlap. |
+| Path | Primary role | Boundary status | Evidence | Folder cycle? |
+| --- | --- | --- | --- | --- |
+| `authorities/` | Effect capability providers | Target shape, except wait store placement. | Busy capability barrel. | No |
+| `events/` | Normalized runtime event contracts | Target after compatibility re-exports drop. | Busy event/protocol barrel. | Yes, with `codecs/` |
+| `transforms/` | Pure stream operators | Target shape. Plain functions over `Stream`; no transform framework. | Imports runtime errors from `host/`. | Yes, via `host/` |
+| `subscribers/` | Runtime-host subscriber drivers | Target for agent event-pipeline subscribers. | Imports runtime errors from `host/`. | Yes, via `host/` |
+| `pipeline/` | Per-runtime event-loop composition | Composition file, not a stage. | Pulls from many runtime folders. | Yes, with `host/` |
+| `sources/` | Live process/resource acquisition | Mostly target; env policy leaks to app consumers. | Imports runtime errors from `host/`. | Yes, via `host/` |
+| `codecs/` | Protocol wire-format normalization | Target shape; event barrel compatibility should drop. | Imported by `events/index.ts`. | Yes, with `events/` |
+| `host/` | Host topology and command entrypoints | Mixed; source of most cycles. | Owns shared runtime errors today. | Yes |
+| `waits/` | Durable coordination operator | Mixed; wait row authority belongs with wait bounded context. | Owns row schema/source registry/router. | No |
+| `agent-tools/` | Runtime tool schemas, MCP exposure, and lowering | Mixed; MCP host couples to host authority. | Host/tool composition overlap. | Yes, via `host/` |
+| `agent-adapters/` | Projections/adapters over codec sessions | Acceptable sibling surface. Keep out of durable runtime pipeline. | Adapter projection only. | No |
+| `workflow-engine/` | Workflow engine adapter/substrate | Separate substrate boundary. Do not fold into agent runtime pipeline. | Runtime substrate dependency. | No |
+| `verified-webhook-ingest/` | External ingress/source adapter | Separate ingest surface. Audit later for generic durable operator overlap. | Adjacent ingest surface. | No |
 
 This table describes the current flat tree. The namespace target above is the
 next cleanup once `host/index.ts` is split.
@@ -364,9 +437,9 @@ Target:
 - do not own durable table providers or generic wait router internals.
 
 The wait router is also subscriber-shaped: it consumes active wait rows,
-attaches to named source streams, and writes completions. It can live under
-`subscribers/` if the folder is defined as host-scoped durable observation
-drivers rather than only agent event-pipeline subscribers.
+attaches to named source streams, and writes completions. It should stay
+wait-owned because its vocabulary is wait rows and source handles, not agent
+event-pipeline events.
 
 ### `pipeline/`
 
@@ -518,9 +591,8 @@ Current mixed roles:
 Post-`#250` target:
 
 - keep `WaitFor.match(...)` as the operator API;
-- express the wait router as a subscriber driver, either under
-  `subscribers/wait-router.ts` or as clearly named wait-internal subscriber
-  implementation;
+- express the wait router as a wait-owned subscriber driver, for example
+  `waits/internal/router.ts`;
 - split wait row storage capabilities so the provider layer exposes row-level
   operations, not wait lifecycle policy;
 - decide which pieces are generic durable operators and move them to
@@ -545,9 +617,10 @@ The distinction is statically visible:
 - subscriber drivers are scoped `Layer<never, E, R>` values that provide no
   service and exist only to run host-scoped fibers.
 
-This lets the wait router share the same subscriber folder as tool routing and
-ingress delivery without pretending the whole `waits/` concept is a
-subscriber. It is an operator with a subscriber driver.
+This lets the wait router use the same static shape as tool routing and
+ingress delivery without pretending the whole `waits/` concept is a subscriber
+or moving wait vocabulary into the agent event-pipeline subscriber folder. It
+is an operator with a wait-owned subscriber driver.
 
 Timeout ownership is intentionally left unchanged for the first reconciliation
 pass. Moving timeout resolution from `WaitFor.match` into the wait router would
@@ -670,37 +743,148 @@ semgrep behavior, but that metadata is not a runtime API.
 
 ## Follow-Up Plan
 
-1. **Host Extraction PR**
-   - Split `host/index.ts` into behavior-preserving modules.
-   - Keep public exports stable only for target primitives.
-   - Validate with existing runtime host, prompt-routing, sync-run, and codec
-     event-plane tests.
-   - Do not change package boundaries or wait internals.
+Work is sequenced so each PR is behavior-preserving and unlocks the next.
 
-2. **Runtime Boundary Audit PR**
-   - Add a module-role inventory table for current `packages/runtime/src`.
-   - Mark each folder/module as provider, transform, subscriber, codec, source,
-     host composition, workflow/operator, or generic durable operator.
-   - Flag modules with mixed roles.
-   - Produce concrete follow-up issues for `agent-tools/`,
-     `verified-webhook-ingest/`, and any public exports that do not map to a
-     role.
+### PR 1: Cycle-Breaking
 
-3. **Durable Wait Extraction SDD**
-   - Decide which `waits/` internals belong in `effect-durable-operators`.
-   - Define a generic source registry and wait lifecycle contract.
-   - Keep runtime-specific adapter code in `packages/runtime`.
+Goal: zero folder-level cycles under `packages/runtime/src`.
 
-4. **Public Surface Cleanup PR**
-   - Re-check package exports after host/wait extraction.
-   - Ensure semgrep and dependency-cruiser rules reflect the final target
-     boundaries.
+1. Create `packages/runtime/src/runtime-errors.ts` and move
+   `RuntimeContextError`, `asRuntimeContextError`, and
+   `mapRuntimeContextError` out of `host/errors.ts`. Update internal importers.
+2. Remove `events/index.ts` re-exports of `codecs/contract.ts` and
+   `sources/byte-stream.ts`. Internal callers import codec contracts from
+   `codecs/index.ts` and byte streams from `sources/byte-stream.ts`.
+3. Remove or inline `host/authority-context.ts` as a compatibility alias if it
+   is only re-exporting protocol launch authority behavior.
+4. Add a dependency-cruiser check, or equivalent, that fails on folder-level
+   cycles under `packages/runtime/src`.
 
-5. **Docs Consolidation**
-   - Move stable architecture guidance from the SDD into a runtime
-     `ARCHITECTURE.md` after the post-`#250` refactors land.
-   - Keep SDDs as decision records, not the only source of operational
-     architecture guidance.
+Acceptance:
+
+- zero folder cycles under `packages/runtime/src`;
+- the load-bearing barrels keep their intended public surfaces;
+- downstream apps build without changes.
+
+### PR 2: Host Extraction
+
+Goal: reduce `host/index.ts` to a small composition root and barrel.
+
+Target extraction:
+
+- `host/runtime-context-workflow.ts`: workflow/activity/run lifecycle;
+- `host/raw-process-runtime.ts`: raw local-process runtime and output-row
+  construction;
+- `host/agent-tool-host-live.ts`: host-coupled `AgentToolHost` implementation;
+- `host/layers.ts`: current host session, table layers, host-scoped runtime
+  composition;
+- `host/commands.ts`: `startRuntime` and `appendRuntimeIngress`;
+- `host/config-live.ts`: config-derived host topology layers;
+- `host/index.ts`: public barrel and minimal entrypoint exports.
+
+PR 1 is a prerequisite. Extraction is cleaner once host no longer owns shared
+runtime error types.
+
+### PR 3: Source Registration Ownership
+
+Goal: eliminate `host/observation-sources.ts` as standalone glue.
+
+Authority/provider layers that expose static `Stream` capability tags should
+also construct the corresponding `SourceCollectionHandle` registrations needed
+for dynamic `wait_for` lookup. Host composition should merge provider layers;
+it should not know every source handle that must be registered.
+
+### PR 4: Wait Authority Comes Home
+
+Goal: move the wait row authority next to the wait row schema.
+
+Move `authorities/durable-wait-store.ts` into the wait bounded context and
+split its services into row-level lookup/upsert/stream capabilities. This does
+not move waits to `effect-durable-operators` and does not change
+`WaitFor.match`.
+
+### PR 5: Wait Router Naming
+
+Goal: name the wait router as a subscriber driver without moving it into the
+agent event-pipeline subscriber folder.
+
+Rename `waits/internal/subscription-router.ts` to `waits/internal/router.ts`
+or `waits/internal/wait-router.ts`. Keep the static `Layer<never, E, R>` shape.
+Do not move timeout ownership into the router in this PR.
+
+### PR 6: Agent Event-Pipeline Namespace
+
+Goal: mechanically namespace clean event-pipeline pieces away from host,
+workflow-engine, waits, tools, adapters, and verified ingest.
+
+Target direction:
+
+```txt
+agent-event-pipeline/
+  protocol/
+    events.ts
+    codecs/
+    transforms/
+  sources/
+  authorities/
+    runtime-output-journal.ts
+    runtime-ingress-appender.ts
+    runtime-ingress-delivery-tracker.ts
+  subscribers/
+  session-runtime.ts
+```
+
+`pipeline/` should shrink to a composition file or be renamed to reflect that
+role. A folder named `pipeline/` should not imply another runtime stage.
+
+### PR 7: Factory Consumer Audit
+
+Goal: narrow `apps/factory` to public client and runtime host/config surfaces.
+
+Factory currently reaches into event and source/env-policy internals. Permission
+observations should come from the client/session surface when possible, and env
+policy should be available through a runtime host/config surface rather than
+sandbox internals.
+
+### PR 8: Durable Wait Extraction SDD
+
+Decide which `waits/` internals belong in `packages/effect-durable-operators`.
+Require a package-boundary SDD before any code moves.
+
+### PR 9: Public Surface Cleanup
+
+Enforce final exports after the layout reshuffles. Add semgrep or
+dependency-cruiser rules that fail on:
+
+- new folder-level cycles in `packages/runtime/src`;
+- direct imports from runtime host internals outside the host barrel;
+- direct imports of `runtime-errors.ts` from outside `@firegrid/runtime`;
+- top-level runtime folders without a documented role in this SDD.
+
+### PR 10: Docs Consolidation
+
+Move stable architecture guidance into `packages/runtime/ARCHITECTURE.md` once
+the post-`#250` refactors land. Keep SDDs as decision records, not the only
+source of operational architecture guidance.
+
+## Refactor Sequencing Invariants
+
+Every PR in the follow-up plan must satisfy:
+
+1. **No new folder cycles.** PR 1 establishes the baseline. PRs 2 onward must
+   not regress it.
+2. **Load-bearing barrels are stable.** Internal layout can change; public
+   imports through `authorities/index.ts`, `events/index.ts`, and
+   `@firegrid/protocol/launch/index.ts` stay coherent unless a PR migrates all
+   importers.
+3. **No new Firegrid abstractions.** Effect's `Context.Tag`, `Layer`,
+   `Queue.Enqueue`, `Stream`, `Sink`, and narrow `Effect` services cover the
+   roles this SDD defines.
+4. **Apps build unchanged until the app audit.** PRs 1 through 6 are
+   runtime-internal. Factory's surface audit is the first PR expected to touch
+   downstream product imports.
+5. **Provider uniqueness is tested against real Effect values.** Keep
+   test-local metadata and avoid production registries for review tooling.
 
 ## Non-Goals
 
@@ -712,3 +896,10 @@ semgrep behavior, but that metadata is not a runtime API.
 - Do not move `waits/` to `effect-durable-operators` without a separate
   package-boundary SDD.
 - Do not turn every implementation detail into a top-level runtime stage.
+- Do not split load-bearing barrels without migrating all importers in the same
+  PR.
+- Do not change `apps/flamecast`'s runtime import pattern. It already consumes
+  runtime through a single host entrypoint.
+- Do not relocate the wait router to `subscribers/`. It has subscriber-driver
+  shape, but its vocabulary is wait rows and source handles, not agent
+  event-pipeline events.

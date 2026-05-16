@@ -14,6 +14,7 @@ components:
       6: Runtime boundary reconciliation starts from semantic role and package ownership, not from preserving historical folder names.
       7: "Operator APIs and subscriber drivers are distinguished with existing Effect shapes: operators are functions returning Effect, while subscriber drivers are scoped Layer values that provide no service."
       8: Clean agent event-pipeline stages are grouped under a dedicated namespace instead of remaining flat beside host, workflow-engine, waits, tools, adapters, and verified ingest.
+      9: Dependency graph evidence is used to prioritize boundary reconciliation work, especially folder-level cycles and hidden compatibility barrels.
 
   NAMESPACE_BOUNDARY:
     requirements:
@@ -22,6 +23,16 @@ components:
       3: Host topology and command entrypoints remain outside the agent event-pipeline namespace.
       4: Waits, workflow-engine, agent-tools, agent-adapters, and verified-webhook-ingest remain adjacent bounded contexts rather than subfolders of the agent event pipeline.
       5: Pipeline namespacing is a mechanical follow-up after host/index extraction, not part of the first host split PR.
+      6: The pipeline composition folder is treated as composition, not as a runtime stage.
+
+  CYCLE_BREAKING:
+    requirements:
+      1: The first implementation PR after the SDD breaks folder-level cycles under packages/runtime/src before broader host extraction.
+      2: RuntimeContextError and its constructors are moved out of host/errors.ts into a runtime-wide module.
+      3: Events barrel compatibility re-exports of codec contracts and source byte streams are removed.
+      4: Host authority compatibility aliases are removed or inlined when they only re-export protocol launch authority behavior.
+      5: A dependency-cruiser or equivalent check prevents new folder-level cycles under packages/runtime/src.
+      6: Cycle-breaking work is behavior-preserving and downstream apps build unchanged.
 
   HOST_SPLIT:
     requirements:
@@ -30,7 +41,7 @@ components:
       3: The host-coupled AgentToolHost live implementation moves out of host/index into a dedicated host module.
       4: Host layer topology and config-derived host layers are separated from command handlers such as startRuntime and appendRuntimeIngress.
       5: The host split is behavior-preserving and validated by existing runtime host, prompt-routing, sync-run, two-host isolation, and codec event-plane tests.
-      6: The first implementation PR for this SDD is the host split and does not move waits internals or package boundaries.
+      6: Host split runs after cycle-breaking and does not move waits internals or package boundaries.
 
   TOOL_AND_ADAPTER_BOUNDARIES:
     requirements:
@@ -50,6 +61,13 @@ components:
       6: The first wait-router reconciliation keeps timeout ownership unchanged; moving timeout resolution into the router requires separate ACIDs.
       7: Durable wait row authority exposes row-level lookup, upsert, and row-stream capabilities rather than bundled services that encode wait lifecycle policy.
       8: Active-wait filtering, match completion, timeout completion, and deferred reconciliation belong to the operator/subscriber driver layer, not the durable wait row provider.
+      9: The wait row authority is moved into the wait bounded context before any package extraction to effect-durable-operators.
+      10: The wait router is named as a wait-owned subscriber driver and is not relocated into the agent event-pipeline subscribers folder.
+
+  SOURCE_REGISTRATION:
+    requirements:
+      1: SourceCollectionHandle registration is owned by provider/source-registration layers rather than host-only observation glue.
+      2: Host composition does not enumerate every authority stream that wait_for can observe.
 
   EFFECT_DURABLE_OPERATORS:
     requirements:
@@ -78,11 +96,15 @@ components:
       3: Runtime package exports do not preserve stale compatibility subpaths when downstream apps can import target primitives.
       4: Semgrep and dependency-boundary rules are updated after boundary reconciliation to prevent regression into compatibility aliases or hidden table authority.
       5: Public runtime exports are reviewed against the role inventory before each boundary reconciliation PR is accepted.
+      6: Load-bearing barrels remain stable unless a PR migrates all importers in the same change.
+      7: Runtime-internal PRs before the factory audit do not require downstream app import changes.
+      8: Flamecast keeps its single host-entrypoint runtime import pattern.
 
 constraints:
   SEQUENCING:
     requirements:
       1: Boundary reconciliation starts after the runtime agent event pipeline cutover lands.
-      2: Host/index extraction may land before generic wait extraction because it is behavior-preserving and local to packages/runtime.
+      2: Cycle-breaking lands before host/index extraction.
       3: Generic durable wait extraction requires a separate package-boundary design before code moves into effect-durable-operators.
       4: The reconciliation work does not re-open accepted event-pipeline behavior unless validation finds a correctness bug.
+      5: Factory consumer cleanup happens after runtime-internal cycle, host, namespace, and source-registration cleanup.
