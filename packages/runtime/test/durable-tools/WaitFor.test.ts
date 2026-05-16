@@ -15,7 +15,7 @@
 import { Workflow } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { Effect, Exit, Fiber, Layer, Option, Schema, Stream } from "effect"
-import { DurableTable, type DurableTableError } from "effect-durable-operators"
+import { DurableTable } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { DurableStreamsWorkflowEngine } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
 import {

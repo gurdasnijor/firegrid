@@ -23,8 +23,7 @@ import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import {
   DurableToolsWaitForLive,
   WaitFor,
-  SourceCollections,
-  sourceCollectionStreamHandle,
+  RuntimeWaitSourceSchema,
 } from "@firegrid/runtime/durable-tools"
 ```
 
@@ -157,7 +156,7 @@ source collection.
 
 Read the detailed durable-tools guide:
 
-- [durable-tools README](src/waits/README.md)
+- [durable-tools README](src/durable-tools/README.md)
 - [Durable tools SDD](../../docs/proposals/SDD_FIREGRID_DURABLE_TOOLS.md)
 
 ## Boundary Rules

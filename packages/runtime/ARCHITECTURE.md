@@ -50,10 +50,9 @@ docs-only metadata, compatibility aliases, or tests.
 | `src/agent-event-pipeline/authorities/` | Runtime output, ingress input, and ingress delivery durable capability providers. |
 | `src/agent-event-pipeline/subscribers/` | Host-scoped drivers over durable observations, such as ingress delivery and tool routing. |
 | `src/agent-event-pipeline/session-runtime.ts` | Per-session composition for source, codec session, subscribers, and output journal. |
-| `src/authorities/` | Runtime control-plane authorities for contexts, runs, and runtime observation source names. |
-| `src/source-registration/` | Dynamic `SourceCollectionHandle` registrations for wait-for source lookup. |
+| `src/authorities/` | Runtime control-plane authorities for contexts and runs. |
 | `src/host/` | Runtime host topology, command entrypoints, config-derived layers, host-owned table wiring, and host-coupled tool services. |
-| `src/waits/` | Durable `WaitFor.match` operator, wait row authority, source collection registry, and wait router. |
+| `src/durable-tools/` | Durable-tools bounded context: `WaitFor.match` operator, wait row authority, typed `RuntimeWaitSource` selection, `RuntimeWaitStreams`, and the wait router. `wait_for` is the first durable tool inside it. |
 | `src/workflow-engine/` | Firegrid durable-table adapter for `@effect/workflow`. |
 | `src/agent-tools/` | Runtime tool catalog, MCP host projection, scheduled input workflow, and tool lowering. |
 | `src/agent-adapters/` | Runtime-facing agent adapter facades and ACP mapping. |
@@ -142,12 +141,10 @@ Runtime-owned durable writes are grouped by authority provider:
 | Runtime ingress input rows | `RuntimeIngressAppenderLayer` and `RuntimeIngressAppendAndGet`. |
 | Runtime ingress delivery claim/completion rows | `RuntimeIngressDeliveryTrackerLayer` and `RuntimeIngressDeliveryClaimAndComplete`. |
 | Runtime contexts and run events | `RuntimeControlPlaneRecorderLive` in `src/authorities/`. |
-| Durable wait rows and completions | `DurableWaitStoreLive` in `src/waits/`. |
+| Durable wait rows and completions | `DurableWaitStoreLive` in `src/durable-tools/`. |
 
 Authority modules expose concrete write capabilities and concrete read
-observation surfaces. The read side is usually a `Stream` capability tag. The
-dynamic wait-for read side is a `SourceCollectionHandle` registered by
-`src/source-registration/`.
+observation surfaces. The read side is a typed `Stream` capability tag.
 
 ## Static And Dynamic Reads
 
@@ -156,30 +153,26 @@ channel. For example, tool routing consumes runtime agent-output observations
 and an ingress append capability; it does not receive a runtime output table
 facade.
 
-Dynamic `WaitFor.match` lookup uses named `SourceCollectionHandle`
-registrations:
+`WaitFor.match` persists a typed `RuntimeWaitSource` discriminator
+(`AgentOutput` | `RuntimeRun`) on the wait row. The wait router resolves it
+without a source-name registry:
 
 ```txt
-authority/provider stream tag -> source-registration layer
-  -> SourceCollections.register(sourceCollectionStreamHandle(name, stream))
-  -> wait router awaits source by name
+typed authority stream tags (RuntimeAgentOutputEvents, RuntimeRuns)
+  -> RuntimeWaitStreamsLive (Effect requirement channel)
+  -> wait router Match.value(source) selects the concrete stream
 ```
 
-`src/source-registration/` owns runtime source-handle registration for current
-runtime output, ingress, and control-plane observation streams. Host
-composition supplies `RuntimeSourceRegistrationsLive`; it does not enumerate
-every authority stream inline. App-owned wait sources use
-`registerRuntimeHostAppSource` or `RuntimeHostAppSourceRegistrationsLive` from
-`runtime-host`.
+Adding a runtime wait source is one `RuntimeWaitSource` variant, one
+`RuntimeWaitStreams` field, and one router `Match` arm. There is no
+`SourceCollections` registry and no app source-name registration; app-owned
+facts use app-local projection waits over app-owned `DurableTable` rows.
+`RuntimeContext` waiting is deferred until a product flow needs it.
 
-Use `SourceCollectionHandle` only for dynamic source-name lookup. It is not the
-universal read abstraction for subscribers that can depend on a typed `Stream`
-capability.
+## Durable Tools
 
-## Waits
-
-`src/waits/` is a durable coordination operator boundary, not an agent event
-pipeline subscriber folder.
+`src/durable-tools/` is a durable coordination operator boundary, not an agent
+event pipeline subscriber folder. `wait_for` is the first durable tool in it.
 
 The split is:
 
@@ -267,7 +260,8 @@ Before adding a new runtime module:
    role. Do not create a convenience folder that hides architecture.
 3. Model dependencies as Effect requirements and layers. Keep row providers and
    table facades inside authority/provider internals.
-4. Use typed `Stream` capabilities for static subscribers. Use
-   `SourceCollectionHandle` only for dynamic wait source lookup.
+4. Use typed `Stream` capabilities for static subscribers and for `wait_for`
+   source selection (typed `RuntimeWaitSource` over `RuntimeWaitStreams`).
+   There is no source-name registry.
 5. Keep product semantics in apps or protocol schemas. Runtime owns host and
    durable execution semantics, not planner prompts or application facts.

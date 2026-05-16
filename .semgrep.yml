@@ -468,7 +468,7 @@ rules:
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
         - "/packages/runtime/src/agent-event-pipeline/authorities/**"
-        - "/packages/runtime/src/waits/internal/durable-wait-store.ts"
+        - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
     message: |
       Runtime-owned DurableTable writes must go through the owning runtime
       authority module.
@@ -702,8 +702,8 @@ rules:
         - "/packages/runtime/src/host/index.ts"
         - "/packages/runtime/src/host/observation-sources.ts"
         - "/packages/runtime/src/agent-tools/mcp-host.ts"
-        - "/packages/runtime/src/waits/DurableToolsWaitFor.ts"
-        - "/packages/runtime/src/waits/internal/table.ts"
+        - "/packages/runtime/src/durable-tools/DurableToolsWaitFor.ts"
+        - "/packages/runtime/src/durable-tools/internal/table.ts"
     message: |
       Runtime-owned DurableTable service yielded outside provider internals or
       explicit host composition.
@@ -741,20 +741,26 @@ rules:
     languages: [typescript]
     severity: ERROR
     metadata:
-      acid: firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.1
-      quality-acid: firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.2
+      acid: firegrid-typed-wait-source-redesign.MIGRATION.4
+      quality-acid: firegrid-typed-wait-source-redesign.REJECTION.1
       category: runtime-boundary
       rationale: |
-        Runtime host composition should merge provider/source-registration
-        layers. Direct SourceCollections registration in host files recreates
-        host-only observation glue and makes host enumerate every wait_for
-        source.
+        The stringly SourceCollections / sourceCollectionStreamHandle /
+        registerRuntimeHostAppSource wait-source registry is a rejected
+        design and is deleted. Runtime waits select a typed RuntimeWaitSource
+        variant resolved from concrete Stream capability tags
+        (RuntimeWaitStreams) through the Effect requirement channel.
       fix-hint: |
-        Move handle construction to packages/runtime/src/source-registration
-        and compose RuntimeSourceRegistrationsLive from host substrate.
+        Use a typed RuntimeWaitSource variant on WaitFor.match; add a
+        RuntimeWaitStreams field and a router Match arm for new runtime
+        observations. App-owned facts use app-local projection waits, not a
+        runtime source-name registry.
     paths:
       include:
-        - "/packages/runtime/src/host/**/*.ts"
+        - "/packages/**/src/**/*.ts"
+        - "/packages/**/src/**/*.tsx"
+        - "/apps/**/src/**/*.ts"
+        - "/apps/**/src/**/*.tsx"
         - "/semgrep-tests/**/*.ts"
       exclude:
         - "**/*.test.ts"
@@ -762,11 +768,16 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
     message: |
-      Runtime host files must not directly use SourceCollections or
-      sourceCollectionStreamHandle. Compose source-registration layers instead.
+      Production code must not use SourceCollections /
+      sourceCollectionStreamHandle / registerRuntimeHostAppSource. The
+      runtime wait-source registry is removed; select a typed
+      RuntimeWaitSource resolved from RuntimeWaitStreams
+      (firegrid-typed-wait-source-redesign).
     pattern-either:
       - pattern-regex: 'import\s*\{[^}]*\b(?:SourceCollections|sourceCollectionStreamHandle)\b[^}]*\}\s*from'
       - pattern: yield* SourceCollections
+      - pattern: sourceCollectionStreamHandle(...)
+      - pattern-regex: '\bregisterRuntimeHostAppSource\b'
       - pattern: sourceCollectionStreamHandle(...)
 
   - id: firegrid-runtime-no-host-internal-imports-outside-host
@@ -881,8 +892,8 @@ rules:
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
         - "/packages/runtime/src/agent-event-pipeline/authorities/**"
-        - "/packages/runtime/src/waits/internal/durable-wait-store.ts"
-        - "/packages/runtime/src/waits/internal/table.ts"
+        - "/packages/runtime/src/durable-tools/internal/durable-wait-store.ts"
+        - "/packages/runtime/src/durable-tools/internal/table.ts"
     message: |
       Runtime production component accepts a runtime-owned DurableTable service.
       Use Effect capability tags instead.

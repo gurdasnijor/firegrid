@@ -1,9 +1,21 @@
 # `@firegrid/runtime/durable-tools`
 
+> **Updated by the typed wait-source redesign.** The `SourceCollections` /
+> `sourceCollectionStreamHandle` source-name registry described in the lower
+> sections of this guide is **removed**. `WaitFor.match` now takes a typed
+> `RuntimeWaitSource` discriminator (`AgentOutput` | `RuntimeRun`); the wait
+> router selects the concrete observation stream from `RuntimeWaitStreams` via
+> `Match.value`, with the typed stream tags supplied through the Effect
+> requirement channel. App-owned facts use app-local projection waits, not a
+> runtime registry. See `docs/sdds/SDD_FIREGRID_TYPED_WAIT_SOURCE_REDESIGN.md`
+> and `features/firegrid/firegrid-typed-wait-source-redesign.feature.yaml`.
+> The registry-era prose below is retained only as historical context pending
+> a full rewrite.
+
 Durable tools for `@effect/workflow` handlers running on the Firegrid
 substrate. v0 ships one primitive: **`wait_for`** — a workflow-handler API
-that durably suspends until a matching row appears in a registered
-DurableTable source collection, with an optional timeout.
+that durably suspends until a row matching a typed `RuntimeWaitSource`
+appears, with an optional timeout.
 
 > Spec: [`features/firegrid/firegrid-durable-tools.feature.yaml`](../../../../../features/firegrid/firegrid-durable-tools.feature.yaml)
 > SDD:  [`docs/proposals/SDD_FIREGRID_DURABLE_TOOLS.md`](../../../../../docs/proposals/SDD_FIREGRID_DURABLE_TOOLS.md)
