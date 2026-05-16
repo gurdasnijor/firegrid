@@ -36,7 +36,7 @@ import {
   WaitForToolInputSchema,
   WaitForToolOutputSchema,
   WorkflowTerminalStateSchema,
-} from "./schema.ts"
+} from "../../src/agent-tools/schema.ts"
 
 const decodes = <A, I>(schema: Schema.Schema<A, I>, input: unknown): Promise<A> =>
   Effect.runPromise(Schema.decodeUnknown(schema)(input))

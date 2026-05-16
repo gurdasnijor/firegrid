@@ -45,7 +45,7 @@ The production client entrypoints are browser/edge safe:
 - no process or sandbox start authority unless the app explicitly provides a
   host-side `RuntimeStartCapability`.
 
-Tests under `packages/client/src/__tests__` may use Node fixtures. Those are not
+Tests under `packages/client/test` may use Node fixtures. Those are not
 part of the browser-facing package surface.
 
 ## Configuration

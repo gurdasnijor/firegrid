@@ -6,7 +6,7 @@ import {
 } from "@firegrid/protocol/agent-tools"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { FiregridClientOperations } from "./firegrid.ts"
+import { FiregridClientOperations } from "../src/firegrid.ts"
 
 describe("Firegrid client schema projection", () => {
   it("firegrid-schema-projection-contract.CLIENT_PROJECTION.1 exposes namespaced client operations from the shared schema catalog", () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   makeRuntimeIngressInputRow,
   promptToRuntimeIngressRequest,
-} from "./index.ts"
+} from "../../src/runtime-ingress/index.ts"
 
 describe("@firegrid/protocol runtime ingress schema", () => {
   it("firegrid-agent-ingress.INGRESS.3 firegrid-agent-ingress.INGRESS.9 builds pending input rows with deterministic idempotency ids", () => {

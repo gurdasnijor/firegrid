@@ -7,7 +7,7 @@ import {
   SessionCreateOrLoadInputSchema,
   SessionExternalKeySchema,
   sessionContextIdForExternalKey,
-} from "./schema.ts"
+} from "../../src/session-facade/schema.ts"
 
 describe("session facade protocol schema", () => {
   it("firegrid-session-fact-client-surfaces.SESSION_IDENTITY.1 documents sessionId as the v1 RuntimeContext.contextId alias", () => {
