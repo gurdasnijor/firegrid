@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   authorizedBindingsFromPlanner,
   decodeFactoryConfig,
-} from "./config.ts"
+} from "../src/config.ts"
 import {
   AcceptFactoryTriggerOptionsSchema,
   DarkFactoryHostLive,
@@ -22,21 +22,21 @@ import {
   readFactoryRunStatus,
   respondToFactoryPermission,
   waitForPermissionRequest,
-} from "./host.ts"
+} from "../src/host.ts"
 import {
   FactoryRunKeySchema,
   PermissionResolutionKeySchema,
   factoryRunIdentityFor,
   permissionResolutionIdentityFor,
-} from "./identity.ts"
-import { buildPlannerPrompt } from "./prompts.ts"
+} from "../src/identity.ts"
+import { buildPlannerPrompt } from "../src/prompts.ts"
 import {
   DarkFactoryFactKeyEncoded,
   DarkFactoryTriggerSchema,
   darkFactoryFactsSourceName,
   type DarkFactoryRun,
   type DarkFactoryTrigger,
-} from "./tables.ts"
+} from "../src/tables.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
