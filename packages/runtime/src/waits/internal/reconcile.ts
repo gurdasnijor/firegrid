@@ -18,24 +18,24 @@
  */
 
 import type { WorkflowEngine } from "@effect/workflow"
-import { Effect, Exit, Option } from "effect"
+import { Effect, Exit, Option, Stream } from "effect"
 import { matchDeferredFor } from "./wait-for.ts"
 import type {
-  DurableWaitAppendAndGet,
-  DurableWaitCompletionAppendAndGet,
+  DurableWaitRowLookup,
+  DurableWaitRowUpsert,
 } from "./durable-wait-store.ts"
+import type { WaitCompletionRow } from "./table.ts"
 
 export const reconcileCompletions = (
-  waitStore:
-    & DurableWaitAppendAndGet["Type"]
-    & DurableWaitCompletionAppendAndGet["Type"],
+  waitLookup: DurableWaitRowLookup["Type"],
+  waitUpsert: DurableWaitRowUpsert["Type"],
+  completionRows: Stream.Stream<WaitCompletionRow, unknown>,
   engine: WorkflowEngine.WorkflowEngine["Type"],
 ) =>
-  Effect.gen(function*() {
-    const completions = yield* waitStore.completions
-    yield* Effect.forEach(completions, (completion) =>
+  completionRows.pipe(
+    Stream.runForEach((completion) =>
       Effect.gen(function*() {
-        const waitOpt = yield* waitStore.findWait(completion.waitKey)
+        const waitOpt = yield* waitLookup.find(completion.waitKey)
         if (Option.isNone(waitOpt)) return
         const wait = waitOpt.value
         // Timeout completions are produced inside the workflow body's race
@@ -45,7 +45,7 @@ export const reconcileCompletions = (
         // If the wait row is still `active`, the router crashed between
         // completion-row write and wait-row flip; bridge by flipping here.
         if (wait.status === "active") {
-          yield* waitStore.upsertWait({ ...wait, status: "completed" })
+          yield* waitUpsert.upsert({ ...wait, status: "completed" })
         }
         // Issue the deferredDone regardless of whether the wait row was
         // already `completed`. The engine's Option.isNone guard makes
@@ -60,5 +60,16 @@ export const reconcileCompletions = (
             exit: Exit.succeed(completion.matchedRowPayload),
           },
         )
-      }))
-  })
+      }).pipe(
+        Effect.catchAll((cause) =>
+          Effect.logDebug(
+            "[durable-tools] reconcile row failed",
+          ).pipe(Effect.annotateLogs({
+            waitName: completion.waitKey.name,
+            cause,
+          })),
+        ),
+      )),
+    Effect.forkScoped,
+    Effect.asVoid,
+  )

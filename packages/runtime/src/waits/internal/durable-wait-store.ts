@@ -1,5 +1,4 @@
-import { Context, Effect, Layer, Option } from "effect"
-import type { Stream } from "effect"
+import { Context, Effect, Layer, Option, type Stream } from "effect"
 import type { WaitKey } from "./keys.ts"
 import {
   DurableToolsTable,
@@ -8,24 +7,32 @@ import {
   type WaitRow,
 } from "./table.ts"
 
-export interface DurableWaitAppendAndGetService {
-  readonly findWait: (
+// firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.5
+// firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.7
+// firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.9
+// firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.11
+export interface DurableWaitRowLookupService {
+  readonly find: (
     waitKey: WaitKey,
   ) => Effect.Effect<Option.Option<WaitRow>, unknown>
-  readonly upsertWait: (
-    row: WaitRow,
-  ) => Effect.Effect<void, unknown>
-  readonly activeWaits: Stream.Stream<WaitRow, unknown>
 }
 
-export interface DurableWaitCompletionAppendAndGetService {
-  readonly findCompletion: (
+export interface DurableWaitRowUpsertService {
+  readonly upsert: (
+    row: WaitRow,
+  ) => Effect.Effect<void, unknown>
+}
+
+export interface DurableWaitCompletionRowLookupService {
+  readonly find: (
     waitKey: WaitKey,
   ) => Effect.Effect<Option.Option<WaitCompletionRow>, unknown>
-  readonly upsertCompletion: (
+}
+
+export interface DurableWaitCompletionRowUpsertService {
+  readonly upsert: (
     row: WaitCompletionRow,
   ) => Effect.Effect<void, unknown>
-  readonly completions: Effect.Effect<ReadonlyArray<WaitCompletionRow>, unknown>
 }
 
 const findWaitIn = findWaitByKey
@@ -53,11 +60,7 @@ const upsertCompletionTo = (
   row: WaitCompletionRow,
 ) => table.completions.upsert(row)
 
-const completionsIn = (
-  table: DurableToolsTable["Type"],
-) => table.completions.query((coll) => coll.toArray)
-
-const activeWaitsIn = (
+const waitRowsFrom = (
   table: DurableToolsTable["Type"],
 ): Stream.Stream<WaitRow, unknown> =>
   table.waits.subscribe<WaitRow>((coll, emit) => {
@@ -65,7 +68,6 @@ const activeWaitsIn = (
       (changes) => {
         changes.forEach((change) => {
           if (change.value === undefined || change.value === null) return
-          if (change.value.status !== "active") return
           emit(change.value)
         })
       },
@@ -74,37 +76,77 @@ const activeWaitsIn = (
     return () => sub.unsubscribe()
   })
 
-const waitAppendAndGetFromTable = (
+const waitCompletionRowsFrom = (
   table: DurableToolsTable["Type"],
-): DurableWaitAppendAndGetService => ({
-  findWait: waitKey => findWaitIn(table, waitKey),
-  upsertWait: row => upsertWaitTo(table, row),
-  activeWaits: activeWaitsIn(table),
-})
+): Stream.Stream<WaitCompletionRow, unknown> =>
+  table.completions.subscribe<WaitCompletionRow>((coll, emit) => {
+    const sub = coll.subscribeChanges(
+      (changes) => {
+        changes.forEach((change) => {
+          if (change.value === undefined || change.value === null) return
+          emit(change.value)
+        })
+      },
+      { includeInitialState: true },
+    )
+    return () => sub.unsubscribe()
+  })
 
-const waitCompletionAppendAndGetFromTable = (
-  table: DurableToolsTable["Type"],
-): DurableWaitCompletionAppendAndGetService => ({
-  findCompletion: waitKey => findCompletionIn(table, waitKey),
-  upsertCompletion: row => upsertCompletionTo(table, row),
-  completions: completionsIn(table),
-})
+export class DurableWaitRowLookup extends Context.Tag(
+  "@firegrid/runtime/DurableWaitRowLookup",
+)<DurableWaitRowLookup, DurableWaitRowLookupService>() {}
 
-export class DurableWaitAppendAndGet extends Context.Tag(
-  "@firegrid/runtime/DurableWaitAppendAndGet",
-)<DurableWaitAppendAndGet, DurableWaitAppendAndGetService>() {}
+export class DurableWaitRowUpsert extends Context.Tag(
+  "@firegrid/runtime/DurableWaitRowUpsert",
+)<DurableWaitRowUpsert, DurableWaitRowUpsertService>() {}
 
-export class DurableWaitCompletionAppendAndGet extends Context.Tag(
-  "@firegrid/runtime/DurableWaitCompletionAppendAndGet",
-)<DurableWaitCompletionAppendAndGet, DurableWaitCompletionAppendAndGetService>() {}
+export class DurableWaitRows extends Context.Tag(
+  "@firegrid/runtime/DurableWaitRows",
+)<DurableWaitRows, Stream.Stream<WaitRow, unknown>>() {}
+
+export class DurableWaitCompletionRowLookup extends Context.Tag(
+  "@firegrid/runtime/DurableWaitCompletionRowLookup",
+)<DurableWaitCompletionRowLookup, DurableWaitCompletionRowLookupService>() {}
+
+export class DurableWaitCompletionRowUpsert extends Context.Tag(
+  "@firegrid/runtime/DurableWaitCompletionRowUpsert",
+)<DurableWaitCompletionRowUpsert, DurableWaitCompletionRowUpsertService>() {}
+
+export class DurableWaitCompletionRows extends Context.Tag(
+  "@firegrid/runtime/DurableWaitCompletionRows",
+)<DurableWaitCompletionRows, Stream.Stream<WaitCompletionRow, unknown>>() {}
 
 export const DurableWaitStoreLive = Layer.mergeAll(
   Layer.effect(
-    DurableWaitAppendAndGet,
-    Effect.map(DurableToolsTable, waitAppendAndGetFromTable),
+    DurableWaitRowLookup,
+    Effect.map(DurableToolsTable, table => ({
+      find: waitKey => findWaitIn(table, waitKey),
+    })),
   ),
   Layer.effect(
-    DurableWaitCompletionAppendAndGet,
-    Effect.map(DurableToolsTable, waitCompletionAppendAndGetFromTable),
+    DurableWaitRowUpsert,
+    Effect.map(DurableToolsTable, table => ({
+      upsert: row => upsertWaitTo(table, row),
+    })),
+  ),
+  Layer.effect(
+    DurableWaitRows,
+    Effect.map(DurableToolsTable, waitRowsFrom),
+  ),
+  Layer.effect(
+    DurableWaitCompletionRowLookup,
+    Effect.map(DurableToolsTable, table => ({
+      find: waitKey => findCompletionIn(table, waitKey),
+    })),
+  ),
+  Layer.effect(
+    DurableWaitCompletionRowUpsert,
+    Effect.map(DurableToolsTable, table => ({
+      upsert: row => upsertCompletionTo(table, row),
+    })),
+  ),
+  Layer.effect(
+    DurableWaitCompletionRows,
+    Effect.map(DurableToolsTable, waitCompletionRowsFrom),
   ),
 )

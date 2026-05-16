@@ -1,11 +1,4 @@
 export {
-  DurableWaitAppendAndGet,
-  DurableWaitCompletionAppendAndGet,
-  DurableWaitStoreLive,
-  type DurableWaitAppendAndGetService,
-  type DurableWaitCompletionAppendAndGetService,
-} from "../waits/internal/durable-wait-store.ts"
-export {
   RuntimeControlPlaneRecorderLive,
   RuntimeContexts,
   RuntimeContextInsertLive,

@@ -110,9 +110,8 @@ needs a runtime config/public host surface instead of sandbox-internal imports.
 
 The graph also exposes two specific placement issues:
 
-- `authorities/durable-wait-store.ts` imports `waits/internal/table.ts`. The
-  wait row schema and the row authority are one bounded context split across
-  two folders for the #250 cutover.
+- `waits/internal/durable-wait-store.ts` now lives beside `waits/internal/table.ts`; the
+  wait row schema and row authority are one bounded context.
 - `host/observation-sources.ts` pulls authority streams and wait source
   registration together only to register `SourceCollectionHandle`s. This is
   host-side glue for behavior that should be owned by provider/source
@@ -371,8 +370,10 @@ const match: <A>(
   WaitForError | ParseResult.ParseError | DurableTableError,
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
-  | DurableWaitAppendAndGet
-  | DurableWaitCompletionAppendAndGet
+  | DurableWaitRowLookup
+  | DurableWaitRowUpsert
+  | DurableWaitCompletionRowLookup
+  | DurableWaitCompletionRowUpsert
   | Scope.Scope
 >
 ```
@@ -393,8 +394,12 @@ Static shape:
 const WaitRouterLive: Layer.Layer<
   never,
   WaitRouterError,
-  | DurableWaitAppendAndGet
-  | DurableWaitCompletionAppendAndGet
+  | DurableWaitRowLookup
+  | DurableWaitRowUpsert
+  | DurableWaitRows
+  | DurableWaitCompletionRowLookup
+  | DurableWaitCompletionRowUpsert
+  | DurableWaitCompletionRows
   | SourceCollections
   | WorkflowEngine.WorkflowEngine
 >
@@ -694,7 +699,7 @@ change restart and race semantics, so it requires separate ACIDs.
 
 ## Wait Row Authority Is Not Wait Semantics
 
-`authorities/durable-wait-store.ts` is the main place where semantics can
+`waits/internal/durable-wait-store.ts` is the main place where semantics can
 bleed. It should be a row authority over durable wait tables, not the owner of
 the wait lifecycle model.
 
@@ -703,7 +708,7 @@ for `WaitRow` and `WaitCompletionRow`. The exact tag names belong to the wait
 authority PR, not to this boundary SDD. The provider layer may still be one
 implementation backed by one `DurableToolsTable`, but callers should consume
 narrow row capabilities. The provider should not expose bundled services like
-"append and get" if the service also contains lookup, filtered active streams,
+bundled "append and get" if the service also contains lookup, filtered active streams,
 and completion scans.
 
 Lifecycle language belongs outside the authority:
@@ -908,7 +913,7 @@ semantics.
 
 Goal: move the wait row authority next to the wait row schema.
 
-Move `authorities/durable-wait-store.ts` into the wait bounded context and
+Move `waits/internal/durable-wait-store.ts` into the wait bounded context and
 split its services into row-level lookup/upsert/stream capabilities. This does
 not move waits to `effect-durable-operators` and does not change
 `WaitFor.match`.

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
-  DurableWaitAppendAndGet,
-  DurableWaitCompletionAppendAndGet,
+  DurableWaitCompletionRowLookup,
+  DurableWaitCompletionRows,
+  DurableWaitCompletionRowUpsert,
+  DurableWaitRows,
+  DurableWaitRowLookup,
+  DurableWaitRowUpsert,
   DurableWaitStoreLive,
 } from "../../src/waits/internal/durable-wait-store.ts"
 import {
@@ -167,13 +171,37 @@ const providerEntries = [
     dynamicSourceCollections: runtimeControlPlaneSources,
   },
   {
-    capability: DurableWaitAppendAndGet,
+    capability: DurableWaitRowLookup,
     provider: DurableWaitStoreLive,
     backingTable: "DurableToolsTable.waits",
     dynamicSourceCollections: durableWaitSources,
   },
   {
-    capability: DurableWaitCompletionAppendAndGet,
+    capability: DurableWaitRowUpsert,
+    provider: DurableWaitStoreLive,
+    backingTable: "DurableToolsTable.waits",
+    dynamicSourceCollections: durableWaitSources,
+  },
+  {
+    capability: DurableWaitRows,
+    provider: DurableWaitStoreLive,
+    backingTable: "DurableToolsTable.waits",
+    dynamicSourceCollections: durableWaitSources,
+  },
+  {
+    capability: DurableWaitCompletionRowLookup,
+    provider: DurableWaitStoreLive,
+    backingTable: "DurableToolsTable.completions",
+    dynamicSourceCollections: durableWaitSources,
+  },
+  {
+    capability: DurableWaitCompletionRowUpsert,
+    provider: DurableWaitStoreLive,
+    backingTable: "DurableToolsTable.completions",
+    dynamicSourceCollections: durableWaitSources,
+  },
+  {
+    capability: DurableWaitCompletionRows,
     provider: DurableWaitStoreLive,
     backingTable: "DurableToolsTable.completions",
     dynamicSourceCollections: durableWaitSources,
@@ -197,12 +225,16 @@ const canonicalCapabilityTags = [
   RuntimeContexts,
   RuntimeRuns,
   RuntimeRunAppendAndGet,
-  DurableWaitAppendAndGet,
-  DurableWaitCompletionAppendAndGet,
+  DurableWaitRowLookup,
+  DurableWaitRowUpsert,
+  DurableWaitRows,
+  DurableWaitCompletionRowLookup,
+  DurableWaitCompletionRowUpsert,
+  DurableWaitCompletionRows,
 ] as const
 
 describe("runtime durable capability provider uniqueness", () => {
-  it("firegrid-runtime-agent-event-pipeline.ENFORCEMENT.1 firegrid-runtime-agent-event-pipeline.ENFORCEMENT.5 firegrid-runtime-agent-event-pipeline.ENFORCEMENT.5-1 maps each durable capability tag value to one real provider layer value", () => {
+  it("firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.5 firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.7 firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.9 firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.11 firegrid-runtime-agent-event-pipeline.ENFORCEMENT.1 firegrid-runtime-agent-event-pipeline.ENFORCEMENT.5 firegrid-runtime-agent-event-pipeline.ENFORCEMENT.5-1 maps each durable capability tag value to one real provider layer value", () => {
     const tags = providerEntries.map(entry => entry.capability)
     expect(tags).toEqual(canonicalCapabilityTags)
     expect(new Set(tags).size).toBe(tags.length)

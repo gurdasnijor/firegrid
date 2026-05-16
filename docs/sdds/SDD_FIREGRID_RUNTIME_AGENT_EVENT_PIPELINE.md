@@ -605,11 +605,11 @@ export const runToolRouter = (options): Effect.Effect<
   ToolRouterError,
   | RuntimeAgentOutputEvents
   | RuntimeIngressAppendAndGet
-  | DurableWaitAppendAndGet
+  | DurableWaitRowUpsert
 > => Effect.gen(function*() {
   const outputEvents = yield* RuntimeAgentOutputEvents
   const appendIngress = yield* RuntimeIngressAppendAndGet
-  const appendWait = yield* DurableWaitAppendAndGet
+  const appendWait = yield* DurableWaitRowUpsert
   // ...
 })
 ```
@@ -627,7 +627,7 @@ Examples:
 AgentOutputEvent stream -> RuntimeAgentOutputRowSink
 RuntimeIngressRequest   -> RuntimeIngressAppendAndGet
 run lifecycle transition -> RuntimeRunAppendAndGet
-wait_for tool call -> DurableWaitAppendAndGet
+wait_for tool call -> DurableWaitRowUpsert
 ```
 
 This does not replace `DurableTable`. `DurableTable` remains the storage and
@@ -991,8 +991,8 @@ RuntimeIngressClaim -> RuntimeIngressDeliveryTrackerLive -> RuntimeIngressTable.
 RuntimeIngressDeliveryComplete -> RuntimeIngressDeliveryTrackerLive -> RuntimeIngressTable.deliveries
 RuntimeContextInsert -> RuntimeControlPlaneRecorderLive -> RuntimeControlPlaneTable.contexts
 RuntimeRunAppendAndGet -> RuntimeControlPlaneRecorderLive -> RuntimeControlPlaneTable.runs
-DurableWaitAppendAndGet -> DurableWaitStoreLive -> DurableTools wait rows
-DurableWaitCompletionAppendAndGet -> DurableWaitStoreLive -> DurableTools wait rows
+DurableWaitRowUpsert -> DurableWaitStoreLive -> DurableTools wait rows
+DurableWaitCompletionRowUpsert -> DurableWaitStoreLive -> DurableTools wait rows
 ```
 
 One layer constructor per table family may provide multiple tags. That grouping
