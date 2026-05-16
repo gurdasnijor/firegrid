@@ -19,7 +19,14 @@ separate package-boundary design before runtime durable wait internals are
 treated as permanent runtime concepts or moved into
 `packages/effect-durable-operators`.
 
-This SDD is that design checkpoint. It evaluates the current
+This SDD is that design checkpoint. It is intentionally ahead of demand: there
+is no second external consumer for durable waits today, and this document is not
+a commitment to move code now. The package boundary still needs to be settled
+before any extraction PR can be planned safely, because once wait rows,
+matching, source lookup, or workflow reconciliation become public package API,
+encoded compatibility and vocabulary choices become hard to unwind.
+
+The goal is a positive roadmap and guardrail. This SDD evaluates the current
 `packages/runtime/src/waits/**` surface after the boundary reconciliation PRs,
 classifies what is generic durable operator behavior versus Firegrid runtime
 vocabulary, and defines staged acceptance criteria. It does not move code.
@@ -161,10 +168,15 @@ following are true:
 7. `pnpm run lint:deps` continues to enforce that
    `effect-durable-operators` imports no `@firegrid/*` packages.
 
+These criteria are future extraction gates, not claims that demand already
+exists. In particular, no current second external consumer justifies extracting
+the full wait operator today.
+
 The strongest first extraction target is the schema/evaluator layer:
 `WaitKey`, wait row schemas, completion row schemas, wait status/outcome enums,
 and scalar field-equality matching. That slice is mostly Effect Schema plus pure
-functions and does not require a workflow dependency decision.
+functions, preserves encoded compatibility as its main risk, and does not
+require a workflow dependency decision.
 
 ## Staged Plan
 
@@ -183,7 +195,8 @@ Acceptance:
 
 ### Stage 1: Schema And Matching Extraction
 
-Move or duplicate behind compatibility exports only the pieces that are pure
+The smallest plausible extraction is the pure schema and matching layer. Move or
+duplicate behind compatibility exports only the pieces that are pure
 schemas/functions:
 
 - wait key schema and encoded key;
@@ -232,6 +245,12 @@ Acceptance:
 
 Evaluate moving the `WaitFor.match`, timeout race, wait router, and completion
 reconciliation mechanics behind a generic workflow bridge.
+
+This is the hard package-boundary decision. Unlike Stage 1, it is coupled to
+workflow semantics: durable deferred naming, durable clock timeout behavior,
+router startup/reconciliation, and `WorkflowEngine.deferredDone` idempotency.
+Stage 4 should not proceed until the team intentionally accepts that dependency
+shape or designs a smaller bridge.
 
 Acceptance:
 
