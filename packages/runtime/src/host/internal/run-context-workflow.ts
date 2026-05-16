@@ -2,10 +2,10 @@
 // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.4
 //
 // Single sanctioned RuntimeContextWorkflow execute call site. The
-// public `startRuntime` in `packages/runtime/src/runtime-host/index.ts`
+// public `startRuntime` in `packages/runtime/src/host/commands.ts`
 // gates with `requireLocalContext` before invoking this helper, so the
 // authority check is observable at the public entry. This file lives
-// under `runtime-host/internal/**` and is excluded from
+// under `host/internal/**` and is excluded from
 // `firegrid-runtime-context-workflow-requires-local-authority`.
 
 import type { Workflow, WorkflowEngine } from "@effect/workflow"
