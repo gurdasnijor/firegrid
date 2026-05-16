@@ -1,9 +1,11 @@
 export * from "./contract.ts"
 export {
   AcpCapabilities,
-  AcpCodec,
+  AcpSessionLive,
+  type AcpMcpServerDeclaration,
+  type AcpSessionOptions,
 } from "./acp/index.ts"
 export {
   StdioJsonlCapabilities,
-  StdioJsonlCodec,
+  StdioJsonlSessionLive,
 } from "./stdio-jsonl/index.ts"

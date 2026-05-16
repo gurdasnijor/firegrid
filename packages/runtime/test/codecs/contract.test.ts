@@ -1,63 +1,42 @@
-import { Tool, Toolkit } from "@effect/ai"
-import { Effect, Schema } from "effect"
+import { Effect, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentCodecs from "../../src/codecs/index.ts"
-import {
-  type AgentCodecOpenOptions,
-} from "../../src/codecs/contract.ts"
+import { AgentSession } from "../../src/codecs/index.ts"
 
-const EchoTool = Tool.make("echo", {
-  description: "Echo text.",
-})
-  .setParameters(Schema.Struct({
-    text: Schema.String,
-  }))
-  .setSuccess(Schema.Struct({
-    text: Schema.String,
-  }))
+describe("AgentSession", () => {
+  it("firegrid-runtime-boundary-reconciliation.CODEC_SESSION.1 firegrid-runtime-boundary-reconciliation.CODEC_SESSION.2 is provided as an Effect Context.Tag service", async () => {
+    const session = await Effect.runPromise(
+      AgentSession.pipe(
+        Effect.provide(
+          Layer.succeed(AgentSession, {
+            meta: {
+              kind: "test",
+              capabilities: {
+                streamingText: true,
+                tools: false,
+                permissions: false,
+                images: false,
+                structuredInput: false,
+                cancellation: false,
+                multiTurn: false,
+                customStatus: [],
+              },
+            },
+            toolUseMode: "observation_only",
+            send: () => Effect.void,
+            outputs: Stream.empty,
+          }),
+        ),
+      ),
+    )
 
-const EchoToolkit = Toolkit.make(EchoTool)
-
-describe("AgentCodecOpenOptions", () => {
-  it("firegrid-agent-io-effect-ai-alignment.TOOLKIT_METADATA.1 firegrid-agent-io-effect-ai-alignment.VALIDATION.1 accepts Effect AI Toolkit metadata", () => {
-    const options: AgentCodecOpenOptions = {
-      toolkit: EchoToolkit,
-    }
-    const tool = options.toolkit?.tools.echo
-    if (tool === undefined) {
-      throw new Error("expected echo tool")
-    }
-
-    expect(tool.name).toBe("echo")
+    expect(session.meta.kind).toBe("test")
+    expect(session.toolUseMode).toBe("observation_only")
   })
 
-  it("firegrid-agent-io-effect-ai-alignment.TOOLKIT_METADATA.2 projects Effect AI Tool metadata without descriptors", async () => {
-    const { echo } = EchoToolkit.tools
-    if (echo === undefined) {
-      throw new Error("expected echo tool")
-    }
-
-    expect(echo.name).toBe("echo")
-    expect(echo.description).toBe("Echo text.")
-    expect(echo.parametersSchema).toBe(EchoTool.parametersSchema)
-    expect(echo.successSchema).toBe(EchoTool.successSchema)
-    expect(echo.failureSchema).toBe(EchoTool.failureSchema)
-    expect(echo.annotations).toBeDefined()
-
-    const encodedFromToolkit = await Effect.runPromise(
-      Schema.encodeUnknown(echo.parametersSchema)({
-        text: "hello",
-      }),
-    )
-    const encodedFromTool = await Effect.runPromise(
-      Schema.encodeUnknown(EchoTool.parametersSchema)({
-        text: "hello",
-      }),
-    )
-    expect(encodedFromToolkit).toEqual(encodedFromTool)
-  })
-
-  it("firegrid-agent-io-effect-ai-alignment.VALIDATION.2 does not export the retired descriptor helper", () => {
+  it("firegrid-runtime-boundary-reconciliation.CODEC_SESSION.7 does not export the retired active codec objects or descriptor helper", () => {
+    expect("AcpCodec" in AgentCodecs).toBe(false)
+    expect("StdioJsonlCodec" in AgentCodecs).toBe(false)
     expect("defineAgentTool" in AgentCodecs).toBe(false)
   })
 })

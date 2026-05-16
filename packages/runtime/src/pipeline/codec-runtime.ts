@@ -3,20 +3,21 @@ import type {
   RuntimeContext,
   RuntimeEventRow,
 } from "@firegrid/protocol/launch"
-import { Clock, Effect, Option, Ref, Stream, type Layer } from "effect"
-import { FiregridAgentToolkit } from "../agent-tools/tools.ts"
+import { IdGenerator } from "@effect/ai"
+import { Clock, Effect, Layer, Option, Ref, Stream } from "effect"
 import {
   RuntimeAgentOutputRowSink,
 } from "../authorities/index.ts"
 import {
-  AcpCodec,
-  StdioJsonlCodec,
+  AcpSessionLive,
+  AgentCodecError,
+  AgentSession,
+  StdioJsonlSessionLive,
 } from "../codecs/index.ts"
 import {
   type AgentOutputEvent,
   encodeRuntimeAgentOutputEnvelope,
 } from "../events/index.ts"
-import type { AgentCodec } from "../codecs/index.ts"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
@@ -27,6 +28,7 @@ import {
   commandForContext,
   type SandboxProviderError,
 } from "../sources/sandbox/index.ts"
+import type { AgentByteStream } from "../sources/byte-stream.ts"
 import {
   runIngressDelivery,
   runStderrJournal,
@@ -39,13 +41,17 @@ const nowIso = Clock.currentTimeMillis.pipe(
 )
 
 const codecForAgentProtocol = (
+  bytes: AgentByteStream,
   protocol: Exclude<RuntimeAgentProtocol, "raw">,
-): AgentCodec => {
+): Layer.Layer<AgentSession, AgentCodecError> => {
+  // firegrid-runtime-boundary-reconciliation.CODEC_SESSION.7
   switch (protocol) {
     case "stdio-jsonl":
-      return StdioJsonlCodec
+      return StdioJsonlSessionLive(bytes)
     case "acp":
-      return AcpCodec
+      return AcpSessionLive(bytes).pipe(
+        Layer.provide(Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator)),
+      )
     default:
       return protocol satisfies never
   }
@@ -114,7 +120,6 @@ export const runCodecRuntimeEventPipeline = (options: {
 }) =>
   Effect.gen(function* () {
     const outputSink = yield* RuntimeAgentOutputRowSink
-    const codec = codecForAgentProtocol(options.protocol)
     const command = yield* commandForContext(options.context)
     const provider = yield* SandboxProvider
     const sandbox = yield* provider.getOrCreate({
@@ -131,89 +136,96 @@ export const runCodecRuntimeEventPipeline = (options: {
     const bytes = yield* provider.openBytePipe(sandbox, command).pipe(
       mapSandboxProviderError(options.context.contextId),
     )
-    const session = yield* codec.open(bytes, {
-      toolkit: FiregridAgentToolkit,
-    }).pipe(
-      Effect.mapError(cause =>
-        asRuntimeContextError(
-          `agent-codec.${cause.op}`,
-          cause.message,
-          options.context.contextId,
-          cause,
-        )),
-    )
 
-    yield* runStderrJournal({
-      context: options.context,
-      activityAttempt: options.activityAttempt,
-      bytes,
-      nowIso,
-    }).pipe(Effect.forkScoped)
+    const runActiveSession = Effect.gen(function* () {
+      const session = yield* AgentSession
 
-    yield* runIngressDelivery({
-      contextId: options.context.contextId,
-      subscriberId: agentCodecSubscriberId(options.protocol),
-      send: session.send,
-    }).pipe(Effect.forkScoped)
+      // firegrid-runtime-boundary-reconciliation.CODEC_SESSION.4
+      yield* runStderrJournal({
+        context: options.context,
+        activityAttempt: options.activityAttempt,
+        bytes,
+        nowIso,
+      }).pipe(Effect.forkScoped)
 
-    yield* runToolRouter({
-      context: options.context,
-      activityAttempt: options.activityAttempt,
-      toolUseMode: session.toolUseMode,
-    }).pipe(
-      Effect.provide(options.toolLoweringLayer),
-      Effect.forkScoped,
-    )
+      yield* runIngressDelivery({
+        contextId: options.context.contextId,
+        subscriberId: agentCodecSubscriberId(options.protocol),
+        send: session.send,
+      }).pipe(Effect.forkScoped)
 
-    const terminal = yield* Ref.make<Option.Option<
-      Extract<AgentOutputEvent, { readonly _tag: "Terminated" }>
-    >>(Option.none())
+      yield* runToolRouter({
+        context: options.context,
+        activityAttempt: options.activityAttempt,
+        toolUseMode: session.toolUseMode,
+      }).pipe(
+        Effect.provide(options.toolLoweringLayer),
+        Effect.forkScoped,
+      )
 
-    yield* session.outputs.pipe(
-      Stream.mapError(cause =>
-        asRuntimeContextError(
-          `agent-codec.${cause.op}`,
-          cause.message,
-          options.context.contextId,
-          cause,
-        )),
-      Stream.mapAccum(0, (sequence, event) => [
-        sequence + 1,
-        { sequence, event },
-      ] as const),
-      Stream.mapEffect(({ sequence, event }) =>
-        outputRowFromAgentEvent(
-          options.context,
-          options.activityAttempt,
-          sequence,
-          event,
-        ).pipe(Effect.map(row => ({ row, event })))),
-      Stream.takeUntil(({ event }) => event._tag === "Terminated"),
-      Stream.tap(({ event }) =>
-        event._tag === "Terminated"
-          ? Ref.set(terminal, Option.some(event))
-          : Effect.void),
-      Stream.map(({ row }) => row),
-      Stream.run(outputSink),
-      mapRuntimeContextError(
-        "runtime-output.codec.write",
-        "failed to write codec runtime output row",
-        options.context.contextId,
-      ),
-    )
+      const terminal = yield* Ref.make<Option.Option<
+        Extract<AgentOutputEvent, { readonly _tag: "Terminated" }>
+      >>(Option.none())
 
-    return yield* Ref.get(terminal).pipe(
-      Effect.flatMap(Option.match({
-        onNone: () =>
-          Effect.fail(asRuntimeContextError(
-            "agent-codec.outputs",
-            "codec output stream ended without a Terminated event",
+      yield* session.outputs.pipe(
+        Stream.mapError(cause =>
+          asRuntimeContextError(
+            `agent-codec.${cause.op}`,
+            cause.message,
             options.context.contextId,
+            cause,
           )),
-        onSome: (event) =>
-          Effect.succeed({
-            exitCode: event.exitCode ?? 0,
-          }),
-      })),
+        Stream.mapAccum(0, (sequence, event) => [
+          sequence + 1,
+          { sequence, event },
+        ] as const),
+        Stream.mapEffect(({ sequence, event }) =>
+          outputRowFromAgentEvent(
+            options.context,
+            options.activityAttempt,
+            sequence,
+            event,
+          ).pipe(Effect.map(row => ({ row, event })))),
+        Stream.takeUntil(({ event }) => event._tag === "Terminated"),
+        Stream.tap(({ event }) =>
+          event._tag === "Terminated"
+            ? Ref.set(terminal, Option.some(event))
+            : Effect.void),
+        Stream.map(({ row }) => row),
+        Stream.run(outputSink),
+        mapRuntimeContextError(
+          "runtime-output.codec.write",
+          "failed to write codec runtime output row",
+          options.context.contextId,
+        ),
+      )
+
+      return yield* Ref.get(terminal).pipe(
+        Effect.flatMap(Option.match({
+          onNone: () =>
+            Effect.fail(asRuntimeContextError(
+              "agent-codec.outputs",
+              "codec output stream ended without a Terminated event",
+              options.context.contextId,
+            )),
+          onSome: (event) =>
+            Effect.succeed({
+              exitCode: event.exitCode ?? 0,
+            }),
+        })),
+      )
+    })
+
+    return yield* runActiveSession.pipe(
+      Effect.provide(codecForAgentProtocol(bytes, options.protocol)),
+      Effect.mapError(cause =>
+        cause instanceof AgentCodecError
+          ? asRuntimeContextError(
+            `agent-codec.${cause.op}`,
+            cause.message,
+            options.context.contextId,
+            cause,
+          )
+          : cause),
     )
   }).pipe(Effect.scoped)

@@ -1,14 +1,14 @@
 import { Prompt, Response } from "@effect/ai"
-import { Chunk, Deferred, Effect, Fiber, Schema, Stream } from "effect"
+import { Chunk, Context, Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import type {
   AgentOutputEvent,
 } from "../../../src/events/index.ts"
 import type { AgentByteStream } from "../../../src/sources/byte-stream.ts"
-import type { AgentSession } from "../../../src/codecs/contract.ts"
+import { AgentSession } from "../../../src/codecs/contract.ts"
 import {
   StdioJsonlCapabilities,
-  StdioJsonlCodec,
+  StdioJsonlSessionLive,
 } from "../../../src/codecs/stdio-jsonl/index.ts"
 
 const encoder = new TextEncoder()
@@ -44,13 +44,19 @@ const makeHarness = Effect.gen(function*() {
 })
 
 const openSession = (bytes: AgentByteStream) =>
-  StdioJsonlCodec.open(bytes, {})
+  Effect.gen(function*() {
+    const scope = yield* Effect.scope
+    const context = yield* Layer.buildWithScope(StdioJsonlSessionLive(bytes), scope)
+    return Context.get(context, AgentSession)
+  })
+
+type LiveAgentSession = Context.Tag.Service<typeof AgentSession>
 
 const userMessage = (text: string): Prompt.UserMessage =>
   Prompt.userMessage({ content: [Prompt.textPart({ text })] })
 
 const collectOutputs = (
-  session: AgentSession,
+  session: LiveAgentSession,
   count: number,
 ) =>
   session.outputs.pipe(
@@ -80,20 +86,28 @@ const readStdinLine = (
     return decoder.decode(result.value).trim()
   })
 
-describe("StdioJsonlCodec", () => {
-  it("firegrid-runtime-agent-event-pipeline.STAGES.3-8 firegrid-runtime-agent-event-pipeline.VALIDATION.2 reports client_result_roundtrip and emits Ready", async () => {
+describe("StdioJsonlSessionLive", () => {
+  it("firegrid-runtime-boundary-reconciliation.CODEC_SESSION.1 firegrid-runtime-boundary-reconciliation.CODEC_SESSION.2 firegrid-runtime-boundary-reconciliation.CODEC_SESSION.8 reports client_result_roundtrip and emits Ready", async () => {
     const result = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
           const harness = yield* makeHarness
           const session = yield* openSession(harness.bytes)
           const events = yield* collectOutputs(session, 1)
-          return { toolUseMode: session.toolUseMode, events }
+          return { meta: session.meta, toolUseMode: session.toolUseMode, events }
         }),
       ),
     )
 
     expect(result.toolUseMode).toBe("client_result_roundtrip")
+    expect(result.events[0]).toEqual({
+      _tag: "Ready",
+      capabilities: result.meta.capabilities,
+    })
+    expect(result.meta).toEqual({
+      kind: "stdio-jsonl",
+      capabilities: StdioJsonlCapabilities,
+    })
     expect(result.events).toEqual([
       {
         _tag: "Ready",
