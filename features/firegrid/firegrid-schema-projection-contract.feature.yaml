@@ -10,6 +10,8 @@ components:
       2: Operation schema entries carry descriptions, examples, and serialization metadata through Effect Schema annotations.
       3: Existing agent-tool protocol schemas are reused or compatibility-exported rather than copied into a second divergent schema family.
       4: Firegrid-specific projection metadata such as operation id, tool name, client method name, and CLI name is expressed through a small custom Schema annotation rather than a parallel descriptor object.
+      5: Protocol operation catalogs expose schema values or plain schema groupings only; production bindings do not depend on FiregridOperationEntry, defineFiregridOperation, or copied metadata objects.
+      6: Encoded-to-decoded conversions and public read-side views use Effect Schema transformations or projections where practical rather than client-local parsers or operation descriptor wrappers.
 
   TOOL_PROJECTION:
     requirements:

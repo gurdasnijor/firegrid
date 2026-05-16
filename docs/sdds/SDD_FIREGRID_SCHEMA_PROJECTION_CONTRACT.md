@@ -181,8 +181,24 @@ Browser-safety checks for the binding layer:
 ## Schema Catalog
 
 The schema catalog should expose operation-shaped schema entries, not only
-loose input/output types. Projection metadata should prefer Effect Schema
-annotations over parallel descriptor objects.
+loose input/output types. Operation metadata must use Effect Schema's native
+surface:
+
+- built-in annotations (`identifier`, `title`, `description`, `examples`,
+  `default`, `jsonSchema`, `documentation`) for documentation, help, examples,
+  and JSON Schema generation;
+- one tiny Firegrid custom annotation only for Firegrid-specific operation
+  identity and surface names;
+- `Schema.transform` / encoded-decoded schema shapes for conversions such as
+  durable rows to app-facing observations or public session ids to runtime
+  context ids;
+- schema projections for deriving narrower public views from richer durable
+  or provider rows.
+
+Do not replace those APIs with a Firegrid `OperationEntry`, registry, or
+descriptor object as the contract source of truth. A catalog may group schemas
+for import ergonomics, but it must be derived from schema values and their AST
+annotations.
 
 ```ts
 export const SessionCreateInputSchema = Schema.Struct({
@@ -204,7 +220,7 @@ export const SessionCreateInputSchema = Schema.Struct({
 ```
 
 Effect's built-in Schema annotation keys already cover the common metadata
-needed for serialization:
+needed for binding serialization:
 
 - `identifier`;
 - `title`;
@@ -218,15 +234,14 @@ Firegrid should add a small custom annotation key only for projection metadata
 that Effect does not already model, such as operation id and surface-specific
 names.
 
-This is not a request for a new framework. The exact helper type can evolve,
-but each operation should make the following metadata discoverable from the
-schema AST:
+This is not a request for a new framework. Each operation should make the
+following metadata discoverable from the schema AST:
 
 - stable operation id;
 - optional projection names, such as tool name, client method name, and CLI
   command or option names;
-- input schema;
-- output schema;
+- input schema, as a schema value;
+- output schema, as a schema value;
 - human-readable description;
 - examples;
 - notes for CLI or agent help only when needed.
@@ -254,9 +269,33 @@ Existing `@firegrid/protocol/agent-tools` schemas should be reused or
 compatibility-exported from the catalog. Do not copy their shapes into a
 second divergent schema family.
 
-If an operation needs both input and output schemas, a tiny helper may pair
-them for import ergonomics, but the helper should not become the metadata
-source of truth. The metadata should remain on the schemas through annotations.
+If an operation needs both input and output schemas, export a plain grouped
+object or tuple for import ergonomics only. Do not expose a Firegrid-specific
+`defineOperation(...)` abstraction that copies annotation data into a second
+metadata object.
+
+The current `packages/protocol/src/operations/schema.ts` shape is therefore a
+transitional implementation detail, not the target. It should be removed in the
+binding cutover and replaced with:
+
+```ts
+export const SessionCreateOrLoad = {
+  input: SessionCreateOrLoadInputSchema,
+  output: SessionHandleReferenceSchema,
+} as const
+```
+
+Bindings that need title, description, examples, or Firegrid operation names
+read those values from `SessionCreateOrLoad.input.ast.annotations` using
+Effect's annotation ids and the tiny Firegrid custom annotation id. They do not
+depend on `FiregridOperationEntry`, `defineFiregridOperation`, or a copied
+`metadata` field.
+
+Runtime read-side conversion should use Effect Schema's transformation and
+projection vocabulary where practical. For example, "RuntimeOutput event row
+raw envelope -> normalized agent-output observation" is a projection from a
+richer durable row into a public observation, not a separate client-local
+parser or operation descriptor.
 
 ## Agent Tool Binding
 
@@ -537,19 +576,22 @@ next implementation slice should be one binding-boundary cutover:
 1. Update or complete the protocol operation catalog in `@firegrid/protocol`,
    reusing existing `@firegrid/protocol/agent-tools` and
    `@firegrid/protocol/session-facade` schemas where they are already correct.
-2. Split agent-tool binding from runtime operation execution so Effect AI
+2. Remove the transitional `packages/protocol/src/operations/schema.ts`
+   operation-entry wrapper. Keep Firegrid operation identity on Schema
+   annotations and expose only plain schema groupings for import ergonomics.
+3. Split agent-tool binding from runtime operation execution so Effect AI
    `Tool.make(...)` definitions and `Toolkit.make(...)` do not import waits,
    host, workflow engine, or tool-call execution.
-3. Split `@firegrid/client` binding helpers from durable transport execution
+4. Split `@firegrid/client` binding helpers from durable transport execution
    while keeping the package runtime-source-free.
-4. Move the root CLI into a CLI package or CLI folder and split command binding
+5. Move the root CLI into a CLI package or CLI folder and split command binding
    from Node/runtime-host execution.
-5. Introduce common operation execution only for operations whose semantics are
+6. Introduce common operation execution only for operations whose semantics are
    identical across bindings, with `ToolUse` / `ToolResult`, client, and CLI
    adapters at the edges.
-6. Add dependency-cruiser or semgrep rules for the browser-safety and import
+7. Add dependency-cruiser or semgrep rules for the browser-safety and import
    direction checks listed above.
-7. Update public barrels, examples, tests, and docs in the same PR so no
+8. Update public barrels, examples, tests, and docs in the same PR so no
    long-lived compatibility surface keeps the old mixed files alive.
 
 Acceptance should explicitly prove:
@@ -560,4 +602,6 @@ Acceptance should explicitly prove:
 - CLI binding files have no Node/process/runtime-host imports;
 - execution files do not import client or CLI binding modules;
 - each operation's tool, client, and CLI binding points to the same protocol
-  operation entry.
+  schema group;
+- no production binding depends on `FiregridOperationEntry`,
+  `defineFiregridOperation`, or copied operation metadata objects.
