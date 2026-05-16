@@ -282,6 +282,122 @@ tool name:    session_prompt
 client API:   firegrid.sessions.prompt(...)
 ```
 
+## Client Read Projection
+
+The same projection rule applies to read-side data. Operation schemas project
+into methods; observation schemas project into snapshots, streams, and waits.
+
+Runtime output rows are storage/journal rows. Product apps should not parse
+`RuntimeEvent.raw` or know about the `firegrid.agent-output` envelope. The
+protocol package should own the normalized observation schemas, and the client
+should project runtime output rows into those observations before returning
+app-facing snapshots or waits.
+
+Target protocol-owned contracts:
+
+```ts
+export const RuntimeAgentOutputObservationSchema = Schema.Struct({
+  source: Schema.Literal("firegrid.runtime.agent-output-events"),
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  sequence: Schema.Number,
+  _tag: Schema.String,
+  event: AgentOutputEventSchema,
+})
+
+export const RuntimePermissionRequestObservationSchema = Schema.Struct({
+  source: Schema.Literal("firegrid.runtime.agent-output-events"),
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  sequence: Schema.Number,
+  _tag: Schema.Literal("PermissionRequest"),
+  permissionRequestId: Schema.String,
+  toolUseId: Schema.String,
+  event: PermissionRequestEventSchema,
+})
+```
+
+The exact file can be `@firegrid/protocol/session-facade` or a nearby
+protocol-owned observation module. The important boundary is that
+`@firegrid/client` and apps import protocol schemas, not
+`@firegrid/runtime/events`.
+
+Target app-facing client ergonomics:
+
+```ts
+const firegrid = yield* Firegrid
+
+const session = yield* firegrid.sessions.createOrLoad({
+  externalKey: { source: "linear", id: "LIN-123" },
+  runtime: { provider: "local-process", config },
+  createdBy: "dark-factory",
+})
+
+yield* session.prompt({
+  idempotencyKey: "initial",
+  payload: Prompt.userMessage({
+    content: [Prompt.textPart({ text: "Plan the fix." })],
+  }),
+})
+
+yield* session.start()
+
+const snapshot = yield* session.snapshot()
+for (const output of snapshot.agentOutputs) {
+  if (output._tag === "PermissionRequest") {
+    yield* session.permissions.respond({
+      permissionRequestId: output.permissionRequestId,
+      decision: { outcome: "allow_once" },
+    })
+  }
+}
+```
+
+For reactive or blocking UI flows, the same projection should be available as a
+session-scoped wait:
+
+```ts
+const next = yield* session.wait.forAgentOutput({
+  afterSequence: snapshot.agentOutputs.at(-1)?.sequence,
+  timeoutMs: 30_000,
+})
+
+if (next.matched && next.output._tag === "PermissionRequest") {
+  yield* session.permissions.respond({
+    permissionRequestId: next.output.permissionRequestId,
+    decision: { outcome: "allow_once" },
+  })
+}
+```
+
+`forPermissionRequest(...)` remains useful as permission-specific sugar, but it
+should be implemented as a specialization of the same normalized agent-output
+projection rather than a separate raw-envelope parser.
+
+This does not remove raw table access. `DurableTableProvider` and direct
+`RuntimeOutputTable` reads remain appropriate for inspectors, diagnostics, and
+toy timelines that intentionally render raw stdout/stderr rows. They are not
+the normal product API for applications that need Firegrid session semantics.
+
+With this boundary, an app like Dark Factory owns its product facts, prompt
+copy, run-status read model, and permission-resolution facts, but it does not
+own Firegrid envelope decoding:
+
+```txt
+factory status view
+  = app facts/runs
+  + session.snapshot().runs
+  + session.snapshot().inputs
+  + session.snapshot().agentOutputs
+```
+
+No product app should need:
+
+```ts
+JSON.parse(row.raw)
+Schema.decodeUnknownEither(AgentOutputEventSchema)(parsed.event)
+```
+
 ## CLI Projection
 
 The CLI can later project the same catalog into commands:
@@ -304,8 +420,11 @@ schema-owned launch/control entries rather than private CLI-only types.
 ## Boundary Rules
 
 - Schema catalog is source of truth for operation shapes and metadata.
+- Protocol observation schemas are source of truth for client read projections.
 - Agent tools are a projection, not the programmer API.
 - Client APIs are a projection, not a separate contract.
+- Client snapshots and waits return normalized protocol observations when the
+  caller asks for Firegrid session semantics.
 - Runtime lowering stays in existing runtime modules until repeated projection
   code proves that a runtime service would remove real duplication.
 - Runtime-host active execution is injected into client facades through a
@@ -317,6 +436,8 @@ schema-owned launch/control entries rather than private CLI-only types.
 - Dark-factory may depend on this facade for the first working app path because
   it prevents product code from reimplementing runtime identity and ingress
   details.
+- Dark-factory and other product apps should not parse runtime output envelopes
+  or import `@firegrid/runtime/events` to recover normalized agent output.
 
 ## First Implementation Slice
 
@@ -336,3 +457,8 @@ The next implementation slice should add the durable session facade described
 above. Its `start` method should require the protocol runtime-start capability;
 the package-boundary rule is more important than making `packages/client`
 directly call runtime-host.
+
+The next read-side slice should add protocol-owned runtime agent-output
+observation schemas, project them into `RuntimeContextSnapshot.agentOutputs`,
+and add `session.wait.forAgentOutput(...)`. Dark Factory should then delete its
+raw `RuntimeEvent.raw` parser and consume the client projection instead.

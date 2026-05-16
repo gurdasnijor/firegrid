@@ -39,6 +39,15 @@ components:
       9: handle.permissions.respond decodes protocol-owned scoped permission response input and appends a RuntimeIngress PermissionResponse control row, deriving default idempotency inside the client helper from contextId plus permissionRequestId.
       10: The facade does not import runtime agent Tool values, app-owned identity helpers, factory-specific code, scenario-side adapters, parent-child hierarchy, or provider-specific Firegrid substrate.
 
+  CLIENT_READ_PROJECTION:
+    requirements:
+      1: Protocol-owned observation schemas define normalized runtime agent-output observations exposed to clients and apps.
+      2: RuntimeContextSnapshot includes agentOutputs derived from RuntimeOutput event rows through the protocol observation schema rather than exposing only raw RuntimeEvent rows for session semantics.
+      3: handle.wait.forAgentOutput observes the scoped session's normalized agent-output observations with optional afterSequence and timeoutMs filters.
+      4: handle.wait.forPermissionRequest is implemented as permission-specific sugar over the same normalized agent-output projection semantics rather than a separate raw-envelope parser.
+      5: Product apps such as Dark Factory do not parse RuntimeEvent.raw or import @firegrid/runtime/events to recover normalized agent output.
+      6: DurableTableProvider and raw RuntimeOutputTable access remain available for inspectors, diagnostics, and raw timelines, but are not the normal product API for Firegrid session semantics.
+
   CLI_PROJECTION:
     requirements:
       1: src/run.ts and future CLI commands project schema metadata into command args, validation, defaults, examples, and help text where applicable.
