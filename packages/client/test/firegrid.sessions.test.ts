@@ -12,13 +12,13 @@ import {
 } from "@firegrid/protocol/launch"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { TestStreamServer } from "../../../effect-durable-operators/test/harness.ts"
+import { TestStreamServer } from "../../effect-durable-operators/test/harness.ts"
 import {
   Firegrid,
   FiregridConfig,
   FiregridLive,
   local,
-} from "../firegrid.ts"
+} from "../src/firegrid.ts"
 
 let server: TestStreamServer | undefined
 let baseUrl: string | undefined

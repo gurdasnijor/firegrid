@@ -27,7 +27,7 @@ import {
   runtimeControlPlaneStreamUrl,
   type HostId,
   type HostSessionId,
-} from "./authority.ts"
+} from "../../src/launch/authority.ts"
 
 describe("HostStreamPrefixSchema", () => {
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1 encodes parts into ${namespace}.firegrid.host.${hostId}", () => {

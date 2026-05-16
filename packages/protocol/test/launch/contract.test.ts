@@ -14,7 +14,7 @@ import {
   PublicLaunchRequestSchema,
   runtimeAgentProtocolValues,
   RuntimeEventSchema,
-} from "./index.ts"
+} from "../../src/launch/index.ts"
 
 describe("@firegrid/protocol launch schema", () => {
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 rejects public launch requests with env or journal fields", () => {

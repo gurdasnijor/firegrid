@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest"
 const dirname = fileURLToPath(new URL(".", import.meta.url))
 
 const clientSourceFiles = [
-  "firegrid.ts",
-  "index.ts",
+  "../src/firegrid.ts",
+  "../src/index.ts",
 ] as const
 
 describe("Firegrid client package boundary", () => {

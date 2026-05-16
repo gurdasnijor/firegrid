@@ -14,6 +14,11 @@ components:
       1: Contributor documentation lists each quality gate, the script that runs it, what it forbids, and the canonical remediation path.
       2: Contributor documentation lists Semgrep rule ids with severity, purpose, canonical replacement, and excluded paths.
 
+  TEST_LAYOUT:
+    requirements:
+      1: Package production src trees do not contain package tests.
+      2: Package tests live under sibling package test directories and still typecheck and run through package-local commands.
+
 constraints:
   SCOPE:
     requirements:
