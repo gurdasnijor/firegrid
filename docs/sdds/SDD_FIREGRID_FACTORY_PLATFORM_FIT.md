@@ -81,9 +81,180 @@ The consuming app still owns configuration and policy:
 Firegrid Host SDK code becomes:
 
 - host-plane Layer;
-- runtime launch substrate;
-- session-plane service provision;
+- provider implementation installation;
+- environment and MCP policy;
+- host authority programs that execute durable agent-session intents;
 - explicit installation of reusable integration Layers.
+
+## Factory After Host SDK
+
+If `SDD_FIREGRID_HOST_SDK.md` lands in the target shape, factory no longer needs
+to make `apps/factory/src/host.ts` the platform boundary. Factory should be a
+product composition over public SDK surfaces:
+
+1. app-owned durable rows for trigger intake, evidence, run state, and UI
+   projections;
+2. reusable integration packages for Linear, GitHub, Slack, and provider
+   clients;
+3. `@firegrid/client-sdk` for agent-session launch, prompt, snapshot, wait, and
+   permission response;
+4. `@firegrid/host-sdk` for provider implementations, local-process env policy,
+   Firegrid MCP exposure, and execution of durable agent-session intents.
+
+Factory host process:
+
+```ts
+import { NodeRuntime } from "@effect/platform-node"
+import { Layer } from "effect"
+import {
+  FiregridHostLive,
+  LocalProcessProviderLive,
+} from "@firegrid/host-sdk"
+import { DarkFactoryTableLive } from "./tables.ts"
+import {
+  GitHubIntegrationLive,
+  LinearIntegrationLive,
+  SlackIntegrationLive,
+} from "@firegrid/integrations"
+
+const FactoryHostLive = FiregridHostLive({
+  name: "dark-factory",
+  durableStreams: {
+    baseUrl: config.durableStreamsBaseUrl,
+    namespace: config.namespace,
+    headers: config.headers,
+  },
+  providers: {
+    localProcess: LocalProcessProviderLive({
+      environment: {
+        source: config.environment,
+        expose: {
+          ANTHROPIC_API_KEY: "ANTHROPIC_API_KEY",
+        },
+      },
+    }),
+  },
+  mcp: { enabled: true },
+}).pipe(
+  Layer.provideMerge(DarkFactoryTableLive(config)),
+  Layer.provideMerge(LinearIntegrationLive(config.linear)),
+  Layer.provideMerge(GitHubIntegrationLive(config.github)),
+  Layer.provideMerge(SlackIntegrationLive(config.slack)),
+)
+
+NodeRuntime.runMain(Layer.launch(FactoryHostLive))
+```
+
+The host process does not name the planner agent. It only installs provider
+implementations and policy. The planner agent is selected when the factory run
+requests an agent session.
+
+Factory trigger intake:
+
+```ts
+import { Effect } from "effect"
+import {
+  Agent,
+  FiregridSessions,
+} from "@firegrid/client-sdk"
+import { envBinding } from "@firegrid/protocol/launch"
+
+const plannerAgent = Agent.localProcess({
+  command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
+  protocol: "acp",
+  cwd: trigger.workspaceDir,
+  env: [envBinding("ANTHROPIC_API_KEY")],
+})
+
+export const acceptLinearIssue = (trigger: LinearIssueTrigger) =>
+  Effect.gen(function* () {
+    const accepted = yield* insertOrGetAcceptedTriggerFact(trigger)
+    const run = yield* insertOrGetFactoryRun({
+      triggerFactKey: accepted.factKey,
+      providerEntityKey: trigger.issueKey,
+    })
+
+    const sessions = yield* FiregridSessions
+    const planner = yield* sessions.launch({
+      idempotencyKey: `${run.factoryRunKey}:planner`,
+      agent: plannerAgent,
+      prompt: plannerPromptFor(run, accepted),
+    })
+
+    yield* recordFactorySessionDispatched({
+      factoryRunKey: run.factoryRunKey,
+      sessionId: planner.sessionId,
+      role: "planner",
+    })
+
+    return { run, planner }
+  })
+```
+
+The `idempotencyKey` is optional in the generic SDK, but factory should use it
+because Linear webhooks and operator retries can redeliver the same logical
+work. It is not part of "launching an agent"; it is product-owned convergence
+for duplicate intake.
+
+Factory read side:
+
+```ts
+export const readFactoryRun = (factoryRunKey: FactoryRunKey) =>
+  Effect.gen(function* () {
+    const run = yield* getFactoryRun(factoryRunKey)
+    const sessions = yield* FiregridSessions
+    const planner = yield* sessions.attach({ sessionId: run.plannerSessionId })
+    const snapshot = yield* planner.snapshot()
+    const timeline = yield* buildFactoryTimeline(factoryRunKey, snapshot)
+    return { run, planner: snapshot, timeline }
+  })
+```
+
+Factory provider effects:
+
+```ts
+export const openPullRequest = (request: FactoryPullRequestRequest) =>
+  Effect.gen(function* () {
+    const github = yield* GitHubIntegration
+    const receipt = yield* github.pullRequests.open(request)
+    return yield* recordProviderActionReceipt({
+      factoryRunKey: request.factoryRunKey,
+      provider: "github",
+      action: "pull_request.open",
+      receipt,
+    })
+  })
+```
+
+Factory waits:
+
+```ts
+const permission = yield* planner.wait.forPermissionRequest({
+  timeoutMs: 120_000,
+})
+
+yield* waitForFactoryProviderEffect({
+  factoryRunKey: run.factoryRunKey,
+  provider: "github",
+  action: "pull_request.open",
+  status: "completed",
+  timeoutMs: 300_000,
+})
+```
+
+Runtime waits stay on runtime-owned session observations. Factory waits over
+factory facts/projections stay app-owned and do not go through runtime
+`wait_for`, SourceCollections, or runtime typed wait-source variants.
+
+This target is materially smaller than current `DarkFactoryHostLive`:
+
+- no direct `@firegrid/runtime/runtime-host` imports in factory product code;
+- no app-owned source registration into runtime wait plumbing;
+- no raw runtime event parsing for planner output;
+- no duplicated local-process env resolver policy;
+- no factory-specific launch/start helper;
+- no requirement that the host process know which planner agent a product run
+  will choose.
 
 ## Factory Table Reverse Engineering
 
