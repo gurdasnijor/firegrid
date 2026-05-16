@@ -3,7 +3,9 @@
 //
 // Static gate: a workspace unit's production `src/` tree must not contain
 // package tests. Tests live under a sibling `test/` directory at the
-// package/app/scenario root (see docs/contributing/quality-gates.md).
+// repo-root / package / app / scenario root (see
+// docs/contributing/quality-gates.md). The repo-root `src/` (the `firegrid`
+// binary) is scanned alongside the pnpm workspace units.
 //
 // This gate is zero-state: there is no baseline file. Any colocated test is
 // a hard failure. If a package/framework genuinely needs an exception, add
@@ -31,6 +33,9 @@ const failures = []
 
 const collectWorkspaceUnits = () => {
   const units = []
+  // Repo root is itself a unit: it ships the `firegrid` binary from `src/`
+  // but is not matched by the pnpm-workspace globs above.
+  if (existsSync("package.json") && existsSync("src")) units.push(".")
   for (const root of workspaceRoots) {
     if (!existsSync(root)) continue
     for (const entry of readdirSync(root, { withFileTypes: true })) {
@@ -78,7 +83,7 @@ for (const unitDir of collectWorkspaceUnits()) {
 }
 
 if (failures.length === 0) {
-  log("test-layout-check: OK — no tests under any workspace src/ tree.")
+  log("test-layout-check: OK — no tests under any root or workspace src/ tree.")
   process.exit(0)
 }
 
