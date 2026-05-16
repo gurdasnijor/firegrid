@@ -6,14 +6,20 @@ import {
   WorkflowEngine,
 } from "@effect/workflow"
 import {
+  ContextNotLocal,
+  CurrentHostSession,
   HostIdSegmentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   RuntimeStartCapability,
   type RuntimeAgentProtocol,
+  hostOwnedStreamUrl,
   local,
   makeHostSessionRow,
   normalizeRuntimeIntent,
+  provideRuntimeContext,
+  requireLocalContext,
+  runtimeControlPlaneStreamUrl,
   type HostId,
   type HostSessionRow,
   type HostSessionId,
@@ -26,15 +32,7 @@ import {
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
 import { Clock, Config, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
-import type { DurableTableHeaders } from "effect-durable-operators"
-import {
-  ContextNotLocal,
-  CurrentHostSession,
-  hostOwnedStreamUrl,
-  provideRuntimeContext,
-  requireLocalContext,
-  runtimeControlPlaneStreamUrl,
-} from "./authority-context.ts"
+import type { DurableTableError, DurableTableHeaders } from "effect-durable-operators"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import {
   LocalProcessSandboxProvider,
@@ -51,7 +49,7 @@ import {
   asRuntimeContextError,
   mapRuntimeContextError,
   runtimeIngressError,
-} from "./errors.ts"
+} from "../runtime-errors.ts"
 import { RuntimeHostConfig } from "./config.ts"
 import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import type {
@@ -102,7 +100,7 @@ export {
   provideRuntimeContext,
   requireLocalContext,
   runtimeControlPlaneStreamUrl,
-} from "./authority-context.ts"
+} from "@firegrid/protocol/launch"
 
 export {
   RuntimeObservationSourceNames,
@@ -240,6 +238,18 @@ const runtimeCodecToolLoweringLayer = () =>
     Layer.provideMerge(RuntimeIngressDeliveryTrackerLayer),
     Layer.provideMerge(ScheduledInputWorkflowLayer),
     Layer.provideMerge(RuntimeHostAgentToolHostLive),
+  )
+
+const runtimeHostAgentToolHostWithControlPlaneLive = (
+  workflowEngineLayer: Layer.Layer<
+    WorkflowEngine.WorkflowEngine,
+    DurableTableError,
+    CurrentHostSession
+  >,
+) =>
+  RuntimeHostAgentToolHostLive.pipe(
+    Layer.provide(RuntimeControlPlaneRecorderLive),
+    Layer.provide(workflowEngineLayer),
   )
 
 const runCodecRuntimeContext = (options: {
@@ -628,7 +638,7 @@ const hostOwnedOutputLayer = (
 
 const hostOwnedWorkflowEngineLayer = (
   options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
-) =>
+): Layer.Layer<WorkflowEngine.WorkflowEngine, DurableTableError, CurrentHostSession> =>
   Layer.unwrapEffect(
     Effect.map(CurrentHostSession, (session) =>
       DurableStreamsWorkflowEngine.layer({
@@ -648,10 +658,11 @@ const hostScopedLayer = (
     baseUrl: options.durableStreamsBaseUrl,
     ...(options.headers !== undefined ? { headers: options.headers } : {}),
   }
+  const workflowEngineLayer = hostOwnedWorkflowEngineLayer(sharedOptions)
   const hostTables = Layer.mergeAll(
     hostOwnedIngressLayer(sharedOptions),
     hostOwnedOutputLayer(sharedOptions),
-    hostOwnedWorkflowEngineLayer(sharedOptions),
+    workflowEngineLayer,
   )
   return RuntimeObservationSourcesLive.pipe(
     Layer.provideMerge(HostOwnedDurableToolsWaitForLive),
@@ -660,6 +671,7 @@ const hostScopedLayer = (
     Layer.provideMerge(RuntimeIngressInputStreamLayer),
     Layer.provideMerge(RuntimeIngressDeliveryTrackerLayer),
     Layer.provideMerge(hostTables),
+    Layer.provideMerge(runtimeHostAgentToolHostWithControlPlaneLive(workflowEngineLayer)),
   )
 }
 

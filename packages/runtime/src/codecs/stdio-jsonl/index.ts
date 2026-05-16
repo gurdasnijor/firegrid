@@ -1,15 +1,17 @@
 import { Prompt, Response } from "@effect/ai"
 import { Effect, Match, Schema, Stream } from "effect"
 import type {
-  AgentByteStream,
   AgentCapabilities,
-  AgentCodec,
-  AgentCodecOpenOptions,
   AgentInputEvent,
   AgentOutputEvent,
   StopReason,
 } from "../../events/index.ts"
-import { AgentCodecError } from "../../events/index.ts"
+import type { AgentByteStream } from "../../sources/byte-stream.ts"
+import type {
+  AgentCodec,
+  AgentCodecOpenOptions,
+} from "../contract.ts"
+import { AgentCodecError } from "../contract.ts"
 
 const codec = "stdio-jsonl"
 const encoder = new TextEncoder()

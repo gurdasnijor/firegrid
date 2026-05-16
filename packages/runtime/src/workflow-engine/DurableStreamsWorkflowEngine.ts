@@ -32,7 +32,7 @@ export const make = (
 
 const layer = (
   options: WorkflowEngineDurableStateOptions,
-) =>
+): Layer.Layer<WorkflowEngine.WorkflowEngine | WorkflowEngineTable, DurableTableError> =>
   Layer.scopedContext(
     Effect.gen(function* () {
       // workflow-engine-durable-state.ENGINE.1
@@ -45,7 +45,7 @@ const layer = (
       )
       return Context.make(WorkflowEngineTable, table).pipe(
         Context.add(WorkflowEngine.WorkflowEngine, engine),
-      )
+      ) as Context.Context<WorkflowEngine.WorkflowEngine | WorkflowEngineTable>
     }),
   ).pipe(
     Layer.provide(WorkflowEngineTable.layer(workflowEngineTableLayerOptions(options))),

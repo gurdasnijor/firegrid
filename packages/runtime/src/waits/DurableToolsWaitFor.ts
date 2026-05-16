@@ -18,7 +18,7 @@ import {
 } from "./internal/table.ts"
 import { SourceCollectionsLive } from "./internal/source-collections.ts"
 import { SubscriptionRouterLive } from "./internal/subscription-router.ts"
-import { DurableWaitStoreLive } from "../authorities/durable-wait-store.ts"
+import { DurableWaitStoreLive } from "./internal/durable-wait-store.ts"
 
 export type DurableToolsWaitForLayerOptions = DurableToolsTableOptions
 

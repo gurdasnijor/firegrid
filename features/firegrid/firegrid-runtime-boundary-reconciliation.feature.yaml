@@ -36,6 +36,14 @@ components:
       7: PR 1 does not introduce a runtime folder-cycle baseline that preserves known debt.
       8: The first implementation wave drops static-tooling accepted findings to zero for the gates it changes, including new architecture enforcement.
 
+  TEST_LAYOUT:
+    requirements:
+      1: Runtime package tests live under packages/runtime/test rather than packages/runtime/src so the production source tree contains runtime code only.
+      2: Runtime tests mirror the source folder layout where practical and import production internals through ../src/... or public package barrels according to the behavior under test.
+      3: packages/runtime/tsconfig.json includes packages/runtime/test so moved tests still typecheck with the runtime package.
+      4: After the first cycle-breaking PR lands, no packages/runtime/src/**/*.test.ts or packages/runtime/src/**/*.spec.ts files remain.
+      5: The runtime test-layout move is mechanical and behavior-preserving; runtime test discovery and downstream app builds remain unchanged.
+
   STATIC_ENFORCEMENT:
     requirements:
       1: Runtime boundary enforcement prefers hard zero-state checks over baselines that preserve known debt.

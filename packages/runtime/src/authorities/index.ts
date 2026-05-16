@@ -4,7 +4,7 @@ export {
   DurableWaitStoreLive,
   type DurableWaitAppendAndGetService,
   type DurableWaitCompletionAppendAndGetService,
-} from "./durable-wait-store.ts"
+} from "../waits/internal/durable-wait-store.ts"
 export {
   RuntimeControlPlaneRecorderLive,
   RuntimeContexts,

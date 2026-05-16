@@ -39,7 +39,7 @@ import { type WaitRow } from "./table.ts"
 import {
   DurableWaitAppendAndGet,
   DurableWaitCompletionAppendAndGet,
-} from "../../authorities/index.ts"
+} from "./durable-wait-store.ts"
 import { evaluateFieldEquals } from "./types.ts"
 import { matchDeferredFor } from "./wait-for.ts"
 

@@ -1,7 +1,7 @@
 // firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.9
 export {
   RuntimeContextError,
-} from "./host/errors.ts"
+} from "./runtime-errors.ts"
 export {
   ContextNotFound,
   ContextNotLocal,

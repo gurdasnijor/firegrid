@@ -42,10 +42,9 @@ import {
   type SleepToolOutput,
   type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
-import { type RuntimeContext } from "@firegrid/protocol/launch"
+import { provideRuntimeContext, type RuntimeContext } from "@firegrid/protocol/launch"
 import { Context, Effect, Layer, Schema } from "effect"
 import { ToolResultEventSchema } from "../events/index.ts"
-import { provideRuntimeContext } from "../host/authority-context.ts"
 import { ToolError, toolExecutionFailed } from "./tool-error.ts"
 import { toolUseToEffect } from "./tool-use-to-effect.ts"
 

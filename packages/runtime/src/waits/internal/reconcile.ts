@@ -23,7 +23,7 @@ import { matchDeferredFor } from "./wait-for.ts"
 import type {
   DurableWaitAppendAndGet,
   DurableWaitCompletionAppendAndGet,
-} from "../../authorities/index.ts"
+} from "./durable-wait-store.ts"
 
 export const reconcileCompletions = (
   waitStore:

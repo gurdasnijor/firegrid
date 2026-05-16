@@ -4,12 +4,12 @@ import type {
 } from "@firegrid/protocol/launch"
 import { Effect, Ref, Stream } from "effect"
 import { RuntimeLogLineAppendAndGet } from "../authorities/index.ts"
-import type { AgentByteStream } from "../events/index.ts"
+import type { AgentByteStream } from "../sources/byte-stream.ts"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
   type RuntimeContextError,
-} from "../host/errors.ts"
+} from "../runtime-errors.ts"
 
 const codecStderrLines = (
   contextId: string,

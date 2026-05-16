@@ -13,6 +13,17 @@ module.exports = {
       to: { circular: true },
     },
     {
+      // firegrid-runtime-boundary-reconciliation.CYCLE_BREAKING.5
+      // firegrid-runtime-boundary-reconciliation.CYCLE_BREAKING.7
+      name: "runtime-src-no-folder-cycles",
+      severity: "error",
+      scope: "folder",
+      comment:
+        "packages/runtime/src must stay free of folder-level cycles; this rule is hard-zero and has no baseline or carveout.",
+      from: { path: "^packages/runtime/src" },
+      to: { circular: true },
+    },
+    {
       // firegrid-remediation-hardening.STATIC_QUALITY.5
       name: "not-to-unresolvable",
       severity: "error",
