@@ -34,13 +34,10 @@ import {
   type RuntimeStartResult,
 } from "@firegrid/protocol/launch"
 import {
-  FiregridRuntimeObservationSourceNames,
   type PermissionRespondInput,
   type PermissionRespondOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
-  type WaitForToolInput,
-  type WaitForToolOutput,
 } from "@firegrid/protocol/session-facade"
 import {
   RuntimeIngressTable,
@@ -201,11 +198,6 @@ export interface FiregridSessionsClient {
   >
 }
 
-export interface FiregridWaitClient {
-  readonly for: (
-    request: WaitForToolInput,
-  ) => Effect.Effect<WaitForToolOutput, LaunchInputError | PreloadError>
-}
 
 export interface FiregridPermissionsClient {
   readonly respond: (
@@ -228,7 +220,6 @@ export interface FiregridService {
     request: PublicPromptRequest,
   ) => Effect.Effect<RuntimeIngressInputRow, PromptInputError | AppendError>
   readonly sessions: FiregridSessionsClient
-  readonly wait: FiregridWaitClient
   readonly permissions: FiregridPermissionsClient
   readonly open: (contextId: string) => RuntimeContextHandle
   readonly watchContexts: (
@@ -440,13 +431,6 @@ const decodeSessionAgentOutputWaitInput = (
       onExcessProperty: "error",
     })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
-const decodeWaitForInput = (
-  request: WaitForToolInput,
-): Effect.Effect<WaitForToolInput, LaunchInputError> =>
-  Schema.decodeUnknown(FiregridClientOperations.wait.for.inputSchema, {
-    onExcessProperty: "error",
-  })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
-
 const sessionPromptToRuntimeIngressRequest = (
   input: SessionPromptToolInput,
 ): RuntimeIngressRequest => ({
@@ -510,67 +494,6 @@ const snapshotFromJournal = (
     logs,
     agentOutputs,
   }
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null
-
-const matchesWhereFields = (
-  row: unknown,
-  whereFields: Readonly<Record<string, unknown>>,
-): boolean =>
-  isRecord(row) &&
-  Object.entries(whereFields).every(([field, expected]) =>
-    row[field] === expected)
-
-const contextIdFromWhereFields = (
-  input: WaitForToolInput,
-): Effect.Effect<string, LaunchInputError> => {
-  const contextId = input.eventQuery.whereFields.contextId
-  if (typeof contextId === "string" && contextId.length > 0) {
-    return Effect.succeed(contextId)
-  }
-  return Effect.fail(new LaunchInputError({
-    cause: new Error(
-      `wait.for source ${input.eventQuery.stream} requires whereFields.contextId`,
-    ),
-  }))
-}
-
-const mapWaitError = (cause: unknown): LaunchInputError | PreloadError => {
-  if (isRecord(cause) && cause._tag === "LaunchInputError") {
-    return cause as unknown as LaunchInputError
-  }
-  if (isRecord(cause) && cause._tag === "PreloadError") {
-    return cause as unknown as PreloadError
-  }
-  return new PreloadError({ cause })
-}
-
-const waitForFirstMatch = (
-  stream: Stream.Stream<unknown, PreloadError>,
-  input: WaitForToolInput,
-): Effect.Effect<WaitForToolOutput, PreloadError> => {
-  const run = Stream.runHead(
-    stream.pipe(
-      Stream.filter(row => matchesWhereFields(
-        row,
-        input.eventQuery.whereFields,
-      )),
-    ),
-  )
-  const awaited = input.timeoutMs === undefined
-    ? run
-    : Effect.raceFirst(
-      run,
-      Clock.sleep(Duration.millis(input.timeoutMs)).pipe(
-        Effect.as(Option.none<unknown>()),
-      ),
-    )
-  return Effect.map(awaited, Option.match({
-    onNone: () => ({ matched: false, timedOut: true }) as const,
-    onSome: event => ({ matched: true, event }) as const,
-  }))
 }
 
 const make = (config: ResolvedConfig) =>
@@ -893,109 +816,6 @@ const make = (config: ResolvedConfig) =>
       Effect.map(decodeSessionAttachInput(request), decoded =>
         makeSessionHandle(decoded.sessionId))
 
-    const waitForControlRows = (
-      input: WaitForToolInput,
-    ): Effect.Effect<WaitForToolOutput, PreloadError> =>
-      waitForFirstMatch(
-        control.runs.rows().pipe(
-          Stream.mapError(cause => new PreloadError({ cause })),
-        ),
-        input,
-      )
-
-    const waitContextFor = (
-      input: WaitForToolInput,
-    ): Effect.Effect<RuntimeContext, LaunchInputError | PreloadError> =>
-      Effect.gen(function* () {
-        const contextId = yield* contextIdFromWhereFields(input)
-        const context = yield* resolveContext(contextId)
-        if (context === undefined) {
-          return yield* Effect.fail(new PreloadError({
-            cause: new Error(`runtime context ${contextId} not found`),
-          }))
-        }
-        return context
-      })
-
-    const waitForRowsInLayer = <R>(
-      input: WaitForToolInput,
-      layer: Layer.Layer<R, unknown, never>,
-      stream: Effect.Effect<Stream.Stream<unknown, unknown>, never, R>,
-    ): Effect.Effect<WaitForToolOutput, LaunchInputError | PreloadError> =>
-      Effect.flatMap(stream, rows =>
-        waitForFirstMatch(
-          rows.pipe(Stream.mapError(cause => new PreloadError({ cause }))),
-          input,
-        )).pipe(
-          Effect.provide(layer),
-          Effect.scoped,
-          Effect.mapError(mapWaitError),
-        )
-
-    const waitForHostRows = <R>(
-      input: WaitForToolInput,
-      layerForContext: (context: RuntimeContext) => Layer.Layer<R, unknown, never>,
-      stream: Effect.Effect<Stream.Stream<unknown, unknown>, never, R>,
-    ): Effect.Effect<WaitForToolOutput, LaunchInputError | PreloadError> =>
-      Effect.gen(function* () {
-        const context = yield* waitContextFor(input)
-        return yield* waitForRowsInLayer(
-          input,
-          layerForContext(context),
-          stream,
-        )
-      })
-
-    const waitFor = (
-      request: WaitForToolInput,
-    ): Effect.Effect<WaitForToolOutput, LaunchInputError | PreloadError> =>
-      Effect.gen(function* () {
-        const input = yield* decodeWaitForInput(request)
-        switch (input.eventQuery.stream) {
-          case FiregridRuntimeObservationSourceNames.runtimeRuns:
-            return yield* waitForControlRows(input)
-          case FiregridRuntimeObservationSourceNames.runtimeOutputEvents:
-            return yield* waitForHostRows(
-              input,
-              context => outputLayerForContext(config, context),
-              Effect.map(RuntimeOutputTable, table => table.events.rows()),
-            )
-          case FiregridRuntimeObservationSourceNames.runtimeOutputLogs:
-            return yield* waitForHostRows(
-              input,
-              context => outputLayerForContext(config, context),
-              Effect.map(RuntimeOutputTable, table => table.logs.rows()),
-            )
-          case FiregridRuntimeObservationSourceNames.runtimeIngressInputs:
-            return yield* waitForHostRows(
-              input,
-              context => ingressLayerForContext(config, context),
-              Effect.map(RuntimeIngressTable, table => table.inputs.rows()),
-            )
-          case FiregridRuntimeObservationSourceNames.runtimeIngressDeliveries:
-            return yield* waitForHostRows(
-              input,
-              context => ingressLayerForContext(config, context),
-              Effect.map(RuntimeIngressTable, table => table.deliveries.rows()),
-            )
-          case FiregridRuntimeObservationSourceNames.agentOutputEvents:
-            return yield* waitForHostRows(
-              input,
-              context => outputLayerForContext(config, context),
-              Effect.map(RuntimeOutputTable, table =>
-                table.events.rows().pipe(
-                  Stream.filterMap(runtimeAgentOutputObservationFromRow),
-                )),
-            )
-          default:
-            return yield* Effect.fail(new LaunchInputError({
-              cause: new Error(
-                `unsupported wait.for source ${input.eventQuery.stream}`,
-              ),
-            }))
-        }
-      })
-
     return Firegrid.of({
       launch: (request) => Effect.gen(function* () {
         // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1
@@ -1059,9 +879,6 @@ const make = (config: ResolvedConfig) =>
             inputId: appended.inputId,
           }
         }),
-      },
-      wait: {
-        for: waitFor,
       },
       permissions: {
         respond: request => Effect.gen(function* () {

@@ -1,0 +1,59 @@
+feature:
+  name: firegrid-typed-wait-source-redesign
+  product: firegrid
+  description: Replace the runtime SourceCollections dynamic registry design by typing the existing wait router source selection over durable observation streams.
+
+components:
+  CONTEXT:
+    requirements:
+      1: Runtime waiting composes durable wait rows, completion rows, typed durable observation streams, DurableClock timeout semantics, and workflow deferred resume.
+      2: Agent event-pipeline observations are already available as typed Stream capability tags and should remain the static source of truth for runtime-owned observations.
+      3: App-owned facts or projections are separate caller-owned durable observations and are not runtime authority internals.
+      4: The bounded context for wait_for is durable tools; wait_for is the first durable tool instance, not the name of the package boundary.
+
+  REJECTION:
+    requirements:
+      1: SourceCollections is rejected as a production runtime architecture primitive rather than relocated or preserved as a transitional public surface.
+      2: Runtime source-registration layers must not depend on waits internals to register observation sources.
+      3: A stringly sourceName-to-stream registry is not introduced or preserved as the default runtime wait abstraction.
+      4: Moving SourceCollections to another folder without changing the model does not satisfy this redesign.
+      5: The replacement lands transactionally across production wait_for paths, tool lowering, tests, public exports, and static enforcement.
+
+  TYPED_SOURCES:
+    requirements:
+      1: Runtime-owned waits use typed wait-source expressions that name supported runtime observations by discriminated variant rather than arbitrary source strings.
+      2: The wait router consumes concrete Stream capability tags through the Effect requirement channel for every runtime observation it supports.
+      3: Wait-source variants select which stream to observe; existing FieldEqualsTrigger predicates continue to represent row matching data persisted on wait rows.
+      4: Runtime wait-source expressions do not expose DurableTable facades or table-taking helper APIs.
+      5: Unsupported runtime observations are not exposed as wait sources until a typed source variant and tests justify them.
+      6: The first typed runtime wait-source set is AgentOutput and RuntimeRun only; RuntimeContext is deferred until a product flow needs context-state waiting.
+
+  WAIT_ROUTER:
+    requirements:
+      1: The existing WaitRouterLive remains the scoped Layer that provides no public service and consumes durable wait row capabilities, typed observation streams, and WorkflowEngine.
+      2: WaitFor.match remains the workflow/operator API while wait matching and workflow resume are implemented by WaitRouterLive.
+      3: The first typed-router cutover keeps timeout completion ownership in WaitFor.match; moving timeout completion into the router requires separate acceptance criteria.
+      4: WaitRouterLive does not live in the agent event-pipeline subscribers folder unless it consumes agent event-pipeline vocabulary as its primary semantic role.
+      5: The first typed-router cutover preserves the existing workflowName, executionId, and deferredName resume path; DurableDeferred token migration is a separate follow-up if it reduces workflow-engine coupling.
+
+  APP_FACTS:
+    requirements:
+      1: Caller-owned app facts that need durable waiting are modeled as app-owned durable projection waits, not as runtime source-registration internals.
+      2: The factory run-process uses shipped client/session primitives for runtime observations and app-local DarkFactoryTable projection wait helpers for factory facts instead of reaching into runtime SourceCollections.
+      3: EventPlane, RunWait, or generic durable wait APIs may replace app-local projection wait helpers later, but they are not required to remove runtime SourceCollections from the factory path.
+
+  MIGRATION:
+    requirements:
+      1: The migration inventories all existing wait_for source names and classifies each as runtime typed wait, app-owned fact wait, or test-only.
+      2: Runtime tests that currently register arbitrary test source names are rewritten to test typed wait-router source selection or moved to a generic durable-operator package when that package owns the behavior.
+      3: Public runtime exports for SourceCollections and sourceCollectionStreamHandle are removed once no production runtime path depends on them.
+      4: Dependency rules prevent source-registration modules from importing durable-tools internals and prevent new SourceCollections production usage.
+      5: No compatibility layer accepts arbitrary legacy source strings in production after the typed wait-source cutover.
+      6: The runtime folder boundary is renamed from waits to durable-tools in the same transactional cutover so future durable tools do not inherit a wait-only package shape.
+
+constraints:
+  DESIGN:
+    requirements:
+      1: "The redesign uses stock Effect surfaces: Context.Tag, Layer, Stream, Sink, Queue.Enqueue, Effect services, DurableTable, DurableClock, and Effect Schema."
+      2: The redesign does not add a new Firegrid wrapper family for source registries, subscribers, or authorities.
+      3: Dynamic plugin-like source lookup is deferred until a concrete non-runtime consumer proves the need.

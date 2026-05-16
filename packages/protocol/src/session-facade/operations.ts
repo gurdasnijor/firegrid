@@ -8,16 +8,12 @@ import {
   PermissionRespondOutputSchema,
   SessionPromptToolInputSchema,
   SessionPromptToolOutputSchema,
-  WaitForToolInputSchema,
-  WaitForToolOutputSchema,
   type FiregridRuntimeObservationSourceName,
   type PermissionDecision,
   type PermissionRespondInput,
   type PermissionRespondOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
-  type WaitForToolInput,
-  type WaitForToolOutput,
 } from "../agent-tools/schema.ts"
 import { defineFiregridOperation } from "../operations/schema.ts"
 import {
@@ -41,8 +37,6 @@ export {
   type PermissionRespondOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
-  type WaitForToolInput,
-  type WaitForToolOutput,
 }
 
 export const FiregridClientOperations = {
@@ -65,10 +59,6 @@ export const FiregridClientOperations = {
     ),
   },
   wait: {
-    for: defineFiregridOperation(
-      WaitForToolInputSchema,
-      WaitForToolOutputSchema,
-    ),
     forAgentOutput: defineFiregridOperation(
       SessionAgentOutputWaitInputSchema,
       SessionAgentOutputWaitOutputSchema,

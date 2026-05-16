@@ -16,7 +16,11 @@ import {
   RuntimeIngressDeliveryTrackerLayer,
   runtimeIngressSubscriberId,
 } from "../../src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
-import { RuntimeAuthoritySourceNames } from "../../src/authorities/source-names.ts"
+
+// `sourceName` is a free-form label on the ingress append input/echo; the
+// deleted RuntimeAuthoritySourceNames registry no longer exists.
+const ingressInputsSourceName = "firegrid.runtime.ingress.inputs"
+const ingressDeliveriesSourceName = "firegrid.runtime.ingress.deliveries"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -72,7 +76,7 @@ describe("runtime ingress authorities", () => {
           firstRow,
           duplicate,
           secondRow,
-          sourceName: RuntimeAuthoritySourceNames.runtimeIngressInputs,
+          sourceName: ingressInputsSourceName,
         }
       }).pipe(
         Effect.provide(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
@@ -86,7 +90,7 @@ describe("runtime ingress authorities", () => {
     expect(result.firstRow.sequence).toBe(0)
     expect(result.duplicate).toEqual(result.firstRow)
     expect(result.secondRow.sequence).toBe(1)
-    expect(result.sourceName).toBe(RuntimeAuthoritySourceNames.runtimeIngressInputs)
+    expect(result.sourceName).toBe(ingressInputsSourceName)
   })
 
   it("firegrid-runtime-agent-event-pipeline.AUTHORITIES.4 claims delivery rows once per subscriber", async () => {
@@ -117,7 +121,7 @@ describe("runtime ingress authorities", () => {
         return {
           first,
           second,
-          sourceName: RuntimeAuthoritySourceNames.runtimeIngressDeliveries,
+          sourceName: ingressDeliveriesSourceName,
         }
       }).pipe(
         Effect.provide(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
@@ -129,6 +133,6 @@ describe("runtime ingress authorities", () => {
 
     expect(Option.isSome(result.first)).toBe(true)
     expect(Option.isNone(result.second)).toBe(true)
-    expect(result.sourceName).toBe(RuntimeAuthoritySourceNames.runtimeIngressDeliveries)
+    expect(result.sourceName).toBe(ingressDeliveriesSourceName)
   })
 })

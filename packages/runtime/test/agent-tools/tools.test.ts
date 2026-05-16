@@ -29,9 +29,26 @@ import {
   SessionNewToolInputSchema,
   SleepToolInputSchema,
 } from "@firegrid/protocol/agent-tools"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer, Schema, Stream } from "effect"
 import { describe, expect, it, afterEach, beforeEach } from "vitest"
-import { DurableToolsWaitForLive } from "../../src/waits/index.ts"
+import {
+  RuntimeAgentOutputEvents,
+} from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
+import { RuntimeRuns } from "../../src/authorities/runtime-control-plane-recorder.ts"
+import { DurableToolsWaitForLive } from "../../src/durable-tools/index.ts"
+
+// These tests exercise sleep / failure mapping, not wait_for. The wait
+// router still requires its typed observation tags; provide empty streams.
+const EmptyWaitStreamsLive = Layer.mergeAll(
+  Layer.succeed(
+    RuntimeRuns,
+    Stream.empty as unknown as RuntimeRuns["Type"],
+  ),
+  Layer.succeed(
+    RuntimeAgentOutputEvents,
+    Stream.empty as unknown as RuntimeAgentOutputEvents["Type"],
+  ),
+)
 import { DurableStreamsWorkflowEngine } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { ScheduledInputWorkflowLayer } from "../../src/agent-tools/scheduled-input-workflow.ts"
 import {
@@ -141,6 +158,7 @@ const buildBridgeLayer = (
     Layer.provideMerge(
       DurableToolsWaitForLive({ streamUrl: streams.waitForUrl }),
     ),
+    Layer.provideMerge(EmptyWaitStreamsLive),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflowUrl,
     }) as Layer.Layer<never, unknown, unknown>),

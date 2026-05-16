@@ -10,7 +10,3 @@ export {
   type RuntimeContextReadService,
   type RuntimeRunAppendAndGetService,
 } from "./runtime-control-plane-recorder.ts"
-export {
-  RuntimeAuthoritySourceNames,
-  type RuntimeAuthoritySourceName,
-} from "./source-names.ts"

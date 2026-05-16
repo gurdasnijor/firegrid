@@ -26,15 +26,17 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import { Prompt } from "@effect/ai"
 import { Workflow } from "@effect/workflow"
 import { DurableTable } from "effect-durable-operators"
-import { Effect, Fiber, Layer, Schema } from "effect"
+import { Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { AgentOutputEvent, ToolResultEvent } from "../../src/agent-event-pipeline/events/index.ts"
 import { AgentToolCallPartSchema, ToolResultEventSchema } from "../../src/agent-event-pipeline/events/index.ts"
 import {
+  RuntimeAgentOutputEvents,
+} from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
+import { RuntimeRuns } from "../../src/authorities/runtime-control-plane-recorder.ts"
+import {
   DurableToolsWaitForLive,
-  SourceCollections,
-  sourceCollectionStreamHandle,
-} from "../../src/waits/index.ts"
+} from "../../src/durable-tools/index.ts"
 import { DurableStreamsWorkflowEngine } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
 import { ScheduledInputWorkflowLayer } from "../../src/agent-tools/scheduled-input-workflow.ts"
 import {
@@ -171,6 +173,24 @@ class TestSourceTable extends DurableTable("agent-tools.test.source", {
   rows: TestSourceRowSchema,
 }) {}
 
+// Typed wait-source harness: RuntimeRun is backed by TestSourceTable;
+// AgentOutput is an empty stream. wait_for lowers to the typed source.
+// firegrid-typed-wait-source-redesign.MIGRATION.2
+const RUNTIME_RUN_SOURCE = { _tag: "RuntimeRun" } as const
+const TestSourceWaitStreamsLive = Layer.mergeAll(
+  Layer.effect(
+    RuntimeRuns,
+    Effect.map(
+      TestSourceTable,
+      table => table.rows.rows() as unknown as RuntimeRuns["Type"],
+    ),
+  ),
+  Layer.succeed(
+    RuntimeAgentOutputEvents,
+    Stream.empty as unknown as RuntimeAgentOutputEvents["Type"],
+  ),
+)
+
 // ---------------------------------------------------------------------------
 // Layer builder
 // ---------------------------------------------------------------------------
@@ -185,6 +205,7 @@ const buildLayer = (
     Layer.provideMerge(
       DurableToolsWaitForLive({ streamUrl: streams.waitForUrl }),
     ),
+    Layer.provideMerge(TestSourceWaitStreamsLive),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflowUrl,
     }) as Layer.Layer<never, unknown, unknown>),
@@ -208,11 +229,9 @@ const runWith = <A, E>(
     >,
   )
 
-const registerTestSource = Effect.gen(function* () {
-  const sources = yield* SourceCollections
-  const table = yield* TestSourceTable
-  yield* sources.register(sourceCollectionStreamHandle("test-source", table.rows.rows()))
-})
+// Typed sources are resolved from the stream tag provided by the test layer;
+// no registration step. Kept as a no-op so call sites stay readable.
+const registerTestSource = Effect.void
 
 // ---------------------------------------------------------------------------
 // Descriptor-lookup tests (no workflow engine needed)
@@ -285,8 +304,8 @@ describe("toolUseToEffect — wait_for arm", () => {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-wait",
           event: toolUse("tool-wait", "wait_for", {
-              eventQuery: {
-                stream: "test-source",
+              waitQuery: {
+                source: RUNTIME_RUN_SOURCE,
                 whereFields: { requestId: "no-such-request" },
               },
               timeoutMs: 50,
@@ -316,8 +335,8 @@ describe("toolUseToEffect — wait_for arm", () => {
           RunToolWorkflow.execute({
             contextId: "ctx-wait-nonscalar",
             event: toolUse("tool-wait-nonscalar", "wait_for", {
-                eventQuery: {
-                  stream: "test-source",
+                waitQuery: {
+                  source: RUNTIME_RUN_SOURCE,
                   whereFields: {
                     requestId: { value: "not-a-scalar" },
                   },
@@ -355,8 +374,8 @@ describe("toolUseToEffect — wait_for arm", () => {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-wait-empty",
           event: toolUse("tool-wait-empty", "wait_for", {
-              eventQuery: {
-                stream: "test-source",
+              waitQuery: {
+                source: RUNTIME_RUN_SOURCE,
                 whereFields: {},
               },
               timeoutMs: 100,
@@ -380,8 +399,8 @@ describe("toolUseToEffect — wait_for arm", () => {
           RunToolWorkflow.execute({
             contextId: "ctx-wait-match",
             event: toolUse("tool-wait-match", "wait_for", {
-                eventQuery: {
-                  stream: "test-source",
+                waitQuery: {
+                  source: RUNTIME_RUN_SOURCE,
                   whereFields: { requestId: "rq-1" },
                 },
               }),

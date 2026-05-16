@@ -24,15 +24,12 @@ export {
   hostOwnedStreamUrl,
   localProcessSpawnEnvFromHostEnv,
   provideRuntimeContext,
-  registerRuntimeHostAppSource,
   requireLocalContext,
   runtimeControlPlaneStreamUrl,
   RuntimeEnvResolverPolicy,
-  RuntimeHostAppSourceRegistrationsLive,
   startRuntime,
   type LocalProcessSandboxProviderOptions,
   type RuntimeEnvResolverPolicyValue,
-  type RuntimeHostAppSourceRegistration,
   type RuntimeHostTopologyOptions,
   type StartRuntimeOptions,
   type StartRuntimeResult,
@@ -64,7 +61,6 @@ export {
   type RunConfig,
 } from "./host/index.ts"
 export {
-  RuntimeAuthoritySourceNames,
   RuntimeControlPlaneRecorderLive,
   RuntimeContexts,
   RuntimeContextInsert,
@@ -74,7 +70,6 @@ export {
   RuntimeRunAppendAndGet,
   type RuntimeContextInsertService,
   type RuntimeContextReadService,
-  type RuntimeAuthoritySourceName,
   type RuntimeRunAppendAndGetService,
 } from "./authorities/index.ts"
 export {
@@ -129,10 +124,8 @@ export {
   FieldEqualsTriggerSchema,
   type FieldEqualsPredicate,
   type FieldEqualsTrigger,
-  SourceCollections,
-  type SourceCollectionHandle,
-  type SourceCollectionsService,
-  sourceCollectionStreamHandle,
+  type RuntimeWaitSource,
+  RuntimeWaitSourceSchema,
   WaitFor,
   type WaitForOptions,
   type WaitForOutcome,
@@ -146,7 +139,7 @@ export {
   type WaitRow,
   type WaitStatus,
   WaitStatusSchema,
-} from "./waits/index.ts"
+} from "./durable-tools/index.ts"
 export {
   AcpCapabilities,
   AcpSessionLive,

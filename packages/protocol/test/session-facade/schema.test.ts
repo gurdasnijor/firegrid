@@ -3,7 +3,6 @@ import { Option, Schema, SchemaAST } from "effect"
 import {
   PermissionRespondInputSchema,
   SessionPromptToolInputSchema,
-  WaitForToolInputSchema,
 } from "../../src/agent-tools/schema.ts"
 import { getFiregridProjectionMetadata } from "../../src/operations/schema.ts"
 import { FiregridClientOperations } from "../../src/session-facade/operations.ts"
@@ -107,8 +106,8 @@ describe("session facade protocol schema", () => {
     expect(FiregridClientOperations.sessions.prompt.inputSchema).toBe(
       SessionPromptToolInputSchema,
     )
-    expect(FiregridClientOperations.wait.for.inputSchema).toBe(
-      WaitForToolInputSchema,
+    expect(FiregridClientOperations.wait.forAgentOutput.inputSchema).toBe(
+      SessionAgentOutputWaitInputSchema,
     )
     expect(FiregridClientOperations.permissions.respond.inputSchema).toBe(
       PermissionRespondInputSchema,

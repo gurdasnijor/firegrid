@@ -208,9 +208,9 @@ This section names what the PoC can use today and what still needs new work.
 | Wait for agent output or permission request | Session facade `session.wait.forAgentOutput(...)` and `session.wait.forPermissionRequest(...)`, backed by runtime observation rows. | Implementable today for runtime-hosted sessions. |
 | Resume ACP permission requests | Session facade `session.permissions.respond(...)` / `permissions.respond(...)` writes a `PermissionResponse` through runtime ingress. | Implementable today. |
 | Compose a host for the factory app | `@firegrid/runtime/runtime-host` `FiregridLocalHostLive`, env resolver policy, `RuntimeStartCapabilityLive`, and `localProcessSpawnEnvFromHostEnv`. | Implementable today. |
-| Register app fact rows as wait sources | `registerRuntimeHostAppSource(...)` and `RuntimeHostAppSourceRegistrationsLive` register app-owned streams with runtime wait source lookup. | Implementable today. |
+| Wait over app fact projections | `apps/factory` app-local projection wait helpers observe `DarkFactoryTable` rows directly. | Implementable today without runtime source registration. |
 | Observe normalized agent output | Runtime agent-event-pipeline output journal plus client `agentOutputs`; protocol session-facade schemas decode permission requests and output payloads. | Implementable today. |
-| Wait over app facts and runtime observations | Runtime `WaitFor.match`, `SourceCollections`, runtime source registrations, and client wait APIs. | Implementable today, with current `wait_for` source-match semantics. |
+| Wait over runtime observations | Session facade waits and typed runtime `wait_for` sources cover agent output, permission requests, and runtime run state. | Implementable today for runtime-owned observations. |
 | Store accepted triggers and permission decisions | `apps/factory` `DarkFactoryTable` facts/runs and schemas. | Implementable today as app-owned facts/projections. |
 
 The following pieces are not shipped as Firegrid primitives today:
@@ -340,8 +340,9 @@ persist the same logical evidence:
 If using current `apps/factory` primitives, the planner context can be created
 or loaded through `@firegrid/client/firegrid` and run by
 `@firegrid/runtime/runtime-host`. The prompt should include the factory run key,
-source names, runtime observation sources, Linear issue fields, repo hint,
-advertised provider capabilities, and the durable rows that can resume the run.
+app-owned projection names, typed runtime wait sources, Linear issue fields,
+repo hint, advertised provider capabilities, and the durable rows that can
+resume the run.
 
 If using a Flamecast adapter first, the Flamecast session id is app-owned
 provider evidence. It should not become Firegrid RuntimeContext schema.
@@ -382,10 +383,11 @@ Each PoC `step.waitForEvent(...)` becomes a durable row/projection wait:
 
 When using future EventPlane support, the preferred shape is projection-match
 `RunWait` because the wait target is caller-owned projection state. With
-current `apps/factory` / runtime-host primitives, `wait_for` over app facts or
-`RuntimeObservationSourceNames` is the shipped path. The important boundary is
-that the wait is over durable rows, not an in-memory promise, hidden callback
-URL, or comment-walking router.
+current `apps/factory` primitives, app-owned projection wait helpers observe
+`DarkFactoryTable` rows directly, while runtime waits stay on session-scoped or
+typed runtime observation APIs. The important boundary is that the app wait is
+over durable app rows, not runtime source registration, an in-memory promise,
+hidden callback URL, or comment-walking router.
 
 Timeouts should also write durable evidence rows before terminalizing or moving
 to an operator fallback path:
@@ -465,7 +467,7 @@ planner or fixture-only event writer is not sufficient acceptance.
 | Planner and implementer prompt policy | App. |
 | UI projections for factory timeline and active waits | App projections. |
 | RuntimeContext, RuntimeIngress, RuntimeOutput, runtime runs | Firegrid runtime. |
-| Runtime host composition and source registration | `@firegrid/runtime`. |
+| Runtime host composition | `@firegrid/runtime`. |
 | Browser-safe session facade and runtime observation waits | `@firegrid/client`. |
 | Schema projection discipline | `@firegrid/protocol` plus projection files. |
 | Durable execution, RunWait, and projection-match mechanics | Firegrid product-neutral runtime/substrate layers. |
@@ -508,9 +510,10 @@ the next implementation direction:
    delivery converges.
 3. **Provider intake.** Port Linear trigger intake to emit durable rows and
    start or wake the app-owned run process without dispatching agents.
-4. **Planner choreography prompt.** Start the planner with durable source names,
-   provider capabilities, and explicit instructions that the planner owns
-   sequencing through durable primitives and observation.
+4. **Planner choreography prompt.** Start the planner with app-owned projection
+   names, typed runtime wait sources, provider capabilities, and explicit
+   instructions that the planner owns sequencing through durable primitives and
+   observation.
 5. **PoC parity escape hatch.** If needed, keep a deterministic
    ticket/planner/gate/implementer/PR chain in app-owned code for smoke parity
    and debugging only. Do not expose it as a Firegrid SDK.

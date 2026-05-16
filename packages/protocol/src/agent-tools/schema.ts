@@ -90,22 +90,45 @@ export type SleepToolOutput = Schema.Schema.Type<typeof SleepToolOutputSchema>
 // ---------------------------------------------------------------------------
 
 /**
- * Phase 1 `EventQuery`: a fixed-record match query against a named
- * Durable Streams-backed stream. Phase 2 may grow the predicate
- * vocabulary; for now `whereFields` is a deep-equal record match.
+ * firegrid-typed-wait-source-redesign.TYPED_SOURCES.1
+ * firegrid-typed-wait-source-redesign.MIGRATION.5
+ *
+ * Typed runtime wait-source discriminator. The agent names a supported
+ * runtime observation by variant; it cannot pass an arbitrary source string.
+ * First supported set is `AgentOutput` and `RuntimeRun` only.
  */
-export const EventQuerySchema = Schema.Struct({
-  stream: Schema.String.pipe(Schema.minLength(1)),
+export const RuntimeWaitSourceSchema = Schema.Union(
+  Schema.Struct({ _tag: Schema.Literal("AgentOutput") }),
+  Schema.Struct({ _tag: Schema.Literal("RuntimeRun") }),
+).annotations({
+  identifier: "firegrid.agentTool.runtimeWaitSource",
+  title: "Runtime wait source",
+  description:
+    "Supported runtime observation a wait_for can select: AgentOutput or RuntimeRun.",
+})
+export type RuntimeWaitSource = Schema.Schema.Type<
+  typeof RuntimeWaitSourceSchema
+>
+
+/**
+ * A typed wait query: a supported runtime wait source plus an equality match
+ * over declared scalar fields. `whereFields` is a deep-equal record match.
+ */
+export const RuntimeWaitQuerySchema = Schema.Struct({
+  source: RuntimeWaitSourceSchema,
   whereFields: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
 }).annotations({
-  identifier: "firegrid.agentTool.eventQuery",
-  title: "Durable event query",
-  description: "Match a row in a named durable stream by equality on declared fields.",
+  identifier: "firegrid.agentTool.runtimeWaitQuery",
+  title: "Runtime wait query",
+  description:
+    "Match a row on a typed runtime wait source by equality on declared fields.",
 })
-export type EventQuery = Schema.Schema.Type<typeof EventQuerySchema>
+export type RuntimeWaitQuery = Schema.Schema.Type<
+  typeof RuntimeWaitQuerySchema
+>
 
 export const WaitForToolInputSchema = Schema.Struct({
-  eventQuery: EventQuerySchema,
+  waitQuery: RuntimeWaitQuerySchema,
   timeoutMs: Schema.optional(
     Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
   ),
@@ -115,8 +138,8 @@ export const WaitForToolInputSchema = Schema.Struct({
   description: "Wait until a matching durable event appears, optionally bounded by a timeout.",
   examples: [
     {
-      eventQuery: {
-        stream: "firegrid.runtime.agent-output-events",
+      waitQuery: {
+        source: { _tag: "AgentOutput" },
         whereFields: {
           contextId: "ctx_example",
           _tag: "PermissionRequest",

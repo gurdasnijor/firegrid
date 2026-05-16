@@ -132,17 +132,17 @@ module.exports = {
       to: { path: "^packages/client/src" },
     },
     {
-      // firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.1
-      // firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.2
-      name: "runtime-host-no-source-collection-registration-imports",
+      // firegrid-typed-wait-source-redesign.MIGRATION.4
+      // firegrid-typed-wait-source-redesign.REJECTION.2
+      // The SourceCollections string registry and source-registration layers
+      // are deleted. Any reintroduced source-registration module must not
+      // depend on the durable-tools bounded context.
+      name: "no-source-registration-to-durable-tools",
       severity: "error",
       comment:
-        "Runtime host composition must merge source-registration layers instead of directly importing SourceCollections or sourceCollectionStreamHandle.",
-      from: { path: "^packages/runtime/src/host" },
-      to: {
-        path:
-          "^packages/runtime/src/waits/(?:index|source-registration|internal/source-collections)\\.ts$",
-      },
+        "source-registration modules must not import durable-tools internals; runtime waits resolve typed observation streams via Effect requirements, not a source-name registry.",
+      from: { path: "^packages/runtime/src/source-registration" },
+      to: { path: "^packages/runtime/src/durable-tools" },
     },
     {
       name: "protocol-no-client-or-runtime",

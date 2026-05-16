@@ -6,7 +6,7 @@ import {
   sessionContextIdForExternalKey,
   type RuntimeAgentOutputEventPayload,
 } from "@firegrid/protocol/session-facade"
-import { Effect, Schema } from "effect"
+import { Effect, Fiber, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   authorizedBindingsFromPlanner,
@@ -31,9 +31,16 @@ import {
 } from "../src/identity.ts"
 import { buildPlannerPrompt } from "../src/prompts.ts"
 import {
+  waitForFactoryPermissionResolution,
+  waitForFactoryPhaseProjection,
+  waitForFactoryProviderEffect,
+  waitForFactoryRunStatus,
+} from "../src/projection-waits.ts"
+import {
   DarkFactoryFactKeyEncoded,
+  DarkFactoryTable,
   DarkFactoryTriggerSchema,
-  darkFactoryFactsSourceName,
+  type DarkFactoryFact,
   type DarkFactoryRun,
   type DarkFactoryTrigger,
 } from "../src/tables.ts"
@@ -158,7 +165,7 @@ describe("dark factory P0 contracts", () => {
     ])
   })
 
-  it("firegrid-dark-factory-app.AUTONOMOUS_RUN.2 firegrid-dark-factory-app.CHOREOGRAPHY.2 builds a planner prompt around durable sources and supported tools", () => {
+  it("firegrid-factory-run-process.CHOREOGRAPHY.1 firegrid-factory-run-process.WAIT_AND_PERMISSION.1 builds a planner prompt around app projections and typed runtime waits", () => {
     const run: DarkFactoryRun = {
       factoryRunKey: triggerIdentity.factoryRunKey,
       subscriberId: triggerIdentity.subscriberId,
@@ -182,7 +189,11 @@ describe("dark factory P0 contracts", () => {
       providerCapabilities: [],
     })
 
-    expect(prompt).toContain(darkFactoryFactsSourceName)
+    expect(prompt).toContain("Factory fact projections")
+    expect(prompt).toContain("typed wait_for for runtime observations")
+    expect(prompt).not.toContain("darkFactory.facts")
+    expect(prompt).not.toContain("Runtime observation sources:")
+    expect(prompt).not.toContain("firegrid.runtime.output.events")
     expect(prompt).toContain("session_new")
     expect(prompt).toContain("session_prompt")
     expect(prompt).toContain("wait_for")
@@ -305,7 +316,12 @@ describe("dark factory P0 contracts", () => {
           providerCapabilities: [],
         })
         const status = yield* readFactoryRunStatus(first.run.factoryRunKey)
-        return { first, second, status }
+        const runProjection = yield* waitForFactoryRunStatus({
+          factoryRunKey: first.run.factoryRunKey,
+          status: "accepted",
+          timeoutMs: 100,
+        })
+        return { first, second, status, runProjection }
       }),
     )
 
@@ -323,6 +339,10 @@ describe("dark factory P0 contracts", () => {
       factoryRunKey: triggerFactoryRunKey,
       subscriberId: triggerSubscriberId,
       plannerContextId: triggerPlannerContextId,
+      status: "accepted",
+    })
+    expect(result.runProjection).toMatchObject({
+      factoryRunKey: triggerFactoryRunKey,
       status: "accepted",
     })
     expect(result.status.facts).toHaveLength(1)
@@ -359,7 +379,13 @@ describe("dark factory P0 contracts", () => {
         const first = yield* respondToFactoryPermission(input)
         const second = yield* respondToFactoryPermission(input)
         const status = yield* readFactoryRunStatus(accepted.run.factoryRunKey)
-        return { first, second, status }
+        const permissionProjection = yield* waitForFactoryPermissionResolution({
+          factoryRunKey: accepted.run.factoryRunKey,
+          permissionRequestId: input.permissionRequestId,
+          decisions: ["Allow"],
+          timeoutMs: 100,
+        })
+        return { first, second, status, permissionProjection }
       }),
     )
 
@@ -378,6 +404,12 @@ describe("dark factory P0 contracts", () => {
       fact.eventType === "permission.resolved" &&
       fact.externalEventKey === permissionIdentity.externalEventKey,
     )).toBe(true)
+    expect(result.permissionProjection).toMatchObject({
+      factoryRunKey: triggerFactoryRunKey,
+      permissionRequestId: "permission-1",
+      status: "resolved",
+      decision: { _tag: "Allow", optionId: "allow" },
+    })
     const controlRows = result.status.ingressInputs.filter(row =>
       row.kind === "control")
     expect(controlRows).toHaveLength(1)
@@ -465,6 +497,84 @@ describe("dark factory P0 contracts", () => {
       contextId: triggerPlannerContextId,
       sequence: 10,
       permissionRequestId: "permission-1",
+    })
+  })
+
+  it("firegrid-factory-run-process.EVENT_PLANE.3 firegrid-factory-run-process.WAIT_AND_PERMISSION.1 waits for app-local phase and provider-effect projections without runtime source registration", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `factory-projections-${crypto.randomUUID()}`
+
+    const result = await runWithHost(
+      namespace,
+      Effect.gen(function* () {
+        const accepted = yield* acceptFactoryTrigger({
+          trigger,
+          planner: { argv: ["node", "planner.js"], agentProtocol: "stdio-jsonl" },
+          providerCapabilities: [],
+        })
+        const table = yield* DarkFactoryTable
+        const phaseWait = yield* waitForFactoryPhaseProjection({
+          factoryRunKey: accepted.run.factoryRunKey,
+          phase: "planner",
+          timeoutMs: 2_000,
+        }).pipe(Effect.fork)
+        const providerWait = yield* waitForFactoryProviderEffect({
+          factoryRunKey: accepted.run.factoryRunKey,
+          effectType: "linear.activity",
+          status: "completed",
+          timeoutMs: 2_000,
+        }).pipe(Effect.fork)
+
+        yield* Effect.sleep("50 millis")
+        const createdAt = new Date().toISOString()
+        const phaseFact: DarkFactoryFact = {
+          factKey: ["darkFactory.phase", "planner-completed"],
+          source: "darkFactory.phase",
+          externalEventKey: "planner-completed",
+          externalEntityKey: trigger.externalEntityKey,
+          eventType: "factory.phase.completed",
+          factoryRunKey: accepted.run.factoryRunKey,
+          contextId: accepted.run.plannerContextId,
+          createdAt,
+          payload: {
+            phase: "planner",
+            status: "completed",
+          },
+        }
+        const providerFact: DarkFactoryFact = {
+          factKey: ["darkFactory.provider", "linear-activity-1"],
+          source: "darkFactory.provider",
+          externalEventKey: "linear-activity-1",
+          externalEntityKey: trigger.externalEntityKey,
+          eventType: "factory.provider.effect",
+          factoryRunKey: accepted.run.factoryRunKey,
+          contextId: accepted.run.plannerContextId,
+          createdAt,
+          payload: {
+            effectType: "linear.activity",
+            status: "completed",
+            providerUrl: "https://linear.example/FG-123#activity",
+          },
+        }
+        yield* table.facts.insertOrGet(phaseFact)
+        yield* table.facts.insertOrGet(providerFact)
+
+        const phase = yield* Fiber.join(phaseWait)
+        const provider = yield* Fiber.join(providerWait)
+        return { phase, provider }
+      }),
+    )
+
+    expect(result.phase).toMatchObject({
+      factoryRunKey: triggerFactoryRunKey,
+      phase: "planner",
+      status: "completed",
+    })
+    expect(result.provider).toMatchObject({
+      factoryRunKey: triggerFactoryRunKey,
+      effectType: "linear.activity",
+      status: "completed",
+      externalEventKey: "linear-activity-1",
     })
   })
 })

@@ -42,7 +42,7 @@ import {
   SpawnAllToolInputSchema,
   SpawnToolInputSchema,
   WaitForToolInputSchema,
-  type EventQuery,
+  type RuntimeWaitQuery,
   type ExecuteToolInput,
   type ScheduleMeToolInput,
   type ScheduleMeToolOutput,
@@ -82,7 +82,7 @@ import {
   type DurableWaitRowLookup,
   type DurableWaitRowUpsert,
   type FieldEqualsTrigger,
-} from "../waits/index.ts"
+} from "../durable-tools/index.ts"
 import { ScheduledInputWorkflow } from "./scheduled-input-workflow.ts"
 import { AgentToolHost } from "./tool-host.ts"
 import {
@@ -103,7 +103,7 @@ export interface ToolLoweringContext {
 }
 
 // ---------------------------------------------------------------------------
-// EventQuery → FieldEqualsTrigger adapter
+// RuntimeWaitQuery → FieldEqualsTrigger adapter
 // ---------------------------------------------------------------------------
 
 const isFieldEqualsScalar = (
@@ -124,8 +124,8 @@ const describeNonScalarValue = (value: unknown): string => {
   return typeof value
 }
 
-const eventQueryToTrigger = (
-  query: EventQuery,
+const waitQueryToTrigger = (
+  query: RuntimeWaitQuery,
 ):
   | { readonly _tag: "Ok"; readonly trigger: FieldEqualsTrigger }
   | { readonly _tag: "NonScalar"; readonly failures: ReadonlyArray<EventQueryAdapterFailure> }
@@ -185,14 +185,13 @@ const runWaitForTool = (
   | DurableWaitCompletionRowUpsert
   | Scope.Scope
 > => {
-  // EventQuery's `whereFields` is typed `Record<string, unknown>` because
-  // schema-level scalar refinement would prevent codecs from publishing
-  // the JSON shape unchanged. We enforce scalar-only predicates here
-  // because the downstream FieldEqualsTrigger evaluator treats an empty
-  // trigger as a universal match — an agent emitting non-scalar values
-  // would otherwise see wait_for "match any row" instead of an
-  // invalid-input ToolResult.
-  const adapted = eventQueryToTrigger(input.eventQuery)
+  // `whereFields` is typed `Record<string, unknown>` because schema-level
+  // scalar refinement would prevent codecs from publishing the JSON shape
+  // unchanged. We enforce scalar-only predicates here because the downstream
+  // FieldEqualsTrigger evaluator treats an empty trigger as a universal
+  // match — an agent emitting non-scalar values would otherwise see wait_for
+  // "match any row" instead of an invalid-input ToolResult.
+  const adapted = waitQueryToTrigger(input.waitQuery)
   if (adapted._tag === "NonScalar") {
     const summary = adapted.failures
       .map((f) => `${f.key}=${describeNonScalarValue(f.value)}`)
@@ -202,7 +201,7 @@ const runWaitForTool = (
       toolUseId,
       name: "wait_for",
       reason:
-        `eventQuery.whereFields values must be string, number, or boolean (got non-scalar: ${summary})`,
+        `waitQuery.whereFields values must be string, number, or boolean (got non-scalar: ${summary})`,
     })
   }
   if (adapted._tag === "Empty") {
@@ -211,12 +210,12 @@ const runWaitForTool = (
       toolUseId,
       name: "wait_for",
       reason:
-        "eventQuery.whereFields must declare at least one predicate; empty predicate sets are rejected because they would match every row.",
+        "waitQuery.whereFields must declare at least one predicate; empty predicate sets are rejected because they would match every row.",
     })
   }
   return WaitFor.match({
     name: `tool:${toolUseId}`,
-    source: input.eventQuery.stream,
+    source: input.waitQuery.source,
     trigger: adapted.trigger,
     ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
   }).pipe(

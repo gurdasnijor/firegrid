@@ -8,8 +8,6 @@ import {
 } from "effect-durable-operators"
 import { FactoryRunKeyStringSchema } from "./identity.ts"
 
-export const darkFactoryFactsSourceName = "darkFactory.facts"
-
 const invalidKey = (
   ast: SchemaAST.AST,
   encoded: string,

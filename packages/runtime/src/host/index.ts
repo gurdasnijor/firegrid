@@ -19,11 +19,9 @@ export {
   runtimeControlPlaneStreamUrl,
 } from "@firegrid/protocol/launch"
 
-export {
-  RuntimeObservationSourceNames,
-  type RuntimeAgentOutputObservation,
-  type RuntimeObservationSourceName,
-} from "../source-registration/index.ts"
+export type {
+  RuntimeAgentOutputObservation,
+} from "../agent-event-pipeline/authorities/runtime-output-journal.ts"
 export { RuntimeIngressError } from "../runtime-errors.ts"
 export {
   localProcessSpawnEnvFromHostEnv,
@@ -44,11 +42,6 @@ export {
   type RunAuthorizedBinding,
   type RunConfig,
 } from "./sync-run.ts"
-export {
-  registerRuntimeHostAppSource,
-  RuntimeHostAppSourceRegistrationsLive,
-  type RuntimeHostAppSourceRegistration,
-} from "../source-registration/app-source-registration.ts"
 export {
   appendRuntimeIngress,
   RuntimeStartCapabilityLive,
