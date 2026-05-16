@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest"
-import { Schema, SchemaAST } from "effect"
+import { Option, Schema, SchemaAST } from "effect"
 import {
+  RuntimeAgentOutputObservationSchema,
+  RuntimePermissionRequestObservationSchema,
   FiregridSessionIdSchema,
   RuntimeContextIdSchema,
   SessionAttachInputSchema,
+  SessionAgentOutputWaitInputSchema,
   SessionCreateOrLoadInputSchema,
   SessionExternalKeySchema,
+  encodeRuntimeAgentOutputEnvelope,
+  runtimeAgentOutputObservationFromRow,
+  runtimePermissionRequestObservationFromAgentOutput,
   sessionContextIdForExternalKey,
 } from "../../src/session-facade/schema.ts"
 
@@ -84,6 +90,97 @@ describe("session facade protocol schema", () => {
       externalKey: { source: "linear", id: "LIN-123" },
       runtime: { provider: "local-process" },
       createdBy: "factory",
+    })
+  })
+
+  it("firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.1 projects normalized agent-output observations from RuntimeOutput rows", () => {
+    const observation = runtimeAgentOutputObservationFromRow({
+      eventId: {
+        contextId: "ctx_projection",
+        activityAttempt: 1,
+        target: "events",
+        sequence: 2,
+      },
+      contextId: "ctx_projection",
+      activityAttempt: 1,
+      sequence: 2,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt: "2026-05-16T00:00:00.000Z",
+      raw: encodeRuntimeAgentOutputEnvelope({
+        _tag: "ToolUse",
+        part: {
+          id: "tool-1",
+          name: "wait_for",
+        },
+      }),
+    })
+
+    expect(Option.isSome(observation)).toBe(true)
+    if (Option.isNone(observation)) return
+    expect(Schema.decodeUnknownSync(RuntimeAgentOutputObservationSchema)(
+      observation.value,
+    )).toMatchObject({
+      source: "firegrid.runtime.agent-output-events",
+      sessionId: "ctx_projection",
+      contextId: "ctx_projection",
+      sequence: 2,
+      _tag: "ToolUse",
+      toolUseId: "tool-1",
+      toolName: "wait_for",
+    })
+  })
+
+  it("firegrid-session-fact-client-surfaces.RUNTIME_OBSERVATION.2 projects PermissionRequest options and resume anchors", () => {
+    const output = runtimeAgentOutputObservationFromRow({
+      eventId: {
+        contextId: "ctx_permission",
+        activityAttempt: 1,
+        target: "events",
+        sequence: 3,
+      },
+      contextId: "ctx_permission",
+      activityAttempt: 1,
+      sequence: 3,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt: "2026-05-16T00:00:00.000Z",
+      raw: encodeRuntimeAgentOutputEnvelope({
+        _tag: "PermissionRequest",
+        permissionRequestId: "permission-1",
+        toolUseId: "tool-1",
+        options: [
+          { optionId: "allow", kind: "allow_once", name: "Allow" },
+        ],
+      }),
+    })
+
+    expect(Option.isSome(output)).toBe(true)
+    if (Option.isNone(output)) return
+    const permission = runtimePermissionRequestObservationFromAgentOutput(output.value)
+    expect(Option.isSome(permission)).toBe(true)
+    if (Option.isNone(permission)) return
+    expect(Schema.decodeUnknownSync(RuntimePermissionRequestObservationSchema)(
+      permission.value,
+    )).toMatchObject({
+      sessionId: "ctx_permission",
+      contextId: "ctx_permission",
+      sequence: 3,
+      permissionRequestId: "permission-1",
+      toolUseId: "tool-1",
+      options: [
+        { optionId: "allow", kind: "allow_once", name: "Allow" },
+      ],
+    })
+  })
+
+  it("firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.3 decodes session agent-output wait input", () => {
+    expect(Schema.decodeUnknownSync(SessionAgentOutputWaitInputSchema)({
+      afterSequence: 1,
+      timeoutMs: 30_000,
+    })).toEqual({
+      afterSequence: 1,
+      timeoutMs: 30_000,
     })
   })
 })

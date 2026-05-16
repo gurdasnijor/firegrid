@@ -31,8 +31,13 @@ export type {
 } from "@firegrid/protocol/runtime-ingress"
 export type {
   FiregridSessionId,
+  RuntimeAgentOutputEventPayload,
+  RuntimeAgentOutputObservation,
   RuntimeContextId,
+  RuntimePermissionOption,
   RuntimePermissionRequestObservation,
+  SessionAgentOutputWaitInput,
+  SessionAgentOutputWaitOutput,
   SessionAttachInput,
   SessionCreateOrLoadInput,
   SessionExternalKey,

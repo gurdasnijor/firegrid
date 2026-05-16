@@ -10,6 +10,7 @@ import {
   type HostSessionId,
   type HostSessionRow,
 } from "@firegrid/protocol/launch"
+import { encodeRuntimeAgentOutputEnvelope } from "@firegrid/protocol/session-facade"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { TestStreamServer } from "../../effect-durable-operators/test/harness.ts"
@@ -41,10 +42,7 @@ const runtimeConfig = () =>
   })
 
 const agentOutputRaw = (event: Readonly<Record<string, unknown>>): string =>
-  JSON.stringify({
-    type: "firegrid.agent-output",
-    event,
-  })
+  encodeRuntimeAgentOutputEnvelope(event)
 
 const makeFixture = () => {
   if (baseUrl === undefined) throw new Error("server not started")
@@ -237,6 +235,16 @@ describe("Firegrid session facade", () => {
       "message",
       "control",
     ])
+    expect(result.snapshot.agentOutputs).toHaveLength(1)
+    expect(result.snapshot.agentOutputs[0]).toMatchObject({
+      sessionId: result.created.sessionId,
+      contextId: result.created.contextId,
+      sequence: 11,
+      _tag: "PermissionRequest",
+      options: [
+        { optionId: "allow", kind: "allow_once", name: "Allow" },
+      ],
+    })
   })
 
   it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.5 prompt appends idempotent RuntimeIngress rows", async () => {
@@ -278,7 +286,65 @@ describe("Firegrid session facade", () => {
     })
   })
 
-  it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.8 waits for PermissionRequest over agentOutputEvents", async () => {
+  it("firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.2 firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.3 firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.6 includes normalized agentOutputs in snapshot and waits for the next one", async () => {
+    const fixture = makeFixture()
+
+    const result = await runWithClient(
+      fixture,
+      Effect.gen(function* () {
+        const firegrid = yield* Firegrid
+        const session = yield* firegrid.sessions.createOrLoad({
+          externalKey: { source: "linear", id: "LIN-output" },
+          runtime: runtimeConfig(),
+        })
+        const fiber = yield* session.wait.forAgentOutput({
+          timeoutMs: 2_000,
+        }).pipe(Effect.fork)
+        yield* Effect.sleep("50 millis")
+        yield* appendAgentOutput(
+          fixture.hostSession,
+          session.contextId,
+          5,
+          {
+            _tag: "TextChunk",
+            part: { text: "hello" },
+          },
+        )
+        const waited = yield* fiber.await
+        const snapshot = yield* session.snapshot()
+        return { waited, snapshot }
+      }),
+    )
+
+    expect(result.waited._tag).toBe("Success")
+    if (result.waited._tag !== "Success") return
+    expect(result.waited.value).toMatchObject({
+      matched: true,
+      output: {
+        source: "firegrid.runtime.agent-output-events",
+        sessionId: result.snapshot.contextId,
+        contextId: result.snapshot.contextId,
+        sequence: 5,
+        _tag: "TextChunk",
+        event: {
+          _tag: "TextChunk",
+          part: { text: "hello" },
+        },
+      },
+    })
+    expect(result.snapshot.agentOutputs).toHaveLength(1)
+    expect(result.snapshot.agentOutputs[0]).toMatchObject({
+      sequence: 5,
+      _tag: "TextChunk",
+    })
+    expect(result.snapshot.events).toHaveLength(1)
+    expect(result.snapshot.events[0]?.raw).toBe(agentOutputRaw({
+      _tag: "TextChunk",
+      part: { text: "hello" },
+    }))
+  })
+
+  it("firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.4 waits for PermissionRequest over normalized agentOutputEvents", async () => {
     const fixture = makeFixture()
 
     const result = await runWithClient(
@@ -293,6 +359,15 @@ describe("Firegrid session facade", () => {
           timeoutMs: 2_000,
         }).pipe(Effect.fork)
         yield* Effect.sleep("50 millis")
+        yield* appendAgentOutput(
+          fixture.hostSession,
+          session.contextId,
+          6,
+          {
+            _tag: "TextChunk",
+            part: { text: "not a permission" },
+          },
+        )
         yield* appendAgentOutput(
           fixture.hostSession,
           session.contextId,
@@ -320,8 +395,13 @@ describe("Firegrid session facade", () => {
         _tag: "PermissionRequest",
         permissionRequestId: "permission-1",
         toolUseId: "tool-1",
+        options: [
+          { optionId: "allow", kind: "allow_once", name: "Allow" },
+        ],
       },
     })
+    if (!result.value.matched) return
+    expect(result.value.request.sessionId).toBe(result.value.request.contextId)
   })
 
   it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.9 writes PermissionResponse RuntimeIngress control rows", async () => {
