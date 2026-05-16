@@ -14,20 +14,30 @@
 
 import { Workflow } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
-import { DurableTable } from "effect-durable-operators"
+import { Effect, Exit, Fiber, Layer, Option, Schema, Stream } from "effect"
+import { DurableTable, type DurableTableError } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { DurableStreamsWorkflowEngine } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
 import {
+  RuntimeAgentOutputEvents,
+  type RuntimeAgentOutputObservation,
+} from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
+import { RuntimeRuns } from "../../src/authorities/runtime-control-plane-recorder.ts"
+import {
   DurableToolsTable,
   DurableToolsWaitForLive,
-  SourceCollections,
-  sourceCollectionStreamHandle,
   type WaitForOptions,
   type WaitForOutcome,
   WaitFor,
   WaitKeyEncoded,
 } from "../../src/durable-tools/index.ts"
+
+// Typed wait-source test harness: the router consumes concrete stream tags
+// (RuntimeRuns / RuntimeAgentOutputEvents). Tests back those tags with their
+// own DurableTables and select them by typed RuntimeWaitSource variant.
+// firegrid-typed-wait-source-redesign.MIGRATION.2
+const RUNTIME_RUN_SOURCE = { _tag: "RuntimeRun" } as const
+const AGENT_OUTPUT_SOURCE = { _tag: "AgentOutput" } as const
 
 /**
  * Workflow bodies declare `error: never`, but `WaitFor.match` can fail with
@@ -102,6 +112,38 @@ const makeStreams = (label: string): Streams => {
   }
 }
 
+// RuntimeRuns is backed by TestSourceTable; RuntimeAgentOutputEvents by an
+// empty stream (the RuntimeRun-source tests never observe agent output).
+const TestSourceWaitStreamsLive = Layer.mergeAll(
+  Layer.effect(
+    RuntimeRuns,
+    Effect.map(
+      TestSourceTable,
+      table =>
+        table.rows.rows() as unknown as RuntimeRuns["Type"],
+    ),
+  ),
+  Layer.succeed(
+    RuntimeAgentOutputEvents,
+    Stream.empty as unknown as RuntimeAgentOutputEvents["Type"],
+  ),
+)
+
+const TaggedSourceWaitStreamsLive = Layer.mergeAll(
+  Layer.effect(
+    RuntimeAgentOutputEvents,
+    Effect.map(
+      TaggedResultTable,
+      table =>
+        table.rows.rows() as unknown as RuntimeAgentOutputEvents["Type"],
+    ),
+  ),
+  Layer.succeed(
+    RuntimeRuns,
+    Stream.empty as unknown as RuntimeRuns["Type"],
+  ),
+)
+
 const buildLayer = (
   streams: Streams,
   workflowLayer: Layer.Layer<never, unknown, unknown>,
@@ -110,6 +152,7 @@ const buildLayer = (
     Layer.provideMerge(
       DurableToolsWaitForLive({ streamUrl: streams.waitForUrl }),
     ),
+    Layer.provideMerge(TestSourceWaitStreamsLive),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflowUrl,
     }) as Layer.Layer<never, unknown, unknown>),
@@ -129,6 +172,7 @@ const buildTaggedLayer = (
     Layer.provideMerge(
       DurableToolsWaitForLive({ streamUrl: streams.waitForUrl }),
     ),
+    Layer.provideMerge(TaggedSourceWaitStreamsLive),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflowUrl,
     }) as Layer.Layer<never, unknown, unknown>),
@@ -150,19 +194,11 @@ const runWith = <A, E>(
     ) as Effect.Effect<A, unknown, never>,
   )
 
-const registerTestSource = Effect.gen(function*() {
-  const sources = yield* SourceCollections
-  const table = yield* TestSourceTable
-  yield* sources.register(sourceCollectionStreamHandle("test-source", table.rows.rows()))
-})
-
-const registerTaggedSource = Effect.gen(function*() {
-  const sources = yield* SourceCollections
-  const table = yield* TaggedResultTable
-  yield* sources.register(
-    sourceCollectionStreamHandle("tagged-source", table.rows.rows()),
-  )
-})
+// Typed wait sources are resolved from concrete stream tags provided by the
+// test layer; there is no registration step. Kept as no-ops so the existing
+// call sites stay readable. firegrid-typed-wait-source-redesign.REJECTION.3
+const registerTestSource = Effect.void
+const registerTaggedSource = Effect.void
 
 const sleep = (millis: number) => Effect.sleep(`${millis} millis`)
 const TestRowResultSchema = TestRowSchema
@@ -201,7 +237,7 @@ describe("durable-tools wait_for", () => {
         resumes += 1
         const outcome = yield* waitForOrDie<TestRow>({
           name: "basic",
-          source: "test-source",
+          source: RUNTIME_RUN_SOURCE,
           trigger: [{ path: ["requestId"], equals: payload.requestId }],
           resultSchema: TestRowResultSchema,
         })
@@ -248,7 +284,7 @@ describe("durable-tools wait_for", () => {
       Effect.gen(function*() {
         const outcome = yield* waitForOrDie<TestRow>({
           name: "restart",
-          source: "test-source",
+          source: RUNTIME_RUN_SOURCE,
           trigger: [{ path: ["requestId"], equals: payload.requestId }],
           resultSchema: TestRowResultSchema,
         })
@@ -301,7 +337,7 @@ describe("durable-tools wait_for", () => {
       Effect.gen(function*() {
         const outcome = yield* waitForOrDie<TestRow>({
           name: "recovery",
-          source: "test-source",
+          source: RUNTIME_RUN_SOURCE,
           trigger: [{ path: ["requestId"], equals: payload.requestId }],
           resultSchema: TestRowResultSchema,
         })
@@ -376,7 +412,7 @@ describe("durable-tools wait_for", () => {
       Effect.gen(function*() {
         const outcome: WaitForOutcome<TestRow> = yield* waitForOrDie<TestRow>({
           name: "timeout",
-          source: "test-source",
+          source: RUNTIME_RUN_SOURCE,
           trigger: [{ path: ["requestId"], equals: "never-arrives" }],
           resultSchema: TestRowResultSchema,
           timeoutMs: 30,
@@ -407,7 +443,7 @@ describe("durable-tools wait_for", () => {
       Effect.gen(function*() {
         const outcome: WaitForOutcome<TestRow> = yield* waitForOrDie<TestRow>({
           name: "preempt",
-          source: "test-source",
+          source: RUNTIME_RUN_SOURCE,
           trigger: [{ path: ["requestId"], equals: payload.requestId }],
           resultSchema: TestRowResultSchema,
           timeoutMs: 10_000,
@@ -447,7 +483,7 @@ describe("durable-tools wait_for", () => {
       Effect.gen(function*() {
         const outcome = yield* waitForOrDie<TestRow>({
           name: "retired",
-          source: "test-source",
+          source: RUNTIME_RUN_SOURCE,
           trigger: [{ path: ["requestId"], equals: "req-5" }],
           resultSchema: TestRowResultSchema,
         })
@@ -493,7 +529,7 @@ describe("durable-tools wait_for", () => {
       Effect.gen(function*() {
         const outcome = yield* waitForOrDie<TestRow>({
           name: "initial",
-          source: "test-source",
+          source: RUNTIME_RUN_SOURCE,
           trigger: [{ path: ["requestId"], equals: payload.requestId }],
           resultSchema: TestRowResultSchema,
         })
@@ -536,7 +572,7 @@ describe("durable-tools wait_for", () => {
       Effect.gen(function*() {
         const outcome = yield* waitForOrDie({
           name: "tagged",
-          source: "tagged-source",
+          source: AGENT_OUTPUT_SOURCE,
           trigger: [{ path: ["requestId"], equals: payload.requestId }],
           resultSchema: TaggedResultUnion,
           timeoutMs: 10_000,
@@ -576,7 +612,7 @@ describe("durable-tools wait_for", () => {
       Effect.gen(function*() {
         const outcome = yield* waitForOrDie<TestRow>({
           name: payload.id,
-          source: "test-source",
+          source: RUNTIME_RUN_SOURCE,
           trigger: [{ path: ["requestId"], equals: payload.requestId }],
           resultSchema: TestRowResultSchema,
         })
@@ -648,7 +684,7 @@ describe("durable-tools wait_for", () => {
       Effect.gen(function*() {
         const outcome = yield* waitForOrDie<TestRow>({
           name: "inspect",
-          source: "test-source",
+          source: RUNTIME_RUN_SOURCE,
           trigger: [{ path: ["requestId"], equals: payload.requestId }],
           resultSchema: TestRowResultSchema,
         })
@@ -692,7 +728,7 @@ describe("durable-tools wait_for", () => {
       Effect.gen(function*() {
         const outcome = yield* waitForOrDie<TestRow>({
           name: "mid-crash",
-          source: "test-source",
+          source: RUNTIME_RUN_SOURCE,
           trigger: [{ path: ["requestId"], equals: payload.requestId }],
           resultSchema: TestRowResultSchema,
         })
@@ -787,7 +823,7 @@ describe("durable-tools wait_for", () => {
       Effect.gen(function*() {
         const outcome = yield* waitForOrDie<TestRow>({
           name: "late-source",
-          source: "test-source",
+          source: RUNTIME_RUN_SOURCE,
           trigger: [{ path: ["requestId"], equals: payload.requestId }],
           resultSchema: TestRowResultSchema,
         })

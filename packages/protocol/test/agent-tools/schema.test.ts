@@ -7,7 +7,7 @@
 import { Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
-  EventQuerySchema,
+  RuntimeWaitQuerySchema,
   ExecuteToolInputSchema,
   ExecuteToolOutputSchema,
   FiregridAgentToolOperations,
@@ -81,25 +81,29 @@ describe("agent-tool schemas — sleep", () => {
 })
 
 describe("agent-tool schemas — wait_for", () => {
-  it("accepts a query with stream and whereFields", async () => {
+  it("accepts a typed wait source with whereFields", async () => {
     const decoded = await decodes(WaitForToolInputSchema, {
-      eventQuery: { stream: "ns.events", whereFields: { type: "Issue.updated" } },
+      waitQuery: {
+        source: { _tag: "AgentOutput" },
+        whereFields: { _tag: "PermissionRequest" },
+      },
       timeoutMs: 30_000,
     })
-    expect(decoded.eventQuery.stream).toBe("ns.events")
+    expect(decoded.waitQuery.source._tag).toBe("AgentOutput")
     expect(decoded.timeoutMs).toBe(30_000)
   })
 
   it("accepts a query without optional timeout", async () => {
     const decoded = await decodes(WaitForToolInputSchema, {
-      eventQuery: { stream: "ns.events", whereFields: {} },
+      waitQuery: { source: { _tag: "RuntimeRun" }, whereFields: {} },
     })
+    expect(decoded.waitQuery.source._tag).toBe("RuntimeRun")
     expect(decoded.timeoutMs).toBeUndefined()
   })
 
-  it("rejects empty stream name", async () => {
-    const error = await rejects(EventQuerySchema, {
-      stream: "",
+  it("rejects an unknown wait source variant", async () => {
+    const error = await rejects(RuntimeWaitQuerySchema, {
+      source: { _tag: "RuntimeContext" },
       whereFields: {},
     })
     expect(error).toBeDefined()

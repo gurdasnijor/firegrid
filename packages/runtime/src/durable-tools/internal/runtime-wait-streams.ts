@@ -20,7 +20,7 @@ import {
 } from "../../agent-event-pipeline/authorities/runtime-output-journal.ts"
 import { RuntimeRuns } from "../../authorities/runtime-control-plane-recorder.ts"
 
-export interface RuntimeWaitStreamsService {
+interface RuntimeWaitStreamsService {
   readonly agentOutput: Stream.Stream<
     RuntimeAgentOutputObservation,
     DurableTableError
