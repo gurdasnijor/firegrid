@@ -37,8 +37,12 @@ import {
 } from "./source-collections.ts"
 import { type WaitRow } from "./table.ts"
 import {
-  DurableWaitAppendAndGet,
-  DurableWaitCompletionAppendAndGet,
+  DurableWaitCompletionRowLookup,
+  DurableWaitCompletionRows,
+  DurableWaitCompletionRowUpsert,
+  DurableWaitRowLookup,
+  DurableWaitRows,
+  DurableWaitRowUpsert,
 } from "./durable-wait-store.ts"
 import { evaluateFieldEquals } from "./types.ts"
 import { matchDeferredFor } from "./wait-for.ts"
@@ -53,14 +57,15 @@ import { matchDeferredFor } from "./wait-for.ts"
 const completeMatch = (
   wait: WaitRow,
   row: unknown,
-  waitStore:
-    & DurableWaitAppendAndGet["Type"]
-    & DurableWaitCompletionAppendAndGet["Type"],
+  waitLookup: DurableWaitRowLookup["Type"],
+  waitUpsert: DurableWaitRowUpsert["Type"],
+  completionLookup: DurableWaitCompletionRowLookup["Type"],
+  completionUpsert: DurableWaitCompletionRowUpsert["Type"],
   engine: WorkflowEngine.WorkflowEngine["Type"],
 ) =>
   Effect.gen(function*() {
     // firegrid-durable-tools.LIFECYCLE.2 — re-read at dispatch boundary.
-    const current = yield* waitStore.findWait(wait.waitKey)
+    const current = yield* waitLookup.find(wait.waitKey)
     if (Option.isNone(current)) {
       return
     }
@@ -75,7 +80,7 @@ const completeMatch = (
     // workflow's deferred. The final guarantee that exactly one of match /
     // timeout resolves the workflow is `engine.deferredDone`'s Option.isNone
     // guard, which makes the second deferredDone call a no-op.
-    const existingCompletion = yield* waitStore.findCompletion(wait.waitKey)
+    const existingCompletion = yield* completionLookup.find(wait.waitKey)
     if (
       Option.isSome(existingCompletion) &&
       existingCompletion.value.outcome === "timeout"
@@ -84,13 +89,13 @@ const completeMatch = (
     }
 
     const completedAtMs = yield* Clock.currentTimeMillis
-    yield* waitStore.upsertCompletion({
+    yield* completionUpsert.upsert({
       waitKey: wait.waitKey,
       outcome: "match",
       matchedRowPayload: row,
       completedAtMs,
     })
-    yield* waitStore.upsertWait({
+    yield* waitUpsert.upsert({
       ...current.value,
       status: "completed",
     })
@@ -116,15 +121,24 @@ const completeMatch = (
 const attachWaitToSource = (
   wait: WaitRow,
   handle: SourceCollectionHandle,
-  waitStore:
-    & DurableWaitAppendAndGet["Type"]
-    & DurableWaitCompletionAppendAndGet["Type"],
+  waitLookup: DurableWaitRowLookup["Type"],
+  waitUpsert: DurableWaitRowUpsert["Type"],
+  completionLookup: DurableWaitCompletionRowLookup["Type"],
+  completionUpsert: DurableWaitCompletionRowUpsert["Type"],
   engine: WorkflowEngine.WorkflowEngine["Type"],
 ) =>
   Effect.gen(function*() {
     yield* handle.subscribe().pipe(
       Stream.runForEach((row) => {
-        return completeMatch(wait, row, waitStore, engine).pipe(
+        return completeMatch(
+          wait,
+          row,
+          waitLookup,
+          waitUpsert,
+          completionLookup,
+          completionUpsert,
+          engine,
+        ).pipe(
           Effect.catchAll((cause) =>
             Effect.logWarning(
               "[durable-tools] router failed to complete wait",
@@ -149,13 +163,21 @@ const attachWaitToSource = (
  */
 const startRouter = Effect.gen(function*() {
   const engine = yield* WorkflowEngine.WorkflowEngine
-  const waits = yield* DurableWaitAppendAndGet
-  const completions = yield* DurableWaitCompletionAppendAndGet
-  const waitStore = { ...waits, ...completions }
+  const waitLookup = yield* DurableWaitRowLookup
+  const waitUpsert = yield* DurableWaitRowUpsert
+  const waitRows = yield* DurableWaitRows
+  const completionLookup = yield* DurableWaitCompletionRowLookup
+  const completionUpsert = yield* DurableWaitCompletionRowUpsert
+  const completionRows = yield* DurableWaitCompletionRows
   const sources = yield* SourceCollections
 
   // firegrid-durable-tools.WAIT_FOR.7
-  yield* reconcileCompletions(waitStore, engine).pipe(
+  yield* reconcileCompletions(
+    waitLookup,
+    waitUpsert,
+    completionRows,
+    engine,
+  ).pipe(
     Effect.catchAll((cause) =>
       Effect.logWarning(
         "[durable-tools] reconcile pass failed",
@@ -171,7 +193,9 @@ const startRouter = Effect.gen(function*() {
   )
   const attached = yield* Ref.make(new Set<string>())
 
-  yield* waitStore.activeWaits.pipe(
+  // firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.8
+  yield* waitRows.pipe(
+    Stream.filter(wait => wait.status === "active"),
     Stream.runForEach((wait) =>
       Effect.gen(function*() {
         const encoded = JSON.stringify(
@@ -193,7 +217,15 @@ const startRouter = Effect.gen(function*() {
         yield* Effect.forkScoped(
           Effect.gen(function*() {
             const handle = yield* sources.awaitHandle(wait.sourceName)
-            yield* attachWaitToSource(wait, handle, waitStore, engine)
+            yield* attachWaitToSource(
+              wait,
+              handle,
+              waitLookup,
+              waitUpsert,
+              completionLookup,
+              completionUpsert,
+              engine,
+            )
           }),
         )
       })),

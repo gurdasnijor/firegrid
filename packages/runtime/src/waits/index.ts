@@ -17,6 +17,19 @@ export {
 } from "./internal/source-collections.ts"
 export { WaitFor, type WaitForOptions } from "./internal/wait-for.ts"
 export {
+  DurableWaitCompletionRowLookup,
+  DurableWaitCompletionRows,
+  DurableWaitCompletionRowUpsert,
+  DurableWaitRows,
+  DurableWaitRowLookup,
+  DurableWaitRowUpsert,
+  DurableWaitStoreLive,
+  type DurableWaitCompletionRowLookupService,
+  type DurableWaitCompletionRowUpsertService,
+  type DurableWaitRowLookupService,
+  type DurableWaitRowUpsertService,
+} from "./internal/durable-wait-store.ts"
+export {
   evaluateFieldEquals,
   FieldEqualsPredicateSchema,
   FieldEqualsTriggerSchema,
