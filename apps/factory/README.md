@@ -6,6 +6,12 @@ Electric/Durable Streams evidence.
 
 ## Hosted Smoke
 
+See also
+[`docs/runbooks/dark-factory-hosted-smoke.md`](../../docs/runbooks/dark-factory-hosted-smoke.md)
+for the post-cutover hosted smoke proof, Claude/Codex ACP notes, and the
+follow-up plan for routing more of the smoke through the public `src/run.ts`
+entrypoint.
+
 Required environment:
 
 - `DURABLE_STREAMS_BASE_URL`
