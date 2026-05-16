@@ -466,6 +466,20 @@ type StaticSubscriberStreamOptions = {
   readonly source: unknown
 }
 
+// ruleid: firegrid-runtime-host-no-direct-source-collection-registration
+import { SourceCollections as ImportedSourceCollections } from "./source-registration.ts"
+
+declare const SourceCollections: unknown
+declare const sourceCollectionStreamHandle: (name: string, stream: unknown) => unknown
+
+function* directHostSourceCollections() {
+  // ruleid: firegrid-runtime-host-no-direct-source-collection-registration
+  return yield* SourceCollections
+}
+
+// ruleid: firegrid-runtime-host-no-direct-source-collection-registration
+const directHostSourceHandle = sourceCollectionStreamHandle("firegrid.runtime.events", {})
+
 const tableServiceBypass = Effect.gen(function* () {
   // ruleid: firegrid-runtime-no-table-service-yield-outside-providers
   const outputTable = yield* RuntimeOutputTable
@@ -577,6 +591,8 @@ export {
   focusedTryPromise,
   directRuntimeContextWorkflowExecution,
   directRuntimeOutputWrite,
+  directHostSourceCollections,
+  directHostSourceHandle,
   duplicateIngressProvider,
   duplicateOutputProvider,
   globalDynamicEnv,
@@ -585,6 +601,7 @@ export {
   inlineDurableToolsHostStream,
   inlineRuntimeStream,
   inlineTaggedFail,
+  ImportedSourceCollections,
   initializedContextId,
   matchedTaggedEvent,
   matchWithFallback,

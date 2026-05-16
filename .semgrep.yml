@@ -734,6 +734,38 @@ rules:
       review/test-only unless production behavior requires it.
     pattern-regex: '(?:packages/runtime/src/authorities/registry\.ts|["''][^"'']*registry(?:\.ts)?["'']|\b[A-Za-z0-9_]*Authority[A-Za-z0-9_]*Registry[A-Za-z0-9_]*\b)'
 
+  - id: firegrid-runtime-host-no-direct-source-collection-registration
+    languages: [typescript]
+    severity: ERROR
+    metadata:
+      acid: firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.1
+      quality-acid: firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.2
+      category: runtime-boundary
+      rationale: |
+        Runtime host composition should merge provider/source-registration
+        layers. Direct SourceCollections registration in host files recreates
+        host-only observation glue and makes host enumerate every wait_for
+        source.
+      fix-hint: |
+        Move handle construction to packages/runtime/src/source-registration
+        and compose RuntimeSourceRegistrationsLive from host substrate.
+    paths:
+      include:
+        - "/packages/runtime/src/host/**/*.ts"
+        - "/semgrep-tests/**/*.ts"
+      exclude:
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.test.mts"
+        - "**/__tests__/**"
+    message: |
+      Runtime host files must not directly use SourceCollections or
+      sourceCollectionStreamHandle. Compose source-registration layers instead.
+    pattern-either:
+      - pattern-regex: 'import\s*\{[^}]*\b(?:SourceCollections|sourceCollectionStreamHandle)\b[^}]*\}\s*from'
+      - pattern: yield* SourceCollections
+      - pattern: sourceCollectionStreamHandle(...)
+
   - id: firegrid-runtime-no-old-singleton-authority-tag-keys
     languages: [typescript]
     severity: ERROR

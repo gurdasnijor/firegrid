@@ -101,6 +101,19 @@ module.exports = {
       to: { path: "^packages/client/src" },
     },
     {
+      // firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.1
+      // firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.2
+      name: "runtime-host-no-source-collection-registration-imports",
+      severity: "error",
+      comment:
+        "Runtime host composition must merge source-registration layers instead of directly importing SourceCollections or sourceCollectionStreamHandle.",
+      from: { path: "^packages/runtime/src/host" },
+      to: {
+        path:
+          "^packages/runtime/src/waits/(?:index|source-registration|internal/source-collections)\\.ts$",
+      },
+    },
+    {
       name: "protocol-no-client-or-runtime",
       severity: "error",
       comment:

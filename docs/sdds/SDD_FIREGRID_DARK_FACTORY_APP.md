@@ -16,7 +16,7 @@ Related source inputs:
 - `/Users/gnijor/gurdasnijor/fireline/vault/canon/concepts/choreography-vs-orchestration.md`
 - `docs/sdds/SDD_FIREGRID_FACTORY_ALIGNED_AGENT_TOOL_WORKSTREAM.md`
 - `packages/runtime/src/agent-tools/tools.ts`
-- `packages/runtime/src/runtime-host/observation-sources.ts`
+- `packages/runtime/src/source-registration/index.ts`
 - `packages/runtime/src/verified-webhook-ingest/README.md`
 - `docs/recipes/runtime-permission-resume.md`
 - `docs/recipes/durable-webhook-facts-and-wait-for.md`

@@ -23,7 +23,7 @@ export {
   RuntimeObservationSourceNames,
   type RuntimeAgentOutputObservation,
   type RuntimeObservationSourceName,
-} from "./observation-sources.ts"
+} from "../source-registration/index.ts"
 export { RuntimeIngressError } from "../runtime-errors.ts"
 export {
   localProcessSpawnEnvFromHostEnv,

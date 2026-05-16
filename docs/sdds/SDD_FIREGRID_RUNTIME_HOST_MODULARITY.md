@@ -231,7 +231,7 @@ host scope
   RuntimeIngressTable
   RuntimeOutputTable
   WorkflowEngine
-  RuntimeObservationSourcesLive
+  RuntimeSourceRegistrationsLive
   DurableToolsWaitForLive
 ```
 

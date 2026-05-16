@@ -3,7 +3,9 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  makeHostSessionRow,
   type HostId,
+  type HostSessionId,
 } from "@firegrid/protocol/launch"
 import { Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -78,7 +80,12 @@ const RuntimeExitedRowSchema = Schema.Struct({
   runEventId: Schema.Unknown,
 })
 
-describe("runtime-host wait_for observation sources", () => {
+const RuntimeContextObservationSchema = Schema.Struct({
+  contextId: Schema.String,
+  createdBy: Schema.optional(Schema.String),
+})
+
+describe("runtime-host wait_for source registrations", () => {
   it("firegrid-factory-aligned-agent-tools.WAIT_FOR.4, WAIT_FOR.5 observes RuntimeOutput PermissionRequest by contextId and permissionRequestId", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-observation-permission-${crypto.randomUUID()}`
@@ -223,6 +230,78 @@ describe("runtime-host wait_for observation sources", () => {
       status: "exited",
       activityAttempt: 1,
       exitCode: 0,
+    })
+  })
+
+  it("firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.1 firegrid-runtime-boundary-reconciliation.SOURCE_REGISTRATION.2 registers runtime contexts outside host-only observation glue", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `runtime-source-context-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const hostSessionId = `session-${crypto.randomUUID()}` as HostSessionId
+    const contextId = `ctx_${crypto.randomUUID()}`
+
+    const Wf = Workflow.make({
+      name: "runtime-source-context",
+      payload: Schema.Struct({ id: Schema.String, contextId: Schema.String }),
+      success: RuntimeContextObservationSchema,
+      idempotencyKey: p => p.id,
+    })
+
+    const workflowLayer = Wf.toLayer(payload =>
+      Effect.gen(function* () {
+        const outcome = yield* waitForOrDie({
+          name: "runtime-context",
+          source: RuntimeObservationSourceNames.runtimeContexts,
+          trigger: [
+            { path: ["contextId"], equals: payload.contextId },
+          ],
+          resultSchema: RuntimeContextObservationSchema,
+        })
+        if (outcome._tag !== "Match") throw new Error("expected Match")
+        return outcome.row
+      }))
+
+    const layer = workflowLayer.pipe(
+      Layer.provideMerge(hostLayer({ namespace, hostId })),
+    ) as Layer.Layer<never, unknown, never>
+
+    const result = await runWith(
+      layer,
+      Effect.gen(function* () {
+        const controlPlane = yield* RuntimeControlPlaneTable
+        const fiber = yield* Effect.fork(Wf.execute({
+          id: "runtime-context-wait",
+          contextId,
+        }))
+        yield* Effect.sleep("50 millis")
+        const host = makeHostSessionRow({
+          hostId,
+          hostSessionId,
+          namespace,
+          startedAtMs: Date.now(),
+        })
+        yield* controlPlane.contexts.upsert({
+          contextId,
+          createdAt: new Date().toISOString(),
+          createdBy: "test",
+          runtime: {
+            provider: "local-process",
+            config: { argv: ["node"] },
+            journal: [],
+          },
+          host: {
+            hostId,
+            streamPrefix: host.streamPrefix,
+            boundAtMs: host.startedAtMs,
+          },
+        })
+        return yield* Fiber.join(fiber)
+      }),
+    )
+
+    expect(result).toMatchObject({
+      contextId,
+      createdBy: "test",
     })
   })
 })
