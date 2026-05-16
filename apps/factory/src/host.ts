@@ -5,14 +5,21 @@ import {
   RuntimeConfigSchema,
   durableStreamUrl,
   type RuntimeConfig,
-  type RuntimeEvent,
 } from "@firegrid/protocol/launch"
 import {
   RuntimeIngressInputRowSchema,
 } from "@firegrid/protocol/runtime-ingress"
 import {
+  RuntimeAgentOutputEventPayloadSchema,
+  RuntimeAgentOutputObservationSchema,
+  RuntimePermissionOptionSchema,
+  runtimePermissionRequestObservationFromAgentOutput,
+  type RuntimeAgentOutputObservation,
   type RuntimePermissionRequestObservation,
 } from "@firegrid/protocol/session-facade"
+import {
+  PermissionDecisionSchema,
+} from "@firegrid/protocol/agent-tools"
 import {
   FiregridLocalHostLive,
   RuntimeStartCapabilityLive,
@@ -30,13 +37,7 @@ import {
   sourceCollectionStreamHandle,
 } from "@firegrid/runtime/durable-tools"
 import type { RuntimeEnvResolverPolicy } from "@firegrid/runtime/sources/sandbox"
-import {
-  AgentOutputEventSchema,
-  PermissionDecisionSchema,
-  PermissionOptionSchema,
-  type AgentOutputEvent,
-} from "@firegrid/runtime/events"
-import { Clock, Effect, Either, Layer, Match, Option, Schema } from "effect"
+import { Clock, Effect, Layer, Match, Option, Schema } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {
   FactoryRunKeyStringSchema,
@@ -90,8 +91,8 @@ export const FactoryPermissionRequestSchema = Schema.Struct({
   sequence: Schema.Number,
   permissionRequestId: Schema.String,
   toolUseId: Schema.String,
-  options: Schema.Array(PermissionOptionSchema),
-  event: AgentOutputEventSchema,
+  options: Schema.Array(RuntimePermissionOptionSchema),
+  event: RuntimeAgentOutputEventPayloadSchema,
 })
 export type FactoryPermissionRequest = Schema.Schema.Type<
   typeof FactoryPermissionRequestSchema
@@ -104,6 +105,7 @@ export const FactoryRunStatusViewSchema = Schema.Struct({
   runtimeEvents: Schema.Array(RuntimeEventSchema),
   runtimeLogs: Schema.Array(RuntimeLogLineSchema),
   ingressInputs: Schema.Array(RuntimeIngressInputRowSchema),
+  agentOutputs: Schema.Array(RuntimeAgentOutputObservationSchema),
   permissions: Schema.Array(FactoryPermissionRequestSchema),
 })
 export type FactoryRunStatusView = Schema.Schema.Type<
@@ -420,58 +422,27 @@ export const acceptAndStartFactoryTrigger = (
     return accepted
   })
 
-const decodeAgentOutputWrapper = (
-  row: RuntimeEvent,
-): AgentOutputEvent | undefined => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(row.raw)
-  } catch {
-    return undefined
-  }
-  if (typeof parsed !== "object" || parsed === null) return undefined
-  const record = parsed as { readonly type?: unknown; readonly event?: unknown }
-  if (record.type !== "firegrid.agent-output") return undefined
-  const decoded = Schema.decodeUnknownEither(AgentOutputEventSchema)(record.event)
-  return Either.isRight(decoded) ? decoded.right : undefined
-}
-
-const permissionFromRow = (
-  row: RuntimeEvent,
-): FactoryPermissionRequest | undefined => {
-  const event = decodeAgentOutputWrapper(row)
-  if (event?._tag !== "PermissionRequest") return undefined
-  return {
-    contextId: row.contextId,
-    activityAttempt: row.activityAttempt,
-    sequence: row.sequence,
-    permissionRequestId: event.permissionRequestId,
-    toolUseId: event.toolUseId,
-    options: event.options,
-    event,
-  }
-}
-
 const permissionFromObservation = (
   observation: RuntimePermissionRequestObservation,
 ): Option.Option<FactoryPermissionRequest> => {
-  const decoded = Schema.decodeUnknownEither(AgentOutputEventSchema)(
-    observation.event,
-  )
-  if (Either.isLeft(decoded) || decoded.right._tag !== "PermissionRequest") {
-    return Option.none()
-  }
-  const event = decoded.right
   return Option.some({
     contextId: observation.contextId,
     activityAttempt: observation.activityAttempt,
     sequence: observation.sequence,
     permissionRequestId: observation.permissionRequestId,
     toolUseId: observation.toolUseId,
-    options: event.options,
-    event,
+    options: observation.options,
+    event: observation.event,
   })
 }
+
+const permissionFromAgentOutput = (
+  observation: RuntimeAgentOutputObservation,
+): Option.Option<FactoryPermissionRequest> =>
+  Option.flatMap(
+    runtimePermissionRequestObservationFromAgentOutput(observation),
+    permissionFromObservation,
+  )
 
 const sortRuntimeEvents = <Row extends { readonly sequence: number }>(
   rows: ReadonlyArray<Row>,
@@ -503,9 +474,10 @@ export const readFactoryRunStatus = (
     const runtimeLogs = sortRuntimeEvents(snapshot.logs)
     const ingressInputs = [...snapshot.inputs]
       .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
-    const permissions = runtimeEvents.flatMap(row => {
-      const permission = permissionFromRow(row)
-      return permission === undefined ? [] : [permission]
+    const agentOutputs = sortRuntimeEvents(snapshot.agentOutputs)
+    const permissions = agentOutputs.flatMap(observation => {
+      const permission = permissionFromAgentOutput(observation)
+      return Option.isSome(permission) ? [permission.value] : []
     })
     return {
       run,
@@ -514,6 +486,7 @@ export const readFactoryRunStatus = (
       runtimeEvents,
       runtimeLogs,
       ingressInputs,
+      agentOutputs,
       permissions,
     }
   })
@@ -601,10 +574,10 @@ export const waitForPermissionRequest = (
     const findExisting = Effect.gen(function* () {
       const snapshot = yield* session.snapshot()
       return Option.fromNullable(
-        snapshot.events
-          .flatMap(row => {
-            const permission = permissionFromRow(row)
-            return permission === undefined ? [] : [permission]
+        snapshot.agentOutputs
+          .flatMap(observation => {
+            const permission = permissionFromAgentOutput(observation)
+            return Option.isSome(permission) ? [permission.value] : []
           })
           .filter(permission => permission.sequence > afterSequence)
           .sort((left, right) => left.sequence - right.sequence)
@@ -644,25 +617,34 @@ export const waitForPermissionRequest = (
 
 export const waitForNextAgentOutput = (
   input: FactoryNextAgentOutputWaitOptions,
-): Effect.Effect<RuntimeEvent, unknown, unknown> =>
+): Effect.Effect<RuntimeAgentOutputObservation, unknown, unknown> =>
   Effect.gen(function* () {
     const decodedInput = yield* Schema.decodeUnknown(FactoryNextAgentOutputWaitOptionsSchema)(
       input,
     )
+    const table = yield* DarkFactoryTable
+    const runOption = yield* table.runs.get(decodedInput.factoryRunKey)
+    const run = yield* Option.match(runOption, {
+      onNone: () =>
+        Effect.fail(new Error(`factory run not found: ${decodedInput.factoryRunKey}`)),
+      onSome: Effect.succeed,
+    })
+    const session = yield* attachPlannerSession(run.plannerContextId)
     const loop = (
       remainingMs: number,
-    ): Effect.Effect<RuntimeEvent, unknown, unknown> =>
+    ): Effect.Effect<RuntimeAgentOutputObservation, unknown, unknown> =>
       Effect.gen(function* () {
-        const status = yield* readFactoryRunStatus(decodedInput.factoryRunKey)
-        const found = status.runtimeEvents.find(row =>
-          row.sequence > decodedInput.afterSequence)
-        if (found !== undefined) return found
         if (remainingMs <= 0) {
           return yield* Effect.fail(
             new Error(`timed out waiting for next output on ${decodedInput.factoryRunKey}`),
           )
         }
-        yield* Effect.sleep("500 millis")
+        const waitMs = Math.min(remainingMs, 500)
+        const waited = yield* session.wait.forAgentOutput({
+          afterSequence: decodedInput.afterSequence,
+          timeoutMs: waitMs,
+        })
+        if (waited.matched) return waited.output
         return yield* loop(remainingMs - 500)
       })
     return yield* loop(decodedInput.timeoutMs)

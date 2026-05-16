@@ -58,15 +58,20 @@ import {
 } from "@firegrid/protocol/runtime-ingress"
 import {
   SessionAttachInputSchema,
+  SessionAgentOutputWaitInputSchema,
   SessionCreateOrLoadInputSchema,
   SessionHandlePromptInputSchema,
   SessionPermissionRequestWaitInputSchema,
   SessionPermissionRespondInputSchema,
+  runtimeAgentOutputObservationFromRow,
+  runtimePermissionRequestObservationFromAgentOutput,
   sessionContextIdForExternalKey,
   type FiregridSessionId,
+  type RuntimeAgentOutputObservation,
+  type SessionAgentOutputWaitInput,
+  type SessionAgentOutputWaitOutput,
   type SessionAttachDecodedInput,
   type SessionAttachInput,
-  type RuntimePermissionRequestObservation,
   type SessionCreateOrLoadInput,
   type SessionHandlePromptInput,
   type SessionPermissionRequestWaitInput,
@@ -75,6 +80,13 @@ import {
 } from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "@firegrid/protocol"
 import { Clock, Context, Data, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
+
+export type {
+  RuntimeAgentOutputObservation,
+  RuntimePermissionRequestObservation,
+  SessionAgentOutputWaitInput,
+  SessionAgentOutputWaitOutput,
+} from "@firegrid/protocol/session-facade"
 
 export interface ClientOptions {
   readonly durableStreamsBaseUrl?: string
@@ -127,6 +139,7 @@ export interface RuntimeContextSnapshot {
   readonly runs: ReadonlyArray<RuntimeRunEventRow>
   readonly events: ReadonlyArray<RuntimeEventRow>
   readonly logs: ReadonlyArray<RuntimeLogLineRow>
+  readonly agentOutputs: ReadonlyArray<RuntimeAgentOutputObservation>
 }
 
 export interface RuntimeContextHandle {
@@ -135,6 +148,12 @@ export interface RuntimeContextHandle {
 }
 
 export interface FiregridSessionWaitClient {
+  readonly forAgentOutput: (
+    request?: SessionAgentOutputWaitInput,
+  ) => Effect.Effect<
+    SessionAgentOutputWaitOutput,
+    LaunchInputError | PreloadError
+  >
   readonly forPermissionRequest: (
     request?: SessionPermissionRequestWaitInput,
   ) => Effect.Effect<
@@ -432,6 +451,15 @@ const decodeSessionPermissionRequestWaitInput = (
       onExcessProperty: "error",
     })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
+const decodeSessionAgentOutputWaitInput = (
+  request: SessionAgentOutputWaitInput | undefined,
+): Effect.Effect<SessionAgentOutputWaitInput, LaunchInputError> =>
+  request === undefined
+    ? Effect.succeed({})
+    : Schema.decodeUnknown(SessionAgentOutputWaitInputSchema, {
+      onExcessProperty: "error",
+    })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
+
 const decodeWaitForInput = (
   request: WaitForToolInput,
 ): Effect.Effect<WaitForToolInput, LaunchInputError> =>
@@ -479,6 +507,10 @@ const snapshotFromJournal = (
   const events = inputs.events
     .filter(row => row.contextId === contextId)
     .sort(compareJournalRows)
+  const agentOutputs = events.flatMap(row => {
+    const observation = runtimeAgentOutputObservationFromRow(row)
+    return Option.isSome(observation) ? [observation.value] : []
+  })
   const logs = inputs.logs
     .filter(row => row.contextId === contextId)
     .sort(compareJournalRows)
@@ -496,6 +528,7 @@ const snapshotFromJournal = (
     runs,
     events,
     logs,
+    agentOutputs,
   }
 }
 
@@ -533,66 +566,6 @@ const mapWaitError = (cause: unknown): LaunchInputError | PreloadError => {
   }
   return new PreloadError({ cause })
 }
-
-const agentOutputObservationFromRow = (
-  row: RuntimeEventRow,
-): Option.Option<Readonly<Record<string, unknown>>> => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(row.raw)
-  } catch {
-    return Option.none()
-  }
-  if (!isRecord(parsed) || parsed.type !== "firegrid.agent-output") {
-    return Option.none()
-  }
-  const event = parsed.event
-  if (!isRecord(event) || typeof event._tag !== "string") {
-    return Option.none()
-  }
-  const base = {
-    contextId: row.contextId,
-    activityAttempt: row.activityAttempt,
-    sequence: row.sequence,
-    _tag: event._tag,
-    event,
-  }
-  if (event._tag === "PermissionRequest") {
-    return Option.some({
-      ...base,
-      permissionRequestId: event.permissionRequestId,
-      toolUseId: event.toolUseId,
-    })
-  }
-  if (event._tag === "ToolUse" && isRecord(event.part)) {
-    return Option.some({
-      ...base,
-      toolUseId: event.part.id,
-      toolName: event.part.name,
-    })
-  }
-  return Option.some(base)
-}
-
-const permissionRequestObservationFromRow = (
-  row: RuntimeEventRow,
-): Option.Option<RuntimePermissionRequestObservation> =>
-  Option.flatMap(agentOutputObservationFromRow(row), (observation) => {
-    if (observation._tag !== "PermissionRequest") return Option.none()
-    if (typeof observation.permissionRequestId !== "string") return Option.none()
-    if (typeof observation.toolUseId !== "string") return Option.none()
-    if (!isRecord(observation.event)) return Option.none()
-    return Option.some({
-      source: FiregridRuntimeObservationSourceNames.agentOutputEvents,
-      contextId: row.contextId,
-      activityAttempt: row.activityAttempt,
-      sequence: row.sequence,
-      _tag: "PermissionRequest",
-      permissionRequestId: observation.permissionRequestId,
-      toolUseId: observation.toolUseId,
-      event: observation.event,
-    })
-  })
 
 const waitForFirstMatch = (
   stream: Stream.Stream<unknown, PreloadError>,
@@ -755,15 +728,17 @@ const make = (config: ResolvedConfig) =>
         )
       })
 
-    const waitForPermissionRequest = (
+    const waitForAgentOutputObservation = (
       contextId: string,
-      request?: SessionPermissionRequestWaitInput,
+      input: SessionAgentOutputWaitInput,
+      predicate: (
+        observation: RuntimeAgentOutputObservation,
+      ) => boolean = () => true,
     ): Effect.Effect<
-      SessionPermissionRequestWaitOutput,
+      Option.Option<RuntimeAgentOutputObservation>,
       LaunchInputError | PreloadError
     > =>
       Effect.gen(function* () {
-        const input = yield* decodeSessionPermissionRequestWaitInput(request)
         const context = yield* resolveContext(contextId)
         if (context === undefined) {
           return yield* Effect.fail(new PreloadError({
@@ -775,11 +750,12 @@ const make = (config: ResolvedConfig) =>
           return yield* Stream.runHead(
             output.events.rows().pipe(
               Stream.mapError(cause => new PreloadError({ cause })),
-              Stream.filterMap(permissionRequestObservationFromRow),
+              Stream.filterMap(runtimeAgentOutputObservationFromRow),
               Stream.filter(observation =>
                 observation.contextId === contextId &&
                 (input.afterSequence === undefined ||
-                  observation.sequence > input.afterSequence),
+                  observation.sequence > input.afterSequence) &&
+                predicate(observation),
               ),
             ),
           )
@@ -793,13 +769,51 @@ const make = (config: ResolvedConfig) =>
           : Effect.raceFirst(
             run,
             Clock.sleep(Duration.millis(input.timeoutMs)).pipe(
-              Effect.as(Option.none<RuntimePermissionRequestObservation>()),
+              Effect.as(Option.none<RuntimeAgentOutputObservation>()),
             ),
           )
-        const matched = yield* awaited
+        return yield* awaited
+      })
+
+    const waitForAgentOutput = (
+      contextId: string,
+      request?: SessionAgentOutputWaitInput,
+    ): Effect.Effect<
+      SessionAgentOutputWaitOutput,
+      LaunchInputError | PreloadError
+    > =>
+      Effect.gen(function* () {
+        const input = yield* decodeSessionAgentOutputWaitInput(request)
+        const matched = yield* waitForAgentOutputObservation(contextId, input)
         return Option.match(matched, {
           onNone: () => ({ matched: false, timedOut: true }) as const,
-          onSome: request => ({ matched: true, request }) as const,
+          onSome: output => ({ matched: true, output }) as const,
+        })
+      })
+
+    const waitForPermissionRequest = (
+      contextId: string,
+      request?: SessionPermissionRequestWaitInput,
+    ): Effect.Effect<
+      SessionPermissionRequestWaitOutput,
+      LaunchInputError | PreloadError
+    > =>
+      Effect.gen(function* () {
+        const input = yield* decodeSessionPermissionRequestWaitInput(request)
+        const matched = yield* waitForAgentOutputObservation(
+          contextId,
+          input,
+          observation =>
+            Option.isSome(runtimePermissionRequestObservationFromAgentOutput(observation)),
+        )
+        return Option.match(matched, {
+          onNone: () => ({ matched: false, timedOut: true }) as const,
+          onSome: output => {
+            const permission = runtimePermissionRequestObservationFromAgentOutput(output)
+            return Option.isSome(permission)
+              ? ({ matched: true, request: permission.value } as const)
+              : ({ matched: false, timedOut: true } as const)
+          },
         })
       })
 
@@ -830,6 +844,8 @@ const make = (config: ResolvedConfig) =>
         }),
       snapshot: () => readSnapshot(sessionId),
       wait: {
+        forAgentOutput: request =>
+          waitForAgentOutput(sessionId, request),
         forPermissionRequest: request =>
           waitForPermissionRequest(sessionId, request),
       },
@@ -988,7 +1004,7 @@ const make = (config: ResolvedConfig) =>
               context => outputLayerForContext(config, context),
               Effect.map(RuntimeOutputTable, table =>
                 table.events.rows().pipe(
-                  Stream.filterMap(agentOutputObservationFromRow),
+                  Stream.filterMap(runtimeAgentOutputObservationFromRow),
                 )),
             )
           default:

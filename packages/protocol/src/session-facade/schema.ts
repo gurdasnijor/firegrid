@@ -1,4 +1,5 @@
-import { Schema } from "effect"
+import type { RuntimeEventRow } from "../launch/index.ts"
+import { Either, Option, Schema } from "effect"
 import {
   FiregridRuntimeObservationSourceNames,
   PermissionDecisionSchema,
@@ -113,6 +114,26 @@ export type SessionPermissionRequestWaitInput = Schema.Schema.Type<
   typeof SessionPermissionRequestWaitInputSchema
 >
 
+export const SessionAgentOutputWaitInputSchema = Schema.Struct({
+  afterSequence: Schema.optional(
+    Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
+  ),
+  timeoutMs: Schema.optional(
+    Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
+  ),
+}).annotations({
+  identifier: "firegrid.operation.session.waitForAgentOutput.input",
+  title: "Session agent-output wait input",
+  description:
+    "Wait for a normalized agent-output observation in the scoped RuntimeContext output.",
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type SessionAgentOutputWaitInput = Schema.Schema.Type<
+  typeof SessionAgentOutputWaitInputSchema
+>
+
 export const SessionPermissionRespondInputSchema = Schema.Struct({
   permissionRequestId: Schema.String.pipe(Schema.minLength(1)),
   decision: PermissionDecisionSchema,
@@ -130,9 +151,91 @@ export type SessionPermissionRespondInput = Schema.Schema.Type<
   typeof SessionPermissionRespondInputSchema
 >
 
+export const RuntimeAgentOutputEventPayloadSchema = Schema.Record({
+  key: Schema.String,
+  value: Schema.Unknown,
+})
+export type RuntimeAgentOutputEventPayload = Schema.Schema.Type<
+  typeof RuntimeAgentOutputEventPayloadSchema
+>
+
+export const RuntimeAgentOutputEnvelopeSchema = Schema.Struct({
+  type: Schema.Literal("firegrid.agent-output"),
+  event: RuntimeAgentOutputEventPayloadSchema,
+}).annotations({
+  identifier: "firegrid.operation.session.agentOutputEnvelope",
+  title: "Runtime agent-output envelope",
+  description:
+    "Protocol-owned wrapper for normalized agent-output payloads stored in RuntimeOutput event rows.",
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type RuntimeAgentOutputEnvelope = Schema.Schema.Type<
+  typeof RuntimeAgentOutputEnvelopeSchema
+>
+
+export const RuntimePermissionOptionSchema = Schema.Struct({
+  optionId: Schema.String.pipe(Schema.minLength(1)),
+  kind: Schema.Literal(
+    "allow_once",
+    "allow_always",
+    "reject_once",
+    "reject_always",
+  ),
+  name: Schema.String.pipe(Schema.minLength(1)),
+})
+export type RuntimePermissionOption = Schema.Schema.Type<
+  typeof RuntimePermissionOptionSchema
+>
+
+const RuntimePermissionRequestEventSchema = Schema.Struct({
+  _tag: Schema.Literal("PermissionRequest"),
+  permissionRequestId: Schema.String.pipe(Schema.minLength(1)),
+  toolUseId: Schema.String.pipe(Schema.minLength(1)),
+  options: Schema.Array(RuntimePermissionOptionSchema),
+})
+
+const RuntimeToolUseEventSchema = Schema.Struct({
+  _tag: Schema.Literal("ToolUse"),
+  part: Schema.Struct({
+    id: Schema.String.pipe(Schema.minLength(1)),
+    name: Schema.String.pipe(Schema.minLength(1)),
+  }),
+})
+
+export const RuntimeAgentOutputObservationSchema = Schema.Struct({
+  source: Schema.Literal(FiregridRuntimeObservationSourceNames.agentOutputEvents),
+  sessionId: FiregridSessionIdSchema,
+  contextId: RuntimeContextIdSchema,
+  activityAttempt: Schema.Number.pipe(
+    Schema.int(),
+    Schema.greaterThanOrEqualTo(1),
+  ),
+  sequence: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
+  _tag: Schema.String.pipe(Schema.minLength(1)),
+  event: RuntimeAgentOutputEventPayloadSchema,
+  permissionRequestId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  toolUseId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  toolName: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+  options: Schema.optional(Schema.Array(RuntimePermissionOptionSchema)),
+}).annotations({
+  identifier: "firegrid.operation.session.agentOutputObservation",
+  title: "Runtime agent-output observation",
+  description:
+    "A normalized agent-output observation scoped to one RuntimeContext-backed session.",
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type RuntimeAgentOutputObservation = Schema.Schema.Type<
+  typeof RuntimeAgentOutputObservationSchema
+>
+
 export const RuntimePermissionRequestObservationSchema = Schema.Struct({
   source: Schema.Literal(FiregridRuntimeObservationSourceNames.agentOutputEvents),
-  contextId: Schema.String.pipe(Schema.minLength(1)),
+  sessionId: FiregridSessionIdSchema,
+  contextId: RuntimeContextIdSchema,
   activityAttempt: Schema.Number.pipe(
     Schema.int(),
     Schema.greaterThanOrEqualTo(1),
@@ -141,7 +244,8 @@ export const RuntimePermissionRequestObservationSchema = Schema.Struct({
   _tag: Schema.Literal("PermissionRequest"),
   permissionRequestId: Schema.String.pipe(Schema.minLength(1)),
   toolUseId: Schema.String.pipe(Schema.minLength(1)),
-  event: Schema.Record({ key: Schema.String, value: Schema.Unknown }),
+  options: Schema.Array(RuntimePermissionOptionSchema),
+  event: RuntimeAgentOutputEventPayloadSchema,
 }).annotations({
   identifier: "firegrid.operation.session.permissionRequestObservation",
   title: "Runtime permission request observation",
@@ -153,6 +257,28 @@ export const RuntimePermissionRequestObservationSchema = Schema.Struct({
 })
 export type RuntimePermissionRequestObservation = Schema.Schema.Type<
   typeof RuntimePermissionRequestObservationSchema
+>
+
+export const SessionAgentOutputWaitOutputSchema = Schema.Union(
+  Schema.Struct({
+    matched: Schema.Literal(true),
+    output: RuntimeAgentOutputObservationSchema,
+  }),
+  Schema.Struct({
+    matched: Schema.Literal(false),
+    timedOut: Schema.Literal(true),
+  }),
+).annotations({
+  identifier: "firegrid.operation.session.waitForAgentOutput.output",
+  title: "Session agent-output wait output",
+  description:
+    "Result of waiting for a normalized agent-output observation in the scoped RuntimeContext output.",
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type SessionAgentOutputWaitOutput = Schema.Schema.Type<
+  typeof SessionAgentOutputWaitOutputSchema
 >
 
 export const SessionPermissionRequestWaitOutputSchema = Schema.Union(
@@ -176,6 +302,115 @@ export const SessionPermissionRequestWaitOutputSchema = Schema.Union(
 export type SessionPermissionRequestWaitOutput = Schema.Schema.Type<
   typeof SessionPermissionRequestWaitOutputSchema
 >
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
+const runtimeAgentOutputContextIds = (
+  contextId: string,
+): Option.Option<{
+  readonly sessionId: FiregridSessionId
+  readonly contextId: RuntimeContextId
+}> => {
+  const sessionId = Schema.decodeUnknownEither(FiregridSessionIdSchema)(contextId)
+  if (Either.isLeft(sessionId)) return Option.none()
+  const runtimeContextId = Schema.decodeUnknownEither(RuntimeContextIdSchema)(contextId)
+  if (Either.isLeft(runtimeContextId)) return Option.none()
+  return Option.some({
+    sessionId: sessionId.right,
+    contextId: runtimeContextId.right,
+  })
+}
+
+export const encodeRuntimeAgentOutputEnvelope = (
+  event: RuntimeAgentOutputEventPayload,
+): string =>
+  JSON.stringify(Schema.encodeUnknownSync(RuntimeAgentOutputEnvelopeSchema)({
+    type: "firegrid.agent-output",
+    event,
+  }))
+
+export const decodeRuntimeAgentOutputEnvelope = (
+  raw: string,
+): Option.Option<RuntimeAgentOutputEventPayload> => {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return Option.none()
+  }
+  const decoded = Schema.decodeUnknownEither(RuntimeAgentOutputEnvelopeSchema)(parsed)
+  return Either.isRight(decoded) ? Option.some(decoded.right.event) : Option.none()
+}
+
+export const runtimeAgentOutputObservationFromRow = (
+  row: RuntimeEventRow,
+): Option.Option<RuntimeAgentOutputObservation> =>
+  Option.flatMap(decodeRuntimeAgentOutputEnvelope(row.raw), (event) => {
+    if (typeof event["_tag"] !== "string") return Option.none()
+    const contextIds = runtimeAgentOutputContextIds(row.contextId)
+    if (Option.isNone(contextIds)) return Option.none()
+    const base = {
+      source: FiregridRuntimeObservationSourceNames.agentOutputEvents,
+      sessionId: contextIds.value.sessionId,
+      contextId: contextIds.value.contextId,
+      activityAttempt: row.activityAttempt,
+      sequence: row.sequence,
+      _tag: event["_tag"],
+      event,
+    }
+    if (event["_tag"] === "PermissionRequest") {
+      const decoded = Schema.decodeUnknownEither(RuntimePermissionRequestEventSchema)(event)
+      if (Either.isLeft(decoded)) return Option.none()
+      return Option.some({
+        ...base,
+        _tag: "PermissionRequest",
+        permissionRequestId: decoded.right.permissionRequestId,
+        toolUseId: decoded.right.toolUseId,
+        options: decoded.right.options,
+      })
+    }
+    if (event["_tag"] === "ToolUse") {
+      const decoded = Schema.decodeUnknownEither(RuntimeToolUseEventSchema)(event)
+      if (Either.isLeft(decoded)) return Option.some(base)
+      return Option.some({
+        ...base,
+        toolUseId: decoded.right.part.id,
+        toolName: decoded.right.part.name,
+      })
+    }
+    return Option.some(base)
+  })
+
+export const runtimePermissionRequestObservationFromAgentOutput = (
+  observation: RuntimeAgentOutputObservation,
+): Option.Option<RuntimePermissionRequestObservation> => {
+  if (observation._tag !== "PermissionRequest") return Option.none()
+  if (observation.permissionRequestId === undefined) return Option.none()
+  if (observation.toolUseId === undefined) return Option.none()
+  if (observation.options === undefined) return Option.none()
+  if (!isRecord(observation.event)) return Option.none()
+  return Option.some({
+    source: FiregridRuntimeObservationSourceNames.agentOutputEvents,
+    sessionId: observation.sessionId,
+    contextId: observation.contextId,
+    activityAttempt: observation.activityAttempt,
+    sequence: observation.sequence,
+    _tag: "PermissionRequest",
+    permissionRequestId: observation.permissionRequestId,
+    toolUseId: observation.toolUseId,
+    options: observation.options,
+    event: observation.event,
+  })
+}
+
+export const runtimePermissionRequestObservationFromRow = (
+  row: RuntimeEventRow,
+): Option.Option<RuntimePermissionRequestObservation> =>
+  Option.flatMap(
+    runtimeAgentOutputObservationFromRow(row),
+    runtimePermissionRequestObservationFromAgentOutput,
+  )
 
 const base64UrlAlphabet =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"

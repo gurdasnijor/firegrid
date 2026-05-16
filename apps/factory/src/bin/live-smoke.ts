@@ -148,10 +148,11 @@ const program = Effect.gen(function* () {
     step: "next_output",
     factoryRunKey: accepted.run.factoryRunKey,
     sequence: next.sequence,
-    raw: next.raw,
+    output: next.event,
     facts: status.facts.length,
     ingressInputs: status.ingressInputs.length,
     runtimeEvents: status.runtimeEvents.length,
+    agentOutputs: status.agentOutputs.length,
   }, null, 2))
 }).pipe(
   Effect.provide(factoryHostLayerFromConfig(factoryConfig)),

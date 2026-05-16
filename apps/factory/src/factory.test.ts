@@ -1,8 +1,11 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { RuntimeOutputTable } from "@firegrid/protocol/launch"
 import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
-import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
-import { AgentOutputEventSchema, type AgentOutputEvent } from "@firegrid/runtime/events"
+import {
+  encodeRuntimeAgentOutputEnvelope,
+  sessionContextIdForExternalKey,
+  type RuntimeAgentOutputEventPayload,
+} from "@firegrid/protocol/session-facade"
 import { Effect, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
@@ -90,11 +93,8 @@ const runWithHost = <A, E>(
     ),
   )
 
-const agentOutputRaw = (event: AgentOutputEvent): string =>
-  JSON.stringify({
-    type: "firegrid.agent-output",
-    event: Schema.encodeUnknownSync(AgentOutputEventSchema)(event),
-  })
+const agentOutputRaw = (event: RuntimeAgentOutputEventPayload): string =>
+  encodeRuntimeAgentOutputEnvelope(event)
 
 describe("dark factory P0 contracts", () => {
   it("firegrid-dark-factory-app.EXTERNAL_FACTS.1 firegrid-dark-factory-app.PARENT_RUN.1 derives deterministic fact/run/context identities", () => {
@@ -261,6 +261,7 @@ describe("dark factory P0 contracts", () => {
       runtimeEvents: [],
       runtimeLogs: [],
       ingressInputs: [],
+      agentOutputs: [],
       permissions: [],
     })
 
@@ -399,7 +400,7 @@ describe("dark factory P0 contracts", () => {
     })
   })
 
-  it("firegrid-dark-factory-app.OBSERVATION.3 derives permissions from durable RuntimeOutput firegrid.agent-output rows", async () => {
+  it("firegrid-dark-factory-app.OBSERVATION.3 firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.5 derives permissions from normalized client agent outputs", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `factory-output-${crypto.randomUUID()}`
 
@@ -445,6 +446,12 @@ describe("dark factory P0 contracts", () => {
     )
 
     const status = result.status
+    expect(status.agentOutputs).toHaveLength(1)
+    expect(status.agentOutputs[0]).toMatchObject({
+      contextId: triggerPlannerContextId,
+      sequence: 10,
+      _tag: "PermissionRequest",
+    })
     expect(status.permissions).toHaveLength(1)
     expect(status.permissions[0]).toMatchObject({
       contextId: triggerPlannerContextId,

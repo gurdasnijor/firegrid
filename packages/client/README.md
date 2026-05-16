@@ -157,11 +157,31 @@ if (permission.matched) {
 }
 ```
 
+For product session reads, use normalized agent-output observations instead of
+parsing raw output rows:
+
+```ts
+const next = yield* session.wait.forAgentOutput({
+  afterSequence: lastSeenSequence,
+  timeoutMs: 30_000,
+})
+
+const snapshot = yield* session.snapshot()
+for (const output of snapshot.agentOutputs) {
+  console.log(output.sequence, output._tag, output.event)
+}
+```
+
+`snapshot.agentOutputs` and `wait.forAgentOutput` are derived from
+host-owned `RuntimeOutputTable.events` rows through protocol-owned observation
+schemas. `snapshot.events` and `snapshot.logs` remain available for raw
+inspectors and diagnostics.
+
 `wait.forPermissionRequest` reads normalized PermissionRequest observations from
-the host-owned `RuntimeOutputTable.events` stream for the scoped session. The
-client resolves the session's RuntimeContext row first, then opens the correct
-host-owned output stream using that row's host binding. It returns either
-`{ matched: true, request }` or `{ matched: false, timedOut: true }`.
+the same agent-output projection for the scoped session. The client resolves the
+session's RuntimeContext row first, then opens the correct host-owned output
+stream using that row's host binding. It returns either `{ matched: true,
+request }` or `{ matched: false, timedOut: true }`.
 
 `session.start()` is intentionally different from prompt/snapshot/wait/respond.
 It requires `RuntimeStartCapability`, which is supplied by runtime-host or app
@@ -189,7 +209,8 @@ The snapshot includes:
 - the `RuntimeContext` row when it exists;
 - run lifecycle rows from the namespace control plane;
 - host-owned ingress inputs;
-- host-owned output events and logs.
+- host-owned output events and logs;
+- normalized agent-output observations for product session semantics.
 
 For live React views, the current generic table provider path is safest for the
 namespace control plane:
