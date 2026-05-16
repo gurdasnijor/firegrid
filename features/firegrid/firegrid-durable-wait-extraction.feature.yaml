@@ -1,0 +1,46 @@
+feature:
+  name: firegrid-durable-wait-extraction
+  product: firegrid
+  description: Evaluate and stage any extraction of runtime durable wait internals into effect-durable-operators without moving Firegrid runtime vocabulary or changing wait_for behavior.
+
+components:
+  CLASSIFICATION:
+    requirements:
+      1: Durable wait extraction classifies each waits internal as generic durable operator behavior, Firegrid runtime adapter behavior, or mixed behavior before code moves.
+      2: Generic candidates are expressible with Effect, Effect Schema, Effect Stream, Effect Layer, DurableTable, and optionally an explicit workflow integration dependency without importing @firegrid/runtime, @firegrid/client, @firegrid/protocol, apps, or scenarios.
+      3: Firegrid runtime keeps runtime source names, runtime source-registration layers, agent-tool wait_for bindings, runtime-host composition, and Firegrid-specific documentation/examples.
+      4: Mixed behavior is split at a typed adapter boundary before any generic part moves to effect-durable-operators.
+
+  CANDIDATES:
+    requirements:
+      1: Wait key schemas, wait row schemas, completion row schemas, row-level lookup/upsert/row-stream capability shapes, source-handle lookup, scalar field-equality matching, completion reconciliation, and match/timeout race semantics are evaluated as extraction candidates.
+      2: Candidate rows and keys preserve their Effect Schema encoded forms unless a separate migration plan defines retained stream compatibility.
+      3: Candidate source matching remains a dynamic named source lookup over SourceCollectionHandle-like handles; it does not replace static runtime Stream capability tags.
+      4: Candidate workflow integration is evaluated separately from row/table schemas because it may add an @effect/workflow dependency to effect-durable-operators.
+
+  EXTRACTION_CRITERIA:
+    requirements:
+      1: A candidate may move only if it has at least two plausible non-Firegrid consumers or clearly belongs beside DurableTable as generic durable coordination behavior.
+      2: A candidate may move only if its public API can be named without Firegrid runtime vocabulary such as runtime context, agent, host, codec, source-registration, or RuntimeObservationSourceNames.
+      3: A candidate may move only if tests prove behavior-preserving retained-stream replay, live row observation, timeout/match idempotency, and completion reconciliation.
+      4: A candidate may move only if dependency-cruiser continues to enforce that effect-durable-operators imports no @firegrid/* packages.
+
+  STAGING:
+    requirements:
+      1: The first implementation PR after this SDD may add generic specs/tests around duplicated wait pieces but does not change Firegrid runtime behavior.
+      2: Row/key/table extraction, source matching extraction, and workflow integration extraction are separate stages unless one PR can keep review scope small and all validation green.
+      3: Firegrid runtime adopts extracted primitives through adapter layers that preserve the current @firegrid/runtime public wait_for surface.
+      4: Durable wait extraction does not change runtime boundary reconciliation PR9 or codec-session work.
+
+constraints:
+  NON_GOALS:
+    requirements:
+      1: This feature does not move code by itself.
+      2: This feature does not introduce new wait row families, a new storage primitive, a new scheduler, or a replacement for DurableTable.
+      3: This feature does not move Firegrid runtime source registrations, agent-tool schemas, client APIs, host config, provider semantics, or app/product vocabulary into effect-durable-operators.
+      4: This feature does not expose wait rows or completion rows from @firegrid/client.
+
+  VALIDATION:
+    requirements:
+      1: Each extraction implementation PR runs package-level effect-durable-operators tests, runtime wait_for tests, runtime host wait/source tests, lint:deps, check:specs, and check:docs.
+      2: Any new effect-durable-operators public API is documented in that package README and covered by package-local tests before runtime adopts it.
