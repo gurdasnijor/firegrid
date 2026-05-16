@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect"
-import { RuntimeIngressInputStream } from "../authorities/runtime-ingress-appender.ts"
-import { RuntimeIngressDeliveries } from "../authorities/runtime-ingress-delivery-tracker.ts"
+import { RuntimeIngressInputStream } from "../agent-event-pipeline/authorities/runtime-ingress-appender.ts"
+import { RuntimeIngressDeliveries } from "../agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
 import { RuntimeAuthoritySourceNames } from "../authorities/source-names.ts"
 import {
   SourceCollections,

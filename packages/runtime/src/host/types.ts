@@ -1,5 +1,5 @@
 import type { DurableTableHeaders } from "effect-durable-operators"
-import type { LocalProcessSandboxProviderOptions } from "../sources/sandbox/local-process.ts"
+import type { LocalProcessSandboxProviderOptions } from "../agent-event-pipeline/sources/sandbox/local-process.ts"
 
 export interface RuntimeHostConfigValue {
   readonly inputEnabled: boolean

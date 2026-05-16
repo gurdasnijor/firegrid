@@ -3,13 +3,16 @@ import {
   type RuntimeIngressDeliveryRow,
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option } from "effect"
 import type { Stream } from "effect"
 import {
   runtimeSubscriberId as makeRuntimeSubscriberId,
   type RuntimeSubscriberId,
 } from "../events/index.ts"
-import { authorityNowIso } from "./time.ts"
+
+const authorityNowIso = Clock.currentTimeMillis.pipe(
+  Effect.map(millis => new Date(millis).toISOString()),
+)
 
 export interface RuntimeIngressDeliveryClaimAndCompleteService {
   readonly claimInput: (

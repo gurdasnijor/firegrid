@@ -1,17 +1,18 @@
 # Runtime Source Boundaries
 
-This directory is still flat after the runtime agent event-pipeline cutover.
-The target from
+This directory keeps the agent event-pipeline grouped under
+`agent-event-pipeline/`. The target from
 [`SDD_FIREGRID_RUNTIME_BOUNDARY_RECONCILIATION.md`](../../../docs/sdds/SDD_FIREGRID_RUNTIME_BOUNDARY_RECONCILIATION.md)
-is to keep the clean agent event-pipeline roles explicit now, then group them
-under an `agent-event-pipeline/` bounded context after host extraction.
+is to keep clean event-pipeline roles together while host, waits, tools,
+workflow-engine, adapters, and verified ingest remain adjacent bounded
+contexts.
 
 The agent event pipeline is:
 
 ```txt
-sources -> codecs -> events -> transforms -> authorities -> subscribers
-                         \                         /
-                          pipeline/session-runtime
+agent-event-pipeline/sources -> codecs -> events -> transforms -> authorities -> subscribers
+                                                        \                         /
+                                                         session-runtime
 ```
 
 The arrows describe ownership of data flow, not import permission. Durable
@@ -50,25 +51,36 @@ transform" abstraction, the boundary is probably misclassified.
 
 | Folder | Role |
 | --- | --- |
-| [`sources/`](./sources/README.md) | Live byte/process/resource acquisition. |
-| [`codecs/`](./codecs/README.md) | Protocol wire-format normalization. |
-| [`events/`](./events/README.md) | Normalized runtime event contracts and envelope helpers. |
-| [`transforms/`](./transforms/README.md) | Pure stream/row shaping operators. |
-| [`authorities/`](./authorities/README.md) | Durable Effect capability providers. |
-| [`subscribers/`](./subscribers/README.md) | Host-scoped drivers over durable observations. |
-| [`pipeline/`](./pipeline/README.md) | Per-session event-loop composition. |
+| [`agent-event-pipeline/sources/`](./agent-event-pipeline/sources/README.md) | Live byte/process/resource acquisition. |
+| [`agent-event-pipeline/codecs/`](./agent-event-pipeline/codecs/README.md) | Protocol wire-format normalization. |
+| [`agent-event-pipeline/events/`](./agent-event-pipeline/events/README.md) | Normalized runtime event contracts and envelope helpers. |
+| [`agent-event-pipeline/transforms/`](./agent-event-pipeline/transforms/README.md) | Pure stream/row shaping operators. |
+| [`agent-event-pipeline/authorities/`](./agent-event-pipeline/authorities/) | Durable Effect capability providers for runtime output/ingress. |
+| [`agent-event-pipeline/subscribers/`](./agent-event-pipeline/subscribers/README.md) | Host-scoped drivers over durable observations. |
+| [`agent-event-pipeline/session-runtime.ts`](./agent-event-pipeline/session-runtime.ts) | Per-session event-loop composition. |
 
 ## Adjacent Runtime Boundaries
 
 These are intentionally not agent event-pipeline stages:
 
-- `host/`: runtime host topology and command entrypoints.
-- `waits/`: durable coordination operator and wait-owned router.
-- `workflow-engine/`: workflow substrate adapter.
+- `host/`: runtime host topology and command entrypoints
+  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.3`).
+- `waits/`: durable coordination operator and wait-owned router
+  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
+- `workflow-engine/`: workflow substrate adapter
+  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
 - `agent-tools/`: tool schemas, lowering, MCP exposure, and host-coupled live
   services.
-- `agent-adapters/`: projections over codec sessions.
-- `verified-webhook-ingest/`: external ingress/source adapter.
+- `agent-adapters/`: projections over codec sessions
+  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
+- `verified-webhook-ingest/`: external ingress/source adapter
+  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
+- `authorities/`: runtime control-plane lifecycle capabilities
+  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.2`).
+
+This namespace move follows the host split and codec session Layer refactor
+(`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.5`,
+`firegrid-runtime-boundary-reconciliation.SEQUENCING.6`).
 
 If new code does not fit one of the pipeline folder roles, start by classifying
 its semantic role instead of adding another convenience folder.

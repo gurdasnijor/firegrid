@@ -5,19 +5,17 @@ import type {
 } from "@firegrid/protocol/launch"
 import { IdGenerator } from "@effect/ai"
 import { Clock, Effect, Layer, Option, Ref, Stream } from "effect"
-import {
-  RuntimeAgentOutputRowSink,
-} from "../authorities/index.ts"
+import { RuntimeAgentOutputRowSink } from "./authorities/runtime-output-journal.ts"
 import {
   AcpSessionLive,
   AgentCodecError,
   AgentSession,
   StdioJsonlSessionLive,
-} from "../codecs/index.ts"
+} from "./codecs/index.ts"
 import {
   type AgentOutputEvent,
   encodeRuntimeAgentOutputEnvelope,
-} from "../events/index.ts"
+} from "./events/index.ts"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
@@ -27,14 +25,14 @@ import {
   SandboxProvider,
   commandForContext,
   type SandboxProviderError,
-} from "../sources/sandbox/index.ts"
-import type { AgentByteStream } from "../sources/byte-stream.ts"
+} from "./sources/sandbox/index.ts"
+import type { AgentByteStream } from "./sources/byte-stream.ts"
 import {
   runIngressDelivery,
   runStderrJournal,
   runToolRouter,
   runtimeIngressSubscriberId,
-} from "../subscribers/index.ts"
+} from "./subscribers/index.ts"
 
 const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map(millis => new Date(millis).toISOString()),

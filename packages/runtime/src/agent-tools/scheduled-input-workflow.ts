@@ -21,7 +21,7 @@
 
 import { Workflow, DurableClock } from "@effect/workflow"
 import { Clock, Duration, Effect, Schema } from "effect"
-import { AgentPromptSchema } from "../events/index.ts"
+import { AgentPromptSchema } from "../agent-event-pipeline/events/index.ts"
 import { AgentToolHost } from "./tool-host.ts"
 import { ToolExecutionFailedError } from "./tool-error.ts"
 

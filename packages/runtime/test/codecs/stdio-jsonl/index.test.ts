@@ -3,13 +3,13 @@ import { Chunk, Context, Deferred, Effect, Fiber, Layer, Schema, Stream } from "
 import { describe, expect, it } from "vitest"
 import type {
   AgentOutputEvent,
-} from "../../../src/events/index.ts"
-import type { AgentByteStream } from "../../../src/sources/byte-stream.ts"
-import { AgentSession } from "../../../src/codecs/contract.ts"
+} from "../../../src/agent-event-pipeline/events/index.ts"
+import type { AgentByteStream } from "../../../src/agent-event-pipeline/sources/byte-stream.ts"
+import { AgentSession } from "../../../src/agent-event-pipeline/codecs/contract.ts"
 import {
   StdioJsonlCapabilities,
   StdioJsonlSessionLive,
-} from "../../../src/codecs/stdio-jsonl/index.ts"
+} from "../../../src/agent-event-pipeline/codecs/stdio-jsonl/index.ts"
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()

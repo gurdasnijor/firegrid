@@ -3,7 +3,7 @@ import {
   RuntimeAgentOutputEvents,
   RuntimeOutputEvents,
   RuntimeOutputLogs,
-} from "../authorities/runtime-output-journal.ts"
+} from "../agent-event-pipeline/authorities/runtime-output-journal.ts"
 import { RuntimeAuthoritySourceNames } from "../authorities/source-names.ts"
 import {
   SourceCollections,

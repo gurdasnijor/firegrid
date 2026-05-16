@@ -15,7 +15,7 @@ import {
   AgentInputEventSchema,
   AgentOutputEventSchema,
   AgentToolUseModeSchema,
-} from "../../src/events/contract.ts"
+} from "../../src/agent-event-pipeline/events/contract.ts"
 
 const decodes = <A, I>(schema: Schema.Schema<A, I>, input: unknown): Promise<A> =>
   Effect.runPromise(Schema.decodeUnknown(schema)(input))

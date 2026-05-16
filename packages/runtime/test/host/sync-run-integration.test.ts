@@ -33,7 +33,7 @@ import {
 import { RuntimeContextInsert } from "../../src/authorities/index.ts"
 import {
   RuntimeEnvResolverPolicy,
-} from "../../src/sources/sandbox/secrets.ts"
+} from "../../src/agent-event-pipeline/sources/sandbox/secrets.ts"
 import {
   firegridRunCreatedBy,
   runConfigToIngressRequest,

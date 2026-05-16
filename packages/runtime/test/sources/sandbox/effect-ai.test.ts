@@ -4,11 +4,11 @@ import { describe, expect, it } from "vitest"
 import {
   SandboxProvider,
   type ProcessOutputChunk,
-} from "../../../src/sources/sandbox/SandboxProvider.ts"
+} from "../../../src/agent-event-pipeline/sources/sandbox/SandboxProvider.ts"
 import {
   effectAi,
   EffectAiSandboxProvider,
-} from "../../../src/sources/sandbox/effect-ai.ts"
+} from "../../../src/agent-event-pipeline/sources/sandbox/effect-ai.ts"
 
 const promptText = (prompt: Prompt.RawInput): string =>
   typeof prompt === "string" ? prompt : "[structured prompt]"

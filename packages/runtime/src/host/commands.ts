@@ -28,9 +28,11 @@ import {
 } from "./internal/runtime-context-helpers.ts"
 import {
   RuntimeContextRead,
+} from "../authorities/index.ts"
+import {
   RuntimeIngressAppendAndGet,
   RuntimeIngressAppenderLayer,
-} from "../authorities/index.ts"
+} from "../agent-event-pipeline/authorities/runtime-ingress-appender.ts"
 import { runtimeIngressError } from "../runtime-errors.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.4

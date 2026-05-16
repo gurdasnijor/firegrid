@@ -40,14 +40,14 @@ export {
   resolveSpawnEnvVars,
   type EnvLookup,
   type RuntimeEnvResolverPolicyValue,
-} from "./sources/sandbox/secrets.ts"
+} from "./agent-event-pipeline/sources/sandbox/secrets.ts"
 // firegrid-effect-ai-inprocess-provider.SANDBOX_PROVIDER.1
 export {
   effectAi,
   EffectAiSandboxProvider,
   type EffectAiSandboxConfig,
   type EffectAiSandboxProviderHelper,
-} from "./sources/sandbox/effect-ai.ts"
+} from "./agent-event-pipeline/sources/sandbox/effect-ai.ts"
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5..8
 export {
   RunAuthorizedBindingSchema,
@@ -61,37 +61,43 @@ export {
   type RunConfig,
 } from "./host/sync-run.ts"
 export {
-  RuntimeAgentOutputEvents,
-  RuntimeAgentOutputRowSink,
   RuntimeAuthoritySourceNames,
   RuntimeControlPlaneRecorderLive,
   RuntimeContexts,
   RuntimeContextInsert,
   RuntimeContextInsertLive,
   RuntimeContextRead,
-  RuntimeEventAppendAndGet,
-  RuntimeIngressAppenderLayer,
-  RuntimeIngressAppendAndGet,
-  RuntimeIngressAppendContextMismatch,
-  RuntimeIngressDeliveryClaimAndComplete,
-  RuntimeIngressDeliveries,
-  RuntimeIngressDeliveryTrackerLayer,
-  RuntimeIngressInputStream,
-  RuntimeIngressInputStreamLayer,
-  RuntimeLogLineAppendAndGet,
-  RuntimeLogLineSink,
-  RuntimeOutputEvents,
-  RuntimeOutputJournalLayer,
-  RuntimeOutputLogs,
   RuntimeRuns,
   RuntimeRunAppendAndGet,
-  runtimeIngressSubscriberId,
-  type RuntimeAgentOutputObservation as RuntimeAuthorityAgentOutputObservation,
   type RuntimeContextInsertService,
   type RuntimeContextReadService,
   type RuntimeAuthoritySourceName,
   type RuntimeRunAppendAndGetService,
 } from "./authorities/index.ts"
+export {
+  RuntimeIngressAppenderLayer,
+  RuntimeIngressAppendAndGet,
+  RuntimeIngressAppendContextMismatch,
+  RuntimeIngressInputStream,
+  RuntimeIngressInputStreamLayer,
+} from "./agent-event-pipeline/authorities/runtime-ingress-appender.ts"
+export {
+  RuntimeIngressDeliveryClaimAndComplete,
+  RuntimeIngressDeliveries,
+  RuntimeIngressDeliveryTrackerLayer,
+  runtimeIngressSubscriberId,
+} from "./agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
+export {
+  RuntimeAgentOutputEvents,
+  RuntimeAgentOutputRowSink,
+  RuntimeEventAppendAndGet,
+  RuntimeLogLineAppendAndGet,
+  RuntimeLogLineSink,
+  RuntimeOutputEvents,
+  RuntimeOutputJournalLayer,
+  RuntimeOutputLogs,
+  type RuntimeAgentOutputObservation as RuntimeAuthorityAgentOutputObservation,
+} from "./agent-event-pipeline/authorities/runtime-output-journal.ts"
 export {
   DurableStreamsWorkflowEngine,
   type WorkflowEngineDurableStateOptions,
@@ -145,7 +151,7 @@ export {
   type AcpSessionOptions,
   StdioJsonlCapabilities,
   StdioJsonlSessionLive,
-} from "./codecs/index.ts"
+} from "./agent-event-pipeline/codecs/index.ts"
 export {
   RuntimeAgentOutputEnvelopeSchema,
   decodeRuntimeAgentOutputEnvelope,
@@ -153,7 +159,7 @@ export {
   runtimeAgentOutputObservationFromRow,
   type RuntimeAgentOutputEnvelope,
   type RuntimeAgentOutputObservation,
-} from "./events/output.ts"
+} from "./agent-event-pipeline/events/output.ts"
 export {
   AdapterCancelled,
   AgentAdapter,

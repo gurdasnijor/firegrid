@@ -3,12 +3,12 @@ import {
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Option, Stream } from "effect"
+import { RuntimeIngressInputStream } from "../authorities/runtime-ingress-appender.ts"
 import {
   RuntimeIngressDeliveryClaimAndComplete,
-  RuntimeIngressInputStream,
   runtimeIngressSubscriberId,
   type RuntimeIngressDeliveryClaimAndCompleteService,
-} from "../authorities/index.ts"
+} from "../authorities/runtime-ingress-delivery-tracker.ts"
 import {
   runtimeIngressRowsToAgentInputEvents,
   sequencedRuntimeIngressRowsForContext,
@@ -21,7 +21,7 @@ import {
   asRuntimeContextError,
   mapRuntimeContextError,
   type RuntimeContextError,
-} from "../runtime-errors.ts"
+} from "../../runtime-errors.ts"
 
 export { runtimeIngressSubscriberId }
 

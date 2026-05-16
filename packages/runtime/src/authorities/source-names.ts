@@ -1,7 +1,7 @@
 import {
   runtimeAuthoritySourceName,
   type RuntimeAuthoritySourceName,
-} from "../events/index.ts"
+} from "../agent-event-pipeline/events/index.ts"
 
 export const RuntimeAuthoritySourceNames = {
   runtimeContexts: runtimeAuthoritySourceName("firegrid.runtime.contexts"),

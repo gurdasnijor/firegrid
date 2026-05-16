@@ -22,12 +22,12 @@
       "default": "./src/waits/index.ts"
     },
     "./events": {
-      "types": "./src/events/index.ts",
-      "default": "./src/events/index.ts"
+      "types": "./src/agent-event-pipeline/events/index.ts",
+      "default": "./src/agent-event-pipeline/events/index.ts"
     },
     "./codecs": {
-      "types": "./src/codecs/index.ts",
-      "default": "./src/codecs/index.ts"
+      "types": "./src/agent-event-pipeline/codecs/index.ts",
+      "default": "./src/agent-event-pipeline/codecs/index.ts"
     },
     "./agent-adapters": {
       "types": "./src/agent-adapters/index.ts",
@@ -38,8 +38,8 @@
       "default": "./src/agent-tools/index.ts"
     },
     "./sources/sandbox": {
-      "types": "./src/sources/sandbox/index.ts",
-      "default": "./src/sources/sandbox/index.ts"
+      "types": "./src/agent-event-pipeline/sources/sandbox/index.ts",
+      "default": "./src/agent-event-pipeline/sources/sandbox/index.ts"
     }
   },
   "files": [

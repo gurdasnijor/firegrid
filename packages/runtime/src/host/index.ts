@@ -28,7 +28,7 @@ export { RuntimeIngressError } from "../runtime-errors.ts"
 export {
   localProcessSpawnEnvFromHostEnv,
   type LocalProcessSandboxProviderOptions,
-} from "../sources/sandbox/local-process.ts"
+} from "../agent-event-pipeline/sources/sandbox/local-process.ts"
 export {
   appendRuntimeIngress,
   RuntimeStartCapabilityLive,

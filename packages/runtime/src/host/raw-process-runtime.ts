@@ -12,22 +12,26 @@ import {
 import type { RuntimeContextError } from "../runtime-errors.ts"
 import {
   RuntimeEventAppendAndGet,
-  RuntimeIngressDeliveryClaimAndComplete,
-  RuntimeIngressAppenderLayer,
-  RuntimeIngressDeliveryTrackerLayer,
-  RuntimeIngressInputStream,
   RuntimeLogLineAppendAndGet,
   RuntimeOutputJournalLayer,
+} from "../agent-event-pipeline/authorities/runtime-output-journal.ts"
+import {
+  RuntimeIngressAppenderLayer,
+  RuntimeIngressInputStream,
+} from "../agent-event-pipeline/authorities/runtime-ingress-appender.ts"
+import {
+  RuntimeIngressDeliveryClaimAndComplete,
+  RuntimeIngressDeliveryTrackerLayer,
   runtimeIngressSubscriberId,
-} from "../authorities/index.ts"
-import { runCodecRuntimeEventPipeline } from "../pipeline/index.ts"
+} from "../agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
+import { runCodecRuntimeEventPipeline } from "../agent-event-pipeline/session-runtime.ts"
 import {
   commandForContext,
   localProcessStdinDelivery,
   streamSandboxProcess,
   type ProcessOutputChunk,
   type SandboxProviderError,
-} from "../sources/sandbox/index.ts"
+} from "../agent-event-pipeline/sources/sandbox/index.ts"
 import { RuntimeHostConfig } from "./config.ts"
 import { RuntimeCodecToolLoweringLayer } from "./runtime-substrate.ts"
 

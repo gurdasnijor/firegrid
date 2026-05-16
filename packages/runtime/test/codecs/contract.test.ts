@@ -1,7 +1,7 @@
 import { Effect, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import * as AgentCodecs from "../../src/codecs/index.ts"
-import { AgentSession } from "../../src/codecs/index.ts"
+import * as AgentCodecs from "../../src/agent-event-pipeline/codecs/index.ts"
+import { AgentSession } from "../../src/agent-event-pipeline/codecs/index.ts"
 
 describe("AgentSession", () => {
   it("firegrid-runtime-boundary-reconciliation.CODEC_SESSION.1 firegrid-runtime-boundary-reconciliation.CODEC_SESSION.2 is provided as an Effect Context.Tag service", async () => {

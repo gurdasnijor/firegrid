@@ -4,7 +4,7 @@ import { Effect, Match } from "effect"
 import {
   acpStopReasonToFinishReason as sharedAcpStopReasonToFinishReason,
   acpUserPromptPartToContentBlock,
-} from "../../codecs/acp/mapping.ts"
+} from "../../agent-event-pipeline/codecs/acp/mapping.ts"
 import { AdapterProtocolError, AdapterUnsupportedFeature } from "../errors.ts"
 
 // firegrid-effect-ai-native-agents.ACP_ADAPTER.4

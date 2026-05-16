@@ -467,6 +467,7 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
+        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
         - "/packages/runtime/src/waits/internal/durable-wait-store.ts"
     message: |
       Runtime-owned DurableTable writes must go through the owning runtime
@@ -489,8 +490,8 @@ rules:
         functions from host/pipeline composition.
     paths:
       include:
-        - "/packages/runtime/src/subscribers/**/*.ts"
-        - "/packages/runtime/src/transforms/**/*.ts"
+        - "/packages/runtime/src/agent-event-pipeline/subscribers/**/*.ts"
+        - "/packages/runtime/src/agent-event-pipeline/transforms/**/*.ts"
         - "/semgrep-tests/**/*.ts"
       exclude:
         - "**/*.test.ts"
@@ -626,7 +627,7 @@ rules:
         owning authority module. Layer.succeed/effect elsewhere creates a hidden
         second writer/reader authority.
       fix-hint: |
-        Move the provider to packages/runtime/src/authorities/** or compose the
+        Move the provider to packages/runtime/src/authorities/** or packages/runtime/src/agent-event-pipeline/authorities/** or compose the
         existing authority provider layer.
     paths:
       include:
@@ -638,6 +639,7 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
+        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
     message: |
       Durable capability tag provided outside its authority module. Use the
       owning provider layer instead.
@@ -659,8 +661,8 @@ rules:
         Stream parameter for pure transform code.
     paths:
       include:
-        - "/packages/runtime/src/subscribers/**/*.ts"
-        - "/packages/runtime/src/transforms/**/*.ts"
+        - "/packages/runtime/src/agent-event-pipeline/subscribers/**/*.ts"
+        - "/packages/runtime/src/agent-event-pipeline/transforms/**/*.ts"
         - "/semgrep-tests/**/*.ts"
       exclude:
         - "**/*.test.ts"
@@ -696,6 +698,7 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
+        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
         - "/packages/runtime/src/host/index.ts"
         - "/packages/runtime/src/host/observation-sources.ts"
         - "/packages/runtime/src/agent-tools/mcp-host.ts"
@@ -817,6 +820,7 @@ rules:
         - "**/*.test.mts"
         - "**/__tests__/**"
         - "/packages/runtime/src/authorities/**"
+        - "/packages/runtime/src/agent-event-pipeline/authorities/**"
         - "/packages/runtime/src/waits/internal/durable-wait-store.ts"
         - "/packages/runtime/src/waits/internal/table.ts"
     message: |

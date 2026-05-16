@@ -21,12 +21,12 @@ import {
   RuntimeIngressAppenderLayer,
   RuntimeIngressInputStream,
   RuntimeIngressInputStreamLayer,
-} from "../../src/authorities/runtime-ingress-appender.ts"
+} from "../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
 import {
   RuntimeIngressDeliveries,
   RuntimeIngressDeliveryClaimAndComplete,
   RuntimeIngressDeliveryTrackerLayer,
-} from "../../src/authorities/runtime-ingress-delivery-tracker.ts"
+} from "../../src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
 import {
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputRowSink,
@@ -36,7 +36,7 @@ import {
   RuntimeOutputEvents,
   RuntimeOutputJournalLayer,
   RuntimeOutputLogs,
-} from "../../src/authorities/runtime-output-journal.ts"
+} from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
 import { RuntimeAuthoritySourceNames } from "../../src/authorities/source-names.ts"
 
 const runtimeOutputEventsSources = [

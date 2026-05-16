@@ -9,9 +9,11 @@ import {
   mapRuntimeContextError,
 } from "../runtime-errors.ts"
 import {
-  RuntimeOutputJournalLayer,
   RuntimeRunAppendAndGet,
 } from "../authorities/index.ts"
+import {
+  RuntimeOutputJournalLayer,
+} from "../agent-event-pipeline/authorities/runtime-output-journal.ts"
 import { runRuntimeContext } from "./raw-process-runtime.ts"
 import {
   readRuntimeContext,

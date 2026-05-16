@@ -1,10 +1,16 @@
 import { Context, Layer } from "effect"
 import {
   RuntimeControlPlaneRecorderLive,
-  RuntimeIngressDeliveryTrackerLayer,
-  RuntimeIngressInputStreamLayer,
-  RuntimeOutputJournalLayer,
 } from "../authorities/index.ts"
+import {
+  RuntimeIngressDeliveryTrackerLayer,
+} from "../agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
+import {
+  RuntimeIngressInputStreamLayer,
+} from "../agent-event-pipeline/authorities/runtime-ingress-appender.ts"
+import {
+  RuntimeOutputJournalLayer,
+} from "../agent-event-pipeline/authorities/runtime-output-journal.ts"
 import { RuntimeSourceRegistrationsLive } from "../source-registration/index.ts"
 import { HostOwnedDurableToolsWaitForLive } from "./host-owned-durable-tools.ts"
 

@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   encodeRuntimeAgentOutputEnvelope,
   type AgentOutputEvent,
-} from "../../src/events/index.ts"
+} from "../../src/agent-event-pipeline/events/index.ts"
 import { WaitFor, type WaitForOptions } from "../../src/waits/index.ts"
 import {
   FiregridRuntimeHostWithWorkflowLive,

@@ -74,7 +74,7 @@ import {
 import {
   type AgentInputEvent,
   type AgentOutputEvent,
-} from "../events/index.ts"
+} from "../agent-event-pipeline/events/index.ts"
 import {
   WaitFor,
   type DurableWaitCompletionRowLookup,

@@ -26,7 +26,7 @@ import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsW
 import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
-} from "../sources/sandbox/index.ts"
+} from "../agent-event-pipeline/sources/sandbox/index.ts"
 import { ScheduledInputWorkflowLayer } from "../agent-tools/scheduled-input-workflow.ts"
 import {
   RuntimeControlPlaneRecorderLive,

@@ -27,11 +27,11 @@ import {
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Option, Schema, Stream } from "effect"
+import { RuntimeIngressInputStream } from "../../authorities/runtime-ingress-appender.ts"
 import {
   RuntimeIngressDeliveryClaimAndComplete,
-  RuntimeIngressInputStream,
   type RuntimeIngressDeliveryClaimAndCompleteService,
-} from "../../authorities/index.ts"
+} from "../../authorities/runtime-ingress-delivery-tracker.ts"
 import type { RuntimeSubscriberId } from "../../events/index.ts"
 import { sequencedRuntimeIngressRowsForContext } from "../../transforms/ingress-to-agent-input.ts"
 

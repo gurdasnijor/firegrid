@@ -16,11 +16,13 @@ import { AgentToolHost } from "../../src/agent-tools/tool-host.ts"
 import { toolExecutionFailed } from "../../src/agent-tools/tool-error.ts"
 import {
   RuntimeIngressAppenderLayer,
+} from "../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
+import {
   RuntimeEventAppendAndGet,
   RuntimeOutputJournalLayer,
-} from "../../src/authorities/index.ts"
-import { encodeRuntimeAgentOutputEnvelope } from "../../src/events/index.ts"
-import { runToolRouter } from "../../src/subscribers/tool-router.ts"
+} from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
+import { encodeRuntimeAgentOutputEnvelope } from "../../src/agent-event-pipeline/events/index.ts"
+import { runToolRouter } from "../../src/agent-event-pipeline/subscribers/tool-router.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

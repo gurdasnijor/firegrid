@@ -8,7 +8,7 @@ import {
   Stream,
 } from "effect"
 import { describe, expect, it } from "vitest"
-import type { AgentByteStream } from "../../../src/sources/byte-stream.ts"
+import type { AgentByteStream } from "../../../src/agent-event-pipeline/sources/byte-stream.ts"
 import {
   AdapterUnsupportedFeature,
   AgentAdapter,
