@@ -1,6 +1,6 @@
 import * as acp from "@agentclientprotocol/sdk"
-import { Prompt, Response } from "@effect/ai"
-import { Chunk, Deferred, Effect, Fiber, Stream } from "effect"
+import { Prompt, Response, Tool, Toolkit } from "@effect/ai"
+import { Chunk, Deferred, Effect, Fiber, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import type {
   AgentOutputEvent,
@@ -271,6 +271,18 @@ const openSession = (bytes: AgentByteStream, options: AgentCodecOpenOptions = {}
 const userMessage = (text: string): Prompt.UserMessage =>
   Prompt.userMessage({ content: [Prompt.textPart({ text })] })
 
+const EchoTool = Tool.make("echo", {
+  description: "Echo text.",
+})
+  .setParameters(Schema.Struct({
+    text: Schema.String,
+  }))
+  .setSuccess(Schema.Struct({
+    text: Schema.String,
+  }))
+
+const EchoToolkit = Toolkit.make(EchoTool)
+
 const collectOutputs = (
   session: AgentSession,
   count: number,
@@ -319,13 +331,14 @@ describe("AcpCodec", () => {
     expect(agent.newSessionRequests[0]?.mcpServers).toEqual([])
   })
 
-  it("firegrid-local-mcp-run.LAUNCH_CONFIG.1 lowers Firegrid-neutral MCP declarations to ACP newSession mcpServers", async () => {
+  it("firegrid-local-mcp-run.LAUNCH_CONFIG.1 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9 lowers MCP declarations and ignores toolkit for ACP newSession", async () => {
     const agent = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
           const harness = yield* makeHarness
           const agent = startAgent(harness, connection => new FixtureAgent(connection))
           yield* openSession(harness.bytes, {
+            toolkit: EchoToolkit,
             session: {
               cwd: "/tmp/firegrid-acp-codec-cwd",
               mcpServers: [
@@ -442,23 +455,27 @@ describe("AcpCodec", () => {
     }])
   })
 
-  it("maps SDK requestPermission to PermissionRequest and resolves PermissionResponse", async () => {
-    const events = await Effect.runPromise(
+  it("firegrid-runtime-agent-event-pipeline.STAGES.3-10 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3 maps requestPermission to a generated live-continuation id and rejects stale responses", async () => {
+    const result = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
           const harness = yield* makeHarness
           startAgent(harness, connection => new PermissionFixtureAgent(connection))
           const session = yield* openSession(harness.bytes)
+          let permissionRequestId = ""
           const fiber = yield* session.outputs.pipe(
             Stream.take(5),
-            Stream.tap(event =>
-              event._tag === "PermissionRequest"
-                ? session.send({
-                  _tag: "PermissionResponse",
-                  permissionRequestId: event.permissionRequestId,
-                  decision: { _tag: "Allow", optionId: "allow" },
-                })
-                : Effect.void,
+            Stream.tap(event => {
+              if (event._tag !== "PermissionRequest") {
+                return Effect.void
+              }
+              permissionRequestId = event.permissionRequestId
+              return session.send({
+                _tag: "PermissionResponse",
+                permissionRequestId: event.permissionRequestId,
+                decision: { _tag: "Allow", optionId: "allow" },
+              })
+            },
             ),
             Stream.runCollect,
             Effect.map(Chunk.toReadonlyArray),
@@ -469,12 +486,18 @@ describe("AcpCodec", () => {
             correlationId: "prompt-2",
             prompt: userMessage("edit config"),
           })
-          return yield* Fiber.join(fiber)
+          const events = yield* Fiber.join(fiber)
+          const staleResponse = yield* session.send({
+            _tag: "PermissionResponse",
+            permissionRequestId,
+            decision: { _tag: "Deny" },
+          }).pipe(Effect.either)
+          return { events, permissionRequestId, staleResponse }
         }),
       ),
     )
 
-    expect(events[1]).toEqual({
+    expect(result.events[1]).toEqual({
       _tag: "ToolUse",
       part: Prompt.toolCallPart({
         id: "tool-permission",
@@ -483,9 +506,9 @@ describe("AcpCodec", () => {
         providerExecuted: true,
       }),
     })
-    expect(events[2]).toEqual({
+    expect(result.events[2]).toEqual({
       _tag: "PermissionRequest",
-      permissionRequestId: "permission-1",
+      permissionRequestId: result.permissionRequestId,
       toolUseId: "tool-permission",
       options: [
         {
@@ -500,17 +523,23 @@ describe("AcpCodec", () => {
         },
       ],
     })
-    expect(events[3]?._tag).toBe("TextChunk")
-    if (events[3]?._tag === "TextChunk") {
-      expect(events[3].part.id).toMatch(/^id_/)
-      expect(events[3].part.id).not.toBe("session-1")
-      expect(events[3].part.delta).toBe("selected")
+    expect(result.permissionRequestId).toMatch(/^permission_id_[0-9A-Za-z]{16}$/)
+    expect(result.permissionRequestId).not.toBe("permission-1")
+    expect(result.events[3]?._tag).toBe("TextChunk")
+    if (result.events[3]?._tag === "TextChunk") {
+      expect(result.events[3].part.id).toMatch(/^id_/)
+      expect(result.events[3].part.id).not.toBe("session-1")
+      expect(result.events[3].part.delta).toBe("selected")
     }
-    expect(events[4]).toEqual({
+    expect(result.events[4]).toEqual({
       _tag: "TurnComplete",
       finishReason: "stop",
       messageId: "prompt-2",
     })
+    expect(result.staleResponse._tag).toBe("Left")
+    if (result.staleResponse._tag === "Left") {
+      expect(result.staleResponse.left.message).toContain("unknown ACP permission request")
+    }
   })
 
   it("sends SDK session/cancel and maps cancelled prompt completion", async () => {
@@ -540,7 +569,7 @@ describe("AcpCodec", () => {
     })
   })
 
-  it("resolves pending ACP permission requests as cancelled before session/cancel", async () => {
+  it("firegrid-runtime-agent-event-pipeline.STAGES.3-10 resolves live ACP permission continuations as cancelled before session/cancel", async () => {
     const events = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
@@ -577,9 +606,15 @@ describe("AcpCodec", () => {
         providerExecuted: true,
       }),
     })
-    expect(events[2]).toEqual({
+    const permissionEvent = events[2]
+    expect(permissionEvent?._tag).toBe("PermissionRequest")
+    if (permissionEvent?._tag !== "PermissionRequest") {
+      throw new Error("expected PermissionRequest")
+    }
+    expect(permissionEvent.permissionRequestId).toMatch(/^permission_id_[0-9A-Za-z]{16}$/)
+    expect(permissionEvent).toEqual({
       _tag: "PermissionRequest",
-      permissionRequestId: "permission-1",
+      permissionRequestId: permissionEvent.permissionRequestId,
       toolUseId: "tool-permission",
       options: [
         {

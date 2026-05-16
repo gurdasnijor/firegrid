@@ -409,11 +409,14 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
 
     expect(result).toMatchObject({ contextId, exitCode: 0 })
     const events = await Effect.runPromise(queryAgentEvents({ namespace, hostId, contextId }))
-    expect(events).toContainEqual(expect.objectContaining({
-      _tag: "PermissionRequest",
-      permissionRequestId: "permission-1",
-      toolUseId: "tool-permission",
-    }))
+    const permissionEvent = events.find(event =>
+      event._tag === "PermissionRequest" && event.toolUseId === "tool-permission",
+    )
+    expect(permissionEvent).toBeDefined()
+    if (permissionEvent === undefined || permissionEvent._tag !== "PermissionRequest") {
+      throw new Error("expected PermissionRequest")
+    }
+    expect(permissionEvent.permissionRequestId).toMatch(/^permission_id_[0-9A-Za-z]{16}$/)
     const selectedChunk = events.find(event =>
       event._tag === "TextChunk" && event.part.delta === "selected",
     )
