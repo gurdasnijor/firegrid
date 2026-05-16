@@ -1,5 +1,5 @@
 /**
- * Subscription router — a scoped runtime worker that resolves `wait_for`
+ * Wait router — a scoped subscriber driver that resolves `wait_for`
  * deferreds when source-collection rows match the wait's trigger.
  *
  * Implements:
@@ -237,11 +237,28 @@ const startRouter = Effect.gen(function*() {
   )
 })
 
+type WaitRouterRequirements =
+  | DurableWaitCompletionRowLookup
+  | DurableWaitCompletionRows
+  | DurableWaitCompletionRowUpsert
+  | DurableWaitRowLookup
+  | DurableWaitRows
+  | DurableWaitRowUpsert
+  | SourceCollections
+  | WorkflowEngine.WorkflowEngine
+
 /**
+ * firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.3
+ * firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.6
+ * firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.10
  * firegrid-durable-tools.SUBSCRIPTION.7
  * firegrid-durable-tools.RUNTIME_BOUNDARY.4
  *
- * Scoped runtime worker. Acquires `WorkflowEngine`, durable wait capabilities,
- * and `SourceCollections` and forks the router stream into the host scope.
+ * Scoped subscriber driver. It provides no public service; the `never` output
+ * channel makes the wait-router role visible in the Effect type.
  */
-export const SubscriptionRouterLive = Layer.scopedDiscard(startRouter)
+export const WaitRouterLive: Layer.Layer<
+  never,
+  never,
+  WaitRouterRequirements
+> = Layer.scopedDiscard(startRouter)
