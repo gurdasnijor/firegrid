@@ -40,7 +40,7 @@ return Match.value(outcome).pipe(
 ```
 
 `wait_for` writes a durable wait row, suspends the workflow on a
-`DurableDeferred`, and resumes when the subscription router observes a
+`DurableDeferred`, and resumes when the wait router observes a
 matching row in your source collection. With `timeoutMs`, the suspension
 races against `DurableClock.sleep`.
 
@@ -89,7 +89,7 @@ races against `DurableClock.sleep`.
         │ (raw payload)                    │ (includeInitialState: true)
         │                                  ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Subscription router (DurableToolsWaitForLive scope)            │
+│  Wait router (DurableToolsWaitForLive scope)                    │
 │  ─────────────────                                              │
 │   ┌──── reconcileCompletions on startup ────┐                   │
 │   │ idempotent deferredDone for orphans     │                   │
@@ -399,7 +399,7 @@ you want to predicate-test rows yourself in product code.
 ## Crash semantics
 
 The **wait completion row is authoritative.** On scope acquisition, the
-subscription router runs a reconciler pass over `completions` rows:
+wait router runs a reconciler pass over `completions` rows:
 
 1. If a `match` completion exists for a wait that's still in `"active"`
    status, the reconciler flips it to `"completed"` and calls
@@ -485,14 +485,14 @@ durable-tools/
     wait-for.ts                # WaitFor.match: persist wait, await
                                # DurableDeferred (optionally raced against
                                # DurableClock.sleep), call-site decode
-    subscription-router.ts     # scoped worker forked by the Layer
+    wait-router.ts             # scoped subscriber driver forked by the Layer
     reconcile.ts               # crash-recovery loop run at acquire
 ```
 
 Module dependency tree (within the package):
 
 ```
-DurableToolsWaitFor ─── subscription-router ─── reconcile
+DurableToolsWaitFor ─── wait-router ─── reconcile
                               │                    │
                               ├── source-collections │
                               └── table ────────────┘
@@ -628,7 +628,7 @@ same shape:
    doesn't fit the "subscribe → completeMatch" loop (e.g., a timer that
    should fire on a deadline), prefer extending `reconcile.ts` and adding
    a separate scoped worker rather than overloading
-   `subscription-router.ts`.
+   `wait-router.ts`.
 5. **Avoid pitfalls from §Gaps**: don't add fenced/CAS to `DurableTable`,
    don't reintroduce deleted operator types (`DurableConsumer`,
    `ConsumerSource`, `ConsumerCheckpointStore`, `DurableProjection`),
