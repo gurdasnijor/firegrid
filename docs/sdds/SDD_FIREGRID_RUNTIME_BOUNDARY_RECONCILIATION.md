@@ -217,8 +217,8 @@ packages/runtime/src/
 The exact folder names can change, but the boundary is fixed:
 
 - agent event-pipeline namespace owns ingress/output event materialization,
-  protocol codecs, source acquisition for agent sessions, pure transforms, and
-  pipeline subscribers;
+  protocol session providers, source acquisition for agent sessions, pure
+  transforms, and pipeline subscribers;
 - runtime control-plane namespace owns context/run lifecycle capabilities;
 - host namespace composes live host topology and command entrypoints;
 - waits, workflow-engine, tools, adapters, and verified ingest are adjacent
@@ -294,14 +294,49 @@ capability tags. They do not accept runtime-owned `DurableTable` facades and
 they do not consume dynamic `SourceCollectionHandle`s as their static read
 surface.
 
-### Protocol Codec
+### Protocol Session Provider
 
-Translates a concrete wire protocol into normalized `AgentInputEvent` /
-`AgentOutputEvent` values and reports per-session protocol capabilities such as
-`toolUseMode`.
+Provides a scoped protocol session that translates a concrete wire protocol
+into normalized `AgentInputEvent` / `AgentOutputEvent` values and reports
+per-session protocol capabilities such as `toolUseMode`.
 
 Codec modules do not write durable rows directly and do not own runtime
 subscriber lifecycle.
+
+Effect-native target:
+
+```ts
+export class AgentSession extends Context.Tag(
+  "@firegrid/runtime/AgentSession",
+)<AgentSession, {
+  readonly meta: AgentCodecMeta
+  readonly toolUseMode: AgentToolUseMode
+  readonly send: (event: AgentInputEvent) => Effect.Effect<void, AgentCodecError>
+  readonly outputs: Stream.Stream<AgentOutputEvent, AgentCodecError>
+}>() {}
+
+export const AcpSessionLive = (
+  bytes: AgentByteStream,
+  options: AcpSessionOptions,
+): Layer.Layer<
+  AgentSession,
+  AgentCodecError,
+  Scope.Scope | IdGenerator.IdGenerator
+> => /* scoped ACP session */
+```
+
+The active runtime pipeline should require `AgentSession` rather than accept an
+object with an opaque `open(...)` method. Stateful protocols may own live RPC
+connections, negotiation, and in-memory continuation maps inside their scoped
+session. That state is protocol-session state, not durable runtime authority;
+durable evidence still crosses the boundary only as `AgentOutputEvent` rows
+and `AgentInputEvent` delivery.
+
+Codec-specific options belong on the concrete session-layer constructor. Do
+not add a shared options field unless every codec can state what it means.
+Metadata may remain as a small `AgentCodecMeta` value carried by the session
+for logging/tests, but dynamic codec registries are out of scope until the
+runtime actually needs plugin-style codec discovery.
 
 ### Host Composition
 
@@ -387,9 +422,9 @@ This inventory is the review checklist for the post-`#250` tree.
 | `events/` | Normalized runtime event contracts | Target after compatibility re-exports drop. | Busy event/protocol barrel. | Yes, with `codecs/` |
 | `transforms/` | Pure stream operators | Target shape. Plain functions over `Stream`; no transform framework. | Imports runtime errors from `host/`. | Yes, via `host/` |
 | `subscribers/` | Runtime-host subscriber drivers | Target for agent event-pipeline subscribers. | Imports runtime errors from `host/`. | Yes, via `host/` |
-| `pipeline/` | Per-runtime event-loop composition | Composition file, not a stage; to be inlined as `agent-event-pipeline/session-runtime.ts` in PR 6. | Pulls from many runtime folders. | Yes, with `host/` |
+| `pipeline/` | Per-runtime event-loop composition | Composition file, not a stage; to be inlined as `agent-event-pipeline/session-runtime.ts` in the namespace PR. | Pulls from many runtime folders. | Yes, with `host/` |
 | `sources/` | Live process/resource acquisition | Mostly target; env policy leaks to app consumers. | Imports runtime errors from `host/`. | Yes, via `host/` |
-| `codecs/` | Protocol wire-format normalization | Target shape; event barrel compatibility should drop. | Imported by `events/index.ts`. | Yes, with `events/` |
+| `codecs/` | Scoped protocol session providers and wire normalization | Target after Effect-native session layer refactor; event barrel compatibility should drop. | Imported by `events/index.ts`. | Yes, with `events/` |
 | `host/` | Host topology and command entrypoints | Mixed; source of most cycles. | Owns shared runtime errors today. | Yes |
 | `waits/` | Durable coordination operator | Mixed; wait row authority belongs with wait bounded context. | Owns row schema/source registry/router. | No |
 | `agent-tools/` | Runtime tool schemas, MCP exposure, and lowering | Mixed; MCP host couples to host authority. | Host/tool composition overlap. | Yes, via `host/` |
@@ -470,7 +505,8 @@ Role: per-runtime source + codec + transform + subscriber composition.
 Target:
 
 - own the concrete runtime event loop for non-raw codec sessions;
-- open codec sessions, fork runtime subscribers, journal output rows, and
+- provide the selected `AgentSession` layer, fork runtime subscribers, journal
+  output rows, and
   return terminal evidence;
 - keep durable writes routed through capability tags;
 - avoid casts that hide unresolved layer requirements.
@@ -488,12 +524,20 @@ Target:
 
 ### `codecs/`
 
-Role: protocol wire format normalization.
+Role: scoped protocol session providers and wire format normalization.
 
 Target:
 
-- ACP, stdio-jsonl, and future protocol sessions;
+- ACP, stdio-jsonl, and future protocol sessions are `Layer` constructors that
+  provide `AgentSession`;
 - per-session capability mode reporting;
+- codec/session metadata is carried by `AgentSession`, not by an active
+  object-with-methods codec value;
+- codec-specific options are explicit at each session-layer constructor;
+- dependencies such as id generation enter through the Effect requirement
+  channel;
+- stateful protocols may keep live RPC connection and continuation state inside
+  the scoped session;
 - no durable row writes;
 - no tool execution assumptions that contradict protocol directionality.
 
@@ -786,7 +830,35 @@ Target extraction:
 PR 1 is a prerequisite. Extraction is cleaner once host no longer owns shared
 runtime error types.
 
-### PR 3: Source Registration Ownership
+### PR 3: Codec Sessions As Effect Layers
+
+Goal: replace the hand-rolled `AgentCodec` object/open-method contract with
+Effect-native scoped session providers.
+
+The target shape is:
+
+- `AgentSession` is a `Context.Tag` service containing `meta`, `toolUseMode`,
+  `send`, and `outputs`;
+- ACP and stdio-jsonl export concrete `*SessionLive(bytes, options)` layer
+  constructors;
+- the runtime pipeline provides the selected session layer and consumes
+  `AgentSession` from the requirement channel;
+- protocol-specific options replace the shared `AgentCodecOpenOptions` bag
+  where a field is not meaningful for every codec;
+- ACP permission/callback identifiers are allocated through an explicit
+  dependency such as `IdGenerator`, not through session-local counters that
+  accidentally become durable identifiers.
+
+This PR should also update `codecs/README.md` so "codec" means "provider of a
+scoped protocol session." Stateful protocols such as ACP may manage live RPC
+connections and in-memory continuation maps inside the scoped session, but
+that state is not durable and does not survive session restart.
+
+Do not add a codec registry in this PR. The runtime currently selects one
+session layer from the runtime context protocol. A registry becomes justified
+only when codec discovery is dynamic or externally extensible.
+
+### PR 4: Source Registration Ownership
 
 Goal: eliminate `host/observation-sources.ts` as standalone glue.
 
@@ -801,7 +873,7 @@ registration is the bridge from static stream capabilities to `wait_for`
 lookup; it should not become a broader dependency from authorities to wait
 semantics.
 
-### PR 4: Wait Authority Comes Home
+### PR 5: Wait Authority Comes Home
 
 Goal: move the wait row authority next to the wait row schema.
 
@@ -819,7 +891,7 @@ Target shape:
 - `WaitCompletionRow` upsert;
 - `WaitCompletionRow` stream.
 
-### PR 5: Wait Router Subscriber-Driver Shape
+### PR 6: Wait Router Subscriber-Driver Shape
 
 Goal: name the wait router as a subscriber driver without moving it into the
 agent event-pipeline subscriber folder.
@@ -829,7 +901,7 @@ or `waits/internal/wait-router.ts`, and make the driver shape explicit as a
 scoped `Layer<never, E, R>` that provides no public service. Do not move timeout
 ownership into the router in this PR.
 
-### PR 6: Agent Event-Pipeline Namespace
+### PR 7: Agent Event-Pipeline Namespace
 
 Goal: mechanically namespace clean event-pipeline pieces away from host,
 workflow-engine, waits, tools, adapters, and verified ingest.
@@ -854,7 +926,7 @@ agent-event-pipeline/
 `pipeline/` is removed as a stage-looking folder. Its current composition
 responsibility becomes `agent-event-pipeline/session-runtime.ts`.
 
-### PR 7: Factory Consumer Audit
+### PR 8: Factory Consumer Audit
 
 Goal: narrow `apps/factory` to public client and runtime host/config surfaces.
 
@@ -863,7 +935,7 @@ observations should come from the client/session surface when possible, and env
 policy should be available through a runtime host/config surface rather than
 sandbox internals.
 
-### PR 8: Durable Wait Extraction SDD
+### PR 9: Durable Wait Extraction SDD
 
 Decide which `waits/` internals belong in `packages/effect-durable-operators`.
 Require a package-boundary SDD before any code moves.
@@ -872,7 +944,7 @@ Draft this SDD when durable wait coordination is needed outside Firegrid
 runtime vocabulary, for example by another workflow product that can consume
 the same wait rows, completion rows, timeout, and source-matching primitives.
 
-### PR 9: Public Surface Cleanup
+### PR 10: Public Surface Cleanup
 
 Enforce final exports after the layout reshuffles. Use dependency-cruiser for
 directory/import-boundary rules and semgrep for code-pattern rules. The
@@ -883,7 +955,7 @@ dependency-cruiser rules should fail on:
 - direct imports of `runtime-errors.ts` from outside `@firegrid/runtime`;
 - top-level runtime folders without a documented role in this SDD.
 
-### PR 10: Docs Consolidation
+### PR 11: Docs Consolidation
 
 Move stable architecture guidance into `packages/runtime/ARCHITECTURE.md` once
 the post-`#250` refactors land. Keep SDDs as decision records, not the only
@@ -902,7 +974,7 @@ Every PR in the follow-up plan must satisfy:
 3. **No new Firegrid abstractions.** Effect's `Context.Tag`, `Layer`,
    `Queue.Enqueue`, `Stream`, `Sink`, and narrow `Effect` services cover the
    roles this SDD defines.
-4. **Apps build unchanged until the app audit.** PRs 1 through 6 are
+4. **Apps build unchanged until the app audit.** PRs 1 through 7 are
    runtime-internal. Factory's surface audit is the first PR expected to touch
    downstream product imports.
 5. **Provider uniqueness is tested against real Effect values.** Keep
