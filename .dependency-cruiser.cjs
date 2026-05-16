@@ -15,6 +15,7 @@ module.exports = {
     {
       // firegrid-runtime-boundary-reconciliation.CYCLE_BREAKING.5
       // firegrid-runtime-boundary-reconciliation.CYCLE_BREAKING.7
+      // firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.4
       name: "runtime-src-no-folder-cycles",
       severity: "error",
       scope: "folder",
@@ -22,6 +23,36 @@ module.exports = {
         "packages/runtime/src must stay free of folder-level cycles; this rule is hard-zero and has no baseline or carveout.",
       from: { path: "^packages/runtime/src" },
       to: { circular: true },
+    },
+    {
+      // firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.4
+      // firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.6
+      name: "runtime-no-host-internal-imports-outside-host",
+      severity: "error",
+      comment:
+        "Runtime host internals must be consumed through the host barrel or @firegrid/runtime/runtime-host public subpath, not direct file imports.",
+      from: {
+        path: "^(packages|apps)/.*/src",
+        pathNot: "^packages/runtime/src/host/",
+      },
+      to: {
+        path: "^packages/runtime/src/host/(?!index\\.ts$)",
+      },
+    },
+    {
+      // firegrid-runtime-boundary-reconciliation.CYCLE_BREAKING.2
+      // firegrid-runtime-boundary-reconciliation.PUBLIC_SURFACE.4
+      name: "runtime-errors-internal-only",
+      severity: "error",
+      comment:
+        "runtime-errors.ts is runtime-internal support. External packages should use @firegrid/runtime public exports, not the source file.",
+      from: {
+        path: "^(packages|apps)/.*/src",
+        pathNot: "^packages/runtime/src/",
+      },
+      to: {
+        path: "^packages/runtime/src/runtime-errors\\.ts$",
+      },
     },
     {
       // firegrid-remediation-hardening.STATIC_QUALITY.5

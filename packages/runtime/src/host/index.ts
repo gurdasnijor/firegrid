@@ -34,6 +34,17 @@ export {
   type RuntimeEnvResolverPolicyValue,
 } from "../agent-event-pipeline/sources/sandbox/secrets.ts"
 export {
+  RunAuthorizedBindingSchema,
+  RunConfigSchema,
+  decodeRunConfig,
+  firegridRunCreatedBy,
+  runConfigRequiresInput,
+  runConfigToIngressRequest,
+  runConfigToRuntimeContextIntent,
+  type RunAuthorizedBinding,
+  type RunConfig,
+} from "./sync-run.ts"
+export {
   registerRuntimeHostAppSource,
   RuntimeHostAppSourceRegistrationsLive,
   type RuntimeHostAppSourceRegistration,
