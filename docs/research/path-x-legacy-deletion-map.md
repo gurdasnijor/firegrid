@@ -246,6 +246,94 @@ survivors, remove dead re-export lines in `host-substrate.ts` +
 (`RUNTIME_CAPABILITY_PROJECTIONS` + `SEQUENCING.12` superseded), run
 dep/dead/docs/specs/semgrep.
 
+## Native Supervisor Cutover — Prioritized Delete Blockers
+
+Coordinator-priority view of the five core deletions. **Headline: none
+of the five delete targets is product public API. Every consumer is old
+internal substrate mechanics.** The only adjacent *kept* public/seam
+surfaces are `appendRuntimeIngress` (host-sdk public, behind
+`session.prompt`), `RuntimeToolUseExecutor` (host-substrate seam,
+host-sdk provides Live, native loop already uses it), and the
+**new** `RuntimeContextWorkflowSession` seam the cutover must implement
+— that service *is* the native supervisor and the replacement owner for
+all five.
+
+Priority order = unblock sequence.
+
+### P0 — `RuntimeContextWorkflowSession` Live impl (the supervisor itself)
+
+Not a deletion; the gating prerequisite. Until it exists,
+`RuntimeContextWorkflowNativeLayer` is dead and nothing below can be
+deleted. Owner of the deleted behavior:
+
+- `start(context, attempt)` — owns codec-session + sandbox process
+  lifecycle (replaces `runRuntimeContext` + `runCodecRuntimeEventPipeline`
+  process/codec setup + `runStderrJournal`), writes output rows the
+  side-channel/`RuntimeAgentOutputEvents` observation reads.
+- `send(context, attempt, event)` — owns input application into the
+  codec (replaces `runIngressDelivery`'s "deliver claimed input to
+  `session.send`"); invoked by the reactive loop's `sendSessionActivity`
+  for both prompt input and tool results.
+
+### P1 — `runToolRouter` / `tool-router.ts` — DELETE, no blocker
+
+- Consumer classification: `session-runtime.ts:154` (old internal
+  mechanics, deleted in P3); `test/subscribers/tool-router.test.ts`
+  (internal test). **Zero public API consumers.**
+- Replacement owner: `runtime-context-workflow-core.ts`
+  `handleAgentOutput` ToolUse arm → `runToolUseActivity`
+  (`RuntimeToolUseExecutor` seam, **already wired in the native body**)
+  → `sendSessionActivity`. Replacement already exists; this is the
+  lowest-risk delete once P0/P3 land.
+
+### P2 — `runIngressDelivery` / `ingress-delivery.ts` — DELETE
+
+- Consumer classification: `session-runtime.ts:148` (old internal
+  mechanics, deleted P3); `test` only. **Zero public API consumers.**
+- Replacement owner: `RuntimeContextWorkflowSession.send` (P0). Input
+  no longer arrives via `RuntimeIngressTable` claim/complete; it arrives
+  as a content-derived `DurableDeferred` completion that the reactive
+  loop turns into a `sendSessionActivity`. The public entry that feeds
+  it — `appendRuntimeIngress` — is **kept and rewritten** (#7), so the
+  cross-host routing public contract is preserved while the internal
+  delivery subscriber is deleted.
+
+### P3 — `runCodecRuntimeEventPipeline` / `session-runtime.ts` — DELETE
+
+- Consumer classification: `raw-process-runtime.ts:172` (internal,
+  deleted P4); `runtime/host-substrate.ts:33` re-export → root barrel.
+  The host-substrate re-export is **internal composition surface
+  consumed only by host-sdk composition**, *not* product public API
+  (browser/client cannot import it; PACKAGE_GRAPH.3). Safe to delete the
+  export line. **Zero product public API consumers.**
+- Replacement owner: `RuntimeContextWorkflowSession.start` (codec
+  session lifecycle) + the reactive loop (output observation + tool
+  dispatch). Blocker: P0.
+
+### P4 — `runRuntimeContext` / `raw-process-runtime.ts` — DELETE
+
+- Consumer classification: `runtime-context-workflow.ts:35` — the
+  **legacy workflow wrapper**, pure old internal mechanics, itself
+  deleted in the cutover (replaced by `RuntimeContextWorkflowNativeLayer`).
+  **Zero public API consumers.**
+- Replacement owner: `RuntimeContextWorkflowSession.start` absorbs the
+  raw sandbox spawn / stdin / output-row construction; the workflow
+  shell is `runWorkflowNativeRuntimeContext`. Blocker: P0; and
+  `layers.ts:204` must swap `RuntimeContextWorkflowLayer` →
+  `RuntimeContextWorkflowNativeLayer` in the same change (the real
+  flip-the-switch step).
+
+### Real public API vs old internal mechanics — net
+
+| Surface | Class | Cutover action |
+| --- | --- | --- |
+| `runRuntimeContext`, `runCodecRuntimeEventPipeline`, `runIngressDelivery`, `runToolRouter`, `runStderrJournal` | old internal mechanics | DELETE |
+| `runtime-context-workflow.ts` legacy `RuntimeContextWorkflowLayer` | old internal mechanics | DELETE (swap to Native) |
+| `host-substrate.ts` re-exports of the above | internal composition surface (host-sdk-only, not product public) | DELETE export lines |
+| `appendRuntimeIngress` / `appendRuntimeIngressToOwner` | **public seam** (host-sdk export, behind `session.prompt`; `agent-tool-host-live` `schedule_me`) | KEEP name, rewrite body to deferred |
+| `RuntimeToolUseExecutor` | **kept seam** (host-sdk provides Live; native loop already consumes) | KEEP unchanged |
+| `RuntimeContextWorkflowSession` | **new internal supervisor seam** | IMPLEMENT (replacement owner for all five) |
+
 ## Blockers / Uncertainty
 
 1. **PR B has no `RuntimeContextWorkflowSession` Live impl.** The
