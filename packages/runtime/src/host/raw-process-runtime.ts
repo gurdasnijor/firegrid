@@ -33,7 +33,6 @@ import {
   type SandboxProviderError,
 } from "../agent-event-pipeline/sources/sandbox/index.ts"
 import { RuntimeHostConfig } from "./config.ts"
-import { RuntimeCodecToolLoweringLayer } from "./runtime-substrate.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.1
 // Raw local-process execution and output-row construction live outside the
@@ -120,14 +119,10 @@ const runCodecRuntimeContext = (options: {
   readonly activityAttempt: number
   readonly protocol: Exclude<RuntimeAgentProtocol, "raw">
 }) =>
-  Effect.gen(function* () {
-    const toolLoweringLayer = yield* RuntimeCodecToolLoweringLayer
-    return yield* runCodecRuntimeEventPipeline({
-      context: options.context,
-      activityAttempt: options.activityAttempt,
-      protocol: options.protocol,
-      toolLoweringLayer,
-    })
+  runCodecRuntimeEventPipeline({
+    context: options.context,
+    activityAttempt: options.activityAttempt,
+    protocol: options.protocol,
   }).pipe(
     Effect.provide(RuntimeOutputJournalLayer),
     Effect.provide(RuntimeIngressAppenderLayer({

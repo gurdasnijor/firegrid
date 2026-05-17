@@ -114,7 +114,6 @@ export const runCodecRuntimeEventPipeline = (options: {
   readonly context: RuntimeContext
   readonly activityAttempt: number
   readonly protocol: Exclude<RuntimeAgentProtocol, "raw">
-  readonly toolLoweringLayer: Layer.Layer<unknown, unknown, unknown>
 }) =>
   Effect.gen(function* () {
     const outputSink = yield* RuntimeAgentOutputRowSink
@@ -157,7 +156,6 @@ export const runCodecRuntimeEventPipeline = (options: {
         activityAttempt: options.activityAttempt,
         toolUseMode: session.toolUseMode,
       }).pipe(
-        Effect.provide(options.toolLoweringLayer),
         Effect.forkScoped,
       )
 
