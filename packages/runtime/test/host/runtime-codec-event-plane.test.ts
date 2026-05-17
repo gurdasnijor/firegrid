@@ -267,6 +267,55 @@ for await (const line of rl) {
     expect(toolResultChunk).toBeDefined()
   }, 15_000)
 
+  it("firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2 preserves schedule_me workflow registration through runtime host tool routing", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `runtime-codec-schedule-me-${crypto.randomUUID()}`
+    const hostId = `host_${crypto.randomUUID()}` as HostId
+    const childCode = `
+import readline from "node:readline"
+const rl = readline.createInterface({ input: process.stdin })
+for await (const line of rl) {
+  const message = JSON.parse(line)
+  if (message.type === "prompt") {
+    console.log(JSON.stringify({
+      type: "tool_use",
+      toolUseId: "tool-schedule-me",
+      name: "schedule_me",
+      input: { when: 0, prompt: "scheduled follow-up" }
+    }))
+  }
+  if (message.type === "tool_result") {
+    console.log(JSON.stringify({ type: "text", text: "schedule_result:" + String(message.isError), messageId: "m1" }))
+    console.log(JSON.stringify({ type: "turn_complete", finishReason: "stop", messageId: "m1" }))
+    process.exit(0)
+  }
+}
+`
+    const contextId = await seedContext({
+      namespace,
+      hostId,
+      argv: [process.execPath, "--input-type=module", "-e", childCode],
+      agentProtocol: "stdio-jsonl",
+    })
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* appendPrompt(contextId, "start")
+        return yield* startRuntime({ contextId })
+      }).pipe(
+        Effect.provide(hostLayer({ namespace, hostId })),
+        Effect.scoped,
+      ),
+    )
+
+    expect(result).toMatchObject({ contextId, exitCode: 0 })
+    const events = await Effect.runPromise(queryAgentEvents({ namespace, hostId, contextId }))
+    expect(events).toContainEqual(expect.objectContaining({ _tag: "ToolUse" }))
+    expect(events.find(event =>
+      event._tag === "TextChunk" && event.part.delta === "schedule_result:false",
+    )).toBeDefined()
+  }, 15_000)
+
   it("firegrid-runtime-agent-event-pipeline.INGREDIENTS.6 commits Terminated before returning terminal exit evidence", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-codec-missing-terminal-${crypto.randomUUID()}`

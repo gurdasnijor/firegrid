@@ -12,8 +12,7 @@ import {
 import { RuntimeIngressTable } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Fiber, Layer, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { AgentToolHost } from "../../src/agent-tools/tool-host.ts"
-import { toolExecutionFailed } from "../../src/agent-tools/tool-error.ts"
+import { toolResult } from "../../src/agent-tools/tool-error.ts"
 import {
   RuntimeIngressAppenderLayer,
 } from "../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
@@ -23,6 +22,7 @@ import {
 } from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
 import { encodeRuntimeAgentOutputEnvelope } from "../../src/agent-event-pipeline/events/index.ts"
 import { runToolRouter } from "../../src/agent-event-pipeline/subscribers/tool-router.ts"
+import { RuntimeToolUseExecutor } from "../../src/agent-event-pipeline/subscribers/runtime-tool-use-executor.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -111,11 +111,8 @@ const runWith = <A, E>(
     >,
   )
 
-const unusedToolHostEffect = () =>
-  Effect.fail(toolExecutionFailed("unused", "unused", "unused"))
-
 describe("runtime tool router subscriber", () => {
-  it("firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.1 firegrid-runtime-agent-event-pipeline.VALIDATION.5 replays committed RuntimeOutput ToolUse rows into deterministic ToolResult ingress", async () => {
+  it("firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.1 firegrid-runtime-agent-event-pipeline.VALIDATION.5 firegrid-host-sdk.TOOL_EXECUTOR_SEAM.1 replays committed RuntimeOutput ToolUse rows through RuntimeToolUseExecutor into deterministic ToolResult ingress", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const streamId = `tool-router-replay-${crypto.randomUUID()}`
     const context = testContext(`ctx_${crypto.randomUUID()}`)
@@ -130,15 +127,9 @@ describe("runtime tool router subscriber", () => {
     const layer = Layer.mergeAll(
       outputCapabilities,
       ingressCapabilities,
-      AgentToolHost.layer({
-        spawnChildContext: unusedToolHostEffect,
-        spawnChildContexts: unusedToolHostEffect,
-        executeSandboxTool: unusedToolHostEffect,
-        executeSessionCapability: unusedToolHostEffect,
-        appendSessionPrompt: unusedToolHostEffect,
-        cancelSession: unusedToolHostEffect,
-        closeSession: unusedToolHostEffect,
-        appendScheduledPrompt: unusedToolHostEffect,
+      RuntimeToolUseExecutor.layer({
+        execute: (_context, event) =>
+          Effect.succeed(toolResult(event.part.id, event.part.name, { ok: true })),
       }),
     )
 

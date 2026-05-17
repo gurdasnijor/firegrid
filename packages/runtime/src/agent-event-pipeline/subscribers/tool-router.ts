@@ -7,7 +7,7 @@ import {
   type AgentToolUseMode,
   runtimeIdempotencyKey,
 } from "../events/index.ts"
-import { toolUseToEffect } from "../../agent-tools/tool-use-to-effect.ts"
+import { RuntimeToolUseExecutor } from "./runtime-tool-use-executor.ts"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
@@ -59,6 +59,7 @@ export const runToolRouter = (options: {
   return Effect.gen(function* () {
     const outputEvents = yield* RuntimeAgentOutputEvents
     const appendIngress = yield* RuntimeIngressAppendAndGet
+    const toolUseExecutor = yield* RuntimeToolUseExecutor
 
     return yield* toolUseObservations({
       ...options,
@@ -84,7 +85,9 @@ export const runToolRouter = (options: {
           // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.1
           // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.2
           // firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1
-          const result = yield* toolUseToEffect(
+          // firegrid-host-sdk.TOOL_EXECUTOR_SEAM.1
+          // firegrid-host-sdk.SEQUENCING.10
+          const result = yield* toolUseExecutor.execute(
             { contextId: options.context.contextId },
             observation.event,
           )

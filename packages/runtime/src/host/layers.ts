@@ -20,14 +20,13 @@ import { RuntimeHostAgentToolHostLive } from "./agent-tool-host-live.ts"
 import { RuntimeContextWorkflowLayer } from "./runtime-context-workflow.ts"
 import {
   HostRuntimeObservationSubstrateLive,
-  RuntimeCodecToolLoweringLayer,
+  RuntimeToolUseExecutorLive,
 } from "./runtime-substrate.ts"
 import { DurableStreamsWorkflowEngine } from "../workflow-engine/DurableStreamsWorkflowEngine.ts"
 import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
 } from "../agent-event-pipeline/sources/sandbox/index.ts"
-import { ScheduledInputWorkflowLayer } from "../agent-tools/scheduled-input-workflow.ts"
 import {
   RuntimeControlPlaneRecorderLive,
 } from "../authorities/index.ts"
@@ -46,15 +45,6 @@ const runtimeHostAgentToolHostWithControlPlaneLive = (
     Layer.provide(RuntimeControlPlaneRecorderLive),
     Layer.provide(workflowEngineLayer),
   )
-
-const runtimeCodecToolLoweringLayerLive = Layer.succeed(
-  RuntimeCodecToolLoweringLayer,
-  // firegrid-runtime-boundary-reconciliation.HOST_HARDENING.3
-  HostRuntimeObservationSubstrateLive.pipe(
-    Layer.provideMerge(ScheduledInputWorkflowLayer),
-    Layer.provideMerge(RuntimeHostAgentToolHostLive),
-  ),
-)
 
 // firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.1
 // firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.2
@@ -194,7 +184,8 @@ const hostScopedLayer = (
   return HostRuntimeObservationSubstrateLive.pipe(
     Layer.provideMerge(hostTables),
     Layer.provideMerge(runtimeHostAgentToolHostWithControlPlaneLive(workflowEngineLayer)),
-    Layer.provideMerge(runtimeCodecToolLoweringLayerLive),
+    // firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2
+    Layer.provideMerge(RuntimeToolUseExecutorLive),
   )
 }
 
