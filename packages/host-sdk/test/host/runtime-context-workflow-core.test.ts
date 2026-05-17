@@ -19,12 +19,13 @@ import {
   RuntimeIngressInputRowSchema,
   makeRuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Fiber, Layer, Ref, Schema } from "effect"
+import { Effect, Fiber, Layer, Option, Ref, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeControlPlaneRecorderLive,
   RuntimeAgentOutputEventsLayer,
   RuntimeIngressAppenderLayer,
+  RuntimeIngressDeliveryClaimAndComplete,
   RuntimeToolUseExecutor,
 } from "@firegrid/runtime/host-substrate"
 import {
@@ -266,6 +267,131 @@ const runtimeContextWorkflowTestLayer = (input: {
     })),
     Layer.provideMerge(hostSessionLayer(input.namespace, input.hostId)),
   )
+
+// Shared harness for the two net-new gap proofs (permission-deferred
+// coverage + runIngressDelivery deletion-proof). Both drive a public
+// ingress input through the wait-router into
+// RuntimeContextWorkflowSession.send; extracted so each new test adds
+// only its distinct event + assertions rather than a second verbatim
+// copy of the existing line-647 prompt scaffold (review feedback on
+// #310; base lint:dup is already saturated).
+const sendIngressInputThroughNativeSession = (options: {
+  readonly label: string
+  readonly inputId: string
+  readonly payload: string
+  readonly eventFor: (row: {
+    readonly inputId: string
+    readonly payload: unknown
+  }) => AgentInputEvent
+  readonly extraLayer?: Layer.Layer<RuntimeIngressDeliveryClaimAndComplete>
+}): Promise<{
+  readonly sent: ReadonlyArray<RuntimeContextSessionCommand>
+  readonly contextId: string
+}> => {
+  if (baseUrl === undefined) throw new Error("server not started")
+  const namespace = `${options.label}-${crypto.randomUUID()}`
+  const hostId = "host-a" as HostId
+  const contextId = `ctx_${crypto.randomUUID()}`
+  const sent: Array<RuntimeContextSessionCommand> = []
+
+  const DeliveryWorkflow = Workflow.make({
+    name: `${options.label}-workflow`,
+    payload: Schema.Struct({ contextId: Schema.String }),
+    success: Schema.Void,
+    error: Schema.Unknown,
+    idempotencyKey: payload => payload.contextId,
+  })
+  const workflowLayer = DeliveryWorkflow.toLayer(({ contextId: payloadContextId }) =>
+    Effect.gen(function*() {
+      const outcome = yield* WaitFor.match({
+        name: `runtime-context/${payloadContextId}/input/0`,
+        source: { _tag: "RuntimeIngressInput" },
+        trigger: [
+          { path: ["contextId"], equals: payloadContextId },
+          { path: ["status"], equals: "sequenced" },
+          { path: ["sequence"], equals: 0 },
+        ],
+        resultSchema: RuntimeIngressInputRowSchema,
+      })
+      if (outcome._tag === "Timeout") {
+        return yield* Effect.fail("unexpected timeout")
+      }
+      const session = yield* RuntimeContextWorkflowSession
+      yield* session.send(
+        seededRuntimeContext({ namespace, hostId, contextId: payloadContextId }),
+        1,
+        {
+          _tag: "AgentInput",
+          commandId: `runtime-input-${payloadContextId}-${outcome.row.inputId}`,
+          event: options.eventFor({
+            inputId: outcome.row.inputId,
+            payload: outcome.row.payload,
+          }),
+        },
+      )
+    }))
+
+  const baseLayer = workflowLayer.pipe(
+    Layer.provideMerge(RuntimeContextWorkflowSession.layer({
+      startOrAttach: (context, activityAttempt) =>
+        Effect.succeed(startedEvidence(context.contextId, activityAttempt)),
+      send: (context, activityAttempt, command) =>
+        Effect.sync(() => {
+          sent.push(command)
+          return acceptedCommand(context.contextId, activityAttempt, command)
+        }),
+    })),
+    Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: streamUrl(`${namespace}.host-a.waits`) })),
+    Layer.provideMerge(RuntimeControlPlaneRecorderLive),
+    Layer.provideMerge(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
+    Layer.provideMerge(RuntimeAgentOutputEventsLayer),
+    Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: streamUrl(`${namespace}.host-a.workflow`) })),
+    Layer.provideMerge(RuntimeControlPlaneTable.layer({
+      streamOptions: { url: streamUrl(`${namespace}.firegrid.runtime`), contentType: "application/json" },
+    })),
+    Layer.provideMerge(RuntimeIngressTable.layer({
+      streamOptions: { url: streamUrl(`${namespace}.host-a.runtimeIngress`), contentType: "application/json" },
+    })),
+    Layer.provideMerge(RuntimeOutputTable.layer({
+      streamOptions: { url: streamUrl(`${namespace}.host-a.runtimeOutput`), contentType: "application/json" },
+    })),
+    Layer.provideMerge(hostSessionLayer(namespace, hostId)),
+  )
+  const testLayer = options.extraLayer === undefined
+    ? baseLayer
+    : baseLayer.pipe(Layer.provideMerge(options.extraLayer))
+
+  return Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function*() {
+        const control = yield* RuntimeControlPlaneTable
+        const ingress = yield* RuntimeIngressTable
+        const context = seededRuntimeContext({ namespace, hostId, contextId })
+        yield* control.contexts.upsert(context)
+        yield* DeliveryWorkflow.execute({ contextId }, { discard: true })
+        yield* waitUntilActiveWait(`runtime-context/${contextId}/input/0`)
+        yield* ingress.inputs.insert({
+          ...makeRuntimeIngressInputRow({
+            contextId,
+            inputId: options.inputId,
+            kind: "message",
+            authoredBy: "client",
+            payload: options.payload,
+            idempotencyKey: options.inputId,
+          }),
+          status: "sequenced",
+          sequence: 0,
+          sequencedAt: new Date().toISOString(),
+        })
+        yield* DeliveryWorkflow.execute({ contextId })
+        return {
+          sent: sent as ReadonlyArray<RuntimeContextSessionCommand>,
+          contextId,
+        }
+      }).pipe(Effect.provide(testLayer)),
+    ),
+  )
+}
 
 describe("workflow-native runtime-context core", () => {
   it("workflow-native runtime-context core resolves AgentOutputAfter initial state through PerContextRuntimeOutputWriter", async () => {
@@ -958,5 +1084,75 @@ describe("workflow-native runtime-context core", () => {
     expect(toolRuns).toBe(1)
     expect(sent).toMatchObject([{ _tag: "ToolResult", part: { id: "tool-1" } }])
     expect(result).toMatchObject({ contextId, activityAttempt: 1, exitCode: 0 })
+  })
+
+  // GAP: base covers prompt + tool deferred commands; permission
+  // deferred command coverage was missing.
+  it("delivers a public permission-response input through RuntimeContextWorkflowSession.send without ingress-delivery tracker", async () => {
+    const { sent, contextId } = await sendIngressInputThroughNativeSession({
+      label: "path-x-permission-delivery",
+      inputId: "input-perm-1",
+      payload: "permission-allow",
+      eventFor: ({ inputId }) => ({
+        _tag: "PermissionResponse",
+        permissionRequestId: inputId,
+        decision: { _tag: "Allow" },
+      }),
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({
+      _tag: "AgentInput",
+      commandId: `runtime-input-${contextId}-input-perm-1`,
+      event: {
+        _tag: "PermissionResponse",
+        permissionRequestId: "input-perm-1",
+        decision: { _tag: "Allow" },
+      },
+    })
+  })
+
+  // DELETION-PROOF: runIngressDelivery still exists on the base
+  // (session-runtime.ts / subscribers/ingress-delivery.ts). The native
+  // send path must never invoke the legacy
+  // RuntimeIngressDeliveryClaimAndComplete authority. Tripwire layer
+  // fails the test if claim/complete is touched; the tracker layer is
+  // deliberately not provided.
+  it("native runtime-context send path never invokes the legacy RuntimeIngressDeliveryClaimAndComplete authority (runIngressDelivery deletion-proof)", async () => {
+    const legacyDeliveryCalls: Array<string> = []
+    const { sent } = await sendIngressInputThroughNativeSession({
+      label: "path-x-delivery-deletion-proof",
+      inputId: "input-native-1",
+      payload: "delivered natively",
+      eventFor: ({ inputId, payload }) => ({
+        _tag: "Prompt",
+        correlationId: inputId,
+        prompt: Prompt.userMessage({
+          content: [Prompt.textPart({ text: String(payload) })],
+        }),
+      }),
+      extraLayer: Layer.succeed(
+        RuntimeIngressDeliveryClaimAndComplete,
+        RuntimeIngressDeliveryClaimAndComplete.of({
+          claimInput: (row) =>
+            Effect.sync(() => {
+              legacyDeliveryCalls.push(`claimInput:${row.inputId}`)
+              return Option.none()
+            }),
+          recordCompleted: (delivery) =>
+            Effect.sync(() => {
+              legacyDeliveryCalls.push(`recordCompleted:${delivery.inputId}`)
+              return delivery
+            }),
+        }),
+      ),
+    })
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({
+      _tag: "AgentInput",
+      event: { _tag: "Prompt", correlationId: "input-native-1" },
+    })
+    expect(legacyDeliveryCalls).toEqual([])
   })
 })
