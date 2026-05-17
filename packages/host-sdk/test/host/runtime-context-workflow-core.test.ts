@@ -14,11 +14,6 @@ import {
   type RuntimeEventRow,
   type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
-import {
-  RuntimeIngressTable,
-  RuntimeIngressInputRowSchema,
-  makeRuntimeIngressInputRow,
-} from "@firegrid/protocol/runtime-ingress"
 import { Effect, Fiber, Layer, Ref, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
@@ -41,6 +36,7 @@ import {
   RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
 } from "../../src/host/runtime-context-workflow-core.ts"
+import { WorkflowEngine } from "@effect/workflow"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import {
   FiregridRuntimeHostWithWorkflowLive,
@@ -49,8 +45,10 @@ import {
   PerContextRuntimeOutputWriter,
 } from "../../src/host/per-context-runtime-output.ts"
 import {
-  RuntimeIngressAppenderLayer,
-} from "../../src/host/runtime-ingress.ts"
+  appendRuntimeInputDeferred,
+} from "../../src/host/runtime-input-deferred.ts"
+import { executeRuntimeContextWorkflow } from "../../src/host/internal/run-context-workflow.ts"
+import { runtimeContextWorkflowExecutionId } from "../../src/host/internal/runtime-context-helpers.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -233,7 +231,6 @@ const runtimeContextWorkflowTestLayer = (input: {
   readonly workflowUrl: string
   readonly waitUrl: string
   readonly controlUrl: string
-  readonly ingressUrl: string
   readonly outputUrl: string
   readonly sessionLayer: Layer.Layer<RuntimeContextWorkflowSession>
   readonly workerId?: string
@@ -255,7 +252,6 @@ const runtimeContextWorkflowTestLayer = (input: {
     })),
     Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: input.waitUrl })),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
-    Layer.provideMerge(RuntimeIngressAppenderLayer({ currentContextId: "unused" })),
     Layer.provideMerge(RuntimeAgentOutputEventsLayer),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: input.workflowUrl,
@@ -264,14 +260,24 @@ const runtimeContextWorkflowTestLayer = (input: {
     Layer.provideMerge(RuntimeControlPlaneTable.layer({
       streamOptions: { url: input.controlUrl, contentType: "application/json" },
     })),
-    Layer.provideMerge(RuntimeIngressTable.layer({
-      streamOptions: { url: input.ingressUrl, contentType: "application/json" },
-    })),
     Layer.provideMerge(RuntimeOutputTable.layer({
       streamOptions: { url: input.outputUrl, contentType: "application/json" },
     })),
     Layer.provideMerge(hostSessionLayer(input.namespace, input.hostId)),
   )
+
+const executeNativeRuntimeContext = (
+  contextId: string,
+  options?: { readonly discard?: boolean },
+) =>
+  Effect.gen(function*() {
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    return yield* executeRuntimeContextWorkflow(engine, RuntimeContextWorkflowNative, {
+      executionId: runtimeContextWorkflowExecutionId(contextId),
+      payload: { contextId },
+      ...(options?.discard === undefined ? {} : { discard: options.discard }),
+    })
+  })
 
 describe("workflow-native runtime-context core", () => {
   it("workflow-native runtime-context core resolves AgentOutputAfter initial state through PerContextRuntimeOutputWriter", async () => {
@@ -425,100 +431,6 @@ describe("workflow-native runtime-context core", () => {
     })
   })
 
-  it("workflow-native runtime-context core resolves sequenced input commands through runtime-context wait-router scope", async () => {
-    if (baseUrl === undefined) throw new Error("server not started")
-    const namespace = `path-x-core-${crypto.randomUUID()}`
-    const hostId = "host-a" as HostId
-    const contextId = `ctx_${crypto.randomUUID()}`
-
-    const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
-    const waitUrl = streamUrl(`${namespace}.host-a.waits`)
-    const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
-    const ingressUrl = streamUrl(`${namespace}.host-a.runtimeIngress`)
-    const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
-
-    const RuntimeIngressCommandWorkflow = Workflow.make({
-      name: "path-x-runtime-ingress-command-wait",
-      payload: Schema.Struct({ contextId: Schema.String }),
-      success: RuntimeIngressInputRowSchema,
-      error: Schema.Unknown,
-      idempotencyKey: payload => payload.contextId,
-    })
-    const workflowLayer = RuntimeIngressCommandWorkflow.toLayer(({ contextId }) =>
-      Effect.gen(function*() {
-        const outcome = yield* WaitFor.match({
-          name: `runtime-context/${contextId}/input/0`,
-          source: { _tag: "RuntimeIngressInput" },
-          trigger: [
-            { path: ["contextId"], equals: contextId },
-            { path: ["status"], equals: "sequenced" },
-            { path: ["sequence"], equals: 0 },
-          ],
-          resultSchema: RuntimeIngressInputRowSchema,
-        })
-        if (outcome._tag === "Timeout") {
-          return yield* Effect.fail("unexpected timeout")
-        }
-        return outcome.row
-      }))
-
-    const testLayer = workflowLayer.pipe(
-      Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: waitUrl })),
-      Layer.provideMerge(RuntimeControlPlaneRecorderLive),
-      Layer.provideMerge(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
-      Layer.provideMerge(RuntimeAgentOutputEventsLayer),
-      Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),
-      Layer.provideMerge(RuntimeControlPlaneTable.layer({
-        streamOptions: { url: controlUrl, contentType: "application/json" },
-      })),
-      Layer.provideMerge(RuntimeIngressTable.layer({
-        streamOptions: { url: ingressUrl, contentType: "application/json" },
-      })),
-      Layer.provideMerge(RuntimeOutputTable.layer({
-        streamOptions: { url: outputUrl, contentType: "application/json" },
-      })),
-      Layer.provideMerge(hostSessionLayer(namespace, hostId)),
-    )
-
-    const result = await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const control = yield* RuntimeControlPlaneTable
-          const ingress = yield* RuntimeIngressTable
-          yield* control.contexts.upsert({
-            contextId,
-            createdAt: new Date().toISOString(),
-            runtime: normalizeRuntimeIntent(local.jsonl({
-              argv: ["node", "-e", "process.exit(0)"],
-              agentProtocol: "stdio-jsonl",
-            })),
-            host: {
-              hostId,
-              streamPrefix: makeHostStreamPrefix({ namespace, hostId }),
-              boundAtMs: Date.now(),
-            },
-          })
-          yield* RuntimeIngressCommandWorkflow.execute({ contextId }, { discard: true })
-          yield* ingress.inputs.insert({
-            ...makeRuntimeIngressInputRow({
-              inputId: "input-0",
-              contextId,
-              kind: "message",
-              authoredBy: "client",
-              payload: "hello",
-            }),
-            status: "sequenced",
-            sequence: 0,
-            sequencedAt: new Date().toISOString(),
-          })
-          return yield* RuntimeIngressCommandWorkflow.execute({ contextId })
-        }).pipe(Effect.provide(testLayer)),
-      ),
-    )
-
-    expect(result).toMatchObject({ contextId, inputId: "input-0", sequence: 0 })
-  })
-
   it("firegrid-workflow-driven-runtime.VALIDATION.6 proves idempotent startOrAttach across duplicate workflow starts", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `path-x-start-idempotent-${crypto.randomUUID()}`
@@ -527,7 +439,6 @@ describe("workflow-native runtime-context core", () => {
     const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
     const waitUrl = streamUrl(`${namespace}.host-a.waits`)
     const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
-    const ingressUrl = streamUrl(`${namespace}.host-a.runtimeIngress`)
     const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
     const sessionEvents = { starts: [] as Array<string>, reattaches: [] as Array<string>, emissions: [] as Array<string> }
     const testLayer = runtimeContextWorkflowTestLayer({
@@ -536,7 +447,6 @@ describe("workflow-native runtime-context core", () => {
       workflowUrl,
       waitUrl,
       controlUrl,
-      ingressUrl,
       outputUrl,
       sessionLayer: reconstructableSessionLayer(sessionEvents),
       workerId: "start-idempotent-worker",
@@ -548,16 +458,16 @@ describe("workflow-native runtime-context core", () => {
           const control = yield* RuntimeControlPlaneTable
           const output = yield* RuntimeOutputTable
           yield* control.contexts.upsert(seededRuntimeContext({ namespace, hostId, contextId }))
-          yield* RuntimeContextWorkflowNative.execute({ contextId }, { discard: true })
+          yield* executeNativeRuntimeContext(contextId, { discard: true })
           yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
-          yield* RuntimeContextWorkflowNative.execute({ contextId }, { discard: true })
+          yield* executeNativeRuntimeContext(contextId, { discard: true })
           yield* output.events.upsert(outputRow({
             contextId,
             activityAttempt: 1,
             sequence: 0,
             event: { _tag: "Terminated", exitCode: 0 },
           }))
-          return yield* RuntimeContextWorkflowNative.execute({ contextId })
+          return yield* executeNativeRuntimeContext(contextId)
         }).pipe(Effect.provide(testLayer)),
       ),
     )
@@ -574,7 +484,6 @@ describe("workflow-native runtime-context core", () => {
     const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
     const waitUrl = streamUrl(`${namespace}.host-a.waits`)
     const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
-    const ingressUrl = streamUrl(`${namespace}.host-a.runtimeIngress`)
     const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
     const beforeRestart = { starts: [] as Array<string>, reattaches: [] as Array<string>, emissions: [] as Array<string> }
     const afterRestart = { starts: [] as Array<string>, reattaches: [] as Array<string>, emissions: [] as Array<string> }
@@ -584,7 +493,7 @@ describe("workflow-native runtime-context core", () => {
         Effect.gen(function*() {
           const control = yield* RuntimeControlPlaneTable
           yield* control.contexts.upsert(seededRuntimeContext({ namespace, hostId, contextId }))
-          yield* RuntimeContextWorkflowNative.execute({ contextId }, { discard: true })
+          yield* executeNativeRuntimeContext(contextId, { discard: true })
           yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
         }).pipe(
           Effect.provide(runtimeContextWorkflowTestLayer({
@@ -593,7 +502,6 @@ describe("workflow-native runtime-context core", () => {
             workflowUrl,
             waitUrl,
             controlUrl,
-            ingressUrl,
             outputUrl,
             sessionLayer: reconstructableSessionLayer(beforeRestart),
             workerId: "reattach-before",
@@ -626,7 +534,7 @@ describe("workflow-native runtime-context core", () => {
             sequence: 1,
             event: { _tag: "Terminated", exitCode: 0 },
           }))
-          return yield* RuntimeContextWorkflowNative.execute({ contextId })
+          return yield* executeNativeRuntimeContext(contextId)
         }).pipe(
           Effect.provide(runtimeContextWorkflowTestLayer({
             namespace,
@@ -634,7 +542,6 @@ describe("workflow-native runtime-context core", () => {
             workflowUrl,
             waitUrl,
             controlUrl,
-            ingressUrl,
             outputUrl,
             sessionLayer: reconstructableSessionLayer(afterRestart),
             workerId: "reattach-after",
@@ -658,52 +565,17 @@ describe("workflow-native runtime-context core", () => {
     const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
     const waitUrl = streamUrl(`${namespace}.host-a.waits`)
     const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
-    const ingressUrl = streamUrl(`${namespace}.host-a.runtimeIngress`)
     const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
     const sent: Array<RuntimeContextSessionCommand> = []
 
-    const RuntimeIngressPromptDeliveryWorkflow = Workflow.make({
-      name: "path-x-runtime-ingress-prompt-delivery",
-      payload: Schema.Struct({ contextId: Schema.String }),
-      success: Schema.Void,
-      error: Schema.Unknown,
-      idempotencyKey: payload => payload.contextId,
-    })
-    const workflowLayer = RuntimeIngressPromptDeliveryWorkflow.toLayer(({ contextId: payloadContextId }) =>
-      Effect.gen(function*() {
-        const outcome = yield* WaitFor.match({
-          name: `runtime-context/${payloadContextId}/input/0`,
-          source: { _tag: "RuntimeIngressInput" },
-          trigger: [
-            { path: ["contextId"], equals: payloadContextId },
-            { path: ["status"], equals: "sequenced" },
-            { path: ["sequence"], equals: 0 },
-          ],
-          resultSchema: RuntimeIngressInputRowSchema,
-        })
-        if (outcome._tag === "Timeout") {
-          return yield* Effect.fail("unexpected timeout")
-        }
-        const session = yield* RuntimeContextWorkflowSession
-        yield* session.send(
-          seededRuntimeContext({ namespace, hostId, contextId: payloadContextId }),
-          1,
-          {
-            _tag: "AgentInput",
-            commandId: `runtime-input-${payloadContextId}-${outcome.row.inputId}`,
-            event: {
-              _tag: "Prompt",
-              correlationId: outcome.row.inputId,
-              prompt: Prompt.userMessage({
-                content: [Prompt.textPart({ text: String(outcome.row.payload) })],
-              }),
-            },
-          },
-        )
-      }))
-
-    const testLayer = workflowLayer.pipe(
-      Layer.provideMerge(RuntimeContextWorkflowSession.layer({
+    const testLayer = runtimeContextWorkflowTestLayer({
+      namespace,
+      hostId,
+      workflowUrl,
+      waitUrl,
+      controlUrl,
+      outputUrl,
+      sessionLayer: RuntimeContextWorkflowSession.layer({
         startOrAttach: (context, activityAttempt) =>
           Effect.succeed(startedEvidence(context.contextId, activityAttempt)),
         send: (context, activityAttempt, command) =>
@@ -711,47 +583,38 @@ describe("workflow-native runtime-context core", () => {
             sent.push(command)
             return acceptedCommand(context.contextId, activityAttempt, command)
           }),
-      })),
-      Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: waitUrl })),
-      Layer.provideMerge(RuntimeControlPlaneRecorderLive),
-      Layer.provideMerge(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
-      Layer.provideMerge(RuntimeAgentOutputEventsLayer),
-      Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),
-      Layer.provideMerge(RuntimeControlPlaneTable.layer({
-        streamOptions: { url: controlUrl, contentType: "application/json" },
-      })),
-      Layer.provideMerge(RuntimeIngressTable.layer({
-        streamOptions: { url: ingressUrl, contentType: "application/json" },
-      })),
-      Layer.provideMerge(RuntimeOutputTable.layer({
-        streamOptions: { url: outputUrl, contentType: "application/json" },
-      })),
-      Layer.provideMerge(hostSessionLayer(namespace, hostId)),
-    )
+      }),
+      workerId: "prompt-delivery-worker",
+    })
 
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
           const control = yield* RuntimeControlPlaneTable
-          const ingress = yield* RuntimeIngressTable
+          const output = yield* RuntimeOutputTable
           const context = seededRuntimeContext({ namespace, hostId, contextId })
           yield* control.contexts.upsert(context)
-          yield* RuntimeIngressPromptDeliveryWorkflow.execute({ contextId }, { discard: true })
-          yield* waitUntilActiveWait(`runtime-context/${contextId}/input/0`)
-          yield* ingress.inputs.insert({
-            ...makeRuntimeIngressInputRow({
-              contextId,
-              inputId: "input-prompt-1",
-              kind: "message",
-              authoredBy: "client",
-              payload: "hello from session.prompt",
-              idempotencyKey: "input-prompt-1",
-            }),
-            status: "sequenced",
+          yield* executeNativeRuntimeContext(contextId, { discard: true })
+          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
+          yield* appendRuntimeInputDeferred({
+            contextId,
+            inputId: "input-prompt-1",
+            kind: "message",
+            authoredBy: "client",
+            payload: "hello from session.prompt",
+            idempotencyKey: "input-prompt-1",
+          }, context)
+          yield* executeNativeRuntimeContext(contextId, { discard: true })
+          for (let attempt = 0; attempt < 40 && sent.length === 0; attempt += 1) {
+            yield* Effect.sleep("25 millis")
+          }
+          yield* output.events.upsert(outputRow({
+            contextId,
+            activityAttempt: 1,
             sequence: 0,
-            sequencedAt: new Date().toISOString(),
-          })
-          return yield* RuntimeIngressPromptDeliveryWorkflow.execute({ contextId })
+            event: { _tag: "Terminated", exitCode: 0 },
+          }))
+          return yield* executeNativeRuntimeContext(contextId)
         }).pipe(Effect.provide(testLayer)),
       ),
     )
@@ -775,7 +638,6 @@ describe("workflow-native runtime-context core", () => {
     const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
     const waitUrl = streamUrl(`${namespace}.host-a.waits`)
     const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
-    const ingressUrl = streamUrl(`${namespace}.host-a.runtimeIngress`)
     const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
     const beforeRestart = { starts: [] as Array<string>, reattaches: [] as Array<string>, emissions: [] as Array<string> }
     const afterRestart = { starts: [] as Array<string>, reattaches: [] as Array<string>, emissions: [] as Array<string> }
@@ -786,7 +648,7 @@ describe("workflow-native runtime-context core", () => {
           const control = yield* RuntimeControlPlaneTable
           const output = yield* RuntimeOutputTable
           yield* control.contexts.upsert(seededRuntimeContext({ namespace, hostId, contextId }))
-          yield* RuntimeContextWorkflowNative.execute({ contextId }, { discard: true })
+          yield* executeNativeRuntimeContext(contextId, { discard: true })
           yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
           yield* output.events.upsert(outputRow({
             contextId,
@@ -802,7 +664,7 @@ describe("workflow-native runtime-context core", () => {
               }),
             },
           }))
-          yield* RuntimeContextWorkflowNative.execute({ contextId }, { discard: true })
+          yield* executeNativeRuntimeContext(contextId, { discard: true })
           yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, 0))
         }).pipe(
           Effect.provide(runtimeContextWorkflowTestLayer({
@@ -811,7 +673,6 @@ describe("workflow-native runtime-context core", () => {
             workflowUrl,
             waitUrl,
             controlUrl,
-            ingressUrl,
             outputUrl,
             sessionLayer: reconstructableSessionLayer(beforeRestart),
             workerId: "send-once-before",
@@ -830,7 +691,7 @@ describe("workflow-native runtime-context core", () => {
             sequence: 1,
             event: { _tag: "Terminated", exitCode: 0 },
           }))
-          return yield* RuntimeContextWorkflowNative.execute({ contextId })
+          return yield* executeNativeRuntimeContext(contextId)
         }).pipe(
           Effect.provide(runtimeContextWorkflowTestLayer({
             namespace,
@@ -838,7 +699,6 @@ describe("workflow-native runtime-context core", () => {
             workflowUrl,
             waitUrl,
             controlUrl,
-            ingressUrl,
             outputUrl,
             sessionLayer: reconstructableSessionLayer(afterRestart),
             workerId: "send-once-after",
@@ -863,7 +723,6 @@ describe("workflow-native runtime-context core", () => {
     const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
     const waitUrl = streamUrl(`${namespace}.host-a.waits`)
     const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
-    const ingressUrl = streamUrl(`${namespace}.host-a.runtimeIngress`)
     const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
 
     const testLayer = RuntimeContextWorkflowNativeLayer.pipe(
@@ -894,14 +753,10 @@ describe("workflow-native runtime-context core", () => {
       })),
       Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: waitUrl })),
       Layer.provideMerge(RuntimeControlPlaneRecorderLive),
-      Layer.provideMerge(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
       Layer.provideMerge(RuntimeAgentOutputEventsLayer),
       Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),
       Layer.provideMerge(RuntimeControlPlaneTable.layer({
         streamOptions: { url: controlUrl, contentType: "application/json" },
-      })),
-      Layer.provideMerge(RuntimeIngressTable.layer({
-        streamOptions: { url: ingressUrl, contentType: "application/json" },
       })),
       Layer.provideMerge(RuntimeOutputTable.layer({
         streamOptions: { url: outputUrl, contentType: "application/json" },
@@ -927,10 +782,7 @@ describe("workflow-native runtime-context core", () => {
               boundAtMs: Date.now(),
             },
           })
-          yield* RuntimeContextWorkflowNative.execute(
-            { contextId },
-            { discard: true },
-          )
+          yield* executeNativeRuntimeContext(contextId, { discard: true })
           yield* output.logs.insert(logRow({
             contextId,
             activityAttempt: 1,
@@ -956,7 +808,7 @@ describe("workflow-native runtime-context core", () => {
             sequence: 2,
             event: { _tag: "Terminated", exitCode: 0 },
           }))
-          return yield* RuntimeContextWorkflowNative.execute({ contextId })
+          return yield* executeNativeRuntimeContext(contextId)
         }).pipe(Effect.provide(testLayer)),
       ),
     )

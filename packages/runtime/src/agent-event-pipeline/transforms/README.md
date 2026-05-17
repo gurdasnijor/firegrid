@@ -1,7 +1,7 @@
 # Runtime Transforms
 
-`transforms/` owns pure stream and row-shaping operators shared by pipeline
-components.
+`transforms/` is reserved for pure stream and row-shaping operators shared by
+pipeline components. It is intentionally empty after the live-owner cutover.
 
 ## Pipeline Fit
 
@@ -17,16 +17,8 @@ a subscriber, source, codec, or pipeline composition module instead.
 
 Typical shape:
 
-```ts
-export const sequencedRuntimeIngressRowsForContext = <E, R>(
-  source: Stream.Stream<RuntimeIngressInputRow, E, R>,
-  contextId: string,
-): Stream.Stream<RuntimeIngressInputRow, E, R> =>
-  source.pipe(
-    Stream.filter(row => row.contextId === contextId),
-    orderSequencedRuntimeIngressRows,
-  )
-```
+No current production transform remains here; runtime input decoding now lives
+with host-sdk workflow/session ownership.
 
 The transform keeps the same error and requirement channels it received. That
 is the signal that it is pure stream shaping, not a subscriber or authority.

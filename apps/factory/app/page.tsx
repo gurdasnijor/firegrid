@@ -252,12 +252,11 @@ function Metrics({ data }: { data: FactoryRunStatusView }) {
     { label: "Runtime Runs", value: data.runtimeRuns.length, icon: GitBranch },
     { label: "Output Events", value: data.runtimeEvents.length, icon: TerminalSquare },
     { label: "Logs", value: data.runtimeLogs.length, icon: Clock },
-    { label: "Ingress Inputs", value: data.ingressInputs.length, icon: Database },
     { label: "Permissions", value: data.permissions.length, icon: ShieldQuestion },
   ]
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       {items.map(item => (
         <Card key={item.label}>
           <CardContent className="flex items-center gap-3 p-4">
@@ -379,33 +378,6 @@ function PermissionsPanel({ data }: { data: FactoryRunStatusView }) {
   )
 }
 
-function IngressPanel({ data }: { data: FactoryRunStatusView }) {
-  const rows = data.ingressInputs.slice().sort((left, right) =>
-    left.createdAt.localeCompare(right.createdAt)).reverse()
-
-  return (
-    <div className="space-y-3">
-      {rows.length === 0 ? (
-        <EmptyPanel label="No ingress inputs reported yet." />
-      ) : rows.map(input => (
-        <div key={input.inputId} className="rounded-lg border bg-card p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap gap-2">
-              <Badge>{input.kind}</Badge>
-              <Badge variant="secondary">{input.status}</Badge>
-            </div>
-            <span className="text-xs text-muted-foreground">{formatTimestamp(input.createdAt)}</span>
-          </div>
-          <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{input.contextId}</p>
-          <pre className="mt-2 max-h-32 overflow-auto rounded bg-secondary/50 p-2 text-xs">
-            {compactJson(input.payload)}
-          </pre>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 function Field({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -475,7 +447,6 @@ export default function DarkFactoryPage() {
                 <TabsTrigger value="facts">Facts</TabsTrigger>
                 <TabsTrigger value="runtime">Runtime</TabsTrigger>
                 <TabsTrigger value="permissions">Permissions</TabsTrigger>
-                <TabsTrigger value="ingress">Ingress</TabsTrigger>
               </TabsList>
               <TabsContent value="facts">
                 <FactsPanel data={data} />
@@ -485,9 +456,6 @@ export default function DarkFactoryPage() {
               </TabsContent>
               <TabsContent value="permissions">
                 <PermissionsPanel data={data} />
-              </TabsContent>
-              <TabsContent value="ingress">
-                <IngressPanel data={data} />
               </TabsContent>
             </Tabs>
           </div>

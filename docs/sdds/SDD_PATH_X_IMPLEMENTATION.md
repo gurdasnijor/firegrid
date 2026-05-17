@@ -48,9 +48,11 @@ the durable control plane only; it is not the live process actor.**
 
 This remains a greenfield cutover: no dual-write, no compatibility
 writers, no divergence detection, no public-surface preservation matrix.
-The public session method shape (`sessions.createOrLoad`,
-`session.prompt`, `session.wait.*`, `session.permissions.respond`,
-`session.snapshot`, `watchContexts`) is unchanged.
+The public session read/identity shape (`sessions.createOrLoad`,
+`session.wait.*`, `session.snapshot`, `watchContexts`) is unchanged. Prompt
+and permission writes remain protocol-shaped, but browser-safe client code no
+longer performs the durable input write itself; host/app authority routes those
+writes through `appendRuntimeIngress`.
 
 ## Live-Owner Shape (Ratified)
 
@@ -167,28 +169,19 @@ shaping used by the adapters. `layers.ts` flips composition to
 `RuntimeContextWorkflowNativeLayer` + the `RuntimeContextSession`
 scoped layer.
 
-## Remaining Work: Deferred-Input Rewrite
+## Deferred-Input Rewrite
 
-`appendRuntimeIngress` / `appendRuntimeIngressToOwner` are **RESHAPE /
-KEEP**, not yet converted. They remain host-sdk-owned and table-backed
-behind the unchanged public `session.prompt`, and `agent-tool-host-live`
-`schedule_me` still routes through `appendRuntimeIngressToOwner`. The
-transient public `@firegrid/runtime/runtime-ingress` subpath is gone;
-runtime exposes only the durable-tools typed input stream needed by the
-wait router / raw stdin delivery. The final slice:
+`appendRuntimeIngress` / `appendRuntimeIngressToOwner` remain the host-sdk
+input seam, but they no longer append to a host-sdk-local
+`RuntimeIngressTable`. They resolve the `RuntimeContext`, open the owner host's
+workflow stream from `RuntimeContext.host.streamPrefix`, and complete a
+content-derived `DurableDeferred` input row. The reactive
+`RuntimeContextWorkflowNative` loop awaits that deferred and turns it into
+`RuntimeContextWorkflowSession.send`.
 
-- replaces the `RuntimeIngressTable` append with a content-derived
-  `DurableDeferred` completion the reactive loop turns into a `send`;
-- keeps `session.prompt` / cross-host routing semantics identical
-  (a non-owner host completing the owner workflow's input deferred);
-- keeps the `@firegrid/client-sdk` session API stable — client-sdk
-  must not learn the deferred mechanics;
-- then deletes the remaining host-sdk-local `RuntimeIngressTable`
-  appender once deferred input carries idempotency / ordering.
-
-Until that lands, the remaining transient edge is host-sdk-local
-`RuntimeIngressTable` appending; the runtime public substrate edge is
-gone.
+This preserves the public prompt/schedule surface and cross-host routing
+semantics while deleting the runtime ingress appender, delivery tracker, typed
+input stream, and raw stdin delivery compatibility path.
 
 ## Schema-Based Transform Guidance
 
@@ -249,6 +242,7 @@ cutover base; (4) live-owner cutover deleting the old spine and adding
 adapters — landed as #309; (5) removal of the transient
 `@firegrid/runtime/runtime-ingress` public subpath — landed in the
 post-#309 cleanup; (6) deferred-input rewrite of `appendRuntimeIngress`
-away from host-sdk-local `RuntimeIngressTable` appending — remaining.
-The public session API is unchanged throughout.
+away from host-sdk-local `RuntimeIngressTable` appending — landed in this
+implementation pass. The client read/session identity API is unchanged;
+input writes are now explicitly host/app routed.
 </content>

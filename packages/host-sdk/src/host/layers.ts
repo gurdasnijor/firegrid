@@ -11,7 +11,6 @@ import {
   type HostId,
   type HostSessionId,
 } from "@firegrid/protocol/launch"
-import { RuntimeIngressTable } from "@firegrid/protocol/runtime-ingress"
 import { Clock, Effect, Layer, Schema } from "effect"
 import type { DurableTableError, DurableTableHeaders } from "effect-durable-operators"
 import { RuntimeHostConfig } from "./config.ts"
@@ -157,34 +156,6 @@ const namespaceScopedLayer = (
     ),
   )
 
-// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1
-// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
-// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3
-// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.2
-//
-// Host-owned operational tables. Each layer reads CurrentHostSession
-// at acquire time and routes its backing stream through the host's
-// schema-encoded prefix via `hostOwnedStreamUrl`. Stream URLs are
-// derived here, never composed from inline template literals at
-// layer call sites.
-const hostOwnedIngressLayer = (
-  options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
-) =>
-  Layer.unwrapEffect(
-    Effect.map(CurrentHostSession, (session) =>
-      RuntimeIngressTable.layer({
-        streamOptions: {
-          url: hostOwnedStreamUrl({
-            baseUrl: options.baseUrl,
-            prefix: session.streamPrefix,
-            segment: "runtimeIngress",
-          }),
-          contentType: "application/json",
-          ...(options.headers !== undefined ? { headers: options.headers } : {}),
-        },
-      })),
-  )
-
 const hostOwnedOutputLayer = (
   options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
 ) =>
@@ -227,7 +198,6 @@ const hostScopedLayer = (
   }
   const workflowEngineLayer = hostOwnedWorkflowEngineLayer(sharedOptions)
   const hostTables = Layer.mergeAll(
-    hostOwnedIngressLayer(sharedOptions),
     hostOwnedOutputLayer(sharedOptions),
     hostOwnedSandboxCommandLayer(sharedOptions),
     workflowEngineLayer,

@@ -1,12 +1,19 @@
 import {
   Activity,
+  DurableDeferred,
   Workflow,
+  WorkflowEngine,
 } from "@effect/workflow"
 import type { RuntimeContext } from "@firegrid/protocol/launch"
+import {
+  RuntimeIngressInputRowSchema,
+  type RuntimeIngressInputRow,
+} from "@firegrid/protocol/runtime-ingress"
 import {
   Context,
   Effect,
   Layer,
+  Predicate,
   Schema,
 } from "effect"
 import { WaitFor } from "@firegrid/runtime/durable-tools"
@@ -27,6 +34,7 @@ import {
   readRuntimeContext,
   runtimeContextWorkflowExecutionId,
 } from "./internal/runtime-context-helpers.ts"
+import { agentInputEventFromRuntimeIngressRow } from "./runtime-ingress-transform.ts"
 import {
   type RuntimeExitEvidence,
   type StartRuntimeResult,
@@ -139,6 +147,21 @@ const outputWaitName = (
   afterSequence: number,
 ) => `runtime-context/${contextId}/output-after/${activityAttempt}/${afterSequence}`
 
+const inputWaitName = (
+  contextId: string,
+  sequence: number,
+) => `runtime-context/${contextId}/input/${sequence}`
+
+export const runtimeInputDeferredName = inputWaitName
+
+export const runtimeInputDeferredFor = (
+  contextId: string,
+  sequence: number,
+) =>
+  DurableDeferred.make(inputWaitName(contextId, sequence), {
+    success: RuntimeIngressInputRowSchema,
+  })
+
 const waitForAgentOutput = (
   context: RuntimeContext,
   activityAttempt: number,
@@ -153,6 +176,20 @@ const waitForAgentOutput = (
       afterSequence,
     },
     trigger: [],
+  })
+
+const completedRuntimeInput = (
+  context: RuntimeContext,
+  sequence: number,
+) =>
+  Effect.gen(function*() {
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    const exit = yield* Workflow.wrapActivityResult(
+      engine.deferredResult(runtimeInputDeferredFor(context.contextId, sequence)),
+      Predicate.isUndefined,
+    )
+    if (exit === undefined) return undefined
+    return yield* exit
   })
 
 const runToolUseActivity = (
@@ -201,14 +238,48 @@ const handleAgentOutput = (
     return undefined
   })
 
+const handleRuntimeInput = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  row: RuntimeIngressInputRow,
+) =>
+  Effect.gen(function*() {
+    const event = yield* agentInputEventFromRuntimeIngressRow(row).pipe(
+      Effect.mapError(cause =>
+        asRuntimeContextError(
+          "runtime-context.input.decode",
+          "failed decoding runtime input row",
+          context.contextId,
+          cause,
+        )),
+    )
+    yield* sendSessionActivity(
+      context,
+      activityAttempt,
+      {
+        _tag: "AgentInput",
+        commandId: `runtime-input-${context.contextId}-${row.inputId}`,
+        event,
+      },
+      `firegrid.runtime-context.session.send.runtime-input.${row.inputId}`,
+    )
+  })
+
 const runReactiveLoop = (
   context: RuntimeContext,
   activityAttempt: number,
 ) => {
   const loop = (
     lastOutputSequence: number,
+    nextInputSequence: number,
   ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> =>
     Effect.gen(function*() {
+      const input = yield* completedRuntimeInput(context, nextInputSequence)
+      if (input !== undefined) {
+        yield* handleRuntimeInput(context, activityAttempt, input)
+        return yield* loop(lastOutputSequence, nextInputSequence + 1)
+      }
+
       const output = yield* waitForAgentOutput(context, activityAttempt, lastOutputSequence).pipe(
         Effect.mapError(cause =>
           asRuntimeContextError(
@@ -217,19 +288,21 @@ const runReactiveLoop = (
             context.contextId,
             cause,
           )),
+        Effect.flatMap((result): Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError> =>
+          result._tag === "Timeout"
+            ? asRuntimeContextError(
+              "runtime-context.wait.timeout",
+              "runtime-context output wait timed out unexpectedly",
+              context.contextId,
+            )
+            : Effect.succeed(result.row)),
       )
-      if (output._tag === "Timeout") {
-        return yield* asRuntimeContextError(
-          "runtime-context.wait.timeout",
-          "runtime-context wait timed out unexpectedly",
-          context.contextId,
-        )
-      }
-      const exit = yield* handleAgentOutput(context, activityAttempt, output.row)
+
+      const exit = yield* handleAgentOutput(context, activityAttempt, output)
       if (exit !== undefined) return exit
-      return yield* loop(output.row.sequence)
+      return yield* loop(output.sequence, nextInputSequence)
     })
-  return loop(-1)
+  return loop(-1, 0)
 }
 
 const runWorkflowNativeRuntimeContext = (

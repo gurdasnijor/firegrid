@@ -19,6 +19,7 @@ import {
   type RuntimePermissionRequestObservation,
 } from "@firegrid/protocol/session-facade"
 import {
+  appendRuntimeIngress,
   FiregridLocalHostLive,
   localProcessSpawnEnvFromHostEnv,
   RuntimeStartCapabilityLive,
@@ -97,7 +98,6 @@ export const FactoryRunStatusViewSchema = Schema.Struct({
   runtimeRuns: Schema.Array(RuntimeRunEventSchema),
   runtimeEvents: Schema.Array(RuntimeEventSchema),
   runtimeLogs: Schema.Array(RuntimeLogLineSchema),
-  ingressInputs: Schema.Array(RuntimeIngressInputRowSchema),
   agentOutputs: Schema.Array(RuntimeAgentOutputObservationSchema),
   permissions: Schema.Array(FactoryPermissionRequestSchema),
 })
@@ -302,7 +302,10 @@ const appendInitialPlannerPrompt = (
 ) => {
   const inputId = `dark-factory:planner:${input.run.factoryRunKey}:initial`
   return Effect.gen(function* () {
-    const row = yield* input.session.prompt({
+    const row = yield* appendRuntimeIngress({
+      contextId: input.session.contextId,
+      kind: "message",
+      authoredBy: "workflow",
       idempotencyKey: inputId,
       payload: buildPlannerPrompt(input),
       metadata: {
@@ -463,8 +466,6 @@ export const readFactoryRunStatus = (
       .sort((left, right) => left.activityAttempt - right.activityAttempt)
     const runtimeEvents = sortRuntimeEvents(snapshot.events)
     const runtimeLogs = sortRuntimeEvents(snapshot.logs)
-    const ingressInputs = [...snapshot.inputs]
-      .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
     const agentOutputs = sortRuntimeEvents(snapshot.agentOutputs)
     const permissions = agentOutputs.flatMap(observation => {
       const permission = permissionFromAgentOutput(observation)
@@ -476,7 +477,6 @@ export const readFactoryRunStatus = (
       runtimeRuns,
       runtimeEvents,
       runtimeLogs,
-      ingressInputs,
       agentOutputs,
       permissions,
     }
@@ -518,20 +518,17 @@ export const respondToFactoryPermission = (
       },
     }
     yield* table.facts.insertOrGet(fact)
-    const session = yield* attachPlannerSession(sessionId)
-    const response = yield* session.permissions.respond({
-      permissionRequestId: decodedInput.permissionRequestId,
-      decision,
+    const response = yield* appendRuntimeIngress({
+      contextId: sessionId,
+      kind: "control",
+      authoredBy: "client",
+      payload: {
+        _tag: "PermissionResponse",
+        permissionRequestId: decodedInput.permissionRequestId,
+        decision,
+      },
       idempotencyKey: identity.idempotencyKey,
     })
-    const snapshot = yield* session.snapshot()
-    const ingress = snapshot.inputs.find(inputRow =>
-      inputRow.inputId === response.inputId)
-    if (ingress === undefined) {
-      return yield* Effect.fail(
-        new Error(`permission response ingress not found: ${response.inputId}`),
-      )
-    }
     const runOption = yield* table.runs.get(decodedInput.factoryRunKey)
     yield* Option.match(runOption, {
       onNone: () => Effect.void,
@@ -542,7 +539,7 @@ export const respondToFactoryPermission = (
     })
     return {
       fact,
-      input: ingress,
+      input: response,
     }
   })
 

@@ -13,7 +13,7 @@ components:
 
   PACKAGE_BOUNDARIES:
     requirements:
-      1: "@firegrid/client-sdk owns the session plane: agent-session launch intent, session handles, attach, prompt, snapshots, typed runtime waits, permission response inputs, and session-safe observation helpers."
+      1: "@firegrid/client-sdk owns the browser-safe session plane: agent-session launch intent, session handles, attach, snapshots, typed runtime waits, and session-safe observation helpers; runtime input writes are routed through host/app authority."
       2: "@firegrid/host-sdk owns the host plane: host composition, agent provider implementations, local process env policy, MCP installation, host session identity, and host-side execution authority wiring."
       3: "@firegrid/runtime remains the implementation package for agent-event-pipeline, workflow-engine integration, runtime authorities, durable-tools, codecs, and host internals; product apps should not import runtime implementation subpaths for normal behavior."
       4: "@firegrid/protocol remains the schema/operation catalog package shared by both SDKs and bindings."

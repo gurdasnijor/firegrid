@@ -6,6 +6,7 @@ import {
   local,
 } from "@firegrid/client-sdk"
 import {
+  appendRuntimeIngress,
   FiregridLocalHostLive,
   startRuntime,
 } from "@firegrid/host-sdk"
@@ -90,13 +91,17 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
         })
         yield* waitForStarted
 
-        const first = yield* firegrid.prompt({
+        const first = yield* appendRuntimeIngress({
           contextId: handle.contextId,
+          kind: "message",
+          authoredBy: "client",
           payload: [{ type: "text", text: "continue live" }],
           idempotencyKey: "tracer-016-live-input",
         })
-        const duplicate = yield* firegrid.prompt({
+        const duplicate = yield* appendRuntimeIngress({
           contextId: handle.contextId,
+          kind: "message",
+          authoredBy: "client",
           payload: [{ type: "text", text: "continue live duplicate" }],
           idempotencyKey: "tracer-016-live-input",
         })

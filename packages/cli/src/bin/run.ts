@@ -54,21 +54,18 @@ import {
   type RuntimeAgentProtocol,
   type RuntimeEnvBinding,
 } from "@firegrid/protocol/launch"
-// firegrid-host-sdk.PACKAGE_GRAPH.5 / RUNTIME_SESSION_SURFACE: @firegrid/cli
-// binds over @firegrid/host-sdk (host composition: host layer, MCP, env
-// policy, runtime start capability) and @firegrid/client-sdk (session
-// methods). It must NOT import @firegrid/runtime substrate, nor the
-// RuntimeContextInsert / appendRuntimeIngress / runConfigToIngressRequest
-// table-authority surfaces: per the coordinator decision run/start go
-// through the session plane (sessions.createOrLoad + session.prompt +
-// session.start), not direct runtime-context insert + ingress append.
+// firegrid-host-sdk.PACKAGE_GRAPH.5: @firegrid/cli is a host process. It may
+// compose @firegrid/host-sdk host authority directly, but must not import
+// @firegrid/runtime substrate or rely on client-sdk durable-table writes.
 import {
+  appendRuntimeIngress,
   ensurePathInput,
   FiregridLocalHostLive,
   FiregridMcpServerLayer,
   firegridRunCreatedBy,
   localProcessSpawnEnvFromHostEnv,
   RuntimeEnvResolverPolicy,
+  runConfigToIngressRequest,
   RuntimeStartCapabilityLive,
   runtimeContextMcpPath,
 } from "@firegrid/host-sdk"
@@ -242,10 +239,6 @@ const launchConfigToPublicRuntimeIntent = (config: LaunchConfig) => {
   return local.jsonl({ argv: config.agentArgv, ...present })
 }
 
-// firegrid-host-sdk.RUNTIME_SESSION_SURFACE / PACKAGE_GRAPH.5
-// run is session-shaped: createOrLoad → prompt → start, through the
-// @firegrid/client-sdk Firegrid service, not RuntimeContextInsert /
-// appendRuntimeIngress / startRuntime substrate authorities.
 const executeRun = (config: LaunchConfig, externalKey: CliExternalKey) =>
   Effect.gen(function* () {
     const firegrid = yield* Firegrid
@@ -258,11 +251,9 @@ const executeRun = (config: LaunchConfig, externalKey: CliExternalKey) =>
       `firegrid:run: launched context ${session.contextId} (${config.agentArgv.join(" ")})`,
     )
 
-    if (config.prompt !== undefined) {
-      yield* session.prompt({
-        payload: config.prompt,
-        idempotencyKey: `${session.contextId}:cli-initial`,
-      })
+    const initialPrompt = runConfigToIngressRequest(config, session.contextId)
+    if (initialPrompt !== undefined) {
+      yield* appendRuntimeIngress(initialPrompt)
       yield* Console.log(
         `firegrid:run: appended initial prompt input for ${session.contextId}`,
       )
@@ -399,11 +390,9 @@ const seedContextAndPrintReady = (
       runtime: launchConfigToPublicRuntimeIntent(runConfig),
       createdBy: startCreatedBy,
     })
-    if (runConfig.prompt !== undefined) {
-      yield* session.prompt({
-        payload: runConfig.prompt,
-        idempotencyKey: `${session.contextId}:cli-initial`,
-      })
+    const initialPrompt = runConfigToIngressRequest(runConfig, session.contextId)
+    if (initialPrompt !== undefined) {
+      yield* appendRuntimeIngress(initialPrompt)
     }
     yield* printReadyRecord({
       address,

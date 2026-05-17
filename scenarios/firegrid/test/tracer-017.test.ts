@@ -23,6 +23,7 @@ import {
   local,
 } from "@firegrid/client-sdk"
 import {
+  appendRuntimeIngress,
   FiregridLocalHostLive,
   startRuntime,
 } from "@firegrid/host-sdk"
@@ -120,13 +121,17 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
           // The duplicate must collapse at the protocol layer (same
           // inputId) AND the provider-owned AtMostOnce checkpoint must
           // ensure the provider sees exactly one stdin chunk.
-          const first = yield* firegrid.prompt({
+          const first = yield* appendRuntimeIngress({
             contextId: handle.contextId,
+            kind: "message",
+            authoredBy: "client",
             payload: [{ type: "text", text: "continue live" }],
             idempotencyKey: "tracer-017-live-input",
           })
-          const duplicate = yield* firegrid.prompt({
+          const duplicate = yield* appendRuntimeIngress({
             contextId: handle.contextId,
+            kind: "message",
+            authoredBy: "client",
             payload: [{ type: "text", text: "continue live duplicate" }],
             idempotencyKey: "tracer-017-live-input",
           })

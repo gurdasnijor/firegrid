@@ -3,9 +3,9 @@
 // firegrid-host-context-authority.PROMPT_ROUTING.3
 // firegrid-host-context-authority.VALIDATION.2
 //
-// Prompt-routing smoke: a host can append durable input for a
-// context owned by another host, and the row lands in the owner
-// host's ingress stream. `schedule_me` uses the same append surface.
+// Prompt-routing smoke: a host can append durable input for a context owned by
+// another host, and the input completes the owner workflow's runtime-input
+// deferred. `schedule_me` uses the same append surface.
 
 import { Prompt } from "@effect/ai"
 import { DurableStreamTestServer } from "@durable-streams/server"
@@ -19,11 +19,14 @@ import {
   type HostId,
 } from "@firegrid/protocol/launch"
 import {
-  RuntimeIngressTable,
+  RuntimeIngressInputRowSchema,
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Clock, Effect } from "effect"
+import { Cause, Clock, Effect, Either, Exit, Match, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import {
+  WorkflowEngineTable,
+} from "@firegrid/runtime/workflow-engine"
 import { ScheduledInputWorkflow, ScheduledInputWorkflowLayer } from "../../src/agent-tools/index.ts"
 import { AgentToolHost } from "../../src/agent-tools/execution/tool-host.ts"
 import {
@@ -82,12 +85,12 @@ const controlPlaneLayer = (input: {
     },
   })
 
-const ingressLayer = (input: {
+const workflowTableLayer = (input: {
   readonly namespace: string
   readonly baseUrl: string
   readonly hostId: HostId
 }) =>
-  RuntimeIngressTable.layer({
+  WorkflowEngineTable.layer({
     streamOptions: {
       url: hostOwnedStreamUrl({
         baseUrl: input.baseUrl,
@@ -95,29 +98,56 @@ const ingressLayer = (input: {
           namespace: input.namespace,
           hostId: input.hostId,
         }),
-        segment: "runtimeIngress",
+        segment: "workflow",
       }),
       contentType: "application/json",
     },
   })
 
-const readHostIngress = (input: {
+const reviveCause = (value: unknown): Cause.Cause<unknown> => {
+  const record = value as { readonly _tag?: string; readonly failure?: unknown; readonly defect?: unknown }
+  if (record?._tag === "Fail") return Cause.fail(record.failure)
+  if (record?._tag === "Die") return Cause.die(record.defect)
+  return value as Cause.Cause<unknown>
+}
+
+const reviveExit = (value: unknown): Exit.Exit<unknown, unknown> => {
+  const record = value as { readonly _tag?: string; readonly value?: unknown; readonly cause?: unknown }
+  if (record?._tag === "Success") return Exit.succeed(record.value)
+  if (record?._tag === "Failure") return Exit.failCause(reviveCause(record.cause))
+  return value as Exit.Exit<unknown, unknown>
+}
+
+const decodeInputRows = (value: unknown): ReadonlyArray<RuntimeIngressInputRow> =>
+  Exit.match(reviveExit(value), {
+    onFailure: () => [],
+    onSuccess: success =>
+      Match.value(Schema.decodeUnknownEither(RuntimeIngressInputRowSchema)(success)).pipe(
+        Match.when(Either.isRight, decoded => [decoded.right]),
+        Match.orElse(() => []),
+      ),
+  })
+
+const readHostDeferredInputs = (input: {
   readonly namespace: string
   readonly baseUrl: string
   readonly hostId: HostId
 }): Promise<ReadonlyArray<RuntimeIngressInputRow>> =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const table = yield* RuntimeIngressTable
-      return yield* table.inputs.query((coll) => coll.toArray)
+      const table = yield* WorkflowEngineTable
+      return yield* table.deferreds.query((coll) =>
+        coll.toArray
+          .filter(row => row.deferredName.includes("/input/"))
+          .flatMap(row => decodeInputRows(row.exit)))
     }).pipe(
-      Effect.provide(ingressLayer(input)),
+      Effect.provide(workflowTableLayer(input)),
       Effect.scoped,
     ),
   )
 
 describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
-  it("host B appends a prompt for host A context into host A ingress", async () => {
+  it("host B appends a prompt for host A context into host A workflow input deferred", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `prompt-routing-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
@@ -156,14 +186,14 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
       payload: "hello from host B",
     })
 
-    const hostAIngress = await readHostIngress({ baseUrl, namespace, hostId: hostA })
-    const hostBIngress = await readHostIngress({ baseUrl, namespace, hostId: hostB })
+    const hostAInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostA })
+    const hostBInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostB })
 
-    expect(hostAIngress.map(row => row.inputId)).toEqual(["input-cross-host"])
-    expect(hostBIngress).toEqual([])
+    expect(hostAInputs.map(row => row.inputId)).toEqual(["input-cross-host"])
+    expect(hostBInputs).toEqual([])
   })
 
-  it("schedule_me fires through the same owner-host prompt append path", async () => {
+  it("schedule_me fires through the same owner-host deferred-input path", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `prompt-routing-schedule-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
@@ -197,10 +227,10 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
       ),
     )
 
-    const hostAIngress = await readHostIngress({ baseUrl, namespace, hostId: hostA })
-    const hostBIngress = await readHostIngress({ baseUrl, namespace, hostId: hostB })
+    const hostAInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostA })
+    const hostBInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostB })
 
-    expect(hostAIngress.map(row => ({
+    expect(hostAInputs.map(row => ({
       inputId: row.inputId,
       authoredBy: row.authoredBy,
       sequence: row.sequence,
@@ -211,10 +241,10 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
       sequence: 0,
       status: "sequenced",
     }])
-    expect(hostBIngress).toEqual([])
+    expect(hostBInputs).toEqual([])
   })
 
-  it("firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2 session_prompt uses owner-host prompt append routing", async () => {
+  it("firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2 session_prompt uses owner-host deferred-input routing", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `prompt-routing-session-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
@@ -250,10 +280,10 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
       ),
     )
 
-    const hostAIngress = await readHostIngress({ baseUrl, namespace, hostId: hostA })
-    const hostBIngress = await readHostIngress({ baseUrl, namespace, hostId: hostB })
+    const hostAInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostA })
+    const hostBInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostB })
 
-    expect(hostAIngress.map(row => ({
+    expect(hostAInputs.map(row => ({
       inputId: row.inputId,
       authoredBy: row.authoredBy,
       sequence: row.sequence,
@@ -264,7 +294,7 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
       sequence: 0,
       status: "sequenced",
     }])
-    expect(hostBIngress).toEqual([])
+    expect(hostBInputs).toEqual([])
   })
 
   it("firegrid-factory-aligned-agent-tools.SESSION.1 starts a live session_new child without awaiting terminal completion", async () => {
@@ -301,8 +331,8 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
     })
     expect(result.context._tag).toBe("Some")
 
-    const hostIngress = await readHostIngress({ baseUrl, namespace, hostId })
-    expect(hostIngress.map(row => ({
+    const hostInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId })
+    expect(hostInputs.map(row => ({
       contextId: row.contextId,
       authoredBy: row.authoredBy,
       status: row.status,

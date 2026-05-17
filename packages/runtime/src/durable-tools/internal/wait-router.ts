@@ -65,7 +65,6 @@ const streamForSource = (
       Match.tag("AgentOutput", () => streams.agentOutput),
       Match.tag("AgentOutputAfter", source => streams.agentOutputAfter(source)),
       Match.tag("RuntimeRun", () => streams.runtimeRun),
-      Match.tag("RuntimeIngressInput", () => streams.runtimeIngressInput),
       Match.exhaustive,
     ))
 

@@ -17,7 +17,7 @@ import * as ingress from "@firegrid/protocol/runtime-ingress"
 | Subpath | Purpose |
 | --- | --- |
 | `@firegrid/protocol/launch` | Launch input schemas, runtime context/run/output schemas, and `RuntimeControlPlaneTable` / `RuntimeOutputTable`. |
-| `@firegrid/protocol/runtime-ingress` | Prompt input schemas, runtime ingress rows, and `RuntimeIngressTable`. |
+| `@firegrid/protocol/runtime-ingress` | Prompt input schemas and runtime ingress row contracts retained for host/workflow compatibility. |
 
 ## Launch Contracts
 
@@ -50,11 +50,11 @@ import {
 - `promptToRuntimeIngressRequest`;
 - `makeRuntimeIngressInputRow`;
 - runtime ingress row types;
-- `RuntimeIngressTable`.
+- legacy `RuntimeIngressTable` declarations for compatibility with historical
+  row contracts.
 
 ```ts
 import {
-  RuntimeIngressTable,
   makeRuntimeIngressInputRow,
   promptToRuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"

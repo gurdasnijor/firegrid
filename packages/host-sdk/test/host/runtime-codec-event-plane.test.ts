@@ -11,7 +11,6 @@ import {
   type RuntimeAgentProtocol,
   type RuntimeEventRow,
 } from "@firegrid/protocol/launch"
-import { RuntimeIngressTable } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Fiber, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
@@ -141,22 +140,6 @@ const queryAgentEvents = (input: {
       const event = decodeAgentEvent(row.raw)
       return event === undefined ? [] : [event]
     })),
-  )
-
-const queryIngressInputs = (input: {
-  readonly namespace: string
-  readonly hostId: HostId
-  readonly contextId: string
-}) =>
-  Effect.gen(function* () {
-    const table = yield* RuntimeIngressTable
-    return yield* table.inputs.query(coll =>
-      coll.toArray
-        .filter(row => row.contextId === input.contextId)
-        .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0)))
-  }).pipe(
-    Effect.provide(hostLayer(input)),
-    Effect.scoped,
   )
 
 const waitForAgentEvent = (
@@ -568,8 +551,5 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
       event.part.name === "sleep",
     )
     expect(observedToolUse).toBeDefined()
-
-    const inputs = await Effect.runPromise(queryIngressInputs({ namespace, hostId, contextId }))
-    expect(inputs.some(row => row.kind === "tool_result" && row.authoredBy === "tool")).toBe(false)
   })
 })

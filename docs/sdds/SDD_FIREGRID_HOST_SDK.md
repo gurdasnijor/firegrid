@@ -57,9 +57,11 @@ Consequences (target, pending #309 merge):
 
 - Direct `RuntimeIngressTable` append, owner-host stream URL construction, and
   runtime authority tags are not app-facing surfaces.
-- Public client and CLI operations stay session-shaped and unchanged by the
-  cutover: `sessions.createOrLoad`, `session.prompt`, `session.wait.*`,
-  `session.permissions.respond`, `session.snapshot`, and `watchContexts`.
+- Public client and CLI operations stay session-shaped for identity and reads:
+  `sessions.createOrLoad`, `session.wait.*`, `session.snapshot`, and
+  `watchContexts`. Prompt and permission write inputs stay protocol-shaped but
+  are routed by host/app authority rather than by direct client-side table
+  writes.
 - Host composition stays host-shaped: apps install providers, MCP, env policy,
   durable storage, and runtime start/execution layers through host-sdk.
   Host-sdk owns the live owner adapters (the codec/raw
@@ -95,8 +97,8 @@ Consequences (target, pending #309 merge):
     differently, treat the name as **pending** and reconcile to the shipped
     subpath; the rationale stands.)
   The transient `@firegrid/runtime/runtime-ingress` subpath is removed by the
-  post-#309 cleanup; the remaining append seam is host-sdk-local until the
-  deferred-input rewrite removes its `RuntimeIngressTable` backing.
+  post-#309 cleanup; the remaining append seam is host-sdk-local and completes
+  owner-workflow input deferreds rather than a `RuntimeIngressTable` queue.
 - `RUNTIME_CAPABILITY_PROJECTIONS` is cancelled — Path X deletes/rewrites the
   runtime authority files those ACIDs described.
 
@@ -375,17 +377,17 @@ In progress (not merged): the Path X live owner cutover and the
 red**. The ratified target #309 implements: the legacy ingress-delivery spine
 is deleted outright (not deprecated) — no mixed-mode runtime path, no
 compatibility writer; host-sdk owns the live owner adapters; client-sdk and cli
-public surfaces are unchanged by the cutover (a target invariant #309 must
-hold, asserted at review/merge, not yet observed).
+public read/session identity surfaces are unchanged by the cutover (a target
+invariant #309 must hold, asserted at review/merge, not yet observed). Runtime
+input writes are host/app-routed.
 
-Follow-up after #309 merges: first remove the transient
-`@firegrid/runtime/runtime-ingress` public subpath by moving the remaining
-append authority into host-sdk internals and keeping only the durable-tools
-typed input stream in runtime. Then complete **deferred-input cleanup** —
-finish converging prompt/permission/tool delivery on the reactive workflow's
-content-derived `DurableDeferred` waits, removing the remaining host-sdk-local
-`RuntimeIngressTable` append plumbing. This is internal-only; it does not alter
-the client-sdk, host-sdk, or cli public surfaces and must not reintroduce a
+Post-#309 cleanup removes the transient runtime ingress appender/delivery
+surfaces and converges prompt/permission/tool delivery on the reactive
+workflow's content-derived `DurableDeferred` waits. Host-sdk still exposes
+`appendRuntimeIngress` / `appendRuntimeIngressToOwner`, but the implementation
+completes owner-workflow input deferreds instead of writing a host-sdk-local
+`RuntimeIngressTable` queue. This is internal-only; it does not alter the
+client-sdk, host-sdk, or cli public surfaces and must not reintroduce a
 deprecated path.
 
 ## Acceptance
