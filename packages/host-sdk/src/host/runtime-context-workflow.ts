@@ -6,7 +6,7 @@ import type { RuntimeContext } from "@firegrid/protocol/launch"
 import { Effect } from "effect"
 import {
   RuntimeContextError,
-} from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/errors"
 import { runRuntimeContext } from "./raw-process-runtime.ts"
 import {
   readRuntimeContext,

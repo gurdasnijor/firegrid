@@ -19,11 +19,11 @@ import {
   type RuntimeContextInsertService,
   RuntimeContextRead,
   type RuntimeContextReadService,
-} from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/control-plane"
 import {
   runtimeIngressError,
-} from "@firegrid/runtime/host-substrate"
-import type { RuntimeContextError } from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/errors"
+import type { RuntimeContextError } from "@firegrid/runtime/errors"
 import { RuntimeHostConfig } from "./config.ts"
 import {
   appendRuntimeIngressToOwner,

@@ -25,14 +25,14 @@ import {
 import {
   PerContextRuntimeOutputWriterLive,
 } from "./per-context-runtime-output.ts"
-import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/host-substrate"
+import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
 } from "@firegrid/runtime/sources/sandbox"
 import {
   RuntimeControlPlaneRecorderLive,
-} from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/control-plane"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.4
 // Host layer topology is separated from command handlers; this module composes

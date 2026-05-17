@@ -644,6 +644,123 @@ describe("workflow-native runtime-context core", () => {
     expect(afterRestart.emissions).toEqual([`tool-${contextId}-1-tool-reattach`])
   })
 
+  it("delivers public session.prompt ingress through RuntimeContextWorkflowSession.send without ingress-delivery tracker", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `path-x-prompt-delivery-${crypto.randomUUID()}`
+    const hostId = "host-a" as HostId
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
+    const waitUrl = streamUrl(`${namespace}.host-a.waits`)
+    const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
+    const ingressUrl = streamUrl(`${namespace}.host-a.runtimeIngress`)
+    const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
+    const sent: Array<RuntimeContextSessionCommand> = []
+
+    const RuntimeIngressPromptDeliveryWorkflow = Workflow.make({
+      name: "path-x-runtime-ingress-prompt-delivery",
+      payload: Schema.Struct({ contextId: Schema.String }),
+      success: Schema.Void,
+      error: Schema.Unknown,
+      idempotencyKey: payload => payload.contextId,
+    })
+    const workflowLayer = RuntimeIngressPromptDeliveryWorkflow.toLayer(({ contextId: payloadContextId }) =>
+      Effect.gen(function*() {
+        const outcome = yield* WaitFor.match({
+          name: `runtime-context/${payloadContextId}/input/0`,
+          source: { _tag: "RuntimeIngressInput" },
+          trigger: [
+            { path: ["contextId"], equals: payloadContextId },
+            { path: ["status"], equals: "sequenced" },
+            { path: ["sequence"], equals: 0 },
+          ],
+          resultSchema: RuntimeIngressInputRowSchema,
+        })
+        if (outcome._tag === "Timeout") {
+          return yield* Effect.fail("unexpected timeout")
+        }
+        const session = yield* RuntimeContextWorkflowSession
+        yield* session.send(
+          seededRuntimeContext({ namespace, hostId, contextId: payloadContextId }),
+          1,
+          {
+            _tag: "AgentInput",
+            commandId: `runtime-input-${payloadContextId}-${outcome.row.inputId}`,
+            event: {
+              _tag: "Prompt",
+              correlationId: outcome.row.inputId,
+              prompt: Prompt.userMessage({
+                content: [Prompt.textPart({ text: String(outcome.row.payload) })],
+              }),
+            },
+          },
+        )
+      }))
+
+    const testLayer = workflowLayer.pipe(
+      Layer.provideMerge(RuntimeContextWorkflowSession.layer({
+        startOrAttach: (context, activityAttempt) =>
+          Effect.succeed(startedEvidence(context.contextId, activityAttempt)),
+        send: (context, activityAttempt, command) =>
+          Effect.sync(() => {
+            sent.push(command)
+            return acceptedCommand(context.contextId, activityAttempt, command)
+          }),
+      })),
+      Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: waitUrl })),
+      Layer.provideMerge(RuntimeControlPlaneRecorderLive),
+      Layer.provideMerge(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
+      Layer.provideMerge(RuntimeAgentOutputEventsLayer),
+      Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),
+      Layer.provideMerge(RuntimeControlPlaneTable.layer({
+        streamOptions: { url: controlUrl, contentType: "application/json" },
+      })),
+      Layer.provideMerge(RuntimeIngressTable.layer({
+        streamOptions: { url: ingressUrl, contentType: "application/json" },
+      })),
+      Layer.provideMerge(RuntimeOutputTable.layer({
+        streamOptions: { url: outputUrl, contentType: "application/json" },
+      })),
+      Layer.provideMerge(hostSessionLayer(namespace, hostId)),
+    )
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const control = yield* RuntimeControlPlaneTable
+          const ingress = yield* RuntimeIngressTable
+          const context = seededRuntimeContext({ namespace, hostId, contextId })
+          yield* control.contexts.upsert(context)
+          yield* RuntimeIngressPromptDeliveryWorkflow.execute({ contextId }, { discard: true })
+          yield* waitUntilActiveWait(`runtime-context/${contextId}/input/0`)
+          yield* ingress.inputs.insert({
+            ...makeRuntimeIngressInputRow({
+              contextId,
+              inputId: "input-prompt-1",
+              kind: "message",
+              authoredBy: "client",
+              payload: "hello from session.prompt",
+              idempotencyKey: "input-prompt-1",
+            }),
+            status: "sequenced",
+            sequence: 0,
+            sequencedAt: new Date().toISOString(),
+          })
+          return yield* RuntimeIngressPromptDeliveryWorkflow.execute({ contextId })
+        }).pipe(Effect.provide(testLayer)),
+      ),
+    )
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({
+      _tag: "AgentInput",
+      commandId: `runtime-input-${contextId}-input-prompt-1`,
+      event: {
+        _tag: "Prompt",
+        correlationId: "input-prompt-1",
+      },
+    })
+  })
+
   it("firegrid-workflow-driven-runtime.VALIDATION.6 proves send activity replay does not duplicate external emission across restart", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `path-x-send-once-${crypto.randomUUID()}`

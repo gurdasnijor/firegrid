@@ -13,6 +13,26 @@
       "types": "./src/host-substrate.ts",
       "default": "./src/host-substrate.ts"
     },
+    "./errors": {
+      "types": "./src/runtime-errors.ts",
+      "default": "./src/runtime-errors.ts"
+    },
+    "./tool-executor": {
+      "types": "./src/agent-event-pipeline/subscribers/runtime-tool-use-executor.ts",
+      "default": "./src/agent-event-pipeline/subscribers/runtime-tool-use-executor.ts"
+    },
+    "./control-plane": {
+      "types": "./src/authorities/index.ts",
+      "default": "./src/authorities/index.ts"
+    },
+    "./runtime-output": {
+      "types": "./src/agent-event-pipeline/authorities/runtime-output-public.ts",
+      "default": "./src/agent-event-pipeline/authorities/runtime-output-public.ts"
+    },
+    "./runtime-ingress": {
+      "types": "./src/agent-event-pipeline/authorities/runtime-ingress-appender.ts",
+      "default": "./src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
+    },
     "./workflow-engine": {
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"

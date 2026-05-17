@@ -28,12 +28,12 @@ import {
 } from "./internal/runtime-context-helpers.ts"
 import {
   RuntimeContextRead,
-} from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/control-plane"
 import {
   RuntimeIngressAppendAndGet,
   RuntimeIngressAppenderLayer,
-} from "@firegrid/runtime/host-substrate"
-import { runtimeIngressError } from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/runtime-ingress"
+import { runtimeIngressError } from "@firegrid/runtime/errors"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.4
 // Command handlers remain thin entrypoints over workflow and ingress

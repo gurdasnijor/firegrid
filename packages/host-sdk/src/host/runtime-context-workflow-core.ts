@@ -17,10 +17,12 @@ import {
   type RuntimeAgentOutputObservation,
 } from "@firegrid/runtime/events"
 import {
-  RuntimeToolUseExecutor,
   RuntimeContextError,
   asRuntimeContextError,
-} from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/errors"
+import {
+  RuntimeToolUseExecutor,
+} from "@firegrid/runtime/tool-executor"
 import {
   readRuntimeContext,
   runtimeContextWorkflowExecutionId,

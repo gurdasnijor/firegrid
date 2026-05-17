@@ -9,7 +9,7 @@ import {
 import { Context, Effect, Layer, Option, Stream } from "effect"
 import {
   RuntimeAgentOutputAfterEvents,
-} from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/runtime-output"
 import {
   encodeRuntimeAgentOutputEnvelope,
   runtimeAgentOutputObservationFromRow,

@@ -1,10 +1,10 @@
 import type { RuntimeContext } from "@firegrid/protocol/launch"
 import { Effect, Schema } from "effect"
-import { RuntimeRunAppendAndGet } from "@firegrid/runtime/host-substrate"
+import { RuntimeRunAppendAndGet } from "@firegrid/runtime/control-plane"
 import {
   mapRuntimeContextError,
-} from "@firegrid/runtime/host-substrate"
-import type { RuntimeContextError } from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/errors"
+import type { RuntimeContextError } from "@firegrid/runtime/errors"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.2
 // RuntimeContextWorkflow owns workflow/activity/run lifecycle wiring only.

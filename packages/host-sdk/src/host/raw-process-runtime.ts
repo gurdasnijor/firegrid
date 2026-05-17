@@ -12,7 +12,7 @@ import {
   RuntimeContextError,
   asRuntimeContextError,
   mapRuntimeContextError,
-} from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/errors"
 import {
   RuntimeAgentOutputEventsLayer,
   RuntimeAgentOutputRowSink,
@@ -21,7 +21,7 @@ import {
 import {
   RuntimeIngressAppenderLayer,
   RuntimeIngressInputStream,
-} from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/runtime-ingress"
 import {
   RuntimeIngressDeliveryTrackerLayer,
 } from "@firegrid/runtime/host-substrate"

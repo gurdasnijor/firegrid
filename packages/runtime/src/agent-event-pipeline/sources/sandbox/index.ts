@@ -1,4 +1,5 @@
 export * from "./SandboxProvider.ts"
+export type { AgentByteStream } from "../byte-stream.ts"
 export * from "./effect-ai.ts"
 export * from "./local-process.ts"
 export * from "./process-stream.ts"
