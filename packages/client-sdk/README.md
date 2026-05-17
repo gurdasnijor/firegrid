@@ -1,8 +1,8 @@
-# `@firegrid/client`
+# `@firegrid/client-sdk`
 
 Browser- and edge-safe Firegrid client APIs for application code.
 
-`@firegrid/client` reads and writes Firegrid durable rows. It does not import
+`@firegrid/client-sdk` reads and writes Firegrid durable rows. It does not import
 `@firegrid/runtime`, start processes by itself, own sandbox providers, or expose
 runtime-host internals. When a caller needs to actively start a runtime, the
 start authority is supplied by host/server composition through
@@ -22,7 +22,7 @@ import {
   FiregridRuntimeTables,
   firegridRuntimeTableTags,
   local,
-} from "@firegrid/client"
+} from "@firegrid/client-sdk"
 ```
 
 | Export | Purpose |
@@ -47,7 +47,7 @@ The production client entrypoints are browser/edge safe:
 - no process or sandbox start authority unless the app explicitly provides a
   host-side `RuntimeStartCapability`.
 
-Tests under `packages/client/test` may use Node fixtures. Those are not
+Tests under `packages/client-sdk/test` may use Node fixtures. Those are not
 part of the browser-facing package surface.
 
 ## Configuration
@@ -58,7 +58,7 @@ for example `https://api.electric-sql.cloud/v1/stream/<service-id>`. Firegrid
 appends encoded stream names below that root.
 
 ```ts
-import { FiregridConfig, FiregridStandaloneLive } from "@firegrid/client"
+import { FiregridConfig, FiregridStandaloneLive } from "@firegrid/client-sdk"
 import type { DurableTableHeaders } from "@firegrid/protocol"
 import { Layer } from "effect"
 
@@ -103,7 +103,7 @@ compatibility alias while app code migrates to the session vocabulary. This
 alias does not create a second table, lookup service, or parent/child hierarchy.
 
 ```ts
-import { Firegrid, local } from "@firegrid/client"
+import { Firegrid, local } from "@firegrid/client-sdk"
 import { Effect } from "effect"
 
 export const createPlanner = Effect.gen(function*() {
@@ -224,7 +224,7 @@ import {
   FiregridControlPlaneTableLive,
   FiregridConfig,
   FiregridRuntimeTables,
-} from "@firegrid/client"
+} from "@firegrid/client-sdk"
 import {
   DurableTableProvider,
   useDurableLiveQuery,
@@ -286,5 +286,5 @@ Application code owns product semantics:
 - UI-specific joins, display copy, and domain-specific status.
 
 That split is the intended cutover path for apps such as `apps/factory`: move
-generic RuntimeContext/session plumbing into `@firegrid/client`, keep factory
+generic RuntimeContext/session plumbing into `@firegrid/client-sdk`, keep factory
 facts and provider semantics in the app.
