@@ -1,0 +1,42 @@
+{
+  "name": "@firegrid/client-sdk",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./firegrid": {
+      "types": "./src/firegrid.ts",
+      "default": "./src/firegrid.ts"
+    },
+    "./operations": {
+      "types": "./src/operations.ts",
+      "default": "./src/operations.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "pnpm run typecheck && pnpm run test",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@firegrid/protocol": "workspace:*",
+    "effect": "^3.21.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}

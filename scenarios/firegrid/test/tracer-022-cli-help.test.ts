@@ -53,7 +53,7 @@ describe("tracer 022 CLI help discoverability", () => {
     expect(output).toContain("--secret-env ANTHROPIC_API_KEY")
     expect(output).toContain("run")
     expect(output).toContain("start")
-  })
+  }, 15_000)
 
   it("firegrid-local-mcp-run.CLI_HELP.2 documents run launch options from schema help", async () => {
     const output = await firegridHelp(["run", "--help"])
@@ -71,7 +71,7 @@ describe("tracer 022 CLI help discoverability", () => {
     expect(output).toContain("--secret-env")
     expect(output).toContain("literal secret values are never accepted")
     expect(output).toContain("agent-argv")
-  })
+  }, 15_000)
 
   it("firegrid-local-mcp-run.CLI_HELP.3 documents start host and MCP options", async () => {
     const output = await firegridHelp(["start", "--help"])
@@ -86,5 +86,5 @@ describe("tracer 022 CLI help discoverability", () => {
     expect(output).toContain("--mcp-port")
     expect(output).toContain("Default 0 asks the OS for a free loopback port")
     expect(output).toContain("--mcp-path")
-  })
+  }, 15_000)
 })

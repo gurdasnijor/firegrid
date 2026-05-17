@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@effect/platform-node": "^0.106.0",
-    "@firegrid/client": "workspace:*",
+    "@firegrid/client-sdk": "workspace:*",
+    "@firegrid/host-sdk": "workspace:*",
     "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
     "@radix-ui/react-slot": "1.2.4",

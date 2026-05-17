@@ -114,22 +114,27 @@ module.exports = {
     },
     {
       // firegrid-architecture-boundary.DEPENDENCY_GRAPH.1
-      name: "client-no-runtime",
+      // firegrid-host-sdk.PACKAGE_GRAPH.3
+      name: "client-sdk-no-runtime",
       severity: "error",
       comment:
-        "The browser/app-facing client package must not import runtime code or runtime-only dependencies.",
-      from: { path: "^packages/client/src" },
+        "The browser/app-facing client-sdk package must not import runtime code or runtime-only dependencies.",
+      from: { path: "^packages/client-sdk/src" },
       to: { path: "^packages/runtime/src" },
     },
     {
       // firegrid-architecture-boundary.DEPENDENCY_GRAPH.2
       // firegrid-package-migration.COMPATIBILITY.4
-      name: "runtime-no-client",
+      // firegrid-host-sdk.PACKAGE_GRAPH.2
+      // Lane 1 owns the client-sdk/cli targets here; Lane 2 adds the
+      // matching host-sdk target (runtime-no-host-sdk) without editing
+      // this rule.
+      name: "runtime-no-client-sdk-or-cli",
       severity: "error",
       comment:
-        "The runtime package must not import the browser/app-facing client package.",
+        "The runtime package must not import the browser/app-facing client-sdk package or the CLI package.",
       from: { path: "^packages/runtime/src" },
-      to: { path: "^packages/client/src" },
+      to: { path: "^packages/(client-sdk|cli)/src" },
     },
     {
       // firegrid-typed-wait-source-redesign.MIGRATION.4
@@ -148,9 +153,9 @@ module.exports = {
       name: "protocol-no-client-or-runtime",
       severity: "error",
       comment:
-        "Protocol must remain the shared browser-safe base; it cannot depend upward on client or runtime.",
+        "Protocol must remain the shared browser-safe base; it cannot depend upward on client-sdk, host-sdk, cli, or runtime.",
       from: { path: "^packages/protocol/src" },
-      to: { path: "^packages/(client|runtime)/src" },
+      to: { path: "^packages/(client-sdk|host-sdk|cli|runtime)/src" },
     },
     {
       // firegrid-architecture-boundary.DEPENDENCY_GRAPH.6
@@ -198,28 +203,58 @@ module.exports = {
       // firegrid-platform-invariants.LOCALITY.2
       // firegrid-platform-invariants.LOCALITY.7
       // firegrid-architecture-boundary.SURFACE_AREA.3
-      name: "client-no-broad-durable-streams-root",
+      name: "client-sdk-no-broad-durable-streams-root",
       severity: "error",
       comment:
-        "@firegrid/client must use narrow browser-safe @firegrid/durable-streams subpaths instead of the broad root.",
-      from: { path: "^packages/client/src" },
+        "@firegrid/client-sdk must use narrow browser-safe @firegrid/durable-streams subpaths instead of the broad root.",
+      from: { path: "^packages/client-sdk/src" },
       to: { path: "^packages/durable-streams/src/index\\.ts$" },
     },
     {
       // firegrid-architecture-boundary.DEPENDENCY_GRAPH.8
       // firegrid-platform-invariants.LOCALITY.2
       // firegrid-platform-invariants.LOCALITY.7
-      name: "client-production-no-node-tier-durable-streams-subpaths",
+      name: "client-sdk-production-no-node-tier-durable-streams-subpaths",
       severity: "error",
       comment:
-        "Production @firegrid/client code must not statically reach workflow-engine, producer, server, or test utility substrate modules.",
+        "Production @firegrid/client-sdk code must not statically reach workflow-engine, producer, server, or test utility substrate modules.",
       from: {
-        path: "^packages/client/src",
+        path: "^packages/client-sdk/src",
         pathNot: "\\.test\\.ts$",
       },
       to: {
         path: "^packages/durable-streams/src/(?:producer|workflow-engine|test-utils|testing/|internal/|DurableStreamProducer|DurableStreamsWorkflowEngine)",
       },
+    },
+    {
+      // === Host SDK plane split — Lane 1 owned (client-sdk/cli) ===
+      // Lane 2 adds host-sdk-source rules separately; do not edit this
+      // block from Lane 2 to avoid integration-branch conflicts.
+      // firegrid-host-sdk.PACKAGE_GRAPH.3
+      name: "client-sdk-no-host-sdk-or-cli",
+      severity: "error",
+      comment:
+        "@firegrid/client-sdk is a browser/edge-safe sibling projection; it must not import host-sdk or cli.",
+      from: { path: "^packages/client-sdk/src" },
+      to: { path: "^packages/(host-sdk|cli)/src" },
+    },
+    {
+      // firegrid-host-sdk.PACKAGE_GRAPH.5
+      name: "no-package-imports-cli",
+      severity: "error",
+      comment:
+        "No package may import @firegrid/cli; the CLI is a terminal binding over host-sdk and client-sdk.",
+      from: { path: "^packages/(?!cli/)[^/]+/src", pathNot: "^packages/cli/src" },
+      to: { path: "^packages/cli/src" },
+    },
+    {
+      // firegrid-host-sdk.PACKAGE_GRAPH.5
+      name: "cli-no-runtime",
+      severity: "error",
+      comment:
+        "@firegrid/cli must bind over @firegrid/host-sdk and @firegrid/client-sdk; it must not import @firegrid/runtime substrate directly.",
+      from: { path: "^packages/cli/src" },
+      to: { path: "^packages/runtime/src" },
     },
     {
       name: "flamecast-client-no-runtime-source",

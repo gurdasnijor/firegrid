@@ -11,7 +11,7 @@ import {
   local,
   type FiregridService,
   type RuntimeContextSnapshot,
-} from "@firegrid/client/firegrid"
+} from "@firegrid/client-sdk/firegrid"
 import {
   DurableTableProvider,
   useDurableLiveQuery,

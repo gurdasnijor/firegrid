@@ -6,7 +6,7 @@ import {
 import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
 import {
   Firegrid,
-} from "@firegrid/client/firegrid"
+} from "@firegrid/client-sdk/firegrid"
 import {
   encodeRuntimeAgentOutputEnvelope,
   sessionContextIdForExternalKey,

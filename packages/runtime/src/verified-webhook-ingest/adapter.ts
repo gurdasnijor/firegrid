@@ -123,6 +123,12 @@ const signatureHexFromHeader = (value: string): string => {
 const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
 
+const bytesToArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
+  const copy = new Uint8Array(bytes.byteLength)
+  copy.set(bytes)
+  return copy.buffer
+}
+
 const hexToBytes = (hex: string): Uint8Array | undefined => {
   if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) return undefined
   const bytes = new Uint8Array(hex.length / 2)
@@ -143,12 +149,12 @@ const hmacSha256Hex = (
     try: async () => {
       const key = await globalThis.crypto.subtle.importKey(
         "raw",
-        typeof secret === "string" ? encoder.encode(secret) : secret,
+        bytesToArrayBuffer(typeof secret === "string" ? encoder.encode(secret) : secret),
         { name: "HMAC", hash: "SHA-256" },
         false,
         ["sign"],
       )
-      const digest = await globalThis.crypto.subtle.sign("HMAC", key, rawBody)
+      const digest = await globalThis.crypto.subtle.sign("HMAC", key, bytesToArrayBuffer(rawBody))
       return bytesToHex(new Uint8Array(digest))
     },
     catch: (cause) => ingestError({
@@ -165,7 +171,7 @@ const sha256Hex = (
 ): Effect.Effect<string, VerifiedWebhookIngestError> =>
   Effect.tryPromise({
     try: async () => {
-      const digest = await globalThis.crypto.subtle.digest("SHA-256", rawBody)
+      const digest = await globalThis.crypto.subtle.digest("SHA-256", bytesToArrayBuffer(rawBody))
       return bytesToHex(new Uint8Array(digest))
     },
     catch: (cause) => ingestError({

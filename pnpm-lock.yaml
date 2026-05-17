@@ -7,34 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@effect/cli':
-        specifier: ^0.75.1
-        version: 0.75.1(@effect/platform@0.96.1(effect@3.21.2))(@effect/printer-ansi@0.49.0(@effect/typeclass@0.40.0(effect@3.21.2))(effect@3.21.2))(@effect/printer@0.49.0(@effect/typeclass@0.40.0(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
-      '@effect/platform':
-        specifier: ^0.96.1
-        version: 0.96.1(effect@3.21.2)
-      '@effect/platform-node':
-        specifier: ^0.106.0
-        version: 0.106.0(@effect/cluster@0.58.2(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
-      '@effect/printer':
-        specifier: ^0.49.0
-        version: 0.49.0(@effect/typeclass@0.40.0(effect@3.21.2))(effect@3.21.2)
-      '@effect/printer-ansi':
-        specifier: ^0.49.0
-        version: 0.49.0(@effect/typeclass@0.40.0(effect@3.21.2))(effect@3.21.2)
-      '@effect/typeclass':
-        specifier: ^0.40.0
-        version: 0.40.0(effect@3.21.2)
-      '@firegrid/protocol':
-        specifier: workspace:*
-        version: link:packages/protocol
-      '@firegrid/runtime':
-        specifier: workspace:*
-        version: link:packages/runtime
-      effect:
-        specifier: ^3.21.2
-        version: 3.21.2
     devDependencies:
       '@durable-streams/server':
         specifier: ^0.3.1
@@ -87,9 +59,12 @@ importers:
       '@effect/platform-node':
         specifier: ^0.106.0
         version: 0.106.0(@effect/cluster@0.58.2(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
-      '@firegrid/client':
+      '@firegrid/client-sdk':
         specifier: workspace:*
-        version: link:../../packages/client
+        version: link:../../packages/client-sdk
+      '@firegrid/host-sdk':
+        specifier: workspace:*
+        version: link:../../packages/host-sdk
       '@firegrid/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -172,9 +147,12 @@ importers:
       '@effect/platform-node':
         specifier: ^0.106.0
         version: 0.106.0(@effect/cluster@0.58.2(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
-      '@firegrid/client':
+      '@firegrid/client-sdk':
         specifier: workspace:*
-        version: link:../../packages/client
+        version: link:../../packages/client-sdk
+      '@firegrid/host-sdk':
+        specifier: workspace:*
+        version: link:../../packages/host-sdk
       '@firegrid/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
@@ -228,7 +206,44 @@ importers:
         specifier: ^3.2.0
         version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
 
-  packages/client:
+  packages/cli:
+    dependencies:
+      '@durable-streams/server':
+        specifier: ^0.3.1
+        version: 0.3.1(@tanstack/db@0.6.5(typescript@5.9.3))
+      '@effect/cli':
+        specifier: ^0.75.1
+        version: 0.75.1(@effect/platform@0.96.1(effect@3.21.2))(@effect/printer-ansi@0.49.0(@effect/typeclass@0.40.0(effect@3.21.2))(effect@3.21.2))(@effect/printer@0.49.0(@effect/typeclass@0.40.0(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@effect/platform':
+        specifier: ^0.96.1
+        version: 0.96.1(effect@3.21.2)
+      '@effect/platform-node':
+        specifier: ^0.106.0
+        version: 0.106.0(@effect/cluster@0.58.2(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@firegrid/client-sdk':
+        specifier: workspace:*
+        version: link:../client-sdk
+      '@firegrid/host-sdk':
+        specifier: workspace:*
+        version: link:../host-sdk
+      '@firegrid/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      effect:
+        specifier: ^3.21.2
+        version: 3.21.2
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
+
+  packages/client-sdk:
     dependencies:
       '@firegrid/protocol':
         specifier: workspace:*
@@ -312,6 +327,55 @@ importers:
         specifier: ^3.2.0
         version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
 
+  packages/host-sdk:
+    dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 0.21.0
+        version: 0.21.0(zod@4.4.3)
+      '@effect/ai':
+        specifier: ^0.35.0
+        version: 0.35.0(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@effect/experimental':
+        specifier: 0.60.0
+        version: 0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4)
+      '@effect/platform':
+        specifier: ^0.96.1
+        version: 0.96.1(effect@3.21.2)
+      '@effect/platform-node':
+        specifier: ^0.106.0
+        version: 0.106.0(@effect/cluster@0.58.2(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(effect@3.21.2))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(@effect/sql@0.51.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@effect/rpc':
+        specifier: 0.75.1
+        version: 0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)
+      '@effect/workflow':
+        specifier: 0.18.1
+        version: 0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@firegrid/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@firegrid/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
+      effect:
+        specifier: ^3.21.2
+        version: 3.21.2
+      effect-durable-operators:
+        specifier: workspace:*
+        version: link:../effect-durable-operators
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.0
+        version: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
+
   packages/protocol:
     dependencies:
       effect:
@@ -376,9 +440,12 @@ importers:
 
   scenarios/firegrid:
     dependencies:
-      '@firegrid/client':
+      '@firegrid/client-sdk':
         specifier: workspace:*
-        version: link:../../packages/client
+        version: link:../../packages/client-sdk
+      '@firegrid/host-sdk':
+        specifier: workspace:*
+        version: link:../../packages/host-sdk
       '@firegrid/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime

@@ -684,7 +684,7 @@ export default tseslint.config(
         "warn",
         {
           packageNames: [
-            "@firegrid/client",
+            "@firegrid/client-sdk",
             "@firegrid/substrate",
             "@firegrid/runtime",
           ],
@@ -698,7 +698,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/{client,runtime}/src/**/*.ts"],
+    files: ["packages/{client-sdk,runtime}/src/**/*.ts"],
     ignores: ["packages/**/src/__tests__/**/*.ts", "packages/**/*.test.ts"],
     rules: {
       "local/no-hidden-control-plane": "error",
@@ -712,7 +712,7 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@firegrid/client",
+              "@firegrid/client-sdk",
               "Substrate must not depend on the client package.",
             ),
             restrictedInternalPackage(
@@ -752,7 +752,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/client/src/**/*.ts"],
+    files: ["packages/client-sdk/src/**/*.ts"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -760,7 +760,15 @@ export default tseslint.config(
           paths: [
             restrictedInternalPackage(
               "@firegrid/runtime",
-              "Client must not depend on the runtime package; runtime → client is an architecture defect and the reverse direction must not exist either.",
+              "client-sdk must not depend on the runtime package; runtime → client-sdk is an architecture defect and the reverse direction must not exist either.",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/host-sdk",
+              "client-sdk is a browser/edge-safe sibling projection; it must not import host-sdk (firegrid-host-sdk.PACKAGE_GRAPH.3).",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/cli",
+              "client-sdk must not import the CLI binding (firegrid-host-sdk.PACKAGE_GRAPH.3/5).",
             ),
             restrictedInternalPackage(
               "@firegrid/lab",
@@ -792,6 +800,35 @@ export default tseslint.config(
               ],
               message:
                 "firegrid-architecture-boundary.DEPENDENCY_GRAPH.6: reusable packages must not import workspace apps.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // firegrid-host-sdk.PACKAGE_GRAPH.5: the CLI binds over host-sdk +
+    // client-sdk + protocol; it must not reach into runtime substrate.
+    files: ["packages/cli/src/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            restrictedInternalPackage(
+              "@firegrid/runtime",
+              "@firegrid/cli must bind over @firegrid/host-sdk and @firegrid/client-sdk, not import the runtime substrate directly (firegrid-host-sdk.PACKAGE_GRAPH.5).",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/lab",
+              "The CLI must not depend on the lab app.",
+            ),
+          ],
+          patterns: [
+            {
+              group: ["@firegrid/runtime", "@firegrid/runtime/*"],
+              message:
+                "@firegrid/cli must bind over @firegrid/host-sdk and @firegrid/client-sdk, not @firegrid/runtime substrate (firegrid-host-sdk.PACKAGE_GRAPH.5).",
             },
           ],
         },
@@ -852,8 +889,16 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@firegrid/client",
+              "@firegrid/client-sdk",
               "Runtime → client is an architecture defect; the runtime must not import the app-facing client package.",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/host-sdk",
+              "firegrid-host-sdk.PACKAGE_GRAPH.2: runtime must not import host-sdk. Runtime owns the narrow RuntimeToolUseExecutor capability tag; host-sdk provides the live layer (firegrid-host-sdk.TOOL_EXECUTOR_SEAM).",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/cli",
+              "firegrid-host-sdk.PACKAGE_GRAPH.5: no package may import the CLI binding.",
             ),
             restrictedInternalPackage(
               "@firegrid/lab",
@@ -862,6 +907,60 @@ export default tseslint.config(
             restrictedInternalPackage(
               "@firegrid/types",
               "Runtime owns its lifecycle/config types only; do not introduce a shared types package.",
+            ),
+          ],
+          patterns: [
+            ...legacyDurableAgentSubstrateImportPatterns,
+            ...upstreamDurableStreamsImportPatterns,
+            ...historicalFiregridDurableStreamsImportPatterns,
+            {
+              group: [
+                "apps/*",
+                "apps/*/*",
+                "../apps/*",
+                "../apps/*/*",
+                "../../apps/*",
+                "../../apps/*/*",
+                "../../../apps/*",
+                "../../../apps/*/*",
+              ],
+              message:
+                "firegrid-architecture-boundary.DEPENDENCY_GRAPH.6: reusable packages must not import workspace apps.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // firegrid-host-sdk.PACKAGE_GRAPH.4 / .5: host-sdk is a sibling
+    // projection over @firegrid/protocol and may compose @firegrid/runtime,
+    // but must not import the client-sdk session plane or the CLI binding.
+    files: ["packages/host-sdk/src/**/*.ts"],
+    ignores: [
+      "packages/host-sdk/src/__tests__/**/*.ts",
+      "packages/**/*.test.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            restrictedInternalPackage(
+              "@firegrid/client-sdk",
+              "firegrid-host-sdk.PACKAGE_GRAPH.4: host-sdk must not import the client-sdk session plane; they are sibling projections over @firegrid/protocol.",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/cli",
+              "firegrid-host-sdk.PACKAGE_GRAPH.5: no package may import the CLI binding.",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/lab",
+              "Host-sdk must not depend on the lab app.",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/types",
+              "Host-sdk reuses protocol/runtime schemas; do not introduce a shared types package.",
             ),
           ],
           patterns: [
@@ -945,7 +1044,7 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@firegrid/client",
+              "@firegrid/client-sdk",
               "Runtime → client is an architecture defect.",
             ),
             restrictedInternalPackage(
