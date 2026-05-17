@@ -15,7 +15,7 @@ import {
   RuntimeIngressInputStreamLayer,
 } from "@firegrid/runtime/host-substrate"
 import {
-  RuntimeOutputJournalLayer,
+  RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/host-substrate"
 import { RuntimeToolUseExecutor } from "@firegrid/runtime/host-substrate"
 import {
@@ -24,6 +24,9 @@ import {
 import { ScheduledInputWorkflowLayer } from "../agent-tools/execution/scheduled-input-workflow.ts"
 import { type AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import { HostOwnedDurableToolsWaitForLive } from "./host-owned-durable-tools.ts"
+import {
+  PerContextRuntimeAgentOutputAfterEventsLive,
+} from "./per-context-runtime-output.ts"
 
 type RuntimeToolUseExecutorHostEnvironment =
   | DurableWaitRowLookup
@@ -41,7 +44,8 @@ type RuntimeToolUseExecutorHostEnvironment =
 // registration layer.
 export const HostRuntimeObservationSubstrateLive = HostOwnedDurableToolsWaitForLive.pipe(
   Layer.provideMerge(Layer.mergeAll(
-    RuntimeOutputJournalLayer,
+    RuntimeAgentOutputEventsLayer,
+    PerContextRuntimeAgentOutputAfterEventsLive,
     RuntimeControlPlaneRecorderLive,
     RuntimeIngressInputStreamLayer,
     RuntimeIngressDeliveryTrackerLayer,

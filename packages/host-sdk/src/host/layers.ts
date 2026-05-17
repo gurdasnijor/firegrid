@@ -22,6 +22,9 @@ import {
   HostRuntimeObservationSubstrateLive,
   RuntimeToolUseExecutorLive,
 } from "./runtime-substrate.ts"
+import {
+  PerContextRuntimeOutputWriterLive,
+} from "./per-context-runtime-output.ts"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/host-substrate"
 import {
   LocalProcessSandboxProvider,
@@ -184,6 +187,7 @@ const hostScopedLayer = (
   return HostRuntimeObservationSubstrateLive.pipe(
     Layer.provideMerge(hostTables),
     Layer.provideMerge(runtimeHostAgentToolHostWithControlPlaneLive(workflowEngineLayer)),
+    Layer.provideMerge(PerContextRuntimeOutputWriterLive),
     // firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2
     Layer.provideMerge(RuntimeToolUseExecutorLive),
   )

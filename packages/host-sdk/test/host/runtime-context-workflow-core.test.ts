@@ -19,7 +19,7 @@ import {
   RuntimeIngressInputRowSchema,
   makeRuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeControlPlaneRecorderLive,
@@ -31,13 +31,19 @@ import {
   encodeRuntimeAgentOutputEnvelope,
   type AgentInputEvent,
 } from "@firegrid/runtime/events"
-import { DurableToolsWaitForLive, WaitFor } from "@firegrid/runtime/durable-tools"
+import { DurableToolsTable, DurableToolsWaitForLive, WaitFor } from "@firegrid/runtime/durable-tools"
 import {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowNativeLayer,
   RuntimeContextWorkflowSession,
 } from "../../src/host/runtime-context-workflow-core.ts"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
+import {
+  FiregridRuntimeHostWithWorkflowLive,
+} from "../../src/host/layers.ts"
+import {
+  PerContextRuntimeOutputWriter,
+} from "../../src/host/per-context-runtime-output.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -110,7 +116,179 @@ const logRow = (input: {
   raw: "startup log",
 })
 
+const agentOutputAfterWaitName = (
+  contextId: string,
+  activityAttempt: number,
+  afterSequence: number,
+) => `runtime-context/${contextId}/output-after/${activityAttempt}/${afterSequence}`
+
+const waitUntilActiveWait = (
+  name: string,
+) =>
+  Effect.gen(function*() {
+    const table = yield* DurableToolsTable
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const rows = yield* table.waits.query((coll) =>
+        coll.toArray.filter(row =>
+          row.waitKey.name === name && row.status === "active"))
+      if (rows.length > 0) return rows[0]!
+      yield* Effect.sleep("25 millis")
+    }
+    return yield* Effect.fail(new Error(`wait row did not become active: ${name}`))
+  })
+
 describe("workflow-native runtime-context core", () => {
+  it("workflow-native runtime-context core resolves AgentOutputAfter initial state through PerContextRuntimeOutputWriter", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `path-x-output-initial-${crypto.randomUUID()}`
+    const hostId = "host-a" as HostId
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const activityAttempt = 1
+    const context = {
+      contextId,
+      createdAt: new Date().toISOString(),
+      runtime: normalizeRuntimeIntent(local.jsonl({
+        argv: ["node", "-e", "process.exit(0)"],
+        agentProtocol: "stdio-jsonl",
+      })),
+      host: {
+        hostId,
+        streamPrefix: makeHostStreamPrefix({ namespace, hostId }),
+        boundAtMs: Date.now(),
+      },
+    }
+
+    const AgentOutputAfterWorkflow = Workflow.make({
+      name: "path-x-agent-output-after-initial",
+      payload: Schema.Struct({ contextId: Schema.String }),
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      idempotencyKey: payload => payload.contextId,
+    })
+    const workflowLayer = AgentOutputAfterWorkflow.toLayer(({ contextId: payloadContextId }) =>
+      Effect.gen(function*() {
+        const outcome = yield* WaitFor.match({
+          name: agentOutputAfterWaitName(payloadContextId, activityAttempt, -1),
+          source: {
+            _tag: "AgentOutputAfter",
+            contextId: payloadContextId,
+            activityAttempt,
+            afterSequence: -1,
+          },
+          trigger: [],
+        })
+        if (outcome._tag === "Timeout") return yield* Effect.fail("unexpected timeout")
+        return outcome.row
+      }))
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const writer = yield* PerContextRuntimeOutputWriter
+          yield* writer.appendAgentEvent(
+            context,
+            activityAttempt,
+            0,
+            { _tag: "Terminated", exitCode: 0 },
+          )
+          return yield* AgentOutputAfterWorkflow.execute({ contextId })
+        }).pipe(
+          Effect.provide(workflowLayer),
+          Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+            durableStreamsBaseUrl: baseUrl,
+            namespace,
+            hostId,
+          })),
+        ),
+      ),
+    )
+
+    expect(result).toMatchObject({
+      contextId,
+      activityAttempt,
+      sequence: 0,
+      _tag: "Terminated",
+    })
+  })
+
+  it("workflow-native runtime-context core resolves AgentOutputAfter live writes through PerContextRuntimeOutputWriter", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `path-x-output-live-${crypto.randomUUID()}`
+    const hostId = "host-a" as HostId
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const activityAttempt = 1
+    const context = {
+      contextId,
+      createdAt: new Date().toISOString(),
+      runtime: normalizeRuntimeIntent(local.jsonl({
+        argv: ["node", "-e", "process.exit(0)"],
+        agentProtocol: "stdio-jsonl",
+      })),
+      host: {
+        hostId,
+        streamPrefix: makeHostStreamPrefix({ namespace, hostId }),
+        boundAtMs: Date.now(),
+      },
+    }
+
+    const AgentOutputAfterWorkflow = Workflow.make({
+      name: "path-x-agent-output-after-live",
+      payload: Schema.Struct({ contextId: Schema.String }),
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      idempotencyKey: payload => payload.contextId,
+    })
+    const workflowLayer = AgentOutputAfterWorkflow.toLayer(({ contextId: payloadContextId }) =>
+      Effect.gen(function*() {
+        const outcome = yield* WaitFor.match({
+          name: agentOutputAfterWaitName(payloadContextId, activityAttempt, -1),
+          source: {
+            _tag: "AgentOutputAfter",
+            contextId: payloadContextId,
+            activityAttempt,
+            afterSequence: -1,
+          },
+          trigger: [],
+        })
+        if (outcome._tag === "Timeout") return yield* Effect.fail("unexpected timeout")
+        return outcome.row
+      }))
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const fiber = yield* AgentOutputAfterWorkflow.execute({ contextId }).pipe(
+            Effect.forkScoped,
+          )
+          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, activityAttempt, -1))
+          yield* Effect.sleep("100 millis")
+          const writer = yield* PerContextRuntimeOutputWriter
+          yield* writer.appendAgentEvent(
+            context,
+            activityAttempt,
+            0,
+            { _tag: "Terminated", exitCode: 0 },
+          )
+          return yield* Fiber.join(fiber)
+        }).pipe(
+          Effect.provide(workflowLayer),
+          Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+            durableStreamsBaseUrl: baseUrl,
+            namespace,
+            hostId,
+          })),
+        ),
+      ),
+    )
+
+    expect(result).toMatchObject({
+      contextId,
+      activityAttempt,
+      sequence: 0,
+      _tag: "Terminated",
+    })
+  })
+
   it("workflow-native runtime-context core resolves sequenced input commands through runtime-context wait-router scope", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `path-x-core-${crypto.randomUUID()}`

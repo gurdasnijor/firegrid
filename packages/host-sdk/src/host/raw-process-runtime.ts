@@ -1,7 +1,5 @@
 import {
-  RuntimeOutputTable,
   hostOwnedStreamUrl,
-  runtimeContextOutputStreamUrl,
 } from "@firegrid/protocol/launch"
 import type {
   RuntimeAgentProtocol,
@@ -9,16 +7,17 @@ import type {
   RuntimeEventRow,
   RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
-import { Clock, Effect, Option, Stream } from "effect"
+import { Clock, Effect, Layer, Option, Sink, Stream } from "effect"
 import {
   RuntimeContextError,
   asRuntimeContextError,
   mapRuntimeContextError,
 } from "@firegrid/runtime/host-substrate"
 import {
+  RuntimeAgentOutputEventsLayer,
+  RuntimeAgentOutputRowSink,
   RuntimeEventAppendAndGet,
   RuntimeLogLineAppendAndGet,
-  RuntimeOutputJournalLayer,
 } from "@firegrid/runtime/host-substrate"
 import {
   RuntimeIngressAppenderLayer,
@@ -39,6 +38,10 @@ import {
   type SandboxProviderError,
 } from "@firegrid/runtime/sources/sandbox"
 import { RuntimeHostConfig } from "./config.ts"
+import {
+  PerContextRuntimeOutputWriter,
+  perContextRuntimeOutputTableLayer,
+} from "./per-context-runtime-output.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.1
 // Raw local-process execution and output-row construction live outside the
@@ -66,22 +69,6 @@ const mapRuntimeContextSurfaceError = (
         contextId,
         cause,
       ))
-
-const runtimeContextOutputTableLayer = (
-  hostConfig: RuntimeHostConfig["Type"],
-  context: RuntimeContext,
-) =>
-  RuntimeOutputTable.layer({
-    streamOptions: {
-      url: runtimeContextOutputStreamUrl({
-        baseUrl: hostConfig.durableStreamsBaseUrl,
-        prefix: context.host.streamPrefix,
-        contextId: context.contextId,
-      }),
-      contentType: "application/json",
-      ...(hostConfig.headers === undefined ? {} : { headers: hostConfig.headers }),
-    },
-  })
 
 const sandboxSupervisorCommandTableLayer = (
   hostConfig: RuntimeHostConfig["Type"],
@@ -168,14 +155,18 @@ const runCodecRuntimeContext = (options: {
   readonly activityAttempt: number
   readonly protocol: Exclude<RuntimeAgentProtocol, "raw">
   readonly hostConfig: RuntimeHostConfig["Type"]
+  readonly outputServicesLayer: Layer.Layer<
+    RuntimeEventAppendAndGet | RuntimeLogLineAppendAndGet | RuntimeAgentOutputRowSink
+  >
 }) =>
   runCodecRuntimeEventPipeline({
     context: options.context,
     activityAttempt: options.activityAttempt,
     protocol: options.protocol,
   }).pipe(
-    Effect.provide(RuntimeOutputJournalLayer),
-    Effect.provide(runtimeContextOutputTableLayer(options.hostConfig, options.context)),
+    Effect.provide(options.outputServicesLayer),
+    Effect.provide(RuntimeAgentOutputEventsLayer),
+    Effect.provide(perContextRuntimeOutputTableLayer(options.hostConfig, options.context)),
     Effect.provide(RuntimeIngressAppenderLayer({
       currentContextId: options.context.contextId,
     })),
@@ -191,7 +182,29 @@ export const runRuntimeContext = (
   // firegrid-workflow-driven-runtime.BOUNDARIES.1
   Effect.gen(function* () {
     const hostConfig = yield* RuntimeHostConfig
-    const outputLayer = runtimeContextOutputTableLayer(hostConfig, context)
+    const outputWriter = yield* PerContextRuntimeOutputWriter
+    const outputLayer = perContextRuntimeOutputTableLayer(hostConfig, context)
+    const outputServicesLayer = Layer.mergeAll(
+      Layer.succeed(
+        RuntimeEventAppendAndGet,
+        RuntimeEventAppendAndGet.of({
+          append: row => outputWriter.appendEventRow(context, row),
+        }),
+      ),
+      Layer.succeed(
+        RuntimeLogLineAppendAndGet,
+        RuntimeLogLineAppendAndGet.of({
+          append: row => outputWriter.appendLogLine(context, row),
+        }),
+      ),
+      Layer.succeed(
+        RuntimeAgentOutputRowSink,
+        RuntimeAgentOutputRowSink.of(
+          Sink.forEach((row: RuntimeEventRow) =>
+            outputWriter.appendEventRow(context, row).pipe(Effect.asVoid)),
+        ),
+      ),
+    )
     const sandboxCommandLayer = sandboxSupervisorCommandTableLayer(hostConfig, context)
 
     const protocol = agentProtocolForContext(context)
@@ -201,6 +214,7 @@ export const runRuntimeContext = (
         activityAttempt,
         protocol,
         hostConfig,
+        outputServicesLayer,
       })
     }
 
@@ -291,7 +305,7 @@ export const runRuntimeContext = (
         })),
       )
     }).pipe(
-      Effect.provide(RuntimeOutputJournalLayer),
+      Effect.provide(outputServicesLayer),
       Effect.provide(outputLayer),
       Effect.provide(SandboxStdinEmissionClaimLive),
       Effect.provide(sandboxCommandLayer),

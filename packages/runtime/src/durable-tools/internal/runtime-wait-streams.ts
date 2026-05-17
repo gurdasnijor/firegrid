@@ -17,16 +17,24 @@ import type { DurableTableError } from "effect-durable-operators"
 import { Context, Effect, Layer, Option, Stream } from "effect"
 import { RuntimeIngressInputStream } from "../../agent-event-pipeline/authorities/runtime-ingress-appender.ts"
 import {
+  RuntimeAgentOutputAfterEvents,
   RuntimeAgentOutputEvents,
   type RuntimeAgentOutputObservation,
 } from "../../agent-event-pipeline/authorities/runtime-output-journal.ts"
 import { RuntimeRuns } from "../../authorities/runtime-control-plane-recorder.ts"
+import type { RuntimeWaitSource } from "./types.ts"
 
 interface RuntimeWaitStreamsService {
   readonly agentOutput: Stream.Stream<
     RuntimeAgentOutputObservation,
     DurableTableError
   >
+  readonly agentOutputAfter: (
+    source: Extract<RuntimeWaitSource, { readonly _tag: "AgentOutputAfter" }>,
+  ) => Stream.Stream<RuntimeAgentOutputObservation, unknown>
+  readonly initialAgentOutputAfter: (
+    source: Extract<RuntimeWaitSource, { readonly _tag: "AgentOutputAfter" }>,
+  ) => Effect.Effect<Option.Option<RuntimeAgentOutputObservation>, unknown>
   readonly runtimeRun: Stream.Stream<RuntimeRunEventRow, unknown>
   readonly runtimeIngressInput: Stream.Stream<RuntimeIngressInputRow, unknown>
 }
@@ -44,11 +52,38 @@ export const RuntimeWaitStreamsLive = Layer.effect(
   RuntimeWaitStreams,
   Effect.gen(function*() {
     const agentOutput = yield* RuntimeAgentOutputEvents
+    const agentOutputAfter = yield* Effect.serviceOption(RuntimeAgentOutputAfterEvents)
     const runtimeRun = yield* RuntimeRuns
     const runtimeIngressInput = yield* Effect.map(
       Effect.serviceOption(RuntimeIngressInputStream),
       Option.getOrElse(() => Stream.empty),
     )
-    return { agentOutput, runtimeRun, runtimeIngressInput }
+    return {
+      agentOutput,
+      agentOutputAfter: source =>
+        Option.match(agentOutputAfter, {
+          onNone: () =>
+            agentOutput.pipe(
+              Stream.filter((row) =>
+                row.contextId === source.contextId &&
+                row.activityAttempt === source.activityAttempt &&
+                row.sequence > source.afterSequence),
+            ),
+          onSome: service =>
+            Stream.merge(
+              Stream.fromEffect(service.initial(source)).pipe(
+                Stream.filterMap(value => value),
+              ),
+              service.after(source),
+            ),
+        }),
+      initialAgentOutputAfter: source =>
+        Option.match(agentOutputAfter, {
+          onNone: () => Effect.succeed(Option.none()),
+          onSome: service => service.initial(source),
+        }),
+      runtimeRun,
+      runtimeIngressInput,
+    }
   }),
 )
