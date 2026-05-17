@@ -24,6 +24,7 @@ import {
   local,
   normalizeRuntimeIntent,
   runtimeControlPlaneStreamUrl,
+  runtimeContextOutputStreamUrl,
   type CurrentHostSession,
   type PublicLaunchRequest,
   type PublicLaunchRuntimeIntent,
@@ -320,14 +321,22 @@ const resolveConfig = (
 const hostOwnedStreamOptions = (
   config: ResolvedConfig,
   context: RuntimeContext,
-  segment: "runtimeIngress" | "runtimeOutput",
+  segment: "runtimeIngress",
+) => durableTableOptions(
+  config,
+  hostOwnedStreamUrl({
+    baseUrl: config.baseUrl,
+    prefix: context.host.streamPrefix,
+    segment,
+  }),
+)
+
+const durableTableOptions = (
+  config: ResolvedConfig,
+  url: string,
 ) => ({
   streamOptions: {
-    url: hostOwnedStreamUrl({
-      baseUrl: config.baseUrl,
-      prefix: context.host.streamPrefix,
-      segment,
-    }),
+    url,
     contentType: config.contentType,
     ...(config.headers === undefined ? {} : { headers: config.headers }),
   },
@@ -347,7 +356,14 @@ const outputLayerForContext = (
   context: RuntimeContext,
 ) =>
   RuntimeOutputTable.layer(
-    hostOwnedStreamOptions(config, context, "runtimeOutput"),
+    durableTableOptions(
+      config,
+      runtimeContextOutputStreamUrl({
+        baseUrl: config.baseUrl,
+        prefix: context.host.streamPrefix,
+        contextId: context.contextId,
+      }),
+    ),
   )
 
 const decodePublicLaunchRequest = (

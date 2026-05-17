@@ -1,6 +1,12 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { RuntimeOutputTable } from "@firegrid/protocol/launch"
+import {
+  RuntimeOutputTable,
+  runtimeContextOutputStreamUrl,
+} from "@firegrid/protocol/launch"
 import { runtimeIngressInputIdForIdempotencyKey } from "@firegrid/protocol/runtime-ingress"
+import {
+  Firegrid,
+} from "@firegrid/client-sdk/firegrid"
 import {
   encodeRuntimeAgentOutputEnvelope,
   sessionContextIdForExternalKey,
@@ -434,6 +440,7 @@ describe("dark factory P0 contracts", () => {
 
   it("firegrid-dark-factory-app.OBSERVATION.3 firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.5 derives permissions from normalized client agent outputs", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
+    const durableStreamsBaseUrl = baseUrl
     const namespace = `factory-output-${crypto.randomUUID()}`
 
     const result = await runWithHost(
@@ -444,29 +451,52 @@ describe("dark factory P0 contracts", () => {
           planner: { argv: ["node", "planner.js"], agentProtocol: "stdio-jsonl" },
           providerCapabilities: [],
         })
-        const output = yield* RuntimeOutputTable
-        yield* output.events.upsert({
-          eventId: {
+        const firegrid = yield* Firegrid
+        const session = yield* firegrid.sessions.attach({
+          sessionId: accepted.run.plannerContextId,
+        })
+        const snapshot = yield* session.snapshot()
+        const context = snapshot.context
+        if (context === undefined) {
+          return yield* Effect.fail(new Error("planner session context not found"))
+        }
+        yield* Effect.gen(function* () {
+          const output = yield* RuntimeOutputTable
+          yield* output.events.upsert({
+            eventId: {
+              contextId: accepted.run.plannerContextId,
+              activityAttempt: 1,
+              target: "events",
+              sequence: 10,
+            },
             contextId: accepted.run.plannerContextId,
             activityAttempt: 1,
-            target: "events",
             sequence: 10,
-          },
-          contextId: accepted.run.plannerContextId,
-          activityAttempt: 1,
-          sequence: 10,
-          source: "stdout",
-          format: "jsonl",
-          receivedAt: new Date().toISOString(),
-          raw: agentOutputRaw({
-            _tag: "PermissionRequest",
-            permissionRequestId: "permission-1",
-            toolUseId: "tool-permission",
-            options: [
-              { optionId: "allow", kind: "allow_once", name: "Allow once" },
-            ],
-          }),
-        })
+            source: "stdout",
+            format: "jsonl",
+            receivedAt: new Date().toISOString(),
+            raw: agentOutputRaw({
+              _tag: "PermissionRequest",
+              permissionRequestId: "permission-1",
+              toolUseId: "tool-permission",
+              options: [
+                { optionId: "allow", kind: "allow_once", name: "Allow once" },
+              ],
+            }),
+          })
+        }).pipe(
+          Effect.provide(RuntimeOutputTable.layer({
+            streamOptions: {
+              url: runtimeContextOutputStreamUrl({
+                baseUrl: durableStreamsBaseUrl,
+                prefix: context.host.streamPrefix,
+                contextId: accepted.run.plannerContextId,
+              }),
+              contentType: "application/json",
+            },
+          })),
+          Effect.scoped,
+        )
         const status = yield* readFactoryRunStatus(accepted.run.factoryRunKey)
         const permission = yield* waitForPermissionRequest({
           factoryRunKey: accepted.run.factoryRunKey,

@@ -16,6 +16,7 @@ import {
   HostStreamPrefixSchema,
   HostStreamPrefixWireSchema,
   NamespaceRuntimeStreamNameSchema,
+  RuntimeContextOutputStreamNameSchema,
   RuntimeContextHostBindingSchema,
   durableStreamUrl,
   hostOwnedStreamUrl,
@@ -25,6 +26,8 @@ import {
   makeHostStreamPrefix,
   namespaceRuntimeStreamName,
   runtimeControlPlaneStreamUrl,
+  runtimeContextOutputStreamName,
+  runtimeContextOutputStreamUrl,
   type HostId,
   type HostSessionId,
 } from "../../src/launch/authority.ts"
@@ -151,6 +154,7 @@ describe("streamAuthority annotation", () => {
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1 marks HostStreamNameSchema and NamespaceRuntimeStreamNameSchema", () => {
     expect(isStreamAuthorityAst(HostStreamNameSchema.ast)).toBe(true)
     expect(isStreamAuthorityAst(NamespaceRuntimeStreamNameSchema.ast)).toBe(true)
+    expect(isStreamAuthorityAst(RuntimeContextOutputStreamNameSchema.ast)).toBe(true)
   })
 })
 
@@ -212,6 +216,42 @@ describe("NamespaceRuntimeStreamNameSchema", () => {
   })
 })
 
+describe("RuntimeContextOutputStreamNameSchema", () => {
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 encodes per-context output side-channel stream names", () => {
+    const prefix = makeHostStreamPrefix({ namespace: "ns", hostId: "host_abc" as HostId })
+    expect(runtimeContextOutputStreamName({
+      prefix,
+      contextId: "ctx.with/slash",
+    })).toBe("ns.firegrid.host.host_abc.runtimeOutput.context.ctx.with%2Fslash")
+  })
+
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 decodes per-context output side-channel stream names", () => {
+    expect(
+      Schema.decodeUnknownSync(RuntimeContextOutputStreamNameSchema)(
+        "ns.firegrid.host.host_abc.runtimeOutput.context.ctx.with%2Fslash",
+      ),
+    ).toEqual({
+      prefix: "ns.firegrid.host.host_abc",
+      contextId: "ctx.with/slash",
+    })
+  })
+
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 keeps marker-like text inside encoded context ids", () => {
+    const prefix = makeHostStreamPrefix({ namespace: "ns", hostId: "host_abc" as HostId })
+    const contextId = "ctx.runtimeOutput.context.child"
+    expect(Schema.decodeUnknownSync(RuntimeContextOutputStreamNameSchema)(
+      runtimeContextOutputStreamName({ prefix, contextId }),
+    )).toEqual({ prefix, contextId })
+  })
+
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3 rejects malformed per-context output names", () => {
+    const result = Schema.decodeUnknownEither(RuntimeContextOutputStreamNameSchema)(
+      "ns.firegrid.host.host_abc.runtimeOutput.context.",
+    )
+    expect(Either.isLeft(result)).toBe(true)
+  })
+})
+
 describe("DurableStreamUrlSchema", () => {
   it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 prepends /v1/stream/ to the service root and percent-encodes the stream name", () => {
     expect(durableStreamUrl("http://h", "ns.firegrid.runtime")).toBe(
@@ -265,5 +305,12 @@ describe("runtimeControlPlaneStreamUrl + hostOwnedStreamUrl", () => {
     expect(
       hostOwnedStreamUrl({ baseUrl: "http://h", prefix, segment: "workflow" }),
     ).toBe("http://h/v1/stream/ns.firegrid.host.host_abc.workflow")
+  })
+
+  it("firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2 per-context output URL chains runtimeContextOutputStreamName + durableStreamUrl", () => {
+    const prefix = makeHostStreamPrefix({ namespace: "ns", hostId: "host_abc" as HostId })
+    expect(
+      runtimeContextOutputStreamUrl({ baseUrl: "http://h", prefix, contextId: "ctx/1" }),
+    ).toBe("http://h/v1/stream/ns.firegrid.host.host_abc.runtimeOutput.context.ctx%252F1")
   })
 })
