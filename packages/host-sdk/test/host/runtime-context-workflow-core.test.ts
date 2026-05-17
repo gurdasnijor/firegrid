@@ -36,6 +36,7 @@ import {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowNativeLayer,
   RuntimeContextWorkflowSession,
+  type RuntimeContextSessionCommand,
 } from "../../src/host/runtime-context-workflow-core.ts"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import {
@@ -136,6 +137,28 @@ const waitUntilActiveWait = (
     }
     return yield* Effect.fail(new Error(`wait row did not become active: ${name}`))
   })
+
+const startedEvidence = (
+  contextId: string,
+  activityAttempt: number,
+) => ({
+  contextId,
+  activityAttempt,
+  ownerKind: "codec" as const,
+  ownerSessionId: `owner-${contextId}-${activityAttempt}`,
+  startCommandId: `start-${contextId}-${activityAttempt}`,
+})
+
+const acceptedCommand = (
+  contextId: string,
+  activityAttempt: number,
+  command: RuntimeContextSessionCommand,
+) => ({
+  contextId,
+  activityAttempt,
+  commandId: command.commandId,
+  ownerSessionId: `owner-${contextId}-${activityAttempt}`,
+})
 
 describe("workflow-native runtime-context core", () => {
   it("workflow-native runtime-context core resolves AgentOutputAfter initial state through PerContextRuntimeOutputWriter", async () => {
@@ -399,10 +422,12 @@ describe("workflow-native runtime-context core", () => {
 
     const testLayer = RuntimeContextWorkflowNativeLayer.pipe(
       Layer.provideMerge(RuntimeContextWorkflowSession.layer({
-        start: () => Effect.void,
-        send: (_context, _activityAttempt, event) =>
+        startOrAttach: (context, activityAttempt) =>
+          Effect.succeed(startedEvidence(context.contextId, activityAttempt)),
+        send: (context, activityAttempt, command) =>
           Effect.sync(() => {
-            sent.push(event)
+            sent.push(command.event)
+            return acceptedCommand(context.contextId, activityAttempt, command)
           }),
       })),
       Layer.provideMerge(RuntimeToolUseExecutor.layer({

@@ -39,16 +39,45 @@ import {
   writeRunStarted,
 } from "./internal/runtime-context-workflow-run.ts"
 
+export const RuntimeContextSessionStartedEvidenceSchema = Schema.Struct({
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  ownerKind: Schema.Literal("raw", "codec"),
+  ownerSessionId: Schema.String,
+  startCommandId: Schema.String,
+})
+export type RuntimeContextSessionStartedEvidence = Schema.Schema.Type<
+  typeof RuntimeContextSessionStartedEvidenceSchema
+>
+
+export const RuntimeContextSessionCommandSchema = Schema.TaggedStruct("AgentInput", {
+  commandId: Schema.String,
+  event: AgentInputEventSchema,
+})
+export type RuntimeContextSessionCommand = Schema.Schema.Type<
+  typeof RuntimeContextSessionCommandSchema
+>
+
+export const RuntimeContextSessionCommandAcceptedSchema = Schema.Struct({
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  commandId: Schema.String,
+  ownerSessionId: Schema.String,
+})
+export type RuntimeContextSessionCommandAccepted = Schema.Schema.Type<
+  typeof RuntimeContextSessionCommandAcceptedSchema
+>
+
 interface RuntimeContextWorkflowSessionService {
-  readonly start: (
+  readonly startOrAttach: (
     context: RuntimeContext,
     activityAttempt: number,
-  ) => Effect.Effect<void, RuntimeContextError>
+  ) => Effect.Effect<RuntimeContextSessionStartedEvidence, RuntimeContextError>
   readonly send: (
     context: RuntimeContext,
     activityAttempt: number,
-    event: AgentInputEvent,
-  ) => Effect.Effect<void, RuntimeContextError>
+    command: RuntimeContextSessionCommand,
+  ) => Effect.Effect<RuntimeContextSessionCommandAccepted, RuntimeContextError>
 }
 
 export class RuntimeContextWorkflowSession extends Context.Tag(
@@ -65,27 +94,30 @@ const startSessionActivity = (
 ) =>
   Activity.make({
     name: `firegrid.runtime-context.session.start.${context.contextId}.${activityAttempt}`,
-    success: Schema.Void,
+    success: RuntimeContextSessionStartedEvidenceSchema,
     error: RuntimeContextError,
     execute: Effect.gen(function*() {
       const session = yield* RuntimeContextWorkflowSession
-      yield* session.start(context, activityAttempt)
+      // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.5
+      // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.7
+      return yield* session.startOrAttach(context, activityAttempt)
     }),
   })
 
 const sendSessionActivity = (
   context: RuntimeContext,
   activityAttempt: number,
-  event: AgentInputEvent,
+  command: RuntimeContextSessionCommand,
   name: string,
 ) =>
   Activity.make({
     name,
-    success: Schema.Void,
+    success: RuntimeContextSessionCommandAcceptedSchema,
     error: RuntimeContextError,
     execute: Effect.gen(function*() {
       const session = yield* RuntimeContextWorkflowSession
-      yield* session.send(context, activityAttempt, event)
+      // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.5
+      return yield* session.send(context, activityAttempt, command)
     }),
   })
 
@@ -137,7 +169,11 @@ const handleAgentOutput = (
       yield* sendSessionActivity(
         context,
         activityAttempt,
-        result,
+        {
+          _tag: "AgentInput",
+          commandId: `tool-${context.contextId}-${activityAttempt}-${event.part.id}`,
+          event: result,
+        },
         `firegrid.runtime-context.session.send.tool-result.${event.part.id}`,
       )
       return undefined
@@ -188,6 +224,7 @@ const runWorkflowNativeRuntimeContext = (
     const context = yield* readRuntimeContext(contextId)
     const activityAttempt = yield* allocateRuntimeActivityAttempt(context)
     yield* writeRunStarted(context, activityAttempt)
+    // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.6
     yield* startSessionActivity(context, activityAttempt)
     const exit = yield* runReactiveLoop(context, activityAttempt).pipe(
       Effect.catchAll(failAfterWritingRunFailed(context, activityAttempt)),

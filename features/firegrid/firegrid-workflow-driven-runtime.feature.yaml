@@ -10,6 +10,10 @@ components:
       2: RuntimeContextWorkflow reads the RuntimeControlPlaneTable context row, records run started and terminal run evidence, and completes with the runtime exit evidence.
       3: RuntimeContextWorkflow performs external runtime side effects through one runRuntimeContext workflow activity per runtime attempt rather than through top-level runtime-host code.
       4: Duplicate startRuntime(contextId) calls do not start duplicate external runtime executions for the same context attempt.
+      5: RuntimeContextWorkflow coordinates live runtime execution through a host-internal RuntimeContextSession seam whose workflow-reachable startOrAttach and send methods take and return only schema-serializable values.
+      6: RuntimeContextSession startOrAttach and send are implemented by separate host-internal RawAdapter and CodecAdapter modules that do not share a generic command queue or monolithic supervisor.
+      7: RuntimeContextSession send lazily reconstructs or reattaches the live owner when workflow replay has cached startOrAttach evidence but the host process has an empty in-memory registry.
+      8: The default RuntimeContextWorkflow production path does not call runRuntimeContext, runCodecRuntimeEventPipeline, runIngressDelivery, or runToolRouter as compatibility fallbacks.
 
   PHASE_2_SYNC_RUN:
     requirements:
@@ -90,6 +94,7 @@ constraints:
       3: A temporal workflow phase must prove DurableClock wakeup survives workflow-engine reconstruction before any Firegrid-owned schedule_me facade is accepted.
       4: "PHASE_6_AGENT_TOOLS V0 must prove FiregridAgentToolkit.tools matches the canonical six, Tool.parametersSchema decodes identically to the @firegrid/protocol schema, direct toolkit execution of sleep runs through toolUseToEffect under the workflow engine, malformed inputs are rejected at the toolkit/schema boundary, tool-arm failures become FiregridMcpToolFailure without failing the workflow, and McpServer.registerToolkit(FiregridAgentToolkit) composes as an Effect without a custom JSON-RPC stack or wrapper toolkit. Local HTTP MCP smoke is V1 acceptance, not V0."
       5: "PHASE_7_MCP_HOST_SERVER must prove FiregridMcpServerLayer composes a loopback Node HTTP server through McpServer.layerHttp + McpServer.registerToolkit(FiregridAgentToolkit), starts and stops with the consuming Effect scope, and that an MCP-shaped JSON-RPC HTTP client can drive initialize, tools/list, sleep, malformed input, and unknown tool through Effect AI's MCP layer without a custom JSON-RPC stack, separate MCP process, agent-visible contextId argument, or FIREGRID_MCP_CONTEXT_ID-style env config."
+      6: RuntimeContextSession cutover tests prove idempotent startOrAttach, lazy send reattach after workflow-engine reconstruction, and at-most-once external command emission across restart.
 
   AGENT_TOOL_BOUNDARIES:
     requirements:
