@@ -1,12 +1,10 @@
 import {
   RuntimeOutputTable,
   type RuntimeEventRow,
-  type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
 import type { DurableTableError } from "effect-durable-operators"
 import { Context, Effect, Layer, Stream } from "effect"
 import type { Option } from "effect"
-import type { Sink } from "effect"
 import {
   type RuntimeAgentOutputObservation,
   runtimeAgentOutputObservationFromRow,
@@ -14,12 +12,6 @@ import {
 import type { RuntimeWaitSource } from "../../durable-tools/internal/types.ts"
 
 export type { RuntimeAgentOutputObservation } from "../events/index.ts"
-
-interface RuntimeLogLineAppendAndGetService {
-  readonly append: (
-    row: RuntimeLogLineRow,
-  ) => Effect.Effect<RuntimeLogLineRow, unknown>
-}
 
 type AgentOutputAfterSource = Extract<RuntimeWaitSource, { readonly _tag: "AgentOutputAfter" }>
 
@@ -43,14 +35,6 @@ const runtimeAgentOutputEvents = (
     Stream.map(runtimeAgentOutputObservationFromRow),
     Stream.filterMap(value => value),
   )
-
-export class RuntimeLogLineAppendAndGet extends Context.Tag(
-  "@firegrid/runtime/RuntimeLogLineAppendAndGet",
-)<RuntimeLogLineAppendAndGet, RuntimeLogLineAppendAndGetService>() {}
-
-export class RuntimeAgentOutputRowSink extends Context.Tag(
-  "@firegrid/runtime/RuntimeAgentOutputRowSink",
-)<RuntimeAgentOutputRowSink, Sink.Sink<void, RuntimeEventRow, never, unknown>>() {}
 
 export class RuntimeAgentOutputEvents extends Context.Tag(
   "@firegrid/runtime/RuntimeAgentOutputEvents",

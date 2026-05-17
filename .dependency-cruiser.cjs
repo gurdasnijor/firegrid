@@ -48,7 +48,10 @@ module.exports = {
         "runtime-errors.ts is runtime-internal support. External packages should use @firegrid/runtime public exports, not the source file.",
       from: {
         path: "^(packages|apps)/.*/src",
-        pathNot: "^packages/runtime/src/",
+        pathNot: [
+          "^packages/runtime/src/",
+          "^packages/host-sdk/src/host/",
+        ],
       },
       to: {
         path: "^packages/runtime/src/runtime-errors\\.ts$",

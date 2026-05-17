@@ -1,10 +1,10 @@
 import type { RuntimeContext } from "@firegrid/protocol/launch"
 import { Effect, Schema } from "effect"
-import { RuntimeRunAppendAndGet } from "@firegrid/runtime/host-substrate"
+import { RuntimeRunAppendAndGet } from "@firegrid/runtime/control-plane"
 import {
   mapRuntimeContextError,
-} from "@firegrid/runtime/host-substrate"
-import type { RuntimeContextError } from "@firegrid/runtime/host-substrate"
+  RuntimeContextError,
+} from "@firegrid/runtime/errors"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.2
 // RuntimeContextWorkflow owns workflow/activity/run lifecycle wiring only.
@@ -22,6 +22,7 @@ export const StartRuntimeResultSchema = Schema.Struct({
   activityAttempt: Schema.Number,
   exitCode: Schema.Number,
   signal: Schema.optional(Schema.String),
+  failure: Schema.optional(RuntimeContextError),
 })
 
 export type RuntimeExitEvidence = Schema.Schema.Type<typeof RuntimeExitEvidence>
@@ -98,6 +99,20 @@ export const failAfterWritingRunFailed = (
     yield* writeRunFailed(context, activityAttempt, error.message)
     return yield* Effect.fail(error)
   })
+
+export const writeRunFailedResult = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  error: RuntimeContextError,
+) =>
+  writeRunFailed(context, activityAttempt, error.message).pipe(
+    Effect.as({
+      contextId: context.contextId,
+      activityAttempt,
+      exitCode: 1,
+      failure: error,
+    } satisfies StartRuntimeResult),
+  )
 
 const startRuntimeResult = (
   context: RuntimeContext,

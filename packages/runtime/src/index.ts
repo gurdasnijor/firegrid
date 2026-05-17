@@ -1,22 +1,23 @@
-// firegrid-durable-launch-runtime-operator.LAUNCH_OPERATOR.9
-// Host composition (`FiregridRuntimeHost*`, `startRuntime`,
-// `RuntimeStartCapabilityLive`, `RuntimeHostAgentToolHostLive`,
-// `RunConfig*`, sync-run, MCP) moved to `@firegrid/host-sdk` per
-// SDD_FIREGRID_HOST_SDK.md. Runtime keeps only the substrate surface the
-// host-sdk composes; runtime must not import `@firegrid/host-sdk`
-// (firegrid-host-sdk.PACKAGE_GRAPH.2). The substrate composition surface
-// has a single declaration site in `./host-substrate.ts` (the
-// `@firegrid/runtime/host-substrate` subpath); the root barrel re-exports
-// it here instead of duplicating the export block (lint:dup).
-export * from "./host-substrate.ts"
-// `RuntimeAgentOutputObservation` is exported by two distinct modules:
-// the output-journal authority (via host-substrate) and
-// `./agent-event-pipeline/events/output.ts` (below). The root barrel
-// keeps the legacy disambiguating alias for the authority one; the plain
-// name continues to resolve to `events/output.ts`.
 export {
   type RuntimeAgentOutputObservation as RuntimeAuthorityAgentOutputObservation,
-} from "./host-substrate.ts"
+} from "./agent-event-pipeline/authorities/runtime-output-public.ts"
+export {
+  RuntimeControlPlaneRecorderLive,
+  RuntimeContexts,
+  RuntimeContextInsert,
+  RuntimeContextInsertLive,
+  RuntimeContextRead,
+  RuntimeRuns,
+  RuntimeRunAppendAndGet,
+  type RuntimeContextInsertService,
+  type RuntimeContextReadService,
+  type RuntimeRunAppendAndGetService,
+} from "./authorities/index.ts"
+export {
+  RuntimeAgentOutputAfterEvents,
+  RuntimeAgentOutputEvents,
+  RuntimeAgentOutputEventsLayer,
+} from "./agent-event-pipeline/authorities/runtime-output-public.ts"
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
 export {
@@ -31,10 +32,6 @@ export {
   type EffectAiSandboxConfig,
   type EffectAiSandboxProviderHelper,
 } from "./agent-event-pipeline/sources/sandbox/effect-ai.ts"
-// `./authorities`, runtime-ingress-appender / -delivery-tracker,
-// runtime-output-journal, and workflow-engine substrate are re-exported
-// via `export * from "./host-substrate.ts"` above (single declaration
-// site; see firegrid-host-sdk.PACKAGE_GRAPH.2).
 export {
   DurableWaitCompletionRowLookup,
   DurableWaitCompletionRows,

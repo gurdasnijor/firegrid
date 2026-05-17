@@ -233,8 +233,12 @@ console.log(JSON.stringify({ type: "raw-probe", ok: true }))
 
     expect(result).toMatchObject({ contextId, exitCode: 0 })
     const rows = await Effect.runPromise(queryRawEvents({ namespace, hostId, contextId }))
-    expect(rows).toHaveLength(1)
+    expect(rows).toHaveLength(2)
     expect(JSON.parse(rows[0]!.raw)).toEqual({ type: "raw-probe", ok: true })
+    expect(JSON.parse(rows[1]!.raw) as unknown).toEqual({
+      type: "firegrid.agent-output",
+      event: { _tag: "Terminated", exitCode: 0 },
+    })
   })
 
   it("firegrid-runtime-agent-event-pipeline.STAGES.6 firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1 journals stdio-jsonl AgentOutputEvent rows and sends ToolResult back to the codec through authority surfaces", async () => {

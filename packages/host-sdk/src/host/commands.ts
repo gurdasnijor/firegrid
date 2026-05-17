@@ -1,3 +1,4 @@
+import { Prompt } from "@effect/ai"
 import { WorkflowEngine } from "@effect/workflow"
 import {
   CurrentHostSession,
@@ -9,17 +10,19 @@ import {
 } from "@firegrid/protocol/launch"
 import {
   RuntimeIngressTable,
+  type RuntimeIngressInputRow,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Layer } from "effect"
+import { Effect, Either, Layer, Schema } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { RuntimeHostConfig } from "./config.ts"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import type { StartRuntimeOptions } from "./types.ts"
 import {
-  RuntimeContextWorkflow,
+  RuntimeContextWorkflowNative,
   RuntimeContextWorkflowPayload,
-} from "./runtime-context-workflow.ts"
+  RuntimeContextWorkflowSession,
+} from "./runtime-context-workflow-core.ts"
 import {
   readRuntimeContext,
   requireLocalRuntimeContextWithHostSession,
@@ -28,12 +31,17 @@ import {
 } from "./internal/runtime-context-helpers.ts"
 import {
   RuntimeContextRead,
-} from "@firegrid/runtime/host-substrate"
+  RuntimeRunAppendAndGet,
+} from "@firegrid/runtime/control-plane"
 import {
   RuntimeIngressAppendAndGet,
   RuntimeIngressAppenderLayer,
-} from "@firegrid/runtime/host-substrate"
-import { runtimeIngressError } from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/runtime-ingress"
+import { runtimeIngressError } from "@firegrid/runtime/errors"
+import {
+  AgentInputEventSchema,
+  type AgentInputEvent,
+} from "@firegrid/runtime/events"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.4
 // Command handlers remain thin entrypoints over workflow and ingress
@@ -61,11 +69,132 @@ const executeRuntimeContextWorkflowForContextId = (
   engine: WorkflowEngine.WorkflowEngine["Type"],
   contextId: string,
 ) =>
-  executeRuntimeContextWorkflow(engine, RuntimeContextWorkflow, {
-    executionId: runtimeContextWorkflowExecutionId(contextId),
-    payload: RuntimeContextWorkflowPayload.make({
-      contextId,
-    }),
+  Effect.gen(function*() {
+    const result = yield* executeRuntimeContextWorkflow(engine, RuntimeContextWorkflowNative, {
+      executionId: runtimeContextWorkflowExecutionId(contextId),
+      payload: RuntimeContextWorkflowPayload.make({
+        contextId,
+      }),
+    })
+    if (result.failure !== undefined) return yield* Effect.fail(result.failure)
+    return result
+  })
+
+class RuntimeIngressAgentInputTransformError extends Schema.TaggedError<
+  RuntimeIngressAgentInputTransformError
+>()("RuntimeIngressAgentInputTransformError", {
+  op: Schema.String,
+  contextId: Schema.String,
+  inputId: Schema.String,
+  message: Schema.String,
+  cause: Schema.optional(Schema.Unknown),
+}) {}
+
+const transformError = (
+  row: RuntimeIngressInputRow,
+  message: string,
+  cause?: unknown,
+): RuntimeIngressAgentInputTransformError =>
+  new RuntimeIngressAgentInputTransformError({
+    op: "runtime-ingress.agent-input.decode",
+    contextId: row.contextId,
+    inputId: row.inputId,
+    message,
+    ...(cause === undefined ? {} : { cause }),
+  })
+
+const RuntimePromptTextPayloadSchema = Schema.Union(
+  Schema.String,
+  Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }),
+  Schema.Struct({ text: Schema.String }),
+  Schema.Array(Schema.Union(
+    Schema.String,
+    Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }),
+    Schema.Struct({ text: Schema.String }),
+  )),
+)
+
+type RuntimePromptTextPayload = Schema.Schema.Type<
+  typeof RuntimePromptTextPayloadSchema
+>
+
+const textFromIngressPayload = (
+  payload: RuntimePromptTextPayload,
+): string => {
+  if (typeof payload === "string") return payload
+  if (Array.isArray(payload)) return payload.map(textFromIngressPayload).join("\n")
+  return (payload as { readonly text: string }).text
+}
+
+const promptFromIngressPayload = (
+  row: RuntimeIngressInputRow,
+): Effect.Effect<Extract<AgentInputEvent, { readonly _tag: "Prompt" }>, RuntimeIngressAgentInputTransformError> => {
+  const text = Schema.decodeUnknownEither(RuntimePromptTextPayloadSchema)(row.payload)
+  if (Either.isRight(text)) {
+    return Effect.succeed({
+      _tag: "Prompt",
+      correlationId: row.inputId,
+      prompt: Prompt.userMessage({
+        content: [Prompt.textPart({ text: textFromIngressPayload(text.right) })],
+      }),
+    })
+  }
+  return Schema.decodeUnknown(Prompt.UserMessage)(row.payload).pipe(
+    Effect.map(prompt => ({
+      _tag: "Prompt" as const,
+      correlationId: row.inputId,
+      prompt,
+    })),
+    Effect.mapError(cause =>
+      transformError(
+        row,
+        "runtime message ingress payload is not an AgentInputEvent, text payload, or Prompt.UserMessage",
+        cause,
+      )),
+  )
+}
+
+const agentInputEventFromRuntimeIngressRow = (
+  row: RuntimeIngressInputRow,
+): Effect.Effect<AgentInputEvent, RuntimeIngressAgentInputTransformError> => {
+  const decoded = Schema.decodeUnknownEither(AgentInputEventSchema)(row.payload)
+  if (Either.isRight(decoded)) return Effect.succeed(decoded.right)
+
+  if (row.kind === "message") return promptFromIngressPayload(row)
+
+  if (row.kind === "tool_result") {
+    return Schema.decodeUnknown(Prompt.ToolResultPart)(row.payload).pipe(
+      Effect.map(part => ({ _tag: "ToolResult" as const, part })),
+      Effect.mapError(cause =>
+        transformError(
+          row,
+          "runtime tool_result ingress payload is not an AgentInputEvent or Prompt.ToolResultPart",
+          cause,
+        )),
+    )
+  }
+
+  return Effect.fail(transformError(
+    row,
+    `runtime ${row.kind} ingress payload is not an AgentInputEvent`,
+    decoded.left,
+  ))
+}
+
+const sendRuntimeIngressToNativeSession = (
+  context: RuntimeContext,
+  row: RuntimeIngressInputRow,
+) =>
+  Effect.gen(function*() {
+    const event = yield* agentInputEventFromRuntimeIngressRow(row)
+    const runs = yield* RuntimeRunAppendAndGet
+    const activityAttempt = yield* runs.allocateActivityAttempt(context)
+    const session = yield* RuntimeContextWorkflowSession
+    yield* session.send(context, activityAttempt, {
+      _tag: "AgentInput",
+      commandId: `runtime-input-${context.contextId}-${row.inputId}`,
+      event,
+    })
   })
 
 export const startRuntime = (
@@ -142,18 +271,24 @@ export const appendRuntimeIngressToOwner = (
   context: RuntimeContext,
   options: RuntimeHostConfig["Type"],
 ) =>
-  appendRuntimeIngressInCurrentContext(request).pipe(
-    provideRuntimeContext(context),
-    Effect.provide(RuntimeIngressAppenderLayer({
-      currentContextId: context.contextId,
-    })),
-    Effect.provide(ownerIngressLayer({
-      baseUrl: options.durableStreamsBaseUrl,
-      ...(options.headers !== undefined ? { headers: options.headers } : {}),
-      context,
-    })),
-    Effect.scoped,
-  )
+  Effect.gen(function*() {
+    const row = yield* appendRuntimeIngressInCurrentContext(request)
+    if (context.runtime.config.agentProtocol !== undefined && context.runtime.config.agentProtocol !== "raw") {
+      yield* sendRuntimeIngressToNativeSession(context, row)
+    }
+    return row
+  }).pipe(
+      provideRuntimeContext(context),
+      Effect.provide(RuntimeIngressAppenderLayer({
+        currentContextId: context.contextId,
+      })),
+      Effect.provide(ownerIngressLayer({
+        baseUrl: options.durableStreamsBaseUrl,
+        ...(options.headers !== undefined ? { headers: options.headers } : {}),
+        context,
+      })),
+      Effect.scoped,
+    )
 
 const appendRuntimeIngressInCurrentContext = (
   request: RuntimeIngressRequest,

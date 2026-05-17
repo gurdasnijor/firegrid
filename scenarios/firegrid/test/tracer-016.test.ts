@@ -116,7 +116,10 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
       exitCode: 0,
     })
 
-    expect(result.snapshot.events.map(event => event.raw)).toEqual([
+    const assistantRows = result.snapshot.events
+      .map(event => event.raw)
+      .filter(raw => !raw.includes("\"firegrid.agent-output\""))
+    expect(assistantRows).toEqual([
       "{\"type\":\"assistant\",\"text\":\"input:continue live\"}",
     ])
   })

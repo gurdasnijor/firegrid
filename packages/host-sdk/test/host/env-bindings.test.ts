@@ -197,7 +197,7 @@ console.log(JSON.stringify({ type: "probe", digest }))
     ])
 
     // The child saw the resolved value — proved by the matching digest.
-    expect(retained.events).toHaveLength(1)
+    expect(retained.events).toHaveLength(2)
     const firstEvent = retained.events[0]
     expect(firstEvent).toBeDefined()
     const parsed = JSON.parse(firstEvent!.raw) as {
@@ -206,6 +206,10 @@ console.log(JSON.stringify({ type: "probe", digest }))
     }
     expect(parsed.type).toBe("probe")
     expect(parsed.digest).toBe(expectedDigest)
+    expect(JSON.parse(retained.events[1]!.raw) as unknown).toEqual({
+      type: "firegrid.agent-output",
+      event: { _tag: "Terminated", exitCode: 0 },
+    })
 
     // The secret value must not appear anywhere durable: not in the
     // context row, not in the event journal, not in the log journal.

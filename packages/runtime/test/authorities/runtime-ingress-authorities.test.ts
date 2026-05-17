@@ -3,24 +3,17 @@ import {
   RuntimeIngressTable,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Option } from "effect"
+import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeIngressAppendAndGet,
   RuntimeIngressAppenderLayer,
   RuntimeIngressInputStream,
 } from "../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
-import {
-  RuntimeIngressDeliveries,
-  RuntimeIngressDeliveryClaimAndComplete,
-  RuntimeIngressDeliveryTrackerLayer,
-  runtimeIngressSubscriberId,
-} from "../../src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
 
 // `sourceName` is a free-form label on the ingress append input/echo; the
 // deleted RuntimeAuthoritySourceNames registry no longer exists.
 const ingressInputsSourceName = "firegrid.runtime.ingress.inputs"
-const ingressDeliveriesSourceName = "firegrid.runtime.ingress.deliveries"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -91,48 +84,5 @@ describe("runtime ingress authorities", () => {
     expect(result.duplicate).toEqual(result.firstRow)
     expect(result.secondRow.sequence).toBe(1)
     expect(result.sourceName).toBe(ingressInputsSourceName)
-  })
-
-  it("firegrid-runtime-agent-event-pipeline.AUTHORITIES.4 claims delivery rows once per subscriber", async () => {
-    if (baseUrl === undefined) throw new Error("server not started")
-    const contextId = `ctx_${crypto.randomUUID()}`
-    const request: RuntimeIngressRequest = {
-      contextId,
-      inputId: "input-claim",
-      kind: "message",
-      authoredBy: "client",
-      payload: "hello",
-      idempotencyKey: "claim",
-    }
-    const subscriberId = runtimeIngressSubscriberId("raw", "stdin")
-
-    const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const appender = yield* RuntimeIngressAppendAndGet
-        const tracker = yield* RuntimeIngressDeliveryClaimAndComplete
-        const _ingressDeliveries = yield* RuntimeIngressDeliveries
-        const row = yield* appender.append(request)
-        const first = yield* tracker.claimInput(row, {
-          subscriberId,
-        })
-        const second = yield* tracker.claimInput(row, {
-          subscriberId,
-        })
-        return {
-          first,
-          second,
-          sourceName: ingressDeliveriesSourceName,
-        }
-      }).pipe(
-        Effect.provide(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
-        Effect.provide(RuntimeIngressDeliveryTrackerLayer),
-        Effect.provide(tableLayer(`runtime-ingress-delivery-${crypto.randomUUID()}`)),
-        Effect.scoped,
-      ),
-    )
-
-    expect(Option.isSome(result.first)).toBe(true)
-    expect(Option.isNone(result.second)).toBe(true)
-    expect(result.sourceName).toBe(ingressDeliveriesSourceName)
   })
 })

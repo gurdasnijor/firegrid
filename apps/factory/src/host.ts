@@ -20,13 +20,11 @@ import {
 } from "@firegrid/protocol/session-facade"
 import {
   FiregridLocalHostLive,
+  localProcessSpawnEnvFromHostEnv,
   RuntimeStartCapabilityLive,
   type RuntimeHostTopologyOptions,
-} from "@firegrid/host-sdk"
-import {
-  localProcessSpawnEnvFromHostEnv,
   type RuntimeEnvResolverPolicy,
-} from "@firegrid/runtime/host-substrate"
+} from "@firegrid/host-sdk"
 import {
   Firegrid,
   FiregridConfig,

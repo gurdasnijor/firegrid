@@ -23,11 +23,6 @@ import {
   RuntimeIngressInputStreamLayer,
 } from "../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
 import {
-  RuntimeIngressDeliveries,
-  RuntimeIngressDeliveryClaimAndComplete,
-  RuntimeIngressDeliveryTrackerLayer,
-} from "../../src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
-import {
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
 } from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
@@ -53,16 +48,6 @@ const providerEntries = [
     capability: RuntimeIngressInputStream,
     provider: RuntimeIngressInputStreamLayer,
     backingTable: "RuntimeIngressTable.inputs",
-  },
-  {
-    capability: RuntimeIngressDeliveryClaimAndComplete,
-    provider: RuntimeIngressDeliveryTrackerLayer,
-    backingTable: "RuntimeIngressTable.deliveries",
-  },
-  {
-    capability: RuntimeIngressDeliveries,
-    provider: RuntimeIngressDeliveryTrackerLayer,
-    backingTable: "RuntimeIngressTable.deliveries",
   },
   {
     capability: RuntimeContextInsert,
@@ -125,8 +110,6 @@ const canonicalCapabilityTags = [
   RuntimeAgentOutputEvents,
   RuntimeIngressAppendAndGet,
   RuntimeIngressInputStream,
-  RuntimeIngressDeliveryClaimAndComplete,
-  RuntimeIngressDeliveries,
   RuntimeContextInsert,
   RuntimeContextRead,
   RuntimeContexts,

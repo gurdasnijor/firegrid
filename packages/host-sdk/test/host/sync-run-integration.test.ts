@@ -172,9 +172,13 @@ console.log(JSON.stringify({ type: "probe", cwd: process.cwd() }))
     const contextRow = Option.getOrThrow(retained.context)
     expect(contextRow.runtime.config.cwd).toBe(workdir)
 
-    expect(retained.events).toHaveLength(1)
+    expect(retained.events).toHaveLength(2)
     const parsed = JSON.parse(retained.events[0]!.raw) as { readonly cwd: string }
     expect(parsed.cwd).toBe(workdir)
+    expect(JSON.parse(retained.events[1]!.raw) as unknown).toEqual({
+      type: "firegrid.agent-output",
+      event: { _tag: "Terminated", exitCode: 0 },
+    })
   })
 })
 
@@ -217,13 +221,17 @@ process.stdin.on("data", chunk => {
     expect(result).toMatchObject({ contextId, exitCode: 0 })
 
     const retained = await Effect.runPromise(queryRuntimeState(namespace, hostId, contextId))
-    expect(retained.events).toHaveLength(1)
+    expect(retained.events).toHaveLength(2)
     const parsed = JSON.parse(retained.events[0]!.raw) as {
       readonly type: string
       readonly digest: string
     }
     expect(parsed.type).toBe("probe")
     expect(parsed.digest).toBe(expectedDigest)
+    expect(JSON.parse(retained.events[1]!.raw) as unknown).toEqual({
+      type: "firegrid.agent-output",
+      event: { _tag: "Terminated", exitCode: 0 },
+    })
 
     // Sanity-check: the durable context row contains no ingress payload
     // value (the ingress payload lives in RuntimeIngressTable, not on

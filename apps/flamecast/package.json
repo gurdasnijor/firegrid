@@ -19,7 +19,6 @@
     "@effect/platform-node": "^0.106.0",
     "@firegrid/client-sdk": "workspace:*",
     "@firegrid/host-sdk": "workspace:*",
-    "@firegrid/runtime": "workspace:*",
     "@tanstack/db": "^0.5.33",
     "@tanstack/react-db": "0.1.77",
     "effect": "^3.21.2",
@@ -28,8 +27,6 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@durable-streams/server": "^0.3.1",
-    "@effect/vitest": "^0.29.0",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",

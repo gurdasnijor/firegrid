@@ -9,7 +9,7 @@ import {
 import { Context, Effect, Layer, Option, Stream } from "effect"
 import {
   RuntimeAgentOutputAfterEvents,
-} from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/runtime-output"
 import {
   encodeRuntimeAgentOutputEnvelope,
   runtimeAgentOutputObservationFromRow,
@@ -38,7 +38,7 @@ export class PerContextRuntimeOutputWriter extends Context.Tag(
   "@firegrid/host-sdk/PerContextRuntimeOutputWriter",
 )<PerContextRuntimeOutputWriter, PerContextRuntimeOutputWriterService>() {}
 
-export const perContextRuntimeOutputTableLayer = (
+const perContextRuntimeOutputTableLayer = (
   hostConfig: RuntimeHostConfig["Type"],
   context: {
     readonly contextId: string
