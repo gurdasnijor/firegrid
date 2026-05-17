@@ -28,7 +28,7 @@ import {
   FiregridRuntimeHostWithWorkflowLive,
   startRuntime,
 } from "../../src/host/index.ts"
-import { WorkflowEngineTable } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

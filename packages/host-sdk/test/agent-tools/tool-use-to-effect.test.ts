@@ -28,16 +28,16 @@ import { Workflow } from "@effect/workflow"
 import { DurableTable } from "effect-durable-operators"
 import { Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import type { AgentOutputEvent, ToolResultEvent } from "../../src/agent-event-pipeline/events/index.ts"
-import { AgentToolCallPartSchema, ToolResultEventSchema } from "../../src/agent-event-pipeline/events/index.ts"
+import type { AgentOutputEvent, ToolResultEvent } from "@firegrid/runtime/events"
+import { AgentToolCallPartSchema, ToolResultEventSchema } from "@firegrid/runtime/events"
 import {
   RuntimeAgentOutputEvents,
-} from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
-import { RuntimeRuns } from "../../src/authorities/runtime-control-plane-recorder.ts"
+} from "@firegrid/runtime"
+import { RuntimeRuns } from "@firegrid/runtime"
 import {
   DurableToolsWaitForLive,
-} from "../../src/durable-tools/index.ts"
-import { DurableStreamsWorkflowEngine } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
+} from "@firegrid/runtime/durable-tools"
+import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import { ScheduledInputWorkflowLayer } from "../../src/agent-tools/execution/scheduled-input-workflow.ts"
 import {
   AgentToolHost,

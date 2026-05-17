@@ -30,10 +30,10 @@ import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { firegridHostLayer } from "../../../../src/host.ts"
-import { RuntimeContextInsert } from "../../src/authorities/index.ts"
+import { RuntimeContextInsert } from "@firegrid/runtime"
 import { FiregridMcpServerLayer, runtimeContextMcpPath } from "../../src/host/mcp-host.ts"
 import { FiregridRuntimeHostWithWorkflowLive } from "../../src/host/index.ts"
-import { WorkflowEngineTable } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
 
 let durableStreamServer: DurableStreamTestServer | undefined
 let durableStreamBaseUrl: string | undefined

@@ -35,7 +35,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeContextInsert,
   RuntimeContextInsertLive,
-} from "../../src/authorities/index.ts"
+} from "@firegrid/runtime"
 import {
   ContextNotFound,
   ContextNotLocal,

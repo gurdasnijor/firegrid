@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   decodeRuntimeAgentOutputEnvelope,
   type AgentOutputEvent,
-} from "../../src/agent-event-pipeline/events/index.ts"
+} from "@firegrid/runtime/events"
 import {
   FiregridRuntimeHostWithWorkflowLive,
   appendRuntimeIngress,

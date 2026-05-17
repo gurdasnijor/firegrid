@@ -31,7 +31,7 @@ import {
   appendRuntimeIngress,
   startRuntime,
 } from "../../src/host/index.ts"
-import { RuntimeContextInsert } from "../../src/authorities/index.ts"
+import { RuntimeContextInsert } from "@firegrid/runtime"
 import {
   firegridRunCreatedBy,
   runConfigToIngressRequest,

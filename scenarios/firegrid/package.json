@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@firegrid/client-sdk": "workspace:*",
+    "@firegrid/host-sdk": "workspace:*",
     "@firegrid/runtime": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "effect": "^3.21.2"

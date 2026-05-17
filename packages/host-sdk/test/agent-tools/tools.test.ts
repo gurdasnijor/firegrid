@@ -33,9 +33,9 @@ import { Effect, Layer, Schema, Stream } from "effect"
 import { describe, expect, it, afterEach, beforeEach } from "vitest"
 import {
   RuntimeAgentOutputEvents,
-} from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
-import { RuntimeRuns } from "../../src/authorities/runtime-control-plane-recorder.ts"
-import { DurableToolsWaitForLive } from "../../src/durable-tools/index.ts"
+} from "@firegrid/runtime"
+import { RuntimeRuns } from "@firegrid/runtime"
+import { DurableToolsWaitForLive } from "@firegrid/runtime/durable-tools"
 
 // These tests exercise sleep / failure mapping, not wait_for. The wait
 // router still requires its typed observation tags; provide empty streams.
@@ -49,7 +49,7 @@ const EmptyWaitStreamsLive = Layer.mergeAll(
     Stream.empty as unknown as RuntimeAgentOutputEvents["Type"],
   ),
 )
-import { DurableStreamsWorkflowEngine } from "../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
+import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import { ScheduledInputWorkflowLayer } from "../../src/agent-tools/execution/scheduled-input-workflow.ts"
 import {
   AgentToolHost,
@@ -58,10 +58,12 @@ import {
 import {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
-  FiregridAgentToolkitLayer,
   SleepTool,
-  ToolCallWorkflowLayer,
 } from "../../src/agent-tools/bindings/tools.ts"
+import {
+  FiregridAgentToolkitLayer,
+  ToolCallWorkflowLayer,
+} from "../../src/agent-tools/execution/toolkit-layer.ts"
 
 // ---------------------------------------------------------------------------
 // Server lifecycle
