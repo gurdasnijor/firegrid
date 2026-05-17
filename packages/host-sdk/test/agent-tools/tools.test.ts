@@ -10,8 +10,8 @@
  *   2. Each Tool's parameter schema decodes identically to the
  *      `@firegrid/protocol/agent-tools` Effect Schema — no parallel
  *      parameter shape lives in this module.
- *   3. Direct toolkit execution of `sleep` runs through
- *      `toolUseToEffect` and returns the typed success.
+ *   3. Direct toolkit execution requires a resolved runtime context; route-less
+ *      calls fail before a fallback workflow engine is used.
  *   4. Malformed `sleep` input is rejected at the toolkit / Schema
  *      boundary before the common handler requests its first
  *      dependency (`IdGenerator.generateId`).
@@ -23,34 +23,13 @@
  */
 
 import { IdGenerator, McpServer } from "@effect/ai"
-import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   FiregridAgentToolOperations,
   SessionNewToolInputSchema,
   SleepToolInputSchema,
 } from "@firegrid/protocol/agent-tools"
-import { Effect, Layer, Schema, Stream } from "effect"
-import { describe, expect, it, afterEach, beforeEach } from "vitest"
-import {
-  RuntimeAgentOutputEvents,
-} from "@firegrid/runtime"
-import { RuntimeRuns } from "@firegrid/runtime"
-import { DurableToolsWaitForLive } from "@firegrid/runtime/durable-tools"
-
-// These tests exercise sleep / failure mapping, not wait_for. The wait
-// router still requires its typed observation tags; provide empty streams.
-const EmptyWaitStreamsLive = Layer.mergeAll(
-  Layer.succeed(
-    RuntimeRuns,
-    Stream.empty as unknown as RuntimeRuns["Type"],
-  ),
-  Layer.succeed(
-    RuntimeAgentOutputEvents,
-    Stream.empty as unknown as RuntimeAgentOutputEvents["Type"],
-  ),
-)
-import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
-import { ScheduledInputWorkflowLayer } from "../../src/agent-tools/execution/scheduled-input-workflow.ts"
+import { Effect, Layer, Schema } from "effect"
+import { describe, expect, it } from "vitest"
 import {
   AgentToolHost,
   type AgentToolHostService,
@@ -62,40 +41,7 @@ import {
 } from "../../src/agent-tools/bindings/tools.ts"
 import {
   FiregridAgentToolkitLayer,
-  ToolCallWorkflowLayer,
 } from "../../src/agent-tools/execution/toolkit-layer.ts"
-
-// ---------------------------------------------------------------------------
-// Server lifecycle
-// ---------------------------------------------------------------------------
-
-let server: DurableStreamTestServer | undefined
-let baseUrl: string | undefined
-
-beforeEach(async () => {
-  server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
-  baseUrl = await server.start()
-})
-
-afterEach(async () => {
-  await server?.stop()
-  server = undefined
-  baseUrl = undefined
-})
-
-interface Streams {
-  readonly workflowUrl: string
-  readonly waitForUrl: string
-}
-
-const makeStreams = (label: string): Streams => {
-  if (!baseUrl) throw new Error("server not started")
-  const id = crypto.randomUUID()
-  return {
-    workflowUrl: `${baseUrl}/v1/stream/tools-${label}-workflow-${id}`,
-    waitForUrl: `${baseUrl}/v1/stream/tools-${label}-waitfor-${id}`,
-  }
-}
 
 const fakeHost = (
   overrides: Partial<AgentToolHostService> = {},
@@ -135,7 +81,6 @@ const fakeHost = (
 })
 
 const buildBridgeLayer = (
-  streams: Streams,
   options: {
     readonly contextId: string
     readonly host?: AgentToolHostService
@@ -143,8 +88,6 @@ const buildBridgeLayer = (
   },
 ): Layer.Layer<never, unknown, never> => {
   const composed = FiregridAgentToolkitLayer.pipe(
-    Layer.provideMerge(ToolCallWorkflowLayer),
-    Layer.provideMerge(ScheduledInputWorkflowLayer),
     Layer.provideMerge(
       FiregridAgentToolContext.layer({ contextId: options.contextId }),
     ),
@@ -157,13 +100,6 @@ const buildBridgeLayer = (
     Layer.provideMerge(
       AgentToolHost.layer(options.host ?? fakeHost()),
     ),
-    Layer.provideMerge(
-      DurableToolsWaitForLive({ streamUrl: streams.waitForUrl }),
-    ),
-    Layer.provideMerge(EmptyWaitStreamsLive),
-    Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
-      streamUrl: streams.workflowUrl,
-    }) as Layer.Layer<never, unknown, unknown>),
   )
   return composed as unknown as Layer.Layer<never, unknown, never>
 }
@@ -259,22 +195,25 @@ describe("FiregridAgentToolkit", () => {
 // rather than this module.
 
 // ---------------------------------------------------------------------------
-// Direct toolkit execution of sleep
+// Direct toolkit execution requires runtime-context route resolution
 // ---------------------------------------------------------------------------
 
 describe("FiregridAgentToolkit direct handler execution", () => {
-  it("runs sleep through toolUseToEffect and returns { slept: true }", async () => {
-    const streams = makeStreams("sleep")
-    const result = await runWith(
-      buildBridgeLayer(streams, { contextId: "ctx-toolkit-sleep" }),
+  it("rejects route-less sleep instead of falling back to a host-wide workflow engine", async () => {
+    const failure = await runWith(
+      buildBridgeLayer({ contextId: "ctx-toolkit-sleep" }),
       Effect.gen(function* () {
         const built = yield* FiregridAgentToolkit
         return yield* built.handle("sleep", { durationMs: 1 })
-      }),
+      }).pipe(Effect.flip),
     )
-    expect(result.isFailure).toBe(false)
-    expect(result.result).toEqual({ slept: true })
-    expect(result.encodedResult).toEqual({ slept: true })
+    expect(failure).toMatchObject({
+      _tag: "ToolExecutionFailed",
+      name: "sleep",
+    })
+    expect(String((failure as { readonly message?: unknown }).message)).toContain(
+      "resolved runtime context",
+    )
   })
 })
 
@@ -284,7 +223,6 @@ describe("FiregridAgentToolkit direct handler execution", () => {
 
 describe("FiregridAgentToolkit schema validation", () => {
   it("rejects malformed sleep params at the Toolkit decode boundary, before the handler requests IdGenerator", async () => {
-    const streams = makeStreams("invalid")
     // The common handler (`handleTool` in tools.ts) does
     // `yield* IdGenerator.IdGenerator` as its first observable side
     // effect. If the toolkit boundary correctly rejects malformed
@@ -303,7 +241,7 @@ describe("FiregridAgentToolkit schema validation", () => {
         }),
     }
     const failure = await runWith(
-      buildBridgeLayer(streams, {
+      buildBridgeLayer({
         contextId: "ctx-toolkit-invalid",
         idGenerator: instrumentedIdGenerator,
       }),
@@ -332,7 +270,6 @@ describe("FiregridAgentToolkit schema validation", () => {
 
 describe("FiregridAgentToolkit failure mapping", () => {
   it("maps a tool-arm failure to FiregridMcpToolFailure via the handler error channel", async () => {
-    const streams = makeStreams("arm-failure")
     const host = fakeHost({
       spawnChildContext: () =>
         Effect.fail({
@@ -343,7 +280,7 @@ describe("FiregridAgentToolkit failure mapping", () => {
         }),
     })
     const failure = await runWith(
-      buildBridgeLayer(streams, {
+      buildBridgeLayer({
         contextId: "ctx-toolkit-arm-failure",
         host,
       }),
@@ -362,7 +299,6 @@ describe("FiregridAgentToolkit failure mapping", () => {
   })
 
   it("the toolkit handler does not fail the surrounding workflow on tool failure", async () => {
-    const streams = makeStreams("isolated-failure")
     const host = fakeHost({
       spawnChildContext: () =>
         Effect.fail({
@@ -373,7 +309,7 @@ describe("FiregridAgentToolkit failure mapping", () => {
         }),
     })
     const outcome = await runWith(
-      buildBridgeLayer(streams, {
+      buildBridgeLayer({
         contextId: "ctx-toolkit-isolated-failure",
         host,
       }),

@@ -353,7 +353,7 @@ describe("dark factory P0 contracts", () => {
     expect(result.status.facts).toHaveLength(1)
   })
 
-  it("firegrid-dark-factory-app.WAIT_AND_PERMISSION.2 writes permission resolution fact and RuntimeIngress control row idempotently", async () => {
+  it("firegrid-dark-factory-app.WAIT_AND_PERMISSION.2 writes permission resolution fact and runtime input intent idempotently", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `factory-permission-${crypto.randomUUID()}`
 
@@ -411,9 +411,9 @@ describe("dark factory P0 contracts", () => {
       contextId: triggerPlannerContextId,
       authoredBy: "client",
       idempotencyKey: permissionIdentity.idempotencyKey,
-      sequence: 1,
-      status: "sequenced",
+      status: "pending",
     })
+    expect(result.first.input.sequence).toBeUndefined()
     expect(result.first.input.payload).toMatchObject({
       _tag: "PermissionResponse",
       permissionRequestId: "permission-1",

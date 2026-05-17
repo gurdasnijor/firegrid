@@ -19,7 +19,7 @@
  *
  * Implements:
  *  - agent-codec-runtime-tools.md/agent-tool-layer-phase-2 §"PR sequencing",
- *    §"`ScheduledInputWorkflow`" (host-specific activity wiring)
+ *    §"`schedule_me` host-specific append wiring"
  *  - firegrid-scheduling-tool-bindings.PACKAGE_PLACEMENT.2 (mount Layers
  *    live on @firegrid/runtime)
  */
@@ -151,11 +151,8 @@ export interface AgentToolHostService {
   ) => Effect.Effect<void, ToolExecutionFailedError>
 
   /**
-   * Append a runtime-input row for a future-fired scheduled prompt.
-   * Called from inside `ScheduledInputWorkflow`'s body after the
-   * `DurableClock.sleep` wakes. The host implementation is responsible
-   * for idempotency on `inputId` (so workflow replay does not duplicate
-   * the row).
+   * Append a runtime-input intent for a scheduled prompt. The host
+   * implementation is responsible for idempotency on `inputId`.
    */
   readonly appendScheduledPrompt: (
     params: AppendScheduledPromptParams,

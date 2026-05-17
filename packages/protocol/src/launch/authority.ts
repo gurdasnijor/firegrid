@@ -180,6 +180,17 @@ const RuntimeContextOutputStreamNamePartsSchema = Schema.Struct({
   ),
 })
 
+const RuntimeContextWorkflowStreamNamePartsSchema = Schema.Struct({
+  namespace: Schema.String.pipe(
+    Schema.filter((value) =>
+      value.length > 0 ? undefined : "runtime context workflow namespace must be non-empty"),
+  ),
+  contextId: Schema.String.pipe(
+    Schema.filter((value) =>
+      value.length > 0 ? undefined : "runtime context workflow contextId must be non-empty"),
+  ),
+})
+
 /**
  * Bidirectional codec for `${prefix}.${segment}` host-owned stream
  * names. Decode parses the last dot, decodes the right-hand side
@@ -241,6 +252,8 @@ export const hostStreamName = (
 ): string => Schema.encodeSync(HostStreamNameSchema)({ prefix, segment })
 
 const RUNTIME_CONTEXT_OUTPUT_STREAM_MARKER = ".runtimeOutput.context."
+const RUNTIME_CONTEXT_WORKFLOW_STREAM_MARKER = `.${FIREGRID_DURABLE_NAMESPACE}.context.`
+const RUNTIME_CONTEXT_WORKFLOW_STREAM_SUFFIX = ".workflow"
 
 export const RuntimeContextOutputStreamNameSchema = Schema.transformOrFail(
   Schema.String,
@@ -291,11 +304,70 @@ export const RuntimeContextOutputStreamNameSchema = Schema.transformOrFail(
   },
 ).pipe(streamAuthority)
 
+export const RuntimeContextWorkflowStreamNameSchema = Schema.transformOrFail(
+  Schema.String,
+  RuntimeContextWorkflowStreamNamePartsSchema,
+  {
+    strict: false,
+    decode: (encoded, _options, ast) => {
+      const marker = encoded.indexOf(RUNTIME_CONTEXT_WORKFLOW_STREAM_MARKER)
+      if (
+        marker <= 0 ||
+        !encoded.endsWith(RUNTIME_CONTEXT_WORKFLOW_STREAM_SUFFIX) ||
+        marker === encoded.length - RUNTIME_CONTEXT_WORKFLOW_STREAM_MARKER.length -
+          RUNTIME_CONTEXT_WORKFLOW_STREAM_SUFFIX.length
+      ) {
+        return ParseResult.fail(
+          new ParseResult.Type(
+            ast,
+            encoded,
+            "runtime context workflow stream name must be {namespace}.firegrid.context.{contextId}.workflow",
+          ),
+        )
+      }
+      const namespace = encoded.slice(0, marker)
+      const contextIdWire = encoded.slice(
+        marker + RUNTIME_CONTEXT_WORKFLOW_STREAM_MARKER.length,
+        -RUNTIME_CONTEXT_WORKFLOW_STREAM_SUFFIX.length,
+      )
+      if (namespace.length === 0) {
+        return ParseResult.fail(
+          new ParseResult.Type(ast, encoded, "runtime context workflow namespace must be non-empty"),
+        )
+      }
+      let contextId: string
+      try {
+        contextId = decodeURIComponent(contextIdWire)
+      } catch {
+        return ParseResult.fail(
+          new ParseResult.Type(ast, encoded, "runtime context workflow contextId is not valid URI encoding"),
+        )
+      }
+      if (contextId.length === 0) {
+        return ParseResult.fail(
+          new ParseResult.Type(ast, encoded, "runtime context workflow contextId must be non-empty"),
+        )
+      }
+      return ParseResult.succeed({ namespace, contextId })
+    },
+    encode: ({ namespace, contextId }) =>
+      ParseResult.succeed(
+        `${namespace}${RUNTIME_CONTEXT_WORKFLOW_STREAM_MARKER}${encodeURIComponent(contextId)}${RUNTIME_CONTEXT_WORKFLOW_STREAM_SUFFIX}`,
+      ),
+  },
+).pipe(streamAuthority)
+
 export const runtimeContextOutputStreamName = (input: {
   readonly prefix: HostStreamPrefix
   readonly contextId: string
 }): string =>
   Schema.encodeSync(RuntimeContextOutputStreamNameSchema)(input)
+
+export const runtimeContextWorkflowStreamName = (input: {
+  readonly namespace: string
+  readonly contextId: string
+}): string =>
+  Schema.encodeSync(RuntimeContextWorkflowStreamNameSchema)(input)
 
 const NAMESPACE_RUNTIME_SUFFIX = `.${FIREGRID_DURABLE_NAMESPACE}.${RUNTIME_TABLE_NAME}`
 
@@ -447,6 +519,16 @@ export const runtimeContextOutputStreamUrl = (input: {
 }): string =>
   durableStreamUrl(input.baseUrl, runtimeContextOutputStreamName({
     prefix: input.prefix,
+    contextId: input.contextId,
+  }))
+
+export const runtimeContextWorkflowStreamUrl = (input: {
+  readonly baseUrl: string
+  readonly namespace: string
+  readonly contextId: string
+}): string =>
+  durableStreamUrl(input.baseUrl, runtimeContextWorkflowStreamName({
+    namespace: input.namespace,
     contextId: input.contextId,
   }))
 

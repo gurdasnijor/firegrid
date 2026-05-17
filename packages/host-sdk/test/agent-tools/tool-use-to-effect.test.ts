@@ -38,7 +38,6 @@ import {
   DurableToolsWaitForLive,
 } from "@firegrid/runtime/durable-tools"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
-import { ScheduledInputWorkflowLayer } from "../../src/agent-tools/execution/scheduled-input-workflow.ts"
 import {
   AgentToolHost,
   type AgentToolHostService,
@@ -200,7 +199,6 @@ const buildLayer = (
   hostLayer: Layer.Layer<AgentToolHost>,
 ): Layer.Layer<never, unknown, never> =>
   RunToolWorkflowLayer.pipe(
-    Layer.provideMerge(ScheduledInputWorkflowLayer),
     Layer.provideMerge(hostLayer),
     Layer.provideMerge(
       DurableToolsWaitForLive({ streamUrl: streams.waitForUrl }),
@@ -626,7 +624,7 @@ describe("toolUseToEffect — spawn_all arm", () => {
 })
 
 describe("toolUseToEffect — schedule_me arm", () => {
-  it("returns scheduled:true immediately and starts the ScheduledInputWorkflow", async () => {
+  it("returns scheduled:true and appends through the host scheduled-prompt seam", async () => {
     const streams = makeStreams("schedule-me")
     let promptObserved: string | undefined
     const host = fakeHost({
@@ -643,11 +641,6 @@ describe("toolUseToEffect — schedule_me arm", () => {
           contextId: "ctx-schedule",
           event: toolUse("tool-schedule", "schedule_me", { when: 0, prompt: "follow-up" }),
         })
-        // The ScheduledInputWorkflow is fire-and-forget (discard:true).
-        // Give the engine a brief window to wake the when=0 sleep so we
-        // can observe the appendScheduledPrompt side effect; the parent
-        // tool result has already been committed at this point.
-        yield* Effect.sleep("50 millis")
         return out
       }),
     )
@@ -658,12 +651,7 @@ describe("toolUseToEffect — schedule_me arm", () => {
     }
     expect(scheduledContent.scheduled).toBe(true)
     expect(scheduledContent.scheduleId).toContain("schedule-me:ctx-schedule")
-    // The scheduled workflow may or may not have fired by the time we
-    // assert; only require the parent tool returned scheduled:true
-    // synchronously.
-    if (promptObserved !== undefined) {
-      expect(promptObserved).toBe("follow-up")
-    }
+    expect(promptObserved).toBe("follow-up")
   })
 })
 

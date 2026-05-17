@@ -1,14 +1,14 @@
 import { Prompt } from "@effect/ai"
-import { WorkflowEngine } from "@effect/workflow"
 import {
   CurrentHostSession,
+  RuntimeControlPlaneTable,
   local,
   normalizeRuntimeIntent,
   type HostSessionRow,
   type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import type { RuntimeIngressRequest } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import {
   AgentToolHost,
   type AgentToolHostService,
@@ -24,9 +24,8 @@ import {
   runtimeIngressError,
 } from "@firegrid/runtime/errors"
 import type { RuntimeContextError } from "@firegrid/runtime/errors"
-import { RuntimeHostConfig } from "./config.ts"
 import {
-  appendRuntimeIngressToOwner,
+  appendRuntimeIngress,
 } from "./commands.ts"
 import {
   readRuntimeContextWithHostSession,
@@ -34,11 +33,17 @@ import {
   runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
 } from "./internal/runtime-context-helpers.ts"
+import {
+  RuntimeContextEngineRegistry,
+} from "./runtime-context-engine-registry.ts"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowPayload,
 } from "./runtime-context-workflow-core.ts"
+import {
+  runtimeContextWorkflowSupportLayer,
+} from "./runtime-context-workflow-support.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.3
 // Host-coupled AgentToolHost live behavior lives here instead of the host
@@ -70,11 +75,12 @@ const sessionNewInputIdForToolUse = (
 ) => `session-new:${childContextId}:${toolUseId}`
 
 const runtimeHostAgentToolHostService = (captured: {
-  readonly hostConfig: RuntimeHostConfig["Type"]
   readonly contextInsert: RuntimeContextInsertService
   readonly contextRead: RuntimeContextReadService
   readonly hostSession: HostSessionRow
-  readonly workflowEngine: WorkflowEngine.WorkflowEngine["Type"]
+  readonly controlTable: RuntimeControlPlaneTable["Type"]
+  readonly registry: RuntimeContextEngineRegistry["Type"]
+  readonly agentToolHost: AgentToolHostService
 }): AgentToolHostService => ({
   spawnChildContext: ({
     parentContextId,
@@ -107,17 +113,7 @@ const runtimeHostAgentToolHostService = (captured: {
         idempotencyKey: inputId,
       })
       yield* requireLocalContextWithHostCapabilities(captured, childContextId)
-      yield* executeRuntimeContextWorkflow(
-        captured.workflowEngine,
-        RuntimeContextWorkflowNative,
-        {
-          executionId: runtimeContextWorkflowExecutionId(childContextId),
-          payload: RuntimeContextWorkflowPayload.make({
-            contextId: childContextId,
-          }),
-          discard: true,
-        },
-      ).pipe(Effect.withClock(runtimeExecutionClock))
+      yield* startChildContextWorkflow(captured, childContextId)
       return {
         childContextId,
         status: "running" as const,
@@ -146,13 +142,18 @@ const runtimeHostAgentToolHostService = (captured: {
     unsupportedAgentTool(toolUseId, "session_close"),
   appendScheduledPrompt: ({ contextId, inputId, prompt }) =>
     // firegrid-host-context-authority.PROMPT_ROUTING.3
-    appendIngressWithHostCapabilities(captured, {
-      contextId,
-      inputId,
-      kind: "message",
-      authoredBy: "workflow",
-      payload: prompt,
-      idempotencyKey: inputId,
+    Effect.gen(function*() {
+      yield* appendIngressWithHostCapabilities(
+        { ...captured, deferActiveDispatch: true },
+        {
+          contextId,
+          inputId,
+          kind: "message",
+          authoredBy: "workflow",
+          payload: prompt,
+          idempotencyKey: inputId,
+        },
+      )
     }).pipe(Effect.mapError(cause =>
       toolExecutionFailed(inputId, "schedule_me", cause))),
 })
@@ -178,15 +179,24 @@ const requireLocalContextWithHostCapabilities = (
     contextId,
   )
 
+const inputIntentAppendOnlyRegistry = (
+  registry: RuntimeContextEngineRegistry["Type"],
+): RuntimeContextEngineRegistry["Type"] => ({
+  ...registry,
+  dispatchIntent: () => Effect.succeed(Option.none()),
+})
+
 const appendIngressWithHostCapabilities = (
   captured: {
-    readonly hostConfig: RuntimeHostConfig["Type"]
     readonly contextRead: RuntimeContextReadService
+    readonly controlTable: RuntimeControlPlaneTable["Type"]
+    readonly registry: RuntimeContextEngineRegistry["Type"]
+    readonly deferActiveDispatch?: boolean
   },
   request: RuntimeIngressRequest,
 ) =>
   Effect.gen(function* () {
-    const context = yield* readRuntimeContextWithHostCapabilities(
+    yield* readRuntimeContextWithHostCapabilities(
       captured,
       request.contextId,
     ).pipe(
@@ -196,26 +206,66 @@ const appendIngressWithHostCapabilities = (
           "failed to resolve runtime context for ingress append",
           request.contextId,
           request.inputId,
-          cause,
-        )),
+        cause,
+      )),
     )
-    yield* appendRuntimeIngressToOwner(request, context, captured.hostConfig)
+    yield* appendRuntimeIngress(request).pipe(
+      Effect.provideService(RuntimeContextRead, captured.contextRead),
+      Effect.provideService(RuntimeControlPlaneTable, captured.controlTable),
+      Effect.provideService(
+        RuntimeContextEngineRegistry,
+        captured.deferActiveDispatch === true
+          ? inputIntentAppendOnlyRegistry(captured.registry)
+          : captured.registry,
+      ),
+    )
   }).pipe(Effect.asVoid)
+
+const startChildContextWorkflow = (
+  captured: {
+    readonly contextRead: RuntimeContextReadService
+    readonly hostSession: HostSessionRow
+    readonly registry: RuntimeContextEngineRegistry["Type"]
+    readonly agentToolHost: AgentToolHostService
+  },
+  contextId: string,
+) =>
+  Effect.gen(function*() {
+    const context = yield* requireLocalContextWithHostCapabilities(captured, contextId)
+    const handle = yield* captured.registry.claimActive(context)
+    yield* captured.registry.reconcile(context)
+    yield* executeRuntimeContextWorkflow(
+      handle.engine,
+      RuntimeContextWorkflowNative,
+      {
+        executionId: runtimeContextWorkflowExecutionId(contextId),
+        payload: RuntimeContextWorkflowPayload.make({ contextId }),
+        discard: true,
+      },
+    ).pipe(
+      Effect.provide(runtimeContextWorkflowSupportLayer(handle, captured.agentToolHost)),
+      Effect.withClock(runtimeExecutionClock),
+    )
+  })
 
 export const RuntimeHostAgentToolHostLive = Layer.effect(
   AgentToolHost,
   Effect.gen(function* () {
-    const hostConfig = yield* RuntimeHostConfig
     const contextInsert = yield* RuntimeContextInsert
     const contextRead = yield* RuntimeContextRead
     const hostSession = yield* CurrentHostSession
-    const workflowEngine = yield* WorkflowEngine.WorkflowEngine
-    return runtimeHostAgentToolHostService({
-      hostConfig,
+    const controlTable = yield* RuntimeControlPlaneTable
+    const registry = yield* RuntimeContextEngineRegistry
+    const service: AgentToolHostService = runtimeHostAgentToolHostService({
       contextInsert,
       contextRead,
       hostSession,
-      workflowEngine,
+      controlTable,
+      registry,
+      get agentToolHost() {
+        return service
+      },
     })
+    return service
   }),
 )

@@ -10,27 +10,46 @@
  */
 
 import { IdGenerator, Prompt } from "@effect/ai"
-import { Workflow } from "@effect/workflow"
+import { Workflow, WorkflowEngine } from "@effect/workflow"
 import {
   type ExecuteToolOutput,
+  type ExecuteToolInput,
+  type ScheduleMeToolInput,
   type ScheduleMeToolOutput,
+  type SessionCancelToolInput,
   type SessionCancelToolOutput,
+  type SessionCloseToolInput,
   type SessionCloseToolOutput,
+  type SessionNewToolInput,
   type SessionNewToolOutput,
+  type SessionPromptToolInput,
   type SessionPromptToolOutput,
+  type SleepToolInput,
   type SleepToolOutput,
+  type WaitForToolInput,
   type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
-import { provideRuntimeContext } from "@firegrid/protocol/launch"
+import {
+  type CurrentHostSession,
+  type RuntimeControlPlaneTable,
+  type RuntimeOutputTable,
+  provideRuntimeContext,
+} from "@firegrid/protocol/launch"
 import { ToolResultEventSchema } from "@firegrid/runtime/events"
-import { Effect, Schema } from "effect"
+import { type Context, Effect, Layer, Schema } from "effect"
+import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
 import { toolExecutionFailed } from "../bindings/tool-error.ts"
 import {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
   type FiregridMcpToolFailure,
 } from "../bindings/tools.ts"
+import { AgentToolHost } from "./tool-host.ts"
 import { toolUseToEffect } from "./tool-use-to-effect.ts"
+import {
+  RuntimeContextEngineRegistry,
+  type ActiveRuntimeContextEngine,
+} from "../../host/runtime-context-engine-registry.ts"
 
 const TOOL_USE_ID_PREFIX = "mcp"
 
@@ -74,12 +93,33 @@ export const ToolCallWorkflowLayer = ToolCallWorkflow.toLayer(
     ),
 )
 
+const toolCallWorkflowSupportLayer = (
+  handle: ActiveRuntimeContextEngine,
+  agentToolHost: AgentToolHost["Type"],
+) =>
+  ToolCallWorkflowLayer.pipe(
+    Layer.provideMerge(Layer.succeed(WorkflowEngine.WorkflowEngine, handle.engine)),
+    Layer.provideMerge(Layer.succeed(WorkflowEngineTable, handle.table)),
+    Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
+  )
+
+type ToolCallHostEnvironment =
+  | RuntimeContextEngineRegistry
+  | AgentToolHost
+  | CurrentHostSession
+  | RuntimeControlPlaneTable
+  | RuntimeOutputTable
+
 /**
  * Common handler shape: every tool routes through `toolUseToEffect` so
  * tool calls observe the same workflow identity, replay safety, and
  * host seams as direct codec paths.
  */
-const handleTool = <Output>(toolName: string, params: unknown) =>
+const handleTool = <Output>(
+  captured: Context.Context<ToolCallHostEnvironment>,
+  toolName: string,
+  params: unknown,
+) =>
   Effect.gen(function* () {
     const ctx = yield* FiregridAgentToolContext
     const idGen = yield* IdGenerator.IdGenerator
@@ -99,9 +139,30 @@ const handleTool = <Output>(toolName: string, params: unknown) =>
       toolName,
       input: params,
     })
-    const result = yield* (resolved.runtimeContext === undefined
-      ? execute
-      : execute.pipe(provideRuntimeContext(resolved.runtimeContext)))
+    if (resolved.runtimeContext === undefined) {
+      return yield* Effect.fail(toolExecutionFailed(
+        toolUseId,
+        toolName,
+        "MCP tool execution requires a resolved runtime context",
+      ))
+    }
+    const runtimeContext = resolved.runtimeContext
+    const result = yield* Effect.gen(function*() {
+      const registry = yield* RuntimeContextEngineRegistry
+      const agentToolHost = yield* AgentToolHost
+      const handle = yield* registry.startOrAttach(runtimeContext).pipe(
+        Effect.mapError(cause =>
+          toolExecutionFailed(toolUseId, toolName, cause)),
+      )
+      return yield* execute.pipe(
+        provideRuntimeContext(runtimeContext),
+        Effect.provide(toolCallWorkflowSupportLayer(handle, agentToolHost)),
+      )
+    }).pipe(
+      Effect.mapError(cause =>
+        toolExecutionFailed(toolUseId, toolName, cause)),
+      Effect.provide(captured),
+    )
     if (result.part.isFailure) {
       const error = extractToolFailure(result.part.result)
       return yield* Effect.fail(error)
@@ -145,24 +206,24 @@ const extractToolFailure = (content: unknown): FiregridMcpToolFailure => {
  * `McpServer.registerToolkit`) projects the toolkit to MCP `tools/list`
  * and `tools/call`.
  *
- * The handler requirements channel includes every `R` accumulated by
- * `toolUseToEffect` (workflow engine, durable-tools table, scope,
- * `AgentToolHost`) plus the bridge-scoped `FiregridAgentToolContext`
- * and `IdGenerator`. Composition wiring provides those services at the
- * MCP layer boundary.
+ * Host services are captured once when the MCP layer is built; each handler
+ * still resolves its route-scoped runtime context at call time and then runs
+ * the tool-call workflow on that context's active per-context engine.
  */
-export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer({
-  sleep: (params) => handleTool<SleepToolOutput>("sleep", params),
-  wait_for: (params) => handleTool<WaitForToolOutput>("wait_for", params),
-  session_new: (params) =>
-    handleTool<SessionNewToolOutput>("session_new", params),
-  session_prompt: (params) =>
-    handleTool<SessionPromptToolOutput>("session_prompt", params),
-  session_cancel: (params) =>
-    handleTool<SessionCancelToolOutput>("session_cancel", params),
-  session_close: (params) =>
-    handleTool<SessionCloseToolOutput>("session_close", params),
-  schedule_me: (params) =>
-    handleTool<ScheduleMeToolOutput>("schedule_me", params),
-  execute: (params) => handleTool<ExecuteToolOutput>("execute", params),
-})
+export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer(
+  Effect.map(Effect.context<ToolCallHostEnvironment>(), captured => ({
+    sleep: (params: SleepToolInput) => handleTool<SleepToolOutput>(captured, "sleep", params),
+    wait_for: (params: WaitForToolInput) => handleTool<WaitForToolOutput>(captured, "wait_for", params),
+    session_new: (params: SessionNewToolInput) =>
+      handleTool<SessionNewToolOutput>(captured, "session_new", params),
+    session_prompt: (params: SessionPromptToolInput) =>
+      handleTool<SessionPromptToolOutput>(captured, "session_prompt", params),
+    session_cancel: (params: SessionCancelToolInput) =>
+      handleTool<SessionCancelToolOutput>(captured, "session_cancel", params),
+    session_close: (params: SessionCloseToolInput) =>
+      handleTool<SessionCloseToolOutput>(captured, "session_close", params),
+    schedule_me: (params: ScheduleMeToolInput) =>
+      handleTool<ScheduleMeToolOutput>(captured, "schedule_me", params),
+    execute: (params: ExecuteToolInput) => handleTool<ExecuteToolOutput>(captured, "execute", params),
+  })),
+)

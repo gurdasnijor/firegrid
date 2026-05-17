@@ -22,7 +22,6 @@
  */
 
 import { IdGenerator, Tool, Toolkit } from "@effect/ai"
-import { WorkflowEngine } from "@effect/workflow"
 import { FiregridAgentToolOperations } from "@firegrid/protocol/agent-tools"
 import { type RuntimeContext } from "@firegrid/protocol/launch"
 import { Context, Effect, Layer } from "effect"
@@ -90,20 +89,15 @@ export class FiregridAgentToolContext extends Context.Tag(
  * (defined in `../execution`), which gives the underlying
  * `toolUseToEffect` body a `WorkflowEngine.WorkflowInstance`.
  *
- * `Workflow.execute(ToolCallWorkflow, ...)` carries
- * `WorkflowEngine.WorkflowEngine` in its `R` channel, so the toolkit
- * handler's requirements include it and the tool must declare it.
- * Declaring these here surfaces them through `Tool.Requirements<T>` so
- * `Toolkit.toLayer` typechecks the handlers cleanly.
+ * The execution layer resolves the route-scoped runtime context and runs the
+ * tool-call workflow on that context's active per-context engine.
  */
 const FiregridToolDependencies: Array<
   | typeof FiregridAgentToolContext
   | typeof IdGenerator.IdGenerator
-  | typeof WorkflowEngine.WorkflowEngine
 > = [
   FiregridAgentToolContext,
   IdGenerator.IdGenerator,
-  WorkflowEngine.WorkflowEngine,
 ]
 
 const operationToolName = <Name extends string>(
@@ -214,8 +208,8 @@ export const SessionCloseTool = Tool.make(operationToolName(FiregridAgentToolOpe
 
 /**
  * `schedule_me` — schedule a future prompt to the same agent context.
- * Lowers onto `ScheduledInputWorkflow.execute({ discard: true })` in
- * `toolUseToEffect`.
+ * Lowers through `AgentToolHost.appendScheduledPrompt`; the active
+ * per-context engine or startup reconciliation owns runtime input delivery.
  */
 export const ScheduleMeTool = Tool.make(operationToolName(FiregridAgentToolOperations.scheduleMe.metadata, "schedule_me"), {
   description: operationDescription(FiregridAgentToolOperations.scheduleMe),

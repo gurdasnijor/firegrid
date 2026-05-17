@@ -43,12 +43,10 @@ import { Config, Effect, Layer, Logger, Option } from "effect"
 // example accepts. Not a raw/custom HTTP server.
 // durable-lint-allow-control-plane: @effect/platform-node NodeHttpServer.layer listener factory
 import { createServer } from "node:http"
-import { ScheduledInputWorkflowLayer } from "../agent-tools/execution/scheduled-input-workflow.ts"
 import {
   FiregridAgentToolContext,
   FiregridAgentToolkit,
   FiregridAgentToolkitLayer,
-  ToolCallWorkflowLayer,
 } from "../agent-tools/index.ts"
 
 /**
@@ -144,8 +142,7 @@ const FiregridMcpRouteContextLayer = Layer.effect(
  *   - `HttpRouter.Default.serve()` — exposes the router as the
  *     server's `HttpApp`
  *   - `FiregridAgentToolkitLayer` — toolkit handlers
- *   - `ToolCallWorkflowLayer` — gives the handlers a workflow instance
- *   - `ScheduledInputWorkflowLayer` — `schedule_me` child workflow
+ *   - route-scoped tool-call workflows on each context's active engine
  *   - `FiregridAgentToolContext` — resolves route context at tool-call time
  *   - `IdGenerator.defaultIdGenerator`
  *   - host-provided AgentToolHost, durable wait_for, and runtime observation
@@ -155,8 +152,7 @@ const FiregridMcpRouteContextLayer = Layer.effect(
  *   - `NodeHttpServer.layer(createServer, { port, host })` — loopback
  *     binder
  *
- * Caller must still provide the `WorkflowEngine` (typically through
- * `FiregridRuntimeHostWithWorkflowLive`).
+ * Caller must provide the host runtime layer that owns per-context engines.
  */
 // firegrid-effect-ai-native-agents.MCP_TRANSPORT_COMPAT.1
 //
@@ -193,8 +189,6 @@ export const FiregridMcpServerLayer = (
     HttpRouter.Default.serve(),
   ).pipe(
     Layer.provide(FiregridAgentToolkitLayer),
-    Layer.provide(ToolCallWorkflowLayer),
-    Layer.provide(ScheduledInputWorkflowLayer),
     Layer.provide(FiregridMcpRouteContextLayer),
     Layer.provide(
       Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator),

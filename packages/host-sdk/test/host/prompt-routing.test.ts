@@ -1,21 +1,12 @@
-// firegrid-host-context-authority.PROMPT_ROUTING.1
-// firegrid-host-context-authority.PROMPT_ROUTING.2
-// firegrid-host-context-authority.PROMPT_ROUTING.3
-// firegrid-host-context-authority.VALIDATION.2
-//
-// Prompt-routing smoke: a host can append durable input for a context owned by
-// another host, and the input completes the owner workflow's runtime-input
-// deferred. `schedule_me` uses the same append surface.
-
 import { Prompt } from "@effect/ai"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   RuntimeControlPlaneTable,
-  hostOwnedStreamUrl,
   local,
   makeHostStreamPrefix,
   normalizeRuntimeIntent,
   runtimeControlPlaneStreamUrl,
+  runtimeContextWorkflowStreamUrl,
   type HostId,
 } from "@firegrid/protocol/launch"
 import {
@@ -27,13 +18,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   WorkflowEngineTable,
 } from "@firegrid/runtime/workflow-engine"
-import { ScheduledInputWorkflow, ScheduledInputWorkflowLayer } from "../../src/agent-tools/index.ts"
 import { AgentToolHost } from "../../src/agent-tools/execution/tool-host.ts"
 import {
   FiregridRuntimeHostWithWorkflowLive,
-  RuntimeHostAgentToolHostLive,
   appendRuntimeIngress,
 } from "../../src/host/index.ts"
+import {
+  RuntimeContextEngineRegistry,
+} from "../../src/host/runtime-context-engine-registry.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -54,7 +46,7 @@ const seedContext = (input: {
   readonly hostId: HostId
   readonly contextId: string
 }) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const table = yield* RuntimeControlPlaneTable
     const nowMs = yield* Clock.currentTimeMillis
     yield* table.contexts.upsert({
@@ -88,18 +80,11 @@ const controlPlaneLayer = (input: {
 const workflowTableLayer = (input: {
   readonly namespace: string
   readonly baseUrl: string
-  readonly hostId: HostId
+  readonly contextId: string
 }) =>
   WorkflowEngineTable.layer({
     streamOptions: {
-      url: hostOwnedStreamUrl({
-        baseUrl: input.baseUrl,
-        prefix: makeHostStreamPrefix({
-          namespace: input.namespace,
-          hostId: input.hostId,
-        }),
-        segment: "workflow",
-      }),
+      url: runtimeContextWorkflowStreamUrl(input),
       contentType: "application/json",
     },
   })
@@ -128,13 +113,13 @@ const decodeInputRows = (value: unknown): ReadonlyArray<RuntimeIngressInputRow> 
       ),
   })
 
-const readHostDeferredInputs = (input: {
+const readContextDeferredInputs = (input: {
   readonly namespace: string
   readonly baseUrl: string
-  readonly hostId: HostId
+  readonly contextId: string
 }): Promise<ReadonlyArray<RuntimeIngressInputRow>> =>
   Effect.runPromise(
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const table = yield* WorkflowEngineTable
       return yield* table.deferreds.query((coll) =>
         coll.toArray
@@ -146,8 +131,39 @@ const readHostDeferredInputs = (input: {
     ),
   )
 
-describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
-  it("host B appends a prompt for host A context into host A workflow input deferred", async () => {
+const intentIds = (input: {
+  readonly namespace: string
+  readonly baseUrl: string
+}) =>
+  Effect.gen(function*() {
+    const table = yield* RuntimeControlPlaneTable
+    return yield* table.inputIntents.query((coll) =>
+      coll.toArray.map(row => row.intentId))
+  }).pipe(
+    Effect.provide(controlPlaneLayer(input)),
+    Effect.scoped,
+  )
+
+const runWithHost = <A, E, R>(
+  options: {
+    readonly baseUrl: string
+    readonly namespace: string
+    readonly hostId: HostId
+  },
+  effect: Effect.Effect<A, E, R>,
+) =>
+  Effect.scoped(
+    effect.pipe(
+      Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+        durableStreamsBaseUrl: options.baseUrl,
+        namespace: options.namespace,
+        hostId: options.hostId,
+      })),
+    ),
+  )
+
+describe("firegrid-workflow-driven-runtime.VALIDATION.8 per-context runtime input intents", () => {
+  it("appends a durable intent without owner-host workflow stream routing when no local engine is active", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `prompt-routing-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
@@ -162,44 +178,32 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
     )
 
     const appended = await Effect.runPromise(
-      appendRuntimeIngress({
+      runWithHost({ baseUrl, namespace, hostId: hostB }, appendRuntimeIngress({
         contextId,
         inputId: "input-cross-host",
         kind: "message",
         authoredBy: "client",
         payload: "hello from host B",
         idempotencyKey: "cross-host",
-      }).pipe(
-        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
-          durableStreamsBaseUrl: baseUrl,
-          namespace,
-          hostId: hostB,
-        })),
-      ),
+      })),
     )
 
     expect(appended).toMatchObject({
       inputId: "input-cross-host",
       contextId,
-      sequence: 0,
-      status: "sequenced",
+      status: "pending",
       payload: "hello from host B",
     })
 
-    const hostAInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostA })
-    const hostBInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostB })
-
-    expect(hostAInputs.map(row => row.inputId)).toEqual(["input-cross-host"])
-    expect(hostBInputs).toEqual([])
+    expect(await Effect.runPromise(intentIds({ baseUrl, namespace }))).toEqual(["input-cross-host"])
+    expect(await readContextDeferredInputs({ baseUrl, namespace, contextId })).toEqual([])
   })
 
-  it("schedule_me fires through the same owner-host deferred-input path", async () => {
+  it("reconciles durable intents when the owning per-context engine starts", async () => {
     if (!baseUrl) throw new Error("server not started")
-    const namespace = `prompt-routing-schedule-${crypto.randomUUID()}`
+    const namespace = `prompt-routing-reconcile-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
-    const hostB = `host_B_${crypto.randomUUID()}` as HostId
     const contextId = `ctx_${crypto.randomUUID()}`
-    const inputId = "schedule-me:test"
 
     await Effect.runPromise(
       seedContext({ namespace, hostId: hostA, contextId }).pipe(
@@ -207,48 +211,46 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
         Effect.scoped,
       ),
     )
+    await Effect.runPromise(
+      runWithHost({ baseUrl, namespace, hostId: hostA }, appendRuntimeIngress({
+        contextId,
+        inputId: "input-reconcile",
+        kind: "message",
+        authoredBy: "client",
+        payload: "hello before engine",
+        idempotencyKey: "reconcile",
+      })),
+    )
 
     await Effect.runPromise(
-      ScheduledInputWorkflow.execute({
-        contextId,
-        dueAtMs: 0,
-        inputId,
-        prompt: Prompt.userMessage({
-          content: [Prompt.textPart({ text: "scheduled follow-up" })],
+      runWithHost(
+        { baseUrl, namespace, hostId: hostA },
+        Effect.gen(function*() {
+          const table = yield* RuntimeControlPlaneTable
+          const context = yield* table.contexts.get(contextId)
+          if (context._tag === "None") return yield* Effect.fail(new Error("missing context"))
+          const registry = yield* RuntimeContextEngineRegistry
+          yield* registry.claimActive(context.value)
+          yield* registry.reconcile(context.value)
         }),
-      }).pipe(
-        Effect.provide(ScheduledInputWorkflowLayer),
-        Effect.provide(RuntimeHostAgentToolHostLive),
-        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
-          durableStreamsBaseUrl: baseUrl,
-          namespace,
-          hostId: hostB,
-        })),
       ),
     )
 
-    const hostAInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostA })
-    const hostBInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostB })
-
-    expect(hostAInputs.map(row => ({
+    expect((await readContextDeferredInputs({ baseUrl, namespace, contextId })).map(row => ({
       inputId: row.inputId,
-      authoredBy: row.authoredBy,
       sequence: row.sequence,
       status: row.status,
     }))).toEqual([{
-      inputId,
-      authoredBy: "workflow",
+      inputId: "input-reconcile",
       sequence: 0,
       status: "sequenced",
     }])
-    expect(hostBInputs).toEqual([])
   })
 
-  it("firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2 session_prompt uses owner-host deferred-input routing", async () => {
+  it("dispatches session_prompt through the active local per-context engine", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `prompt-routing-session-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
-    const hostB = `host_B_${crypto.randomUUID()}` as HostId
     const contextId = `ctx_${crypto.randomUUID()}`
     const inputId = "session-prompt:test"
 
@@ -260,30 +262,28 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
     )
 
     await Effect.runPromise(
-      Effect.gen(function* () {
-        const host = yield* AgentToolHost
-        yield* host.appendSessionPrompt({
-          toolUseId: "tool-session-prompt",
-          sessionId: contextId,
-          inputId,
-          prompt: Prompt.userMessage({
-            content: [Prompt.textPart({ text: "session follow-up" })],
-          }),
-        })
-      }).pipe(
-        Effect.provide(RuntimeHostAgentToolHostLive),
-        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
-          durableStreamsBaseUrl: baseUrl,
-          namespace,
-          hostId: hostB,
-        })),
+      runWithHost(
+        { baseUrl, namespace, hostId: hostA },
+        Effect.gen(function*() {
+          const table = yield* RuntimeControlPlaneTable
+          const context = yield* table.contexts.get(contextId)
+          if (context._tag === "None") return yield* Effect.fail(new Error("missing context"))
+          const registry = yield* RuntimeContextEngineRegistry
+          yield* registry.claimActive(context.value)
+          const host = yield* AgentToolHost
+          yield* host.appendSessionPrompt({
+            toolUseId: "tool-session-prompt",
+            sessionId: contextId,
+            inputId,
+            prompt: Prompt.userMessage({
+              content: [Prompt.textPart({ text: "session follow-up" })],
+            }),
+          })
+        }),
       ),
     )
 
-    const hostAInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostA })
-    const hostBInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId: hostB })
-
-    expect(hostAInputs.map(row => ({
+    expect((await readContextDeferredInputs({ baseUrl, namespace, contextId })).map(row => ({
       inputId: row.inputId,
       authoredBy: row.authoredBy,
       sequence: row.sequence,
@@ -294,34 +294,28 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
       sequence: 0,
       status: "sequenced",
     }])
-    expect(hostBInputs).toEqual([])
   })
 
-  it("firegrid-factory-aligned-agent-tools.SESSION.1 starts a live session_new child without awaiting terminal completion", async () => {
+  it("starts a live session_new child and reconciles its initial prompt on the child engine", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `session-new-live-${crypto.randomUUID()}`
     const hostId = `host_A_${crypto.randomUUID()}` as HostId
 
     const result = await Effect.runPromise(
-      Effect.gen(function* () {
-        const host = yield* AgentToolHost
-        const session = yield* host.spawnChildContext({
-          parentContextId: "ctx-parent",
-          toolUseId: "tool-session-new-live",
-          agentKind: "/usr/bin/true",
-          prompt: "ignored",
-        })
-        const table = yield* RuntimeControlPlaneTable
-        const context = yield* table.contexts.get(session.childContextId)
-        return { session, context }
-      }).pipe(
-        Effect.provide(RuntimeHostAgentToolHostLive),
-        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
-          durableStreamsBaseUrl: baseUrl,
-          namespace,
-          hostId,
-        })),
-        Effect.scoped,
+      runWithHost(
+        { baseUrl, namespace, hostId },
+        Effect.gen(function*() {
+          const host = yield* AgentToolHost
+          const session = yield* host.spawnChildContext({
+            parentContextId: "ctx-parent",
+            toolUseId: "tool-session-new-live",
+            agentKind: "/usr/bin/true",
+            prompt: "ignored",
+          })
+          const table = yield* RuntimeControlPlaneTable
+          const context = yield* table.contexts.get(session.childContextId)
+          return { session, context }
+        }),
       ),
     )
 
@@ -331,8 +325,11 @@ describe("firegrid-host-context-authority.VALIDATION.2 prompt routing", () => {
     })
     expect(result.context._tag).toBe("Some")
 
-    const hostInputs = await readHostDeferredInputs({ baseUrl, namespace, hostId })
-    expect(hostInputs.map(row => ({
+    expect((await readContextDeferredInputs({
+      baseUrl,
+      namespace,
+      contextId: result.session.childContextId,
+    })).map(row => ({
       contextId: row.contextId,
       authoredBy: row.authoredBy,
       status: row.status,

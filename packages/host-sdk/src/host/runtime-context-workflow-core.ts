@@ -11,6 +11,7 @@ import {
 } from "@firegrid/protocol/runtime-ingress"
 import {
   Context,
+  Cause,
   Effect,
   Layer,
   Predicate,
@@ -30,6 +31,10 @@ import {
 import {
   RuntimeToolUseExecutor,
 } from "@firegrid/runtime/tool-executor"
+import {
+  toolErrorResult,
+  toolExecutionFailed,
+} from "../agent-tools/bindings/tool-error.ts"
 import {
   readRuntimeContext,
   runtimeContextWorkflowExecutionId,
@@ -203,7 +208,16 @@ const runToolUseActivity = (
     execute: Effect.gen(function*() {
       const executor = yield* RuntimeToolUseExecutor
       return yield* executor.execute({ contextId: context.contextId }, event)
-    }),
+    }).pipe(
+      Effect.catchAllCause(cause =>
+        Effect.succeed(toolErrorResult(
+          toolExecutionFailed(
+            event.part.id,
+            event.part.name,
+            Cause.squash(cause),
+          ),
+        ))),
+    ),
   })
 
 const handleAgentOutput = (
@@ -334,5 +348,13 @@ export const RuntimeContextWorkflowNative = Workflow.make({
   idempotencyKey: ({ contextId }) => runtimeContextWorkflowExecutionId(contextId),
 }).annotate(Workflow.SuspendOnFailure, true)
 
-export const RuntimeContextWorkflowNativeLayer = RuntimeContextWorkflowNative.toLayer(({ contextId }) =>
-  runWorkflowNativeRuntimeContext(contextId))
+export const RuntimeContextWorkflowNativeLayer = Layer.scopedDiscard(
+  Effect.gen(function*() {
+    const engine = yield* WorkflowEngine.WorkflowEngine
+    const captured = yield* Effect.context<never>()
+    yield* engine.register(RuntimeContextWorkflowNative, ({ contextId }) =>
+      runWorkflowNativeRuntimeContext(contextId).pipe(
+        Effect.provide(captured),
+      ) as Effect.Effect<StartRuntimeResult, RuntimeContextError>)
+  }),
+)

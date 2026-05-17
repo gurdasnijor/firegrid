@@ -665,6 +665,16 @@ const make = (config: ResolvedConfig) =>
         }
       })
 
+    const appendDecodedPermissionResponseIntent = (
+      request: {
+        readonly contextId: string
+        readonly permissionRequestId: string
+        readonly decision: PermissionDecision
+        readonly idempotencyKey?: string
+      },
+    ) =>
+      appendPermissionResponseIntent(request)
+
     const makeSessionHandle = (
       sessionId: FiregridSessionId,
     ): FiregridSessionHandle => ({
@@ -700,11 +710,13 @@ const make = (config: ResolvedConfig) =>
         respond: request =>
           Effect.gen(function* () {
             const decoded = yield* decodeSessionPermissionRespondInput(request)
-            return yield* appendPermissionResponseIntent({
+            return yield* appendDecodedPermissionResponseIntent({
               contextId: sessionId,
               permissionRequestId: decoded.permissionRequestId,
               decision: decoded.decision,
-              idempotencyKey: decoded.idempotencyKey,
+              ...(decoded.idempotencyKey !== undefined
+                ? { idempotencyKey: decoded.idempotencyKey }
+                : {}),
             })
           }),
       },
@@ -817,11 +829,13 @@ const make = (config: ResolvedConfig) =>
       permissions: {
         respond: request => Effect.gen(function* () {
           const decoded = yield* decodePermissionRespondInput(request)
-          return yield* appendPermissionResponseIntent({
+          return yield* appendDecodedPermissionResponseIntent({
             contextId: decoded.contextId,
             permissionRequestId: decoded.permissionRequestId,
             decision: decoded.decision,
-            idempotencyKey: decoded.idempotencyKey,
+            ...(decoded.idempotencyKey !== undefined
+              ? { idempotencyKey: decoded.idempotencyKey }
+              : {}),
           })
         }),
       },
