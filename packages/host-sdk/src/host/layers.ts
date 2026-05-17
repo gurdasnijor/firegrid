@@ -257,6 +257,9 @@ export const FiregridRuntimeHostLive = (
   const session = currentHostSessionLayer(options)
   const namespaceScoped = namespaceScopedLayer(options)
   const hostScoped = hostScopedLayer(options)
+  // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
+  // Production host composition installs the native workflow/session path
+  // directly; deleted legacy runner/subscriber symbols are not fallback paths.
   return RuntimeContextWorkflowNativeLayer.pipe(
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),

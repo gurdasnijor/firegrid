@@ -11,16 +11,14 @@ import {
 } from "@firegrid/runtime/errors"
 import type { AgentInputEvent } from "@firegrid/runtime/events"
 import {
-  commandForContext,
-  streamSandboxProcess,
+  type AgentByteStream,
   type ProcessOutputChunk,
-  type SandboxProviderError,
 } from "@firegrid/runtime/sources/sandbox"
 import {
   Clock,
   Effect,
-  Queue,
   Schema,
+  Scope,
   Stream,
 } from "effect"
 import type {
@@ -33,7 +31,7 @@ import {
   makeRuntimeContextSessionAdapterService,
   makeRuntimeContextSessionCommandSender,
   makeRuntimeContextWorkflowSessionService,
-  removeRuntimeContextSession,
+  openRuntimeContextByteStream,
   runtimeContextSessionOwnerSessionId,
   scopedRuntimeContextWorkflowSessionLayer,
   type RuntimeContextSessionAdapterRequirements,
@@ -46,7 +44,7 @@ type SequencedChunk = {
 }
 
 interface RawRuntimeContextSession extends RuntimeContextSessionRecord {
-  readonly stdin: Queue.Queue<Uint8Array>
+  readonly stdin: WritableStreamDefaultWriter<Uint8Array>
 }
 
 const nowIso = Clock.currentTimeMillis.pipe(
@@ -171,34 +169,58 @@ const writeOutputChunk = (
     ),
   )
 
+const outputLines = (
+  contextId: string,
+  channel: "stdout" | "stderr",
+  stream: ReadableStream<Uint8Array>,
+): Stream.Stream<Extract<ProcessOutputChunk, { readonly type: "output" }>, RuntimeContextError> =>
+  Stream.fromReadableStream({
+    evaluate: () => stream,
+    onError: cause =>
+      asRuntimeContextError(
+        `sandbox.raw.${channel}`,
+        `failed reading raw process ${channel}`,
+        contextId,
+        cause,
+      ),
+    releaseLockOnEnd: true,
+  }).pipe(
+    Stream.decodeText(),
+    Stream.splitLines,
+    Stream.map(text => ({
+      type: "output" as const,
+      channel,
+      text,
+    })),
+  )
+
 const runRawProcess = (
   session: RawRuntimeContextSession,
+  bytes: AgentByteStream,
   writer: PerContextRuntimeOutputWriter["Type"],
 ) =>
   Effect.gen(function* () {
-    const command = yield* commandForContext(session.context)
-    yield* streamSandboxProcess({
-      labels: {
-        firegridRuntimeContextId: session.context.contextId,
-      },
-      ...(session.context.runtime.config.cwd === undefined
-        ? {}
-        : { workingDir: session.context.runtime.config.cwd }),
-      providerConfig: {
-        contextId: session.context.contextId,
-      },
-      command: {
-        ...command,
-        stdin: Stream.fromQueue(session.stdin),
-      },
-    }).pipe(
-      Stream.mapError((cause: SandboxProviderError) =>
-        asRuntimeContextError(
-          `sandbox.${cause.op}`,
-          cause.message,
-          session.context.contextId,
-          cause,
-        )),
+    const output = Stream.merge(
+      outputLines(session.context.contextId, "stdout", bytes.stdout),
+      outputLines(session.context.contextId, "stderr", bytes.stderr),
+    )
+    const exit = Stream.fromEffect(
+      bytes.exit.pipe(
+        Effect.map(exit => ({
+          type: "exit" as const,
+          exitCode: exit.exitCode ?? 0,
+        })),
+        Effect.mapError(cause =>
+          asRuntimeContextError(
+            "sandbox.raw.exit",
+            "failed waiting for raw process exit",
+            session.context.contextId,
+            cause,
+          )),
+      ),
+    )
+    yield* output.pipe(
+      Stream.concat(exit),
       Stream.mapAccum(0, (sequence, chunk): readonly [number, SequencedChunk] => [
         sequence + 1,
         { sequence, chunk },
@@ -237,26 +259,29 @@ export const makeRawRuntimeContextWorkflowSessionService:
     const startSession = (
       context: RuntimeContext,
       activityAttempt: number,
-      key: string,
-    ): Effect.Effect<RawRuntimeContextSession, RuntimeContextError> =>
+      _key: string,
+    ) =>
       Effect.gen(function* () {
-        const stdin = yield* Queue.unbounded<Uint8Array>()
+        const bytes = yield* Scope.extend(
+          openRuntimeContextByteStream(context).pipe(Effect.provide(captured)),
+          scope,
+        )
         const session: RawRuntimeContextSession = {
           context,
           activityAttempt,
           ownerSessionId: ownerSessionIdFor(context, activityAttempt),
-          stdin,
+          stdin: bytes.stdin.getWriter(),
         }
-        yield* runRawProcess(session, writer).pipe(
-          Effect.provide(captured),
-          Effect.catchAll(cause =>
-            Effect.logError("[host-sdk] raw runtime session failed").pipe(
-              Effect.annotateLogs({ contextId: context.contextId, cause }),
-            )),
-          Effect.ensuring(removeRuntimeContextSession(sessions, key)),
-          Effect.forkIn(scope),
-        )
-        return session
+        return {
+          session,
+          run: runRawProcess(session, bytes, writer).pipe(
+            Effect.catchAll(cause =>
+              Effect.logError("[host-sdk] raw runtime session failed").pipe(
+                Effect.annotateLogs({ contextId: context.contextId, cause }),
+              )),
+            Effect.ensuring(Effect.sync(() => session.stdin.releaseLock())),
+          ),
+        }
       })
 
     const sendCommand = makeRuntimeContextSessionCommandSender<RawRuntimeContextSession>({
@@ -267,7 +292,16 @@ export const makeRawRuntimeContextWorkflowSessionService:
           const bytes = yield* rawBytesForInput(command.event)
           return {
             byteLength: bytes.byteLength,
-            emit: Queue.offer(session.stdin, bytes),
+            emit: Effect.tryPromise({
+              try: () => session.stdin.write(bytes),
+              catch: cause =>
+                asRuntimeContextError(
+                  "sandbox.raw.stdin.write",
+                  "failed writing raw runtime stdin",
+                  context.contextId,
+                  cause,
+                ),
+            }),
           }
         }),
     })
@@ -275,6 +309,7 @@ export const makeRawRuntimeContextWorkflowSessionService:
     return makeRuntimeContextWorkflowSessionService({
       ownerKind: "raw",
       sessions,
+      scope,
       startSession,
       sendCommand,
     })

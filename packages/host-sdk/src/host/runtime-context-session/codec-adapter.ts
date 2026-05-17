@@ -1,4 +1,5 @@
 import { IdGenerator } from "@effect/ai"
+import { WorkflowEngine } from "@effect/workflow"
 import type {
   RuntimeAgentProtocol,
   RuntimeContext,
@@ -20,18 +21,14 @@ import {
 } from "@firegrid/runtime/events"
 import {
   type AgentByteStream,
-  commandForContext,
-  type RuntimeEnvResolverPolicy,
-  type SandboxProvider,
-  type SandboxProviderError,
 } from "@firegrid/runtime/sources/sandbox"
-import { SandboxProvider as SandboxProviderTag } from "@firegrid/runtime/sources/sandbox"
 import {
   Clock,
   Context,
   Effect,
   Layer,
   Match,
+  Option,
   Ref,
   Schema,
   Scope,
@@ -41,8 +38,12 @@ import type {
   PerContextRuntimeOutputWriter,
 } from "../per-context-runtime-output.ts"
 import {
+  RuntimeContextWorkflowNative,
   type RuntimeContextWorkflowSessionService,
 } from "../runtime-context-workflow-core.ts"
+import {
+  runtimeContextWorkflowExecutionId,
+} from "../internal/runtime-context-helpers.ts"
 import * as SessionCommon from "./common.ts"
 
 interface CodecRuntimeContextSession extends SessionCommon.RuntimeContextSessionRecord {
@@ -161,39 +162,6 @@ const codecLayerForProtocol = (
     Match.exhaustive,
   )
 
-const mapSandboxProviderError = (
-  contextId: string,
-) =>
-  Effect.mapError((cause: SandboxProviderError) =>
-    asRuntimeContextError(
-      `sandbox.${cause.op}`,
-      cause.message,
-      contextId,
-      cause,
-    ))
-
-const openByteStream = (
-  context: RuntimeContext,
-): Effect.Effect<AgentByteStream, RuntimeContextError, SandboxProvider | RuntimeEnvResolverPolicy | Scope.Scope> =>
-  Effect.gen(function* () {
-    const command = yield* commandForContext(context)
-    const provider = yield* SandboxProviderTag
-    const sandbox = yield* provider.getOrCreate({
-      labels: {
-        firegridRuntimeContextId: context.contextId,
-      },
-      ...(context.runtime.config.cwd === undefined ? {} : {
-        workingDir: context.runtime.config.cwd,
-      }),
-      providerConfig: {
-        contextId: context.contextId,
-      },
-    }).pipe(mapSandboxProviderError(context.contextId))
-    return yield* provider.openBytePipe(sandbox, command).pipe(
-      mapSandboxProviderError(context.contextId),
-    )
-  })
-
 export const makeCodecRuntimeContextWorkflowSessionService:
   Effect.Effect<
     RuntimeContextWorkflowSessionService,
@@ -204,16 +172,29 @@ export const makeCodecRuntimeContextWorkflowSessionService:
     const startSession = (
       context: RuntimeContext,
       activityAttempt: number,
-      key: string,
-    ): Effect.Effect<CodecRuntimeContextSession, RuntimeContextError> =>
+      _key: string,
+    ) =>
         Effect.gen(function* () {
           const bytes = yield* Scope.extend(
-            openByteStream(context).pipe(Effect.provide(deps.captured)),
+            SessionCommon.openRuntimeContextByteStream(context).pipe(Effect.provide(deps.captured)),
             deps.scope,
           )
           const protocol = protocolForContext(context)
+          const workflowEngine = yield* Effect.serviceOption(WorkflowEngine.WorkflowEngine)
+          const workflowInstance = yield* Effect.serviceOption(WorkflowEngine.WorkflowInstance)
+          const instance = Option.getOrElse(workflowInstance, () =>
+            WorkflowEngine.WorkflowInstance.initial(
+              RuntimeContextWorkflowNative,
+              runtimeContextWorkflowExecutionId(context.contextId),
+            ))
+          const codecLayer = codecLayerForProtocol(bytes, context, protocol).pipe(
+            layer => Option.isSome(workflowEngine)
+              ? layer.pipe(Layer.provide(Layer.succeed(WorkflowEngine.WorkflowEngine, workflowEngine.value)))
+              : layer,
+            layer => layer.pipe(Layer.provide(Layer.succeed(WorkflowEngine.WorkflowInstance, instance))),
+          )
           const sessionContext = yield* Layer.buildWithScope(
-            codecLayerForProtocol(bytes, context, protocol),
+            codecLayer,
             deps.scope,
           ).pipe(
             Effect.mapError(cause =>
@@ -231,44 +212,46 @@ export const makeCodecRuntimeContextWorkflowSessionService:
               ownerSessionId: SessionCommon.runtimeContextSessionOwnerSessionId("codec", context, activityAttempt),
             agentSession,
           }
-          yield* runCodecStderrJournal(context, activityAttempt, bytes, deps.writer).pipe(
-            Effect.catchAll(cause =>
-              Effect.logWarning("[host-sdk] codec stderr journal failed").pipe(
-                Effect.annotateLogs({ contextId: context.contextId, cause }),
-              )),
-            Effect.forkIn(deps.scope),
-          )
-          yield* agentSession.outputs.pipe(
-            Stream.mapError(cause =>
-              asRuntimeContextError(
-                `agent-codec.${cause.op}`,
-                cause.message,
-                context.contextId,
-                cause,
-              )),
-            Stream.mapAccum(0, (sequence, event) => [
-              sequence + 1,
-              { sequence, event },
-            ] as const),
-            Stream.mapEffect(({ sequence, event }) =>
-              deps.writer.appendAgentEvent(context, activityAttempt, sequence, event).pipe(
-                mapRuntimeContextError(
-                  "runtime-output.codec.write",
-                  "failed to write codec runtime output row",
-                  context.contextId,
-                ),
-                Effect.as(event),
-              )),
-            Stream.takeUntil(event => event._tag === "Terminated"),
-            Stream.runDrain,
-            Effect.catchAll(cause =>
-              Effect.logError("[host-sdk] codec runtime session failed").pipe(
-                Effect.annotateLogs({ contextId: context.contextId, cause }),
-              )),
-            Effect.ensuring(SessionCommon.removeRuntimeContextSession(deps.sessions, key)),
-            Effect.forkIn(deps.scope),
-          )
-          return session
+          return {
+            session,
+            run: Effect.gen(function*() {
+              yield* runCodecStderrJournal(context, activityAttempt, bytes, deps.writer).pipe(
+                Effect.catchAll(cause =>
+                  Effect.logWarning("[host-sdk] codec stderr journal failed").pipe(
+                    Effect.annotateLogs({ contextId: context.contextId, cause }),
+                  )),
+                Effect.forkIn(deps.scope),
+              )
+              yield* agentSession.outputs.pipe(
+                Stream.mapError(cause =>
+                  asRuntimeContextError(
+                    `agent-codec.${cause.op}`,
+                    cause.message,
+                    context.contextId,
+                    cause,
+                  )),
+                Stream.mapAccum(0, (sequence, event) => [
+                  sequence + 1,
+                  { sequence, event },
+                ] as const),
+                Stream.mapEffect(({ sequence, event }) =>
+                  deps.writer.appendAgentEvent(context, activityAttempt, sequence, event).pipe(
+                    mapRuntimeContextError(
+                      "runtime-output.codec.write",
+                      "failed to write codec runtime output row",
+                      context.contextId,
+                    ),
+                    Effect.as(event),
+                  )),
+                Stream.takeUntil(event => event._tag === "Terminated"),
+                Stream.runDrain,
+                Effect.catchAll(cause =>
+                  Effect.logError("[host-sdk] codec runtime session failed").pipe(
+                    Effect.annotateLogs({ contextId: context.contextId, cause }),
+                  )),
+              )
+            }),
+          }
         })
 
     const sendCommand = SessionCommon.makeRuntimeContextSessionCommandSender<CodecRuntimeContextSession>({
@@ -304,6 +287,7 @@ export const makeCodecRuntimeContextWorkflowSessionService:
     return SessionCommon.makeRuntimeContextWorkflowSessionService({
       ownerKind: "codec",
       sessions: deps.sessions,
+      scope: deps.scope,
       startSession,
       sendCommand,
     })

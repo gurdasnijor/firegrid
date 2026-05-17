@@ -35,6 +35,7 @@ import {
   allocateRuntimeActivityAttempt,
   failAfterWritingRunFailed,
   writeRunExitedResult,
+  writeRunFailedResult,
   writeRunStarted,
 } from "./internal/runtime-context-workflow-run.ts"
 
@@ -50,6 +51,15 @@ const RuntimeContextSessionStartedEvidenceSchema = Schema.Struct({
 export type RuntimeContextSessionStartedEvidence = Schema.Schema.Type<
   typeof RuntimeContextSessionStartedEvidenceSchema
 >
+
+const RuntimeContextSessionStartOutcomeSchema = Schema.Union(
+  Schema.TaggedStruct("Started", {
+    evidence: RuntimeContextSessionStartedEvidenceSchema,
+  }),
+  Schema.TaggedStruct("Failed", {
+    error: RuntimeContextError,
+  }),
+)
 
 export interface RuntimeContextSessionCommand {
   readonly _tag: "AgentInput"
@@ -93,14 +103,17 @@ const startSessionActivity = (
 ) =>
   Activity.make({
     name: `firegrid.runtime-context.session.start.${context.contextId}.${activityAttempt}`,
-    success: RuntimeContextSessionStartedEvidenceSchema,
-    error: RuntimeContextError,
+    success: RuntimeContextSessionStartOutcomeSchema,
+    error: Schema.Never,
     execute: Effect.gen(function*() {
       const session = yield* RuntimeContextWorkflowSession
       // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.5
       // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.7
-      return yield* session.startOrAttach(context, activityAttempt)
-    }),
+      const evidence = yield* session.startOrAttach(context, activityAttempt)
+      return { _tag: "Started" as const, evidence }
+    }).pipe(
+      Effect.catchAll(error => Effect.succeed({ _tag: "Failed" as const, error })),
+    ),
   })
 
 const sendSessionActivity = (
@@ -164,6 +177,9 @@ const handleAgentOutput = (
   Effect.gen(function*() {
     const event = observation.event
     if (event._tag === "ToolUse") {
+      if (context.runtime.config.agentProtocol === "acp") {
+        return undefined
+      }
       const result = yield* runToolUseActivity(context, event)
       yield* sendSessionActivity(
         context,
@@ -223,11 +239,17 @@ const runWorkflowNativeRuntimeContext = (
     const context = yield* readRuntimeContext(contextId)
     const activityAttempt = yield* allocateRuntimeActivityAttempt(context)
     yield* writeRunStarted(context, activityAttempt)
-    // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.6
-    yield* startSessionActivity(context, activityAttempt)
-    const exit = yield* runReactiveLoop(context, activityAttempt).pipe(
+    const exit = yield* Effect.gen(function*() {
+      // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.6
+      const start = yield* startSessionActivity(context, activityAttempt)
+      if (start._tag === "Failed") {
+        return yield* writeRunFailedResult(context, activityAttempt, start.error)
+      }
+      return yield* runReactiveLoop(context, activityAttempt)
+    }).pipe(
       Effect.catchAll(failAfterWritingRunFailed(context, activityAttempt)),
     )
+    if ("failure" in exit && exit.failure !== undefined) return exit
     return yield* writeRunExitedResult(context, activityAttempt, exit)
   })
 

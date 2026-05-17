@@ -102,6 +102,7 @@ const testLayer = (state: {
   readonly logs: Array<RuntimeLogLineRow>
   readonly streamStarts: Array<ReadonlyArray<string>>
   readonly emitted: Array<string>
+  readonly immediateExitsRemaining?: { count: number }
 }) =>
   RawRuntimeContextWorkflowSessionLive.pipe(
     Layer.provideMerge(Layer.succeed(
@@ -167,6 +168,13 @@ const testLayer = (state: {
       executeMany: () => Effect.succeed([]),
       stream: (_sandbox, command: SandboxCommand) => {
         state.streamStarts.push(command.argv)
+        if (state.immediateExitsRemaining !== undefined && state.immediateExitsRemaining.count > 0) {
+          state.immediateExitsRemaining.count -= 1
+          return Stream.succeed({
+            type: "exit" as const,
+            exitCode: 0,
+          })
+        }
         const stdin = typeof command.stdin === "string"
           ? Stream.succeed(new TextEncoder().encode(command.stdin))
           : command.stdin ?? Stream.empty
@@ -185,13 +193,38 @@ const testLayer = (state: {
           })),
         )
       },
-      openBytePipe: () =>
-        Effect.fail({
-          _tag: "SandboxProviderError",
-          provider: "fake",
-          op: "openBytePipe",
-          message: "not used by raw adapter tests",
-        } as never),
+      openBytePipe: (_sandbox, command: SandboxCommand) =>
+        Effect.sync(() => {
+          state.streamStarts.push(command.argv)
+          if (state.immediateExitsRemaining !== undefined && state.immediateExitsRemaining.count > 0) {
+            state.immediateExitsRemaining.count -= 1
+            return {
+              stdin: new WritableStream<Uint8Array>(),
+              stdout: new ReadableStream<Uint8Array>({
+                start(controller) {
+                  controller.close()
+                },
+              }),
+              stderr: new ReadableStream<Uint8Array>({
+                start(controller) {
+                  controller.close()
+                },
+              }),
+              exit: Effect.succeed({ exitCode: 0 }),
+            }
+          }
+          const bytes = new TransformStream<Uint8Array, Uint8Array>()
+          return {
+            stdin: bytes.writable,
+            stdout: bytes.readable,
+            stderr: new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.close()
+              },
+            }),
+            exit: Effect.never,
+          }
+        }),
       upload: () => Effect.void,
       download: () => Effect.void,
       destroy: () => Effect.succeed(true),
@@ -280,5 +313,32 @@ describe("RawRuntimeContextWorkflowSessionLive", () => {
 
     expect(state.streamStarts).toHaveLength(1)
     expect(state.events.map(row => row.raw)).toEqual(["from send"])
+  })
+
+  it("removes an immediately exited raw session before a later send reattaches", async () => {
+    const state = {
+      events: [] as Array<RuntimeEventRow>,
+      logs: [] as Array<RuntimeLogLineRow>,
+      streamStarts: [] as Array<ReadonlyArray<string>>,
+      emitted: [] as Array<string>,
+      immediateExitsRemaining: { count: 1 },
+    }
+    const runtimeContext = context(`ctx_${crypto.randomUUID()}`)
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const session = yield* RuntimeContextWorkflowSession
+          yield* session.startOrAttach(runtimeContext, 1)
+          yield* waitUntil(() => state.events.length === 1, "immediate terminal row")
+          yield* session.send(runtimeContext, 1, promptCommand("input-after-exit", "after exit"))
+          yield* waitUntil(() => state.events.length === 2, "reattached raw stdout row")
+        }).pipe(Effect.provide(testLayer(state))),
+      ),
+    )
+
+    expect(state.streamStarts).toHaveLength(2)
+    expect(JSON.parse(state.events[0]!.raw) as unknown).toEqual({ _tag: "Terminated", exitCode: 0 })
+    expect(state.events[1]!.raw).toBe("after exit")
   })
 })

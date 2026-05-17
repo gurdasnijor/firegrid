@@ -179,7 +179,7 @@ console.error("diagnostic: child stderr")
     expect(statuses).toEqual(expect.arrayContaining(["started", "exited"]))
     expect(statuses).toHaveLength(2)
 
-    expect(retained.events).toHaveLength(2)
+    expect(retained.events).toHaveLength(3)
     expect(retained.events[0]).toMatchObject({
       sequence: 0,
       source: "stdout",
@@ -190,9 +190,12 @@ console.error("diagnostic: child stderr")
     expect(JSON.parse(firstEvent!.raw)).toMatchObject({
       type: "assistant",
     })
-    expect(retained.events[1]).toMatchObject({
-      sequence: 1,
+    expect(retained.events).toContainEqual(expect.objectContaining({
       raw: "{malformed",
+    }))
+    expect(JSON.parse(retained.events[2]!.raw) as unknown).toEqual({
+      type: "firegrid.agent-output",
+      event: { _tag: "Terminated", exitCode: 0 },
     })
 
     expect(retained.logs).toContainEqual(expect.objectContaining({
@@ -229,7 +232,7 @@ console.error("diagnostic: child stderr")
     if (Either.isLeft(result)) {
       expect(result.left).toMatchObject({
         _tag: "RuntimeContextError",
-        op: "sandbox.stream",
+        op: "sandbox.openBytePipe",
       })
     }
 
@@ -385,7 +388,7 @@ console.log(JSON.stringify({ type: "firegrid.process-start-marker", marker: ${JS
       expect(terminalRuns[0]).toMatchObject({ status: "exited", exitCode: 0 })
       expect(retained.runs).toHaveLength(2)
       expect(new Set(retained.runs.map(event => event.activityAttempt))).toEqual(new Set([1]))
-      expect(retained.events).toHaveLength(1)
+      expect(retained.events).toHaveLength(2)
       const markerRows = retained.events
         .map(event => JSON.parse(event.raw) as {
           readonly marker?: string
@@ -398,6 +401,10 @@ console.log(JSON.stringify({ type: "firegrid.process-start-marker", marker: ${JS
         marker,
         starts: 1,
       }])
+      expect(JSON.parse(retained.events[1]!.raw) as unknown).toEqual({
+        type: "firegrid.agent-output",
+        event: { _tag: "Terminated", exitCode: 0 },
+      })
     } finally {
       await rm(markerDir, { recursive: true, force: true })
     }

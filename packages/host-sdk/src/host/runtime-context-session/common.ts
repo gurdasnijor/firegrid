@@ -5,10 +5,14 @@ import {
   type RuntimeContextError,
 } from "@firegrid/runtime/errors"
 import type {
+  AgentByteStream,
   RuntimeEnvResolverPolicy,
   SandboxProvider,
+  SandboxProviderError,
 } from "@firegrid/runtime/sources/sandbox"
 import {
+  commandForContext,
+  SandboxProvider as SandboxProviderTag,
   SandboxStdinEmissionClaim,
 } from "@firegrid/runtime/sources/sandbox"
 import { Effect, Layer, Ref, type Context, type Scope } from "effect"
@@ -38,12 +42,50 @@ export type RuntimeContextSessionAdapterRequirements =
   | SandboxStdinEmissionClaim
   | Scope.Scope
 
+const mapSandboxProviderError = (
+  contextId: string,
+) =>
+  Effect.mapError((cause: SandboxProviderError) =>
+    asRuntimeContextError(
+      `sandbox.${cause.op}`,
+      cause.message,
+      contextId,
+      cause,
+    ))
+
+export const openRuntimeContextByteStream = (
+  context: RuntimeContext,
+): Effect.Effect<AgentByteStream, RuntimeContextError, RuntimeEnvResolverPolicy | SandboxProvider | Scope.Scope> =>
+  Effect.gen(function* () {
+    const command = yield* commandForContext(context)
+    const provider = yield* SandboxProviderTag
+    const sandbox = yield* provider.getOrCreate({
+      labels: {
+        firegridRuntimeContextId: context.contextId,
+      },
+      ...(context.runtime.config.cwd === undefined ? {} : {
+        workingDir: context.runtime.config.cwd,
+      }),
+      providerConfig: {
+        contextId: context.contextId,
+      },
+    }).pipe(mapSandboxProviderError(context.contextId))
+    return yield* provider.openBytePipe(sandbox, command).pipe(
+      mapSandboxProviderError(context.contextId),
+    )
+  })
+
 interface RuntimeContextSessionAdapterDeps<Session extends RuntimeContextSessionRecord> {
   readonly writer: PerContextRuntimeOutputWriter["Type"]
   readonly stdinClaim: SandboxStdinEmissionClaim["Type"]
   readonly captured: Context.Context<RuntimeEnvResolverPolicy | SandboxProvider>
   readonly scope: Scope.Scope
   readonly sessions: Ref.Ref<Map<string, Session>>
+}
+
+interface RuntimeContextSessionStart<Session extends RuntimeContextSessionRecord> {
+  readonly session: Session
+  readonly run: Effect.Effect<void>
 }
 
 const runtimeContextSessionKey = (
@@ -79,7 +121,7 @@ const runtimeContextSessionCommandAccepted = (
   ownerSessionId: session.ownerSessionId,
 })
 
-export const removeRuntimeContextSession = <Session>(
+const removeRuntimeContextSession = <Session>(
   sessions: Ref.Ref<Map<string, Session>>,
   key: string,
 ) =>
@@ -117,11 +159,12 @@ export const makeRuntimeContextWorkflowSessionService = <Session extends Runtime
   options: {
     readonly ownerKind: RuntimeContextSessionOwnerKind
     readonly sessions: Ref.Ref<Map<string, Session>>
+    readonly scope: Scope.Scope
     readonly startSession: (
       context: RuntimeContext,
       activityAttempt: number,
       key: string,
-    ) => Effect.Effect<Session, RuntimeContextError>
+    ) => Effect.Effect<RuntimeContextSessionStart<Session>, RuntimeContextError>
     readonly sendCommand: (
       context: RuntimeContext,
       session: Session,
@@ -137,8 +180,12 @@ export const makeRuntimeContextWorkflowSessionService = <Session extends Runtime
       const key = runtimeContextSessionKey(context, activityAttempt)
       const current = yield* Ref.get(options.sessions)
       if (!current.has(key)) {
-        const session = yield* options.startSession(context, activityAttempt, key)
-        yield* Ref.update(options.sessions, map => new Map([...map, [key, session]]))
+        const start = yield* options.startSession(context, activityAttempt, key)
+        yield* Ref.update(options.sessions, map => new Map([...map, [key, start.session]]))
+        yield* start.run.pipe(
+          Effect.ensuring(removeRuntimeContextSession(options.sessions, key)),
+          Effect.forkIn(options.scope),
+        )
       }
       return runtimeContextSessionStartedEvidence(options.ownerKind, context, activityAttempt)
     })
