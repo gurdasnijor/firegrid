@@ -27,6 +27,12 @@ await projection change
 return handle or result
 ```
 
+The intent is not the authoritative runtime state. A client prompt or required
+action response writes a command/control record that the owning runtime
+workflow later consumes. The workflow or operator remains the single writer for
+runtime-owned rows, workflow deferred completions, claims, terminal state, and
+live adapter delivery.
+
 The client-side wait algorithm **SHOULD** use the projection subscription contract in §10.4. For example, a prompt API should:
 
 ```txt
@@ -47,6 +53,7 @@ A stream-first client **MUST NOT**:
 ```txt
 open agent protocol transport directly for normal prompt dispatch
 depend on WebSocket/stdio/HTTP details of the agent
+write runtime-owned state rows or workflow deferred completions directly
 mint replacement identities when the agent wire format provides canonical ids
 treat local timeout as the normal signal of runtime unavailability
 ```

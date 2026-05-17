@@ -1,5 +1,5 @@
 import {
-  RuntimeIngressInputRowSchema,
+  RuntimeInputIntentRowSchema,
 } from "../runtime-ingress/schema.ts"
 import {
   FiregridRuntimeObservationSourceNames,
@@ -55,7 +55,7 @@ export const FiregridClientOperations = {
     ),
     promptScoped: defineFiregridOperation(
       SessionHandlePromptInputSchema,
-      RuntimeIngressInputRowSchema,
+      RuntimeInputIntentRowSchema,
     ),
   },
   wait: {

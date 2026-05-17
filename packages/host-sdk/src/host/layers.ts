@@ -43,6 +43,9 @@ import {
 import {
   makeRawRuntimeContextWorkflowSessionService,
 } from "./runtime-context-session/raw-adapter.ts"
+import {
+  RuntimeInputControlRouterLive,
+} from "./runtime-input-control-router.ts"
 
 const RuntimeContextWorkflowSessionLive = Layer.scoped(
   RuntimeContextWorkflowSession,
@@ -230,7 +233,10 @@ export const FiregridRuntimeHostLive = (
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
-  return RuntimeContextWorkflowNativeLayer.pipe(
+  return Layer.mergeAll(
+    RuntimeContextWorkflowNativeLayer,
+    RuntimeInputControlRouterLive,
+  ).pipe(
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(hostScoped),

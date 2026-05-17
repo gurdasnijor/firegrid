@@ -63,8 +63,9 @@ The useful session facade already exists in `@firegrid/client`:
 - `wait.forPermissionRequest(...)` already reads the host-owned
   `RuntimeOutputTable.events` stream for the scoped context and waits for the
   first normalized permission request after an optional sequence;
-- `permissions.respond(...)` already appends a host-owned `RuntimeIngress`
-  control row with `_tag: "PermissionResponse"`;
+- `prompt(...)` and `permissions.respond(...)` append protocol-owned client
+  control intents; the owning host/workflow converts those intents into
+  runtime input deferred completion and live session delivery;
 - the client package remains runtime-source-free and receives active start
   authority through `RuntimeStartCapability`.
 

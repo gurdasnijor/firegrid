@@ -11,6 +11,10 @@ import {
   type HostSessionRow,
 } from "@firegrid/protocol/launch"
 import { encodeRuntimeAgentOutputEnvelope } from "@firegrid/protocol/session-facade"
+import {
+  inputIdForRuntimeIngressRequest,
+  type RuntimeInputIntentRow,
+} from "@firegrid/protocol/runtime-ingress"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { TestStreamServer } from "../../effect-durable-operators/test/harness.ts"
@@ -66,6 +70,13 @@ const makeFixture = () => {
     })),
   )
   return { hostSession, clientLayer }
+}
+
+const namespaceFromHostSession = (hostSession: HostSessionRow): string => {
+  const marker = ".firegrid.host."
+  const index = hostSession.streamPrefix.indexOf(marker)
+  if (index < 0) throw new Error("invalid host session stream prefix")
+  return hostSession.streamPrefix.slice(0, index)
 }
 
 const runWithClient = <A, E>(
@@ -129,6 +140,29 @@ const appendAgentOutput = (
     })),
     Effect.scoped,
   )
+}
+
+const readRuntimeInputIntent = (
+  hostSession: HostSessionRow,
+  intentId: string,
+): Promise<RuntimeInputIntentRow | undefined> => {
+  if (baseUrl === undefined) throw new Error("server not started")
+  return Effect.runPromise(Effect.gen(function* () {
+    const table = yield* RuntimeControlPlaneTable
+    return yield* table.inputIntents.query((coll) =>
+      coll.toArray.find(row => row.intentId === intentId))
+  }).pipe(
+    Effect.provide(RuntimeControlPlaneTable.layer({
+      streamOptions: {
+        url: runtimeControlPlaneStreamUrl({
+          baseUrl,
+          namespace: namespaceFromHostSession(hostSession),
+        }),
+        contentType: "application/json",
+      },
+    })),
+    Effect.scoped,
+  ))
 }
 
 describe("Firegrid session facade", () => {
@@ -229,29 +263,42 @@ describe("Firegrid session facade", () => {
     })
   })
 
-  it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.4 prompt decodes but does not append from the client package", async () => {
+  it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.5-1 prompt appends a durable runtime input intent", async () => {
     const fixture = makeFixture()
-
-    const result = await runWithClient(
-      fixture,
-      Effect.gen(function* () {
-        const firegrid = yield* Firegrid
-        const session = yield* firegrid.sessions.createOrLoad({
-          externalKey: { source: "linear", id: "LIN-456" },
-          runtime: runtimeConfig(),
-        })
-        return yield* session.prompt({
+    const effect = Effect.flatMap(Firegrid, firegrid =>
+      Effect.flatMap(firegrid.sessions.createOrLoad({
+        externalKey: { source: "linear", id: "LIN-456" },
+        runtime: runtimeConfig(),
+      }), session =>
+        Effect.flatMap(session.prompt({
           payload: { text: "turn one" },
           idempotencyKey: "turn-1",
           metadata: { source: "test" },
-        }).pipe(Effect.flip)
-      }),
-    )
+        }), intent =>
+          Effect.succeed({ contextId: session.contextId, intent }))))
 
-    expect(result).toMatchObject({
-      _tag: "AppendError",
+    const result = await runWithClient(
+      fixture,
+      effect,
+    )
+    const stored = await readRuntimeInputIntent(fixture.hostSession, result.intent.intentId)
+
+    expect(result.intent).toMatchObject({
+      intentId: inputIdForRuntimeIngressRequest({
+        contextId: result.contextId,
+        kind: "message",
+        authoredBy: "client",
+        payload: { text: "turn one" },
+        idempotencyKey: "turn-1",
+        metadata: { source: "test" },
+      }),
+      contextId: result.contextId,
+      kind: "message",
+      authoredBy: "client",
+      payload: { text: "turn one" },
+      idempotencyKey: "turn-1",
     })
-    expect(String(result.cause)).toContain("host/app authority")
+    expect(stored).toMatchObject(result.intent)
   })
 
   it("firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.2 firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.3 firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.6 includes normalized agentOutputs in snapshot and waits for the next one", async () => {
@@ -372,28 +419,42 @@ describe("Firegrid session facade", () => {
     expect(result.value.request.sessionId).toBe(result.value.request.contextId)
   })
 
-  it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.4 permission response decodes but does not append from the client package", async () => {
+  it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.9-1 permission response appends a durable runtime input intent", async () => {
     const fixture = makeFixture()
+    const effect = Effect.flatMap(Firegrid, firegrid =>
+      Effect.flatMap(firegrid.sessions.createOrLoad({
+        externalKey: { source: "linear", id: "LIN-999" },
+        runtime: runtimeConfig(),
+      }), session =>
+        Effect.flatMap(session.permissions.respond({
+          permissionRequestId: "permission-1",
+          decision: { _tag: "Allow", optionId: "allow" },
+        }), response =>
+          Effect.succeed({ contextId: session.contextId, response }))))
 
     const result = await runWithClient(
       fixture,
-      Effect.gen(function* () {
-        const firegrid = yield* Firegrid
-        const session = yield* firegrid.sessions.createOrLoad({
-          externalKey: { source: "linear", id: "LIN-999" },
-          runtime: runtimeConfig(),
-        })
-        return yield* session.permissions.respond({
-          permissionRequestId: "permission-1",
-          decision: { _tag: "Allow", optionId: "allow" },
-        }).pipe(Effect.flip)
-      }),
+      effect,
     )
+    const stored = await readRuntimeInputIntent(fixture.hostSession, result.response.inputId)
 
-    expect(result).toMatchObject({
-      _tag: "AppendError",
+    expect(result.response).toMatchObject({
+      responded: true,
+      contextId: result.contextId,
+      permissionRequestId: "permission-1",
     })
-    expect(String(result.cause)).toContain("host/app authority")
+    expect(stored).toMatchObject({
+      intentId: result.response.inputId,
+      contextId: result.contextId,
+      kind: "required_action_result",
+      authoredBy: "client",
+      payload: {
+        _tag: "PermissionResponse",
+        permissionRequestId: "permission-1",
+        decision: { _tag: "Allow", optionId: "allow" },
+      },
+      idempotencyKey: `permission-response:${result.contextId}:permission-1`,
+    })
   })
 
   it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.2 delegates attached start through the server-provided protocol capability", async () => {

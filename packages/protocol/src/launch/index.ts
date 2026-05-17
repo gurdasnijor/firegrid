@@ -121,6 +121,7 @@ export {
   type RuntimeControlPlaneTableService,
   type RuntimeContextRow,
   type RuntimeEventRow,
+  type RuntimeInputIntentRow,
   type RuntimeLogLineRow,
   type RuntimeOutputTableService,
   type RuntimeRunEventRow,

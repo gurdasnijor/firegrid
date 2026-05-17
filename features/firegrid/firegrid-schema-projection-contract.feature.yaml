@@ -25,7 +25,7 @@ components:
       1: The programmer-facing API stays in the single @firegrid/client package and exposes namespaces such as sessions, wait, and permissions.
       2: Client methods decode inputs through the same schema catalog and do not import @effect/ai Tool values, MCP server layers, or runtime-only handler dependencies.
       3: Client APIs use product-facing names such as sessions.create and sessions.prompt while preserving the same schema contract as agent tool projections.
-      4: The client exposes a durable session facade that can create or load a RuntimeContext-backed session by external key, read snapshots, and wait for permission requests without callers constructing RuntimeContext ids or runtime-owned stream URLs.
+      4: The client exposes a durable session facade that can create or load a RuntimeContext-backed session by external key, append protocol-owned runtime input intents, read snapshots, and wait for permission requests without callers constructing RuntimeContext ids, runtime-owned stream URLs, workflow deferred names, or adapter transports.
       5: Starting a runtime from the client facade is expressed through a protocol-owned runtime-start capability supplied by host/runtime composition; packages/client must not import packages/runtime source or call startRuntime directly.
       6: Client wait and permission helpers use protocol-owned runtime observation source names and protocol schemas so browser/app-facing code does not import runtime-host observation modules.
 
@@ -34,16 +34,18 @@ components:
       1: firegrid.sessions.createOrLoad decodes protocol-owned SessionCreateOrLoad input schemas, normalizes PublicLaunchRuntimeIntentSchema runtime config, derives contextId through the protocol external-key helper, and returns the same RuntimeContext handle for duplicate externalKey calls.
       2: The external-key to contextId helper is protocol-owned, deterministic, collision-resistant for distinct canonical key tuples, and does not rely on app-local slug or separator joining policy.
       3: createOrLoad writes or loads a host-bound RuntimeContext row through protocol host-authority primitives so apps do not reconstruct Firegrid runtime identity, host binding, journal, or launch normalization details.
-      4: The returned handle scopes prompt, start, snapshot, wait.forPermissionRequest, and permissions.respond to the durable contextId so browser-safe callers do not restate RuntimeContext identity on every operation; write methods require an app or host transport and do not write runtime input tables directly.
+      4: The returned handle scopes prompt, start, snapshot, wait.forPermissionRequest, and permissions.respond to the durable contextId so browser-safe callers do not restate RuntimeContext identity on every operation; write methods append client control intents and do not write runtime input tables, workflow deferreds, or live adapter transports directly.
       5:
         requirement: handle.prompt decoded protocol-owned scoped prompt input and appended a RuntimeIngress message row from the client package.
         deprecated: true
+      5-1: handle.prompt decodes protocol-owned scoped prompt input and appends a protocol-owned runtime input intent to the namespace control stream; the owning host/workflow is the only path that converts that intent into runtime input deferred completion and RuntimeContextWorkflowSession.send.
       6: handle.start delegates to protocol RuntimeStartCapability supplied by runtime-host or app composition; @firegrid/client remains runtime-source-free and does not call startRuntime directly.
       7: handle.snapshot observes existing RuntimeControlPlane and RuntimeOutput DurableTable rows for the scoped RuntimeContext without app-local projection state; runtime input evidence is no longer read from RuntimeIngressTable by the client package.
       8: handle.wait.forPermissionRequest observes protocol FiregridRuntimeObservationSourceNames.agentOutputEvents semantics over RuntimeOutput events, filters by scoped contextId plus optional afterSequence and timeoutMs, and returns the matching PermissionRequest observation without adding a permission table.
       9:
         requirement: handle.permissions.respond decoded protocol-owned scoped permission response input and appended a RuntimeIngress PermissionResponse control row from the client package.
         deprecated: true
+      9-1: handle.permissions.respond decodes protocol-owned scoped permission response input and appends a protocol-owned runtime input intent; the owning host/workflow validates ordering, idempotency, and current runtime ownership before applying runtime input state.
       10: The facade does not import runtime agent Tool values, app-owned identity helpers, factory-specific code, scenario-side adapters, parent-child hierarchy, or provider-specific Firegrid substrate.
 
   CLIENT_READ_PROJECTION:
@@ -76,5 +78,5 @@ constraints:
       2: This feature does not expose packages/runtime/src/agent-tools/tools.ts as the programmer-facing client API.
       3: This feature does not introduce packages/runtime/src/session-control or another runtime service layer unless repeated execution code proves that abstraction is needed.
       4: This feature does not introduce a platform parent/child session hierarchy beyond RuntimeContext identity and explicit metadata.
-      5: The client package remains runtime-source-free; if an operation needs runtime-host authority, the dependency is represented as an Effect service/tag declared in protocol and provided by runtime-host or app composition.
+      5: The client package remains runtime-source-free; client write APIs may append protocol-owned control intents through client-safe control-plane facades, but any operation that mutates runtime-owned state, workflow deferreds, or live adapter transports is consumed later by the owning host/workflow through protocol-owned services.
       6: The binding/execution split does not require publishing one package that mixes browser-safe client code, Node CLI code, MCP/Effect AI tooling, and runtime host execution.

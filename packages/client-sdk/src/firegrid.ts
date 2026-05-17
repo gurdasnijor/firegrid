@@ -5,10 +5,9 @@
 // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.3
 //
 // Public Firegrid client. This package is browser/app safe: it writes
-// durable launch intent through protocol helpers and reads durable
-// control/output projections, but it does not own live runtime input
-// delivery. Prompt / permission writes must route through an app or
-// host authority such as @firegrid/host-sdk appendRuntimeIngress.
+// durable launch and runtime-input intent through protocol helpers and
+// reads durable control/output projections, but it does not own live
+// runtime input delivery.
 
 import {
   PublicLaunchRequestSchema,
@@ -31,15 +30,19 @@ import {
   type RuntimeStartResult,
 } from "@firegrid/protocol/launch"
 import {
+  type PermissionDecision,
   type PermissionRespondInput,
   type PermissionRespondOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 } from "@firegrid/protocol/session-facade"
 import {
+  makeRuntimeInputIntentRow,
   PublicPromptRequestSchema,
+  promptToRuntimeIngressRequest,
   type PublicPromptRequest,
-  type RuntimeIngressInputRow,
+  type RuntimeInputIntentRow,
+  type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
 import {
   runtimeAgentOutputObservationFromRow,
@@ -156,7 +159,7 @@ export interface FiregridSessionHandle {
   readonly contextId: string
   readonly prompt: (
     request: SessionHandlePromptInput,
-  ) => Effect.Effect<RuntimeIngressInputRow, PromptInputError | AppendError>
+  ) => Effect.Effect<RuntimeInputIntentRow, PromptInputError | AppendError>
   readonly start: () => Effect.Effect<
     RuntimeStartResult,
     unknown,
@@ -209,7 +212,7 @@ export interface FiregridService {
   >
   readonly prompt: (
     request: PublicPromptRequest,
-  ) => Effect.Effect<RuntimeIngressInputRow, PromptInputError | AppendError>
+  ) => Effect.Effect<RuntimeInputIntentRow, PromptInputError | AppendError>
   readonly sessions: FiregridSessionsClient
   readonly permissions: FiregridPermissionsClient
   readonly open: (contextId: string) => RuntimeContextHandle
@@ -436,16 +439,6 @@ const snapshotFromJournal = (
   }
 }
 
-const clientInputAppendUnavailable = (
-  contextId: string,
-): AppendError =>
-  new AppendError({
-    contextId,
-    cause: new Error(
-      "Runtime input append requires host/app authority; use @firegrid/host-sdk appendRuntimeIngress from a host-owned process",
-    ),
-  })
-
 const make = (config: ResolvedConfig) =>
   Effect.gen(function* () {
     const control = yield* RuntimeControlPlaneTable
@@ -620,6 +613,58 @@ const make = (config: ResolvedConfig) =>
         })
       })
 
+    const appendRuntimeInputIntent = (
+      request: RuntimeIngressRequest,
+    ): Effect.Effect<RuntimeInputIntentRow, AppendError> =>
+      Effect.gen(function* () {
+        const context = yield* resolveContext(request.contextId).pipe(
+          Effect.mapError(cause =>
+            new AppendError({ contextId: request.contextId, cause })),
+        )
+        if (context === undefined) {
+          return yield* new AppendError({
+            contextId: request.contextId,
+            cause: new Error(`runtime context ${request.contextId} not found`),
+          })
+        }
+        const intent = makeRuntimeInputIntentRow(request)
+        const result = yield* control.inputIntents.insertOrGet(intent).pipe(
+          Effect.mapError(cause =>
+            new AppendError({ contextId: request.contextId, cause })),
+        )
+        return result._tag === "Found" ? result.row : intent
+      })
+
+    const appendPermissionResponseIntent = (
+      request: {
+        readonly contextId: string
+        readonly permissionRequestId: string
+        readonly decision: PermissionDecision
+        readonly idempotencyKey?: string
+      },
+    ): Effect.Effect<PermissionRespondOutput, AppendError> =>
+      Effect.gen(function* () {
+        const idempotencyKey = request.idempotencyKey ??
+          `permission-response:${request.contextId}:${request.permissionRequestId}`
+        const intent = yield* appendRuntimeInputIntent({
+          contextId: request.contextId,
+          kind: "required_action_result",
+          authoredBy: "client",
+          payload: {
+            _tag: "PermissionResponse",
+            permissionRequestId: request.permissionRequestId,
+            decision: request.decision,
+          },
+          idempotencyKey,
+        })
+        return {
+          responded: true,
+          contextId: request.contextId,
+          permissionRequestId: request.permissionRequestId,
+          inputId: intent.intentId,
+        }
+      })
+
     const makeSessionHandle = (
       sessionId: FiregridSessionId,
     ): FiregridSessionHandle => ({
@@ -629,8 +674,15 @@ const make = (config: ResolvedConfig) =>
       contextId: sessionId,
       prompt: request =>
         Effect.gen(function* () {
-          yield* decodeSessionHandlePromptInput(request)
-          return yield* clientInputAppendUnavailable(sessionId)
+          const decoded = yield* decodeSessionHandlePromptInput(request)
+          return yield* appendRuntimeInputIntent({
+            contextId: sessionId,
+            kind: "message",
+            authoredBy: "client",
+            payload: decoded.payload,
+            idempotencyKey: decoded.idempotencyKey,
+            ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
+          })
         }),
       start: () =>
         Effect.gen(function* () {
@@ -647,8 +699,13 @@ const make = (config: ResolvedConfig) =>
       permissions: {
         respond: request =>
           Effect.gen(function* () {
-            yield* decodeSessionPermissionRespondInput(request)
-            return yield* clientInputAppendUnavailable(sessionId)
+            const decoded = yield* decodeSessionPermissionRespondInput(request)
+            return yield* appendPermissionResponseIntent({
+              contextId: sessionId,
+              permissionRequestId: decoded.permissionRequestId,
+              decision: decoded.decision,
+              idempotencyKey: decoded.idempotencyKey,
+            })
           }),
       },
     })
@@ -734,20 +791,38 @@ const make = (config: ResolvedConfig) =>
       prompt: request => Effect.gen(function* () {
         // firegrid-agent-ingress.INGRESS.6
         const decoded = yield* decodePublicPromptRequest(request)
-        return yield* clientInputAppendUnavailable(decoded.contextId)
+        return yield* appendRuntimeInputIntent(promptToRuntimeIngressRequest(decoded))
       }),
       sessions: {
         attach: attachSession,
         createOrLoad: createOrLoadSession,
         prompt: request => Effect.gen(function* () {
           const decoded = yield* decodeSessionPromptInput(request)
-          return yield* clientInputAppendUnavailable(decoded.sessionId)
+          const intent = yield* appendRuntimeInputIntent({
+            inputId: decoded.inputId,
+            contextId: decoded.sessionId,
+            kind: "message",
+            authoredBy: "client",
+            payload: decoded.prompt,
+            ...(decoded.inputId === undefined ? {} : { idempotencyKey: decoded.inputId }),
+            ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
+          })
+          return {
+            appended: true,
+            sessionId: decoded.sessionId,
+            inputId: intent.intentId,
+          }
         }),
       },
       permissions: {
         respond: request => Effect.gen(function* () {
           const decoded = yield* decodePermissionRespondInput(request)
-          return yield* clientInputAppendUnavailable(decoded.contextId)
+          return yield* appendPermissionResponseIntent({
+            contextId: decoded.contextId,
+            permissionRequestId: decoded.permissionRequestId,
+            decision: decoded.decision,
+            idempotencyKey: decoded.idempotencyKey,
+          })
         }),
       },
       open,

@@ -183,6 +183,39 @@ This preserves the public prompt/schedule surface and cross-host routing
 semantics while deleting the runtime ingress appender, delivery tracker, typed
 input stream, and raw stdin delivery compatibility path.
 
+## Client Runtime Input Intents
+
+Programmatic client writes are durable `RuntimeInputIntent` records on the
+namespace control stream. That record family is the long-term client-written
+input authority, not a transitional bridge and not a compatibility tier.
+
+The post-Path-X chain is:
+
+```txt
+client-sdk prompt / permission response
+  -> RuntimeInputIntent in RuntimeControlPlaneTable.inputIntents
+  -> host runtime input control router
+  -> owner workflow runtime-input DurableDeferred completion
+  -> RuntimeContextWorkflowSession.send
+```
+
+This keeps browser-safe clients away from host stream prefixes, workflow
+execution ids, deferred names, `RuntimeIngressTable`, process stdin, and codec
+transports. The workflow/host side remains the only writer that turns accepted
+client intent into sequenced runtime input evidence and live adapter delivery.
+
+The ingress-tier deletion plan is unchanged: `RuntimeIngressTable.inputs`,
+`RuntimeIngressTable.deliveries`, `RuntimeIngressDeliveryTrackerLayer`,
+`runIngressDelivery`, and the scoped runtime-ingress public subpath remain gone.
+No intent plus ingress coexistence is allowed.
+
+Named follow-up: **router-direct-deferred**. It must migrate the runtime input
+control router's internals from the compatibility-shaped
+`appendRuntimeIngressToOwner` helper to a direct owner-host
+`DurableDeferred.succeed` / workflow-engine deferred completion call. That PR
+must not add another table, resurrect runtime-ingress exports, or change the
+client API.
+
 ## Schema-Based Transform Guidance
 
 Runtime-boundary evidence and command shapes are Effect `Schema`
@@ -229,9 +262,10 @@ guesses, per the repo's vendored-reference rule. No `repos/` edits.
 - Tool execution stays on `RuntimeToolUseExecutor`; `schedule_me`
   continues through the executor / live host composition.
 - Cross-host prompt routing remains true at the session level.
-- After #309: dead-code and dependency checks see the old spine and
-  `host-substrate` barrel as gone; only the `runtime-ingress` transient
-  subpath remains pending the deferred-input rewrite.
+- After #309/#314: dead-code and dependency checks see the old spine,
+  `host-substrate` barrel, and runtime-ingress public subpath as gone.
+- Client-written input is durable `RuntimeInputIntent`; runtime input
+  application is owner-workflow deferred completion.
 
 ## Summary
 
@@ -239,10 +273,13 @@ The plan is now: (1) engine + permission fix — landed; (2) per-context
 output writer — landed; (3) scoped runtime subpaths — landed on the
 cutover base; (4) live-owner cutover deleting the old spine and adding
 `RuntimeContextWorkflowNative` + `RuntimeContextSession` Raw/Codec
-adapters — landed as #309; (5) removal of the transient
+adapters — landed as #309; (5) removal of the former
 `@firegrid/runtime/runtime-ingress` public subpath — landed in the
 post-#309 cleanup; (6) deferred-input rewrite of `appendRuntimeIngress`
 away from host-sdk-local `RuntimeIngressTable` appending — landed in this
-implementation pass. The client read/session identity API is unchanged;
-input writes are now explicitly host/app routed.
+implementation pass; (7) durable client `RuntimeInputIntent` control-stream
+records — in #315. The remaining cleanup is **router-direct-deferred**:
+the router should call the owner workflow deferred completion path directly
+instead of going through the `appendRuntimeIngressToOwner` helper name. The
+client read/session identity API is unchanged.
 </content>

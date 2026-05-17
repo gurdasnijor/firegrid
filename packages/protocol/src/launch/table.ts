@@ -2,6 +2,9 @@ import { DurableTable, type DurableTableService } from "effect-durable-operators
 import { ParseResult, Schema } from "effect"
 import type { Either, SchemaAST } from "effect"
 import {
+  RuntimeInputIntentRowSchema,
+} from "../runtime-ingress/schema.ts"
+import {
   RuntimeContextIntentSchema,
   RuntimeOutputEventKeySchema,
   RuntimeOutputLogLineKeySchema,
@@ -163,6 +166,7 @@ const RuntimeRunEventRowSchema = Schema.Struct({
 const runtimeControlPlaneSchemas = {
   contexts: RuntimeContextRowSchema,
   runs: RuntimeRunEventRowSchema,
+  inputIntents: RuntimeInputIntentRowSchema,
 } as const
 
 const RuntimeEventRowSchema = Schema.Struct({
@@ -193,6 +197,7 @@ export class RuntimeOutputTable extends DurableTable(
 export type RuntimeControlPlaneTableService = DurableTableService<typeof runtimeControlPlaneSchemas>
 export type RuntimeOutputTableService = DurableTableService<typeof runtimeOutputSchemas>
 export type RuntimeContextRow = RuntimeContext
+export type RuntimeInputIntentRow = Schema.Schema.Type<typeof RuntimeInputIntentRowSchema>
 export type RuntimeRunEventRow = Schema.Schema.Type<typeof RuntimeRunEventRowSchema>
 export type RuntimeEventRow = Schema.Schema.Type<typeof RuntimeEventRowSchema>
 export type RuntimeLogLineRow = Schema.Schema.Type<typeof RuntimeLogLineRowSchema>
