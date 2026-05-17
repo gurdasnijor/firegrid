@@ -17,6 +17,10 @@ const allowedRuntimeRootFiles = new Set([
   "README.md",
   "index.ts",
   "runtime-errors.ts",
+  // firegrid-host-sdk.TOOL_EXECUTOR_SEAM / PACKAGE_GRAPH.2: narrow
+  // runtime composition surface @firegrid/host-sdk imports instead of
+  // the root barrel.
+  "host-substrate.ts",
 ])
 
 const staleRuntimeExportSubpaths = new Set([

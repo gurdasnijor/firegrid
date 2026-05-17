@@ -22,14 +22,14 @@ import {
   HostRuntimeObservationSubstrateLive,
   RuntimeToolUseExecutorLive,
 } from "./runtime-substrate.ts"
-import { DurableStreamsWorkflowEngine } from "@firegrid/runtime"
+import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/host-substrate"
 import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
 } from "@firegrid/runtime/sources/sandbox"
 import {
   RuntimeControlPlaneRecorderLive,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.4
 // Host layer topology is separated from command handlers; this module composes

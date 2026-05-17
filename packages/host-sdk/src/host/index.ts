@@ -21,8 +21,8 @@ export {
 
 export type {
   RuntimeAgentOutputObservation,
-} from "@firegrid/runtime"
-export { RuntimeIngressError } from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
+export { RuntimeIngressError } from "@firegrid/runtime/host-substrate"
 export {
   localProcessSpawnEnvFromHostEnv,
   type LocalProcessSandboxProviderOptions,

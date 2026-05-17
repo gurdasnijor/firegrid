@@ -26,7 +26,7 @@ import {
 import {
   localProcessSpawnEnvFromHostEnv,
   type RuntimeEnvResolverPolicy,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import {
   Firegrid,
   FiregridConfig,

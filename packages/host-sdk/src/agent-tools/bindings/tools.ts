@@ -25,7 +25,8 @@ import { IdGenerator, Tool, Toolkit } from "@effect/ai"
 import { WorkflowEngine } from "@effect/workflow"
 import { FiregridAgentToolOperations } from "@firegrid/protocol/agent-tools"
 import { type RuntimeContext } from "@firegrid/protocol/launch"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer } from "effect"
+import type { Schema } from "effect"
 import { ToolError } from "./tool-error.ts"
 
 // ---------------------------------------------------------------------------

@@ -8,23 +8,23 @@ import { Clock, Effect, Option, Stream } from "effect"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
-} from "@firegrid/runtime"
-import type { RuntimeContextError } from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
+import type { RuntimeContextError } from "@firegrid/runtime/host-substrate"
 import {
   RuntimeEventAppendAndGet,
   RuntimeLogLineAppendAndGet,
   RuntimeOutputJournalLayer,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import {
   RuntimeIngressAppenderLayer,
   RuntimeIngressInputStream,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import {
   RuntimeIngressDeliveryClaimAndComplete,
   RuntimeIngressDeliveryTrackerLayer,
   runtimeIngressSubscriberId,
-} from "@firegrid/runtime"
-import { runCodecRuntimeEventPipeline } from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
+import { runCodecRuntimeEventPipeline } from "@firegrid/runtime/host-substrate"
 import {
   commandForContext,
   localProcessStdinDelivery,

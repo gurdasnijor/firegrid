@@ -8,7 +8,7 @@ import {
 } from "@firegrid/host-sdk"
 import {
   localProcessSpawnEnvFromHostEnv,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import { Console, Effect, Layer } from "effect"
 
 export const firegridHostProgram = Effect.never

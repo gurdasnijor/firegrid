@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect"
 import {
   RuntimeControlPlaneRecorderLive,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import {
   type DurableWaitCompletionRowLookup,
   type DurableWaitCompletionRowUpsert,
@@ -10,14 +10,14 @@ import {
 } from "@firegrid/runtime/durable-tools"
 import {
   RuntimeIngressDeliveryTrackerLayer,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import {
   RuntimeIngressInputStreamLayer,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import {
   RuntimeOutputJournalLayer,
-} from "@firegrid/runtime"
-import { RuntimeToolUseExecutor } from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
+import { RuntimeToolUseExecutor } from "@firegrid/runtime/host-substrate"
 import {
   toolUseToEffect,
 } from "../agent-tools/execution/tool-use-to-effect.ts"

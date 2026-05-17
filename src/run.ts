@@ -58,7 +58,7 @@ import {
   RuntimeEnvResolverPolicy,
   RuntimeContextInsert,
   localProcessSpawnEnvFromHostEnv,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import {
   appendRuntimeIngress,
   ensurePathInput,

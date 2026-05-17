@@ -6,7 +6,7 @@ import {
 } from "@firegrid/host-sdk"
 import {
   localProcessSpawnEnvFromHostEnv,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import { Config, Console, Effect, Layer, Option, Redacted, Stream } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { flamecastToyCreatedBy } from "../shared/agent.ts"

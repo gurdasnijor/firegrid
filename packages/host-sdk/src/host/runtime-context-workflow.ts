@@ -7,13 +7,13 @@ import { Effect, Schema } from "effect"
 import {
   RuntimeContextError,
   mapRuntimeContextError,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import {
   RuntimeRunAppendAndGet,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import {
   RuntimeOutputJournalLayer,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import { runRuntimeContext } from "./raw-process-runtime.ts"
 import {
   readRuntimeContext,

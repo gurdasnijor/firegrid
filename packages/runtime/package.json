@@ -9,6 +9,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./host-substrate": {
+      "types": "./src/host-substrate.ts",
+      "default": "./src/host-substrate.ts"
+    },
     "./workflow-engine": {
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"

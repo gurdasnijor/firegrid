@@ -7,12 +7,12 @@ import { Clock, Effect, Option } from "effect"
 import {
   RuntimeContextRead,
   type RuntimeContextReadService,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
-} from "@firegrid/runtime"
-import type { RuntimeContextError } from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
+import type { RuntimeContextError } from "@firegrid/runtime/host-substrate"
 
 // firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5
 export const runtimeContextWorkflowExecutionId = (contextId: string) =>
