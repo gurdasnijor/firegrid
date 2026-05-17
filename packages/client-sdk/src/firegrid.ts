@@ -278,11 +278,11 @@ const resolveConfig = (
         : undefined)
 
     if (controlPlaneStreamUrl === undefined) {
-      return yield* Effect.fail(new FiregridConfigError({
+      return yield* new FiregridConfigError({
         cause: new Error(
           "FiregridConfig requires durableStreamsBaseUrl + namespace or a runtime/control-plane stream URL",
         ),
-      }))
+      })
     }
 
     return {
@@ -544,9 +544,9 @@ const make = (config: ResolvedConfig) =>
       Effect.gen(function* () {
         const context = yield* resolveContext(contextId)
         if (context === undefined) {
-          return yield* Effect.fail(new PreloadError({
+          return yield* new PreloadError({
             cause: new Error(`runtime context ${contextId} not found`),
-          }))
+          })
         }
         const run = Effect.gen(function* () {
           const output = yield* RuntimeOutputTable
@@ -630,7 +630,7 @@ const make = (config: ResolvedConfig) =>
       prompt: request =>
         Effect.gen(function* () {
           yield* decodeSessionHandlePromptInput(request)
-          return yield* Effect.fail(clientInputAppendUnavailable(sessionId))
+          return yield* clientInputAppendUnavailable(sessionId)
         }),
       start: () =>
         Effect.gen(function* () {
@@ -647,14 +647,8 @@ const make = (config: ResolvedConfig) =>
       permissions: {
         respond: request =>
           Effect.gen(function* () {
-            const decoded = yield* decodeSessionPermissionRespondInput(request)
-            yield* Effect.fail(clientInputAppendUnavailable(sessionId))
-            return {
-              responded: true,
-              contextId: sessionId,
-              permissionRequestId: decoded.permissionRequestId,
-              inputId: decoded.idempotencyKey ?? `permission-response:${sessionId}:${decoded.permissionRequestId}`,
-            }
+            yield* decodeSessionPermissionRespondInput(request)
+            return yield* clientInputAppendUnavailable(sessionId)
           }),
       },
     })
@@ -740,31 +734,20 @@ const make = (config: ResolvedConfig) =>
       prompt: request => Effect.gen(function* () {
         // firegrid-agent-ingress.INGRESS.6
         const decoded = yield* decodePublicPromptRequest(request)
-        return yield* Effect.fail(clientInputAppendUnavailable(decoded.contextId))
+        return yield* clientInputAppendUnavailable(decoded.contextId)
       }),
       sessions: {
         attach: attachSession,
         createOrLoad: createOrLoadSession,
         prompt: request => Effect.gen(function* () {
           const decoded = yield* decodeSessionPromptInput(request)
-          yield* Effect.fail(clientInputAppendUnavailable(decoded.sessionId))
-          return {
-            appended: true,
-            sessionId: decoded.sessionId,
-            inputId: decoded.inputId ?? decoded.sessionId,
-          }
+          return yield* clientInputAppendUnavailable(decoded.sessionId)
         }),
       },
       permissions: {
         respond: request => Effect.gen(function* () {
           const decoded = yield* decodePermissionRespondInput(request)
-          yield* Effect.fail(clientInputAppendUnavailable(decoded.contextId))
-          return {
-            responded: true,
-            contextId: decoded.contextId,
-            permissionRequestId: decoded.permissionRequestId,
-            inputId: decoded.idempotencyKey ?? `permission-response:${decoded.contextId}:${decoded.permissionRequestId}`,
-          }
+          return yield* clientInputAppendUnavailable(decoded.contextId)
         }),
       },
       open,
