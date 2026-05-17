@@ -26,20 +26,14 @@
 
 import {
   decodeLaunchConfig,
-  LaunchAuthorizedBindingSchema,
-  LaunchConfigSchema,
   local,
   normalizeRuntimeIntent,
   type RuntimeContextIntent,
   type RuntimeEnvBinding,
-  type LaunchAuthorizedBinding,
   type LaunchConfig,
 } from "@firegrid/protocol/launch"
 import type { RuntimeIngressRequest } from "@firegrid/protocol/runtime-ingress"
 
-export const RunAuthorizedBindingSchema = LaunchAuthorizedBindingSchema
-export type RunAuthorizedBinding = LaunchAuthorizedBinding
-export const RunConfigSchema = LaunchConfigSchema
 export type RunConfig = LaunchConfig
 export const decodeRunConfig = decodeLaunchConfig
 

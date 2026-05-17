@@ -32,14 +32,11 @@ export {
   type RuntimeEnvResolverPolicyValue,
 } from "@firegrid/runtime/sources/sandbox"
 export {
-  RunAuthorizedBindingSchema,
-  RunConfigSchema,
   decodeRunConfig,
   firegridRunCreatedBy,
   runConfigRequiresInput,
   runConfigToIngressRequest,
   runConfigToRuntimeContextIntent,
-  type RunAuthorizedBinding,
   type RunConfig,
 } from "./sync-run.ts"
 export {
