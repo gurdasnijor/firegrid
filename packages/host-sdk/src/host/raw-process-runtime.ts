@@ -42,7 +42,7 @@ import { RuntimeHostConfig } from "./config.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.1
 // Raw local-process execution and output-row construction live outside the
-// host barrel; RuntimeContextWorkflow calls this module as the activity effect.
+// host barrel; RuntimeContextWorkflowSession calls this module as the activity effect.
 type SequencedChunk = {
   readonly sequence: number
   readonly chunk: ProcessOutputChunk
@@ -168,11 +168,13 @@ const runCodecRuntimeContext = (options: {
   readonly activityAttempt: number
   readonly protocol: Exclude<RuntimeAgentProtocol, "raw">
   readonly hostConfig: RuntimeHostConfig["Type"]
+  readonly routeToolUses?: boolean
 }) =>
   runCodecRuntimeEventPipeline({
     context: options.context,
     activityAttempt: options.activityAttempt,
     protocol: options.protocol,
+    ...(options.routeToolUses === undefined ? {} : { routeToolUses: options.routeToolUses }),
   }).pipe(
     Effect.provide(RuntimeOutputJournalLayer),
     Effect.provide(runtimeContextOutputTableLayer(options.hostConfig, options.context)),
@@ -186,6 +188,9 @@ const runCodecRuntimeContext = (options: {
 export const runRuntimeContext = (
   context: RuntimeContext,
   activityAttempt: number,
+  options: {
+    readonly routeToolUses?: boolean
+  } = {},
 ) =>
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.3
   // firegrid-workflow-driven-runtime.BOUNDARIES.1
@@ -201,6 +206,7 @@ export const runRuntimeContext = (
         activityAttempt,
         protocol,
         hostConfig,
+        ...(options.routeToolUses === undefined ? {} : { routeToolUses: options.routeToolUses }),
       })
     }
 

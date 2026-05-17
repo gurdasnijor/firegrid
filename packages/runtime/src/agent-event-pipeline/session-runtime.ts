@@ -114,6 +114,7 @@ export const runCodecRuntimeEventPipeline = (options: {
   readonly context: RuntimeContext
   readonly activityAttempt: number
   readonly protocol: Exclude<RuntimeAgentProtocol, "raw">
+  readonly routeToolUses?: boolean
 }) =>
   Effect.gen(function* () {
     const outputSink = yield* RuntimeAgentOutputRowSink
@@ -151,13 +152,15 @@ export const runCodecRuntimeEventPipeline = (options: {
         send: session.send,
       }).pipe(Effect.forkScoped)
 
-      yield* runToolRouter({
-        context: options.context,
-        activityAttempt: options.activityAttempt,
-        toolUseMode: session.toolUseMode,
-      }).pipe(
-        Effect.forkScoped,
-      )
+      if (options.routeToolUses !== false) {
+        yield* runToolRouter({
+          context: options.context,
+          activityAttempt: options.activityAttempt,
+          toolUseMode: session.toolUseMode,
+        }).pipe(
+          Effect.forkScoped,
+        )
+      }
 
       const terminal = yield* Ref.make<Option.Option<
         Extract<AgentOutputEvent, { readonly _tag: "Terminated" }>

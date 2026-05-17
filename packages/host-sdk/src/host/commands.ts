@@ -2,24 +2,19 @@ import { WorkflowEngine } from "@effect/workflow"
 import {
   CurrentHostSession,
   RuntimeStartCapability,
-  hostOwnedStreamUrl,
-  provideRuntimeContext,
   requireLocalContext,
-  type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import {
-  RuntimeIngressTable,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Layer } from "effect"
-import type { DurableTableHeaders } from "effect-durable-operators"
 import { RuntimeHostConfig } from "./config.ts"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import type { StartRuntimeOptions } from "./types.ts"
 import {
-  RuntimeContextWorkflow,
+  RuntimeContextWorkflowNative,
   RuntimeContextWorkflowPayload,
-} from "./runtime-context-workflow.ts"
+} from "./runtime-context-workflow-core.ts"
 import {
   readRuntimeContext,
   requireLocalRuntimeContextWithHostSession,
@@ -29,39 +24,18 @@ import {
 import {
   RuntimeContextRead,
 } from "@firegrid/runtime/host-substrate"
-import {
-  RuntimeIngressAppendAndGet,
-  RuntimeIngressAppenderLayer,
-} from "@firegrid/runtime/host-substrate"
 import { runtimeIngressError } from "@firegrid/runtime/host-substrate"
+import { appendRuntimeIngressToOwner as appendRuntimeIngressToOwnerInternal } from "./internal/runtime-ingress-owner.ts"
+export { appendRuntimeIngressToOwner } from "./internal/runtime-ingress-owner.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.4
 // Command handlers remain thin entrypoints over workflow and ingress
 // capabilities; host topology lives in layers.ts.
-const ownerIngressLayer = (
-  options: {
-    readonly baseUrl: string
-    readonly headers?: DurableTableHeaders
-    readonly context: RuntimeContext
-  },
-) =>
-  RuntimeIngressTable.layer({
-    streamOptions: {
-      url: hostOwnedStreamUrl({
-        baseUrl: options.baseUrl,
-        prefix: options.context.host.streamPrefix,
-        segment: "runtimeIngress",
-      }),
-      contentType: "application/json",
-      ...(options.headers !== undefined ? { headers: options.headers } : {}),
-    },
-  })
-
 const executeRuntimeContextWorkflowForContextId = (
   engine: WorkflowEngine.WorkflowEngine["Type"],
   contextId: string,
 ) =>
-  executeRuntimeContextWorkflow(engine, RuntimeContextWorkflow, {
+  executeRuntimeContextWorkflow(engine, RuntimeContextWorkflowNative, {
     executionId: runtimeContextWorkflowExecutionId(contextId),
     payload: RuntimeContextWorkflowPayload.make({
       contextId,
@@ -134,40 +108,5 @@ export const appendRuntimeIngress = (
         )),
     )
     const options = yield* RuntimeHostConfig
-    return yield* appendRuntimeIngressToOwner(request, context, options)
+    return yield* appendRuntimeIngressToOwnerInternal(request, context, options)
   })
-
-export const appendRuntimeIngressToOwner = (
-  request: RuntimeIngressRequest,
-  context: RuntimeContext,
-  options: RuntimeHostConfig["Type"],
-) =>
-  appendRuntimeIngressInCurrentContext(request).pipe(
-    provideRuntimeContext(context),
-    Effect.provide(RuntimeIngressAppenderLayer({
-      currentContextId: context.contextId,
-    })),
-    Effect.provide(ownerIngressLayer({
-      baseUrl: options.durableStreamsBaseUrl,
-      ...(options.headers !== undefined ? { headers: options.headers } : {}),
-      context,
-    })),
-    Effect.scoped,
-  )
-
-const appendRuntimeIngressInCurrentContext = (
-  request: RuntimeIngressRequest,
-) =>
-  Effect.gen(function* () {
-    const appendIngress = yield* RuntimeIngressAppendAndGet
-    return yield* appendIngress.append(request)
-  }).pipe(
-    Effect.mapError(cause =>
-      runtimeIngressError(
-        "append",
-        "failed to append runtime ingress durable row",
-        request.contextId,
-        request.inputId,
-        cause,
-      )),
-  )

@@ -221,7 +221,7 @@ describe("workflow-native runtime-context core", () => {
 
     const testLayer = RuntimeContextWorkflowNativeLayer.pipe(
       Layer.provideMerge(RuntimeContextWorkflowSession.layer({
-        start: () => Effect.void,
+        start: () => Effect.succeed({ _tag: "Started" as const }),
         send: (_context, _activityAttempt, event) =>
           Effect.sync(() => {
             sent.push(event)

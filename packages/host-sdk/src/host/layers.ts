@@ -17,7 +17,10 @@ import type { DurableTableError, DurableTableHeaders } from "effect-durable-oper
 import { RuntimeHostConfig } from "./config.ts"
 import type { RuntimeHostTopologyOptions } from "./types.ts"
 import { RuntimeHostAgentToolHostLive } from "./agent-tool-host-live.ts"
-import { RuntimeContextWorkflowLayer } from "./runtime-context-workflow.ts"
+import {
+  RuntimeContextWorkflowNativeLayer,
+  RuntimeContextWorkflowSessionLive,
+} from "./runtime-context-workflow-core.ts"
 import {
   HostRuntimeObservationSubstrateLive,
   RuntimeToolUseExecutorLive,
@@ -201,7 +204,8 @@ export const FiregridRuntimeHostLive = (
   const session = currentHostSessionLayer(options)
   const namespaceScoped = namespaceScopedLayer(options)
   const hostScoped = hostScopedLayer(options)
-  return RuntimeContextWorkflowLayer.pipe(
+  return RuntimeContextWorkflowNativeLayer.pipe(
+    Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(hostScoped),
     Layer.provideMerge(namespaceScoped),
