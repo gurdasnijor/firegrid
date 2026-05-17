@@ -63,7 +63,15 @@ const streamForSource = (
   Effect.map(RuntimeWaitStreams, (streams) =>
     Match.value(source).pipe(
       Match.tag("AgentOutput", () => streams.agentOutput),
+      Match.tag("AgentOutputAfter", ({ contextId, activityAttempt, afterSequence }) =>
+        streams.agentOutput.pipe(
+          Stream.filter((row) =>
+            row.contextId === contextId &&
+            row.activityAttempt === activityAttempt &&
+            row.sequence > afterSequence),
+        )),
       Match.tag("RuntimeRun", () => streams.runtimeRun),
+      Match.tag("RuntimeIngressInput", () => streams.runtimeIngressInput),
       Match.exhaustive,
     ))
 
