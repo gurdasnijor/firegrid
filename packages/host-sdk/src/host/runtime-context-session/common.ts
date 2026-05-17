@@ -17,7 +17,7 @@ import {
 } from "@firegrid/runtime/sources/sandbox"
 import type {
   RuntimeIngressInputStream,
-} from "@firegrid/runtime/runtime-ingress"
+} from "@firegrid/runtime/durable-tools"
 import { Effect, Layer, Ref, type Context, type Scope } from "effect"
 import { PerContextRuntimeOutputWriter } from "../per-context-runtime-output.ts"
 import type {

@@ -15,7 +15,7 @@ import { type RuntimeRunEventRow } from "@firegrid/protocol/launch"
 import { type RuntimeIngressInputRow } from "@firegrid/protocol/runtime-ingress"
 import type { DurableTableError } from "effect-durable-operators"
 import { Context, Effect, Layer, Option, Stream } from "effect"
-import { RuntimeIngressInputStream } from "../../agent-event-pipeline/authorities/runtime-ingress-appender.ts"
+import { RuntimeIngressInputStream } from "./runtime-ingress-input-stream.ts"
 import {
   RuntimeAgentOutputAfterEvents,
   RuntimeAgentOutputEvents,

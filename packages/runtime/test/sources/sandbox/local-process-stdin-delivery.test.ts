@@ -17,13 +17,12 @@ import {
   LocalProcessStdinDeliveryError,
   localProcessStdinDelivery,
 } from "../../../src/agent-event-pipeline/sources/sandbox/local-process-stdin-delivery.ts"
-import {
-  RuntimeIngressAppenderLayer,
-} from "../../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
 import type {
-  RuntimeIngressAppendAndGet,
   RuntimeIngressInputStream,
-} from "../../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
+} from "../../../src/durable-tools/internal/runtime-ingress-input-stream.ts"
+import {
+  RuntimeIngressInputStream as RuntimeIngressInputStreamTag,
+} from "../../../src/durable-tools/internal/runtime-ingress-input-stream.ts"
 import {
   SandboxStdinEmissionClaimLive,
   SandboxSupervisorCommandTable,
@@ -69,24 +68,24 @@ const makeRow = (
 const deliveryLayer = (
   tableLayer: Layer.Layer<RuntimeIngressTable, unknown>,
   supervisorTableLayer: Layer.Layer<SandboxSupervisorCommandTable, unknown>,
-  contextId: string,
 ): Layer.Layer<
   | RuntimeIngressTable
-  | RuntimeIngressAppendAndGet
   | RuntimeIngressInputStream
   | SandboxSupervisorCommandTable
   | SandboxStdinEmissionClaim,
   unknown,
   never
 > =>
-  RuntimeIngressAppenderLayer({ currentContextId: contextId }).pipe(
+  Layer.effect(
+    RuntimeIngressInputStreamTag,
+    Effect.map(RuntimeIngressTable, table => table.inputs.rows()),
+  ).pipe(
     Layer.provideMerge(tableLayer),
     Layer.provideMerge(SandboxStdinEmissionClaimLive.pipe(
       Layer.provideMerge(supervisorTableLayer),
     )),
   ) as unknown as Layer.Layer<
     | RuntimeIngressTable
-    | RuntimeIngressAppendAndGet
     | RuntimeIngressInputStream
     | SandboxSupervisorCommandTable
     | SandboxStdinEmissionClaim,
@@ -145,7 +144,7 @@ describe("localProcessStdinDelivery", () => {
           // RuntimeIngressTable.layer currently widens its service type to any
           // in tests; the target service is RuntimeIngressTable.
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer, contextId)),
+          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer)),
         ),
       ),
     )
@@ -187,7 +186,7 @@ describe("localProcessStdinDelivery", () => {
           // RuntimeIngressTable.layer currently widens its service type to any
           // in tests; the target service is RuntimeIngressTable.
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer, contextId)),
+          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer)),
         ),
       ),
     )
@@ -243,7 +242,7 @@ describe("localProcessStdinDelivery", () => {
           // RuntimeIngressTable.layer currently widens its service type to any
           // in tests; the target service is RuntimeIngressTable.
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer, contextId)),
+          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer)),
         ),
       ),
     )
@@ -299,7 +298,7 @@ describe("localProcessStdinDelivery", () => {
           // RuntimeIngressTable.layer currently widens its service type to any
           // in tests; the target service is RuntimeIngressTable.
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer, contextId)),
+          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer)),
         ),
       ),
     )

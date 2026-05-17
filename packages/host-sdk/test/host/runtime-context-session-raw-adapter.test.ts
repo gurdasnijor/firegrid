@@ -19,7 +19,7 @@ import {
 } from "@firegrid/runtime/sources/sandbox"
 import {
   RuntimeIngressInputStream,
-} from "@firegrid/runtime/runtime-ingress"
+} from "@firegrid/runtime/durable-tools"
 import {
   Effect,
   Layer,

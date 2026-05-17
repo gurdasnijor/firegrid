@@ -3,16 +3,16 @@ import {
   RuntimeIngressTable,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
+import {
+  RuntimeIngressInputStream,
+} from "@firegrid/runtime/durable-tools"
 import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeIngressAppendAndGet,
   RuntimeIngressAppenderLayer,
-  RuntimeIngressInputStream,
-} from "../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
+} from "../../src/host/runtime-ingress.ts"
 
-// `sourceName` is a free-form label on the ingress append input/echo; the
-// deleted RuntimeAuthoritySourceNames registry no longer exists.
 const ingressInputsSourceName = "firegrid.runtime.ingress.inputs"
 
 let server: DurableStreamTestServer | undefined
@@ -37,8 +37,8 @@ const tableLayer = (name: string) =>
     },
   })
 
-describe("runtime ingress authorities", () => {
-  it("firegrid-runtime-agent-event-pipeline.AUTHORITIES.3 appends sequenced input rows idempotently", async () => {
+describe("host runtime ingress append authority", () => {
+  it("firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 appends sequenced input rows idempotently behind the host-sdk seam", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const contextId = `ctx_${crypto.randomUUID()}`
     const first: RuntimeIngressRequest = {

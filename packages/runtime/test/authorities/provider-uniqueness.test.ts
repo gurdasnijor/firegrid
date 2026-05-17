@@ -17,12 +17,6 @@ import {
   RuntimeRunAppendAndGet,
 } from "../../src/authorities/runtime-control-plane-recorder.ts"
 import {
-  RuntimeIngressAppendAndGet,
-  RuntimeIngressAppenderLayer,
-  RuntimeIngressInputStream,
-  RuntimeIngressInputStreamLayer,
-} from "../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
-import {
   RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
 } from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
@@ -38,16 +32,6 @@ const providerEntries = [
     capability: RuntimeAgentOutputEvents,
     provider: RuntimeAgentOutputEventsLayer,
     backingTable: "RuntimeOutputTable.events",
-  },
-  {
-    capability: RuntimeIngressAppendAndGet,
-    provider: RuntimeIngressAppenderLayer,
-    backingTable: "RuntimeIngressTable.inputs",
-  },
-  {
-    capability: RuntimeIngressInputStream,
-    provider: RuntimeIngressInputStreamLayer,
-    backingTable: "RuntimeIngressTable.inputs",
   },
   {
     capability: RuntimeContextInsert,
@@ -108,8 +92,6 @@ const providerEntries = [
 
 const canonicalCapabilityTags = [
   RuntimeAgentOutputEvents,
-  RuntimeIngressAppendAndGet,
-  RuntimeIngressInputStream,
   RuntimeContextInsert,
   RuntimeContextRead,
   RuntimeContexts,
@@ -134,9 +116,6 @@ describe("runtime durable capability provider uniqueness", () => {
     )
     expect(outputEvents?.provider).toBe(RuntimeAgentOutputEventsLayer)
 
-    const ingressAppend = providerEntries.find(entry =>
-      entry.capability === RuntimeIngressAppendAndGet,
-    )
-    expect(ingressAppend?.provider).toBe(RuntimeIngressAppenderLayer)
+    expect(outputEvents?.backingTable).toBe("RuntimeOutputTable.events")
   })
 })

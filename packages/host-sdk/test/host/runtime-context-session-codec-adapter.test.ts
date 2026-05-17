@@ -13,7 +13,7 @@ import {
 } from "@firegrid/runtime/events"
 import {
   RuntimeIngressInputStream,
-} from "@firegrid/runtime/runtime-ingress"
+} from "@firegrid/runtime/durable-tools"
 import {
   RuntimeEnvResolverPolicy,
   SandboxProvider,

@@ -36,7 +36,7 @@ import {
 import {
   RuntimeIngressAppendAndGet,
   RuntimeIngressAppenderLayer,
-} from "@firegrid/runtime/runtime-ingress"
+} from "./runtime-ingress.ts"
 import { runtimeIngressError } from "@firegrid/runtime/errors"
 import {
   AgentInputEventSchema,
