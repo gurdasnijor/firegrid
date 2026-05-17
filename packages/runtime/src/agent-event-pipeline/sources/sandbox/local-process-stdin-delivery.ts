@@ -27,7 +27,7 @@ import {
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Option, Schema, Stream } from "effect"
-import { RuntimeIngressInputStream } from "../../authorities/runtime-ingress-appender.ts"
+import { RuntimeIngressInputStream } from "../../../durable-tools/internal/runtime-ingress-input-stream.ts"
 import { sequencedRuntimeIngressRowsForContext } from "../../transforms/ingress-to-agent-input.ts"
 import {
   SandboxStdinEmissionClaim,

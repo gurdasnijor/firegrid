@@ -28,9 +28,6 @@ import {
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
 import {
-  RuntimeIngressAppenderLayer,
-} from "@firegrid/runtime/runtime-ingress"
-import {
   RuntimeToolUseExecutor,
 } from "@firegrid/runtime/tool-executor"
 import {
@@ -51,6 +48,9 @@ import {
 import {
   PerContextRuntimeOutputWriter,
 } from "../../src/host/per-context-runtime-output.ts"
+import {
+  RuntimeIngressAppenderLayer,
+} from "../../src/host/runtime-ingress.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined

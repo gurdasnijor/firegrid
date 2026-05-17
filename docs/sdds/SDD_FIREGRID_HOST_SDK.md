@@ -74,8 +74,6 @@ Consequences (target, pending #309 merge):
     + read authorities the host composition wires.
   - `@firegrid/runtime/runtime-output` — per-context output writer / output
     table the live-owner adapters journal through.
-  - `@firegrid/runtime/runtime-ingress` — runtime ingress append surface for
-    host-side sequenced input.
   - `@firegrid/runtime/tool-executor` — the `RuntimeToolUseExecutor` capability
     tag (host provides the live layer).
   - `@firegrid/runtime/events` — `AgentInputEvent`/`AgentOutputEvent` schemas
@@ -96,6 +94,9 @@ Consequences (target, pending #309 merge):
     dependency. (If the final #309 export layout names either of these
     differently, treat the name as **pending** and reconcile to the shipped
     subpath; the rationale stands.)
+  The transient `@firegrid/runtime/runtime-ingress` subpath is removed by the
+  post-#309 cleanup; the remaining append seam is host-sdk-local until the
+  deferred-input rewrite removes its `RuntimeIngressTable` backing.
 - `RUNTIME_CAPABILITY_PROJECTIONS` is cancelled — Path X deletes/rewrites the
   runtime authority files those ACIDs described.
 
@@ -377,13 +378,15 @@ compatibility writer; host-sdk owns the live owner adapters; client-sdk and cli
 public surfaces are unchanged by the cutover (a target invariant #309 must
 hold, asserted at review/merge, not yet observed).
 
-Follow-up after #309 merges (one item, scoped narrow): **deferred-input
-cleanup** — finish converging prompt/permission/tool delivery on the reactive
-workflow's content-derived `DurableDeferred` waits, removing any transitional
-`RuntimeIngressInput` sequencing helpers that #309 leaves only as internal
-plumbing. This is internal-only; it does not alter the client-sdk, host-sdk,
-or cli public surfaces and must not reintroduce a deprecated path. It is gated
-on #309 landing.
+Follow-up after #309 merges: first remove the transient
+`@firegrid/runtime/runtime-ingress` public subpath by moving the remaining
+append authority into host-sdk internals and keeping only the durable-tools
+typed input stream in runtime. Then complete **deferred-input cleanup** —
+finish converging prompt/permission/tool delivery on the reactive workflow's
+content-derived `DurableDeferred` waits, removing the remaining host-sdk-local
+`RuntimeIngressTable` append plumbing. This is internal-only; it does not alter
+the client-sdk, host-sdk, or cli public surfaces and must not reintroduce a
+deprecated path.
 
 ## Acceptance
 

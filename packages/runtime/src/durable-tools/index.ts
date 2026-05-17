@@ -41,3 +41,6 @@ export {
   type WaitStatus,
 } from "./internal/types.ts"
 export { WaitKeyEncoded, WaitKeySchema, type WaitKey } from "./internal/keys.ts"
+export {
+  RuntimeIngressInputStream,
+} from "./internal/runtime-ingress-input-stream.ts"

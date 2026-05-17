@@ -9,9 +9,6 @@ import {
   type DurableWaitRowUpsert,
 } from "@firegrid/runtime/durable-tools"
 import {
-  RuntimeIngressInputStreamLayer,
-} from "@firegrid/runtime/runtime-ingress"
-import {
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
 import { RuntimeToolUseExecutor } from "@firegrid/runtime/tool-executor"
@@ -24,6 +21,9 @@ import { HostOwnedDurableToolsWaitForLive } from "./host-owned-durable-tools.ts"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
 } from "./per-context-runtime-output.ts"
+import {
+  HostRuntimeIngressInputStreamLayer,
+} from "./runtime-ingress.ts"
 
 type RuntimeToolUseExecutorHostEnvironment =
   | DurableWaitRowLookup
@@ -44,7 +44,7 @@ export const HostRuntimeObservationSubstrateLive = HostOwnedDurableToolsWaitForL
     RuntimeAgentOutputEventsLayer,
     PerContextRuntimeAgentOutputAfterEventsLive,
     RuntimeControlPlaneRecorderLive,
-    RuntimeIngressInputStreamLayer,
+    HostRuntimeIngressInputStreamLayer,
   )),
 )
 

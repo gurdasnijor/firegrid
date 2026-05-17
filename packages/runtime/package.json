@@ -25,10 +25,6 @@
       "types": "./src/agent-event-pipeline/authorities/runtime-output-public.ts",
       "default": "./src/agent-event-pipeline/authorities/runtime-output-public.ts"
     },
-    "./runtime-ingress": {
-      "types": "./src/agent-event-pipeline/authorities/runtime-ingress-appender.ts",
-      "default": "./src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
-    },
     "./workflow-engine": {
       "types": "./src/workflow-engine/index.ts",
       "default": "./src/workflow-engine/index.ts"

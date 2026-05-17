@@ -5,10 +5,12 @@ import {
   type RuntimeIngressInputRow,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
+import {
+  RuntimeIngressInputStream,
+} from "@firegrid/runtime/durable-tools"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
-import type { Stream } from "effect"
 
-export class RuntimeIngressAppendContextMismatch extends Schema.TaggedError<RuntimeIngressAppendContextMismatch>()(
+class RuntimeIngressAppendContextMismatch extends Schema.TaggedError<RuntimeIngressAppendContextMismatch>()(
   "RuntimeIngressAppendContextMismatch",
   {
     expectedContextId: Schema.String,
@@ -62,15 +64,6 @@ const appendTo = (
     return sequenced
   })
 
-const findInputTo = (
-  table: RuntimeIngressTable["Type"],
-  inputId: string,
-) => table.inputs.get(inputId)
-
-const ingressInputStream = (
-  table: RuntimeIngressTable["Type"],
-): Stream.Stream<RuntimeIngressInputRow, unknown> => table.inputs.rows()
-
 const appendAndGetFromTable = (
   table: RuntimeIngressTable["Type"],
   options: {
@@ -78,20 +71,16 @@ const appendAndGetFromTable = (
   },
 ): RuntimeIngressAppendAndGetService => ({
   append: request => appendTo(table, request, options),
-  findInput: inputId => findInputTo(table, inputId),
+  findInput: inputId => table.inputs.get(inputId),
 })
 
 export class RuntimeIngressAppendAndGet extends Context.Tag(
-  "@firegrid/runtime/RuntimeIngressAppendAndGet",
+  "@firegrid/host-sdk/RuntimeIngressAppendAndGet",
 )<RuntimeIngressAppendAndGet, RuntimeIngressAppendAndGetService>() {}
 
-export class RuntimeIngressInputStream extends Context.Tag(
-  "@firegrid/runtime/RuntimeIngressInputStream",
-)<RuntimeIngressInputStream, Stream.Stream<RuntimeIngressInputRow, unknown>>() {}
-
-export const RuntimeIngressInputStreamLayer = Layer.effect(
+export const HostRuntimeIngressInputStreamLayer = Layer.effect(
   RuntimeIngressInputStream,
-  Effect.map(RuntimeIngressTable, ingressInputStream),
+  Effect.map(RuntimeIngressTable, table => table.inputs.rows()),
 )
 
 export const RuntimeIngressAppenderLayer = (options: {
@@ -102,8 +91,5 @@ export const RuntimeIngressAppenderLayer = (options: {
       RuntimeIngressAppendAndGet,
       Effect.map(RuntimeIngressTable, table => appendAndGetFromTable(table, options)),
     ),
-    Layer.effect(
-      RuntimeIngressInputStream,
-      Effect.map(RuntimeIngressTable, ingressInputStream),
-    ),
-)
+    HostRuntimeIngressInputStreamLayer,
+  )

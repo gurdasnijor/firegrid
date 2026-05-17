@@ -103,7 +103,6 @@ composes the substrate through narrow role-scoped subpaths
 | `@firegrid/runtime/tool-executor` | `…/subscribers/runtime-tool-use-executor.ts` | the `RuntimeToolUseExecutor` seam tag |
 | `@firegrid/runtime/control-plane` | `src/authorities/index.ts` | durable context/run authorities |
 | `@firegrid/runtime/runtime-output` | `…/authorities/runtime-output-public.ts` | curated KEPT observation surface only |
-| `@firegrid/runtime/runtime-ingress` | `…/authorities/runtime-ingress-appender.ts` | **transient**: until the deferred-input rewrite |
 | `@firegrid/runtime/workflow-engine` | `src/workflow-engine/index.ts` | `DurableStreamsWorkflowEngine` |
 | `@firegrid/runtime/codecs` | `…/agent-event-pipeline/codecs/index.ts` | accepted (pre-existing): `AgentSession` / ACP / stdio-jsonl framing consumed by `CodecRuntimeOwnerAdapter` |
 | `@firegrid/runtime/sources/sandbox` | `…/agent-event-pipeline/sources/sandbox/index.ts` | accepted (pre-existing): local-process spawn / stdin delivery / env policy consumed by `RawRuntimeOwnerAdapter` |
@@ -171,10 +170,12 @@ scoped layer.
 ## Remaining Work: Deferred-Input Rewrite
 
 `appendRuntimeIngress` / `appendRuntimeIngressToOwner` are **RESHAPE /
-KEEP**, not yet converted. They remain `RuntimeIngressTable`-backed
+KEEP**, not yet converted. They remain host-sdk-owned and table-backed
 behind the unchanged public `session.prompt`, and `agent-tool-host-live`
 `schedule_me` still routes through `appendRuntimeIngressToOwner`. The
-final slice:
+transient public `@firegrid/runtime/runtime-ingress` subpath is gone;
+runtime exposes only the durable-tools typed input stream needed by the
+wait router / raw stdin delivery. The final slice:
 
 - replaces the `RuntimeIngressTable` append with a content-derived
   `DurableDeferred` completion the reactive loop turns into a `send`;
@@ -182,11 +183,12 @@ final slice:
   (a non-owner host completing the owner workflow's input deferred);
 - keeps the `@firegrid/client-sdk` session API stable — client-sdk
   must not learn the deferred mechanics;
-- then deletes the transient `@firegrid/runtime/runtime-ingress`
-  subpath and `runtime-ingress-appender.ts`.
+- then deletes the remaining host-sdk-local `RuntimeIngressTable`
+  appender once deferred input carries idempotency / ordering.
 
-Until that lands, `runtime-ingress` is the only remaining transient
-substrate edge; everything else in the spine is gone after #309.
+Until that lands, the remaining transient edge is host-sdk-local
+`RuntimeIngressTable` appending; the runtime public substrate edge is
+gone.
 
 ## Schema-Based Transform Guidance
 
@@ -244,8 +246,9 @@ The plan is now: (1) engine + permission fix — landed; (2) per-context
 output writer — landed; (3) scoped runtime subpaths — landed on the
 cutover base; (4) live-owner cutover deleting the old spine and adding
 `RuntimeContextWorkflowNative` + `RuntimeContextSession` Raw/Codec
-adapters — in flight as #309; (5) deferred-input rewrite of
-`appendRuntimeIngress` and retirement of the transient
-`@firegrid/runtime/runtime-ingress` subpath — remaining. The public
-session API is unchanged throughout.
+adapters — landed as #309; (5) removal of the transient
+`@firegrid/runtime/runtime-ingress` public subpath — landed in the
+post-#309 cleanup; (6) deferred-input rewrite of `appendRuntimeIngress`
+away from host-sdk-local `RuntimeIngressTable` appending — remaining.
+The public session API is unchanged throughout.
 </content>
