@@ -12,11 +12,13 @@ import {
 import type { AgentInputEvent } from "@firegrid/runtime/events"
 import {
   type AgentByteStream,
+  localProcessStdinDelivery,
   type ProcessOutputChunk,
 } from "@firegrid/runtime/sources/sandbox"
 import {
   Clock,
   Effect,
+  Fiber,
   Schema,
   Scope,
   Stream,
@@ -243,6 +245,37 @@ const runRawProcess = (
     )
   })
 
+const runRuntimeIngressInputDelivery = (
+  session: RawRuntimeContextSession,
+) =>
+  localProcessStdinDelivery({ contextId: session.context.contextId }).pipe(
+    Stream.runForEach(bytes =>
+      Effect.tryPromise({
+        try: () => session.stdin.write(bytes),
+        catch: cause =>
+          asRuntimeContextError(
+            "sandbox.raw.stdin.write",
+            "failed writing raw runtime stdin",
+            session.context.contextId,
+            cause,
+          ),
+      })),
+  )
+
+const runRawSession = (
+  session: RawRuntimeContextSession,
+  bytes: AgentByteStream,
+  writer: PerContextRuntimeOutputWriter["Type"],
+) =>
+  Effect.gen(function* () {
+    const inputFiber = yield* runRuntimeIngressInputDelivery(session).pipe(
+      Effect.fork,
+    )
+    return yield* runRawProcess(session, bytes, writer).pipe(
+      Effect.ensuring(Fiber.interrupt(inputFiber)),
+    )
+  })
+
 export const makeRawRuntimeContextWorkflowSessionService:
   Effect.Effect<
     RuntimeContextWorkflowSessionService,
@@ -274,7 +307,8 @@ export const makeRawRuntimeContextWorkflowSessionService:
         }
         return {
           session,
-          run: runRawProcess(session, bytes, writer).pipe(
+          run: runRawSession(session, bytes, writer).pipe(
+            Effect.provide(captured),
             Effect.catchAll(cause =>
               Effect.logError("[host-sdk] raw runtime session failed").pipe(
                 Effect.annotateLogs({ contextId: context.contextId, cause }),

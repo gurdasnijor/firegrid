@@ -279,8 +279,11 @@ const assertSmokeDurableState = (
     exitCode: config.expectedExitCode,
   })
 
-  expect(retained.events).toHaveLength(1)
-  const output = JSON.parse(retained.events[0]!.raw) as {
+  const assistantEvents = retained.events.filter(row =>
+    !row.raw.includes("\"firegrid.agent-output\"")
+  )
+  expect(assistantEvents).toHaveLength(1)
+  const output = JSON.parse(assistantEvents[0]!.raw) as {
     readonly type: string
     readonly cwdOk: boolean
     readonly promptDigest: string

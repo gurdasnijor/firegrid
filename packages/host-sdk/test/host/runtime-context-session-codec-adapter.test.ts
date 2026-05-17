@@ -12,6 +12,9 @@ import {
   encodeRuntimeAgentOutputEnvelope,
 } from "@firegrid/runtime/events"
 import {
+  RuntimeIngressInputStream,
+} from "@firegrid/runtime/runtime-ingress"
+import {
   RuntimeEnvResolverPolicy,
   SandboxProvider,
   SandboxStdinEmissionClaim,
@@ -23,6 +26,7 @@ import {
   Effect,
   Fiber,
   Layer,
+  Stream,
 } from "effect"
 import { describe, expect, it } from "vitest"
 import {
@@ -216,6 +220,10 @@ const testLayer = (state: {
       download: () => Effect.void,
       destroy: () => Effect.succeed(true),
     })),
+    Layer.provideMerge(Layer.succeed(
+      RuntimeIngressInputStream,
+      Stream.empty,
+    )),
     Layer.provideMerge(RuntimeEnvResolverPolicy.denyAll),
   )
 

@@ -103,25 +103,39 @@ const transformError = (
     ...(cause === undefined ? {} : { cause }),
   })
 
-const textFromIngressPayload = (payload: unknown): string | undefined => {
+const RuntimePromptTextPayloadSchema = Schema.Union(
+  Schema.String,
+  Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }),
+  Schema.Struct({ text: Schema.String }),
+  Schema.Array(Schema.Union(
+    Schema.String,
+    Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }),
+    Schema.Struct({ text: Schema.String }),
+  )),
+)
+
+type RuntimePromptTextPayload = Schema.Schema.Type<
+  typeof RuntimePromptTextPayloadSchema
+>
+
+const textFromIngressPayload = (
+  payload: RuntimePromptTextPayload,
+): string => {
   if (typeof payload === "string") return payload
-  if (typeof payload !== "object" || payload === null) return undefined
-  const record = payload as Record<string, unknown>
-  return record.type === "text" && typeof record.text === "string"
-    ? record.text
-    : undefined
+  if (Array.isArray(payload)) return payload.map(textFromIngressPayload).join("\n")
+  return (payload as { readonly text: string }).text
 }
 
 const promptFromIngressPayload = (
   row: RuntimeIngressInputRow,
 ): Effect.Effect<Extract<AgentInputEvent, { readonly _tag: "Prompt" }>, RuntimeIngressAgentInputTransformError> => {
-  const text = textFromIngressPayload(row.payload)
-  if (text !== undefined) {
+  const text = Schema.decodeUnknownEither(RuntimePromptTextPayloadSchema)(row.payload)
+  if (Either.isRight(text)) {
     return Effect.succeed({
       _tag: "Prompt",
       correlationId: row.inputId,
       prompt: Prompt.userMessage({
-        content: [Prompt.textPart({ text })],
+        content: [Prompt.textPart({ text: textFromIngressPayload(text.right) })],
       }),
     })
   }
@@ -259,7 +273,9 @@ export const appendRuntimeIngressToOwner = (
 ) =>
   Effect.gen(function*() {
     const row = yield* appendRuntimeIngressInCurrentContext(request)
-    yield* sendRuntimeIngressToNativeSession(context, row)
+    if (context.runtime.config.agentProtocol !== undefined && context.runtime.config.agentProtocol !== "raw") {
+      yield* sendRuntimeIngressToNativeSession(context, row)
+    }
     return row
   }).pipe(
       provideRuntimeContext(context),

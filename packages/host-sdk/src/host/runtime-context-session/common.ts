@@ -15,6 +15,9 @@ import {
   SandboxProvider as SandboxProviderTag,
   SandboxStdinEmissionClaim,
 } from "@firegrid/runtime/sources/sandbox"
+import type {
+  RuntimeIngressInputStream,
+} from "@firegrid/runtime/runtime-ingress"
 import { Effect, Layer, Ref, type Context, type Scope } from "effect"
 import { PerContextRuntimeOutputWriter } from "../per-context-runtime-output.ts"
 import type {
@@ -37,6 +40,7 @@ export interface RuntimeContextSessionRecord {
 
 export type RuntimeContextSessionAdapterRequirements =
   | PerContextRuntimeOutputWriter
+  | RuntimeIngressInputStream
   | RuntimeEnvResolverPolicy
   | SandboxProvider
   | SandboxStdinEmissionClaim
@@ -78,7 +82,12 @@ export const openRuntimeContextByteStream = (
 interface RuntimeContextSessionAdapterDeps<Session extends RuntimeContextSessionRecord> {
   readonly writer: PerContextRuntimeOutputWriter["Type"]
   readonly stdinClaim: SandboxStdinEmissionClaim["Type"]
-  readonly captured: Context.Context<RuntimeEnvResolverPolicy | SandboxProvider>
+  readonly captured: Context.Context<
+    | RuntimeEnvResolverPolicy
+    | RuntimeIngressInputStream
+    | SandboxProvider
+    | SandboxStdinEmissionClaim
+  >
   readonly scope: Scope.Scope
   readonly sessions: Ref.Ref<Map<string, Session>>
 }
@@ -230,7 +239,9 @@ export const makeRuntimeContextSessionAdapterService = <Session extends RuntimeC
     const stdinClaim = yield* SandboxStdinEmissionClaim
     const captured = yield* Effect.context<
       | RuntimeEnvResolverPolicy
+      | RuntimeIngressInputStream
       | SandboxProvider
+      | SandboxStdinEmissionClaim
     >()
     const scope = yield* Effect.scope
     const sessions = yield* Ref.make(new Map<string, Session>())

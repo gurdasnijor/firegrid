@@ -114,7 +114,10 @@ describe("firegrid tracer 012 runtime ingress", () => {
       exitCode: 0,
     })
 
-    expect(result.snapshot.events.map(event => event.raw)).toEqual([
+    const assistantRows = result.snapshot.events
+      .map(event => event.raw)
+      .filter(raw => !raw.includes("\"firegrid.agent-output\""))
+    expect(assistantRows).toEqual([
       "{\"type\":\"assistant\",\"text\":\"ingress:start here\"}",
       "{\"type\":\"assistant\",\"text\":\"ingress:continue once\"}",
     ])

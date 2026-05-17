@@ -150,7 +150,10 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
       // the first delivery. Any duplicate stdin chunk would either
       // appear as a second assistant row (visible here) or
       // exit-with-error (already asserted above).
-      expect(result.snapshot.events.map((event) => event.raw)).toEqual([
+      const assistantRows = result.snapshot.events
+        .map((event) => event.raw)
+        .filter(raw => !raw.includes("\"firegrid.agent-output\""))
+      expect(assistantRows).toEqual([
         "{\"type\":\"assistant\",\"text\":\"input:continue live\"}",
       ])
     },

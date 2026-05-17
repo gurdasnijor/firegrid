@@ -18,6 +18,9 @@ import {
   SandboxProviderError,
 } from "@firegrid/runtime/sources/sandbox"
 import {
+  RuntimeIngressInputStream,
+} from "@firegrid/runtime/runtime-ingress"
+import {
   Effect,
   Layer,
   Stream,
@@ -229,6 +232,10 @@ const testLayer = (state: {
       download: () => Effect.void,
       destroy: () => Effect.succeed(true),
     })),
+    Layer.provideMerge(Layer.succeed(
+      RuntimeIngressInputStream,
+      Stream.empty,
+    )),
     Layer.provideMerge(RuntimeEnvResolverPolicy.denyAll),
   )
 
