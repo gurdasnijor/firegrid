@@ -16,8 +16,7 @@
         "src/bin/host.ts"
       ],
       "project": [
-        "src/**/*.ts",
-        "test/**/*.ts"
+        "src/**/*.ts"
       ]
     },
     "packages/client": {
