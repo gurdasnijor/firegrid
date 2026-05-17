@@ -12,7 +12,26 @@ import {
 import { RuntimeIngressTable } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Fiber, Layer, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { toolResult } from "@firegrid/host-sdk/agent-tools/bindings"
+import type { AgentInputEvent } from "../../src/agent-event-pipeline/events/index.ts"
+
+// Runtime-local ToolResult builder. The runtime package (incl. tests)
+// must not import @firegrid/host-sdk (firegrid-host-sdk.PACKAGE_GRAPH.2);
+// this mirrors the host-sdk `toolResult` binding using the @effect/ai
+// `Prompt` primitive the runtime already depends on.
+const toolResult = (
+  toolUseId: string,
+  name: string,
+  content: unknown,
+): Extract<AgentInputEvent, { _tag: "ToolResult" }> => ({
+  _tag: "ToolResult",
+  part: Prompt.toolResultPart({
+    id: toolUseId,
+    name,
+    result: content,
+    isFailure: false,
+    providerExecuted: false,
+  }),
+})
 import {
   RuntimeIngressAppenderLayer,
 } from "../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
