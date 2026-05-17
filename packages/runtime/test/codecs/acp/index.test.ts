@@ -1,6 +1,8 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { IdGenerator, Prompt, Response } from "@effect/ai"
-import { Chunk, Context, Deferred, Effect, Fiber, Layer, Stream } from "effect"
+import { DurableStreamTestServer } from "@durable-streams/server"
+import { Workflow, WorkflowEngine } from "@effect/workflow"
+import { Chunk, Context, Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import type { AgentOutputEvent } from "../../../src/agent-event-pipeline/events/index.ts"
 import type { AgentByteStream } from "../../../src/agent-event-pipeline/sources/byte-stream.ts"
@@ -10,6 +12,7 @@ import {
   type AcpSessionOptions,
 } from "../../../src/agent-event-pipeline/codecs/acp/index.ts"
 import { AgentSession } from "../../../src/agent-event-pipeline/codecs/contract.ts"
+import { DurableStreamsWorkflowEngine } from "../../../src/workflow-engine/DurableStreamsWorkflowEngine.ts"
 
 interface Harness {
   readonly bytes: AgentByteStream
@@ -290,6 +293,52 @@ const deterministicIdGenerator = (): IdGenerator.Service => {
   }
 }
 
+const AcpPermissionWorkflow = Workflow.make({
+  name: "acp-permission-codec-test",
+  payload: Schema.Struct({ id: Schema.String }),
+  success: Schema.Void,
+  idempotencyKey: payload => payload.id,
+})
+
+const acpPermissionWorkflowLayer = (
+  engineLayer: Layer.Layer<WorkflowEngine.WorkflowEngine, unknown>,
+) =>
+  Layer.mergeAll(
+    engineLayer,
+    Layer.effect(
+      WorkflowEngine.WorkflowInstance,
+      Effect.map(
+        AcpPermissionWorkflow.executionId({ id: "session-1" }),
+        executionId => WorkflowEngine.WorkflowInstance.initial(
+          AcpPermissionWorkflow,
+          executionId,
+        ),
+      ),
+    ),
+  )
+
+const withMemoryPermissionWorkflow = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+) =>
+  effect.pipe(
+    Effect.provide(acpPermissionWorkflowLayer(WorkflowEngine.layerMemory)),
+  ) as Effect.Effect<A, E, never>
+
+const withDurablePermissionWorkflow = (
+  streamUrl: string,
+) =>
+<A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+) =>
+  effect.pipe(
+    Effect.provide(acpPermissionWorkflowLayer(
+      DurableStreamsWorkflowEngine.layer({ streamUrl }) as Layer.Layer<
+        WorkflowEngine.WorkflowEngine,
+        unknown
+      >,
+    )),
+  ) as Effect.Effect<A, E, never>
+
 const userMessage = (text: string): Prompt.UserMessage =>
   Prompt.userMessage({ content: [Prompt.textPart({ text })] })
 
@@ -467,7 +516,7 @@ describe("AcpSessionLive", () => {
     }])
   })
 
-  it("firegrid-runtime-boundary-reconciliation.CODEC_SESSION.6 firegrid-runtime-agent-event-pipeline.STAGES.3-10 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3 maps requestPermission to an injected generated live-continuation id and rejects stale responses", async () => {
+  it("firegrid-runtime-boundary-reconciliation.CODEC_SESSION.6 firegrid-runtime-agent-event-pipeline.STAGES.3-10 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3 maps requestPermission to a content-derived durable permission id", async () => {
     const result = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
@@ -509,7 +558,7 @@ describe("AcpSessionLive", () => {
             decision: { _tag: "Deny" },
           }).pipe(Effect.either)
           return { events, permissionRequestId, staleResponse }
-        }),
+        }).pipe(withMemoryPermissionWorkflow),
       ),
     )
 
@@ -550,9 +599,67 @@ describe("AcpSessionLive", () => {
       finishReason: "stop",
       messageId: "prompt-2",
     })
-    expect(result.staleResponse._tag).toBe("Left")
-    if (result.staleResponse._tag === "Left") {
-      expect(result.staleResponse.left.message).toContain("unknown ACP permission request")
+    expect(result.staleResponse._tag).toBe("Right")
+  })
+
+  it("workflow-engine-durable-state.VALIDATION.2 resumes ACP permission from a durable permission deferred completed before the live request is recreated", async () => {
+    const events = await Effect.runPromise(
+      Effect.scoped(
+        Effect.acquireRelease(
+          Effect.promise(async () => {
+            const server = new DurableStreamTestServer({ port: 0, host: "127.0.0.1" })
+            const baseUrl = await server.start()
+            return { server, streamUrl: `${baseUrl}/v1/stream/acp-permission-${crypto.randomUUID()}` }
+          }),
+          ({ server }) => Effect.promise(() => server.stop()),
+        ).pipe(
+          Effect.flatMap(({ streamUrl }) =>
+            Effect.gen(function*() {
+              const harness = yield* makeHarness
+              startAgent(harness, connection => new PermissionFixtureAgent(connection))
+              const session = yield* openSession(
+                harness.bytes,
+                {},
+                deterministicIdGenerator(),
+              )
+              yield* session.send({
+                _tag: "PermissionResponse",
+                permissionRequestId: "permission_test_1",
+                decision: { _tag: "Allow", optionId: "allow" },
+              })
+              const fiber = yield* collectOutputs(session, 5).pipe(Effect.fork)
+              yield* session.send({
+                _tag: "Prompt",
+                correlationId: "prompt-durable-permission",
+                prompt: userMessage("edit config"),
+              })
+              return yield* Fiber.join(fiber)
+            }).pipe(withDurablePermissionWorkflow(streamUrl)),
+          ),
+        ),
+      ),
+    )
+
+    expect(events[2]).toEqual({
+      _tag: "PermissionRequest",
+      permissionRequestId: "permission_test_1",
+      toolUseId: "tool-permission",
+      options: [
+        {
+          optionId: "allow",
+          kind: "allow_once",
+          name: "Allow once",
+        },
+        {
+          optionId: "deny",
+          kind: "reject_once",
+          name: "Deny",
+        },
+      ],
+    })
+    expect(events[3]?._tag).toBe("TextChunk")
+    if (events[3]?._tag === "TextChunk") {
+      expect(events[3].part.delta).toBe("selected")
     }
   })
 
@@ -607,7 +714,7 @@ describe("AcpSessionLive", () => {
             prompt: userMessage("edit config"),
           })
           return yield* Fiber.join(fiber)
-        }),
+        }).pipe(withMemoryPermissionWorkflow),
       ),
     )
 

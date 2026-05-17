@@ -3,9 +3,10 @@ import {
   DurableClock,
   DurableDeferred,
   Workflow,
+  WorkflowEngine,
 } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { Cause, Context, Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   DurableStreamsWorkflowEngine,
@@ -74,6 +75,17 @@ const inspectTable = async <A>(
       ),
     ),
   )
+
+class CodecSessionAliveSupervisor extends Context.Tag("@firegrid/runtime/test/CodecSessionAliveSupervisor")<
+  CodecSessionAliveSupervisor,
+  {
+    readonly emitStdin: (command: {
+      readonly contextId: string
+      readonly inputId: string
+      readonly bytes: string
+    }) => Effect.Effect<void>
+  }
+>() {}
 
 describe("durable workflow engine", () => {
   it("firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.1 lets subscriber-like work run on the Durable Streams workflow engine", async () => {
@@ -486,6 +498,92 @@ describe("durable workflow engine", () => {
     expect(result).toBe("registered")
   })
 
+  it("path-x.Q-2 replays a completed CodecSessionAlive stdin emission activity after engine reconstruction without duplicate supervisor writes", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const streamUrl = `${baseUrl}/v1/stream/codec-session-activity-replay-${crypto.randomUUID()}`
+    const Continue = DurableDeferred.make("codec-session-continue", {
+      success: Schema.String,
+    })
+    const CodecSessionAliveWorkflow = Workflow.make({
+      name: "path-x-codec-session-alive-replay",
+      payload: Schema.Struct({
+        contextId: Schema.String,
+        inputId: Schema.String,
+        bytes: Schema.String,
+      }),
+      success: Schema.String,
+      idempotencyKey: payload => `${payload.contextId}:${payload.inputId}`,
+    })
+    const emissions: Array<string> = []
+    const supervisor = {
+      emitStdin: ({ contextId, inputId, bytes }: {
+        readonly contextId: string
+        readonly inputId: string
+        readonly bytes: string
+      }) =>
+        Effect.sync(() => {
+          emissions.push(`${contextId}/${inputId}/${bytes}`)
+        }),
+    }
+    let token: DurableDeferred.Token | undefined
+    const workflowLayer = CodecSessionAliveWorkflow.toLayer(payload =>
+      Effect.gen(function*() {
+        const EmitStdinBytes = Activity.make({
+          name: `codec-session-alive.emit-stdin.${payload.inputId}`,
+          execute: Effect.gen(function*() {
+            const sessionSupervisor = yield* CodecSessionAliveSupervisor
+            yield* sessionSupervisor.emitStdin(payload)
+          }),
+        })
+        yield* EmitStdinBytes
+        token = yield* DurableDeferred.token(Continue)
+        return yield* DurableDeferred.await(Continue)
+      })).pipe(
+        Layer.provide(Layer.succeed(CodecSessionAliveSupervisor, supervisor)),
+      )
+    const payload = {
+      contextId: "ctx-codec-session",
+      inputId: "input-1",
+      bytes: "hello\n",
+    }
+
+    await runWith(
+      { streamUrl, workerId: "codec-worker-before-restart" },
+      workflowLayer,
+      CodecSessionAliveWorkflow.execute(payload, { discard: true }),
+    )
+
+    const afterFirstRunActivities = await inspectTable(streamUrl, table =>
+      table.activities.query((coll) => coll.toArray),
+    )
+    expect(emissions).toEqual(["ctx-codec-session/input-1/hello\n"])
+    expect(afterFirstRunActivities).toHaveLength(1)
+    expect(afterFirstRunActivities[0]?.activityName).toBe(
+      "codec-session-alive.emit-stdin.input-1",
+    )
+    if (token === undefined) throw new Error("expected deferred token")
+    const continuationToken = token
+
+    const completed = await runWith(
+      { streamUrl, workerId: "codec-worker-after-restart" },
+      workflowLayer,
+      Effect.gen(function*() {
+        yield* DurableDeferred.succeed(Continue, {
+          token: continuationToken,
+          value: "continued-after-restart",
+        })
+        return yield* CodecSessionAliveWorkflow.execute(payload)
+      }),
+    )
+
+    const afterRestartActivities = await inspectTable(streamUrl, table =>
+      table.activities.query((coll) => coll.toArray),
+    )
+    expect(completed).toBe("continued-after-restart")
+    expect(emissions).toEqual(["ctx-codec-session/input-1/hello\n"])
+    expect(afterRestartActivities).toHaveLength(1)
+  })
+
   it("workflow-engine-durable-state.VALIDATION.6 firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.1 firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.2 firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.3 claims a raced activity once across concurrent workers", async () => {
     if (!baseUrl) throw new Error("server not started")
     const streamUrl = `${baseUrl}/v1/stream/workflow-activity-race-${crypto.randomUUID()}`
@@ -534,5 +632,246 @@ describe("durable workflow engine", () => {
     expect(claims).toHaveLength(1)
     expect(claims[0]?.claimKey).toContain("/race-once/")
     expect(["worker-a", "worker-b"]).toContain(claims[0]?.workerId)
+  })
+
+  it("workflow-engine-durable-state.VALIDATION.7 polls absent, suspended, and completed executions", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const streamUrl = `${baseUrl}/v1/stream/workflow-poll-${crypto.randomUUID()}`
+    const Gate = DurableDeferred.make("poll-gate", {
+      success: Schema.String,
+    })
+    let token: DurableDeferred.Token | undefined
+    const PollWorkflow = Workflow.make({
+      name: "poll-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.String,
+      idempotencyKey: payload => payload.id,
+    })
+    const workflowLayer = PollWorkflow.toLayer(() =>
+      Effect.gen(function* () {
+        token = yield* DurableDeferred.token(Gate)
+        return yield* DurableDeferred.await(Gate)
+      }),
+    )
+
+    const executionId = await Effect.runPromise(PollWorkflow.executionId({ id: "poll" }))
+    const absent = await runWith(
+      { streamUrl },
+      workflowLayer,
+      PollWorkflow.poll("missing"),
+    )
+    await runWith(
+      { streamUrl },
+      workflowLayer,
+      PollWorkflow.execute({ id: "poll" }, { discard: true }),
+    )
+    const suspended = await runWith(
+      { streamUrl },
+      workflowLayer,
+      PollWorkflow.poll(executionId),
+    )
+    if (!token) throw new Error("expected deferred token")
+    const gateToken = token
+    const completed = await runWith(
+      { streamUrl },
+      workflowLayer,
+      Effect.gen(function* () {
+        yield* DurableDeferred.succeed(Gate, {
+          token: gateToken,
+          value: "done",
+        })
+        yield* PollWorkflow.execute({ id: "poll" })
+        return yield* PollWorkflow.poll(executionId)
+      }),
+    )
+
+    expect(absent).toBeUndefined()
+    expect(suspended).toBeUndefined()
+    expect(completed?._tag).toBe("Complete")
+    if (completed?._tag === "Complete") {
+      expect(completed.exit).toEqual(Exit.succeed("done"))
+    }
+  })
+
+  it("workflow-engine-durable-state.VALIDATION.7 persists interrupted state without cancelling the stored execution", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const streamUrl = `${baseUrl}/v1/stream/workflow-interrupt-${crypto.randomUUID()}`
+    const Gate = DurableDeferred.make("interrupt-gate", {
+      success: Schema.String,
+    })
+    const InterruptWorkflow = Workflow.make({
+      name: "interrupt-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.String,
+      idempotencyKey: payload => payload.id,
+    })
+    const workflowLayer = InterruptWorkflow.toLayer(() =>
+      DurableDeferred.await(Gate),
+    )
+    const executionId = await Effect.runPromise(InterruptWorkflow.executionId({ id: "interrupt" }))
+
+    await runWith(
+      { streamUrl },
+      workflowLayer,
+      InterruptWorkflow.execute({ id: "interrupt" }, { discard: true }),
+    )
+    await runWith(
+      { streamUrl },
+      workflowLayer,
+      InterruptWorkflow.interrupt(executionId),
+    )
+
+    const row = await inspectTable(streamUrl, table =>
+      table.executions.get(executionId),
+    )
+    expect(row._tag).toBe("Some")
+    if (row._tag === "Some") {
+      expect(row.value.interrupted).toBe(true)
+      expect(row.value.finalResult).toBeUndefined()
+    }
+  })
+
+  it("workflow-engine-durable-state.VALIDATION.8 replays failed deferred exits through deferredResult", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const streamUrl = `${baseUrl}/v1/stream/workflow-deferred-failure-${crypto.randomUUID()}`
+    const Approval = DurableDeferred.make("approval-fail", {
+      success: Schema.String,
+      error: Schema.String,
+    })
+    let token: DurableDeferred.Token | undefined
+    const DeferredFailureWorkflow = Workflow.make({
+      name: "deferred-failure-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.String,
+      error: Schema.String,
+      idempotencyKey: payload => payload.id,
+    })
+    const workflowLayer = DeferredFailureWorkflow.toLayer(() =>
+      Effect.gen(function* () {
+        token = yield* DurableDeferred.token(Approval)
+        return yield* DurableDeferred.await(Approval)
+      }),
+    )
+
+    await runWith(
+      { streamUrl },
+      workflowLayer,
+      DeferredFailureWorkflow.execute({ id: "deferred-fail" }, { discard: true }),
+    )
+    if (!token) throw new Error("expected deferred token")
+    const executionId = await Effect.runPromise(DeferredFailureWorkflow.executionId({ id: "deferred-fail" }))
+    await inspectTable(streamUrl, table =>
+      table.deferreds.upsert({
+        deferredKey: `${executionId}/approval-fail`,
+        workflowName: DeferredFailureWorkflow.name,
+        executionId,
+        deferredName: "approval-fail",
+        exit: {
+          _id: "Exit",
+          _tag: "Failure",
+          cause: {
+            _id: "Cause",
+            _tag: "Fail",
+            failure: "denied",
+          },
+        },
+      }),
+    )
+    const first = await runWith(
+      { streamUrl },
+      workflowLayer,
+      DeferredFailureWorkflow.execute({ id: "deferred-fail" }).pipe(Effect.either),
+    )
+    const replay = await runWith(
+      { streamUrl },
+      workflowLayer,
+      DeferredFailureWorkflow.execute({ id: "deferred-fail" }).pipe(Effect.either),
+    )
+
+    expect(first).toMatchObject({ _tag: "Left", left: "denied" })
+    expect(replay).toMatchObject({ _tag: "Left", left: "denied" })
+  })
+
+  it("workflow-engine-durable-state.VALIDATION.8 replays failed activity exits through activityExecute", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const streamUrl = `${baseUrl}/v1/stream/workflow-activity-failure-${crypto.randomUUID()}`
+    let runs = 0
+    const FailingActivity = Activity.make({
+      name: "fail-once",
+      success: Schema.String,
+      error: Schema.String,
+      execute: Effect.sync(() => {
+        runs += 1
+        return "activity-denied"
+      }).pipe(Effect.flatMap(Effect.fail)),
+    })
+    const ActivityFailureWorkflow = Workflow.make({
+      name: "activity-failure-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.String,
+      error: Schema.String,
+      idempotencyKey: payload => payload.id,
+    })
+    const workflowLayer = ActivityFailureWorkflow.toLayer(() => FailingActivity)
+
+    const first = await runWith(
+      { streamUrl },
+      workflowLayer,
+      ActivityFailureWorkflow.execute({ id: "activity-fail" }).pipe(Effect.either),
+    )
+    const replay = await runWith(
+      { streamUrl },
+      workflowLayer,
+      ActivityFailureWorkflow.execute({ id: "activity-fail" }).pipe(Effect.either),
+    )
+
+    expect(first).toMatchObject({ _tag: "Left", left: "activity-denied" })
+    expect(replay).toMatchObject({ _tag: "Left", left: "activity-denied" })
+    expect(runs).toBe(1)
+  })
+
+  it("workflow-engine-durable-state.VALIDATION.9 persists SuspendOnFailure causes across engine reconstruction", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const streamUrl = `${baseUrl}/v1/stream/workflow-suspend-cause-${crypto.randomUUID()}`
+    let shouldFail = true
+    const CauseWorkflow = Workflow.make({
+      name: "suspend-cause-workflow",
+      payload: Schema.Struct({ id: Schema.String }),
+      success: Schema.String,
+      error: Schema.String,
+      idempotencyKey: payload => payload.id,
+    }).annotate(Workflow.SuspendOnFailure, true)
+    const workflowLayer = CauseWorkflow.toLayer(() =>
+      Effect.gen(function* () {
+        const instance = yield* WorkflowEngine.WorkflowInstance
+        if (shouldFail) {
+          return yield* Effect.fail("boom")
+        }
+        return instance.cause === undefined ? "missing" : Cause.pretty(instance.cause)
+      }),
+    )
+    const executionId = await Effect.runPromise(CauseWorkflow.executionId({ id: "cause" }))
+
+    await runWith(
+      { streamUrl },
+      workflowLayer,
+      CauseWorkflow.execute({ id: "cause" }, { discard: true }),
+    )
+    const row = await inspectTable(streamUrl, table =>
+      table.executions.get(executionId),
+    )
+    expect(row._tag).toBe("Some")
+    if (row._tag === "Some") {
+      expect(row.value.suspended).toBe(true)
+      expect(row.value.cause).toBeDefined()
+    }
+
+    shouldFail = false
+    const restoredCause = await runWith(
+      { streamUrl },
+      workflowLayer,
+      CauseWorkflow.execute({ id: "cause" }),
+    )
+    expect(restoredCause).toContain("boom")
   })
 })

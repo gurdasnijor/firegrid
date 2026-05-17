@@ -470,6 +470,7 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
       event._tag === "TextChunk" && event.part.delta === "selected",
     )
     expect(selectedChunk).toBeDefined()
+    expect(events.filter(event => event._tag === "Error")).toEqual([])
     expect(events.some(event => event._tag === "Terminated")).toBe(true)
   })
 
