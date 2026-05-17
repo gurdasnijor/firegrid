@@ -1,11 +1,17 @@
 # SDD: Path X Workflow-Native Runtime Substrate Implementation
 
-Status: draft implementation plan
+Status: revised to the ratified live-owner shape. The original
+three-PR plan (PR A / Q-2 / PR B / PR C) has been superseded by the
+process-ownership retreat decision and the live-owner cutover now in
+flight as #309.
 
 Date: 2026-05-17
 
 Authoritative inputs:
 
+- `docs/sdds/DECISION_PATH_X_PROCESS_OWNERSHIP.md` (ratified decision)
+- `docs/research/path-x-legacy-deletion-map.md`
+- `docs/research/path-x-architecture-drift-sweep-2026-05-17.md`
 - `docs/research/workflow-native-runtime-substrate-spike-2026-05-16.md`
 - `docs/research/workflow-engine-audit.md`
 - `docs/research/durability-assumption-audit-2026-05-16.md`
@@ -21,303 +27,225 @@ Related specs:
 
 ## Decision
 
-Path X is the implementation target: a reactive `RuntimeContextWorkflow` body
-over `DurableStreamsWorkflowEngine`, using content-derived `DurableDeferred`
-for input, permission, and tool round-trips; reusing the existing
-`durable-tools` wait-router and reconciler for push wake and crash recovery;
-and keeping high-volume output on per-context side-channel streams.
+Path X is the implementation target, but its scope is bounded by
+`DECISION_PATH_X_PROCESS_OWNERSHIP.md`: **the reactive workflow body is
+the durable control plane only; it is not the live process actor.**
 
-This is a greenfield project, not a production migration. The plan should not
-carry dual-write soak windows, compatibility writers, divergence detection, or
-large public-surface preservation matrices. The current public session method
-shape remains the SDK boundary, but the implementation can move directly to the
-workflow-native substrate once the targeted prep work is done.
+- The workflow owns durable run state (`RuntimeRun.started/failed/
+  exited`), content-derived `DurableDeferred` decisions for input,
+  permission, and tool round-trips, activity-backed tool execution via
+  `RuntimeToolUseExecutor`, `Workflow.SuspendOnFailure` with durable
+  cause, and cross-restart recovery.
+- A **host-scoped live owner** (`RuntimeContextSession`) owns the
+  raw/codec process and session loops, stdin / JSON-RPC emission,
+  in-memory attachment, and the output pump. The workflow reaches it
+  only through two short activities: `startOrAttach(context,
+  activityAttempt)` and `send(context, activityAttempt, command)`.
+- No second mini-runtime: no monolithic raw+codec supervisor, no
+  generic workflow↔owner command queue as shared substrate, no host-sdk
+  dependency on `RuntimeOutputJournalLayer` as an authority layer, no
+  `runRuntimeContext` / `runCodecRuntimeEventPipeline` fallback.
 
-## Coordination
+This remains a greenfield cutover: no dual-write, no compatibility
+writers, no divergence detection, no public-surface preservation matrix.
+The public session method shape (`sessions.createOrLoad`,
+`session.prompt`, `session.wait.*`, `session.permissions.respond`,
+`session.snapshot`, `watchContexts`) is unchanged.
 
-PR 282, the `RuntimeToolUseExecutor` seam, is compatible with Path X and should
-not be blocked. Path X consumes that seam when the reactive workflow body runs
-tool execution inside workflow activities.
+## Live-Owner Shape (Ratified)
 
-The Host SDK plane-split lane remains parallelizable. Its public surface is
-transport-shaped: session methods and host composition, not table appends. The
-optional Host SDK `RUNTIME_CAPABILITY_PROJECTIONS` cleanup should be cancelled,
-because Path X deletes or rewrites the authority files it would polish.
+The runtime-context workflow is `RuntimeContextWorkflowNative`
+(`packages/host-sdk/src/host/runtime-context-workflow-core.ts`):
 
-## Greenfield Scope Rules
+- reactive loop drives off `WaitFor.match<RuntimeAgentOutputObservation>`
+  with a typed `{ _tag: "AgentOutputAfter" }` source;
+- `handleAgentOutput` dispatches `ToolUse` through a
+  `RuntimeToolUseExecutor` activity and returns the result via `send`;
+- terminal output writes `RuntimeRun.exited`; recoverable failure
+  suspends with durable cause.
 
-- Do not build dual-write pathways between old ingress rows and new deferred
-  commands.
-- Do not add compatibility writers whose only purpose is to preserve old table
-  authority behavior during a migration window.
-- Do not add divergence-detection observability between old and new substrates.
-- Do not expand this SDD into a table-by-table public-surface preservation
-  checklist.
-- Keep client and CLI interactions session-shaped. App-facing examples should
-  use `sessions.createOrLoad`, `session.prompt`, `session.wait.*`,
-  `session.permissions.respond`, `session.snapshot`, and `watchContexts`.
-- The rewrite may delete old runtime authority/subscriber code once replacement
-  tests prove the workflow-native behavior.
+The live owner is `RuntimeContextSession`
+(`packages/host-sdk/src/host/runtime-context-session/`):
 
-## Engine And Runtime Decisions
+- `common.ts` — the shared seam: `RuntimeContextWorkflowSession`
+  service, `makeRuntimeContextWorkflowSessionService`,
+  `makeRuntimeContextSessionAdapterService`,
+  `scopedRuntimeContextWorkflowSessionLayer`, an owner-kind
+  (`"raw" | "codec"`) attach registry keyed by `{ contextId,
+  activityAttempt }`, and a per-command durable claim
+  (`claimRuntimeContextSessionCommand`) taken before any external
+  byte / JSON-RPC emission. The registry exists for production
+  correctness: a replayed cached `startOrAttach` result must reattach
+  or rebuild an owner against an empty in-memory registry after engine
+  restart.
+- `raw-adapter.ts` — `RawRuntimeOwnerAdapter`: local-process spawn,
+  stdin byte encoding, stdout/stderr capture, synthetic terminal
+  emission. No ACP/JSON-RPC framing.
+- `codec-adapter.ts` — `CodecRuntimeOwnerAdapter`: `AgentByteStream`,
+  `AgentSession`, ACP / stdio-jsonl framing, typed `AgentInputEvent`
+  sends. No raw prompt-to-line encoding.
 
-The reactive workflow body should use `Workflow.SuspendOnFailure`. Runtime
-contexts are long-lived and externally observable; recoverable codec, delivery,
-tool, or host-substrate failures should suspend the workflow with an
-inspectable cause rather than erase diagnostic state. Because the workflow
-engine audit found that `instance.cause` is not durable today, PR A adds durable
-cause persistence before the reactive body lands.
+Per-context output is written through the narrow host-sdk
+`PerContextRuntimeOutputWriter`; the workflow observes it via the
+`RuntimeAgentOutputAfterEvents` / `RuntimeAgentOutputEvents` read-side
+(curated `@firegrid/runtime/runtime-output`), never the old journal
+authority bundle.
 
-User-initiated tool cancellation is not required for the first Path X cutover.
-The current public surface does not expose a durable in-flight tool cancel
-operation that must interrupt a running activity. PR A documents current
-`interrupt` behavior with tests. Full cluster-style in-flight activity
-cancellation should be implemented only when a public cancel surface requires
-it.
+## Scoped Runtime Subpaths
 
-Side effects that cross the runtime boundary must be workflow activities. In
-particular, stdin byte emission, ACP JSON-RPC sends, and equivalent
-process/session side effects must be wrapped in `Activity.make`. DurableDeferred
-first-writer-wins protects input acceptance; workflow activity rows and claims
-protect at-most-once external side effects.
+The `@firegrid/runtime/host-substrate` mega-barrel is retired. Host-sdk
+composes the substrate through narrow role-scoped subpaths
+(`packages/runtime/package.json` exports):
 
-## Sequence
+| Subpath | Source | Role |
+| --- | --- | --- |
+| `@firegrid/runtime/errors` | `src/runtime-errors.ts` | runtime-context / ingress error vocabulary |
+| `@firegrid/runtime/tool-executor` | `…/subscribers/runtime-tool-use-executor.ts` | the `RuntimeToolUseExecutor` seam tag |
+| `@firegrid/runtime/control-plane` | `src/authorities/index.ts` | durable context/run authorities |
+| `@firegrid/runtime/runtime-output` | `…/authorities/runtime-output-public.ts` | curated KEPT observation surface only |
+| `@firegrid/runtime/runtime-ingress` | `…/authorities/runtime-ingress-appender.ts` | **transient**: until the deferred-input rewrite |
+| `@firegrid/runtime/workflow-engine` | `src/workflow-engine/index.ts` | `DurableStreamsWorkflowEngine` |
+| `@firegrid/runtime/codecs` | `…/agent-event-pipeline/codecs/index.ts` | accepted (pre-existing): `AgentSession` / ACP / stdio-jsonl framing consumed by `CodecRuntimeOwnerAdapter` |
+| `@firegrid/runtime/sources/sandbox` | `…/agent-event-pipeline/sources/sandbox/index.ts` | accepted (pre-existing): local-process spawn / stdin delivery / env policy consumed by `RawRuntimeOwnerAdapter` |
 
-### PR A: Engine Confidence And Durable ACP Permission Fix
+The table is the host-sdk-consumed scoped surface, not an exhaustive
+list of every runtime subpath. `codecs` and `sources/sandbox` are
+**accepted, pre-existing** subpaths — they predate the `host-substrate`
+retirement, are already in `packages/runtime/package.json` exports, and
+the #309 live-owner adapters legitimately consume both
+(`CodecRuntimeOwnerAdapter` → `@firegrid/runtime/codecs`,
+`RawRuntimeOwnerAdapter` → `@firegrid/runtime/sources/sandbox`). They
+are listed so the allowed-import contract accounts for them explicitly
+rather than leaving them implicit; neither is transient.
 
-Purpose:
+`runtime-output-public.ts` deliberately exports only the KEPT set
+(`RuntimeAgentOutputAfterEvents`, `RuntimeAgentOutputEvents`,
+`RuntimeAgentOutputEventsLayer`, `RuntimeAgentOutputObservation`) and
+excludes the legacy shims so the dead path cannot be resurrected.
+Legacy symbols (`runCodecRuntimeEventPipeline`,
+`RuntimeIngressDeliveryTrackerLayer`, `RuntimeAgentOutputRowSink`,
+`RuntimeLogLineAppendAndGet`) intentionally receive **no** scoped
+subpath; they are deleted with the spine, not re-pathed.
 
-- Close the workflow-engine test gaps required by Path X.
-- Add the small engine durability hardening needed for `SuspendOnFailure`.
-- Fix the ACP permission continuation crash-loss bug independently of the full
-  substrate rewrite.
+## Actual Landed Sequence
 
-What it does:
+1. **Engine confidence + durable ACP permission fix — landed**
+   (#288/#289): durable workflow `cause`, content-derived
+   `DurableDeferred` ACP permission continuations, engine replay
+   coverage.
+2. **Per-context output writer — landed** (#305 → #307 → #308):
+   `PerContextRuntimeOutputWriter` + `AgentOutputAfter` plumbing;
+   `RuntimeOutputJournalLayer` removed from `packages/host-sdk/src`;
+   orphaned output-journal bundle and the raw `RuntimeEventAppendAndGet`
+   edge deleted.
+3. **Scoped runtime subpaths — landed on the cutover base** (#309):
+   the six subpaths above; KEPT symbols re-pathed off `host-substrate`.
+4. **Live-owner cutover — in flight as #309**: replaces the legacy
+   spine with `RuntimeContextWorkflowNative` + `RuntimeContextSession`
+   Raw/Codec adapters and deletes the old spine (see below).
 
-- Adds isolated `poll` tests for absent, in-flight or suspended, and completed
-  workflow executions.
-- Adds isolated `interrupt` tests for persisted interrupted state and resume
-  behavior.
-- Adds failed-exit replay tests for `deferredResult`.
-- Adds failed-exit replay tests for `activityExecute`.
-- Adds a durable `cause` field to `WorkflowExecutionRow`, writes it when a
-  workflow suspends on failure, and restores it into `WorkflowInstance`.
-- Replaces ACP `livePermissionContinuations` with content-derived
-  `DurableDeferred` names such as `permission-{id}`.
+## Old Spine Deleted in #309
 
-Likely files:
+#309 deletes, not deprecates:
 
-- `packages/runtime/src/workflow-engine/internal/table.ts`
-- `packages/runtime/src/workflow-engine/internal/engine-runtime.ts`
-- `packages/runtime/test/workflow-engine/DurableStreamsWorkflowEngine.test.ts`
-- `packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts`
-- relevant ACP/session permission tests under `packages/runtime/test/` and
-  `packages/client/test/`
-
-Behavior changed:
-
-- Suspended workflow failure cause survives process restart.
-- ACP permission responses no longer depend on an in-memory promise map.
-- No reactive runtime-context rewrite yet.
-
-Invariants and validation:
-
-- Existing workflow-engine durability tests remain green.
-- ACP permission request/response behavior remains session-shaped.
-- `session.permissions.respond` still returns `contextId`,
-  `permissionRequestId`, and `inputId`.
-- Browser/client code still does not import runtime or workflow-engine modules.
-
-Reversible standalone:
-
-- yes. This is independently useful engine coverage plus a real permission
-  durability bug fix.
-
-Gates:
-
-- the reactive body's use of `Workflow.SuspendOnFailure`;
-- durable permission handling inside the codec-session activity boundary;
-- confidence that failed deferred and activity exits replay correctly.
-
-Estimate:
-
-- 3 to 5 engineer-days.
-
-### Q-2 Proof Work: CodecSessionAlive Activity Boundary
-
-Before committing to the final reactive body shape, spend 1 to 2 days proving
-the codec-session activity boundary. This is proof work, not a long gate with
-formal acceptance thresholds.
-
-Scope:
-
-- Build the smallest local-process proof of one long-running
-  `CodecSessionAlive` activity plus an external sandbox supervisor.
-- Verify replay behavior around process/session restart.
-- Prove that byte emission is represented as an `Activity.make` side effect,
-  preserving the current at-most-once invariant from
-  `packages/runtime/test/sources/sandbox/local-process-stdin-delivery.test.ts`.
-- Check whether ACP needs the same supervisor shape or a small adaptation.
-
-Output:
-
-- either a short committed test/proof if it is clean enough to keep, or a short
-  implementation note attached to PR B;
-- a go/no-go on the exact reactive body shape. If the full replayable codec
-  session is too awkward, keep the reactive body and deferred command model but
-  use the spike's fallback: a thin host-scoped live codec process driven by the
-  workflow body.
-
-Estimate:
-
-- 1 to 2 engineer-days.
-
-### PR B: Workflow-Native Runtime Substrate Rewrite
-
-Purpose:
-
-- Replace the current runtime authority/subscriber bypass with the Path X
-  workflow-native substrate in one direct rewrite.
-
-What it does:
-
-- Rewrites `RuntimeContextWorkflow` as the reactive control-plane loop.
-- Uses content-derived DurableDeferred names for prompt input, permission
-  responses, and tool results.
-- Wires the existing durable-tools wait-router and reconciler for
-  runtime-context deferred wake.
-- Introduces the per-context output side-channel stream for token streams,
-  stderr/log lines, and normalized agent-output observations.
-- Runs tool execution through `RuntimeToolUseExecutor` inside workflow
-  activities.
-- Wraps external side effects such as stdin emission and ACP sends in
-  `Activity.make`.
-- Replaces `tool-router.ts`, ingress delivery, and session-runtime bypass
-  responsibilities with workflow-body behavior.
-- Updates client/session reads and waits to the new runtime substrate without
-  adding dual-write or compatibility writer layers.
-- Rewrites tests from old ingress/table mechanics to session-level behavior and
-  workflow-native durability.
-
-Likely files:
-
-- `packages/runtime/src/host/runtime-context-workflow.ts`
-- `packages/runtime/src/host/runtime-substrate.ts`
-- `packages/runtime/src/host/layers.ts`
-- `packages/runtime/src/host/raw-process-runtime.ts`
+- `packages/host-sdk/src/host/raw-process-runtime.ts`
+  (`runRuntimeContext`);
+- `packages/host-sdk/src/host/runtime-context-workflow.ts` (legacy
+  `RuntimeContextWorkflowLayer` wrapper);
 - `packages/runtime/src/agent-event-pipeline/session-runtime.ts`
-- `packages/runtime/src/agent-event-pipeline/subscribers/tool-router.ts`
-- `packages/runtime/src/agent-event-pipeline/subscribers/ingress-delivery.ts`
-- `packages/runtime/src/agent-event-pipeline/sources/sandbox/local-process-stdin-delivery.ts`
-- `packages/runtime/src/agent-event-pipeline/authorities/runtime-ingress-appender.ts`
-- `packages/runtime/src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts`
-- `packages/runtime/src/agent-event-pipeline/authorities/runtime-output-journal.ts`
-- `packages/runtime/src/durable-tools/internal/wait-router.ts`
-- `packages/client/src/firegrid.ts`
-- runtime host, subscriber, source, client session, and CLI scenario tests
+  (`runCodecRuntimeEventPipeline`);
+- `…/subscribers/ingress-delivery.ts` (`runIngressDelivery`),
+  `…/subscribers/tool-router.ts` (`runToolRouter`),
+  `…/subscribers/stderr-journal.ts` (`runStderrJournal`);
+- `…/authorities/runtime-ingress-delivery-tracker.ts`;
+- `packages/runtime/src/host-substrate.ts` (the barrel itself);
+- the legacy-only tests (`tool-router.test.ts`, the deleted-mechanics
+  rows of `runtime-ingress-authorities.test.ts` /
+  `provider-uniqueness.test.ts`).
 
-Behavior changed:
+`transforms/ingress-to-agent-input.ts` is trimmed to the surviving
+shaping used by the adapters. `layers.ts` flips composition to
+`RuntimeContextWorkflowNativeLayer` + the `RuntimeContextSession`
+scoped layer.
 
-- Runtime contexts are driven by the reactive workflow body.
-- External input and permission/tool round-trips are workflow deferred
-  completions, not direct ingress table delivery.
-- At-most-once delivery is enforced by workflow activities and activity claims.
-- High-volume output is side-channel stream data, not workflow journal data.
+## Remaining Work: Deferred-Input Rewrite
 
-Invariants and validation:
+`appendRuntimeIngress` / `appendRuntimeIngressToOwner` are **RESHAPE /
+KEEP**, not yet converted. They remain `RuntimeIngressTable`-backed
+behind the unchanged public `session.prompt`, and `agent-tool-host-live`
+`schedule_me` still routes through `appendRuntimeIngressToOwner`. The
+final slice:
 
-- Cross-host prompt routing remains true at the session level: a non-owner host
-  can submit input for an owner-host context and the owner workflow receives it.
-- `session.prompt`, `session.permissions.respond`, `session.wait.forAgentOutput`,
-  `session.wait.forPermissionRequest`, `session.snapshot`, and `watchContexts`
-  remain the app-facing operations.
-- Tool execution still uses `RuntimeToolUseExecutor`; runtime does not import
-  host-sdk, client-sdk, or CLI.
-- `schedule_me` continues to work through the executor/live host composition.
-- The local-process stdin at-most-once crash test is rewritten to assert the
-  activity-backed invariant.
-- Runtime output waits observe history and future output from the new
-  side-channel stream.
+- replaces the `RuntimeIngressTable` append with a content-derived
+  `DurableDeferred` completion the reactive loop turns into a `send`;
+- keeps `session.prompt` / cross-host routing semantics identical
+  (a non-owner host completing the owner workflow's input deferred);
+- keeps the `@firegrid/client-sdk` session API stable — client-sdk
+  must not learn the deferred mechanics;
+- then deletes the transient `@firegrid/runtime/runtime-ingress`
+  subpath and `runtime-ingress-appender.ts`.
 
-Reversible standalone:
+Until that lands, `runtime-ingress` is the only remaining transient
+substrate edge; everything else in the spine is gone after #309.
 
-- by revert only. This is the intentional substrate replacement, not a staged
-  migration.
+## Schema-Based Transform Guidance
 
-Gates:
+Runtime-boundary evidence and command shapes are Effect `Schema`
+values, not hand-rolled interfaces. The live-owner seam already follows
+this: `RuntimeContextSessionStartedEvidence` and
+`RuntimeContextSessionCommandAccepted` are
+`Schema.Schema.Type<typeof …Schema>` over `Schema.Struct`, and the
+`startOrAttach` / `send` activities use those schemas as their
+`success` type so replay decode is total.
 
-- PR A;
-- the 1 to 2 day Q-2 proof work.
+Guidance for the deferred-input rewrite and any further transforms:
 
-Estimate:
+- Model every cross-boundary payload (deferred input commands,
+  ingress→agent-input shaping in
+  `transforms/ingress-to-agent-input.ts`) as a `Schema.Struct` /
+  tagged union; derive the TS type with `Schema.Schema.Type`, never a
+  parallel hand-written interface.
+- Decode at the boundary with `Schema.decodeUnknown` (or
+  `decodeUnknownSync` only where the value is already trusted and the
+  failure is a defect) and return `ParseResult` failures through the
+  typed error channel; do not `as`-cast workflow payloads.
+- Use `Schema.transformOrFail` for ingress-row → `AgentInputEvent`
+  shaping so encode/decode stay inverse and replay-stable; keep the
+  transform pure and total.
+- Prefer `Schema.TaggedError` / `Schema.TaggedClass` for
+  runtime-context error and command variants so `Match`-based handling
+  in the reactive loop stays exhaustive.
 
-- 1.5 to 3 engineer-weeks.
+Style reference (read-only, do not edit): the vendored Effect Schema
+tests under `repos/effect/packages/effect/test/Schema/` — in particular
+the `Schema/` transformation cases, `ParseResult.test.ts`, and
+`ParseResultFormatter.test.ts` — are the authoritative idiom for
+`transformOrFail`, decode error handling, and tagged-union schemas.
+Follow `repos/effect/AGENTS.md` and those examples over generated
+guesses, per the repo's vendored-reference rule. No `repos/` edits.
 
-### PR C: Cleanup And Spec Alignment
+## Invariants
 
-Purpose:
-
-- Remove dead code, stale exports, stale docs, and spec references after the
-  direct rewrite lands.
-
-What it does:
-
-- Deletes old runtime authority/subscriber files that PR B left behind only to
-  keep the diff reviewable.
-- Removes obsolete exports and provider wiring for old ingress delivery,
-  output-journal authority, and ToolUse router paths.
-- Updates `packages/runtime/ARCHITECTURE.md` and
-  `packages/runtime/src/agent-event-pipeline/README.md` to describe the
-  workflow-native substrate.
-- Updates SDD/spec references so `RUNTIME_CAPABILITY_PROJECTIONS` is marked
-  superseded or removed from active implementation scope.
-- Removes tests that only asserted deleted internal table mechanics and keeps
-  session/workflow behavior tests.
-- Runs dependency, dead-code, docs, specs, and semgrep checks.
-
-Likely files:
-
-- `packages/runtime/src/index.ts`
-- `packages/runtime/ARCHITECTURE.md`
-- `packages/runtime/src/agent-event-pipeline/README.md`
-- `docs/sdds/*`
-- `features/firegrid/*.feature.yaml`
-- obsolete runtime authority/subscriber tests
-
-Behavior changed:
-
-- none intended beyond removing dead implementation surface.
-
-Invariants and validation:
-
-- `@firegrid/runtime` does not import host-sdk, client-sdk, or CLI.
-- host-sdk and client-sdk remain sibling projections over protocol.
-- browser/client code does not import runtime, host-sdk, Node modules, Effect AI,
-  MCP, or platform-node.
-- dead-code and dependency checks see the old bypass tier as gone.
-
-Reversible standalone:
-
-- yes, as a cleanup PR after PR B.
-
-Gates:
-
-- PR B.
-
-Estimate:
-
-- 2 to 4 engineer-days.
+- `@firegrid/runtime` does not import `@firegrid/host-sdk`,
+  `@firegrid/client-sdk`, or `@firegrid/cli`.
+- host-sdk and client-sdk remain sibling projections over protocol;
+  browser/client code does not import runtime, host-sdk, Node, Effect
+  AI, MCP, or platform-node.
+- Tool execution stays on `RuntimeToolUseExecutor`; `schedule_me`
+  continues through the executor / live host composition.
+- Cross-host prompt routing remains true at the session level.
+- After #309: dead-code and dependency checks see the old spine and
+  `host-substrate` barrel as gone; only the `runtime-ingress` transient
+  subpath remains pending the deferred-input rewrite.
 
 ## Summary
 
-The implementation is now three code PRs plus one short proof interval:
-
-1. PR A: engine tests/hardening and durable ACP permission continuation fix.
-2. Q-2 proof work: 1 to 2 days validating the codec-session activity boundary.
-3. PR B: direct workflow-native substrate rewrite.
-4. PR C: cleanup and spec/docs alignment.
-
-Expected implementation scale is roughly 3 to 5 engineering-weeks after the
-executor seam, assuming the Q-2 proof confirms the reactive body shape or uses
-the documented fallback without changing the public session API.
-
+The plan is now: (1) engine + permission fix — landed; (2) per-context
+output writer — landed; (3) scoped runtime subpaths — landed on the
+cutover base; (4) live-owner cutover deleting the old spine and adding
+`RuntimeContextWorkflowNative` + `RuntimeContextSession` Raw/Codec
+adapters — in flight as #309; (5) deferred-input rewrite of
+`appendRuntimeIngress` and retirement of the transient
+`@firegrid/runtime/runtime-ingress` subpath — remaining. The public
+session API is unchanged throughout.
+</content>
