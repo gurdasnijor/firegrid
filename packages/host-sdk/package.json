@@ -40,6 +40,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "0.21.0",
     "@effect/ai": "^0.35.0",
     "@effect/experimental": "0.60.0",
     "@effect/platform": "^0.96.1",
