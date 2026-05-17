@@ -169,12 +169,6 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
     devDependencies:
-      '@durable-streams/server':
-        specifier: ^0.3.1
-        version: 0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))
-      '@effect/vitest':
-        specifier: ^0.29.0
-        version: 0.29.0(effect@3.21.2)(vitest@3.2.4(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4))
       '@types/node':
         specifier: ^22.10.0
         version: 22.19.17
@@ -677,12 +671,6 @@ packages:
     resolution: {integrity: sha512-L/2o2ImeqbemFlqH0b3y2PqQTFc+E0/DUnffCU8bkJUGh0yUZmh2RXuXhR8QOpfNCe718JQjI+mLnpVF2MMmaQ==}
     peerDependencies:
       effect: ^3.21.0
-
-  '@effect/vitest@0.29.0':
-    resolution: {integrity: sha512-DvWr1aeEcaZ8mtu8hNVb4e3rEYvGEwQSr7wsNrW53t6nKYjkmjRICcvVEsXUhjoCblRHSxRsRV0TOt0+UmcvaQ==}
-    peerDependencies:
-      effect: ^3.21.0
-      vitest: ^3.2.0
 
   '@effect/workflow@0.18.1':
     resolution: {integrity: sha512-FxsUxkyvd7CyN7tw4bQgmAJv8tf8hUwy72bwGYzKGpeuiEObiUKgO1pg8xM49gB6EtwOdVRJhytwcFc8eM/6ow==}
@@ -4041,15 +4029,6 @@ snapshots:
       '@microsoft/fetch-event-source': 2.0.1
       fastq: 1.20.1
 
-  '@durable-streams/server@0.3.1(@tanstack/db@0.5.33(typescript@5.9.3))':
-    dependencies:
-      '@durable-streams/client': 0.2.3
-      '@durable-streams/state': 0.2.5(@tanstack/db@0.5.33(typescript@5.9.3))
-      '@neophi/sieve-cache': 1.5.0
-      lmdb: 3.5.4
-    transitivePeerDependencies:
-      - '@tanstack/db'
-
   '@durable-streams/server@0.3.1(@tanstack/db@0.6.5(typescript@5.9.3))':
     dependencies:
       '@durable-streams/client': 0.2.3
@@ -4177,11 +4156,6 @@ snapshots:
   '@effect/typeclass@0.40.0(effect@3.21.2)':
     dependencies:
       effect: 3.21.2
-
-  '@effect/vitest@0.29.0(effect@3.21.2)(vitest@3.2.4(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4))':
-    dependencies:
-      effect: 3.21.2
-      vitest: 3.2.4(@types/node@22.19.17)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.4)
 
   '@effect/workflow@0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)':
     dependencies:
