@@ -94,10 +94,19 @@ The runtime host installs one host-wide dispatcher over the namespace
 `RuntimeInputIntent` stream. It maintains or reads a local active-engine
 registry keyed by `contextId`.
 
+The active-engine registry is in-memory only. A per-context engine
+registers itself after the context ownership claim succeeds and before it
+begins accepting runtime input. It deregisters on workflow termination and
+engine teardown. The dispatcher reads this registry but does not mutate
+engine lifecycle state; registration and deregistration are owned by the
+per-context engine lifecycle.
+
 On each intent:
 
 1. If no local active engine exists for `intent.contextId`, the
-   dispatcher ignores it or leaves it for startup reconciliation.
+   dispatcher does not claim or route the intent. It remains durable in
+   the namespace control stream for the context engine's startup
+   reconciliation path.
 2. If a local active engine exists, the dispatcher completes the
    content-derived runtime-input deferred on that local engine.
 3. Durable idempotency remains keyed by the input intent id and the
@@ -106,6 +115,28 @@ On each intent:
 The dispatcher does not filter by `context.host.hostId` to decide
 cross-host routing, and it never opens a workflow stream for a different
 host. The active per-context engine is the ownership boundary.
+
+## Startup Reconciliation
+
+Every per-context engine reconciles input intents when it starts. After
+the ownership claim succeeds and the engine is registered locally, it
+reads the namespace `RuntimeInputIntent` stream filtered to its
+`contextId`, orders unconsumed intents deterministically, and completes
+their runtime-input deferreds before relying on the live subscription for
+new intents.
+
+This is the only path for intents that arrived while no local engine was
+active. The dispatcher must not drop or mark those intents consumed
+without an active engine, and it must not create a new owner engine as a
+side effect of observing an intent.
+
+## Engine Teardown
+
+Per-context engines remain active for the lifetime of their workflow
+body. On workflow termination they deregister from the in-memory
+active-engine registry and tear down the workflow engine scope. There is
+no idle eviction, inactivity timeout, background compaction, or host
+rebalance in this cut.
 
 ## Simplification
 
@@ -154,6 +185,12 @@ host-owned-router bridge:
   dispatcher over active per-context engines;
 - replace host-owned workflow engine layer construction with
   context-derived workflow engine stream construction;
+- make the active-engine registry in-memory only, with lifecycle-owned
+  registration and deregistration;
+- implement per-context startup reconciliation over durable
+  `RuntimeInputIntent` rows for that `contextId`;
+- keep engines active for the workflow body lifetime, with no idle
+  eviction in this cut;
 - delete or avoid `appendRuntimeIngressToOwner` and owner-host workflow
   stream URL routing;
 - add validation for duplicate host start/attach rejection and
@@ -169,6 +206,10 @@ The implementation is not complete until tests prove:
 - a client/host that does not own the context can append a
   `RuntimeInputIntent`, and the owning host's local dispatcher completes
   the per-context workflow deferred;
+- intents appended before the per-context engine starts are reconciled in
+  order during engine startup;
+- workflow termination deregisters the context from the active-engine
+  registry and tears down the engine scope;
 - no production code calls `appendRuntimeIngressToOwner` or opens owner
   workflow streams from another host's stream prefix;
 - client code has no imports from runtime, host-sdk, workflow engine,
