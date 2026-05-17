@@ -1,6 +1,6 @@
 # SDD: Firegrid SDK Plane Split
 
-Status: draft design contract
+Status: draft design contract, revised for the greenfield Path X baseline
 
 Related specs:
 
@@ -11,129 +11,55 @@ Related specs:
 - `firegrid-runtime-host-modularity`
 - `firegrid-local-mcp-run`
 
-Prior art:
+Related substrate plan:
 
-- Restate TypeScript services: <https://docs.restate.dev/develop/ts/services>
-- Restate service configuration:
-  <https://docs.restate.dev/services/configuration>
+- `docs/sdds/SDD_PATH_X_IMPLEMENTATION.md`
 
-## Why
+## Decision
 
-`@firegrid/runtime` currently exports surfaces that product apps should not
-import directly: host composition layers, agent-tool bindings, MCP listener
-setup, and CLI launch substrate. The result is that `apps/factory` reaches
-into runtime host paths, the root CLI duplicates launch logic that already
-exists in host commands, and `packages/runtime/src/agent-tools/` mixes four
-roles under one folder.
+Firegrid should cut directly to three public package surfaces over protocol and
+runtime:
 
-The fix is three public packages over the existing protocol/runtime split:
+- `@firegrid/client-sdk` owns the session plane.
+- `@firegrid/host-sdk` owns host composition, provider installation, agent-tool
+  bindings, MCP exposure, and host-side execution layers.
+- `@firegrid/cli` owns command bindings over host-sdk and client-sdk.
 
-- `@firegrid/client-sdk` owns the browser/edge-safe session plane;
-- `@firegrid/host-sdk` owns host composition, providers, MCP, and runtime
-  authority composition;
-- `@firegrid/cli` owns `@effect/cli` commands over host-sdk and client-sdk.
+`@firegrid/runtime` remains the execution substrate. Product apps should not
+import runtime implementation paths for normal behavior, and runtime must not
+import host-sdk, client-sdk, or CLI.
 
-The runtime stays the execution substrate. It should not become an app import
-path, and it must not import the SDK packages. The load-bearing code change is
-one dependency inversion: the runtime ToolUse subscriber stops importing
-`toolUseToEffect` directly and consumes a narrow `RuntimeToolUseExecutor`
-capability instead.
+This is a greenfield cutover, not a compatibility migration. Do not build
+long-lived shims, deprecation windows, duplicate package surfaces, or projection
+helper cleanups for files Path X is about to delete. The target architecture is
+the clean baseline future work should build on.
 
-The protocol package is already shaped correctly. The current client package
-is close. The hard work is in runtime host and agent-tool boundaries.
+## Relationship To Path X
 
-## Changes
+Path X replaces the current runtime authority/subscriber bypass with a reactive
+`RuntimeContextWorkflow` body over `DurableStreamsWorkflowEngine`. This SDK SDD
+must not freeze old substrate mechanics as public API.
 
-| Today | Target |
-| --- | --- |
-| `@firegrid/runtime/host` exports `FiregridLocalHostLive`, `RuntimeStartCapabilityLive`, and related host composition as public API. | `@firegrid/host-sdk` exports those surfaces, renamed where useful. Runtime stops being the product-app import path. |
-| `packages/runtime/src/agent-tools/` mixes Effect AI `Tool.make` bindings, MCP listener setup, host capability service, scheduled prompt workflow, and `toolUseToEffect` execution. | Agent-tool bindings and MCP listener move to host-sdk. Runtime keeps only the committed ToolUse observation edge and invokes `RuntimeToolUseExecutor`. |
-| `agent-event-pipeline/subscribers/tool-router.ts` imports `toolUseToEffect` directly. | `tool-router.ts` consumes `RuntimeToolUseExecutor`; host-sdk provides the live executor layer. |
-| `packages/client/src/firegrid.ts` mixes schema decoding, transport, session handles, projection helpers, and Layer wiring. | Same package behavior, split into modules and published as `@firegrid/client-sdk`. |
-| `src/run.ts` owns CLI parsing, launch substrate, `RuntimeContext` insertion, MCP injection, `startRuntime`, and process exit behavior. | `@firegrid/cli` owns command parsing and process behavior. Host composition comes from host-sdk; session operations come from client-sdk. |
-| `verified-webhook-ingest/` is a tracer-era runtime table no live product uses. | Retired or moved later to an integration package if a real consumer appears. |
+Consequences:
 
-What does not change:
-
-- `@firegrid/protocol` owns operation schemas, `firegridProjection`
-  annotations, and plain import groupings for operation input/output schemas.
-- `@firegrid/runtime` keeps agent-event-pipeline, authorities,
-  workflow-engine, durable-tools, codecs, and runtime-private host substrate.
-- `RuntimeStartCapability` remains in `@firegrid/protocol/launch`.
-- Durable row contracts do not migrate for this package split.
-
-## Projection Contract
-
-The protocol catalog is the source of truth. Each operation is a pair of Effect
-Schemas annotated with `firegridProjection` metadata.
-
-```ts
-export const SessionCreateOrLoadInputSchema = Schema.Struct({
-  externalKey: SessionExternalKeySchema,
-  runtime: PublicLaunchRuntimeIntentSchema,
-  createdBy: Schema.optional(Schema.String),
-}).annotations({
-  identifier: "firegrid.operation.session.createOrLoad.input",
-  ...firegridProjection({
-    operationId: "session.createOrLoad",
-    clientName: "sessions.createOrLoad",
-  }),
-})
-```
-
-Bindings project this catalog into target environments:
-
-```txt
-@firegrid/protocol catalog
-  schemas + firegridProjection annotations
-
-  -> @firegrid/client-sdk
-       TypeScript session methods
-       sessions.createOrLoad(...)
-       session.prompt(...)
-       session.wait.forAgentOutput(...)
-
-  -> @firegrid/host-sdk
-       Effect AI Tool / Toolkit values
-       route-scoped MCP exposure
-       host capability services
-
-  -> @firegrid/cli
-       @effect/cli Command values
-       flags, help, examples, process exit
-```
-
-The annotation already supplies the operation id and target binding names. Do
-not introduce a second `OperationEntry` registry or a Firegrid graph DSL.
-
-The current `FiregridOperationEntry` / `defineFiregridOperation` wrapper is a
-transitional implementation detail. The target catalog uses plain grouped
-schema values:
-
-```ts
-export const SessionCreateOrLoad = {
-  input: SessionCreateOrLoadInputSchema,
-  output: SessionHandleReferenceSchema,
-} as const
-```
-
-Bindings read Effect Schema annotations directly from the schema AST:
-
-```ts
-const projection = projectionMetadata(SessionCreateOrLoad.input)
-const methodName = projection.clientName
-```
-
-If a binding needs a convenience helper, the helper may read and validate
-schema annotations. It must not recreate an `OperationEntry` object that copies
-metadata out of the schema value.
+- Direct `RuntimeIngressTable` append, owner-host stream URL construction, and
+  runtime authority tags are not app-facing surfaces.
+- Public client and CLI operations stay session-shaped:
+  `sessions.createOrLoad`, `session.prompt`, `session.wait.*`,
+  `session.permissions.respond`, `session.snapshot`, and `watchContexts`.
+- Host composition stays host-shaped: apps install providers, MCP, env policy,
+  durable storage, and runtime start/execution layers through host-sdk.
+- `RuntimeToolUseExecutor` is the shared seam between this SDD and Path X. It
+  already landed in PR 282 and is the injection point the reactive workflow body
+  uses for tool execution.
+- `RUNTIME_CAPABILITY_PROJECTIONS` is cancelled. Those ACIDs described optional
+  cleanup of runtime authority files that Path X deletes or rewrites.
 
 ## Package Contracts
 
 ### `@firegrid/client-sdk`
 
-Owns session-plane bindings projected from the protocol catalog. It is browser
-and edge safe.
+Owns browser/edge-safe session-plane bindings projected from protocol schemas.
 
 Public surface:
 
@@ -148,16 +74,22 @@ import {
 } from "@firegrid/client-sdk"
 ```
 
-`@firegrid/client-sdk` must not import `@firegrid/runtime`,
-`@firegrid/host-sdk`, `@firegrid/cli`, `@effect/platform-node`,
-`@effect/ai`, `@modelcontextprotocol/sdk`, or `node:*`.
+Rules:
 
-This is the current `@firegrid/client` package, renamed and split internally.
+- Must not import `@firegrid/runtime`, `@firegrid/host-sdk`, `@firegrid/cli`,
+  `@effect/platform-node`, `@effect/ai`, `@modelcontextprotocol/sdk`, or
+  `node:*`.
+- Must not expose runtime table append, owner-stream construction, workflow
+  engine tokens, host credentials, process handles, or provider clients.
+- Examples and tests must demonstrate session methods, not substrate mechanics.
+- Internal transport files may use protocol-owned table schemas where necessary
+  before Path X lands, but that detail must not leak into public bindings.
 
 ### `@firegrid/host-sdk`
 
-Owns host composition, runtime authority composition, agent-tool bindings, MCP
-listener setup, provider implementations, and runtime start capability.
+Owns host composition, provider implementation installation, route-scoped MCP
+exposure, agent-tool bindings, runtime start capability, and the live
+`RuntimeToolUseExecutor` layer.
 
 Public surface:
 
@@ -182,12 +114,10 @@ Allowed imports: `@firegrid/protocol`, `@firegrid/runtime`, `@effect/ai`,
 
 Forbidden imports: `@firegrid/client-sdk`, `@firegrid/cli`.
 
-`FiregridHostLive` is the current `FiregridLocalHostLive` with host-plane
-configuration made explicit. It accepts optional MCP listener config and
-explicit provider installation. The deterministic host id derivation from
-namespace stays for the local/default host shape. Multi-host topologies use the
-lower-level topology variant that takes `hostId` directly. There is no cosmetic
-`name` field in the host topology contract.
+Host-sdk composes whatever runtime substrate exists. Today that includes the
+current host layers; after Path X it includes the reactive workflow substrate.
+The public `FiregridHostLive` options should not change because of that
+internal substrate replacement.
 
 ### `@firegrid/cli`
 
@@ -205,318 +135,185 @@ Allowed imports: `@firegrid/protocol`, `@firegrid/host-sdk`,
 
 No package may import `@firegrid/cli`.
 
+CLI commands call client-sdk session methods and host-sdk composition. They do
+not call runtime substrate helpers directly.
+
 ### `@firegrid/runtime`
 
-Loses public host composition, `agent-tools/`, and
-`verified-webhook-ingest/`.
+Loses public host composition, `agent-tools/`, and `verified-webhook-ingest/`.
+Keeps runtime-private substrate implementation: agent event pipeline,
+workflow-engine integration, durable-tools, codecs, agent adapters, and host
+internals.
 
-Gains `RuntimeToolUseExecutor` as a runtime-owned capability tag consumed by
-the ToolUse subscriber.
+Runtime owns `RuntimeToolUseExecutor` as the narrow capability consumed by
+ToolUse routing today and by the Path X reactive workflow body later.
 
-Keeps agent-event-pipeline, authorities, workflow-engine, durable-tools,
-agent-adapters, and runtime-private host substrate.
+## Operation Projection Contract
 
-## Decisions
+Protocol schemas are the source of truth. Bindings project schema annotations
+into target environments:
 
-1. **`sessions.createOrLoad` stays.** Do not rename it to `launch`. The
-   current `externalKey` and `sessionContextIdForExternalKey` derivation are
-   tested and honest: the caller binds a session to caller-owned identity.
-   `idempotencyKey` is a worse spelling because it sounds like a retry option
-   rather than the session identity input.
+```txt
+@firegrid/protocol catalog
+  schemas + firegridProjection annotations
 
-2. **`local.jsonl(...)` stays.** Do not introduce `Agent.localProcess(...)` as
-   a second public spelling. The existing helper produces
-   `PublicLaunchRuntimeIntent`, which is the durable protocol shape.
+  -> @firegrid/client-sdk
+       session methods, snapshots, waits, permission helpers
 
-3. **Host provider config is host-plane; runtime intent is session-plane.**
-   Agent provider choice, command, protocol, cwd, and env binding refs live in
-   the `PublicLaunchRuntimeIntent` passed to `sessions.createOrLoad`. Provider
-   implementation availability and env exposure policy live in host-sdk
-   configuration.
+  -> @firegrid/host-sdk
+       Effect AI tools/toolkits, MCP exposure, host layers
 
-4. **MCP defaults to disabled.** The host can opt into
-   `FiregridMcpServerLayer`. The default Firegrid MCP declaration may be
-   injected into launched agent configs only when that host layer is installed
-   and the selected protocol supports MCP setup.
-
-5. **`ScheduledInputWorkflow` moves to host-sdk.** It is a workflow that calls
-   `AgentToolHost.appendScheduledPrompt`, so it belongs with host-plane
-   tool execution.
-
-6. **`agent-adapters/` stays in runtime.** The current adapters lower ACP or
-   Effect AI model/session behavior into runtime byte/session substrate used by
-   the pipeline. They are codec/runtime substrate, not public host
-   composition.
-
-7. **`verified-webhook-ingest/` retires.** No product imports it today. Its
-   old wait integration depended on SourceCollections, which typed wait-source
-   redesign removed.
-
-8. **`FiregridOperationEntry` is deleted in the binding cutover.** SPC is the
-   contract document here: operation metadata lives on Effect Schema
-   annotations. `FiregridClientOperations` and `FiregridAgentToolOperations`
-   may remain as plain `{ input, output }` groupings for import ergonomics, but
-   production bindings must not depend on `defineFiregridOperation` or copied
-   metadata objects.
-
-## Load-Bearing Change: RuntimeToolUseExecutor
-
-This is the structural inversion that makes the package split possible.
-Everything else is file movement, renaming, or static enforcement.
-
-Today, `agent-event-pipeline/subscribers/tool-router.ts` imports
-`toolUseToEffect` from `../../agent-tools/`. That edge makes `agent-tools/`
-unmovable: moving it to host-sdk would create a forbidden
-`@firegrid/runtime -> @firegrid/host-sdk` dependency.
-
-The target capability is:
-
-```ts
-export class RuntimeToolUseExecutor extends Context.Tag(
-  "@firegrid/runtime/RuntimeToolUseExecutor",
-)<RuntimeToolUseExecutor, {
-  readonly execute: (input: {
-    readonly context: RuntimeContext
-    readonly activityAttempt: number
-    readonly observation: RuntimeAgentOutputObservation
-  }) => Effect.Effect<ToolResultEvent, never, Scope.Scope>
-}>() {}
+  -> @firegrid/cli
+       @effect/cli commands, flags, help, local defaults
 ```
 
-`tool-router.ts` changes from direct lowering:
+Production bindings must not depend on `FiregridOperationEntry`,
+`defineFiregridOperation`, copied metadata registries, or a second operation
+DSL. Plain grouped schema values plus Schema annotations are the contract.
 
-```ts
-const result = yield* toolUseToEffect({ contextId }, observation.event)
-```
+## Direct Cutover Plan
 
-to capability execution:
+### Already Landed: RuntimeToolUseExecutor Seam
 
-```ts
-const executor = yield* RuntimeToolUseExecutor
-const result = yield* executor.execute({ context, activityAttempt, observation })
-```
+PR 282 landed the load-bearing inversion:
 
-Host-sdk provides the live layer:
+- runtime ToolUse routing depends on `RuntimeToolUseExecutor`;
+- live execution delegates to existing host-side `toolUseToEffect`;
+- runtime no longer needs to import agent-tool bindings directly.
 
-```ts
-export const RuntimeToolUseExecutorLive = Layer.effect(
-  RuntimeToolUseExecutor,
-  Effect.gen(function* () {
-    return {
-      execute: ({ context, observation }) =>
-        toolUseToEffect({ contextId: context.contextId }, observation.event),
-    }
-  }),
-)
-```
+This satisfies:
 
-`toolUseToEffect` keeps its existing host-side requirements internally:
-workflow engine, workflow instance, `AgentToolHost`, durable-tools, `Scope`,
-and host authority surfaces. The executor service absorbs those requirements
-in the host layer. Runtime sees only the narrow capability.
+- `firegrid-host-sdk.TOOL_EXECUTOR_SEAM.1`
+- `firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2`
+- `firegrid-host-sdk.TOOL_EXECUTOR_SEAM.3`
+- `firegrid-host-sdk.SEQUENCING.10`
+- `firegrid-host-sdk.PACKAGE_GRAPH.6`
 
-The runtime by itself no longer dispatches tool calls. A host that wants agent
-tools provides `RuntimeToolUseExecutorLive` alongside the runtime substrate.
+### PR A: SDK Baseline Cutover
 
-## Runtime Capability Projection Cleanup
+Purpose:
 
-The SDK split does not depend on runtime durable-authority cleanup, but the
-same audit exposed one runtime-internal simplification worth documenting so it
-does not become a new framework.
+- Create the clean package baseline in one direct cutover.
 
-Runtime authorities currently expose many hand-written `Context.Tag`s from one
-`DurableTable` family. For example, the runtime output authority provides
-append, sink, stream, and derived observation tags from `RuntimeOutputTable`.
-The visible repetition is the live-layer projection:
+What it does:
 
-```ts
-Layer.effect(Tag, Effect.map(TableTag, table => projector(table)))
-```
+- Creates `packages/client-sdk`, `packages/host-sdk`, and `packages/cli`.
+- Moves client session bindings, snapshots, waits, permission helpers, and local
+  runtime intent helpers into client-sdk.
+- Moves host composition, provider layers, agent-tool bindings, MCP exposure,
+  `RuntimeStartCapabilityLive`, scheduled input workflow, `AgentToolHost`, and
+  `RuntimeToolUseExecutorLive` into host-sdk.
+- Moves root CLI command definitions and process entrypoints into CLI.
+- Deletes production dependency on `FiregridOperationEntry` and
+  `defineFiregridOperation`; operation groupings become plain protocol schema
+  values.
+- Updates factory, scenarios, and root command entrypoints to import the new
+  public packages.
+- Adds package graph, boundary, and semgrep rules in the same PR:
+  runtime cannot import SDK packages or CLI; client-sdk cannot import runtime,
+  host-sdk, CLI, Node, Effect AI, MCP, or platform-node; host-sdk cannot import
+  client-sdk or CLI; no package imports CLI; examples do not demonstrate
+  substrate-shaped input.
+- Keeps behavior through existing session, CLI, runtime, and factory tests.
 
-Name that projection pattern directly. Do not replace the tags.
+Likely files:
 
-Accepted helper shape:
+- `packages/client/**` -> `packages/client-sdk/**`
+- `packages/runtime/src/agent-tools/**` -> `packages/host-sdk/agent-tools/**`
+- `packages/runtime/src/host/**` host composition exports -> `packages/host-sdk/host/**`
+- `src/run.ts` and CLI entrypoints -> `packages/cli/**`
+- `packages/protocol/src/**` operation catalog groupings
+- root `package.json`, `pnpm-workspace.yaml`, tsconfig/dependency-cruiser
+  configuration, semgrep rules, and exports maps
+- app/scenario imports that currently reach into runtime or root CLI paths
 
-```ts
-export const projectAppend = (tag, tableTag, toAction) =>
-  Layer.effect(tag, Effect.map(tableTag, table => ({ append: toAction(table) })))
+Behavior changed:
 
-export const projectStream = (tag, tableTag, toStream) =>
-  Layer.effect(tag, Effect.map(tableTag, toStream))
+- package names and import paths change to the target architecture.
+- public session/host/CLI behavior should remain the same.
 
-export const projectSink = (tag, tableTag, toWrite) =>
-  Layer.effect(
-    tag,
-    Effect.map(tableTag, table => Sink.forEach(row => toWrite(table)(row))),
-  )
-```
+Invariants and validation:
 
-The real implementation should type these helpers precisely. The SDD-level
-rule is simpler: helpers name `Layer.effect(Tag, Effect.map(TableTag, ...))`.
-They do not generate tags, own service shapes, or create a Firegrid capability
-framework.
+- `sessions.createOrLoad`, `externalKey`, `local.jsonl(...)`, typed waits, and
+  permission response behavior remain unchanged.
+- `pnpm firegrid -- run` and `pnpm firegrid -- start` scenario behavior remains
+  covered through CLI compatibility tests or their moved equivalents.
+- Factory imports only public SDK/protocol/integration/app-owned modules for
+  normal Firegrid behavior.
+- Runtime does not import host-sdk, client-sdk, or CLI.
+- Client-sdk remains browser/edge safe.
+- Host-sdk returns protocol-shaped launch/session identity results rather than
+  client-sdk-owned handles.
 
-This keeps the important part visible:
+Reversible standalone:
 
-```ts
-export class RuntimeOutputEvents extends Context.Tag(
-  "@firegrid/runtime/RuntimeOutputEvents",
-)<RuntimeOutputEvents, Stream.Stream<RuntimeEventRow, DurableTableError>>() {}
+- by revert only. This is the intentional baseline cutover, not a staged
+  migration.
 
-export const RuntimeOutputJournalLayer = Layer.mergeAll(
-  projectStream(RuntimeOutputEvents, RuntimeOutputTable, table =>
-    table.events.rows()),
-  projectSink(RuntimeAgentOutputRowSink, RuntimeOutputTable, table =>
-    row => table.events.upsert(row)),
-)
-```
+Estimate:
 
-Rejected alternatives:
+- 1.5 to 3 engineer-weeks.
 
-- **Brand-typed capability interfaces** such as `Append<A, E>` or
-  `Executor<In, Out, E, R>`. Firegrid's durable row capabilities do not use the
-  variance those brands provide, and the apparent executor cases are ordinary
-  Effect compositions: read clock plus append, read plus conditional append, or
-  cross-table `Effect.gen`.
-- **`DurableRecordCapabilities` factories** that return anonymous
-  `bundle.Append` / `bundle.Stream` / `bundle.Sink` tags. Those hide tag
-  identity, make go-to-definition and static rules worse, and do not fit
-  overlays such as `RuntimeAgentOutputEvents`, which derives observations from
-  output rows.
+### PR B: Cleanup And Spec Alignment
 
-Tags remain hand-written next to their domain service type. Direct table
-projections may use projection helpers. Operations that genuinely compose
-multiple capabilities stay as ordinary `Effect.gen` code. Long-lived drivers
-remain `Effect<void, E, R>` or `Layer.scopedDiscard`; they are roles, not new
-capability shapes.
+Purpose:
 
-## Plane Split Rules
+- Remove stale surfaces and align docs/specs after the direct package cutover.
 
-These rules must be enforced with dependency-cruiser, the existing client
-boundary test, or a small static checker.
+What it does:
 
-| Rule | Enforcement |
-| --- | --- |
-| `@firegrid/protocol` imports only allowed base libraries such as `effect` and `effect-durable-operators`. | dependency-cruiser allowed list |
-| `@firegrid/runtime` does not import `@firegrid/client-sdk`, `@firegrid/host-sdk`, or `@firegrid/cli`. | dependency-cruiser |
-| `@firegrid/client-sdk` does not import runtime, host-sdk, CLI, Node, Effect AI, MCP, or platform-node. | boundary test + dependency-cruiser |
-| `@firegrid/host-sdk` does not import client-sdk or CLI. | dependency-cruiser |
-| No package imports `@firegrid/cli`. | dependency-cruiser |
-| Runtime ToolUse routing depends on `RuntimeToolUseExecutor`, not host-sdk agent-tool bindings. | dependency-cruiser + runtime tests |
-| Production bindings do not import `FiregridOperationEntry` or `defineFiregridOperation`. | dependency-cruiser or semgrep |
-| Runtime durable authority cleanup does not introduce brand-typed capability frameworks or generated tag bundles. | review + optional semgrep |
+- Retires `packages/runtime/src/verified-webhook-ingest/` unless a real product
+  consumer appears before this PR.
+- Deletes old root CLI compatibility files if PR A left tiny entrypoint shims.
+- Removes deprecated runtime host or agent-tool exports kept only to make PR A
+  reviewable.
+- Updates docs and examples to use only `@firegrid/client-sdk`,
+  `@firegrid/host-sdk`, `@firegrid/cli`, and protocol packages.
+- Marks `firegrid-host-sdk.RUNTIME_CAPABILITY_PROJECTIONS.1-4` and
+  `firegrid-host-sdk.SEQUENCING.12` superseded by Path X.
+- Runs dependency, dead-code, docs, specs, and semgrep checks.
 
-## Plan
+Behavior changed:
 
-### PR 1: RuntimeToolUseExecutor Seam
+- none intended beyond removing stale implementation surface.
 
-Scope: behavior-preserving runtime inversion.
+Invariants and validation:
 
-- Add `RuntimeToolUseExecutor` in
-  `agent-event-pipeline/subscribers/tool-use-executor.ts`.
-- Rewrite `tool-router.ts` to consume the capability.
-- Add a temporary `RuntimeToolUseExecutorLive` in runtime host substrate that
-  delegates to existing `toolUseToEffect`.
-- Provide that layer from current host composition.
-- Keep all runtime ToolUse tests green.
+- boundary checks still pass;
+- dead-code checks do not see old public runtime host/agent-tool surfaces;
+- docs/specs no longer instruct workers to implement cancelled projection
+  helpers.
 
-This PR satisfies `firegrid-host-sdk.TOOL_EXECUTOR_SEAM.1`,
-`firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2`, and
-`firegrid-host-sdk.TOOL_EXECUTOR_SEAM.3`.
+Reversible standalone:
 
-### PR 2: Transactional SDK Plane Cutover
+- yes, after PR A.
 
-Scope: the package boundary becomes visible everywhere at once. This PR is
-large, but mostly file movement and import rewrites. Do not create a long-lived
-state where one binding moved and the others still depend on mixed files.
+Estimate:
 
-- Delete `defineFiregridOperation` and `FiregridOperationEntry` as production
-  dependencies.
-- Replace operation catalogs with plain `{ input, output }` schema groupings.
-- Update agent-tool, client, and CLI bindings to read projection metadata from
-  schema annotations.
-- Create `packages/host-sdk`, `packages/client-sdk`, and `packages/cli`.
-- Move host-sdk agent-tool bindings, MCP exposure, host capability services,
-  host composition, and `RuntimeToolUseExecutorLive`.
-- Move client-sdk session bindings and split transport/session execution
-  modules.
-- Move CLI command bindings and process entrypoints.
-- Add dependency-cruiser, boundary-test, and semgrep/static rules:
-  - runtime cannot import host-sdk, client-sdk, or CLI;
-  - client-sdk cannot import runtime, host-sdk, CLI, Node, Effect AI, MCP, or
-    platform-node;
-  - host-sdk cannot import client-sdk or CLI;
-  - no package imports CLI;
-  - production bindings cannot import `FiregridOperationEntry` or
-    `defineFiregridOperation`;
-  - binding modules cannot import execution/substrate modules to discover
-    operations, and execution modules cannot import binding modules.
-- Update factory and scenario imports to public SDK package names.
-- Keep `sessions.createOrLoad`, `externalKey`, `local.jsonl(...)`, typed waits,
-  and permission response behavior unchanged.
-- Keep `pnpm firegrid -- run` and `pnpm firegrid -- start` behavior through CLI
-  compatibility tests.
-
-This PR satisfies `firegrid-host-sdk.PROJECTION_BINDINGS.7`,
-`firegrid-host-sdk.SEQUENCING.8`,
-`firegrid-host-sdk.SEQUENCING.9`,
-`firegrid-host-sdk.SEQUENCING.11`, and
-`firegrid-schema-projection-contract.BINDING_EXECUTION_SPLIT.2`.
-
-### PR 3: Cleanup And Retirement
-
-Scope: delete surfaces intentionally left until the transaction proves green.
-
-- Retire `packages/runtime/src/verified-webhook-ingest/` and its tracer
-  scenario test, unless a real product consumer appears before this PR.
-- Delete remaining old root `src/run.ts` compatibility if PR 2 left a shim for
-  package transition.
-- Remove any deprecated runtime host or agent-tool package exports that were
-  kept only to keep PR 2 reviewable.
-
-### Optional Follow-Up: Runtime Projection Helpers
-
-Scope: runtime-internal authority cleanup only.
-
-- Add typed `projectAppend`, `projectStream`, and `projectSink` helpers.
-- Apply them only to direct DurableTable-to-capability projections in runtime
-  output, ingress, ingress delivery, and control-plane authority files.
-- Keep tag declarations hand-written.
-- Keep timestamped insert, idempotent claim, cross-table operations, and
-  ToolUse execution as explicit `Effect.gen` compositions or executor seams.
-
-This follow-up satisfies
-`firegrid-host-sdk.RUNTIME_CAPABILITY_PROJECTIONS.1`,
-`firegrid-host-sdk.RUNTIME_CAPABILITY_PROJECTIONS.2`,
-`firegrid-host-sdk.RUNTIME_CAPABILITY_PROJECTIONS.3`, and
-`firegrid-host-sdk.RUNTIME_CAPABILITY_PROJECTIONS.4`. It must not block PR 1
-or PR 2.
+- 2 to 4 engineer-days.
 
 ## Acceptance
 
 - Dependency-cruiser reports zero SDK boundary violations.
-- Runtime no longer exports public `host/` or `agent-tools/` surfaces.
-- Runtime ToolUse router consumes `RuntimeToolUseExecutor`.
+- Runtime no longer exports public `host/` or `agent-tools/` surfaces for
+  product apps.
+- Runtime ToolUse routing depends on `RuntimeToolUseExecutor`.
 - Production bindings do not import `FiregridOperationEntry` or
   `defineFiregridOperation`.
-- Client-sdk passes its browser/edge boundary test.
+- Client-sdk passes browser/edge boundary tests.
 - Host-sdk exports `FiregridHostLive`, `FiregridAgentToolkit`,
   `FiregridMcpServerLayer`, `RuntimeStartCapabilityLive`, and
   `RuntimeToolUseExecutorLive`.
-- CLI exposes `sessions create-or-load`, `sessions attach`,
-  `sessions prompt`, `permissions respond`, `run`, and `start` commands
-  projected from protocol schemas.
-- Factory imports only host-sdk, client-sdk, protocol shared types, integration
-  packages, and app-owned modules for normal Firegrid behavior.
+- CLI exposes session, permission, `run`, and `start` commands projected from
+  protocol schemas.
+- Factory and scenarios use public SDK imports for normal Firegrid behavior.
 - `verified-webhook-ingest/` is gone or explicitly moved to a real integration
   package with a product consumer.
-- Existing `pnpm firegrid -- run` and `pnpm firegrid -- start` scenario tests
-  pass.
 
 ## Non-Goals
 
 - No new operation contracts.
-- No durable row migrations.
+- No durable row migrations; Path X owns substrate replacement.
 - No replacement for SourceCollections; typed wait-source redesign already
   retired it.
 - No dynamic provider registry. Providers are explicit Layers at the
@@ -524,80 +321,16 @@ or PR 2.
 - No Firegrid-specific workflow DSL or operator framework.
 - No brand-typed runtime capability framework.
 - No durable-record factory that generates anonymous tag bundles.
-- No second event pipeline.
+- No runtime capability projection helpers.
 - No browser-originated runtime authority.
+- No substrate-aware public client surface.
 
 ## Risks
 
 | Risk | Mitigation |
 | --- | --- |
-| The executor inversion hides requirement-channel mismatches from `toolUseToEffect`. | Build `RuntimeToolUseExecutorLive` exactly where host composition already provides workflow, durable-tools, `AgentToolHost`, and scope. The existing runtime codec tool lowering layer is the template. |
-| Moving `AgentToolHost` breaks runtime code that references its tag. | Audit before PR 2. If runtime must name the service, keep the tag in protocol or a runtime-neutral contract module and move only the live layer to host-sdk. |
-| CLI cutover drops a current `src/run.ts` option. | Snapshot current CLI help and scenario behavior before PR 2; diff new CLI output against the snapshot. |
-| External consumers import old package names. | New packages publish at new names. Old package paths can ship a deprecation shim for one release if needed, but internal implementation should move to the target packages. |
-
-## Appendix: File Ownership
-
-```txt
-@firegrid/runtime
-  agent-event-pipeline/
-    authorities/
-    codecs/
-    events/
-    sources/
-    subscribers/
-      tool-router.ts
-      tool-use-executor.ts
-    transforms/
-    session-runtime.ts
-  agent-adapters/
-  authorities/
-  durable-tools/
-  workflow-engine/
-  host/
-    runtime-context-workflow.ts
-    raw-process-runtime.ts
-    runtime-substrate.ts
-    internal/
-
-@firegrid/host-sdk
-  agent-tools/
-    bindings/
-      tools.ts
-      mcp-host.ts
-    execution/
-      tool-use-to-effect.ts
-      scheduled-input-workflow.ts
-      tool-host.ts
-      tool-error.ts
-    runtime-tool-use-executor.ts
-  host/
-    layers.ts
-    commands.ts
-    config-live.ts
-    sync-run.ts
-    agent-tool-host-live.ts
-
-@firegrid/client-sdk
-  bindings/
-    sessions.ts
-    permissions.ts
-    operations.ts
-  transport/
-    control-plane.ts
-    host-owned-streams.ts
-  firegrid.ts
-
-@firegrid/cli
-  commands/
-    sessions.ts
-    permissions.ts
-    run.ts
-    start.ts
-  main.ts
-
-Retired
-  packages/runtime/src/verified-webhook-ingest/
-  scenarios/firegrid/test/tracer-020-verified-webhook-ingest.test.ts
-  src/run.ts
-```
+| Package cutover becomes a long-lived partial boundary. | PR A moves package surfaces, imports, static rules, and consumers together. |
+| Runtime imports host-sdk after agent tools move. | `RuntimeToolUseExecutor` remains runtime-owned; host-sdk provides only the live layer. Dependency rules fail the build on reverse imports. |
+| Client-sdk leaks substrate mechanics. | Boundary rules forbid runtime/Node/host imports and examples must use session methods only. |
+| CLI loses current flags or local defaults. | Snapshot current help and scenario behavior before PR A; preserve behavior in moved CLI tests. |
+| Path X and SDK cutover touch the same host wiring files. | Coordinate by file ownership. If a file is being moved and rewritten, merge the move first or include the rewrite on top of the moved path. |

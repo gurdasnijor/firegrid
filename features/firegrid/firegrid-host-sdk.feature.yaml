@@ -67,10 +67,18 @@ components:
 
   RUNTIME_CAPABILITY_PROJECTIONS:
     requirements:
-      1: Runtime durable authority cleanup may introduce small projection helpers for stock Effect services such as append method services, Stream tags, and Sink tags over DurableTable collections.
-      2: Runtime durable authority cleanup must keep Context.Tag declarations hand-written and adjacent to domain service types; helpers may only name Layer projection patterns, not generate anonymous tag bundles.
-      3: Runtime durable authority cleanup must not introduce brand-typed Append/Read/Executor framework interfaces or a DurableRecordCapabilities factory that hides tag identities.
-      4: Runtime cross-record operations such as timestamped context insert, idempotent ingress delivery claim, and ToolUse execution remain ordinary Effect.gen compositions or explicit executor seams when they are not direct table projections.
+      1:
+        requirement: Runtime durable authority cleanup may introduce small projection helpers for stock Effect services such as append method services, Stream tags, and Sink tags over DurableTable collections.
+        deprecated: true
+      2:
+        requirement: Runtime durable authority cleanup must keep Context.Tag declarations hand-written and adjacent to domain service types; helpers may only name Layer projection patterns, not generate anonymous tag bundles.
+        deprecated: true
+      3:
+        requirement: Runtime durable authority cleanup must not introduce brand-typed Append/Read/Executor framework interfaces or a DurableRecordCapabilities factory that hides tag identities.
+        deprecated: true
+      4:
+        requirement: Runtime cross-record operations such as timestamped context insert, idempotent ingress delivery claim, and ToolUse execution remain ordinary Effect.gen compositions or explicit executor seams when they are not direct table projections.
+        deprecated: true
 
   AGENT_TOOL_BOUNDARY:
     requirements:
@@ -123,7 +131,9 @@ constraints:
       9: Split binding modules from execution/substrate modules in the same transactional SDK cutover that publishes the package boundary consumers will build against.
       10: Land the `RuntimeToolUseExecutor` seam before moving agent-tool bindings or MCP exposure out of runtime.
       11: After the `RuntimeToolUseExecutor` seam lands, move host-sdk, client-sdk, CLI bindings, operation-entry deletion, static rules, and consumer import updates as one transaction rather than through long-lived partial package boundaries.
-      12: Runtime durable authority projection-helper cleanup is optional follow-up work and must not block the RuntimeToolUseExecutor seam or transactional SDK plane cutover.
+      12:
+        requirement: Runtime durable authority projection-helper cleanup is optional follow-up work and must not block the RuntimeToolUseExecutor seam or transactional SDK plane cutover.
+        deprecated: true
 
   PACKAGE_GRAPH:
     requirements:
