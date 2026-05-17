@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@firegrid/client": "workspace:*",
+    "@firegrid/client-sdk": "workspace:*",
     "@firegrid/runtime": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "effect": "^3.21.2"

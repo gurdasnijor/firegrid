@@ -1,5 +1,5 @@
 import { NodeRuntime } from "@effect/platform-node"
-import { Firegrid, FiregridConfig, FiregridLive } from "@firegrid/client/firegrid"
+import { Firegrid, FiregridConfig, FiregridLive } from "@firegrid/client-sdk/firegrid"
 import {
   FiregridLocalHostLive,
   localProcessSpawnEnvFromHostEnv,

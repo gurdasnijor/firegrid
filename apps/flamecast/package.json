@@ -17,7 +17,7 @@
   "dependencies": {
     "@effect/platform": "^0.96.1",
     "@effect/platform-node": "^0.106.0",
-    "@firegrid/client": "workspace:*",
+    "@firegrid/client-sdk": "workspace:*",
     "@firegrid/runtime": "workspace:*",
     "@tanstack/db": "^0.5.33",
     "@tanstack/react-db": "0.1.77",

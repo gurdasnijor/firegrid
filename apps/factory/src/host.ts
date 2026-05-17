@@ -30,7 +30,7 @@ import {
   FiregridConfig,
   FiregridLive,
   type FiregridSessionHandle,
-} from "@firegrid/client/firegrid"
+} from "@firegrid/client-sdk/firegrid"
 import { Clock, Effect, Layer, Match, Option, Schema } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import {

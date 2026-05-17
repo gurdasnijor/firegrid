@@ -5,8 +5,10 @@
     "moduleResolution": "Bundler",
     "baseUrl": ".",
     "paths": {
-      "@firegrid/client": ["packages/client/src/index.ts"],
-      "@firegrid/client/*": ["packages/client/src/*"],
+      "@firegrid/client-sdk": ["packages/client-sdk/src/index.ts"],
+      "@firegrid/client-sdk/*": ["packages/client-sdk/src/*"],
+      "@firegrid/cli": ["packages/cli/src/index.ts"],
+      "@firegrid/cli/*": ["packages/cli/src/*"],
       "@firegrid/substrate": ["packages/substrate/src/index.ts"],
       "@firegrid/substrate/descriptors": ["packages/substrate/src/descriptors/index.ts"],
       "@firegrid/substrate/event-plane": ["packages/substrate/src/event-plane/index.ts"],

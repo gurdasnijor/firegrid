@@ -15,7 +15,7 @@ import {
   Firegrid,
   FiregridConfig,
   FiregridStandaloneLive,
-} from "@firegrid/client"
+} from "@firegrid/client-sdk"
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
 import { mkdtemp, realpath, rm } from "node:fs/promises"
