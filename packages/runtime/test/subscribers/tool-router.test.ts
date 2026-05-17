@@ -36,8 +36,7 @@ import {
   RuntimeIngressAppenderLayer,
 } from "../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
 import {
-  RuntimeEventAppendAndGet,
-  RuntimeOutputJournalLayer,
+  RuntimeAgentOutputEventsLayer,
 } from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
 import { encodeRuntimeAgentOutputEnvelope } from "../../src/agent-event-pipeline/events/index.ts"
 import { runToolRouter } from "../../src/agent-event-pipeline/subscribers/tool-router.ts"
@@ -135,7 +134,7 @@ describe("runtime tool router subscriber", () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const streamId = `tool-router-replay-${crypto.randomUUID()}`
     const context = testContext(`ctx_${crypto.randomUUID()}`)
-    const outputCapabilities = RuntimeOutputJournalLayer.pipe(
+    const outputCapabilities = RuntimeAgentOutputEventsLayer.pipe(
       Layer.provideMerge(outputTableLayer(streamId)),
     )
     const ingressCapabilities = RuntimeIngressAppenderLayer({
@@ -156,8 +155,8 @@ describe("runtime tool router subscriber", () => {
       layer,
       Effect.gen(function* () {
         const ingress = yield* RuntimeIngressTable
-        const appendEvent = yield* RuntimeEventAppendAndGet
-        yield* appendEvent.append(
+        const output = yield* RuntimeOutputTable
+        yield* output.events.upsert(
           committedToolUseRow({
             context,
             activityAttempt: 1,

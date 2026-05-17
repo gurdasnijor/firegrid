@@ -70,10 +70,6 @@ export {
   RuntimeAgentOutputRowSink,
   RuntimeEventAppendAndGet,
   RuntimeLogLineAppendAndGet,
-  RuntimeLogLineSink,
-  RuntimeOutputEvents,
-  RuntimeOutputJournalLayer,
-  RuntimeOutputLogs,
   type RuntimeAgentOutputObservation,
 } from "./agent-event-pipeline/authorities/runtime-output-journal.ts"
 export {

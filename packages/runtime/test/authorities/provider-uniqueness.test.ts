@@ -29,13 +29,7 @@ import {
 } from "../../src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
 import {
   RuntimeAgentOutputEvents,
-  RuntimeAgentOutputRowSink,
-  RuntimeEventAppendAndGet,
-  RuntimeLogLineAppendAndGet,
-  RuntimeLogLineSink,
-  RuntimeOutputEvents,
-  RuntimeOutputJournalLayer,
-  RuntimeOutputLogs,
+  RuntimeAgentOutputEventsLayer,
 } from "../../src/agent-event-pipeline/authorities/runtime-output-journal.ts"
 
 interface TestProviderEntry {
@@ -46,39 +40,9 @@ interface TestProviderEntry {
 
 const providerEntries = [
   {
-    capability: RuntimeEventAppendAndGet,
-    provider: RuntimeOutputJournalLayer,
-    backingTable: "RuntimeOutputTable.events",
-  },
-  {
-    capability: RuntimeAgentOutputRowSink,
-    provider: RuntimeOutputJournalLayer,
-    backingTable: "RuntimeOutputTable.events",
-  },
-  {
-    capability: RuntimeOutputEvents,
-    provider: RuntimeOutputJournalLayer,
-    backingTable: "RuntimeOutputTable.events",
-  },
-  {
     capability: RuntimeAgentOutputEvents,
-    provider: RuntimeOutputJournalLayer,
+    provider: RuntimeAgentOutputEventsLayer,
     backingTable: "RuntimeOutputTable.events",
-  },
-  {
-    capability: RuntimeLogLineAppendAndGet,
-    provider: RuntimeOutputJournalLayer,
-    backingTable: "RuntimeOutputTable.logs",
-  },
-  {
-    capability: RuntimeLogLineSink,
-    provider: RuntimeOutputJournalLayer,
-    backingTable: "RuntimeOutputTable.logs",
-  },
-  {
-    capability: RuntimeOutputLogs,
-    provider: RuntimeOutputJournalLayer,
-    backingTable: "RuntimeOutputTable.logs",
   },
   {
     capability: RuntimeIngressAppendAndGet,
@@ -158,13 +122,7 @@ const providerEntries = [
 ] as const satisfies readonly TestProviderEntry[]
 
 const canonicalCapabilityTags = [
-  RuntimeEventAppendAndGet,
-  RuntimeAgentOutputRowSink,
-  RuntimeOutputEvents,
   RuntimeAgentOutputEvents,
-  RuntimeLogLineAppendAndGet,
-  RuntimeLogLineSink,
-  RuntimeOutputLogs,
   RuntimeIngressAppendAndGet,
   RuntimeIngressInputStream,
   RuntimeIngressDeliveryClaimAndComplete,
@@ -188,10 +146,10 @@ describe("runtime durable capability provider uniqueness", () => {
     expect(tags).toEqual(canonicalCapabilityTags)
     expect(new Set(tags).size).toBe(tags.length)
 
-    const outputSink = providerEntries.find(entry =>
-      entry.capability === RuntimeAgentOutputRowSink,
+    const outputEvents = providerEntries.find(entry =>
+      entry.capability === RuntimeAgentOutputEvents,
     )
-    expect(outputSink?.provider).toBe(RuntimeOutputJournalLayer)
+    expect(outputEvents?.provider).toBe(RuntimeAgentOutputEventsLayer)
 
     const ingressAppend = providerEntries.find(entry =>
       entry.capability === RuntimeIngressAppendAndGet,

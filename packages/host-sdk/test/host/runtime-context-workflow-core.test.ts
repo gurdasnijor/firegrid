@@ -23,8 +23,8 @@ import { Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeControlPlaneRecorderLive,
+  RuntimeAgentOutputEventsLayer,
   RuntimeIngressAppenderLayer,
-  RuntimeOutputJournalLayer,
   RuntimeToolUseExecutor,
 } from "@firegrid/runtime/host-substrate"
 import {
@@ -330,7 +330,7 @@ describe("workflow-native runtime-context core", () => {
       Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: waitUrl })),
       Layer.provideMerge(RuntimeControlPlaneRecorderLive),
       Layer.provideMerge(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
-      Layer.provideMerge(RuntimeOutputJournalLayer),
+      Layer.provideMerge(RuntimeAgentOutputEventsLayer),
       Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),
       Layer.provideMerge(RuntimeControlPlaneTable.layer({
         streamOptions: { url: controlUrl, contentType: "application/json" },
@@ -424,7 +424,7 @@ describe("workflow-native runtime-context core", () => {
       Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: waitUrl })),
       Layer.provideMerge(RuntimeControlPlaneRecorderLive),
       Layer.provideMerge(RuntimeIngressAppenderLayer({ currentContextId: contextId })),
-      Layer.provideMerge(RuntimeOutputJournalLayer),
+      Layer.provideMerge(RuntimeAgentOutputEventsLayer),
       Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),
       Layer.provideMerge(RuntimeControlPlaneTable.layer({
         streamOptions: { url: controlUrl, contentType: "application/json" },
