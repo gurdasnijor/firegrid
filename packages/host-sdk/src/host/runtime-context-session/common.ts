@@ -15,9 +15,6 @@ import {
   SandboxProvider as SandboxProviderTag,
   SandboxStdinEmissionClaim,
 } from "@firegrid/runtime/sources/sandbox"
-import type {
-  RuntimeIngressInputStream,
-} from "@firegrid/runtime/durable-tools"
 import { Effect, Layer, Ref, type Context, type Scope } from "effect"
 import { PerContextRuntimeOutputWriter } from "../per-context-runtime-output.ts"
 import type {
@@ -40,7 +37,6 @@ export interface RuntimeContextSessionRecord {
 
 export type RuntimeContextSessionAdapterRequirements =
   | PerContextRuntimeOutputWriter
-  | RuntimeIngressInputStream
   | RuntimeEnvResolverPolicy
   | SandboxProvider
   | SandboxStdinEmissionClaim
@@ -84,7 +80,6 @@ interface RuntimeContextSessionAdapterDeps<Session extends RuntimeContextSession
   readonly stdinClaim: SandboxStdinEmissionClaim["Type"]
   readonly captured: Context.Context<
     | RuntimeEnvResolverPolicy
-    | RuntimeIngressInputStream
     | SandboxProvider
     | SandboxStdinEmissionClaim
   >
@@ -239,7 +234,6 @@ export const makeRuntimeContextSessionAdapterService = <Session extends RuntimeC
     const stdinClaim = yield* SandboxStdinEmissionClaim
     const captured = yield* Effect.context<
       | RuntimeEnvResolverPolicy
-      | RuntimeIngressInputStream
       | SandboxProvider
       | SandboxStdinEmissionClaim
     >()

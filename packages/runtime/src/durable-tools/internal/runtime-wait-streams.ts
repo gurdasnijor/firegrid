@@ -12,10 +12,8 @@
  */
 
 import { type RuntimeRunEventRow } from "@firegrid/protocol/launch"
-import { type RuntimeIngressInputRow } from "@firegrid/protocol/runtime-ingress"
 import type { DurableTableError } from "effect-durable-operators"
 import { Context, Effect, Layer, Option, Stream } from "effect"
-import { RuntimeIngressInputStream } from "./runtime-ingress-input-stream.ts"
 import {
   RuntimeAgentOutputAfterEvents,
   RuntimeAgentOutputEvents,
@@ -36,7 +34,6 @@ interface RuntimeWaitStreamsService {
     source: Extract<RuntimeWaitSource, { readonly _tag: "AgentOutputAfter" }>,
   ) => Effect.Effect<Option.Option<RuntimeAgentOutputObservation>, unknown>
   readonly runtimeRun: Stream.Stream<RuntimeRunEventRow, unknown>
-  readonly runtimeIngressInput: Stream.Stream<RuntimeIngressInputRow, unknown>
 }
 
 export class RuntimeWaitStreams extends Context.Tag(
@@ -54,10 +51,6 @@ export const RuntimeWaitStreamsLive = Layer.effect(
     const agentOutput = yield* RuntimeAgentOutputEvents
     const agentOutputAfter = yield* Effect.serviceOption(RuntimeAgentOutputAfterEvents)
     const runtimeRun = yield* RuntimeRuns
-    const runtimeIngressInput = yield* Effect.map(
-      Effect.serviceOption(RuntimeIngressInputStream),
-      Option.getOrElse(() => Stream.empty),
-    )
     return {
       agentOutput,
       agentOutputAfter: source =>
@@ -83,7 +76,6 @@ export const RuntimeWaitStreamsLive = Layer.effect(
           onSome: service => service.initial(source),
         }),
       runtimeRun,
-      runtimeIngressInput,
     }
   }),
 )

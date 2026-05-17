@@ -169,7 +169,7 @@ describe("Firegrid session facade", () => {
     })
   })
 
-  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.1 firegrid-session-fact-client-surfaces.CLIENT_SESSION.2 firegrid-session-fact-client-surfaces.CLIENT_SESSION.3 attaches to an existing session id and scopes prompt, snapshot, wait, and permission response", async () => {
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.1 firegrid-session-fact-client-surfaces.CLIENT_SESSION.2 firegrid-session-fact-client-surfaces.CLIENT_SESSION.3 attaches to an existing session id and scopes snapshot, wait, and start", async () => {
     const fixture = makeFixture()
 
     const result = await runWithClient(
@@ -182,10 +182,6 @@ describe("Firegrid session facade", () => {
         })
         const attached = yield* firegrid.sessions.attach({
           sessionId: created.sessionId,
-        })
-        const prompt = yield* attached.prompt({
-          payload: { text: "attached prompt" },
-          idempotencyKey: "attached-turn-1",
         })
         const waiting = yield* attached.wait.forPermissionRequest({
           timeoutMs: 2_000,
@@ -205,18 +201,13 @@ describe("Firegrid session facade", () => {
           },
         )
         const permission = yield* waiting.await
-        const response = yield* attached.permissions.respond({
-          permissionRequestId: "permission-attached",
-          decision: { _tag: "Allow", optionId: "allow" },
-        })
         const snapshot = yield* attached.snapshot()
-        return { created, attached, prompt, permission, response, snapshot }
+        return { created, attached, permission, snapshot }
       }),
     )
 
     expect(result.attached.sessionId).toBe(result.created.sessionId)
     expect(result.attached.contextId).toBe(result.created.contextId)
-    expect(result.prompt.contextId).toBe(result.created.contextId)
     expect(result.permission._tag).toBe("Success")
     if (result.permission._tag !== "Success") return
     expect(result.permission.value).toMatchObject({
@@ -226,15 +217,6 @@ describe("Firegrid session facade", () => {
         permissionRequestId: "permission-attached",
       },
     })
-    expect(result.response).toMatchObject({
-      responded: true,
-      contextId: result.created.contextId,
-      permissionRequestId: "permission-attached",
-    })
-    expect(result.snapshot.inputs.map(row => row.kind)).toEqual([
-      "message",
-      "control",
-    ])
     expect(result.snapshot.agentOutputs).toHaveLength(1)
     expect(result.snapshot.agentOutputs[0]).toMatchObject({
       sessionId: result.created.sessionId,
@@ -247,7 +229,7 @@ describe("Firegrid session facade", () => {
     })
   })
 
-  it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.5 prompt appends idempotent RuntimeIngress rows", async () => {
+  it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.4 prompt decodes but does not append from the client package", async () => {
     const fixture = makeFixture()
 
     const result = await runWithClient(
@@ -258,32 +240,18 @@ describe("Firegrid session facade", () => {
           externalKey: { source: "linear", id: "LIN-456" },
           runtime: runtimeConfig(),
         })
-        const first = yield* session.prompt({
+        return yield* session.prompt({
           payload: { text: "turn one" },
           idempotencyKey: "turn-1",
           metadata: { source: "test" },
-        })
-        const second = yield* session.prompt({
-          payload: { text: "duplicate should not rewrite" },
-          idempotencyKey: "turn-1",
-        })
-        const snapshot = yield* session.snapshot()
-        return { first, second, snapshot }
+        }).pipe(Effect.flip)
       }),
     )
 
-    expect(result.second.inputId).toBe(result.first.inputId)
-    expect(result.snapshot.inputs).toHaveLength(1)
-    expect(result.snapshot.inputs[0]).toMatchObject({
-      inputId: result.first.inputId,
-      sequence: 0,
-      status: "sequenced",
-      kind: "message",
-      authoredBy: "client",
-      payload: { text: "turn one" },
-      idempotencyKey: "turn-1",
-      metadata: { source: "test" },
+    expect(result).toMatchObject({
+      _tag: "AppendError",
     })
+    expect(String(result.cause)).toContain("host/app authority")
   })
 
   it("firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.2 firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.3 firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.6 includes normalized agentOutputs in snapshot and waits for the next one", async () => {
@@ -404,7 +372,7 @@ describe("Firegrid session facade", () => {
     expect(result.value.request.sessionId).toBe(result.value.request.contextId)
   })
 
-  it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.9 writes PermissionResponse RuntimeIngress control rows", async () => {
+  it("firegrid-schema-projection-contract.CLIENT_SESSION_FACADE.4 permission response decodes but does not append from the client package", async () => {
     const fixture = makeFixture()
 
     const result = await runWithClient(
@@ -415,32 +383,17 @@ describe("Firegrid session facade", () => {
           externalKey: { source: "linear", id: "LIN-999" },
           runtime: runtimeConfig(),
         })
-        const response = yield* session.permissions.respond({
+        return yield* session.permissions.respond({
           permissionRequestId: "permission-1",
           decision: { _tag: "Allow", optionId: "allow" },
-        })
-        const duplicate = yield* session.permissions.respond({
-          permissionRequestId: "permission-1",
-          decision: { _tag: "Allow", optionId: "allow" },
-        })
-        const snapshot = yield* session.snapshot()
-        return { response, duplicate, snapshot }
+        }).pipe(Effect.flip)
       }),
     )
 
-    expect(result.duplicate.inputId).toBe(result.response.inputId)
-    expect(result.snapshot.inputs).toHaveLength(1)
-    expect(result.snapshot.inputs[0]).toMatchObject({
-      inputId: result.response.inputId,
-      kind: "control",
-      authoredBy: "client",
-      payload: {
-        _tag: "PermissionResponse",
-        permissionRequestId: "permission-1",
-        decision: { _tag: "Allow", optionId: "allow" },
-      },
-      idempotencyKey: `permission-response:${result.response.contextId}:permission-1`,
+    expect(result).toMatchObject({
+      _tag: "AppendError",
     })
+    expect(String(result.cause)).toContain("host/app authority")
   })
 
   it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.2 delegates attached start through the server-provided protocol capability", async () => {

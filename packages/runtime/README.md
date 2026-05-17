@@ -88,8 +88,8 @@ pnpm firegrid:run \
 ```
 
 The command after `--` is the child process argv. The entrypoint creates a
-`RuntimeContext` row, appends the optional `--prompt` as a
-`RuntimeIngressTable.inputs` row before `startRuntime`, runs the context through
+`RuntimeContext` row, routes the optional `--prompt` through host-owned
+`appendRuntimeIngress` before `startRuntime`, runs the context through
 `RuntimeContextWorkflow`, records runtime output in `RuntimeOutputTable`, and
 then exits with the child exit code.
 
@@ -97,8 +97,8 @@ Flags:
 
 - `--cwd PATH` writes `RuntimeContext.runtime.config.cwd`; the local-process
   provider spawns the child from that durable row value.
-- `--prompt TEXT` writes the first input to `RuntimeIngressTable`; stdin
-  delivery reads from durable ingress rather than bypassing it.
+- `--prompt TEXT` writes the first input by completing the owner workflow's
+  runtime-input `DurableDeferred`; stdin delivery does not bypass host routing.
 - `--secret-env CHILD_ENV[=HOST_ENV]` authorizes one env binding. Both sides are
   env-var names, never raw secret values. The durable row stores only
   `{ name: "CHILD_ENV", ref: "env:HOST_ENV" }`, and the host resolves the value

@@ -19,7 +19,7 @@ components:
     requirements:
       1: A synchronous Firegrid run entrypoint can create a RuntimeContext row from a command supplied after a "--" separator and then call startRuntime(contextId).
       2: The synchronous run entrypoint blocks until RuntimeContextWorkflow completes and exits with the runtime execution exit code.
-      3: The synchronous run entrypoint uses the same runtime host Layer composition, RuntimeControlPlaneTable, RuntimeIngressTable, RuntimeOutputTable, workflow engine, and local-process provider path as normal runtime execution.
+      3: The synchronous run entrypoint uses the same runtime host Layer composition, RuntimeControlPlaneTable, durable runtime input evidence, RuntimeOutputTable, workflow engine, and local-process provider path as normal runtime execution.
       4: The synchronous run entrypoint accepts secrets only through Effect Config or environment-backed redacted configuration, not through command-line token flags.
       5: The synchronous run entrypoint can attach env bindings of shape { name, ref:"env:VAR" } to the local-process provider's runtime.config.envBindings; only the binding ref is durably persisted, and the resolved value is sourced from the host process's env at spawn time and merged into the local-process SandboxCommand.envVars without traversing the durable plane.
       5-1: The local-process provider must not expose unrelated host process environment variables to the child; the child environment is limited to an explicit minimal baseline plus SandboxConfig.envVars and SandboxCommand.envVars.
@@ -82,7 +82,10 @@ constraints:
   BOUNDARIES:
     requirements:
       1: RuntimeContext remains the durable intent and identity record; runRuntimeContext is an activity effect, not a new durable record family or product plane.
-      2: RuntimeIngressTable.deliveries remains per-input delivery evidence inside runRuntimeContext unless a narrower activity-private checkpoint table is explicitly introduced.
+      2:
+        requirement: RuntimeIngressTable.deliveries was legacy per-input delivery evidence inside runRuntimeContext.
+        deprecated: true
+      2-1: Runtime input delivery records durable per-input evidence by completing content-derived RuntimeContextWorkflow input deferreds; the workflow-native runtime path must not depend on RuntimeIngressTable.deliveries, RuntimeIngressTable.inputs, or runRuntimeContext.
       3: packages/runtime/src/durable-tools is provisional and may only bridge DurableTable row matches into workflow deferred completion; it must not own host dispatch, runtime execution, temporal scheduling, or context ownership.
       4: The workflow-driven runtime model does not introduce a public executeByName, workflow-name registry, DurableConsumer, ConsumerSource, ConsumerCheckpointStore, or DurableProjection replacement.
       5: Per-message runtime input delivery is not modeled as one workflow activity per input row in the default runtime path.

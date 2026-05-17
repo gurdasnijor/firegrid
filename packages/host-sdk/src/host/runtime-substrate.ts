@@ -21,9 +21,6 @@ import { HostOwnedDurableToolsWaitForLive } from "./host-owned-durable-tools.ts"
 import {
   PerContextRuntimeAgentOutputAfterEventsLive,
 } from "./per-context-runtime-output.ts"
-import {
-  HostRuntimeIngressInputStreamLayer,
-} from "./runtime-ingress.ts"
 
 type RuntimeToolUseExecutorHostEnvironment =
   | DurableWaitRowLookup
@@ -44,7 +41,6 @@ export const HostRuntimeObservationSubstrateLive = HostOwnedDurableToolsWaitForL
     RuntimeAgentOutputEventsLayer,
     PerContextRuntimeAgentOutputAfterEventsLive,
     RuntimeControlPlaneRecorderLive,
-    HostRuntimeIngressInputStreamLayer,
   )),
 )
 

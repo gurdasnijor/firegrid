@@ -5,7 +5,7 @@
  *
  *   pnpm firegrid -- run --cwd ... --prompt ... --secret-env ... -- <agent>
  *
- * It then inspects the durable control, ingress, run, and output tables. The
+ * It then inspects durable control, run, and output state. The
  * Electric scenario uses the same command shape but is opt-in and credential
  * gated.
  */
@@ -262,16 +262,6 @@ const assertSmokeDurableState = (
     },
   ])
 
-  expect(retained.inputs).toHaveLength(1)
-  expect(retained.inputs[0]).toMatchObject({
-    contextId,
-    status: "sequenced",
-    sequence: 0,
-    kind: "message",
-    authoredBy: "client",
-    payload: config.prompt,
-  })
-
   expect(retained.runs.map(row => row.status)).toEqual(["started", "exited"])
   expect(retained.runs.at(-1)).toMatchObject({
     contextId,
@@ -309,7 +299,7 @@ const assertSmokeDurableState = (
 
 describe("firegrid tracer 019 sync-run local smoke", () => {
   it(
-    "firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.3 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.4 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 firegrid-local-mcp-run.LAUNCH_CONFIG.5 firegrid-local-mcp-run.LAUNCH_CONFIG.6 firegrid-local-mcp-run.VALIDATION.3 firegrid-workflow-driven-runtime.VALIDATION.2 invokes pnpm firegrid -- run and observes durable context ingress run output evidence",
+    "firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.1 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.3 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.4 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7 firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8 firegrid-local-mcp-run.LAUNCH_CONFIG.5 firegrid-local-mcp-run.LAUNCH_CONFIG.6 firegrid-local-mcp-run.VALIDATION.3 firegrid-workflow-driven-runtime.VALIDATION.2 invokes pnpm firegrid -- run and observes durable context run output evidence",
     async () => {
       if (baseUrl === undefined) throw new Error("durable streams test server not started")
       if (workdir === undefined) throw new Error("workdir not created")

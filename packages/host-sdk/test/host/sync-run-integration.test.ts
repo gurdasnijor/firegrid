@@ -4,7 +4,7 @@
 // End-to-end coverage for the sync-run --cwd and --prompt features.
 // Each test exercises the real product path the firegrid:run binary
 // uses: RunConfig → durable RuntimeContext row → (optional) durable
-// RuntimeIngressTable input → RuntimeContextWorkflow → local-process
+// Runtime input deferred → RuntimeContextWorkflow → local-process
 // sandbox spawn → stdin delivery → child stdout journaled to
 // RuntimeOutputTable.
 //
@@ -234,7 +234,7 @@ process.stdin.on("data", chunk => {
     })
 
     // Sanity-check: the durable context row contains no ingress payload
-    // value (the ingress payload lives in RuntimeIngressTable, not on
+    // value (the ingress payload is durable runtime input, not on
     // the context row).
     const contextRow = Option.getOrThrow(retained.context)
     expect(JSON.stringify(contextRow)).not.toContain(prompt)

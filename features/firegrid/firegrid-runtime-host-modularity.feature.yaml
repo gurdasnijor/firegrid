@@ -32,13 +32,13 @@ components:
 
   INGRESS:
     requirements:
-      1: appendRuntimeIngress continues to resolve RuntimeContext through the namespace-scoped control plane before opening the owner host RuntimeIngressTable.
-      2: appendRuntimeIngress remains idempotent by inputId and assigns sequence numbers through the owner RuntimeIngressTable.
+      1: appendRuntimeIngress continues to resolve RuntimeContext through the namespace-scoped control plane before completing the owner host workflow's runtime-input DurableDeferred.
+      2: appendRuntimeIngress remains idempotent by inputId and assigns sequence numbers through owner workflow input deferred evidence.
       3: RuntimeIngress routing does not accept caller-supplied host-owned stream URLs or host ids as authority.
 
   HOST_TOPOLOGY:
     requirements:
-      1: Runtime-host layer topology keeps RuntimeControlPlaneTable namespace-scoped and RuntimeIngressTable, RuntimeOutputTable, workflow engine, durable tools, and observation sources host-owned.
+      1: Runtime-host layer topology keeps RuntimeControlPlaneTable namespace-scoped and RuntimeOutputTable, workflow engine, durable tools, and observation sources host-owned; runtime input delivery is owner-workflow deferred completion, not a host-owned ingress table.
       2: Host-owned stream URLs are derived through hostOwnedStreamUrl from CurrentHostSession.streamPrefix rather than inline string templates.
       3: FiregridLocalHostLive continues to derive host id deterministically from namespace.
       4: RuntimeHostTopologyFromConfig continues to read Durable Streams endpoint, namespace, input flag, and optional token while keeping host identity out of env configuration.
@@ -47,7 +47,7 @@ components:
     requirements:
       1: RuntimeHostAgentToolHostLive remains the runtime-owned production implementation of AgentToolHost seams.
       2: session_new continues to lower to child RuntimeContext creation, initial RuntimeIngress prompt append, and runtime workflow execution.
-      3: session_prompt and schedule_me continue to append through appendRuntimeIngress rather than constructing host-owned stream URLs at call sites.
+      3: session_prompt and schedule_me continue to append through appendRuntimeIngress rather than constructing owner workflow stream URLs at call sites.
       4: Unsupported execute, cancel, close, and fanout seams continue to fail explicitly with typed tool execution failures until implemented.
 
 constraints:

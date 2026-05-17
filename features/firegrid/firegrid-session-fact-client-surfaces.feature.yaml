@@ -13,10 +13,10 @@ components:
   CLIENT_SESSION:
     requirements:
       1: "@firegrid/client exposes a sessions.attach({ sessionId }) operation that returns the same scoped session handle shape as sessions.createOrLoad without requiring runtime config."
-      2: The attached handle scopes prompt, snapshot, wait.forPermissionRequest, permissions.respond, and start to the supplied session id.
+      2: The attached handle scopes prompt, snapshot, wait.forPermissionRequest, permissions.respond, and start to the supplied session id; prompt and permission writes require a host/app transport and are not implemented by direct client-side runtime table writes.
       3: The attached handle decodes inputs through protocol-owned schemas and keeps packages/client runtime-source-free.
       4: createOrLoad exposes sessionId as the public handle identity while preserving contextId as a compatibility alias until existing callers migrate.
-      5: Literate session helper APIs hide host-owned stream routing and table selection while remaining thin schema-backed projections over durable RuntimeContext, RuntimeIngress, RuntimeOutput, and runtime run rows.
+      5: Literate session helper APIs hide host-owned stream routing and table selection while remaining thin schema-backed projections over durable RuntimeContext, RuntimeOutput, and runtime run rows; input append belongs to host-owned routing.
 
   RUNTIME_OBSERVATION:
     requirements:

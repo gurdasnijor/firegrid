@@ -345,22 +345,7 @@ describe("tracer 021 local MCP run interface", () => {
         contextId: sessionId,
       })
       expect(childState.context?.contextId).toBe(sessionId)
-      expect(childState.inputs.map(input => ({
-        contextId: input.contextId,
-        authoredBy: input.authoredBy,
-        status: input.status,
-      }))).toEqual([
-        {
-          contextId: sessionId,
-          authoredBy: "workflow",
-          status: "sequenced",
-        },
-        {
-          contextId: sessionId,
-          authoredBy: "workflow",
-          status: "sequenced",
-        },
-      ])
+      expect(childState.runs.map(row => row.status)).toContain("started")
     })
 
     expect(localMcp.stdout().trim().split("\n")).toHaveLength(1)

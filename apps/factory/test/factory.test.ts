@@ -277,7 +277,6 @@ describe("dark factory P0 contracts", () => {
       runtimeRuns: [],
       runtimeEvents: [],
       runtimeLogs: [],
-      ingressInputs: [],
       agentOutputs: [],
       permissions: [],
     })
@@ -352,15 +351,6 @@ describe("dark factory P0 contracts", () => {
       status: "accepted",
     })
     expect(result.status.facts).toHaveLength(1)
-    expect(result.status.ingressInputs).toHaveLength(1)
-    expect(result.status.ingressInputs[0]).toMatchObject({
-      contextId: triggerPlannerContextId,
-      kind: "message",
-      authoredBy: "client",
-      idempotencyKey: `dark-factory:planner:${triggerFactoryRunKey}:initial`,
-      sequence: 0,
-      status: "sequenced",
-    })
   })
 
   it("firegrid-dark-factory-app.WAIT_AND_PERMISSION.2 writes permission resolution fact and RuntimeIngress control row idempotently", async () => {
@@ -416,10 +406,7 @@ describe("dark factory P0 contracts", () => {
       status: "resolved",
       decision: { _tag: "Allow", optionId: "allow" },
     })
-    const controlRows = result.status.ingressInputs.filter(row =>
-      row.kind === "control")
-    expect(controlRows).toHaveLength(1)
-    expect(controlRows[0]).toMatchObject({
+    expect(result.first.input).toMatchObject({
       inputId,
       contextId: triggerPlannerContextId,
       authoredBy: "client",
@@ -427,7 +414,7 @@ describe("dark factory P0 contracts", () => {
       sequence: 1,
       status: "sequenced",
     })
-    expect(controlRows[0]?.payload).toMatchObject({
+    expect(result.first.input.payload).toMatchObject({
       _tag: "PermissionResponse",
       permissionRequestId: "permission-1",
       decision: { _tag: "Allow", optionId: "allow" },

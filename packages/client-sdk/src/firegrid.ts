@@ -4,14 +4,11 @@
 // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
 // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.3
 //
-// Public Firegrid client. Host authority lives in @firegrid/protocol,
-// so the client reads `RuntimeContext.host` off durable rows and
-// resolves host-owned ingress / output tables per-call rather than at
-// layer-acquire time. Effect-typed: `launch` carries the
-// `CurrentHostSession + Clock` requirement on its method signature so
-// callers compose the client alongside a runtime host that provides
-// those services; read-only consumers (snapshot / watchContexts) do
-// not need a host session because the host id is read off the row.
+// Public Firegrid client. This package is browser/app safe: it writes
+// durable launch intent through protocol helpers and reads durable
+// control/output projections, but it does not own live runtime input
+// delivery. Prompt / permission writes must route through an app or
+// host authority such as @firegrid/host-sdk appendRuntimeIngress.
 
 import {
   PublicLaunchRequestSchema,
@@ -19,7 +16,6 @@ import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   RuntimeStartCapability,
-  hostOwnedStreamUrl,
   insertLocalRuntimeContext,
   local,
   normalizeRuntimeIntent,
@@ -41,14 +37,9 @@ import {
   type SessionPromptToolOutput,
 } from "@firegrid/protocol/session-facade"
 import {
-  RuntimeIngressTable,
-  makeRuntimeIngressInputRow,
-  nextRuntimeIngressSequence,
-  promptToRuntimeIngressRequest,
   PublicPromptRequestSchema,
   type PublicPromptRequest,
   type RuntimeIngressInputRow,
-  type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
 import {
   runtimeAgentOutputObservationFromRow,
@@ -125,7 +116,6 @@ export interface RuntimeContextSnapshot {
   readonly contextId: string
   readonly context?: RuntimeContext
   readonly status?: RuntimeRunEventRow["status"]
-  readonly inputs: ReadonlyArray<RuntimeIngressInputRow>
   readonly runs: ReadonlyArray<RuntimeRunEventRow>
   readonly events: ReadonlyArray<RuntimeEventRow>
   readonly logs: ReadonlyArray<RuntimeLogLineRow>
@@ -237,13 +227,11 @@ export { local }
 
 export const FiregridRuntimeTables = {
   ControlPlane: RuntimeControlPlaneTable,
-  Ingress: RuntimeIngressTable,
   Output: RuntimeOutputTable,
 } as const
 
 export const firegridRuntimeTableTags = [
   RuntimeControlPlaneTable,
-  RuntimeIngressTable,
   RuntimeOutputTable,
 ] as const
 
@@ -265,10 +253,6 @@ const compareJournalRows = (
   left.activityAttempt - right.activityAttempt || left.sequence - right.sequence
 
 const makeContextId = (): string => `ctx_${crypto.randomUUID()}`
-
-const nowIso = Clock.currentTimeMillis.pipe(
-  Effect.map(millis => new Date(millis).toISOString()),
-)
 
 interface ResolvedConfig {
   readonly baseUrl: string
@@ -311,26 +295,6 @@ const resolveConfig = (
     }
   })
 
-/**
- * Build the stream options for a host-owned table layer scoped to a
- * specific runtime context. The host stream prefix is read off the
- * context row, so the URL is never composed at scenario sites.
- *
- * firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
- */
-const hostOwnedStreamOptions = (
-  config: ResolvedConfig,
-  context: RuntimeContext,
-  segment: "runtimeIngress",
-) => durableTableOptions(
-  config,
-  hostOwnedStreamUrl({
-    baseUrl: config.baseUrl,
-    prefix: context.host.streamPrefix,
-    segment,
-  }),
-)
-
 const durableTableOptions = (
   config: ResolvedConfig,
   url: string,
@@ -342,14 +306,6 @@ const durableTableOptions = (
   },
   txTimeoutMs: config.txTimeoutMs,
 })
-
-const ingressLayerForContext = (
-  config: ResolvedConfig,
-  context: RuntimeContext,
-) =>
-  RuntimeIngressTable.layer(
-    hostOwnedStreamOptions(config, context, "runtimeIngress"),
-  )
 
 const outputLayerForContext = (
   config: ResolvedConfig,
@@ -447,39 +403,11 @@ const decodeSessionAgentOutputWaitInput = (
       onExcessProperty: "error",
     })(request).pipe(Effect.mapError(cause => new LaunchInputError({ cause })))
 
-const sessionPromptToRuntimeIngressRequest = (
-  input: SessionPromptToolInput,
-): RuntimeIngressRequest => ({
-  ...(input.inputId === undefined ? {} : { inputId: input.inputId }),
-  contextId: input.sessionId,
-  kind: "message",
-  authoredBy: "client",
-  payload: input.prompt,
-  ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
-})
-
-const permissionRespondToRuntimeIngressRequest = (
-  input: PermissionRespondInput,
-): RuntimeIngressRequest => ({
-  contextId: input.contextId,
-  kind: "control",
-  authoredBy: "client",
-  payload: {
-    _tag: "PermissionResponse",
-    permissionRequestId: input.permissionRequestId,
-    decision: input.decision,
-  },
-  idempotencyKey:
-    input.idempotencyKey ??
-    `permission-response:${input.contextId}:${input.permissionRequestId}`,
-})
-
 const snapshotFromJournal = (
   contextId: string,
   inputs: {
     readonly context?: RuntimeContext
     readonly runs: ReadonlyArray<RuntimeRunEventRow>
-    readonly ingressInputs: ReadonlyArray<RuntimeIngressInputRow>
     readonly events: ReadonlyArray<RuntimeEventRow>
     readonly logs: ReadonlyArray<RuntimeLogLineRow>
   },
@@ -496,21 +424,27 @@ const snapshotFromJournal = (
     .sort(compareJournalRows)
   const runs = [...inputs.runs].sort((left, right) =>
     left.at.localeCompare(right.at))
-  const promptInputs = [...inputs.ingressInputs]
-    .filter(row => row.contextId === contextId)
-    .sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
   const status = latestStatus(runs)
   return {
     contextId,
     ...(inputs.context === undefined ? {} : { context: inputs.context }),
     ...(status === undefined ? {} : { status }),
-    inputs: promptInputs,
     runs,
     events,
     logs,
     agentOutputs,
   }
 }
+
+const clientInputAppendUnavailable = (
+  contextId: string,
+): AppendError =>
+  new AppendError({
+    contextId,
+    cause: new Error(
+      "Runtime input append requires host/app authority; use @firegrid/host-sdk appendRuntimeIngress from a host-owned process",
+    ),
+  })
 
 const make = (config: ResolvedConfig) =>
   Effect.gen(function* () {
@@ -543,28 +477,23 @@ const make = (config: ResolvedConfig) =>
         if (context === undefined) {
           return snapshotFromJournal(contextId, {
             runs,
-            ingressInputs: [],
             events: [],
             logs: [],
           })
         }
 
         // firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2
-        // Host-owned ingress and output tables are opened per snapshot
-        // using the context's host binding. The control plane stays
-        // namespace-scoped (the RuntimeContext index is global).
+        // Output is still read from the context-owned stream. Runtime
+        // input delivery is workflow-deferred and host-owned; the
+          // client does not open the legacy durable input table.
         const hostOwned = yield* Effect.gen(function* () {
-          const ingressTable = yield* RuntimeIngressTable
           const outputTable = yield* RuntimeOutputTable
-          const ingressInputs = yield* ingressTable.inputs.query((coll) =>
-            coll.toArray.filter(row => row.contextId === contextId))
           const events = yield* outputTable.events.query((coll) =>
             coll.toArray.filter(row => row.contextId === contextId))
           const logs = yield* outputTable.logs.query((coll) =>
             coll.toArray.filter(row => row.contextId === contextId))
-          return { ingressInputs, events, logs }
+          return { events, logs }
         }).pipe(
-          Effect.provide(ingressLayerForContext(config, context)),
           Effect.provide(outputLayerForContext(config, context)),
           Effect.scoped,
           Effect.mapError(cause => new PreloadError({ cause })),
@@ -573,7 +502,6 @@ const make = (config: ResolvedConfig) =>
         return snapshotFromJournal(contextId, {
           context,
           runs,
-          ingressInputs: hostOwned.ingressInputs,
           events: hostOwned.events,
           logs: hostOwned.logs,
         })
@@ -602,50 +530,6 @@ const make = (config: ResolvedConfig) =>
       }).pipe(
         Stream.mapError(cause => new PreloadError({ cause })),
       )
-
-    const appendPrompt = (
-      contextId: string,
-      row: RuntimeIngressInputRow,
-    ): Effect.Effect<RuntimeIngressInputRow, AppendError> =>
-      Effect.gen(function* () {
-        const context = yield* resolveContext(contextId).pipe(
-          Effect.mapError(cause =>
-            new AppendError({ contextId, cause })),
-        )
-        if (context === undefined) {
-          return yield* Effect.fail(
-            new AppendError({
-              contextId,
-              cause: new Error(`runtime context ${contextId} not found`),
-            }),
-          )
-        }
-
-        return yield* Effect.gen(function* () {
-          const ingress = yield* RuntimeIngressTable
-          const existing = yield* ingress.inputs.get(row.inputId)
-          if (Option.isSome(existing)) return existing.value
-          // firegrid-agent-ingress.INGRESS.9
-          const nextSequence = yield* nextRuntimeIngressSequence(
-            ingress,
-            row.contextId,
-          )
-          const sequenced = {
-            ...row,
-            // firegrid-agent-ingress.INGRESS.9
-            status: "sequenced" as const,
-            sequence: nextSequence,
-            sequencedAt: yield* nowIso,
-          }
-          yield* ingress.inputs.insert(sequenced)
-          return sequenced
-        }).pipe(
-          Effect.provide(ingressLayerForContext(config, context)),
-          Effect.scoped,
-          Effect.mapError(cause =>
-            new AppendError({ contextId, cause })),
-        )
-      })
 
     const waitForAgentOutputObservation = (
       contextId: string,
@@ -745,16 +629,8 @@ const make = (config: ResolvedConfig) =>
       contextId: sessionId,
       prompt: request =>
         Effect.gen(function* () {
-          const decoded = yield* decodeSessionHandlePromptInput(request)
-          const row = makeRuntimeIngressInputRow({
-            contextId: sessionId,
-            kind: "message",
-            authoredBy: "client",
-            payload: decoded.payload,
-            idempotencyKey: decoded.idempotencyKey,
-            ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
-          })
-          return yield* appendPrompt(sessionId, row)
+          yield* decodeSessionHandlePromptInput(request)
+          return yield* Effect.fail(clientInputAppendUnavailable(sessionId))
         }),
       start: () =>
         Effect.gen(function* () {
@@ -772,25 +648,12 @@ const make = (config: ResolvedConfig) =>
         respond: request =>
           Effect.gen(function* () {
             const decoded = yield* decodeSessionPermissionRespondInput(request)
-            const row = makeRuntimeIngressInputRow({
-              contextId: sessionId,
-              kind: "control",
-              authoredBy: "client",
-              payload: {
-                _tag: "PermissionResponse",
-                permissionRequestId: decoded.permissionRequestId,
-                decision: decoded.decision,
-              },
-              idempotencyKey:
-                decoded.idempotencyKey ??
-                `permission-response:${sessionId}:${decoded.permissionRequestId}`,
-            })
-            const appended = yield* appendPrompt(sessionId, row)
+            yield* Effect.fail(clientInputAppendUnavailable(sessionId))
             return {
               responded: true,
               contextId: sessionId,
               permissionRequestId: decoded.permissionRequestId,
-              inputId: appended.inputId,
+              inputId: decoded.idempotencyKey ?? `permission-response:${sessionId}:${decoded.permissionRequestId}`,
             }
           }),
       },
@@ -877,37 +740,30 @@ const make = (config: ResolvedConfig) =>
       prompt: request => Effect.gen(function* () {
         // firegrid-agent-ingress.INGRESS.6
         const decoded = yield* decodePublicPromptRequest(request)
-        const row = makeRuntimeIngressInputRow(promptToRuntimeIngressRequest(decoded))
-        return yield* appendPrompt(decoded.contextId, row)
+        return yield* Effect.fail(clientInputAppendUnavailable(decoded.contextId))
       }),
       sessions: {
         attach: attachSession,
         createOrLoad: createOrLoadSession,
         prompt: request => Effect.gen(function* () {
           const decoded = yield* decodeSessionPromptInput(request)
-          const row = makeRuntimeIngressInputRow(
-            sessionPromptToRuntimeIngressRequest(decoded),
-          )
-          const appended = yield* appendPrompt(decoded.sessionId, row)
+          yield* Effect.fail(clientInputAppendUnavailable(decoded.sessionId))
           return {
             appended: true,
             sessionId: decoded.sessionId,
-            inputId: appended.inputId,
+            inputId: decoded.inputId ?? decoded.sessionId,
           }
         }),
       },
       permissions: {
         respond: request => Effect.gen(function* () {
           const decoded = yield* decodePermissionRespondInput(request)
-          const row = makeRuntimeIngressInputRow(
-            permissionRespondToRuntimeIngressRequest(decoded),
-          )
-          const appended = yield* appendPrompt(decoded.contextId, row)
+          yield* Effect.fail(clientInputAppendUnavailable(decoded.contextId))
           return {
             responded: true,
             contextId: decoded.contextId,
             permissionRequestId: decoded.permissionRequestId,
-            inputId: appended.inputId,
+            inputId: decoded.idempotencyKey ?? `permission-response:${decoded.contextId}:${decoded.permissionRequestId}`,
           }
         }),
       },

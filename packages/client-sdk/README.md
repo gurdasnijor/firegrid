@@ -2,12 +2,12 @@
 
 Browser- and edge-safe Firegrid client APIs for application code.
 
-`@firegrid/client-sdk` reads and writes Firegrid durable rows. It does not import
-`@firegrid/runtime`, start processes by itself, own sandbox providers, or expose
-runtime-host internals. When a caller needs to actively start a runtime, the
-start authority is supplied by host/server composition through
-`RuntimeStartCapability`; ordinary browser code should treat runtime execution as
-something a host observes and performs.
+`@firegrid/client-sdk` writes durable session intent and reads Firegrid durable
+projections. It does not import `@firegrid/runtime`, start processes by itself,
+own sandbox providers, or deliver live runtime input. When a caller needs to
+actively start a runtime, the start authority is supplied by host/server
+composition through `RuntimeStartCapability`; prompt and permission writes route
+through host/app authority such as `@firegrid/host-sdk` `appendRuntimeIngress`.
 
 ## Public Surface
 
@@ -33,7 +33,7 @@ import {
 | `FiregridStandaloneLive` | `FiregridLive` plus its own control-plane table layer. Use this for browser/edge readers or server code that is not also composing the runtime host in-process. |
 | `FiregridControlPlaneTableLive` | Layer for the namespace-scoped runtime control-plane table. This is the browser-live table layer that can be safely shared with React table providers. |
 | `FiregridClientOperations` | Protocol-backed operation catalog for client projections. Client decoders use these schema entries rather than a client-local contract or the runtime agent-tool projection. |
-| `FiregridRuntimeTables` | DurableTable tag map for `ControlPlane`, `Ingress`, and `Output`. Ingress and output are host-owned tables, so generic browser code usually reaches them through `snapshot()` rather than a single static provider layer. |
+| `FiregridRuntimeTables` | DurableTable tag map for `ControlPlane` and `Output`. Runtime input is host/workflow owned and is not exposed here as a browser-write table. |
 | `firegridRuntimeTableTags` | Table tag list for advanced compositions that provide all required table layers. |
 | `local` | Helper constructors for local-process runtime intents. |
 
@@ -92,8 +92,8 @@ Layer.succeed(FiregridConfig, {
 ## Durable Sessions
 
 The main app-facing surface is the session facade. It creates or loads a
-RuntimeContext from a caller-owned external key, appends prompts, reads durable
-snapshots, waits for permission requests, and writes permission responses.
+RuntimeContext from a caller-owned external key, reads durable snapshots, and
+waits for permission requests.
 Its inputs are decoded through protocol-owned session operation schemas exposed
 by `FiregridClientOperations`.
 
@@ -118,26 +118,19 @@ export const createPlanner = Effect.gen(function*() {
     createdBy: "factory",
   })
 
-  yield* session.prompt({
-    payload: { type: "text", text: "Plan the work for LIN-123." },
-    idempotencyKey: "LIN-123:initial",
-    metadata: { source: "linear.issue" },
-  })
-
   return yield* session.snapshot()
 })
 ```
+
+Server/host code that needs to send the initial prompt should use
+`@firegrid/host-sdk` `appendRuntimeIngress`; the browser-safe client does not
+append runtime input rows directly.
 
 When an app already knows the durable session id, attach to it without
 restating runtime config:
 
 ```ts
 const session = yield* firegrid.sessions.attach({ sessionId })
-
-yield* session.prompt({
-  payload: { type: "text", text: "Continue from the latest provider fact." },
-  idempotencyKey: `${session.sessionId}:continue`,
-})
 
 const snapshot = yield* session.snapshot()
 ```
@@ -154,10 +147,7 @@ const permission = yield* session.wait.forPermissionRequest({
 })
 
 if (permission.matched) {
-  yield* session.permissions.respond({
-    permissionRequestId: permission.request.permissionRequestId,
-    decision: { _tag: "Allow", optionId: "allow" },
-  })
+  // Send the response through host/app authority, not a browser table write.
 }
 ```
 
@@ -187,15 +177,15 @@ session's RuntimeContext row first, then opens the correct host-owned output
 stream using that row's host binding. It returns either `{ matched: true,
 request }` or `{ matched: false, timedOut: true }`.
 
-`session.start()` is intentionally different from prompt/snapshot/wait/respond.
+`session.start()` is intentionally different from snapshot/wait.
 It requires `RuntimeStartCapability`, which is supplied by runtime-host or app
-server composition. Browser code can attach to, prompt, snapshot, wait on, and
-respond to sessions, but it should not supervise local processes.
+server composition. Browser code can attach to, snapshot, and wait on sessions,
+but it should not supervise local processes or deliver live runtime input.
 
 ## Lower-Level Operations
 
-`firegrid.launch`, `firegrid.prompt`, `firegrid.open(contextId).snapshot`, and
-`firegrid.wait.for` remain available for lower-level integrations and tests.
+`firegrid.launch` and `firegrid.open(contextId).snapshot` remain available for
+lower-level integrations and tests.
 Prefer `firegrid.sessions.createOrLoad(...)` for new RuntimeContext-backed app
 work because it centralizes deterministic context identity and scoped session
 operations.
@@ -212,7 +202,6 @@ The snapshot includes:
 
 - the `RuntimeContext` row when it exists;
 - run lifecycle rows from the namespace control plane;
-- host-owned ingress inputs;
 - host-owned output events and logs;
 - normalized agent-output observations for product session semantics.
 

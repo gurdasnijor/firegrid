@@ -54,15 +54,10 @@ export const RuntimeRunWaitSourceSchema = Schema.Struct({
   _tag: Schema.Literal("RuntimeRun"),
 })
 
-const RuntimeIngressInputWaitSourceSchema = Schema.Struct({
-  _tag: Schema.Literal("RuntimeIngressInput"),
-})
-
 export const RuntimeWaitSourceSchema = Schema.Union(
   AgentOutputWaitSourceSchema,
   AgentOutputAfterWaitSourceSchema,
   RuntimeRunWaitSourceSchema,
-  RuntimeIngressInputWaitSourceSchema,
 )
 export type RuntimeWaitSource = Schema.Schema.Type<
   typeof RuntimeWaitSourceSchema

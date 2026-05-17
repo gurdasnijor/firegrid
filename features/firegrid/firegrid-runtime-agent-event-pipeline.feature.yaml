@@ -29,8 +29,12 @@ components:
     requirements:
       1: Every durable table family written by runtime code has exactly one runtime authority module that owns commits for that family.
       2: RuntimeOutputJournalLive is the only runtime provider layer for capability tags that write RuntimeOutputTable.events and RuntimeOutputTable.logs.
-      3: RuntimeIngressAppenderLive is the only runtime provider layer for capability tags that write sequenced RuntimeIngressTable.inputs rows.
-      4: RuntimeIngressDeliveryTrackerLive is the only runtime provider layer for capability tags that write RuntimeIngressTable.deliveries rows.
+      3:
+        requirement: RuntimeIngressAppenderLive was the legacy runtime provider layer for sequenced RuntimeIngressTable.inputs rows.
+        deprecated: true
+      4:
+        requirement: RuntimeIngressDeliveryTrackerLive was the legacy runtime provider layer for RuntimeIngressTable.deliveries rows.
+        deprecated: true
       4-1: RuntimeIngress delivery claim/complete capabilities are shared across raw stdin and codec delivery paths; subscriberId namespaces delivery claims by protocol and role.
       4-2: RuntimeIngress delivery subscriber ids use the shape runtime-ingress:<protocol>:<role>.
       5: RuntimeControlPlaneRecorderLive is the only runtime provider layer for capability tags that write RuntimeControlPlaneTable.contexts and RuntimeControlPlaneTable.runs lifecycle rows.
@@ -63,12 +67,12 @@ components:
 
   INGREDIENTS:
     requirements:
-      1: RuntimeIngress rows are decoded into AgentInputEvent values and sent to the active codec session by an ingress-delivery subscriber.
+      1: Runtime input deferred rows are decoded into AgentInputEvent values by the reactive RuntimeContextWorkflow and sent to the active session through RuntimeContextWorkflowSession.send.
       2: AgentOutputEvent values are transformed and committed through RuntimeAgentOutputRowSink before subscriber side effects depend on them.
-      3: RuntimeOutput ToolUse observations are routed to toolUseToEffect through a subscriber that appends responses through RuntimeIngressAppendAndGet.
+      3: RuntimeOutput ToolUse observations are routed to toolUseToEffect through the reactive workflow, which sends ToolResult responses through RuntimeContextWorkflowSession.send.
       4: RuntimeOutput PermissionRequest observations remain durable observations that are resumed by PermissionResponse ingress rows.
       4-1: Permission waits observe RuntimeAgentOutputEvents or its dynamic wait/source registration through wait_for or session.wait APIs rather than subscribing to codec internals.
-      4-2: PermissionResponse rows are appended only through RuntimeIngressAppendAndGet and delivered to the active codec by the ingress-delivery subscriber.
+      4-2: PermissionResponse runtime input is completed as owner-workflow deferred input and delivered to the active codec by RuntimeContextWorkflowSession.send.
       4-3: AcpCodec resolves pending ACP requestPermission promises from delivered PermissionResponse rows without making the tool router responsible for permission flow.
       4-4: The permission-wait bridge is the v1 instance of the general control_channel_request_response capability bridge pattern.
       4-5: Capability bridges compose only when they fit the substrate guarantee of a durable output Stream capability, durable wait capability, runtime ingress append capability, and ingress delivery to the active codec; other shapes require a new SDD.

@@ -11,8 +11,6 @@ The agent event pipeline is:
 
 ```txt
 agent-event-pipeline/sources -> codecs -> events -> transforms -> authorities -> subscribers
-                                                        \                         /
-                                                         session-runtime
 ```
 
 The arrows describe ownership of data flow, not import permission. Durable
@@ -33,13 +31,13 @@ Context.Tag<RuntimeEventLog, Queue.Enqueue<RuntimeEventRow>>
 Context.Tag<RuntimeOutputEvents, Stream.Stream<RuntimeEventRow, E>>
 
 // richer command gets a named method, not a new framework
-Context.Tag<RuntimeEventAppendAndGet, {
+Context.Tag<RuntimeAgentOutputAfterEvents, {
   readonly append: (row: RuntimeEventRow) => Effect.Effect<RuntimeEventRow, E>
 }>
 
 // drivers declare needs through the R channel
 Effect.Effect<void, ToolRouterError,
-  RuntimeAgentOutputEvents | RuntimeIngressAppendAndGet
+  RuntimeAgentOutputEvents | RuntimeToolUseExecutor
 >
 ```
 
@@ -56,8 +54,7 @@ transform" abstraction, the boundary is probably misclassified.
 | [`agent-event-pipeline/events/`](./agent-event-pipeline/events/README.md) | Normalized runtime event contracts and envelope helpers. |
 | [`agent-event-pipeline/transforms/`](./agent-event-pipeline/transforms/README.md) | Pure stream/row shaping operators. |
 | [`agent-event-pipeline/authorities/`](./agent-event-pipeline/authorities/) | Durable Effect capability providers for runtime output/ingress. |
-| [`agent-event-pipeline/subscribers/`](./agent-event-pipeline/subscribers/README.md) | Host-scoped drivers over durable observations. |
-| [`agent-event-pipeline/session-runtime.ts`](./agent-event-pipeline/session-runtime.ts) | Per-session event-loop composition. |
+| [`agent-event-pipeline/subscribers/`](./agent-event-pipeline/subscribers/README.md) | Historical subscriber folder; the live-owner cutover moved prompt/tool routing into the host workflow/session owner. |
 
 ## Adjacent Runtime Boundaries
 

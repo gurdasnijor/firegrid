@@ -199,7 +199,7 @@ const appendIngressWithHostCapabilities = (
           cause,
         )),
     )
-    return yield* appendRuntimeIngressToOwner(request, context, captured.hostConfig)
+    yield* appendRuntimeIngressToOwner(request, context, captured.hostConfig)
   }).pipe(Effect.asVoid)
 
 export const RuntimeHostAgentToolHostLive = Layer.effect(

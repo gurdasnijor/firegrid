@@ -168,9 +168,9 @@ export const makeRuntimeIngressInputRow = (
 }
 
 /**
- * Single sanctioned query for the next ingress sequence number on a
- * context. Both the runtime-host append path and the client
- * `Firegrid.prompt` path call this so the logic lives in one place.
+ * Legacy query for the next ingress sequence number on a context. New
+ * host-owned runtime input routing records sequence through workflow
+ * input deferred evidence instead of client-side table writes.
  *
  * firegrid-agent-ingress.INGRESS.9
  */

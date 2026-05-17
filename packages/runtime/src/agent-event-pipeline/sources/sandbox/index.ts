@@ -6,6 +6,3 @@ export * from "./process-stream.ts"
 export * from "./runtime-command.ts"
 export * from "./secrets.ts"
 export * from "./supervisor-commands.ts"
-export {
-  localProcessStdinDelivery,
-} from "./local-process-stdin-delivery.ts"

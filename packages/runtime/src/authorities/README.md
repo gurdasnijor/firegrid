@@ -17,19 +17,20 @@ Use stock Effect surfaces:
 Example shape:
 
 ```ts
-export class RuntimeOutputEvents extends Context.Tag(
-  "@firegrid/runtime/RuntimeOutputEvents",
-)<RuntimeOutputEvents, Stream.Stream<RuntimeEventRow, DurableTableError>>() {}
-
-export class RuntimeAgentOutputRowSink extends Context.Tag(
-  "@firegrid/runtime/RuntimeAgentOutputRowSink",
-)<RuntimeAgentOutputRowSink, Sink.Sink<void, RuntimeEventRow, never, E>>() {}
-
-export class RuntimeEventAppendAndGet extends Context.Tag(
-  "@firegrid/runtime/RuntimeEventAppendAndGet",
-)<RuntimeEventAppendAndGet, {
-  readonly append: (row: RuntimeEventRow) => Effect.Effect<RuntimeEventRow, E>
+export class RuntimeAgentOutputAfterEvents extends Context.Tag(
+  "@firegrid/runtime/RuntimeAgentOutputAfterEvents",
+)<RuntimeAgentOutputAfterEvents, {
+  readonly after: (
+    contextId: string,
+    sequence: number,
+  ) => Stream.Stream<RuntimeEventRow, DurableTableError>
 }>() {}
+
+export const RuntimeAgentOutputEventsLayer: Layer.Layer<
+  RuntimeAgentOutputEvents | RuntimeAgentOutputAfterEvents,
+  never,
+  RuntimeOutputTable
+>
 ```
 
 This mirrors Effect's own least-privilege split. A `Queue` value may support
@@ -49,21 +50,8 @@ reads. Static subscribers consume `Stream` capability tags through the Effect
 requirement channel. Dynamic wait lookup uses `SourceCollectionHandle`
 registrations that resolve to the same underlying durable streams.
 
-Provider layers group tags over the same table family:
-
-```ts
-export const RuntimeOutputJournalLayer: Layer.Layer<
-  | RuntimeEventAppendAndGet
-  | RuntimeAgentOutputRowSink
-  | RuntimeOutputEvents
-  | RuntimeAgentOutputEvents,
-  never,
-  RuntimeOutputTable
->
-```
-
-The grouping is for construction only. Callers should not depend on a bundled
-"journal service."
+Provider layers group only the surviving read-side tags over the same table
+family. Callers should not depend on a bundled "journal service."
 
 ## Boundary Rules
 

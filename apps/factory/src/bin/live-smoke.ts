@@ -150,7 +150,6 @@ const program = Effect.gen(function* () {
     sequence: next.sequence,
     output: next.event,
     facts: status.facts.length,
-    ingressInputs: status.ingressInputs.length,
     runtimeEvents: status.runtimeEvents.length,
     agentOutputs: status.agentOutputs.length,
   }, null, 2))

@@ -43,13 +43,12 @@ docs-only metadata, compatibility aliases, or tests.
 | Folder | Responsibility |
 | --- | --- |
 | `src/agent-event-pipeline/` | Agent runtime event pipeline bounded context. |
-| `src/agent-event-pipeline/sources/` | Live process, byte stream, sandbox, and raw stdin delivery edges. |
+| `src/agent-event-pipeline/sources/` | Live process, byte stream, and sandbox edges. |
 | `src/agent-event-pipeline/codecs/` | Protocol wire/session normalization into `AgentSession`. |
 | `src/agent-event-pipeline/events/` | Normalized agent input/output events, envelope helpers, and stage contracts. |
 | `src/agent-event-pipeline/transforms/` | Pure stream and row-shaping functions shared by pipeline components. |
-| `src/agent-event-pipeline/authorities/` | Runtime output, ingress input, and ingress delivery durable capability providers. |
-| `src/agent-event-pipeline/subscribers/` | Host-scoped drivers over durable observations, such as ingress delivery and tool routing. |
-| `src/agent-event-pipeline/session-runtime.ts` | Per-session composition for source, codec session, subscribers, and output journal. |
+| `src/agent-event-pipeline/authorities/` | Runtime output durable capability providers. |
+| `src/agent-event-pipeline/subscribers/` | Historical subscriber boundary; runtime-context routing now lives in the host workflow/session owner. |
 | `src/authorities/` | Runtime control-plane authorities for contexts and runs. |
 | `src/host/` | Runtime host topology, command entrypoints, config-derived layers, host-owned table wiring, and host-coupled tool services. |
 | `src/durable-tools/` | Durable-tools bounded context: `WaitFor.match` operator, wait row authority, typed `RuntimeWaitSource` selection, `RuntimeWaitStreams`, and the wait router. `wait_for` is the first durable tool inside it. |
@@ -68,16 +67,13 @@ bounded contexts, not pipeline stages.
 The runtime event pipeline is:
 
 ```txt
-sources -> codecs -> events -> transforms -> authorities -> subscribers
-                          \                         /
-                           session-runtime
+sources -> codecs -> events -> transforms -> authorities
 ```
 
-The arrows describe role ownership, not import permission. `session-runtime.ts`
-selects the active protocol session layer, starts scoped subscribers, writes
-normalized output through the output authority sink, and returns terminal
-evidence. Growth in `session-runtime.ts` is a signal to move behavior into a
-role-specific folder.
+The arrows describe role ownership, not import permission. The live-owner
+cutover moved per-context session ownership into host-sdk
+`RuntimeContextWorkflowSession` adapters; runtime no longer carries a second
+per-session event-loop composition.
 
 The codec contract is an Effect service, not a retained object with an
 `open(...)` method:
@@ -137,9 +133,7 @@ Runtime-owned durable writes are grouped by authority provider:
 
 | Durable family | Authority/provider |
 | --- | --- |
-| Runtime output events and logs | `RuntimeOutputJournalLayer` in `agent-event-pipeline/authorities/runtime-output-journal.ts`. |
-| Runtime ingress input rows | `RuntimeIngressAppenderLayer` and `RuntimeIngressAppendAndGet`. |
-| Runtime ingress delivery claim/completion rows | `RuntimeIngressDeliveryTrackerLayer` and `RuntimeIngressDeliveryClaimAndComplete`. |
+| Runtime output events and logs | `RuntimeAgentOutputEventsLayer` and read-side output tags in `agent-event-pipeline/authorities/runtime-output-journal.ts`. |
 | Runtime contexts and run events | `RuntimeControlPlaneRecorderLive` in `src/authorities/`. |
 | Durable wait rows and completions | `DurableWaitStoreLive` in `src/durable-tools/`. |
 

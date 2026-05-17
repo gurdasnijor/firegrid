@@ -12,27 +12,22 @@ Subscribers react after durable observations exist:
 authorities -> subscribers -> authorities/codecs
 ```
 
-Examples include ingress delivery, tool routing, and stderr journaling. They
-are scoped fibers in runtime host composition; they are not public operator
-APIs and they do not provide durable table layers.
+The legacy ingress-delivery, tool-router, and stderr-journal subscribers were
+deleted by the live-owner cutover. New runtime-context prompt/tool routing lives
+in the host workflow/session owner rather than in runtime subscriber fibers.
 
 Subscriber shape:
 
 ```ts
-export const runToolRouter = (options: {
-  readonly context: RuntimeContext
-  readonly activityAttempt: number
-  readonly toolUseMode: AgentToolUseMode
-}): Effect.Effect<
-  void,
-  RuntimeContextError,
-  RuntimeAgentOutputEvents | RuntimeIngressAppendAndGet
+Layer.Layer<never, WaitRouterError,
+  SourceCollections | DurableWaitIntentRows | DurableWaitCompletionUpsert
 >
 ```
 
-The important part is the requirement channel: the router can read agent output
-observations and append ingress rows, but it cannot mutate output tables,
-deliver stdin, or access table facades. Composition supplies the capabilities.
+The important part is the requirement channel: a subscriber can read its
+declared observations and write through narrow capabilities, but it cannot
+mutate unrelated tables, deliver stdin, or access table facades. Composition
+supplies the capabilities.
 
 Long-running drivers that provide no public service can also be modeled as
 scoped layers:
@@ -49,7 +44,7 @@ service other code should call.
 ## Boundary Rules
 
 - Depend on `Stream` capability tags, not table facades.
-- Write through authority capability tags.
+- Write through narrow capability tags.
 - Keep protocol-specific send behavior in codecs or active session
   capabilities.
 - Keep generic wait routing in `waits/`; it is subscriber-shaped but wait-owned
