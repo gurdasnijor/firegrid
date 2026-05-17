@@ -38,14 +38,14 @@ components:
       5:
         requirement: handle.prompt decoded protocol-owned scoped prompt input and appended a RuntimeIngress message row from the client package.
         deprecated: true
-      5-1: handle.prompt decodes protocol-owned scoped prompt input and appends a protocol-owned runtime input intent to the namespace control stream; the owning host/workflow is the only path that converts that intent into runtime input deferred completion and RuntimeContextWorkflowSession.send.
+      5-1: handle.prompt decodes protocol-owned scoped prompt input and appends a protocol-owned runtime input intent to the namespace control stream; the owning host's local per-context workflow engine is the only path that converts that intent into runtime input deferred completion and RuntimeContextWorkflowSession.send.
       6: handle.start delegates to protocol RuntimeStartCapability supplied by runtime-host or app composition; @firegrid/client remains runtime-source-free and does not call startRuntime directly.
       7: handle.snapshot observes existing RuntimeControlPlane and RuntimeOutput DurableTable rows for the scoped RuntimeContext without app-local projection state; runtime input evidence is no longer read from RuntimeIngressTable by the client package.
       8: handle.wait.forPermissionRequest observes protocol FiregridRuntimeObservationSourceNames.agentOutputEvents semantics over RuntimeOutput events, filters by scoped contextId plus optional afterSequence and timeoutMs, and returns the matching PermissionRequest observation without adding a permission table.
       9:
         requirement: handle.permissions.respond decoded protocol-owned scoped permission response input and appended a RuntimeIngress PermissionResponse control row from the client package.
         deprecated: true
-      9-1: handle.permissions.respond decodes protocol-owned scoped permission response input and appends a protocol-owned runtime input intent; the owning host/workflow validates ordering, idempotency, and current runtime ownership before applying runtime input state.
+      9-1: handle.permissions.respond decodes protocol-owned scoped permission response input and appends a protocol-owned runtime input intent; the owning host's local per-context workflow engine validates ordering, idempotency, and current runtime ownership before applying runtime input state.
       10: The facade does not import runtime agent Tool values, app-owned identity helpers, factory-specific code, scenario-side adapters, parent-child hierarchy, or provider-specific Firegrid substrate.
 
   CLIENT_READ_PROJECTION:
@@ -78,5 +78,5 @@ constraints:
       2: This feature does not expose packages/runtime/src/agent-tools/tools.ts as the programmer-facing client API.
       3: This feature does not introduce packages/runtime/src/session-control or another runtime service layer unless repeated execution code proves that abstraction is needed.
       4: This feature does not introduce a platform parent/child session hierarchy beyond RuntimeContext identity and explicit metadata.
-      5: The client package remains runtime-source-free; client write APIs may append protocol-owned control intents through client-safe control-plane facades, but any operation that mutates runtime-owned state, workflow deferreds, or live adapter transports is consumed later by the owning host/workflow through protocol-owned services.
+      5: The client package remains runtime-source-free; client write APIs may append protocol-owned control intents through client-safe control-plane facades, but any operation that mutates runtime-owned state, workflow deferreds, or live adapter transports is consumed later by the owning host's local per-context workflow engine through protocol-owned services.
       6: The binding/execution split does not require publishing one package that mixes browser-safe client code, Node CLI code, MCP/Effect AI tooling, and runtime host execution.

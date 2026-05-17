@@ -401,7 +401,8 @@ client method
   -> append protocol-owned RuntimeInputIntent to the namespace control stream
 
 owning host/workflow
-  -> observe accepted intent for a locally owned RuntimeContext
+  -> host-wide local dispatcher observes accepted intent for an active
+     per-context RuntimeContext engine
   -> complete the workflow runtime-input DurableDeferred
   -> dispatch through RuntimeContextWorkflowSession.send
 ```
@@ -414,13 +415,12 @@ accepted intent into runtime input state.
 
 `RuntimeInputIntent` is the long-term durable record for client-written runtime
 input. It is not a bridge to keep the old ingress tier alive. After Path X, the
-allowed chain is client -> intent -> owner-host router -> workflow
-`DurableDeferred` completion -> `RuntimeContextWorkflowSession.send`. The
-runtime-ingress table, delivery tracker, and old delivery subscriber remain
-deleted. A named follow-up, **router-direct-deferred**, may simplify the router
-from `appendRuntimeIngressToOwner` delegation to direct owner workflow deferred
-completion, but it must not change the client API or reintroduce an ingress
-table.
+allowed chain is client -> intent -> host-wide local dispatcher -> local
+per-context workflow `DurableDeferred` completion ->
+`RuntimeContextWorkflowSession.send`. The runtime-ingress table, delivery
+tracker, old delivery subscriber, `appendRuntimeIngressToOwner`, and
+owner-host workflow stream routing remain deleted. The dispatcher is a local
+demux to active per-context engines, not a cross-host router.
 
 `packages/client` remains runtime-source-free. If a facade method actively
 starts a runtime, it must depend on a protocol-owned runtime-start

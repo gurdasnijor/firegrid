@@ -89,6 +89,9 @@ constraints:
       3: packages/runtime/src/durable-tools is provisional and may only bridge DurableTable row matches into workflow deferred completion; it must not own host dispatch, runtime execution, temporal scheduling, or context ownership.
       4: The workflow-driven runtime model does not introduce a public executeByName, workflow-name registry, DurableConsumer, ConsumerSource, ConsumerCheckpointStore, or DurableProjection replacement.
       5: Per-message runtime input delivery is not modeled as one workflow activity per input row in the default runtime path.
+      6: RuntimeContext workflow engine state is provisioned per contextId; host-owned workflow stream routing and appendRuntimeIngressToOwner are not part of the target runtime input path.
+      7: Client-written RuntimeInputIntent rows are consumed by a host-wide local dispatcher that demuxes to active per-context workflow engines; per-context engines do not each subscribe to the entire namespace intent stream.
+      8: Sticky RuntimeContext ownership prevents two hosts from starting or attaching workflow engines for the same contextId; lease expiry, failover takeover, rebalance, and scheduler-driven reassignment are deferred future work.
 
   VALIDATION:
     requirements:
@@ -98,6 +101,8 @@ constraints:
       4: "PHASE_6_AGENT_TOOLS V0 must prove FiregridAgentToolkit.tools matches the canonical six, Tool.parametersSchema decodes identically to the @firegrid/protocol schema, direct toolkit execution of sleep runs through toolUseToEffect under the workflow engine, malformed inputs are rejected at the toolkit/schema boundary, tool-arm failures become FiregridMcpToolFailure without failing the workflow, and McpServer.registerToolkit(FiregridAgentToolkit) composes as an Effect without a custom JSON-RPC stack or wrapper toolkit. Local HTTP MCP smoke is V1 acceptance, not V0."
       5: "PHASE_7_MCP_HOST_SERVER must prove FiregridMcpServerLayer composes a loopback Node HTTP server through McpServer.layerHttp + McpServer.registerToolkit(FiregridAgentToolkit), starts and stops with the consuming Effect scope, and that an MCP-shaped JSON-RPC HTTP client can drive initialize, tools/list, sleep, malformed input, and unknown tool through Effect AI's MCP layer without a custom JSON-RPC stack, separate MCP process, agent-visible contextId argument, or FIREGRID_MCP_CONTEXT_ID-style env config."
       6: RuntimeContextSession cutover tests prove idempotent startOrAttach, lazy send reattach after workflow-engine reconstruction, and at-most-once external command emission across restart.
+      7: Per-context engine tests prove duplicate cross-host start or attach for the same contextId is rejected before a second engine is provisioned, while same-owner attach is idempotent.
+      8: Runtime input intent tests prove a client or non-owner host can append an intent and the owning host's local dispatcher completes the active per-context workflow deferred without appendRuntimeIngressToOwner or owner-host workflow stream URL routing.
 
   AGENT_TOOL_BOUNDARIES:
     requirements:

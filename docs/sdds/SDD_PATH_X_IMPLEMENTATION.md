@@ -9,6 +9,7 @@ Date: 2026-05-17
 
 Authoritative inputs:
 
+- `docs/sdds/SDD_FIREGRID_PER_CONTEXT_RUNTIME_ENGINE.md`
 - `docs/sdds/DECISION_PATH_X_PROCESS_OWNERSHIP.md` (ratified decision)
 - `docs/research/path-x-legacy-deletion-map.md`
 - `docs/research/path-x-architecture-drift-sweep-2026-05-17.md`
@@ -171,17 +172,20 @@ scoped layer.
 
 ## Deferred-Input Rewrite
 
-`appendRuntimeIngress` / `appendRuntimeIngressToOwner` remain the host-sdk
-input seam, but they no longer append to a host-sdk-local
-`RuntimeIngressTable`. They resolve the `RuntimeContext`, open the owner host's
-workflow stream from `RuntimeContext.host.streamPrefix`, and complete a
-content-derived `DurableDeferred` input row. The reactive
-`RuntimeContextWorkflowNative` loop awaits that deferred and turns it into
-`RuntimeContextWorkflowSession.send`.
+`appendRuntimeIngressToOwner` is not part of the target architecture.
+Runtime input application is local to the active per-context workflow
+engine. Host/app/client surfaces append protocol-owned
+`RuntimeInputIntent` records to the namespace control stream; the
+owning host's local dispatcher observes those intents, finds the active
+per-context engine for `contextId`, and completes the
+content-derived `RuntimeContextWorkflow` input deferred on that local
+engine. The reactive `RuntimeContextWorkflowNative` loop awaits that
+deferred and turns it into `RuntimeContextWorkflowSession.send`.
 
-This preserves the public prompt/schedule surface and cross-host routing
-semantics while deleting the runtime ingress appender, delivery tracker, typed
-input stream, and raw stdin delivery compatibility path.
+This preserves public prompt/schedule/permission surfaces while deleting
+the runtime ingress appender, delivery tracker, typed input stream, raw
+stdin delivery compatibility path, owner-host workflow URL routing, and
+cross-host router bridge.
 
 ## Client Runtime Input Intents
 
@@ -194,8 +198,8 @@ The post-Path-X chain is:
 ```txt
 client-sdk prompt / permission response
   -> RuntimeInputIntent in RuntimeControlPlaneTable.inputIntents
-  -> host runtime input control router
-  -> owner workflow runtime-input DurableDeferred completion
+  -> host-wide local dispatcher for active per-context engines
+  -> local per-context workflow runtime-input DurableDeferred completion
   -> RuntimeContextWorkflowSession.send
 ```
 
@@ -207,14 +211,9 @@ client intent into sequenced runtime input evidence and live adapter delivery.
 The ingress-tier deletion plan is unchanged: `RuntimeIngressTable.inputs`,
 `RuntimeIngressTable.deliveries`, `RuntimeIngressDeliveryTrackerLayer`,
 `runIngressDelivery`, and the scoped runtime-ingress public subpath remain gone.
-No intent plus ingress coexistence is allowed.
-
-Named follow-up: **router-direct-deferred**. It must migrate the runtime input
-control router's internals from the compatibility-shaped
-`appendRuntimeIngressToOwner` helper to a direct owner-host
-`DurableDeferred.succeed` / workflow-engine deferred completion call. That PR
-must not add another table, resurrect runtime-ingress exports, or change the
-client API.
+No intent plus ingress coexistence is allowed. No
+`router-direct-deferred` bridge remains: the #315 reshape goes directly to
+per-context engines plus a host-wide local dispatcher.
 
 ## Schema-Based Transform Guidance
 
@@ -262,10 +261,14 @@ guesses, per the repo's vendored-reference rule. No `repos/` edits.
 - Tool execution stays on `RuntimeToolUseExecutor`; `schedule_me`
   continues through the executor / live host composition.
 - Cross-host prompt routing remains true at the session level.
+- Workflow engine state is context-scoped, not host-scoped. Sticky
+  context ownership prevents two hosts from running engines over the
+  same `contextId`; lease expiry, takeover, and scheduler migration are
+  separate future work.
 - After #309/#314: dead-code and dependency checks see the old spine,
   `host-substrate` barrel, and runtime-ingress public subpath as gone.
 - Client-written input is durable `RuntimeInputIntent`; runtime input
-  application is owner-workflow deferred completion.
+  application is local per-context workflow deferred completion.
 
 ## Summary
 
@@ -278,8 +281,6 @@ adapters — landed as #309; (5) removal of the former
 post-#309 cleanup; (6) deferred-input rewrite of `appendRuntimeIngress`
 away from host-sdk-local `RuntimeIngressTable` appending — landed in this
 implementation pass; (7) durable client `RuntimeInputIntent` control-stream
-records — in #315. The remaining cleanup is **router-direct-deferred**:
-the router should call the owner workflow deferred completion path directly
-instead of going through the `appendRuntimeIngressToOwner` helper name. The
-client read/session identity API is unchanged.
+records plus per-context workflow engine delivery — the reshaped #315 target.
+The client read/session identity API is unchanged.
 </content>
