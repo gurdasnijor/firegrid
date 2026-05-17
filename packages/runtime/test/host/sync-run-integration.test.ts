@@ -21,6 +21,7 @@ import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   makeHostStreamPrefix,
+  runtimeContextOutputStreamUrl,
   type HostId,
 } from "@firegrid/protocol/launch"
 import { Effect, type Layer, Option } from "effect"
@@ -117,7 +118,11 @@ const queryRuntimeState = (
     })),
     Effect.provide(RuntimeOutputTable.layer({
       streamOptions: {
-        url: `${baseUrl!}/v1/stream/${makeHostStreamPrefix({ namespace, hostId })}.runtimeOutput`,
+        url: runtimeContextOutputStreamUrl({
+          baseUrl: baseUrl!,
+          prefix: makeHostStreamPrefix({ namespace, hostId }),
+          contextId,
+        }),
         contentType: "application/json",
       },
     })),

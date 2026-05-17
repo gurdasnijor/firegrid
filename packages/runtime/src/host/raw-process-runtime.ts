@@ -1,3 +1,8 @@
+import {
+  RuntimeOutputTable,
+  hostOwnedStreamUrl,
+  runtimeContextOutputStreamUrl,
+} from "@firegrid/protocol/launch"
 import type {
   RuntimeAgentProtocol,
   RuntimeContext,
@@ -6,10 +11,10 @@ import type {
 } from "@firegrid/protocol/launch"
 import { Clock, Effect, Option, Stream } from "effect"
 import {
+  RuntimeContextError,
   asRuntimeContextError,
   mapRuntimeContextError,
 } from "../runtime-errors.ts"
-import type { RuntimeContextError } from "../runtime-errors.ts"
 import {
   RuntimeEventAppendAndGet,
   RuntimeLogLineAppendAndGet,
@@ -20,14 +25,15 @@ import {
   RuntimeIngressInputStream,
 } from "../agent-event-pipeline/authorities/runtime-ingress-appender.ts"
 import {
-  RuntimeIngressDeliveryClaimAndComplete,
   RuntimeIngressDeliveryTrackerLayer,
-  runtimeIngressSubscriberId,
 } from "../agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
 import { runCodecRuntimeEventPipeline } from "../agent-event-pipeline/session-runtime.ts"
 import {
   commandForContext,
   localProcessStdinDelivery,
+  SandboxStdinEmissionClaim,
+  SandboxStdinEmissionClaimLive,
+  SandboxSupervisorCommandTable,
   streamSandboxProcess,
   type ProcessOutputChunk,
   type SandboxProviderError,
@@ -48,7 +54,50 @@ const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map(millis => new Date(millis).toISOString()),
 )
 
-const localProcessStdinSubscriberId = runtimeIngressSubscriberId("raw", "stdin")
+const mapRuntimeContextSurfaceError = (
+  contextId: string,
+) =>
+  Effect.mapError((cause: unknown) =>
+    cause instanceof RuntimeContextError
+      ? cause
+      : asRuntimeContextError(
+        "runtime-context.surfaces",
+        "failed to initialize runtime context durable surfaces",
+        contextId,
+        cause,
+      ))
+
+const runtimeContextOutputTableLayer = (
+  hostConfig: RuntimeHostConfig["Type"],
+  context: RuntimeContext,
+) =>
+  RuntimeOutputTable.layer({
+    streamOptions: {
+      url: runtimeContextOutputStreamUrl({
+        baseUrl: hostConfig.durableStreamsBaseUrl,
+        prefix: context.host.streamPrefix,
+        contextId: context.contextId,
+      }),
+      contentType: "application/json",
+      ...(hostConfig.headers === undefined ? {} : { headers: hostConfig.headers }),
+    },
+  })
+
+const sandboxSupervisorCommandTableLayer = (
+  hostConfig: RuntimeHostConfig["Type"],
+  context: RuntimeContext,
+) =>
+  SandboxSupervisorCommandTable.layer({
+    streamOptions: {
+      url: hostOwnedStreamUrl({
+        baseUrl: hostConfig.durableStreamsBaseUrl,
+        prefix: context.host.streamPrefix,
+        segment: "durableTools",
+      }),
+      contentType: "application/json",
+      ...(hostConfig.headers === undefined ? {} : { headers: hostConfig.headers }),
+    },
+  })
 
 const outputRowFromProcessChunk = (
   context: RuntimeContext,
@@ -118,6 +167,7 @@ const runCodecRuntimeContext = (options: {
   readonly context: RuntimeContext
   readonly activityAttempt: number
   readonly protocol: Exclude<RuntimeAgentProtocol, "raw">
+  readonly hostConfig: RuntimeHostConfig["Type"]
 }) =>
   runCodecRuntimeEventPipeline({
     context: options.context,
@@ -125,10 +175,12 @@ const runCodecRuntimeContext = (options: {
     protocol: options.protocol,
   }).pipe(
     Effect.provide(RuntimeOutputJournalLayer),
+    Effect.provide(runtimeContextOutputTableLayer(options.hostConfig, options.context)),
     Effect.provide(RuntimeIngressAppenderLayer({
       currentContextId: options.context.contextId,
     })),
     Effect.provide(RuntimeIngressDeliveryTrackerLayer),
+    mapRuntimeContextSurfaceError(options.context.contextId),
   )
 
 export const runRuntimeContext = (
@@ -139,27 +191,8 @@ export const runRuntimeContext = (
   // firegrid-workflow-driven-runtime.BOUNDARIES.1
   Effect.gen(function* () {
     const hostConfig = yield* RuntimeHostConfig
-    const appendEvent = yield* RuntimeEventAppendAndGet
-    const appendLog = yield* RuntimeLogLineAppendAndGet
-    const ingressInputStream = yield* RuntimeIngressInputStream
-    const ingressDelivery = yield* RuntimeIngressDeliveryClaimAndComplete
-    const writeOutputChunk = (
-      sequence: number,
-      chunk: Extract<ProcessOutputChunk, { readonly type: "output" }>,
-    ) =>
-      outputRowFromProcessChunk(context, activityAttempt, sequence, chunk).pipe(
-        Effect.flatMap((row) => {
-          if (row.source === "stdout") {
-            return appendEvent.append(row).pipe(Effect.asVoid)
-          }
-          return appendLog.append(row).pipe(Effect.asVoid)
-        }),
-        mapRuntimeContextError(
-          "runtime-output.write",
-          "failed to write runtime data-plane row",
-          context.contextId,
-        ),
-      )
+    const outputLayer = runtimeContextOutputTableLayer(hostConfig, context)
+    const sandboxCommandLayer = sandboxSupervisorCommandTableLayer(hostConfig, context)
 
     const protocol = agentProtocolForContext(context)
     if (protocol !== "raw") {
@@ -167,71 +200,102 @@ export const runRuntimeContext = (
         context,
         activityAttempt,
         protocol,
+        hostConfig,
       })
     }
 
-    const command = yield* commandForContext(context)
-    const stdin = hostConfig.inputEnabled
-      ? localProcessStdinDelivery({
-        contextId: context.contextId,
-        subscriberId: localProcessStdinSubscriberId,
-      }).pipe(
-        // firegrid-workflow-driven-runtime.BOUNDARIES.5
-        Stream.mapError(cause =>
-          asRuntimeContextError(
-            `runtime-ingress.${cause.op}`,
-            cause.message,
-            context.contextId,
-            cause,
-          )),
-        Stream.provideService(RuntimeIngressInputStream, ingressInputStream),
-        Stream.provideService(RuntimeIngressDeliveryClaimAndComplete, ingressDelivery),
-      )
-      : undefined
-
-    return yield* streamSandboxProcess({
-      labels: {
-        firegridRuntimeContextId: context.contextId,
-      },
-      ...(context.runtime.config.cwd === undefined ? {} : { workingDir: context.runtime.config.cwd }),
-      providerConfig: {
-        contextId: context.contextId,
-      },
-      command: {
-        ...command,
-        ...(stdin === undefined ? {} : { stdin }),
-      },
-    }).pipe(
-      Stream.mapError((cause: SandboxProviderError) => {
-        const op = `sandbox.${cause.op}`
-        return asRuntimeContextError(op, cause.message, context.contextId, cause)
-      }),
-      Stream.mapAccum(0, (sequence, chunk): readonly [number, SequencedChunk] => [
-        sequence + 1,
-        { sequence, chunk },
-      ]),
-      Stream.tap(({ chunk, sequence }) =>
-        chunk.type === "exit"
-          ? Effect.void
-          // firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.7
-          : writeOutputChunk(sequence, chunk)),
-      Stream.filter((item): item is SequencedChunk & {
-        readonly sequence: number
-        readonly chunk: Extract<ProcessOutputChunk, { readonly type: "exit" }>
-      } => item.chunk.type === "exit"),
-      Stream.runHead,
-      Effect.flatMap(Option.match({
-        onNone: () =>
-          Effect.fail(asRuntimeContextError(
-            "sandbox.stream",
-            "process stream ended without an exit chunk",
-            context.contextId,
-          )),
-        onSome: ({ chunk }) =>
-          Effect.succeed({
-            exitCode: chunk.exitCode,
-            ...(chunk.signal === undefined ? {} : { signal: chunk.signal }),
+    return yield* Effect.gen(function* () {
+      const appendEvent = yield* RuntimeEventAppendAndGet
+      const appendLog = yield* RuntimeLogLineAppendAndGet
+      const ingressInputStream = yield* RuntimeIngressInputStream
+      const stdinEmissionClaim = yield* SandboxStdinEmissionClaim
+      const writeOutputChunk = (
+        sequence: number,
+        chunk: Extract<ProcessOutputChunk, { readonly type: "output" }>,
+      ) =>
+        outputRowFromProcessChunk(context, activityAttempt, sequence, chunk).pipe(
+          Effect.flatMap((row) => {
+            if (row.source === "stdout") {
+              return appendEvent.append(row).pipe(Effect.asVoid)
+            }
+            return appendLog.append(row).pipe(Effect.asVoid)
           }),
-      })),
+          mapRuntimeContextError(
+            "runtime-output.write",
+            "failed to write runtime data-plane row",
+            context.contextId,
+          ),
+        )
+
+      const command = yield* commandForContext(context)
+      const stdin = hostConfig.inputEnabled
+        ? localProcessStdinDelivery({
+          contextId: context.contextId,
+        }).pipe(
+          // firegrid-workflow-driven-runtime.BOUNDARIES.5
+          Stream.mapError(cause =>
+            asRuntimeContextError(
+              `runtime-ingress.${cause.op}`,
+              cause.message,
+              context.contextId,
+              cause,
+          )),
+          Stream.provideService(RuntimeIngressInputStream, ingressInputStream),
+          Stream.provideService(SandboxStdinEmissionClaim, stdinEmissionClaim),
+        )
+        : undefined
+
+      return yield* streamSandboxProcess({
+        labels: {
+          firegridRuntimeContextId: context.contextId,
+        },
+        ...(context.runtime.config.cwd === undefined ? {} : { workingDir: context.runtime.config.cwd }),
+        providerConfig: {
+          contextId: context.contextId,
+        },
+        command: {
+          ...command,
+          ...(stdin === undefined ? {} : { stdin }),
+        },
+      }).pipe(
+        Stream.mapError((cause: SandboxProviderError) => {
+          const op = `sandbox.${cause.op}`
+          return asRuntimeContextError(op, cause.message, context.contextId, cause)
+        }),
+        Stream.mapAccum(0, (sequence, chunk): readonly [number, SequencedChunk] => [
+          sequence + 1,
+          { sequence, chunk },
+        ]),
+        Stream.tap(({ chunk, sequence }) =>
+          chunk.type === "exit"
+            ? Effect.void
+            // firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.7
+            : writeOutputChunk(sequence, chunk)),
+        Stream.filter((item): item is SequencedChunk & {
+          readonly sequence: number
+          readonly chunk: Extract<ProcessOutputChunk, { readonly type: "exit" }>
+        } => item.chunk.type === "exit"),
+        Stream.runHead,
+        Effect.flatMap(Option.match({
+          onNone: () =>
+            Effect.fail(asRuntimeContextError(
+              "sandbox.stream",
+              "process stream ended without an exit chunk",
+              context.contextId,
+            )),
+          onSome: ({ chunk }) =>
+            Effect.succeed({
+              exitCode: chunk.exitCode,
+              ...(chunk.signal === undefined ? {} : { signal: chunk.signal }),
+            }),
+        })),
+      )
+    }).pipe(
+      Effect.provide(RuntimeOutputJournalLayer),
+      Effect.provide(outputLayer),
+      Effect.provide(SandboxStdinEmissionClaimLive),
+      Effect.provide(sandboxCommandLayer),
+      Effect.scoped,
+      mapRuntimeContextSurfaceError(context.contextId),
     )
   })

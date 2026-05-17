@@ -1,16 +1,16 @@
 /**
  * Local-process sandbox stdin delivery.
  *
- * Subscribes to sequenced runtime ingress input rows for a given
- * `(contextId, subscriberId)` and translates them into encoded stdin chunks
- * for the local-process sandbox. Per-key delivery progress is recorded through
- * RuntimeIngressDeliveryTracker.
+ * Subscribes to sequenced runtime ingress input rows for a given `contextId`
+ * and translates them into encoded stdin chunks for the local-process sandbox.
+ * Per-command delivery progress is recorded through the sandbox supervisor
+ * command claim surface.
  *
  * Semantic guarantee (AtMostOnce):
  *  - the durable claim upsert is awaited (txid + materialized view) BEFORE
  *    the encoded bytes are emitted downstream;
  *  - if the process dies after the claim and before stdin write, the same
- *    row is skipped on restart because the claim row is durable;
+ *    command is skipped on restart because the claim row is durable;
  *  - stdin is a non-acknowledged sink, so we do not retry the byte emission
  *    on failure.
  *
@@ -28,12 +28,11 @@ import {
 } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Option, Schema, Stream } from "effect"
 import { RuntimeIngressInputStream } from "../../authorities/runtime-ingress-appender.ts"
-import {
-  RuntimeIngressDeliveryClaimAndComplete,
-  type RuntimeIngressDeliveryClaimAndCompleteService,
-} from "../../authorities/runtime-ingress-delivery-tracker.ts"
-import type { RuntimeSubscriberId } from "../../events/index.ts"
 import { sequencedRuntimeIngressRowsForContext } from "../../transforms/ingress-to-agent-input.ts"
+import {
+  SandboxStdinEmissionClaim,
+  stdinEmissionCommandId,
+} from "./supervisor-commands.ts"
 
 export class LocalProcessStdinDeliveryError extends Schema.TaggedError<LocalProcessStdinDeliveryError>()(
   "LocalProcessStdinDeliveryError",
@@ -94,7 +93,6 @@ const providerInputFromIngress = (row: RuntimeIngressInputRow): string => {
 
 interface LocalProcessStdinDeliveryOptions {
   readonly contextId: string
-  readonly subscriberId: RuntimeSubscriberId
   /**
    * Test seam: invoked AFTER the durable claim upsert has completed and
    * BEFORE the encoded bytes are emitted. Production code does not supply
@@ -133,8 +131,8 @@ const mapDeliveryError = (
     }
     if (tag === "DurableTableError") {
       return localProcessStdinDeliveryError(
-        "delivery-write",
-        "runtime input delivery table failure",
+        "supervisor-claim",
+        "sandbox stdin supervisor claim failure",
         options.contextId,
         undefined,
         cause,
@@ -173,23 +171,31 @@ export const localProcessStdinDelivery = (
 ): Stream.Stream<
   Uint8Array,
   LocalProcessStdinDeliveryError,
-  RuntimeIngressInputStream | RuntimeIngressDeliveryClaimAndComplete
+  RuntimeIngressInputStream | SandboxStdinEmissionClaim
 > => {
   const stream = Stream.unwrap(
     Effect.gen(function* () {
       const source = yield* RuntimeIngressInputStream
-      const deliveryTracker: RuntimeIngressDeliveryClaimAndCompleteService =
-        yield* RuntimeIngressDeliveryClaimAndComplete
+      const stdinClaim = yield* SandboxStdinEmissionClaim
       return sequencedInputRows(
         source,
         options.contextId,
       ).pipe(
         Stream.mapEffect(row =>
           Effect.gen(function* () {
-            const claimed = yield* deliveryTracker.claimInput(row, {
-              subscriberId: options.subscriberId,
+            const bytes = encoder.encode(`${providerInputFromIngress(row)}\n`)
+            const commandId = yield* stdinEmissionCommandId({
+              contextId: row.contextId,
+              inputId: row.inputId,
+              bytes,
             })
-            if (Option.isNone(claimed)) {
+            const claimed = yield* stdinClaim.claim({
+              commandId,
+              contextId: row.contextId,
+              inputId: row.inputId,
+              byteLength: bytes.byteLength,
+            })
+            if (!claimed) {
               return Option.none<Uint8Array>()
             }
 
@@ -197,9 +203,7 @@ export const localProcessStdinDelivery = (
               yield* options.onClaimedBeforeEmit(row)
             }
 
-            return Option.some(
-              encoder.encode(`${providerInputFromIngress(row)}\n`),
-            )
+            return Option.some(bytes)
           }).pipe(
             Effect.mapError(mapDeliveryError(options)),
           )),

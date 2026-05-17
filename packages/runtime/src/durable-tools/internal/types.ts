@@ -43,13 +43,26 @@ export const AgentOutputWaitSourceSchema = Schema.Struct({
   _tag: Schema.Literal("AgentOutput"),
 })
 
+const AgentOutputAfterWaitSourceSchema = Schema.Struct({
+  _tag: Schema.Literal("AgentOutputAfter"),
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  afterSequence: Schema.Number,
+})
+
 export const RuntimeRunWaitSourceSchema = Schema.Struct({
   _tag: Schema.Literal("RuntimeRun"),
 })
 
+const RuntimeIngressInputWaitSourceSchema = Schema.Struct({
+  _tag: Schema.Literal("RuntimeIngressInput"),
+})
+
 export const RuntimeWaitSourceSchema = Schema.Union(
   AgentOutputWaitSourceSchema,
+  AgentOutputAfterWaitSourceSchema,
   RuntimeRunWaitSourceSchema,
+  RuntimeIngressInputWaitSourceSchema,
 )
 export type RuntimeWaitSource = Schema.Schema.Type<
   typeof RuntimeWaitSourceSchema
