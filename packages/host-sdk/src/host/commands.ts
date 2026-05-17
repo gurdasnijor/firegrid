@@ -17,9 +17,9 @@ import { RuntimeHostConfig } from "./config.ts"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import type { StartRuntimeOptions } from "./types.ts"
 import {
-  RuntimeContextWorkflow,
+  RuntimeContextWorkflowNative,
   RuntimeContextWorkflowPayload,
-} from "./runtime-context-workflow.ts"
+} from "./runtime-context-workflow-core.ts"
 import {
   readRuntimeContext,
   requireLocalRuntimeContextWithHostSession,
@@ -61,7 +61,7 @@ const executeRuntimeContextWorkflowForContextId = (
   engine: WorkflowEngine.WorkflowEngine["Type"],
   contextId: string,
 ) =>
-  executeRuntimeContextWorkflow(engine, RuntimeContextWorkflow, {
+  executeRuntimeContextWorkflow(engine, RuntimeContextWorkflowNative, {
     executionId: runtimeContextWorkflowExecutionId(contextId),
     payload: RuntimeContextWorkflowPayload.make({
       contextId,

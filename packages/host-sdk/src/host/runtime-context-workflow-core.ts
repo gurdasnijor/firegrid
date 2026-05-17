@@ -1,5 +1,6 @@
 import {
   Activity,
+  DurableDeferred,
   Workflow,
 } from "@effect/workflow"
 import type { RuntimeContext } from "@firegrid/protocol/launch"
@@ -12,6 +13,7 @@ import {
 import { WaitFor } from "@firegrid/runtime/durable-tools"
 import {
   AgentInputEventSchema,
+  PermissionDecisionSchema,
   type AgentInputEvent,
   type AgentOutputEvent,
   type RuntimeAgentOutputObservation,
@@ -26,11 +28,9 @@ import {
   runtimeContextWorkflowExecutionId,
 } from "./internal/runtime-context-helpers.ts"
 import {
-  RuntimeContextWorkflow,
-} from "./runtime-context-workflow.ts"
-import {
   type RuntimeExitEvidence,
   type StartRuntimeResult,
+  RuntimeContextWorkflowName,
   RuntimeContextWorkflowPayload,
   StartRuntimeResultSchema,
   allocateRuntimeActivityAttempt,
@@ -38,17 +38,41 @@ import {
   writeRunExitedResult,
   writeRunStarted,
 } from "./internal/runtime-context-workflow-run.ts"
+import {
+  RuntimeContextSupervisor,
+  type RuntimeContextSupervisorCommand,
+} from "./runtime-context-supervisor.ts"
+
+const RuntimeContextSupervisorStartedEvidenceSchema = Schema.Struct({
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  supervisorSessionId: Schema.String,
+  startCommandId: Schema.String,
+})
+
+const RuntimeContextSupervisorCommandAcceptedSchema = Schema.Struct({
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  supervisorSessionId: Schema.String,
+  commandId: Schema.String,
+})
 
 interface RuntimeContextWorkflowSessionService {
-  readonly start: (
+  readonly startOrAttach: (
     context: RuntimeContext,
     activityAttempt: number,
-  ) => Effect.Effect<void, RuntimeContextError>
+  ) => Effect.Effect<
+    Schema.Schema.Type<typeof RuntimeContextSupervisorStartedEvidenceSchema>,
+    RuntimeContextError
+  >
   readonly send: (
     context: RuntimeContext,
     activityAttempt: number,
-    event: AgentInputEvent,
-  ) => Effect.Effect<void, RuntimeContextError>
+    command: RuntimeContextSupervisorCommand,
+  ) => Effect.Effect<
+    Schema.Schema.Type<typeof RuntimeContextSupervisorCommandAcceptedSchema>,
+    RuntimeContextError
+  >
 }
 
 export class RuntimeContextWorkflowSession extends Context.Tag(
@@ -59,33 +83,32 @@ export class RuntimeContextWorkflowSession extends Context.Tag(
   ): Layer.Layer<RuntimeContextWorkflowSession> => Layer.succeed(this, service)
 }
 
-const startSessionActivity = (
+const startOrAttachSessionActivity = (
   context: RuntimeContext,
   activityAttempt: number,
 ) =>
   Activity.make({
-    name: `firegrid.runtime-context.session.start.${context.contextId}.${activityAttempt}`,
-    success: Schema.Void,
+    name: `firegrid.runtime-context.session.start-or-attach.${context.contextId}.${activityAttempt}`,
+    success: RuntimeContextSupervisorStartedEvidenceSchema,
     error: RuntimeContextError,
     execute: Effect.gen(function*() {
       const session = yield* RuntimeContextWorkflowSession
-      yield* session.start(context, activityAttempt)
+      return yield* session.startOrAttach(context, activityAttempt)
     }),
   })
 
 const sendSessionActivity = (
   context: RuntimeContext,
   activityAttempt: number,
-  event: AgentInputEvent,
-  name: string,
+  command: RuntimeContextSupervisorCommand,
 ) =>
   Activity.make({
-    name,
-    success: Schema.Void,
+    name: `firegrid.runtime-context.session.send.${command.commandId}`,
+    success: RuntimeContextSupervisorCommandAcceptedSchema,
     error: RuntimeContextError,
     execute: Effect.gen(function*() {
       const session = yield* RuntimeContextWorkflowSession
-      yield* session.send(context, activityAttempt, event)
+      return yield* session.send(context, activityAttempt, command)
     }),
   })
 
@@ -125,6 +148,18 @@ const runToolUseActivity = (
     }),
   })
 
+const toolCommandId = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  toolUseId: string,
+) => `tool-${context.contextId}-${activityAttempt}-${toolUseId}`
+
+const permissionDeferred = (
+  permissionRequestId: string,
+) => DurableDeferred.make(`permission-${permissionRequestId}`, {
+  success: PermissionDecisionSchema,
+})
+
 const handleAgentOutput = (
   context: RuntimeContext,
   activityAttempt: number,
@@ -137,9 +172,23 @@ const handleAgentOutput = (
       yield* sendSessionActivity(
         context,
         activityAttempt,
-        result,
-        `firegrid.runtime-context.session.send.tool-result.${event.part.id}`,
+        {
+          commandId: toolCommandId(context, activityAttempt, event.part.id),
+          event: result,
+        },
       )
+      return undefined
+    }
+    if (event._tag === "PermissionRequest") {
+      const decision = yield* DurableDeferred.await(permissionDeferred(event.permissionRequestId))
+      yield* sendSessionActivity(context, activityAttempt, {
+        commandId: `permission-${event.permissionRequestId}`,
+        event: {
+          _tag: "PermissionResponse",
+          permissionRequestId: event.permissionRequestId,
+          decision,
+        },
+      })
       return undefined
     }
     if (event._tag === "Terminated") {
@@ -188,7 +237,7 @@ const runWorkflowNativeRuntimeContext = (
     const context = yield* readRuntimeContext(contextId)
     const activityAttempt = yield* allocateRuntimeActivityAttempt(context)
     yield* writeRunStarted(context, activityAttempt)
-    yield* startSessionActivity(context, activityAttempt)
+    yield* startOrAttachSessionActivity(context, activityAttempt)
     const exit = yield* runReactiveLoop(context, activityAttempt).pipe(
       Effect.catchAll(failAfterWritingRunFailed(context, activityAttempt)),
     )
@@ -196,7 +245,7 @@ const runWorkflowNativeRuntimeContext = (
   })
 
 export const RuntimeContextWorkflowNative = Workflow.make({
-  name: RuntimeContextWorkflow.name,
+  name: RuntimeContextWorkflowName,
   payload: RuntimeContextWorkflowPayload,
   success: StartRuntimeResultSchema,
   error: RuntimeContextError,
@@ -205,3 +254,16 @@ export const RuntimeContextWorkflowNative = Workflow.make({
 
 export const RuntimeContextWorkflowNativeLayer = RuntimeContextWorkflowNative.toLayer(({ contextId }) =>
   runWorkflowNativeRuntimeContext(contextId))
+
+export { RuntimeContextWorkflowPayload }
+
+export const RuntimeContextWorkflowSessionLive = Layer.effect(
+  RuntimeContextWorkflowSession,
+  Effect.gen(function*() {
+    const supervisor = yield* RuntimeContextSupervisor
+    return RuntimeContextWorkflowSession.of({
+      startOrAttach: supervisor.startOrAttach,
+      send: supervisor.send,
+    })
+  }),
+)

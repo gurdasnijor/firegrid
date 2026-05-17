@@ -42,7 +42,8 @@ import { RuntimeHostConfig } from "./config.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.1
 // Raw local-process execution and output-row construction live outside the
-// host barrel; RuntimeContextWorkflow calls this module as the activity effect.
+// host barrel; retained only until the native runtime-context supervisor
+// absorbs the remaining raw-process execution tests.
 type SequencedChunk = {
   readonly sequence: number
   readonly chunk: ProcessOutputChunk

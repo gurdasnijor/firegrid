@@ -36,9 +36,9 @@ import {
 } from "./internal/runtime-context-helpers.ts"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import {
-  RuntimeContextWorkflow,
+  RuntimeContextWorkflowNative,
   RuntimeContextWorkflowPayload,
-} from "./runtime-context-workflow.ts"
+} from "./runtime-context-workflow-core.ts"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.3
 // Host-coupled AgentToolHost live behavior lives here instead of the host
@@ -109,7 +109,7 @@ const runtimeHostAgentToolHostService = (captured: {
       yield* requireLocalContextWithHostCapabilities(captured, childContextId)
       yield* executeRuntimeContextWorkflow(
         captured.workflowEngine,
-        RuntimeContextWorkflow,
+        RuntimeContextWorkflowNative,
         {
           executionId: runtimeContextWorkflowExecutionId(childContextId),
           payload: RuntimeContextWorkflowPayload.make({

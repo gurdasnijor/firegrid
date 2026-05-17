@@ -1,4 +1,5 @@
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option, Stream } from "effect"
+import { CurrentHostSession } from "@firegrid/protocol/launch"
 import {
   RuntimeControlPlaneRecorderLive,
 } from "@firegrid/runtime/host-substrate"
@@ -16,6 +17,7 @@ import {
 } from "@firegrid/runtime/host-substrate"
 import {
   RuntimeOutputJournalLayer,
+  RuntimeAgentOutputAfterEvents,
 } from "@firegrid/runtime/host-substrate"
 import { RuntimeToolUseExecutor } from "@firegrid/runtime/host-substrate"
 import {
@@ -24,6 +26,12 @@ import {
 import { ScheduledInputWorkflowLayer } from "../agent-tools/execution/scheduled-input-workflow.ts"
 import { type AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import { HostOwnedDurableToolsWaitForLive } from "./host-owned-durable-tools.ts"
+import { RuntimeHostConfig } from "./config.ts"
+import {
+  RuntimeOutputTable,
+  runtimeContextOutputStreamUrl,
+} from "@firegrid/protocol/launch"
+import { runtimeAgentOutputObservationFromRow } from "@firegrid/runtime/events"
 
 type RuntimeToolUseExecutorHostEnvironment =
   | DurableWaitRowLookup
@@ -42,6 +50,70 @@ type RuntimeToolUseExecutorHostEnvironment =
 export const HostRuntimeObservationSubstrateLive = HostOwnedDurableToolsWaitForLive.pipe(
   Layer.provideMerge(Layer.mergeAll(
     RuntimeOutputJournalLayer,
+    Layer.effect(
+      RuntimeAgentOutputAfterEvents,
+      Effect.gen(function*() {
+        const hostConfig = yield* RuntimeHostConfig
+        const hostSession = yield* CurrentHostSession
+        return RuntimeAgentOutputAfterEvents.of({
+          after: source => Stream.unwrapScoped(
+            Effect.map(
+              RuntimeOutputTable,
+              table => table.events.rows().pipe(
+                Stream.filterMap(runtimeAgentOutputObservationFromRow),
+                Stream.filter((row) =>
+                  row.contextId === source.contextId &&
+                  row.activityAttempt === source.activityAttempt &&
+                  row.sequence > source.afterSequence),
+              ),
+            ).pipe(
+              Effect.provide(RuntimeOutputTable.layer({
+              streamOptions: {
+                url: runtimeContextOutputStreamUrl({
+                  baseUrl: hostConfig.durableStreamsBaseUrl,
+                  prefix: hostSession.streamPrefix,
+                  contextId: source.contextId,
+                }),
+                contentType: "application/json",
+                ...(hostConfig.headers === undefined ? {} : { headers: hostConfig.headers }),
+              },
+              })),
+            ),
+          ),
+          initial: source =>
+            Effect.map(
+              RuntimeOutputTable,
+              table => table.events.query((coll) =>
+                coll.toArray
+                  .map(runtimeAgentOutputObservationFromRow)
+                  .flatMap(Option.match({
+                    onNone: () => [],
+                    onSome: row => [row],
+                  }))
+                  .filter((row) =>
+                    row.contextId === source.contextId &&
+                    row.activityAttempt === source.activityAttempt &&
+                    row.sequence > source.afterSequence)
+                  .sort((left, right) => left.sequence - right.sequence)[0]).pipe(
+                Effect.map(Option.fromNullable),
+              ),
+            ).pipe(
+              Effect.flatten,
+              Effect.provide(RuntimeOutputTable.layer({
+                streamOptions: {
+                  url: runtimeContextOutputStreamUrl({
+                    baseUrl: hostConfig.durableStreamsBaseUrl,
+                    prefix: hostSession.streamPrefix,
+                    contextId: source.contextId,
+                  }),
+                  contentType: "application/json",
+                  ...(hostConfig.headers === undefined ? {} : { headers: hostConfig.headers }),
+                },
+              })),
+            ),
+        })
+      }),
+    ),
     RuntimeControlPlaneRecorderLive,
     RuntimeIngressInputStreamLayer,
     RuntimeIngressDeliveryTrackerLayer,

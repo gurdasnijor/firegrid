@@ -63,13 +63,7 @@ const streamForSource = (
   Effect.map(RuntimeWaitStreams, (streams) =>
     Match.value(source).pipe(
       Match.tag("AgentOutput", () => streams.agentOutput),
-      Match.tag("AgentOutputAfter", ({ contextId, activityAttempt, afterSequence }) =>
-        streams.agentOutput.pipe(
-          Stream.filter((row) =>
-            row.contextId === contextId &&
-            row.activityAttempt === activityAttempt &&
-            row.sequence > afterSequence),
-        )),
+      Match.tag("AgentOutputAfter", source => streams.agentOutputAfter(source)),
       Match.tag("RuntimeRun", () => streams.runtimeRun),
       Match.tag("RuntimeIngressInput", () => streams.runtimeIngressInput),
       Match.exhaustive,
@@ -221,6 +215,25 @@ const startRouter = Effect.gen(function*() {
   )
   const attached = yield* Ref.make(new Set<string>())
 
+  const completeInitialIfPresent = (
+    wait: WaitRow,
+  ) =>
+    Effect.gen(function*() {
+      if (wait.source._tag !== "AgentOutputAfter") return
+      const streams = yield* RuntimeWaitStreams
+      const row = yield* streams.initialAgentOutputAfter(wait.source)
+      if (Option.isNone(row)) return
+      yield* completeMatch(
+        wait,
+        row.value,
+        waitLookup,
+        waitUpsert,
+        completionLookup,
+        completionUpsert,
+        engine,
+      )
+    })
+
   // firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.8
   yield* waitRows.pipe(
     Stream.filter(wait => wait.status === "active"),
@@ -241,6 +254,16 @@ const startRouter = Effect.gen(function*() {
         yield* Ref.update(
           attached,
           (s) => new Set([...s, encoded]),
+        )
+        yield* completeInitialIfPresent(wait).pipe(
+          Effect.catchAll((cause) =>
+            Effect.logWarning(
+              "[durable-tools] router failed initial wait completion",
+            ).pipe(Effect.annotateLogs({
+              waitName: wait.waitKey.name,
+              cause,
+            })),
+          ),
         )
         yield* Effect.forkScoped(
           Effect.gen(function*() {

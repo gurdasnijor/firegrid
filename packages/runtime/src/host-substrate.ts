@@ -65,6 +65,8 @@ export {
 } from "./agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
 export {
   RuntimeAgentOutputEvents,
+  RuntimeAgentOutputAfterEvents,
+  RuntimeAgentOutputAfterEventsFromRuntimeOutputEventsLive,
   RuntimeAgentOutputRowSink,
   RuntimeEventAppendAndGet,
   RuntimeLogLineAppendAndGet,

@@ -4,11 +4,12 @@ import {
   type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
 import type { DurableTableError } from "effect-durable-operators"
-import { Context, Effect, Layer, Sink, Stream } from "effect"
+import { Context, Effect, Layer, Option, Sink, Stream } from "effect"
 import {
   type RuntimeAgentOutputObservation,
   runtimeAgentOutputObservationFromRow,
 } from "../events/index.ts"
+import type { RuntimeWaitSource } from "../../durable-tools/internal/types.ts"
 
 export type { RuntimeAgentOutputObservation } from "../events/index.ts"
 
@@ -22,6 +23,15 @@ interface RuntimeLogLineAppendAndGetService {
   readonly append: (
     row: RuntimeLogLineRow,
   ) => Effect.Effect<RuntimeLogLineRow, unknown>
+}
+
+interface RuntimeAgentOutputAfterEventsService {
+  readonly after: (
+    source: Extract<RuntimeWaitSource, { readonly _tag: "AgentOutputAfter" }>,
+  ) => Stream.Stream<RuntimeAgentOutputObservation, unknown>
+  readonly initial: (
+    source: Extract<RuntimeWaitSource, { readonly _tag: "AgentOutputAfter" }>,
+  ) => Effect.Effect<Option.Option<RuntimeAgentOutputObservation>, unknown>
 }
 
 const runtimeOutputEvents = (
@@ -88,6 +98,10 @@ export class RuntimeAgentOutputEvents extends Context.Tag(
   "@firegrid/runtime/RuntimeAgentOutputEvents",
 )<RuntimeAgentOutputEvents, Stream.Stream<RuntimeAgentOutputObservation, DurableTableError>>() {}
 
+export class RuntimeAgentOutputAfterEvents extends Context.Tag(
+  "@firegrid/runtime/RuntimeAgentOutputAfterEvents",
+)<RuntimeAgentOutputAfterEvents, RuntimeAgentOutputAfterEventsService>() {}
+
 export const RuntimeOutputJournalLayer = Layer.mergeAll(
   Layer.effect(
     RuntimeEventAppendAndGet,
@@ -123,4 +137,32 @@ export const RuntimeOutputJournalLayer = Layer.mergeAll(
     RuntimeAgentOutputEvents,
     Effect.map(RuntimeOutputTable, runtimeAgentOutputEvents),
   ),
+)
+
+export const RuntimeAgentOutputAfterEventsFromRuntimeOutputEventsLive = Layer.effect(
+  RuntimeAgentOutputAfterEvents,
+  Effect.map(RuntimeOutputTable, table => ({
+    after: source =>
+      runtimeAgentOutputEvents(table).pipe(
+        Stream.filter((row) =>
+          row.contextId === source.contextId &&
+          row.activityAttempt === source.activityAttempt &&
+          row.sequence > source.afterSequence),
+      ),
+    initial: source =>
+      table.events.query((coll) =>
+        coll.toArray
+          .map(runtimeAgentOutputObservationFromRow)
+          .flatMap(Option.match({
+            onNone: () => [],
+            onSome: row => [row],
+          }))
+          .filter((row) =>
+            row.contextId === source.contextId &&
+            row.activityAttempt === source.activityAttempt &&
+            row.sequence > source.afterSequence)
+          .sort((left, right) => left.sequence - right.sequence)[0]).pipe(
+        Effect.map(Option.fromNullable),
+      ),
+  })),
 )

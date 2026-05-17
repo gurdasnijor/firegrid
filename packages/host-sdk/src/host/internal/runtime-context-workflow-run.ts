@@ -8,6 +8,8 @@ import type { RuntimeContextError } from "@firegrid/runtime/host-substrate"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.2
 // RuntimeContextWorkflow owns workflow/activity/run lifecycle wiring only.
+export const RuntimeContextWorkflowName = "firegrid.runtime-context"
+
 export const RuntimeContextWorkflowPayload = Schema.Struct({
   contextId: Schema.String,
 })

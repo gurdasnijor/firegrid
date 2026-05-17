@@ -5,10 +5,12 @@ import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  hostOwnedStreamUrl,
   local,
   makeHostSessionRow,
   makeHostStreamPrefix,
   normalizeRuntimeIntent,
+  runtimeContextOutputStreamUrl,
   type HostId,
   type HostSessionId,
   type RuntimeEventRow,
@@ -19,7 +21,7 @@ import {
   RuntimeIngressInputRowSchema,
   makeRuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeControlPlaneRecorderLive,
@@ -32,6 +34,15 @@ import {
   type AgentInputEvent,
 } from "@firegrid/runtime/events"
 import { DurableToolsWaitForLive, WaitFor } from "@firegrid/runtime/durable-tools"
+import {
+  FiregridRuntimeHostWithWorkflowLive,
+} from "../../src/host/layers.ts"
+import {
+  RuntimeHostConfig,
+} from "../../src/host/config.ts"
+import {
+  HostRuntimeObservationSubstrateLive,
+} from "../../src/host/runtime-substrate.ts"
 import {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowNativeLayer,
@@ -111,6 +122,310 @@ const logRow = (input: {
 })
 
 describe("workflow-native runtime-context core", () => {
+  it("host observation substrate resolves AgentOutputAfter from per-context output initial state", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `path-x-output-initial-${crypto.randomUUID()}`
+    const hostId = "host-a" as HostId
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const activityAttempt = 1
+    const prefix = makeHostStreamPrefix({ namespace, hostId })
+
+    const workflowUrl = hostOwnedStreamUrl({ baseUrl, prefix, segment: "workflow" })
+    const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
+    const ingressUrl = hostOwnedStreamUrl({ baseUrl, prefix, segment: "runtimeIngress" })
+    const hostOutputUrl = hostOwnedStreamUrl({ baseUrl, prefix, segment: "runtimeOutput" })
+    const contextOutputUrl = runtimeContextOutputStreamUrl({ baseUrl, prefix, contextId })
+
+    const AgentOutputAfterWorkflow = Workflow.make({
+      name: "path-x-agent-output-after-initial",
+      payload: Schema.Struct({ contextId: Schema.String }),
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      idempotencyKey: payload => payload.contextId,
+    })
+    const workflowLayer = AgentOutputAfterWorkflow.toLayer(({ contextId: payloadContextId }) =>
+      Effect.gen(function*() {
+        const outcome = yield* WaitFor.match({
+          name: `runtime-context/${payloadContextId}/output-after/${activityAttempt}/-1`,
+          source: {
+            _tag: "AgentOutputAfter",
+            contextId: payloadContextId,
+            activityAttempt,
+            afterSequence: -1,
+          },
+          trigger: [],
+        })
+        if (outcome._tag === "Timeout") return yield* Effect.fail("unexpected timeout")
+        return outcome.row
+      }))
+
+    const testLayer = workflowLayer.pipe(
+      Layer.provideMerge(HostRuntimeObservationSubstrateLive),
+      Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),
+      Layer.provideMerge(RuntimeControlPlaneTable.layer({
+        streamOptions: { url: controlUrl, contentType: "application/json" },
+      })),
+      Layer.provideMerge(RuntimeIngressTable.layer({
+        streamOptions: { url: ingressUrl, contentType: "application/json" },
+      })),
+      Layer.provideMerge(RuntimeOutputTable.layer({
+        streamOptions: { url: hostOutputUrl, contentType: "application/json" },
+      })),
+      Layer.provideMerge(Layer.succeed(RuntimeHostConfig, {
+        durableStreamsBaseUrl: baseUrl,
+        inputEnabled: false,
+      })),
+      Layer.provideMerge(hostSessionLayer(namespace, hostId)),
+    )
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const output = yield* RuntimeOutputTable
+          yield* output.events.insert(outputRow({
+            contextId,
+            activityAttempt,
+            sequence: 0,
+            event: { _tag: "Terminated", exitCode: 0 },
+          }))
+          return yield* AgentOutputAfterWorkflow.execute({ contextId })
+        }).pipe(
+          Effect.provide(RuntimeOutputTable.layer({
+            streamOptions: { url: contextOutputUrl, contentType: "application/json" },
+          })),
+          Effect.provide(testLayer),
+        ),
+      ),
+    )
+
+    expect(result).toMatchObject({
+      contextId,
+      activityAttempt,
+      sequence: 0,
+      _tag: "Terminated",
+    })
+  })
+
+  it("host observation substrate resolves AgentOutputAfter from per-context output live writes", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `path-x-output-live-${crypto.randomUUID()}`
+    const hostId = "host-a" as HostId
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const activityAttempt = 1
+    const prefix = makeHostStreamPrefix({ namespace, hostId })
+
+    const workflowUrl = hostOwnedStreamUrl({ baseUrl, prefix, segment: "workflow" })
+    const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
+    const ingressUrl = hostOwnedStreamUrl({ baseUrl, prefix, segment: "runtimeIngress" })
+    const hostOutputUrl = hostOwnedStreamUrl({ baseUrl, prefix, segment: "runtimeOutput" })
+    const contextOutputUrl = runtimeContextOutputStreamUrl({ baseUrl, prefix, contextId })
+
+    const AgentOutputAfterWorkflow = Workflow.make({
+      name: "path-x-agent-output-after-live",
+      payload: Schema.Struct({ contextId: Schema.String }),
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      idempotencyKey: payload => payload.contextId,
+    })
+    const workflowLayer = AgentOutputAfterWorkflow.toLayer(({ contextId: payloadContextId }) =>
+      Effect.gen(function*() {
+        const outcome = yield* WaitFor.match({
+          name: `runtime-context/${payloadContextId}/output-after/${activityAttempt}/-1`,
+          source: {
+            _tag: "AgentOutputAfter",
+            contextId: payloadContextId,
+            activityAttempt,
+            afterSequence: -1,
+          },
+          trigger: [],
+        })
+        if (outcome._tag === "Timeout") return yield* Effect.fail("unexpected timeout")
+        return outcome.row
+      }))
+
+    const testLayer = workflowLayer.pipe(
+      Layer.provideMerge(HostRuntimeObservationSubstrateLive),
+      Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),
+      Layer.provideMerge(RuntimeControlPlaneTable.layer({
+        streamOptions: { url: controlUrl, contentType: "application/json" },
+      })),
+      Layer.provideMerge(RuntimeIngressTable.layer({
+        streamOptions: { url: ingressUrl, contentType: "application/json" },
+      })),
+      Layer.provideMerge(RuntimeOutputTable.layer({
+        streamOptions: { url: hostOutputUrl, contentType: "application/json" },
+      })),
+      Layer.provideMerge(Layer.succeed(RuntimeHostConfig, {
+        durableStreamsBaseUrl: baseUrl,
+        inputEnabled: false,
+      })),
+      Layer.provideMerge(hostSessionLayer(namespace, hostId)),
+    )
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const fiber = yield* AgentOutputAfterWorkflow.execute({ contextId }).pipe(
+            Effect.forkScoped,
+          )
+          const output = yield* RuntimeOutputTable
+          yield* output.events.insert(outputRow({
+            contextId,
+            activityAttempt,
+            sequence: 0,
+            event: { _tag: "Terminated", exitCode: 0 },
+          }))
+          return yield* Fiber.join(fiber)
+        }).pipe(
+          Effect.provide(RuntimeOutputTable.layer({
+            streamOptions: { url: contextOutputUrl, contentType: "application/json" },
+          })),
+          Effect.provide(testLayer),
+        ),
+      ),
+    )
+
+    expect(result).toMatchObject({
+      contextId,
+      activityAttempt,
+      sequence: 0,
+      _tag: "Terminated",
+    })
+  })
+
+  it("production host composition resolves AgentOutputAfter from per-context output initial state", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `path-x-output-host-${crypto.randomUUID()}`
+    const hostId = "host-a" as HostId
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const activityAttempt = 1
+    const prefix = makeHostStreamPrefix({ namespace, hostId })
+    const contextOutputUrl = runtimeContextOutputStreamUrl({ baseUrl, prefix, contextId })
+
+    const AgentOutputAfterWorkflow = Workflow.make({
+      name: "path-x-agent-output-after-production-host",
+      payload: Schema.Struct({ contextId: Schema.String }),
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      idempotencyKey: payload => payload.contextId,
+    })
+    const workflowLayer = AgentOutputAfterWorkflow.toLayer(({ contextId: payloadContextId }) =>
+      Effect.gen(function*() {
+        const outcome = yield* WaitFor.match({
+          name: `runtime-context/${payloadContextId}/output-after/${activityAttempt}/-1`,
+          source: {
+            _tag: "AgentOutputAfter",
+            contextId: payloadContextId,
+            activityAttempt,
+            afterSequence: -1,
+          },
+          trigger: [],
+        })
+        if (outcome._tag === "Timeout") return yield* Effect.fail("unexpected timeout")
+        return outcome.row
+      }))
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const output = yield* RuntimeOutputTable
+          yield* output.events.insert(outputRow({
+            contextId,
+            activityAttempt,
+            sequence: 0,
+            event: { _tag: "Terminated", exitCode: 0 },
+          }))
+          return yield* AgentOutputAfterWorkflow.execute({ contextId })
+        }).pipe(
+          Effect.provide(RuntimeOutputTable.layer({
+            streamOptions: { url: contextOutputUrl, contentType: "application/json" },
+          })),
+          Effect.provide(workflowLayer),
+          Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+            durableStreamsBaseUrl: baseUrl,
+            namespace,
+            hostId,
+          })),
+        ),
+      ),
+    )
+
+    expect(result).toMatchObject({
+      contextId,
+      activityAttempt,
+      sequence: 0,
+      _tag: "Terminated",
+    })
+  })
+
+  it("production host composition resolves AgentOutputAfter from per-context output live writes", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+    const namespace = `path-x-output-host-live-${crypto.randomUUID()}`
+    const hostId = "host-a" as HostId
+    const contextId = `ctx_${crypto.randomUUID()}`
+    const activityAttempt = 1
+    const prefix = makeHostStreamPrefix({ namespace, hostId })
+    const contextOutputUrl = runtimeContextOutputStreamUrl({ baseUrl, prefix, contextId })
+
+    const AgentOutputAfterWorkflow = Workflow.make({
+      name: "path-x-agent-output-after-production-host-live",
+      payload: Schema.Struct({ contextId: Schema.String }),
+      success: Schema.Unknown,
+      error: Schema.Unknown,
+      idempotencyKey: payload => payload.contextId,
+    })
+    const workflowLayer = AgentOutputAfterWorkflow.toLayer(({ contextId: payloadContextId }) =>
+      Effect.gen(function*() {
+        const outcome = yield* WaitFor.match({
+          name: `runtime-context/${payloadContextId}/output-after/${activityAttempt}/-1`,
+          source: {
+            _tag: "AgentOutputAfter",
+            contextId: payloadContextId,
+            activityAttempt,
+            afterSequence: -1,
+          },
+          trigger: [],
+        })
+        if (outcome._tag === "Timeout") return yield* Effect.fail("unexpected timeout")
+        return outcome.row
+      }))
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const fiber = yield* AgentOutputAfterWorkflow.execute({ contextId }).pipe(
+            Effect.forkScoped,
+          )
+          const output = yield* RuntimeOutputTable
+          yield* output.events.insert(outputRow({
+            contextId,
+            activityAttempt,
+            sequence: 0,
+            event: { _tag: "Terminated", exitCode: 0 },
+          }))
+          return yield* Fiber.join(fiber)
+        }).pipe(
+          Effect.provide(RuntimeOutputTable.layer({
+            streamOptions: { url: contextOutputUrl, contentType: "application/json" },
+          })),
+          Effect.provide(workflowLayer),
+          Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+            durableStreamsBaseUrl: baseUrl,
+            namespace,
+            hostId,
+          })),
+        ),
+      ),
+    )
+
+    expect(result).toMatchObject({
+      contextId,
+      activityAttempt,
+      sequence: 0,
+      _tag: "Terminated",
+    })
+  })
+
   it("workflow-native runtime-context core resolves sequenced input commands through runtime-context wait-router scope", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `path-x-core-${crypto.randomUUID()}`
@@ -221,10 +536,22 @@ describe("workflow-native runtime-context core", () => {
 
     const testLayer = RuntimeContextWorkflowNativeLayer.pipe(
       Layer.provideMerge(RuntimeContextWorkflowSession.layer({
-        start: () => Effect.void,
-        send: (_context, _activityAttempt, event) =>
+        startOrAttach: (context, activityAttempt) =>
+          Effect.succeed({
+            contextId: context.contextId,
+            activityAttempt,
+            supervisorSessionId: "test-supervisor",
+            startCommandId: "test-start",
+          }),
+        send: (_context, _activityAttempt, command) =>
           Effect.sync(() => {
-            sent.push(event)
+            sent.push(command.event)
+            return {
+              contextId: _context.contextId,
+              activityAttempt: _activityAttempt,
+              supervisorSessionId: "test-supervisor",
+              commandId: command.commandId,
+            }
           }),
       })),
       Layer.provideMerge(RuntimeToolUseExecutor.layer({
