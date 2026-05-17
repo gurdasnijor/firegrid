@@ -11,9 +11,6 @@ import {
 import {
   RuntimeRunAppendAndGet,
 } from "../authorities/index.ts"
-import {
-  RuntimeOutputJournalLayer,
-} from "../agent-event-pipeline/authorities/runtime-output-journal.ts"
 import { runRuntimeContext } from "./raw-process-runtime.ts"
 import {
   readRuntimeContext,
@@ -108,9 +105,7 @@ const runRuntimeContextActivity = (
     name: "firegrid.runtime-context.run",
     success: RuntimeExitEvidence,
     error: RuntimeContextError,
-    execute: runRuntimeContext(context, activityAttempt).pipe(
-      Effect.provide(RuntimeOutputJournalLayer),
-    ),
+    execute: runRuntimeContext(context, activityAttempt),
   })
 
 export const RuntimeContextWorkflow = Workflow.make({

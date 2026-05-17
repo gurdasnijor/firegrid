@@ -6,6 +6,7 @@ import {
   makeHostStreamPrefix,
   normalizeRuntimeIntent,
   runtimeControlPlaneStreamUrl,
+  runtimeContextOutputStreamUrl,
   type HostId,
   type RuntimeAgentProtocol,
   type RuntimeEventRow,
@@ -93,13 +94,18 @@ const hostLayer = (input: {
 const outputTableLayer = (input: {
   readonly namespace: string
   readonly hostId: HostId
+  readonly contextId: string
 }) =>
   RuntimeOutputTable.layer({
     streamOptions: {
-      url: `${baseUrl!}/v1/stream/${makeHostStreamPrefix({
-        namespace: input.namespace,
-        hostId: input.hostId,
-      })}.runtimeOutput`,
+      url: runtimeContextOutputStreamUrl({
+        baseUrl: baseUrl!,
+        prefix: makeHostStreamPrefix({
+          namespace: input.namespace,
+          hostId: input.hostId,
+        }),
+        contextId: input.contextId,
+      }),
       contentType: "application/json",
     },
   })
@@ -179,6 +185,22 @@ const waitForAgentEvent = (
     })
   return loop(100)
 }
+
+const waitForAgentEventInContext = (
+  input: {
+    readonly namespace: string
+    readonly hostId: HostId
+    readonly contextId: string
+  },
+  predicate: (event: AgentOutputEvent) => boolean,
+) =>
+  Effect.gen(function* () {
+    const outputTable = yield* RuntimeOutputTable
+    return yield* waitForAgentEvent(outputTable, input.contextId, predicate)
+  }).pipe(
+    Effect.provide(outputTableLayer(input)),
+    Effect.scoped,
+  )
 
 const appendPrompt = (contextId: string, prompt: string) =>
   appendRuntimeIngress({
@@ -429,10 +451,8 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
       Effect.gen(function* () {
         yield* appendPrompt(contextId, "requires permission")
         const fiber = yield* startRuntime({ contextId }).pipe(Effect.fork)
-        const outputTable = yield* RuntimeOutputTable
-        const permission = yield* waitForAgentEvent(
-          outputTable,
-          contextId,
+        const permission = yield* waitForAgentEventInContext(
+          { namespace, hostId, contextId },
           event => event._tag === "PermissionRequest",
         )
         if (permission._tag !== "PermissionRequest") {

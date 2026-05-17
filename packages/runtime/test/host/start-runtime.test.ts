@@ -8,6 +8,7 @@ import {
   normalizeRuntimeIntent,
   RuntimeOutputTable,
   RuntimeStartCapability,
+  runtimeContextOutputStreamUrl,
   type HostId,
 } from "@firegrid/protocol/launch"
 import { Effect, Either, Option } from "effect"
@@ -84,9 +85,7 @@ describe("durable launch tracer bullet 001", () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-launcher-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
-    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const outputTableStreamUrl = `${baseUrl}/v1/stream/${streamPrefix}.runtimeOutput`
     const childCode = `
 console.log(JSON.stringify({
   type: "assistant",
@@ -104,6 +103,11 @@ console.error("diagnostic: child stderr")
       argv: [process.execPath, "--input-type=module", "-e", childCode],
       hostId,
       namespace,
+    })
+    const outputTableStreamUrl = runtimeContextOutputStreamUrl({
+      baseUrl,
+      prefix: makeHostStreamPrefix({ namespace, hostId }),
+      contextId,
     })
 
     const result = await Effect.runPromise(
@@ -285,9 +289,7 @@ console.error("diagnostic: child stderr")
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-launcher-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
-    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const outputTableStreamUrl = `${baseUrl}/v1/stream/${streamPrefix}.runtimeOutput`
     const markerDir = join(tmpdir(), `firegrid-runtime-start-${crypto.randomUUID()}`)
     await mkdir(markerDir)
     const markerPath = join(markerDir, "starts.txt")
@@ -306,6 +308,11 @@ console.log(JSON.stringify({ type: "firegrid.process-start-marker", marker: ${JS
       argv: [process.execPath, "--input-type=module", "-e", childCode],
       hostId,
       namespace,
+    })
+    const outputTableStreamUrl = runtimeContextOutputStreamUrl({
+      baseUrl,
+      prefix: makeHostStreamPrefix({ namespace, hostId }),
+      contextId,
     })
 
     try {
