@@ -55,21 +55,21 @@ import {
   type RuntimeEnvBinding,
 } from "@firegrid/protocol/launch"
 import {
-  FiregridLocalHostLive,
   RuntimeEnvResolverPolicy,
   RuntimeContextInsert,
-  appendRuntimeIngress,
-  firegridRunCreatedBy,
   localProcessSpawnEnvFromHostEnv,
-  runConfigToIngressRequest,
-  runConfigToRuntimeContextIntent,
-  startRuntime,
 } from "@firegrid/runtime"
 import {
-  FiregridMcpServerLayer,
+  appendRuntimeIngress,
   ensurePathInput,
+  FiregridLocalHostLive,
+  FiregridMcpServerLayer,
+  firegridRunCreatedBy,
+  runConfigToIngressRequest,
+  runConfigToRuntimeContextIntent,
   runtimeContextMcpPath,
-} from "@firegrid/runtime/agent-tools"
+  startRuntime,
+} from "@firegrid/host-sdk"
 import { Cause, Console, Data, Effect, Either, Exit, Layer, Option, ParseResult } from "effect"
 
 class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{

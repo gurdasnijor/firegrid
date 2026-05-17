@@ -9,7 +9,7 @@ import {
   appendRuntimeIngress,
   FiregridLocalHostLive,
   startRuntime,
-} from "@firegrid/runtime"
+} from "@firegrid/host-sdk"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
