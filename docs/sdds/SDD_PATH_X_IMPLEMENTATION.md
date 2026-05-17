@@ -105,6 +105,18 @@ composes the substrate through narrow role-scoped subpaths
 | `@firegrid/runtime/runtime-output` | `…/authorities/runtime-output-public.ts` | curated KEPT observation surface only |
 | `@firegrid/runtime/runtime-ingress` | `…/authorities/runtime-ingress-appender.ts` | **transient**: until the deferred-input rewrite |
 | `@firegrid/runtime/workflow-engine` | `src/workflow-engine/index.ts` | `DurableStreamsWorkflowEngine` |
+| `@firegrid/runtime/codecs` | `…/agent-event-pipeline/codecs/index.ts` | accepted (pre-existing): `AgentSession` / ACP / stdio-jsonl framing consumed by `CodecRuntimeOwnerAdapter` |
+| `@firegrid/runtime/sources/sandbox` | `…/agent-event-pipeline/sources/sandbox/index.ts` | accepted (pre-existing): local-process spawn / stdin delivery / env policy consumed by `RawRuntimeOwnerAdapter` |
+
+The table is the host-sdk-consumed scoped surface, not an exhaustive
+list of every runtime subpath. `codecs` and `sources/sandbox` are
+**accepted, pre-existing** subpaths — they predate the `host-substrate`
+retirement, are already in `packages/runtime/package.json` exports, and
+the #309 live-owner adapters legitimately consume both
+(`CodecRuntimeOwnerAdapter` → `@firegrid/runtime/codecs`,
+`RawRuntimeOwnerAdapter` → `@firegrid/runtime/sources/sandbox`). They
+are listed so the allowed-import contract accounts for them explicitly
+rather than leaving them implicit; neither is transient.
 
 `runtime-output-public.ts` deliberately exports only the KEPT set
 (`RuntimeAgentOutputAfterEvents`, `RuntimeAgentOutputEvents`,
