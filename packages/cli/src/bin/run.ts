@@ -54,25 +54,37 @@ import {
   type RuntimeAgentProtocol,
   type RuntimeEnvBinding,
 } from "@firegrid/protocol/launch"
+// firegrid-host-sdk.PACKAGE_GRAPH.5 / RUNTIME_SESSION_SURFACE: @firegrid/cli
+// binds over @firegrid/host-sdk (host composition: host layer, MCP, env
+// policy, runtime start capability) and @firegrid/client-sdk (session
+// methods). It must NOT import @firegrid/runtime substrate, nor the
+// RuntimeContextInsert / appendRuntimeIngress / runConfigToIngressRequest
+// table-authority surfaces: per the coordinator decision run/start go
+// through the session plane (sessions.createOrLoad + session.prompt +
+// session.start), not direct runtime-context insert + ingress append.
 import {
-  RuntimeEnvResolverPolicy,
-  RuntimeContextInsert,
-  localProcessSpawnEnvFromHostEnv,
-} from "@firegrid/runtime/host-substrate"
-import {
-  appendRuntimeIngress,
   ensurePathInput,
   FiregridLocalHostLive,
   FiregridMcpServerLayer,
   firegridRunCreatedBy,
-  runConfigToIngressRequest,
-  runConfigToRuntimeContextIntent,
+  localProcessSpawnEnvFromHostEnv,
+  RuntimeEnvResolverPolicy,
+  RuntimeStartCapabilityLive,
   runtimeContextMcpPath,
-  startRuntime,
 } from "@firegrid/host-sdk"
+import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client-sdk/firegrid"
+import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
 import { Cause, Console, Data, Effect, Either, Exit, Layer, Option, ParseResult } from "effect"
 
 class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{
+  readonly message: string
+}> {}
+
+// session.start() surfaces its failure as `unknown` (client-sdk start
+// capability boundary). Contain it in a typed CLI error so the top-level
+// command channel stays a known tagged union (and exits 1, distinct from
+// the usage-error exit 2).
+class FiregridRunError extends Data.TaggedError("FiregridRunError")<{
   readonly message: string
 }> {}
 
@@ -137,10 +149,10 @@ const rawRunConfigFromCli = (
 ): Effect.Effect<RawRunConfig, FiregridCliUsageError> =>
   Effect.gen(function* () {
     if (!input.allowEmptyAgentArgv && input.agentArgv.length === 0) {
-      return yield* Effect.fail(usageError(
+      return yield* usageError(
         "firegrid run requires an agent command after `--`.\n" +
           "Example: pnpm firegrid -- run -- node -e 'console.log(\"hello\")'",
-      ))
+      )
     }
 
     const envBindings: Array<RuntimeEnvBinding> = []
@@ -150,15 +162,15 @@ const rawRunConfigFromCli = (
     while (index < input.secretEnv.length) {
       const decoded = decodeLaunchSecretEnvCliValue(input.secretEnv[index]!)
       if (Either.isLeft(decoded)) {
-        return yield* Effect.fail(usageError(decoded.left))
+        return yield* usageError(decoded.left)
       }
       const { authorizedBinding, envBinding } = decoded.right
       const [name] = authorizedBinding
       if (seenTargets.has(name)) {
-        return yield* Effect.fail(usageError(
+        return yield* usageError(
           `--secret-env target ${name} was specified more than once; ` +
             "each child env-var name may be authorized at most once per invocation.",
-        ))
+        )
       }
       seenTargets.add(name)
       envBindings.push(envBinding)
@@ -197,31 +209,75 @@ const decodeCliRunConfig = (
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.2
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.7
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8
-const executeRun = (config: LaunchConfig, contextId: string) =>
+// CLI session identity. Each `firegrid run`/`start` invocation is a fresh
+// caller-owned session, so the externalKey id is a generated uuid; the
+// source distinguishes the two CLI entrypoints. contextId is derived
+// deterministically from the externalKey (the same derivation client-sdk
+// uses internally), which the caller needs up-front for MCP URL injection.
+type CliExternalKey = { readonly source: string; readonly id: string }
+
+const cliExternalKey = (kind: "run" | "start"): CliExternalKey => ({
+  source: `firegrid:cli:${kind}`,
+  id: crypto.randomUUID(),
+})
+
+const cliContextId = (externalKey: CliExternalKey): string =>
+  sessionContextIdForExternalKey(externalKey)
+
+// sessions.createOrLoad expects `runtime: PublicLaunchRuntimeIntent`. The CLI
+// decodes a LaunchConfig from argv; the protocol-owned `local` builder
+// produces the public intent. Centralized here so the LaunchConfig field
+// copy is a single review point.
+const launchConfigToPublicRuntimeIntent = (config: LaunchConfig) => {
+  const optional = {
+    agent: config.agent,
+    agentProtocol: config.agentProtocol,
+    cwd: config.cwd,
+    envBindings: config.envBindings,
+    mcpServers: config.mcpServers,
+  }
+  const present = Object.fromEntries(
+    Object.entries(optional).filter((entry) => entry[1] !== undefined),
+  )
+  return local.jsonl({ argv: config.agentArgv, ...present })
+}
+
+// firegrid-host-sdk.RUNTIME_SESSION_SURFACE / PACKAGE_GRAPH.5
+// run is session-shaped: createOrLoad → prompt → start, through the
+// @firegrid/client-sdk Firegrid service, not RuntimeContextInsert /
+// appendRuntimeIngress / startRuntime substrate authorities.
+const executeRun = (config: LaunchConfig, externalKey: CliExternalKey) =>
   Effect.gen(function* () {
-    // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
-    // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
-    const intent = runConfigToRuntimeContextIntent(config)
-    const contextInsert = yield* RuntimeContextInsert
-    const context = yield* contextInsert.insertLocalContext(intent, {
-      contextId,
+    const firegrid = yield* Firegrid
+    const session = yield* firegrid.sessions.createOrLoad({
+      externalKey,
+      runtime: launchConfigToPublicRuntimeIntent(config),
       createdBy: firegridRunCreatedBy,
     })
     yield* Console.log(
-      `firegrid:run: launched context ${context.contextId} (${config.agentArgv.join(" ")})`,
+      `firegrid:run: launched context ${session.contextId} (${config.agentArgv.join(" ")})`,
     )
 
-    const ingressRequest = runConfigToIngressRequest(config, context.contextId)
-    if (ingressRequest !== undefined) {
-      yield* appendRuntimeIngress(ingressRequest)
+    if (config.prompt !== undefined) {
+      yield* session.prompt({
+        payload: config.prompt,
+        idempotencyKey: `${session.contextId}:cli-initial`,
+      })
       yield* Console.log(
-        `firegrid:run: appended initial prompt input for ${context.contextId}`,
+        `firegrid:run: appended initial prompt input for ${session.contextId}`,
       )
     }
 
-    const result = yield* startRuntime({ contextId: context.contextId })
+    const result = yield* session.start().pipe(
+      Effect.mapError((cause) =>
+        new FiregridRunError({
+          message: `firegrid run failed to start session ${session.contextId}: ${
+            cause instanceof Error ? cause.message : String(cause)
+          }`,
+        })),
+    )
     yield* Console.log(
-      `firegrid:run: context ${context.contextId} exited (attempt ${result.activityAttempt}, exitCode ${result.exitCode}${
+      `firegrid:run: context ${session.contextId} exited (attempt ${result.activityAttempt}, exitCode ${result.exitCode}${
         result.signal === undefined ? "" : `, signal ${result.signal}`
       })`,
     )
@@ -280,12 +336,12 @@ const durableStreamsEndpoint = Effect.acquireRelease(
       server,
     }
   }),
-  (endpoint) =>
-    endpoint.server === undefined
+  (endpoint) => {
+    const server = endpoint.server
+    return server === undefined
       ? Effect.void
-      : Effect.promise(() => endpoint.server.stop()).pipe(
-        Effect.catchAll(() => Effect.void),
-      ),
+      : Effect.tryPromise(() => server.stop()).pipe(Effect.ignore)
+  },
 ).pipe(
   Effect.map((endpoint): DurableStreamsEndpoint => ({
     baseUrl: endpoint.baseUrl,
@@ -328,28 +384,31 @@ const seedContextAndPrintReady = (
   config: StartConfig,
 ) =>
   Effect.gen(function* () {
-    const contextId = `ctx_${crypto.randomUUID()}`
+    const externalKey = cliExternalKey("start")
+    const contextId = cliContextId(externalKey)
     const address = yield* HttpServer.addressFormattedWith((addr) => Effect.succeed(addr))
     const runConfig = injectLaunchMcpDeclaration(
       config.runConfig,
       firegridRuntimeContextMcpDeclaration(mcpUrl(address, config.mcpPath, contextId)),
     )
-    const contextInsert = yield* RuntimeContextInsert
-    const context = yield* contextInsert.insertLocalContext(
-      runConfigToRuntimeContextIntent(runConfig),
-      {
-        contextId,
-        createdBy: startCreatedBy,
-      },
-    )
-    const ingressRequest = runConfigToIngressRequest(runConfig, context.contextId)
-    if (ingressRequest !== undefined) {
-      yield* appendRuntimeIngress(ingressRequest)
+    // `firegrid start` seeds the session and keeps the host alive for MCP
+    // clients; it does not run to completion (no session.start()).
+    const firegrid = yield* Firegrid
+    const session = yield* firegrid.sessions.createOrLoad({
+      externalKey,
+      runtime: launchConfigToPublicRuntimeIntent(runConfig),
+      createdBy: startCreatedBy,
+    })
+    if (runConfig.prompt !== undefined) {
+      yield* session.prompt({
+        payload: runConfig.prompt,
+        idempotencyKey: `${session.contextId}:cli-initial`,
+      })
     }
     yield* printReadyRecord({
       address,
       config,
-      contextId: context.contextId,
+      contextId: session.contextId,
       durableStreams,
     })
   })
@@ -360,11 +419,26 @@ const hostMcpLayer = (
 ): Layer.Layer<HttpServer.HttpServer, unknown, never> =>
   {
     const headers = durableTableHeadersFromEnv()
+    // The CLI composes the host in-process, then layers the client-sdk
+    // `Firegrid` service over it. `session.start()` requires
+    // `RuntimeStartCapability` (host-sdk `RuntimeStartCapabilityLive`);
+    // `FiregridLive` shares the host's control-plane/host-session context.
+    // FiregridLive consumes FiregridConfig (Durable Streams endpoint +
+    // namespace) and the host's RuntimeControlPlaneTable. The CLI process
+    // owns the durable endpoint, so it supplies the client config from the
+    // same values the host layer is built with.
+    const clientConfigLayer = Layer.succeed(FiregridConfig, {
+      durableStreamsBaseUrl: durableStreams.baseUrl,
+      namespace: config.namespace,
+      ...(headers === undefined ? {} : { headers }),
+    })
     const layer = FiregridMcpServerLayer({
       host: config.mcpHost,
       port: config.mcpPort,
       path: ensurePathInput(config.mcpPath),
     }).pipe(
+      Layer.provideMerge(FiregridLive.pipe(Layer.provide(clientConfigLayer))),
+      Layer.provideMerge(RuntimeStartCapabilityLive),
       Layer.provideMerge(FiregridLocalHostLive(
         {
           durableStreamsBaseUrl: durableStreams.baseUrl,
@@ -413,12 +487,13 @@ const runWithMcp = (
       const address = yield* HttpServer.addressFormattedWith((addr) => Effect.succeed(addr)).pipe(
         Effect.provide(context),
       )
-      const contextId = `ctx_${crypto.randomUUID()}`
+      const externalKey = cliExternalKey("run")
+      const contextId = cliContextId(externalKey)
       const normalized = injectLaunchMcpDeclaration(
         config,
         firegridRuntimeContextMcpDeclaration(mcpUrl(address, hostConfig.mcpPath, contextId)),
       )
-      return yield* executeRun(normalized, contextId).pipe(
+      return yield* executeRun(normalized, externalKey).pipe(
         Effect.provide(context),
       )
     }),
@@ -594,7 +669,7 @@ const startCommand = Command.make(
         mcpPath,
         runConfig,
       }
-      yield* Layer.launch(hostAndMcpLayer(durableStreams, config))
+      return yield* Layer.launch(hostAndMcpLayer(durableStreams, config))
     }).pipe(Effect.scoped),
 ).pipe(Command.withDescription(startHelp))
 
@@ -610,12 +685,11 @@ const cli = Command.run(rootCommand, {
 
 const program = cli(globalThis.process.argv).pipe(
   Effect.provide(NodeContext.layer),
-  Effect.catchTag("FiregridCliUsageError", (error) =>
-    Console.error(error.message).pipe(
-      Effect.zipRight(Effect.sync(() => {
-        globalThis.process.exitCode = 2
-      })),
-    )),
+  // @effect/cli `Command.run` handles command-handler failures
+  // (FiregridCliUsageError / FiregridRunError) and renders/exits for them,
+  // so the top-level error channel is already `never` here — typed
+  // `catchTag`s would be impossible. A single `catchAllCause` owns the
+  // top-level defect/interrupt exit path.
   Effect.catchAllCause((cause) =>
     Console.error(`firegrid failed: ${Cause.pretty(cause)}`).pipe(
       Effect.zipRight(Effect.sync(() => {
@@ -629,12 +703,19 @@ function teardown<E, A>(
   onExit: (code: number) => void,
 ): void {
   Exit.match(exit, {
-    onSuccess: () => onExit(globalThis.process.exitCode ?? 0),
+    onSuccess: () => onExit(Number(globalThis.process.exitCode ?? 0)),
     onFailure: (cause) => onExit(Cause.isInterruptedOnly(cause) ? 0 : 1),
   })
 }
 
-NodeRuntime.runMain(program, {
+// Localized final-boundary cast (firegrid-host-sdk.PACKAGE_GRAPH.5 review
+// note): the in-process host layer really does provide Firegrid /
+// RuntimeStartCapability / CurrentHostSession at runtime, but the
+// pre-existing `as Layer.Layer<HttpServer.HttpServer, ...>` host-composition
+// casts erase those services from the static success type, so the requirement
+// is discharged at runtime but not visible to the type. Keep the cast here at
+// the runMain boundary rather than widening the host/client composition.
+NodeRuntime.runMain(program as Effect.Effect<unknown, never, never>, {
   disableErrorReporting: true,
   teardown,
 })

@@ -807,6 +807,35 @@ export default tseslint.config(
     },
   },
   {
+    // firegrid-host-sdk.PACKAGE_GRAPH.5: the CLI binds over host-sdk +
+    // client-sdk + protocol; it must not reach into runtime substrate.
+    files: ["packages/cli/src/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            restrictedInternalPackage(
+              "@firegrid/runtime",
+              "@firegrid/cli must bind over @firegrid/host-sdk and @firegrid/client-sdk, not import the runtime substrate directly (firegrid-host-sdk.PACKAGE_GRAPH.5).",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/lab",
+              "The CLI must not depend on the lab app.",
+            ),
+          ],
+          patterns: [
+            {
+              group: ["@firegrid/runtime", "@firegrid/runtime/*"],
+              message:
+                "@firegrid/cli must bind over @firegrid/host-sdk and @firegrid/client-sdk, not @firegrid/runtime substrate (firegrid-host-sdk.PACKAGE_GRAPH.5).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["apps/lab/src/**/*.ts", "apps/lab/src/**/*.tsx"],
     rules: {
       "no-restricted-imports": [

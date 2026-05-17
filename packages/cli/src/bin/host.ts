@@ -1,14 +1,14 @@
 import { NodeRuntime } from "@effect/platform-node"
+// firegrid-host-sdk.PACKAGE_GRAPH.5: @firegrid/cli binds over @firegrid/host-sdk
+// (+ client-sdk + protocol); it must not import @firegrid/runtime substrate.
 import {
   ensurePathInput,
   FiregridLocalHostLive,
   FiregridMcpServerLayer,
   FiregridMcpServerListenerConfig,
+  localProcessSpawnEnvFromHostEnv,
   RuntimeHostTopologyFromConfig,
 } from "@firegrid/host-sdk"
-import {
-  localProcessSpawnEnvFromHostEnv,
-} from "@firegrid/runtime/host-substrate"
 import { Console, Effect, Layer } from "effect"
 
 export const firegridHostProgram = Effect.never
