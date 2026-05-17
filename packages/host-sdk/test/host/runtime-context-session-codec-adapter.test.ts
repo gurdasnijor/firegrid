@@ -20,6 +20,7 @@ import {
 } from "@firegrid/runtime/sources/sandbox"
 import {
   Effect,
+  Fiber,
   Layer,
   Ref,
 } from "effect"
@@ -229,9 +230,11 @@ describe("CodecRuntimeContextWorkflowSessionLive", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const session = yield* RuntimeContextWorkflowSession
-          yield* session.send(runtimeContext, 1, promptCommand("input-1", "hello codec"))
+          yield* session.startOrAttach(runtimeContext, 1)
           yield* waitUntil(() => state.harnesses.length === 1, "codec byte pipe")
-          return yield* readLine(state.harnesses[0]!.stdinReader)
+          const line = yield* readLine(state.harnesses[0]!.stdinReader).pipe(Effect.fork)
+          yield* session.send(runtimeContext, 1, promptCommand("input-1", "hello codec"))
+          return yield* Fiber.join(line)
         }).pipe(Effect.provide(testLayer(state))),
       ),
     )
@@ -259,9 +262,10 @@ describe("CodecRuntimeContextWorkflowSessionLive", () => {
           const session = yield* RuntimeContextWorkflowSession
           yield* session.startOrAttach(runtimeContext, 1)
           yield* waitUntil(() => state.harnesses.length === 1, "codec byte pipe")
+          const line = yield* readLine(state.harnesses[0]!.stdinReader).pipe(Effect.fork)
           yield* session.send(runtimeContext, 1, command)
           yield* session.send(runtimeContext, 1, command)
-          return yield* readLine(state.harnesses[0]!.stdinReader)
+          return yield* Fiber.join(line)
         }).pipe(Effect.provide(testLayer(state))),
       ),
     )
@@ -302,7 +306,7 @@ describe("CodecRuntimeContextWorkflowSessionLive", () => {
       ),
     )
 
-    expect(state.events.map(row => JSON.parse(row.raw) as { readonly _tag: string })).toEqual(
+    expect(state.events.map(row => (JSON.parse(row.raw) as { readonly event: { readonly _tag: string } }).event)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ _tag: "Ready" }),
         expect.objectContaining({ _tag: "TextChunk" }),

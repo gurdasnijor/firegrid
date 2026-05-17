@@ -32,13 +32,14 @@ import {
 import { SandboxProvider as SandboxProviderTag } from "@firegrid/runtime/sources/sandbox"
 import {
   Clock,
+  Context,
   Effect,
   Layer,
   Match,
   Option,
   Ref,
   Schema,
-  type Scope,
+  Scope,
   Stream,
 } from "effect"
 import {
@@ -295,16 +296,20 @@ export const CodecRuntimeContextWorkflowSessionLive: Layer.Layer<
       context: RuntimeContext,
       activityAttempt: number,
     ): Effect.Effect<RuntimeContextSessionStartedEvidence, RuntimeContextError> =>
-      Effect.scoped(
         Effect.gen(function* () {
           const key = codecSessionKey(context, activityAttempt)
           const current = yield* Ref.get(sessions)
           if (current.has(key)) return startedEvidence(context, activityAttempt)
 
-          const bytes = yield* openByteStream(context).pipe(Effect.provide(captured))
+          const bytes = yield* Scope.extend(
+            openByteStream(context).pipe(Effect.provide(captured)),
+            scope,
+          )
           const protocol = protocolForContext(context)
-          const agentSession = yield* AgentSession.pipe(
-            Effect.provide(codecLayerForProtocol(bytes, context, protocol)),
+          const sessionContext = yield* Layer.buildWithScope(
+            codecLayerForProtocol(bytes, context, protocol),
+            scope,
+          ).pipe(
             Effect.mapError(cause =>
               asRuntimeContextError(
                 `agent-codec.${cause.op}`,
@@ -313,6 +318,7 @@ export const CodecRuntimeContextWorkflowSessionLive: Layer.Layer<
                 cause,
               )),
           )
+          const agentSession = Context.get(sessionContext, AgentSession)
           const session: CodecRuntimeContextSession = {
             context,
             activityAttempt,
@@ -358,8 +364,7 @@ export const CodecRuntimeContextWorkflowSessionLive: Layer.Layer<
             Effect.forkIn(scope),
           )
           return startedEvidence(context, activityAttempt)
-        }),
-      )
+        })
 
     const getOrStart = (
       context: RuntimeContext,
