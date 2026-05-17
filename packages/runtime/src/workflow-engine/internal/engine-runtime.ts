@@ -104,7 +104,7 @@ export const makeWorkflowEngine = (
       }
 
       const instance = WorkflowEngine.WorkflowInstance.initial(entry.workflow, executionId)
-      instance.interrupted = row.interrupted
+      Object.assign(instance, { interrupted: row.interrupted, cause: row.cause as typeof instance.cause })
 
       const fiber = yield* entry.execute(row.payload as object, executionId).pipe(
         Workflow.intoResult,
@@ -121,7 +121,7 @@ export const makeWorkflowEngine = (
             yield* orDieTable(table.executions.upsert({
               ...latest,
               interrupted: instance.interrupted,
-              suspended: result._tag === "Suspended",
+              suspended: result._tag === "Suspended", ...(result._tag === "Suspended" && result.cause !== undefined ? { cause: result.cause } : {}),
               ...(finalResult !== undefined ? { finalResult } : {}),
             }))
           }),

@@ -1,6 +1,7 @@
 import * as acp from "@agentclientprotocol/sdk"
 import { IdGenerator, Prompt, Response } from "@effect/ai"
-import { Effect, Layer, Match, Queue, Ref, Runtime, Stream } from "effect"
+import { DurableDeferred, WorkflowEngine } from "@effect/workflow"
+import { Effect, Exit, Layer, Match, Option, Queue, Ref, Runtime, Stream } from "effect"
 import type {
   AgentCapabilities,
   AgentInputEvent,
@@ -8,6 +9,7 @@ import type {
   PermissionDecision,
   PermissionOption,
 } from "../../events/index.ts"
+import { PermissionDecisionSchema } from "../../events/index.ts"
 import type { AgentByteStream } from "../../sources/byte-stream.ts"
 import { AgentCodecError, AgentSession } from "../contract.ts"
 import {
@@ -150,6 +152,11 @@ const makePermissionRequestId = (
     Effect.map(id => `permission_${id}`),
   )
 
+const permissionDeferred = (permissionRequestId: string) =>
+  DurableDeferred.make(`permission-${permissionRequestId}`, {
+    success: PermissionDecisionSchema,
+  })
+
 const status = (
   kind: string,
   payload?: unknown,
@@ -222,10 +229,13 @@ export const AcpSessionLive = (
     Effect.gen(function*() {
       const scope = yield* Effect.scope
       const idGenerator = yield* IdGenerator.IdGenerator
+      const workflowEngine = yield* Effect.serviceOption(WorkflowEngine.WorkflowEngine)
+      const workflowInstance = yield* Effect.serviceOption(WorkflowEngine.WorkflowInstance)
       const runtime = yield* Effect.runtime<never>()
       const runPromise = Runtime.runPromise(runtime)
       const outputEvents = yield* Queue.unbounded<AgentOutputEvent>()
       const currentTextDeltaId = yield* Ref.make<string | undefined>(undefined)
+      const pendingPermissionIds = yield* Ref.make<ReadonlySet<string>>(new Set())
       const emitEffect = (event: AgentOutputEvent): Effect.Effect<void> =>
         Queue.offer(outputEvents, event).pipe(Effect.asVoid)
       const emit = (event: AgentOutputEvent): Promise<void> =>
@@ -248,69 +258,97 @@ export const AcpSessionLive = (
         )
       }
 
-      type LivePermissionContinuation = {
-        readonly options: ReadonlyArray<acp.PermissionOption>
-        readonly resolve: (response: acp.RequestPermissionResponse) => void
-      }
-
-      // firegrid-runtime-boundary-reconciliation.CODEC_SESSION.3
-      // firegrid-runtime-agent-event-pipeline.STAGES.3-10
-      // firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3
-      // ACP requestPermission is a live protocol continuation, not durable
-      // permission state. If the ACP process/session dies after a
-      // PermissionRequest is journaled but before response delivery, the old
-      // promise cannot be resumed; replay must create a new live continuation.
-      const livePermissionContinuations = new Map<
-        string,
-        LivePermissionContinuation
-      >()
-
-      const registerPermission = (
-        permissionRequestId: string,
-        entry: LivePermissionContinuation,
-      ): Effect.Effect<void> =>
-        Effect.sync(() => {
-          livePermissionContinuations.set(permissionRequestId, entry)
+      const durablePermissionContext = (): Effect.Effect<
+        {
+          readonly engine: WorkflowEngine.WorkflowEngine["Type"]
+          readonly instance: WorkflowEngine.WorkflowInstance["Type"]
+        },
+        AgentCodecError
+      > =>
+        Option.match(workflowEngine, {
+          onNone: () =>
+            Effect.fail(codecError(
+              "permission",
+              "ACP durable permission continuation requires WorkflowEngine",
+            )),
+          onSome: engine =>
+            Option.match(workflowInstance, {
+              onNone: () =>
+                Effect.fail(codecError(
+                  "permission",
+                  "ACP durable permission continuation requires WorkflowInstance",
+                )),
+              onSome: instance => Effect.succeed({ engine, instance }),
+            }),
         })
 
-      const takePermission = (
+      const awaitPermissionDecision = (
         permissionRequestId: string,
-      ): Effect.Effect<LivePermissionContinuation | undefined> =>
-        Effect.sync(() => {
-          const pending = livePermissionContinuations.get(permissionRequestId)
-          if (pending !== undefined) {
-            livePermissionContinuations.delete(permissionRequestId)
-          }
-          return pending
+      ): Effect.Effect<PermissionDecision, AgentCodecError> =>
+        Effect.gen(function*() {
+          const { engine, instance } = yield* durablePermissionContext()
+          const deferred = permissionDeferred(permissionRequestId)
+          const poll = (): Effect.Effect<PermissionDecision, AgentCodecError> => Effect.gen(function*() {
+            const exit = yield* engine.deferredResult(deferred).pipe(
+              Effect.provideService(WorkflowEngine.WorkflowInstance, instance),
+            )
+            if (exit === undefined) {
+              yield* Effect.sleep("20 millis")
+              return yield* poll()
+            }
+            return yield* exit
+          })
+          return yield* poll().pipe(
+            Effect.ensuring(Ref.update(pendingPermissionIds, ids => {
+              const next = new Set(ids)
+              next.delete(permissionRequestId)
+              return next
+            })),
+          )
         })
 
-      const cancelPendingPermissions = Effect.sync(() => {
-        for (const { resolve } of livePermissionContinuations.values()) {
-          resolve({ outcome: { outcome: "cancelled" } })
-        }
-        livePermissionContinuations.clear()
+      const completePermissionDecision = (
+        permissionRequestId: string,
+        decision: PermissionDecision,
+      ): Effect.Effect<void, AgentCodecError> =>
+        Effect.gen(function*() {
+          const { engine, instance } = yield* durablePermissionContext()
+          const deferred = permissionDeferred(permissionRequestId)
+          const token = DurableDeferred.tokenFromExecutionId(deferred, {
+            workflow: instance.workflow,
+            executionId: instance.executionId,
+          })
+          yield* DurableDeferred.done(deferred, {
+            token,
+            exit: Exit.succeed(decision),
+          }).pipe(
+            Effect.provideService(WorkflowEngine.WorkflowEngine, engine),
+            Effect.orDie,
+          )
+        })
+
+      const cancelPendingPermissions = Effect.gen(function*() {
+        const ids = yield* Ref.get(pendingPermissionIds)
+        yield* Effect.forEach(
+          ids,
+          id => completePermissionDecision(id, { _tag: "Cancelled" }),
+          { discard: true },
+        )
+        yield* Ref.set(pendingPermissionIds, new Set())
       })
 
       const client: acp.Client = {
         requestPermission: async params => {
           const permissionRequestId = await runPromise(makePermissionRequestId(idGenerator))
-          let resolveResponse: (response: acp.RequestPermissionResponse) => void = () => {}
-          const response = new Promise<acp.RequestPermissionResponse>(resolve => {
-            resolveResponse = resolve
-          })
-          await runPromise(
-            registerPermission(permissionRequestId, {
-              options: params.options,
-              resolve: resolveResponse,
-            }),
-          )
+          await runPromise(Ref.update(pendingPermissionIds, ids => new Set(ids).add(permissionRequestId)))
           await emit({
             _tag: "PermissionRequest",
             permissionRequestId,
             toolUseId: params.toolCall.toolCallId,
             options: mapPermissionOptions(params.options),
           })
-          return await response
+          const decision = await runPromise(awaitPermissionDecision(permissionRequestId))
+          return permissionResponse(decision, params.options)
         },
         sessionUpdate: async params => {
           await runPromise(
@@ -379,18 +417,7 @@ export const AcpSessionLive = (
         event: Extract<AgentInputEvent, { _tag: "PermissionResponse" }>,
       ): Effect.Effect<void, AgentCodecError> =>
         Effect.gen(function*() {
-          const pending = yield* takePermission(event.permissionRequestId)
-          if (pending === undefined) {
-            return yield* Effect.fail(
-              codecError(
-                "send",
-                `unknown ACP permission request ${event.permissionRequestId}`,
-              ),
-            )
-          }
-          yield* Effect.sync(() => {
-            pending.resolve(permissionResponse(event.decision, pending.options))
-          })
+          yield* completePermissionDecision(event.permissionRequestId, event.decision)
         })
 
       const sendCancel = (): Effect.Effect<void, AgentCodecError> =>

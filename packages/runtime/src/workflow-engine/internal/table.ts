@@ -21,6 +21,7 @@ const WorkflowExecutionRowSchema = Schema.Struct({
   parentExecutionId: Schema.optional(Schema.String),
   interrupted: Schema.Boolean,
   suspended: Schema.Boolean,
+  cause: Schema.optional(Schema.Unknown),
   finalResult: Schema.optional(Schema.Unknown),
 })
 export type WorkflowExecutionRow = Schema.Schema.Type<typeof WorkflowExecutionRowSchema>
