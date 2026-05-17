@@ -137,6 +137,22 @@ module.exports = {
       to: { path: "^packages/(client-sdk|cli)/src" },
     },
     {
+      // firegrid-host-sdk.PACKAGE_GRAPH.2
+      // firegrid-host-sdk.TOOL_EXECUTOR_SEAM.1 / .3
+      // Separate rule (not the Lane 1-owned runtime-no-client-sdk-or-cli
+      // block above): runtime owns the narrow RuntimeToolUseExecutor
+      // capability tag; @firegrid/host-sdk provides the live layer, so the
+      // dependency only ever points host-sdk -> runtime, never back.
+      // Mirrors the existing eslint no-restricted-imports guard so the
+      // boundary fails the build at the depcruise tier too.
+      name: "runtime-no-host-sdk",
+      severity: "error",
+      comment:
+        "The runtime package must not import @firegrid/host-sdk. Runtime owns the RuntimeToolUseExecutor tag; host-sdk provides the live layer (firegrid-host-sdk.PACKAGE_GRAPH.2).",
+      from: { path: "^packages/runtime/src" },
+      to: { path: "^packages/host-sdk/src" },
+    },
+    {
       // firegrid-typed-wait-source-redesign.MIGRATION.4
       // firegrid-typed-wait-source-redesign.REJECTION.2
       // The SourceCollections string registry and source-registration layers
