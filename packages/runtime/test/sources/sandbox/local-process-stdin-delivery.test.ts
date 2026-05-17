@@ -25,12 +25,12 @@ import type {
   RuntimeIngressInputStream,
 } from "../../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"
 import {
-  RuntimeIngressDeliveryTrackerLayer,
-  runtimeIngressSubscriberId,
-} from "../../../src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
+  SandboxStdinEmissionClaimLive,
+  SandboxSupervisorCommandTable,
+} from "../../../src/agent-event-pipeline/sources/sandbox/supervisor-commands.ts"
 import type {
-  RuntimeIngressDeliveryClaimAndComplete,
-} from "../../../src/agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts"
+  SandboxStdinEmissionClaim,
+} from "../../../src/agent-event-pipeline/sources/sandbox/supervisor-commands.ts"
 
 let server: DurableStreamTestServer
 let baseUrl: string | undefined
@@ -68,26 +68,28 @@ const makeRow = (
 
 const deliveryLayer = (
   tableLayer: Layer.Layer<RuntimeIngressTable, unknown>,
+  supervisorTableLayer: Layer.Layer<SandboxSupervisorCommandTable, unknown>,
   contextId: string,
 ): Layer.Layer<
   | RuntimeIngressTable
   | RuntimeIngressAppendAndGet
   | RuntimeIngressInputStream
-  | RuntimeIngressDeliveryClaimAndComplete,
+  | SandboxSupervisorCommandTable
+  | SandboxStdinEmissionClaim,
   unknown,
   never
 > =>
-  RuntimeIngressDeliveryTrackerLayer.pipe(
-    Layer.provideMerge(
-      RuntimeIngressAppenderLayer({ currentContextId: contextId }).pipe(
-        Layer.provideMerge(tableLayer),
-      ),
-    ),
+  RuntimeIngressAppenderLayer({ currentContextId: contextId }).pipe(
+    Layer.provideMerge(tableLayer),
+    Layer.provideMerge(SandboxStdinEmissionClaimLive.pipe(
+      Layer.provideMerge(supervisorTableLayer),
+    )),
   ) as unknown as Layer.Layer<
     | RuntimeIngressTable
     | RuntimeIngressAppendAndGet
     | RuntimeIngressInputStream
-    | RuntimeIngressDeliveryClaimAndComplete,
+    | SandboxSupervisorCommandTable
+    | SandboxStdinEmissionClaim,
     unknown,
     never
   >
@@ -96,12 +98,18 @@ describe("localProcessStdinDelivery", () => {
   it("effect-durable-operators.FIREGRID_PROOF.4 firegrid-agent-ingress.DELIVERY.3 AtMostOnce: failure between claim and byte emission durably skips the row on restart", async () => {
     if (!baseUrl) throw new Error("server not started")
     const tableUrl = `${baseUrl}/v1/stream/runtime-ingress-atmost-${crypto.randomUUID()}.firegrid.runtimeIngress`
+    const supervisorTableUrl = `${baseUrl}/v1/stream/sandbox-supervisor-atmost-${crypto.randomUUID()}.firegrid.sandboxSupervisor`
     const contextId = "ctx-am1"
-    const subscriberId = runtimeIngressSubscriberId("raw", "stdin")
     const inputId = "input-1"
     const tableLayer = RuntimeIngressTable.layer({
       streamOptions: {
         url: tableUrl,
+        contentType: "application/json",
+      },
+    })
+    const supervisorTableLayer = SandboxSupervisorCommandTable.layer({
+      streamOptions: {
+        url: supervisorTableUrl,
         contentType: "application/json",
       },
     })
@@ -118,7 +126,6 @@ describe("localProcessStdinDelivery", () => {
         Effect.gen(function* () {
           const deliveryStream = localProcessStdinDelivery({
             contextId,
-            subscriberId,
             onClaimedBeforeEmit: () =>
               Effect.fail(
                 new LocalProcessStdinDeliveryError({
@@ -138,7 +145,7 @@ describe("localProcessStdinDelivery", () => {
           // RuntimeIngressTable.layer currently widens its service type to any
           // in tests; the target service is RuntimeIngressTable.
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          Effect.provide(deliveryLayer(tableLayer, contextId)),
+          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer, contextId)),
         ),
       ),
     )
@@ -146,14 +153,17 @@ describe("localProcessStdinDelivery", () => {
     const claimed = await runScopedTestEffect(
       Effect.scoped(
         Effect.gen(function* () {
-          const table = yield* RuntimeIngressTable
-          return yield* table.deliveries.get({ subscriberId, inputId })
-        }).pipe(Effect.provide(tableLayer)),
+          const table = yield* SandboxSupervisorCommandTable
+          return yield* table.stdinEmissionClaims.rows().pipe(
+            Stream.filter(row => row.contextId === contextId && row.inputId === inputId),
+            Stream.runHead,
+          )
+        }).pipe(Effect.provide(supervisorTableLayer)),
       ),
     )
     expect(Option.isSome(claimed)).toBe(true)
     if (Option.isSome(claimed)) {
-      expect(typeof claimed.value.claimedAt).toBe("string")
+      expect(typeof claimed.value.claimedAtMs).toBe("number")
     }
 
     const secondRunChunks = await Effect.runPromise(
@@ -161,7 +171,6 @@ describe("localProcessStdinDelivery", () => {
         Effect.gen(function* () {
           const deliveryStream = localProcessStdinDelivery({
             contextId,
-            subscriberId,
           })
           const chunks: Array<Uint8Array> = []
           const fiber = yield* Effect.fork(
@@ -178,7 +187,7 @@ describe("localProcessStdinDelivery", () => {
           // RuntimeIngressTable.layer currently widens its service type to any
           // in tests; the target service is RuntimeIngressTable.
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          Effect.provide(deliveryLayer(tableLayer, contextId)),
+          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer, contextId)),
         ),
       ),
     )
@@ -189,12 +198,18 @@ describe("localProcessStdinDelivery", () => {
   it("effect-durable-operators.FIREGRID_PROOF.4 emits one chunk for an unclaimed input row", async () => {
     if (!baseUrl) throw new Error("server not started")
     const tableUrl = `${baseUrl}/v1/stream/runtime-ingress-happy-${crypto.randomUUID()}.firegrid.runtimeIngress`
+    const supervisorTableUrl = `${baseUrl}/v1/stream/sandbox-supervisor-happy-${crypto.randomUUID()}.firegrid.sandboxSupervisor`
     const contextId = "ctx-happy"
-    const subscriberId = runtimeIngressSubscriberId("raw", "stdin")
     const inputId = "input-happy"
     const tableLayer = RuntimeIngressTable.layer({
       streamOptions: {
         url: tableUrl,
+        contentType: "application/json",
+      },
+    })
+    const supervisorTableLayer = SandboxSupervisorCommandTable.layer({
+      streamOptions: {
+        url: supervisorTableUrl,
         contentType: "application/json",
       },
     })
@@ -212,7 +227,6 @@ describe("localProcessStdinDelivery", () => {
         Effect.gen(function* () {
           const deliveryStream = localProcessStdinDelivery({
             contextId,
-            subscriberId,
           })
           const collected: Array<string> = []
           const fiber = yield* Effect.fork(
@@ -229,7 +243,7 @@ describe("localProcessStdinDelivery", () => {
           // RuntimeIngressTable.layer currently widens its service type to any
           // in tests; the target service is RuntimeIngressTable.
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          Effect.provide(deliveryLayer(tableLayer, contextId)),
+          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer, contextId)),
         ),
       ),
     )
@@ -240,11 +254,17 @@ describe("localProcessStdinDelivery", () => {
   it("firegrid-runtime-agent-event-pipeline.STAGES.7 preserves RuntimeIngressAppender sequence order before stdin delivery", async () => {
     if (!baseUrl) throw new Error("server not started")
     const tableUrl = `${baseUrl}/v1/stream/runtime-ingress-order-${crypto.randomUUID()}.firegrid.runtimeIngress`
+    const supervisorTableUrl = `${baseUrl}/v1/stream/sandbox-supervisor-order-${crypto.randomUUID()}.firegrid.sandboxSupervisor`
     const contextId = "ctx-order"
-    const subscriberId = runtimeIngressSubscriberId("raw", "stdin")
     const tableLayer = RuntimeIngressTable.layer({
       streamOptions: {
         url: tableUrl,
+        contentType: "application/json",
+      },
+    })
+    const supervisorTableLayer = SandboxSupervisorCommandTable.layer({
+      streamOptions: {
+        url: supervisorTableUrl,
         contentType: "application/json",
       },
     })
@@ -263,7 +283,6 @@ describe("localProcessStdinDelivery", () => {
         Effect.gen(function* () {
           const deliveryStream = localProcessStdinDelivery({
             contextId,
-            subscriberId,
           })
           const collected: Array<string> = []
           const fiber = yield* Effect.fork(
@@ -280,7 +299,7 @@ describe("localProcessStdinDelivery", () => {
           // RuntimeIngressTable.layer currently widens its service type to any
           // in tests; the target service is RuntimeIngressTable.
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          Effect.provide(deliveryLayer(tableLayer, contextId)),
+          Effect.provide(deliveryLayer(tableLayer, supervisorTableLayer, contextId)),
         ),
       ),
     )

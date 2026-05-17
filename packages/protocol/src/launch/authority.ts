@@ -172,6 +172,14 @@ const HostStreamNamePartsSchema = Schema.Struct({
   segment: HostStreamSegmentSchema,
 })
 
+const RuntimeContextOutputStreamNamePartsSchema = Schema.Struct({
+  prefix: HostStreamPrefixWireSchema,
+  contextId: Schema.String.pipe(
+    Schema.filter((value) =>
+      value.length > 0 ? undefined : "runtime output contextId must be non-empty"),
+  ),
+})
+
 /**
  * Bidirectional codec for `${prefix}.${segment}` host-owned stream
  * names. Decode parses the last dot, decodes the right-hand side
@@ -231,6 +239,63 @@ export const hostStreamName = (
   prefix: HostStreamPrefix,
   segment: HostStreamSegment,
 ): string => Schema.encodeSync(HostStreamNameSchema)({ prefix, segment })
+
+const RUNTIME_CONTEXT_OUTPUT_STREAM_MARKER = ".runtimeOutput.context."
+
+export const RuntimeContextOutputStreamNameSchema = Schema.transformOrFail(
+  Schema.String,
+  RuntimeContextOutputStreamNamePartsSchema,
+  {
+    strict: false,
+    decode: (encoded, _options, ast) => {
+      const marker = encoded.indexOf(RUNTIME_CONTEXT_OUTPUT_STREAM_MARKER)
+      if (marker <= 0 || marker === encoded.length - RUNTIME_CONTEXT_OUTPUT_STREAM_MARKER.length) {
+        return ParseResult.fail(
+          new ParseResult.Type(
+            ast,
+            encoded,
+            "runtime context output stream name must be {prefix}.runtimeOutput.context.{contextId}",
+          ),
+        )
+      }
+      const prefixWire = encoded.slice(0, marker)
+      const contextIdWire = encoded.slice(marker + RUNTIME_CONTEXT_OUTPUT_STREAM_MARKER.length)
+      const prefixValidation = validateHostStreamPrefixWire(prefixWire)
+      if (prefixValidation !== undefined) {
+        return ParseResult.fail(
+          new ParseResult.Type(ast, encoded, prefixValidation),
+        )
+      }
+      let contextId: string
+      try {
+        contextId = decodeURIComponent(contextIdWire)
+      } catch {
+        return ParseResult.fail(
+          new ParseResult.Type(ast, encoded, "runtime output contextId is not valid URI encoding"),
+        )
+      }
+      if (contextId.length === 0) {
+        return ParseResult.fail(
+          new ParseResult.Type(ast, encoded, "runtime output contextId must be non-empty"),
+        )
+      }
+      return ParseResult.succeed({
+        prefix: prefixWire as HostStreamPrefix,
+        contextId,
+      })
+    },
+    encode: ({ prefix, contextId }) =>
+      ParseResult.succeed(
+        `${prefix}${RUNTIME_CONTEXT_OUTPUT_STREAM_MARKER}${encodeURIComponent(contextId)}`,
+      ),
+  },
+).pipe(streamAuthority)
+
+export const runtimeContextOutputStreamName = (input: {
+  readonly prefix: HostStreamPrefix
+  readonly contextId: string
+}): string =>
+  Schema.encodeSync(RuntimeContextOutputStreamNameSchema)(input)
 
 const NAMESPACE_RUNTIME_SUFFIX = `.${FIREGRID_DURABLE_NAMESPACE}.${RUNTIME_TABLE_NAME}`
 
@@ -374,6 +439,16 @@ export const hostOwnedStreamUrl = (input: {
   readonly segment: HostStreamSegment
 }): string =>
   durableStreamUrl(input.baseUrl, hostStreamName(input.prefix, input.segment))
+
+export const runtimeContextOutputStreamUrl = (input: {
+  readonly baseUrl: string
+  readonly prefix: HostStreamPrefix
+  readonly contextId: string
+}): string =>
+  durableStreamUrl(input.baseUrl, runtimeContextOutputStreamName({
+    prefix: input.prefix,
+    contextId: input.contextId,
+  }))
 
 /**
  * Conceptual host session row. V1 does not persist a HostSession

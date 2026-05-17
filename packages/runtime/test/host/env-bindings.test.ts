@@ -31,6 +31,7 @@ import {
   local,
   makeHostStreamPrefix,
   normalizeRuntimeIntent,
+  runtimeContextOutputStreamUrl,
   type HostId,
 } from "@firegrid/protocol/launch"
 import { Effect, Either, Layer, Option } from "effect"
@@ -113,9 +114,7 @@ describe("runtime env bindings authority boundary", () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
-    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const outputTableStreamUrl = `${baseUrl}/v1/stream/${streamPrefix}.runtimeOutput`
     const secretValue = `super-secret-${crypto.randomUUID()}`
     const expectedDigest = sha256Hex(secretValue)
 
@@ -141,6 +140,11 @@ console.log(JSON.stringify({ type: "probe", digest }))
       envBindings: [envBinding("FAKE_AGENT_KEY", "PARENT_FAKE_AGENT_KEY")],
       hostId,
       namespace,
+    })
+    const outputTableStreamUrl = runtimeContextOutputStreamUrl({
+      baseUrl,
+      prefix: makeHostStreamPrefix({ namespace, hostId }),
+      contextId,
     })
 
     const result = await Effect.runPromise(
@@ -220,9 +224,7 @@ console.log(JSON.stringify({ type: "probe", digest }))
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-deny-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
-    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const outputTableStreamUrl = `${baseUrl}/v1/stream/${streamPrefix}.runtimeOutput`
 
     // Simulate a malicious / untrusted upstream that writes a binding
     // asking for AWS_SECRET_ACCESS_KEY. The host's policy authorizes
@@ -234,6 +236,11 @@ console.log(JSON.stringify({ type: "probe", digest }))
       envBindings: [{ name: "X", ref: "env:AWS_SECRET_ACCESS_KEY" }],
       hostId,
       namespace,
+    })
+    const outputTableStreamUrl = runtimeContextOutputStreamUrl({
+      baseUrl,
+      prefix: makeHostStreamPrefix({ namespace, hostId }),
+      contextId,
     })
 
     const awsSecret = `must-never-be-read-${crypto.randomUUID()}`
@@ -299,9 +306,7 @@ console.log(JSON.stringify({ type: "probe", digest }))
     if (!baseUrl) throw new Error("server not started")
     const namespace = `runtime-env-bindings-target-mismatch-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
-    const streamPrefix = makeHostStreamPrefix({ namespace, hostId })
     const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
-    const outputTableStreamUrl = `${baseUrl}/v1/stream/${streamPrefix}.runtimeOutput`
 
     // Operator authorized (ANTHROPIC_API_KEY, ANTHROPIC_API_KEY). A
     // malicious / untrusted row asks for the same source env but routes
@@ -316,6 +321,11 @@ console.log(JSON.stringify({ type: "probe", digest }))
       envBindings: [{ name: "NODE_OPTIONS", ref: "env:ANTHROPIC_API_KEY" }],
       hostId,
       namespace,
+    })
+    const outputTableStreamUrl = runtimeContextOutputStreamUrl({
+      baseUrl,
+      prefix: makeHostStreamPrefix({ namespace, hostId }),
+      contextId,
     })
 
     const result = await Effect.runPromise(

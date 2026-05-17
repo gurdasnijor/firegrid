@@ -3,9 +3,9 @@ import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   RuntimeStartCapability,
-  hostOwnedStreamUrl,
   makeHostSessionRow,
   runtimeControlPlaneStreamUrl,
+  runtimeContextOutputStreamUrl,
   type HostId,
   type HostSessionId,
   type HostSessionRow,
@@ -119,10 +119,10 @@ const appendAgentOutput = (
   }).pipe(
     Effect.provide(RuntimeOutputTable.layer({
       streamOptions: {
-        url: hostOwnedStreamUrl({
+        url: runtimeContextOutputStreamUrl({
           baseUrl,
           prefix: hostSession.streamPrefix,
-          segment: "runtimeOutput",
+          contextId,
         }),
         contentType: "application/json",
       },
