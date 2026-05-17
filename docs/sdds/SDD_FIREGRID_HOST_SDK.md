@@ -1,6 +1,9 @@
 # SDD: Firegrid SDK Plane Split
 
-Status: draft design contract, revised for the greenfield Path X baseline
+Status: design contract, aligned to the post-#309 Host SDK baseline (live
+owner cutover landed). The package split, the Path X live-owner cutover, and
+the `@firegrid/runtime/host-substrate` removal have shipped; this document
+describes the realized architecture, not a plan.
 
 Related specs:
 
@@ -36,24 +39,35 @@ the clean baseline future work should build on.
 
 ## Relationship To Path X
 
-Path X replaces the current runtime authority/subscriber bypass with a reactive
-`RuntimeContextWorkflow` body over `DurableStreamsWorkflowEngine`. This SDK SDD
-must not freeze old substrate mechanics as public API.
+Path X replaced the runtime authority/subscriber bypass with a reactive
+`RuntimeContextWorkflow` body over `DurableStreamsWorkflowEngine`. As of #309
+(live owner cutover) this has landed: the legacy ingress-delivery spine —
+`agent-event-pipeline/subscribers/ingress-delivery.ts` (`runIngressDelivery`),
+`agent-event-pipeline/session-runtime.ts`, and
+`agent-event-pipeline/authorities/runtime-ingress-delivery-tracker.ts`
+(`RuntimeIngressDeliveryClaimAndComplete`) — is deleted, not deprecated. No
+mixed-mode or compatibility writer path remains.
 
-Consequences:
+Consequences (realized):
 
 - Direct `RuntimeIngressTable` append, owner-host stream URL construction, and
   runtime authority tags are not app-facing surfaces.
-- Public client and CLI operations stay session-shaped:
-  `sessions.createOrLoad`, `session.prompt`, `session.wait.*`,
+- Public client and CLI operations stay session-shaped and unchanged by the
+  cutover: `sessions.createOrLoad`, `session.prompt`, `session.wait.*`,
   `session.permissions.respond`, `session.snapshot`, and `watchContexts`.
 - Host composition stays host-shaped: apps install providers, MCP, env policy,
   durable storage, and runtime start/execution layers through host-sdk.
-- `RuntimeToolUseExecutor` is the shared seam between this SDD and Path X. It
-  already landed in PR 282 and is the injection point the reactive workflow body
-  uses for tool execution.
-- `RUNTIME_CAPABILITY_PROJECTIONS` is cancelled. Those ACIDs described optional
-  cleanup of runtime authority files that Path X deletes or rewrites.
+  Host-sdk owns the live owner adapters (the codec/raw
+  `RuntimeContextWorkflowSession` adapters) behind that surface.
+- `RuntimeToolUseExecutor` is the shared seam. It landed in PR 282 and is the
+  injection point the reactive workflow body uses for tool execution.
+- `@firegrid/runtime/host-substrate` (the transitional barrel host-sdk imported
+  during the split) is **removed**. Runtime now exposes scoped subpaths
+  (`@firegrid/runtime/{control-plane,runtime-output,runtime-ingress,tool-executor,events,durable-tools,workflow-engine}`);
+  host-sdk imports those, never a runtime root barrel or a `host-substrate`
+  aggregate.
+- `RUNTIME_CAPABILITY_PROJECTIONS` is cancelled — Path X deleted/rewrote the
+  runtime authority files those ACIDs described.
 
 ## Package Contracts
 
@@ -88,8 +102,10 @@ Rules:
 ### `@firegrid/host-sdk`
 
 Owns host composition, provider implementation installation, route-scoped MCP
-exposure, agent-tool bindings, runtime start capability, and the live
-`RuntimeToolUseExecutor` layer.
+exposure, agent-tool bindings, runtime start capability, the live owner
+adapters (the codec/raw `RuntimeContextWorkflowSession` adapters that drive the
+reactive `RuntimeContextWorkflow` body), and the live `RuntimeToolUseExecutor`
+layer.
 
 Public surface:
 
@@ -109,15 +125,20 @@ import {
 } from "@firegrid/host-sdk"
 ```
 
-Allowed imports: `@firegrid/protocol`, `@firegrid/runtime`, `@effect/ai`,
-`@effect/platform-node`, and `@modelcontextprotocol/sdk`.
+Allowed imports: `@firegrid/protocol`, `@effect/ai`, `@effect/platform-node`,
+`@modelcontextprotocol/sdk`, and `@firegrid/runtime` **only through its scoped
+public subpaths** (`@firegrid/runtime/{control-plane,runtime-output,runtime-ingress,tool-executor,events,durable-tools,workflow-engine}`).
+The `@firegrid/runtime` root barrel and the former
+`@firegrid/runtime/host-substrate` aggregate are not import surfaces; the
+latter is deleted.
 
-Forbidden imports: `@firegrid/client-sdk`, `@firegrid/cli`.
+Forbidden imports: `@firegrid/client-sdk`, `@firegrid/cli`,
+`@firegrid/runtime/host-substrate` (removed).
 
-Host-sdk composes whatever runtime substrate exists. Today that includes the
-current host layers; after Path X it includes the reactive workflow substrate.
-The public `FiregridHostLive` options should not change because of that
-internal substrate replacement.
+Host-sdk composes the reactive workflow substrate that the Path X live owner
+cutover (#309) realized. The public `FiregridHostLive` / `FiregridHostFromConfig`
+options are stable across that internal substrate replacement, and the
+client-sdk and cli public surfaces are unchanged by it.
 
 ### `@firegrid/cli`
 
@@ -140,13 +161,19 @@ not call runtime substrate helpers directly.
 
 ### `@firegrid/runtime`
 
-Loses public host composition, `agent-tools/`, and `verified-webhook-ingest/`.
-Keeps runtime-private substrate implementation: agent event pipeline,
-workflow-engine integration, durable-tools, codecs, agent adapters, and host
-internals.
+Has no public host composition, `agent-tools/`, or `verified-webhook-ingest/`
+surface. Keeps runtime-private substrate implementation: agent event pipeline,
+workflow-engine integration, durable-tools, codecs, and agent adapters. The
+post-#309 legacy ingress-delivery spine (`subscribers/ingress-delivery.ts`,
+`session-runtime.ts`, `authorities/runtime-ingress-delivery-tracker.ts`) is
+deleted, and `src/host-substrate.ts` no longer exists.
 
-Runtime owns `RuntimeToolUseExecutor` as the narrow capability consumed by
-ToolUse routing today and by the Path X reactive workflow body later.
+Runtime exposes only scoped public subpaths for the substrate host-sdk
+composes (`control-plane`, `runtime-output`, `runtime-ingress`,
+`tool-executor`, `events`, `durable-tools`, `workflow-engine`). It owns
+`RuntimeToolUseExecutor` as the narrow capability consumed by ToolUse routing
+and the reactive workflow body. Runtime never imports host-sdk, client-sdk, or
+cli (enforced by depcruise `runtime-no-host-sdk` + eslint).
 
 ## Operation Projection Contract
 
@@ -292,9 +319,25 @@ Estimate:
 
 - 2 to 4 engineer-days.
 
+## Post-#309 Status and Next Cleanup
+
+Landed: the PR A package split, the Path X live owner cutover (#309), and the
+`@firegrid/runtime/host-substrate` removal. The legacy ingress-delivery spine
+is deleted, not deprecated — there is no mixed-mode runtime path and no
+compatibility writer. Host-sdk owns the live owner adapters; client-sdk and cli
+public surfaces did not change across the cutover.
+
+Remaining follow-up (one item, scoped narrow): **deferred-input cleanup** —
+finish converging prompt/permission/tool delivery on the reactive workflow's
+content-derived `DurableDeferred` waits, removing any remaining transitional
+RuntimeIngressInput sequencing helpers that the live-owner cutover left only as
+internal plumbing. This is internal-only; it does not alter the client-sdk,
+host-sdk, or cli public surfaces and must not reintroduce a deprecated path.
+
 ## Acceptance
 
-- Dependency-cruiser reports zero SDK boundary violations.
+- Dependency-cruiser reports zero SDK boundary violations, including
+  `runtime-no-host-sdk` and no `@firegrid/runtime/host-substrate` consumers.
 - Runtime no longer exports public `host/` or `agent-tools/` surfaces for
   product apps.
 - Runtime ToolUse routing depends on `RuntimeToolUseExecutor`.
