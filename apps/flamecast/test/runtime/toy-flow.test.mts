@@ -1,6 +1,6 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { assert, describe, it } from "@effect/vitest"
-import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client"
+import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client-sdk"
 import { FiregridLocalHostLive, startRuntime } from "@firegrid/runtime/runtime-host"
 import { Effect, Layer } from "effect"
 import { afterEach, beforeEach } from "vitest"

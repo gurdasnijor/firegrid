@@ -4,7 +4,7 @@ import {
   FiregridConfig,
   FiregridLive,
   local,
-} from "@firegrid/client"
+} from "@firegrid/client-sdk"
 import {
   FiregridLocalHostLive,
   startRuntime,

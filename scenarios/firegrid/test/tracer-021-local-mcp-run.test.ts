@@ -23,7 +23,7 @@ import {
   Firegrid,
   FiregridConfig,
   FiregridStandaloneLive,
-} from "@firegrid/client"
+} from "@firegrid/client-sdk"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { Effect, Layer } from "effect"

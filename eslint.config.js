@@ -684,7 +684,7 @@ export default tseslint.config(
         "warn",
         {
           packageNames: [
-            "@firegrid/client",
+            "@firegrid/client-sdk",
             "@firegrid/substrate",
             "@firegrid/runtime",
           ],
@@ -698,7 +698,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/{client,runtime}/src/**/*.ts"],
+    files: ["packages/{client-sdk,runtime}/src/**/*.ts"],
     ignores: ["packages/**/src/__tests__/**/*.ts", "packages/**/*.test.ts"],
     rules: {
       "local/no-hidden-control-plane": "error",
@@ -712,7 +712,7 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@firegrid/client",
+              "@firegrid/client-sdk",
               "Substrate must not depend on the client package.",
             ),
             restrictedInternalPackage(
@@ -752,7 +752,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/client/src/**/*.ts"],
+    files: ["packages/client-sdk/src/**/*.ts"],
     rules: {
       "no-restricted-imports": [
         "error",
@@ -760,7 +760,15 @@ export default tseslint.config(
           paths: [
             restrictedInternalPackage(
               "@firegrid/runtime",
-              "Client must not depend on the runtime package; runtime → client is an architecture defect and the reverse direction must not exist either.",
+              "client-sdk must not depend on the runtime package; runtime → client-sdk is an architecture defect and the reverse direction must not exist either.",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/host-sdk",
+              "client-sdk is a browser/edge-safe sibling projection; it must not import host-sdk (firegrid-host-sdk.PACKAGE_GRAPH.3).",
+            ),
+            restrictedInternalPackage(
+              "@firegrid/cli",
+              "client-sdk must not import the CLI binding (firegrid-host-sdk.PACKAGE_GRAPH.3/5).",
             ),
             restrictedInternalPackage(
               "@firegrid/lab",
@@ -852,7 +860,7 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@firegrid/client",
+              "@firegrid/client-sdk",
               "Runtime → client is an architecture defect; the runtime must not import the app-facing client package.",
             ),
             restrictedInternalPackage(
@@ -945,7 +953,7 @@ export default tseslint.config(
         {
           paths: [
             restrictedInternalPackage(
-              "@firegrid/client",
+              "@firegrid/client-sdk",
               "Runtime → client is an architecture defect.",
             ),
             restrictedInternalPackage(
