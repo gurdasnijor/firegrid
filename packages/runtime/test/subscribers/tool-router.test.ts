@@ -12,7 +12,7 @@ import {
 import { RuntimeIngressTable } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Fiber, Layer, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { toolResult } from "../../src/agent-tools/tool-error.ts"
+import { toolResult } from "@firegrid/host-sdk/agent-tools/bindings"
 import {
   RuntimeIngressAppenderLayer,
 } from "../../src/agent-event-pipeline/authorities/runtime-ingress-appender.ts"

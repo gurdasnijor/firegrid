@@ -2,38 +2,33 @@
 export {
   RuntimeContextError,
 } from "./runtime-errors.ts"
+// Host composition (`FiregridRuntimeHost*`, `startRuntime`,
+// `RuntimeStartCapabilityLive`, `RuntimeHostAgentToolHostLive`,
+// `RunConfig*`, sync-run, MCP) moved to `@firegrid/host-sdk` per
+// SDD_FIREGRID_HOST_SDK.md. Runtime keeps only the substrate surface the
+// host-sdk composes; runtime must not import `@firegrid/host-sdk`
+// (firegrid-host-sdk.PACKAGE_GRAPH.2).
 export {
-  ContextNotFound,
-  ContextNotLocal,
-  CurrentHostSession,
-  CurrentHostStopped,
-  CurrentRuntimeContext,
-  FiregridLocalHostLive,
-  FiregridRuntimeHostFromConfig,
-  FiregridRuntimeHostLive,
-  FiregridRuntimeHostWithWorkflowFromConfig,
-  FiregridRuntimeHostWithWorkflowFromConfigWithEnvPolicy,
-  FiregridRuntimeHostWithWorkflowLive,
-  RuntimeStartCapabilityLive,
+  asRuntimeContextError,
+  mapRuntimeContextError,
   RuntimeIngressError,
-  RuntimeHostAgentToolHostLive,
-  RuntimeHostTopologyFromConfig,
-  appendRuntimeIngress,
-  durableStreamUrl,
-  findRuntimeContext,
-  hostOwnedStreamUrl,
+  runtimeIngressError,
+} from "./runtime-errors.ts"
+// firegrid-host-sdk.TOOL_EXECUTOR_SEAM.1 / .3 — runtime owns the narrow
+// `RuntimeToolUseExecutor` capability tag; host-sdk provides the live
+// layer.
+export {
+  RuntimeToolUseExecutor,
+} from "./agent-event-pipeline/subscribers/runtime-tool-use-executor.ts"
+export {
+  runCodecRuntimeEventPipeline,
+} from "./agent-event-pipeline/session-runtime.ts"
+export {
   localProcessSpawnEnvFromHostEnv,
-  provideRuntimeContext,
-  requireLocalContext,
-  runtimeControlPlaneStreamUrl,
   RuntimeEnvResolverPolicy,
-  startRuntime,
   type LocalProcessSandboxProviderOptions,
   type RuntimeEnvResolverPolicyValue,
-  type RuntimeHostTopologyOptions,
-  type StartRuntimeOptions,
-  type StartRuntimeResult,
-} from "./host/index.ts"
+} from "./agent-event-pipeline/sources/sandbox/index.ts"
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.6
 export {
@@ -48,18 +43,6 @@ export {
   type EffectAiSandboxConfig,
   type EffectAiSandboxProviderHelper,
 } from "./agent-event-pipeline/sources/sandbox/effect-ai.ts"
-// firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.5..8
-export {
-  RunAuthorizedBindingSchema,
-  RunConfigSchema,
-  decodeRunConfig,
-  firegridRunCreatedBy,
-  runConfigRequiresInput,
-  runConfigToIngressRequest,
-  runConfigToRuntimeContextIntent,
-  type RunAuthorizedBinding,
-  type RunConfig,
-} from "./host/index.ts"
 export {
   RuntimeControlPlaneRecorderLive,
   RuntimeContexts,
