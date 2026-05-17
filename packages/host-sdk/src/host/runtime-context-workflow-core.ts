@@ -28,9 +28,6 @@ import {
   runtimeContextWorkflowExecutionId,
 } from "./internal/runtime-context-helpers.ts"
 import {
-  RuntimeContextWorkflow,
-} from "./runtime-context-workflow.ts"
-import {
   type RuntimeExitEvidence,
   type StartRuntimeResult,
   RuntimeContextWorkflowPayload,
@@ -41,7 +38,9 @@ import {
   writeRunStarted,
 } from "./internal/runtime-context-workflow-run.ts"
 
-export const RuntimeContextSessionStartedEvidenceSchema = Schema.Struct({
+export { RuntimeContextWorkflowPayload }
+
+const RuntimeContextSessionStartedEvidenceSchema = Schema.Struct({
   contextId: Schema.String,
   activityAttempt: Schema.Number,
   ownerKind: Schema.Literal("raw", "codec"),
@@ -52,15 +51,13 @@ export type RuntimeContextSessionStartedEvidence = Schema.Schema.Type<
   typeof RuntimeContextSessionStartedEvidenceSchema
 >
 
-export const RuntimeContextSessionCommandSchema = Schema.TaggedStruct("AgentInput", {
-  commandId: Schema.String,
-  event: AgentInputEventSchema,
-})
-export type RuntimeContextSessionCommand = Schema.Schema.Type<
-  typeof RuntimeContextSessionCommandSchema
->
+export interface RuntimeContextSessionCommand {
+  readonly _tag: "AgentInput"
+  readonly commandId: string
+  readonly event: AgentInputEvent
+}
 
-export const RuntimeContextSessionCommandAcceptedSchema = Schema.Struct({
+const RuntimeContextSessionCommandAcceptedSchema = Schema.Struct({
   contextId: Schema.String,
   activityAttempt: Schema.Number,
   commandId: Schema.String,
@@ -70,7 +67,7 @@ export type RuntimeContextSessionCommandAccepted = Schema.Schema.Type<
   typeof RuntimeContextSessionCommandAcceptedSchema
 >
 
-interface RuntimeContextWorkflowSessionService {
+export interface RuntimeContextWorkflowSessionService {
   readonly startOrAttach: (
     context: RuntimeContext,
     activityAttempt: number,
@@ -235,7 +232,7 @@ const runWorkflowNativeRuntimeContext = (
   })
 
 export const RuntimeContextWorkflowNative = Workflow.make({
-  name: RuntimeContextWorkflow.name,
+  name: "firegrid.runtime-context",
   payload: RuntimeContextWorkflowPayload,
   success: StartRuntimeResultSchema,
   error: RuntimeContextError,

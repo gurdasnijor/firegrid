@@ -9,20 +9,20 @@ import {
   type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
 import {
+  encodeRuntimeAgentOutputEnvelope,
+} from "@firegrid/runtime/events"
+import {
   RuntimeEnvResolverPolicy,
   SandboxProvider,
-  SandboxProviderError,
   SandboxStdinEmissionClaim,
   type AgentByteStream,
   type ExecutionResult,
   type Sandbox,
-  type SandboxCommand,
 } from "@firegrid/runtime/sources/sandbox"
 import {
   Effect,
   Fiber,
   Layer,
-  Ref,
 } from "effect"
 import { describe, expect, it } from "vitest"
 import {
@@ -159,7 +159,7 @@ const testLayer = (state: {
               source: "stdout",
               format: "jsonl",
               receivedAt: new Date().toISOString(),
-              raw: JSON.stringify(event),
+              raw: encodeRuntimeAgentOutputEnvelope(event),
             }
             state.events.push(row)
             return row
@@ -202,7 +202,10 @@ const testLayer = (state: {
       find: () => Effect.succeed(undefined),
       execute: () => Effect.succeed(fakeExecution),
       executeMany: () => Effect.succeed([]),
-      stream: () => Effect.die("not used by codec adapter tests") as never,
+      stream: () =>
+        Effect.sync(() => {
+          throw new Error("not used by codec adapter tests")
+        }) as never,
       openBytePipe: () =>
         Effect.sync(() => {
           const harness = makeHarness()

@@ -7,89 +7,56 @@ import type {
 import {
   asRuntimeContextError,
   mapRuntimeContextError,
-  RuntimeContextError,
+  type RuntimeContextError,
 } from "@firegrid/runtime/errors"
 import type { AgentInputEvent } from "@firegrid/runtime/events"
 import {
   commandForContext,
-  RuntimeEnvResolverPolicy,
-  SandboxStdinEmissionClaim,
   streamSandboxProcess,
   type ProcessOutputChunk,
-  type SandboxProvider,
   type SandboxProviderError,
 } from "@firegrid/runtime/sources/sandbox"
 import {
   Clock,
   Effect,
-  Layer,
   Queue,
-  Ref,
   Schema,
   Stream,
 } from "effect"
-import {
+import type {
   PerContextRuntimeOutputWriter,
 } from "../per-context-runtime-output.ts"
 import {
-  RuntimeContextWorkflowSession,
-  type RuntimeContextSessionCommand,
-  type RuntimeContextSessionCommandAccepted,
-  type RuntimeContextSessionStartedEvidence,
+  type RuntimeContextWorkflowSessionService,
 } from "../runtime-context-workflow-core.ts"
+import {
+  makeRuntimeContextSessionAdapterService,
+  makeRuntimeContextSessionCommandSender,
+  makeRuntimeContextWorkflowSessionService,
+  removeRuntimeContextSession,
+  runtimeContextSessionOwnerSessionId,
+  scopedRuntimeContextWorkflowSessionLayer,
+  type RuntimeContextSessionAdapterRequirements,
+  type RuntimeContextSessionRecord,
+} from "./common.ts"
 
 type SequencedChunk = {
   readonly sequence: number
   readonly chunk: ProcessOutputChunk
 }
 
-interface RawRuntimeContextSession {
-  readonly context: RuntimeContext
-  readonly activityAttempt: number
-  readonly ownerSessionId: string
+interface RawRuntimeContextSession extends RuntimeContextSessionRecord {
   readonly stdin: Queue.Queue<Uint8Array>
 }
-
-export const runtimeContextSessionOwnerSessionId = (
-  ownerKind: "raw" | "codec",
-  context: RuntimeContext,
-  activityAttempt: number,
-) => `${ownerKind}:${context.contextId}:${activityAttempt}`
 
 const nowIso = Clock.currentTimeMillis.pipe(
   Effect.map(millis => new Date(millis).toISOString()),
 )
 
-const rawSessionKey = (
-  context: RuntimeContext,
-  activityAttempt: number,
-) => `${context.contextId}:${activityAttempt}`
-
 const ownerSessionIdFor = (
   context: RuntimeContext,
   activityAttempt: number,
 ) => runtimeContextSessionOwnerSessionId("raw", context, activityAttempt)
-
-const startedEvidence = (
-  context: RuntimeContext,
-  activityAttempt: number,
-): RuntimeContextSessionStartedEvidence => ({
-  contextId: context.contextId,
-  activityAttempt,
-  ownerKind: "raw",
-  ownerSessionId: ownerSessionIdFor(context, activityAttempt),
-  startCommandId: `start-${context.contextId}-${activityAttempt}`,
-})
-
-const acceptedCommand = (
-  session: RawRuntimeContextSession,
-  command: RuntimeContextSessionCommand,
-): RuntimeContextSessionCommandAccepted => ({
-  contextId: session.context.contextId,
-  activityAttempt: session.activityAttempt,
-  commandId: command.commandId,
-  ownerSessionId: session.ownerSessionId,
-})
 
 const outputRowFromProcessChunk = (
   context: RuntimeContext,
@@ -254,34 +221,25 @@ const runRawProcess = (
     )
   })
 
-export const RawRuntimeContextWorkflowSessionLive: Layer.Layer<
-  RuntimeContextWorkflowSession,
-  never,
-  | PerContextRuntimeOutputWriter
-  | RuntimeEnvResolverPolicy
-  | SandboxProvider
-  | SandboxStdinEmissionClaim
-> = Layer.scoped(
-  RuntimeContextWorkflowSession,
-  Effect.gen(function* () {
-    const writer = yield* PerContextRuntimeOutputWriter
-    const stdinClaim = yield* SandboxStdinEmissionClaim
-    const captured = yield* Effect.context<
-      | RuntimeEnvResolverPolicy
-      | SandboxProvider
-    >()
-    const scope = yield* Effect.scope
-    const sessions = yield* Ref.make(new Map<string, RawRuntimeContextSession>())
-
-    const startOrAttach = (
+export const makeRawRuntimeContextWorkflowSessionService:
+  Effect.Effect<
+    RuntimeContextWorkflowSessionService,
+    never,
+    RuntimeContextSessionAdapterRequirements
+  > =
+  makeRuntimeContextSessionAdapterService<RawRuntimeContextSession>(({
+    writer,
+    stdinClaim,
+    captured,
+    scope,
+    sessions,
+  }) => {
+    const startSession = (
       context: RuntimeContext,
       activityAttempt: number,
-    ): Effect.Effect<RuntimeContextSessionStartedEvidence, RuntimeContextError> =>
+      key: string,
+    ): Effect.Effect<RawRuntimeContextSession, RuntimeContextError> =>
       Effect.gen(function* () {
-        const key = rawSessionKey(context, activityAttempt)
-        const current = yield* Ref.get(sessions)
-        if (current.has(key)) return startedEvidence(context, activityAttempt)
-
         const stdin = yield* Queue.unbounded<Uint8Array>()
         const session: RawRuntimeContextSession = {
           context,
@@ -289,69 +247,39 @@ export const RawRuntimeContextWorkflowSessionLive: Layer.Layer<
           ownerSessionId: ownerSessionIdFor(context, activityAttempt),
           stdin,
         }
-        yield* Ref.update(sessions, map => new Map([...map, [key, session]]))
         yield* runRawProcess(session, writer).pipe(
           Effect.provide(captured),
           Effect.catchAll(cause =>
             Effect.logError("[host-sdk] raw runtime session failed").pipe(
               Effect.annotateLogs({ contextId: context.contextId, cause }),
             )),
-          Effect.ensuring(Ref.update(sessions, map => {
-            const next = new Map(map)
-            next.delete(key)
-            return next
-          })),
+          Effect.ensuring(removeRuntimeContextSession(sessions, key)),
           Effect.forkIn(scope),
         )
-        return startedEvidence(context, activityAttempt)
-      })
-
-    const getOrStart = (
-      context: RuntimeContext,
-      activityAttempt: number,
-    ) =>
-      Effect.gen(function* () {
-        yield* startOrAttach(context, activityAttempt)
-        const session = (yield* Ref.get(sessions)).get(rawSessionKey(context, activityAttempt))
-        if (session === undefined) {
-          return yield* Effect.fail(asRuntimeContextError(
-            "runtime-context.raw-session.attach",
-            "raw runtime session did not attach",
-            context.contextId,
-          ))
-        }
         return session
       })
 
-    const send = (
-      context: RuntimeContext,
-      activityAttempt: number,
-      command: RuntimeContextSessionCommand,
-    ) =>
-      Effect.gen(function* () {
-        const session = yield* getOrStart(context, activityAttempt)
-        const bytes = yield* rawBytesForInput(command.event)
-        const claimed = yield* stdinClaim.claim({
-          commandId: command.commandId,
-          contextId: context.contextId,
-          inputId: command.commandId,
-          byteLength: bytes.byteLength,
-        }).pipe(
-          mapRuntimeContextError(
-            "runtime-context.raw-session.claim",
-            "failed to claim raw runtime input command",
-            context.contextId,
-          ),
-        )
-        if (claimed) {
-          yield* Queue.offer(session.stdin, bytes)
-        }
-        return acceptedCommand(session, command)
-      })
-
-    return RuntimeContextWorkflowSession.of({
-      startOrAttach,
-      send,
+    const sendCommand = makeRuntimeContextSessionCommandSender<RawRuntimeContextSession>({
+      ownerKind: "raw",
+      stdinClaim,
+      prepare: (context, session, command) =>
+        Effect.gen(function* () {
+          const bytes = yield* rawBytesForInput(command.event)
+          return {
+            byteLength: bytes.byteLength,
+            emit: Queue.offer(session.stdin, bytes),
+          }
+        }),
     })
-  }),
+
+    return makeRuntimeContextWorkflowSessionService({
+      ownerKind: "raw",
+      sessions,
+      startSession,
+      sendCommand,
+    })
+  })
+
+export const RawRuntimeContextWorkflowSessionLive = scopedRuntimeContextWorkflowSessionLayer(
+  makeRawRuntimeContextWorkflowSessionService,
 )

@@ -68,9 +68,6 @@ importers:
       '@firegrid/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
-      '@firegrid/runtime':
-        specifier: workspace:*
-        version: link:../../packages/runtime
       '@radix-ui/react-slot':
         specifier: 1.2.4
         version: 1.2.4(@types/react@19.2.14)(react@19.2.6)
@@ -153,9 +150,6 @@ importers:
       '@firegrid/host-sdk':
         specifier: workspace:*
         version: link:../../packages/host-sdk
-      '@firegrid/runtime':
-        specifier: workspace:*
-        version: link:../../packages/runtime
       '@tanstack/db':
         specifier: ^0.5.33
         version: 0.5.33(typescript@5.9.3)

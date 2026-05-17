@@ -23,10 +23,16 @@ import { Effect, Fiber, Layer, Ref, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeControlPlaneRecorderLive,
+} from "@firegrid/runtime/control-plane"
+import {
   RuntimeAgentOutputEventsLayer,
+} from "@firegrid/runtime/runtime-output"
+import {
   RuntimeIngressAppenderLayer,
+} from "@firegrid/runtime/runtime-ingress"
+import {
   RuntimeToolUseExecutor,
-} from "@firegrid/runtime/host-substrate"
+} from "@firegrid/runtime/tool-executor"
 import {
   encodeRuntimeAgentOutputEnvelope,
   type AgentInputEvent,

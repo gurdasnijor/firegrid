@@ -9,9 +9,6 @@ import {
   type DurableWaitRowUpsert,
 } from "@firegrid/runtime/durable-tools"
 import {
-  RuntimeIngressDeliveryTrackerLayer,
-} from "@firegrid/runtime/host-substrate"
-import {
   RuntimeIngressInputStreamLayer,
 } from "@firegrid/runtime/runtime-ingress"
 import {
@@ -48,7 +45,6 @@ export const HostRuntimeObservationSubstrateLive = HostOwnedDurableToolsWaitForL
     PerContextRuntimeAgentOutputAfterEventsLive,
     RuntimeControlPlaneRecorderLive,
     RuntimeIngressInputStreamLayer,
-    RuntimeIngressDeliveryTrackerLayer,
   )),
 )
 

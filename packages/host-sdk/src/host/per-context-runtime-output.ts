@@ -38,7 +38,7 @@ export class PerContextRuntimeOutputWriter extends Context.Tag(
   "@firegrid/host-sdk/PerContextRuntimeOutputWriter",
 )<PerContextRuntimeOutputWriter, PerContextRuntimeOutputWriterService>() {}
 
-export const perContextRuntimeOutputTableLayer = (
+const perContextRuntimeOutputTableLayer = (
   hostConfig: RuntimeHostConfig["Type"],
   context: {
     readonly contextId: string

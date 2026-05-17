@@ -9,10 +9,6 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./host-substrate": {
-      "types": "./src/host-substrate.ts",
-      "default": "./src/host-substrate.ts"
-    },
     "./errors": {
       "types": "./src/runtime-errors.ts",
       "default": "./src/runtime-errors.ts"
