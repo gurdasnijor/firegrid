@@ -5,7 +5,7 @@ import {
   Workflow,
 } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { Context, Duration, Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   DurableStreamsWorkflowEngine,
@@ -74,6 +74,17 @@ const inspectTable = async <A>(
       ),
     ),
   )
+
+class CodecSessionAliveSupervisor extends Context.Tag("@firegrid/runtime/test/CodecSessionAliveSupervisor")<
+  CodecSessionAliveSupervisor,
+  {
+    readonly emitStdin: (command: {
+      readonly contextId: string
+      readonly inputId: string
+      readonly bytes: string
+    }) => Effect.Effect<void>
+  }
+>() {}
 
 describe("durable workflow engine", () => {
   it("firegrid-durable-subscriber-webhooks.RUNTIME_VERTICAL.1 lets subscriber-like work run on the Durable Streams workflow engine", async () => {
@@ -484,6 +495,92 @@ describe("durable workflow engine", () => {
     )
 
     expect(result).toBe("registered")
+  })
+
+  it("path-x.Q-2 replays a completed CodecSessionAlive stdin emission activity after engine reconstruction without duplicate supervisor writes", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const streamUrl = `${baseUrl}/v1/stream/codec-session-activity-replay-${crypto.randomUUID()}`
+    const Continue = DurableDeferred.make("codec-session-continue", {
+      success: Schema.String,
+    })
+    const CodecSessionAliveWorkflow = Workflow.make({
+      name: "path-x-codec-session-alive-replay",
+      payload: Schema.Struct({
+        contextId: Schema.String,
+        inputId: Schema.String,
+        bytes: Schema.String,
+      }),
+      success: Schema.String,
+      idempotencyKey: payload => `${payload.contextId}:${payload.inputId}`,
+    })
+    const emissions: Array<string> = []
+    const supervisor = {
+      emitStdin: ({ contextId, inputId, bytes }: {
+        readonly contextId: string
+        readonly inputId: string
+        readonly bytes: string
+      }) =>
+        Effect.sync(() => {
+          emissions.push(`${contextId}/${inputId}/${bytes}`)
+        }),
+    }
+    let token: DurableDeferred.Token | undefined
+    const workflowLayer = CodecSessionAliveWorkflow.toLayer(payload =>
+      Effect.gen(function*() {
+        const EmitStdinBytes = Activity.make({
+          name: `codec-session-alive.emit-stdin.${payload.inputId}`,
+          execute: Effect.gen(function*() {
+            const sessionSupervisor = yield* CodecSessionAliveSupervisor
+            yield* sessionSupervisor.emitStdin(payload)
+          }),
+        })
+        yield* EmitStdinBytes
+        token = yield* DurableDeferred.token(Continue)
+        return yield* DurableDeferred.await(Continue)
+      })).pipe(
+        Layer.provide(Layer.succeed(CodecSessionAliveSupervisor, supervisor)),
+      )
+    const payload = {
+      contextId: "ctx-codec-session",
+      inputId: "input-1",
+      bytes: "hello\n",
+    }
+
+    await runWith(
+      { streamUrl, workerId: "codec-worker-before-restart" },
+      workflowLayer,
+      CodecSessionAliveWorkflow.execute(payload, { discard: true }),
+    )
+
+    const afterFirstRunActivities = await inspectTable(streamUrl, table =>
+      table.activities.query((coll) => coll.toArray),
+    )
+    expect(emissions).toEqual(["ctx-codec-session/input-1/hello\n"])
+    expect(afterFirstRunActivities).toHaveLength(1)
+    expect(afterFirstRunActivities[0]?.activityName).toBe(
+      "codec-session-alive.emit-stdin.input-1",
+    )
+    if (token === undefined) throw new Error("expected deferred token")
+    const continuationToken = token
+
+    const completed = await runWith(
+      { streamUrl, workerId: "codec-worker-after-restart" },
+      workflowLayer,
+      Effect.gen(function*() {
+        yield* DurableDeferred.succeed(Continue, {
+          token: continuationToken,
+          value: "continued-after-restart",
+        })
+        return yield* CodecSessionAliveWorkflow.execute(payload)
+      }),
+    )
+
+    const afterRestartActivities = await inspectTable(streamUrl, table =>
+      table.activities.query((coll) => coll.toArray),
+    )
+    expect(completed).toBe("continued-after-restart")
+    expect(emissions).toEqual(["ctx-codec-session/input-1/hello\n"])
+    expect(afterRestartActivities).toHaveLength(1)
   })
 
   it("workflow-engine-durable-state.VALIDATION.6 firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.1 firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.2 firegrid-workflow-driven-runtime.PHASE_3_ACTIVITY_CLAIMS.3 claims a raced activity once across concurrent workers", async () => {
