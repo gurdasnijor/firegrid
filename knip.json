@@ -3,13 +3,21 @@
   "workspaces": {
     ".": {
       "entry": [
-        "src/index.ts",
-        "src/host.ts",
         "scripts/**/*.mjs"
       ],
       "project": [
-        "src/**/*.ts",
         "scripts/**/*.mjs"
+      ]
+    },
+    "packages/cli": {
+      "entry": [
+        "src/bin/index.ts",
+        "src/bin/run.ts",
+        "src/bin/host.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "test/**/*.ts"
       ]
     },
     "packages/client": {

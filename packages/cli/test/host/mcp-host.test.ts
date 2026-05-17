@@ -29,11 +29,14 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { firegridHostLayer } from "../../../../src/host.ts"
+import {
+  FiregridMcpServerLayer,
+  FiregridRuntimeHostWithWorkflowLive,
+  runtimeContextMcpPath,
+} from "@firegrid/host-sdk"
 import { RuntimeContextInsert } from "@firegrid/runtime"
-import { FiregridMcpServerLayer, runtimeContextMcpPath } from "../../src/host/mcp-host.ts"
-import { FiregridRuntimeHostWithWorkflowLive } from "../../src/host/index.ts"
 import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
+import { firegridHostLayer } from "../../src/bin/host.ts"
 
 let durableStreamServer: DurableStreamTestServer | undefined
 let durableStreamBaseUrl: string | undefined

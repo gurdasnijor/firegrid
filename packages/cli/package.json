@@ -1,0 +1,51 @@
+{
+  "name": "@firegrid/cli",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/bin/index.ts",
+      "default": "./src/bin/index.ts"
+    },
+    "./run": {
+      "types": "./src/bin/run.ts",
+      "default": "./src/bin/run.ts"
+    },
+    "./host": {
+      "types": "./src/bin/host.ts",
+      "default": "./src/bin/host.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "pnpm run typecheck && pnpm run test",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@durable-streams/server": "^0.3.1",
+    "@effect/cli": "^0.75.1",
+    "@effect/platform": "^0.96.1",
+    "@effect/platform-node": "^0.106.0",
+    "@firegrid/client-sdk": "workspace:*",
+    "@firegrid/host-sdk": "workspace:*",
+    "@firegrid/protocol": "workspace:*",
+    "effect": "^3.21.2"
+  },
+  "devDependencies": {
+    "@firegrid/runtime": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}
