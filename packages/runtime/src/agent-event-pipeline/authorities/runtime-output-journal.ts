@@ -15,12 +15,6 @@ import type { RuntimeWaitSource } from "../../durable-tools/internal/types.ts"
 
 export type { RuntimeAgentOutputObservation } from "../events/index.ts"
 
-interface RuntimeEventAppendAndGetService {
-  readonly append: (
-    row: RuntimeEventRow,
-  ) => Effect.Effect<RuntimeEventRow, unknown>
-}
-
 interface RuntimeLogLineAppendAndGetService {
   readonly append: (
     row: RuntimeLogLineRow,
@@ -49,10 +43,6 @@ const runtimeAgentOutputEvents = (
     Stream.map(runtimeAgentOutputObservationFromRow),
     Stream.filterMap(value => value),
   )
-
-export class RuntimeEventAppendAndGet extends Context.Tag(
-  "@firegrid/runtime/RuntimeEventAppendAndGet",
-)<RuntimeEventAppendAndGet, RuntimeEventAppendAndGetService>() {}
 
 export class RuntimeLogLineAppendAndGet extends Context.Tag(
   "@firegrid/runtime/RuntimeLogLineAppendAndGet",

@@ -16,7 +16,6 @@ import {
 import {
   RuntimeAgentOutputEventsLayer,
   RuntimeAgentOutputRowSink,
-  RuntimeEventAppendAndGet,
   RuntimeLogLineAppendAndGet,
 } from "@firegrid/runtime/host-substrate"
 import {
@@ -156,7 +155,7 @@ const runCodecRuntimeContext = (options: {
   readonly protocol: Exclude<RuntimeAgentProtocol, "raw">
   readonly hostConfig: RuntimeHostConfig["Type"]
   readonly outputServicesLayer: Layer.Layer<
-    RuntimeEventAppendAndGet | RuntimeLogLineAppendAndGet | RuntimeAgentOutputRowSink
+    RuntimeLogLineAppendAndGet | RuntimeAgentOutputRowSink
   >
 }) =>
   runCodecRuntimeEventPipeline({
@@ -186,12 +185,6 @@ export const runRuntimeContext = (
     const outputLayer = perContextRuntimeOutputTableLayer(hostConfig, context)
     const outputServicesLayer = Layer.mergeAll(
       Layer.succeed(
-        RuntimeEventAppendAndGet,
-        RuntimeEventAppendAndGet.of({
-          append: row => outputWriter.appendEventRow(context, row),
-        }),
-      ),
-      Layer.succeed(
         RuntimeLogLineAppendAndGet,
         RuntimeLogLineAppendAndGet.of({
           append: row => outputWriter.appendLogLine(context, row),
@@ -219,8 +212,6 @@ export const runRuntimeContext = (
     }
 
     return yield* Effect.gen(function* () {
-      const appendEvent = yield* RuntimeEventAppendAndGet
-      const appendLog = yield* RuntimeLogLineAppendAndGet
       const ingressInputStream = yield* RuntimeIngressInputStream
       const stdinEmissionClaim = yield* SandboxStdinEmissionClaim
       const writeOutputChunk = (
@@ -230,9 +221,9 @@ export const runRuntimeContext = (
         outputRowFromProcessChunk(context, activityAttempt, sequence, chunk).pipe(
           Effect.flatMap((row) => {
             if (row.source === "stdout") {
-              return appendEvent.append(row).pipe(Effect.asVoid)
+              return outputWriter.appendEventRow(context, row).pipe(Effect.asVoid)
             }
-            return appendLog.append(row).pipe(Effect.asVoid)
+            return outputWriter.appendLogLine(context, row).pipe(Effect.asVoid)
           }),
           mapRuntimeContextError(
             "runtime-output.write",
