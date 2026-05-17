@@ -1,14 +1,14 @@
 import { NodeRuntime } from "@effect/platform-node"
 import {
+  ensurePathInput,
+  FiregridLocalHostLive,
   FiregridMcpServerLayer,
   FiregridMcpServerListenerConfig,
-  ensurePathInput,
-} from "@firegrid/runtime/agent-tools"
-import {
-  FiregridLocalHostLive,
   RuntimeHostTopologyFromConfig,
+} from "@firegrid/host-sdk"
+import {
   localProcessSpawnEnvFromHostEnv,
-} from "@firegrid/runtime"
+} from "@firegrid/runtime/host-substrate"
 import { Console, Effect, Layer } from "effect"
 
 export const firegridHostProgram = Effect.never

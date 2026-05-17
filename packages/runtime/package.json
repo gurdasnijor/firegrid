@@ -9,9 +9,9 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./runtime-host": {
-      "types": "./src/host/index.ts",
-      "default": "./src/host/index.ts"
+    "./host-substrate": {
+      "types": "./src/host-substrate.ts",
+      "default": "./src/host-substrate.ts"
     },
     "./workflow-engine": {
       "types": "./src/workflow-engine/index.ts",
@@ -32,10 +32,6 @@
     "./agent-adapters": {
       "types": "./src/agent-adapters/index.ts",
       "default": "./src/agent-adapters/index.ts"
-    },
-    "./agent-tools": {
-      "types": "./src/agent-tools/index.ts",
-      "default": "./src/agent-tools/index.ts"
     },
     "./sources/sandbox": {
       "types": "./src/agent-event-pipeline/sources/sandbox/index.ts",

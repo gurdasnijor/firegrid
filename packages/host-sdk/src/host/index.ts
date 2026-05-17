@@ -1,0 +1,61 @@
+// firegrid-runtime-boundary-reconciliation.HOST_HARDENING.1
+export type {
+  RuntimeHostTopologyOptions,
+  StartRuntimeOptions,
+  StartRuntimeResult,
+} from "./types.ts"
+
+export {
+  ContextNotFound,
+  ContextNotLocal,
+  CurrentHostSession,
+  CurrentHostStopped,
+  CurrentRuntimeContext,
+  durableStreamUrl,
+  findRuntimeContext,
+  hostOwnedStreamUrl,
+  provideRuntimeContext,
+  requireLocalContext,
+  runtimeControlPlaneStreamUrl,
+} from "@firegrid/protocol/launch"
+
+export type {
+  RuntimeAgentOutputObservation,
+} from "@firegrid/runtime/host-substrate"
+export { RuntimeIngressError } from "@firegrid/runtime/host-substrate"
+export {
+  localProcessSpawnEnvFromHostEnv,
+  type LocalProcessSandboxProviderOptions,
+} from "@firegrid/runtime/sources/sandbox"
+export {
+  RuntimeEnvResolverPolicy,
+  type RuntimeEnvResolverPolicyValue,
+} from "@firegrid/runtime/sources/sandbox"
+export {
+  RunAuthorizedBindingSchema,
+  RunConfigSchema,
+  decodeRunConfig,
+  firegridRunCreatedBy,
+  runConfigRequiresInput,
+  runConfigToIngressRequest,
+  runConfigToRuntimeContextIntent,
+  type RunAuthorizedBinding,
+  type RunConfig,
+} from "./sync-run.ts"
+export {
+  appendRuntimeIngress,
+  RuntimeStartCapabilityLive,
+  startRuntime,
+} from "./commands.ts"
+export {
+  FiregridLocalHostLive,
+  FiregridRuntimeHostLive,
+  FiregridRuntimeHostWithWorkflowLive,
+} from "./layers.ts"
+export {
+  FiregridRuntimeHostFromConfig,
+  FiregridRuntimeHostWithWorkflowFromConfig,
+  FiregridRuntimeHostWithWorkflowFromConfigWithEnvPolicy,
+  RuntimeHostTopologyFromConfig,
+} from "./config-live.ts"
+export { RuntimeHostAgentToolHostLive } from "./agent-tool-host-live.ts"

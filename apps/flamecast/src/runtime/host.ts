@@ -2,9 +2,11 @@ import { NodeRuntime } from "@effect/platform-node"
 import { Firegrid, FiregridConfig, FiregridLive } from "@firegrid/client-sdk/firegrid"
 import {
   FiregridLocalHostLive,
-  localProcessSpawnEnvFromHostEnv,
   startRuntime,
-} from "@firegrid/runtime/runtime-host"
+} from "@firegrid/host-sdk"
+import {
+  localProcessSpawnEnvFromHostEnv,
+} from "@firegrid/runtime/host-substrate"
 import { Config, Console, Effect, Layer, Option, Redacted, Stream } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { flamecastToyCreatedBy } from "../shared/agent.ts"

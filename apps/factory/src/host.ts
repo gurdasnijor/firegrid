@@ -21,10 +21,12 @@ import {
 import {
   FiregridLocalHostLive,
   RuntimeStartCapabilityLive,
+  type RuntimeHostTopologyOptions,
+} from "@firegrid/host-sdk"
+import {
   localProcessSpawnEnvFromHostEnv,
   type RuntimeEnvResolverPolicy,
-  type RuntimeHostTopologyOptions,
-} from "@firegrid/runtime/runtime-host"
+} from "@firegrid/runtime/host-substrate"
 import {
   Firegrid,
   FiregridConfig,

@@ -64,8 +64,9 @@
     "repos/**"
   ],
   "ignoreDependencies": [
-    "jscpd",
-    "@modelcontextprotocol/sdk"
+    "@agentclientprotocol/sdk",
+    "@modelcontextprotocol/sdk",
+    "jscpd"
   ],
   "ignoreBinaries": [
     "ruby",
