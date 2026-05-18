@@ -66,7 +66,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-021 | resolved (#317/#320 cleanup) | toy tests | Scenario tests should stay above component internals. | cat-4/toy (toy discipline rule; toy cleanup) |
 | TFIND-022 | open | toy package surface | `src/index.ts` should not become an artificial public API. | cat-4/toy (toy discipline rule) |
 | TFIND-023 | resolved (#317/#320 cleanup) | toy layout | Package layout should mirror production package layout. | cat-4/toy (toy discipline rule; toy cleanup) |
-| TFIND-024 | open | runtime adapters | Agent adapter path is still under-modeled. | cat-4/toy (deferred toy modeling; `agent-adapters` exists in production) |
+| TFIND-024 | open — cat-4 framing has a cat-1 PRODUCTION KERNEL: see TFIND-049 (toy realization blocked on it) | runtime adapters | Agent adapter path is still under-modeled. | cat-4/toy framing was WRONG that "`agent-adapters` exists in production" — it is NOT wired into the runtime host (effect-ai-native-agents Slice 4 unbuilt). The real gap = TFIND-049 (cat-1). TFIND-024 toy-realization blocked on TFIND-049 |
 | TFIND-025 | open | durable-tools | Shape C / wait arbitration remains unmodeled. | cat-4/toy (deferred toy modeling of an existing production durable-tools surface) |
 | TFIND-026 | resolved (#321) | durable backend | Durable-streams backend reached Group D. | cat-4/toy (toy milestone; toy PR #321, no production surface) |
 | TFIND-027 | accepted | toy readability | Duplicate inline configuration code is acceptable when it documents wiring. | cat-4/toy (toy readability rule; accepted, no action) |
@@ -91,6 +91,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-046 | open (low priority — client-sdk ergonomic completeness; annotated in #341 MIGRATION_NOTES) | client-sdk / durable tables | client SDK exposes `FiregridRuntimeTables.ControlPlane` but not the `runtimeControlPlaneStreamUrl` builder needed to instantiate its layer, forcing consumer-shaped code to import the URL helper from `@firegrid/protocol/launch`. | cat-1 (real consumer gap — a client-side live control-plane query, the Flamecast `useDurableTable` pattern, must reach into protocol for the stream URL; low severity but consumer-facing; fix = client-sdk re-export/fold. NOT toy-test-cleanness: a real non-Firegrid consumer hits the identical import) |
 | TFIND-047 | open (filed 2026-05-18 by Gurdas; framing-gated, distinct from TFIND-040) | client-sdk / snapshot observation typing | `RuntimeContextSnapshot["agentOutputs"]` carries weaker typing than runtime-side `RuntimeAgentOutputObservation`: the Codex test needs `asRecord` defensive casts to read `event.part.delta` / `event.part.name` from snapshot rows, while the same fields are properly typed when consumed from `RuntimeOutputTable.events.rows()` directly. | cat-2 (real client-SDK type-precision boundary — the snapshot path loses observation type precision the runtime side has, forcing consumer casts; distinct from TFIND-040 subscription ergonomics; relates TFIND-030/035 SSOT but a deeper `.part.*`/row-shape precision gap not closed by #329) |
 | TFIND-048 | open — REFRAMED 2026-05-18 (Reading 2 / architectural; was mis-shaped as "client-sdk missing helper"); framing-gated, folds into the #332-impl MCP-lifecycle question; blocks Codex ACP | client/host boundary / MCP route + URL lifecycle | The #332 client/host model does not resolve **who builds the concrete `contextId`-scoped MCP URL and when**. Codex ACP bakes it client-side pre-`createOrLoad`; production (`host-sdk/mcp-host.ts`, CLI) has the **host** own the MCP server with a `/mcp/runtime-context/:contextId` route resolved at tool-call time. Client-baking a concrete URL into the intent is test-fixture-shaped. | cat-1/2 **architectural** (real production-model gap, not a missing API: re-exporting `sessionContextIdForExternalKey` would canonize the backwards lifecycle = WRONG fix. The determinism primitive itself is sound; the smell is URL-lifecycle ownership. Migration-as-validation working exactly as designed — proved #332 left an MCP-lifecycle hole. NOT cat-3 toy-fix: the production model needs the decision, not the toy) |
+| TFIND-049 | open — ARCHITECT/ROADMAP (build effect-ai-native-agents Slice 4? — Gurdas binary); blocks `agent-adapter-driven-pipeline` + capstone + TFIND-024 toy-realization | runtime host / agent-adapter integration | The runtime host has NO agent-adapter integration: `RuntimeProviderSchema = Literal("local-process")` only (`protocol/src/launch/schema.ts:60`); `FiregridRuntimeHostLive` hardcodes `LocalProcessSandboxProvider` (`host-sdk/src/host/layers.ts:31,143`); zero host-sdk consumers of `AgentAdapterRegistry`/`adapterFor`; `docs/proposals/effect-ai-native-agents.md:474` "Slice 4: wire `AgentAdapterRegistry.adapterFor(context)` into the runtime host" is explicitly **unbuilt**. | cat-1 (real production capability gap — adapter-driven/AI-provider launch does not exist in prod; a real consumer cannot do it. NOT a small surface fix and NOT toy-fix: it is an unbuilt, deliberately-deferred production slice. Surfaced by `33`'s correct halt — migration-as-validation. Disposition is a roadmap binary Gurdas owns) |
 
 ## Triage Audit (2026-05-18)
 
@@ -797,15 +798,28 @@ to production code directly.
 
 ### TFIND-024: Agent adapter path is still under-modeled
 
-status: open
+status: open — BLOCKED on TFIND-049 (its cat-4 framing concealed a cat-1 production kernel)
 
 The toy currently models an `AgentSessionService` and a tiny sandbox output
 stream, but it does not yet show how `packages/runtime/src/agent-adapters` fits
 between sandbox/process streams, codecs, workflow session send/receive, and
 output persistence.
 
-Next action: add an agent-adapter configuration after host/client process
-separation is stable.
+**Re-triage 2026-05-18:** TFIND-024 was triaged cat-4/toy on the
+assumption "`agent-adapters` exists in production." `33`'s
+`agent-adapter-driven-pipeline` build attempt (Gurdas-directed) proved
+that assumption WRONG: the adapter path is **not wired into the runtime
+host** (effect-ai-native-agents **Slice 4 unbuilt** — see TFIND-049 for
+verified file:line evidence). So TFIND-024 is the canonical
+"cat-1/2 kernel hiding in cat-4 toy framing" inverse-risk (cf.
+TFIND-012/015): the toy "under-modeling" is a *symptom* of an unbuilt
+production capability, not toy laziness. TFIND-024's toy realization is
+**blocked on TFIND-049 / Slice 4**, not on "host/client process
+separation."
+
+Next action: gated on TFIND-049 (Slice 4 roadmap decision — Gurdas).
+When the runtime host integrates `AgentAdapterRegistry`, the
+`agent-adapter-driven-pipeline` config realizes this finding.
 
 ### TFIND-025: Durable-tools Shape C / wait arbitration remains unmodeled
 
@@ -1696,3 +1710,49 @@ delivered post-materialization vs. client URL-pattern + host
 resolution vs. other) → batched framing-signoff pass with Gurdas
 alongside TFIND-044/045 (+#334). Off the keystone critical path but the
 live blocker of the dispatched option-3 Codex ACP work.
+
+### TFIND-049: runtime host has no agent-adapter integration (effect-ai-native-agents Slice 4 unbuilt)
+
+status: open — ARCHITECT/ROADMAP binary (Gurdas owns: prioritize Slice 4 vs. keep adapter configs dequeued). Blocks `agent-adapter-driven-pipeline` + `agent-adapter-tool-execution-pipeline` capstone + TFIND-024 toy-realization.
+
+Triage: **cat-1** (real production capability gap — an unbuilt,
+deliberately-deferred slice). Surfaced 2026-05-18 by `33`'s
+Gurdas-directed `agent-adapter-driven-pipeline` build: it halted
+correctly per protocol rather than reach past / replace host internals.
+Migration-as-validation working exactly as designed.
+
+**Verified evidence (coordinator, file:line):**
+- `RuntimeProviderSchema = Schema.Literal("local-process")` — only
+  value (`packages/protocol/src/launch/schema.ts:60`).
+- `FiregridRuntimeHostLive` imports + hardcodes
+  `LocalProcessSandboxProvider` (`packages/host-sdk/src/host/layers.ts:31,143`).
+- Zero host-sdk consumers of `AgentAdapterRegistry` / `adapterFor`
+  (grep `packages/host-sdk/src` = empty). `RuntimeContextWorkflowSessionLive`
+  only selects raw vs codec sessions.
+- `docs/proposals/effect-ai-native-agents.md:474` — **"### Slice 4:
+  Runtime Host Integration — Wire `AgentAdapterRegistry.adapterFor(context)`
+  into the runtime host"**; `:482` "Only after Slice 4 proves production
+  behavior". Slice 4 is explicitly future/unbuilt.
+
+So adapter-driven / AI-provider launch is **not a missing surface — it
+is an unbuilt production capability**. The `agent-adapter-driven-pipeline`
+config (and the `agent-adapter-tool-execution-pipeline` capstone) cannot
+be production-consuming until Slice 4 lands. Distinct from TFIND-048
+(MCP URL lifecycle, an existing-capability shape question) — TFIND-049
+is capability-absent.
+
+**Process note (CONFIGS queue):** the CONFIGS.md queue marked
+`agent-adapter-driven-pipeline` "pre-conditions clean (TFIND-024 open,
+no upstream blocks)". That was WRONG — there is a hard upstream block
+(Slice 4). Queue pre-condition assessments must verify the *production
+capability exists*, not merely that the modeling TFIND is open. See
+[[feedback-configs-queue-precondition-verify-capability]].
+
+Next action: **architect-handoff to Gurdas** — roadmap binary:
+(a) prioritize building effect-ai-native-agents Slice 4 now (unblocks
+the adapter config + capstone + TFIND-024) vs. (b) keep the adapter
+configs dequeued/blocked until Slice 4 is independently scheduled.
+Coordinator does NOT decide this (new production-capability roadmap
+binary). `33` redirected to genuinely-clean work meanwhile;
+`agent-adapter-driven-pipeline` + capstone CONFIGS rows → BLOCKED on
+TFIND-049/Slice 4 (toy updates CONFIGS in its scope).
