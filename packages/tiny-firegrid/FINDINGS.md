@@ -65,7 +65,7 @@ of scope for this package.
 | TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
 | TFIND-030 | in-progress (#329 — framing signed off: Q1=C, Q2=strict) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
 | TFIND-035 | open (tracked dependent of TFIND-030) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
-| TFIND-031 | in-progress (root finding — single missing provision; Agent 2) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
+| TFIND-031 | in-progress (#331 — Option Y signed off; shared-store proof gated) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
 | TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
 | TFIND-033 | superseded (folded into TFIND-031) | host-sdk | `commands.ts` manifestation of TFIND-031. |
 | TFIND-034 | superseded (folded into TFIND-031) | host-sdk | `toolkit-layer.ts` manifestation of TFIND-031. |
@@ -641,7 +641,23 @@ Next action: tighten the client-sdk snapshot/projection type so decoded
 
 ### TFIND-031: host/toolkit composition omits a shared DurableTable tag-family provision
 
-status: in-progress (root finding — single missing provision; Agent 2)
+status: in-progress (#331 — Option Y signed off; shared-store proof gated)
+
+Update (2026-05-18): the contained ambient-tag fixes are done (client-sdk
+launch provideService; `HostRuntimeContextExecutionEnv` capture of
+RuntimeControlPlaneTable|RuntimeOutputTable|CurrentHostSession|RuntimeHostConfig).
+The remaining 3 seams (toolkit-layer:215, agent-tool-host-live:90,
+commands:163) leak the 4 `DurableWait*` tags — an architectural fork
+(SDD `SDD_TFIND031_DURABLE_WAIT_SUBSTRATE_OWNERSHIP.md`, PR #331). Gurdas
+signed off **Option Y** (execution-scoped: merge `DurableWaitStoreLive`
+into `runtimeContextWorkflowSupportLayer`; no public host-contract change,
+no test ambient edits) with a NON-NEGOTIABLE emit-then-wait correctness
+gate: a deterministic blocked-pending test must PROVE
+`DurableWaitStoreLive` and `HostOwnedDurableToolsWaitForLive` resolve to
+ONE shared materialized store (router wakes on the store waits are
+recorded in); divergence → restructure to one store or re-escalate, never
+assume. On green, #326 rebases → keystone merge (unblocks
+TFIND-007-step2 + TFIND-029).
 
 Surfaced by TFIND-005. Initially filed as 4 separate leaks
 (TFIND-031..034); Agent 2's finding-grade diagnosis (2026-05-17) shows
