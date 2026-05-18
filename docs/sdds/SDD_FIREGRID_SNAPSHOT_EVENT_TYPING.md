@@ -4,8 +4,8 @@ Status: draft — framing for coordinator/Gurdas signoff, NO production code
 Created: 2026-05-17
 Owner: Firegrid Client SDK (sidecar `sidecar/snapshot-event-typing`)
 
-Resolves: `packages/tiny-firegrid/FINDINGS.md` → TFIND-030
-"Snapshot agent output events are typed as records, not protocol unions."
+Resolves: Beads DB (`bv --robot-triage`, join key `tfind:030`) → "Snapshot
+agent output events are typed as records, not protocol unions."
 
 Governing spec (decisive): `SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md`
 ("Client Read Binding" — already prescribes the target contract below).
@@ -119,7 +119,7 @@ calls.
   retain a permissive fallback? This changes `snapshot()`/`wait` observable
   behavior and needs an explicit decision before code.
 
-## 5. Adjacent findings (coordinator → FINDINGS.md, not this PR)
+## 5. Adjacent findings (coordinator → Beads DB, not this PR)
 
 - Two divergent `RuntimeAgentOutputEnvelopeSchema`/`decodeRuntimeAgentOutputEnvelope`
   definitions (runtime typed vs. protocol `Record`) are a latent SSOT
@@ -132,5 +132,5 @@ This document is the deliverable. No production code until Q1+Q2 are answered.
 On signoff the implementation lands on `sidecar/snapshot-event-typing` scoped
 to the chosen option, verified: typecheck client-sdk + protocol + dependents,
 full `pnpm run lint`, affected tests (incl. a decode-path test proving the
-union is actually yielded, not just typed). FINDINGS.md ledger is
+union is actually yielded, not just typed). Beads DB updates are
 coordinator-owned.

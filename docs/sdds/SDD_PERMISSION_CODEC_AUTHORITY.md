@@ -22,11 +22,23 @@ This matches the existing codec README boundary rule that durable permission sta
 
 The implementation is the proof point for the chosen boundary: ACP no longer depends on `WorkflowEngine` or `DurableDeferred`, and the runtime workflow owns the durable input deferred that resumes the live ACP continuation.
 
-## §1 — Grounding from canonical FINDINGS
+## §1 — Grounding from Beads and historical findings context
 
-`packages/tiny-firegrid/FINDINGS.md:740-752` records TFIND-015 as open. The relevant production kernel is not merely that the toy lacks permission coverage; it is whether codec layers only translate protocol events, or whether any codec currently completes workflow deferreds / performs authority-like work for permission-class events. The recorded next action is a permission-flow configuration that observes permission requests through the per-context output channel and routes permission responses back as client input intents, "unless production chooses a different authority boundary."
+Beads DB (`bv --robot-triage`, join key `tfind:015`) carries current TFIND-015
+state. The relevant production kernel is not merely that the toy lacks
+permission coverage; it is whether codec layers only translate protocol events,
+or whether any codec currently completes workflow deferreds / performs
+authority-like work for permission-class events. The recorded next action was a
+permission-flow configuration that observes permission requests through the
+per-context output channel and routes permission responses back as client input
+intents, "unless production chooses a different authority boundary."
 
-`packages/tiny-firegrid/FINDINGS.md:1375-1436` records TFIND-041 as resolved by decision B on 2026-05-18. For `ToolUse`, Gurdas chose session/codec mode as the explicit authority axis rather than promoting execution authority onto the event itself: ACP is observation-only, stdio-jsonl is client-result roundtrip, and the shared `ToolUse` event deliberately remains under-discriminated by execution authority.
+Beads DB (`bv --robot-triage`, join key `tfind:041`) carries current TFIND-041
+state. The historical decision was B on 2026-05-18. For `ToolUse`, Gurdas chose
+session/codec mode as the explicit authority axis rather than promoting
+execution authority onto the event itself: ACP is observation-only,
+stdio-jsonl is client-result roundtrip, and the shared `ToolUse` event
+deliberately remains under-discriminated by execution authority.
 
 The TFIND-041 precedent is directly relevant but not automatically dispositive. Permission-class events have the same family shape because a normalized event can either carry authority semantics itself, defer interpretation to session mode, or route through workflow authority. The difference is that ACP permission handling currently reaches into `WorkflowEngine`/`DurableDeferred`, while TFIND-041's decided branch lives in workflow code that interprets a normalized `ToolUse` event by session mode.
 
