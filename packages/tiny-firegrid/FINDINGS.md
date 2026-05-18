@@ -38,7 +38,7 @@ of scope for this package.
 | TFIND-002 | in-progress (#332 — Option 1 signed off; impl SDD next) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
 | TFIND-003 | in-progress (#332 — Option 1 signed off; impl SDD next) | client-sdk / host boundary | No remote start request surface. |
 | TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
-| TFIND-005 | blocked (keystone — leak-stack first, #326 last) | Effect layer typing | Workflow/table layer composition leaks type precision. |
+| TFIND-005 | blocked (keystone — #331 landed; #326 fork: (1) curry-sweep OCA3, (2) DurableTableProvider API-shape → architect) | Effect layer typing | Workflow/table layer composition leaks type precision. |
 | TFIND-006 | resolved (#325) | tiny host coverage | Durable configuration still models a tiny host capability. |
 | TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. |
 | TFIND-008 | open | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
@@ -65,7 +65,7 @@ of scope for this package.
 | TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
 | TFIND-030 | resolved (#329) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
 | TFIND-035 | resolved (#333) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
-| TFIND-031 | in-progress (#331 — Option Y; RIn∩ROut knot diagnosed; same agent on focused completion run) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
+| TFIND-031 | resolved (#331, e48d82904) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
 | TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
 | TFIND-033 | superseded (folded into TFIND-031) | host-sdk | `commands.ts` manifestation of TFIND-031. |
 | TFIND-034 | superseded (folded into TFIND-031) | host-sdk | `toolkit-layer.ts` manifestation of TFIND-031. |
@@ -201,7 +201,38 @@ in tests and use only the durable backend as shared state.
 
 ### TFIND-005: Workflow layer composition leaks type precision
 
-status: blocked (keystone — leak-stack first, #326 last)
+status: blocked (keystone — #331 landed; #326 fork (1) OCA3 / (2) architect)
+
+Keystone update (2026-05-18): **TFIND-031 #331 MERGED** (e48d82904) —
+the DurableWait* leak-stack root + Option-Y execution-scoped
+self-containment is resolved (deterministic record→blocked→wake test
+passing; a typecheck-passing-but-broken sibling-merge attempt was caught
+& rejected by that test, not forced). #326 (the TFIND-005 curry
+self-identity keystone) does NOT go green atop #331 due to #326's OWN
+incomplete scope — a two-part fork, NOT TFIND-031, NOT in the SDD
+buckets:
+1. **Incomplete curry sweep (mechanical, IN-SCOPE of TFIND-005's
+   signed-off "all callsites").** `apps/factory/src/tables.ts:145`
+   `DarkFactoryTable` (and likely more app/scenario callsites) never got
+   `<Self>()` — factory was absent from #326's commit → runtime
+   `Class extends value () => {}`. Dispatched to OCA3 to complete the
+   full repo sweep on the #326 branch.
+2. **DurableTableProvider heterogeneous multi-table precise identity
+   (ARCHITECT decision — beyond the signed-off SDD).**
+   `firegridRuntimeTableTags` (client-sdk `firegrid.ts:237`) is an
+   N-table array consumed via single-generic
+   `DurableTableProvider<ROut,E>` (effect-durable-operators
+   `react.ts`). Precise per-table `<Self>` identities cannot be
+   represented by one ROut generic → flamecast `#typecheck` TS2322. The
+   SDD scoped 6 prod + 14 test occ; it did NOT address a heterogeneous
+   multi-table provider's ROut shape. This is a DurableTableProvider
+   API-shape decision for the keystone owner — QUEUED to architect-handoff;
+   coordinator does not improvise it.
+
+Cascade status: TFIND-007-step2 + TFIND-029 (#328) remain GATED on #326,
+which is now blocked on (2). #326 will be "green except the (2) TS2322"
+once OCA3 finishes (1); it merges only after Gurdas decides (2). The
+in-scope Cat C/A #326 fixes are preserved on the branch (372c8b1a0).
 
 Keystone update (2026-05-17): the fix on PR #326 is **correct** —
 `.layer` now returns a precise `Layer<<Table>, …>` (protocol typecheck
@@ -684,7 +715,25 @@ Next action: tighten the client-sdk snapshot/projection type so decoded
 
 ### TFIND-031: host/toolkit composition omits a shared DurableTable tag-family provision
 
-status: in-progress (#331 — Option Y; RIn∩ROut knot diagnosed; same agent on focused completion run)
+status: resolved (#331, e48d82904)
+
+RESOLVED 2026-05-18 (#331 merged): Option-Y execution-scoped
+self-containment landed exactly as the SDD diagnosed — the support
+layer required what it provided (`RuntimeToolUseExecutorLive`'s own
+`Effect.context<DurableWait*>` capture was provideMerged as a sibling,
+never discharged). Fix (NO cast): provide the SAME
+`HostRuntimeObservationSubstrateLive` reference INTO the executor while
+keeping it provideMerged into the workflow chain → Effect memoization =
+ONE shared store (workflow body + wait-router + tool executor);
+`toolCallWorkflowSupportLayer` got analogous self-containment. A first
+sibling-`Layer.merge` attempt typechecked but broke
+`TOOL_EXECUTOR_SEAM.2` schedule_me — **caught and rejected by the
+deterministic record→blocked→wake test, not forced green**; corrected
+re-thread passes it. Full gate green (turbo typecheck 17/17, test 17/17,
+host-sdk 96/96 incl. the wake path), CI-confirmed. Cat A/B fixes
+included. Closes the TFIND-005 leak-stack root; the remaining TFIND-005
+keystone work is the separate #326 curry-self-identity fork (see
+TFIND-005).
 
 Honest keystone status (2026-05-18): NOT green yet, by design. The
 shared-store gate passed (structural proof, prior). Final Option-Y
