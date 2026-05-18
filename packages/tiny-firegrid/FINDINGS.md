@@ -47,7 +47,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-002 | resolved (#332 — client writes durable intent, no host identity) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. | cat-1 (rubric anchor — client-only frontend hits host-identity wall immediately) |
 | TFIND-003 | resolved (#332 — durable start request + host reconciler) | client-sdk / host boundary | No remote start request surface. | cat-1 (real remote client needs a durable start trigger, not an in-process host capability) |
 | TFIND-004 | unblocked by #332 (client/host now separable; toy realization = toy-maintainer follow-up) | tests / architecture | Tests must not compose client and host in one Effect environment. | cat-1-consequence (real e2e shape; unblocked by cat-1 #332; toy realization = toy follow-up) |
-| TFIND-005 | FRAMING SIGNED OFF (Gurdas 2026-05-18 — curried shape accepted); #326 = mechanical idiom migration only, verify-then-flip; "fork (2)" EXCISED → TFIND-044 | Effect layer typing | Workflow/table layer composition leaks type precision. | cat-2 (rubric anchor — `any` leaks Layer precision through public host factories; type-honesty boundary) |
+| TFIND-005 | #326 VERIFIED (Crux-B both arms pass; strict scope; gates green), NOT flip-ready — co-gated on TFIND-044 + TFIND-045; branch force-pushed `15af74c4e` (rebased onto main + SDD inv 7/6); coordinator holds merge | Effect layer typing | Workflow/table layer composition leaks type precision. | cat-2 (rubric anchor — `any` leaks Layer precision through public host factories; type-honesty boundary) |
 | TFIND-006 | resolved (#325) | tiny host coverage | Durable configuration still models a tiny host capability. | cat-4/toy (toy fidelity — toy should compose production host; no production surface gap; its adoption surfaced cat-1 TFIND-028) |
 | TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. | cat-2 (rubric anchor — consumers reached into impl to build an unnamed host type) |
 | TFIND-008 | unblocked by #332 (separate-process client/host seam now exists; toy e2e = follow-up) | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. | cat-1-consequence (real separate-process e2e; unblocked by #332; toy realization = toy follow-up) |
@@ -87,6 +87,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-042 | resolved (#337) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. | cat-4 (test-infra/tooling artifact — cold-start latency; test-infra-only fix, NO production code) |
 | TFIND-043 | open (low priority — test-infra flake, TFIND-042-class) | runtime / test infra | `DurableStreamsWorkflowEngine` VALIDATION.5 flakes under 17-way local turbo contention. | cat-4 (test-infra/tooling artifact — load-contention flake; CI-arbiter, correctly NOT dispatched to a production sidecar) |
 | TFIND-044 | QUEUED-FOR-ARCHITECT (own SDD needed; was TFIND-005 "fork (2)"; excised per the TFIND-005 halt rule) | client-sdk / effect-durable-operators provider | `DurableTableProvider`'s single `ROut` generic cannot carry N heterogeneous precise `DurableTable` `<Self>` identities (`firegridRuntimeTableTags`; flamecast `client/main.tsx:360` TS2322) — a latent precision leak the TFIND-005 `any` was hiding. | cat-2 (real boundary/wrong-shape — a real flamecast consumer hits it; the provider abstraction can't express the precise heterogeneous identity set; needs its own SDD, architect-gated) |
+| TFIND-045 | QUEUED-FOR-ARCHITECT (own SDD; halt-rule finding surfaced by #326 verify; co-gates #326 flip with TFIND-044) | host-sdk / control-request-reconciler | `RuntimeControlRequestReconcilerEnvironment` (`control-request-reconciler.ts:42-46`) omits `RuntimeOutputTable` + `HostRuntimeContextExecutionEnv` that `reconcileStartRequest:211` transitively requires via `startRuntime()`→`RuntimeContextEngineRegistry` — a genuine missing-dependency the TFIND-005 `any` was masking (Crux-B false-equivalence). | cat-2 (real production correctness — declared Effect env alias incomplete; fails when ambient doesn't supply it, TFIND-028 class; controlled experiment proved NOT branch scope-creep; relates TFIND-029 env-enumeration family, distinct mechanism from TFIND-044) |
 
 ## Triage Audit (2026-05-18)
 
@@ -290,7 +291,44 @@ in tests and use only the durable backend as shared state.
 
 ### TFIND-005: Workflow layer composition leaks type precision
 
-status: FRAMING SIGNED OFF (Gurdas 2026-05-18) — #326 = mechanical curried-idiom migration ONLY; verify-then-flip; "fork (2)" EXCISED → TFIND-044
+status: #326 VERIFIED (NOT flip-ready) — Crux-B both arms pass, strict scope, gates green; co-gated on TFIND-044 + TFIND-045; coordinator holds merge
+
+**EXECUTION VERIFIED (Agent 2, 2026-05-18; coordinator-dispositioned).**
+Agent 2 completed the STRICT idiom migration on `15af74c4e`
+(`sidecar/workflow-layer-precision`, force-pushed: rebased onto main
+`83ff0ada5` + certified-dead lint sweep `da1356e1d` + SDD inventory
+correction). Findings:
+- **Crux-B binding condition MET:** both probe arms pass against the
+  curried shape — Arm A `IsAny<ROut>`=false + concrete class
+  (RuntimeControlPlaneTable, RuntimeOutputTable); Arm B mutual
+  non-assignability proven via negative control. Probe throwaway, deleted.
+- **Strict scope confirmed:** lib curry per SDD §Exact signature; 7 prod
+  (SDD undercounted 6 — `DarkFactoryTable` mandatory once `Self=any`
+  default removed; inventory corrected) + 14 test idiom appends; all
+  non-idiom hunks are direct mechanical consequences (dead-cast/dead-
+  suppression removals, test type-args, WaitFor helper generalization
+  RIn=never preserved); tiny-firegrid annotation removal empirically
+  proven non-papering.
+- **Gates:** lint chain green; tests green all curry-affected pkgs (incl.
+  host-sdk 103 — tests pass despite typecheck-red ⇒ confirms SDD's
+  zero-runtime-change claim). Recursive CI typecheck RED on EXACTLY two
+  residuals, both halt-rule findings, neither #326 scope.
+- **Flip is HARD-GATED (flamecast IS in the merge typecheck set):** two
+  reds — (1) flamecast `main.tsx:360` = TFIND-044 (already excised); (2)
+  the NEW host-sdk reconciler env leak = **TFIND-045** (filed; controlled
+  experiment proved NOT branch scope-creep — `control-request-reconciler.ts`
+  is unmodified by the branch). #326's OWN pkgs (edo/runtime/protocol/
+  client-sdk) typecheck GREEN in isolation.
+
+#326 is preserved + correct but its flip/merge is co-gated on **both**
+TFIND-044 and TFIND-045 SDD dispositions (flamecast cannot be CI-red).
+Coordinator holds the merge gate. Agent 2 standby; NO impl on
+TFIND-044/045 (architect-gated SDD-first).
+
+---
+Prior status (preserved for evidence):
+
+status (superseded): FRAMING SIGNED OFF (Gurdas 2026-05-18) — #326 = mechanical curried-idiom migration ONLY; verify-then-flip; "fork (2)" EXCISED → TFIND-044
 
 **SIGNOFF + RE-SCOPE (Gurdas, 2026-05-18; SDD signoff `349bfd8af` on
 `sidecar/workflow-layer-precision`).** Curried `(ns,schemas)<Self>()`
@@ -1413,3 +1451,51 @@ heterogeneous-identity shape (relate effect-durable-operators
 `react.ts`, client-sdk `firegrid.ts:237`, flamecast
 `client/main.tsx:360`); coordinator reviews framing → Gurdas signoff →
 implement → unblocks #326 flip → keystone cascade.
+
+### TFIND-045: RuntimeControlRequestReconciler environment alias omits transitively-required tags
+
+status: QUEUED-FOR-ARCHITECT (own SDD + framing gate; halt-rule finding surfaced by #326 verify; co-gates #326 flip with TFIND-044)
+
+Triage: **cat-2** (real production correctness / wrong shape). Surfaced
+by the TFIND-005 halt rule during Agent 2's #326 verify (2026-05-18).
+
+`RuntimeControlRequestReconcilerEnvironment`
+(`packages/host-sdk/src/host/control-request-reconciler.ts:42-46` =
+`CurrentHostSession | RuntimeControlPlaneTable |
+RuntimeContextEngineRegistry | AgentToolHost`) **omits**
+`RuntimeOutputTable` and `HostRuntimeContextExecutionEnv`, yet
+`reconcileStartRequest` (`:211`) transitively requires them via
+`startRuntime()` → `RuntimeContextEngineRegistry`. Pre-curry, the
+TFIND-005 `any` made `RuntimeOutputTable` spuriously assignable to
+`RuntimeControlPlaneTable` (the Crux-B false equivalence), so the
+declared env "covered" the gap. The precise `<Self>` idiom exposes the
+genuine missing-dependency — textbook "a latent requirement leak the
+`any` was hiding" (TFIND-028 class: declared env doesn't enumerate true
+transitive deps; would fail when ambient context doesn't supply them).
+
+Distinct from **TFIND-044** (different mechanism: an Effect
+requirements-channel env alias, not the flamecast N-table React
+provider). Relates to **TFIND-029** (same env-enumeration family —
+`RuntimeStartCapabilityLive` explicit deps) but a distinct file/surface;
+cross-link, do not fold.
+
+Provenance / discipline: per the TFIND-005 halt rule this is NOT #326
+fix scope and is NOT papered with a forcing/widening cast. Agent 2's
+controlled experiment proves it is NOT #326 branch scope-creep — the
+error persists identically with the branch's host-sdk/runtime fallout
+hunks reverted to origin/main, and `control-request-reconciler.ts` is
+unmodified by the branch. It also bleeds into tiny-firegrid's typecheck
+via TS path resolution to host-sdk src.
+
+Gating: #326's flip/merge is co-gated on TFIND-045 **and** TFIND-044
+(both must be dispositioned; flamecast cannot be CI-red). The keystone
+cascade (TFIND-007-step2 + TFIND-029 / #328) is gated on these two SDDs.
+
+Next action: scope a dedicated SDD for the reconciler environment
+enumeration (correctly declare/provide `RuntimeOutputTable` +
+`HostRuntimeContextExecutionEnv`, or restructure how
+`reconcileStartRequest` acquires them — relate
+`control-request-reconciler.ts:42-46/211`, `startRuntime()`,
+`RuntimeContextEngineRegistry`; cross-ref TFIND-028/029). Coordinator
+reviews framing → Gurdas signoff → implement. SDD-first; no production
+code, no call-site forcing cast.
