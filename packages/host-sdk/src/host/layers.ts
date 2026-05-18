@@ -4,7 +4,7 @@ import {
   HostIdSegmentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
-  RuntimeStartCapability,
+  type RuntimeStartCapability,
   hostOwnedStreamUrl,
   makeHostSessionRow,
   runtimeControlPlaneStreamUrl,
