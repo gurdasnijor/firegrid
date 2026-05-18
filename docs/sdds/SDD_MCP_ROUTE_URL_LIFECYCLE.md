@@ -533,14 +533,38 @@ load-bearing proof and lands in the same transaction.
    lint:effect-quality). Coordinator reviews at the correctness bar; no
    self-merge.
 
+## A1.7 — Condition 5: single-purpose primitive (binding)
+
+The late-bind primitive is **single-purpose, not a generic host-fact
+bus**. `FiregridRuntimeContextMcpBaseUrl` carries ONLY the
+runtime-context MCP base (`Option<{ address, basePath }>`), is named for
+exactly that, and is doc-commented "SINGLE-PURPOSE — DO NOT GENERALIZE".
+`publish` has one caller (`FiregridMcpServerLayer`, the bound-`HttpServer`
+owner). There is no generic `Deferred`/`SubscriptionRef`-of-arbitrary-
+host-fact abstraction; a future host fact needing late-binding gets its
+OWN single-purpose primitive. This keeps it structurally hard for any
+consumer to reach through this for some other host-owned fact
+(ambient-leak anti-pattern avoided).
+
 ## A1.6 — Status of this PR (#344)
 
-This commit delivers the **ratified implementation contract + the
-explicit F-2 answer + the Q3 choice** only. The cross-package
-production edit (A1.5 steps 1–4) is gated on coordinator review of the
-A1.1(b) composition wrinkle at the correctness bar — per Condition 1
-("answer F-2 explicitly before you write the impl"; if a wrinkle
-exists, "specify how the reconciler obtains the bound address") and the
-no-self-merge gate. Implementing the host-layer recomposition before
-that review would be silent scope on an unreviewed architectural
-change.
+Framing ratified; coordinator concurred at the correctness bar on the
+A1.1(b) composition mechanism; Gurdas concurred (OWNERSHIP veto-window).
+A1.5 steps 1–4 are **implemented in this PR** under Conditions 1–5:
+
+- The single-owner channel is `FiregridRuntimeContextMcpBaseUrlLive`,
+  composed once inside `FiregridRuntimeHostLive` (B). Because every
+  in-tree composition does `FiregridMcpServerLayer(A).provideMerge(B)`,
+  B is provided to A, so A late-binds its OWN bound address into B's
+  single instance and B's codec start path reads it — no top-level
+  rewiring, no cross-process channel, no second construction site.
+- `injectLaunchMcpDeclaration` now runs once on the host start path
+  (codec adapter, keyed on the URL-less marker); both CLI
+  pre-`createOrLoad` sites and the dead `cliContextId`/`mcpUrl`
+  pre-derivation are deleted (no dual path).
+- The resumed Codex ACP migration runs entirely through the public
+  client surface with the URL-less marker, no reach-past, no
+  `as unknown as`, no TFIND-048 `it.skip` (only the pre-existing
+  environmental `OPENAI_API_KEY` gate, called out explicitly).
+
+Coordinator reviews at the correctness bar; no self-merge.
