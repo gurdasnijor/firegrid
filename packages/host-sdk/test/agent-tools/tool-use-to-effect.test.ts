@@ -193,10 +193,16 @@ const TestSourceWaitStreamsLive = Layer.mergeAll(
 // Layer builder
 // ---------------------------------------------------------------------------
 
+// TFIND-031: the prior `as Layer<never, unknown, never>` mask collapsed
+// this fully-closed test layer's real type while `DurableTable.layer`
+// leaked `any`. With precise typing the composition genuinely satisfies
+// every requirement (RIn = never); it just also re-exposes the durable
+// substrate tags it materialises (ROut ≠ never). Let the real type flow
+// instead of forcing it.
 const buildLayer = (
   streams: Streams,
   hostLayer: Layer.Layer<AgentToolHost>,
-): Layer.Layer<never, unknown, never> =>
+) =>
   RunToolWorkflowLayer.pipe(
     Layer.provideMerge(hostLayer),
     Layer.provideMerge(
@@ -205,17 +211,17 @@ const buildLayer = (
     Layer.provideMerge(TestSourceWaitStreamsLive),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflowUrl,
-    }) as Layer.Layer<never, unknown, unknown>),
+    })),
     Layer.provideMerge(TestSourceTable.layer({
       streamOptions: {
         url: streams.sourceUrl,
         contentType: "application/json",
       },
     })),
-  ) as Layer.Layer<never, unknown, never>
+  )
 
-const runWith = <A, E>(
-  layer: Layer.Layer<never, unknown, never>,
+const runWith = <A, E, ROut>(
+  layer: Layer.Layer<ROut, unknown, never>,
   effect: Effect.Effect<A, E, unknown>,
 ): Promise<A> =>
   Effect.runPromise(

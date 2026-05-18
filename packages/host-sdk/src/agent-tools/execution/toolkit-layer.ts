@@ -32,7 +32,10 @@ import {
 import {
   provideRuntimeContext,
 } from "@firegrid/protocol/launch"
-import type { HostRuntimeContextExecutionEnv } from "../../host/runtime-substrate.ts"
+import {
+  HostRuntimeObservationSubstrateLive,
+  type HostRuntimeContextExecutionEnv,
+} from "../../host/runtime-substrate.ts"
 import { ToolResultEventSchema } from "@firegrid/runtime/events"
 import { type Context, Effect, Layer, Schema } from "effect"
 import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
@@ -95,7 +98,18 @@ const toolCallWorkflowSupportLayer = (
   handle: ActiveRuntimeContextEngine,
   agentToolHost: AgentToolHost["Type"],
 ) =>
+  // TFIND-031 (Option Y): the ephemeral tool-call workflow body
+  // (`toolUseToEffect` — `WaitFor.match`, child workflows) genuinely
+  // requires the `DurableWait*` family. Like `runtimeContextWorkflowSupportLayer`,
+  // this execution-scoped support layer must SELF-CONTAIN that substrate
+  // (provide the single shared `HostRuntimeObservationSubstrateLive` so
+  // `DurableWait*` LEAVES RIn while STAYING in ROut — one materialized
+  // store, recorder/waker cannot diverge; SDD structural proof). Omitting
+  // it only typechecked while `DurableTable.layer` leaked `any`; with
+  // precise typing the real requirement must be discharged here, not
+  // re-surfaced onto every MCP tool handler.
   ToolCallWorkflowLayer.pipe(
+    Layer.provideMerge(HostRuntimeObservationSubstrateLive),
     Layer.provideMerge(Layer.succeed(WorkflowEngine.WorkflowEngine, handle.engine)),
     Layer.provideMerge(Layer.succeed(WorkflowEngineTable, handle.table)),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
