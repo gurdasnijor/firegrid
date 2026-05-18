@@ -228,6 +228,18 @@ const handleAgentOutput = (
   Effect.gen(function*() {
     const event = observation.event
     if (event._tag === "ToolUse") {
+      // TFIND-041 (decided): session/codec mode is the INTENTIONAL,
+      // by-decision authority for the ToolUse execution lifecycle — it is
+      // not an accident of "by default". ACP codecs are observation-only
+      // (the host does not execute the tool; the provider already did), so
+      // the workflow skips `RuntimeToolUseExecutor` here; stdio-jsonl is
+      // client-result roundtrip (the host executes and feeds the result
+      // back). The `AgentOutput` ToolUse event is deliberately NOT
+      // discriminated by execution authority; interpretation stays
+      // codec/session-aware on purpose. Promoting an event-level
+      // discriminant (option A: `ToolUseRequest` vs `ToolUseObservation`)
+      // is a tracked, deliberately-deferred future option, not the
+      // current contract.
       if (context.runtime.config.agentProtocol === "acp") {
         return undefined
       }
