@@ -5,7 +5,6 @@ import {
   FiregridStandaloneLive,
   local,
   type FiregridConfigError,
-  type RuntimeContextSnapshot,
 } from "@firegrid/client-sdk/firegrid"
 import {
   localProcessSpawnEnvFromHostEnv,
@@ -97,49 +96,11 @@ const provideClient = <A, E, R>(
 
 const promptForToolCall = [
   "Use the MCP server available in this ACP session.",
-  "Call the Firegrid `sleep` tool with durationMs 0.",
-  "After the tool returns, respond exactly with: FIREGRID_TOOL_RESULT sleep slept=true",
-  "Do not answer without making the tool call first.",
+  "Make EXACTLY ONE call to the Firegrid `sleep` tool with durationMs 0.",
+  "Immediately after that single tool call returns, respond with this",
+  "exact line and nothing else: FIREGRID_TOOL_RESULT sleep slept=true",
+  "Do not call any tool more than once. Do not answer before the call.",
 ].join("\n")
-
-type SnapshotObservation = RuntimeContextSnapshot["agentOutputs"][number]
-
-// TFIND-048 forbids `as unknown as`. The typed `AgentOutputEvent` union
-// is narrowed on `observation.event._tag` (the correct access pattern;
-// the separate TFIND-047 envelope-`_tag` precision gap is NOT pulled
-// into this PR), so `event.part.delta` is typed with no cast.
-const textDeltaFromObservation = (
-  observation: SnapshotObservation,
-): string | undefined =>
-  observation.event._tag === "TextChunk"
-    ? observation.event.part.delta
-    : undefined
-
-const toolNameFromObservation = (
-  observation: SnapshotObservation,
-): string | undefined =>
-  observation._tag === "ToolUse" ? observation.toolName : undefined
-
-const textOf = (snapshot: RuntimeContextSnapshot): string =>
-  snapshot.agentOutputs
-    .flatMap(row => {
-      const delta = textDeltaFromObservation(row)
-      return delta === undefined ? [] : [delta]
-    })
-    .join("")
-
-const hasReady = (snapshot: RuntimeContextSnapshot): boolean =>
-  snapshot.agentOutputs.some(row => row.event._tag === "Ready")
-
-const hasSleepToolUse = (snapshot: RuntimeContextSnapshot): boolean =>
-  snapshot.agentOutputs.some(row => toolNameFromObservation(row) === "sleep")
-
-const hasCompletedToolCallResponse = (
-  snapshot: RuntimeContextSnapshot,
-): boolean =>
-  hasReady(snapshot) &&
-  hasSleepToolUse(snapshot) &&
-  textOf(snapshot).includes("FIREGRID_TOOL_RESULT")
 
 describe("tiny-firegrid Codex ACP MCP tool-call pipeline", () => {
   const maybeIt = hasOpenAiKey() ? it : it.skip
@@ -156,7 +117,7 @@ describe("tiny-firegrid Codex ACP MCP tool-call pipeline", () => {
         id: "codex-acp-tool-call",
       }
 
-      const snapshot = await Effect.runPromise(
+      const observed = await Effect.runPromise(
         Effect.scoped(Effect.gen(function*() {
           // Host: reconciler daemon + bound MCP listener (OS-chosen
           // port). The daemon materializes the client's context request
@@ -211,61 +172,81 @@ describe("tiny-firegrid Codex ACP MCP tool-call pipeline", () => {
             { baseUrl: durableStreamsBaseUrl, namespace },
           )
 
-          // Poll the client snapshot until the host-provisioned MCP URL
-          // has driven a real Firegrid `sleep` tool call to completion.
-          // Budget is generous: this spawns a real `npx` Codex agent
-          // (cold-start download) plus live LLM round-trips.
+          // Consume agent output INCREMENTALLY through the client
+          // `wait.forAgentOutput` surface (one observation per call,
+          // server-blocked up to `timeoutMs`). This is the client-surface
+          // equivalent of the old incremental durable stream and is
+          // O(1) memory — unlike re-snapshotting a stream that a real
+          // LLM can grow large by looping the tool call. Budget is
+          // generous: a real `npx` Codex cold-start + live LLM.
           const deadline = (yield* Clock.currentTimeMillis) + 260_000
-          const readContextSnapshot = provideClient(
-            Effect.gen(function*() {
-              const firegrid = yield* Firegrid
-              const session = yield* firegrid.sessions.attach({
-                sessionId: contextId,
-              })
-              return yield* session.snapshot()
-            }),
-            { baseUrl: durableStreamsBaseUrl, namespace },
-          ).pipe(
-            // The context is materialized (prompt succeeded), but the
-            // snapshot can transiently error during agent cold-start.
-            Effect.retry(
-              Schedule.intersect(
-                Schedule.spaced("1000 millis"),
-                Schedule.recurs(5),
+          const waitNext = (afterSequence: number | undefined) =>
+            provideClient(
+              Effect.gen(function*() {
+                const firegrid = yield* Firegrid
+                const session = yield* firegrid.sessions.attach({
+                  sessionId: contextId,
+                })
+                return yield* session.wait.forAgentOutput({
+                  ...(afterSequence === undefined
+                    ? {}
+                    : { afterSequence }),
+                  timeoutMs: 15_000,
+                })
+              }),
+              { baseUrl: durableStreamsBaseUrl, namespace },
+            ).pipe(
+              Effect.retry(
+                Schedule.intersect(
+                  Schedule.spaced("1000 millis"),
+                  Schedule.recurs(5),
+                ),
               ),
-            ),
-          )
-          let current = yield* readContextSnapshot
-          while (!hasCompletedToolCallResponse(current)) {
+            )
+
+          let sawReady = false
+          let sawSleepToolUse = false
+          let resultText = ""
+          let afterSequence: number | undefined
+          while (
+            !(sawReady && sawSleepToolUse &&
+              resultText.includes("FIREGRID_TOOL_RESULT"))
+          ) {
             if ((yield* Clock.currentTimeMillis) >= deadline) break
-            yield* Clock.sleep("1000 millis")
-            current = yield* readContextSnapshot
+            const next = yield* waitNext(afterSequence)
+            if (!next.matched) continue
+            const observation = next.output
+            afterSequence = observation.sequence
+            // Cast-free narrowing on the typed `AgentOutputEvent` union
+            // (the separate TFIND-047 envelope-`_tag`/flattened-field
+            // precision gap is intentionally NOT pulled into this PR).
+            const event = observation.event
+            if (event._tag === "Ready") sawReady = true
+            if (event._tag === "ToolUse" && event.part.name === "sleep") {
+              sawSleepToolUse = true
+            }
+            if (event._tag === "TextChunk") resultText += event.part.delta
           }
-          return current
+          return { sawReady, sawSleepToolUse, resultText }
         })),
       )
 
-      if (!hasCompletedToolCallResponse(snapshot)) {
-        // Diagnostic: surface what the agent actually produced so a
-        // host-provisioned-URL regression is distinguishable from a
-        // slow/absent real-LLM tool call.
-        console.error("[codex-acp] incomplete snapshot", JSON.stringify({
-          tags: snapshot.agentOutputs.map(row => row._tag),
-          eventTags: snapshot.agentOutputs.map(row => row.event._tag),
-          text: textOf(snapshot).slice(0, 2000),
+      if (
+        !(observed.sawReady && observed.sawSleepToolUse &&
+          observed.resultText.includes("FIREGRID_TOOL_RESULT"))
+      ) {
+        // Diagnostic: distinguish a host-provisioned-URL regression
+        // from a slow/absent real-LLM tool call.
+        console.error("[codex-acp] incomplete", JSON.stringify({
+          sawReady: observed.sawReady,
+          sawSleepToolUse: observed.sawSleepToolUse,
+          text: observed.resultText.slice(0, 2000),
         }))
       }
 
-      expect(hasReady(snapshot)).toBe(true)
-      expect(hasSleepToolUse(snapshot)).toBe(true)
-      const sleepToolUse = snapshot.agentOutputs.find(
-        row => toolNameFromObservation(row) === "sleep",
-      )
-      expect(sleepToolUse).toMatchObject({
-        _tag: "ToolUse",
-        toolName: "sleep",
-      })
-      expect(textOf(snapshot)).toContain("FIREGRID_TOOL_RESULT")
+      expect(observed.sawReady).toBe(true)
+      expect(observed.sawSleepToolUse).toBe(true)
+      expect(observed.resultText).toContain("FIREGRID_TOOL_RESULT")
     },
     300_000,
   )
