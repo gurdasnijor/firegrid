@@ -28,6 +28,10 @@
     "./agent-tools": {
       "types": "./src/agent-tools/index.ts",
       "default": "./src/agent-tools/index.ts"
+    },
+    "./agent-output": {
+      "types": "./src/agent-output/index.ts",
+      "default": "./src/agent-output/index.ts"
     }
   },
   "files": [

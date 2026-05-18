@@ -1,20 +1,16 @@
 /**
- * Protocol-owned normalized agent-output event union.
+ * Canonical normalized agent-output event union (single source of truth).
  *
- * TFIND-030 (Option C, smallest sound down-payment): the canonical
- * discriminated `AgentOutputEvent` union is currently defined in
- * `@firegrid/runtime` (`agent-event-pipeline/events/contract.ts`), which
- * `@firegrid/protocol` / `@firegrid/client-sdk` must not depend on
- * (browser-safe / runtime-source-free). To expose `session.snapshot()`
- * agent-output events as the typed public union *and* parse the durable
- * envelope against it (not assert a phantom type), protocol owns this
- * mirror. It is byte-compatible with the runtime union by construction:
- * the part sub-schemas are the same `@effect/ai` Prompt/Response contracts
- * the runtime encoder uses.
+ * TFIND-035: this is the ONE definition of `AgentOutputEvent` + its part
+ * sub-schemas. It lives in `@firegrid/protocol` (browser-safe,
+ * runtime-source-free) because the dependency graph is one-directional —
+ * `@firegrid/runtime` and `@firegrid/client-sdk` depend on
+ * `@firegrid/protocol`, never the reverse. `@firegrid/runtime`'s
+ * `agent-event-pipeline/events/contract.ts` re-exports these names for
+ * back-compat; this module is the authority.
  *
- * The full single-source-of-truth consolidation (relocate the union to
- * protocol; runtime re-exports) is the deliberately deferred dependent
- * tracked as TFIND-035 — NOT a bridge, NOT in this PR's scope.
+ * Part payloads reuse the same `@effect/ai` Prompt/Response contracts the
+ * runtime encoder/codecs use, so the durable wire form is identical.
  */
 
 import { Prompt, Response } from "@effect/ai"
@@ -37,14 +33,12 @@ export const PermissionOptionKindSchema = Schema.Literal(
 )
 export type PermissionOptionKind = Schema.Schema.Type<typeof PermissionOptionKindSchema>
 
-export const AgentOutputPermissionOptionSchema = Schema.Struct({
+export const PermissionOptionSchema = Schema.Struct({
   optionId: Schema.String,
   kind: PermissionOptionKindSchema,
   name: Schema.String,
 })
-export type AgentOutputPermissionOption = Schema.Schema.Type<
-  typeof AgentOutputPermissionOptionSchema
->
+export type PermissionOption = Schema.Schema.Type<typeof PermissionOptionSchema>
 
 export const AgentCapabilitiesSchema = Schema.Struct({
   streamingText: Schema.Boolean,
@@ -58,20 +52,19 @@ export const AgentCapabilitiesSchema = Schema.Struct({
 })
 export type AgentCapabilities = Schema.Schema.Type<typeof AgentCapabilitiesSchema>
 
-// Mirrors @firegrid/runtime AgentOutputEventSchema exactly. Keep the two in
-// lockstep until TFIND-035 collapses them to one source of truth.
 export const AgentOutputEventSchema = Schema.Union(
   Schema.TaggedStruct("Ready", { capabilities: AgentCapabilitiesSchema }),
   Schema.TaggedStruct("TextChunk", {
     part: AgentTextDeltaPartSchema,
   }),
   Schema.TaggedStruct("ToolUse", {
+    // firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.2
     part: AgentToolCallPartSchema,
   }),
   Schema.TaggedStruct("PermissionRequest", {
     permissionRequestId: Schema.String,
     toolUseId: Schema.String,
-    options: Schema.Array(AgentOutputPermissionOptionSchema),
+    options: Schema.Array(PermissionOptionSchema),
   }),
   Schema.TaggedStruct("TurnComplete", {
     finishReason: StopReasonSchema,

@@ -9,7 +9,7 @@ import { firegridProjection } from "../operations/schema.ts"
 import {
   AgentOutputEventSchema,
   type AgentOutputEvent,
-} from "./agent-output-event.ts"
+} from "../agent-output/index.ts"
 
 export const FiregridSessionIdSchema = Schema.String.pipe(
   Schema.minLength(1),

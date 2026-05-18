@@ -20,7 +20,7 @@
  *     (suspension/result vocabulary stays substrate-neutral).
  */
 
-import { Prompt, Response } from "@effect/ai"
+import { Prompt } from "@effect/ai"
 import { Schema } from "effect"
 
 // ---------------------------------------------------------------------------
@@ -29,12 +29,6 @@ import { Schema } from "effect"
 
 export const AgentPromptSchema = Prompt.UserMessage
 export type AgentPrompt = Prompt.UserMessage
-
-export const AgentTextDeltaPartSchema = Response.TextDeltaPart
-export type AgentTextDeltaPart = Response.TextDeltaPart
-
-export const AgentToolCallPartSchema = Prompt.ToolCallPart
-export type AgentToolCallPart = Prompt.ToolCallPart
 
 export const AgentToolResultPartSchema = Prompt.ToolResultPart
 export type AgentToolResultPart = Prompt.ToolResultPart
@@ -82,71 +76,33 @@ export type AgentInputEvent = Schema.Schema.Type<typeof AgentInputEventSchema>
 // Output events (codec -> workflow body)
 // ---------------------------------------------------------------------------
 
-export const StopReasonSchema = Response.FinishReason
-export type StopReason = Response.FinishReason
+// firegrid TFIND-035: the agent-output event union and its part
+// sub-schemas are canonical in `@firegrid/protocol/agent-output` (the
+// dependency graph is one-directional: runtime depends on protocol).
+// Re-exported here so runtime codecs and `@firegrid/runtime/events`
+// consumers keep their existing import paths unchanged.
+export {
+  AgentCapabilitiesSchema,
+  type AgentCapabilities,
+  AgentOutputEventSchema,
+  type AgentOutputEvent,
+  AgentTextDeltaPartSchema,
+  type AgentTextDeltaPart,
+  AgentToolCallPartSchema,
+  type AgentToolCallPart,
+  PermissionOptionKindSchema,
+  type PermissionOptionKind,
+  PermissionOptionSchema,
+  type PermissionOption,
+  StopReasonSchema,
+  type StopReason,
+} from "@firegrid/protocol/agent-output"
 
-export const PermissionOptionKindSchema = Schema.Literal(
-  "allow_once",
-  "allow_always",
-  "reject_once",
-  "reject_always",
-)
-export type PermissionOptionKind = Schema.Schema.Type<typeof PermissionOptionKindSchema>
-
-export const PermissionOptionSchema = Schema.Struct({
-  optionId: Schema.String,
-  kind: PermissionOptionKindSchema,
-  name: Schema.String,
-})
-export type PermissionOption = Schema.Schema.Type<typeof PermissionOptionSchema>
-
+// Session-mode authority (NOT part of the output event union); stays
+// runtime-owned.
 export const AgentToolUseModeSchema = Schema.Literal(
   "observation_only",
   "client_result_roundtrip",
   "control_channel_request_response",
 )
 export type AgentToolUseMode = Schema.Schema.Type<typeof AgentToolUseModeSchema>
-
-export const AgentCapabilitiesSchema = Schema.Struct({
-  streamingText: Schema.Boolean,
-  tools: Schema.Boolean,
-  permissions: Schema.Boolean,
-  images: Schema.Boolean,
-  structuredInput: Schema.Boolean,
-  cancellation: Schema.Boolean,
-  multiTurn: Schema.Boolean,
-  customStatus: Schema.Array(Schema.String),
-})
-export type AgentCapabilities = Schema.Schema.Type<typeof AgentCapabilitiesSchema>
-
-export const AgentOutputEventSchema = Schema.Union(
-  Schema.TaggedStruct("Ready", { capabilities: AgentCapabilitiesSchema }),
-  Schema.TaggedStruct("TextChunk", {
-    part: AgentTextDeltaPartSchema,
-  }),
-  Schema.TaggedStruct("ToolUse", {
-    // firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.2
-    part: AgentToolCallPartSchema,
-  }),
-  Schema.TaggedStruct("PermissionRequest", {
-    permissionRequestId: Schema.String,
-    toolUseId: Schema.String,
-    options: Schema.Array(PermissionOptionSchema),
-  }),
-  Schema.TaggedStruct("TurnComplete", {
-    finishReason: StopReasonSchema,
-    messageId: Schema.optional(Schema.String),
-  }),
-  Schema.TaggedStruct("Status", {
-    kind: Schema.String,
-    payload: Schema.optional(Schema.Unknown),
-  }),
-  Schema.TaggedStruct("Error", {
-    cause: Schema.Unknown,
-    recoverable: Schema.Boolean,
-  }),
-  Schema.TaggedStruct("Terminated", {
-    exitCode: Schema.optional(Schema.Number),
-  }),
-)
-export type AgentOutputEvent = Schema.Schema.Type<typeof AgentOutputEventSchema>
