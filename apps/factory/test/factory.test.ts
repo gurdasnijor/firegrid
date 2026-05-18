@@ -10,7 +10,7 @@ import {
 import {
   encodeRuntimeAgentOutputEnvelope,
   sessionContextIdForExternalKey,
-  type RuntimeAgentOutputEventPayload,
+  type AgentOutputEvent,
 } from "@firegrid/protocol/session-facade"
 import { Effect, Fiber, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -106,7 +106,7 @@ const runWithHost = <A, E>(
     ),
   )
 
-const agentOutputRaw = (event: RuntimeAgentOutputEventPayload): string =>
+const agentOutputRaw = (event: AgentOutputEvent): string =>
   encodeRuntimeAgentOutputEnvelope(event)
 
 describe("dark factory P0 contracts", () => {

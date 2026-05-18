@@ -1,3 +1,4 @@
+import { Prompt } from "@effect/ai"
 import { describe, expect, it } from "vitest"
 import { Option, Schema, SchemaAST } from "effect"
 import {
@@ -7,7 +8,6 @@ import {
 import { getFiregridProjectionMetadata } from "../../src/operations/schema.ts"
 import { FiregridClientOperations } from "../../src/session-facade/operations.ts"
 import {
-  RuntimeAgentOutputObservationSchema,
   RuntimePermissionRequestObservationSchema,
   FiregridSessionIdSchema,
   RuntimeContextIdSchema,
@@ -15,6 +15,7 @@ import {
   SessionAgentOutputWaitInputSchema,
   SessionCreateOrLoadInputSchema,
   SessionExternalKeySchema,
+  decodeRuntimeAgentOutputEnvelope,
   encodeRuntimeAgentOutputEnvelope,
   runtimeAgentOutputObservationFromRow,
   runtimePermissionRequestObservationFromAgentOutput,
@@ -148,18 +149,22 @@ describe("session facade protocol schema", () => {
       receivedAt: "2026-05-16T00:00:00.000Z",
       raw: encodeRuntimeAgentOutputEnvelope({
         _tag: "ToolUse",
-        part: {
+        part: Prompt.toolCallPart({
           id: "tool-1",
           name: "wait_for",
-        },
+          params: {},
+          providerExecuted: false,
+        }),
       }),
     })
 
     expect(Option.isSome(observation)).toBe(true)
     if (Option.isNone(observation)) return
-    expect(Schema.decodeUnknownSync(RuntimeAgentOutputObservationSchema)(
-      observation.value,
-    )).toMatchObject({
+    // TFIND-030: `event` is now the typed union (a decoded Effect-AI
+    // `ToolCallPart` class for ToolUse). Assert the projected observation
+    // directly rather than re-decoding a Schema class instance back through
+    // the strict (`onExcessProperty: "error"`) observation schema.
+    expect(observation.value).toMatchObject({
       source: "firegrid.runtime.agent-output-events",
       sessionId: "ctx_projection",
       contextId: "ctx_projection",
@@ -211,6 +216,53 @@ describe("session facade protocol schema", () => {
         { optionId: "allow", kind: "allow_once", name: "Allow" },
       ],
     })
+  })
+
+  it("TFIND-030 firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.1 strictly rejects an envelope whose event is not a known AgentOutputEvent", () => {
+    // Wire JSON with a non-conforming event. The strict encoder cannot
+    // produce this, so the envelope is hand-built to model a malformed/
+    // unknown producer event reaching the client read path.
+    const raw = JSON.stringify({
+      type: "firegrid.agent-output",
+      event: { _tag: "NotARealAgentOutputEvent", whatever: true },
+    })
+
+    // Decode rejects (no opaque-record pass-through).
+    expect(Option.isNone(decodeRuntimeAgentOutputEnvelope(raw))).toBe(true)
+
+    // And the projection therefore yields no observation.
+    const observation = runtimeAgentOutputObservationFromRow({
+      eventId: {
+        contextId: "ctx_reject",
+        activityAttempt: 1,
+        target: "events",
+        sequence: 1,
+      },
+      contextId: "ctx_reject",
+      activityAttempt: 1,
+      sequence: 1,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt: "2026-05-16T00:00:00.000Z",
+      raw,
+    })
+    expect(Option.isNone(observation)).toBe(true)
+  })
+
+  it("TFIND-030 decoded agent-output event is the typed union, not an opaque record", () => {
+    const decoded = decodeRuntimeAgentOutputEnvelope(
+      encodeRuntimeAgentOutputEnvelope({
+        _tag: "Status",
+        kind: "thinking",
+      }),
+    )
+    expect(Option.isSome(decoded)).toBe(true)
+    if (Option.isNone(decoded)) return
+    // Discriminated access without a record cast.
+    expect(decoded.value._tag).toBe("Status")
+    if (decoded.value._tag === "Status") {
+      expect(decoded.value.kind).toBe("thinking")
+    }
   })
 
   it("firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.3 decodes session agent-output wait input", () => {

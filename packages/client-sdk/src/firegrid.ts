@@ -65,6 +65,7 @@ import { Clock, Context, Data, Duration, Effect, Layer, Option, Schema, Stream }
 import { FiregridClientOperations } from "./operations.ts"
 
 export type {
+  AgentOutputEvent,
   RuntimeAgentOutputObservation,
   RuntimePermissionRequestObservation,
   SessionAgentOutputWaitInput,

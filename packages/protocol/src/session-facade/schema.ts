@@ -6,6 +6,10 @@ import {
 } from "../agent-tools/schema.ts"
 import { PublicLaunchRuntimeIntentSchema } from "../launch/schema.ts"
 import { firegridProjection } from "../operations/schema.ts"
+import {
+  AgentOutputEventSchema,
+  type AgentOutputEvent,
+} from "./agent-output-event.ts"
 
 export const FiregridSessionIdSchema = Schema.String.pipe(
   Schema.minLength(1),
@@ -201,7 +205,11 @@ export type RuntimeAgentOutputEventPayload = Schema.Schema.Type<
 
 export const RuntimeAgentOutputEnvelopeSchema = Schema.Struct({
   type: Schema.Literal("firegrid.agent-output"),
-  event: RuntimeAgentOutputEventPayloadSchema,
+  // TFIND-030 (Q2 strict): the envelope `event` is parsed against the typed
+  // protocol-owned `AgentOutputEvent` union. A non-conforming event fails
+  // decode (no opaque-record pass-through). `RuntimeAgentOutputEventPayload`
+  // is retained below only for back-compat consumers.
+  event: AgentOutputEventSchema,
 }).annotations({
   identifier: "firegrid.operation.session.agentOutputEnvelope",
   title: "Runtime agent-output envelope",
@@ -256,7 +264,8 @@ const RuntimeAgentOutputObservationBaseFields = {
     Schema.greaterThanOrEqualTo(1),
   ),
   sequence: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
-  event: RuntimeAgentOutputEventPayloadSchema,
+  // TFIND-030: observation `event` is the typed public union, not a record.
+  event: AgentOutputEventSchema,
 } as const
 
 export const RuntimeAgentOutputObservationSchema = Schema.Struct({
@@ -342,8 +351,6 @@ export type SessionPermissionRequestWaitOutput = Schema.Schema.Type<
   typeof SessionPermissionRequestWaitOutputSchema
 >
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null
 
 const runtimeAgentOutputContextIds = (
   contextId: string,
@@ -362,16 +369,19 @@ const runtimeAgentOutputContextIds = (
 }
 
 export const encodeRuntimeAgentOutputEnvelope = (
-  event: RuntimeAgentOutputEventPayload,
+  event: AgentOutputEvent,
 ): string =>
   Schema.encodeSync(RuntimeAgentOutputEnvelopeJsonSchema)({
     type: "firegrid.agent-output",
     event,
   })
 
+// TFIND-030 (Q2 strict): yields the typed union or `Option.none()`. A stored
+// envelope whose `event` does not conform to `AgentOutputEvent` is rejected
+// here rather than passed through as an opaque record.
 export const decodeRuntimeAgentOutputEnvelope = (
   raw: string,
-): Option.Option<RuntimeAgentOutputEventPayload> =>
+): Option.Option<AgentOutputEvent> =>
   Option.map(
     Schema.decodeUnknownOption(RuntimeAgentOutputEnvelopeJsonSchema)(raw),
     envelope => envelope.event,
@@ -380,8 +390,10 @@ export const decodeRuntimeAgentOutputEnvelope = (
 export const runtimeAgentOutputObservationFromRow = (
   row: RuntimeEventRow,
 ): Option.Option<RuntimeAgentOutputObservation> =>
+  // TFIND-030: `event` is already the typed `AgentOutputEvent` union here
+  // (a non-conforming envelope was rejected upstream), so the discriminant
+  // is guaranteed present — no record/string guard needed.
   Option.flatMap(decodeRuntimeAgentOutputEnvelope(row.raw), (event) => {
-    if (typeof event["_tag"] !== "string") return Option.none()
     const contextIds = runtimeAgentOutputContextIds(row.contextId)
     if (Option.isNone(contextIds)) return Option.none()
     const base = {
@@ -390,10 +402,10 @@ export const runtimeAgentOutputObservationFromRow = (
       contextId: contextIds.value.contextId,
       activityAttempt: row.activityAttempt,
       sequence: row.sequence,
-      _tag: event["_tag"],
+      _tag: event._tag,
       event,
     }
-    if (event["_tag"] === "PermissionRequest") {
+    if (event._tag === "PermissionRequest") {
       const decoded = Schema.decodeUnknownEither(RuntimePermissionRequestEventSchema)(event)
       if (Either.isLeft(decoded)) return Option.none()
       return Option.some({
@@ -404,7 +416,7 @@ export const runtimeAgentOutputObservationFromRow = (
         options: decoded.right.options,
       })
     }
-    if (event["_tag"] === "ToolUse") {
+    if (event._tag === "ToolUse") {
       const decoded = Schema.decodeUnknownEither(RuntimeToolUseEventSchema)(event)
       if (Either.isLeft(decoded)) return Option.some(base)
       return Option.some({
@@ -423,7 +435,6 @@ export const runtimePermissionRequestObservationFromAgentOutput = (
   if (observation.permissionRequestId === undefined) return Option.none()
   if (observation.toolUseId === undefined) return Option.none()
   if (observation.options === undefined) return Option.none()
-  if (!isRecord(observation.event)) return Option.none()
   return Option.some({
     source: FiregridRuntimeObservationSourceNames.agentOutputEvents,
     sessionId: observation.sessionId,

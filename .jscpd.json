@@ -16,7 +16,8 @@
     "**/*.test.tsx",
     "**/*.test.mts",
     "**/__tests__/**",
-    "packages/tiny-firegrid/**"
+    "packages/tiny-firegrid/**",
+    "packages/protocol/src/session-facade/agent-output-event.ts"
   ],
   "reporters": [
     "console",
