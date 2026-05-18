@@ -456,6 +456,9 @@ importers:
         specifier: workspace:*
         version: link:../effect-durable-operators
     devDependencies:
+      '@agentclientprotocol/sdk':
+        specifier: 0.21.0
+        version: 0.21.0(zod@4.4.3)
       '@durable-streams/server':
         specifier: ^0.3.1
         version: 0.3.1(@tanstack/db@0.6.5(typescript@5.9.3))

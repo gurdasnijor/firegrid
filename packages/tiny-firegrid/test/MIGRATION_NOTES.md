@@ -7,6 +7,7 @@ Scope:
 - `durable-streams-backed-pipeline.test.ts`
 - `stdio-jsonl-tool-execution-pipeline.test.ts`
 - `multi-context-production-consuming-pipeline.test.ts`
+- `permission-flow-pipeline.test.ts`
 
 ## Reach-Pasts Removed Cleanly
 
@@ -17,6 +18,7 @@ Scope:
 - Snapshot polling was removed from wait paths. Context materialization and terminal run waits now subscribe to `FiregridRuntimeTables.ControlPlane` rows and filter the live stream.
 - The stdio-jsonl tool-execution test no longer extracts host context, constructs a host-bound `RuntimeContext`, writes `contexts.upsert`, calls `RuntimeStartCapability.start`, opens `RuntimeOutputTable`, or decodes runtime output rows directly. It now drives create/start/prompt through the session facade and observes the tool loop through `session.wait.forAgentOutput`.
 - The multi-context production-consuming test uses two distinct `sessions.createOrLoad` external keys, two `session.start()` calls, interleaved `session.prompt()` calls, live `FiregridRuntimeTables.ControlPlane` waits, and per-session `session.wait.forAgentOutput()`. No host context extraction or host-bound row construction was needed to prove registry/dispatcher demux and output isolation.
+- The permission-flow test uses a deterministic ACP subprocess, `session.wait.forPermissionRequest`, and `session.permissions.respond`. It did not need host context extraction, host-bound row construction, direct `RuntimeStartCapability.start`, codec-internal deferred completion, or raw output-table reads to prove the permission request/response bridge.
 
 ## Reach-Pasts Not Removable / Public Gaps
 
@@ -24,11 +26,13 @@ Scope:
 - The old test asserted a direct host-internal replay result from `RuntimeStartCapability.start`. The consumer surface does not expose that synchronous host result. The migrated test asserts the same restart property through durable client-visible state instead: `session.start()` is idempotent after restart and the completed snapshot contains no duplicate outputs.
 - The test composes `FiregridRuntimeTables.ControlPlane` from the client SDK, but still imports `runtimeControlPlaneStreamUrl` from `@firegrid/protocol/launch` to build the table layer. This is public and not host-bound, but it is a candidate for a client SDK re-export so consumer-shaped tests do not need to import protocol URL helpers directly.
 - Codex ACP migration is paused on TFIND-048. Its runtime intent needs a route-scoped MCP URL before `sessions.createOrLoad`, but the context-id / MCP-route URL lifecycle is still an architectural framing issue. Migrating Codex without a new reach-past is blocked until that lifecycle is decided and exposed through the public surface.
+- None blocking for `permission-flow-pipeline`; the public session permission surface was sufficient after the TFIND-015 implementation landed.
 
 ## Repeating Code Patterns
 
 - Live durable-table waits repeat the same shape: filter `rows()`, `Stream.runHead`, and race a timeout. This is the Effect equivalent of Flamecast's `useDurableTable(FiregridRuntimeTables.ControlPlane)` plus live query pattern.
 - Session-output waits repeat the `waitForAgentOutputMatching` shape listed below.
+- Session-permission waits use `session.wait.forPermissionRequest` directly, while response assertions still use the public control-plane intent stream to prove the client response entered the durable input plane.
 - Multi-context public-surface assertions repeat pairwise scenario setup: create two sessions, start both, subscribe to both context/run rows, interleave prompts, then assert per-session snapshots.
 - Production-consuming tests repeatedly launch a host layer in a scoped background fiber while driving the scenario through a separate client SDK surface.
 
