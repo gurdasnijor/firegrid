@@ -49,9 +49,7 @@ import {
 - `PublicPromptRequestSchema`;
 - `promptToRuntimeIngressRequest`;
 - `makeRuntimeIngressInputRow`;
-- runtime ingress row types;
-- legacy `RuntimeIngressTable` declarations for compatibility with historical
-  row contracts.
+- runtime ingress row types.
 
 ```ts
 import {
