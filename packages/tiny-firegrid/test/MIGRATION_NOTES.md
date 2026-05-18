@@ -20,10 +20,11 @@ Scope: `durable-streams-backed-pipeline.test.ts`
 
 ## Repeating Code Patterns
 
-- Live durable-table waits repeat the same shape: compose the public table tag, filter `rows()`, `Stream.runHead`, and race a timeout. This is the Effect equivalent of Flamecast's `useDurableTable(FiregridRuntimeTables.ControlPlane)` plus live query pattern.
+- Live durable-table waits repeat the same shape: filter `rows()`, `Stream.runHead`, and race a timeout. This is the Effect equivalent of Flamecast's `useDurableTable(FiregridRuntimeTables.ControlPlane)` plus live query pattern.
 - Production-consuming tests repeatedly launch a host layer in a scoped background fiber while driving the scenario through a separate client SDK surface.
 
 ## Layer / Scoped Infrastructure Primitive Candidates
 
+- `firstWithinOrFail`: a generic stream-first-emission-with-timeout helper for public table subscriptions.
+- Per-scenario control-plane layer scope: one public `FiregridRuntimeTables.ControlPlane` materialization should be shared by all waits in a scenario.
 - A tiny test harness could launch a production host layer in the background while exposing only the client SDK to scenario code.
-- A public durable-table wait helper could wrap `Stream.filter` / `Stream.runHead` / timeout behavior without pushing tests back toward snapshot polling.

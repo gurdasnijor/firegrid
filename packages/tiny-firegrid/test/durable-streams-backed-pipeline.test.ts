@@ -7,6 +7,7 @@ import {
   FiregridStandaloneLive,
   local,
   type FiregridConfigError,
+  type FiregridService,
   type FiregridSessionHandle,
   type RuntimeContextSnapshot,
 } from "@firegrid/client-sdk/firegrid"
@@ -14,10 +15,12 @@ import {
   encodeRuntimeAgentOutputEnvelope,
 } from "@firegrid/protocol/session-facade"
 import { runtimeControlPlaneStreamUrl } from "@firegrid/protocol/launch"
-import { Clock, Effect, Layer, Option, Stream, type Scope } from "effect"
+import { Clock, Effect, Layer, Option, Stream, type Context, type Scope } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { tinyDurableStreamsBackedPipeline } from "../src/configurations/durable-streams-backed-pipeline.ts"
+
+type ControlPlaneService = Context.Tag.Service<typeof FiregridRuntimeTables.ControlPlane>
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -108,11 +111,11 @@ const controlPlaneLayer = (
     txTimeoutMs: 2_000,
   })
 
-const waitForControlPlaneRow = <A, E>(
+const firstWithinOrFail = <A, E>(
   stream: Stream.Stream<A, E>,
   label: string,
   timeoutMs: number,
-) =>
+): Effect.Effect<A, E | Error> =>
   Effect.raceFirst(
     Stream.runHead(stream).pipe(
       Effect.flatMap(row =>
@@ -127,54 +130,39 @@ const waitForControlPlaneRow = <A, E>(
   )
 
 const waitForMaterializedContext = (
+  control: ControlPlaneService,
   session: FiregridSessionHandle,
-  input: {
-    readonly baseUrl: string
-    readonly namespace: string
-  },
 ) =>
-  Effect.gen(function*() {
-    const control = yield* FiregridRuntimeTables.ControlPlane
-    return yield* waitForControlPlaneRow(
-      control.contexts.rows().pipe(
-        Stream.filter(row => row.contextId === session.contextId),
-      ),
-      `context ${session.contextId}`,
-      10_000,
-    )
-  }).pipe(
-    Effect.provide(controlPlaneLayer(input)),
-    Effect.scoped,
+  firstWithinOrFail(
+    control.contexts.rows().pipe(
+      Stream.filter(row => row.contextId === session.contextId),
+    ),
+    `context ${session.contextId}`,
+    10_000,
   )
 
 const waitForExitedRun = (
+  control: ControlPlaneService,
   session: FiregridSessionHandle,
-  input: {
-    readonly baseUrl: string
-    readonly namespace: string
-  },
   exitCode: number,
 ) =>
-  Effect.gen(function*() {
-    const control = yield* FiregridRuntimeTables.ControlPlane
-    return yield* waitForControlPlaneRow(
-      control.runs.rows().pipe(
-        Stream.filter(row =>
-          row.contextId === session.contextId &&
-          row.status === "exited" &&
-          row.exitCode === exitCode,
-        ),
+  firstWithinOrFail(
+    control.runs.rows().pipe(
+      Stream.filter(row =>
+        row.contextId === session.contextId &&
+        row.status === "exited" &&
+        row.exitCode === exitCode,
       ),
-      `exited run for ${session.contextId}`,
-      10_000,
-    )
-  }).pipe(
-    Effect.provide(controlPlaneLayer(input)),
-    Effect.scoped,
+    ),
+    `exited run for ${session.contextId}`,
+    10_000,
   )
 
 const runWithPublicClient = <A, E>(
-  self: Effect.Effect<A, E, Firegrid | Scope.Scope>,
+  scenario: (services: {
+    readonly control: ControlPlaneService
+    readonly firegrid: FiregridService
+  }) => Effect.Effect<A, E, Scope.Scope>,
   input: {
     readonly baseUrl: string
     readonly namespace: string
@@ -182,8 +170,23 @@ const runWithPublicClient = <A, E>(
 ): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(
-      provideClient(self, input),
+      provideClient(
+        Effect.gen(function*() {
+          const control: ControlPlaneService = yield* FiregridRuntimeTables.ControlPlane
+          const firegrid = yield* Firegrid
+          return yield* scenario({ control, firegrid })
+        }).pipe(Effect.provide(controlPlaneLayer(input))),
+        input,
+      ),
     ),
+  )
+
+const launchHost = (
+  hostLayer: ReturnType<typeof tinyDurableStreamsBackedPipeline>,
+): Effect.Effect<void, DurableTableError, Scope.Scope> =>
+  Layer.launch(hostLayer).pipe(
+    Effect.forkScoped,
+    Effect.asVoid,
   )
 
 describe("tiny-firegrid durable-streams-backed pipeline", () => {
@@ -197,25 +200,21 @@ describe("tiny-firegrid durable-streams-backed pipeline", () => {
       namespace,
     })
 
-    const result = await runWithPublicClient(Effect.gen(function*() {
-      const firegrid = yield* Firegrid
+    const result = await runWithPublicClient(({ control, firegrid }) => Effect.gen(function*() {
       const session = yield* firegrid.sessions.createOrLoad({
         externalKey: { source: "tiny-firegrid", id: "e2e" },
         runtime: runtime(promptDrivenAgentScript(["hello"])),
         createdBy: "tiny-firegrid",
       })
       const started = yield* session.start()
-      yield* Layer.launch(hostLayer).pipe(Effect.forkScoped)
-      yield* waitForMaterializedContext(session, {
-        baseUrl: durableStreamsBaseUrl,
-        namespace,
-      })
+      yield* launchHost(hostLayer)
+      yield* waitForMaterializedContext(control, session)
       const intent = yield* session.prompt({
         payload: { type: "text", text: "hello" },
         idempotencyKey: "turn-1",
       })
       const firstOutput = yield* session.wait.forAgentOutput({ timeoutMs: 10_000 })
-      yield* waitForExitedRun(session, { baseUrl: durableStreamsBaseUrl, namespace }, 0)
+      yield* waitForExitedRun(control, session, 0)
       const snapshot = yield* session.snapshot()
 
       return {
@@ -262,25 +261,21 @@ describe("tiny-firegrid durable-streams-backed pipeline", () => {
       namespace,
     })
 
-    const first = await runWithPublicClient(Effect.gen(function*() {
-      const firegrid = yield* Firegrid
+    const first = await runWithPublicClient(({ control, firegrid }) => Effect.gen(function*() {
       const session = yield* firegrid.sessions.createOrLoad({
         externalKey: { source: "tiny-firegrid", id: "replay" },
         runtime: runtime(promptDrivenAgentScript(["first", "second"])),
         createdBy: "tiny-firegrid",
       })
       const started = yield* session.start()
-      yield* Layer.launch(firstHostLayer).pipe(Effect.forkScoped)
-      yield* waitForMaterializedContext(session, {
-        baseUrl: durableStreamsBaseUrl,
-        namespace,
-      })
+      yield* launchHost(firstHostLayer)
+      yield* waitForMaterializedContext(control, session)
       const intent = yield* session.prompt({
         payload: { type: "text", text: "hello" },
         idempotencyKey: "turn-1",
       })
       const partial = yield* session.wait.forAgentOutput({ timeoutMs: 10_000 })
-      yield* waitForExitedRun(session, { baseUrl: durableStreamsBaseUrl, namespace }, 0)
+      yield* waitForExitedRun(control, session, 0)
       const snapshot = yield* session.snapshot()
       return { intent, partial, session, snapshot, started }
     }), { baseUrl: durableStreamsBaseUrl, namespace })
@@ -307,14 +302,13 @@ describe("tiny-firegrid durable-streams-backed pipeline", () => {
       namespace,
     })
 
-    const restarted = await runWithPublicClient(Effect.gen(function*() {
-      const firegrid = yield* Firegrid
+    const restarted = await runWithPublicClient(({ control, firegrid }) => Effect.gen(function*() {
       const attached = yield* firegrid.sessions.attach({
         sessionId: first.session.sessionId,
       })
       const started = yield* attached.start()
-      yield* Layer.launch(secondHostLayer).pipe(Effect.forkScoped)
-      yield* waitForExitedRun(attached, { baseUrl: durableStreamsBaseUrl, namespace }, 0)
+      yield* launchHost(secondHostLayer)
+      yield* waitForExitedRun(control, attached, 0)
       const snapshot = yield* attached.snapshot()
       return { snapshot, started }
     }), { baseUrl: durableStreamsBaseUrl, namespace })
