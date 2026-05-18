@@ -845,7 +845,23 @@ reconciler SDD/transaction after the TFIND-001 investigation lands.
 
 ### TFIND-040: Client SDK lacks a per-event session observation surface
 
-status: open (client-surface family — relates TFIND-008/030)
+status: in-progress (SDD #334 ready — framing review; Q1 deferred to #332; impl queued)
+
+SDD #334 (`SDD_FIREGRID_SESSION_OBSERVATION_SURFACE.md`,
+`sidecar/session-observation`): the substrate primitive already exists
+internally (`waitForAgentOutputObservation` = `RuntimeOutputTable.events
+.rows()` tail → filterMap → filter); `subscribe()` is that pipeline minus
+`Stream.runHead`, yielding TFIND-030 typed `RuntimeAgentOutputObservation`.
+No substrate/protocol change; `wait.forAgentOutput` refactors to
+`subscribe |> filter |> runHead` (one code path, no drift). Stable across
+TFIND-035 (consumer only). Framing: Q1 attach-point (A session / B
+context / C both) **explicitly deferred to #332** per Gurdas (impl is
+contextId-keyed/attach-point-agnostic, so deferral is non-blocking);
+coordinator concurs with OCA3 recs on the rest — **Q2** live-tail until
+scope close, **Q3** ship `subscribe()` only first (wait.* enrichments =
+tracked follow-up), **Q4** generic stream only (typed conveniences =
+follow-up sugar). Non-blocking: impl queued behind keystone /
+TFIND-035-impl / #332-impl-SDD; awaiting Gurdas rubber-stamp on Q2/Q3/Q4.
 
 The Codex ACP tool-call test subscribes directly to `RuntimeControlPlaneTable`
 and `RuntimeOutputTable` for durable assertions, but still polls
