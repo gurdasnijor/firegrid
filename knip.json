@@ -44,6 +44,22 @@
         "src/**/*.ts"
       ]
     },
+    "apps/factory": {
+      "entry": [
+        "src/index.ts",
+        "src/bin/live-smoke.ts",
+        "src/bin/env.ts"
+      ],
+      "project": [
+        "{app,components,lib,src}/**/*.{ts,tsx,mts}"
+      ],
+      "ignoreDependencies": [
+        "tailwindcss",
+        "tw-animate-css",
+        "@tailwindcss/postcss",
+        "postcss"
+      ]
+    },
     "apps/flamecast": {
       "project": [
         "src/**/*.{ts,tsx,mts}"
