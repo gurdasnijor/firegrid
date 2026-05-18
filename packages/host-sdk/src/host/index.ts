@@ -48,6 +48,7 @@ export {
   FiregridLocalHostLive,
   FiregridRuntimeHostLive,
   FiregridRuntimeHostWithWorkflowLive,
+  type FiregridHost,
 } from "./layers.ts"
 export {
   FiregridRuntimeHostFromConfig,
