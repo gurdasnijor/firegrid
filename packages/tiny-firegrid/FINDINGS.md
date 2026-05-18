@@ -38,7 +38,7 @@ of scope for this package.
 | TFIND-002 | in-progress (`sidecar/client-host-boundary`) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
 | TFIND-003 | in-progress (`sidecar/client-host-boundary`) | client-sdk / host boundary | No remote start request surface. |
 | TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
-| TFIND-005 | in-progress (`sidecar/workflow-layer-precision`) | Effect layer typing | Workflow/table layer composition leaks type precision. |
+| TFIND-005 | blocked (architectural — DurableTable API change; awaiting framing decision) | Effect layer typing | Workflow/table layer composition leaks type precision. |
 | TFIND-006 | open | tiny host coverage | Durable configuration still models a tiny host capability. |
 | TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. |
 | TFIND-008 | open | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
@@ -140,7 +140,7 @@ in tests and use only the durable backend as shared state.
 
 ### TFIND-005: Workflow layer composition leaks type precision
 
-status: in-progress (`sidecar/workflow-layer-precision`)
+status: blocked (architectural — DurableTable API change; awaiting framing decision)
 
 Composing `Workflow.toLayer`, `DurableTable.layer`, and
 `DurableStreamsWorkflowEngine.layer` can leak `any` through `Layer` pipe
@@ -165,9 +165,28 @@ host/engine composition that merges a table layer. This is load-bearing: it
 gates TFIND-007 step 2 (the host-sdk test suite depends on this `any` `ROut`
 to discharge internal requirements).
 
-Next action: fix `DurableTable` so `Self` flows into the returned tag-class
-type (the tag is its own identifier; the cast just discards it). Then revisit
-TFIND-007 step 2 and remove local annotations downstream.
+Sidecar deepened analysis (2026-05-17, surface:155): the minimal fix is
+**provably inert and the obvious stronger fix is type-unsound** —
+1. A `this`-polymorphic / `Self`-flowing `.layer` typechecks 17/17 green
+   but a type-probe shows `WorkflowEngineTable.layer()` ROut is still
+   `any`. Green only proves no consumer relied on the `any`; the fix
+   changed nothing, because `as unknown as DurableTableTagClass<Schemas>`
+   + `Self = any` erases identity at the factory return and an already-
+   `any` Tag Identifier cannot be recovered downstream.
+2. Returning the precise `typeof DurableTableTag` is **unsound**: Effect
+   Tag identity is the `Self` type param, not the runtime key. Every
+   table built by `defineDurableTable` shares the same lexical
+   `DurableTableTag`, so all such tables would **unify** — one table's
+   layer would type-satisfy another table's requirement. Strictly worse
+   than the `any` leak.
+3. The only sound fix is the canonical Effect self-referential idiom:
+   `class WorkflowEngineTable extends DurableTable(ns, schemas)<WorkflowEngineTable>() {}`
+   — a `defineDurableTable` signature change plus every `extends
+   DurableTable(` call site. This exceeds a zero-API-change down-payment.
+
+status note: blocked pending a framing decision (architectural change vs.
+accept as a documented latent finding). If approved, an SDD precedes
+implementation. Root cause re-verified directly from source.
 
 ### TFIND-006: Runtime start remains a toy host capability
 
