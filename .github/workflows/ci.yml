@@ -56,6 +56,9 @@ jobs:
       - name: Check Effect-quality metric ratchet
         run: pnpm run lint:effect-quality
 
+      - name: Check tiny-firegrid configuration coverage
+        run: pnpm run toy:coverage:check
+
   semgrep:
     name: Semgrep
     runs-on: ubuntu-latest
