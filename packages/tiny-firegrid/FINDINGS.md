@@ -39,7 +39,7 @@ of scope for this package.
 | TFIND-003 | in-progress (`sidecar/client-host-boundary`) | client-sdk / host boundary | No remote start request surface. |
 | TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
 | TFIND-005 | in-progress (`sidecar/workflow-layer-precision`, SDD-first) | Effect layer typing | Workflow/table layer composition leaks type precision. |
-| TFIND-006 | open | tiny host coverage | Durable configuration still models a tiny host capability. |
+| TFIND-006 | resolved (#325) | tiny host coverage | Durable configuration still models a tiny host capability. |
 | TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. |
 | TFIND-008 | open | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
 | TFIND-009 | open | workflow-engine | Durable workflow codec appears orphaned in the engine closure. |
@@ -61,6 +61,9 @@ of scope for this package.
 | TFIND-025 | open | durable-tools | Shape C / wait arbitration remains unmodeled. |
 | TFIND-026 | resolved (#321) | durable backend | Durable-streams backend reached Group D. |
 | TFIND-027 | accepted | toy readability | Duplicate inline configuration code is acceptable when it documents wiring. |
+| TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. |
+| TFIND-029 | open | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
+| TFIND-030 | open | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
 
 ## Findings
 
@@ -155,6 +158,11 @@ Composing `Workflow.toLayer`, `DurableTable.layer`, and
 inference even when every consumed service is named explicitly. Earlier durable
 configuration iterations had to localize this with annotations.
 
+After #323, `FiregridRuntimeHostLive` has a named public surface but still
+infers `Layer<any, DurableTableError, never>`. The durable-streams-backed tiny
+configuration consumes the production factory directly and must localize a
+single `no-unsafe-return` suppression at that return boundary.
+
 Tiny-firegrid should continue treating broad `as unknown as Effect<...>` casts
 on configuration exports as a failed model. A narrow internal annotation is only
 acceptable when it identifies the production type boundary that leaked.
@@ -198,7 +206,7 @@ implementation. Root cause re-verified directly from source.
 
 ### TFIND-006: Runtime start remains a toy host capability
 
-status: open
+status: resolved (#325)
 
 The durable-streams-backed configuration uses real Durable Streams tables and
 the real `DurableStreamsWorkflowEngine`, but the host side is still a tiny
@@ -209,8 +217,13 @@ It does not compose `FiregridRuntimeHostLive`,
 `RuntimeContextEngineRegistryLive`, `RuntimeInputIntentDispatcherLive`,
 `RuntimeContextWorkflowSessionLive`, or `RuntimeHostAgentToolHostLive`.
 
-Next action: once `FiregridHost` lands, add a host-sdk-backed configuration or
-replace the tiny host where possible.
+PR #325 replaces the durable-streams-backed toy host with
+`FiregridRuntimeHostLive`, which brings the production registry, dispatcher,
+runtime workflow session, per-context output writer, tool-host support, and
+durable-tools observation substrate into the configuration.
+
+Next action: keep the durable configuration on production host composition;
+future gaps should become narrower findings rather than rebuilding a tiny host.
 
 ### TFIND-007: Host SDK has layer factories, not a named host surface
 
@@ -237,8 +250,10 @@ infer `Layer<any, …>` (the TFIND-005 leak) and the host-sdk test suite
 depends on that `any` to discharge internal requirements; pinning the
 return before TFIND-005 turns the suite red.
 
-Next action: land #323 (named type unblocks the toy now); complete step 2
-after TFIND-005.
+Tiny-firegrid now consumes the exported type instead of inventing a local
+host-layer alias.
+
+Next action: complete factory return type annotation after TFIND-005.
 
 ### TFIND-008: Client surface and host surface cannot yet be tested as separate processes end-to-end
 
@@ -486,3 +501,61 @@ architectural wiring visible. The package is documentation plus verification;
 factoring every repeated line into helpers can make the system shape harder to
 read. Duplication should still not obscure public boundaries or create hidden
 toy APIs.
+
+### TFIND-028: RuntimeStartCapabilityLive did not capture workflow support services
+
+status: resolved (#325)
+
+Switching the durable-streams-backed configuration to the production
+`FiregridRuntimeHostLive` surfaced that `RuntimeStartCapabilityLive` captured
+`RuntimeContextEngineRegistry` and `AgentToolHost`, but not the host-scoped
+services needed later by `runtimeContextWorkflowSupportLayer`. Calling
+`RuntimeStartCapability.start()` as a public host capability failed at runtime
+with a missing `RuntimeOutputTable`.
+
+The fix captures the full host context when constructing the capability and
+provides it when running the claimed context workflow. This keeps
+client/host-separated tests on the public capability instead of reaching for a
+private start path.
+
+The ambient capture does not currently introduce a type/lint leak: focused
+host-sdk and tiny-firegrid typecheck plus eslint pass. It is still an indirect
+dependency expression; TFIND-029 tracks the clearer explicit-dependency shape.
+
+Next action: keep `FiregridRuntimeHostLive` in tiny-firegrid so future support
+layer regressions surface in this configuration.
+
+### TFIND-029: RuntimeStartCapabilityLive should enumerate workflow support dependencies
+
+status: open
+
+TFIND-028 fixed the runtime bug by capturing the full host context when
+constructing `RuntimeStartCapabilityLive` and re-providing it when `start()`
+runs. That is behaviorally correct, but it captures every ambient service
+rather than naming the services `claimAndRunRuntimeContextWorkflow` needs
+through `runtimeContextWorkflowSupportLayer`.
+
+A more explicit production shape would make those requirements visible in the
+layer contract instead of relying on ambient context capture. That would make
+future support-layer changes fail at composition/type boundaries rather than
+at runtime.
+
+Next action: refactor `RuntimeStartCapabilityLive` to enumerate the workflow
+support dependencies it must retain, or document why Effect context capture is
+the intended host-capability pattern.
+
+### TFIND-030: Snapshot agent output events are typed as records, not protocol unions
+
+status: open
+
+The durable-streams-backed test needs a local `textDeltas` projection that
+checks `agentOutputs[].event` as `Record<string, unknown>` instead of using the
+typed `AgentOutputEvent` union. The runtime output rows are decoded correctly
+at runtime, but the client snapshot projection type loses the discriminated
+event shape.
+
+This weakens client-side code that wants to branch on `_tag` or inspect event
+payloads from `session.snapshot()` without local record checks or casts.
+
+Next action: tighten the client-sdk snapshot/projection type so decoded
+`agentOutputs[].event` is exposed as the public `AgentOutputEvent` union.
