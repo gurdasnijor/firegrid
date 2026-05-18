@@ -139,6 +139,48 @@ responses. Don't broadcast every commit — coordinator updates are
 review-shaped, not progress-shaped. See `docs/contributing/acai-walkthrough.md`
 for the end-to-end review cadence Firegrid PRs follow.
 
+### Pulling lane status (don't wait for engineers to message back)
+
+Engineers do not reliably push status via `cmux send`. The coordinator should
+*pull* instead: `scripts/lane-sweep.sh` fans `cmux read-screen` across every
+other worklane.
+
+```bash
+bash scripts/lane-sweep.sh                 # all lanes except the current tab
+bash scripts/lane-sweep.sh --lines 25      # deeper tail
+bash scripts/lane-sweep.sh --json          # structured, agent-parseable
+bash scripts/lane-sweep.sh 155 161         # only specific surfaces
+```
+
+It runs **relative to the current tab**: the pane the coordinator invokes it
+from is auto-excluded (via `cmux identify`), so it shows only the *other*
+lanes. It is heuristic-free by design — `--json` emits
+`{lanes:[{surface,label,running,status,beads,tail[]}]}` where `running` is a
+literal read of the TUI's own `esc to interrupt` indicator and `status` quotes
+the agent's own activity line verbatim; neither is a classification that could
+be confidently wrong. Run it on a cadence rather than waiting for a `cmux
+send` that may never come.
+
+**Lane labels are the short tab names** (`coordinator`, `oca1`, `oca2`,
+`cca1`, `cca2`). These double as the beads join key.
+
+#### Engineer protocol: tag your WIP bead with your lane
+
+So `lane-sweep --json` can show which bead each lane owns, every engineer
+**must set `assignee` to its own lane label** when it starts work:
+
+```bash
+# resolve own lane label, then claim the bead with it
+LANE=$(cmux list-pane-surfaces | awk -v s="$(cmux identify | grep -m1 surface_ref | grep -oE 'surface:[0-9]+')" \
+  '$0 ~ s {sub(/^[* ] *surface:[0-9]+ +/,""); sub(/ +\[selected\]$/,""); print; exit}')
+br update <id> --status in_progress --assignee "$LANE"
+```
+
+The join is whitespace/case-tolerant, so exact spacing doesn't matter, but the
+label must be the lane's tab name. Without this tag the sweep still shows
+`running`/`status`/`tail` (no engineer cooperation needed) — `beads` just stays
+empty for that lane.
+
 
 
 ## Beads (br) — Dependency-Aware Issue Tracking
