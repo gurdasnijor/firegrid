@@ -4,6 +4,7 @@ import {
   HostIdSegmentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  type RuntimeStartCapability,
   hostOwnedStreamUrl,
   makeHostSessionRow,
   runtimeControlPlaneStreamUrl,
@@ -182,6 +183,31 @@ const hostScopedLayer = (
   )
   return Layer.mergeAll(hostServices, stdinClaim)
 }
+
+// firegrid-host-surface (docs/sdds/SDD_FIREGRID_HOST_SURFACE.md)
+//
+// The named Firegrid host surface: the public, protocol-owned services a
+// composed Firegrid host provides to its consumers. Modeled on Effect's
+// own `NodeContext` / `BunContext` precedent — a `@category models` union,
+// NOT a service Tag.
+//
+// Consumers annotate their own host handle with this type
+// (`const host: Layer.Layer<FiregridHost, ...> = FiregridRuntimeHostLive(...)`),
+// which is sound because `Layer` `ROut` is contravariant: the host layer
+// provides `FiregridHost` plus host-sdk-internal tags, and narrowing the
+// declared output to the public subset only forgets the internals.
+//
+// The factory return types are intentionally NOT annotated to
+// `Layer.Layer<FiregridHost, ...>` yet: doing so is entangled with the
+// open Finding 3 `any` ROut leak in this composition, which the host-sdk
+// test suite currently depends on to discharge internal requirements.
+// See SDD_FIREGRID_HOST_SURFACE.md "Risk and validation".
+/** @category models */
+export type FiregridHost =
+  | RuntimeStartCapability
+  | CurrentHostSession
+  | RuntimeControlPlaneTable
+  | RuntimeOutputTable
 
 export const FiregridRuntimeHostLive = (
   options: RuntimeHostTopologyOptions,
