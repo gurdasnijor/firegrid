@@ -739,7 +739,29 @@ is stable enough to avoid hard-coding another toy-only tool seam.
 
 ### TFIND-015: Permission flow and codec authority remain unsettled
 
-status: open
+status: FRAMING DRAFTED + COORDINATOR-REVIEWED-SOUND (SDD #350 `SDD_PERMISSION_CODEC_AUTHORITY.md`); awaiting Gurdas batched signoff (bundle: TFIND-048 + TFIND-015 [+#334]). gates `permission-flow-pipeline`.
+
+**Framing (SDD #350, by `163`, coordinator-reviewed 2026-05-18):** §0
+= the Gurdas-accepted question verbatim. A = bless ACP codec-side
+durable-deferred authority; **B (recommended) = strict observation +
+workflow-side durable resumption** (codec keeps ONLY the live ACP
+promise/correlation; workflow/runtime owns durable deferred
+creation/completion). Evidence **coordinator-verified accurate**: the
+ACP codec genuinely does durable-deferred permission authority *from
+inside the codec* — `DurableDeferred.make` (acp/index.ts:154-158),
+`engine.deferredResult(...)` poll + `DurableDeferred.done(...)`
+(:283-328), requiring `WorkflowEngine`/`WorkflowInstance` — while the
+codecs README explicitly states codecs "may not own … durable
+permission state." Concrete documented-contract contradiction; B aligns
+impl to the existing contract and is consistent with the TFIND-041
+authority-family precedent (same family, not mechanically identical:
+ACP reaches into WorkflowEngine/DurableDeferred whereas TFIND-041's
+decided branch is workflow code reading a normalized event by session
+mode). If Gurdas picks A, the codec boundary docs+tests must be
+explicitly rewritten to bless codec-side permission authority. No code;
+no experiment needed at framing level.
+
+Original framing (preserved):
 
 The toy does not yet model permission requests or permission responses. That
 leaves open the Cycle 1 question: whether codec layers only translate protocol
