@@ -68,26 +68,28 @@ Implementation must preserve those fields through `RuntimeContextRequestRow`
 and into `normalizeRuntimeIntent()` when the host materializes the bound
 context.
 
-Add host-written reconciliation state rows:
+Add host-written reconciliation state rows, but do not add a new locking or
+lease abstraction. The state is intentionally just durable facts written
+through the existing `DurableTable.insertOrGet` primary-key fence:
 
-- `RuntimeContextRequestClaimRow`
-  - table: `RuntimeControlPlaneTable.contextRequestClaims`
-  - fields: `claimId`, `requestId`, `contextId`, `hostId`, `hostSessionId`,
-    `claimWindowStartedAtMs`, `claimWindowExpiresAtMs`, `claimedAtMs`,
-    `status`, optional `message`.
+- `RuntimeControlRequestClaimRow`
+  - table: `RuntimeControlPlaneTable.controlRequestClaims`
+  - fields: `claimId`, `requestKind`, `requestId`, `contextId`, `hostId`,
+    `hostSessionId`, `claimWindowStartedAtMs`, `claimWindowExpiresAtMs`,
+    `claimedAtMs`.
+  - `claimId` is deterministic per request/window. `insertOrGet` is the only
+    winner election mechanism.
 
-- `RuntimeStartRequestClaimRow`
-  - table: `RuntimeControlPlaneTable.startRequestClaims`
-  - same claim fields, plus `requestId` and `contextId`.
+- `RuntimeControlRequestCompletionRow`
+  - table: `RuntimeControlPlaneTable.controlRequestCompletions`
+  - fields: `requestId`, `requestKind`, `contextId`, `status`, `hostId`,
+    `completedAtMs`, optional `activityAttempt`, optional `exitCode`,
+    optional `signal`, optional `message`.
+  - `requestId` is the primary key. The first terminal row wins; later
+    claimants can only observe it.
 
-- `RuntimeStartRequestCompletionRow`
-  - table: `RuntimeControlPlaneTable.startRequestCompletions`
-  - fields: `requestId`, `contextId`, `hostId`, `completedAtMs`,
-    `activityAttempt`, `exitCode`, optional `signal`, optional `message`.
+Completion `status` values:
 
-Claim row `status` values:
-
-- `claimed`
 - `succeeded`
 - `failed`
 - `abandoned`
@@ -178,51 +180,65 @@ reconciler. Tests can use the one-shot API to keep assertions deterministic.
 
 These semantics are load-bearing.
 
-Claim window:
+Primitive-based claim window:
 
 - Default `claimWindowMs`: 60 seconds.
 - A claim id is deterministic per request and window:
   - context: `ctx_req_claim:${requestId}:${claimWindowStartedAtMs}`
   - start: `start_req_claim:${requestId}:${claimWindowStartedAtMs}`
-- A host claims by `insertOrGet` on the claim row.
+- A host claims by `insertOrGet` on
+  `RuntimeControlPlaneTable.controlRequestClaims`.
 - If another host already owns the current claim window, this host skips the
   request until the next scan.
 - If the current claim window expires without success, the request becomes
   eligible for another claim window.
+- This is not a package-owned lease/mutex layer. `DurableTable.insertOrGet`
+  already provides the first-writer-wins row fence; the reconciler uses it
+  directly and treats the returned `_tag` as the election result.
 
 Timeout/abandon:
 
 - Default `abandonAfterMs`: 10 minutes from request `createdAt`.
 - If no host has successfully materialized a context request before
-  `abandonAfterMs`, the reconciler writes an `abandoned` claim/status row and
+  `abandonAfterMs`, the reconciler writes an `abandoned` completion row and
   stops materializing that request.
 - If no host has successfully completed a start request before
-  `abandonAfterMs`, the reconciler writes an `abandoned` claim/status row and
+  `abandonAfterMs`, the reconciler writes an `abandoned` completion row and
   stops executing that request.
 - A later host must not revive abandoned requests. The client can issue a new
   logical request only by using a new context/session identity or by a future
   explicit reset API.
+- Abandon is also written with `insertOrGet`. If a completion row already
+  exists, abandon loses and observes the existing terminal status; if abandon
+  wins, later success/failure writes observe the abandoned row and do not
+  replace it.
 
 Context idempotency:
 
 - Client request id is deterministic from `contextId`.
+- The host first checks `controlRequestCompletions` for the `requestId`. If a
+  terminal row exists, it skips the request.
 - Host materialization must use `contexts.insertOrGet(...)`, not blind
   `upsert(...)`.
 - If the context row already exists, materialization is treated as succeeded.
-- If a late claimant resumes after its lease expired, `insertOrGet` prevents
-  overwriting the host binding chosen by the winning materializer.
+- The host records `succeeded` by `insertOrGet` on
+  `controlRequestCompletions`. If an `abandoned` row won first, the success
+  write observes it and the request remains terminally abandoned.
+- If a late claimant resumes after its window expired, `contexts.insertOrGet`
+  prevents overwriting the host binding chosen by the winning materializer.
 
 Start idempotency and duplicate-start suppression:
 
 - Client start request id is deterministic from `contextId` in v1.
-- Before starting, the host checks `startRequestCompletions` for the
+- Before starting, the host checks `controlRequestCompletions` for the
   `requestId`. If present, it returns/skips.
 - The host claims the current start window with `insertOrGet`.
 - The host then calls `startRuntime({ contextId })`.
-- On success/failure result, it writes `RuntimeStartRequestCompletionRow`.
+- On success/failure result, it writes `RuntimeControlRequestCompletionRow`.
 - Duplicate execution is suppressed by:
-  - one winning claim per request/window;
-  - completion-row check before execution;
+  - one winning claim per request/window from DurableTable's row fence;
+  - terminal completion-row check before execution;
+  - first-writer-wins completion row after execution;
   - existing deterministic `runtimeContextWorkflowExecutionId(contextId)` in
     the workflow engine path;
   - `RuntimeContextEngineRegistry.claimActive()` within the host process.
@@ -232,8 +248,29 @@ Known consequence:
 - A host crash after claim but before completion waits until the next
   `claimWindowMs` before another host/session can retry.
 - A process pause longer than the claim window can race with a retry. The
-  completion-row check plus deterministic workflow execution id are the final
-  duplicate-start guards.
+  completion-row check plus first-writer-wins completion insert plus
+  deterministic workflow execution id are the final duplicate-start guards.
+
+Property-preservation argument:
+
+- Claim idempotency: the primary key for each claim is a pure function of
+  `requestKind`, `requestId`, and the 60s window start. Re-running the same
+  host or a different host in the same window converges on one row.
+- Exactly one winner per request/window: `insertOrGet` writes through
+  DurableTable's existing append-with-producer primary-key fence. One caller
+  gets `_tag: "Inserted"`; contenders get `_tag: "Found"` and skip.
+- Duplicate-start suppression: a start request must pass the terminal-row
+  check, win the window claim, then call the existing host-owned
+  `startRuntime`. The run path already uses `claimActive()` and
+  `runtimeContextWorkflowExecutionId(contextId)`; the terminal completion row
+  is another first-writer-wins durable fact, not a replacement execution
+  system.
+- No lost requests: request rows remain append-only durable rows until a
+  terminal completion row exists. A host crash before completion leaves the
+  request visible to the next scan/window.
+- No zombie revival: abandon is a terminal completion row keyed by
+  `requestId`. Once written, later reconciliation observes it before work and
+  later completion attempts cannot overwrite it.
 
 ## Sequencing
 

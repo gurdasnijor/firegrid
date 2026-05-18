@@ -8,6 +8,7 @@ import {
 import {
   appendRuntimeIngress,
   FiregridLocalHostLive,
+  reconcileRuntimeControlRequestsOnce,
   startRuntime,
 } from "@firegrid/host-sdk"
 import { Duration, Effect, Fiber, Layer } from "effect"
@@ -74,6 +75,7 @@ describe("firegrid tracer 016 session-plane input control surface", () => {
             argv: [process.execPath, "--input-type=module", "-e", liveStdinEchoAgent],
           }),
         })
+        yield* reconcileRuntimeControlRequestsOnce()
 
         // Fork the runtime so we can interact with it while it's
         // alive (poll snapshot, send live prompt).

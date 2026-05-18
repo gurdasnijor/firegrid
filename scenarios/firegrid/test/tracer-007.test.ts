@@ -7,6 +7,7 @@ import {
 } from "@firegrid/client-sdk"
 import {
   FiregridLocalHostLive,
+  reconcileRuntimeControlRequestsOnce,
   startRuntime,
 } from "@firegrid/host-sdk"
 import { Effect, Layer } from "effect"
@@ -52,6 +53,7 @@ console.error("diagnostic: sandbox-slot")
             argv: [process.execPath, "--input-type=module", "-e", childCode],
           }),
         })
+        yield* reconcileRuntimeControlRequestsOnce()
         const runResult = yield* startRuntime({ contextId: handle.contextId })
         const snapshot = yield* firegrid.open(handle.contextId).snapshot
         return { handle, runResult, snapshot }

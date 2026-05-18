@@ -45,6 +45,16 @@ export {
   startRuntime,
 } from "./commands.ts"
 export {
+  RuntimeControlRequestReconciler,
+  RuntimeControlRequestReconcilerDaemonLive,
+  RuntimeControlRequestReconcilerLive,
+  reconcileRuntimeControlRequestsOnce,
+  runRuntimeControlRequestReconciler,
+  runtimeControlRequestReconcilerDefaults,
+  type RuntimeControlRequestReconcilerOptions,
+  type RuntimeControlRequestReconcilerService,
+} from "./control-request-reconciler.ts"
+export {
   FiregridLocalHostLive,
   FiregridRuntimeHostLive,
   FiregridRuntimeHostWithWorkflowLive,

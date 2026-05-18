@@ -1,21 +1,11 @@
 import { Response } from "@effect/ai"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import {
-  CurrentHostSession,
-  makeLocalRuntimeContextForHostSession,
-  normalizeRuntimeIntent,
-  RuntimeControlPlaneTable,
-  RuntimeStartCapability,
-} from "@firegrid/protocol/launch"
-import type {
-  CurrentHostStopped,
-  RuntimeStartResult,
-} from "@firegrid/protocol/launch"
 import type { FiregridHost } from "@firegrid/host-sdk"
 import {
-  sessionContextIdForExternalKey,
-  type FiregridSessionId,
-} from "@firegrid/protocol/session-facade"
+  reconcileRuntimeControlRequestsOnce,
+  startRuntime,
+} from "@firegrid/host-sdk"
+import type { FiregridSessionId } from "@firegrid/protocol/session-facade"
 import {
   Firegrid,
   FiregridConfig,
@@ -24,12 +14,18 @@ import {
   type FiregridConfigError,
 } from "@firegrid/client-sdk/firegrid"
 import { encodeRuntimeAgentOutputEnvelope } from "@firegrid/runtime/events"
-import { Clock, Context, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { tinyDurableStreamsBackedPipeline } from "../src/configurations/durable-streams-backed-pipeline.ts"
 
 type TinyDurableHostLayer = Layer.Layer<FiregridHost, DurableTableError>
+interface StartRuntimeForTest {
+  readonly contextId: string
+  readonly activityAttempt: number
+  readonly exitCode: number
+  readonly signal?: string | undefined
+}
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -113,52 +109,44 @@ const startHostRuntime = (
     readonly contextId: string
     readonly hostLayer: TinyDurableHostLayer
   },
-): Effect.Effect<
-  RuntimeStartResult,
-  unknown,
-  never
-> => {
-  const run = Layer.build(input.hostLayer).pipe(
-    Effect.flatMap((context) => {
-      const starter = Context.get(context, RuntimeStartCapability)
-      return starter.start({ contextId: input.contextId })
-    }),
+) =>
+  startRuntime({ contextId: input.contextId }).pipe(
+    Effect.provide(input.hostLayer),
     Effect.scoped,
-  )
-  return run
-}
+  ) as Effect.Effect<StartRuntimeForTest, unknown, never>
 
-const createHostBoundSessionContext = (
+const reconcileHostRequests = (
   input: {
+    readonly hostLayer: TinyDurableHostLayer
+  },
+) =>
+  reconcileRuntimeControlRequestsOnce().pipe(
+    Effect.provide(input.hostLayer),
+    Effect.scoped,
+  ) as Effect.Effect<void, unknown, never>
+
+const createClientSessionContext = (
+  input: {
+    readonly baseUrl: string
+    readonly namespace: string
     readonly externalKey: { readonly source: string; readonly id: string }
     readonly hostLayer: TinyDurableHostLayer
     readonly runtimeScript: string
   },
-): Effect.Effect<FiregridSessionId, DurableTableError | CurrentHostStopped, never> => {
-  const contextId = sessionContextIdForExternalKey(input.externalKey)
-  const run = Layer.build(input.hostLayer).pipe(
-    Effect.flatMap(context =>
-      Effect.gen(function*() {
-        const table = Context.get(context, RuntimeControlPlaneTable)
-        const session = Context.get(context, CurrentHostSession)
-        const createdAtMs = yield* Clock.currentTimeMillis
-        const runtimeContext = yield* makeLocalRuntimeContextForHostSession(
-          session,
-          normalizeRuntimeIntent(runtime(input.runtimeScript)),
-          {
-            contextId,
-            createdAtMs,
-            createdBy: "tiny-firegrid",
-          },
-        )
-        yield* table.contexts.upsert(runtimeContext)
-        return contextId
-      }),
-    ),
-    Effect.scoped,
-  )
-  return run
-}
+): Effect.Effect<FiregridSessionId, unknown, never> =>
+  Effect.gen(function*() {
+    const sessionId = yield* provideClient(Effect.gen(function*() {
+      const firegrid = yield* Firegrid
+      const session = yield* firegrid.sessions.createOrLoad({
+        externalKey: input.externalKey,
+        runtime: runtime(input.runtimeScript),
+        createdBy: "tiny-firegrid",
+      })
+      return session.sessionId
+    }), { baseUrl: input.baseUrl, namespace: input.namespace }).pipe(Effect.scoped)
+    yield* reconcileHostRequests({ hostLayer: input.hostLayer })
+    return sessionId
+  })
 
 describe("tiny-firegrid durable-streams-backed pipeline", () => {
   it("wires Firegrid client launch and prompt through the production Durable Streams substrate", async () => {
@@ -168,9 +156,12 @@ describe("tiny-firegrid durable-streams-backed pipeline", () => {
     const hostLayer = tinyDurableStreamsBackedPipeline({
       baseUrl,
       namespace,
+      controlRequestReconciler: false,
     })
 
-    const contextId = await Effect.runPromise(createHostBoundSessionContext({
+    const contextId = await Effect.runPromise(createClientSessionContext({
+      baseUrl,
+      namespace,
       externalKey: { source: "tiny-firegrid", id: "e2e" },
       hostLayer,
       runtimeScript: promptDrivenAgentScript(["hello"]),
@@ -213,9 +204,12 @@ describe("tiny-firegrid durable-streams-backed pipeline", () => {
     const firstHostLayer = tinyDurableStreamsBackedPipeline({
       baseUrl,
       namespace,
+      controlRequestReconciler: false,
     })
 
-    const contextId = await Effect.runPromise(createHostBoundSessionContext({
+    const contextId = await Effect.runPromise(createClientSessionContext({
+      baseUrl,
+      namespace,
       externalKey: { source: "tiny-firegrid", id: "replay" },
       hostLayer: firstHostLayer,
       runtimeScript: promptDrivenAgentScript(["first", "second"]),
@@ -263,6 +257,7 @@ describe("tiny-firegrid durable-streams-backed pipeline", () => {
     const secondHostLayer = tinyDurableStreamsBackedPipeline({
       baseUrl,
       namespace,
+      controlRequestReconciler: false,
     })
 
     const restarted = await Effect.runPromise(startHostRuntime({

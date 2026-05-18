@@ -14,20 +14,19 @@ import {
   PublicLaunchRuntimeIntentSchema,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
-  RuntimeStartCapability,
-  insertLocalRuntimeContext,
   local,
-  normalizeRuntimeIntent,
+  makeRuntimeContextRequestRow,
+  makeRuntimeStartRequestAck,
+  makeRuntimeStartRequestRow,
   runtimeControlPlaneStreamUrl,
   runtimeContextOutputStreamUrl,
-  type CurrentHostSession,
   type PublicLaunchRequest,
   type PublicLaunchRuntimeIntent,
   type RuntimeContext,
   type RuntimeEventRow,
   type RuntimeLogLineRow,
   type RuntimeRunEventRow,
-  type RuntimeStartResult,
+  type RuntimeStartRequestAck,
 } from "@firegrid/protocol/launch"
 import {
   type PermissionDecision,
@@ -71,6 +70,7 @@ export type {
   SessionAgentOutputWaitInput,
   SessionAgentOutputWaitOutput,
 } from "@firegrid/protocol/session-facade"
+export type { RuntimeStartRequestAck } from "@firegrid/protocol/launch"
 export { FiregridClientOperations } from "./operations.ts"
 
 export interface ClientOptions {
@@ -162,9 +162,8 @@ export interface FiregridSessionHandle {
     request: SessionHandlePromptInput,
   ) => Effect.Effect<RuntimeInputIntentRow, PromptInputError | AppendError>
   readonly start: () => Effect.Effect<
-    RuntimeStartResult,
-    unknown,
-    RuntimeStartCapability
+    RuntimeStartRequestAck,
+    AppendError
   >
   readonly snapshot: () => Effect.Effect<RuntimeContextSnapshot, PreloadError>
   readonly wait: FiregridSessionWaitClient
@@ -182,8 +181,7 @@ export interface FiregridSessionsClient {
     request: SessionCreateOrLoadInput,
   ) => Effect.Effect<
     FiregridSessionHandle,
-    LaunchInputError | AppendError,
-    CurrentHostSession
+    LaunchInputError | AppendError
   >
   readonly prompt: (
     request: SessionPromptToolInput,
@@ -208,8 +206,7 @@ export interface FiregridService {
     request: PublicLaunchRequest,
   ) => Effect.Effect<
     RuntimeContextHandle,
-    LaunchInputError | AppendError,
-    CurrentHostSession
+    LaunchInputError | AppendError
   >
   readonly prompt: (
     request: PublicPromptRequest,
@@ -636,12 +633,53 @@ const make = (config: ResolvedConfig) =>
         return result._tag === "Found" ? result.row : intent
       })
 
+    const appendRuntimeContextRequest = (
+      input: {
+        readonly contextId: string
+        readonly runtime: PublicLaunchRuntimeIntent
+        readonly createdBy?: string
+      },
+    ): Effect.Effect<void, AppendError> =>
+      Effect.gen(function* () {
+        const row = makeRuntimeContextRequestRow(input)
+        yield* control.contextRequests.insertOrGet(row).pipe(
+          Effect.mapError(cause =>
+          new AppendError({ contextId: input.contextId, cause })),
+        )
+      })
+
+    const createContextRequest = (
+      contextId: string,
+      runtime: PublicLaunchRuntimeIntent,
+      createdBy?: string,
+    ) =>
+      appendRuntimeContextRequest({
+        contextId,
+        runtime,
+        ...(createdBy === undefined ? {} : { createdBy }),
+      })
+
+    const appendRuntimeStartRequest = (
+      contextId: string,
+    ): Effect.Effect<RuntimeStartRequestAck, AppendError> =>
+      Effect.gen(function* () {
+        const row = makeRuntimeStartRequestRow({ contextId })
+        const result = yield* control.startRequests.insertOrGet(row).pipe(
+          Effect.mapError(cause => new AppendError({ contextId, cause })),
+        )
+        return makeRuntimeStartRequestAck({
+          requestId: row.requestId,
+          contextId,
+          inserted: result._tag === "Inserted",
+        })
+      })
+
     const appendPermissionResponseIntent = (
       request: {
         readonly contextId: string
         readonly permissionRequestId: string
         readonly decision: PermissionDecision
-        readonly idempotencyKey?: string
+        readonly idempotencyKey?: string | undefined
       },
     ): Effect.Effect<PermissionRespondOutput, AppendError> =>
       Effect.gen(function* () {
@@ -671,10 +709,26 @@ const make = (config: ResolvedConfig) =>
         readonly contextId: string
         readonly permissionRequestId: string
         readonly decision: PermissionDecision
-        readonly idempotencyKey?: string
+        readonly idempotencyKey?: string | undefined
       },
     ) =>
       appendPermissionResponseIntent(request)
+
+    const permissionResponseInput = (
+      contextId: string,
+      decoded: {
+        readonly permissionRequestId: string
+        readonly decision: PermissionDecision
+        readonly idempotencyKey?: string | undefined
+      },
+    ) => ({
+      contextId,
+      permissionRequestId: decoded.permissionRequestId,
+      decision: decoded.decision,
+      ...(decoded.idempotencyKey !== undefined
+        ? { idempotencyKey: decoded.idempotencyKey }
+        : {}),
+    })
 
     const makeSessionHandle = (
       sessionId: FiregridSessionId,
@@ -696,10 +750,7 @@ const make = (config: ResolvedConfig) =>
           })
         }),
       start: () =>
-        Effect.gen(function* () {
-          const starter = yield* RuntimeStartCapability
-          return yield* starter.start({ contextId: sessionId })
-        }),
+        appendRuntimeStartRequest(sessionId),
       snapshot: () => readSnapshot(sessionId),
       wait: {
         forAgentOutput: request =>
@@ -711,14 +762,9 @@ const make = (config: ResolvedConfig) =>
         respond: request =>
           Effect.gen(function* () {
             const decoded = yield* decodeSessionPermissionRespondInput(request)
-            return yield* appendDecodedPermissionResponseIntent({
-              contextId: sessionId,
-              permissionRequestId: decoded.permissionRequestId,
-              decision: decoded.decision,
-              ...(decoded.idempotencyKey !== undefined
-                ? { idempotencyKey: decoded.idempotencyKey }
-                : {}),
-            })
+            return yield* appendDecodedPermissionResponseIntent(
+              permissionResponseInput(sessionId, decoded),
+            )
           }),
       },
     })
@@ -727,27 +773,13 @@ const make = (config: ResolvedConfig) =>
       request: SessionCreateOrLoadInput,
     ): Effect.Effect<
       FiregridSessionHandle,
-      LaunchInputError | AppendError,
-      CurrentHostSession
+      LaunchInputError | AppendError
     > =>
       Effect.gen(function* () {
         const decoded = yield* decodeSessionCreateOrLoadInput(request)
         const runtime = yield* decodePublicLaunchRuntimeIntent(decoded.runtime)
         const contextId = sessionContextIdForExternalKey(decoded.externalKey)
-        const existing = yield* resolveContext(contextId).pipe(
-          Effect.mapError(cause =>
-            new AppendError({ contextId, cause })),
-        )
-        if (existing === undefined) {
-          yield* insertLocalRuntimeContext(normalizeRuntimeIntent(runtime), {
-            contextId,
-            ...(decoded.createdBy === undefined ? {} : { createdBy: decoded.createdBy }),
-          }).pipe(
-            Effect.provideService(RuntimeControlPlaneTable, control),
-            Effect.mapError(cause =>
-              new AppendError({ contextId, cause })),
-          )
-        }
+        yield* createContextRequest(contextId, runtime, decoded.createdBy)
         return makeSessionHandle(contextId)
       })
 
@@ -763,49 +795,10 @@ const make = (config: ResolvedConfig) =>
       launch: (request) => Effect.gen(function* () {
         // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1
         // firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6
-        // firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2
-        //
-        // Routed through the shared `insertLocalRuntimeContext`
-        // primitive (from @firegrid/protocol). The method requires
-        // `CurrentHostSession` at the call site, so the launched row
-        // carries the same host binding the runtime host will
-        // recognize via `requireLocalContext`.
         const decoded = yield* decodePublicLaunchRequest(request)
-        const intent = {
-          provider: "local-process" as const,
-          config: {
-            argv: [...decoded.runtime.config.argv],
-            ...(decoded.runtime.config.cwd === undefined
-              ? {}
-              : { cwd: decoded.runtime.config.cwd }),
-            ...(decoded.runtime.config.envBindings === undefined
-              ? {}
-              : {
-                envBindings: decoded.runtime.config.envBindings.map(b => ({
-                  name: b.name,
-                  ref: b.ref,
-                })),
-              }),
-          },
-          journal: [
-            { source: "stdout" as const, format: "jsonl" as const, target: "events" as const },
-            { source: "stderr" as const, format: "text-lines" as const, target: "logs" as const },
-          ],
-        }
         const contextId = makeContextId()
-        // TFIND-031: provide the in-scope control plane (bound in
-        // `make` at `const control = yield* RuntimeControlPlaneTable`),
-        // mirroring the `createOrLoadSession` path. Omitting it only
-        // typechecked while `DurableTable.layer` leaked `any`;
-        // `Firegrid.launch`'s contract is `R = CurrentHostSession`.
-        const context = yield* insertLocalRuntimeContext(intent, {
-          contextId,
-          ...(decoded.requestedBy === undefined ? {} : { createdBy: decoded.requestedBy }),
-        }).pipe(
-          Effect.provideService(RuntimeControlPlaneTable, control),
-          Effect.mapError(cause => new AppendError({ contextId, cause })),
-        )
-        return open(context.contextId)
+        yield* createContextRequest(contextId, decoded.runtime, decoded.requestedBy)
+        return open(contextId)
       }),
       prompt: request => Effect.gen(function* () {
         // firegrid-agent-ingress.INGRESS.6
@@ -836,14 +829,9 @@ const make = (config: ResolvedConfig) =>
       permissions: {
         respond: request => Effect.gen(function* () {
           const decoded = yield* decodePermissionRespondInput(request)
-          return yield* appendDecodedPermissionResponseIntent({
-            contextId: decoded.contextId,
-            permissionRequestId: decoded.permissionRequestId,
-            decision: decoded.decision,
-            ...(decoded.idempotencyKey !== undefined
-              ? { idempotencyKey: decoded.idempotencyKey }
-              : {}),
-          })
+          return yield* appendDecodedPermissionResponseIntent(
+            permissionResponseInput(decoded.contextId, decoded),
+          )
         }),
       },
       open,
@@ -856,9 +844,8 @@ const make = (config: ResolvedConfig) =>
 // Namespace-scoped control plane layer. Consumed by the Firegrid
 // client and host runtime; co-locating them on a single layer
 // instance gives both sides one materialized RuntimeContext index
-// so an `insertLocalRuntimeContext` write is observable from a
-// subsequent client `prompt` / `snapshot` without cross-instance
-// replication latency.
+// so durable context/start requests and runtime projections share one
+// materialized namespace view with the runtime host layer.
 const configuredFiregridControlPlaneLayer = (
   cfg: ClientOptions,
 ) =>

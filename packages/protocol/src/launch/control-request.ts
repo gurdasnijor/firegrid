@@ -48,6 +48,18 @@ export const runtimeContextRequestId = (contextId: string): string =>
 export const runtimeStartRequestId = (contextId: string): string =>
   `req_start_${sanitizeIdSegment(contextId)}`
 
+export const runtimeContextRequestClaimId = (
+  requestId: string,
+  claimWindowStartedAtMs: number,
+): string =>
+  `ctx_req_claim:${sanitizeIdSegment(requestId)}:${claimWindowStartedAtMs}`
+
+export const runtimeStartRequestClaimId = (
+  requestId: string,
+  claimWindowStartedAtMs: number,
+): string =>
+  `start_req_claim:${sanitizeIdSegment(requestId)}:${claimWindowStartedAtMs}`
+
 // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
 //
 // The unbound create/load request. `contextId` is the client-computed
@@ -92,6 +104,75 @@ export type RuntimeStartRequestRow = Schema.Schema.Type<
   typeof RuntimeStartRequestRowSchema
 >
 
+export const RuntimeControlRequestKindSchema = Schema.Literal("context", "start")
+export type RuntimeControlRequestKind = Schema.Schema.Type<
+  typeof RuntimeControlRequestKindSchema
+>
+
+export const RuntimeControlRequestCompletionStatusSchema = Schema.Literal(
+  "succeeded",
+  "failed",
+  "abandoned",
+)
+export type RuntimeControlRequestCompletionStatus = Schema.Schema.Type<
+  typeof RuntimeControlRequestCompletionStatusSchema
+>
+
+export const RuntimeControlRequestClaimRowSchema = Schema.Struct({
+  claimId: Schema.String.pipe(DurableTable.primaryKey),
+  requestKind: RuntimeControlRequestKindSchema,
+  requestId: Schema.String,
+  contextId: Schema.String,
+  hostId: Schema.String,
+  hostSessionId: Schema.String,
+  claimWindowStartedAtMs: Schema.Number,
+  claimWindowExpiresAtMs: Schema.Number,
+  claimedAtMs: Schema.Number,
+}).annotations({
+  identifier: "firegrid.runtimeControlRequestClaim.row",
+  title: "Runtime control request claim row",
+  description:
+    "Host-written first-writer-wins claim fact for a client-authored control request.",
+})
+export type RuntimeControlRequestClaimRow = Schema.Schema.Type<
+  typeof RuntimeControlRequestClaimRowSchema
+>
+
+export const RuntimeControlRequestCompletionRowSchema = Schema.Struct({
+  requestId: Schema.String.pipe(DurableTable.primaryKey),
+  requestKind: RuntimeControlRequestKindSchema,
+  contextId: Schema.String,
+  status: RuntimeControlRequestCompletionStatusSchema,
+  hostId: Schema.String,
+  completedAtMs: Schema.Number,
+  activityAttempt: Schema.optional(Schema.Number),
+  exitCode: Schema.optional(Schema.Number),
+  signal: Schema.optional(Schema.String),
+  message: Schema.optional(Schema.String),
+}).annotations({
+  identifier: "firegrid.runtimeControlRequestCompletion.row",
+  title: "Runtime control request completion row",
+  description:
+    "Host-written terminal completion row for a client-authored control request.",
+})
+export type RuntimeControlRequestCompletionRow = Schema.Schema.Type<
+  typeof RuntimeControlRequestCompletionRowSchema
+>
+
+export const RuntimeStartRequestAckSchema = Schema.Struct({
+  requestId: Schema.String,
+  contextId: Schema.String,
+  inserted: Schema.Boolean,
+}).annotations({
+  identifier: "firegrid.runtimeStartRequest.ack",
+  title: "Runtime start request acknowledgement",
+  description:
+    "Client-visible acknowledgement that a durable RuntimeStartRequest was recorded.",
+})
+export type RuntimeStartRequestAck = Schema.Schema.Type<
+  typeof RuntimeStartRequestAckSchema
+>
+
 export const makeRuntimeContextRequestRow = (
   input: {
     readonly contextId: string
@@ -124,4 +205,67 @@ export const makeRuntimeStartRequestRow = (
   contextId: input.contextId,
   ...(input.requestedBy === undefined ? {} : { requestedBy: input.requestedBy }),
   createdAt: options?.createdAt ?? nowIso(),
+})
+
+export const makeRuntimeControlRequestClaimRow = (
+  input: {
+    readonly requestKind: RuntimeControlRequestKind
+    readonly requestId: string
+    readonly contextId: string
+    readonly hostId: string
+    readonly hostSessionId: string
+    readonly claimWindowStartedAtMs: number
+    readonly claimWindowExpiresAtMs: number
+    readonly claimedAtMs: number
+  },
+): RuntimeControlRequestClaimRow => ({
+  claimId: input.requestKind === "context"
+    ? runtimeContextRequestClaimId(input.requestId, input.claimWindowStartedAtMs)
+    : runtimeStartRequestClaimId(input.requestId, input.claimWindowStartedAtMs),
+  requestKind: input.requestKind,
+  requestId: input.requestId,
+  contextId: input.contextId,
+  hostId: input.hostId,
+  hostSessionId: input.hostSessionId,
+  claimWindowStartedAtMs: input.claimWindowStartedAtMs,
+  claimWindowExpiresAtMs: input.claimWindowExpiresAtMs,
+  claimedAtMs: input.claimedAtMs,
+})
+
+export const makeRuntimeControlRequestCompletionRow = (
+  input: {
+    readonly requestKind: RuntimeControlRequestKind
+    readonly requestId: string
+    readonly contextId: string
+    readonly status: RuntimeControlRequestCompletionStatus
+    readonly hostId: string
+    readonly completedAtMs: number
+    readonly activityAttempt?: number
+    readonly exitCode?: number
+    readonly signal?: string
+    readonly message?: string
+  },
+): RuntimeControlRequestCompletionRow => ({
+  requestId: input.requestId,
+  requestKind: input.requestKind,
+  contextId: input.contextId,
+  status: input.status,
+  hostId: input.hostId,
+  completedAtMs: input.completedAtMs,
+  ...(input.activityAttempt === undefined ? {} : { activityAttempt: input.activityAttempt }),
+  ...(input.exitCode === undefined ? {} : { exitCode: input.exitCode }),
+  ...(input.signal === undefined ? {} : { signal: input.signal }),
+  ...(input.message === undefined ? {} : { message: input.message }),
+})
+
+export const makeRuntimeStartRequestAck = (
+  input: {
+    readonly requestId: string
+    readonly contextId: string
+    readonly inserted: boolean
+  },
+): RuntimeStartRequestAck => ({
+  requestId: input.requestId,
+  contextId: input.contextId,
+  inserted: input.inserted,
 })

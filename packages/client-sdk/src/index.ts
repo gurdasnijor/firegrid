@@ -22,6 +22,7 @@ export {
   type PromptInputError,
   type RuntimeContextHandle,
   type RuntimeContextSnapshot,
+  type RuntimeStartRequestAck,
 } from "./firegrid.ts"
 export {
   FiregridClientOperations,

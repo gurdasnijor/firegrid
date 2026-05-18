@@ -18,6 +18,10 @@ import type { RuntimeHostTopologyOptions } from "./types.ts"
 import { RuntimeHostAgentToolHostLive } from "./agent-tool-host-live.ts"
 import { RuntimeStartCapabilityLive } from "./commands.ts"
 import {
+  RuntimeControlRequestReconcilerDaemonLive,
+  RuntimeControlRequestReconcilerLive,
+} from "./control-request-reconciler.ts"
+import {
   RuntimeContextWorkflowSession,
 } from "./runtime-context-workflow-core.ts"
 import {
@@ -244,6 +248,10 @@ export const FiregridRuntimeHostLive = (
   return Layer.mergeAll(
     RuntimeInputIntentDispatcherLive,
     RuntimeStartCapabilityLive,
+    RuntimeControlRequestReconcilerLive,
+    ...(options.controlRequestReconciler === false
+      ? []
+      : [RuntimeControlRequestReconcilerDaemonLive]),
   ).pipe(
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
@@ -296,6 +304,7 @@ export const FiregridLocalHostLive = (
     readonly input?: boolean
     readonly headers?: DurableTableHeaders
     readonly localProcessEnv?: RuntimeHostTopologyOptions["localProcessEnv"]
+    readonly controlRequestReconciler?: boolean
   },
   envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
 ) => {
@@ -308,6 +317,9 @@ export const FiregridLocalHostLive = (
     ...(options.localProcessEnv === undefined
       ? {}
       : { localProcessEnv: options.localProcessEnv }),
+    ...(options.controlRequestReconciler === undefined
+      ? {}
+      : { controlRequestReconciler: options.controlRequestReconciler }),
   }
   return FiregridRuntimeHostWithWorkflowLive(composed, envPolicy)
 }

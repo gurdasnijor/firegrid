@@ -1,11 +1,19 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
+  makeRuntimeControlRequestClaimRow,
+  makeRuntimeControlRequestCompletionRow,
   makeRuntimeContextRequestRow,
+  makeRuntimeStartRequestAck,
   makeRuntimeStartRequestRow,
+  RuntimeControlRequestClaimRowSchema,
+  RuntimeControlRequestCompletionRowSchema,
   RuntimeContextRequestRowSchema,
+  RuntimeStartRequestAckSchema,
   RuntimeStartRequestRowSchema,
+  runtimeContextRequestClaimId,
   runtimeContextRequestId,
+  runtimeStartRequestClaimId,
   runtimeStartRequestId,
 } from "../../src/launch/index.ts"
 
@@ -57,5 +65,51 @@ describe("@firegrid/protocol launch control requests (TFIND-002/003)", () => {
       makeRuntimeStartRequestRow({ contextId: "ctx_ext_abc" }).requestId,
     )
     expect(runtimeContextRequestId("a/b c")).toBe("req_ctx_a_b_c")
+  })
+
+  it("builds deterministic host claim rows for per-window reconciliation", () => {
+    const claim = makeRuntimeControlRequestClaimRow({
+      requestKind: "context",
+      requestId: "req_ctx_ctx_ext_abc",
+      contextId: "ctx_ext_abc",
+      hostId: "host_a",
+      hostSessionId: "session-a",
+      claimWindowStartedAtMs: 1_000,
+      claimWindowExpiresAtMs: 61_000,
+      claimedAtMs: 2_000,
+    })
+    const startClaim = makeRuntimeControlRequestClaimRow({
+      ...claim,
+      requestKind: "start",
+    })
+
+    expect(claim.claimId).toBe("ctx_req_claim:req_ctx_ctx_ext_abc:1000")
+    expect(claim.claimId).toBe(runtimeContextRequestClaimId(claim.requestId, 1_000))
+    expect(Schema.decodeUnknownSync(RuntimeControlRequestClaimRowSchema)(claim)).toEqual(claim)
+    expect(startClaim.claimId).toBe("start_req_claim:req_ctx_ctx_ext_abc:1000")
+    expect(startClaim.claimId).toBe(runtimeStartRequestClaimId(startClaim.requestId, 1_000))
+    expect(Schema.decodeUnknownSync(RuntimeControlRequestClaimRowSchema)(startClaim)).toEqual(startClaim)
+  })
+
+  it("builds start completions and client-visible request acknowledgements", () => {
+    const completion = makeRuntimeControlRequestCompletionRow({
+      requestKind: "start",
+      requestId: "req_start_ctx_ext_abc",
+      contextId: "ctx_ext_abc",
+      status: "succeeded",
+      hostId: "host_a",
+      completedAtMs: 12_000,
+      activityAttempt: 1,
+      exitCode: 0,
+    })
+    const ack = makeRuntimeStartRequestAck({
+      requestId: "req_start_ctx_ext_abc",
+      contextId: "ctx_ext_abc",
+      inserted: true,
+    })
+
+    expect(Schema.decodeUnknownSync(RuntimeControlRequestCompletionRowSchema)(completion)).toEqual(completion)
+    expect(Schema.decodeUnknownSync(RuntimeStartRequestAckSchema)(ack)).toEqual(ack)
+    expect(completion).not.toHaveProperty("signal")
   })
 })

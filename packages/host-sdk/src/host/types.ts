@@ -37,4 +37,5 @@ export interface RuntimeHostTopologyOptions {
   readonly headers?: DurableTableHeaders
   readonly input?: boolean
   readonly localProcessEnv?: LocalProcessSandboxProviderOptions
+  readonly controlRequestReconciler?: boolean
 }

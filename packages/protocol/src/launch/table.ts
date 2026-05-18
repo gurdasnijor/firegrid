@@ -5,6 +5,12 @@ import {
   RuntimeInputIntentRowSchema,
 } from "../runtime-ingress/schema.ts"
 import {
+  RuntimeControlRequestClaimRowSchema,
+  RuntimeControlRequestCompletionRowSchema,
+  RuntimeContextRequestRowSchema,
+  RuntimeStartRequestRowSchema,
+} from "./control-request.ts"
+import {
   RuntimeContextIntentSchema,
   RuntimeOutputEventKeySchema,
   RuntimeOutputLogLineKeySchema,
@@ -167,6 +173,10 @@ const runtimeControlPlaneSchemas = {
   contexts: RuntimeContextRowSchema,
   runs: RuntimeRunEventRowSchema,
   inputIntents: RuntimeInputIntentRowSchema,
+  contextRequests: RuntimeContextRequestRowSchema,
+  startRequests: RuntimeStartRequestRowSchema,
+  controlRequestClaims: RuntimeControlRequestClaimRowSchema,
+  controlRequestCompletions: RuntimeControlRequestCompletionRowSchema,
 } as const
 
 const RuntimeEventRowSchema = Schema.Struct({
@@ -199,5 +209,9 @@ export type RuntimeOutputTableService = DurableTableService<typeof runtimeOutput
 export type RuntimeContextRow = RuntimeContext
 export type RuntimeInputIntentRow = Schema.Schema.Type<typeof RuntimeInputIntentRowSchema>
 export type RuntimeRunEventRow = Schema.Schema.Type<typeof RuntimeRunEventRowSchema>
+export type RuntimeContextRequestRow = Schema.Schema.Type<typeof RuntimeContextRequestRowSchema>
+export type RuntimeStartRequestRow = Schema.Schema.Type<typeof RuntimeStartRequestRowSchema>
+export type RuntimeControlRequestClaimRow = Schema.Schema.Type<typeof RuntimeControlRequestClaimRowSchema>
+export type RuntimeControlRequestCompletionRow = Schema.Schema.Type<typeof RuntimeControlRequestCompletionRowSchema>
 export type RuntimeEventRow = Schema.Schema.Type<typeof RuntimeEventRowSchema>
 export type RuntimeLogLineRow = Schema.Schema.Type<typeof RuntimeLogLineRowSchema>

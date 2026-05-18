@@ -11,6 +11,7 @@
 // so the public client (@firegrid/client) can resolve host authority
 // without taking a runtime dependency on @firegrid/runtime.
 
+import type { DurableTableError } from "effect-durable-operators"
 import { Clock, Context, Effect, Option, Schema } from "effect"
 import {
   HostIdSchema,
@@ -53,6 +54,18 @@ export class CurrentRuntimeContext extends Context.Tag(
   "@firegrid/protocol/CurrentRuntimeContext",
 )<CurrentRuntimeContext, RuntimeContext>() {}
 
+const runtimeControlPlaneTable: Effect.Effect<
+  RuntimeControlPlaneTable["Type"],
+  never,
+  RuntimeControlPlaneTable
+> = RuntimeControlPlaneTable
+
+const currentHostSession: Effect.Effect<
+  HostSessionRow,
+  never,
+  CurrentHostSession
+> = CurrentHostSession
+
 /**
  * Context authority errors.
  *
@@ -92,9 +105,11 @@ export class CurrentHostStopped extends Schema.TaggedError<CurrentHostStopped>()
  *
  * firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
  */
-export const findRuntimeContext = (contextId: string) =>
+export const findRuntimeContext = (
+  contextId: string,
+): Effect.Effect<RuntimeContext, ContextNotFound | DurableTableError, RuntimeControlPlaneTable> =>
   Effect.gen(function* () {
-    const table = yield* RuntimeControlPlaneTable
+    const table = yield* runtimeControlPlaneTable
     const maybe = yield* table.contexts.get(contextId)
     return yield* Option.match(maybe, {
       onNone: () => Effect.fail(new ContextNotFound({ contextId })),
@@ -178,9 +193,15 @@ export const insertLocalRuntimeContext = (
  *
  * firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2
  */
-export const requireLocalContext = (contextId: string) =>
+export const requireLocalContext = (
+  contextId: string,
+): Effect.Effect<
+  RuntimeContext,
+  ContextNotFound | ContextNotLocal | DurableTableError,
+  RuntimeControlPlaneTable | CurrentHostSession
+> =>
   Effect.gen(function* () {
-    const session = yield* CurrentHostSession
+    const session = yield* currentHostSession
     const context = yield* findRuntimeContext(contextId)
     if (context.host.hostId !== session.hostId) {
       return yield* Effect.fail(
