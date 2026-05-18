@@ -298,6 +298,91 @@ both consumer paths + `apps/factory` + full lint).
   ((b) in the #326 rebase) is separate, correct, and stays in `#326`;
   `#326`'s flip remains gated on this §0.1.
 
+## §0.2 — Ratified c1 FALSIFIED; reframe required (read this first)
+
+> **Status (architect-level — beyond §0.1; coordinator does NOT
+> decide).** Gurdas ratified §0.1 option **(c1)**. It was implemented
+> exactly as ratified and **falsified by the binding §0.1 Evidence
+> gate**. The §0.1 provider-`layer`-type option space (a/b/c1/c2/c3) is
+> the **wrong axis**. This requires an architect reframe.
+> **Reproducer:** branch `sidecar/tfind050-c1-decouple-rout`
+> commit `b7a66e6b8` (kept unpushed as evidence).
+
+### 1. What was implemented (ratified c1, exactly)
+
+`ROut` reintroduced as a **decoupled, free, per-call inference-only
+generic** on `DurableTableProvider` / `DurableTableProviderProps` /
+`acquireServices` (`layer: Layer.Layer<ROut, E, never>`); `tables` stays
+the erased `AnyDurableTableTag`; **no default** on `ROut`;
+`useDurableTable` untouched (already `AnyDurableTableTag`-bound,
+source-compatible). No paper, no forcing cast, no default.
+
+### 2. Binding gate result
+
+- **Pre-curry `origin/main`** (necessary, *not* sufficient — §0.1
+  Condition 2): full gate **GREEN** (cache-cleared recursive typecheck
+  all workspaces, lint + lint:dead/dup/deps, effect:diagnostics,
+  semgrep(+test), edo 27 + client-sdk 12 tests).
+- **Post-`#326`-curry overlay** (the gate that produced the §0.1
+  Evidence: `#326` rebased onto current `main` + c1, `.tsbuildinfo`
+  cleared, recursive typecheck + full lint): **FAILED — 29 host-sdk
+  `TS2375`/`TS2379`** (`Effect<…, unknown>` ⊄ `Effect<…, never>`,
+  `exactOptionalPropertyTypes` R-channel). Production src:
+  `packages/host-sdk/src/host/commands.ts:163`,
+  `control-request-reconciler.ts:227`,
+  `agent-tool-host-live.ts:90`; plus 6 host-sdk test files
+  (`env-bindings`, `runtime-codec-event-plane`,
+  `runtime-context-workflow-core`, `start-runtime`,
+  `sync-run-integration`, `two-host-isolation`).
+
+### 3. Deterministic single-variable isolation
+
+Same overlay worktree, `.tsbuildinfo` cleared each run, only `react.ts`
+toggled: **c1 absent → 0 host-sdk errors** (only the expected `#326`
+react-types (b) arity item); **c1 present → 29 host-sdk errors**. c1 is
+the **sole trigger**.
+
+### 4. The falsified premise
+
+§0.1 recommended — and Gurdas ratified — c1 on the reasoning *"`ROut`
+inferred per-call ⇒ no scalar ⇒ no package-graph ripple."* This is
+**empirically false**: the *exported generic itself* cascades into
+host-sdk's cross-package `Effect`-R inference regardless of per-call
+inference. Per-call inference does not contain the ripple.
+
+### 5. The 3-for-3 pattern → wrong axis
+
+| Provider `layer` variant | Post-curry failure |
+| --- | --- |
+| (a) `unknown` (#348) | breaks explicit-props / by-name path (react-types `TS2769`) |
+| (b) `never` | relocates breakage → `apps/factory` (`TS2769`/`TS2379`) |
+| (c1) decoupled per-call generic | cascades `host-sdk` (29 errors, incl. production src) |
+
+Every provider-`layer`-type variant fails in the post-`#326`-curry
+world. The §0.1 option space (a/b/c1/c2/c3) is the **wrong axis**. The
+real instability is **cross-package `Effect`-R inference under
+`exactOptionalPropertyTypes` × the `#326` curry**; the provider type is
+only the *trigger surface*, not the root.
+
+### 6. Candidate reframe directions (UNRANKED, UNDECIDED — for Gurdas)
+
+Architect decision; the coordinator does not choose; the executor does
+not pre-decide or probe these:
+
+- **(x)** Isolate the provider type so it cannot ripple — move provider
+  types to a leaf module / sever the `effect-durable-operators`
+  package-type-graph coupling that propagates the exported-type change
+  into consumer `Effect`-R inference.
+- **(y)** Address the `exactOptionalPropertyTypes` × curry `Effect`-R
+  interaction at its root (the shared cause across the 3 failures and
+  the earlier TFIND-045 reconciler leak).
+- **(z)** Treat the host-sdk (and `apps/factory`) cascades as a
+  broadened **TFIND-045-class explicit-R enumeration** finding rather
+  than a provider-type problem.
+
+**This needs an architect reframe beyond §0.1. The coordinator does not
+decide; §0.1's option space is closed.**
+
 ## Contract
 
 `effect-durable-operators` exposes a read-only TanStack collection view on each
