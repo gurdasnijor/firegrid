@@ -1,10 +1,12 @@
 # SDD: Permission Codec Authority
 
+Status: signed off — Build B implementation in PR #350. No toy `permission-flow-pipeline` work is in scope for this PR.
+
 ## §0 — The load-bearing question, read this first
 
 **Does any codec complete workflow deferreds / do authority work, or is permission-class event routing strictly observation + workflow-side resumption?**
 
-This is the Gurdas-signoff question for TFIND-015. The answer gates the queued `permission-flow-pipeline` configuration; do not build that configuration until this SDD lands and the decision is batched through coordinator review.
+This is the Gurdas-signoff question for TFIND-015. The answer gates the queued `permission-flow-pipeline` configuration; do not build that configuration until this implementation lands.
 
 ### A/B framing
 
@@ -12,13 +14,13 @@ This is the Gurdas-signoff question for TFIND-015. The answer gates the queued `
 
 **B. Strict observation + workflow-side resumption.** Treat codecs as protocol/session translators only. A codec may keep live protocol promises and correlation state required by the wire protocol, but it must not own durable permission state or complete workflow deferreds. Permission requests are normalized as observable output, permission responses enter as client/workflow input intents, and workflow-side runtime code owns any durable deferred creation/completion/resumption needed to bridge those two facts back to the live codec continuation.
 
-### Coordinator recommendation (Gurdas decides)
+### Decision
 
-Recommend **B: strict observation + workflow-side resumption**, with one important clarification: ACP still needs a live protocol continuation because `requestPermission` is an active ACP SDK promise. The recommended boundary is not "make ACP stateless"; it is "codec owns only the live ACP promise/correlation, while workflow/runtime owns durable authority and deferred completion."
+Gurdas signed off **B: strict observation + workflow-side resumption**, with one important clarification: ACP still needs a live protocol continuation because `requestPermission` is an active ACP SDK promise. The boundary is not "make ACP stateless"; it is "codec owns only the live ACP promise/correlation, while workflow/runtime owns durable authority and deferred completion."
 
-This matches the existing codec README boundary rule that durable permission state belongs outside codecs, makes permission-class behavior analogous to the TFIND-041 by-decision precedent, and keeps the planned `permission-flow-pipeline` from encoding hidden codec-side durable authority as the production contract. If Gurdas chooses A instead, the follow-on work should explicitly update the codec boundary documentation and tests to say ACP permission authority is intentionally codec-side.
+This matches the existing codec README boundary rule that durable permission state belongs outside codecs, makes permission-class behavior analogous to the TFIND-041 by-decision precedent, and keeps the planned `permission-flow-pipeline` from encoding hidden codec-side durable authority as the production contract.
 
-No code experiment appears necessary to answer §0 at the framing level: the current authority split is statically visible in the ACP codec and the stdio-jsonl codec. Implementation will still need a focused verification plan once Gurdas chooses A or B.
+The implementation is the proof point for the chosen boundary: ACP no longer depends on `WorkflowEngine` or `DurableDeferred`, and the runtime workflow owns the durable input deferred that resumes the live ACP continuation.
 
 ## §1 — Grounding from canonical FINDINGS
 
@@ -28,9 +30,9 @@ No code experiment appears necessary to answer §0 at the framing level: the cur
 
 The TFIND-041 precedent is directly relevant but not automatically dispositive. Permission-class events have the same family shape because a normalized event can either carry authority semantics itself, defer interpretation to session mode, or route through workflow authority. The difference is that ACP permission handling currently reaches into `WorkflowEngine`/`DurableDeferred`, while TFIND-041's decided branch lives in workflow code that interprets a normalized `ToolUse` event by session mode.
 
-## §2 — Current codec evidence
+## §2 — Pre-implementation codec evidence
 
-ACP currently advertises permission support and contains durable workflow machinery:
+At framing time, ACP advertised permission support and contained durable workflow machinery:
 
 - `packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts:155-158` constructs a `DurableDeferred` for each permission request id.
 - `packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts:261-283` requires `WorkflowEngine` and `WorkflowInstance` from inside the codec.
@@ -49,7 +51,7 @@ The codec boundary documentation already leans toward B:
 - `packages/runtime/src/agent-event-pipeline/codecs/README.md:25-35` says codecs produce/consume runtime event contracts but do not own durable tables, subscriber dispatch, host topology, or durable permission state.
 - `packages/runtime/src/agent-event-pipeline/codecs/README.md:72-83` says ACP permission request/response is a live control-channel continuation, while durable permission state must stay outside codecs.
 
-That creates the TFIND-015 conflict in concrete form: ACP implementation currently does durable-deferred work from inside the codec, while the documented codec contract says durable permission state is outside codecs.
+That created the TFIND-015 conflict in concrete form: ACP implementation did durable-deferred work from inside the codec, while the documented codec contract said durable permission state is outside codecs. Build B resolves this by removing the durable-deferred work from the codec.
 
 ## §3 — Option A: codec-side authority
 
@@ -109,9 +111,25 @@ Permission-class events should get the same explicitness. The recommended answer
 
 ## §7 — Acceptance gate
 
-This document is the deliverable for this PR. No production code is in scope. After coordinator review and Gurdas batched signoff:
+This document is the signed-off record for PR #350. The production implementation is in scope for the same PR; the toy `permission-flow-pipeline` remains out of scope and is unblocked only after this lands.
 
-- If A is chosen, update codec boundary documentation and implement the permission-flow pipeline against explicit codec-side authority.
-- If B is chosen, move durable permission authority out of codec scope before or as part of the permission-flow pipeline, then test the public observe/respond/resume path.
+- ACP codec owns only live `requestPermission` correlation and promise resolution.
+- Runtime workflow owns durable runtime-input deferred waiting/completion and sends the matching `PermissionResponse` to the active codec.
+- No forcing/widening cast is present on the ACP codec, runtime workflow permission bridge, or runtime-input deferred path.
+- The deterministic integration test records prompt input, observes a durable `PermissionRequest`, proves the agent remains blocked before response ingress, appends `PermissionResponse`, observes the exact `runtime-context/<contextId>/input/1` deferred row, and verifies the live ACP continuation resumes.
 
-Until then, `permission-flow-pipeline` remains gated by TFIND-015.
+## §8 — Structural proof for Build B
+
+Build B splits authority by direction:
+
+1. **Codec output observation:** `AcpSessionLive` converts ACP `requestPermission` into a normalized `PermissionRequest` output event and stores only an in-memory `Deferred<PermissionDecision>` keyed by `permissionRequestId`. It does not import or require `WorkflowEngine`, `WorkflowInstance`, or `DurableDeferred`.
+2. **Durable response authority:** client/workflow `PermissionResponse` ingress is still recorded as a runtime input intent, then sequenced into the owner workflow's existing `runtimeInputDeferredFor(contextId, sequence)` durable deferred. This is the only durable deferred completion used by the permission response path.
+3. **Workflow-side bridge:** `RuntimeContextWorkflowNative` waits for a `PermissionRequest` output observation, then awaits the next runtime-input durable deferred. Only a matching `PermissionResponse.permissionRequestId` is sent to `RuntimeContextWorkflowSession.send`; mismatches fail the runtime workflow with a named permission-response error.
+4. **Live ACP continuation:** after workflow delivery, the ACP codec completes the live in-memory deferred and returns the ACP `RequestPermissionResponse` to the SDK callback. This is protocol correlation, not durable authority.
+
+The deterministic failure-mode test is:
+
+`packages/host-sdk/test/host/runtime-codec-event-plane.test.ts` —
+`firegrid-runtime-agent-event-pipeline.INGREDIENTS.4 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-2 firegrid-runtime-agent-event-pipeline.VALIDATION.3-2 journals ACP PermissionRequest, blocks, and resumes through the runtime-input deferred`.
+
+It uses DurableTable live streams instead of sleep polling for the permission request and deferred-row observation, satisfying the emit-then-wait bar.

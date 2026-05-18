@@ -184,6 +184,29 @@ const waitForAgentOutput = (
     trigger: [],
   })
 
+const nextAgentOutput = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  afterSequence: number,
+): Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError, unknown> =>
+  waitForAgentOutput(context, activityAttempt, afterSequence).pipe(
+    Effect.mapError(cause =>
+      asRuntimeContextError(
+        "runtime-context.output.wait",
+        "failed waiting for runtime-context output",
+        context.contextId,
+        cause,
+      )),
+    Effect.flatMap((result): Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError> =>
+      result._tag === "Timeout"
+        ? asRuntimeContextError(
+          "runtime-context.wait.timeout",
+          "runtime-context output wait timed out unexpectedly",
+          context.contextId,
+        )
+        : Effect.succeed(result.row)),
+  )
+
 const completedRuntimeInput = (
   context: RuntimeContext,
   sequence: number,
@@ -197,6 +220,12 @@ const completedRuntimeInput = (
     if (exit === undefined) return undefined
     return yield* exit
   })
+
+const awaitRuntimeInput = (
+  context: RuntimeContext,
+  sequence: number,
+) =>
+  DurableDeferred.await(runtimeInputDeferredFor(context.contextId, sequence))
 
 const runToolUseActivity = (
   context: RuntimeContext,
@@ -221,10 +250,74 @@ const runToolUseActivity = (
     ),
   })
 
+const decodeRuntimeInputEvent = (
+  context: RuntimeContext,
+  row: RuntimeIngressInputRow,
+) =>
+  agentInputEventFromRuntimeIngressRow(row).pipe(
+    Effect.mapError(cause =>
+      asRuntimeContextError(
+        "runtime-context.input.decode",
+        "failed decoding runtime input row",
+        context.contextId,
+        cause,
+      )),
+  )
+
+const sendRuntimeInputEvent = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  row: RuntimeIngressInputRow,
+  event: AgentInputEvent,
+) =>
+  sendSessionActivity(
+    context,
+    activityAttempt,
+    {
+      _tag: "AgentInput",
+      commandId: `runtime-input-${context.contextId}-${row.inputId}`,
+      event,
+    },
+    `firegrid.runtime-context.session.send.runtime-input.${row.inputId}`,
+  )
+
+const awaitPermissionResponseInput = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  permissionRequestId: string,
+  inputSequence: number,
+) =>
+  Effect.gen(function*() {
+    // firegrid-runtime-agent-event-pipeline.INGREDIENTS.4
+    // firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-2
+    // firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3
+    const row = yield* awaitRuntimeInput(context, inputSequence)
+    const event = yield* decodeRuntimeInputEvent(context, row)
+    if (
+      event._tag !== "PermissionResponse" ||
+      event.permissionRequestId !== permissionRequestId
+    ) {
+      return yield* Effect.fail(asRuntimeContextError(
+        "runtime-context.permission.response",
+        "permission response did not match the pending permission request",
+        context.contextId,
+        {
+          expectedPermissionRequestId: permissionRequestId,
+          inputId: row.inputId,
+          sequence: inputSequence,
+          event,
+        },
+      ))
+    }
+    yield* sendRuntimeInputEvent(context, activityAttempt, row, event)
+    return inputSequence + 1
+  })
+
 const handleAgentOutput = (
   context: RuntimeContext,
   activityAttempt: number,
   observation: RuntimeAgentOutputObservation,
+  nextInputSequence: number,
 ) =>
   Effect.gen(function*() {
     const event = observation.event
@@ -242,7 +335,7 @@ const handleAgentOutput = (
       // is a tracked, deliberately-deferred future option, not the
       // current contract.
       if (context.runtime.config.agentProtocol === "acp") {
-        return undefined
+        return { _tag: "Continue" as const, nextInputSequence }
       }
       const result = yield* runToolUseActivity(context, event)
       yield* sendSessionActivity(
@@ -255,14 +348,26 @@ const handleAgentOutput = (
         },
         `firegrid.runtime-context.session.send.tool-result.${event.part.id}`,
       )
-      return undefined
+      return { _tag: "Continue" as const, nextInputSequence }
+    }
+    if (event._tag === "PermissionRequest") {
+      const afterPermissionResponse = yield* awaitPermissionResponseInput(
+        context,
+        activityAttempt,
+        event.permissionRequestId,
+        nextInputSequence,
+      )
+      return { _tag: "Continue" as const, nextInputSequence: afterPermissionResponse }
     }
     if (event._tag === "Terminated") {
       return {
-        exitCode: event.exitCode ?? 0,
+        _tag: "Exit" as const,
+        exit: {
+          exitCode: event.exitCode ?? 0,
+        },
       }
     }
-    return undefined
+    return { _tag: "Continue" as const, nextInputSequence }
   })
 
 const handleRuntimeInput = (
@@ -271,25 +376,8 @@ const handleRuntimeInput = (
   row: RuntimeIngressInputRow,
 ) =>
   Effect.gen(function*() {
-    const event = yield* agentInputEventFromRuntimeIngressRow(row).pipe(
-      Effect.mapError(cause =>
-        asRuntimeContextError(
-          "runtime-context.input.decode",
-          "failed decoding runtime input row",
-          context.contextId,
-          cause,
-        )),
-    )
-    yield* sendSessionActivity(
-      context,
-      activityAttempt,
-      {
-        _tag: "AgentInput",
-        commandId: `runtime-input-${context.contextId}-${row.inputId}`,
-        event,
-      },
-      `firegrid.runtime-context.session.send.runtime-input.${row.inputId}`,
-    )
+    const event = yield* decodeRuntimeInputEvent(context, row)
+    yield* sendRuntimeInputEvent(context, activityAttempt, row, event)
   })
 
 const runReactiveLoop = (
@@ -303,31 +391,32 @@ const runReactiveLoop = (
     Effect.gen(function*() {
       const input = yield* completedRuntimeInput(context, nextInputSequence)
       if (input !== undefined) {
+        const inputEvent = yield* decodeRuntimeInputEvent(context, input)
+        if (inputEvent._tag === "PermissionResponse") {
+          const output = yield* nextAgentOutput(context, activityAttempt, lastOutputSequence)
+          const outcome = yield* handleAgentOutput(
+            context,
+            activityAttempt,
+            output,
+            nextInputSequence,
+          )
+          if (outcome._tag === "Exit") return outcome.exit
+          return yield* loop(output.sequence, outcome.nextInputSequence)
+        }
         yield* handleRuntimeInput(context, activityAttempt, input)
         return yield* loop(lastOutputSequence, nextInputSequence + 1)
       }
 
-      const output = yield* waitForAgentOutput(context, activityAttempt, lastOutputSequence).pipe(
-        Effect.mapError(cause =>
-          asRuntimeContextError(
-            "runtime-context.output.wait",
-            "failed waiting for runtime-context output",
-            context.contextId,
-            cause,
-          )),
-        Effect.flatMap((result): Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError> =>
-          result._tag === "Timeout"
-            ? asRuntimeContextError(
-              "runtime-context.wait.timeout",
-              "runtime-context output wait timed out unexpectedly",
-              context.contextId,
-            )
-            : Effect.succeed(result.row)),
-      )
+      const output = yield* nextAgentOutput(context, activityAttempt, lastOutputSequence)
 
-      const exit = yield* handleAgentOutput(context, activityAttempt, output)
-      if (exit !== undefined) return exit
-      return yield* loop(output.sequence, nextInputSequence)
+      const outcome = yield* handleAgentOutput(
+        context,
+        activityAttempt,
+        output,
+        nextInputSequence,
+      )
+      if (outcome._tag === "Exit") return outcome.exit
+      return yield* loop(output.sequence, outcome.nextInputSequence)
     })
   return loop(-1, 0)
 }
@@ -375,6 +464,6 @@ export const RuntimeContextWorkflowNativeLayer = Layer.scopedDiscard(
     yield* engine.register(RuntimeContextWorkflowNative, ({ contextId }) =>
       runWorkflowNativeRuntimeContext(contextId).pipe(
         Effect.provide(captured),
-      ) as Effect.Effect<StartRuntimeResult, RuntimeContextError>)
+      ))
   }),
 )

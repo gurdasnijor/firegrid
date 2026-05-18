@@ -7,11 +7,11 @@ import {
   normalizeRuntimeIntent,
   runtimeControlPlaneStreamUrl,
   runtimeContextOutputStreamUrl,
+  runtimeContextWorkflowStreamUrl,
   type HostId,
   type RuntimeAgentProtocol,
-  type RuntimeEventRow,
 } from "@firegrid/protocol/launch"
-import { Effect, Fiber, Option } from "effect"
+import { Effect, Fiber, Option, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   decodeRuntimeAgentOutputEnvelope,
@@ -22,6 +22,13 @@ import {
   appendRuntimeIngress,
   startRuntime,
 } from "../../src/host/index.ts"
+import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
+import {
+  runtimeInputDeferredName,
+} from "../../src/host/runtime-context-workflow-core.ts"
+import {
+  runtimeContextWorkflowExecutionId,
+} from "../../src/host/internal/runtime-context-helpers.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -109,6 +116,21 @@ const outputTableLayer = (input: {
     },
   })
 
+const workflowTableLayer = (input: {
+  readonly namespace: string
+  readonly contextId: string
+}) =>
+  WorkflowEngineTable.layer({
+    streamOptions: {
+      url: runtimeContextWorkflowStreamUrl({
+        baseUrl: baseUrl!,
+        namespace: input.namespace,
+        contextId: input.contextId,
+      }),
+      contentType: "application/json",
+    },
+  })
+
 const queryRawEvents = (input: {
   readonly namespace: string
   readonly hostId: HostId
@@ -142,34 +164,7 @@ const queryAgentEvents = (input: {
     })),
   )
 
-const waitForAgentEvent = (
-  table: RuntimeOutputTable["Type"],
-  contextId: string,
-  predicate: (event: AgentOutputEvent) => boolean,
-): Effect.Effect<AgentOutputEvent, Error> => {
-  const loop = (remaining: number): Effect.Effect<AgentOutputEvent, Error> =>
-    Effect.gen(function* () {
-      const rows: ReadonlyArray<RuntimeEventRow> = yield* table.events.query(coll =>
-        coll.toArray
-          .filter(row => row.contextId === contextId)
-          .sort((left, right) => left.sequence - right.sequence))
-      const found = rows
-        .flatMap(row => {
-          const event = decodeAgentEvent(row.raw)
-          return event === undefined ? [] : [event]
-        })
-        .find(predicate)
-      if (found !== undefined) return found
-      if (remaining <= 0) {
-        return yield* Effect.fail(new Error("timed out waiting for agent output event"))
-      }
-      yield* Effect.sleep("20 millis")
-      return yield* loop(remaining - 1)
-    })
-  return loop(100)
-}
-
-const waitForAgentEventInContext = (
+const waitForAgentEventInContextStream = (
   input: {
     readonly namespace: string
     readonly hostId: HostId
@@ -179,9 +174,41 @@ const waitForAgentEventInContext = (
 ) =>
   Effect.gen(function* () {
     const outputTable = yield* RuntimeOutputTable
-    return yield* waitForAgentEvent(outputTable, input.contextId, predicate)
+    const found = yield* outputTable.events.rows().pipe(
+      Stream.filter(row => row.contextId === input.contextId),
+      Stream.filterMap(row => decodeRuntimeAgentOutputEnvelope(row.raw)),
+      Stream.filter(predicate),
+      Stream.runHead,
+    )
+    if (Option.isNone(found)) {
+      return yield* Effect.fail(new Error("agent output stream ended before expected event"))
+    }
+    return found.value
   }).pipe(
     Effect.provide(outputTableLayer(input)),
+    Effect.scoped,
+  )
+
+const waitForWorkflowDeferred = (input: {
+  readonly namespace: string
+  readonly contextId: string
+  readonly deferredName: string
+}) =>
+  Effect.gen(function* () {
+    const table = yield* WorkflowEngineTable
+    const executionId = runtimeContextWorkflowExecutionId(input.contextId)
+    const found = yield* table.deferreds.rows().pipe(
+      Stream.filter(row =>
+        row.executionId === executionId &&
+        row.deferredName === input.deferredName),
+      Stream.runHead,
+    )
+    if (Option.isNone(found)) {
+      return yield* Effect.fail(new Error("workflow deferred stream ended before expected row"))
+    }
+    return found.value
+  }).pipe(
+    Effect.provide(workflowTableLayer(input)),
     Effect.scoped,
   )
 
@@ -373,7 +400,7 @@ console.log(JSON.stringify({ type: "text", text: "before-terminal", messageId: "
     expect(runs).toEqual(expect.arrayContaining(["started", "exited"]))
   }, 15_000)
 
-  it("firegrid-factory-aligned-agent-tools.RUNTIME_CODEC.1 journals ACP PermissionRequest and resumes it through RuntimeIngress PermissionResponse", async () => {
+  it("firegrid-runtime-agent-event-pipeline.INGREDIENTS.4 firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-2 firegrid-runtime-agent-event-pipeline.VALIDATION.3-2 journals ACP PermissionRequest, blocks, and resumes through the runtime-input deferred", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-codec-acp-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
@@ -438,12 +465,18 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
       Effect.gen(function* () {
         yield* appendPrompt(contextId, "requires permission")
         const fiber = yield* startRuntime({ contextId }).pipe(Effect.fork)
-        const permission = yield* waitForAgentEventInContext(
+        const permission = yield* waitForAgentEventInContextStream(
           { namespace, hostId, contextId },
           event => event._tag === "PermissionRequest",
         )
         if (permission._tag !== "PermissionRequest") {
           return yield* Effect.fail(new Error("expected PermissionRequest"))
+        }
+        const blockedEvents = yield* queryAgentEvents({ namespace, hostId, contextId })
+        if (blockedEvents.some(event =>
+          event._tag === "TextChunk" && event.part.delta === "selected",
+        )) {
+          return yield* Effect.fail(new Error("permission continuation resumed before response ingress"))
         }
         yield* appendRuntimeIngress({
           contextId,
@@ -456,6 +489,17 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
           },
           idempotencyKey: `runtime-codec-test:${contextId}:permission-response`,
         })
+        const deferred = yield* waitForWorkflowDeferred({
+          namespace,
+          contextId,
+          deferredName: runtimeInputDeferredName(contextId, 1),
+        })
+        if (
+          deferred.executionId !== runtimeContextWorkflowExecutionId(contextId) ||
+          deferred.workflowName !== "firegrid.runtime-context"
+        ) {
+          return yield* Effect.fail(new Error("permission response completed the wrong workflow deferred"))
+        }
         return yield* Fiber.join(fiber)
       }).pipe(
         Effect.provide(hostLayer({ namespace, hostId })),
@@ -479,7 +523,7 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
     expect(selectedChunk).toBeDefined()
     expect(events.filter(event => event._tag === "Error")).toEqual([])
     expect(events.some(event => event._tag === "Terminated")).toBe(true)
-  })
+  }, 15_000)
 
   it("firegrid-runtime-agent-event-pipeline.STAGES.6 firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7 journals ACP tool_call observations without routing them to agent-tool lowering", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
@@ -551,5 +595,5 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
       event.part.name === "sleep",
     )
     expect(observedToolUse).toBeDefined()
-  })
+  }, 15_000)
 })
