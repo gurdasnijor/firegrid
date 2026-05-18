@@ -153,6 +153,26 @@ export const PerContextRuntimeAgentOutputAfterEventsLive = Layer.effect(
             host: { streamPrefix: hostSession.streamPrefix },
           })),
         ),
+      // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
+      //
+      // Whole-context observation backing the non-After `AgentOutput`
+      // wait source: the per-context output stream is already scoped to
+      // one context, so this streams every decoded observation on it
+      // (all attempts, includeInitialState replay included). The wait
+      // router's `evaluateFieldEquals` applies the trigger predicates —
+      // the redundant contextId predicate is harmless.
+      forContext: contextId =>
+        Stream.unwrap(
+          Effect.map(RuntimeOutputTable, table =>
+            table.events.rows().pipe(
+              Stream.filterMap(runtimeAgentOutputObservationFromRow),
+            )),
+        ).pipe(
+          Stream.provideLayer(perContextRuntimeOutputTableLayer(hostConfig, {
+            contextId,
+            host: { streamPrefix: hostSession.streamPrefix },
+          })),
+        ),
     })
   }),
 )

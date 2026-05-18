@@ -22,6 +22,19 @@ interface RuntimeAgentOutputAfterEventsService {
   readonly after: (
     source: AgentOutputAfterSource,
   ) => Stream.Stream<RuntimeAgentOutputObservation, unknown>
+  // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
+  //
+  // Attempt-agnostic per-context observation. The non-After `AgentOutput`
+  // wait source carries no contextId on the variant (it lives in the
+  // wait trigger); post-#315 there is no host-wide output stream to
+  // observe, so the router resolves the per-context output stream by the
+  // contextId predicate and observes ALL of that context's output rows
+  // (every activity attempt, from the beginning). `evaluateFieldEquals`
+  // on the wait trigger still decides which rows match.
+  // See docs/research/host-vs-context-boundary-audit.md §A4.
+  readonly forContext: (
+    contextId: string,
+  ) => Stream.Stream<RuntimeAgentOutputObservation, unknown>
 }
 
 const runtimeOutputEvents = (

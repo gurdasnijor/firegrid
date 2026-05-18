@@ -1,8 +1,10 @@
 import { Workflow } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
+  CurrentHostSession,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  runtimeContextOutputStreamUrl,
   runtimeContextWorkflowStreamUrl,
   type HostId,
 } from "@firegrid/protocol/launch"
@@ -102,7 +104,17 @@ const RuntimeExitedRowSchema = Schema.Struct({
 
 
 describe("runtime-host wait_for source registrations", () => {
-  it("firegrid-factory-aligned-agent-tools.WAIT_FOR.4, WAIT_FOR.5 observes RuntimeOutput PermissionRequest by contextId and permissionRequestId", async () => {
+  // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
+  //
+  // A4 regression. The PermissionRequest row is written through the
+  // production per-context output stream (the stream
+  // `PerContextRuntimeOutputWriter` writes:
+  // `{prefix}.runtimeOutput.context.{contextId}`), NOT the ambient
+  // host-prefixed `RuntimeOutputTable`. Before the per-context
+  // `AgentOutput` routing fix this wait observed the unwritten
+  // host-prefixed stream and hung until timeout. See
+  // docs/research/host-vs-context-boundary-audit.md §A4.
+  it("firegrid-factory-aligned-agent-tools.WAIT_FOR.4, WAIT_FOR.5 observes per-context RuntimeOutput PermissionRequest by contextId and permissionRequestId", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `runtime-observation-permission-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
@@ -144,35 +156,53 @@ describe("runtime-host wait_for source registrations", () => {
     const result = await runWith(
       layer,
       Effect.gen(function* () {
-        const output = yield* RuntimeOutputTable
+        const session = yield* CurrentHostSession
         const fiber = yield* Effect.fork(Wf.execute({
           id: "permission-wait",
           contextId,
           permissionRequestId: "permission-1",
         }))
         yield* Effect.sleep("50 millis")
-        yield* output.events.upsert({
-          eventId: {
+        // Production write path: the per-context output stream the real
+        // PerContextRuntimeOutputWriter targets, not the ambient
+        // host-prefixed RuntimeOutputTable.
+        yield* Effect.gen(function* () {
+          const output = yield* RuntimeOutputTable
+          yield* output.events.upsert({
+            eventId: {
+              contextId,
+              activityAttempt: 1,
+              target: "events",
+              sequence: 0,
+            },
             contextId,
             activityAttempt: 1,
-            target: "events",
             sequence: 0,
-          },
-          contextId,
-          activityAttempt: 1,
-          sequence: 0,
-          source: "stdout",
-          format: "jsonl",
-          receivedAt: new Date().toISOString(),
-          raw: agentOutputRaw({
-            _tag: "PermissionRequest",
-            permissionRequestId: "permission-1",
-            toolUseId: "tool-permission",
-            options: [
-              { optionId: "allow", kind: "allow_once", name: "Allow once" },
-            ],
-          }),
-        })
+            source: "stdout",
+            format: "jsonl",
+            receivedAt: new Date().toISOString(),
+            raw: agentOutputRaw({
+              _tag: "PermissionRequest",
+              permissionRequestId: "permission-1",
+              toolUseId: "tool-permission",
+              options: [
+                { optionId: "allow", kind: "allow_once", name: "Allow once" },
+              ],
+            }),
+          })
+        }).pipe(
+          Effect.provide(RuntimeOutputTable.layer({
+            streamOptions: {
+              url: runtimeContextOutputStreamUrl({
+                baseUrl: baseUrl!,
+                prefix: session.streamPrefix,
+                contextId,
+              }),
+              contentType: "application/json",
+            },
+          })),
+          Effect.scoped,
+        )
         return yield* Fiber.join(fiber)
       }),
     )
