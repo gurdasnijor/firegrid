@@ -169,6 +169,135 @@ purist choice; this is a recommendation, not a decision.
 - Resolving TFIND-045 (distinct mechanism; `docs/sdds/
   SDD_RECONCILER_ENV_ENUMERATION.md`).
 
+## §0.1 — The load-bearing question (read this first) — TFIND-050 amendment (layer-ROut erasure)
+
+> **Amendment (TFIND-050, framing — architect-gated; Gurdas decides).**
+> §0 (TFIND-044 Option B, signed off) fixed the **`tables`** side of
+> the provider seam (→ the named coarse `AnyDurableTableTag`). It left
+> the **`layer` prop's ROut erasure** under-specified: the
+> implementation chose `Layer.Layer<unknown, E, never>`. That scalar was
+> never separately decided, and it is wrong — but so is the obvious
+> alternative. Escalated from a within-coordinator-authority "2-line
+> correctness fix" to architectural framing because the alternative does
+> not fix the defect, it **relocates** it (§Evidence). No production
+> code is in scope until this §0.1 is decided.
+
+**How must the `DurableTableProvider` seam type the `layer` prop's ROut
+so that BOTH consumer paths typecheck without relocating breakage — the
+flamecast JSX-inference path AND the explicit-props / by-name path —
+given that Effect's `Layer` ROut behaves *contravariantly* for
+value-assignment at this prop?**
+
+The provider runtime is ROut-agnostic (it builds the layer and resolves
+each tag by string key via `Context.unsafeGet` into
+`ReadonlyMap<string, unknown>` — §0's "runtime is already heterogeneous"
+argument). So this is purely a *boundary-acceptance type* decision, not
+a runtime one. It cannot be answered by a code patch: every scalar
+choice has been shown to break one path or the other, so the resolution
+is a design decision over the public provider type.
+
+### The contravariance fact (why no scalar works)
+
+Empirically (curried `#326` shape): `Layer<X, E, never>` is assignable
+to `Layer<Y, E, never>` **iff `Y <: X`** — the ROut position behaves
+contravariantly for value-assignment at this prop. Consequence: a fixed
+scalar `P` in `layer: Layer<P, E, never>` accepts *all* `Layer<X, …>`
+only if `P <: X` for every `X` → `P = never`. `unknown` requires
+`unknown <: X`, which fails for every concrete table identity, so the
+explicit-props / by-name path rejects every real layer.
+
+### §Evidence — falsification (deterministic, cache-cleared, single-variable isolation)
+
+The only variable changed was `react.ts` `layer` ROut; `.tsbuildinfo`
+cleared; recursive typecheck across all workspaces.
+
+- **(a) `unknown`** (current `#348`/main): explicit-props / by-name path
+  **RED**. Under `#326`'s curried world, the `react-types.test.ts`
+  explicit-pin variant →
+  `TS2769`: `Layer<ReactWorkflowTable, DurableTableError, never>` is not
+  assignable to `Layer<unknown, DurableTableError, never>` ("`unknown`
+  is not assignable to `ReactWorkflowTable`"). flamecast's JSX path
+  passes *only* via bidirectional generic inference; the by-name public
+  surface is broken.
+- **(b) `never`**: explicit-props path **GREEN**, but **relocates**
+  breakage to a *second* by-name consumer, `apps/factory` (it imports
+  `DurableTableHeaders` from `effect-durable-operators` root; the
+  exported provider-type change ripples through the package type-graph):
+  `apps/factory/src/bin/live-smoke.ts:160` `TS2769`;
+  `apps/factory/test/factory.test.ts:104` `TS2379`
+  (`Effect<…, unknown>` not assignable to `Effect<…, never>`,
+  `exactOptionalPropertyTypes`); plus one now-unused
+  `eslint-disable`. A pristine-`unknown` isolation run showed
+  `apps/factory` green, proving `react.ts` `unknown↔never` is the sole
+  determinant. Additionally, off pre-curry `origin/main`, `never`
+  cannot be lint-green: `@typescript-eslint/no-unsafe-assignment`
+  tolerates `any→unknown` but not `any→never`, and pre-curry
+  `ReactWorkflowTable.layer()` is `Layer<any, …>` (the TFIND-005 leak,
+  cured only by `#326`).
+
+`never` is therefore **not a fix — it is a breakage relocation**. No
+single scalar reconciles both paths; the shape itself must change.
+
+### Option space (tradeoffs; coordinator recommendation — Gurdas decides)
+
+- **(a) `unknown`** — REJECTED by Evidence (breaks the by-name /
+  explicit-props public surface).
+- **(b) `never`** — REJECTED by Evidence (relocates breakage to
+  `apps/factory`; not lint-green off pre-curry main). Not a fix.
+- **(c1) Decouple ROut — thread the layer's ROut as an inference-only
+  generic, separate from `tables`.** TFIND-044's root defect was
+  `layer` and `tables` *sharing one `ROut`*. §0 Option B fixed `tables`
+  (→ `AnyDurableTableTag`) but *also* collapsed `layer`'s ROut to a
+  scalar, which was unnecessary. If `layer: Layer.Layer<ROut, E,
+  never>` with `ROut` a free generic **inferred per call site**, and
+  `tables: ReadonlyArray<AnyDurableTableTag>` stays decoupled, there is
+  no contravariance trap (TS infers `ROut` = the layer's actual
+  provided set at each call; it is never assigned to a fixed supertype)
+  and no fixed scalar to ripple through the package type-graph.
+  flamecast infers `ROut` from `FiregridBrowserTablesLive`;
+  explicit-props consumers infer or specify. *Tradeoff:* re-introduces
+  a generic parameter to public `DurableTableProviderProps` (the param
+  `#348` removed) — but the original bug was the *shared* ROut, not
+  ROut's existence; decoupling is the precise root-cause fix. *Cannot*
+  reopen the flamecast `TS2322`, because `tables` is no longer
+  `Context.Tag<ROut, any>[]`. Requires impl-time validation (both
+  paths + `apps/factory` + lint).
+- **(c2) Named/branded coarse `Layer` aggregate** — symmetry with
+  `AnyDurableTableTag`: a single documented `AnyDurableTableLayer<E> =
+  Layer.Layer<any, E, never>`, carrying the *same* signed-off
+  justification (one explicit, named, localized coarsening at a seam
+  that is already runtime-erased — categorically distinct from the
+  TFIND-005 diffuse/implicit/unnamed leak). `any` ROut is permissive
+  in both directions, so it should not relocate breakage the way
+  `never` did — but that must be impl-time validated, especially the
+  `apps/factory` package-graph path.
+- **(c3) Per-path / overloaded prop typing** — REJECTED as impractical:
+  a React component cannot ergonomically vary its props type by call
+  path; high complexity, no payoff over (c1)/(c2).
+
+**Recommendation: lean (c1).** It is the *precise* correction of
+TFIND-044's actual root cause (shared ROut), variance-natural (no
+contravariance trap, no scalar, no package-graph scalar ripple), keeps
+`tables` exactly on the signed-off `AnyDurableTableTag`, and reintroduces
+no `any`. Fallback **(c2)** if Gurdas prefers a non-generic public
+`DurableTableProviderProps` and accepts a localized named `any` by
+symmetry with the tables-side decision. (a)/(b) are rejected by
+Evidence. Every (c) option requires post-signoff impl-time validation on
+the exact gate that produced this Evidence (recursive typecheck across
+both consumer paths + `apps/factory` + full lint).
+
+### Non-goals (TFIND-050)
+
+- No production code before §0.1 signoff; no paper, no forcing cast, no
+  scalar chosen to silence one path at another's expense.
+- No change to provider **runtime** (per-key/`unknown` acquisition is
+  correct).
+- Does not reopen §0's tables-side decision — `AnyDurableTableTag`
+  stands.
+- Not `#326` scope — the `react-types.test.ts` arity reconciliation
+  ((b) in the #326 rebase) is separate, correct, and stays in `#326`;
+  `#326`'s flip remains gated on this §0.1.
+
 ## Contract
 
 `effect-durable-operators` exposes a read-only TanStack collection view on each
