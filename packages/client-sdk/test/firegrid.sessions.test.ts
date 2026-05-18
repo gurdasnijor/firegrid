@@ -1,14 +1,18 @@
 import {
-  CurrentHostSession,
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
-  RuntimeStartCapability,
+  makeLocalRuntimeContextForHostSession,
   makeHostSessionRow,
+  normalizeRuntimeIntent,
+  runtimeContextRequestId,
   runtimeControlPlaneStreamUrl,
   runtimeContextOutputStreamUrl,
   type HostId,
   type HostSessionId,
   type HostSessionRow,
+  type RuntimeContext,
+  type RuntimeContextRequestRow,
+  type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
 import {
   encodeRuntimeAgentOutputEnvelope,
@@ -18,7 +22,7 @@ import {
   inputIdForRuntimeIngressRequest,
   type RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { TestStreamServer } from "../../effect-durable-operators/test/harness.ts"
 import {
@@ -26,6 +30,8 @@ import {
   FiregridConfig,
   FiregridLive,
   local,
+  type FiregridSessionHandle,
+  type RuntimeStartRequestAck,
 } from "../src/firegrid.ts"
 
 let server: TestStreamServer | undefined
@@ -94,17 +100,41 @@ const runWithClient = <A, E>(
   effect: Effect.Effect<
     A,
     E,
-    Firegrid | RuntimeControlPlaneTable | CurrentHostSession
+    Firegrid | RuntimeControlPlaneTable
   >,
 ): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(
       effect.pipe(
         Effect.provide(fixture.clientLayer),
-        Effect.provideService(CurrentHostSession, fixture.hostSession),
       ),
     ),
   )
+
+const materializeContextRequest = (
+  hostSession: HostSessionRow,
+  contextId: string,
+): Effect.Effect<RuntimeContext, unknown, RuntimeControlPlaneTable> =>
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  Effect.gen(function*() {
+    const table = yield* RuntimeControlPlaneTable
+    const request = yield* table.contextRequests.get(runtimeContextRequestId(contextId))
+    if (Option.isNone(request)) {
+      return yield* Effect.fail(new Error(`missing context request for ${contextId}`))
+    }
+    const createdAtMs = Date.parse(request.value.createdAt)
+    const runtimeContext = yield* makeLocalRuntimeContextForHostSession(
+      hostSession,
+      normalizeRuntimeIntent(request.value.runtime),
+      {
+        contextId,
+        createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
+        ...(request.value.createdBy === undefined ? {} : { createdBy: request.value.createdBy }),
+      },
+    )
+    yield* table.contexts.insertOrGet(runtimeContext)
+    return runtimeContext
+  })
 
 const appendAgentOutput = (
   hostSession: HostSessionRow,
@@ -171,30 +201,43 @@ const readRuntimeInputIntent = (
 describe("Firegrid session facade", () => {
   it("firegrid-session-fact-client-surfaces.SESSION_IDENTITY.3 firegrid-session-fact-client-surfaces.CLIENT_SESSION.4 createOrLoad is idempotent and exposes sessionId with contextId alias", async () => {
     const fixture = makeFixture()
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const effect: Effect.Effect<
+      {
+        readonly first: FiregridSessionHandle
+        readonly second: FiregridSessionHandle
+        readonly requests: ReadonlyArray<RuntimeContextRequestRow>
+      },
+      unknown,
+      Firegrid | RuntimeControlPlaneTable
+    > = Effect.gen(function* () {
+      const firegrid = yield* Firegrid
+      const first = yield* firegrid.sessions.createOrLoad({
+        externalKey: { source: "linear", id: "LIN-123" },
+        runtime: runtimeConfig(),
+        createdBy: "client-session-test",
+      })
+      const second = yield* firegrid.sessions.createOrLoad({
+        externalKey: { source: "linear", id: "LIN-123" },
+        runtime: runtimeConfig(),
+        createdBy: "client-session-test",
+      })
+      const table = yield* RuntimeControlPlaneTable
+      const requests = yield* table.contextRequests.query((coll) => coll.toArray)
+      return { first, second, requests }
+    })
 
     const result = await runWithClient(
       fixture,
-      Effect.gen(function* () {
-        const firegrid = yield* Firegrid
-        const first = yield* firegrid.sessions.createOrLoad({
-          externalKey: { source: "linear", id: "LIN-123" },
-          runtime: runtimeConfig(),
-          createdBy: "client-session-test",
-        })
-        const second = yield* firegrid.sessions.createOrLoad({
-          externalKey: { source: "linear", id: "LIN-123" },
-          runtime: runtimeConfig(),
-          createdBy: "client-session-test",
-        })
-        const snapshot = yield* first.snapshot()
-        return { first, second, snapshot }
-      }),
+      effect,
     )
 
     expect(result.second.contextId).toBe(result.first.contextId)
     expect(result.first.sessionId).toBe(result.first.contextId)
     expect(result.second.sessionId).toBe(result.first.sessionId)
-    expect(result.snapshot.context).toMatchObject({
+    expect(result.requests).toHaveLength(1)
+    expect(result.requests[0]).toMatchObject({
+      requestId: runtimeContextRequestId(result.first.contextId),
       contextId: result.first.contextId,
       createdBy: "client-session-test",
       runtime: {
@@ -217,6 +260,7 @@ describe("Firegrid session facade", () => {
           externalKey: { source: "linear", id: "LIN-attach" },
           runtime: runtimeConfig(),
         })
+        yield* materializeContextRequest(fixture.hostSession, created.contextId)
         const attached = yield* firegrid.sessions.attach({
           sessionId: created.sessionId,
         })
@@ -273,12 +317,13 @@ describe("Firegrid session facade", () => {
         externalKey: { source: "linear", id: "LIN-456" },
         runtime: runtimeConfig(),
       }), session =>
-        Effect.flatMap(session.prompt({
-          payload: { text: "turn one" },
-          idempotencyKey: "turn-1",
-          metadata: { source: "test" },
-        }), intent =>
-          Effect.succeed({ contextId: session.contextId, intent }))))
+        Effect.flatMap(materializeContextRequest(fixture.hostSession, session.contextId), () =>
+          Effect.flatMap(session.prompt({
+            payload: { text: "turn one" },
+            idempotencyKey: "turn-1",
+            metadata: { source: "test" },
+          }), intent =>
+            Effect.succeed({ contextId: session.contextId, intent })))))
 
     const result = await runWithClient(
       fixture,
@@ -315,6 +360,7 @@ describe("Firegrid session facade", () => {
           externalKey: { source: "linear", id: "LIN-output" },
           runtime: runtimeConfig(),
         })
+        yield* materializeContextRequest(fixture.hostSession, session.contextId)
         const fiber = yield* session.wait.forAgentOutput({
           timeoutMs: 2_000,
         }).pipe(Effect.fork)
@@ -373,6 +419,7 @@ describe("Firegrid session facade", () => {
           externalKey: { source: "linear", id: "LIN-789" },
           runtime: runtimeConfig(),
         })
+        yield* materializeContextRequest(fixture.hostSession, session.contextId)
         const fiber = yield* session.wait.forPermissionRequest({
           timeoutMs: 2_000,
         }).pipe(Effect.fork)
@@ -429,11 +476,12 @@ describe("Firegrid session facade", () => {
         externalKey: { source: "linear", id: "LIN-999" },
         runtime: runtimeConfig(),
       }), session =>
-        Effect.flatMap(session.permissions.respond({
-          permissionRequestId: "permission-1",
-          decision: { _tag: "Allow", optionId: "allow" },
-        }), response =>
-          Effect.succeed({ contextId: session.contextId, response }))))
+        Effect.flatMap(materializeContextRequest(fixture.hostSession, session.contextId), () =>
+          Effect.flatMap(session.permissions.respond({
+            permissionRequestId: "permission-1",
+            decision: { _tag: "Allow", optionId: "allow" },
+          }), response =>
+            Effect.succeed({ contextId: session.contextId, response })))))
 
     const result = await runWithClient(
       fixture,
@@ -460,36 +508,40 @@ describe("Firegrid session facade", () => {
     })
   })
 
-  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.2 delegates attached start through the server-provided protocol capability", async () => {
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.2 records an attached start request acknowledgement", async () => {
     const fixture = makeFixture()
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const effect: Effect.Effect<
+      {
+        readonly ack: RuntimeStartRequestAck
+        readonly request: Option.Option<RuntimeStartRequestRow>
+      },
+      unknown,
+      Firegrid | RuntimeControlPlaneTable
+    > = Effect.gen(function* () {
+      const firegrid = yield* Firegrid
+      const session = yield* firegrid.sessions.createOrLoad({
+        externalKey: { source: "linear", id: "LIN-start" },
+        runtime: runtimeConfig(),
+      })
+      const attached = yield* firegrid.sessions.attach({
+        sessionId: session.sessionId,
+      })
+      const ack = yield* attached.start()
+      const table = yield* RuntimeControlPlaneTable
+      const request = yield* table.startRequests.get(ack.requestId)
+      return { ack, request }
+    })
 
     const result = await runWithClient(
       fixture,
-      Effect.gen(function* () {
-        const firegrid = yield* Firegrid
-        const session = yield* firegrid.sessions.createOrLoad({
-          externalKey: { source: "linear", id: "LIN-start" },
-          runtime: runtimeConfig(),
-        })
-        const attached = yield* firegrid.sessions.attach({
-          sessionId: session.sessionId,
-        })
-        return yield* attached.start().pipe(
-          Effect.provideService(RuntimeStartCapability, {
-            start: options =>
-              Effect.succeed({
-                contextId: options.contextId,
-                activityAttempt: 1,
-                exitCode: 0,
-              }),
-          }),
-        )
-      }),
+      effect,
     )
 
-    expect(result).toMatchObject({
-      activityAttempt: 1,
-      exitCode: 0,
+    expect(result.ack).toMatchObject({
+      contextId: Option.getOrThrow(result.request).contextId,
+      inserted: true,
     })
+    expect(Option.getOrThrow(result.request).requestId).toBe(result.ack.requestId)
   })
 })

@@ -64,10 +64,11 @@ import {
   FiregridMcpServerLayer,
   firegridRunCreatedBy,
   localProcessSpawnEnvFromHostEnv,
+  reconcileRuntimeControlRequestsOnce,
   RuntimeEnvResolverPolicy,
   runConfigToIngressRequest,
-  RuntimeStartCapabilityLive,
   runtimeContextMcpPath,
+  startRuntime,
 } from "@firegrid/host-sdk"
 import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client-sdk/firegrid"
 import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
@@ -77,10 +78,6 @@ class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{
   readonly message: string
 }> {}
 
-// session.start() surfaces its failure as `unknown` (client-sdk start
-// capability boundary). Contain it in a typed CLI error so the top-level
-// command channel stays a known tagged union (and exits 1, distinct from
-// the usage-error exit 2).
 class FiregridRunError extends Data.TaggedError("FiregridRunError")<{
   readonly message: string
 }> {}
@@ -251,6 +248,7 @@ const executeRun = (config: LaunchConfig, externalKey: CliExternalKey) =>
       `firegrid:run: launched context ${session.contextId} (${config.agentArgv.join(" ")})`,
     )
 
+    yield* reconcileRuntimeControlRequestsOnce()
     const initialPrompt = runConfigToIngressRequest(config, session.contextId)
     if (initialPrompt !== undefined) {
       yield* appendRuntimeIngress(initialPrompt)
@@ -259,7 +257,7 @@ const executeRun = (config: LaunchConfig, externalKey: CliExternalKey) =>
       )
     }
 
-    const result = yield* session.start().pipe(
+    const result = yield* startRuntime({ contextId: session.contextId }).pipe(
       Effect.mapError((cause) =>
         new FiregridRunError({
           message: `firegrid run failed to start session ${session.contextId}: ${
@@ -390,6 +388,7 @@ const seedContextAndPrintReady = (
       runtime: launchConfigToPublicRuntimeIntent(runConfig),
       createdBy: startCreatedBy,
     })
+    yield* reconcileRuntimeControlRequestsOnce()
     const initialPrompt = runConfigToIngressRequest(runConfig, session.contextId)
     if (initialPrompt !== undefined) {
       yield* appendRuntimeIngress(initialPrompt)
@@ -409,9 +408,9 @@ const hostMcpLayer = (
   {
     const headers = durableTableHeadersFromEnv()
     // The CLI composes the host in-process, then layers the client-sdk
-    // `Firegrid` service over it. `session.start()` requires
-    // `RuntimeStartCapability` (host-sdk `RuntimeStartCapabilityLive`);
-    // `FiregridLive` shares the host's control-plane/host-session context.
+    // `Firegrid` service over it. `FiregridLive` shares the host's
+    // namespace-scoped control plane; synchronous execution uses
+    // host-sdk `startRuntime`.
     // FiregridLive consumes FiregridConfig (Durable Streams endpoint +
     // namespace) and the host's RuntimeControlPlaneTable. The CLI process
     // owns the durable endpoint, so it supplies the client config from the
@@ -427,7 +426,6 @@ const hostMcpLayer = (
       path: ensurePathInput(config.mcpPath),
     }).pipe(
       Layer.provideMerge(FiregridLive.pipe(Layer.provide(clientConfigLayer))),
-      Layer.provideMerge(RuntimeStartCapabilityLive),
       Layer.provideMerge(FiregridLocalHostLive(
         {
           durableStreamsBaseUrl: durableStreams.baseUrl,
@@ -698,8 +696,8 @@ function teardown<E, A>(
 }
 
 // Localized final-boundary cast (firegrid-host-sdk.PACKAGE_GRAPH.5 review
-// note): the in-process host layer really does provide Firegrid /
-// RuntimeStartCapability / CurrentHostSession at runtime, but the
+// note): the in-process host layer really does provide Firegrid plus
+// host-owned runtime services at runtime, but the
 // pre-existing `as Layer.Layer<HttpServer.HttpServer, ...>` host-composition
 // casts erase those services from the static success type, so the requirement
 // is discharged at runtime but not visible to the type. Keep the cast here at

@@ -8,6 +8,7 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   appendRuntimeIngress,
   FiregridLocalHostLive,
+  reconcileRuntimeControlRequestsOnce,
   startRuntime,
 } from "@firegrid/host-sdk"
 import { Effect, Layer } from "effect"
@@ -74,6 +75,7 @@ describe("firegrid tracer 012 runtime ingress", () => {
             argv: [process.execPath, "--input-type=module", "-e", stdinEchoAgent],
           }),
         })
+        yield* reconcileRuntimeControlRequestsOnce()
 
         const initial = yield* appendRuntimeIngress({
           contextId: handle.contextId,

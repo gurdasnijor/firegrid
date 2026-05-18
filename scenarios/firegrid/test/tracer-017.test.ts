@@ -25,6 +25,7 @@ import {
 import {
   appendRuntimeIngress,
   FiregridLocalHostLive,
+  reconcileRuntimeControlRequestsOnce,
   startRuntime,
 } from "@firegrid/host-sdk"
 import { Duration, Effect, Fiber, Layer } from "effect"
@@ -102,6 +103,7 @@ describe("firegrid tracer 017 effect-durable-operators Firegrid proof", () => {
               argv: [process.execPath, "--input-type=module", "-e", liveStdinEchoAgent],
             }),
           })
+          yield* reconcileRuntimeControlRequestsOnce()
 
           const runtimeFiber = yield* Effect.fork(
             startRuntime({ contextId: handle.contextId }),

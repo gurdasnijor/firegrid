@@ -22,7 +22,8 @@ import {
   appendRuntimeIngress,
   FiregridLocalHostLive,
   localProcessSpawnEnvFromHostEnv,
-  RuntimeStartCapabilityLive,
+  reconcileRuntimeControlRequestsOnce,
+  startRuntime,
   type RuntimeHostTopologyOptions,
   type RuntimeEnvResolverPolicy,
 } from "@firegrid/host-sdk"
@@ -182,7 +183,6 @@ export const DarkFactoryHostLive = (
   )
   return Layer.mergeAll(
     client,
-    RuntimeStartCapabilityLive,
   ).pipe(
     Layer.provideMerge(appTable),
     Layer.provideMerge(host),
@@ -334,6 +334,7 @@ export const acceptFactoryTrigger = (
       factoryRunKey: identity.factoryRunKey,
       planner,
     })
+    yield* reconcileRuntimeControlRequestsOnce()
     const plannerSessionId = session.sessionId
     const fact = acceptedFactFrom({
       trigger,
@@ -388,9 +389,8 @@ export const startFactoryPlanner = (
   run: DarkFactoryRun,
 ) =>
   Effect.gen(function* () {
-    const session = yield* attachPlannerSession(run.plannerContextId)
     yield* upsertRunStatus(run, "planner_started")
-    return yield* session.start()
+    return yield* startRuntime({ contextId: run.plannerContextId })
   })
 
 export const acceptAndStartFactoryTrigger = (

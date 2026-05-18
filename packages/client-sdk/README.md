@@ -4,10 +4,9 @@ Browser- and edge-safe Firegrid client APIs for application code.
 
 `@firegrid/client-sdk` writes durable session intent and reads Firegrid durable
 projections. It does not import `@firegrid/runtime`, start processes by itself,
-own sandbox providers, or deliver live runtime input. When a caller needs to
-actively start a runtime, the start authority is supplied by host/server
-composition through `RuntimeStartCapability`; prompt and permission writes route
-through host/app authority such as `@firegrid/host-sdk` `appendRuntimeIngress`.
+own sandbox providers, or deliver live runtime input. `session.start()` records
+a durable start request and returns an acknowledgement; host processes execute
+that request through `@firegrid/host-sdk`.
 
 ## Public Surface
 
@@ -44,8 +43,7 @@ The production client entrypoints are browser/edge safe:
 - no `@firegrid/runtime` import path;
 - no Node-only module imports in production client source;
 - no process environment reads;
-- no process or sandbox start authority unless the app explicitly provides a
-  host-side `RuntimeStartCapability`.
+- no process or sandbox start authority.
 
 Tests under `packages/client-sdk/test` may use Node fixtures. Those are not
 part of the browser-facing package surface.
@@ -178,9 +176,9 @@ stream using that row's host binding. It returns either `{ matched: true,
 request }` or `{ matched: false, timedOut: true }`.
 
 `session.start()` is intentionally different from snapshot/wait.
-It requires `RuntimeStartCapability`, which is supplied by runtime-host or app
-server composition. Browser code can attach to, snapshot, and wait on sessions,
-but it should not supervise local processes or deliver live runtime input.
+It appends a `RuntimeStartRequestRow` and returns a request acknowledgement, not
+a terminal process result. Host/server code that needs a synchronous terminal
+result should use `@firegrid/host-sdk` `startRuntime({ contextId })`.
 
 ## Lower-Level Operations
 

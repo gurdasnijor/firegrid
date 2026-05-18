@@ -11,6 +11,7 @@ interface DurableStreamsBackedPipelineOptions {
   readonly namespace?: string
   readonly hostId?: string
   readonly localProcessEnv?: RuntimeHostTopologyOptions["localProcessEnv"]
+  readonly controlRequestReconciler?: boolean
 }
 
 export const tinyDurableStreamsBackedPipeline = (
@@ -30,5 +31,8 @@ export const tinyDurableStreamsBackedPipeline = (
     ...(options.localProcessEnv === undefined
       ? {}
       : { localProcessEnv: options.localProcessEnv }),
+    ...(options.controlRequestReconciler === undefined
+      ? {}
+      : { controlRequestReconciler: options.controlRequestReconciler }),
   })
 }
