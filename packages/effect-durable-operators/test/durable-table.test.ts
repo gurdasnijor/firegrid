@@ -63,7 +63,7 @@ type WorkflowExecution = Schema.Schema.Type<typeof WorkflowExecution>
 
 class WorkflowTable extends DurableTable("workflow", {
   executions: WorkflowExecution,
-}) {}
+})<WorkflowTable>() {}
 
 const isUnknownArray = (value: unknown): value is ReadonlyArray<unknown> =>
   Array.isArray(value)
@@ -163,7 +163,7 @@ describe("DurableTable", () => {
           id: DurableTable.primaryKey(Schema.String),
           value: Schema.Number,
         }),
-      }) {}
+      })<DirectPrimaryKeyTable>() {}
       return DirectPrimaryKeyTable
     }).not.toThrow()
   })
@@ -175,7 +175,7 @@ describe("DurableTable", () => {
           id: Schema.String,
           value: Schema.Number,
         }),
-      }) {}
+      })<MissingPrimaryKeyTable>() {}
       return MissingPrimaryKeyTable
     }).toThrow(/exactly one DurableTable\.primaryKey/)
 
@@ -185,7 +185,7 @@ describe("DurableTable", () => {
           id: Schema.String.pipe(DurableTable.primaryKey),
           otherId: Schema.String.pipe(DurableTable.primaryKey),
         }),
-      }) {}
+      })<MultiplePrimaryKeyTable>() {}
       return MultiplePrimaryKeyTable
     }).toThrow(/found 2/)
   })
@@ -196,7 +196,7 @@ describe("DurableTable", () => {
         awaitTxId: Schema.Struct({
           id: Schema.String.pipe(DurableTable.primaryKey),
         }),
-      }) {}
+      })<ReservedCollectionTable>() {}
       return ReservedCollectionTable
     }).toThrow(/collides with a table service property/)
   })
@@ -585,7 +585,7 @@ describe("DurableTable", () => {
         id: NumericEncodedKey.pipe(DurableTable.primaryKey),
         value: Schema.String,
       }),
-    }) {}
+    })<BadInsertOrGetKeyTable>() {}
 
     const url = server.url("table-insert-or-get-bad-pk-encode")
 
@@ -701,7 +701,7 @@ describe("DurableTable", () => {
         requestKey: RequestKey.pipe(DurableTable.primaryKey),
         owner: Schema.String,
       }),
-    }) {}
+    })<ActivityRequestTable>() {}
 
     await runtime(
       Effect.gen(function* () {
@@ -954,7 +954,7 @@ describe("DurableTable", () => {
         key: CompositeKey.pipe(DurableTable.primaryKey),
         claimedAt: Schema.String,
       }),
-    }) {}
+    })<CheckpointTable>() {}
 
     await runtime(
       Effect.gen(function* () {
@@ -1145,7 +1145,7 @@ describe("DurableTable", () => {
         waitKey: WaitKey.pipe(DurableTable.primaryKey),
         deferredName: Schema.String,
       }),
-    }) {}
+    })<WaitsTable>() {}
 
     await runtime(
       Effect.gen(function* () {
@@ -1279,7 +1279,7 @@ describe("DurableTable", () => {
         id: NumericEncodedKey.pipe(DurableTable.primaryKey),
         value: Schema.String,
       }),
-    }) {}
+    })<BadKeyTable>() {}
 
     const url = server.url("table-bad-pk-encode")
 

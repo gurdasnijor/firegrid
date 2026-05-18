@@ -59,7 +59,7 @@ type TestRow = Schema.Schema.Type<typeof TestRowSchema>
 
 class TestSourceTable extends DurableTable("test.source", {
   rows: TestRowSchema,
-}) {}
+})<TestSourceTable>() {}
 
 const SUCCESS_TAG = "Succeeded" as const
 const FAIL_TAG = "Failed" as const
@@ -73,7 +73,7 @@ type _TaggedResultRow = Schema.Schema.Type<typeof TaggedResultRowSchema>
 
 class TaggedResultTable extends DurableTable("test.tagged", {
   rows: TaggedResultRowSchema,
-}) {}
+})<TaggedResultTable>() {}
 
 // ---------------------------------------------------------------------------
 // Server lifecycle

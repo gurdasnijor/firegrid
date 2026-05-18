@@ -76,7 +76,7 @@ const workflowEngineSchemas = {
 export class WorkflowEngineTable extends DurableTable(
   "firegrid.workflow",
   workflowEngineSchemas,
-) {}
+)<WorkflowEngineTable>() {}
 
 export type WorkflowEngineTableService = DurableTableService<typeof workflowEngineSchemas>
 

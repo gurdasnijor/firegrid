@@ -197,12 +197,12 @@ const runtimeOutputSchemas = {
 export class RuntimeControlPlaneTable extends DurableTable(
   "firegrid.runtime",
   runtimeControlPlaneSchemas,
-) {}
+)<RuntimeControlPlaneTable>() {}
 
 export class RuntimeOutputTable extends DurableTable(
   "firegrid.runtimeOutput",
   runtimeOutputSchemas,
-) {}
+)<RuntimeOutputTable>() {}
 
 export type RuntimeControlPlaneTableService = DurableTableService<typeof runtimeControlPlaneSchemas>
 export type RuntimeOutputTableService = DurableTableService<typeof runtimeOutputSchemas>

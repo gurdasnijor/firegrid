@@ -97,7 +97,7 @@ const durableToolsSchemas = {
 export class DurableToolsTable extends DurableTable(
   "firegrid.durableTools",
   durableToolsSchemas,
-) {}
+)<DurableToolsTable>() {}
 
 export type DurableToolsTableService = DurableTableService<
   typeof durableToolsSchemas

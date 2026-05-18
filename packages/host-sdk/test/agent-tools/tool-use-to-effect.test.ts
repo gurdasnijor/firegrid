@@ -169,7 +169,7 @@ type TestSourceRow = Schema.Schema.Type<typeof TestSourceRowSchema>
 
 class TestSourceTable extends DurableTable("agent-tools.test.source", {
   rows: TestSourceRowSchema,
-}) {}
+})<TestSourceTable>() {}
 
 // Typed wait-source harness: RuntimeRun is backed by TestSourceTable;
 // AgentOutput is an empty stream. wait_for lowers to the typed source.

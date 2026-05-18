@@ -49,7 +49,7 @@ const verifiedWebhookFactSchemas = {
 export class VerifiedWebhookFactTable extends DurableTable(
   "firegrid.verifiedWebhook",
   verifiedWebhookFactSchemas,
-) {}
+)<VerifiedWebhookFactTable>() {}
 
 export type VerifiedWebhookFactTableService = DurableTableService<
   typeof verifiedWebhookFactSchemas

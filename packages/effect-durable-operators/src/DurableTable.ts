@@ -185,10 +185,12 @@ export type DurableTableService<Schemas extends TableSchemas<Schemas>> = {
   ) => Effect.Effect<void, DurableTableError>
 }
 
-// `Self` is bound to the resulting tag class so consumers' Effects that
-// `yield* MyTable` get a precise requirements channel instead of `unknown`.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type DurableTableTagClass<Schemas extends TableSchemas<Schemas>, Self = any> =
+// `Self` is the consumer's own tag class, supplied via the curried
+// `DurableTable(ns, schemas)<Self>()` call. It is bound to the resulting
+// tag class so `yield* MyTable` and `MyTable.layer(...)` carry a precise
+// requirements channel (`MyTable`) instead of `any`. No default: omitting
+// `<Self>()` is a compile error, never a silent `any`.
+export type DurableTableTagClass<Schemas extends TableSchemas<Schemas>, Self> =
   Context.TagClass<
     Self,
     string,
@@ -983,38 +985,41 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
     }),
   )
 
-const defineDurableTable = <const Schemas extends TableSchemas<Schemas>>(
-  namespace: string,
-  schemas: Schemas,
-): DurableTableTagClass<Schemas> => {
-  const table = compileTable(namespace, schemas)
-  const tagKey = `effect-durable-operators/DurableTable/${namespace}`
+const defineDurableTable =
+  <const Schemas extends TableSchemas<Schemas>>(
+    namespace: string,
+    schemas: Schemas,
+  ) =>
+  <Self>(): DurableTableTagClass<Schemas, Self> => {
+    const table = compileTable(namespace, schemas)
+    const tagKey = `effect-durable-operators/DurableTable/${namespace}`
 
-  // Self-reference: the class is its own Identifier so `yield* MyTable`
-  // produces R = MyTable rather than R = unknown. The forward reference
-  // to `DurableTableTag` inside the Context.Tag generics is the canonical
-  // Effect pattern and works because class declarations are hoisted.
-  class DurableTableTag extends Context.Tag(tagKey)<
-    DurableTableTag,
-    DurableTableService<Schemas>
-  >() {
-    static readonly namespace = namespace
+    // `Self` is the consumer's own class, supplied at the second call:
+    //   class MyTable extends DurableTable(ns, schemas)<MyTable>() {}
+    // It becomes the tag Identifier, so distinct tables are distinct
+    // types (no cross-table unification) and `yield* MyTable` /
+    // `MyTable.layer(...)` resolve to R = MyTable rather than `any`.
+    class DurableTableTag extends Context.Tag(tagKey)<
+      Self,
+      DurableTableService<Schemas>
+    >() {
+      static readonly namespace = namespace
 
-    static layer(
-      this: Context.Tag<DurableTableTag, DurableTableService<Schemas>>,
-      options: LayerOptions,
-    ) {
-      return Layer.scoped(
-        this,
-        makeService(table, options).pipe(
-          Effect.map((service) => this.of(service)),
-        ),
-      )
+      static layer(
+        this: Context.Tag<Self, DurableTableService<Schemas>>,
+        options: LayerOptions,
+      ) {
+        return Layer.scoped(
+          this,
+          makeService(table, options).pipe(
+            Effect.map((service) => this.of(service)),
+          ),
+        )
+      }
     }
-  }
 
-  return DurableTableTag as unknown as DurableTableTagClass<Schemas>
-}
+    return DurableTableTag as unknown as DurableTableTagClass<Schemas, Self>
+  }
 
 export const DurableTable = Object.assign(defineDurableTable, {
   primaryKey,

@@ -15,7 +15,7 @@ class ReactWorkflowTable extends DurableTable("react-workflow", {
     executionId: Schema.String.pipe(DurableTable.primaryKey),
     workflowName: Schema.String,
   }),
-}) {}
+})<ReactWorkflowTable>() {}
 
 const ReactWorkflowLive = ReactWorkflowTable.layer({
   streamOptions: {

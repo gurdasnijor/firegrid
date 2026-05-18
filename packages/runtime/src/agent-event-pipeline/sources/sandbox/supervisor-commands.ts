@@ -22,7 +22,7 @@ const sandboxSupervisorCommandSchemas = {
 export class SandboxSupervisorCommandTable extends DurableTable(
   "firegrid.sandboxSupervisor",
   sandboxSupervisorCommandSchemas,
-) {}
+)<SandboxSupervisorCommandTable>() {}
 
 export interface SandboxStdinEmissionCommand {
   readonly commandId: string
