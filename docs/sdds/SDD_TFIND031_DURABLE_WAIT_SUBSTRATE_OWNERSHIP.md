@@ -236,8 +236,60 @@ framing fork. Handoff point is precise: re-thread
 `runtimeContextWorkflowSupportLayer` to discharge `DurableWait*` from
 its own RIn.
 
-## Status of branch
+## RESOLVED — bounded completion (focused pass)
 
-WIP committed (contained fixes + narrowed `HostRuntimeContextExecutionEnv`
-+ this SDD). Intentionally RED at the 3 fork seams — that redness IS the
-documented open fork, not a regression. #326 remains untouched/draft.
+Status: **DONE**. The knot was exactly as diagnosed: the support layer
+required what it provided. Precise sub-mechanism (found by in-project
+type probe under the #326 overlay): the residual `DurableWait*` RIn was
+NOT re-surfaced by `HostRuntimeObservationSubstrateLive` (proven clean:
+ROut ⊇ all 4 `DurableWait*`, RIn ∌ any) — it was re-introduced *inside*
+`runtimeContextWorkflowSupportLayer` by `RuntimeToolUseExecutorLive`'s
+own `Effect.context<…DurableWait*…>()` capture, which was `provideMerge`d
+as a sibling of the substrate (so `provideMerge` discharged only the
+workflow body's RIn; the executor's identical capture flowed out as an
+unsatisfiable support-layer RIn).
+
+Fix (no forcing cast): keep `RuntimeToolUseExecutorLive` `provideMerge`d
+into the workflow chain (the workflow handler resolves
+`RuntimeToolUseExecutor` from its build-time captured context — a plain
+sibling `Layer.merge` silently breaks that wiring) AND additionally
+`Layer.provide` the **same** `HostRuntimeObservationSubstrateLive`
+reference into `RuntimeToolUseExecutorLive` so its own `DurableWait*` RIn
+is discharged. Effect Layer memoization (same reference, one build) ⇒
+workflow body, wait-router, and tool executor resolve ONE materialized
+`DurableToolsTable` / wait store — the SDD shared-store invariant holds.
+`toolCallWorkflowSupportLayer` (toolkit-layer.ts:215) gets the analogous
+Option-Y self-containment (single `HostRuntimeObservationSubstrateLive`
+provideMerge).
+
+Empirical correctness gate (decisive): a first attempt that used a
+sibling `Layer.merge` typechecked (RIn discharged) but BROKE
+`TOOL_EXECUTOR_SEAM.2 schedule_me` — the deterministic
+record→blocked→wake path — because the workflow handler could no longer
+resolve `RuntimeToolUseExecutor`. That regression was caught and rejected
+by the emit-then-wait test, NOT forced green; the corrected re-thread
+passes it. This is why the structural type proof alone was insufficient
+and the deterministic test was mandatory.
+
+Verification (all green):
+- 3 fork seams (commands.ts:163, agent-tool-host-live.ts:90,
+  toolkit-layer.ts:215) discharged; production src **0 errors** under
+  the transient #326 precise-typing overlay; host-sdk tests 0 errors
+  under overlay too.
+- Cat A: dropped now-false `as Layer<never,unknown,never>` masks in
+  `tool-use-to-effect.test.ts`; `runWith` generic over ROut.
+- Cat B: hand-rolled test layers in `runtime-context-workflow-core.test.ts`
+  now provide the honestly-required `RuntimeHostConfig`. No edits forced
+  via `FiregridRuntimeHostWithWorkflowLive` (public contract unchanged).
+- Cat C: not triggered in host-sdk; `react-types.test.ts` belongs to
+  #326's own diff (mechanical callsite), out of #331 scope.
+- Full CI gate on #331 standalone: `lint` + `lint:dead` + `lint:dup` +
+  `lint:deps` + `turbo typecheck` (17/17) + `turbo test` (17/17, incl.
+  tiny-firegrid; host-sdk 96/96 incl. the deterministic wake path).
+- A stray `consistent-type-imports` residue from the env-narrowing WIP
+  (runtime-substrate / agent-tool-host-live) was finished as type-only
+  imports so the lint gate is clean.
+
+Architecture remains unchanged: execution-scoped, single shared store —
+proven structurally AND confirmed empirically. #331 is review-ready;
+#326 (the keystone curry) rebases onto main-with-#331 next.
