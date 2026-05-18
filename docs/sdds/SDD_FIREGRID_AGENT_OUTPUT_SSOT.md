@@ -4,8 +4,8 @@ Status: draft — framing for coordinator review + Gurdas signoff, NO code
 Created: 2026-05-18
 Owner: Firegrid (sidecar `sidecar/agent-output-ssot`)
 
-Resolves: `packages/tiny-firegrid/FINDINGS.md` → TFIND-035 (tracked dependent
-of TFIND-030 #329, merged `a7c76c268`).
+Resolves: Beads DB (`bv --robot-triage`, join key `tfind:035`) → tracked
+dependent of TFIND-030 #329, merged `a7c76c268`.
 
 Completion signal (explicit): removal of the scoped `.jscpd.json` ignore on
 `packages/protocol/src/session-facade/agent-output-event.ts`.
@@ -132,7 +132,7 @@ A-vs-B and observation-collapse depth are coordinator/Gurdas calls.
   (acp/stdio-jsonl), host-sdk per-context, client-sdk projection, factory.
 - Confirm via CI (`gh pr checks`) before reporting green — not local alone.
 
-## 6. Adjacent (coordinator → FINDINGS.md, not this PR)
+## 6. Adjacent (coordinator → Beads DB, not this PR)
 
 - tiny-firegrid has its own runtime mirrors (`src/runtime/agent-event-pipeline/…`);
   their reconciliation is maintainer/toy-driven, out of sidecar scope.
@@ -145,4 +145,4 @@ A-vs-B and observation-collapse depth are coordinator/Gurdas calls.
 This document is the deliverable. No production code until Q1–Q4 are
 answered. On signoff the implementation lands on `sidecar/agent-output-ssot`
 scoped to the chosen option; the `.jscpd.json` ignore deletion is the
-explicit completion signal; FINDINGS.md ledger is coordinator-owned.
+explicit completion signal; Beads DB updates are coordinator-owned.

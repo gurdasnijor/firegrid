@@ -6,10 +6,10 @@ Owner: Firegrid Client SDK (sidecar `sidecar/client-host-boundary`)
 
 Resolves (coupled, one workstream):
 
-- `packages/tiny-firegrid/FINDINGS.md` → TFIND-002 "session creation still
-  requires host identity"
-- `packages/tiny-firegrid/FINDINGS.md` → TFIND-003 "no remote start request
-  surface"
+- Beads DB (`bv --robot-triage`, join key `tfind:002`) → "session creation
+  still requires host identity"
+- Beads DB (`bv --robot-triage`, join key `tfind:003`) → "no remote start
+  request surface"
 
 Feeds (noted, NOT in scope here): TFIND-008 (separate-process e2e). Relates to
 TFIND-001 (`launch()` vs session handle) — same root cause, deliberately not
@@ -205,7 +205,7 @@ client, with the `start()` break gated on Q2.** But (A) ships a
 temporarily-inert public method, which may violate Public-Surface-Stability
 more than (B) does. That trade is a coordinator call, not mine.
 
-## 7. Adjacent findings (for the coordinator → FINDINGS.md, not this PR)
+## 7. Adjacent findings (for the coordinator → Beads DB, not this PR)
 
 - **TFIND-001 shares this exact root cause:** `launch()` also requires
   `CurrentHostSession` via `insertLocalRuntimeContext`. The §3 shape
@@ -225,5 +225,4 @@ This document is the framing deliverable. No production code until the
 coordinator answers Q1 + Q2. On signoff, the implementation PR will state the
 chosen boundary, the typecheck/lint/test plan (changed packages + dependents:
 `@firegrid/protocol`, `@firegrid/client-sdk`, and any consumer touched), and
-the FINDINGS.md ledger delta (applied by the toy maintainer, not this
-sidecar).
+the Beads DB update (coordinator-owned, not this sidecar).

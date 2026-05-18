@@ -40,6 +40,7 @@ facades, `Workflow.make`, `WorkflowEngine`, runtime agent-event-pipeline
 contracts, and host-sdk control-plane contracts. A transition that has to be
 called directly is treated as production-internal machinery, not a model API.
 
-See `FINDINGS.md` for the running tracker of architectural/API gaps surfaced
-while keeping the toy model aligned with production boundaries. Sidecar agents
-should update the stable `TFIND-*` status lines as they address findings.
+Current tiny-firegrid finding/configuration status lives in the Beads DB. Read
+it with `bv --robot-triage` or `br` using the join key `tfind:NNN`.
+`FINDINGS_TRIAGE_RUBRIC.md` remains the triage methodology for classifying
+toy-surfaced architectural/API gaps.

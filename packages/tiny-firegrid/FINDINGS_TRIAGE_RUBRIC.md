@@ -165,7 +165,9 @@ Stop and apply the triage question harder if the finding has any of these:
 ## Recording the triage
 
 For each finding, the coordinator records the category and the triage
-question's answer in FINDINGS.md alongside the status. Format:
+question's answer in the Beads DB. Read current state with
+`bv --robot-triage` using the join key `tfind:NNN`. Historical methodology
+should follow this shape:
 
 | TFIND-NNN | open | <area> | <one-line summary> | triage: cat-N (<one-line reason>) |
 
