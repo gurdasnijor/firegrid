@@ -431,6 +431,9 @@ importers:
       '@effect/ai':
         specifier: ^0.35.0
         version: 0.35.0(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
+      '@effect/platform':
+        specifier: ^0.96.1
+        version: 0.96.1(effect@3.21.2)
       '@effect/workflow':
         specifier: 0.18.1
         version: 0.18.1(@effect/experimental@0.60.0(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2)(lmdb@3.5.4))(@effect/platform@0.96.1(effect@3.21.2))(@effect/rpc@0.75.1(@effect/platform@0.96.1(effect@3.21.2))(effect@3.21.2))(effect@3.21.2)
@@ -447,6 +450,9 @@ importers:
         specifier: workspace:*
         version: link:../effect-durable-operators
     devDependencies:
+      '@durable-streams/server':
+        specifier: ^0.3.1
+        version: 0.3.1(@tanstack/db@0.6.5(typescript@5.9.3))
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

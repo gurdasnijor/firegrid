@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@effect/ai": "^0.35.0",
+    "@effect/platform": "^0.96.1",
     "@effect/workflow": "0.18.1",
     "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
@@ -26,6 +27,7 @@
     "effect-durable-operators": "workspace:*"
   },
   "devDependencies": {
+    "@durable-streams/server": "^0.3.1",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   }
