@@ -72,7 +72,7 @@ of scope for this package.
 | TFIND-038 | in-progress (#332 — Option 1 signed off; impl SDD next) | client-sdk / runtime config | Client session creation cannot express arbitrary public runtime intent (argv/env/ACP/MCP). |
 | TFIND-039 | in-progress (#332 — Option 1 signed off; durable start request = the client trigger) | client-sdk / host split | Client SDK has no client-visible runtime start trigger. |
 | TFIND-040 | in-progress (`sidecar/session-observation` — SDD-first; OCA3; attach-point pending #332) | client-sdk / observations | Client SDK lacks a per-event session observation surface. |
-| TFIND-036 | open | MCP / tools | Firegrid MCP toolkit lacks a read-only runtime-state query tool. |
+| TFIND-036 | QUEUED-FOR-ARCHITECT (architectural binary — SDD #335; coordinator cannot decide) | MCP / tools | Firegrid MCP toolkit lacks a read-only runtime-state query tool. |
 | TFIND-037 | superseded (duplicate — folded into TFIND-041) | ACP / tool execution | ACP MCP tool calls are provider-executed observations (= the ACP face of TFIND-041). |
 | TFIND-041 | decided B — session-mode owns lifecycle by decision; doc-comment pending | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
 | TFIND-042 | open (low priority — test-infra flake) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. |
@@ -914,7 +914,37 @@ TFIND-030 lands and the client/host transaction shape is settled.
 
 ### TFIND-036: Firegrid MCP toolkit lacks a read-only runtime-state query tool
 
-status: open
+status: QUEUED-FOR-ARCHITECT (architectural binary; SDD #335; not dispatched)
+
+Sidecar review (2026-05-18, OCA3 SDD #335,
+`sidecar/mcp-readonly-query`): two nuances reframe this from "add a
+tool" to a binding-SCOPE + read-CONTRACT decision a coordinator may NOT
+make:
+1. `wait_for` ALREADY accepts `RuntimeRun` as a source
+   (`RuntimeWaitSource = AgentOutput | RuntimeRun`) but is a *blocking
+   suspension* primitive — it cannot express a non-blocking "most recent
+   run + exit code / none-yet" read. The `sleep durationMs:0` workaround
+   exists because there is NO read at all.
+2. A `session.status` operation ALREADY EXISTS in the protocol catalog
+   but is DORMANT: `clientName`+`cliName` projection, **no `toolName`**,
+   and no live impl on any surface. The absent `toolName` is itself an
+   already-expressed product stance: runtime-state reads are
+   client/CLI-facing, NOT agent-facing.
+Options: **A** realize + tool-bind `session.status` (reuse schema,
+session-level not raw run exit code; forces realizing a dormant op);
+**B** new dedicated read-only runtime-runs query op over
+`RuntimeControlPlaneTable.runs` → latest `RuntimeRunEventRow`
+(exitCode/signal), read-only by construction (OCA3 non-committal lean);
+**C** affirm no agent read (the stance `session.status` already
+encodes). Narrow Qs: Q1 read contract, **Q2 agent-surface-at-all (core
+product call)**, Q3 read-only lowering/authority guarantee, Q4 wait_for
+overlap, Q5 dormant `session.status` realization across client/CLI. No
+substrate change.
+
+**Coordinator action:** Q2 is a core product binary Gurdas has not
+decided — per the autonomous charter this is QUEUED for architect-handoff,
+NOT dispatched. No production code. Carried in the architect-handoff
+status. SDD #335 stays draft.
 
 The requested scenario wanted a simple read-only tool such as "find the most
 recent runtime run for this context and report its exit code." The current
