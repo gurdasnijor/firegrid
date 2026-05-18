@@ -34,6 +34,38 @@ export {
   useTanStackLiveSuspenseQuery as useDurableLiveSuspenseQuery,
 }
 
+declare const AnyDurableTableTagBrand: unique symbol
+
+/**
+ * TFIND-044 (Option B — localized named coarse aggregate; SDD
+ * `docs/proposals/SDD_DURABLE_TABLE_REACT_LIVE_QUERY.md` §0, Gurdas
+ * signed off).
+ *
+ * The `DurableTableProvider` seam is **inherently heterogeneous and
+ * type-erased by design**: `acquireServices` resolves each tag by its
+ * string `key` into a `ReadonlyMap<string, unknown>`, and consumers
+ * re-narrow per tag at `useDurableTable`. A single shared `ROut`
+ * generic therefore cannot — and need not — carry N distinct precise
+ * DurableTable `<Self>` identities once TFIND-005's curry makes them
+ * precise (it produced `flamecast main.tsx:360` TS2322). Option A would
+ * reconstruct precision this boundary immediately discards.
+ *
+ * `AnyDurableTableTag` is that one explicit, **named** aggregate,
+ * confined to this seam; every `DurableTable` stays precise everywhere
+ * else. This is categorically distinct from the TFIND-005 bug: that was
+ * a *diffuse, implicit, unnamed* `any` leaking from
+ * `defineDurableTable`'s return that silently discharged *unrelated*
+ * required tags across every host/engine composition. This is a
+ * *single, named, explicit* coarsening at one boundary that is already
+ * `unknown`-typed by design and discharges nothing elsewhere. The
+ * optional phantom brand makes the seam role visible in types while
+ * keeping arbitrary heterogeneous real tags assignable without casts.
+ */
+export type AnyDurableTableTag =
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- seam is heterogeneous-and-erased by design (see above); the single localized, named coarsening for TFIND-044 Option B
+  & Context.Tag<any, any>
+  & { readonly [AnyDurableTableTagBrand]?: never }
+
 type DurableTableReactState =
   | {
     readonly status: "loading"
@@ -73,13 +105,15 @@ const failReactHook = (error: unknown): never => {
   throw error
 }
 
-export interface DurableTableProviderProps<ROut, E> {
+export interface DurableTableProviderProps<E> {
   readonly children?: ReactNode
   readonly fallback?: ReactNode
-  readonly layer: Layer.Layer<ROut, E, never>
+  // ROut erased to `unknown` at this seam: the layer's precise provided
+  // identities are resolved per-tag by string key below and re-narrowed
+  // at `useDurableTable` (TFIND-044 Option B — see `AnyDurableTableTag`).
+  readonly layer: Layer.Layer<unknown, E, never>
   readonly onError?: (error: unknown) => void
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  readonly tables: ReadonlyArray<Context.Tag<ROut, any>>
+  readonly tables: ReadonlyArray<AnyDurableTableTag>
 }
 
 const closeScope = (scope: Scope.CloseableScope): void => {
@@ -88,10 +122,9 @@ const closeScope = (scope: Scope.CloseableScope): void => {
   void Effect.runPromise(Scope.close(scope, Exit.void))
 }
 
-const acquireServices = <ROut, E>(options: {
-  readonly layer: Layer.Layer<ROut, E, never>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  readonly tables: ReadonlyArray<Context.Tag<ROut, any>>
+const acquireServices = <E>(options: {
+  readonly layer: Layer.Layer<unknown, E, never>
+  readonly tables: ReadonlyArray<AnyDurableTableTag>
 }): Effect.Effect<
   {
     readonly scope: Scope.CloseableScope
@@ -123,8 +156,8 @@ const acquireServices = <ROut, E>(options: {
  * Builds the supplied DurableTable layer once for this provider lifetime and
  * closes the backing Effect Scope when the provider unmounts.
  */
-export function DurableTableProvider<ROut, E>(
-  props: DurableTableProviderProps<ROut, E>,
+export function DurableTableProvider<E>(
+  props: DurableTableProviderProps<E>,
 ): ReactNode {
   const [state, setState] = useState<DurableTableReactState>({ status: "loading" })
   const [initialOptions] = useState(() => ({
@@ -194,8 +227,7 @@ export function useDurableTableProviderStatus(): DurableTableProviderStatus {
  *
  * Retrieves a shared DurableTable service acquired by DurableTableProvider.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useDurableTable<Tag extends Context.Tag<any, any>>(
+export function useDurableTable<Tag extends AnyDurableTableTag>(
   table: Tag,
 ): Context.Tag.Service<Tag> {
   const state = useContext(DurableTableReactContext)
