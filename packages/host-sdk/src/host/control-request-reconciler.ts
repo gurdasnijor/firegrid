@@ -8,12 +8,14 @@ import {
   type RuntimeContextRequestRow,
   type RuntimeControlRequestCompletionRow,
   type RuntimeControlRequestKind,
+  type RuntimeOutputTable,
   type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
 import { Cause, Clock, Context, Duration, Effect, Layer, Option } from "effect"
 import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import { startRuntime } from "./commands.ts"
 import type { RuntimeContextEngineRegistry } from "./runtime-context-engine-registry.ts"
+import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 
 const runtimeControlPlaneTable: Effect.Effect<
   RuntimeControlPlaneTable["Type"],
@@ -39,11 +41,25 @@ export interface RuntimeControlRequestReconcilerOptions {
   readonly abandonAfterMs?: number
 }
 
+// TFIND-045: `reconcileStartRequest` calls `startRuntime()`, which
+// transitively requires `RuntimeOutputTable` and
+// `HostRuntimeContextExecutionEnv` via `RuntimeContextEngineRegistry`.
+// Before TFIND-005's curry, `RuntimeOutputTable`'s tag identity was
+// `any`, so it was mutually assignable with `RuntimeControlPlaneTable`
+// (Crux-B false equivalence) and these two were silently discharged —
+// a genuine missing-dependency the `any` masked. They are enumerated
+// explicitly here so the declared environment matches the real
+// transitive requirement. Planned reconciliation (NOT a new finding):
+// once TFIND-029 (#328) makes `RuntimeStartCapabilityLive`'s
+// workflow-support deps explicit/self-contained, this enumeration may
+// tighten — see docs/sdds/SDD_RECONCILER_ENV_ENUMERATION.md §5 Q4.
 type RuntimeControlRequestReconcilerEnvironment =
   | CurrentHostSession
   | RuntimeControlPlaneTable
   | RuntimeContextEngineRegistry
   | AgentToolHost
+  | RuntimeOutputTable
+  | HostRuntimeContextExecutionEnv
 
 export interface RuntimeControlRequestReconcilerService {
   readonly reconcileOnce: (
