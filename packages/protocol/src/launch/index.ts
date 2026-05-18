@@ -119,6 +119,16 @@ export {
   type RuntimeStartResult,
 } from "./runtime-start.ts"
 export {
+  RuntimeContextRequestRowSchema,
+  RuntimeStartRequestRowSchema,
+  makeRuntimeContextRequestRow,
+  makeRuntimeStartRequestRow,
+  runtimeContextRequestId,
+  runtimeStartRequestId,
+  type RuntimeContextRequestRow,
+  type RuntimeStartRequestRow,
+} from "./control-request.ts"
+export {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
   type RuntimeControlPlaneTableService,
