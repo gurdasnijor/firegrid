@@ -21,12 +21,12 @@ Scope:
 - None blocking for `durable-streams-backed-pipeline`.
 - The old test asserted a direct host-internal replay result from `RuntimeStartCapability.start`. The consumer surface does not expose that synchronous host result. The migrated test asserts the same restart property through durable client-visible state instead: `session.start()` is idempotent after restart and the completed snapshot contains no duplicate outputs.
 - The test composes `FiregridRuntimeTables.ControlPlane` from the client SDK, but still imports `runtimeControlPlaneStreamUrl` from `@firegrid/protocol/launch` to build the table layer. This is public and not host-bound, but it is a candidate for a client SDK re-export so consumer-shaped tests do not need to import protocol URL helpers directly.
-- Codex ACP migration is paused on TFIND-048. Its runtime intent needs a route-scoped MCP URL before `sessions.createOrLoad`, and that URL requires the deterministic session context id. The client SDK does not yet expose a blessed pre-create context-id derivation helper, so migrating Codex without a new reach-past is blocked until the production client SDK fix lands.
+- Codex ACP migration is paused on TFIND-048. Its runtime intent needs a route-scoped MCP URL before `sessions.createOrLoad`, but the context-id / MCP-route URL lifecycle is still an architectural framing issue. Migrating Codex without a new reach-past is blocked until that lifecycle is decided and exposed through the public surface.
 
 ## Repeating Code Patterns
 
 - Live durable-table waits repeat the same shape: filter `rows()`, `Stream.runHead`, and race a timeout. This is the Effect equivalent of Flamecast's `useDurableTable(FiregridRuntimeTables.ControlPlane)` plus live query pattern.
-- Session-output waits repeat the same shape: call `session.wait.forAgentOutput`, inspect the typed observation, advance `afterSequence`, and continue until a predicate matches.
+- Session-output waits repeat the `waitForAgentOutputMatching` shape listed below.
 - Production-consuming tests repeatedly launch a host layer in a scoped background fiber while driving the scenario through a separate client SDK surface.
 
 ## Layer / Scoped Infrastructure Primitive Candidates
