@@ -19,6 +19,18 @@ import {
   runtimeInputDeferredName,
 } from "./runtime-context-workflow-core.ts"
 
+const workflowEngineTable: Effect.Effect<
+  WorkflowEngineTable["Type"],
+  never,
+  WorkflowEngineTable
+> = WorkflowEngineTable
+
+const workflowEngine: Effect.Effect<
+  WorkflowEngine.WorkflowEngine["Type"],
+  never,
+  WorkflowEngine.WorkflowEngine
+> = WorkflowEngine.WorkflowEngine
+
 const reviveExit = (value: unknown): Exit.Exit<unknown, unknown> => {
   const record = value as {
     readonly _tag?: string
@@ -75,7 +87,11 @@ export const appendRuntimeInputDeferred = (
   Error,
   WorkflowEngine.WorkflowEngine | WorkflowEngineTable
 > => {
-  return Effect.gen(function*() {
+  const append: Effect.Effect<
+    RuntimeIngressInputRow,
+    Error,
+    WorkflowEngine.WorkflowEngine | WorkflowEngineTable
+  > = Effect.gen(function*() {
     const pending = makeRuntimeIngressInputRow(request)
     if (pending.contextId !== context.contextId) {
       return yield* Effect.fail(new Error(
@@ -83,7 +99,7 @@ export const appendRuntimeInputDeferred = (
       ))
     }
 
-    const table = yield* WorkflowEngineTable
+    const table = yield* workflowEngineTable
     const existingRows = yield* runtimeInputRowsForContext(table, context.contextId)
     const existing = existingRows.find(row => row.inputId === pending.inputId)
     if (existing !== undefined) return existing
@@ -99,7 +115,7 @@ export const appendRuntimeInputDeferred = (
       sequence: nextSequence,
       sequencedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
     }
-    const engine = yield* WorkflowEngine.WorkflowEngine
+    const engine = yield* workflowEngine
     const deferredName = runtimeInputDeferredName(context.contextId, nextSequence)
     yield* engine.deferredDone(
       runtimeInputDeferredFor(context.contextId, nextSequence),
@@ -111,9 +127,11 @@ export const appendRuntimeInputDeferred = (
       },
     )
     return sequenced
-  }) as Effect.Effect<
-    RuntimeIngressInputRow,
-    Error,
-    WorkflowEngine.WorkflowEngine | WorkflowEngineTable
-  >
+  }).pipe(
+    Effect.mapError(cause =>
+      cause instanceof Error
+        ? cause
+        : new Error("failed appending runtime input deferred", { cause })),
+  )
+  return append
 }
