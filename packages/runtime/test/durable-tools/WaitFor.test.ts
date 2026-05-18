@@ -322,7 +322,7 @@ describe("durable-tools wait_for", () => {
     expect(result.id).toBe("match-2")
   })
 
-  it("firegrid-durable-tools.WAIT_FOR.7 reconciles a completion row written before a crash by issuing idempotent deferredDone", async () => {
+  it("firegrid-durable-tools.WAIT_FOR.7 recovers a crash mid-completeMatch (completion written, status not yet flipped, deferredDone not fired) via the live-replay path, not a reconciler", async () => {
     const streams = makeStreams("recovery")
     const Wf = Workflow.make({
       name: "wait-for-recovery",
@@ -353,40 +353,62 @@ describe("durable-tools wait_for", () => {
       }),
     )
 
-    // Between runs: simulate the post-crash state by writing the completion
-    // row + flipping the wait status directly. (firegrid-durable-tools.WAIT_FOR.7)
+    // Between runs: reproduce the crash point the completeMatch reorder
+    // targets — gap (a): the completion row was written but the host died
+    // BEFORE `deferredDone` and BEFORE the `status: "completed"` flip, so
+    // the wait row is still `active`. The matching source row is present
+    // (completeMatch only ever runs because a source row arrived). There is
+    // no reconciler; recovery must come from the live-replay path on Run 2:
+    // the router re-attaches the still-`active` wait, the durable source
+    // replays via includeInitialState, completeMatch re-derives the
+    // deterministic match, and idempotent deferredDone resumes the workflow.
+    const matchedRow: TestRow = {
+      id: "match-3",
+      requestId: "req-3",
+      status: "submitted",
+    }
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
-          const table = yield* DurableToolsTable
-          const waitsBefore = yield* table.waits.query((coll) => coll.toArray)
+          const waitTable = yield* DurableToolsTable
+          const source = yield* TestSourceTable
+          const waitsBefore = yield* waitTable.waits.query((coll) => coll.toArray)
           expect(waitsBefore).toHaveLength(1)
           const wait = waitsBefore[0]!
-          const matchedRow: TestRow = {
-            id: "match-3",
-            requestId: "req-3",
-            status: "submitted",
-          }
-          yield* table.completions.upsert({
+          expect(wait.status).toBe("active")
+          // Source row that triggered the crashed completeMatch is durable.
+          yield* source.rows.upsert(matchedRow)
+          // Completion row written; wait row deliberately left `active`
+          // (status flip + deferredDone never happened — the crash gap).
+          yield* waitTable.completions.upsert({
             waitKey: wait.waitKey,
             outcome: "match",
             matchedRowPayload: matchedRow,
             completedAtMs: Date.now(),
           })
-          yield* table.waits.upsert({ ...wait, status: "completed" })
         }).pipe(
-          Effect.provide(DurableToolsTable.layer({
-            streamOptions: {
-              url: streams.waitForUrl,
-              contentType: "application/json",
-            },
-          })),
+          Effect.provide(
+            Layer.mergeAll(
+              DurableToolsTable.layer({
+                streamOptions: {
+                  url: streams.waitForUrl,
+                  contentType: "application/json",
+                },
+              }),
+              TestSourceTable.layer({
+                streamOptions: {
+                  url: streams.sourceUrl,
+                  contentType: "application/json",
+                },
+              }),
+            ),
+          ),
         ) as Effect.Effect<void, unknown, never>,
       ),
     )
 
-    // Run 2: rehydrate; the reconciler runs on startup and bridges the
-    // completion row → deferredDone → workflow returns.
+    // Run 2: rehydrate. With no reconciler, the live-replay path alone must
+    // resume the workflow from the still-`active` wait + replayed source row.
     const result = await runWith(
       buildLayer(streams, workflowLayer),
       Effect.gen(function*() {
@@ -395,6 +417,26 @@ describe("durable-tools wait_for", () => {
       }),
     )
     expect(result.id).toBe("match-3")
+
+    // Invariant: status === "completed" ⟹ deferredDone already fired.
+    // After recovery the wait must be flipped to `completed` (proving the
+    // reordered completeMatch ran fully, not just the deferred resolution).
+    const finalWaits = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const waitTable = yield* DurableToolsTable
+          return yield* waitTable.waits.query((coll) => coll.toArray)
+        }).pipe(
+          Effect.provide(DurableToolsTable.layer({
+            streamOptions: {
+              url: streams.waitForUrl,
+              contentType: "application/json",
+            },
+          })),
+        ) as Effect.Effect<ReadonlyArray<{ readonly status: string }>, unknown, never>,
+      ),
+    )
+    expect(finalWaits[0]?.status).toBe("completed")
   })
 
   it("firegrid-durable-tools.TIMEOUT.1, TIMEOUT.2, WAIT_FOR.4 returns Timeout outcome when no match arrives within timeoutMs", async () => {
@@ -713,100 +755,14 @@ describe("durable-tools wait_for", () => {
     )
   })
 
-  it("firegrid-durable-tools.WAIT_FOR.7 reconciles a match completion written before the wait status was flipped to completed", async () => {
-    const streams = makeStreams("mid-crash")
-    const Wf = Workflow.make({
-      name: "wait-for-mid-crash",
-      payload: Schema.Struct({ id: Schema.String, requestId: Schema.String }),
-      success: TestRowResultSchema,
-      idempotencyKey: (p) => p.id,
-    })
-    const workflowLayer = Wf.toLayer((payload) =>
-      Effect.gen(function*() {
-        const outcome = yield* waitForOrDie<TestRow>({
-          name: "mid-crash",
-          source: RUNTIME_RUN_SOURCE,
-          trigger: [{ path: ["requestId"], equals: payload.requestId }],
-          resultSchema: TestRowResultSchema,
-        })
-        if (outcome._tag !== "Match") {
-          throw new Error("expected Match")
-        }
-        return outcome.row
-      }))
-
-    // Run 1: persist the wait, then crash without dispatching.
-    await runWith(
-      buildLayer(streams, workflowLayer),
-      Effect.gen(function*() {
-        yield* registerTestSource
-        yield* Wf.execute(
-          { id: "mid-crash-1", requestId: "req-mid" },
-          { discard: true },
-        )
-        yield* sleep(50)
-      }),
-    )
-
-    // Between runs: write the completion row but leave the wait row in
-    // status === "active". This is the exact crash window the reconciler
-    // must bridge.
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const table = yield* DurableToolsTable
-          const waitsBefore = yield* table.waits.query((coll) => coll.toArray)
-          expect(waitsBefore).toHaveLength(1)
-          const wait = waitsBefore[0]!
-          expect(wait.status).toBe("active")
-          yield* table.completions.upsert({
-            waitKey: wait.waitKey,
-            outcome: "match",
-            matchedRowPayload: {
-              id: "match-mid",
-              requestId: "req-mid",
-              status: "submitted",
-            } satisfies TestRow,
-            completedAtMs: Date.now(),
-          })
-        }).pipe(
-          Effect.provide(DurableToolsTable.layer({
-            streamOptions: {
-              url: streams.waitForUrl,
-              contentType: "application/json",
-            },
-          })),
-        ) as Effect.Effect<void, unknown, never>,
-      ),
-    )
-
-    const result = await runWith(
-      buildLayer(streams, workflowLayer),
-      Effect.gen(function*() {
-        yield* registerTestSource
-        return yield* Wf.execute({ id: "mid-crash-1", requestId: "req-mid" })
-      }),
-    )
-    expect(result.id).toBe("match-mid")
-
-    // After reconcile, the wait row should also be flipped to completed.
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function*() {
-          const table = yield* DurableToolsTable
-          const wait = (yield* table.waits.query((coll) => coll.toArray))[0]
-          expect(wait?.status).toBe("completed")
-        }).pipe(
-          Effect.provide(DurableToolsTable.layer({
-            streamOptions: {
-              url: streams.waitForUrl,
-              contentType: "application/json",
-            },
-          })),
-        ) as Effect.Effect<void, unknown, never>,
-      ),
-    )
-  })
+  // NOTE: a second WAIT_FOR.7 crash test ("reconciles a match completion
+  // written before the wait status was flipped to completed") was removed
+  // here. It simulated completion-written-without-a-durable-source-row and
+  // relied solely on the deleted reconciler to bridge it. That state is not
+  // reachable in production (completeMatch only writes a completion because
+  // it observed a durable source row), and once made faithful it duplicated
+  // the rewritten gap-(a) recovery test above exactly. See
+  // docs/research/durable-tools-vs-workflow-engine-convergence.md.
 
   it("firegrid-durable-tools.RUNTIME_BOUNDARY.3 attaches a wait whose source is registered after the wait row is created", async () => {
     const streams = makeStreams("late-source")

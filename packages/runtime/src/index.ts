@@ -34,7 +34,6 @@ export {
 } from "./agent-event-pipeline/sources/sandbox/effect-ai.ts"
 export {
   DurableWaitCompletionRowLookup,
-  DurableWaitCompletionRows,
   DurableWaitCompletionRowUpsert,
   DurableWaitRows,
   DurableWaitRowLookup,

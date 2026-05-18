@@ -31,12 +31,10 @@ import {
   Schema,
   Stream,
 } from "effect"
-import { reconcileCompletions } from "./reconcile.ts"
 import { RuntimeWaitStreams } from "./runtime-wait-streams.ts"
 import { type WaitRow } from "./table.ts"
 import {
   DurableWaitCompletionRowLookup,
-  DurableWaitCompletionRows,
   DurableWaitCompletionRowUpsert,
   DurableWaitRowLookup,
   DurableWaitRows,
@@ -116,11 +114,21 @@ const completeMatch = (
       matchedRowPayload: row,
       completedAtMs,
     })
-    yield* waitUpsert.upsert({
-      ...current.value,
-      status: "completed",
-    })
     // firegrid-durable-tools.WAIT_FOR.7
+    //
+    // ORDER IS LOAD-BEARING. `engine.deferredDone` must fire BEFORE the
+    // `status: "completed"` write. This guarantees the invariant
+    //   status === "completed"  ⟹  deferredDone has already fired.
+    //
+    // The crash-recovery reconciler was deleted (the redundant
+    // completed-but-not-notified gap (b) it bridged is now unreachable):
+    // if a crash lands between the completion-row write and this
+    // deferredDone, the wait row is still `active`, so on restart the
+    // router re-attaches it, the durable source replays via
+    // includeInitialState, completeMatch re-derives the deterministic
+    // match, and idempotent deferredDone makes the re-fire a no-op.
+    // See docs/research/durable-tools-vs-workflow-engine-convergence.md
+    // and test/workflow-engine/deferred-done-idempotency.test.ts.
     yield* engine.deferredDone(
       matchDeferredFor(wait.deferredName),
       {
@@ -130,6 +138,10 @@ const completeMatch = (
         exit: Exit.succeed(row),
       },
     )
+    yield* waitUpsert.upsert({
+      ...current.value,
+      status: "completed",
+    })
   })
 
 /**
@@ -190,21 +202,16 @@ const startRouter = Effect.gen(function*() {
   const waitRows = yield* DurableWaitRows
   const completionLookup = yield* DurableWaitCompletionRowLookup
   const completionUpsert = yield* DurableWaitCompletionRowUpsert
-  const completionRows = yield* DurableWaitCompletionRows
 
   // firegrid-durable-tools.WAIT_FOR.7
-  yield* reconcileCompletions(
-    waitLookup,
-    waitUpsert,
-    completionRows,
-    engine,
-  ).pipe(
-    Effect.catchAll((cause) =>
-      Effect.logWarning(
-        "[durable-tools] reconcile pass failed",
-      ).pipe(Effect.annotateLogs({ cause })),
-    ),
-  )
+  //
+  // No crash-recovery reconciler pass. With the completeMatch reorder
+  // (deferredDone before the status flip), the completed-but-not-notified
+  // gap is unreachable; the remaining still-active-with-completion gap is
+  // covered by the live-replay path (active waits are re-attached below,
+  // the durable source replays via includeInitialState, completeMatch
+  // re-derives the match, idempotent deferredDone makes the re-fire a
+  // no-op). See docs/research/durable-tools-vs-workflow-engine-convergence.md.
 
   const encodeWaitKey = Schema.encodeSync(
     Schema.Struct({
@@ -289,7 +296,6 @@ const startRouter = Effect.gen(function*() {
 
 type WaitRouterRequirements =
   | DurableWaitCompletionRowLookup
-  | DurableWaitCompletionRows
   | DurableWaitCompletionRowUpsert
   | DurableWaitRowLookup
   | DurableWaitRows
