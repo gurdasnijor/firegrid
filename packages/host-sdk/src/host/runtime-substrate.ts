@@ -10,6 +10,12 @@ import {
   type DurableWaitRowUpsert,
 } from "@firegrid/runtime/durable-tools"
 import {
+  type CurrentHostSession,
+  type RuntimeControlPlaneTable,
+  type RuntimeOutputTable,
+} from "@firegrid/protocol/launch"
+import { type RuntimeHostConfig } from "./config.ts"
+import {
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
 import { RuntimeToolUseExecutor } from "@firegrid/runtime/tool-executor"
@@ -32,6 +38,37 @@ type RuntimeToolUseExecutorHostEnvironment =
   | DurableWaitCompletionRowLookup
   | DurableWaitCompletionRowUpsert
   | AgentToolHost
+
+// TFIND-031: the host-provided durable substrate that a per-context
+// workflow execution genuinely requires. Deferred-execution seams
+// (`Effect.context<…>()` captured at Layer-build time and re-provided
+// into closures that run later) MUST capture this set instead of
+// `never`. These tags are always satisfied at runtime by the composed
+// Firegrid host layer (`FiregridRuntimeHostLive`); annotating `never`
+// was only ever sound because `DurableTable.layer` leaked `any` and
+// collapsed the requirements channel. With precise `.layer` typing the
+// real requirement surfaces — declare it honestly here rather than
+// re-erase it.
+export type HostRuntimeContextExecutionEnv =
+  | RuntimeControlPlaneTable
+  | RuntimeOutputTable
+  | CurrentHostSession
+  | RuntimeHostConfig
+
+// TFIND-031 (Option Y, execution-scoped): the workflow-body capture
+// seam (`RuntimeContextWorkflowNativeLayer`) is built *inside*
+// `runtimeContextWorkflowSupportLayer`, where `HostRuntimeObservationSubstrateLive`
+// already provides the durable-wait substrate execution-scoped (one
+// shared materialized store — see SDD shared-store proof). So that seam
+// alone may capture the wider set including `DurableWait*`; the host-
+// level seams (commands / agent-tool-host) must NOT — those tags are
+// deliberately not ambient on the public `FiregridRuntimeHostWithWorkflowLive`.
+export type RuntimeContextWorkflowExecutionEnv =
+  | HostRuntimeContextExecutionEnv
+  | DurableWaitRowLookup
+  | DurableWaitRowUpsert
+  | DurableWaitCompletionRowLookup
+  | DurableWaitCompletionRowUpsert
 
 // firegrid-runtime-boundary-reconciliation.HOST_HARDENING.2
 // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1

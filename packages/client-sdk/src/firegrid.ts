@@ -793,10 +793,16 @@ const make = (config: ResolvedConfig) =>
           ],
         }
         const contextId = makeContextId()
+        // TFIND-031: provide the in-scope control plane (bound in
+        // `make` at `const control = yield* RuntimeControlPlaneTable`),
+        // mirroring the `createOrLoadSession` path. Omitting it only
+        // typechecked while `DurableTable.layer` leaked `any`;
+        // `Firegrid.launch`'s contract is `R = CurrentHostSession`.
         const context = yield* insertLocalRuntimeContext(intent, {
           contextId,
           ...(decoded.requestedBy === undefined ? {} : { createdBy: decoded.requestedBy }),
         }).pipe(
+          Effect.provideService(RuntimeControlPlaneTable, control),
           Effect.mapError(cause => new AppendError({ contextId, cause })),
         )
         return open(context.contextId)

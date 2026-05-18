@@ -44,6 +44,7 @@ import {
 import {
   HostRuntimeObservationSubstrateLive,
 } from "../../src/host/runtime-substrate.ts"
+import { RuntimeHostConfig } from "../../src/host/config.ts"
 import {
   PerContextRuntimeOutputWriter,
 } from "../../src/host/per-context-runtime-output.ts"
@@ -82,6 +83,18 @@ const hostSessionLayer = (
       startedAtMs: 1_700_000_000_000,
     }),
   )
+
+// TFIND-031: the workflow capture seam (`RuntimeContextWorkflowNativeLayer`)
+// now honestly carries `RuntimeHostConfig` in its precise requirements
+// channel (it was masked while `DurableTable.layer` leaked `any`). The
+// production host provides it via `namespaceScopedLayer`; the hand-rolled
+// test layers must provide an equivalent so the seam is satisfied.
+const hostConfigLayer = (namespace: string) =>
+  Layer.succeed(RuntimeHostConfig, {
+    inputEnabled: false,
+    durableStreamsBaseUrl: baseUrl ?? "",
+    namespace,
+  })
 
 const outputRow = (input: {
   readonly contextId: string
@@ -267,6 +280,7 @@ const runtimeContextWorkflowTestLayer = (input: {
       streamOptions: { url: input.outputUrl, contentType: "application/json" },
     })),
     Layer.provideMerge(hostSessionLayer(input.namespace, input.hostId)),
+    Layer.provideMerge(hostConfigLayer(input.namespace)),
   )
 
 const executeNativeRuntimeContext = (
@@ -773,6 +787,7 @@ describe("workflow-native runtime-context core", () => {
         streamOptions: { url: outputUrl, contentType: "application/json" },
       })),
       Layer.provideMerge(hostSessionLayer(namespace, hostId)),
+      Layer.provideMerge(hostConfigLayer(namespace)),
     )
 
     const result = await Effect.runPromise(

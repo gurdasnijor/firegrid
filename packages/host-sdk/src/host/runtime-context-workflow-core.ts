@@ -18,6 +18,7 @@ import {
   Schema,
 } from "effect"
 import { WaitFor } from "@firegrid/runtime/durable-tools"
+import type { RuntimeContextWorkflowExecutionEnv } from "./runtime-substrate.ts"
 import {
   AgentInputEventSchema,
   type AgentInputEvent,
@@ -363,7 +364,14 @@ export const RuntimeContextWorkflowNative = Workflow.make({
 export const RuntimeContextWorkflowNativeLayer = Layer.scopedDiscard(
   Effect.gen(function*() {
     const engine = yield* WorkflowEngine.WorkflowEngine
-    const captured = yield* Effect.context<never>()
+    // TFIND-031 (Option Y): capture the execution-scoped workflow
+    // substrate — host ambient tags PLUS the durable-wait family, which
+    // `runtimeContextWorkflowSupportLayer` provides around this layer
+    // via `HostRuntimeObservationSubstrateLive` (one shared materialized
+    // store; see SDD proof). Deferred handler runs later, outside this
+    // gen, so it must re-provide the captured substrate. `never` was
+    // only sound while `DurableTable.layer` leaked `any`.
+    const captured = yield* Effect.context<RuntimeContextWorkflowExecutionEnv>()
     yield* engine.register(RuntimeContextWorkflowNative, ({ contextId }) =>
       runWorkflowNativeRuntimeContext(contextId).pipe(
         Effect.provide(captured),

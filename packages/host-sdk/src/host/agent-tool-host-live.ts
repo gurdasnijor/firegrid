@@ -7,7 +7,7 @@ import {
   type HostSessionRow,
 } from "@firegrid/protocol/launch"
 import type { RuntimeIngressRequest } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Layer } from "effect"
+import { type Context, Effect, Layer } from "effect"
 import {
   AgentToolHost,
   type AgentToolHostService,
@@ -27,6 +27,7 @@ import {
   runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
 } from "./internal/runtime-context-helpers.ts"
+import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 import {
   RuntimeContextEngineRegistry,
 } from "./runtime-context-engine-registry.ts"
@@ -75,6 +76,9 @@ const runtimeHostAgentToolHostService = (captured: {
   readonly controlTable: RuntimeControlPlaneTable["Type"]
   readonly registry: RuntimeContextEngineRegistry["Type"]
   readonly agentToolHost: AgentToolHostService
+  // TFIND-031: ambient host durable substrate captured at layer-build
+  // time, re-provided into the deferred child-context workflow run.
+  readonly hostContext: Context.Context<HostRuntimeContextExecutionEnv>
 }): AgentToolHostService => ({
   spawnChildContext: ({
     parentContextId,
@@ -113,6 +117,12 @@ const runtimeHostAgentToolHostService = (captured: {
         status: "running" as const,
       }
     }).pipe(
+      // TFIND-031: discharge the host durable substrate the deferred
+      // child-context workflow genuinely needs (RuntimeControlPlaneTable
+      // / RuntimeOutputTable / DurableWait* / RuntimeHostConfig /
+      // CurrentHostSession). Always satisfied at runtime by the composed
+      // host layer; `any` previously hid the requirement.
+      Effect.provide(captured.hostContext),
       Effect.mapError(cause => toolExecutionFailed(toolUseId, "session_new", cause)),
     ),
   spawnChildContexts: ({ toolUseId }) => unsupportedAgentTool(toolUseId, "spawn_all"),
@@ -202,12 +212,17 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
     const hostSession = yield* CurrentHostSession
     const controlTable = yield* RuntimeControlPlaneTable
     const registry = yield* RuntimeContextEngineRegistry
+    // TFIND-031: capture the ambient host durable substrate so the
+    // deferred child-context workflow (run later, outside this gen) can
+    // re-provide it. Always present here via the composed host layer.
+    const hostContext = yield* Effect.context<HostRuntimeContextExecutionEnv>()
     const service: AgentToolHostService = runtimeHostAgentToolHostService({
       contextInsert,
       contextRead,
       hostSession,
       controlTable,
       registry,
+      hostContext,
       get agentToolHost() {
         return service
       },
