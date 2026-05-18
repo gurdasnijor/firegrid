@@ -154,7 +154,12 @@ bash scripts/lane-sweep.sh 155 161         # only specific surfaces
 
 It runs **relative to the current tab**: the pane the coordinator invokes it
 from is auto-excluded (via `cmux identify`), so it shows only the *other*
-lanes. It is heuristic-free by design — `--json` emits
+lanes. The cmux **workspace is pinned once** (resolved from the caller's
+`.caller.workspace_ref`); if the invoking shell's ambient context may not be
+the worker workspace (nested tool subprocess, selected-workspace drift), pass
+`--workspace <ref>` (or set `LANE_SWEEP_WS`) — otherwise enumeration can
+intermittently list the wrong workspace and show no lanes. It is heuristic-free
+by design — `--json` emits
 `{lanes:[{surface,label,running,status,beads,prs,tail[]}]}` where `running` is
 a literal read of the TUI's own `esc to interrupt` indicator and `status`
 quotes the agent's own activity line verbatim; neither is a classification

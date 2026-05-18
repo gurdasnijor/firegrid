@@ -16,6 +16,10 @@
 #   bash scripts/lane-sweep.sh 153 155 161     # only these surface numbers
 #   bash scripts/lane-sweep.sh --lines 25      # deeper tail (default 14)
 #   bash scripts/lane-sweep.sh --json          # structured, agent-parseable
+#   bash scripts/lane-sweep.sh --workspace workspace:2   # pin the workspace
+#       (default: the caller's workspace via cmux identify; pin this when the
+#       invoking shell's ambient cmux context may not be the worker workspace
+#       — e.g. nested tool subprocess. Or set LANE_SWEEP_WS.)
 #
 # --json emits {generated_at, lanes:[{surface,label,running,status,beads,
 # prs,tail[]}]}. `running` is a literal read of the TUI's own "esc to
@@ -39,16 +43,30 @@ command -v cmux >/dev/null 2>&1 || { echo "lane-sweep: cmux not on PATH" >&2; ex
 
 LINES=14
 FORMAT=text
+WS="${LANE_SWEEP_WS:-}"
 SURFACES=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --lines) LINES="${2:?--lines needs a number}"; shift 2 ;;
     --lines=*) LINES="${1#*=}"; shift ;;
+    --workspace) WS="${2:?--workspace needs a ref}"; shift 2 ;;
+    --workspace=*) WS="${1#*=}"; shift ;;
     --json) FORMAT=json; shift ;;
     -h|--help) awk 'NR>1{ if($0 !~ /^#/) exit; sub(/^# ?/,""); print }' "$0"; exit 0 ;;
     *) SURFACES+=("${1#surface:}"); shift ;;
   esac
 done
+
+# Pin the cmux workspace deterministically. Auto-enumeration was unreliable
+# because `cmux list-pane-surfaces`/`identify` default to the caller's
+# ambient context, which is NOT guaranteed to be the coordinator's worker
+# workspace (selected-workspace drift, nested tool subprocess, socket
+# discovery). Resolve ONCE — explicit flag/env, else the caller's
+# workspace_ref — and pass --workspace to every cmux call.
+IDENT="$(cmux identify 2>/dev/null || true)"
+[ -n "$WS" ] || WS="$(printf '%s' "$IDENT" | jq -r '.caller.workspace_ref // empty' 2>/dev/null)"
+WSARG=()
+[ -n "$WS" ] && WSARG=(--workspace "$WS")
 
 # Repo root for the beads join (best-effort; skipped if unavailable).
 BEADS_JSONL=""
@@ -116,17 +134,17 @@ beads_for() { # $1=surface-ref  $2=label
 # The leading "*" marks the selected surface — almost always the pane the
 # coordinator is running this from — so skip it unless explicitly named.
 ROWS=()
-while IFS= read -r line; do ROWS+=("$line"); done < <(cmux list-pane-surfaces 2>/dev/null)
+while IFS= read -r line; do ROWS+=("$line"); done < <(cmux list-pane-surfaces ${WSARG[@]+"${WSARG[@]}"} 2>/dev/null)
 
 # "Relative to the current tab": exclude the surface this script is running
 # in (the coordinator's own pane), resolved via `cmux identify` →
 # .caller.surface_ref. This is robust regardless of which pane is *selected*
 # or how lanes are labelled. Falls back to no self-exclusion if not run from
 # inside a cmux pane (e.g. plain shell), where there is no "current tab".
-SELF=""
-if SELF_LINE=$(cmux identify 2>/dev/null | grep -m1 '"surface_ref"'); then
-  [[ "$SELF_LINE" =~ surface:([0-9]+) ]] && SELF="${BASH_REMATCH[1]}"
-fi
+# The pane the script runs in = .caller.surface_ref (parse the JSON, not
+# grep -m1 — identify emits multiple surface_ref keys; the first is not
+# reliably the caller).
+SELF="$(printf '%s' "$IDENT" | jq -r '.caller.surface_ref // empty' 2>/dev/null | grep -oE '[0-9]+' | head -1)"
 
 if [ "${#SURFACES[@]}" -eq 0 ]; then
   for row in "${ROWS[@]}"; do
@@ -154,7 +172,7 @@ JSON_LANES=""
 
 for s in "${SURFACES[@]}"; do
   label="$(label_for "$s")"
-  raw="$(cmux read-screen --surface "surface:$s" --lines "$LINES" 2>&1 || true)"
+  raw="$(cmux read-screen ${WSARG[@]+"${WSARG[@]}"} --surface "surface:$s" --lines "$LINES" 2>&1 || true)"
   # `running` is a literal read of the TUI's own indicator, not a heuristic.
   running=false
   printf '%s' "$raw" | grep -qa 'esc to interrupt' && running=true
