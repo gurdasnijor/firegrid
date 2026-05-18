@@ -172,7 +172,10 @@ A avoided).
 
 ## Call-site inventory (current origin/main `a38da9781`, post-#322)
 
-**Production — 6 tag classes / 5 files:**
+**Production — 7 tag classes / 6 files** (corrected 2026-05-18: the
+original "6 / 5" inventory omitted `DarkFactoryTable`; migrating it is
+**mandatory** once the `Self = any` default is removed — the branch
+correctly migrated all 7):
 
 | File | Class |
 | --- | --- |
@@ -182,6 +185,13 @@ A avoided).
 | `packages/runtime/src/durable-tools/internal/table.ts:97` | `DurableToolsTable` |
 | `packages/protocol/src/launch/table.ts:187` | `RuntimeControlPlaneTable` |
 | `packages/protocol/src/launch/table.ts:192` | `RuntimeOutputTable` |
+| `apps/factory/src/tables.ts:145` | `DarkFactoryTable` |
+
+(Doc note: some prose paths in earlier SDD revisions are stale —
+`packages/scenarios/` is now `packages/tiny-firegrid/src/configurations/`;
+`DurableStreamsWorkflowEngine.ts` lives at
+`packages/runtime/src/workflow-engine/`, not a `durable-streams-engine/`
+subdir. Inventory above is authoritative.)
 
 **Tests — 14 occurrences / 4 files** (must migrate in the same
 transaction or typecheck breaks):
