@@ -200,6 +200,42 @@ Not done (blocked on the knot above): the deterministic
 record→blocked-pending→wake test, Cat A/B/C fallout, full verification,
 #331 ready-flip, #326 rebase.
 
+## Knot RESOLVED to a precise mechanism (decisive probe)
+
+In-project type probe of `ReturnType<typeof runtimeContextWorkflowSupportLayer>`:
+
+- `DurableWait*` (all 4) **ARE** in the support layer's **ROut** (it
+  does expose them).
+- `DurableWait*` **ARE ALSO** in the support layer's **RIn** (it still
+  *requires* them as input).
+
+Mechanism: `runtimeContextWorkflowSupportLayer` **requires what it
+provides**. `Effect.provide(effect, supportLayer)` yields effect-R =
+`(effect.R \ supportLayer.ROut) ∪ supportLayer.RIn`. Because
+`supportLayer.RIn ⊇ DurableWait*`, every consumer
+(`executeRuntimeContextWorkflowForContextId` → `claimAndRun…` → the 3
+seams) inherits an unsatisfied `DurableWait*` requirement **no matter
+what the capture seam declares** — which is why both the narrowed and
+widened capture variants leaked identically.
+
+So the fix target is NOT the capture seams and NOT the public host
+layer. It is: **make `runtimeContextWorkflowSupportLayer` self-contained
+for `DurableWait*`** — i.e., its internal composition must `Layer.provide`
+the durable-wait store such that `DurableWait*` leaves RIn (stays in
+ROut). The internal cause is a `provideMerge`/`unwrapEffect` ordering
+inside the `RuntimeContextWorkflowNativeLayer.pipe(Layer.provideMerge(
+HostRuntimeObservationSubstrateLive), …)` chain where a consumer's
+`DurableWait*` RIn is re-surfaced rather than discharged before
+exposure. This is the exact, bounded next step — correctness-sensitive
+(wait routing), so it must be done deliberately (and validated by the
+deterministic record→blocked→wake test), not by a forcing cast.
+
+Architecture remains sound and unchanged (execution-scoped, single
+shared store — proven). This is a layer-composition-order defect, not a
+framing fork. Handoff point is precise: re-thread
+`runtimeContextWorkflowSupportLayer` to discharge `DurableWait*` from
+its own RIn.
+
 ## Status of branch
 
 WIP committed (contained fixes + narrowed `HostRuntimeContextExecutionEnv`
