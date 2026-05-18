@@ -21,7 +21,7 @@ This is a research artifact only. It proposes no production code change.
 
 ## Sources Read
 
-- `HANDOFF.md`
+- removed historical handoff notes
 - `docs/replatforming/README.md`
 - `/private/tmp/firegrid-runtime-ergonomics-sdd/docs/proposals/SDD_FIREGRID_RUNTIME_ERGONOMICS.md`
 - `packages/client/README.md`
@@ -357,7 +357,6 @@ code.
 
 ```sh
 sed -n '1,240p' .agents/skills/acai/SKILL.md
-sed -n '1,260p' HANDOFF.md
 sed -n '1,240p' docs/replatforming/README.md
 sed -n '1,300p' /private/tmp/firegrid-runtime-ergonomics-sdd/docs/proposals/SDD_FIREGRID_RUNTIME_ERGONOMICS.md
 sed -n '300,760p' /private/tmp/firegrid-runtime-ergonomics-sdd/docs/proposals/SDD_FIREGRID_RUNTIME_ERGONOMICS.md
