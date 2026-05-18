@@ -107,6 +107,61 @@ Reading is via the two surfaces above. `scripts/beads-import-findings.sh` was
 the one-time migration; its `FINDINGS.md`/`CONFIGS.md` inputs were deleted in
 #354, so it is no longer re-runnable — never invoke it to "update" state.
 
+## Signoff queue (draining decisions)
+
+When the bottleneck is *signoff-drain* (work blocked on a human decision, not
+on engineering capacity), make that queue a first-class, ranked, queryable
+thing — no new infra, just one label + the decisioner tool.
+
+**Convention — the owning lane applies this when it queues a decision:**
+
+```bash
+br update <id> --add-label signoff:pending --add-label pr-<NNN>
+# then APPEND to the bead description (not a comment — comments are NOT in
+# issues.jsonl, so the drain query can't see them):
+#   === SIGNOFF ===
+#   DECISION: <one line: exactly what is being decided>
+#   READ: PR#<n> <doc path> §<section>
+```
+
+`signoff:pending` and `pr-<NNN>` are **binary signals** — no judgment, the
+worker can always set them. The DECISION/READ block lives in the
+**description** because that is on the reliable `issues.jsonl` surface;
+`br comments` are not, so the queue could not surface them.
+
+**Decisioner tool (read-only):**
+
+```bash
+bash scripts/signoff-queue.sh          # ranked digest, keystone first
+bash scripts/signoff-queue.sh --json   # structured
+```
+
+It prints each pending item with its DECISION, READ pointer, and the exact
+sign-off command — so "summarise the decision + where to read it" needs no
+round-trip. Items missing the block render `⚠ NONE RECORDED`, which is itself
+the signal that the owning lane has not encoded it yet.
+
+**Ranking is NOT raw bv order.** bv's `topk_set` is 1-hop marginal gain and
+under-weights a keystone whose value is transitive (e.g. TFIND-050 gates the
+TFIND-005 → #326 → #328 cascade but shows marginal +1). The tool ranks:
+`keystone` label → membership in `bv … blockers_to_clear` → priority → age.
+Priority is **advisory**; the `keystone` label is the authoritative
+load-bearing signal.
+
+**Ownership (clean under the coordinator's no-br-mutations constraint):**
+
+- *Owning lane* applies `signoff:pending`/`pr-` + the DECISION block on queuing.
+- *Coordinator* is read-only: runs `signoff-queue.sh`, routes
+  signoff-blocked → decisioner, eng-blocked → worker. No `br` writes.
+- *Decisioner / br-owner* clears on signoff: `br label remove <id> -l
+  signoff:pending` then advance/close per the decision. **This removal step
+  is owned — if it lapses, decided-but-uncleared items inflate the queue as
+  false debt.** Backstop: `bv --robot-alerts` / `--robot-label-health` on the
+  `signoff:pending` label surfaces staleness (undrained *or* uncleared).
+
+Note: `jq` over `issues.jsonl` here is **not an exception** — it is one of the
+two first-class surfaces. Only ad-hoc `br … --json` is prohibited.
+
 ## When something looks empty or wrong
 
 1. Don't suppress stderr. Re-run without `2>/dev/null` and read the error.

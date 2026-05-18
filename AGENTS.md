@@ -235,10 +235,20 @@ these project facts override it:
 
 **Operating guide:** for *how* to query the graph reliably (the
 `br … --json` schema-divergence trap), how to sequence the next phase by
-blocking factor (`bv --robot-insights` `topk_set`/`coverage_set`), and
-verified `jq` recipes against `issues.jsonl`, see
+blocking factor (`bv --robot-insights` `topk_set`/`coverage_set`), the
+**signoff queue** (draining decisions: the `signoff:pending` convention +
+`scripts/signoff-queue.sh`), and verified `jq` recipes against
+`issues.jsonl`, see
 [docs/contributing/beads-operating-guide.md](docs/contributing/beads-operating-guide.md).
 Point coordinators there.
+
+**Signoff protocol (every lane):** when you queue a decision for a human,
+`br update <id> --add-label signoff:pending --add-label pr-<NNN>` *and* append
+a `DECISION:`/`READ:` block to the bead **description** (not a comment —
+comments are not in `issues.jsonl`). The decisioner drains via
+`bash scripts/signoff-queue.sh` (read-only, ranked keystone-first) and clears
+with `br label remove <id> -l signoff:pending`. The coordinator stays
+read-only: it routes, it does not mutate `br`.
 
 ### Bead-graph hygiene policy (added 2026-05-09 by `beads_rust-30ci`)
 
