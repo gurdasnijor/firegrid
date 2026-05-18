@@ -52,13 +52,13 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. | cat-2 (rubric anchor — consumers reached into impl to build an unnamed host type) |
 | TFIND-008 | unblocked by #332 (separate-process client/host seam now exists; toy e2e = follow-up) | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. | cat-1-consequence (real separate-process e2e; unblocked by #332; toy realization = toy follow-up) |
 | TFIND-009 | superseded (false positive — codec is load-bearing) | workflow-engine | Durable workflow codec appears orphaned in the engine closure. | cat-4 (coverage-tool import-graph miss — codec is load-bearing; correctly closed, NO production code. Note: rubric calibration listed 5 assuming the orphan was real; the resolution proved it a coverage artifact = 4) |
-| TFIND-010 | open | runtime host | RuntimeContext engine registry is load-bearing. | cat-4/toy (toy not yet wired to production `RuntimeContextEngineRegistryLive`; production already has it — toy modeling roadmap, NOT a production gap) |
-| TFIND-011 | open | runtime input | Startup reconciliation is not yet modeled against Durable Streams. | cat-4/toy (toy hasn't proven reconciliation against prod Durable Streams; modeling roadmap, no production gap) |
+| TFIND-010 | open — audit 2026-05-18: **BUILDABLE** (cap EXISTS: `RuntimeContextEngineRegistryLive` composed in `FiregridRuntimeHostLive` layers.ts:259) | runtime host | RuntimeContext engine registry is load-bearing. | cat-4/toy (toy modeling roadmap; capability verified present — realizable via the multi-context build) |
+| TFIND-011 | open — audit 2026-05-18: **BUILDABLE** (cap EXISTS: `RuntimeContextEngineRegistry.reconcile()` reads per-context input-intents, sorts, applies before tailing — runtime-context-engine-registry.ts:195-213, called from startOrAttach:184) | runtime input | Startup reconciliation is not yet modeled against Durable Streams. | cat-4/toy (toy modeling roadmap; capability verified present) |
 | TFIND-012 | open | durable-tools / wait | Wait-for output surface still needs production-backed modeling. | cat-4/toy WRAPPER over a cat-1/2 kernel ⚠ (the non-After `AgentOutput` wait-router arm reads the host-prefixed stream vs post-#315 per-context = REAL prod drift / A4 residue — split the prod kernel out as its own finding) |
 | TFIND-013 | resolved (#338, `960ec59b3` — output-journal-pipeline.ts toy config landed) | output journal | Output journal / A4 path remains unmodeled in durable config. | cat-4/toy (toy A4/output-journal modeling = the #338 toy config; the A4 prod path itself is tracked separately as residue) |
-| TFIND-014 | open | tools | Tool execution and `AgentToolHost` are deferred. | cat-4/toy (deliberately-deferred toy modeling; production tool execution exists) |
+| TFIND-014 | resolved (audit 2026-05-18 — REALIZED by #343 stdio-jsonl tool-execution config; `RuntimeToolUseExecutorLive` + `toolUseToEffect` + `Activity.make`-wrapped, exercised e2e) | tools | Tool execution and `AgentToolHost` are deferred. | cat-4/toy → realized; "deferred" status was stale post-#343 |
 | TFIND-015 | open | permissions / codecs | Permission flow and codec authority remain unsettled. | cat-4/toy WRAPPER over a cat-1/2 kernel ⚠ (the "does any codec complete workflow deferreds / do authority work" question is a real production architectural question — TFIND-041 family; split it out) |
-| TFIND-016 | open | workflow activities | Activity boundaries are not yet represented. | cat-4/toy (deferred toy modeling; `Activity.make` exists in production) |
+| TFIND-016 | open — audit 2026-05-18: **BUILDABLE-INDIRECT / shape-note** (`Activity.make` EXISTS but is workflow-internal-by-design — runtime-context-workflow-core.ts:118,139,205; a dedicated "activity-boundary" config may be the wrong shape — observe activity-mediated replay/retry via the public surface, likely already covered by the durable-streams replay config) | workflow activities | Activity boundaries are not yet represented. | cat-4/toy (capability present but internal-by-design; needs a small shape decision, not a kernel — low priority) |
 | TFIND-017 | open | toy DurableTable | `rows()` is a live tail; snapshot reads must use `query()`. | cat-4/toy (toy in-memory-adapter usage rule; no production surface) |
 | TFIND-018 | resolved (#317/#320 cleanup) | toy discipline | Hand-maintained contracts are rejected. | cat-4/toy (toy discipline rule; toy cleanup PR, no production surface) |
 | TFIND-019 | resolved (#317/#320 cleanup) | toy discipline | Internal transition functions are rejected. | cat-4/toy (toy discipline rule; toy cleanup, no production surface) |
@@ -67,7 +67,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-022 | open | toy package surface | `src/index.ts` should not become an artificial public API. | cat-4/toy (toy discipline rule) |
 | TFIND-023 | resolved (#317/#320 cleanup) | toy layout | Package layout should mirror production package layout. | cat-4/toy (toy discipline rule; toy cleanup) |
 | TFIND-024 | open — cat-4 framing has a cat-1 PRODUCTION KERNEL: see TFIND-049 (toy realization blocked on it) | runtime adapters | Agent adapter path is still under-modeled. | cat-4/toy framing was WRONG that "`agent-adapters` exists in production" — it is NOT wired into the runtime host (effect-ai-native-agents Slice 4 unbuilt). The real gap = TFIND-049 (cat-1). TFIND-024 toy-realization blocked on TFIND-049 |
-| TFIND-025 | open | durable-tools | Shape C / wait arbitration remains unmodeled. | cat-4/toy (deferred toy modeling of an existing production durable-tools surface) |
+| TFIND-025 | open — RE-TRIAGED 2026-05-18 (audit): **cat-4/toy WRAPPER over a cat-1/2-FUTURE kernel** (Shape C step 2) — production-deferred, NOT framing | durable-tools | Shape C / wait arbitration remains unmodeled. | Shape C **step 1 LANDED**; **steps 2-3 explicitly remaining/unbuilt** (raceAll arbitration collapse + completions-table deletion — durable-tools-vs-workflow-engine-convergence.md:74-81; precondition "after per-context engine slice" now MET so it's schedulable production work, not architect-framing). Same family as TFIND-049 but precondition cleared. Toy can't model an unbuilt slice — not toy laziness |
 | TFIND-026 | resolved (#321) | durable backend | Durable-streams backend reached Group D. | cat-4/toy (toy milestone; toy PR #321, no production surface) |
 | TFIND-027 | accepted | toy readability | Duplicate inline configuration code is acceptable when it documents wiring. | cat-4/toy (toy readability rule; accepted, no action) |
 | TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. | cat-1 (REAL production runtime bug — an operator running a host via the public capability hits a missing `RuntimeOutputTable`; surfaced by the toy adopting prod composition) |
@@ -86,8 +86,8 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-041 | resolved (#336 — decision B + by-decision doc-comment landed) | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). | cat-1 (rubric anchor — real architectural shape question; resolution = right-sized by-decision doc-comment, zero behavior change) |
 | TFIND-042 | resolved (#337) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. | cat-4 (test-infra/tooling artifact — cold-start latency; test-infra-only fix, NO production code) |
 | TFIND-043 | open (low priority — test-infra flake, TFIND-042-class) | runtime / test infra | `DurableStreamsWorkflowEngine` VALIDATION.5 flakes under 17-way local turbo contention. | cat-4 (test-infra/tooling artifact — load-contention flake; CI-arbiter, correctly NOT dispatched to a production sidecar) |
-| TFIND-044 | QUEUED-FOR-ARCHITECT (framing = AMENDMENT to existing `SDD_DURABLE_TABLE_REACT_LIVE_QUERY.md` §0, NOT a new SDD; was TFIND-005 "fork (2)") | client-sdk / effect-durable-operators provider | `DurableTableProvider`'s single `ROut` generic cannot carry N heterogeneous precise `DurableTable` `<Self>` identities (`firegridRuntimeTableTags`; flamecast `client/main.tsx:360` TS2322) — a latent precision leak the TFIND-005 `any` was hiding. The provider API/usage WAS SDD'd (REACT_LIVE_QUERY); its generic *type shape* was not. | cat-2 (real boundary/wrong-shape — a real flamecast consumer hits it; the provider abstraction can't express the precise heterogeneous identity set; architect-gated; framing = §0 amendment to the existing provider SDD) |
-| TFIND-045 | QUEUED-FOR-ARCHITECT (own SDD; halt-rule finding surfaced by #326 verify; co-gates #326 flip with TFIND-044) | host-sdk / control-request-reconciler | `RuntimeControlRequestReconcilerEnvironment` (`control-request-reconciler.ts:42-46`) omits `RuntimeOutputTable` + `HostRuntimeContextExecutionEnv` that `reconcileStartRequest:211` transitively requires via `startRuntime()`→`RuntimeContextEngineRegistry` — a genuine missing-dependency the TFIND-005 `any` was masking (Crux-B false-equivalence). | cat-2 (real production correctness — declared Effect env alias incomplete; fails when ambient doesn't supply it, TFIND-028 class; controlled experiment proved NOT branch scope-creep; relates TFIND-029 env-enumeration family, distinct mechanism from TFIND-044) |
+| TFIND-044 | resolved (#348 `798821692` — Option B named coarse provider seam, branded `AnyDurableTableTag`; SDD #345; signed off Gurdas 2026-05-18) | client-sdk / effect-durable-operators provider | `DurableTableProvider`'s single `ROut` generic cannot carry N heterogeneous precise `DurableTable` `<Self>` identities (`firegridRuntimeTableTags`; flamecast `client/main.tsx:360` TS2322) — a latent precision leak the TFIND-005 `any` was hiding. The provider API/usage WAS SDD'd (REACT_LIVE_QUERY); its generic *type shape* was not. | cat-2 (real boundary/wrong-shape — a real flamecast consumer hits it; the provider abstraction can't express the precise heterogeneous identity set; architect-gated; framing = §0 amendment to the existing provider SDD) |
+| TFIND-045 | resolved (#347 `67de514a0` — enumerate reconciler env transitive deps; SDD #345; §5-Q1 oracle clean, §5-Q3 no external consumers; signed off Gurdas 2026-05-18) | host-sdk / control-request-reconciler | `RuntimeControlRequestReconcilerEnvironment` (`control-request-reconciler.ts:42-46`) omits `RuntimeOutputTable` + `HostRuntimeContextExecutionEnv` that `reconcileStartRequest:211` transitively requires via `startRuntime()`→`RuntimeContextEngineRegistry` — a genuine missing-dependency the TFIND-005 `any` was masking (Crux-B false-equivalence). | cat-2 (real production correctness — declared Effect env alias incomplete; fails when ambient doesn't supply it, TFIND-028 class; controlled experiment proved NOT branch scope-creep; relates TFIND-029 env-enumeration family, distinct mechanism from TFIND-044) |
 | TFIND-046 | open (low priority — client-sdk ergonomic completeness; annotated in #341 MIGRATION_NOTES) | client-sdk / durable tables | client SDK exposes `FiregridRuntimeTables.ControlPlane` but not the `runtimeControlPlaneStreamUrl` builder needed to instantiate its layer, forcing consumer-shaped code to import the URL helper from `@firegrid/protocol/launch`. | cat-1 (real consumer gap — a client-side live control-plane query, the Flamecast `useDurableTable` pattern, must reach into protocol for the stream URL; low severity but consumer-facing; fix = client-sdk re-export/fold. NOT toy-test-cleanness: a real non-Firegrid consumer hits the identical import) |
 | TFIND-047 | open (filed 2026-05-18 by Gurdas; framing-gated, distinct from TFIND-040) | client-sdk / snapshot observation typing | `RuntimeContextSnapshot["agentOutputs"]` carries weaker typing than runtime-side `RuntimeAgentOutputObservation`: the Codex test needs `asRecord` defensive casts to read `event.part.delta` / `event.part.name` from snapshot rows, while the same fields are properly typed when consumed from `RuntimeOutputTable.events.rows()` directly. | cat-2 (real client-SDK type-precision boundary — the snapshot path loses observation type precision the runtime side has, forcing consumer casts; distinct from TFIND-040 subscription ergonomics; relates TFIND-030/035 SSOT but a deeper `.part.*`/row-shape precision gap not closed by #329) |
 | TFIND-048 | open — REFRAMED 2026-05-18 (Reading 2 / architectural; was mis-shaped as "client-sdk missing helper"); framing-gated, folds into the #332-impl MCP-lifecycle question; blocks Codex ACP | client/host boundary / MCP route + URL lifecycle | The #332 client/host model does not resolve **who builds the concrete `contextId`-scoped MCP URL and when**. Codex ACP bakes it client-side pre-`createOrLoad`; production (`host-sdk/mcp-host.ts`, CLI) has the **host** own the MCP server with a `/mcp/runtime-context/:contextId` route resolved at tool-call time. Client-baking a concrete URL into the intent is test-fixture-shaped. | cat-1/2 **architectural** (real production-model gap, not a missing API: re-exporting `sessionContextIdForExternalKey` would canonize the backwards lifecycle = WRONG fix. The determinism primitive itself is sound; the smell is URL-lifecycle ownership. Migration-as-validation working exactly as designed — proved #332 left an MCP-lifecycle hole. NOT cat-3 toy-fix: the production model needs the decision, not the toy) |
@@ -144,6 +144,47 @@ sidecar SDD (done or in-flight); cat-5 (TFIND-029) → low-pri sidecar
 toy-coverage/discipline (006, 010–027, 042/043) → toy maintainer / coverage
 tooling, NOT production sidecars. Most of the open backlog (010–025) is
 cat-4 toy modeling roadmap, correctly not production work.
+
+## Cat-4 Capability Audit (2026-05-18)
+
+One-pass coordinator-verified capability-existence audit of the open
+cat-4 toy-modeling cluster (after three "cat-4 wrapper over cat-1/2
+kernel" discoveries: TFIND-012/015/024→049). Converts the CONFIGS
+queue from consumer-hypothesis to verified plan. Per-finding verdict
+(file:line evidence in each entry / index cell):
+
+- **TFIND-010** — BUILDABLE. `RuntimeContextEngineRegistryLive` composed
+  in `FiregridRuntimeHostLive` (layers.ts:259); consumed by
+  control-reconciler + input-dispatcher.
+- **TFIND-011** — BUILDABLE. Startup reconciliation EXISTS
+  (`RuntimeContextEngineRegistry.reconcile()` per-context, before tailing
+  — registry.ts:195-213 / startOrAttach:184).
+- **TFIND-014** — RESOLVED/REALIZED by #343 (stdio-jsonl tool execution:
+  `RuntimeToolUseExecutorLive` + `toolUseToEffect` + `Activity.make`,
+  e2e-tested). "deferred" was stale.
+- **TFIND-016** — BUILDABLE-INDIRECT / shape-note. `Activity.make`
+  EXISTS but workflow-internal-by-design; a dedicated activity-boundary
+  config may be the wrong shape (observe via public surface; likely
+  subsumed by the durable-streams replay config). Small shape decision,
+  not a kernel; low priority.
+- **TFIND-024** — PRODUCTION-DEFERRED → TFIND-049 (effect-ai-native
+  Slice 4 unbuilt). Confirmed.
+- **TFIND-025** — PRODUCTION-DEFERRED. Shape C step 1 LANDED; steps 2-3
+  unbuilt (convergence.md:74-81); cat-4 wrapper over a cat-1/2-FUTURE
+  kernel, precondition (per-context engine) now MET → schedulable
+  production work, NOT architect-framing.
+- **multi-context-production-consuming-pipeline** — BUILDABLE. Per-context
+  observation demuxes cleanly through the public surface (contextId
+  primary/composite key; registry per-context lookup;
+  snapshot/waitForAgentOutputObservation/watchContexts filter per
+  context). Dispatched to `33` 2026-05-18 (toy-side validation of
+  TFIND-004/008 "unblocked by #332"; surface friction → cat-1 ergonomic
+  finding, not a halt).
+
+**No new architectural-framing kernel surfaced** — only TFIND-015
+(permission/codec authority, pre-existing) joins the framing bundle.
+TFIND-024/025 are production-deferred roadmap lines (build, not frame).
+See [[feedback-configs-queue-precondition-verify-capability]].
 
 ## Findings
 
