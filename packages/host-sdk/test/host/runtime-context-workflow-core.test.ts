@@ -42,6 +42,9 @@ import {
   FiregridRuntimeHostWithWorkflowLive,
 } from "../../src/host/layers.ts"
 import {
+  HostRuntimeObservationSubstrateLive,
+} from "../../src/host/runtime-substrate.ts"
+import {
   PerContextRuntimeOutputWriter,
 } from "../../src/host/per-context-runtime-output.ts"
 import {
@@ -336,6 +339,10 @@ describe("workflow-native runtime-context core", () => {
           return yield* AgentOutputAfterWorkflow.execute({ contextId })
         }).pipe(
           Effect.provide(workflowLayer),
+          Effect.provide(HostRuntimeObservationSubstrateLive),
+          Effect.provide(DurableStreamsWorkflowEngine.layer({
+            streamUrl: streamUrl(`${namespace}.test.workflow`),
+          })),
           Effect.provide(FiregridRuntimeHostWithWorkflowLive({
             durableStreamsBaseUrl: baseUrl,
             namespace,
@@ -414,6 +421,10 @@ describe("workflow-native runtime-context core", () => {
           return yield* Fiber.join(fiber)
         }).pipe(
           Effect.provide(workflowLayer),
+          Effect.provide(HostRuntimeObservationSubstrateLive),
+          Effect.provide(DurableStreamsWorkflowEngine.layer({
+            streamUrl: streamUrl(`${namespace}.test.workflow`),
+          })),
           Effect.provide(FiregridRuntimeHostWithWorkflowLive({
             durableStreamsBaseUrl: baseUrl,
             namespace,

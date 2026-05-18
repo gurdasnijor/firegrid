@@ -366,8 +366,9 @@ dependencies. The client is one binding of the schema catalog, not a
 wrapper around the agent-tool catalog.
 
 For durable RuntimeContext-backed work, the client should expose a session
-facade that keeps low-level runtime identity and ingress details out of product
-apps:
+facade that keeps low-level runtime identity and delivery details out of
+product apps. Client write methods append durable control intents; they do not
+write runtime-owned state, workflow deferred rows, or live adapter transports.
 
 ```ts
 const session = yield* firegrid.sessions.createOrLoad({
@@ -388,10 +389,38 @@ yield* permission.respond({ decision })
 ```
 
 This facade is still a binding over Firegrid primitives. It should hide
-deterministic `RuntimeContext` identity, `RuntimeIngress` input id construction,
+deterministic `RuntimeContext` identity, runtime input intent id construction,
 permission-response idempotency, and runtime-observation joins from callers.
 Product apps may still own product facts and read models, but they should not
-rebuild Firegrid session/ingress identity helpers.
+rebuild Firegrid session/control-intent identity helpers.
+
+The post-Path-X input boundary is:
+
+```txt
+client method
+  -> append protocol-owned RuntimeInputIntent to the namespace control stream
+
+owning host/workflow
+  -> host-wide local dispatcher observes accepted intent for an active
+     per-context RuntimeContext engine
+  -> complete the workflow runtime-input DurableDeferred
+  -> dispatch through RuntimeContextWorkflowSession.send
+```
+
+The client must not write `RuntimeIngressTable` rows, workflow deferred rows, or
+host-owned stream segments directly. Those are runtime-owned state or host
+execution details. Programmatic prompting stays on the client surface because
+the client writes intent; the workflow remains the single writer that turns
+accepted intent into runtime input state.
+
+`RuntimeInputIntent` is the long-term durable record for client-written runtime
+input. It is not a bridge to keep the old ingress tier alive. After Path X, the
+allowed chain is client -> intent -> host-wide local dispatcher -> local
+per-context workflow `DurableDeferred` completion ->
+`RuntimeContextWorkflowSession.send`. The runtime-ingress table, delivery
+tracker, old delivery subscriber, `appendRuntimeIngressToOwner`, and
+owner-host workflow stream routing remain deleted. The dispatcher is a local
+demux to active per-context engines, not a cross-host router.
 
 `packages/client` remains runtime-source-free. If a facade method actively
 starts a runtime, it must depend on a protocol-owned runtime-start
@@ -519,7 +548,6 @@ own Firegrid envelope decoding:
 factory status view
   = app facts/runs
   + session.snapshot().runs
-  + session.snapshot().inputs
   + session.snapshot().agentOutputs
 ```
 

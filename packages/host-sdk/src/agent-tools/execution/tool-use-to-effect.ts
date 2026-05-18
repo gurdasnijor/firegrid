@@ -66,6 +66,7 @@ import {
 } from "@firegrid/protocol/agent-tools"
 import {
   Duration,
+  Clock,
   Effect,
   ParseResult,
   Schema,
@@ -83,7 +84,6 @@ import {
   type DurableWaitRowUpsert,
   type FieldEqualsTrigger,
 } from "@firegrid/runtime/durable-tools"
-import { ScheduledInputWorkflow } from "./scheduled-input-workflow.ts"
 import { AgentToolHost } from "./tool-host.ts"
 import {
   toolErrorResult,
@@ -399,19 +399,26 @@ const runScheduleMeTool = (
 ): Effect.Effect<
   ScheduleMeToolOutput,
   ToolError,
-  WorkflowEngine.WorkflowEngine
+  AgentToolHost | WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
 > => {
   const scheduleId = scheduleIdFor(ctx.contextId, toolUseId)
   const prompt = promptFromText(input.prompt)
-  return ScheduledInputWorkflow.execute(
-    {
-      contextId: ctx.contextId,
-      dueAtMs: input.when,
+  return Effect.gen(function*() {
+    const host = yield* AgentToolHost
+    const now = yield* Clock.currentTimeMillis
+    // firegrid-workflow-driven-runtime.PHASE_4_TEMPORAL_WORKFLOWS.2
+    yield* DurableClock.sleep({
+      name: scheduleId,
+      duration: Duration.millis(Math.max(0, input.when - now)),
+      inMemoryThreshold: Duration.zero,
+    })
+    yield* host.appendSessionPrompt({
+      toolUseId,
+      sessionId: ctx.contextId,
       prompt,
       inputId: scheduleId,
-    },
-    { discard: true },
-  ).pipe(
+    })
+  }).pipe(
     Effect.as<ScheduleMeToolOutput>({ scheduled: true, scheduleId }),
     Effect.mapError((cause) =>
       toolExecutionFailed(toolUseId, "schedule_me", cause),

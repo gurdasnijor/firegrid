@@ -1,18 +1,18 @@
-import { WorkflowEngine } from "@effect/workflow"
+import type { WorkflowEngine } from "@effect/workflow"
 import {
   CurrentHostSession,
+  RuntimeControlPlaneTable,
   RuntimeStartCapability,
-  hostOwnedStreamUrl,
   requireLocalContext,
-  type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import {
+  makeRuntimeIngressInputRow,
+  makeRuntimeInputIntentRow,
   type RuntimeIngressInputRow,
   type RuntimeIngressRequest,
+  type RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
 import { Effect, Layer } from "effect"
-import type { DurableTableError, DurableTableHeaders } from "effect-durable-operators"
-import { RuntimeHostConfig } from "./config.ts"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import type { StartRuntimeOptions } from "./types.ts"
 import {
@@ -27,12 +27,29 @@ import {
 } from "./internal/runtime-context-helpers.ts"
 import { RuntimeContextRead } from "@firegrid/runtime/control-plane"
 import {
-  RuntimeIngressError,
   runtimeIngressError,
+  type RuntimeIngressError,
 } from "@firegrid/runtime/errors"
-import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
-import type { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
-import { appendRuntimeInputDeferred } from "./runtime-input-deferred.ts"
+import {
+  RuntimeContextEngineRegistry,
+} from "./runtime-context-engine-registry.ts"
+import {
+  AgentToolHost,
+  type AgentToolHostService,
+} from "../agent-tools/execution/tool-host.ts"
+import {
+  runtimeContextWorkflowSupportLayer,
+} from "./runtime-context-workflow-support.ts"
+
+type RuntimeIngressAppendEnvironment =
+  | RuntimeContextRead
+  | RuntimeControlPlaneTable
+
+const runtimeControlPlaneTable: Effect.Effect<
+  RuntimeControlPlaneTable["Type"],
+  never,
+  RuntimeControlPlaneTable
+> = RuntimeControlPlaneTable
 
 const executeRuntimeContextWorkflowForContextId = (
   engine: WorkflowEngine.WorkflowEngine["Type"],
@@ -49,6 +66,65 @@ const executeRuntimeContextWorkflowForContextId = (
     return result
   })
 
+const claimAndRunRuntimeContextWorkflow = (
+  context: Parameters<RuntimeContextEngineRegistry["Type"]["claimActive"]>[0],
+  registry: RuntimeContextEngineRegistry["Type"],
+  agentToolHost: AgentToolHostService,
+) =>
+  Effect.gen(function*() {
+    const handle = yield* registry.claimActive(context)
+    yield* registry.reconcile(context)
+    return yield* executeRuntimeContextWorkflowForContextId(handle.engine, context.contextId).pipe(
+      Effect.provide(runtimeContextWorkflowSupportLayer(handle, agentToolHost)),
+      Effect.ensuring(registry.deregister(context.contextId)),
+    )
+  }).pipe(
+    Effect.withClock(runtimeExecutionClock),
+  )
+
+const insertRuntimeInputIntent = (
+  request: RuntimeIngressRequest,
+  control: RuntimeControlPlaneTable["Type"],
+): Effect.Effect<RuntimeInputIntentRow, RuntimeIngressError> =>
+  Effect.gen(function*() {
+    const intent = makeRuntimeInputIntentRow(request)
+    const stored = yield* control.inputIntents.insertOrGet(intent).pipe(
+      Effect.mapError(cause =>
+        runtimeIngressError(
+          "append",
+          "failed to append runtime input intent",
+          request.contextId,
+          request.inputId,
+          cause,
+        )),
+    )
+    return stored._tag === "Found" ? stored.row : intent
+  })
+
+const readRuntimeContextForIngress = (
+  request: RuntimeIngressRequest,
+): Effect.Effect<void, RuntimeIngressError, RuntimeContextRead> =>
+  readRuntimeContext(request.contextId).pipe(
+    Effect.mapError(cause =>
+      runtimeIngressError(
+        "append",
+        "failed to resolve runtime context for ingress append",
+        request.contextId,
+        request.inputId,
+        cause,
+      )),
+    Effect.asVoid,
+  )
+
+const makePendingRuntimeIngressInput = (
+  request: RuntimeIngressRequest,
+  row: RuntimeInputIntentRow,
+): RuntimeIngressInputRow =>
+  makeRuntimeIngressInputRow(request, {
+    inputId: row.intentId,
+    createdAt: row.createdAt,
+  })
+
 export const startRuntime = (
   options: StartRuntimeOptions,
 ) =>
@@ -63,115 +139,38 @@ export const startRuntime = (
   // RuntimeControlPlaneTable + CurrentHostSession from this same host
   // scope; it is not a tool-arg or env-var check.
   Effect.gen(function* () {
-    yield* requireLocalContext(options.contextId)
-    const engine = yield* WorkflowEngine.WorkflowEngine
-    return yield* executeRuntimeContextWorkflowForContextId(engine, options.contextId)
-  }).pipe(
-    Effect.withClock(runtimeExecutionClock),
-  )
+    const context = yield* requireLocalContext(options.contextId)
+    const registry = yield* RuntimeContextEngineRegistry
+    const agentToolHost = yield* AgentToolHost
+    return yield* claimAndRunRuntimeContextWorkflow(context, registry, agentToolHost)
+  })
 
 export const RuntimeStartCapabilityLive = Layer.effect(
   RuntimeStartCapability,
   Effect.gen(function* () {
-    const engine = yield* WorkflowEngine.WorkflowEngine
     const contextRead = yield* RuntimeContextRead
     const hostSession = yield* CurrentHostSession
+    const registry = yield* RuntimeContextEngineRegistry
+    const agentToolHost = yield* AgentToolHost
     return RuntimeStartCapability.of({
       start: options =>
         Effect.gen(function* () {
-          yield* requireLocalRuntimeContextWithHostSession(
+          const context = yield* requireLocalRuntimeContextWithHostSession(
             contextRead,
             hostSession,
             options.contextId,
           )
-          return yield* executeRuntimeContextWorkflowForContextId(engine, options.contextId)
-        }).pipe(
-          Effect.withClock(runtimeExecutionClock),
-        ),
+          return yield* claimAndRunRuntimeContextWorkflow(context, registry, agentToolHost)
+        }),
     })
   }),
 )
 
 export const appendRuntimeIngress = (
   request: RuntimeIngressRequest,
-): Effect.Effect<RuntimeIngressInputRow, RuntimeIngressError, RuntimeContextRead | RuntimeHostConfig> =>
-  Effect.gen(function* () {
-    // firegrid-host-context-authority.PROMPT_ROUTING.1
-    // firegrid-host-context-authority.PROMPT_ROUTING.2
-    //
-    // Prompt append is durable routing, not local process execution.
-    // Resolve RuntimeContext through the namespace-scoped control plane,
-    // then complete the owner workflow's input deferred. The caller never
-    // passes or constructs owner host stream URLs.
-    const context = yield* readRuntimeContext(request.contextId).pipe(
-      Effect.mapError(cause =>
-        runtimeIngressError(
-          "append",
-          "failed to resolve runtime context for ingress append",
-          request.contextId,
-          request.inputId,
-          cause,
-        )),
-    )
-    const options = yield* RuntimeHostConfig
-    return yield* appendRuntimeIngressToOwner(request, context, options)
-  })
-
-export const appendRuntimeIngressToOwner = (
-  request: RuntimeIngressRequest,
-  context: RuntimeContext,
-  options: RuntimeHostConfig["Type"],
-): Effect.Effect<RuntimeIngressInputRow, RuntimeIngressError> =>
-  appendRuntimeIngressToWorkflow(request, context).pipe(
-    Effect.provide(ownerWorkflowEngineLayer({
-      baseUrl: options.durableStreamsBaseUrl,
-      ...(options.headers === undefined ? {} : { headers: options.headers }),
-      context,
-    })),
-    Effect.scoped,
-    Effect.mapError(cause =>
-      cause instanceof RuntimeIngressError ? cause : runtimeIngressError(
-        "append",
-        "failed to append runtime ingress deferred input to owner workflow",
-        request.contextId,
-        request.inputId,
-        cause,
-      )),
+): Effect.Effect<RuntimeIngressInputRow, RuntimeIngressError, RuntimeIngressAppendEnvironment> =>
+  readRuntimeContextForIngress(request).pipe(
+    Effect.zipRight(runtimeControlPlaneTable),
+    Effect.flatMap(control => insertRuntimeInputIntent(request, control)),
+    Effect.map(row => makePendingRuntimeIngressInput(request, row)),
   )
-
-const ownerWorkflowEngineLayer = (
-  options: {
-    readonly baseUrl: string
-    readonly headers?: DurableTableHeaders
-    readonly context: RuntimeContext
-  },
-): Layer.Layer<WorkflowEngine.WorkflowEngine | WorkflowEngineTable, DurableTableError> =>
-  DurableStreamsWorkflowEngine.layer({
-    streamUrl: hostOwnedStreamUrl({
-      baseUrl: options.baseUrl,
-      prefix: options.context.host.streamPrefix,
-      segment: "workflow",
-    }),
-    ...(options.headers === undefined ? {} : { headers: options.headers }),
-  })
-
-const appendRuntimeIngressToWorkflow = (
-  request: RuntimeIngressRequest,
-  context: RuntimeContext,
-): Effect.Effect<
-  RuntimeIngressInputRow,
-  RuntimeIngressError,
-  WorkflowEngine.WorkflowEngine | WorkflowEngineTable
-> =>
-  Effect.gen(function*() {
-    return yield* appendRuntimeInputDeferred(request, context).pipe(
-      Effect.mapError(cause =>
-        runtimeIngressError(
-          "append",
-          "failed to append runtime ingress deferred input",
-          request.contextId,
-          request.inputId,
-          cause,
-        )),
-    )
-  })

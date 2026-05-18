@@ -3,6 +3,7 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  runtimeContextWorkflowStreamUrl,
   type HostId,
 } from "@firegrid/protocol/launch"
 import { Effect, Fiber, Layer, Schema } from "effect"
@@ -15,6 +16,12 @@ import { WaitFor, type WaitForOptions } from "@firegrid/runtime/durable-tools"
 import {
   FiregridRuntimeHostWithWorkflowLive,
 } from "../../src/host/index.ts"
+import {
+  DurableStreamsWorkflowEngine,
+} from "@firegrid/runtime/workflow-engine"
+import {
+  HostRuntimeObservationSubstrateLive,
+} from "../../src/host/runtime-substrate.ts"
 
 // Typed runtime wait sources. firegrid-typed-wait-source-redesign.TYPED_SOURCES.6
 const AGENT_OUTPUT_SOURCE = { _tag: "AgentOutput" } as const
@@ -56,6 +63,18 @@ const hostLayer = (input: {
     namespace: input.namespace,
     hostId: input.hostId,
     input: true,
+  })
+
+const workflowEngineLayer = (input: {
+  readonly namespace: string
+  readonly contextId: string
+}) =>
+  DurableStreamsWorkflowEngine.layer({
+    streamUrl: runtimeContextWorkflowStreamUrl({
+      baseUrl: baseUrl!,
+      namespace: input.namespace,
+      contextId: input.contextId,
+    }),
   })
 
 const agentOutputRaw = (event: AgentOutputEvent): string =>
@@ -117,6 +136,8 @@ describe("runtime-host wait_for source registrations", () => {
       }))
 
     const layer = workflowLayer.pipe(
+      Layer.provideMerge(HostRuntimeObservationSubstrateLive),
+      Layer.provideMerge(workflowEngineLayer({ namespace, contextId })),
       Layer.provideMerge(hostLayer({ namespace, hostId })),
     ) as Layer.Layer<never, unknown, never>
 
@@ -193,6 +214,8 @@ describe("runtime-host wait_for source registrations", () => {
       }))
 
     const layer = workflowLayer.pipe(
+      Layer.provideMerge(HostRuntimeObservationSubstrateLive),
+      Layer.provideMerge(workflowEngineLayer({ namespace, contextId })),
       Layer.provideMerge(hostLayer({ namespace, hostId })),
     ) as Layer.Layer<never, unknown, never>
 

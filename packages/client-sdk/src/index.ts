@@ -32,7 +32,7 @@ export {
 } from "./operations.ts"
 export type {
   PublicPromptRequest,
-  RuntimeIngressInputRow,
+  RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
 export type {
   FiregridSessionId,

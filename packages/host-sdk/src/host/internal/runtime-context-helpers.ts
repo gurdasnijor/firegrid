@@ -45,7 +45,7 @@ export const readRuntimeContext = (
     })
   })
 
-export const readRuntimeContextWithHostSession = (
+const readRuntimeContextWithHostSession = (
   contextRead: RuntimeContextReadService,
   contextId: string,
 ) =>

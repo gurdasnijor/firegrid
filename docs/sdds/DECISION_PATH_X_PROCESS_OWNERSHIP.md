@@ -173,6 +173,6 @@ fallback.
 | `runCodecRuntimeEventPipeline` | DELETE from production reachability |
 | `runIngressDelivery` | DELETE once command delivery is workflow/owner-owned |
 | `runToolRouter` | DELETE once tool execution is workflow-owned via `RuntimeToolUseExecutor` |
-| `appendRuntimeIngress` / `appendRuntimeIngressToOwner` | RESHAPE/KEEP temporarily as the `session.prompt` / internal command seam until the deferred-input design replaces it |
+| `appendRuntimeIngress` / `appendRuntimeIngressToOwner` | SUPERSEDED by `RuntimeInputIntent` plus per-context workflow engines. Client/app prompt surfaces append intents; host-local dispatcher completes the active per-context workflow deferred. `appendRuntimeIngressToOwner` is not target architecture. |
 | `RuntimeOutputJournalLayer` | RESHAPE/KEEP on the runtime read-side substrate; host-sdk production composition must **not** depend on it as an authority layer |
 </content>

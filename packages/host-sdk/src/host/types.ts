@@ -4,6 +4,7 @@ import type { LocalProcessSandboxProviderOptions } from "@firegrid/runtime/sourc
 export interface RuntimeHostConfigValue {
   readonly inputEnabled: boolean
   readonly durableStreamsBaseUrl: string
+  readonly namespace: string
   readonly headers?: DurableTableHeaders
 }
 

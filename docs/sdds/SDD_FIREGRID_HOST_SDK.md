@@ -383,10 +383,13 @@ input writes are host/app-routed.
 
 Post-#309 cleanup removes the transient runtime ingress appender/delivery
 surfaces and converges prompt/permission/tool delivery on the reactive
-workflow's content-derived `DurableDeferred` waits. Host-sdk still exposes
-`appendRuntimeIngress` / `appendRuntimeIngressToOwner`, but the implementation
-completes owner-workflow input deferreds instead of writing a host-sdk-local
-`RuntimeIngressTable` queue. This is internal-only; it does not alter the
+workflow's content-derived `DurableDeferred` waits. The current target is
+`docs/sdds/SDD_FIREGRID_PER_CONTEXT_RUNTIME_ENGINE.md`: runtime input writes
+append `RuntimeInputIntent` records, a host-wide local dispatcher demuxes
+those intents to active per-context workflow engines, and local
+`engine.deferredDone` resumes the workflow. `appendRuntimeIngressToOwner`,
+owner-host workflow stream URL routing, and cross-host router bridge code are
+not part of the target. This is internal-only; it does not alter the
 client-sdk, host-sdk, or cli public surfaces and must not reintroduce a
 deprecated path.
 

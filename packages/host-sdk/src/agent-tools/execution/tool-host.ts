@@ -19,7 +19,7 @@
  *
  * Implements:
  *  - agent-codec-runtime-tools.md/agent-tool-layer-phase-2 §"PR sequencing",
- *    §"`ScheduledInputWorkflow`" (host-specific activity wiring)
+ *    §"`schedule_me` host-specific append wiring"
  *  - firegrid-scheduling-tool-bindings.PACKAGE_PLACEMENT.2 (mount Layers
  *    live on @firegrid/runtime)
  */
@@ -90,12 +90,6 @@ export interface SessionLifecycleParams {
   readonly reason?: string
 }
 
-export interface AppendScheduledPromptParams {
-  readonly contextId: string
-  readonly inputId: string
-  readonly prompt: AgentPrompt
-}
-
 export interface AgentToolHostService {
   /**
    * Create/start a child `RuntimeContextWorkflow` session.
@@ -134,9 +128,11 @@ export interface AgentToolHostService {
   ) => Effect.Effect<unknown, ToolExecutionFailedError>
 
   /**
-   * Append a prompt to an existing RuntimeContext-backed session. The
-   * host implementation must route through RuntimeContext.host-owned
-   * ingress instead of constructing stream URLs at the call site.
+   * Append a prompt to an existing RuntimeContext-backed session. This is the
+   * canonical prompt-intent append seam for tool lowering; session_prompt uses
+   * the requested session and schedule_me uses the current context after its
+   * durable delay. The host implementation must route through runtime input
+   * intents instead of constructing stream URLs at the call site.
    */
   readonly appendSessionPrompt: (
     params: AppendSessionPromptParams,
@@ -150,16 +146,6 @@ export interface AgentToolHostService {
     params: SessionLifecycleParams,
   ) => Effect.Effect<void, ToolExecutionFailedError>
 
-  /**
-   * Append a runtime-input row for a future-fired scheduled prompt.
-   * Called from inside `ScheduledInputWorkflow`'s body after the
-   * `DurableClock.sleep` wakes. The host implementation is responsible
-   * for idempotency on `inputId` (so workflow replay does not duplicate
-   * the row).
-   */
-  readonly appendScheduledPrompt: (
-    params: AppendScheduledPromptParams,
-  ) => Effect.Effect<void, ToolExecutionFailedError>
 }
 
 export class AgentToolHost extends Context.Tag(

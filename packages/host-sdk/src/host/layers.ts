@@ -1,5 +1,4 @@
 import { NodeContext } from "@effect/platform-node"
-import type { WorkflowEngine } from "@effect/workflow"
 import {
   CurrentHostSession,
   HostIdSegmentSchema,
@@ -12,22 +11,17 @@ import {
   type HostSessionId,
 } from "@firegrid/protocol/launch"
 import { Clock, Effect, Layer, Schema } from "effect"
-import type { DurableTableError, DurableTableHeaders } from "effect-durable-operators"
+import type { DurableTableHeaders } from "effect-durable-operators"
 import { RuntimeHostConfig } from "./config.ts"
 import type { RuntimeHostTopologyOptions } from "./types.ts"
 import { RuntimeHostAgentToolHostLive } from "./agent-tool-host-live.ts"
+import { RuntimeStartCapabilityLive } from "./commands.ts"
 import {
-  RuntimeContextWorkflowNativeLayer,
   RuntimeContextWorkflowSession,
 } from "./runtime-context-workflow-core.ts"
 import {
-  HostRuntimeObservationSubstrateLive,
-  RuntimeToolUseExecutorLive,
-} from "./runtime-substrate.ts"
-import {
   PerContextRuntimeOutputWriterLive,
 } from "./per-context-runtime-output.ts"
-import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import {
   LocalProcessSandboxProvider,
   RuntimeEnvResolverPolicy,
@@ -43,6 +37,10 @@ import {
 import {
   makeRawRuntimeContextWorkflowSessionService,
 } from "./runtime-context-session/raw-adapter.ts"
+import {
+  RuntimeContextEngineRegistryLive,
+  RuntimeInputIntentDispatcherLive,
+} from "./runtime-context-engine-registry.ts"
 
 const RuntimeContextWorkflowSessionLive = Layer.scoped(
   RuntimeContextWorkflowSession,
@@ -78,21 +76,6 @@ const hostOwnedSandboxCommandLayer = (
           ...(options.headers !== undefined ? { headers: options.headers } : {}),
         },
       })),
-  )
-
-// firegrid-runtime-boundary-reconciliation.HOST_SPLIT.4
-// Host layer topology is separated from command handlers; this module composes
-// table, workflow, sandbox, and host-scoped capability layers.
-const runtimeHostAgentToolHostWithControlPlaneLive = (
-  workflowEngineLayer: Layer.Layer<
-    WorkflowEngine.WorkflowEngine,
-    DurableTableError,
-    CurrentHostSession
-  >,
-) =>
-  RuntimeHostAgentToolHostLive.pipe(
-    Layer.provide(RuntimeControlPlaneRecorderLive),
-    Layer.provide(workflowEngineLayer),
   )
 
 // firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.1
@@ -139,6 +122,7 @@ const namespaceScopedLayer = (
       // firegrid-agent-ingress.HOST.7
       inputEnabled: options.input === true,
       durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+      namespace: options.namespace,
       ...(options.headers !== undefined ? { headers: options.headers } : {}),
     }),
     RuntimeControlPlaneTable.layer({
@@ -174,21 +158,6 @@ const hostOwnedOutputLayer = (
       })),
   )
 
-const hostOwnedWorkflowEngineLayer = (
-  options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
-): Layer.Layer<WorkflowEngine.WorkflowEngine, DurableTableError, CurrentHostSession> =>
-  Layer.unwrapEffect(
-    Effect.map(CurrentHostSession, (session) =>
-      DurableStreamsWorkflowEngine.layer({
-        streamUrl: hostOwnedStreamUrl({
-          baseUrl: options.baseUrl,
-          prefix: session.streamPrefix,
-          segment: "workflow",
-        }),
-        ...(options.headers !== undefined ? { headers: options.headers } : {}),
-      })),
-  )
-
 const hostScopedLayer = (
   options: RuntimeHostTopologyOptions,
 ) => {
@@ -196,23 +165,22 @@ const hostScopedLayer = (
     baseUrl: options.durableStreamsBaseUrl,
     ...(options.headers !== undefined ? { headers: options.headers } : {}),
   }
-  const workflowEngineLayer = hostOwnedWorkflowEngineLayer(sharedOptions)
   const hostTables = Layer.mergeAll(
     hostOwnedOutputLayer(sharedOptions),
     hostOwnedSandboxCommandLayer(sharedOptions),
-    workflowEngineLayer,
   )
-  const observation = HostRuntimeObservationSubstrateLive.pipe(
+  const hostServices = Layer.mergeAll(
+    PerContextRuntimeOutputWriterLive,
+    RuntimeHostAgentToolHostLive.pipe(
+      Layer.provide(RuntimeControlPlaneRecorderLive),
+    ),
+  ).pipe(
     Layer.provideMerge(hostTables),
-    Layer.provideMerge(runtimeHostAgentToolHostWithControlPlaneLive(workflowEngineLayer)),
-    Layer.provideMerge(PerContextRuntimeOutputWriterLive),
-    // firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2
-    Layer.provideMerge(RuntimeToolUseExecutorLive),
   )
   const stdinClaim = SandboxStdinEmissionClaimLive.pipe(
     Layer.provideMerge(hostTables),
   )
-  return Layer.mergeAll(observation, stdinClaim)
+  return Layer.mergeAll(hostServices, stdinClaim)
 }
 
 export const FiregridRuntimeHostLive = (
@@ -230,10 +198,14 @@ export const FiregridRuntimeHostLive = (
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
-  return RuntimeContextWorkflowNativeLayer.pipe(
+  return Layer.mergeAll(
+    RuntimeInputIntentDispatcherLive,
+    RuntimeStartCapabilityLive,
+  ).pipe(
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(hostScoped),
+    Layer.provideMerge(RuntimeContextEngineRegistryLive),
     Layer.provideMerge(namespaceScoped),
     Layer.provideMerge(session),
     Layer.provideMerge(envPolicy),
