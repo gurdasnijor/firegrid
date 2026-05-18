@@ -74,7 +74,7 @@ of scope for this package.
 | TFIND-040 | in-progress (`sidecar/session-observation` — SDD-first; OCA3; attach-point pending #332) | client-sdk / observations | Client SDK lacks a per-event session observation surface. |
 | TFIND-036 | QUEUED-FOR-ARCHITECT (architectural binary — SDD #335; coordinator cannot decide) | MCP / tools | Firegrid MCP toolkit lacks a read-only runtime-state query tool. |
 | TFIND-037 | superseded (duplicate — folded into TFIND-041) | ACP / tool execution | ACP MCP tool calls are provider-executed observations (= the ACP face of TFIND-041). |
-| TFIND-041 | decided B — session-mode owns lifecycle by decision; doc-comment pending | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
+| TFIND-041 | resolved (#336 — decision B + by-decision doc-comment landed) | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
 | TFIND-042 | open (low priority — test-infra flake) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. |
 
 ## Findings
@@ -982,7 +982,16 @@ tracking, the binary decision, and the probe result live under TFIND-041.
 
 ### TFIND-041: ToolUse event lifecycle is under-discriminated
 
-status: open (architectural — paused-and-tracked; binary decision pending Gurdas)
+status: resolved (#336, e361d4147 — decision B + by-decision doc-comment)
+
+RESOLVED 2026-05-18: Gurdas decided **(B)** — session/codec mode owns
+the ToolUse execution lifecycle by decision, not by default. The
+canonical decision is now recorded in-code (#336, doc-comment at the
+`agentProtocol === "acp"` branch in `runtime-context-workflow-core.ts`):
+ACP = observation-only, stdio-jsonl = client-result roundtrip, the
+`AgentOutput` `ToolUse` event is deliberately NOT discriminated by
+execution authority, and the (A) event-level discriminant is a tracked,
+deliberately-deferred future option. Doc-only, zero behaviour change.
 
 Reconciliation note: TFIND-037 (Codex, PR #330 branch) is the ACP-face
 duplicate of this finding and is superseded into it. This entry is the
