@@ -75,7 +75,7 @@ of scope for this package.
 | TFIND-036 | QUEUED-FOR-ARCHITECT (architectural binary — SDD #335; coordinator cannot decide) | MCP / tools | Firegrid MCP toolkit lacks a read-only runtime-state query tool. |
 | TFIND-037 | superseded (duplicate — folded into TFIND-041) | ACP / tool execution | ACP MCP tool calls are provider-executed observations (= the ACP face of TFIND-041). |
 | TFIND-041 | resolved (#336 — decision B + by-decision doc-comment landed) | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
-| TFIND-042 | open (low priority — test-infra flake) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. |
+| TFIND-042 | resolved (#337) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. |
 
 ## Findings
 
@@ -1087,7 +1087,21 @@ ToolResult-not-durably-observable point also touches TFIND-040
 
 ### TFIND-042: scenario-firegrid CLI `--help` flakes under high local turbo contention
 
-status: open (low priority — test-infra flake, not a regression)
+status: resolved (#337, 1f69c5583)
+
+RESOLVED 2026-05-18 (#337): diagnosed as cold-process startup latency —
+the test spawns a cold `pnpm firegrid --help` (pnpm bin + Node + CLI
+ESM graph); `--help` is fully deterministic (static-string asserts, no
+ports/network/races) so the only variable is process-start time. Under
+17-way local turbo contention the first cold invocation exceeded the 10s
+execFile cap and was killed mid-startup. NOT a determinism/correctness
+defect (correctly not surfaced as halt). Fix: raised execFile timeout
+10s→60s and per-test vitest timeout 15s→90s — a deterministic ceiling
+that resolves the instant the process exits (not a sleep/skip/quarantine
+/assertion-paper); all assertions + coverage intact; test stays in both
+the contended local turbo lane and CI. Validated: `pnpm turbo run test`
+17/17 (the exact triggering contention now passes), full gate clean,
+CI-confirmed. Test-infra only; no production code.
 
 Observed during TFIND-035 (#333) verification: under 17-way local
 `turbo` contention, the scenario-firegrid CLI `--help` test flaked once;
