@@ -160,6 +160,46 @@ source, not by convention. A deterministic record→blocked-pending→
 router-wakes test remains the empirical confirmation of this structural
 proof and is part of the completion gate.
 
+## Option Y implementation — UNRESOLVED type-threading knot (honest status)
+
+Shared-store gate: PASSED (structural proof above). Contained fixes:
+DONE + verified. Option Y *framing*: correct and signed off. But the
+concrete type-level threading is **not yet closed**, and I am recording
+the exact knot rather than forcing green:
+
+- The 3 seams (`commands.ts:163`, `agent-tool-host-live.ts:90`,
+  `toolkit-layer.ts:215`) still leak the 4 `DurableWait*` tags under the
+  #326 overlay.
+- Structurally, `runtimeContextWorkflowSupportLayer` *should* expose
+  `DurableWait*` in ROut: `HostRuntimeObservationSubstrateLive` →
+  `HostOwnedDurableToolsWaitForLive` (`Layer.unwrapEffect`) →
+  `DurableToolsWaitForLive` ends in
+  `routerLive.pipe(Layer.provideMerge(DurableWaitStoreLive),
+  Layer.provideMerge(durableToolsTableLive))`, so `DurableWaitStoreLive`'s
+  5 tags are in that layer's ROut, and `provideMerge` into
+  `RuntimeContextWorkflowNativeLayer` should both discharge the (now
+  widened) workflow-capture RIn and re-expose them.
+- `RuntimeContextEngineRegistry` methods are contractually `R = never`
+  (interface signatures carry no requirements channel), so the leak is
+  **not** from the pre-handle `registry.claimActive/reconcile` calls.
+- Yet the typechecker still shows `DurableWait*` residual at the seam.
+  The mismatch between this structural model and the checker is the
+  open knot: most likely a `Layer.unwrapEffect` ROut-erasure or a
+  `provideMerge` variance subtlety where `DurableWait*` is consumed as
+  RIn but not re-surfaced as ROut through the `unwrapEffect` boundary.
+
+This is **not** a new architectural fork (the design — execution-scoped,
+single shared store — is sound and proven). It is a focused Effect
+Layer-variance / `unwrapEffect`-ROut investigation. It needs either a
+fresh focused pass or a second set of eyes; continuing to iterate solo
+was thrashing. WIP (the widened `RuntimeContextWorkflowExecutionEnv` +
+workflow-core capture) is committed so the investigation has a concrete
+starting point.
+
+Not done (blocked on the knot above): the deterministic
+record→blocked-pending→wake test, Cat A/B/C fallout, full verification,
+#331 ready-flip, #326 rebase.
+
 ## Status of branch
 
 WIP committed (contained fixes + narrowed `HostRuntimeContextExecutionEnv`

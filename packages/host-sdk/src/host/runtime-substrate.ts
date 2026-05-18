@@ -55,6 +55,21 @@ export type HostRuntimeContextExecutionEnv =
   | CurrentHostSession
   | RuntimeHostConfig
 
+// TFIND-031 (Option Y, execution-scoped): the workflow-body capture
+// seam (`RuntimeContextWorkflowNativeLayer`) is built *inside*
+// `runtimeContextWorkflowSupportLayer`, where `HostRuntimeObservationSubstrateLive`
+// already provides the durable-wait substrate execution-scoped (one
+// shared materialized store — see SDD shared-store proof). So that seam
+// alone may capture the wider set including `DurableWait*`; the host-
+// level seams (commands / agent-tool-host) must NOT — those tags are
+// deliberately not ambient on the public `FiregridRuntimeHostWithWorkflowLive`.
+export type RuntimeContextWorkflowExecutionEnv =
+  | HostRuntimeContextExecutionEnv
+  | DurableWaitRowLookup
+  | DurableWaitRowUpsert
+  | DurableWaitCompletionRowLookup
+  | DurableWaitCompletionRowUpsert
+
 // firegrid-runtime-boundary-reconciliation.HOST_HARDENING.2
 // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
 // firegrid-typed-wait-source-redesign.REJECTION.2
