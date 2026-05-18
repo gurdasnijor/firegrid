@@ -138,3 +138,383 @@ Use this for spec PR opens, implementation PR opens, CI status, and review
 responses. Don't broadcast every commit — coordinator updates are
 review-shaped, not progress-shaped. See `docs/contributing/acai-walkthrough.md`
 for the end-to-end review cadence Firegrid PRs follow.
+
+
+
+## Beads (br) — Dependency-Aware Issue Tracking
+
+Beads provides a lightweight, dependency-aware issue database and CLI (`br` - beads_rust) for selecting "ready work," setting priorities, and tracking status. It complements MCP Agent Mail's messaging and file reservations.
+
+**Important:** `br` is non-invasive—it NEVER runs git commands automatically. You must manually commit changes after `br sync --flush-only`.
+
+### Firegrid workspace specifics (read this first)
+
+The generic guidance below is upstream beads_rust boilerplate. For this repo,
+these project facts override it:
+
+- **Workspace & prefix:** repo-root `.beads/`, resolved via `BEADS_DIR` in
+  `~/.zshenv` (single source of truth — not `.zshrc`; non-interactive script
+  shells must resolve the same workspace). Issue prefix is **`tf`** (IDs look
+  like `tf-q44`), *not* `br-`/`bd-`. Wherever the boilerplate says `br-###`,
+  read `tf-###`.
+- **Git-tracked state:** `br init` wrote `.beads/.gitignore` so the SQLite db,
+  WAL, and lock/daemon files are ignored and only **`.beads/issues.jsonl`**
+  (this `br` version names it `issues.jsonl`, not `beads.jsonl`),
+  `config.yaml`, and `metadata.json` are committed. The JSONL is the source of
+  truth; after `br sync --flush-only` run `git add .beads && git commit`.
+- **tiny-firegrid authority cutover:** Beads is the **sole** authority for
+  tiny-firegrid finding and configuration status. The old Markdown ledgers
+  (`packages/tiny-firegrid/FINDINGS.md`, `CONFIGS.md`, `HANDOFF.md`) were
+  **deleted** once the cutover was signed off (#354/#356) — do not recreate
+  them. Each `TFIND-*` finding is a `br` issue; each configuration is an epic
+  (`issue_type=epic`, `config:<slug>` label). Status changes happen via `br`.
+- **Join key:** `br create` cannot set explicit IDs, so the original
+  `TFIND-NNN` identity is carried as the **`tfind:NNN` label** (zero-padded,
+  3 digits). Cross-reference from SDDs/commits/PRs via
+  `br list --all --label tfind:049`. Other structural labels: `pr-<n>`
+  (GitHub PR link), `cat-N` (triage rubric category), `status:*` (mirrors the
+  disposition for filtering), `config:<slug>` / `surfaced-by:<slug>` /
+  `consumed-by:<slug>` (finding↔config-epic edges), `keystone` / `factory-*`
+  (routing tags).
+- **Querying:** `br list` hides closed issues by default. Use
+  `br list --all --limit 0` for full coverage (≈64 issues = 52 findings + 12
+  config epics).
+- **Label constraints:** ≤50 chars, charset `[A-Za-z0-9:_-]` only.
+  Comma-joined label lists work **only** on `br create -l "a,b,c"`;
+  `br label add` and `br update --add-label` take exactly one label per call.
+- **Import script is historical:** `scripts/beads-import-findings.sh` was the
+  one-time migration. Its inputs (`FINDINGS.md`/`CONFIGS.md`) were deleted in
+  #354, so it is **no longer re-runnable** and is kept only as a provenance
+  record. Never re-run it; mutate state with `br` directly. The live
+  `.beads/issues.jsonl` is the only source of truth.
+- **Status:** set via `br` (`br update --status …` / `br close …`). Ground
+  status against merged/open PR state (`pr-<n>` labels link the bead to its
+  GitHub PR), not against any Markdown.
+
+**Operating guide:** for *how* to query the graph reliably (the
+`br … --json` schema-divergence trap), how to sequence the next phase by
+blocking factor (`bv --robot-insights` `topk_set`/`coverage_set`), and
+verified `jq` recipes against `issues.jsonl`, see
+[docs/contributing/beads-operating-guide.md](docs/contributing/beads-operating-guide.md).
+Point coordinators there.
+
+### Bead-graph hygiene policy (added 2026-05-09 by `beads_rust-30ci`)
+
+**Don't close beads with `Forced close due to cycle` or similar hedge text in the `close_reason`.** If a dependency cycle is in the way, resolve it first via:
+
+- `br dep remove <issue> <depends-on>` — drop a single edge.
+- `br update <issue> --parent ''` — clear a parent-child edge.
+- Refactor the bead graph itself (split / merge / restructure).
+
+Closing a bead under an unresolved cycle hides architectural debt and produces an audit-suspect close trail.
+
+The doctor check `audit.suspect_close_reasons` (sibling bead `beads_rust-m3mi`) flags this pattern. The only legitimate close-under-cycle is when accompanied by the `audit-historical-cycle-close-<YYYY>-<MM>-<DD>` label, applied via:
+
+```bash
+br update <id> --add-label audit-historical-cycle-close-<DATE>
+```
+
+The label tells the doctor check + future audits that the closure has been triaged. Past triage decisions live in `docs/audit_forced_cycle_close_<DATE>.md`.
+
+### Conventions
+
+- **Single source of truth:** Beads for task status/priority/dependencies; Agent Mail for conversation and audit
+- **Shared identifiers:** Use Beads issue ID (e.g., `br-123`) as Mail `thread_id` and prefix subjects with `[br-123]`
+- **Reservations:** When starting a task, call `file_reservation_paths()` with the issue ID in `reason`
+
+### Typical Agent Flow
+
+1. **Pick ready work (Beads):**
+   ```bash
+   br ready --json  # Choose highest priority, no blockers
+   ```
+
+2. **Reserve edit surface (Mail):**
+   ```
+   file_reservation_paths(project_key, agent_name, ["src/**"], ttl_seconds=3600, exclusive=true, reason="br-123")
+   ```
+
+3. **Announce start (Mail):**
+   ```
+   send_message(..., thread_id="br-123", subject="[br-123] Start: <title>", ack_required=true)
+   ```
+
+4. **Work and update:** Reply in-thread with progress
+
+5. **Complete and release:**
+   ```bash
+   br close 123 --reason "Completed"
+   br sync --flush-only  # Export to JSONL (no git operations)
+   ```
+   ```
+   release_file_reservations(project_key, agent_name, paths=["src/**"])
+   ```
+   Final Mail reply: `[br-123] Completed` with summary
+
+### Degraded Coordination When Agent Mail Is Unavailable
+
+Agent Mail reservations are the normal collision-avoidance mechanism. If Agent
+Mail is red or unreachable, keep moving but make the weaker coordination state
+visible in `br` before touching code:
+
+1. **Claim with an explicit actor:**
+   ```bash
+   br update <id> --status in_progress --assignee "$AGENT_NAME" --json
+   ```
+
+2. **Record intended file scope in the issue thread:**
+   ```bash
+   br comments add <id> --author "$AGENT_NAME" \
+     --message "degraded-coordination: Agent Mail unavailable; files: src/foo.rs, docs/bar.md" \
+     --json
+   ```
+
+3. **Check for collisions before editing:** inspect `git status --short`,
+   `br list --status in_progress --json`, and recent comments on the bead. If
+   another active agent names the same files, pick different work or narrow the
+   scope before editing.
+
+4. **Keep the fallback advisory:** this is not a lock. Use the smallest possible
+   file set, avoid broad globs, and update the comment if the edit surface
+   expands.
+
+5. **Finish normally:** close the bead, run `br sync --flush-only`, commit the
+   code and `.beads/` changes together, and mention in the close reason that the
+   work used degraded coordination. There is no Mail reservation to release.
+
+### Stale Claims and Reclaiming Abandoned Work
+
+`br ready` excludes `in_progress` beads, so a crashed or abandoned session can
+hide work indefinitely. Do not treat every old claim as free work. Reclaim only
+after you have evidence from the bead metadata and coordination trail.
+
+Use this rule of thumb:
+
+- Agent swarm claim: stale candidate after two hours without an `updated_at`
+  change, unless the human operator explicitly says the pane/session is dead.
+- Human or unclear claim: stale candidate after one business day.
+- Any claim with live Agent Mail reservations, recent comments, or visible dirty
+  work in the same files is not abandoned.
+
+Before reclaiming, inspect:
+
+```bash
+br show <id> --json
+br comments list <id> --json
+br list --status in_progress --json
+git status --short
+```
+
+If Agent Mail is healthy, also inspect the issue thread and active file
+reservations. Use `updated_at`, `assignee`, any session/pane/agent identity in
+comments, and named file scopes as evidence. If the previous owner may still be
+working, choose another ready bead or ask the human operator.
+
+When reclaiming, leave an audit comment first, then claim:
+
+```bash
+br comments add <id> --author "$AGENT_NAME" \
+  --message "reclaim: previous in_progress claim appears abandoned; evidence: updated_at=<timestamp>, assignee=<name>, no active reservation or pane" \
+  --json
+br update <id> --claim --json
+```
+
+If Agent Mail is unavailable, add or include the degraded-coordination intended
+file scope before editing. The newest assignee owns the claim, but if the old
+owner returns, coordinate in the bead thread instead of overwriting their work.
+
+### Mapping Cheat Sheet
+
+In this repo the issue prefix is `tf`, so `###` below means a full id like
+`tf-q44` (and for tiny-firegrid work also carry the `tfind:NNN` label):
+
+| Concept | Value |
+|---------|-------|
+| Mail `thread_id` | `tf-###` |
+| Mail subject | `[tf-###] ...` |
+| File reservation `reason` | `tf-###` |
+| Commit messages | Include `tf-###` (and `TFIND-NNN` when relevant) for traceability |
+
+---
+
+## bv — Graph-Aware Triage Engine
+
+bv is a graph-aware triage engine for Beads projects (here: `.beads/issues.jsonl`). It computes PageRank, betweenness, critical path, cycles, HITS, eigenvector, and k-core metrics deterministically.
+
+**Scope boundary:** bv handles *what to work on* (triage, priority, planning). For agent-to-agent coordination (messaging, work claiming, file reservations), use MCP Agent Mail. If Agent Mail is unavailable, use the degraded `br` comment protocol above until Mail is healthy again.
+
+**CRITICAL: Use ONLY `--robot-*` flags. Bare `bv` launches an interactive TUI that blocks your session.**
+
+### The Workflow: Start With Triage
+
+**`bv --robot-triage` is your single entry point.** It returns:
+- `quick_ref`: at-a-glance counts + top 3 picks
+- `recommendations`: ranked actionable items with scores, reasons, unblock info
+- `quick_wins`: low-effort high-impact items
+- `blockers_to_clear`: items that unblock the most downstream work
+- `project_health`: status/type/priority distributions, graph metrics
+- `commands`: copy-paste shell commands for next steps
+
+```bash
+bv --robot-triage        # THE MEGA-COMMAND: start here
+bv --robot-next          # Minimal: just the single top pick + claim command
+```
+
+### Command Reference
+
+**Planning:**
+| Command | Returns |
+|---------|---------|
+| `--robot-plan` | Parallel execution tracks with `unblocks` lists |
+| `--robot-priority` | Priority misalignment detection with confidence |
+
+**Graph Analysis:**
+| Command | Returns |
+|---------|---------|
+| `--robot-insights` | Full metrics: PageRank, betweenness, HITS, eigenvector, critical path, cycles, k-core, articulation points, slack |
+| `--robot-label-health` | Per-label health: `health_level`, `velocity_score`, `staleness`, `blocked_count` |
+| `--robot-label-flow` | Cross-label dependency: `flow_matrix`, `dependencies`, `bottleneck_labels` |
+| `--robot-label-attention [--attention-limit=N]` | Attention-ranked labels |
+
+**History & Change Tracking:**
+| Command | Returns |
+|---------|---------|
+| `--robot-history` | Bead-to-commit correlations |
+| `--robot-diff --diff-since <ref>` | Changes since ref: new/closed/modified issues, cycles |
+
+**Other:**
+| Command | Returns |
+|---------|---------|
+| `--robot-burndown <sprint>` | Sprint burndown, scope changes, at-risk items |
+| `--robot-forecast <id\|all>` | ETA predictions with dependency-aware scheduling |
+| `--robot-alerts` | Stale issues, blocking cascades, priority mismatches |
+| `--robot-suggest` | Hygiene: duplicates, missing deps, label suggestions |
+| `--robot-graph [--graph-format=json\|dot\|mermaid]` | Dependency graph export |
+| `--export-graph <file.html>` | Interactive HTML visualization |
+
+### Scoping & Filtering
+
+```bash
+bv --robot-plan --label backend              # Scope to label's subgraph
+bv --robot-insights --as-of HEAD~30          # Historical point-in-time
+bv --recipe actionable --robot-plan          # Pre-filter: ready to work
+bv --recipe high-impact --robot-triage       # Pre-filter: top PageRank
+bv --robot-triage --robot-triage-by-track    # Group by parallel work streams
+bv --robot-triage --robot-triage-by-label    # Group by domain
+```
+
+### Understanding Robot Output
+
+**All robot JSON includes:**
+- `data_hash` — Fingerprint of source beads.jsonl
+- `status` — Per-metric state: `computed|approx|timeout|skipped` + elapsed ms
+- `as_of` / `as_of_commit` — Present when using `--as-of`
+
+**Two-phase analysis:**
+- **Phase 1 (instant):** degree, topo sort, density
+- **Phase 2 (async, 500ms timeout):** PageRank, betweenness, HITS, eigenvector, cycles
+
+### jq Quick Reference
+
+```bash
+bv --robot-triage | jq '.quick_ref'                        # At-a-glance summary
+bv --robot-triage | jq '.recommendations[0]'               # Top recommendation
+bv --robot-plan | jq '.plan.summary.highest_impact'        # Best unblock target
+bv --robot-insights | jq '.status'                         # Check metric readiness
+bv --robot-insights | jq '.Cycles'                         # Circular deps (must fix!)
+```
+
+<!-- bv-agent-instructions-v2 -->
+
+---
+
+## Beads Workflow Integration
+
+This project uses [beads_rust](https://github.com/Dicklesworthstone/beads_rust) (`br`) for issue tracking and [beads_viewer](https://github.com/Dicklesworthstone/beads_viewer) (`bv`) for graph-aware triage. Issues are stored in `.beads/` and tracked in git.
+
+### Using bv as an AI sidecar
+
+bv is a graph-aware triage engine for Beads projects (here: `.beads/issues.jsonl`). Instead of parsing JSONL or hallucinating graph traversal, use robot flags for deterministic, dependency-aware outputs with precomputed metrics (PageRank, betweenness, critical path, cycles, HITS, eigenvector, k-core).
+
+**Scope boundary:** bv handles *what to work on* (triage, priority, planning). `br` handles creating, modifying, and closing beads.
+
+**CRITICAL: Use ONLY --robot-* flags. Bare bv launches an interactive TUI that blocks your session.**
+
+#### The Workflow: Start With Triage
+
+**`bv --robot-triage` is your single entry point.** It returns everything you need in one call:
+- `quick_ref`: at-a-glance counts + top 3 picks
+- `recommendations`: ranked actionable items with scores, reasons, unblock info
+- `quick_wins`: low-effort high-impact items
+- `blockers_to_clear`: items that unblock the most downstream work
+- `project_health`: status/type/priority distributions, graph metrics
+- `commands`: copy-paste shell commands for next steps
+
+```bash
+bv --robot-triage        # THE MEGA-COMMAND: start here
+bv --robot-next          # Minimal: just the single top pick + claim command
+
+# Token-optimized output (TOON) for lower LLM context usage:
+bv --robot-triage --format toon
+```
+
+#### Other bv Commands
+
+| Command | Returns |
+|---------|---------|
+| `--robot-plan` | Parallel execution tracks with unblocks lists |
+| `--robot-priority` | Priority misalignment detection with confidence |
+| `--robot-insights` | Full metrics: PageRank, betweenness, HITS, eigenvector, critical path, cycles, k-core |
+| `--robot-alerts` | Stale issues, blocking cascades, priority mismatches |
+| `--robot-suggest` | Hygiene: duplicates, missing deps, label suggestions, cycle breaks |
+| `--robot-diff --diff-since <ref>` | Changes since ref: new/closed/modified issues |
+| `--robot-graph [--graph-format=json\|dot\|mermaid]` | Dependency graph export |
+
+#### Scoping & Filtering
+
+```bash
+bv --robot-plan --label backend              # Scope to label's subgraph
+bv --robot-insights --as-of HEAD~30          # Historical point-in-time
+bv --recipe actionable --robot-plan          # Pre-filter: ready to work (no blockers)
+bv --recipe high-impact --robot-triage       # Pre-filter: top PageRank scores
+```
+
+### br Commands for Issue Management
+
+```bash
+br ready              # Show issues ready to work (no blockers)
+br list --status=open # All open issues
+br show <id>          # Full issue details with dependencies
+br create --title="..." --type=task --priority=2
+br update <id> --status=in_progress
+br close <id> --reason="Completed"
+br close <id1> <id2>  # Close multiple issues at once
+br sync --flush-only  # Export DB to JSONL
+```
+
+### Workflow Pattern
+
+1. **Triage**: Run `bv --robot-triage` to find the highest-impact actionable work
+2. **Claim**: Use `br update <id> --status=in_progress`
+3. **Work**: Implement the task
+4. **Complete**: Use `br close <id>`
+5. **Sync**: Always run `br sync --flush-only` at session end
+
+### Key Concepts
+
+- **Dependencies**: Issues can block other issues. `br ready` shows only unblocked work.
+- **Priority**: P0=critical, P1=high, P2=medium, P3=low, P4=backlog (use numbers 0-4, not words)
+- **Types**: task, bug, feature, epic, chore, docs, question
+- **Blocking**: `br dep add <issue> <depends-on>` to add dependencies
+
+### Session Protocol
+
+```bash
+git status              # Check what changed
+git add <files>         # Stage code changes
+br sync --flush-only    # Export beads changes to JSONL
+git commit -m "..."     # Commit everything
+git push                # Push to remote
+```
+
+<!-- end-bv-agent-instructions -->

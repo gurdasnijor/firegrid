@@ -41,7 +41,7 @@ Code read for this framing:
   - Those rows have no host binding and are explicitly reserved for the later
     client/CLI/factory flip plus host reconciler transaction.
 
-- `packages/tiny-firegrid/FINDINGS.md` on `origin/main`
+- Beads DB (`bv --robot-triage`, join keys `tfind:038` and `tfind:039`)
   - TFIND-038: client session creation cannot express arbitrary public runtime
     intent (argv/env/ACP/MCP).
   - TFIND-039: client SDK has no client-visible start trigger.

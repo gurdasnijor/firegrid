@@ -18,7 +18,9 @@ The decision-tree complexity is not mostly documentation debt. It is evidence th
 
 ## Source Evidence Read
 
-- `HANDOFF.md`: source-of-truth warning; current `apps/flamecast` topology/runtime code is bad code, not a pattern; Firegrid CLI is attached-only and reads `DURABLE_STREAMS_URL`.
+- Removed historical handoff notes: source-of-truth warning; current
+  `apps/flamecast` topology/runtime code is bad code, not a pattern; Firegrid
+  CLI is attached-only and reads `DURABLE_STREAMS_URL`.
 - `/private/tmp/firegrid-runtime-ergonomics-sdd/docs/proposals/SDD_FIREGRID_RUNTIME_ERGONOMICS.md`: explicitly says the problem is not just docs; app authors should not see `ctx`, handler facades, `RunWait`, `PlaneProducer`, or app-authored EventStream sink calls in the default stream graph.
 - `docs/patterns/README.md`: missing on `origin/main`.
 - `packages/client/README.md`: current public client and projection-query examples.
@@ -54,14 +56,14 @@ The decision-tree complexity is not mostly documentation debt. It is evidence th
 | `@firegrid/substrate` root coordination exports | `packages/substrate/src/index.ts` | Multiple feature specs expose curated primitives | Keep substrate-internal/advanced; narrow examples | Root exports include coordination, claims, completions, current work context, trigger matchers, and projections. Broad export shape invites app imports. | Do not import substrate root from app examples except descriptors. Prefer explicit subpaths for advanced use. |
 | `@firegrid/substrate/kernel` public export | `packages/substrate/package.json` | Guardrails forbid kernel/envelope/terminal authority in app code | Delete/deprecate from app-facing docs; keep diagnostic/internal if required | A public package export makes raw kernel authority look sanctioned. | Never use in canonical examples; audit whether it needs to remain public. |
 | `@tanstack/db` dependency in substrate | `packages/substrate/package.json`; no current source imports found in this spike | `firegrid-client-projection-api.FRAMEWORK_ADAPTER_DEFERRAL.1` says no TanStack helpers | Keep internal only or remove if unused | The design reference is useful, but a core substrate dependency creates pressure to expose TanStack-shaped concepts or adapters. | Audit dependency; do not expose TanStack in Firegrid core app APIs. |
-| `apps/flamecast` topology and direct Durable Streams runtime | `apps/flamecast/src/runtime/main.ts`; `apps/flamecast/src/shared/topology.ts`; `HANDOFF.md` | `flamecast-product-contract.RUNTIME_LOWERING.1-.5` says runtime should lower through Firegrid | Delete/quarantine as obsolete example | It writes `public/topology.json`, starts `DurableStreamTestServer`, and creates streams directly. HANDOFF explicitly says this is bad code. | Remove or mark obsolete before #114 is reopened. |
+| `apps/flamecast` topology and direct Durable Streams runtime | `apps/flamecast/src/runtime/main.ts`; `apps/flamecast/src/shared/topology.ts`; removed historical handoff notes | `flamecast-product-contract.RUNTIME_LOWERING.1-.5` says runtime should lower through Firegrid | Delete/quarantine as obsolete example | It writes `public/topology.json`, starts `DurableStreamTestServer`, and creates streams directly. Historical handoff notes explicitly said this is bad code. | Remove or mark obsolete before #114 is reopened. |
 
 ## Docs To Remove, Rewrite, Or Mark Obsolete Before Reopening #114
 
 - `docs/patterns/README.md`: absent on `origin/main`. Either restore as a current canonical guide or remove it from dispatch/review references.
-- `apps/flamecast/src/runtime/main.ts` and `apps/flamecast/src/shared/topology.ts`: not docs, but they act as executable documentation. HANDOFF says this topology/direct Durable Streams path is bad code.
+- `apps/flamecast/src/runtime/main.ts` and `apps/flamecast/src/shared/topology.ts`: not docs, but they act as executable documentation. Historical handoff notes said this topology/direct Durable Streams path is bad code.
 - `docs/replatforming/litmus/LT-02-local-runtime-session-loop.md`: sections that recommend browser `@firegrid/substrate/event-plane` reads and "existing surfaces are enough" need to be updated for the client projection facade and runtime/client boundary.
-- `docs/proposals/SDD_FLAMECAST_REPLATFORMING_ON_FIREGRID.md`: already superseded per HANDOFF; keep historical only, not as current implementation guidance.
+- `docs/proposals/SDD_FLAMECAST_REPLATFORMING_ON_FIREGRID.md`: already superseded by later handoff guidance; keep historical only, not as current implementation guidance.
 - `docs/proposals/SDD_FIREGRID_PROJECTION_QUERY.md`: proposal-era handle-first wording should be marked superseded or updated so `liveQuery` is the primary app-facing read-model concept and handle APIs are advanced.
 - Old review/handoff material that mentions Choreography facades should remain historical only. Current source exports `RunWait` and runtime APIs; Choreography should not re-enter canonical examples.
 

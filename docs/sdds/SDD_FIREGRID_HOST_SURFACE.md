@@ -6,8 +6,8 @@ Owner: Firegrid Host SDK
 
 Related:
 
-- `packages/tiny-firegrid/FINDINGS.md` → "Host SDK has layer factories, not a
-  named host surface" (the toy-surfaced finding this resolves)
+- Beads DB (`bv --robot-triage`, join key `tfind:007`) → "Host SDK has layer
+  factories, not a named host surface" (the toy-surfaced finding this resolves)
 - `packages/host-sdk/src/host/layers.ts`
 - Effect precedent: `@effect/platform-node` `NodeContext`, `@effect/platform-bun`
   `BunContext`, `@effect/platform` `HttpLayerRouter.Provided`
@@ -145,7 +145,7 @@ Acceptance gate before merge:
    with the annotation in place.
 2. If any consumer fails to compile, it is reaching past the intended public
    host surface into an internal tag. That is **a new finding** (consumer
-   boundary violation), recorded in `FINDINGS.md` — not silently absorbed by
+   boundary violation), recorded in Beads — not silently absorbed by
    widening `FiregridHost`. Scope of *this* PR does not expand to fix it.
 
 Consumer scope for the landing PR (accepted): **type only, no migration.**
@@ -164,7 +164,6 @@ the maintainer, not by this PR.
   contravariance probe. ✅
 - New finding recorded: **host-sdk test suite depends on the Finding 3
   `any` `ROut` leak**, which links Finding 1's second step to Finding 3.
-- `FINDINGS.md` "Host SDK has layer factories, not a named host surface"
-  moved to Resolved with a PR reference (FINDINGS.md lives in the toy
-  worktree; the maintainer applies the ledger delta — this sidecar does
-  not edit `packages/tiny-firegrid`).
+- Beads DB entry `tfind:007` carries the current state for "Host SDK has
+  layer factories, not a named host surface"; use
+  `FINDINGS_TRIAGE_RUBRIC.md` for the triage methodology.
