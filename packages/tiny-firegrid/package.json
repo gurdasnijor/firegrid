@@ -28,6 +28,7 @@
     "effect-durable-operators": "workspace:*"
   },
   "devDependencies": {
+    "@agentclientprotocol/sdk": "0.21.0",
     "@durable-streams/server": "^0.3.1",
     "@firegrid/client-sdk": "workspace:*",
     "typescript": "^5.7.0",
