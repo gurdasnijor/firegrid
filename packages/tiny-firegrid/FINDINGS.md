@@ -91,6 +91,8 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-046 | open (low priority — client-sdk ergonomic completeness; annotated in #341 MIGRATION_NOTES) | client-sdk / durable tables | client SDK exposes `FiregridRuntimeTables.ControlPlane` but not the `runtimeControlPlaneStreamUrl` builder needed to instantiate its layer, forcing consumer-shaped code to import the URL helper from `@firegrid/protocol/launch`. | cat-1 (real consumer gap — a client-side live control-plane query, the Flamecast `useDurableTable` pattern, must reach into protocol for the stream URL; low severity but consumer-facing; fix = client-sdk re-export/fold. NOT toy-test-cleanness: a real non-Firegrid consumer hits the identical import) |
 | TFIND-047 | open (filed 2026-05-18 by Gurdas; framing-gated, distinct from TFIND-040) | client-sdk / snapshot observation typing | `RuntimeContextSnapshot["agentOutputs"]` carries weaker typing than runtime-side `RuntimeAgentOutputObservation`: the Codex test needs `asRecord` defensive casts to read `event.part.delta` / `event.part.name` from snapshot rows, while the same fields are properly typed when consumed from `RuntimeOutputTable.events.rows()` directly. | cat-2 (real client-SDK type-precision boundary — the snapshot path loses observation type precision the runtime side has, forcing consumer casts; distinct from TFIND-040 subscription ergonomics; relates TFIND-030/035 SSOT but a deeper `.part.*`/row-shape precision gap not closed by #329) |
 | TFIND-048 | open — REFRAMED 2026-05-18 (Reading 2 / architectural; was mis-shaped as "client-sdk missing helper"); framing-gated, folds into the #332-impl MCP-lifecycle question; blocks Codex ACP | client/host boundary / MCP route + URL lifecycle | The #332 client/host model does not resolve **who builds the concrete `contextId`-scoped MCP URL and when**. Codex ACP bakes it client-side pre-`createOrLoad`; production (`host-sdk/mcp-host.ts`, CLI) has the **host** own the MCP server with a `/mcp/runtime-context/:contextId` route resolved at tool-call time. Client-baking a concrete URL into the intent is test-fixture-shaped. | cat-1/2 **architectural** (real production-model gap, not a missing API: re-exporting `sessionContextIdForExternalKey` would canonize the backwards lifecycle = WRONG fix. The determinism primitive itself is sound; the smell is URL-lifecycle ownership. Migration-as-validation working exactly as designed — proved #332 left an MCP-lifecycle hole. NOT cat-3 toy-fix: the production model needs the decision, not the toy) |
+| TFIND-051 | open — **TRIAGE-PENDING (regression vs test-infra-timeout — needs diagnosis before cat-assign)**; low urgency (Codex ACP already TFIND-048-parked); cross-ref TFIND-048 | tiny-firegrid / codex-acp config exec | Drift sweep 2026-05-18: the LANDED `codex-acp-tool-call-pipeline` is not re-runnable under the real-key path on current main — test timed out at `test/codex-acp-tool-call-pipeline.test.ts:364` and `afterEach` timed out stopping `DurableStreamTestServer` at `:58`; no MCP/tool/output assertion completed. Could be (a) real regression on current main, (b) test-infra/teardown-hang/timeout (TFIND-042/043 class), or (c) surface drift. NOT papered. Needs focused diagnosis (regression vs infra) before cat is assigned; do not dispatch a prod fix until diagnosed. |
+| TFIND-052 | open — cat-4 coverage-tooling (toy/tooling scope, NOT a production sidecar) | tiny-firegrid / coverage tooling | Drift sweep 2026-05-18: all 5 landed production-consuming configs report **identical** coverage (host_surface_closure 80.4% / end_to_end 86.6%) — once a config imports `FiregridRuntimeHostLive` + client SDK the closure denominator is too coarse to distinguish scenario-specific production surface. CONFIGS coverage must NOT be read as per-scenario surface proof. | cat-4 (rubric coverage-tool-artifact — misleading denominator; resolution = improve the coverage script: a scenario-specific delta or outside-spine denominator; retain current thresholds only as a gross guardrail). Toy/tooling scope. |
 | TFIND-050 | open — corrective; **fix dispatched to `155` as Option (i) follow-up PR** (then #326 rebases onto it) | effect-durable-operators / provider seam | Merged #348 (signed-off TFIND-044 Option B) typed the erased provider prop `layer: Layer.Layer<unknown, E, never>` — `Layer` ROut is **contravariant**, so `unknown <: <Table>` fails on the explicit-props/by-name path (only the flamecast JSX-inference path ever worked). Latent type defect surfaced during the #326 rebase by `155`, which HALTED (no paper). Fix = `unknown → never` at the react.ts provider seam (DurableTableProviderProps + acquireServices); `155` empirically proved `never` typechecks BOTH paths 0-errors, assertions intact. | cat-2 corrective (real defect shipped in resolved TFIND-044/#348; design-conformant fix — Option B intent = erase ROut at the seam, `never` is the correct erasure operator for a contravariant position, `unknown` was a #348 oversight; NOT an A/B reopen). Process note: full-CI-green didn't catch it — no test referenced the props type by name on the failing path; latent until #326's by-name rebase. Cross-ref TFIND-044 |
 | TFIND-049 | open — ARCHITECT/ROADMAP (build effect-ai-native-agents Slice 4? — Gurdas binary); blocks `agent-adapter-driven-pipeline` + capstone + TFIND-024 toy-realization | runtime host / agent-adapter integration | The runtime host has NO agent-adapter integration: `RuntimeProviderSchema = Literal("local-process")` only (`protocol/src/launch/schema.ts:60`); `FiregridRuntimeHostLive` hardcodes `LocalProcessSandboxProvider` (`host-sdk/src/host/layers.ts:31,143`); zero host-sdk consumers of `AgentAdapterRegistry`/`adapterFor`; `docs/proposals/effect-ai-native-agents.md:474` "Slice 4: wire `AgentAdapterRegistry.adapterFor(context)` into the runtime host" is explicitly **unbuilt**. | **cat-4/toy WRAPPER over a cat-1/2-FUTURE kernel** (Gurdas-classified 2026-05-18). Toy half (cat-4): the toy correctly refuses to model a capability that does not exist — not toy laziness. Kernel (cat-1/2): adapter-driven/AI-provider launch is **deferred FUTURE production work** (effect-ai-native-agents Slice 4), **NOT a current-architecture gap/bug/regression** — distinguish: nothing is broken today, the capability is planned-not-yet-built. Surfaced by `33`'s correct halt (migration-as-validation). Disposition = a roadmap binary Gurdas owns (build Slice 4 vs. keep dequeued), NOT a coordinator/sidecar fix |
 
@@ -191,6 +193,39 @@ queue from consumer-hypothesis to verified plan. Per-finding verdict
 (permission/codec authority, pre-existing) joins the framing bundle.
 TFIND-024/025 are production-deferred roadmap lines (build, not frame).
 See [[feedback-configs-queue-precondition-verify-capability]].
+
+## Drift Sweep (2026-05-18)
+
+`33` re-validated the 5 landed production-consuming configs against
+origin/main `b6dddffd9` (no code changes; coverage regenerated locally).
+4/5 pass; coordinator triage of the candidates:
+
+- **codex-acp real-key FAIL** (timeout `:364` + afterEach teardown hang
+  `:58`) → **TFIND-051**, triage-pending (regression vs infra; diagnose
+  before cat). Low urgency (already TFIND-048-parked).
+- **Coverage denominator too coarse** (all 5 configs identical 80.4/86.6)
+  → **TFIND-052**, cat-4 coverage-tooling (toy/tooling scope).
+- **output-journal-pipeline carries now-stale reach-pasts** —
+  `makeLocalRuntimeContextForHostSession`+host `RuntimeControlPlaneTable`
+  (`:111-126`, TFIND-038), `Context.get RuntimeStartCapability`
+  (`:170-173`, TFIND-039), host-ambient `RuntimeOutputTable` read
+  (`:178-183`). TFIND-038/039 are RESOLVED (#332) → this config now
+  needs the SAME public-surface migration the durable/stdio/multi-context
+  configs got (#341/#343/#349 pattern). NOT a new finding — a tracked
+  **toy-realization migration** (dispatched to `33`); migration ==
+  validation: if a reach-past genuinely cannot be removed via the public
+  surface, THAT is a new finding. Also carries `asRecord` casts
+  (`:295+`, TFIND-047 class — fold into the migration).
+- **Stale CONFIGS rows** (coverage values 2.7/25.0 vs current 80.4/86.6
+  on all rows; output-journal row says in-flight #338/TFIND-013-open vs
+  FINDINGS TFIND-013 resolved) → NOT a finding; CONFIGS Maintenance is
+  the toy maintainer's responsibility (dispatched to `33`, fold into the
+  output-journal migration PR).
+
+Net: the sweep produced 2 tracked findings (TFIND-051/052), 1 actionable
+toy migration (output-journal → public surface), and CONFIGS hygiene —
+exactly the build/fix signal it was for. No production fixes attempted,
+no expectations relaxed, no FINDINGS edits by `33` (coordinator-filed).
 
 ## Findings
 
