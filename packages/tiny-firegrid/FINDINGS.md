@@ -90,7 +90,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-045 | QUEUED-FOR-ARCHITECT (own SDD; halt-rule finding surfaced by #326 verify; co-gates #326 flip with TFIND-044) | host-sdk / control-request-reconciler | `RuntimeControlRequestReconcilerEnvironment` (`control-request-reconciler.ts:42-46`) omits `RuntimeOutputTable` + `HostRuntimeContextExecutionEnv` that `reconcileStartRequest:211` transitively requires via `startRuntime()`→`RuntimeContextEngineRegistry` — a genuine missing-dependency the TFIND-005 `any` was masking (Crux-B false-equivalence). | cat-2 (real production correctness — declared Effect env alias incomplete; fails when ambient doesn't supply it, TFIND-028 class; controlled experiment proved NOT branch scope-creep; relates TFIND-029 env-enumeration family, distinct mechanism from TFIND-044) |
 | TFIND-046 | open (low priority — client-sdk ergonomic completeness; annotated in #341 MIGRATION_NOTES) | client-sdk / durable tables | client SDK exposes `FiregridRuntimeTables.ControlPlane` but not the `runtimeControlPlaneStreamUrl` builder needed to instantiate its layer, forcing consumer-shaped code to import the URL helper from `@firegrid/protocol/launch`. | cat-1 (real consumer gap — a client-side live control-plane query, the Flamecast `useDurableTable` pattern, must reach into protocol for the stream URL; low severity but consumer-facing; fix = client-sdk re-export/fold. NOT toy-test-cleanness: a real non-Firegrid consumer hits the identical import) |
 | TFIND-047 | open (filed 2026-05-18 by Gurdas; framing-gated, distinct from TFIND-040) | client-sdk / snapshot observation typing | `RuntimeContextSnapshot["agentOutputs"]` carries weaker typing than runtime-side `RuntimeAgentOutputObservation`: the Codex test needs `asRecord` defensive casts to read `event.part.delta` / `event.part.name` from snapshot rows, while the same fields are properly typed when consumed from `RuntimeOutputTable.events.rows()` directly. | cat-2 (real client-SDK type-precision boundary — the snapshot path loses observation type precision the runtime side has, forcing consumer casts; distinct from TFIND-040 subscription ergonomics; relates TFIND-030/035 SSOT but a deeper `.part.*`/row-shape precision gap not closed by #329) |
-| TFIND-048 | open (option-3 VALIDATION finding — surfaced by Codex ACP migration; blocks Codex ACP, framing-gated) | client-sdk / session identity | client SDK has no pre-create deterministic session-context-id helper: route-scoped MCP runtime intent needs the MCP URL (which embeds the deterministic `contextId`) *before* `createOrLoad`, but client-SDK only returns `contextId` *after* `createOrLoad` and does not export `sessionContextIdForExternalKey`; deriving it requires a `@firegrid/protocol/session-facade` reach-past. | cat-1/2 (real production consumer gap — anyone wiring a route-scoped MCP server URL into runtime intent at create time hits the chicken-and-egg; #332 made createOrLoad carry intent but did NOT expose pre-create id derivation. The migration-as-validation working exactly as designed: proves #332 did not fully close the route-scoped-MCP consumer surface) |
+| TFIND-048 | open — REFRAMED 2026-05-18 (Reading 2 / architectural; was mis-shaped as "client-sdk missing helper"); framing-gated, folds into the #332-impl MCP-lifecycle question; blocks Codex ACP | client/host boundary / MCP route + URL lifecycle | The #332 client/host model does not resolve **who builds the concrete `contextId`-scoped MCP URL and when**. Codex ACP bakes it client-side pre-`createOrLoad`; production (`host-sdk/mcp-host.ts`, CLI) has the **host** own the MCP server with a `/mcp/runtime-context/:contextId` route resolved at tool-call time. Client-baking a concrete URL into the intent is test-fixture-shaped. | cat-1/2 **architectural** (real production-model gap, not a missing API: re-exporting `sessionContextIdForExternalKey` would canonize the backwards lifecycle = WRONG fix. The determinism primitive itself is sound; the smell is URL-lifecycle ownership. Migration-as-validation working exactly as designed — proved #332 left an MCP-lifecycle hole. NOT cat-3 toy-fix: the production model needs the decision, not the toy) |
 
 ## Triage Audit (2026-05-18)
 
@@ -1621,55 +1621,66 @@ TFIND-030 `AgentOutputEvent` union. Architectural (public observable
 type change like TFIND-030) — SDD/framing-gated; coordinator scopes →
 Gurdas signoff. Not on the keystone critical path.
 
-### TFIND-048: client SDK lacks a pre-create deterministic session-context-id helper
+### TFIND-048: MCP route + URL lifecycle ownership unresolved in the #332 client/host model
 
-status: open (option-3 VALIDATION finding — surfaced by the Codex ACP migration 2026-05-18; blocks Codex ACP; framing-gated)
+status: open — REFRAMED 2026-05-18 (Reading 2 / architectural). Was mis-filed as "client-SDK lacks a pre-create helper" (Reading 1, cat-2 small re-export). Gurdas challenged the shape before it set; an architecture investigation (Explore, evidence below) decided Reading 2. Framing-gated; folds into the #332-impl MCP-lifecycle question; blocks Codex ACP.
 
-Triage: **cat-1/2** (real production consumer-surface gap). The
-migration-as-validation working exactly as Gurdas designed: the toy
-maintainer (`surface:33`), migrating the Codex ACP tool-call test to the
-public client/session surface per the option-3 decision (see TFIND-038),
-hit a genuine gap, **did not paper it with the protocol helper**, paused
-Codex ACP, and proceeded with stdio-jsonl first. Reported to
-`surface:153`.
+Triage: **cat-1/2 architectural** (real production-model gap — NOT a
+missing API, NOT a toy-fix). The migration-as-validation worked exactly
+as designed: the toy maintainer (`surface:33`), migrating Codex ACP per
+option-3 (TFIND-038), hit the gap, **did not paper it**, paused Codex
+ACP, proceeded stdio-jsonl, reported to `surface:153`.
 
-The gap: a route-scoped MCP runtime intent must include the MCP server
-URL, and that URL embeds the **deterministic `contextId`**. So the
-consumer needs the `contextId` *before* `createOrLoad` (it is an input
-to the runtime intent passed to `createOrLoad`). But public client-SDK
-returns `contextId` only *after* `createOrLoad`, and does not export a
-pre-create deterministic derivation
-(`sessionContextIdForExternalKey`). Deriving it today requires importing
-from `@firegrid/protocol/session-facade` — a new non-client-SDK
-reach-past.
+**The two readings (Gurdas, 2026-05-18) and the decision:**
+- *Reading 1 (helper-missing, cat-2):* re-export `sessionContextIdForExternalKey`
+  from client-SDK; small fix. **REJECTED by evidence.**
+- *Reading 2 (design-smell, architectural):* baking a concrete
+  `contextId`-scoped MCP URL into the intent *before* `createOrLoad` is
+  the consumer predicting createOrLoad's output; a real host provisions
+  the route-scoped MCP route *after* materializing the context. The
+  "missing helper" is the wrong abstraction. **DECIDED — evidence below.**
 
-Triage question: would a real consumer outside Firegrid hit this? Yes —
-anyone wiring a route-scoped MCP server URL into runtime intent at
-create time has the identical chicken-and-egg. #332 made `createOrLoad`
-*carry* runtime intent (TFIND-038 resolved) but did **not** expose the
-pre-create id derivation that route-scoped intents require. Distinct
-from TFIND-046 (control-plane stream URL re-export) and TFIND-047
-(snapshot observation typing).
+**Evidence (Explore, file:line):**
+- `sessionContextIdForExternalKey` (`protocol/src/session-facade/schema.ts:482`)
+  is a sound deterministic primitive (canonical-JSON → id; pure;
+  re-exported by client-sdk `firegrid.ts:49` but undocumented). Its
+  determinism is **for client/host independent reconciliation**, not for
+  clients to pre-bake route URLs. The primitive is NOT the smell.
+- Production host **owns** the MCP server: `host-sdk/src/host/mcp-host.ts:1-26`
+  mounts `/mcp/runtime-context/:contextId`; the route param is the
+  request authority, resolved **at tool-call time** (`:118-124`), no
+  pre-provisioning. CLI (`cli/src/bin/run.ts`) starts the host MCP
+  server FIRST, then derives contextId, then builds the URL.
+- Codex ACP test/config (`tiny-firegrid/src/configurations/codex-acp-tool-call-pipeline.ts:24-36,57-81`,
+  `test/...:374-392`) builds the concrete URL **pre-`createOrLoad`** and
+  embeds it in the intent — the **test fixture** starts the server
+  before the context exists; uniquely test-fixture-shaped.
+- `SDD_CONSOLIDATED_CLIENT_HOST_BOUNDARY.md:49-95` ("client writes
+  intent, host materializes") is **silent on who builds the concrete
+  `contextId`-scoped MCP URL and when**.
+- No other config (durable-streams, stdio-jsonl, output-journal) uses
+  MCP or pre-derives a contextId-scoped URL. Codex ACP is unique.
 
-**Sequencing / ownership note:** the fix is a *production client-SDK*
-change (expose a blessed pre-create deterministic context-id derivation
-for an `externalKey`, or have `createOrLoad` accept an intent *builder*
-that receives the derived id) — **sidecar/production scope, NOT toy
-scope**; the toy maintainer cannot and must not fix it (and must not
-import the protocol helper). The option-3 "same PR / same agent"
-principle is preserved differently here because the gap crosses the
-toy↔production boundary: stdio-jsonl migration proceeds now; **Codex ACP
-stays paused/unmigrated (red-or-held, no escape hatch) until TFIND-048's
-client-SDK fix lands**, and the Codex ACP migration PR then *consumes*
-the new helper — that migration is the validation that TFIND-048
-actually closed the gap (no window to re-add the protocol reach-past
-because Codex ACP is not migrated until the real fix exists).
+**The real question (load-bearing, for §0 of the framing):** in the
+#332 model, how does the client express "this runtime needs MCP"
+*without* a concrete URL or final contextId, and how/when does the
+**host** derive the concrete `contextId`-scoped MCP URL post-
+materialization and deliver it to the agent? Re-exporting the helper
+would canonize the backwards lifecycle and is explicitly rejected.
 
-Next action: scope a client-SDK SDD framing (the shape decision:
-re-export `sessionContextIdForExternalKey` vs. a client-SDK-blessed
-helper vs. `createOrLoad` accepting an intent builder that receives the
-derived id) — load-bearing decision at §0. Coordinator scopes → Gurdas
-signoff → sidecar impl → resume Codex ACP migration as validation. Not
-on the keystone critical path, but it is the live blocker of the
-dispatched option-3 Codex ACP work — higher urgency than #334 in the
-owed framing bundle.
+**Sequencing / ownership:** resolution is an **architectural framing
+decision on MCP route/URL lifecycle in the #332 model** (likely a
+section of / extension to the #332 implementation SDD), NOT a toy
+reshape and NOT a client-SDK helper re-export. The Codex ACP config
+shape is downstream of that decision. **Codex ACP stays
+paused/unmigrated** (no escape hatch, no `it.skip`, no protocol
+reach-past) until the framing is decided and implemented; the resumed
+Codex ACP migration is then the validation. stdio-jsonl migration
+proceeds independently (no MCP) — see #343.
+
+Next action: coordinator scopes the MCP-route/URL-lifecycle framing
+(§0 = the load-bearing question above; options: host-provisioned URL
+delivered post-materialization vs. client URL-pattern + host
+resolution vs. other) → batched framing-signoff pass with Gurdas
+alongside TFIND-044/045 (+#334). Off the keystone critical path but the
+live blocker of the dispatched option-3 Codex ACP work.
