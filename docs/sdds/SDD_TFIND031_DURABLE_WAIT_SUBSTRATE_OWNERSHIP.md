@@ -129,6 +129,37 @@ question. Concretely the framing decision needed from Gurdas:
 - Full `pnpm turbo run typecheck` + `pnpm run lint` + affected suites +
   tiny-firegrid green. macOS: NO `timeout`.
 
+## Shared-store proof (Option Y correctness gate — STRUCTURAL, discharged)
+
+Gurdas signed off Option Y conditioned on proving the router (waker) and
+recorder resolve ONE materialized wait store. Proven from
+`runtime/src/durable-tools/DurableToolsWaitFor.ts:38–52`:
+
+1. `DurableWaitStoreLive` (`durable-wait-store.ts:88`) **materializes no
+   store**. All 5 services are `Effect.map(DurableToolsTable, …)` — pure
+   adapters over whichever `DurableToolsTable` is in scope. So
+   "which store" ≡ "which `DurableToolsTable`".
+2. `DurableToolsWaitForLive` invokes `DurableToolsTable.layer(...)`
+   exactly once → single `durableToolsTableLive`.
+3. One `durableToolsCapabilities = DurableWaitStoreLive` reference is
+   used in BOTH `Layer.provide(durableToolsCapabilities)` (into
+   `WaitRouterLive`, the waker) AND
+   `Layer.provideMerge(durableToolsCapabilities)` (exposed recorder
+   tags), and both are closed over the same single `durableToolsTableLive`
+   via the trailing `Layer.provideMerge(durableToolsTableLive)`.
+4. Effect Layer memoization within a single build ⇒ waker and recorder
+   resolve the **same** materialized `DurableToolsTable` ⇒ one store.
+
+Therefore a divergent store is **structurally impossible** within
+`DurableToolsWaitForLive`; `HostOwnedDurableToolsWaitForLive` wraps
+exactly this composition and inherits the guarantee. Merging /
+exposing `DurableWaitStoreLive` through the execution-scoped support
+layer cannot introduce a second store because `DurableWaitStoreLive`
+has no store of its own. The emit-then-wait hazard is closed at the
+source, not by convention. A deterministic record→blocked-pending→
+router-wakes test remains the empirical confirmation of this structural
+proof and is part of the completion gate.
+
 ## Status of branch
 
 WIP committed (contained fixes + narrowed `HostRuntimeContextExecutionEnv`
