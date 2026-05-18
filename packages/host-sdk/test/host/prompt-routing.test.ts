@@ -13,7 +13,7 @@ import {
   RuntimeIngressInputRowSchema,
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Cause, Clock, Effect, Either, Exit, Match, Schema } from "effect"
+import { Cause, Clock, Duration, Effect, Either, Exit, Match, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   WorkflowEngineTable,
@@ -130,6 +130,22 @@ const readContextDeferredInputs = (input: {
       Effect.scoped,
     ),
   )
+
+const waitForContextDeferredInputs = async (
+  input: {
+    readonly namespace: string
+    readonly baseUrl: string
+    readonly contextId: string
+  },
+  count: number,
+): Promise<ReadonlyArray<RuntimeIngressInputRow>> => {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const rows = await readContextDeferredInputs(input)
+    if (rows.length >= count) return rows
+    await Effect.runPromise(Effect.sleep(Duration.millis(10)))
+  }
+  return readContextDeferredInputs(input)
+}
 
 const intentIds = (input: {
   readonly namespace: string
@@ -283,7 +299,7 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 per-context runtime inpu
       ),
     )
 
-    expect((await readContextDeferredInputs({ baseUrl, namespace, contextId })).map(row => ({
+    expect((await waitForContextDeferredInputs({ baseUrl, namespace, contextId }, 1)).map(row => ({
       inputId: row.inputId,
       authoredBy: row.authoredBy,
       sequence: row.sequence,

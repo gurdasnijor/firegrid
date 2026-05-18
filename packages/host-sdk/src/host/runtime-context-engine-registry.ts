@@ -242,7 +242,10 @@ export const RuntimeInputIntentDispatcherLive = Layer.scopedDiscard(
     yield* table.inputIntents.rows().pipe(
       Stream.runForEach(intent =>
         registry.dispatchIntent(intent).pipe(
-          Effect.catchAll(() => Effect.void),
+          Effect.catchAll(cause =>
+            Effect.logError("[host-sdk] runtime input intent dispatch failed").pipe(
+              Effect.annotateLogs({ contextId: intent.contextId, intentId: intent.intentId, cause }),
+            )),
         )),
       Effect.forkScoped,
     )

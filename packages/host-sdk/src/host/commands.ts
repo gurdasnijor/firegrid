@@ -12,7 +12,7 @@ import {
   type RuntimeIngressRequest,
   type RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer } from "effect"
 import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.ts"
 import type { StartRuntimeOptions } from "./types.ts"
 import {
@@ -44,19 +44,12 @@ import {
 type RuntimeIngressAppendEnvironment =
   | RuntimeContextRead
   | RuntimeControlPlaneTable
-  | RuntimeContextEngineRegistry
 
 const runtimeControlPlaneTable: Effect.Effect<
   RuntimeControlPlaneTable["Type"],
   never,
   RuntimeControlPlaneTable
 > = RuntimeControlPlaneTable
-
-const runtimeContextEngineRegistry: Effect.Effect<
-  RuntimeContextEngineRegistry["Type"],
-  never,
-  RuntimeContextEngineRegistry
-> = RuntimeContextEngineRegistry
 
 const executeRuntimeContextWorkflowForContextId = (
   engine: WorkflowEngine.WorkflowEngine["Type"],
@@ -107,22 +100,6 @@ const insertRuntimeInputIntent = (
     )
     return stored._tag === "Found" ? stored.row : intent
   })
-
-const dispatchRuntimeInputIntent = (
-  request: RuntimeIngressRequest,
-  registry: RuntimeContextEngineRegistry["Type"],
-  row: RuntimeInputIntentRow,
-): Effect.Effect<Option.Option<RuntimeIngressInputRow>, RuntimeIngressError> =>
-  registry.dispatchIntent(row).pipe(
-    Effect.mapError(cause =>
-      runtimeIngressError(
-        "append",
-        "failed dispatching runtime input intent",
-        request.contextId,
-        request.inputId,
-        cause,
-      )),
-  )
 
 const readRuntimeContextForIngress = (
   request: RuntimeIngressRequest,
@@ -195,10 +172,5 @@ export const appendRuntimeIngress = (
   readRuntimeContextForIngress(request).pipe(
     Effect.zipRight(runtimeControlPlaneTable),
     Effect.flatMap(control => insertRuntimeInputIntent(request, control)),
-    Effect.flatMap(row =>
-      runtimeContextEngineRegistry.pipe(
-        Effect.flatMap(registry => dispatchRuntimeInputIntent(request, registry, row)),
-        Effect.map(dispatched =>
-          Option.getOrElse(dispatched, () => makePendingRuntimeIngressInput(request, row))),
-      )),
+    Effect.map(row => makePendingRuntimeIngressInput(request, row)),
   )
