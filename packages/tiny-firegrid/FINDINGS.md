@@ -63,7 +63,7 @@ of scope for this package.
 | TFIND-027 | accepted | toy readability | Duplicate inline configuration code is acceptable when it documents wiring. |
 | TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. |
 | TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
-| TFIND-030 | in-progress (#329 — @effect/ai dep blessed; CI-green/knip pending) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
+| TFIND-030 | resolved (#329) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
 | TFIND-035 | open (tracked dependent of TFIND-030) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
 | TFIND-031 | in-progress (#331 — Option Y; shared-store gate DISCHARGED, structural proof) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
 | TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
@@ -607,7 +607,19 @@ the intended host-capability pattern.
 
 ### TFIND-030: Snapshot agent output events are typed as records, not protocol unions
 
-status: in-progress (#329 — framing signed off: Q1=C, Q2=strict)
+status: resolved (#329, a7c76c268)
+
+RESOLVED 2026-05-18 (#329 merged): protocol-owned `AgentOutputEvent`
+union (byte-mirroring runtime via the same `@effect/ai` Prompt/Response
+primitives; `@effect/ai` added to `@firegrid/protocol` — Gurdas-blessed,
+lint:deps clean). Protocol envelope/observation decode parses `event`
+against the union; `session.snapshot().agentOutputs[].event` is the typed
+union, re-exported from client-sdk. Q2 STRICT: non-conforming event →
+`Option.none()` (intentional observable change to snapshot()/wait.* for
+malformed events; verified by decode-PATH + reject-path tests).
+Out-of-scope SSOT consolidation deferred = TFIND-035. The intentional
+protocol↔runtime mirror is recorded via a scoped `.jscpd.json` ignore
+(repo's sanctioned by-design-dup mechanism, not a global threshold bump).
 
 Framing signed off (Gurdas, 2026-05-18): Q1 = **Option C** (smallest
 sound down-payment — protocol-owned `AgentOutputEvent` union; switch only
@@ -743,8 +755,19 @@ relocate/consolidate to a single protocol-owned canonical union with
 runtime re-export, collapsing the two decoders. Deliberate tracked
 dependent, NOT a bridge — must be closed, not left as a permanent fork.
 
-Next action: after TFIND-030 lands, scope the canonical relocation
-(option A/B of SDD #329) as its own coordinated PR.
+Now active as the tracked dependent (TFIND-030 landed #329). The
+accepted intentional duplication is currently recorded via a scoped
+`.jscpd.json` ignore on
+`packages/protocol/src/session-facade/agent-output-event.ts` — that
+ignore is the standing marker of this debt and MUST be removed when the
+canonical relocation lands (its removal is the completion signal).
+
+Next action: scope the canonical relocation (option A/B of SDD #329 —
+move `AgentOutputEventSchema` + part sub-schemas to `@firegrid/protocol`,
+runtime re-exports, collapse to one decoder, delete the jscpd ignore) as
+its own coordinated PR. Architectural; SDD + framing-gate. On-deck owner:
+OCA3 (deepest context from #329), sequenced after the consolidated
+client/host SDD priorities.
 
 ### TFIND-038: Client session creation cannot express arbitrary runtime intents
 
@@ -849,3 +872,19 @@ the Codex coordinator probes via the stdio-jsonl config whether one
 workflow body can express both lifecycles without codec knowledge. The
 A-vs-B decision is a future Gurdas framing call, informed by that probe;
 no sidecar code until then.
+
+Probe result (2026-05-18, Codex coordinator, PR #330
+`stdio-jsonl-tool-execution-pipeline`): a local stdio-jsonl agent emits
+`tool_use` for `sleep`, awaits `tool_result`, emits final text only after
+`{ slept: true }`. Test passes against `FiregridRuntimeHostLive`; durable
+evidence: control-plane input intent, run started/exited, RuntimeOutput
+Ready, `ToolUse` named `sleep` `providerExecuted=false`, final TextChunk
+`FIREGRID_TOOL_RESULT sleep slept=true`. **Confirms (B)-by-default
+empirically**: one workflow body does NOT interpret the ToolUse lifecycle
+purely from the event — production still relies on codec/session
+semantics (`agentProtocol === "acp"` branch) to decide execution.
+Nuance: `ToolResult` is an `AgentInputEvent` (sent back to the codec),
+so it is NOT exposed as a RuntimeOutputTable row — durable proof of
+ToolResult is necessarily indirect (via subsequent agent output). This
+ToolResult-not-durably-observable point also touches TFIND-040
+(client per-event observation surface) — cross-linked, not a new id.
