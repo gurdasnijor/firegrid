@@ -58,7 +58,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-013 | resolved (#338, `960ec59b3` — output-journal-pipeline.ts toy config landed) | output journal | Output journal / A4 path remains unmodeled in durable config. | cat-4/toy (toy A4/output-journal modeling = the #338 toy config; the A4 prod path itself is tracked separately as residue) |
 | TFIND-014 | resolved (audit 2026-05-18 — REALIZED by #343 stdio-jsonl tool-execution config; `RuntimeToolUseExecutorLive` + `toolUseToEffect` + `Activity.make`-wrapped, exercised e2e) | tools | Tool execution and `AgentToolHost` are deferred. | cat-4/toy → realized; "deferred" status was stale post-#343 |
 | TFIND-015 | open | permissions / codecs | Permission flow and codec authority remain unsettled. | cat-4/toy WRAPPER over a cat-1/2 kernel ⚠ (the "does any codec complete workflow deferreds / do authority work" question is a real production architectural question — TFIND-041 family; split it out) |
-| TFIND-016 | open — audit 2026-05-18: **BUILDABLE-INDIRECT / shape-note** (`Activity.make` EXISTS but is workflow-internal-by-design — runtime-context-workflow-core.ts:118,139,205; a dedicated "activity-boundary" config may be the wrong shape — observe activity-mediated replay/retry via the public surface, likely already covered by the durable-streams replay config) | workflow activities | Activity boundaries are not yet represented. | cat-4/toy (capability present but internal-by-design; needs a small shape decision, not a kernel — low priority) |
+| TFIND-016 | resolved (cat-3 CLOSE 2026-05-18, Gurdas-concurred) — a dedicated activity-boundary config necessarily exercises an INTERNAL abstraction (`Activity.make`), violating the CONFIGS "drive examples through public boundaries" rule. Activity-mediated durability (replay/retry) is observed through the public surface and already covered by the durable-streams replay config. No new config; no production change. | workflow activities | Activity boundaries are not yet represented. | cat-3 (test-fixture-shaped — modeling an internal-by-design abstraction directly is the wrong shape; redirect = observe activity-mediated behavior via the public surface, already covered) |
 | TFIND-017 | open | toy DurableTable | `rows()` is a live tail; snapshot reads must use `query()`. | cat-4/toy (toy in-memory-adapter usage rule; no production surface) |
 | TFIND-018 | resolved (#317/#320 cleanup) | toy discipline | Hand-maintained contracts are rejected. | cat-4/toy (toy discipline rule; toy cleanup PR, no production surface) |
 | TFIND-019 | resolved (#317/#320 cleanup) | toy discipline | Internal transition functions are rejected. | cat-4/toy (toy discipline rule; toy cleanup, no production surface) |
@@ -67,7 +67,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-022 | open | toy package surface | `src/index.ts` should not become an artificial public API. | cat-4/toy (toy discipline rule) |
 | TFIND-023 | resolved (#317/#320 cleanup) | toy layout | Package layout should mirror production package layout. | cat-4/toy (toy discipline rule; toy cleanup) |
 | TFIND-024 | open — cat-4 framing has a cat-1 PRODUCTION KERNEL: see TFIND-049 (toy realization blocked on it) | runtime adapters | Agent adapter path is still under-modeled. | cat-4/toy framing was WRONG that "`agent-adapters` exists in production" — it is NOT wired into the runtime host (effect-ai-native-agents Slice 4 unbuilt). The real gap = TFIND-049 (cat-1). TFIND-024 toy-realization blocked on TFIND-049 |
-| TFIND-025 | open — RE-TRIAGED 2026-05-18 (audit): **cat-4/toy WRAPPER over a cat-1/2-FUTURE kernel** (Shape C step 2) — production-deferred, NOT framing | durable-tools | Shape C / wait arbitration remains unmodeled. | Shape C **step 1 LANDED**; **steps 2-3 explicitly remaining/unbuilt** (raceAll arbitration collapse + completions-table deletion — durable-tools-vs-workflow-engine-convergence.md:74-81; precondition "after per-context engine slice" now MET so it's schedulable production work, not architect-framing). Same family as TFIND-049 but precondition cleared. Toy can't model an unbuilt slice — not toy laziness |
+| TFIND-025 | open — RE-TRIAGED 2026-05-18 (audit) + **VERIFIED schedulable-build, NOT framing-gated** | durable-tools | Shape C / wait arbitration remains unmodeled. | cat-4/toy WRAPPER over a cat-1/2-FUTURE kernel (Shape C step 2). Step 1 LANDED; **steps 2-3 verified architecturally DEFINED** (convergence.md:74-81 — Step 2: collapse match/timeout arbitration onto `DurableDeferred.raceAll` since the race deferred already decides + completions reads redundant given idempotent deferredDone; Step 3: delete dead `completions` table + reduce `durable-wait-store.ts`) ⇒ deterministic implementation, NOT undefined/framing-gated. Precondition (per-context engine slice) MET (TFIND-010). = schedulable production cleanup ("recommended near-term"), NOT a bundle item. Toy modeling deferred until built — not toy laziness |
 | TFIND-026 | resolved (#321) | durable backend | Durable-streams backend reached Group D. | cat-4/toy (toy milestone; toy PR #321, no production surface) |
 | TFIND-027 | accepted | toy readability | Duplicate inline configuration code is acceptable when it documents wiring. | cat-4/toy (toy readability rule; accepted, no action) |
 | TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. | cat-1 (REAL production runtime bug — an operator running a host via the public capability hits a missing `RuntimeOutputTable`; surfaced by the toy adopting prod composition) |
@@ -162,17 +162,22 @@ queue from consumer-hypothesis to verified plan. Per-finding verdict
 - **TFIND-014** — RESOLVED/REALIZED by #343 (stdio-jsonl tool execution:
   `RuntimeToolUseExecutorLive` + `toolUseToEffect` + `Activity.make`,
   e2e-tested). "deferred" was stale.
-- **TFIND-016** — BUILDABLE-INDIRECT / shape-note. `Activity.make`
-  EXISTS but workflow-internal-by-design; a dedicated activity-boundary
-  config may be the wrong shape (observe via public surface; likely
-  subsumed by the durable-streams replay config). Small shape decision,
-  not a kernel; low priority.
+- **TFIND-016** — **cat-3 CLOSED** (2026-05-18, Gurdas-concurred).
+  `Activity.make` is workflow-internal-by-design; a dedicated
+  activity-boundary config necessarily exercises an internal abstraction,
+  violating the CONFIGS "drive examples through public boundaries" rule.
+  Redirect: observe activity-mediated replay/retry via the public
+  surface — already covered by the durable-streams replay config. No
+  config, no production change.
 - **TFIND-024** — PRODUCTION-DEFERRED → TFIND-049 (effect-ai-native
   Slice 4 unbuilt). Confirmed.
-- **TFIND-025** — PRODUCTION-DEFERRED. Shape C step 1 LANDED; steps 2-3
-  unbuilt (convergence.md:74-81); cat-4 wrapper over a cat-1/2-FUTURE
-  kernel, precondition (per-context engine) now MET → schedulable
-  production work, NOT architect-framing.
+- **TFIND-025** — PRODUCTION-DEFERRED, **verified schedulable-build NOT
+  framing-gated**. Steps 2-3 re-read (convergence.md:74-81): both
+  architecturally DEFINED (Step 2 = collapse arbitration onto
+  `DurableDeferred.raceAll`; Step 3 = delete dead `completions` table +
+  reduce wait-store) — deterministic impl, not undefined. Precondition
+  (per-context engine) MET → schedulable production cleanup
+  ("recommended near-term"), NOT a bundle/framing item.
 - **multi-context-production-consuming-pipeline** — BUILDABLE. Per-context
   observation demuxes cleanly through the public surface (contextId
   primary/composite key; registry per-context lookup;
