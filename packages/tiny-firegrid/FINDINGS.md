@@ -38,9 +38,9 @@ of scope for this package.
 | TFIND-002 | open | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
 | TFIND-003 | open | client-sdk / host boundary | No remote start request surface. |
 | TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
-| TFIND-005 | open | Effect layer typing | Workflow/table layer composition leaks type precision. |
+| TFIND-005 | in-progress (`sidecar/workflow-layer-precision`) | Effect layer typing | Workflow/table layer composition leaks type precision. |
 | TFIND-006 | open | tiny host coverage | Durable configuration still models a tiny host capability. |
-| TFIND-007 | in-progress (`docs/sdds/SDD_FIREGRID_HOST_SURFACE.md`) | host-sdk | Host SDK lacks a named host surface type. |
+| TFIND-007 | in-progress (#323) | host-sdk | Host SDK lacks a named host surface type. |
 | TFIND-008 | open | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
 | TFIND-009 | open | workflow-engine | Durable workflow codec appears orphaned in the engine closure. |
 | TFIND-010 | open | runtime host | RuntimeContext engine registry is load-bearing. |
@@ -134,7 +134,7 @@ in tests and use only the durable backend as shared state.
 
 ### TFIND-005: Workflow layer composition leaks type precision
 
-status: open
+status: in-progress (`sidecar/workflow-layer-precision`)
 
 Composing `Workflow.toLayer`, `DurableTable.layer`, and
 `DurableStreamsWorkflowEngine.layer` can leak `any` through `Layer` pipe
@@ -145,9 +145,23 @@ Tiny-firegrid should continue treating broad `as unknown as Effect<...>` casts
 on configuration exports as a failed model. A narrow internal annotation is only
 acceptable when it identifies the production type boundary that leaked.
 
-Next action: after the host-surface type lands, remove local annotations where
-possible. If annotations remain necessary, move the fix to production layer
-return types.
+Sidecar root-cause trace (2026-05-17): the leak is **not** in
+`DurableStreamsWorkflowEngine.layer` (that infers precisely as
+`Layer<WorkflowEngineTable | WorkflowEngine, DurableTableError, never>`). It is
+in `effect-durable-operators` `DurableTable`: `DurableTableTagClass<Schemas,
+Self = any>` (`DurableTable.ts:191`) declares `.layer` as
+`Layer.Layer<Self, DurableTableError>`, but `defineDurableTable` returns the
+tag class via `as unknown as DurableTableTagClass<Schemas>` (`:1016`),
+discarding `Self`, so `Self` defaults to `any`. Every `DurableTable`-derived
+`.layer()` (`WorkflowEngineTable`, `RuntimeControlPlaneTable`,
+`RuntimeOutputTable`) therefore returns `Layer<any, …>`, which poisons every
+host/engine composition that merges a table layer. This is load-bearing: it
+gates TFIND-007 step 2 (the host-sdk test suite depends on this `any` `ROut`
+to discharge internal requirements).
+
+Next action: fix `DurableTable` so `Self` flows into the returned tag-class
+type (the tag is its own identifier; the cast just discards it). Then revisit
+TFIND-007 step 2 and remove local annotations downstream.
 
 ### TFIND-006: Runtime start remains a toy host capability
 
@@ -167,21 +181,25 @@ replace the tiny host where possible.
 
 ### TFIND-007: Host SDK has layer factories, not a named host surface
 
-status: in-progress (`docs/sdds/SDD_FIREGRID_HOST_SURFACE.md`)
+status: in-progress (#323)
 
 `packages/host-sdk` exports public layer factories such as
 `FiregridRuntimeHostLive` and `FiregridLocalHostLive`, plus capability tags
 owned by protocol/runtime, but it does not export a named host surface type
 that a caller can compose against directly.
 
-Sidecar resolution in flight:
-`docs/sdds/SDD_FIREGRID_HOST_SURFACE.md` proposes the smallest safe
-down-payment: export a `FiregridHost` union type from `@firegrid/host-sdk` and
-annotate existing host layer factories as `Layer.Layer<FiregridHost, ...>`.
-That matches the toy's finding without inventing a `Host` service.
+Sidecar resolution (PR #323, `sidecar/host-surface`, SDD
+`docs/sdds/SDD_FIREGRID_HOST_SURFACE.md`): exports a `FiregridHost` union
+type from `@firegrid/host-sdk` — a `@category models` union following
+Effect's own `NodeContext`/`BunContext` precedent, not a `Host` service.
+Step 2 (annotating the factory return types `Layer.Layer<FiregridHost,
+...>`) is **deferred and blocked on TFIND-005**: the factories currently
+infer `Layer<any, …>` (the TFIND-005 leak) and the host-sdk test suite
+depends on that `any` to discharge internal requirements; pinning the
+return before TFIND-005 turns the suite red.
 
-Next action: after this lands on `main`, tiny-firegrid should consume the
-exported type instead of defining a local host-layer alias.
+Next action: land #323 (named type unblocks the toy now); complete step 2
+after TFIND-005.
 
 ### TFIND-008: Client surface and host surface cannot yet be tested as separate processes end-to-end
 
