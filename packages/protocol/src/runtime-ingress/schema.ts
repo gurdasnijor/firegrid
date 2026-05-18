@@ -1,4 +1,4 @@
-import { DurableTable, type DurableTableService } from "effect-durable-operators"
+import { DurableTable } from "effect-durable-operators"
 import { Schema } from "effect"
 
 export const RuntimeIngressKindSchema = Schema.Literal(
@@ -108,18 +108,6 @@ export const RuntimeIngressDeliveryRowSchema = Schema.Struct({
 })
 export type RuntimeIngressDeliveryRow = Schema.Schema.Type<typeof RuntimeIngressDeliveryRowSchema>
 
-const runtimeIngressSchemas = {
-  inputs: RuntimeIngressInputRowSchema,
-  deliveries: RuntimeIngressDeliveryRowSchema,
-} as const
-
-export class RuntimeIngressTable extends DurableTable(
-  "firegrid.runtimeIngress",
-  runtimeIngressSchemas,
-) {}
-
-export type RuntimeIngressTableService = DurableTableService<typeof runtimeIngressSchemas>
-
 export const runtimeIngressInputIdForIdempotencyKey = (
   contextId: string,
   idempotencyKey: string,
@@ -202,23 +190,3 @@ export const runtimeInputIntentToRuntimeIngressRequest = (
   ...(intent.idempotencyKey === undefined ? {} : { idempotencyKey: intent.idempotencyKey }),
   ...(intent.metadata === undefined ? {} : { metadata: intent.metadata }),
 })
-
-/**
- * Legacy query for the next ingress sequence number on a context. New
- * host-owned runtime input routing records sequence through workflow
- * input deferred evidence instead of client-side table writes.
- *
- * firegrid-agent-ingress.INGRESS.9
- */
-export const nextRuntimeIngressSequence = (
-  table: RuntimeIngressTableService,
-  contextId: string,
-) =>
-  table.inputs.query((coll) =>
-    coll.toArray
-      .filter(candidate => candidate.contextId === contextId)
-      .reduce(
-        (max, candidate) =>
-          candidate.sequence === undefined ? max : Math.max(max, candidate.sequence + 1),
-        0,
-      ))
