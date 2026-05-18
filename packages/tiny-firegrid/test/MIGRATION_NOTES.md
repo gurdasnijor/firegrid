@@ -6,6 +6,7 @@ Scope:
 
 - `durable-streams-backed-pipeline.test.ts`
 - `stdio-jsonl-tool-execution-pipeline.test.ts`
+- `multi-context-production-consuming-pipeline.test.ts`
 
 ## Reach-Pasts Removed Cleanly
 
@@ -15,6 +16,7 @@ Scope:
 - Manual per-context output layer construction was removed. Output assertions use `session.wait.forAgentOutput()` and `session.snapshot()`, which resolve the context/output stream through the client surface.
 - Snapshot polling was removed from wait paths. Context materialization and terminal run waits now subscribe to `FiregridRuntimeTables.ControlPlane` rows and filter the live stream.
 - The stdio-jsonl tool-execution test no longer extracts host context, constructs a host-bound `RuntimeContext`, writes `contexts.upsert`, calls `RuntimeStartCapability.start`, opens `RuntimeOutputTable`, or decodes runtime output rows directly. It now drives create/start/prompt through the session facade and observes the tool loop through `session.wait.forAgentOutput`.
+- The multi-context production-consuming test uses two distinct `sessions.createOrLoad` external keys, two `session.start()` calls, interleaved `session.prompt()` calls, live `FiregridRuntimeTables.ControlPlane` waits, and per-session `session.wait.forAgentOutput()`. No host context extraction or host-bound row construction was needed to prove registry/dispatcher demux and output isolation.
 
 ## Reach-Pasts Not Removable / Public Gaps
 
@@ -27,6 +29,7 @@ Scope:
 
 - Live durable-table waits repeat the same shape: filter `rows()`, `Stream.runHead`, and race a timeout. This is the Effect equivalent of Flamecast's `useDurableTable(FiregridRuntimeTables.ControlPlane)` plus live query pattern.
 - Session-output waits repeat the `waitForAgentOutputMatching` shape listed below.
+- Multi-context public-surface assertions repeat pairwise scenario setup: create two sessions, start both, subscribe to both context/run rows, interleave prompts, then assert per-session snapshots.
 - Production-consuming tests repeatedly launch a host layer in a scoped background fiber while driving the scenario through a separate client SDK surface.
 
 ## Layer / Scoped Infrastructure Primitive Candidates
