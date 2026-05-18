@@ -33,6 +33,9 @@ interface RuntimeWaitStreamsService {
   readonly initialAgentOutputAfter: (
     source: Extract<RuntimeWaitSource, { readonly _tag: "AgentOutputAfter" }>,
   ) => Effect.Effect<Option.Option<RuntimeAgentOutputObservation>, unknown>
+  readonly agentOutputForContext: (
+    contextId: string,
+  ) => Stream.Stream<RuntimeAgentOutputObservation, unknown>
   readonly runtimeRun: Stream.Stream<RuntimeRunEventRow, unknown>
 }
 
@@ -51,6 +54,28 @@ export const RuntimeWaitStreamsLive = Layer.effect(
     const agentOutput = yield* RuntimeAgentOutputEvents
     const agentOutputAfter = yield* Effect.serviceOption(RuntimeAgentOutputAfterEvents)
     const runtimeRun = yield* RuntimeRuns
+
+    // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
+    //
+    // THE `onNone` BRANCHES BELOW ARE DEAD IN PRODUCTION — DO NOT DEEPEN.
+    //
+    // They filter the host-prefixed whole-table `agentOutput` stream
+    // (`RuntimeAgentOutputEvents` → the ambient `RuntimeOutputTable`,
+    // `…firegrid.host.{hostId}.runtimeOutput`). Post-#315 nothing writes
+    // that stream: runtime output is sharded per-context by
+    // `PerContextRuntimeOutputWriter`, and the production host
+    // composition always provides `PerContextRuntimeAgentOutputAfterEventsLive`
+    // (see `runtime-substrate.ts`), so `agentOutputAfter` is always
+    // `Some` and the `onSome` (per-context) branch is taken. The
+    // `onNone` arms exist only to keep this layer constructible when the
+    // per-context service is absent (non-production / unit harnesses).
+    // They are intentionally a thin, contextId/attempt filter over an
+    // empty stream — adding logic here would be reviving the
+    // host-as-runtime-owner output model the per-context reshape
+    // removed. See docs/research/host-vs-context-boundary-audit.md
+    // §A4 (the ambient host-prefixed `RuntimeOutputTable` is flagged
+    // for Cycle 1 cleanup once `RuntimeAgentOutputEvents`'s structural
+    // dependency is reshaped).
     return {
       agentOutput,
       agentOutputAfter: source =>
@@ -74,6 +99,14 @@ export const RuntimeWaitStreamsLive = Layer.effect(
         Option.match(agentOutputAfter, {
           onNone: () => Effect.succeed(Option.none()),
           onSome: service => service.initial(source),
+        }),
+      agentOutputForContext: contextId =>
+        Option.match(agentOutputAfter, {
+          onNone: () =>
+            agentOutput.pipe(
+              Stream.filter((row) => row.contextId === contextId),
+            ),
+          onSome: service => service.forContext(contextId),
         }),
       runtimeRun,
     }

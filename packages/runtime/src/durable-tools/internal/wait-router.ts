@@ -40,27 +40,66 @@ import {
   DurableWaitRows,
   DurableWaitRowUpsert,
 } from "./durable-wait-store.ts"
-import { evaluateFieldEquals, type RuntimeWaitSource } from "./types.ts"
+import { evaluateFieldEquals, type FieldEqualsTrigger } from "./types.ts"
 import { matchDeferredFor } from "./wait-for.ts"
+
+/**
+ * firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
+ *
+ * The non-After `AgentOutput` variant carries no contextId on the
+ * source itself — the SDD model is "source selects the stream, the
+ * `FieldEqualsTrigger` value decides which rows match", and every
+ * supported `AgentOutput` wait scopes itself with a `contextId`
+ * predicate (the agent-tool schema example, the workflow callers, and
+ * the per-context reshape all assume it). Post-#315 there is no
+ * host-wide output stream, so the router resolves the per-context
+ * output stream by this predicate. Absence is handled by the
+ * fail-fast guard at the `wait_for` tool boundary
+ * (`tool-use-to-effect.ts`), not here.
+ */
+const contextIdFromTrigger = (
+  trigger: FieldEqualsTrigger,
+): Option.Option<string> => {
+  const predicate = trigger.find(
+    (candidate) =>
+      candidate.path.length === 1 &&
+      candidate.path[0] === "contextId" &&
+      typeof candidate.equals === "string",
+  )
+  return predicate === undefined
+    ? Option.none()
+    : Option.some(predicate.equals as string)
+}
 
 /**
  * firegrid-typed-wait-source-redesign.TYPED_SOURCES.2
  * firegrid-typed-wait-source-redesign.TYPED_SOURCES.3
  *
- * Select the concrete runtime observation stream for a persisted typed wait
- * source. Adding a variant is one `Match.tag` arm plus one
- * `RuntimeWaitStreams` field.
+ * Select the concrete runtime observation stream for a persisted typed
+ * wait. Adding a variant is one `Match.tag` arm plus one
+ * `RuntimeWaitStreams` field. `AgentOutput` is routed to the
+ * per-context output stream selected by the wait trigger's contextId
+ * predicate (see `contextIdFromTrigger`); the trigger still does the
+ * final row matching in `completeMatch`.
  */
-const streamForSource = (
-  source: RuntimeWaitSource,
+const streamForWait = (
+  wait: WaitRow,
 ): Effect.Effect<
   Stream.Stream<unknown, unknown>,
   never,
   RuntimeWaitStreams
 > =>
   Effect.map(RuntimeWaitStreams, (streams) =>
-    Match.value(source).pipe(
-      Match.tag("AgentOutput", () => streams.agentOutput),
+    Match.value(wait.source).pipe(
+      Match.tag("AgentOutput", () =>
+        Option.match(contextIdFromTrigger(wait.trigger), {
+          // Degenerate: a contextId-less AgentOutput wait. The tool
+          // boundary rejects this shape; internal callers always scope
+          // by contextId. Fall back to the (post-#315 empty,
+          // documented) host-wide stream rather than guess a context.
+          onNone: () => streams.agentOutput,
+          onSome: contextId => streams.agentOutputForContext(contextId),
+        })),
       Match.tag("AgentOutputAfter", source => streams.agentOutputAfter(source)),
       Match.tag("RuntimeRun", () => streams.runtimeRun),
       Match.exhaustive,
@@ -273,7 +312,7 @@ const startRouter = Effect.gen(function*() {
         )
         yield* Effect.forkScoped(
           Effect.gen(function*() {
-            const source = yield* streamForSource(wait.source)
+            const source = yield* streamForWait(wait)
             yield* attachWaitToSource(
               wait,
               source,

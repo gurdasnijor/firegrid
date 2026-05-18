@@ -141,6 +141,23 @@ const namespaceScopedLayer = (
     ),
   )
 
+// firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
+//
+// CYCLE 1 CLEANUP CANDIDATE — host-prefixed ambient `RuntimeOutputTable`
+// with NO production writer post-#315.
+//
+// This binds the ambient `RuntimeOutputTable` to the host-prefixed
+// stream `…firegrid.host.{hostId}.runtimeOutput`. Runtime output is
+// written per-context by `PerContextRuntimeOutputWriter`
+// (`{prefix}.runtimeOutput.context.{contextId}`), so nothing writes
+// this stream. It exists only to satisfy a *structural* dependency:
+// `RuntimeWaitStreamsLive` resolves `RuntimeAgentOutputEvents`
+// (`RuntimeAgentOutputEventsLayer` → ambient `RuntimeOutputTable`) as a
+// hard requirement, and the wait router's now-dead host-wide
+// `agentOutput` fallback reads it. The live `AgentOutput` path is
+// per-context (see `wait-router.ts` / `runtime-wait-streams.ts`).
+// Removing this layer is gated on reshaping that structural dependency.
+// See docs/research/host-vs-context-boundary-audit.md §A4.
 const hostOwnedOutputLayer = (
   options: { readonly baseUrl: string; readonly headers?: DurableTableHeaders },
 ) =>

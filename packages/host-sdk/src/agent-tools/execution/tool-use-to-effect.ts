@@ -213,6 +213,31 @@ const runWaitForTool = (
         "waitQuery.whereFields must declare at least one predicate; empty predicate sets are rejected because they would match every row.",
     })
   }
+  // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
+  //
+  // Post-#315 runtime output is sharded per-context; the wait router
+  // resolves an `AgentOutput` wait to the per-context output stream
+  // selected by the trigger's `contextId` predicate. A contextId-less
+  // `AgentOutput` wait would have no stream to observe and silently
+  // hang until timeout. Reject it here with an actionable error
+  // instead. See docs/research/host-vs-context-boundary-audit.md §A4.
+  if (
+    input.waitQuery.source._tag === "AgentOutput" &&
+    !adapted.trigger.some(
+      (predicate) =>
+        predicate.path.length === 1 &&
+        predicate.path[0] === "contextId" &&
+        typeof predicate.equals === "string",
+    )
+  ) {
+    return Effect.fail({
+      _tag: "ToolInvalidInput",
+      toolUseId,
+      name: "wait_for",
+      reason:
+        "waitQuery.whereFields must include a string `contextId` predicate for AgentOutput waits: runtime output is observed per runtime context.",
+    })
+  }
   return WaitFor.match({
     name: `tool:${toolUseId}`,
     source: input.waitQuery.source,
