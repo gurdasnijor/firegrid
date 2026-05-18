@@ -1,31 +1,23 @@
 import { Response } from "@effect/ai"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import type { FiregridHost } from "@firegrid/host-sdk"
-import {
-  reconcileRuntimeControlRequestsOnce,
-  startRuntime,
-} from "@firegrid/host-sdk"
-import type { FiregridSessionId } from "@firegrid/protocol/session-facade"
 import {
   Firegrid,
   FiregridConfig,
+  FiregridRuntimeTables,
   FiregridStandaloneLive,
   local,
   type FiregridConfigError,
+  type FiregridSessionHandle,
+  type RuntimeContextSnapshot,
 } from "@firegrid/client-sdk/firegrid"
-import { encodeRuntimeAgentOutputEnvelope } from "@firegrid/runtime/events"
-import { Effect, Layer } from "effect"
+import {
+  encodeRuntimeAgentOutputEnvelope,
+} from "@firegrid/protocol/session-facade"
+import { runtimeControlPlaneStreamUrl } from "@firegrid/protocol/launch"
+import { Clock, Effect, Layer, Option, Stream, type Scope } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { tinyDurableStreamsBackedPipeline } from "../src/configurations/durable-streams-backed-pipeline.ts"
-
-type TinyDurableHostLayer = Layer.Layer<FiregridHost, DurableTableError>
-interface StartRuntimeForTest {
-  readonly contextId: string
-  readonly activityAttempt: number
-  readonly exitCode: number
-  readonly signal?: string | undefined
-}
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -75,19 +67,17 @@ setTimeout(() => process.exit(2), 5_000);
 `
 
 const textDeltas = (
-  snapshot: {
-    readonly agentOutputs: ReadonlyArray<{
-      readonly _tag: string
-      readonly event: Record<string, unknown>
-    }>
-  },
+  snapshot: RuntimeContextSnapshot,
 ): ReadonlyArray<string> =>
   snapshot.agentOutputs.flatMap((row) => {
-    const part = row.event.part
-    if (row._tag !== "TextChunk" || typeof part !== "object" || part === null) return []
-    const delta = (part as Record<string, unknown>).delta
-    return typeof delta === "string" ? [delta] : []
+    if (row.event._tag !== "TextChunk") return []
+    return [row.event.part.delta]
   })
+
+const exitedRun = (
+  snapshot: RuntimeContextSnapshot,
+) =>
+  snapshot.runs.find(row => row.status === "exited")
 
 const provideClient = <A, E, R>(
   self: Effect.Effect<A, E, R>,
@@ -104,177 +94,236 @@ const provideClient = <A, E, R>(
     })),
   )
 
-const startHostRuntime = (
-  input: {
-    readonly contextId: string
-    readonly hostLayer: TinyDurableHostLayer
-  },
-) =>
-  startRuntime({ contextId: input.contextId }).pipe(
-    Effect.provide(input.hostLayer),
-    Effect.scoped,
-  ) as Effect.Effect<StartRuntimeForTest, unknown, never>
-
-const reconcileHostRequests = (
-  input: {
-    readonly hostLayer: TinyDurableHostLayer
-  },
-) =>
-  reconcileRuntimeControlRequestsOnce().pipe(
-    Effect.provide(input.hostLayer),
-    Effect.scoped,
-  ) as Effect.Effect<void, unknown, never>
-
-const createClientSessionContext = (
+const controlPlaneLayer = (
   input: {
     readonly baseUrl: string
     readonly namespace: string
-    readonly externalKey: { readonly source: string; readonly id: string }
-    readonly hostLayer: TinyDurableHostLayer
-    readonly runtimeScript: string
   },
-): Effect.Effect<FiregridSessionId, unknown, never> =>
-  Effect.gen(function*() {
-    const sessionId = yield* provideClient(Effect.gen(function*() {
-      const firegrid = yield* Firegrid
-      const session = yield* firegrid.sessions.createOrLoad({
-        externalKey: input.externalKey,
-        runtime: runtime(input.runtimeScript),
-        createdBy: "tiny-firegrid",
-      })
-      return session.sessionId
-    }), { baseUrl: input.baseUrl, namespace: input.namespace }).pipe(Effect.scoped)
-    yield* reconcileHostRequests({ hostLayer: input.hostLayer })
-    return sessionId
+) =>
+  FiregridRuntimeTables.ControlPlane.layer({
+    streamOptions: {
+      url: runtimeControlPlaneStreamUrl(input),
+      contentType: "application/json",
+    },
+    txTimeoutMs: 2_000,
   })
+
+const waitForControlPlaneRow = <A, E>(
+  stream: Stream.Stream<A, E>,
+  label: string,
+  timeoutMs: number,
+) =>
+  Effect.raceFirst(
+    Stream.runHead(stream).pipe(
+      Effect.flatMap(row =>
+        Option.match(row, {
+          onNone: () => Effect.fail(new Error(`${label} stream ended before matching`)),
+          onSome: Effect.succeed,
+        })),
+    ),
+    Clock.sleep(`${timeoutMs} millis`).pipe(
+      Effect.flatMap(() => Effect.fail(new Error(`timed out waiting for ${label}`))),
+    ),
+  )
+
+const waitForMaterializedContext = (
+  session: FiregridSessionHandle,
+  input: {
+    readonly baseUrl: string
+    readonly namespace: string
+  },
+) =>
+  Effect.gen(function*() {
+    const control = yield* FiregridRuntimeTables.ControlPlane
+    return yield* waitForControlPlaneRow(
+      control.contexts.rows().pipe(
+        Stream.filter(row => row.contextId === session.contextId),
+      ),
+      `context ${session.contextId}`,
+      10_000,
+    )
+  }).pipe(
+    Effect.provide(controlPlaneLayer(input)),
+    Effect.scoped,
+  )
+
+const waitForExitedRun = (
+  session: FiregridSessionHandle,
+  input: {
+    readonly baseUrl: string
+    readonly namespace: string
+  },
+  exitCode: number,
+) =>
+  Effect.gen(function*() {
+    const control = yield* FiregridRuntimeTables.ControlPlane
+    return yield* waitForControlPlaneRow(
+      control.runs.rows().pipe(
+        Stream.filter(row =>
+          row.contextId === session.contextId &&
+          row.status === "exited" &&
+          row.exitCode === exitCode,
+        ),
+      ),
+      `exited run for ${session.contextId}`,
+      10_000,
+    )
+  }).pipe(
+    Effect.provide(controlPlaneLayer(input)),
+    Effect.scoped,
+  )
+
+const runWithPublicClient = <A, E>(
+  self: Effect.Effect<A, E, Firegrid | Scope.Scope>,
+  input: {
+    readonly baseUrl: string
+    readonly namespace: string
+  },
+): Promise<A> =>
+  Effect.runPromise(
+    Effect.scoped(
+      provideClient(self, input),
+    ),
+  )
 
 describe("tiny-firegrid durable-streams-backed pipeline", () => {
   it("wires Firegrid client launch and prompt through the production Durable Streams substrate", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
 
+    const durableStreamsBaseUrl = baseUrl
     const namespace = `tiny-e2e-${crypto.randomUUID()}`
     const hostLayer = tinyDurableStreamsBackedPipeline({
-      baseUrl,
+      baseUrl: durableStreamsBaseUrl,
       namespace,
-      controlRequestReconciler: false,
     })
 
-    const contextId = await Effect.runPromise(createClientSessionContext({
-      baseUrl,
-      namespace,
-      externalKey: { source: "tiny-firegrid", id: "e2e" },
-      hostLayer,
-      runtimeScript: promptDrivenAgentScript(["hello"]),
-    }))
-    const created = await Effect.runPromise(provideClient(Effect.gen(function*() {
+    const result = await runWithPublicClient(Effect.gen(function*() {
       const firegrid = yield* Firegrid
-      const session = yield* firegrid.sessions.attach({ sessionId: contextId })
+      const session = yield* firegrid.sessions.createOrLoad({
+        externalKey: { source: "tiny-firegrid", id: "e2e" },
+        runtime: runtime(promptDrivenAgentScript(["hello"])),
+        createdBy: "tiny-firegrid",
+      })
+      const started = yield* session.start()
+      yield* Layer.launch(hostLayer).pipe(Effect.forkScoped)
+      yield* waitForMaterializedContext(session, {
+        baseUrl: durableStreamsBaseUrl,
+        namespace,
+      })
       const intent = yield* session.prompt({
         payload: { type: "text", text: "hello" },
         idempotencyKey: "turn-1",
       })
-      return { contextId: session.contextId, intent }
-    }), { baseUrl, namespace }).pipe(Effect.scoped))
+      const firstOutput = yield* session.wait.forAgentOutput({ timeoutMs: 10_000 })
+      yield* waitForExitedRun(session, { baseUrl: durableStreamsBaseUrl, namespace }, 0)
+      const snapshot = yield* session.snapshot()
 
-    const started = await Effect.runPromise(startHostRuntime({
-      contextId: created.contextId,
-      hostLayer,
-    }))
-    const snapshot = await Effect.runPromise(provideClient(Effect.gen(function*() {
-      const firegrid = yield* Firegrid
-      const session = yield* firegrid.sessions.attach({ sessionId: created.contextId })
-      return yield* session.snapshot()
-    }), { baseUrl, namespace }).pipe(Effect.scoped))
+      return {
+        firstOutput,
+        intent,
+        session,
+        snapshot,
+        started,
+      }
+    }), { baseUrl: durableStreamsBaseUrl, namespace })
 
-    expect(started).toMatchObject({
-      contextId: created.intent.contextId,
-      exitCode: 0,
+    expect(result.started).toMatchObject({
+      contextId: result.session.contextId,
+      inserted: true,
     })
-    expect(textDeltas(snapshot)).toEqual(["hello"])
-    expect(snapshot.agentOutputs.map(row => row.contextId)).toEqual([
-      created.intent.contextId,
-      created.intent.contextId,
-    ])
-  })
-
-  it("replays a completed workflow after engine restart without duplicate sends", async () => {
-    if (baseUrl === undefined) throw new Error("server not started")
-
-    const namespace = `tiny-replay-${crypto.randomUUID()}`
-    const firstHostLayer = tinyDurableStreamsBackedPipeline({
-      baseUrl,
-      namespace,
-      controlRequestReconciler: false,
+    expect(result.intent).toMatchObject({
+      contextId: result.session.contextId,
     })
-
-    const contextId = await Effect.runPromise(createClientSessionContext({
-      baseUrl,
-      namespace,
-      externalKey: { source: "tiny-firegrid", id: "replay" },
-      hostLayer: firstHostLayer,
-      runtimeScript: promptDrivenAgentScript(["first", "second"]),
-    }))
-    const created = await Effect.runPromise(provideClient(Effect.gen(function*() {
-      const firegrid = yield* Firegrid
-      const session = yield* firegrid.sessions.attach({ sessionId: contextId })
-      const intent = yield* session.prompt({
-        payload: { type: "text", text: "hello" },
-        idempotencyKey: "turn-1",
-      })
-      return { contextId: session.contextId, intent }
-    }), { baseUrl, namespace }).pipe(Effect.scoped))
-
-    const firstHostRun = Effect.runPromise(startHostRuntime({
-      contextId: created.contextId,
-      hostLayer: firstHostLayer,
-    }))
-    const partial = await Effect.runPromise(provideClient(Effect.gen(function*() {
-      const firegrid = yield* Firegrid
-      const session = yield* firegrid.sessions.attach({ sessionId: created.contextId })
-      return yield* session.wait.forAgentOutput({ timeoutMs: 2_000 })
-    }), { baseUrl, namespace }).pipe(Effect.scoped))
-    const completed = await firstHostRun
-    const snapshot = await Effect.runPromise(provideClient(Effect.gen(function*() {
-      const firegrid = yield* Firegrid
-      const session = yield* firegrid.sessions.attach({ sessionId: created.contextId })
-      return yield* session.snapshot()
-    }), { baseUrl, namespace }).pipe(Effect.scoped))
-
-    expect(partial).toMatchObject({
+    expect(result.firstOutput).toMatchObject({
       matched: true,
       output: {
-        contextId: created.contextId,
+        contextId: result.session.contextId,
         sequence: 0,
       },
     })
-    expect(completed).toMatchObject({
-      contextId: created.contextId,
+    expect(exitedRun(result.snapshot)).toMatchObject({
+      contextId: result.session.contextId,
       exitCode: 0,
     })
-    expect(textDeltas(snapshot)).toEqual(["first", "second"])
-    expect(snapshot.agentOutputs.map(row => row.sequence)).toEqual([0, 1, 2])
+    expect(textDeltas(result.snapshot)).toEqual(["hello"])
+    expect(result.snapshot.agentOutputs.map(row => row.contextId)).toEqual([
+      result.session.contextId,
+      result.session.contextId,
+    ])
+  })
+
+  it("restarts the host without duplicating completed output", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+
+    const durableStreamsBaseUrl = baseUrl
+    const namespace = `tiny-replay-${crypto.randomUUID()}`
+    const firstHostLayer = tinyDurableStreamsBackedPipeline({
+      baseUrl: durableStreamsBaseUrl,
+      namespace,
+    })
+
+    const first = await runWithPublicClient(Effect.gen(function*() {
+      const firegrid = yield* Firegrid
+      const session = yield* firegrid.sessions.createOrLoad({
+        externalKey: { source: "tiny-firegrid", id: "replay" },
+        runtime: runtime(promptDrivenAgentScript(["first", "second"])),
+        createdBy: "tiny-firegrid",
+      })
+      const started = yield* session.start()
+      yield* Layer.launch(firstHostLayer).pipe(Effect.forkScoped)
+      yield* waitForMaterializedContext(session, {
+        baseUrl: durableStreamsBaseUrl,
+        namespace,
+      })
+      const intent = yield* session.prompt({
+        payload: { type: "text", text: "hello" },
+        idempotencyKey: "turn-1",
+      })
+      const partial = yield* session.wait.forAgentOutput({ timeoutMs: 10_000 })
+      yield* waitForExitedRun(session, { baseUrl: durableStreamsBaseUrl, namespace }, 0)
+      const snapshot = yield* session.snapshot()
+      return { intent, partial, session, snapshot, started }
+    }), { baseUrl: durableStreamsBaseUrl, namespace })
+
+    expect(first.started).toMatchObject({
+      contextId: first.session.contextId,
+      inserted: true,
+    })
+    expect(first.partial).toMatchObject({
+      matched: true,
+      output: {
+        contextId: first.session.contextId,
+        sequence: 0,
+      },
+    })
+    expect(first.intent).toMatchObject({
+      contextId: first.session.contextId,
+    })
+    expect(textDeltas(first.snapshot)).toEqual(["first", "second"])
+    expect(first.snapshot.agentOutputs.map(row => row.sequence)).toEqual([0, 1, 2])
 
     const secondHostLayer = tinyDurableStreamsBackedPipeline({
-      baseUrl,
+      baseUrl: durableStreamsBaseUrl,
       namespace,
-      controlRequestReconciler: false,
     })
 
-    const restarted = await Effect.runPromise(startHostRuntime({
-      contextId: created.contextId,
-      hostLayer: secondHostLayer,
-    }))
-    const replaySnapshot = await Effect.runPromise(provideClient(Effect.gen(function*() {
+    const restarted = await runWithPublicClient(Effect.gen(function*() {
       const firegrid = yield* Firegrid
-      const attached = yield* firegrid.sessions.attach({ sessionId: created.contextId })
-      return yield* attached.snapshot()
-    }), { baseUrl, namespace }).pipe(Effect.scoped))
+      const attached = yield* firegrid.sessions.attach({
+        sessionId: first.session.sessionId,
+      })
+      const started = yield* attached.start()
+      yield* Layer.launch(secondHostLayer).pipe(Effect.forkScoped)
+      yield* waitForExitedRun(attached, { baseUrl: durableStreamsBaseUrl, namespace }, 0)
+      const snapshot = yield* attached.snapshot()
+      return { snapshot, started }
+    }), { baseUrl: durableStreamsBaseUrl, namespace })
 
-    expect(restarted).toMatchObject({
-      contextId: created.contextId,
-      exitCode: 0,
+    expect(restarted.started).toMatchObject({
+      contextId: first.session.contextId,
+      inserted: false,
     })
-    expect(textDeltas(replaySnapshot)).toEqual(["first", "second"])
-    expect(replaySnapshot.agentOutputs.map(row => row.sequence)).toEqual([0, 1, 2])
+    expect(textDeltas(restarted.snapshot)).toEqual(["first", "second"])
+    expect(restarted.snapshot.agentOutputs.map(row => row.sequence)).toEqual([0, 1, 2])
   })
 })
