@@ -34,7 +34,7 @@ of scope for this package.
 
 | ID | Status | Area | Finding |
 | --- | --- | --- | --- |
-| TFIND-001 | open | client-sdk | `Firegrid.launch()` returns a context handle, not a session handle. |
+| TFIND-001 | in-progress (Codex Agent 1 — SDD-first: independent fix vs fold into deferred client/host transaction) | client-sdk | `Firegrid.launch()` returns a context handle, not a session handle. |
 | TFIND-002 | in-progress (#327 — framing signed off, Option B) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
 | TFIND-003 | in-progress (#327 — framing signed off, Option B) | client-sdk / host boundary | No remote start request surface. |
 | TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
@@ -63,7 +63,8 @@ of scope for this package.
 | TFIND-027 | accepted | toy readability | Duplicate inline configuration code is acceptable when it documents wiring. |
 | TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. |
 | TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
-| TFIND-030 | blocked (architectural — SDD #329, framing Q1/Q2 pending) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
+| TFIND-030 | in-progress (#329 — framing signed off: Q1=C, Q2=strict) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
+| TFIND-035 | open (tracked dependent of TFIND-030) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
 | TFIND-031 | in-progress (root finding — single missing provision; Agent 2) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
 | TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
 | TFIND-033 | superseded (folded into TFIND-031) | host-sdk | `commands.ts` manifestation of TFIND-031. |
@@ -73,7 +74,17 @@ of scope for this package.
 
 ### TFIND-001: Client launch handle is not a session handle
 
-status: open
+status: in-progress (Codex Agent 1 — SDD-first scoping)
+
+Sidecar (2026-05-18): dispatched to Codex Coding Agent 1. Shares the
+exact root cause as TFIND-002/003 (`launch()` also requires
+`CurrentHostSession` via `insertLocalRuntimeContext`); the
+`SDD_FIREGRID_CLIENT_HOST_BOUNDARY.md` §3 shape generalizes to it.
+Bounded question: is TFIND-001 independently resolvable now via an
+additive protocol/client down-payment analogous to #327, or is it purely
+a manifestation of the same deferred client/host coordinated transaction
+(fold it, as 032/033/034 folded into 031)? SDD-first; framing-gated;
+no production code before coordinator review + Gurdas framing signoff.
 
 `Firegrid.launch()` creates a `RuntimeContextHandle` with `contextId` and
 `snapshot`, but programmatic prompt/start/wait operations are exposed on
@@ -592,7 +603,16 @@ the intended host-capability pattern.
 
 ### TFIND-030: Snapshot agent output events are typed as records, not protocol unions
 
-status: blocked (architectural — SDD #329, framing Q1/Q2 pending)
+status: in-progress (#329 — framing signed off: Q1=C, Q2=strict)
+
+Framing signed off (Gurdas, 2026-05-18): Q1 = **Option C** (smallest
+sound down-payment — protocol-owned `AgentOutputEvent` union; switch only
+the protocol envelope/observation decode + client-sdk snapshot type;
+runtime `events/output.ts` untouched); Q2 = **strict reject**
+(non-conforming `event` → decode error/`Option.none()`, an intentional
+observable change to `snapshot()`/`wait.*`, documented in #329). Full
+SSOT consolidation deliberately deferred → tracked as TFIND-035 (a
+tracked dependent, not a bridge). Implementation in progress on #329.
 
 Sidecar (2026-05-18): verified real (not discoverability). The typed
 `AgentOutputEventSchema` union is `@firegrid/runtime`-owned; client-sdk
@@ -673,3 +693,21 @@ status: superseded (manifestation of TFIND-031 — `toolkit-layer.ts`)
 Not an independent bug. The `HandlersFrom`/`DurableWaitRowLookup` shape
 is the same root tag-family provision gap viewed through the toolkit
 handler chain. See TFIND-031.
+
+### TFIND-035: Two divergent agent-output envelope decoders (SSOT consolidation)
+
+status: open (tracked dependent of TFIND-030)
+
+Surfaced during TFIND-030. There are two envelope decoders for
+agent-output rows: runtime's (`agent-event-pipeline/events/output.ts`,
+already parses `event: AgentOutputEventSchema` — typed) and protocol's
+(`session-facade/schema.ts` — previously a `Record`; TFIND-030 makes it
+parse the new protocol-owned union). TFIND-030 Option C deliberately
+leaves the runtime decoder and the runtime-owned `AgentOutputEventSchema`
+in place to keep blast radius minimal. This is the deferred SSOT work:
+relocate/consolidate to a single protocol-owned canonical union with
+runtime re-export, collapsing the two decoders. Deliberate tracked
+dependent, NOT a bridge — must be closed, not left as a permanent fork.
+
+Next action: after TFIND-030 lands, scope the canonical relocation
+(option A/B of SDD #329) as its own coordinated PR.
