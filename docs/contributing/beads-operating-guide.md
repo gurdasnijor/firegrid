@@ -132,14 +132,23 @@ worker can always set them. The DECISION/READ block lives in the
 **Decisioner tool (read-only):**
 
 ```bash
-bash scripts/signoff-queue.sh          # ranked digest, keystone first
-bash scripts/signoff-queue.sh --json   # structured
+bash scripts/signoff-queue.sh            # ranked digest, keystone first
+bash scripts/signoff-queue.sh --json     # structured
+bash scripts/signoff-queue.sh show tf-qy4   # full context for ONE item
 ```
 
-It prints each pending item with its DECISION, READ pointer, and the exact
-sign-off command — so "summarise the decision + where to read it" needs no
-round-trip. Items missing the block render `⚠ NONE RECORDED`, which is itself
-the signal that the owning lane has not encoded it yet.
+The digest prints each pending item with its DECISION, READ pointer, and the
+exact sign-off command. `show <tf-id|TFIND-NNN|#PR>` is the drill-down: it
+renders the DECISION, the live PR state (`draft/state/mergeable/ci`, verbatim
+— `mergeable` is eventually-consistent, never interpreted), **and the actual
+SDD section(s) the `READ:` line names, pulled verbatim from the PR head** (the
+SDD lives in the open PR, not main; falls back to working tree, then
+`gh pr diff`). Section extraction is heading-shape tolerant (`## §0.1 —`,
+`### 7.`, …) and bounds each section at the next same-or-higher heading. So
+"show me the thing I'm deciding" is one command, no context switch.
+
+Items missing the block render `⚠ NONE RECORDED` — the signal to bounce it
+back to the owning lane, not to decide blind.
 
 **Ranking is NOT raw bv order.** bv's `topk_set` is 1-hop marginal gain and
 under-weights a keystone whose value is transitive (e.g. TFIND-050 gates the
