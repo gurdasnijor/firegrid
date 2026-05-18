@@ -1,6 +1,6 @@
 # SDD: DurableTable Self-Identity (TFIND-005)
 
-Status: draft — framing-gated; NO production code until coordinator review + Gurdas framing signoff
+Status: FRAMING SIGNED OFF (Gurdas, 2026-05-18) — curried shape accepted; proceed with the one-transaction migration under the binding conditions in "## Framing signoff — RESOLVED" (verify-then-flip; halt rule; flamecast TS2322 excised as TFIND-044)
 
 Finding: TFIND-005 — `DurableTable.layer` leaks `any` through Layer ROut,
 poisoning every host/engine composition that merges a table layer.
@@ -259,11 +259,53 @@ sites, tests).
   the mechanical idiom migration.
 - New requirement leaks (if any) filed as separate findings.
 
-## Open question for framing signoff
+## Framing signoff — RESOLVED (Gurdas, 2026-05-18)
 
-The fix makes `DurableTable` a two-step (`(ns, schemas)<Self>()`)
-factory. This matches Effect's `Context.Tag`/`Effect.Service`
-ergonomics, but it is a public API shape change for
-`effect-durable-operators`. Confirm the curried-call ergonomic is the
-accepted public surface (vs. e.g. an options-object or a named
-`.tag<Self>()` method) before any production code is written.
+**Curried `(ns, schemas)<Self>()` ACCEPTED.** It mirrors
+`Context.Tag` / `Effect.Service` exactly — a reader recognizes the
+self-referential tag pattern with no new affordance to learn.
+Options-object dresses up the same two-step shape worse; a named
+`.tag<Self>()` invents a library-specific affordance that diverges from
+the Effect idiom. Both rejected.
+
+Binding execution conditions (Gurdas):
+
+1. **Verify Crux B in practice, not on paper.** Before declaring the
+   migration done, run BOTH probe arms against the *curried* shape and
+   confirm both pass: (a) `IsAny<ROut>` is `false`; (b) two distinct
+   tables' `ROut` are mutually **non-assignable**. Crux B's rejection
+   rests on the cross-table-non-assignability assertion — it must hold
+   empirically.
+2. **Stale-SHA resolved.** The SDD §Sequencing challenge was correct:
+   `#322` already merged (`a38da9781` is in `origin/main`); the
+   dispatch's contingency plan guarded a condition that cannot occur
+   post-#322 — do NOT paper over it, it is simply void. Coordinator
+   re-synced; no fallback path.
+3. **Halt rule (load-bearing).** Proceed with the one-transaction
+   migration per §"Migration plan". If ANY consumer fails typecheck for
+   a reason *other than* the missing `<Self>()` idiom, **halt and
+   surface it as a NEW architectural finding** — that is a latent
+   requirement/precision leak the `any` was hiding; it is an
+   architectural finding with its own SDD, NOT #326 fix scope, and NOT
+   a forcing/widening cast at the call site.
+4. **Verify-then-flip-ready, not flip-then-verify.** Acceptance criteria
+   as stated below. Single PR; per-file commits grouped (lib change,
+   runtime sites, protocol sites, tests). The PR is made flip-ready only
+   after the probe + full gate pass.
+
+### Disposition of the flamecast `main.tsx:360` `DurableTableProvider`
+### TS2322 (formerly "fork (2)")
+
+Per the halt rule (3): this is a consumer typecheck failure NOT caused
+by a missing `<Self>()` idiom — `firegridRuntimeTableTags` /
+`DurableTableProvider<ROut,E>` is a heterogeneous N-table provider whose
+single `ROut` generic cannot carry N precise per-table `<Self>`
+identities once the idiom makes identities precise. That is precisely
+"a latent precision leak the `any` was hiding." It is therefore
+**excised from #326 and filed as a NEW architectural finding
+(TFIND-044)** with its own SDD + framing gate. It is NOT solved inside
+#326 and the coordinator does NOT improvise the provider API shape
+(A/B). #326's scope is the mechanical idiom migration only; its
+flip/merge remains gated on TFIND-044's disposition only because
+flamecast cannot be left red in CI — that gate is now a properly-scoped
+architectural finding, not a coordinator decision.
