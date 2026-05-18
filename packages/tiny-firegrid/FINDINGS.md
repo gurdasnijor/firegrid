@@ -35,12 +35,12 @@ of scope for this package.
 | ID | Status | Area | Finding |
 | --- | --- | --- | --- |
 | TFIND-001 | open | client-sdk | `Firegrid.launch()` returns a context handle, not a session handle. |
-| TFIND-002 | open | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
-| TFIND-003 | open | client-sdk / host boundary | No remote start request surface. |
+| TFIND-002 | in-progress (`sidecar/client-host-boundary`) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
+| TFIND-003 | in-progress (`sidecar/client-host-boundary`) | client-sdk / host boundary | No remote start request surface. |
 | TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
 | TFIND-005 | in-progress (`sidecar/workflow-layer-precision`) | Effect layer typing | Workflow/table layer composition leaks type precision. |
 | TFIND-006 | open | tiny host coverage | Durable configuration still models a tiny host capability. |
-| TFIND-007 | in-progress (#323) | host-sdk | Host SDK lacks a named host surface type. |
+| TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. |
 | TFIND-008 | open | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
 | TFIND-009 | open | workflow-engine | Durable workflow codec appears orphaned in the engine closure. |
 | TFIND-010 | open | runtime host | RuntimeContext engine registry is load-bearing. |
@@ -80,7 +80,10 @@ session-shaped handle.
 
 ### TFIND-002: Critical: session creation still requires host identity
 
-status: open
+status: in-progress (`sidecar/client-host-boundary`)
+
+Sidecar (2026-05-17): dispatched as one coupled workstream with TFIND-003.
+Architectural — SDD-first; framing review before implementation.
 
 `Firegrid.sessions.createOrLoad()` requires `CurrentHostSession` because it
 creates a host-bound `RuntimeContext` row through `insertLocalRuntimeContext`.
@@ -100,7 +103,10 @@ requests it.
 
 ### TFIND-003: Critical: no remote start request surface
 
-status: open
+status: in-progress (`sidecar/client-host-boundary`)
+
+Sidecar (2026-05-17): dispatched as one coupled workstream with TFIND-002.
+Architectural — SDD-first; framing review before implementation.
 
 `FiregridSessionHandle.start()` requires `RuntimeStartCapability`, which is a
 host-process capability. In a real deployment a client should not provide this
@@ -181,7 +187,13 @@ replace the tiny host where possible.
 
 ### TFIND-007: Host SDK has layer factories, not a named host surface
 
-status: in-progress (#323)
+status: resolved (#323)
+
+The named-type deliverable landed on `main` (#323): `FiregridHost` is
+exported from `@firegrid/host-sdk`; tiny-firegrid can now return
+`Layer.Layer<FiregridHost, ...>` instead of a local alias. Step 2
+(annotating factory return types) remains deferred and is tracked under
+TFIND-005 — see the linked note below.
 
 `packages/host-sdk` exports public layer factories such as
 `FiregridRuntimeHostLive` and `FiregridLocalHostLive`, plus capability tags
