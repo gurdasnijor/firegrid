@@ -88,6 +88,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-043 | open (low priority — test-infra flake, TFIND-042-class) | runtime / test infra | `DurableStreamsWorkflowEngine` VALIDATION.5 flakes under 17-way local turbo contention. | cat-4 (test-infra/tooling artifact — load-contention flake; CI-arbiter, correctly NOT dispatched to a production sidecar) |
 | TFIND-044 | QUEUED-FOR-ARCHITECT (own SDD needed; was TFIND-005 "fork (2)"; excised per the TFIND-005 halt rule) | client-sdk / effect-durable-operators provider | `DurableTableProvider`'s single `ROut` generic cannot carry N heterogeneous precise `DurableTable` `<Self>` identities (`firegridRuntimeTableTags`; flamecast `client/main.tsx:360` TS2322) — a latent precision leak the TFIND-005 `any` was hiding. | cat-2 (real boundary/wrong-shape — a real flamecast consumer hits it; the provider abstraction can't express the precise heterogeneous identity set; needs its own SDD, architect-gated) |
 | TFIND-045 | QUEUED-FOR-ARCHITECT (own SDD; halt-rule finding surfaced by #326 verify; co-gates #326 flip with TFIND-044) | host-sdk / control-request-reconciler | `RuntimeControlRequestReconcilerEnvironment` (`control-request-reconciler.ts:42-46`) omits `RuntimeOutputTable` + `HostRuntimeContextExecutionEnv` that `reconcileStartRequest:211` transitively requires via `startRuntime()`→`RuntimeContextEngineRegistry` — a genuine missing-dependency the TFIND-005 `any` was masking (Crux-B false-equivalence). | cat-2 (real production correctness — declared Effect env alias incomplete; fails when ambient doesn't supply it, TFIND-028 class; controlled experiment proved NOT branch scope-creep; relates TFIND-029 env-enumeration family, distinct mechanism from TFIND-044) |
+| TFIND-046 | open (low priority — client-sdk ergonomic completeness; annotated in #341 MIGRATION_NOTES) | client-sdk / durable tables | client SDK exposes `FiregridRuntimeTables.ControlPlane` but not the `runtimeControlPlaneStreamUrl` builder needed to instantiate its layer, forcing consumer-shaped code to import the URL helper from `@firegrid/protocol/launch`. | cat-1 (real consumer gap — a client-side live control-plane query, the Flamecast `useDurableTable` pattern, must reach into protocol for the stream URL; low severity but consumer-facing; fix = client-sdk re-export/fold. NOT toy-test-cleanness: a real non-Firegrid consumer hits the identical import) |
 
 ## Triage Audit (2026-05-18)
 
@@ -1499,3 +1500,35 @@ enumeration (correctly declare/provide `RuntimeOutputTable` +
 `RuntimeContextEngineRegistry`; cross-ref TFIND-028/029). Coordinator
 reviews framing → Gurdas signoff → implement. SDD-first; no production
 code, no call-site forcing cast.
+
+### TFIND-046: client SDK exposes the control-plane table tag but not its stream-URL builder
+
+status: open (low priority — client-sdk ergonomic completeness)
+
+Triage: **cat-1** (real consumer gap, low severity). Surfaced + honestly
+annotated by the toy in #341's `MIGRATION_NOTES.md` while migrating
+`durable-streams-backed-pipeline.test.ts` to drive purely through the
+public client surface.
+
+The client SDK exposes `FiregridRuntimeTables.ControlPlane` (the durable
+table tag), but to instantiate its layer a consumer must supply the
+stream URL via `runtimeControlPlaneStreamUrl`, which is only exported
+from `@firegrid/protocol/launch`. So consumer-shaped code that builds a
+client-side live query over the control-plane table (the Flamecast
+`useDurableTable(FiregridRuntimeTables.ControlPlane)` + live-query
+pattern) must reach past the client SDK into a protocol URL helper.
+
+Triage question: would a real consumer outside Firegrid hit this? Yes —
+any client building a live control-plane subscription needs the same URL
+builder; the client SDK surface is incomplete for its own exposed table
+tag. This is NOT "the test would be cleaner if" (the import is genuinely
+forced by a public-surface gap, not test ergonomics). Low severity (the
+protocol helper is public and not host-bound) → low priority, but a real
+client-surface completeness finding, not toy scope.
+
+Next action (low priority, sidecar-shaped, micro): re-export
+`runtimeControlPlaneStreamUrl` (or a `FiregridRuntimeTables.ControlPlane`
+layer convenience that folds it) from `@firegrid/client-sdk` so
+consumer-shaped code does not import protocol URL helpers directly. Not
+gating any workstream; fold into the next natural client-sdk-touching
+PR. #341 merges with the reach-past annotated to this id.
