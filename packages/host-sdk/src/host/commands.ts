@@ -40,6 +40,7 @@ import {
 import {
   runtimeContextWorkflowSupportLayer,
 } from "./runtime-context-workflow-support.ts"
+import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 
 type RuntimeIngressAppendEnvironment =
   | RuntimeContextRead
@@ -148,7 +149,11 @@ export const startRuntime = (
 export const RuntimeStartCapabilityLive = Layer.effect(
   RuntimeStartCapability,
   Effect.gen(function* () {
-    const captured = yield* Effect.context<never>()
+    // TFIND-031: capture the host durable substrate (always provided by
+    // the composed Firegrid host layer) so the deferred `start` closure
+    // can re-provide it. `never` here was only sound while
+    // `DurableTable.layer` leaked `any`.
+    const captured = yield* Effect.context<HostRuntimeContextExecutionEnv>()
     const contextRead = yield* RuntimeContextRead
     const hostSession = yield* CurrentHostSession
     const registry = yield* RuntimeContextEngineRegistry

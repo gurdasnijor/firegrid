@@ -30,11 +30,9 @@ import {
   type WaitForToolOutput,
 } from "@firegrid/protocol/agent-tools"
 import {
-  type CurrentHostSession,
-  type RuntimeControlPlaneTable,
-  type RuntimeOutputTable,
   provideRuntimeContext,
 } from "@firegrid/protocol/launch"
+import type { HostRuntimeContextExecutionEnv } from "../../host/runtime-substrate.ts"
 import { ToolResultEventSchema } from "@firegrid/runtime/events"
 import { type Context, Effect, Layer, Schema } from "effect"
 import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
@@ -103,12 +101,15 @@ const toolCallWorkflowSupportLayer = (
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
   )
 
+// TFIND-031: includes the full host durable substrate
+// (`HostRuntimeContextExecutionEnv` adds the DurableWait* observation
+// tags + RuntimeHostConfig that tool handlers genuinely require). The
+// prior shorter list only typechecked because `DurableTable.layer`
+// leaked `any` and collapsed the handler requirements channel.
 type ToolCallHostEnvironment =
   | RuntimeContextEngineRegistry
   | AgentToolHost
-  | CurrentHostSession
-  | RuntimeControlPlaneTable
-  | RuntimeOutputTable
+  | HostRuntimeContextExecutionEnv
 
 /**
  * Common handler shape: every tool routes through `toolUseToEffect` so

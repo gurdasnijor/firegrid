@@ -10,6 +10,12 @@ import {
   type DurableWaitRowUpsert,
 } from "@firegrid/runtime/durable-tools"
 import {
+  CurrentHostSession,
+  RuntimeControlPlaneTable,
+  RuntimeOutputTable,
+} from "@firegrid/protocol/launch"
+import { RuntimeHostConfig } from "./config.ts"
+import {
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
 import { RuntimeToolUseExecutor } from "@firegrid/runtime/tool-executor"
@@ -32,6 +38,22 @@ type RuntimeToolUseExecutorHostEnvironment =
   | DurableWaitCompletionRowLookup
   | DurableWaitCompletionRowUpsert
   | AgentToolHost
+
+// TFIND-031: the host-provided durable substrate that a per-context
+// workflow execution genuinely requires. Deferred-execution seams
+// (`Effect.context<…>()` captured at Layer-build time and re-provided
+// into closures that run later) MUST capture this set instead of
+// `never`. These tags are always satisfied at runtime by the composed
+// Firegrid host layer (`FiregridRuntimeHostLive`); annotating `never`
+// was only ever sound because `DurableTable.layer` leaked `any` and
+// collapsed the requirements channel. With precise `.layer` typing the
+// real requirement surfaces — declare it honestly here rather than
+// re-erase it.
+export type HostRuntimeContextExecutionEnv =
+  | RuntimeControlPlaneTable
+  | RuntimeOutputTable
+  | CurrentHostSession
+  | RuntimeHostConfig
 
 // firegrid-runtime-boundary-reconciliation.HOST_HARDENING.2
 // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
