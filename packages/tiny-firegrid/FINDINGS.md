@@ -89,6 +89,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-044 | QUEUED-FOR-ARCHITECT (own SDD needed; was TFIND-005 "fork (2)"; excised per the TFIND-005 halt rule) | client-sdk / effect-durable-operators provider | `DurableTableProvider`'s single `ROut` generic cannot carry N heterogeneous precise `DurableTable` `<Self>` identities (`firegridRuntimeTableTags`; flamecast `client/main.tsx:360` TS2322) — a latent precision leak the TFIND-005 `any` was hiding. | cat-2 (real boundary/wrong-shape — a real flamecast consumer hits it; the provider abstraction can't express the precise heterogeneous identity set; needs its own SDD, architect-gated) |
 | TFIND-045 | QUEUED-FOR-ARCHITECT (own SDD; halt-rule finding surfaced by #326 verify; co-gates #326 flip with TFIND-044) | host-sdk / control-request-reconciler | `RuntimeControlRequestReconcilerEnvironment` (`control-request-reconciler.ts:42-46`) omits `RuntimeOutputTable` + `HostRuntimeContextExecutionEnv` that `reconcileStartRequest:211` transitively requires via `startRuntime()`→`RuntimeContextEngineRegistry` — a genuine missing-dependency the TFIND-005 `any` was masking (Crux-B false-equivalence). | cat-2 (real production correctness — declared Effect env alias incomplete; fails when ambient doesn't supply it, TFIND-028 class; controlled experiment proved NOT branch scope-creep; relates TFIND-029 env-enumeration family, distinct mechanism from TFIND-044) |
 | TFIND-046 | open (low priority — client-sdk ergonomic completeness; annotated in #341 MIGRATION_NOTES) | client-sdk / durable tables | client SDK exposes `FiregridRuntimeTables.ControlPlane` but not the `runtimeControlPlaneStreamUrl` builder needed to instantiate its layer, forcing consumer-shaped code to import the URL helper from `@firegrid/protocol/launch`. | cat-1 (real consumer gap — a client-side live control-plane query, the Flamecast `useDurableTable` pattern, must reach into protocol for the stream URL; low severity but consumer-facing; fix = client-sdk re-export/fold. NOT toy-test-cleanness: a real non-Firegrid consumer hits the identical import) |
+| TFIND-047 | open (filed 2026-05-18 by Gurdas; framing-gated, distinct from TFIND-040) | client-sdk / snapshot observation typing | `RuntimeContextSnapshot["agentOutputs"]` carries weaker typing than runtime-side `RuntimeAgentOutputObservation`: the Codex test needs `asRecord` defensive casts to read `event.part.delta` / `event.part.name` from snapshot rows, while the same fields are properly typed when consumed from `RuntimeOutputTable.events.rows()` directly. | cat-2 (real client-SDK type-precision boundary — the snapshot path loses observation type precision the runtime side has, forcing consumer casts; distinct from TFIND-040 subscription ergonomics; relates TFIND-030/035 SSOT but a deeper `.part.*`/row-shape precision gap not closed by #329) |
 
 ## Triage Audit (2026-05-18)
 
@@ -1097,6 +1098,35 @@ client/host SDD priorities.
 
 ### TFIND-038: Client session creation cannot express arbitrary runtime intents
 
+status: resolved (#332 — RuntimeContextRequest carries full public runtime intent; see TFIND-002 cluster note) — TOY-REALIZATION pending (Gurdas decision: option 3, see below)
+
+**TOY-REALIZATION DECISION (Gurdas, 2026-05-18) — applies to the Codex
+ACP + stdio-jsonl tool-execution tests (TFIND-038/039 reach-pasts;
+relates TFIND-004/008).** The *production* findings 002/038/039 are
+resolved by #332. The remaining work is the toy-side realization: the
+Codex ACP and stdio-jsonl tests still demonstrate the exact
+anti-patterns the durable-streams migration (#341/#342) eliminated —
+host-context capability extraction, host-bound row construction, direct
+`RuntimeStartCapability.start`, snapshot polling — annotated to
+TFIND-038/039/040 but green under the annotations, so the findings gate
+nothing operationally and the tests silently model the patterns the
+production-fidelity rubric now discourages.
+
+**Decision: option (3).** Migrate BOTH tests to the production-fidelity
+public client/session surface (the #341/#342 pattern) **now**, in ONE
+PR, by ONE agent (toy maintainer, `surface:33`), where **migration ==
+validation**: prerequisites (#332) have landed, so they should go green
+through the public surface. If any cannot, that is the validation
+signal — **file the surface gap as a NEW finding; do NOT reintroduce an
+escape hatch, do NOT `it.skip`**. Migration and any finding-resolution
+in the SAME PR by the SAME agent so there is no window where someone
+"fixes the red test" by re-adding host reach-pasts. `RuntimeContextSnapshot`
+typing gap filed regardless as **TFIND-047** — the migration must
+consume/validate it (eliminate the `asRecord` casts, or TFIND-047
+tracks why it cannot yet). Dispatched to `surface:33` 2026-05-18.
+
+Original triage/evidence below.
+
 status: resolved (#332 — RuntimeContextRequest carries full public runtime intent; see TFIND-002 cluster note)
 
 The Codex ACP tool-call test manually constructs a `RuntimeContext` with
@@ -1121,7 +1151,7 @@ transaction (see TFIND-039 / TFIND-001 SDD).
 
 ### TFIND-039: Client SDK has no client-visible runtime start trigger
 
-status: resolved (#332 — durable start trigger + host reconciler landed; see TFIND-002 cluster note)
+status: resolved (#332 — durable start trigger + host reconciler landed; see TFIND-002 cluster note) — TOY-REALIZATION pending (Gurdas option-3 decision recorded under TFIND-038)
 
 The Codex ACP tool-call test manually extracts `RuntimeStartCapability` from
 the host context and calls `start({ contextId })`. That is a host capability,
@@ -1552,3 +1582,40 @@ layer convenience that folds it) from `@firegrid/client-sdk` so
 consumer-shaped code does not import protocol URL helpers directly. Not
 gating any workstream; fold into the next natural client-sdk-touching
 PR. #341 merges with the reach-past annotated to this id.
+
+### TFIND-047: snapshot agentOutputs typing is weaker than the runtime observation type
+
+status: open (filed 2026-05-18 by Gurdas; framing-gated; distinct from TFIND-040)
+
+Triage: **cat-2** (real client-SDK type-precision boundary / wrong
+shape).
+
+`RuntimeContextSnapshot["agentOutputs"]` carries weaker typing than the
+runtime-side `RuntimeAgentOutputObservation`. The Codex ACP test uses
+`asRecord` defensive casts to extract `event.part.delta` and
+`event.part.name` from snapshot rows, whereas the same fields are
+properly typed when consumed from `RuntimeOutputTable.events.rows()`
+directly. A real client-SDK consumer reading `session.snapshot()
+.agentOutputs` therefore gets a weaker type than the runtime
+observation and must cast.
+
+Distinct from **TFIND-040** (that is subscription/observation-surface
+*ergonomics* — `session.subscribe()`); this is observation *type
+precision through the snapshot path*. Relates to **TFIND-030** (made
+`session.snapshot().agentOutputs[].event` the typed `AgentOutputEvent`
+union via #329) and **TFIND-035** (SSOT) but is **not closed by #329** —
+it is a deeper `.part.*` / snapshot-row-shape precision gap vs.
+`RuntimeAgentOutputObservation`.
+
+Filed per Gurdas regardless of the TFIND-038/039 toy-realization option;
+the option-3 migration (recorded under TFIND-038) must consume/validate
+it — i.e. eliminate the `asRecord` casts, or TFIND-047 tracks precisely
+why they cannot be removed yet (the validation signal).
+
+Next action: scope a client-sdk snapshot-observation typing fix
+(`RuntimeContextSnapshot["agentOutputs"]` row type → expose the same
+precision as `RuntimeAgentOutputObservation`, including `event.part.*`);
+relate the runtime `RuntimeOutputTable.events` row type and the
+TFIND-030 `AgentOutputEvent` union. Architectural (public observable
+type change like TFIND-030) — SDD/framing-gated; coordinator scopes →
+Gurdas signoff. Not on the keystone critical path.
