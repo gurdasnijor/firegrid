@@ -17,6 +17,18 @@
 #   - tmp/toy-coverage/<target>/end_to_end_modules.json
 #   - tmp/toy-coverage/<target>/end_to_end_unmodeled.json
 #   - tmp/toy-coverage/<target>/end_to_end_unmodeled_by_category.txt
+#   - tmp/toy-coverage/<target>/host_surface_direct_touchpoints.json
+#   - tmp/toy-coverage/<target>/host_surface_shared_touchpoint_spine.json
+#   - tmp/toy-coverage/<target>/host_surface_outside_spine_touchpoint_denominator.json
+#   - tmp/toy-coverage/<target>/host_surface_touchpoint_delta_modules.json
+#   - tmp/toy-coverage/<target>/host_surface_touchpoint_delta_unmodeled.json
+#   - tmp/toy-coverage/<target>/host_surface_touchpoint_delta_unmodeled_by_category.txt
+#   - tmp/toy-coverage/<target>/end_to_end_direct_touchpoints.json
+#   - tmp/toy-coverage/<target>/end_to_end_shared_touchpoint_spine.json
+#   - tmp/toy-coverage/<target>/end_to_end_outside_spine_touchpoint_denominator.json
+#   - tmp/toy-coverage/<target>/end_to_end_touchpoint_delta_modules.json
+#   - tmp/toy-coverage/<target>/end_to_end_touchpoint_delta_unmodeled.json
+#   - tmp/toy-coverage/<target>/end_to_end_touchpoint_delta_unmodeled_by_category.txt
 #   - tmp/toy-coverage/<target>/prod-modules.json
 #   - tmp/toy-coverage/<target>/summary.md
 #
@@ -83,13 +95,19 @@ unmodeled_modules() {
 coverage_pct() {
   local modeled_count="$1"
   local prod_count="$2"
-  awk "BEGIN { printf \"%.1f\", ($modeled_count / $prod_count) * 100 }"
+  awk -v modeled="$modeled_count" -v total="$prod_count" 'BEGIN {
+    if (total == "" || total == 0) {
+      printf "0.0"
+    } else {
+      printf "%.1f", (modeled / total) * 100
+    }
+  }'
 }
 
 coverage_ge() {
   local actual="$1"
   local minimum="$2"
-  awk "BEGIN { exit !($actual >= $minimum) }"
+  awk -v actual="$actual" -v minimum="$minimum" 'BEGIN { exit !(actual >= minimum) }'
 }
 
 categorize_unmodeled() {
@@ -154,6 +172,123 @@ directory_summary() {
     | sort -rn
 }
 
+json_intersection() {
+  local left="$1"
+  local right="$2"
+  local output="$3"
+  jq -n \
+    --slurpfile left "$left" \
+    --slurpfile right "$right" \
+    '[ $left[0][] as $module | select($right[0] | index($module)) | $module ]' \
+    > "$output"
+}
+
+json_subtract() {
+  local left="$1"
+  local right="$2"
+  local output="$3"
+  jq -n \
+    --slurpfile left "$left" \
+    --slurpfile right "$right" \
+    '$left[0] - $right[0]' \
+    > "$output"
+}
+
+json_union() {
+  local left="$1"
+  local right="$2"
+  local output="$3"
+  jq -n \
+    --slurpfile left "$left" \
+    --slurpfile right "$right" \
+    '($left[0] + $right[0]) | sort | unique' \
+    > "$output"
+}
+
+direct_touchpoints() {
+  local output="$1"
+  shift
+  pnpm exec depcruise \
+    --ts-pre-compilation-deps \
+    --include-only "^packages/" \
+    --exclude "node_modules" \
+    --output-type json \
+    "$@" \
+    | jq '[.modules[]
+      | select(.source | startswith("packages/tiny-firegrid/"))
+      | .dependencies[]?.resolved
+      | select(test("^packages/(protocol|runtime|host-sdk|client-sdk|effect-durable-operators)/"))
+    ] | sort | unique' \
+    > "$output"
+}
+
+production_config_files() {
+  for candidate in packages/tiny-firegrid/src/configurations/*.ts; do
+    if grep -q "FiregridRuntimeHostLive" "$candidate"; then
+      printf '%s\n' "$candidate"
+    fi
+  done | sort
+}
+
+end_to_end_entries_for_config() {
+  local candidate="$1"
+  local name
+  name="$(basename "$candidate" .ts)"
+  local test_candidate="packages/tiny-firegrid/test/${name}.test.ts"
+  if [[ -f "$test_candidate" ]]; then
+    printf '%s\n%s\n' "$candidate" "$test_candidate"
+  else
+    printf '%s\n' "$candidate"
+  fi
+}
+
+compute_production_consuming_touchpoint_sets() {
+  local output="$1"
+  local mode="$2"
+  local operation="$3"
+  local scratch_dir="$OUT_DIR/_touchpoint_${mode}_${operation}"
+  rm -rf "$scratch_dir"
+  mkdir -p "$scratch_dir"
+
+  local initialized=false
+  local work="$scratch_dir/work.json"
+
+  while IFS= read -r candidate; do
+    [[ -n "$candidate" ]] || continue
+    local name
+    name="$(basename "$candidate" .ts)"
+    local touchpoints="$scratch_dir/${name}.json"
+
+    if [[ "$mode" == "host_surface" ]]; then
+      direct_touchpoints "$touchpoints" "$candidate"
+    else
+      local entries=()
+      while IFS= read -r entry; do
+        entries+=("$entry")
+      done < <(end_to_end_entries_for_config "$candidate")
+      direct_touchpoints "$touchpoints" "${entries[@]}"
+    fi
+
+    if [[ "$initialized" == false ]]; then
+      cp "$touchpoints" "$work"
+      initialized=true
+    elif [[ "$operation" == "intersection" ]]; then
+      json_intersection "$work" "$touchpoints" "$scratch_dir/next.json"
+      mv "$scratch_dir/next.json" "$work"
+    else
+      json_union "$work" "$touchpoints" "$scratch_dir/next.json"
+      mv "$scratch_dir/next.json" "$work"
+    fi
+  done < <(production_config_files)
+
+  if [[ "$initialized" == false ]]; then
+    printf '[]\n' > "$output"
+  else
+    cp "$work" "$output"
+  fi
+  rm -rf "$scratch_dir"
+}
+
 # ---- check all canonical configurations ----
 if [[ "$CHECK" == true && "$TARGET" == "all" ]]; then
   MIN_HOST_SURFACE="${TOY_COVERAGE_MIN_HOST_SURFACE:-20.0}"
@@ -176,7 +311,7 @@ if [[ "$CHECK" == true && "$TARGET" == "all" ]]; then
     host_min="$MIN_HOST_SURFACE"
     end_min="$MIN_END_TO_END"
     tier="base"
-    if rg -q "FiregridRuntimeHostLive" "$candidate"; then
+    if grep -q "FiregridRuntimeHostLive" "$candidate"; then
       host_min="$MIN_PRODUCTION_HOST_SURFACE"
       end_min="$MIN_PRODUCTION_END_TO_END"
       tier="production"
@@ -285,6 +420,71 @@ echo "==> end_to_end_closure unmodeled by category..."
 category_summary "$OUT_DIR/end_to_end_unmodeled_by_category.txt"
 echo ""
 
+echo "==> computing direct production touchpoint delta..."
+direct_touchpoints "$OUT_DIR/host_surface_direct_touchpoints.json" "$HOST_SURFACE_ENTRY"
+direct_touchpoints "$OUT_DIR/end_to_end_direct_touchpoints.json" "${END_TO_END_ENTRY[@]}"
+
+compute_production_consuming_touchpoint_sets \
+  "$OUT_DIR/host_surface_shared_touchpoint_spine.json" \
+  "host_surface" \
+  "intersection"
+compute_production_consuming_touchpoint_sets \
+  "$OUT_DIR/host_surface_touchpoint_denominator.json" \
+  "host_surface" \
+  "union"
+compute_production_consuming_touchpoint_sets \
+  "$OUT_DIR/end_to_end_shared_touchpoint_spine.json" \
+  "end_to_end" \
+  "intersection"
+compute_production_consuming_touchpoint_sets \
+  "$OUT_DIR/end_to_end_touchpoint_denominator.json" \
+  "end_to_end" \
+  "union"
+
+json_subtract "$OUT_DIR/host_surface_touchpoint_denominator.json" \
+  "$OUT_DIR/host_surface_shared_touchpoint_spine.json" \
+  "$OUT_DIR/host_surface_outside_spine_touchpoint_denominator.json"
+json_subtract "$OUT_DIR/host_surface_direct_touchpoints.json" \
+  "$OUT_DIR/host_surface_shared_touchpoint_spine.json" \
+  "$OUT_DIR/host_surface_touchpoint_delta_modules.json"
+json_subtract "$OUT_DIR/host_surface_outside_spine_touchpoint_denominator.json" \
+  "$OUT_DIR/host_surface_touchpoint_delta_modules.json" \
+  "$OUT_DIR/host_surface_touchpoint_delta_unmodeled.json"
+categorize_unmodeled \
+  "$OUT_DIR/host_surface_touchpoint_delta_unmodeled.json" \
+  "$OUT_DIR/host_surface_touchpoint_delta_unmodeled_by_category.txt"
+
+json_subtract "$OUT_DIR/end_to_end_touchpoint_denominator.json" \
+  "$OUT_DIR/end_to_end_shared_touchpoint_spine.json" \
+  "$OUT_DIR/end_to_end_outside_spine_touchpoint_denominator.json"
+json_subtract "$OUT_DIR/end_to_end_direct_touchpoints.json" \
+  "$OUT_DIR/end_to_end_shared_touchpoint_spine.json" \
+  "$OUT_DIR/end_to_end_touchpoint_delta_modules.json"
+json_subtract "$OUT_DIR/end_to_end_outside_spine_touchpoint_denominator.json" \
+  "$OUT_DIR/end_to_end_touchpoint_delta_modules.json" \
+  "$OUT_DIR/end_to_end_touchpoint_delta_unmodeled.json"
+categorize_unmodeled \
+  "$OUT_DIR/end_to_end_touchpoint_delta_unmodeled.json" \
+  "$OUT_DIR/end_to_end_touchpoint_delta_unmodeled_by_category.txt"
+
+HOST_SURFACE_SPINE_COUNT=$(jq 'length' "$OUT_DIR/host_surface_shared_touchpoint_spine.json")
+HOST_SURFACE_TOUCHPOINT_DENOMINATOR=$(jq 'length' "$OUT_DIR/host_surface_outside_spine_touchpoint_denominator.json")
+HOST_SURFACE_SCENARIO_DELTA=$(jq 'length' "$OUT_DIR/host_surface_touchpoint_delta_modules.json")
+HOST_SURFACE_TOUCHPOINT_UNMODELED=$(jq 'length' "$OUT_DIR/host_surface_touchpoint_delta_unmodeled.json")
+HOST_SURFACE_TOUCHPOINT_COVERAGE=$(coverage_pct "$HOST_SURFACE_SCENARIO_DELTA" "$HOST_SURFACE_TOUCHPOINT_DENOMINATOR")
+
+END_TO_END_SPINE_COUNT=$(jq 'length' "$OUT_DIR/end_to_end_shared_touchpoint_spine.json")
+END_TO_END_TOUCHPOINT_DENOMINATOR=$(jq 'length' "$OUT_DIR/end_to_end_outside_spine_touchpoint_denominator.json")
+END_TO_END_SCENARIO_DELTA=$(jq 'length' "$OUT_DIR/end_to_end_touchpoint_delta_modules.json")
+END_TO_END_TOUCHPOINT_UNMODELED=$(jq 'length' "$OUT_DIR/end_to_end_touchpoint_delta_unmodeled.json")
+END_TO_END_TOUCHPOINT_COVERAGE=$(coverage_pct "$END_TO_END_SCENARIO_DELTA" "$END_TO_END_TOUCHPOINT_DENOMINATOR")
+
+echo "    host_surface shared touchpoint spine: $HOST_SURFACE_SPINE_COUNT modules"
+echo "    host_surface touchpoint delta: $HOST_SURFACE_SCENARIO_DELTA modeled / $HOST_SURFACE_TOUCHPOINT_UNMODELED unmodeled (${HOST_SURFACE_TOUCHPOINT_COVERAGE}%)"
+echo "    end_to_end shared touchpoint spine: $END_TO_END_SPINE_COUNT modules"
+echo "    end_to_end touchpoint delta: $END_TO_END_SCENARIO_DELTA modeled / $END_TO_END_TOUCHPOINT_UNMODELED unmodeled (${END_TO_END_TOUCHPOINT_COVERAGE}%)"
+echo ""
+
 cat > "$OUT_DIR/coverage.json" <<EOF
 {
   "target": "$TOY_LABEL",
@@ -293,13 +493,23 @@ cat > "$OUT_DIR/coverage.json" <<EOF
     "totalClosureModules": $HOST_SURFACE_TOTAL,
     "productionModulesModeled": $HOST_SURFACE_MODELED,
     "productionModulesUnmodeled": $HOST_SURFACE_UNMODELED,
-    "coverage": $HOST_SURFACE_COVERAGE
+    "coverage": $HOST_SURFACE_COVERAGE,
+    "sharedTouchpointSpineModules": $HOST_SURFACE_SPINE_COUNT,
+    "outsideSpineTouchpointDenominator": $HOST_SURFACE_TOUCHPOINT_DENOMINATOR,
+    "touchpointDeltaModules": $HOST_SURFACE_SCENARIO_DELTA,
+    "touchpointDeltaUnmodeledModules": $HOST_SURFACE_TOUCHPOINT_UNMODELED,
+    "touchpointDeltaCoverage": $HOST_SURFACE_TOUCHPOINT_COVERAGE
   },
   "end_to_end": {
     "totalClosureModules": $END_TO_END_TOTAL,
     "productionModulesModeled": $END_TO_END_MODELED,
     "productionModulesUnmodeled": $END_TO_END_UNMODELED,
-    "coverage": $END_TO_END_COVERAGE
+    "coverage": $END_TO_END_COVERAGE,
+    "sharedTouchpointSpineModules": $END_TO_END_SPINE_COUNT,
+    "outsideSpineTouchpointDenominator": $END_TO_END_TOUCHPOINT_DENOMINATOR,
+    "touchpointDeltaModules": $END_TO_END_SCENARIO_DELTA,
+    "touchpointDeltaUnmodeledModules": $END_TO_END_TOUCHPOINT_UNMODELED,
+    "touchpointDeltaCoverage": $END_TO_END_TOUCHPOINT_COVERAGE
   }
 }
 EOF
@@ -326,6 +536,35 @@ The denominator is the production surface under \`packages/protocol\`,
 | host_surface_closure | $HOST_SURFACE_TOTAL | $HOST_SURFACE_MODELED | $HOST_SURFACE_UNMODELED | ${HOST_SURFACE_COVERAGE}% |
 | end_to_end_closure | $END_TO_END_TOTAL | $END_TO_END_MODELED | $END_TO_END_UNMODELED | ${END_TO_END_COVERAGE}% |
 
+## Direct Touchpoint Delta
+
+The gross production-surface denominator above is intentionally retained as a
+coarse guardrail. Production-consuming configs also import a large shared
+host/client spine, so this report computes a scenario-specific direct
+touchpoint denominator:
+
+1. find every configuration under \`src/configurations/\` that imports
+   \`FiregridRuntimeHostLive\`;
+2. compute the first-order production modules imported directly by each
+   configuration and companion test from \`packages/tiny-firegrid\`;
+3. intersect those direct touchpoint sets to get the shared host/client spine;
+4. union those direct touchpoint sets to get the known production-consuming
+   touchpoint denominator;
+5. subtract the shared spine from both the target touchpoints and the
+   denominator.
+
+\`touchpoint_delta_modules\` is therefore "what this configuration names beyond
+the shared production-consuming spine." \`touchpoint_delta_coverage\` is that
+delta over all currently-known production-consuming touchpoints after removing
+the shared spine. This metric is not a replacement for runtime assertions; it
+is a sharper static signal than the transitive closure when the transitive
+closure has collapsed to the shared host/client graph.
+
+| closure | shared touchpoint spine | touchpoint denominator | touchpoint delta modules | touchpoint delta unmodeled | touchpoint delta coverage |
+|---|---:|---:|---:|---:|---:|
+| host_surface_closure | $HOST_SURFACE_SPINE_COUNT | $HOST_SURFACE_TOUCHPOINT_DENOMINATOR | $HOST_SURFACE_SCENARIO_DELTA | $HOST_SURFACE_TOUCHPOINT_UNMODELED | ${HOST_SURFACE_TOUCHPOINT_COVERAGE}% |
+| end_to_end_closure | $END_TO_END_SPINE_COUNT | $END_TO_END_TOUCHPOINT_DENOMINATOR | $END_TO_END_SCENARIO_DELTA | $END_TO_END_TOUCHPOINT_UNMODELED | ${END_TO_END_TOUCHPOINT_COVERAGE}% |
+
 ## Closure Semantics
 
 - \`host_surface_closure\`: what production composition this configuration
@@ -348,6 +587,12 @@ reliable for this repository.
 $(category_summary "$OUT_DIR/host_surface_unmodeled_by_category.txt")
 \`\`\`
 
+## host_surface_closure Touchpoint Delta Unmodeled By Category
+
+\`\`\`
+$(category_summary "$OUT_DIR/host_surface_touchpoint_delta_unmodeled_by_category.txt")
+\`\`\`
+
 ### host_surface_closure Unmodeled By Directory
 
 \`\`\`
@@ -360,6 +605,12 @@ $(directory_summary "$OUT_DIR/host_surface_unmodeled.json")
 $(category_summary "$OUT_DIR/end_to_end_unmodeled_by_category.txt")
 \`\`\`
 
+## end_to_end_closure Touchpoint Delta Unmodeled By Category
+
+\`\`\`
+$(category_summary "$OUT_DIR/end_to_end_touchpoint_delta_unmodeled_by_category.txt")
+\`\`\`
+
 ### end_to_end_closure Unmodeled By Directory
 
 \`\`\`
@@ -370,8 +621,20 @@ $(directory_summary "$OUT_DIR/end_to_end_unmodeled.json")
 
 - \`host_surface_unmodeled.json\`
 - \`host_surface_unmodeled_by_category.txt\`
+- \`host_surface_direct_touchpoints.json\`
+- \`host_surface_shared_touchpoint_spine.json\`
+- \`host_surface_outside_spine_touchpoint_denominator.json\`
+- \`host_surface_touchpoint_delta_modules.json\`
+- \`host_surface_touchpoint_delta_unmodeled.json\`
+- \`host_surface_touchpoint_delta_unmodeled_by_category.txt\`
 - \`end_to_end_unmodeled.json\`
 - \`end_to_end_unmodeled_by_category.txt\`
+- \`end_to_end_direct_touchpoints.json\`
+- \`end_to_end_shared_touchpoint_spine.json\`
+- \`end_to_end_outside_spine_touchpoint_denominator.json\`
+- \`end_to_end_touchpoint_delta_modules.json\`
+- \`end_to_end_touchpoint_delta_unmodeled.json\`
+- \`end_to_end_touchpoint_delta_unmodeled_by_category.txt\`
 
 ## Framing for the write-up
 
@@ -399,6 +662,8 @@ echo "  target:                 $TOY_LABEL"
 echo "  prod:                   $PROD_COUNT modules"
 echo "  host_surface_closure:   $HOST_SURFACE_MODELED modeled / $HOST_SURFACE_UNMODELED unmodeled (${HOST_SURFACE_COVERAGE}%)"
 echo "  end_to_end_closure:     $END_TO_END_MODELED modeled / $END_TO_END_UNMODELED unmodeled (${END_TO_END_COVERAGE}%)"
+echo "  host_surface_delta:     $HOST_SURFACE_SCENARIO_DELTA direct touchpoints outside shared spine / $HOST_SURFACE_TOUCHPOINT_DENOMINATOR touchpoint denominator (${HOST_SURFACE_TOUCHPOINT_COVERAGE}%)"
+echo "  end_to_end_delta:       $END_TO_END_SCENARIO_DELTA direct touchpoints outside shared spine / $END_TO_END_TOUCHPOINT_DENOMINATOR touchpoint denominator (${END_TO_END_TOUCHPOINT_COVERAGE}%)"
 echo "================================================================"
 echo ""
 echo "artifacts:"
@@ -406,8 +671,20 @@ echo "  $OUT_DIR/prod-modules.json"
 echo "  $OUT_DIR/host_surface_modules.json"
 echo "  $OUT_DIR/host_surface_unmodeled.json"
 echo "  $OUT_DIR/host_surface_unmodeled_by_category.txt"
+echo "  $OUT_DIR/host_surface_direct_touchpoints.json"
+echo "  $OUT_DIR/host_surface_shared_touchpoint_spine.json"
+echo "  $OUT_DIR/host_surface_outside_spine_touchpoint_denominator.json"
+echo "  $OUT_DIR/host_surface_touchpoint_delta_modules.json"
+echo "  $OUT_DIR/host_surface_touchpoint_delta_unmodeled.json"
+echo "  $OUT_DIR/host_surface_touchpoint_delta_unmodeled_by_category.txt"
 echo "  $OUT_DIR/end_to_end_modules.json"
 echo "  $OUT_DIR/end_to_end_unmodeled.json"
 echo "  $OUT_DIR/end_to_end_unmodeled_by_category.txt"
+echo "  $OUT_DIR/end_to_end_direct_touchpoints.json"
+echo "  $OUT_DIR/end_to_end_shared_touchpoint_spine.json"
+echo "  $OUT_DIR/end_to_end_outside_spine_touchpoint_denominator.json"
+echo "  $OUT_DIR/end_to_end_touchpoint_delta_modules.json"
+echo "  $OUT_DIR/end_to_end_touchpoint_delta_unmodeled.json"
+echo "  $OUT_DIR/end_to_end_touchpoint_delta_unmodeled_by_category.txt"
 echo "  $OUT_DIR/coverage.json"
 echo "  $OUT_DIR/summary.md"
