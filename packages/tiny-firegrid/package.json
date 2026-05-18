@@ -1,0 +1,32 @@
+{
+  "name": "@firegrid/tiny-firegrid",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "pnpm run typecheck && pnpm run test",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@effect/ai": "^0.35.0",
+    "@effect/workflow": "0.18.1",
+    "@firegrid/protocol": "workspace:*",
+    "@firegrid/runtime": "workspace:*",
+    "effect": "^3.21.2",
+    "effect-durable-operators": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}
