@@ -38,7 +38,7 @@ of scope for this package.
 | TFIND-002 | in-progress (#332 — Option 1 signed off; impl SDD next) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
 | TFIND-003 | in-progress (#332 — Option 1 signed off; impl SDD next) | client-sdk / host boundary | No remote start request surface. |
 | TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
-| TFIND-005 | blocked (keystone — #331 landed; #326 fork: (1) curry-sweep OCA3, (2) DurableTableProvider API-shape → architect) | Effect layer typing | Workflow/table layer composition leaks type precision. |
+| TFIND-005 | blocked (keystone — #331 landed; #326 fork(1) swept+cleanup-in-progress; (2) DurableTableProvider API-shape → ARCHITECT, sole merge blocker) | Effect layer typing | Workflow/table layer composition leaks type precision. |
 | TFIND-006 | resolved (#325) | tiny host coverage | Durable configuration still models a tiny host capability. |
 | TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. |
 | TFIND-008 | open | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
@@ -76,6 +76,7 @@ of scope for this package.
 | TFIND-037 | superseded (duplicate — folded into TFIND-041) | ACP / tool execution | ACP MCP tool calls are provider-executed observations (= the ACP face of TFIND-041). |
 | TFIND-041 | resolved (#336 — decision B + by-decision doc-comment landed) | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
 | TFIND-042 | resolved (#337) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. |
+| TFIND-043 | open (low priority — test-infra flake, TFIND-042-class) | runtime / test infra | `DurableStreamsWorkflowEngine` VALIDATION.5 flakes under 17-way local turbo contention. |
 
 ## Findings
 
@@ -201,7 +202,28 @@ in tests and use only the durable backend as shared state.
 
 ### TFIND-005: Workflow layer composition leaks type precision
 
-status: blocked (keystone — #331 landed; #326 fork (1) OCA3 / (2) architect)
+status: blocked (keystone — #331 landed; #326 fork(1) swept; (2) ARCHITECT = sole merge blocker)
+
+Fork(1) progress (2026-05-18): full repo sweep = 21 `extends
+DurableTable(` callsites; 20 already curried by #326, the only
+un-migrated one was `apps/factory/src/tables.ts:145 DarkFactoryTable` —
+fixed. #326 branch carried 7 SUPERSEDED TFIND-031 WIP commits beneath
+the 3 TFIND-005 commits (canonical TFIND-031 = merged #331 e48d82904);
+coordinator authorized the clean `git rebase --onto origin/main
+a7b1111b2` reconstruction (replays only the 3 TFIND-005 commits; zero
+work lost). Curry-precision lint-fallout (dead casts /
+`eslint-disable no-unsafe-return` / type-only imports made dead by the
+precision change) ruled IN-SCOPE of fork(1): 5 non-toy sites → OCA3
+(in progress); 3 toy-file sites (tiny-firegrid configs) → routed to the
+toy maintainer to land CONCURRENT with #326 (lint is repo-wide
+max-warnings-0; toy-edit boundary preserved). VALIDATION.5 contention
+flake → filed TFIND-043 (TFIND-042-class, CI-arbiter, NOT a #326
+blocker). Post-cleanup #326 residual reduces to exactly ONE merge
+blocker: **fork (2)** — the heterogeneous multi-table
+`DurableTableProvider`/`firegridRuntimeTableTags` precise-N-tag API
+shape (flamecast `main.tsx:360` TS2322), an architect decision queued to
+Gurdas. #326 merges the instant (2) is decided + the concurrent toy
+cleanup lands.
 
 Keystone update (2026-05-18): **TFIND-031 #331 MERGED** (e48d82904) —
 the DurableWait* leak-stack root + Option-Y execution-scoped
@@ -1162,3 +1184,20 @@ regression. Filed so it is tracked rather than lost.
 Next action: low priority — when convenient, harden the scenario-firegrid
 CLI `--help` test against load-induced startup latency (or quarantine it
 from the contended local turbo lane). Not gating any workstream.
+
+### TFIND-043: DurableStreamsWorkflowEngine VALIDATION.5 flakes under 17-way local turbo
+
+status: open (low priority — test-infra flake, TFIND-042-class, not a regression)
+
+Surfaced during #326 fork(1) verification (OCA3). Runtime
+`DurableStreamsWorkflowEngine` VALIDATION.5 ('expected [] length 1, got
+0') PASSES isolated (~509ms) but flakes under 17-way local `turbo`
+contention. Distinct test from TFIND-042 (that was scenario-firegrid CLI
+`--help`) but the same class: load-induced contention, not a determinism
+or correctness defect, NOT introduced by #326. CI's dedicated Tests job
+is the arbiter (passes there). Explicitly NOT a #326 blocker.
+
+Next action: low priority — when convenient, harden VALIDATION.5 against
+load-induced contention (same approach family as TFIND-042's
+deterministic ceiling) or isolate it from the contended local turbo
+lane. Not gating any workstream.
