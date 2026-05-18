@@ -1,3 +1,4 @@
+export * from "./configurations/agent-adapter-driven-pipeline.ts"
 export * from "./configurations/current-pipeline.ts"
 export * from "./configurations/codex-acp-tool-call-pipeline.ts"
 export * from "./configurations/dispatcher-driven-pipeline.ts"
