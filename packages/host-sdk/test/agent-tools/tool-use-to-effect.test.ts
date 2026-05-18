@@ -153,7 +153,6 @@ const fakeHost = (
       "session_close",
       "session close is not available in this test host",
     )),
-  appendScheduledPrompt: () => Effect.void,
   ...overrides,
 })
 
@@ -624,14 +623,20 @@ describe("toolUseToEffect — spawn_all arm", () => {
 })
 
 describe("toolUseToEffect — schedule_me arm", () => {
-  it("returns scheduled:true and appends through the host scheduled-prompt seam", async () => {
+  it("returns scheduled:true and appends through the canonical host prompt seam", async () => {
     const streams = makeStreams("schedule-me")
-    let promptObserved: string | undefined
+    let observed:
+      | { readonly sessionId: string; readonly inputId: string; readonly text: string }
+      | undefined
     const host = fakeHost({
-      appendScheduledPrompt: ({ prompt }) =>
+      appendSessionPrompt: ({ sessionId, inputId, prompt }) =>
         Effect.sync(() => {
           const firstPart = prompt.content[0]
-          if (firstPart?.type === "text") promptObserved = firstPart.text
+          observed = {
+            sessionId,
+            inputId,
+            text: firstPart?.type === "text" ? firstPart.text : "",
+          }
         }),
     })
     const result = await runWith(
@@ -651,7 +656,11 @@ describe("toolUseToEffect — schedule_me arm", () => {
     }
     expect(scheduledContent.scheduled).toBe(true)
     expect(scheduledContent.scheduleId).toContain("schedule-me:ctx-schedule")
-    expect(promptObserved).toBe("follow-up")
+    expect(observed).toEqual({
+      sessionId: "ctx-schedule",
+      inputId: scheduledContent.scheduleId,
+      text: "follow-up",
+    })
   })
 })
 

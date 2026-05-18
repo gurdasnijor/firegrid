@@ -11,7 +11,6 @@
 export {
   AgentToolHost,
   type AgentToolHostService,
-  type AppendScheduledPromptParams,
   type AppendSessionPromptParams,
   type ExecuteSandboxToolParams,
   type ExecuteSessionCapabilityParams,

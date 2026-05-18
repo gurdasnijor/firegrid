@@ -399,16 +399,22 @@ const runScheduleMeTool = (
 ): Effect.Effect<
   ScheduleMeToolOutput,
   ToolError,
-  AgentToolHost
+  AgentToolHost | WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
 > => {
   const scheduleId = scheduleIdFor(ctx.contextId, toolUseId)
   const prompt = promptFromText(input.prompt)
   return Effect.gen(function*() {
     const host = yield* AgentToolHost
     const now = yield* Clock.currentTimeMillis
-    yield* Effect.sleep(Duration.millis(Math.max(0, input.when - now)))
-    yield* host.appendScheduledPrompt({
-      contextId: ctx.contextId,
+    // firegrid-workflow-driven-runtime.PHASE_4_TEMPORAL_WORKFLOWS.2
+    yield* DurableClock.sleep({
+      name: scheduleId,
+      duration: Duration.millis(Math.max(0, input.when - now)),
+      inMemoryThreshold: Duration.zero,
+    })
+    yield* host.appendSessionPrompt({
+      toolUseId,
+      sessionId: ctx.contextId,
       prompt,
       inputId: scheduleId,
     })

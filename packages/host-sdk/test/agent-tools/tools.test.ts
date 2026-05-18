@@ -76,7 +76,6 @@ const fakeHost = (
     name: "session_close",
     message: "session_close is not available in this test host",
   }),
-  appendScheduledPrompt: () => Effect.void,
   ...overrides,
 })
 

@@ -5,10 +5,9 @@ import {
   local,
   normalizeRuntimeIntent,
   type HostSessionRow,
-  type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import type { RuntimeIngressRequest } from "@firegrid/protocol/runtime-ingress"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer } from "effect"
 import {
   AgentToolHost,
   type AgentToolHostService,
@@ -21,14 +20,9 @@ import {
   type RuntimeContextReadService,
 } from "@firegrid/runtime/control-plane"
 import {
-  runtimeIngressError,
-} from "@firegrid/runtime/errors"
-import type { RuntimeContextError } from "@firegrid/runtime/errors"
-import {
   appendRuntimeIngress,
 } from "./commands.ts"
 import {
-  readRuntimeContextWithHostSession,
   requireLocalRuntimeContextWithHostSession,
   runtimeContextWorkflowExecutionId,
   runtimeExecutionClock,
@@ -140,31 +134,7 @@ const runtimeHostAgentToolHostService = (captured: {
     unsupportedAgentTool(toolUseId, "session_cancel"),
   closeSession: ({ toolUseId }) =>
     unsupportedAgentTool(toolUseId, "session_close"),
-  appendScheduledPrompt: ({ contextId, inputId, prompt }) =>
-    // firegrid-host-context-authority.PROMPT_ROUTING.3
-    Effect.gen(function*() {
-      yield* appendIngressWithHostCapabilities(
-        { ...captured, deferActiveDispatch: true },
-        {
-          contextId,
-          inputId,
-          kind: "message",
-          authoredBy: "workflow",
-          payload: prompt,
-          idempotencyKey: inputId,
-        },
-      )
-    }).pipe(Effect.mapError(cause =>
-      toolExecutionFailed(inputId, "schedule_me", cause))),
 })
-
-const readRuntimeContextWithHostCapabilities = (
-  captured: {
-    readonly contextRead: RuntimeContextReadService
-  },
-  contextId: string,
-): Effect.Effect<RuntimeContext, RuntimeContextError> =>
-  readRuntimeContextWithHostSession(captured.contextRead, contextId)
 
 const requireLocalContextWithHostCapabilities = (
   captured: {
@@ -179,47 +149,23 @@ const requireLocalContextWithHostCapabilities = (
     contextId,
   )
 
-const inputIntentAppendOnlyRegistry = (
-  registry: RuntimeContextEngineRegistry["Type"],
-): RuntimeContextEngineRegistry["Type"] => ({
-  ...registry,
-  dispatchIntent: () => Effect.succeed(Option.none()),
-})
-
 const appendIngressWithHostCapabilities = (
   captured: {
     readonly contextRead: RuntimeContextReadService
     readonly controlTable: RuntimeControlPlaneTable["Type"]
     readonly registry: RuntimeContextEngineRegistry["Type"]
-    readonly deferActiveDispatch?: boolean
   },
   request: RuntimeIngressRequest,
 ) =>
-  Effect.gen(function* () {
-    yield* readRuntimeContextWithHostCapabilities(
-      captured,
-      request.contextId,
-    ).pipe(
-      Effect.mapError(cause =>
-        runtimeIngressError(
-          "append",
-          "failed to resolve runtime context for ingress append",
-          request.contextId,
-          request.inputId,
-        cause,
-      )),
-    )
-    yield* appendRuntimeIngress(request).pipe(
-      Effect.provideService(RuntimeContextRead, captured.contextRead),
-      Effect.provideService(RuntimeControlPlaneTable, captured.controlTable),
-      Effect.provideService(
-        RuntimeContextEngineRegistry,
-        captured.deferActiveDispatch === true
-          ? inputIntentAppendOnlyRegistry(captured.registry)
-          : captured.registry,
-      ),
-    )
-  }).pipe(Effect.asVoid)
+  appendRuntimeIngress(request).pipe(
+    Effect.provideService(RuntimeContextRead, captured.contextRead),
+    Effect.provideService(RuntimeControlPlaneTable, captured.controlTable),
+    Effect.provideService(
+      RuntimeContextEngineRegistry,
+      captured.registry,
+    ),
+    Effect.asVoid,
+  )
 
 const startChildContextWorkflow = (
   captured: {

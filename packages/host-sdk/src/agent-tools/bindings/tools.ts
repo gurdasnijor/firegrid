@@ -208,8 +208,9 @@ export const SessionCloseTool = Tool.make(operationToolName(FiregridAgentToolOpe
 
 /**
  * `schedule_me` — schedule a future prompt to the same agent context.
- * Lowers through `AgentToolHost.appendScheduledPrompt`; the active
- * per-context engine or startup reconciliation owns runtime input delivery.
+ * Lowers through `DurableClock.sleep` and the canonical host prompt append
+ * seam; the active per-context engine or startup reconciliation owns runtime
+ * input delivery.
  */
 export const ScheduleMeTool = Tool.make(operationToolName(FiregridAgentToolOperations.scheduleMe.metadata, "schedule_me"), {
   description: operationDescription(FiregridAgentToolOperations.scheduleMe),
