@@ -55,7 +55,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-010 | open | runtime host | RuntimeContext engine registry is load-bearing. | cat-4/toy (toy not yet wired to production `RuntimeContextEngineRegistryLive`; production already has it — toy modeling roadmap, NOT a production gap) |
 | TFIND-011 | open | runtime input | Startup reconciliation is not yet modeled against Durable Streams. | cat-4/toy (toy hasn't proven reconciliation against prod Durable Streams; modeling roadmap, no production gap) |
 | TFIND-012 | open | durable-tools / wait | Wait-for output surface still needs production-backed modeling. | cat-4/toy WRAPPER over a cat-1/2 kernel ⚠ (the non-After `AgentOutput` wait-router arm reads the host-prefixed stream vs post-#315 per-context = REAL prod drift / A4 residue — split the prod kernel out as its own finding) |
-| TFIND-013 | open | output journal | Output journal / A4 path remains unmodeled in durable config. | cat-4/toy (toy A4/output-journal modeling = the #338 toy config; the A4 prod path itself is tracked separately as residue) |
+| TFIND-013 | resolved (#338, `960ec59b3` — output-journal-pipeline.ts toy config landed) | output journal | Output journal / A4 path remains unmodeled in durable config. | cat-4/toy (toy A4/output-journal modeling = the #338 toy config; the A4 prod path itself is tracked separately as residue) |
 | TFIND-014 | open | tools | Tool execution and `AgentToolHost` are deferred. | cat-4/toy (deliberately-deferred toy modeling; production tool execution exists) |
 | TFIND-015 | open | permissions / codecs | Permission flow and codec authority remain unsettled. | cat-4/toy WRAPPER over a cat-1/2 kernel ⚠ (the "does any codec complete workflow deferreds / do authority work" question is a real production architectural question — TFIND-041 family; split it out) |
 | TFIND-016 | open | workflow activities | Activity boundaries are not yet represented. | cat-4/toy (deferred toy modeling; `Activity.make` exists in production) |
@@ -647,7 +647,27 @@ surface cleanup.
 
 ### TFIND-013: Output journal / A4 path remains unmodeled in the durable configuration
 
-status: open
+status: resolved (#338, `960ec59b3`)
+
+RESOLVED 2026-05-18 (#338 merged — `output-journal-pipeline.ts` toy
+config + test, full CI gate green, coordinator-reviewed). The config
+exercises the per-context output-authority / `AgentOutputAfter` path
+against production `FiregridRuntimeHostLive`. **Halt-class clearance
+recorded:** an interim CI-red showed a 4th per-context output row
+(`[0,1,2,3]` vs `[0,1,2]`) on the #318/#331 `AgentOutputAfter` path —
+investigated as a possible duplicate-output regression in merged
+#318/#331. Root cause was a **test-fixture double-emit** (the toy agent
+fixture printed its own `Terminated` envelope *and* the stdio-jsonl
+codec derives terminal evidence from process exit ⇒ two terminal rows),
+fixed by the fixture no longer printing `Terminated` (just
+`process.exit(0)`, codec owns terminal evidence). Verified non-papering:
+`readPerContextOutputRows` asserts the **raw unfiltered** journal
+(`events.query(toArray)`), assertion stays `[0,1,2]`. **NOT a #318/#331
+production regression** — deterministic fixture bug. Reach-pasts
+annotated to TFIND-039/040.
+
+---
+Prior status (preserved): open
 
 The durable-streams-backed configuration writes runtime output through
 `RuntimeOutputTable` directly. It does not exercise
