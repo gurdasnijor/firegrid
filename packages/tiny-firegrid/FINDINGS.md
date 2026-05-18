@@ -38,7 +38,7 @@ of scope for this package.
 | TFIND-002 | in-progress (`sidecar/client-host-boundary`) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
 | TFIND-003 | in-progress (`sidecar/client-host-boundary`) | client-sdk / host boundary | No remote start request surface. |
 | TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
-| TFIND-005 | blocked (architectural — DurableTable API change; awaiting framing decision) | Effect layer typing | Workflow/table layer composition leaks type precision. |
+| TFIND-005 | in-progress (`sidecar/workflow-layer-precision`, SDD-first) | Effect layer typing | Workflow/table layer composition leaks type precision. |
 | TFIND-006 | open | tiny host coverage | Durable configuration still models a tiny host capability. |
 | TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. |
 | TFIND-008 | open | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
@@ -140,7 +140,15 @@ in tests and use only the durable backend as shared state.
 
 ### TFIND-005: Workflow layer composition leaks type precision
 
-status: blocked (architectural — DurableTable API change; awaiting framing decision)
+status: in-progress (`sidecar/workflow-layer-precision`, SDD-first)
+
+Decision (Gurdas, 2026-05-17): approve the full breaking sweep — adopt the
+canonical self-referential Tag idiom `class X extends DurableTable(ns,
+schemas)<X>() {}` with a `defineDurableTable` signature change, all
+production call sites migrated in one transaction. SDD precedes any code
+and the coordinator relays framing to Gurdas for signoff before
+implementation. Scope is **6 production call sites** post-#322 (the
+RuntimeIngressTable site was removed by #322, merged `a38da9781`).
 
 Composing `Workflow.toLayer`, `DurableTable.layer`, and
 `DurableStreamsWorkflowEngine.layer` can leak `any` through `Layer` pipe
