@@ -74,7 +74,7 @@ of scope for this package.
 | TFIND-040 | open (client-surface family — relates TFIND-008/030) | client-sdk / observations | Client SDK lacks a per-event session observation surface. |
 | TFIND-036 | open | MCP / tools | Firegrid MCP toolkit lacks a read-only runtime-state query tool. |
 | TFIND-037 | superseded (duplicate — folded into TFIND-041) | ACP / tool execution | ACP MCP tool calls are provider-executed observations (= the ACP face of TFIND-041). |
-| TFIND-041 | open (architectural — track + probe; relates TFIND-015) | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
+| TFIND-041 | decided B — session-mode owns lifecycle by decision; doc-comment pending | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
 
 ## Findings
 
@@ -910,11 +910,22 @@ decide later*.
   under-discriminated by choice, not by accident.
 
 Current production is (B) **by default, not by decision** — empirically
-confirmed by the probe. The decision is purely A vs B; not blocking any
-workstream. Coordinator recommendation: **(B) made explicit now** as the
-minimum the finding asks (cheap; converts default→decision), and track
-**(A)** as a future-cycle improvement gated on real demand (codec-
-agnostic workflow need / a third codec). Awaiting Gurdas's call.
+confirmed by the probe.
+
+**DECIDED (Gurdas, 2026-05-18): (B).** Session mode owns the ToolUse
+lifecycle **by decision, not by default**. Do NOT promote an event-level
+discriminant now; (A) is tracked as a future-cycle improvement gated on
+real demand (codec-agnostic workflow need / a third codec).
+
+Next action (small, sidecar-shaped — queued for next free worker, micro-PR):
+land a doc-comment at the workflow boundary in
+`packages/host-sdk/src/host/runtime-context-workflow-core.ts` (the
+`agentProtocol === "acp"` branch that skips `RuntimeToolUseExecutor`)
+stating that session/codec mode is the **intentional, by-decision**
+authority for ToolUse execution lifecycle (ACP = observation-only;
+stdio-jsonl = client-result roundtrip), with a back-reference to
+TFIND-041 and the deferred (A) discriminant option. Doc-only; no behavior
+change; not framing-gated (decision made).
 
 `ToolUse` is normalized as a shared `AgentOutputEvent`, but execution
 authority is not carried by the event. ACP and stdio-jsonl both emit
