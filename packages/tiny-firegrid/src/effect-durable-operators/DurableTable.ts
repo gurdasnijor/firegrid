@@ -3,7 +3,7 @@ import type {
   DurableTableCollectionFacade,
   DurableTableInsertOrGetResult,
 } from "effect-durable-operators"
-import { Effect, Option, Ref, Stream } from "effect"
+import { Effect, Option, PubSub, Ref, Stream } from "effect"
 
 const collectionFromRows = <Row extends object>(
   rows: ReadonlyArray<Row>,
@@ -15,6 +15,7 @@ export const makeMemoryDurableCollectionFacade = <Row extends object, Key extend
 ): Effect.Effect<DurableTableCollectionFacade<Row, Key>> =>
   Effect.gen(function*() {
     const rows = yield* Ref.make(new Map<Key, Row>())
+    const changes = yield* PubSub.unbounded<Row>()
 
     const snapshot = Ref.get(rows).pipe(
       Effect.map(map => [...map.values()]),
@@ -22,7 +23,14 @@ export const makeMemoryDurableCollectionFacade = <Row extends object, Key extend
 
     return {
       collection: collectionFromRows<Row>([]),
-      rows: () => Stream.fromIterableEffect(snapshot),
+      // `rows()` models durable stream observation: first replay current rows,
+      // then keep tailing live insert/upsert publications. Use `query()` when a
+      // configuration needs a terminating snapshot read.
+      rows: () =>
+        Stream.concat(
+          Stream.fromIterableEffect(snapshot),
+          Stream.fromPubSub(changes),
+        ),
       insert: row =>
         Ref.update(rows, map => {
           const next = new Map(map)
@@ -30,7 +38,7 @@ export const makeMemoryDurableCollectionFacade = <Row extends object, Key extend
           if (next.has(key)) return next
           next.set(key, row)
           return next
-        }),
+        }).pipe(Effect.zipRight(PubSub.publish(changes, row))),
       insertOrGet: row =>
         Ref.modify(rows, (map): readonly [DurableTableInsertOrGetResult<Row>, Map<Key, Row>] => {
           const key = keyOf(row)
@@ -47,13 +55,18 @@ export const makeMemoryDurableCollectionFacade = <Row extends object, Key extend
             { _tag: "Inserted" } satisfies DurableTableInsertOrGetResult<Row>,
             next,
           ]
-        }),
+        }).pipe(
+          Effect.tap(result =>
+            result._tag === "Inserted"
+              ? PubSub.publish(changes, row)
+              : Effect.void),
+        ),
       upsert: row =>
         Ref.update(rows, map => {
           const next = new Map(map)
           next.set(keyOf(row), row)
           return next
-        }),
+        }).pipe(Effect.zipRight(PubSub.publish(changes, row))),
       delete: key =>
         Ref.update(rows, map => {
           const next = new Map(map)
