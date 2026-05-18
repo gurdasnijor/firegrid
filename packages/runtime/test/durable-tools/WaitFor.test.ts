@@ -439,6 +439,107 @@ describe("durable-tools wait_for", () => {
     expect(finalWaits[0]?.status).toBe("completed")
   })
 
+  it("firegrid-durable-tools.WAIT_FOR.7, TIMEOUT.3, TIMEOUT.4 a timeout whose deadline elapsed during the crash gap must NOT win — an already-recorded match completion preempts it", async () => {
+    // The crash gap WAIT_FOR.7 preserves (completion row written, wait still
+    // active, deferredDone not fired) combined with a timeoutMs whose
+    // durable-clock deadline elapsed while the host was down. On restart the
+    // recovered clock fires immediately; the timeout side must observe the
+    // already-recorded match completion and resolve as Match using the
+    // authoritative stored payload — never Timeout. (Pre-fix this raced to
+    // Timeout because the timeout side mapped to {_tag:"Timeout"}
+    // unconditionally.)
+    const streams = makeStreams("timeout-crash-gap")
+    const Wf = Workflow.make({
+      name: "wait-for-timeout-crash-gap",
+      payload: Schema.Struct({ id: Schema.String, requestId: Schema.String }),
+      success: Schema.Literal("Match", "Timeout"),
+      idempotencyKey: (p) => p.id,
+    })
+    const workflowLayer = Wf.toLayer((payload) =>
+      Effect.gen(function*() {
+        const outcome: WaitForOutcome<TestRow> = yield* waitForOrDie<TestRow>({
+          name: "timeout-crash-gap",
+          source: RUNTIME_RUN_SOURCE,
+          trigger: [{ path: ["requestId"], equals: payload.requestId }],
+          resultSchema: TestRowResultSchema,
+          // Deadline must outlive Run 1 (so the timeout does NOT fire while
+          // Run 1 is alive) but elapse during the between-runs downtime.
+          timeoutMs: 200,
+        })
+        return outcome._tag
+      }))
+
+    // Run 1: suspend in the match/timeout race (schedules the durable clock
+    // with a 200ms deadline), then "crash" ~50ms in (well before 200ms).
+    await runWith(
+      buildLayer(streams, workflowLayer),
+      Effect.gen(function*() {
+        yield* registerTestSource
+        yield* Wf.execute(
+          { id: "tcg-1", requestId: "req-tcg" },
+          { discard: true },
+        )
+        yield* sleep(50)
+      }),
+    )
+
+    // Between runs: faithful gap (a) — the matching source row is durable
+    // and the match completion row was written, but the wait row is still
+    // `active` (status flip + deferredDone never landed).
+    const matchedRow: TestRow = {
+      id: "match-tcg",
+      requestId: "req-tcg",
+      status: "submitted",
+    }
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const waitTable = yield* DurableToolsTable
+          const source = yield* TestSourceTable
+          const wait = (yield* waitTable.waits.query((coll) => coll.toArray))[0]!
+          expect(wait.status).toBe("active")
+          yield* source.rows.upsert(matchedRow)
+          yield* waitTable.completions.upsert({
+            waitKey: wait.waitKey,
+            outcome: "match",
+            matchedRowPayload: matchedRow,
+            completedAtMs: Date.now(),
+          })
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              DurableToolsTable.layer({
+                streamOptions: {
+                  url: streams.waitForUrl,
+                  contentType: "application/json",
+                },
+              }),
+              TestSourceTable.layer({
+                streamOptions: {
+                  url: streams.sourceUrl,
+                  contentType: "application/json",
+                },
+              }),
+            ),
+          ),
+        ) as Effect.Effect<void, unknown, never>,
+      ),
+    )
+    // Ensure the 200ms durable-clock deadline is firmly in the past, so on
+    // Run 2 the recovered clock fires immediately and the timeout side runs
+    // before any live-replay match re-fire.
+    await Effect.runPromise(sleep(260))
+
+    const result = await runWith(
+      buildLayer(streams, workflowLayer),
+      Effect.gen(function*() {
+        yield* registerTestSource
+        return yield* Wf.execute({ id: "tcg-1", requestId: "req-tcg" })
+      }),
+    )
+    expect(result).toBe("Match")
+  })
+
   it("firegrid-durable-tools.TIMEOUT.1, TIMEOUT.2, WAIT_FOR.4 returns Timeout outcome when no match arrives within timeoutMs", async () => {
     const streams = makeStreams("timeout")
     const Wf = Workflow.make({

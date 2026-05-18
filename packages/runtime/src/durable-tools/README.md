@@ -103,9 +103,8 @@ races against `DurableClock.sleep`.
 ┌─────────────────────────────────────────────────────────────────┐
 │  Wait router (DurableToolsWaitForLive scope)                    │
 │  ─────────────────                                              │
-│   ┌──── reconcileCompletions on startup ────┐                   │
-│   │ idempotent deferredDone for orphans     │                   │
-│   └──────────────────────────────────────────┘                  │
+│   (no startup reconciler — crash recovery is the live-replay    │
+│    path below + the completeMatch ordering invariant)           │
 │                                                                 │
 │   waits.subscribeChanges(includeInitialState: true)             │
 │        for each active wait (deduped by waitKey):               │
@@ -117,8 +116,8 @@ races against `DurableClock.sleep`.
 │            check completions; skip if timeout already won       │
 │            evaluate fieldEquals trigger                         │
 │            upsert completion row { outcome:"match", row }       │
-│            upsert wait row { status:"completed" }               │
-│            engine.deferredDone(raw row payload)                 │
+│            engine.deferredDone(raw row payload)   ◄─ BEFORE     │
+│            upsert wait row { status:"completed" }  ◄─ AFTER     │
 └─────────────────────────────────────────────────────────────────┘
         ▲                                  ▲
         │                                  │
@@ -410,30 +409,38 @@ you want to predicate-test rows yourself in product code.
 
 ## Crash semantics
 
-The **wait completion row is authoritative.** On scope acquisition, the
-wait router runs a reconciler pass over `completions` rows:
+The **wait completion row is authoritative.** There is **no startup
+reconciler pass**. `completeMatch` issues `engine.deferredDone` **before**
+flipping the wait row to `"completed"`, which establishes the invariant:
 
-1. If a `match` completion exists for a wait that's still in `"active"`
-   status, the reconciler flips it to `"completed"` and calls
-   `engine.deferredDone` with the persisted payload.
-2. If the wait is already `"completed"`, the reconciler still issues
-   `engine.deferredDone` — the engine's `Option.isNone` guard makes it a
-   no-op if the deferred row already exists.
+> `status === "completed"` ⟹ `engine.deferredDone` has already fired.
 
-This bridges two distinct crash gaps:
+That invariant eliminates one of the two historical crash gaps and lets
+the ordinary live-replay path cover the other:
 
-- **Gap A**: completion row written → crash → wait row still `"active"`.
-  Reconciler observes the orphan and bridges.
-- **Gap B**: wait row flipped to `"completed"` → crash before
-  `engine.deferredDone` → workflow stranded. Reconciler issues the call.
+- **Gap B is unreachable.** "wait flipped to `"completed"` but
+  `deferredDone` not yet called" cannot occur — the flip happens *after*
+  `deferredDone`.
+- **Gap A is covered by live replay.** completion row written → crash →
+  wait row still `"active"`. On restart the router re-attaches the
+  still-`active` wait, the durable source replays via
+  `includeInitialState`, `completeMatch` re-derives the deterministic
+  match, and `engine.deferredDone` (idempotent, first-writer-wins per
+  `(executionId, deferredName)`) resumes the workflow. The second
+  `deferredDone` is a no-op.
 
-Timeout completions don't need a router-side bridge: the workflow body's
-own `DurableClock.sleep` is durable, so on replay the race deferred
-captures the Timeout marker without help from the router.
+Timeouts cannot strand a recorded match. The workflow body's
+`DurableClock.sleep` is durable, so on restart a deadline that elapsed
+during the outage fires immediately — but `writeTimeoutCompletion` checks
+for an existing `match` completion *first* and, if present, the timeout
+side resolves as that **match** using the authoritative stored payload
+(it never wins the race as `Timeout`). See
+`firegrid-durable-tools.TIMEOUT.3/.4` and the WAIT_FOR.7 + timeout test.
 
 > One workflow body / one race deferred / two completion paths. Exactly
 > one resolves the workflow because `engine.deferredDone` is idempotent
-> per `(executionId, deferredName)`.
+> per `(executionId, deferredName)` (pinned by
+> `test/workflow-engine/deferred-done-idempotency.test.ts`).
 
 ---
 
@@ -441,7 +448,7 @@ captures the Timeout marker without help from the router.
 
 - **Acquire `DurableToolsWaitForLive` once per runtime-host scope.** The
   router fork lives in that scope and shuts down on scope close.
-  Recreating the layer per workflow execution defeats the dedup/reconcile
+  Recreating the layer per workflow execution defeats the dedup
   guarantees.
 - **Provide `WorkflowEngine` alongside.** `wait_for` requires it; the
   composite layer does *not* include a workflow-engine layer because
@@ -498,16 +505,17 @@ durable-tools/
                                # DurableDeferred (optionally raced against
                                # DurableClock.sleep), call-site decode
     wait-router.ts             # scoped subscriber driver forked by the Layer
-    reconcile.ts               # crash-recovery loop run at acquire
+                               # (no reconcile.ts: crash recovery is the
+                               # live-replay path + completeMatch ordering)
 ```
 
 Module dependency tree (within the package):
 
 ```
-DurableToolsWaitFor ─── wait-router ─── reconcile
-                              │                    │
-                              ├── source-collections │
-                              └── table ────────────┘
+DurableToolsWaitFor ─── wait-router
+                              │
+                              ├── source-collections
+                              └── table
                                     │
                                     └── types, keys
 
@@ -535,9 +543,9 @@ In the current `effect-durable-operators` + Effect Schema versions, the
 even though `.query.toArray` returns the row correctly).
 
 **Workaround**: `internal/table.ts` exports `findWaitByKey(table,
-waitKey)` which uses a `.query.toArray.find(...)` scan. The router,
-reconciler, and `wait_for` all route lookups through this helper. The
-scan is O(active waits) — acceptable for v0, since waits are short-lived.
+waitKey)` which uses a `.query.toArray.find(...)` scan. The router and
+`wait_for` both route lookups through this helper. The scan is O(active
+waits) — acceptable for v0, since waits are short-lived.
 
 **Future**: fix the upstream `.get` path in `effect-durable-operators` and
 delete `findWaitByKey`. The follow-up should also revisit any other
@@ -558,7 +566,13 @@ atomic insert-if-absent on `DurableTable`, which the spec
 side calls `engine.deferredDone` first wins, because the engine's
 `deferredDone` is idempotent per `(executionId, deferredName)`. The
 completion row may briefly disagree with the workflow's actual exit in
-the narrow race window, but recovery is unaffected.
+the narrow race window, but recovery is unaffected. Once a `match`
+completion row exists it is *authoritative against the timeout*:
+`writeTimeoutCompletion` checks completions first and the timeout side
+resolves as that match (using the stored payload) rather than as
+`Timeout` — so the crash gap (match completion written, deferred not yet
+re-fired) plus an elapsed timeout still resolves as a match, never a
+stranded timeout.
 
 **Future**: if a product surface needs "first completion row wins"
 strictly, add a fenced/CAS insert path to `DurableTable` (currently
@@ -638,9 +652,10 @@ same shape:
    one preload, one materialized view.
 4. **Extend the router** to handle the new row family. If the new tool
    doesn't fit the "subscribe → completeMatch" loop (e.g., a timer that
-   should fire on a deadline), prefer extending `reconcile.ts` and adding
-   a separate scoped worker rather than overloading
-   `wait-router.ts`.
+   should fire on a deadline), add a separate scoped worker rather than
+   overloading `wait-router.ts`. (There is no `reconcile.ts` to extend —
+   crash recovery is the live-replay path plus the `completeMatch`
+   ordering invariant; do not reintroduce a startup reconciler.)
 5. **Avoid pitfalls from §Gaps**: don't add fenced/CAS to `DurableTable`,
    don't reintroduce deleted operator types (`DurableConsumer`,
    `ConsumerSource`, `ConsumerCheckpointStore`, `DurableProjection`),

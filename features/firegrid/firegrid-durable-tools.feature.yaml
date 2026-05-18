@@ -12,7 +12,7 @@ components:
       4: wait_for distinguishes a match resume from a timeout resume so the caller can branch on which side resolved without inspecting raw completion rows.
       5: wait_for is a @firegrid/runtime workflow-handler surface and does not extend the @firegrid/client browser/edge API surface.
       6: A wait identity resolves exactly once across replay, restart, and initial-state-replay re-emissions; further matches against the same wait identity are ignored.
-      7: The wait completion row is the authoritative record of resolution; on router startup or replay, a completed wait row whose workflow-engine deferred has not yet been observed as done is reconciled by an idempotent deferredDone call so that a crash between completion-row write and deferred resume does not strand the wait.
+      7: The wait completion row is the authoritative record of resolution. The router completes the workflow-engine deferred before flipping the wait row to completed, so a completed wait row implies the deferred was already done (status == completed ⟹ deferredDone fired). A crash between completion-row write and deferred resume does not strand the wait and requires no separate startup reconciler pass: on restart the router re-attaches the still-active wait, the durable source replays via initial-state observation, the match is deterministically re-derived, and the idempotent deferredDone resumes the workflow; if the wait also carried a timeout whose deadline elapsed during the outage, the already-recorded match completion preempts the recovered timeout so the wait resolves as that match, never as a stranded timeout.
 
   SUBSCRIPTION:
     requirements:
@@ -29,7 +29,7 @@ components:
       1: An optional wait timeout uses the existing @effect/workflow clock semantics (for example DurableClock) for durable suspension and wake-up; the router does not manipulate workflow clock storage or fire-due-clocks workers directly, and no separate ToolTimersTable is introduced.
       2: A timeout firing marks the wait as timed_out and completes the workflow-engine deferred with a typed timeout exit distinguishable from a match exit.
       3: A match resume preempts a pending timeout firing such that a single wait identity resolves at most once between match and timeout.
-      4: A timeout firing for a wait that has already resolved via match is a no-op.
+      4: A timeout firing for a wait that already has a recorded match completion is a no-op for the timeout outcome — including the crash gap where the match completion row is written but the workflow-engine deferred has not yet been re-fired and the wait row is still active: the timeout side resolves as that match using the authoritative stored matched-row payload and never produces a timeout resume.
 
   LIFECYCLE:
     requirements:
