@@ -52,7 +52,8 @@
     "toy:coverage": "bash scripts/tiny-config-prod-coverage.sh",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
-    "verify": "pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:effect-quality && pnpm run lint:semgrep:test && pnpm run lint:semgrep && pnpm run test"
+    "verify": "pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:effect-quality && pnpm run lint:semgrep:test && pnpm run lint:semgrep && pnpm run test",
+    "toy:coverage:check": "bash scripts/tiny-config-prod-coverage.sh --check"
   },
   "dependencies": {},
   "devDependencies": {
