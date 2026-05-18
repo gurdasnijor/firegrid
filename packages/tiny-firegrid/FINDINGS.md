@@ -34,14 +34,14 @@ of scope for this package.
 
 | ID | Status | Area | Finding |
 | --- | --- | --- | --- |
-| TFIND-001 | in-progress (#332 — Option 1 signed off; impl SDD next; folded into consolidated client/host) | client-sdk | `Firegrid.launch()` returns a context handle, not a session handle. |
-| TFIND-002 | in-progress (#332 — Option 1 signed off; impl SDD next) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
-| TFIND-003 | in-progress (#332 — Option 1 signed off; impl SDD next) | client-sdk / host boundary | No remote start request surface. |
-| TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
+| TFIND-001 | resolved (#332 — consolidated client/host transaction) | client-sdk | `Firegrid.launch()` returns a context handle, not a session handle. |
+| TFIND-002 | resolved (#332 — client writes durable intent, no host identity) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
+| TFIND-003 | resolved (#332 — durable start request + host reconciler) | client-sdk / host boundary | No remote start request surface. |
+| TFIND-004 | unblocked by #332 (client/host now separable; toy realization = toy-maintainer follow-up) | tests / architecture | Tests must not compose client and host in one Effect environment. |
 | TFIND-005 | blocked (keystone — #331 landed; #326 fork(1) swept+cleanup-in-progress; (2) DurableTableProvider API-shape → ARCHITECT, sole merge blocker) | Effect layer typing | Workflow/table layer composition leaks type precision. |
 | TFIND-006 | resolved (#325) | tiny host coverage | Durable configuration still models a tiny host capability. |
 | TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. |
-| TFIND-008 | open | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
+| TFIND-008 | unblocked by #332 (separate-process client/host seam now exists; toy e2e = follow-up) | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
 | TFIND-009 | superseded (false positive — codec is load-bearing) | workflow-engine | Durable workflow codec appears orphaned in the engine closure. |
 | TFIND-010 | open | runtime host | RuntimeContext engine registry is load-bearing. |
 | TFIND-011 | open | runtime input | Startup reconciliation is not yet modeled against Durable Streams. |
@@ -69,8 +69,8 @@ of scope for this package.
 | TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
 | TFIND-033 | superseded (folded into TFIND-031) | host-sdk | `commands.ts` manifestation of TFIND-031. |
 | TFIND-034 | superseded (folded into TFIND-031) | host-sdk | `toolkit-layer.ts` manifestation of TFIND-031. |
-| TFIND-038 | in-progress (#332 — Option 1 signed off; impl SDD next) | client-sdk / runtime config | Client session creation cannot express arbitrary public runtime intent (argv/env/ACP/MCP). |
-| TFIND-039 | in-progress (#332 — Option 1 signed off; durable start request = the client trigger) | client-sdk / host split | Client SDK has no client-visible runtime start trigger. |
+| TFIND-038 | resolved (#332 — RuntimeContextRequest carries full public runtime intent) | client-sdk / runtime config | Client session creation cannot express arbitrary public runtime intent (argv/env/ACP/MCP). |
+| TFIND-039 | resolved (#332 — durable start request + host reconciler) | client-sdk / host split | Client SDK has no client-visible runtime start trigger. |
 | TFIND-040 | in-progress (`sidecar/session-observation` — SDD-first; OCA3; attach-point pending #332) | client-sdk / observations | Client SDK lacks a per-event session observation surface. |
 | TFIND-036 | QUEUED-FOR-ARCHITECT (architectural binary — SDD #335; coordinator cannot decide) | MCP / tools | Firegrid MCP toolkit lacks a read-only runtime-state query tool. |
 | TFIND-037 | superseded (duplicate — folded into TFIND-041) | ACP / tool execution | ACP MCP tool calls are provider-executed observations (= the ACP face of TFIND-041). |
@@ -82,7 +82,7 @@ of scope for this package.
 
 ### TFIND-001: Client launch handle is not a session handle
 
-status: in-progress (Codex Agent 1 — SDD-first scoping)
+status: resolved (#332 — folded into the consolidated client/host transaction; see TFIND-002 cluster note)
 
 Sidecar (2026-05-18): dispatched to Codex Coding Agent 1. Shares the
 exact root cause as TFIND-002/003 (`launch()` also requires
@@ -106,7 +106,33 @@ session-shaped handle.
 
 ### TFIND-002: Critical: session creation still requires host identity
 
-status: in-progress (#332 — Option 1 signed off; implementation SDD next)
+status: resolved (#332, 2d474c70d)
+
+CLUSTER RESOLVED 2026-05-18 (#332 merged — consolidated client/host
+boundary, Option 1). One transaction resolved the whole client/host
+reach-past cluster:
+- **TFIND-002**: `sessions.createOrLoad()` writes a
+  `RuntimeContextRequestRow` (full public runtime intent) — no
+  `CurrentHostSession` on the client path.
+- **TFIND-001**: `launch()` is the same durable-request seam (folded
+  in); no longer a host-bound context primitive.
+- **TFIND-003 / TFIND-039**: `session.start()` writes a durable
+  `RuntimeStartRequestRow` (request/ack); a host-side
+  `control-request-reconciler` binds contexts + claims/runs starts.
+- **TFIND-038**: `RuntimeContextRequestRow` carries argv/env/agent
+  protocol/MCP — arbitrary public runtime intent expressible client-side.
+- CLI/factory migrated to the host-owned synchronous `startRuntime()`
+  same-transaction (no compat wait-helper). Abandon semantics =
+  terminal/no-revival/10min, idempotent claim via `insertOrGet`,
+  duplicate-start suppression — guarded by 5 named deterministic
+  failure-mode tests (concurrent-one-winner, window-expiry-re-eligible,
+  abandon-terminal, duplicate-start-suppressed, request-not-lost) + a
+  6th determinism test; CI-confirmed green; no cast on the
+  reconciler/claim/dedup/completion path (charter correctness bar met).
+- **TFIND-004 / TFIND-008**: UNBLOCKED — the durable-intent/reconciler
+  seam makes separate-process client/host e2e expressible; realizing it
+  in the toy is a toy-maintainer follow-up, the production gap is closed.
+- `startOnCreate?` reserved (Option 2 not foreclosed), not built.
 
 CONSOLIDATED DECISION (Gurdas, 2026-05-18) — cluster anchor for
 TFIND-001/002/003/038/039 (one root; SDD `#332
@@ -163,7 +189,7 @@ requests it.
 
 ### TFIND-003: Critical: no remote start request surface
 
-status: in-progress (#327 down-payment merged; end-state gated on deferred host transaction)
+status: resolved (#332 — durable start request + host reconciler; see TFIND-002 cluster note)
 
 Sidecar (2026-05-17): coupled with TFIND-002 — same SDD/PR #327, same
 Option B signoff (protocol-only `RuntimeStartRequest`; `start()`
@@ -184,7 +210,7 @@ control intent. Then update client-sdk/protocol accordingly.
 
 ### TFIND-004: Critical: tests must not compose client and host in one Effect environment
 
-status: open
+status: unblocked by #332 (production seam exists; toy realization = toy-maintainer follow-up)
 
 The durable-streams-backed test briefly composed `FiregridLive` and the tiny
 host layer together to satisfy `CurrentHostSession` and
@@ -202,7 +228,19 @@ in tests and use only the durable backend as shared state.
 
 ### TFIND-005: Workflow layer composition leaks type precision
 
-status: blocked (keystone — #331 landed; #326 fork(1) swept; (2) ARCHITECT = sole merge blocker)
+status: blocked (keystone FULLY ASSEMBLED — #326 single unit, green except fork (2); (2) ARCHITECT decision = the ONLY thing between here and the cascade)
+
+#326 ASSEMBLED 2026-05-18: rebased clean (`--onto` dropped 7 superseded
+TFIND-031 WIP; canonical = merged #331) + 5 non-toy curry-precision
+cleanups + #339 (toy maintainer's 3-file cleanup, cherry-pick -x,
+authorship preserved) folded as ONE mutually-dependent unit. Full lint
+chain 0, lint:dead/dup(42<50)/deps 0, turbo test 17/17. Residual is
+EXACTLY: (2) flamecast `main.tsx:360` TS2322
+(`DurableTableProvider`/`firegridRuntimeTableTags` heterogeneous N-tag
+shape — architect-gated, Gurdas) + the TFIND-043 VALIDATION.5 CI-arbiter
+flake (non-blocker). #326 merges the instant Gurdas decides fork (2) →
+that single merge unblocks the TFIND-007-step2 + TFIND-029 (#328)
+cascade. The entire keystone is one decision away.
 
 Fork(1) progress (2026-05-18): full repo sweep = 21 `extends
 DurableTable(` callsites; 20 already curried by #326, the only
@@ -385,7 +423,7 @@ Next action: complete factory return type annotation after TFIND-005.
 
 ### TFIND-008: Client surface and host surface cannot yet be tested as separate processes end-to-end
 
-status: open
+status: unblocked by #332 (separate-process client/host seam exists; toy e2e = toy-maintainer follow-up)
 
 The desired test shape is: client Effect program writes context/input/start
 requests through client-sdk; separate host Effect program observes durable
@@ -900,7 +938,7 @@ client/host SDD priorities.
 
 ### TFIND-038: Client session creation cannot express arbitrary runtime intents
 
-status: open (client/host cluster — enriches TFIND-002)
+status: resolved (#332 — RuntimeContextRequest carries full public runtime intent; see TFIND-002 cluster note)
 
 The Codex ACP tool-call test manually constructs a `RuntimeContext` with
 `makeLocalRuntimeContextForHostSession` and writes it through
@@ -924,7 +962,7 @@ transaction (see TFIND-039 / TFIND-001 SDD).
 
 ### TFIND-039: Client SDK has no client-visible runtime start trigger
 
-status: open (client/host cluster — = the deferred host-reconciler transaction)
+status: resolved (#332 — durable start trigger + host reconciler landed; see TFIND-002 cluster note)
 
 The Codex ACP tool-call test manually extracts `RuntimeStartCapability` from
 the host context and calls `start({ contextId })`. That is a host capability,
