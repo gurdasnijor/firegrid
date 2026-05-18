@@ -35,14 +35,14 @@ of scope for this package.
 | ID | Status | Area | Finding |
 | --- | --- | --- | --- |
 | TFIND-001 | open | client-sdk | `Firegrid.launch()` returns a context handle, not a session handle. |
-| TFIND-002 | in-progress (`sidecar/client-host-boundary`) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
-| TFIND-003 | in-progress (`sidecar/client-host-boundary`) | client-sdk / host boundary | No remote start request surface. |
+| TFIND-002 | in-progress (#327 — framing signed off, Option B) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
+| TFIND-003 | in-progress (#327 — framing signed off, Option B) | client-sdk / host boundary | No remote start request surface. |
 | TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
-| TFIND-005 | in-progress (`sidecar/workflow-layer-precision`, SDD-first) | Effect layer typing | Workflow/table layer composition leaks type precision. |
+| TFIND-005 | in-progress (#326 — curried API signed off, implementing) | Effect layer typing | Workflow/table layer composition leaks type precision. |
 | TFIND-006 | resolved (#325) | tiny host coverage | Durable configuration still models a tiny host capability. |
 | TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. |
 | TFIND-008 | open | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
-| TFIND-009 | open | workflow-engine | Durable workflow codec appears orphaned in the engine closure. |
+| TFIND-009 | superseded (false positive — codec is load-bearing) | workflow-engine | Durable workflow codec appears orphaned in the engine closure. |
 | TFIND-010 | open | runtime host | RuntimeContext engine registry is load-bearing. |
 | TFIND-011 | open | runtime input | Startup reconciliation is not yet modeled against Durable Streams. |
 | TFIND-012 | open | durable-tools / wait | Wait-for output surface still needs production-backed modeling. |
@@ -62,7 +62,7 @@ of scope for this package.
 | TFIND-026 | resolved (#321) | durable backend | Durable-streams backend reached Group D. |
 | TFIND-027 | accepted | toy readability | Duplicate inline configuration code is acceptable when it documents wiring. |
 | TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. |
-| TFIND-029 | open | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
+| TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
 | TFIND-030 | open | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
 
 ## Findings
@@ -83,10 +83,18 @@ session-shaped handle.
 
 ### TFIND-002: Critical: session creation still requires host identity
 
-status: in-progress (`sidecar/client-host-boundary`)
+status: in-progress (#327 — framing signed off, Option B)
 
-Sidecar (2026-05-17): dispatched as one coupled workstream with TFIND-003.
-Architectural — SDD-first; framing review before implementation.
+Sidecar (2026-05-17): one coupled seam with TFIND-003. SDD
+`SDD_FIREGRID_CLIENT_HOST_BOUNDARY.md` (PR #327) reviewed; Gurdas signed
+off **Option B**: protocol-only — add `RuntimeContextRequest` /
+`RuntimeStartRequest` schemas to `@firegrid/protocol/launch` (additive,
+non-breaking, no client/CLI/factory change). The client/CLI/factory flip
++ a host-side reconciler are a later single coordinated transaction —
+tracked cross-lane dependent (relates TFIND-008/006). insertLocalRuntime-
+Context cutover concern resolved (#250 already merged; deprecation
+supports this direction). Adjacent: TFIND-001 shares this root cause;
+`SDD_FIREGRID_SESSION_FACT_CLIENT_SURFACES.md` needs a spec delta.
 
 `Firegrid.sessions.createOrLoad()` requires `CurrentHostSession` because it
 creates a host-bound `RuntimeContext` row through `insertLocalRuntimeContext`.
@@ -106,10 +114,12 @@ requests it.
 
 ### TFIND-003: Critical: no remote start request surface
 
-status: in-progress (`sidecar/client-host-boundary`)
+status: in-progress (#327 — framing signed off, Option B)
 
-Sidecar (2026-05-17): dispatched as one coupled workstream with TFIND-002.
-Architectural — SDD-first; framing review before implementation.
+Sidecar (2026-05-17): coupled with TFIND-002 — same SDD/PR #327, same
+Option B signoff (protocol-only `RuntimeStartRequest`; `start()`
+unchanged this PR; client flip + host reconciler deferred to a later
+coordinated transaction). See TFIND-002 note for full framing.
 
 `FiregridSessionHandle.start()` requires `RuntimeStartCapability`, which is a
 host-process capability. In a real deployment a client should not provide this
@@ -143,15 +153,21 @@ in tests and use only the durable backend as shared state.
 
 ### TFIND-005: Workflow layer composition leaks type precision
 
-status: in-progress (`sidecar/workflow-layer-precision`, SDD-first)
+status: in-progress (#326 — curried API signed off, implementing)
 
 Decision (Gurdas, 2026-05-17): approve the full breaking sweep — adopt the
 canonical self-referential Tag idiom `class X extends DurableTable(ns,
 schemas)<X>() {}` with a `defineDurableTable` signature change, all
-production call sites migrated in one transaction. SDD precedes any code
-and the coordinator relays framing to Gurdas for signoff before
-implementation. Scope is **6 production call sites** post-#322 (the
-RuntimeIngressTable site was removed by #322, merged `a38da9781`).
+production call sites migrated in one transaction. Scope is **6 production
+call sites + 14 test occurrences** post-#322.
+
+Framing signed off (Gurdas, 2026-05-17): SDD
+`SDD_DURABLE_TABLE_SELF_IDENTITY.md` (PR #326) reviewed and approved; the
+**curried `(ns,schemas)<Self>()`** public shape is accepted
+(options-object / `.tag<Self>()` rejected). The SDD proved the minimal
+fix inert and the naive precise fix type-unsound (cross-table Identifier
+unification). Implementation in progress on PR #326; zero runtime/behavior
+change; coordinator merges on green under the mechanical-once-framed rule.
 
 Composing `Workflow.toLayer`, `DurableTable.layer`, and
 `DurableStreamsWorkflowEngine.layer` can leak `any` through `Layer` pipe
@@ -274,15 +290,23 @@ durable-streams-backed test into separate client and host invocations.
 
 ### TFIND-009: Durable workflow codec is orphaned within the workflow-engine closure
 
-status: open
+status: superseded (false positive — codec is load-bearing)
 
 The coverage analysis found
 `packages/runtime/src/workflow-engine/internal/codec.ts` is not imported by
 `workflow-engine/` production modules. That is a production cleanup finding,
 not a tiny-firegrid coverage gap.
 
-Next action: sidecar should verify whether the file is vestigial post-Shape C
-step 1 and delete or reconnect it in a production cleanup PR.
+Resolution (sidecar, 2026-05-17): **FALSE POSITIVE — no action.**
+`internal/engine-runtime.ts` imports all four codec exports
+(`decodeWorkflowResult` / `encodeWorkflowResult` / `reviveEncodedResult` /
+`reviveExit`) and uses them at 7 call sites; `makeWorkflowEngine` is
+reached via the public `@firegrid/runtime/workflow-engine`
+(`DurableStreamsWorkflowEngine`) and exercised by
+`DurableStreamsWorkflowEngine.test.ts` + `deferred-done-idempotency.test.ts`.
+The codec is connected and load-bearing, not vestigial. The coverage
+tool's import graph missed `engine-runtime.ts → codec.ts` (toy-closure
+walk). Nothing to delete or reconnect; no PR.
 
 ### TFIND-010: RuntimeContext engine registry is load-bearing
 
@@ -527,7 +551,12 @@ layer regressions surface in this configuration.
 
 ### TFIND-029: RuntimeStartCapabilityLive should enumerate workflow support dependencies
 
-status: open
+status: in-progress (`sidecar/runtime-start-deps`)
+
+Sidecar (2026-05-17): assigned as an independent parallel task; verify
+what #325 did (ambient capture) then either implement explicit
+enumeration (mechanical) or justify ambient via a short SDD (framing-
+gated). Draft PR for visibility.
 
 TFIND-028 fixed the runtime bug by capturing the full host context when
 constructing `RuntimeStartCapabilityLive` and re-providing it when `start()`
