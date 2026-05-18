@@ -3,39 +3,25 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   Firegrid,
   FiregridConfig,
+  FiregridRuntimeTables,
   FiregridStandaloneLive,
   local,
   type FiregridConfigError,
+  type FiregridService,
+  type FiregridSessionHandle,
   type RuntimeContextSnapshot,
 } from "@firegrid/client-sdk/firegrid"
-import type { FiregridHost } from "@firegrid/host-sdk"
-import {
-  CurrentHostSession,
-  makeLocalRuntimeContextForHostSession,
-  normalizeRuntimeIntent,
-  RuntimeControlPlaneTable,
-  RuntimeOutputTable,
-  RuntimeStartCapability,
-  runtimeContextOutputStreamUrl,
-  type CurrentHostStopped,
-  type RuntimeContext,
-  type RuntimeEventRow,
-  type RuntimeStartResult,
-} from "@firegrid/protocol/launch"
-import {
-  sessionContextIdForExternalKey,
-  type FiregridSessionId,
-} from "@firegrid/protocol/session-facade"
+import { runtimeControlPlaneStreamUrl } from "@firegrid/protocol/launch"
 import {
   encodeRuntimeAgentOutputEnvelope,
-  runtimeAgentOutputObservationFromRow,
-} from "@firegrid/runtime/events"
-import { Clock, Context, Effect, Layer, Option } from "effect"
+} from "@firegrid/protocol/session-facade"
+import { Clock, Effect, Layer, Option, Stream, type Context, type Scope } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { tinyOutputJournalPipeline } from "../src/configurations/output-journal-pipeline.ts"
 
-type OutputJournalHostContext = Context.Context<FiregridHost>
+type ControlPlaneService = Context.Tag.Service<typeof FiregridRuntimeTables.ControlPlane>
+type AgentOutputObservation = RuntimeContextSnapshot["agentOutputs"][number]
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -100,127 +86,127 @@ const provideClient = <A, E, R>(
     })),
   )
 
-const createHostBoundSessionContext = (
-  input: {
-    readonly externalKey: { readonly source: string; readonly id: string }
-    readonly hostContext: OutputJournalHostContext
-    readonly runtimeScript: string
-  },
-): Effect.Effect<RuntimeContext, DurableTableError | CurrentHostStopped, never> =>
-  Effect.gen(function*() {
-    // TFIND-038: temporary reach-past until client session creation can
-    // express full public runtime intent without host-bound row construction.
-    const table = Context.get(input.hostContext, RuntimeControlPlaneTable)
-    const session = Context.get(input.hostContext, CurrentHostSession)
-    const contextId = sessionContextIdForExternalKey(input.externalKey)
-    const createdAtMs = yield* Clock.currentTimeMillis
-    const runtimeContext = yield* makeLocalRuntimeContextForHostSession(
-      session,
-      normalizeRuntimeIntent(runtime(input.runtimeScript)),
-      {
-        contextId,
-        createdAtMs,
-        createdBy: "tiny-firegrid",
-      },
-    )
-    yield* table.contexts.upsert(runtimeContext)
-    return runtimeContext
-  }).pipe(
-    Effect.provide(input.hostContext),
-  )
-
-const appendPrompt = (
+const controlPlaneLayer = (
   input: {
     readonly baseUrl: string
     readonly namespace: string
-    readonly contextId: FiregridSessionId
   },
 ) =>
-  provideClient(Effect.gen(function*() {
-    const firegrid = yield* Firegrid
-    const session = yield* firegrid.sessions.attach({ sessionId: input.contextId })
-    return yield* session.prompt({
-      payload: { type: "text", text: "drive output journal" },
-      idempotencyKey: "output-journal-turn-1",
-    })
-  }), input)
-
-const readSnapshot = (
-  input: {
-    readonly baseUrl: string
-    readonly namespace: string
-    readonly contextId: FiregridSessionId
-  },
-) =>
-  provideClient(Effect.gen(function*() {
-    const firegrid = yield* Firegrid
-    const session = yield* firegrid.sessions.attach({ sessionId: input.contextId })
-    // TFIND-040: temporary polling path until the client SDK exposes a
-    // session-scoped event stream / richer wait surface.
-    return yield* session.snapshot()
-  }), input)
-
-const startRuntime = (
-  input: {
-    readonly hostContext: OutputJournalHostContext
-    readonly contextId: string
-  },
-): Effect.Effect<RuntimeStartResult, unknown, never> =>
-  Effect.gen(function*() {
-    // TFIND-039: temporary reach-past until clients can record a durable
-    // start request or hosts can reconcile active contexts automatically.
-    const starter = Context.get(input.hostContext, RuntimeStartCapability)
-    return yield* starter.start({ contextId: input.contextId })
-  }).pipe(
-    Effect.provide(input.hostContext),
-  )
-
-const readHostAmbientOutputRows = (
-  hostContext: OutputJournalHostContext,
-): Effect.Effect<ReadonlyArray<RuntimeEventRow>, DurableTableError, never> =>
-  Effect.gen(function*() {
-    const output = Context.get(hostContext, RuntimeOutputTable)
-    return yield* output.events.query(coll => coll.toArray)
-  })
-
-const perContextOutputTableLayer = (
-  input: {
-    readonly baseUrl: string
-    readonly context: RuntimeContext
-  },
-) =>
-  RuntimeOutputTable.layer({
+  FiregridRuntimeTables.ControlPlane.layer({
     streamOptions: {
-      url: runtimeContextOutputStreamUrl({
-        baseUrl: input.baseUrl,
-        prefix: input.context.host.streamPrefix,
-        contextId: input.context.contextId,
-      }),
+      url: runtimeControlPlaneStreamUrl(input),
       contentType: "application/json",
     },
+    txTimeoutMs: 2_000,
   })
 
-const readPerContextOutputRows = (
+const firstWithinOrFail = <A, E>(
+  stream: Stream.Stream<A, E>,
+  label: string,
+  timeoutMs: number,
+): Effect.Effect<A, E | Error> =>
+  Effect.raceFirst(
+    Stream.runHead(stream).pipe(
+      Effect.flatMap(row =>
+        Option.match(row, {
+          onNone: () => Effect.fail(new Error(`${label} stream ended before matching`)),
+          onSome: Effect.succeed,
+        })),
+    ),
+    Clock.sleep(`${timeoutMs} millis`).pipe(
+      Effect.flatMap(() => Effect.fail(new Error(`timed out waiting for ${label}`))),
+    ),
+  )
+
+const waitForMaterializedContext = (
+  control: ControlPlaneService,
+  session: FiregridSessionHandle,
+) =>
+  firstWithinOrFail(
+    control.contexts.rows().pipe(
+      Stream.filter(row => row.contextId === session.contextId),
+    ),
+    `context ${session.contextId}`,
+    10_000,
+  )
+
+const waitForIntent = (
+  control: ControlPlaneService,
+  session: FiregridSessionHandle,
+  intentId: string,
+) =>
+  firstWithinOrFail(
+    control.inputIntents.rows().pipe(
+      Stream.filter(row =>
+        row.contextId === session.contextId &&
+        row.intentId === intentId,
+      ),
+    ),
+    `intent ${intentId}`,
+    10_000,
+  )
+
+const waitForExitedRun = (
+  control: ControlPlaneService,
+  session: FiregridSessionHandle,
+  exitCode: number,
+) =>
+  firstWithinOrFail(
+    control.runs.rows().pipe(
+      Stream.filter(row =>
+        row.contextId === session.contextId &&
+        row.status === "exited" &&
+        row.exitCode === exitCode,
+      ),
+    ),
+    `exited run for ${session.contextId}`,
+    10_000,
+  )
+
+const runWithPublicClient = <A, E>(
+  scenario: (services: {
+    readonly control: ControlPlaneService
+    readonly firegrid: FiregridService
+  }) => Effect.Effect<A, E, Scope.Scope>,
   input: {
     readonly baseUrl: string
-    readonly context: RuntimeContext
+    readonly namespace: string
   },
-): Effect.Effect<ReadonlyArray<RuntimeEventRow>, DurableTableError> =>
-  Effect.map(
-    RuntimeOutputTable,
-    table => table.events.query(coll => coll.toArray),
-  ).pipe(
-    Effect.flatten,
-    Effect.provide(perContextOutputTableLayer(input)),
+): Promise<A> =>
+  Effect.runPromise(
+    Effect.scoped(
+      provideClient(
+        Effect.gen(function*() {
+          const control: ControlPlaneService = yield* FiregridRuntimeTables.ControlPlane
+          const firegrid = yield* Firegrid
+          return yield* scenario({ control, firegrid })
+        }).pipe(Effect.provide(controlPlaneLayer(input))),
+        input,
+      ),
+    ),
   )
+
+const launchHost = (
+  hostLayer: ReturnType<typeof tinyOutputJournalPipeline>,
+): Effect.Effect<void, DurableTableError, Scope.Scope> =>
+  Layer.launch(hostLayer).pipe(
+    Effect.forkScoped,
+    Effect.asVoid,
+  )
+
+const textDeltaFromObservation = (
+  observation: AgentOutputObservation,
+): string | undefined => {
+  if (observation.event._tag !== "TextChunk") return undefined
+  return observation.event.part.delta
+}
 
 const textDeltas = (
   snapshot: RuntimeContextSnapshot,
 ): ReadonlyArray<string> =>
   snapshot.agentOutputs.flatMap(row => {
-    if (row._tag !== "TextChunk") return []
-    const event = row.event as { readonly part?: { readonly delta?: unknown } }
-    return typeof event.part?.delta === "string" ? [event.part.delta] : []
+    const delta = textDeltaFromObservation(row)
+    return delta === undefined ? [] : [delta]
   })
 
 describe("tiny-firegrid output-journal pipeline", () => {
@@ -234,56 +220,89 @@ describe("tiny-firegrid output-journal pipeline", () => {
       namespace,
     })
 
-    const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const hostContext = yield* Layer.build(hostLayer)
-      const runtimeContext = yield* createHostBoundSessionContext({
+    const result = await runWithPublicClient(({ control, firegrid }) => Effect.gen(function*() {
+      const session = yield* firegrid.sessions.createOrLoad({
         externalKey: { source: "tiny-firegrid", id: "output-journal" },
-        hostContext,
-        runtimeScript: outputJournalAgentScript(["first", "second"]),
+        runtime: runtime(outputJournalAgentScript(["first", "second"])),
+        createdBy: "tiny-firegrid",
       })
-      yield* appendPrompt({
-        baseUrl: durableStreamsBaseUrl,
-        namespace,
-        contextId: runtimeContext.contextId as FiregridSessionId,
+      const started = yield* session.start()
+      yield* launchHost(hostLayer)
+      yield* waitForMaterializedContext(control, session)
+      const intent = yield* session.prompt({
+        payload: { type: "text", text: "drive output journal" },
+        idempotencyKey: "output-journal-turn-1",
       })
-      const started = yield* startRuntime({
-        hostContext,
-        contextId: runtimeContext.contextId,
+      const observedIntent = yield* waitForIntent(control, session, intent.intentId)
+      const firstOutput = yield* session.wait.forAgentOutput({ timeoutMs: 10_000 })
+      if (!firstOutput.matched) {
+        return yield* Effect.fail(new Error("timed out waiting for first output"))
+      }
+      const secondOutput = yield* session.wait.forAgentOutput({
+        afterSequence: firstOutput.output.sequence,
+        timeoutMs: 10_000,
       })
-      const hostAmbientRows = yield* readHostAmbientOutputRows(hostContext)
-      const perContextRows = yield* readPerContextOutputRows({
-        baseUrl: durableStreamsBaseUrl,
-        context: runtimeContext,
+      if (!secondOutput.matched) {
+        return yield* Effect.fail(new Error("timed out waiting for second output"))
+      }
+      const terminated = yield* session.wait.forAgentOutput({
+        afterSequence: secondOutput.output.sequence,
+        timeoutMs: 10_000,
       })
-      const snapshot = yield* readSnapshot({
-        baseUrl: durableStreamsBaseUrl,
-        namespace,
-        contextId: runtimeContext.contextId as FiregridSessionId,
-      })
+      if (!terminated.matched) {
+        return yield* Effect.fail(new Error("timed out waiting for terminated output"))
+      }
+      const exited = yield* waitForExitedRun(control, session, 0)
+      const snapshot = yield* session.snapshot()
       return {
-        hostAmbientRows,
-        perContextRows,
-        perContextObservations: perContextRows.flatMap(row => {
-          const observation = runtimeAgentOutputObservationFromRow(row)
-          return Option.isSome(observation) ? [observation.value] : []
-        }),
+        exited,
+        firstOutput: firstOutput.output,
+        intent,
+        observedIntent,
+        secondOutput: secondOutput.output,
+        session,
         snapshot,
         started,
+        terminated: terminated.output,
       }
-    })))
+    }), { baseUrl: durableStreamsBaseUrl, namespace })
 
     expect(result.started).toMatchObject({
-      exitCode: 0,
-      activityAttempt: 1,
+      contextId: result.session.contextId,
+      inserted: true,
     })
-    expect(result.hostAmbientRows).toEqual([])
-    expect(result.perContextRows.map(row => row.sequence)).toEqual([0, 1, 2])
-    expect(result.perContextObservations.map(row => row._tag)).toEqual([
-      "TextChunk",
-      "TextChunk",
-      "Terminated",
-    ])
+    expect(result.observedIntent).toMatchObject({
+      intentId: result.intent.intentId,
+      contextId: result.session.contextId,
+    })
+    expect(result.firstOutput).toMatchObject({
+      contextId: result.session.contextId,
+      sequence: 0,
+      _tag: "TextChunk",
+    })
+    expect(textDeltaFromObservation(result.firstOutput)).toBe("first")
+    expect(result.secondOutput).toMatchObject({
+      contextId: result.session.contextId,
+      sequence: 1,
+      _tag: "TextChunk",
+    })
+    expect(textDeltaFromObservation(result.secondOutput)).toBe("second")
+    expect(result.terminated).toMatchObject({
+      contextId: result.session.contextId,
+      sequence: 2,
+      _tag: "Terminated",
+    })
+    expect(result.exited).toMatchObject({
+      contextId: result.session.contextId,
+      status: "exited",
+      exitCode: 0,
+    })
     expect(textDeltas(result.snapshot)).toEqual(["first", "second"])
     expect(result.snapshot.agentOutputs.map(row => row.sequence)).toEqual([0, 1, 2])
+    expect(result.snapshot.agentOutputs.map(row => row.contextId)).toEqual([
+      result.session.contextId,
+      result.session.contextId,
+      result.session.contextId,
+    ])
   })
 })
