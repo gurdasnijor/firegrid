@@ -32,6 +32,9 @@ import {
   CodecRuntimeContextWorkflowSessionLive,
 } from "../../src/host/runtime-context-session/codec-adapter.ts"
 import {
+  FiregridRuntimeContextMcpBaseUrlLive,
+} from "../../src/host/runtime-context-mcp-base-url.ts"
+import {
   RuntimeContextWorkflowSession,
   type RuntimeContextSessionCommand,
 } from "../../src/host/runtime-context-workflow-core.ts"
@@ -217,6 +220,7 @@ const testLayer = (state: {
       destroy: () => Effect.succeed(true),
     })),
     Layer.provideMerge(RuntimeEnvResolverPolicy.denyAll),
+    Layer.provideMerge(FiregridRuntimeContextMcpBaseUrlLive),
   )
 
 describe("CodecRuntimeContextWorkflowSessionLive", () => {

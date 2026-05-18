@@ -17,6 +17,7 @@ import {
 } from "@firegrid/runtime/sources/sandbox"
 import { Effect, Layer, Ref, type Context, type Scope } from "effect"
 import { PerContextRuntimeOutputWriter } from "../per-context-runtime-output.ts"
+import type { FiregridRuntimeContextMcpBaseUrl } from "../runtime-context-mcp-base-url.ts"
 import type {
   RuntimeContextSessionCommand,
   RuntimeContextSessionCommandAccepted,
@@ -40,6 +41,10 @@ export type RuntimeContextSessionAdapterRequirements =
   | RuntimeEnvResolverPolicy
   | SandboxProvider
   | SandboxStdinEmissionClaim
+  // TFIND-048: host-scoped late-bind of the runtime-context MCP base
+  // URL, captured alongside the other host-execution services so the
+  // codec start path can resolve the concrete contextId-scoped URL.
+  | FiregridRuntimeContextMcpBaseUrl
   | Scope.Scope
 
 const mapSandboxProviderError = (
@@ -82,6 +87,7 @@ interface RuntimeContextSessionAdapterDeps<Session extends RuntimeContextSession
     | RuntimeEnvResolverPolicy
     | SandboxProvider
     | SandboxStdinEmissionClaim
+    | FiregridRuntimeContextMcpBaseUrl
   >
   readonly scope: Scope.Scope
   readonly sessions: Ref.Ref<Map<string, Session>>
@@ -236,6 +242,7 @@ export const makeRuntimeContextSessionAdapterService = <Session extends RuntimeC
       | RuntimeEnvResolverPolicy
       | SandboxProvider
       | SandboxStdinEmissionClaim
+      | FiregridRuntimeContextMcpBaseUrl
     >()
     const scope = yield* Effect.scope
     const sessions = yield* Ref.make(new Map<string, Session>())

@@ -138,6 +138,36 @@ export type McpServerDeclaration = Schema.Schema.Type<typeof McpServerDeclaratio
 
 export const firegridRuntimeContextMcpName = "firegrid-runtime-context"
 
+// TFIND-048 (SDD_MCP_ROUTE_URL_LIFECYCLE Amendment 1 §A1.2): the
+// URL-less client marker. A client expresses *that* the runtime needs
+// the host-owned Firegrid runtime-context MCP server attached; it
+// structurally cannot express *where* — this schema has no url/host/
+// port slot. The concrete `contextId`-scoped URL is host-owned and is
+// resolved + injected post-materialization at start time from the
+// host's own bound MCP listener address (see host-sdk
+// `FiregridRuntimeContextMcpBaseUrl`). A sentinel on an `mcpServers`
+// entry was rejected: `mcpServers` is client-owned end-to-end (every
+// entry carries a required client-authored `url`), while this server's
+// URL authority is host-owned — the distinction is made visible at the
+// schema level by a dedicated member.
+export const RuntimeContextMcpMarkerSchema = Schema.Struct({
+  enabled: Schema.Literal(true),
+}).annotations({
+  identifier: "firegrid.launch.runtimeContextMcpMarker",
+  title: "Runtime-context MCP attachment marker",
+  description:
+    "URL-less client intent to attach the host-owned Firegrid runtime-context MCP server. The host resolves and injects the concrete contextId-scoped URL at start.",
+  parseOptions: {
+    onExcessProperty: "error",
+  },
+})
+export type RuntimeContextMcpMarker = Schema.Schema.Type<
+  typeof RuntimeContextMcpMarkerSchema
+>
+
+// Host-side concrete-injection helper. NOT part of the client path:
+// only the host start path constructs this, from the host's own bound
+// MCP base + the materialized `contextId`.
 export const firegridRuntimeContextMcpDeclaration = (
   url: string,
 ): McpServerDeclaration => ({
@@ -166,6 +196,9 @@ export const RuntimeConfigSchema = Schema.Struct({
   envBindings: Schema.optional(Schema.Array(RuntimeEnvBindingSchema)),
   agentProtocol: Schema.optional(RuntimeAgentProtocolSchema),
   mcpServers: Schema.optional(Schema.Array(McpServerDeclarationSchema)),
+  // TFIND-048: URL-less, host-owned runtime-context MCP attachment.
+  // Distinct from `mcpServers` (client-owned, carries client URLs).
+  runtimeContextMcp: Schema.optional(RuntimeContextMcpMarkerSchema),
 })
 export type RuntimeConfig = Schema.Schema.Type<typeof RuntimeConfigSchema>
 
@@ -221,6 +254,9 @@ const normalizeRuntimeConfig = (config: RuntimeConfig): RuntimeConfig => ({
           : { headers: { ...declaration.server.headers } }),
       },
     })),
+  }),
+  ...(config.runtimeContextMcp === undefined ? {} : {
+    runtimeContextMcp: { enabled: config.runtimeContextMcp.enabled },
   }),
 })
 
@@ -318,6 +354,8 @@ export const LaunchConfigSchema = Schema.Struct({
   agentProtocol: Schema.optional(RuntimeAgentProtocolSchema),
   // firegrid-local-mcp-run.LAUNCH_CONFIG.1
   mcpServers: Schema.optional(Schema.Array(McpServerDeclarationSchema)),
+  // TFIND-048: URL-less host-owned runtime-context MCP attachment.
+  runtimeContextMcp: Schema.optional(RuntimeContextMcpMarkerSchema),
 }).annotations({
   parseOptions: {
     onExcessProperty: "error",

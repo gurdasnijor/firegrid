@@ -1,9 +1,11 @@
 import { IdGenerator } from "@effect/ai"
 import { WorkflowEngine } from "@effect/workflow"
-import type {
-  RuntimeAgentProtocol,
-  RuntimeContext,
-  RuntimeLogLineRow,
+import {
+  firegridRuntimeContextMcpDeclaration,
+  type McpServerDeclaration,
+  type RuntimeAgentProtocol,
+  type RuntimeContext,
+  type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
 import {
   asRuntimeContextError,
@@ -45,6 +47,11 @@ import {
   runtimeContextWorkflowExecutionId,
 } from "../internal/runtime-context-helpers.ts"
 import * as SessionCommon from "./common.ts"
+import { runtimeContextMcpPath } from "../mcp-host.ts"
+import {
+  FiregridRuntimeContextMcpBaseUrl,
+  type FiregridRuntimeContextMcpBase,
+} from "../runtime-context-mcp-base-url.ts"
 
 interface CodecRuntimeContextSession extends SessionCommon.RuntimeContextSessionRecord {
   readonly agentSession: AgentSession["Type"]
@@ -135,14 +142,20 @@ const codecLayerForProtocol = (
   bytes: AgentByteStream,
   context: RuntimeContext,
   protocol: Exclude<RuntimeAgentProtocol, "raw">,
+  // TFIND-048: the host-resolved effective MCP server list. This is the
+  // durable client `mcpServers` PLUS, when the URL-less
+  // `runtimeContextMcp` marker is set, the host-injected concrete
+  // `firegrid-runtime-context` declaration built from the host's OWN
+  // bound MCP base. The client never expresses this URL.
+  effectiveMcpServers: ReadonlyArray<McpServerDeclaration> | undefined,
 ): Layer.Layer<AgentSession, AgentCodecError> =>
   Match.value(protocol).pipe(
     Match.when("stdio-jsonl", () => StdioJsonlSessionLive(bytes)),
     Match.when("acp", () =>
       AcpSessionLive(bytes, {
         ...(context.runtime.config.cwd === undefined ? {} : { cwd: context.runtime.config.cwd }),
-        ...(context.runtime.config.mcpServers === undefined ? {} : {
-          mcpServers: context.runtime.config.mcpServers.map(declaration => ({
+        ...(effectiveMcpServers === undefined ? {} : {
+          mcpServers: effectiveMcpServers.map(declaration => ({
             name: declaration.name,
             server: {
               type: "url" as const,
@@ -162,6 +175,56 @@ const codecLayerForProtocol = (
     Match.exhaustive,
   )
 
+// TFIND-048 (SDD_MCP_ROUTE_URL_LIFECYCLE Amendment 1 §A1.2/§A1.3):
+// host-side resolution of the effective MCP server list. The URL-less
+// `runtimeContextMcp` marker on the materialized intent is honored HERE,
+// at start, by injecting the concrete `firegrid-runtime-context`
+// declaration built from the host's OWN bound MCP base + the
+// materialized `contextId`. This is the single injection site; the CLI
+// pre-`createOrLoad` injection was deleted in the same transaction. If
+// the marker is set but no MCP listener is bound in this host, this is
+// an explicit start failure, never a silent skip.
+const buildRuntimeContextMcpUrl = (
+  base: FiregridRuntimeContextMcpBase,
+  contextId: string,
+): string => {
+  const route = runtimeContextMcpPath(base.basePath).replace(
+    ":contextId",
+    encodeURIComponent(contextId),
+  )
+  return new URL(route, base.address).toString()
+}
+
+const resolveEffectiveMcpServers = (
+  context: RuntimeContext,
+): Effect.Effect<
+  ReadonlyArray<McpServerDeclaration> | undefined,
+  RuntimeContextError,
+  FiregridRuntimeContextMcpBaseUrl
+> =>
+  Effect.gen(function* () {
+    const declared = context.runtime.config.mcpServers
+    if (context.runtime.config.runtimeContextMcp?.enabled !== true) {
+      return declared
+    }
+    const baseService = yield* FiregridRuntimeContextMcpBaseUrl
+    const base = yield* baseService.get
+    if (Option.isNone(base)) {
+      return yield* Effect.fail(asRuntimeContextError(
+        "agent-codec.runtime-context-mcp.unavailable",
+        "runtime intent requires the Firegrid runtime-context MCP server (runtimeContextMcp marker) but this host has no MCP listener bound",
+        context.contextId,
+      ))
+    }
+    const injected = firegridRuntimeContextMcpDeclaration(
+      buildRuntimeContextMcpUrl(base.value, context.contextId),
+    )
+    return [
+      injected,
+      ...(declared ?? []).filter(existing => existing.name !== injected.name),
+    ]
+  })
+
 export const makeCodecRuntimeContextWorkflowSessionService:
   Effect.Effect<
     RuntimeContextWorkflowSessionService,
@@ -180,6 +243,9 @@ export const makeCodecRuntimeContextWorkflowSessionService:
             deps.scope,
           )
           const protocol = protocolForContext(context)
+          const effectiveMcpServers = yield* resolveEffectiveMcpServers(context).pipe(
+            Effect.provide(deps.captured),
+          )
           const workflowEngine = yield* Effect.serviceOption(WorkflowEngine.WorkflowEngine)
           const workflowInstance = yield* Effect.serviceOption(WorkflowEngine.WorkflowInstance)
           const instance = Option.getOrElse(workflowInstance, () =>
@@ -187,7 +253,7 @@ export const makeCodecRuntimeContextWorkflowSessionService:
               RuntimeContextWorkflowNative,
               runtimeContextWorkflowExecutionId(context.contextId),
             ))
-          const codecLayer = codecLayerForProtocol(bytes, context, protocol).pipe(
+          const codecLayer = codecLayerForProtocol(bytes, context, protocol, effectiveMcpServers).pipe(
             layer => Option.isSome(workflowEngine)
               ? layer.pipe(Layer.provide(Layer.succeed(WorkflowEngine.WorkflowEngine, workflowEngine.value)))
               : layer,
