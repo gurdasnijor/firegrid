@@ -44,6 +44,37 @@
         "src/**/*.ts"
       ]
     },
+    "packages/host-sdk": {
+      "entry": [
+        "src/index.ts",
+        "src/host/index.ts",
+        "src/agent-tools/index.ts",
+        "src/agent-tools/bindings/index.ts",
+        "src/agent-tools/execution/index.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "packages/client-sdk": {
+      "entry": [
+        "src/index.ts",
+        "src/firegrid.ts",
+        "src/operations.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
+    "packages/effect-durable-operators": {
+      "entry": [
+        "src/index.ts",
+        "src/react.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
     "apps/flamecast": {
       "project": [
         "src/**/*.{ts,tsx,mts}"
