@@ -38,7 +38,7 @@ of scope for this package.
 | TFIND-002 | in-progress (#327 — framing signed off, Option B) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
 | TFIND-003 | in-progress (#327 — framing signed off, Option B) | client-sdk / host boundary | No remote start request surface. |
 | TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
-| TFIND-005 | in-progress (#326 — curried API signed off, implementing) | Effect layer typing | Workflow/table layer composition leaks type precision. |
+| TFIND-005 | blocked (keystone — leak-stack first, #326 last) | Effect layer typing | Workflow/table layer composition leaks type precision. |
 | TFIND-006 | resolved (#325) | tiny host coverage | Durable configuration still models a tiny host capability. |
 | TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. |
 | TFIND-008 | open | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
@@ -64,6 +64,10 @@ of scope for this package.
 | TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. |
 | TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
 | TFIND-030 | open | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
+| TFIND-031 | open | client-sdk | `firegrid.ts` effect requires `RuntimeControlPlaneTable` but is typed without it (was masked by TFIND-005 `any`). |
+| TFIND-032 | open | host-sdk | `agent-tool-host-live.ts` requires `RuntimeControlPlaneTable` + others + `RuntimeHostConfig`, typed `never` (TFIND-005 mask). |
+| TFIND-033 | open | host-sdk | `commands.ts` runtime-start has the same untyped durable-table requirement (TFIND-005 mask). |
+| TFIND-034 | open | host-sdk | `toolkit-layer.ts` HandlersFrom / DurableWaitRowLookup chain mismatch surfaced by precise `.layer`. |
 
 ## Findings
 
@@ -153,7 +157,18 @@ in tests and use only the durable backend as shared state.
 
 ### TFIND-005: Workflow layer composition leaks type precision
 
-status: in-progress (#326 — curried API signed off, implementing)
+status: blocked (keystone — leak-stack first, #326 last)
+
+Keystone update (2026-05-17): the fix on PR #326 is **correct** —
+`.layer` now returns a precise `Layer<<Table>, …>` (protocol typecheck
+clean, all 6 prod classes + 14 test occ migrated). As the SDD predicted,
+making `.layer` precise **surfaced 4 genuine pre-existing production
+requirement-provision bugs** the `any` was masking (now filed as
+TFIND-031..034) plus test fallout. Per discipline these were NOT papered
+over. Gurdas decision: **stack** — fix TFIND-031..034 as separate scoped
+PRs first (fanned to workers), then #326 rebases green and merges last as
+the keystone. TFIND-005 is the keystone that also unblocks TFIND-007
+step 2 and TFIND-029. #326 stays draft/red until the stack lands.
 
 Decision (Gurdas, 2026-05-17): approve the full breaking sweep — adopt the
 canonical self-referential Tag idiom `class X extends DurableTable(ns,
@@ -588,3 +603,52 @@ payloads from `session.snapshot()` without local record checks or casts.
 
 Next action: tighten the client-sdk snapshot/projection type so decoded
 `agentOutputs[].event` is exposed as the public `AgentOutputEvent` union.
+
+### TFIND-031: client-sdk firegrid.ts requires RuntimeControlPlaneTable but is untyped for it
+
+status: open
+
+Surfaced by TFIND-005: with `DurableTable.layer` precise, an effect in
+`packages/client-sdk/src/firegrid.ts` is shown to genuinely require
+`RuntimeControlPlaneTable` while its declared `R` carried only
+`CurrentHostSession`. The `any` leak was silently discharging the real
+durable-table tag requirement — a pre-existing missing-provision bug, not
+a typing nitpick. Part of the TFIND-005 leak-stack (fix before #326).
+
+Next action: provide/declare the required `RuntimeControlPlaneTable` at the
+correct boundary; scoped PR; coordinator-reviewed.
+
+### TFIND-032: host-sdk agent-tool-host-live.ts has an untyped multi-tag requirement
+
+status: open
+
+Surfaced by TFIND-005: `packages/host-sdk/src/host/agent-tool-host-live.ts`
+requires `RuntimeControlPlaneTable` plus ~6 more tags plus
+`RuntimeHostConfig`, while typed `never` — masked by the TFIND-005 `any`.
+Real missing-provision bug. Part of the TFIND-005 leak-stack.
+
+Next action: enumerate and provide the real requirements at the boundary;
+scoped PR; coordinator-reviewed.
+
+### TFIND-033: host-sdk commands.ts runtime-start has the same untyped requirement
+
+status: open
+
+Surfaced by TFIND-005: `packages/host-sdk/src/host/commands.ts:~157`
+(runtime-start) exhibits the same untyped durable-table requirement shape
+as TFIND-032, masked by the `any`. The CLI inherits this. Part of the
+TFIND-005 leak-stack.
+
+Next action: provide the real requirements; scoped PR; coordinator-reviewed.
+
+### TFIND-034: host-sdk toolkit-layer.ts HandlersFrom / DurableWaitRowLookup mismatch
+
+status: open
+
+Surfaced by TFIND-005: `packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts:~214`
+shows a `HandlersFrom` mismatch against the `DurableWaitRowLookup` chain
+once `.layer` types are precise. Distinct from TFIND-031..033 (a
+handler-shape mismatch, not a bare missing provision). Part of the
+TFIND-005 leak-stack; may need its own scoping.
+
+Next action: characterize against Agent 2's per-file detail; scoped PR.
