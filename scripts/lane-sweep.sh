@@ -18,11 +18,18 @@
 #   bash scripts/lane-sweep.sh --json          # structured, agent-parseable
 #
 # --json emits {generated_at, lanes:[{surface,label,running,status,beads,
-# tail[]}]}. `running` is a literal read of the TUI's own "esc to interrupt"
-# indicator; `status` is the agent's own status line quoted verbatim — neither
-# is a classification. `beads` is the in_progress issues whose `assignee` tags
-# this lane, joined from .beads/issues.jsonl. For the join to populate, each
-# engineer must tag its WIP bead with its lane (see AGENTS.md cmux section).
+# prs,tail[]}]}. `running` is a literal read of the TUI's own "esc to
+# interrupt" indicator; `status` is the agent's own status line quoted
+# verbatim — neither is a classification. `beads` is the in_progress issues
+# whose `assignee` tags this lane, joined from .beads/issues.jsonl. `prs`
+# resolves each of those beads' pr-<n> labels via one `gh pr view` and shows
+# {number,draft,state,mergeable,ci} VERBATIM — mergeable (mergeStateStatus) is
+# eventually-consistent and often UNKNOWN; it is never interpreted into a
+# "merge it" verdict. PR enrichment is best-effort (a gh failure/rate-limit
+# does not abort the sweep) and degrades to no `prs` when gh is
+# unavailable or the bead carries no pr-<n>. For both joins to populate, each
+# engineer must tag its WIP bead with `--assignee "$LANE"` and `pr-<n>`
+# (see AGENTS.md cmux section).
 #
 # Best-effort reporter: a grep no-match must not abort the sweep, so no -e /
 # pipefail here. -u catches typos.
@@ -48,6 +55,25 @@ BEADS_JSONL=""
 if RR=$(git rev-parse --show-toplevel 2>/dev/null) && [ -f "$RR/.beads/issues.jsonl" ]; then
   BEADS_JSONL="$RR/.beads/issues.jsonl"
 fi
+
+# PR enrichment is best-effort: a missing/unauthed/rate-limited gh must never
+# abort the sweep (same discipline as "grep no-match must not abort").
+HAVE_GH=false
+command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && HAVE_GH=true
+
+# Verbatim PR + CI state for one PR number. No verdict — mergeStateStatus is
+# eventually-consistent (often UNKNOWN); surfaced raw, never interpreted. `ci`
+# is a factual count of statusCheckRollup conclusions, not a pass/fail call.
+pr_view() { # $1=PR number  → one-line JSON object, or {} on any failure
+  [ "$HAVE_GH" = true ] || { printf '{}'; return; }
+  gh pr view "$1" --json number,isDraft,state,mergeStateStatus,statusCheckRollup 2>/dev/null \
+    | jq -c '{number, draft:.isDraft, state, mergeable:.mergeStateStatus,
+              ci:(((.statusCheckRollup // [])
+                   | map(.conclusion // .state // .status // "?")
+                   | group_by(.) | map("\(.[0]):\(length)") | join(" "))
+                  | if . == "" then "none" else . end)}' 2>/dev/null \
+    || printf '{}'
+}
 
 # Strip pure terminal chrome so the tail is parseable. Drops rule lines,
 # empty prompt boxes, the permission footer, and known cmux/TUI chrome —
@@ -78,7 +104,9 @@ beads_for() { # $1=surface-ref  $2=label
     ($s|norm) as $sn | ($lbl|norm) as $ln
     | [ .[] | select(.status=="in_progress"
           and ((.assignee|norm)==$sn or (.assignee|norm)==$ln))
-        | {id, title, tfind:([.labels[]?|select(startswith("tfind:"))][0]//null)} ]' \
+        | {id, title,
+           tfind:([.labels[]?|select(startswith("tfind:"))][0]//null),
+           prs:[.labels[]?|select(startswith("pr-"))|ltrimstr("pr-")]} ]' \
     "$BEADS_JSONL" 2>/dev/null || printf '[]'
 }
 
@@ -134,17 +162,27 @@ for s in "${SURFACES[@]}"; do
   tail_clean="$(printf '%s\n' "$raw" | sed 's/[[:space:]]*$//' | denoise | sed '/^[[:space:]]*$/d' | tail -n "$LINES")"
   beads="$(beads_for "surface:$s" "$label")"
 
+  # Resolve pr-<n> labels on this lane's in_progress beads → one gh call each.
+  prs_json='[]'
+  pr_nums="$(printf '%s' "$beads" | jq -r '[.[].prs[]?]|unique[]' 2>/dev/null)"
+  for n in $pr_nums; do
+    pv="$(pr_view "$n")"
+    [ "$pv" = '{}' ] && continue
+    prs_json="$(printf '%s' "$prs_json" | jq -c --argjson p "$pv" '. + [$p]' 2>/dev/null || printf '%s' "$prs_json")"
+  done
+
   if [ "$FORMAT" = json ]; then
     obj="$(jq -nc \
       --arg surface "surface:$s" --arg label "$label" \
       --arg status "$status" --argjson running "$running" \
-      --arg tail "$tail_clean" --argjson beads "$beads" \
-      '{surface:$surface,label:$label,running:$running,status:$status,beads:$beads,tail:($tail|split("\n")|map(select(length>0)))}')"
+      --arg tail "$tail_clean" --argjson beads "$beads" --argjson prs "$prs_json" \
+      '{surface:$surface,label:$label,running:$running,status:$status,beads:$beads,prs:$prs,tail:($tail|split("\n")|map(select(length>0)))}')"
     JSON_LANES="${JSON_LANES:+$JSON_LANES,}$obj"
   else
     printf '\n──── surface:%s · %s ────\n' "$s" "$label"
     printf 'running=%s  status=%s\n' "$running" "${status:-<none>}"
     [ "$beads" != "[]" ] && printf 'beads=%s\n' "$(printf '%s' "$beads" | jq -c '[.[]|.id+" "+( .tfind//"")]')"
+    printf '%s' "$prs_json" | jq -r '.[]? | "pr=#\(.number) draft=\(.draft) state=\(.state) mergeable=\(.mergeable) ci=\(.ci)"'
     printf '%s\n' "$tail_clean"
   fi
 done
