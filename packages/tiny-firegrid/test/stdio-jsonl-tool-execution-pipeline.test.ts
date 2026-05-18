@@ -2,38 +2,22 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   Firegrid,
   FiregridConfig,
+  FiregridRuntimeTables,
   FiregridStandaloneLive,
   local,
   type FiregridConfigError,
+  type FiregridService,
+  type FiregridSessionHandle,
+  type RuntimeContextSnapshot,
 } from "@firegrid/client-sdk/firegrid"
-import type { FiregridHost } from "@firegrid/host-sdk"
-import {
-  CurrentHostSession,
-  makeLocalRuntimeContextForHostSession,
-  normalizeRuntimeIntent,
-  RuntimeControlPlaneTable,
-  RuntimeOutputTable,
-  RuntimeStartCapability,
-  runtimeContextOutputStreamUrl,
-  type CurrentHostStopped,
-  type RuntimeContext,
-  type RuntimeInputIntentRow,
-  type RuntimeRunEventRow,
-} from "@firegrid/protocol/launch"
-import {
-  sessionContextIdForExternalKey,
-  type FiregridSessionId,
-} from "@firegrid/protocol/session-facade"
-import {
-  runtimeAgentOutputObservationFromRow,
-  type RuntimeAgentOutputObservation,
-} from "@firegrid/runtime/events"
-import { Clock, Context, Effect, Layer, Option, Stream } from "effect"
+import { runtimeControlPlaneStreamUrl } from "@firegrid/protocol/launch"
+import { Clock, Effect, Layer, Option, Stream, type Context, type Scope } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { tinyStdioJsonlToolExecutionPipeline } from "../src/configurations/stdio-jsonl-tool-execution-pipeline.ts"
 
-type StdioJsonlHostContext = Context.Context<FiregridHost>
+type ControlPlaneService = Context.Tag.Service<typeof FiregridRuntimeTables.ControlPlane>
+type AgentOutputObservation = RuntimeContextSnapshot["agentOutputs"][number]
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -107,90 +91,108 @@ const stdioJsonlRuntime = (script: string) =>
     cwd: globalThis.process.cwd(),
   })
 
-const perContextOutputTableLayer = (
+const controlPlaneLayer = (
   input: {
     readonly baseUrl: string
-    readonly context: RuntimeContext
+    readonly namespace: string
   },
 ) =>
-  RuntimeOutputTable.layer({
+  FiregridRuntimeTables.ControlPlane.layer({
     streamOptions: {
-      url: runtimeContextOutputStreamUrl({
-        baseUrl: input.baseUrl,
-        prefix: input.context.host.streamPrefix,
-        contextId: input.context.contextId,
-      }),
+      url: runtimeControlPlaneStreamUrl(input),
       contentType: "application/json",
     },
+    txTimeoutMs: 2_000,
   })
 
-const firstWithin = <A, E, R>(
-  self: Stream.Stream<A, E, R>,
+const firstWithinOrFail = <A, E>(
+  stream: Stream.Stream<A, E>,
+  label: string,
   timeoutMs: number,
-): Effect.Effect<Option.Option<A>, E, R> =>
+): Effect.Effect<A, E | Error> =>
   Effect.raceFirst(
-    Stream.runHead(self),
-    Clock.sleep(`${timeoutMs} millis`).pipe(Effect.as(Option.none<A>())),
+    Stream.runHead(stream).pipe(
+      Effect.flatMap(row =>
+        Option.match(row, {
+          onNone: () => Effect.fail(new Error(`${label} stream ended before matching`)),
+          onSome: Effect.succeed,
+        })),
+    ),
+    Clock.sleep(`${timeoutMs} millis`).pipe(
+      Effect.flatMap(() => Effect.fail(new Error(`timed out waiting for ${label}`))),
+    ),
+  )
+
+const waitForMaterializedContext = (
+  control: ControlPlaneService,
+  session: FiregridSessionHandle,
+) =>
+  firstWithinOrFail(
+    control.contexts.rows().pipe(
+      Stream.filter(row => row.contextId === session.contextId),
+    ),
+    `context ${session.contextId}`,
+    10_000,
   )
 
 const waitForIntent = (
-  control: RuntimeControlPlaneTable["Type"],
-  input: {
-    readonly contextId: string
-    readonly timeoutMs: number
-  },
-): Effect.Effect<Option.Option<RuntimeInputIntentRow>, DurableTableError> =>
-  firstWithin(
+  control: ControlPlaneService,
+  session: FiregridSessionHandle,
+  intentId: string,
+) =>
+  firstWithinOrFail(
     control.inputIntents.rows().pipe(
-      Stream.filter(row => row.contextId === input.contextId),
+      Stream.filter(row =>
+        row.contextId === session.contextId &&
+        row.intentId === intentId,
+      ),
     ),
-    input.timeoutMs,
+    `intent ${intentId}`,
+    10_000,
   )
 
 const waitForRunStatus = (
-  control: RuntimeControlPlaneTable["Type"],
-  input: {
-    readonly contextId: string
-    readonly status: RuntimeRunEventRow["status"]
-    readonly timeoutMs: number
-  },
-): Effect.Effect<Option.Option<RuntimeRunEventRow>, DurableTableError> =>
-  firstWithin(
+  control: ControlPlaneService,
+  session: FiregridSessionHandle,
+  status: "started" | "exited" | "failed",
+  timeoutMs: number,
+) =>
+  firstWithinOrFail(
     control.runs.rows().pipe(
       Stream.filter(row =>
-        row.contextId === input.contextId &&
-        row.status === input.status,
+        row.contextId === session.contextId &&
+        row.status === status,
       ),
     ),
-    input.timeoutMs,
+    `${status} run for ${session.contextId}`,
+    timeoutMs,
   )
 
-const waitForOutputObservation = (
-  input: {
-    readonly baseUrl: string
-    readonly context: RuntimeContext
-    readonly timeoutMs: number
-    readonly predicate: (observation: RuntimeAgentOutputObservation) => boolean
-  },
-): Effect.Effect<Option.Option<RuntimeAgentOutputObservation>, DurableTableError> =>
-  firstWithin(
-    Stream.unwrap(
-      Effect.map(RuntimeOutputTable, table =>
-        table.events.rows().pipe(
-          Stream.filterMap(runtimeAgentOutputObservationFromRow),
-          Stream.filter(row =>
-            row.contextId === input.context.contextId &&
-            input.predicate(row),
-          ),
-        )),
-    ).pipe(
-      Stream.provideLayer(perContextOutputTableLayer({
-        baseUrl: input.baseUrl,
-        context: input.context,
-      })),
-    ),
-    input.timeoutMs,
-  )
+const waitForAgentOutputMatching = (
+  session: FiregridSessionHandle,
+  predicate: (observation: AgentOutputObservation) => boolean,
+  timeoutMs: number,
+): Effect.Effect<AgentOutputObservation, Error> =>
+  Effect.gen(function*() {
+    const deadlineMs = (yield* Clock.currentTimeMillis) + timeoutMs
+    let afterSequence: number | undefined
+
+    while (true) {
+      const nowMs = yield* Clock.currentTimeMillis
+      if (nowMs >= deadlineMs) {
+        return yield* Effect.fail(new Error(`timed out waiting for agent output from ${session.contextId}`))
+      }
+      const result = yield* session.wait.forAgentOutput({
+        ...(afterSequence === undefined ? {} : { afterSequence }),
+        timeoutMs: deadlineMs - nowMs,
+      })
+      if (!result.matched) {
+        return yield* Effect.fail(new Error(`timed out waiting for agent output from ${session.contextId}`))
+      }
+      if (predicate(result.output)) return result.output
+      afterSequence = result.output.sequence
+    }
+  })
 
 const provideClient = <A, E, R>(
   self: Effect.Effect<A, E, R>,
@@ -207,61 +209,56 @@ const provideClient = <A, E, R>(
     })),
   )
 
-const createHostBoundSessionContext = (
-  input: {
-    readonly contextId: FiregridSessionId
-    readonly hostContext: StdioJsonlHostContext
-  },
-): Effect.Effect<RuntimeContext, DurableTableError | CurrentHostStopped, never> =>
-  Effect.gen(function*() {
-    // TFIND-038: temporary reach-past until client session creation can
-    // express full public runtime intent without host-bound row construction.
-    const table = Context.get(input.hostContext, RuntimeControlPlaneTable)
-    const session = Context.get(input.hostContext, CurrentHostSession)
-    const createdAtMs = yield* Clock.currentTimeMillis
-    const runtimeContext = yield* makeLocalRuntimeContextForHostSession(
-      session,
-      normalizeRuntimeIntent(stdioJsonlRuntime(stdioJsonlToolAgentScript)),
-      {
-        contextId: input.contextId,
-        createdAtMs,
-        createdBy: "tiny-firegrid",
-      },
-    )
-    yield* table.contexts.upsert(runtimeContext)
-    return runtimeContext
-  }).pipe(
-    Effect.provide(input.hostContext),
-  )
-
-const appendPrompt = (
+const runWithPublicClient = <A, E>(
+  scenario: (services: {
+    readonly control: ControlPlaneService
+    readonly firegrid: FiregridService
+  }) => Effect.Effect<A, E, Scope.Scope>,
   input: {
     readonly baseUrl: string
     readonly namespace: string
-    readonly contextId: FiregridSessionId
   },
-) =>
-  provideClient(Effect.gen(function*() {
-    const firegrid = yield* Firegrid
-    const session = yield* firegrid.sessions.attach({ sessionId: input.contextId })
-    return yield* session.prompt({
-      payload: "Run the Firegrid sleep tool with durationMs 0, then report the result.",
-      idempotencyKey: "stdio-jsonl-tool-call-turn-1",
-    })
-  }), input)
+): Promise<A> =>
+  Effect.runPromise(
+    Effect.scoped(
+      provideClient(
+        Effect.gen(function*() {
+          const control: ControlPlaneService = yield* FiregridRuntimeTables.ControlPlane
+          const firegrid = yield* Firegrid
+          return yield* scenario({ control, firegrid })
+        }).pipe(Effect.provide(controlPlaneLayer(input))),
+        input,
+      ),
+    ),
+  )
 
-const textDeltaFromRuntimeObservation = (
-  observation: RuntimeAgentOutputObservation,
+const launchHost = (
+  hostLayer: ReturnType<typeof tinyStdioJsonlToolExecutionPipeline>,
+): Effect.Effect<void, DurableTableError, Scope.Scope> =>
+  Layer.launch(hostLayer).pipe(
+    Effect.forkScoped,
+    Effect.asVoid,
+  )
+
+const textDeltaFromObservation = (
+  observation: AgentOutputObservation,
 ): string | undefined => {
   if (observation.event._tag !== "TextChunk") return undefined
   return observation.event.part.delta
 }
 
 const toolUseProviderExecuted = (
-  observation: RuntimeAgentOutputObservation,
+  observation: AgentOutputObservation,
 ): boolean | undefined => {
   if (observation.event._tag !== "ToolUse") return undefined
   return observation.event.part.providerExecuted
+}
+
+const toolNameFromObservation = (
+  observation: AgentOutputObservation,
+): string | undefined => {
+  if (observation.event._tag !== "ToolUse") return undefined
+  return observation.event.part.name
 }
 
 describe("tiny-firegrid stdio-jsonl tool-execution pipeline", () => {
@@ -273,119 +270,102 @@ describe("tiny-firegrid stdio-jsonl tool-execution pipeline", () => {
       const durableStreamsBaseUrl = baseUrl
       const namespace = `tiny-stdio-jsonl-tool-${crypto.randomUUID()}`
       const externalKey = { source: "tiny-firegrid", id: "stdio-jsonl-tool-call" }
-      const contextId = sessionContextIdForExternalKey(externalKey)
-      const result = await Effect.runPromise(
-        Effect.scoped(Effect.gen(function*() {
-          const hostContext = yield* Layer.build(tinyStdioJsonlToolExecutionPipeline({
-            baseUrl: durableStreamsBaseUrl,
-            namespace,
-          }))
-          const control = Context.get(hostContext, RuntimeControlPlaneTable)
-          const intentFiber = yield* waitForIntent(control, {
-            contextId,
-            timeoutMs: 10_000,
-          }).pipe(Effect.forkScoped)
-          const startedFiber = yield* waitForRunStatus(control, {
-            contextId,
-            status: "started",
-            timeoutMs: 30_000,
-          }).pipe(Effect.forkScoped)
-          const exitedFiber = yield* waitForRunStatus(control, {
-            contextId,
-            status: "exited",
-            timeoutMs: 30_000,
-          }).pipe(Effect.forkScoped)
-          const runtimeContext = yield* createHostBoundSessionContext({
-            contextId,
-            hostContext,
-          })
-          const readyFiber = yield* waitForOutputObservation({
-            baseUrl: durableStreamsBaseUrl,
-            context: runtimeContext,
-            timeoutMs: 30_000,
-            predicate: observation => observation._tag === "Ready",
-          }).pipe(Effect.forkScoped)
-          const toolUseFiber = yield* waitForOutputObservation({
-            baseUrl: durableStreamsBaseUrl,
-            context: runtimeContext,
-            timeoutMs: 30_000,
-            predicate: observation =>
-              observation._tag === "ToolUse" &&
-              observation.toolName === "sleep",
-          }).pipe(Effect.forkScoped)
-          const finalTextFiber = yield* waitForOutputObservation({
-            baseUrl: durableStreamsBaseUrl,
-            context: runtimeContext,
-            timeoutMs: 30_000,
-            predicate: observation =>
-              textDeltaFromRuntimeObservation(observation)?.includes(
-                "FIREGRID_TOOL_RESULT sleep slept=true",
-              ) === true,
-          }).pipe(Effect.forkScoped)
-          const intent = yield* appendPrompt({
-            baseUrl: durableStreamsBaseUrl,
-            namespace,
-            contextId,
-          })
-          // TFIND-039: temporary reach-past until clients can record a durable
-          // start trigger or hosts auto-start eligible contexts.
-          const starter = Context.get(hostContext, RuntimeStartCapability)
-          yield* starter.start({ contextId }).pipe(
-            Effect.provide(hostContext),
-            Effect.forkScoped,
-          )
-          const observedIntent = yield* intentFiber
-          const runStarted = yield* startedFiber
-          const ready = yield* readyFiber
-          const toolUse = yield* toolUseFiber
-          const finalText = yield* finalTextFiber
-          const runExited = yield* exitedFiber
-          return {
-            intent,
-            observedIntent,
-            runStarted,
-            ready,
-            toolUse,
-            finalText,
-            runExited,
-          }
-        })),
-      )
-
-      expect(Option.getOrUndefined(result.observedIntent)).toMatchObject({
-        intentId: result.intent.intentId,
-        contextId,
+      const hostLayer = tinyStdioJsonlToolExecutionPipeline({
+        baseUrl: durableStreamsBaseUrl,
+        namespace,
       })
-      expect(Option.getOrUndefined(result.runStarted)).toMatchObject({
-        contextId,
+
+      const result = await runWithPublicClient(({ control, firegrid }) => Effect.gen(function*() {
+        const session = yield* firegrid.sessions.createOrLoad({
+          externalKey,
+          runtime: stdioJsonlRuntime(stdioJsonlToolAgentScript),
+          createdBy: "tiny-firegrid",
+        })
+        const started = yield* session.start()
+        yield* launchHost(hostLayer)
+        yield* waitForMaterializedContext(control, session)
+        const intent = yield* session.prompt({
+          payload: "Run the Firegrid sleep tool with durationMs 0, then report the result.",
+          idempotencyKey: "stdio-jsonl-tool-call-turn-1",
+        })
+        const observedIntent = yield* waitForIntent(control, session, intent.intentId)
+        const runStarted = yield* waitForRunStatus(control, session, "started", 30_000)
+        const ready = yield* waitForAgentOutputMatching(
+          session,
+          observation => observation._tag === "Ready",
+          30_000,
+        )
+        const toolUse = yield* waitForAgentOutputMatching(
+          session,
+          observation =>
+            observation._tag === "ToolUse" &&
+            toolNameFromObservation(observation) === "sleep",
+          30_000,
+        )
+        const finalText = yield* waitForAgentOutputMatching(
+          session,
+          observation =>
+            textDeltaFromObservation(observation)?.includes(
+              "FIREGRID_TOOL_RESULT sleep slept=true",
+            ) === true,
+          30_000,
+        )
+        const runExited = yield* waitForRunStatus(control, session, "exited", 30_000)
+        const snapshot = yield* session.snapshot()
+        return {
+          finalText,
+          intent,
+          observedIntent,
+          ready,
+          runExited,
+          runStarted,
+          session,
+          snapshot,
+          started,
+          toolUse,
+        }
+      }), { baseUrl: durableStreamsBaseUrl, namespace })
+
+      expect(result.started).toMatchObject({
+        contextId: result.session.contextId,
+        inserted: true,
+      })
+      expect(result.observedIntent).toMatchObject({
+        intentId: result.intent.intentId,
+        contextId: result.session.contextId,
+      })
+      expect(result.runStarted).toMatchObject({
+        contextId: result.session.contextId,
         status: "started",
       })
-      expect(Option.getOrUndefined(result.ready)).toMatchObject({
-        contextId,
+      expect(result.ready).toMatchObject({
+        contextId: result.session.contextId,
         _tag: "Ready",
       })
-      const toolUse = Option.getOrUndefined(result.toolUse)
-      expect(toolUse).toMatchObject({
-        contextId,
+      expect(result.toolUse).toMatchObject({
+        contextId: result.session.contextId,
         _tag: "ToolUse",
         toolName: "sleep",
       })
-      expect(toolUse === undefined ? undefined : toolUseProviderExecuted(toolUse)).toBe(false)
+      expect(toolUseProviderExecuted(result.toolUse)).toBe(false)
       // TFIND-041: `ToolUse` does not carry a full lifecycle discriminant.
       // The public proof that stdio-jsonl requested Firegrid execution is
       // indirect: providerExecuted=false plus a later agent TextChunk that
       // could only be emitted after the codec received a ToolResult.
-      expect(Option.getOrUndefined(result.finalText)).toMatchObject({
-        contextId,
+      expect(result.finalText).toMatchObject({
+        contextId: result.session.contextId,
         _tag: "TextChunk",
       })
-      expect(textDeltaFromRuntimeObservation(
-        Option.getOrThrow(result.finalText),
-      )).toContain("FIREGRID_TOOL_RESULT sleep slept=true")
-      expect(Option.getOrUndefined(result.runExited)).toMatchObject({
-        contextId,
+      expect(textDeltaFromObservation(result.finalText)).toContain(
+        "FIREGRID_TOOL_RESULT sleep slept=true",
+      )
+      expect(result.runExited).toMatchObject({
+        contextId: result.session.contextId,
         status: "exited",
         exitCode: 0,
+      })
+      expect(result.snapshot.context).toMatchObject({
+        contextId: result.session.contextId,
       })
     },
     60_000,
