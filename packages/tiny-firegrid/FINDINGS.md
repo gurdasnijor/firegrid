@@ -1623,7 +1623,7 @@ Gurdas signoff. Not on the keystone critical path.
 
 ### TFIND-048: MCP route + URL lifecycle ownership unresolved in the #332 client/host model
 
-status: open — REFRAMED 2026-05-18 (Reading 2 / architectural). Was mis-filed as "client-SDK lacks a pre-create helper" (Reading 1, cat-2 small re-export). Gurdas challenged the shape before it set; an architecture investigation (Explore, evidence below) decided Reading 2. Framing-gated; folds into the #332-impl MCP-lifecycle question; blocks Codex ACP.
+status: open — REFRAMED 2026-05-18 (architectural; coordinator RECOMMENDS Reading 2). Was mis-filed as "client-SDK lacks a pre-create helper" (Reading 1, cat-2 small re-export). Gurdas challenged the shape before it set; an architecture investigation (Explore, evidence below) strongly supports Reading 2. The Reading-1-vs-Reading-2 binary is the **§0 load-bearing decision for Gurdas's framing signoff** — coordinator does not own it; recommendation only. Framing-gated; folds into the #332-impl MCP-lifecycle question; blocks Codex ACP.
 
 Triage: **cat-1/2 architectural** (real production-model gap — NOT a
 missing API, NOT a toy-fix). The migration-as-validation worked exactly
@@ -1631,14 +1631,14 @@ as designed: the toy maintainer (`surface:33`), migrating Codex ACP per
 option-3 (TFIND-038), hit the gap, **did not paper it**, paused Codex
 ACP, proceeded stdio-jsonl, reported to `surface:153`.
 
-**The two readings (Gurdas, 2026-05-18) and the decision:**
+**The two readings (Gurdas, 2026-05-18) — the §0 load-bearing decision (Gurdas owns it; coordinator recommends):**
 - *Reading 1 (helper-missing, cat-2):* re-export `sessionContextIdForExternalKey`
-  from client-SDK; small fix. **REJECTED by evidence.**
+  from client-SDK; small fix. **Coordinator recommends AGAINST — evidence below contradicts it.**
 - *Reading 2 (design-smell, architectural):* baking a concrete
   `contextId`-scoped MCP URL into the intent *before* `createOrLoad` is
   the consumer predicting createOrLoad's output; a real host provisions
   the route-scoped MCP route *after* materializing the context. The
-  "missing helper" is the wrong abstraction. **DECIDED — evidence below.**
+  "missing helper" is the wrong abstraction. **Coordinator RECOMMENDS Reading 2; Gurdas decides at the framing signoff (evidence below).**
 
 **Evidence (Explore, file:line):**
 - `sessionContextIdForExternalKey` (`protocol/src/session-facade/schema.ts:482`)
