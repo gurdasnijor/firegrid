@@ -64,7 +64,7 @@ of scope for this package.
 | TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. |
 | TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
 | TFIND-030 | resolved (#329) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
-| TFIND-035 | in-progress (framing signed off: Q1=A, Q2=1-decoder/2-shapes, Q3=dedicated subpath, Q4=none; OCA3, queued behind TFIND-040 SDD) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
+| TFIND-035 | resolved (#333) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
 | TFIND-031 | in-progress (#331 — Option Y; RIn∩ROut knot diagnosed; same agent on focused completion run) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
 | TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
 | TFIND-033 | superseded (folded into TFIND-031) | host-sdk | `commands.ts` manifestation of TFIND-031. |
@@ -75,6 +75,7 @@ of scope for this package.
 | TFIND-036 | open | MCP / tools | Firegrid MCP toolkit lacks a read-only runtime-state query tool. |
 | TFIND-037 | superseded (duplicate — folded into TFIND-041) | ACP / tool execution | ACP MCP tool calls are provider-executed observations (= the ACP face of TFIND-041). |
 | TFIND-041 | decided B — session-mode owns lifecycle by decision; doc-comment pending | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
+| TFIND-042 | open (low priority — test-infra flake) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. |
 
 ## Findings
 
@@ -787,7 +788,19 @@ handler chain. See TFIND-031.
 
 ### TFIND-035: Two divergent agent-output envelope decoders (SSOT consolidation)
 
-status: open (tracked dependent of TFIND-030)
+status: resolved (#333, 28aac646f)
+
+RESOLVED 2026-05-18 (#333 merged) per signed-off framing: canonical
+`AgentOutputEvent` union + part sub-schemas relocated to a dedicated
+`@firegrid/protocol/agent-output` subpath (Q3); `@firegrid/runtime`
+`contract.ts` re-exports the moved subset, dup defs deleted (Q1=A
+relocate+re-export); one envelope decoder with the two observation shapes
+retained (Q2); no further @effect/ai (Q4). #329's
+`session-facade/agent-output-event.ts` mirror deleted; client-sdk
+`AgentOutputEvent` unchanged. **Completion signal achieved**: the scoped
+`.jscpd.json` ignore was DELETED — duplication genuinely eliminated, not
+hidden (lint:dup 42<50 with the ignore removed; was 91 when duplicated).
+Closes the TFIND-030 SSOT dependent.
 
 Surfaced during TFIND-030. There are two envelope decoders for
 agent-output rows: runtime's (`agent-event-pipeline/events/output.ts`,
@@ -1032,3 +1045,18 @@ so it is NOT exposed as a RuntimeOutputTable row — durable proof of
 ToolResult is necessarily indirect (via subsequent agent output). This
 ToolResult-not-durably-observable point also touches TFIND-040
 (client per-event observation surface) — cross-linked, not a new id.
+
+### TFIND-042: scenario-firegrid CLI `--help` flakes under high local turbo contention
+
+status: open (low priority — test-infra flake, not a regression)
+
+Observed during TFIND-035 (#333) verification: under 17-way local
+`turbo` contention, the scenario-firegrid CLI `--help` test flaked once;
+it passed deterministically in isolation, on rerun, and on CI's dedicated
+Tests job. #333 was a schema-only change (no CLI surface touched) so this
+is pre-existing test-infra timing sensitivity under load, NOT a
+regression. Filed so it is tracked rather than lost.
+
+Next action: low priority — when convenient, harden the scenario-firegrid
+CLI `--help` test against load-induced startup latency (or quarantine it
+from the contended local turbo lane). Not gating any workstream.
