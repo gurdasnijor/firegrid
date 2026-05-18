@@ -65,7 +65,7 @@ of scope for this package.
 | TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
 | TFIND-030 | resolved (#329) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
 | TFIND-035 | in-progress (framing signed off: Q1=A, Q2=1-decoder/2-shapes, Q3=dedicated subpath, Q4=none; OCA3, queued behind TFIND-040 SDD) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
-| TFIND-031 | in-progress (#331 — Option Y; shared-store gate DISCHARGED, structural proof) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
+| TFIND-031 | in-progress (#331 — Option Y; RIn∩ROut knot diagnosed; same agent on focused completion run) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
 | TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
 | TFIND-033 | superseded (folded into TFIND-031) | host-sdk | `commands.ts` manifestation of TFIND-031. |
 | TFIND-034 | superseded (folded into TFIND-031) | host-sdk | `toolkit-layer.ts` manifestation of TFIND-031. |
@@ -683,7 +683,26 @@ Next action: tighten the client-sdk snapshot/projection type so decoded
 
 ### TFIND-031: host/toolkit composition omits a shared DurableTable tag-family provision
 
-status: in-progress (#331 — Option Y; shared-store gate DISCHARGED, structural proof)
+status: in-progress (#331 — Option Y; RIn∩ROut knot diagnosed; same agent on focused completion run)
+
+Honest keystone status (2026-05-18): NOT green yet, by design. The
+shared-store gate passed (structural proof, prior). Final Option-Y
+type-threading hit a precisely-diagnosed knot, **recorded not forced**:
+`runtimeContextWorkflowSupportLayer` carries `DurableWait*` in BOTH RIn
+and ROut (requires-what-it-provides), so `Effect.provide` re-surfaces
+unsatisfied `DurableWait*` on every consumer regardless of capture seam —
+why narrowed and widened variants leaked identically. Bounded fix (NOT a
+new fork; Option Y unchanged + proven): make the support layer
+self-contained for `DurableWait*` (internal `Layer.provide` of the single
+proven shared store so the tags leave RIn while staying in ROut; correct
+the `provideMerge`/`unwrapEffect` ordering in
+`RuntimeContextWorkflowNativeLayer.pipe(...)`). Correctness-critical wait
+routing — must be validated by a deterministic record→blocked→wake test,
+no forcing cast. The same agent that diagnosed it (it wrote the precise
+handoff into this branch's SDD) is executing the focused completion run;
+remaining: support-layer re-thread, det. test, ~42 Cat A/B/C fallout,
+full gate, flip #331, rebase #326 → then keystone cascade unblocks
+TFIND-007-step2 + TFIND-029.
 
 Shared-store gate DISCHARGED (2026-05-18, structural proof on #331, not
 convention): `DurableWaitStoreLive` materializes NO store of its own (all
