@@ -63,7 +63,7 @@ of scope for this package.
 | TFIND-027 | accepted | toy readability | Duplicate inline configuration code is acceptable when it documents wiring. |
 | TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. |
 | TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
-| TFIND-030 | in-progress (#329 — framing signed off: Q1=C, Q2=strict) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
+| TFIND-030 | in-progress (#329 — @effect/ai dep blessed; CI-green/knip pending) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
 | TFIND-035 | open (tracked dependent of TFIND-030) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
 | TFIND-031 | in-progress (#331 — Option Y; shared-store gate DISCHARGED, structural proof) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
 | TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
@@ -72,6 +72,7 @@ of scope for this package.
 | TFIND-038 | open (client/host cluster — enriches TFIND-002) | client-sdk / runtime config | Client session creation cannot express arbitrary public runtime intent (argv/env/ACP/MCP). |
 | TFIND-039 | open (client/host cluster — = deferred host-reconciler transaction) | client-sdk / host split | Client SDK has no client-visible runtime start trigger. |
 | TFIND-040 | open (client-surface family — relates TFIND-008/030) | client-sdk / observations | Client SDK lacks a per-event session observation surface. |
+| TFIND-041 | open (architectural — track + probe; relates TFIND-015) | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
 
 ## Findings
 
@@ -813,3 +814,38 @@ ergonomics finding (a `session.subscribe()` / richer `session.wait.*`).
 Relates to TFIND-008 (separate-process e2e) and consumes TFIND-030's
 typed `AgentOutputEvent` decode. Architectural; track open, scope after
 TFIND-030 lands and the client/host transaction shape is settled.
+
+### TFIND-041: ToolUse event lifecycle is under-discriminated
+
+status: open (architectural — track + probe; relates TFIND-015)
+
+`ToolUse` is normalized as a shared `AgentOutputEvent`, but execution
+authority is not carried by the event. ACP and stdio-jsonl both emit
+`ToolUse`, while the workflow core interprets it by consulting
+codec/session mode. Evidence:
+`packages/runtime/src/agent-event-pipeline/events/contract.ts` defines
+`ToolUse` as a single event shape;
+`packages/runtime/src/agent-event-pipeline/codecs/stdio-jsonl/index.ts`
+marks emitted tool calls `providerExecuted: false`, session
+`toolUseMode: "client_result_roundtrip"`;
+`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts` declares
+`toolUseMode: "observation_only"` and rejects `ToolResult` input;
+`packages/host-sdk/src/host/runtime-context-workflow-core.ts:230`
+compensates with codec-aware branching (`if agentProtocol === "acp"
+return undefined`) before deciding whether to execute through
+`RuntimeToolUseExecutor`.
+
+Load-bearing decision to track: either (A) promote execution authority
+to an event-level discriminant (`ToolUseRequest` vs `ToolUseObservation`,
+or an explicit provider-executed/requested split), or (B) keep
+session-mode as the authority axis and document that workflow
+interpretation is codec/session-aware by design. Current production
+shape is (B) by default rather than by explicit decision.
+
+Sidecar triage (2026-05-18, surface:153): genuine production
+architectural finding; distinct from TFIND-015 (broader codec authority)
+and TFIND-014 (toy-scope tool execution). NOT fanned out — track now;
+the Codex coordinator probes via the stdio-jsonl config whether one
+workflow body can express both lifecycles without codec knowledge. The
+A-vs-B decision is a future Gurdas framing call, informed by that probe;
+no sidecar code until then.
