@@ -65,10 +65,13 @@ of scope for this package.
 | TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
 | TFIND-030 | in-progress (#329 — framing signed off: Q1=C, Q2=strict) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
 | TFIND-035 | open (tracked dependent of TFIND-030) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
-| TFIND-031 | in-progress (#331 — Option Y signed off; shared-store proof gated) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
+| TFIND-031 | in-progress (#331 — Option Y; shared-store gate DISCHARGED, structural proof) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
 | TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
 | TFIND-033 | superseded (folded into TFIND-031) | host-sdk | `commands.ts` manifestation of TFIND-031. |
 | TFIND-034 | superseded (folded into TFIND-031) | host-sdk | `toolkit-layer.ts` manifestation of TFIND-031. |
+| TFIND-038 | open (client/host cluster — enriches TFIND-002) | client-sdk / runtime config | Client session creation cannot express arbitrary public runtime intent (argv/env/ACP/MCP). |
+| TFIND-039 | open (client/host cluster — = deferred host-reconciler transaction) | client-sdk / host split | Client SDK has no client-visible runtime start trigger. |
+| TFIND-040 | open (client-surface family — relates TFIND-008/030) | client-sdk / observations | Client SDK lacks a per-event session observation surface. |
 
 ## Findings
 
@@ -641,7 +644,21 @@ Next action: tighten the client-sdk snapshot/projection type so decoded
 
 ### TFIND-031: host/toolkit composition omits a shared DurableTable tag-family provision
 
-status: in-progress (#331 — Option Y signed off; shared-store proof gated)
+status: in-progress (#331 — Option Y; shared-store gate DISCHARGED, structural proof)
+
+Shared-store gate DISCHARGED (2026-05-18, structural proof on #331, not
+convention): `DurableWaitStoreLive` materializes NO store of its own (all
+5 services are pure `Effect.map(DurableToolsTable, …)` adapters);
+`DurableToolsWaitForLive` calls `DurableToolsTable.layer()` exactly once
+and feeds the same ref to both `WaitRouterLive` (waker) and the recorder
+tags over one `durableToolsTableLive` — Effect Layer memoization ⇒
+waker+recorder are one materialized store; a divergent store is
+structurally impossible at source. Emit-then-wait hazard closed at the
+source. Agent 2 proceeding with Y autonomously (gate was the sole
+escalation trigger; it passed). Remaining: re-thread support-layer
+DurableWait* discharge to the 3 leak seams, deterministic
+record→blocked→wake confirmation test, ~42 Cat-A/B/C fallout, verify,
+flip #331, rebase #326.
 
 Update (2026-05-18): the contained ambient-tag fixes are done (client-sdk
 launch provideService; `HostRuntimeContextExecutionEnv` capture of
@@ -727,3 +744,72 @@ dependent, NOT a bridge — must be closed, not left as a permanent fork.
 
 Next action: after TFIND-030 lands, scope the canonical relocation
 (option A/B of SDD #329) as its own coordinated PR.
+
+### TFIND-038: Client session creation cannot express arbitrary runtime intents
+
+status: open (client/host cluster — enriches TFIND-002)
+
+The Codex ACP tool-call test manually constructs a `RuntimeContext` with
+`makeLocalRuntimeContextForHostSession` and writes it through
+`RuntimeControlPlaneTable.contexts.upsert(...)`. It does this because the
+client session facade cannot currently create/load a session with arbitrary
+runtime configuration: binary argv, env bindings, ACP protocol selection, and
+MCP server declarations.
+
+That is not just test awkwardness. A real consumer that wants to launch a
+specific agent binary with a specific MCP setup has the same gap: the
+client-visible session creation surface does not yet express the full public
+runtime intent needed for this scenario.
+
+Sidecar triage (2026-05-18, surface:153): part of the client/host boundary
+cluster — a sharper manifestation of TFIND-002. The #327
+`RuntimeContextRequest` schema is the seam; the likely down-payment is an
+additive enrichment of that request to carry full public runtime intent
+(argv/envBindings/agentProtocol/MCP), analogous to Option B. Not fanned
+out separately — to be folded into the consolidated client/host
+transaction (see TFIND-039 / TFIND-001 SDD).
+
+### TFIND-039: Client SDK has no client-visible runtime start trigger
+
+status: open (client/host cluster — = the deferred host-reconciler transaction)
+
+The Codex ACP tool-call test manually extracts `RuntimeStartCapability` from
+the host context and calls `start({ contextId })`. That is a host capability,
+not a real client operation. The test reaches into it because the client SDK
+does not expose a durable start request or any other client-visible way to ask
+a host to start a runtime context.
+
+This is the bigger operational split gap: Firegrid can model a client appending
+input intent rows and reading projections, but starting the runtime still
+requires an in-process host service. Either hosts should auto-start eligible
+contexts when they become active, or the client plane needs a durable
+start-trigger row that a host-side reconciler observes and claims.
+
+Sidecar triage (2026-05-18, surface:153): this **is** the deferred
+host-reconciler transaction already identified as the cross-lane
+end-state of TFIND-002/003 (`SDD_FIREGRID_CLIENT_HOST_BOUNDARY.md` §3/§5).
+The #327 `RuntimeStartRequest` schema is its client-side half (merged,
+inert). NOT a new independent workstream — it is the named form of the
+cluster end-state; to be scoped as ONE consolidated client/host
+reconciler SDD/transaction after the TFIND-001 investigation lands.
+
+### TFIND-040: Client SDK lacks a per-event session observation surface
+
+status: open (client-surface family — relates TFIND-008/030)
+
+The Codex ACP tool-call test subscribes directly to `RuntimeControlPlaneTable`
+and `RuntimeOutputTable` for durable assertions, but still polls
+`session.snapshot()` to assemble final text because the client SDK lacks a
+session-scoped event stream. Today the choices are either low-level durable
+table subscriptions or broad snapshot polling.
+
+This matters for client-shaped tests and real consumers that want to react to
+agent output incrementally. A `session.subscribe()` stream or a richer
+`session.wait.*` family would let tests and applications observe events without
+polling snapshots or manually opening substrate tables.
+
+Sidecar triage (2026-05-18, surface:153): distinct client-surface
+ergonomics finding (a `session.subscribe()` / richer `session.wait.*`).
+Relates to TFIND-008 (separate-process e2e) and consumes TFIND-030's
+typed `AgentOutputEvent` decode. Architectural; track open, scope after
+TFIND-030 lands and the client/host transaction shape is settled.
