@@ -1,14 +1,11 @@
-import type { ServeError } from "@effect/platform/HttpServerError"
 import {
   ensurePathInput,
   FiregridMcpServerLayer,
   FiregridRuntimeHostLive,
-  type FiregridHost,
   RuntimeEnvResolverPolicy,
   type RuntimeHostTopologyOptions,
 } from "@firegrid/host-sdk"
 import { Layer } from "effect"
-import type { DurableTableError } from "effect-durable-operators"
 
 interface CodexAcpToolCallPipelineOptions {
   readonly baseUrl: string
@@ -45,11 +42,7 @@ export const codexAcpOpenAiEnvPolicy = (
 
 export const tinyCodexAcpToolCallPipeline = (
   options: CodexAcpToolCallPipelineOptions,
-): Layer.Layer<
-  FiregridHost,
-  DurableTableError | ServeError,
-  never
-> => {
+) => {
   const namespace = options.namespace ?? `tiny-codex-acp-${crypto.randomUUID()}`
   const hostId = options.hostId ?? "host-a"
   const mcpHost = options.mcpHost ?? "127.0.0.1"
@@ -67,9 +60,6 @@ export const tinyCodexAcpToolCallPipeline = (
     },
     options.envPolicy ?? RuntimeEnvResolverPolicy.denyAll,
   )
-  // TFIND-005: production host factories still return a layer whose public
-  // surface is `FiregridHost` but whose inferred output channel is `any`.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return Layer.discard(
     FiregridMcpServerLayer({
       host: mcpHost,
