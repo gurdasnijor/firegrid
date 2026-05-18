@@ -63,7 +63,7 @@ of scope for this package.
 | TFIND-027 | accepted | toy readability | Duplicate inline configuration code is acceptable when it documents wiring. |
 | TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. |
 | TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
-| TFIND-030 | open | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
+| TFIND-030 | blocked (architectural — SDD #329, framing Q1/Q2 pending) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
 | TFIND-031 | in-progress (root finding — single missing provision; Agent 2) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
 | TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
 | TFIND-033 | superseded (folded into TFIND-031) | host-sdk | `commands.ts` manifestation of TFIND-031. |
@@ -592,7 +592,20 @@ the intended host-capability pattern.
 
 ### TFIND-030: Snapshot agent output events are typed as records, not protocol unions
 
-status: open
+status: blocked (architectural — SDD #329, framing Q1/Q2 pending)
+
+Sidecar (2026-05-18): verified real (not discoverability). The typed
+`AgentOutputEventSchema` union is `@firegrid/runtime`-owned; client-sdk
+and protocol are runtime-source-free, so exposing it needs a
+**protocol-owned union = cross-package schema-ownership change**, and the
+protocol decode currently parses `event` only as a `Record` + `_tag`
+string (a sound fix changes the protocol DECODE CONTRACT — a behavior
+change). Decisive: `SDD_FIREGRID_SCHEMA_PROJECTION_CONTRACT.md` already
+prescribes `event: AgentOutputEventSchema` — current `Record` is a
+divergence from the approved target; plus two divergent envelope decoders
+(runtime typed vs protocol Record) = latent SSOT finding. SDD on PR #329;
+framing-gated on Q1 (ownership mechanism) + Q2 (decode reject vs
+permissive — observable behavior). No code until Gurdas signoff.
 
 The durable-streams-backed test needs a local `textDeltas` projection that
 checks `agentOutputs[].event` as `Record<string, unknown>` instead of using the
