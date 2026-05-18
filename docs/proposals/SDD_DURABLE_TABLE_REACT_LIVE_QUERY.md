@@ -364,24 +364,85 @@ real instability is **cross-package `Effect`-R inference under
 `exactOptionalPropertyTypes` × the `#326` curry**; the provider type is
 only the *trigger surface*, not the root.
 
-### 6. Candidate reframe directions (UNRANKED, UNDECIDED — for Gurdas)
+### 6. Traced cascade edges (the actual paths; reproducer `b7a66e6b8`)
 
-Architect decision; the coordinator does not choose; the executor does
-not pre-decide or probe these:
+Each cascade traced to its exact edge by reading the import graph on
+the reproducer. **Two of the three cascades travel NO import path** —
+they travel the absence of a type-isolation boundary.
 
-- **(x)** Isolate the provider type so it cannot ripple — move provider
-  types to a leaf module / sever the `effect-durable-operators`
-  package-type-graph coupling that propagates the exported-type change
-  into consumer `Effect`-R inference.
-- **(y)** Address the `exactOptionalPropertyTypes` × curry `Effect`-R
-  interaction at its root (the shared cause across the 3 failures and
-  the earlier TFIND-045 reconciler leak).
-- **(z)** Treat the host-sdk (and `apps/factory`) cascades as a
-  broadened **TFIND-045-class explicit-R enumeration** finding rather
-  than a provider-type problem.
+**The boundary that is missing.** `effect-durable-operators`:
+`tsconfig` `include: ["src/**/*.ts","test/**/*.ts"]` (so `react.ts` is
+in the package program), `composite` unset, `declaration` unset,
+`noEmit: true`; `package.json` `exports["."].types → ./src/index.ts`
+(**source**, not a built `.d.ts`). Consumers therefore **type-check
+the package's TypeScript source**, with no `composite`
+project-reference / emitted-declaration boundary between `react.ts` and
+the root API. `src/index.ts` re-exports only `./DurableTable.ts` +
+`./Errors.ts` — `react.ts` is **not** in the root import closure.
+
+| Cascade | Exact edge | Import path? | Severable? / cost |
+| --- | --- | --- | --- |
+| **(a) flamecast `TS2322`** | DIRECT: `apps/flamecast/src/client/main.tsx:19` `from "effect-durable-operators/react"` (+ `firegridRuntimeTableTags` from `@firegrid/client-sdk/firegrid:14`; `DurableTableHeaders` from root `:20`). The **only** direct `/react` consumer repo-wide. | Yes — a real, intended import. | **Not severable.** flamecast is the product consumer the provider exists for. (a) is the provider's own type being wrong for a legitimate consumer — a genuine defect, *not* a coupling artifact. |
+| **(b) apps/factory `TS2769`/`TS2379`** | INDIRECT. apps/factory imports **only** `import type { DurableTableHeaders } from "effect-durable-operators"` (root) at `apps/factory/src/bin/env.ts:3` and `src/host.ts:37`. No `/react`, no provider. | **No import path to `react.ts`.** | Severable only by adding the missing isolation boundary (see §7). Cost: see §7 — not cosmetic. |
+| **(c1) host-sdk 29 errors** | INDIRECT, strongest. The 3 cascade src files (`commands.ts`, `control-request-reconciler.ts`, `agent-tool-host-live.ts`) import **nothing** from `effect-durable-operators`. host-sdk's only edo importers (`config-live.ts`, `layers.ts`, `types.ts`) use the **root** specifier; **no `/react` importer exists in host-sdk or its `@firegrid/protocol` / `@firegrid/runtime` closure**. `react.ts` is unreachable by any host-sdk import. | **No import path to `react.ts`.** | Severable only by the §7 boundary. Cost: see §7. |
+
+**Conclusion of the trace:** for (b) and (c1) the edge is **not a
+re-export and not an import** — it is the missing
+declaration/project-reference isolation. Under `pnpm --recursive
+typecheck`, the `effect-durable-operators` program is checked *with
+`react.ts` in it*, and source-resolving consumers observe a
+type-surface that shifts with `react.ts`'s generic shape, flipping
+host-sdk / apps-factory `Effect`-R inference under
+`exactOptionalPropertyTypes`. This is precisely why a *scalar* choice
+can never fix it (a/b/c1/c2/c3 wrong axis) and why the direction must
+be structural isolation.
+
+### 7. Candidate mechanism (x) — CONTINGENT, not the recommendation
+
+**(x) — introduce the missing isolation boundary** so a `react.ts`
+change cannot perturb the type-surface root consumers observe (e.g.
+make `effect-durable-operators` `composite` with emitted declarations,
+or split `/react` into its own TS project / leaf module so consumers
+resolve to a stable `.d.ts` instead of whole source).
+
+- **Viability is CONTINGENT**, not established: it is contingent on
+  the §6 trace (done — confirms the edge *is* the missing boundary,
+  which (x) addresses) **and** on the no-reopen confirmation below.
+  It is **not** ratified, **not** the recommendation. Gurdas reframes;
+  the coordinator does not decide; the executor does not pre-pick or
+  probe a mechanism.
+- **Cost (must be visible before signoff).** The source-`types`
+  resolution (`exports["."].types → ./src/index.ts`, `noEmit`,
+  non-`composite`) is a *deliberate, repo-wide* workspace-DX choice:
+  no build step, instant cross-package types, source-mapped
+  debugging. (x) trades that for type-surface stability and requires
+  monorepo-scope build changes (composite project graph + emitted
+  declarations / a split provider project, build ordering, turbo
+  pipeline). **Not cosmetic; repo-wide blast radius.**
+- **(y)/(z) remain open** (UNRANKED, UNDECIDED): (y) address the
+  `exactOptionalPropertyTypes` × curry `Effect`-R interaction at root
+  (shared cause across the 3 cascades and the TFIND-045 reconciler
+  leak); (z) treat the host-sdk / apps-factory cascades as a broadened
+  TFIND-045-class explicit-R enumeration finding.
+
+### 8. (x) does NOT reopen §0 — confirmed, with STOP-condition
+
+`AnyDurableTableTag` (the §0 / Option B signed-off **tables-side**
+fix) **STANDS**. (x) is a *structural / build-isolation* change — it
+alters **where/how the provider module is compiled and resolved**, not
+**what the tables-side type is**. By construction it does not touch
+`AnyDurableTableTag` or the tables-side typing; the reframe is
+isolation *layered on top of* the signed-off fix, not a redo.
+
+**STOP-condition (binding):** if any concrete (x) mechanism is found
+to require changing `AnyDurableTableTag` or the tables-side decision,
+**STOP and escalate to surface:153 before proceeding** — do not author
+or implement a change that quietly reopens the signed-off §0
+tables-side decision.
 
 **This needs an architect reframe beyond §0.1. The coordinator does not
-decide; §0.1's option space is closed.**
+decide; §0.1's scalar/generic option space is closed; (x) is a
+contingent candidate pending Gurdas.**
 
 ## Contract
 
