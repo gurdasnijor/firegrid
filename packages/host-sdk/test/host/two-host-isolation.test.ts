@@ -190,8 +190,7 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
 
     // Host B tries to execute host A's context. The local-authority
     // gate must reject before WorkflowEngine.execute runs, so no
-    // workflow row appears in host B's host-owned workflow stream
-    // and no run row is appended for contextA.
+    // workflow execution occurs and no run row is appended for contextA.
     const result = await Effect.runPromise(
       Effect.either(
         startRuntime({ contextId: contextA }).pipe(

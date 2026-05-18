@@ -34,7 +34,7 @@ export {
 } from "./host/runtime-substrate.ts"
 
 // Agent-tool bindings (protocol → Effect AI Tool/Toolkit) and execution
-// (lowering, AgentToolHost seam, scheduled-input workflow). Kept split
+// (lowering, AgentToolHost seam, toolkit handler Layer). Kept split
 // per firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6; also reachable via the
 // `@firegrid/host-sdk/agent-tools/{bindings,execution}` subpaths.
 export * from "./agent-tools/index.ts"
