@@ -32,51 +32,112 @@ of scope for this package.
 
 ## Index
 
-| ID | Status | Area | Finding |
-| --- | --- | --- | --- |
-| TFIND-001 | resolved (#332 — consolidated client/host transaction) | client-sdk | `Firegrid.launch()` returns a context handle, not a session handle. |
-| TFIND-002 | resolved (#332 — client writes durable intent, no host identity) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
-| TFIND-003 | resolved (#332 — durable start request + host reconciler) | client-sdk / host boundary | No remote start request surface. |
-| TFIND-004 | unblocked by #332 (client/host now separable; toy realization = toy-maintainer follow-up) | tests / architecture | Tests must not compose client and host in one Effect environment. |
-| TFIND-005 | blocked (keystone — #331 landed; #326 fork(1) swept+cleanup-in-progress; (2) DurableTableProvider API-shape → ARCHITECT, sole merge blocker) | Effect layer typing | Workflow/table layer composition leaks type precision. |
-| TFIND-006 | resolved (#325) | tiny host coverage | Durable configuration still models a tiny host capability. |
-| TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. |
-| TFIND-008 | unblocked by #332 (separate-process client/host seam now exists; toy e2e = follow-up) | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. |
-| TFIND-009 | superseded (false positive — codec is load-bearing) | workflow-engine | Durable workflow codec appears orphaned in the engine closure. |
-| TFIND-010 | open | runtime host | RuntimeContext engine registry is load-bearing. |
-| TFIND-011 | open | runtime input | Startup reconciliation is not yet modeled against Durable Streams. |
-| TFIND-012 | open | durable-tools / wait | Wait-for output surface still needs production-backed modeling. |
-| TFIND-013 | open | output journal | Output journal / A4 path remains unmodeled in durable config. |
-| TFIND-014 | open | tools | Tool execution and `AgentToolHost` are deferred. |
-| TFIND-015 | open | permissions / codecs | Permission flow and codec authority remain unsettled. |
-| TFIND-016 | open | workflow activities | Activity boundaries are not yet represented. |
-| TFIND-017 | open | toy DurableTable | `rows()` is a live tail; snapshot reads must use `query()`. |
-| TFIND-018 | resolved (#317/#320 cleanup) | toy discipline | Hand-maintained contracts are rejected. |
-| TFIND-019 | resolved (#317/#320 cleanup) | toy discipline | Internal transition functions are rejected. |
-| TFIND-020 | open | toy configuration shape | One configuration file should express one system shape. |
-| TFIND-021 | resolved (#317/#320 cleanup) | toy tests | Scenario tests should stay above component internals. |
-| TFIND-022 | open | toy package surface | `src/index.ts` should not become an artificial public API. |
-| TFIND-023 | resolved (#317/#320 cleanup) | toy layout | Package layout should mirror production package layout. |
-| TFIND-024 | open | runtime adapters | Agent adapter path is still under-modeled. |
-| TFIND-025 | open | durable-tools | Shape C / wait arbitration remains unmodeled. |
-| TFIND-026 | resolved (#321) | durable backend | Durable-streams backend reached Group D. |
-| TFIND-027 | accepted | toy readability | Duplicate inline configuration code is acceptable when it documents wiring. |
-| TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. |
-| TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
-| TFIND-030 | resolved (#329) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
-| TFIND-035 | resolved (#333) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
-| TFIND-031 | resolved (#331, e48d82904) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
-| TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
-| TFIND-033 | superseded (folded into TFIND-031) | host-sdk | `commands.ts` manifestation of TFIND-031. |
-| TFIND-034 | superseded (folded into TFIND-031) | host-sdk | `toolkit-layer.ts` manifestation of TFIND-031. |
-| TFIND-038 | resolved (#332 — RuntimeContextRequest carries full public runtime intent) | client-sdk / runtime config | Client session creation cannot express arbitrary public runtime intent (argv/env/ACP/MCP). |
-| TFIND-039 | resolved (#332 — durable start request + host reconciler) | client-sdk / host split | Client SDK has no client-visible runtime start trigger. |
-| TFIND-040 | in-progress (`sidecar/session-observation` — SDD-first; OCA3; attach-point pending #332) | client-sdk / observations | Client SDK lacks a per-event session observation surface. |
-| TFIND-036 | QUEUED-FOR-ARCHITECT (architectural binary — SDD #335; coordinator cannot decide) | MCP / tools | Firegrid MCP toolkit lacks a read-only runtime-state query tool. |
-| TFIND-037 | superseded (duplicate — folded into TFIND-041) | ACP / tool execution | ACP MCP tool calls are provider-executed observations (= the ACP face of TFIND-041). |
-| TFIND-041 | resolved (#336 — decision B + by-decision doc-comment landed) | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
-| TFIND-042 | resolved (#337) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. |
-| TFIND-043 | open (low priority — test-infra flake, TFIND-042-class) | runtime / test infra | `DurableStreamsWorkflowEngine` VALIDATION.5 flakes under 17-way local turbo contention. |
+Triage column added 2026-05-18 (FINDINGS_TRIAGE_RUBRIC.md applied to every
+finding incl. shipped ones). cat-1/2 = real production gap → sidecar SDD;
+cat-3 = test-fixture awkwardness → toy fix + redirect, NO production change;
+cat-4 = toy-internal / coverage-tooling artifact → toy / tooling, NO
+production change; cat-5 = internal production cleanup → low-pri sidecar.
+See "## Triage Audit (2026-05-18)" below the Index for the cross-cutting
+conclusions (no shipped violations; the TFIND-036 process miss; the
+TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
+
+| ID | Status | Area | Finding | Triage |
+| --- | --- | --- | --- | --- |
+| TFIND-001 | resolved (#332 — consolidated client/host transaction) | client-sdk | `Firegrid.launch()` returns a context handle, not a session handle. | cat-1 (real client consumer hits launch/session split; folded into the #332 cluster) |
+| TFIND-002 | resolved (#332 — client writes durable intent, no host identity) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. | cat-1 (rubric anchor — client-only frontend hits host-identity wall immediately) |
+| TFIND-003 | resolved (#332 — durable start request + host reconciler) | client-sdk / host boundary | No remote start request surface. | cat-1 (real remote client needs a durable start trigger, not an in-process host capability) |
+| TFIND-004 | unblocked by #332 (client/host now separable; toy realization = toy-maintainer follow-up) | tests / architecture | Tests must not compose client and host in one Effect environment. | cat-1-consequence (real e2e shape; unblocked by cat-1 #332; toy realization = toy follow-up) |
+| TFIND-005 | blocked (keystone — #331 landed; #326 fork(1) swept+cleanup-in-progress; (2) DurableTableProvider API-shape → ARCHITECT, sole merge blocker) | Effect layer typing | Workflow/table layer composition leaks type precision. | cat-2 (rubric anchor — `any` leaks Layer precision through public host factories; type-honesty boundary) |
+| TFIND-006 | resolved (#325) | tiny host coverage | Durable configuration still models a tiny host capability. | cat-4/toy (toy fidelity — toy should compose production host; no production surface gap; its adoption surfaced cat-1 TFIND-028) |
+| TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. | cat-2 (rubric anchor — consumers reached into impl to build an unnamed host type) |
+| TFIND-008 | unblocked by #332 (separate-process client/host seam now exists; toy e2e = follow-up) | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. | cat-1-consequence (real separate-process e2e; unblocked by #332; toy realization = toy follow-up) |
+| TFIND-009 | superseded (false positive — codec is load-bearing) | workflow-engine | Durable workflow codec appears orphaned in the engine closure. | cat-4 (coverage-tool import-graph miss — codec is load-bearing; correctly closed, NO production code. Note: rubric calibration listed 5 assuming the orphan was real; the resolution proved it a coverage artifact = 4) |
+| TFIND-010 | open | runtime host | RuntimeContext engine registry is load-bearing. | cat-4/toy (toy not yet wired to production `RuntimeContextEngineRegistryLive`; production already has it — toy modeling roadmap, NOT a production gap) |
+| TFIND-011 | open | runtime input | Startup reconciliation is not yet modeled against Durable Streams. | cat-4/toy (toy hasn't proven reconciliation against prod Durable Streams; modeling roadmap, no production gap) |
+| TFIND-012 | open | durable-tools / wait | Wait-for output surface still needs production-backed modeling. | cat-4/toy WRAPPER over a cat-1/2 kernel ⚠ (the non-After `AgentOutput` wait-router arm reads the host-prefixed stream vs post-#315 per-context = REAL prod drift / A4 residue — split the prod kernel out as its own finding) |
+| TFIND-013 | open | output journal | Output journal / A4 path remains unmodeled in durable config. | cat-4/toy (toy A4/output-journal modeling = the #338 toy config; the A4 prod path itself is tracked separately as residue) |
+| TFIND-014 | open | tools | Tool execution and `AgentToolHost` are deferred. | cat-4/toy (deliberately-deferred toy modeling; production tool execution exists) |
+| TFIND-015 | open | permissions / codecs | Permission flow and codec authority remain unsettled. | cat-4/toy WRAPPER over a cat-1/2 kernel ⚠ (the "does any codec complete workflow deferreds / do authority work" question is a real production architectural question — TFIND-041 family; split it out) |
+| TFIND-016 | open | workflow activities | Activity boundaries are not yet represented. | cat-4/toy (deferred toy modeling; `Activity.make` exists in production) |
+| TFIND-017 | open | toy DurableTable | `rows()` is a live tail; snapshot reads must use `query()`. | cat-4/toy (toy in-memory-adapter usage rule; no production surface) |
+| TFIND-018 | resolved (#317/#320 cleanup) | toy discipline | Hand-maintained contracts are rejected. | cat-4/toy (toy discipline rule; toy cleanup PR, no production surface) |
+| TFIND-019 | resolved (#317/#320 cleanup) | toy discipline | Internal transition functions are rejected. | cat-4/toy (toy discipline rule; toy cleanup, no production surface) |
+| TFIND-020 | open | toy configuration shape | One configuration file should express one system shape. | cat-4/toy (toy discipline rule) |
+| TFIND-021 | resolved (#317/#320 cleanup) | toy tests | Scenario tests should stay above component internals. | cat-4/toy (toy discipline rule; toy cleanup) |
+| TFIND-022 | open | toy package surface | `src/index.ts` should not become an artificial public API. | cat-4/toy (toy discipline rule) |
+| TFIND-023 | resolved (#317/#320 cleanup) | toy layout | Package layout should mirror production package layout. | cat-4/toy (toy discipline rule; toy cleanup) |
+| TFIND-024 | open | runtime adapters | Agent adapter path is still under-modeled. | cat-4/toy (deferred toy modeling; `agent-adapters` exists in production) |
+| TFIND-025 | open | durable-tools | Shape C / wait arbitration remains unmodeled. | cat-4/toy (deferred toy modeling of an existing production durable-tools surface) |
+| TFIND-026 | resolved (#321) | durable backend | Durable-streams backend reached Group D. | cat-4/toy (toy milestone; toy PR #321, no production surface) |
+| TFIND-027 | accepted | toy readability | Duplicate inline configuration code is acceptable when it documents wiring. | cat-4/toy (toy readability rule; accepted, no action) |
+| TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. | cat-1 (REAL production runtime bug — an operator running a host via the public capability hits a missing `RuntimeOutputTable`; surfaced by the toy adopting prod composition) |
+| TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. | cat-5 (internal production composition robustness — explicit deps vs ambient capture; not consumer-visible; correctly low-pri / auto-unblocks on #326) |
+| TFIND-030 | resolved (#329) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. | cat-1 (real client-sdk consumer wants the typed `AgentOutputEvent` union from `snapshot()` without casts) |
+| TFIND-035 | resolved (#333) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. | cat-2 (SSOT/boundary — two divergent envelope decoders; defensible as TFIND-030's tracked completion) |
+| TFIND-031 | resolved (#331, e48d82904) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. | cat-2 (real host-composition correctness — missing shared DurableTable tag-family provision, was masked by the TFIND-005 `any`) |
+| TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. | cat-2 (manifestation of cat-2 TFIND-031) |
+| TFIND-033 | superseded (folded into TFIND-031) | host-sdk | `commands.ts` manifestation of TFIND-031. | cat-2 (manifestation of cat-2 TFIND-031) |
+| TFIND-034 | superseded (folded into TFIND-031) | host-sdk | `toolkit-layer.ts` manifestation of TFIND-031. | cat-2 (manifestation of cat-2 TFIND-031) |
+| TFIND-038 | resolved (#332 — RuntimeContextRequest carries full public runtime intent) | client-sdk / runtime config | Client session creation cannot express arbitrary public runtime intent (argv/env/ACP/MCP). | cat-1 (rubric anchor — real consumer launching a specific agent binary + MCP hits the client-intent gap) |
+| TFIND-039 | resolved (#332 — durable start request + host reconciler) | client-sdk / host split | Client SDK has no client-visible runtime start trigger. | cat-1 (real client needs a durable start trigger; cluster end-state, folded into #332) |
+| TFIND-040 | in-progress (`sidecar/session-observation` — SDD-first; OCA3; attach-point pending #332) | client-sdk / observations | Client SDK lacks a per-event session observation surface. | cat-1 (rubric anchor — real client consumer pattern: `session.subscribe()` per-event; correctly SDD-first) |
+| TFIND-036 | RE-TRIAGED cat-3 → toy redirect (2026-05-18; was QUEUED-FOR-ARCHITECT/SDD #335) | MCP / tools | Firegrid MCP toolkit lacks a read-only runtime-state query tool. | cat-3 (rubric CANONICAL — "agent reads its own runtime exit code" has NO coherent non-Firegrid consumer; test-fixture awkwardness. NO production code shipped — caught at SDD stage. Toy fix: use `wait_for{RuntimeRun}` / accept the awkwardness; SDD #335's two-plane analysis is retained as the recorded *why* but NOT implemented) |
+| TFIND-037 | superseded (duplicate — folded into TFIND-041) | ACP / tool execution | ACP MCP tool calls are provider-executed observations (= the ACP face of TFIND-041). | cat-1 (ACP face of the cat-1 architectural-shape TFIND-041) |
+| TFIND-041 | resolved (#336 — decision B + by-decision doc-comment landed) | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). | cat-1 (rubric anchor — real architectural shape question; resolution = right-sized by-decision doc-comment, zero behavior change) |
+| TFIND-042 | resolved (#337) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. | cat-4 (test-infra/tooling artifact — cold-start latency; test-infra-only fix, NO production code) |
+| TFIND-043 | open (low priority — test-infra flake, TFIND-042-class) | runtime / test infra | `DurableStreamsWorkflowEngine` VALIDATION.5 flakes under 17-way local turbo contention. | cat-4 (test-infra/tooling artifact — load-contention flake; CI-arbiter, correctly NOT dispatched to a production sidecar) |
+
+## Triage Audit (2026-05-18)
+
+`FINDINGS_TRIAGE_RUBRIC.md` applied to all 43 findings, including the
+already-shipped ones, to check we did not ship rubric violations.
+
+**Conclusion: NO rubric violation was shipped to production.** Every finding
+that received production code is cat-1 or cat-2 (real consumer / boundary):
+client/host cluster #332 (001/002/003/038/039 — cat-1), #323 (007 — cat-2),
+#325 (028 — cat-1 real runtime bug), #329 (030 — cat-1), #331 (031±32/33/34
+— cat-2), #333 (035 — cat-2), #336 (041 — cat-1 doc-only), #326 keystone
+(005 — cat-2, pending). The toy/test-infra PRs (#317/#320/#321, #325's
+toy-composition part, #337) touched no production surface.
+
+**The TFIND-036 process miss (the reason for this rubric).** TFIND-036 is
+the rubric's canonical cat-3 and reached a *fourth-revision SDD* (#335)
+before triage asked whether "an agent reads its own runtime-run exit code"
+was a real capability. It is not — it has no coherent non-Firegrid consumer
+(the run hasn't exited; it's host-plane forensic data). The good news: it
+was caught at the SDD stage — **no production code shipped**. The failure
+was purely that triage was applied late, not that bad code landed. Going
+forward the triage question is applied *before* engaging a finding's
+framing. TFIND-036 re-triaged → cat-3, pushed back to the toy with a
+redirect (see its detail entry). SDD #335's two-plane boundary analysis is
+retained only as the recorded rationale for *why there is no agent read*; it
+is not an implementation track.
+
+**The inverse risk — cat-1/2 production kernels wrapped in cat-4 toy
+framing.** Two open findings hide a real production sub-question inside a
+toy-modeling ask and must be split, not closed as toy work:
+
+- **TFIND-012** — the toy-modeling ask wraps a REAL production drift: the
+  non-After `AgentOutput` wait-router arm reads the host-prefixed runtime
+  output stream while post-#315 production writes per-context streams. That
+  kernel is the tracked A4 / host-vs-context residue and is a cat-1/2
+  production finding in its own right.
+- **TFIND-015** — wraps the real production question of whether any codec
+  completes workflow deferreds / performs authority-like work for
+  permission-class events (TFIND-041 family), distinct from the toy
+  permission-flow modeling.
+
+Action: keep both open; the cat-4 toy-modeling halves route to the toy
+maintainer; the cat-1/2 kernels are tracked production questions (TFIND-012
+↔ A4 residue; TFIND-015 ↔ codec-authority / TFIND-041 family) — not to be
+dispatched as generic toy coverage.
+
+**Routing applied (rubric §"When to push back vs route"):** cat-1/2 →
+sidecar SDD (done or in-flight); cat-5 (TFIND-029) → low-pri sidecar
+(auto-unblocks on #326); cat-3 (TFIND-036) → toy + named redirect; cat-4
+toy-coverage/discipline (006, 010–027, 042/043) → toy maintainer / coverage
+tooling, NOT production sidecars. Most of the open backlog (010–025) is
+cat-4 toy modeling roadmap, correctly not production work.
 
 ## Findings
 
@@ -1023,7 +1084,40 @@ TFIND-030 lands and the client/host transaction shape is settled.
 
 ### TFIND-036: Firegrid MCP toolkit lacks a read-only runtime-state query tool
 
-status: QUEUED-FOR-ARCHITECT (architectural binary; SDD #335; not dispatched)
+status: RE-TRIAGED cat-3 → toy redirect (2026-05-18; was QUEUED-FOR-ARCHITECT/SDD #335)
+
+**RE-TRIAGE (2026-05-18, coordinator, per FINDINGS_TRIAGE_RUBRIC.md +
+Gurdas direction).** Triage category: **3 (test-fixture awkwardness)** —
+the canonical cat-3. The triage question: *would a real consumer outside
+Firegrid need an agent to read its own runtime-run exit code for a real
+purpose?* No: the agent is inside the current run (it has not exited), and
+runtime-run exit/signal is host-plane forensic data with no coherent
+in-run agent use. The `sleep durationMs:0` "workaround" was the toy
+reaching for a plausible-sounding capability to exercise the MCP bridge —
+test-fixture awkwardness wearing capability clothes. **No production
+change. No further SDD work.**
+
+Redirect to the toy maintainer (what to do instead): exercise the MCP
+bridge with an *existing* tool, or use `wait_for{RuntimeRun}` (already a
+host-plane agent primitive) where the config genuinely needs run presence
+/ terminal state; accept that there is no non-blocking "read my own exit
+code" because that capability is not well-formed in the agent plane. The
+finding is closed as reframed, not as built.
+
+SDD #335's two-plane boundary analysis (session-plane name vs host-plane
+truth; why `session.status` is deliberately dormant; why option (A) would
+ship a leak) is **retained as the recorded rationale for why there is no
+agent runtime-state read** — it is documentation of the boundary decision,
+NOT an implementation track. SDD #335 stays draft/closed, no dispatch.
+
+Note: TFIND-036 reaching a 4th-revision SDD before this triage is the
+process gap that motivated the rubric (see "## Triage Audit (2026-05-18)").
+It was caught at the SDD stage — no production code shipped.
+
+---
+Original framing (preserved for evidence):
+
+status (superseded): QUEUED-FOR-ARCHITECT (architectural binary; SDD #335; not dispatched)
 
 Sidecar review (2026-05-18, OCA3 SDD #335,
 `sidecar/mcp-readonly-query`): two nuances reframe this from "add a
