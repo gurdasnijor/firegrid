@@ -7,6 +7,7 @@ Scope:
 - `durable-streams-backed-pipeline.test.ts`
 - `stdio-jsonl-tool-execution-pipeline.test.ts`
 - `multi-context-production-consuming-pipeline.test.ts`
+- `output-journal-pipeline.test.ts`
 - `permission-flow-pipeline.test.ts`
 
 ## Reach-Pasts Removed Cleanly
@@ -18,6 +19,7 @@ Scope:
 - Snapshot polling was removed from wait paths. Context materialization and terminal run waits now subscribe to `FiregridRuntimeTables.ControlPlane` rows and filter the live stream.
 - The stdio-jsonl tool-execution test no longer extracts host context, constructs a host-bound `RuntimeContext`, writes `contexts.upsert`, calls `RuntimeStartCapability.start`, opens `RuntimeOutputTable`, or decodes runtime output rows directly. It now drives create/start/prompt through the session facade and observes the tool loop through `session.wait.forAgentOutput`.
 - The multi-context production-consuming test uses two distinct `sessions.createOrLoad` external keys, two `session.start()` calls, interleaved `session.prompt()` calls, live `FiregridRuntimeTables.ControlPlane` waits, and per-session `session.wait.forAgentOutput()`. No host context extraction or host-bound row construction was needed to prove registry/dispatcher demux and output isolation.
+- The output-journal test no longer constructs a host-bound `RuntimeContext`, writes `contexts.upsert`, calls `RuntimeStartCapability.start`, reads the host-ambient `RuntimeOutputTable`, composes a per-context output table, or casts snapshot output rows. It now drives create/start/prompt through the session facade and proves `AgentOutputAfter` behavior through repeated `session.wait.forAgentOutput({ afterSequence })` calls.
 - The permission-flow test uses a deterministic ACP subprocess, `session.wait.forPermissionRequest`, and `session.permissions.respond`. It did not need host context extraction, host-bound row construction, direct `RuntimeStartCapability.start`, codec-internal deferred completion, or raw output-table reads to prove the permission request/response bridge.
 
 ## Reach-Pasts Not Removable / Public Gaps
@@ -34,6 +36,7 @@ Scope:
 - Session-output waits repeat the `waitForAgentOutputMatching` shape listed below.
 - Session-permission waits use `session.wait.forPermissionRequest` directly, while response assertions still use the public control-plane intent stream to prove the client response entered the durable input plane.
 - Multi-context public-surface assertions repeat pairwise scenario setup: create two sessions, start both, subscribe to both context/run rows, interleave prompts, then assert per-session snapshots.
+- Output-journal assertions repeat a stricter session-output wait shape: wait for the first output, then use each returned `sequence` as the next `afterSequence` cursor to prove ordered journal advancement.
 - Production-consuming tests repeatedly launch a host layer in a scoped background fiber while driving the scenario through a separate client SDK surface.
 
 ## Layer / Scoped Infrastructure Primitive Candidates
