@@ -1,6 +1,9 @@
 # SDD: MCP Route + URL Lifecycle in the Client/Host Model
 
-Status: draft - framing only, no production code
+Status: RATIFIED 2026-05-18 (Gurdas/coordinator: Reading 2, Option A).
+Implementation design appended as Amendment 1. Framing body (§0–§6)
+is preserved as the decision record; the binding implementation
+contract is Amendment 1.
 Created: 2026-05-18
 Owner: Firegrid Client SDK / Host SDK boundary
 Scope: extends `SDD_CONSOLIDATED_CLIENT_HOST_BOUNDARY_IMPLEMENTATION.md`
@@ -351,3 +354,193 @@ step.
   protocol reach-past) until this framing is decided and implemented;
   the resumed Codex ACP migration is then the validation. stdio-jsonl
   (no MCP) proceeds independently (#343).
+
+---
+
+# Amendment 1 — RATIFIED implementation contract (Reading 2, Option A)
+
+Ratified 2026-05-18. Binding decision: **Reading 2, Option A —
+host-provisioned MCP URL, delivered at start time.** Reading 1
+(re-export) is rejected: a separated #332 client structurally cannot
+know the host MCP listener address (`FIREGRID_MCP_PORT=0` ⇒ address
+does not exist pre-`createOrLoad`); re-export canonizes the backwards
+lifecycle. This is a completion of the #332 model (which has since
+**landed** at origin/main `4bdc81a838`: `control-request-reconciler.ts`
++ live request rows exist), so this is the TFIND-048 follow-on PR
+within the #332 architectural transaction, not a standalone scope.
+
+**Architectural principle (applies to every decision below):** the
+public surface MUST NOT let a client express *or predict* a host-owned
+fact, even when a co-located path makes it work. The CLI co-located
+shortcut is the EXCEPTION, not the model. Where schema/types can
+prevent expressing host-owned facts at the client boundary, they
+should.
+
+## A1.1 — Condition 1: explicit F-2 answer (co-location)
+
+**Question.** Does the #332 reconciler ALWAYS run co-located in the
+same host process that owns the `FiregridMcpServerLayer` listener?
+
+**Answer — two parts; the second is a wrinkle the framing body did not
+cover, now specified per Condition 1.**
+
+**(a) Process co-location IS structurally guaranteed for any topology
+that mounts an MCP listener.** The only in-tree compositions that mount
+`FiregridMcpServerLayer` do so by `Layer.provideMerge`-ing it with the
+runtime host that builds the reconciler daemon:
+
+- `packages/cli/src/bin/host.ts:30-43` —
+  `FiregridMcpServerLayer({...}).pipe(Layer.provideMerge(runtimeHost))`
+  where `runtimeHost = FiregridLocalHostLive(...)` →
+  `FiregridRuntimeHostLive` includes
+  `RuntimeControlRequestReconcilerDaemonLive`
+  (`packages/host-sdk/src/host/layers.ts:251-254`).
+- Same pattern: `packages/cli/src/bin/run.ts:423` and
+  `packages/tiny-firegrid/src/configurations/codex-acp-tool-call-pipeline.ts:74`.
+
+There is **no** in-tree topology that runs the reconciler in a process
+that does not also build the MCP listener. The MCP listener is opt-in
+(`FIREGRID_MCP_ENABLED`, default `false`; `host.ts: if (!mcp.enabled)
+return runtimeHost`). A host with MCP disabled simply **cannot satisfy
+an MCP-requiring context** — that is a legitimate, explicit start
+failure (the host cannot honor the URL-less marker), not an Option A
+gap. This is the architectural principle in action: the client said
+"needs MCP"; a host with no MCP listener fails loudly rather than
+fabricate a URL.
+
+**(b) Process co-location ≠ Effect service-environment visibility —
+the wrinkle.** In `FiregridMcpServerLayer(A).pipe(Layer.provideMerge(
+runtimeHost B))`, `B` (which builds the reconciler daemon) is provided
+*to* `A`. `A`'s `HttpServer` (the bound MCP listener address, incl. the
+OS-chosen port when `port:0`) is in the **merged output**, but it is
+**not** in the reconciler daemon's construction environment — the
+reconciler is built inside `B`, which is composed *below* `A`.
+`FiregridMcpServerLayer` deliberately `provideMerge`s
+`NodeHttpServer.layer` so the bound address is resolvable
+(`mcp-host.ts:213-218` comment: "keeps the bound `HttpServer` service
+in the output Layer so the host can log its address (or tests can
+resolve the OS-chosen port when `port: 0`)") — but only to a consumer
+composed *above* it, which the reconciler/`startRuntime` path is not.
+So the start path **cannot today require** an MCP-address service; one
+must be threaded in. The framing body's Option A assumed "host owns
+both halves at start" without specifying this composition gap; F-1/F-2
+flagged it; here is the specified resolution.
+
+**Specified mechanism (how the reconciler/start path obtains the bound
+address):** introduce a dedicated host-scope service
+`FiregridRuntimeContextMcpBaseUrl` (Option-typed — MCP is opt-in),
+carrying the resolved MCP base (`scheme://host:boundPort` + base path)
+derived from the MCP layer's `HttpServer` at bind time. Publication is
+via a host-owned synchronization primitive (`Deferred` /
+`SubscriptionRef`) created at the **top binary composition** — the one
+point that sees both the MCP layer and the runtime host;
+`FiregridMcpServerLayer` fills it on bind, the host start path reads
+it. The start path requires it **Option-ally**; absent ⇒ a URL-less
+runtime-context-MCP marker in the intent is an **explicit start
+failure**, never a silent skip. Co-location remains the only supported
+topology and is now *enforced by composition*: the marker is
+unsatisfiable unless the address service is in the reconciler's scope,
+which only the merged host+MCP composition provides. No cross-process
+address discovery is introduced (and none is needed — there is no
+split-process topology).
+
+**This wrinkle changes host-SDK layer composition (publication
+primitive + start-path dependency + binary wiring). It is
+architecturally sensitive and OWNERSHIP-relevant; per the no-self-merge
+correctness-bar gate it is surfaced to surface:153 for coordinator
+review BEFORE the cross-package production edit — not silently
+implemented.**
+
+## A1.2 — Condition 2: Q3 URL-less intent mechanism (chosen)
+
+**Choice: a DEDICATED, URL-less runtime-context-MCP marker on the
+runtime intent — NOT a field/sentinel on a generic `mcpServers`
+entry.**
+
+Rationale (schema-level enforcement of the architectural principle):
+
+- `McpServerDeclarationSchema`
+  (`packages/protocol/src/launch/schema.ts:129-137`) is
+  `{ name, server: { type:"url", url: Schema.String, ... } }`. Its
+  `url` is **required**. Every `mcpServers` entry is, by type, a
+  client-authored concrete URL — `mcpServers` is **client-owned
+  end-to-end**.
+- The Firegrid runtime-context MCP server's URL authority is
+  **host-owned**. Putting a sentinel/optional-url on an `mcpServers`
+  entry would make a client-owned schema member carry a host-owned
+  fact — invisible at the type level and re-inviting the smell.
+- Therefore add a **distinct schema member** to `RuntimeConfigSchema`
+  (`schema.ts:160-169`) / `PublicLaunchRuntimeIntent` — e.g.
+  `runtimeContextMcp?: { enabled: true }` (final shape an impl
+  detail). It has **no `url` slot**: the client type *literally cannot
+  carry a URL*, so a client structurally cannot express or predict the
+  host-owned fact. "The host owns this one" is visible at the schema
+  level, not hidden behind a sentinel.
+- `firegridRuntimeContextMcpName` / `firegridRuntimeContextMcpDeclaration`
+  / `injectLaunchMcpDeclaration` (`schema.ts:139-150,360-372`) are
+  **retained as the host-side concrete-injection helpers**: at start
+  the host resolves the concrete URL from
+  `FiregridRuntimeContextMcpBaseUrl` + the bound `contextId` and
+  produces the concrete `firegrid-runtime-context` `McpServerDeclaration`
+  for the spawned agent. The client-side declaration form is removed
+  from the client path.
+
+## A1.3 — Condition 3: single injection site (no dual path)
+
+`injectLaunchMcpDeclaration` moves to the **host start path** and is
+applied exactly once, host-side, keyed on the URL-less marker, after
+the context is materialized and the bound `contextId` + MCP base are
+known. The CLI pre-`createOrLoad` injection at
+`packages/cli/src/bin/run.ts:379-382` (and the sibling normalized path
+at `run.ts:479`, plus the now-dead pre-derived `cliContextId`/`mcpUrl`
+plumbing at `run.ts:208-219,341-348` used only for that injection)
+**MUST be deleted in the same transaction** — no backwards-compat dual
+path. The CLI is just a host program; it receives the concrete URL via
+the identical host-side mechanism as every other consumer.
+
+## A1.4 — Condition 4: validation gate (Codex ACP stays paused)
+
+The host-SDK + protocol work is necessary but **not sufficient**. The
+implementation is NOT validated until the paused Codex ACP migration
+resumes cleanly using **only** the URL-less marker + host-provisioned
+URL path, with **no `it.skip`, no `as unknown as`, no protocol
+reach-past**. The resumed Codex ACP config+test landing is the
+load-bearing proof and lands in the same transaction.
+
+## A1.5 — Implementation plan (folds into the #332 model; PR #344)
+
+1. **Protocol** (`packages/protocol`): add the URL-less
+   `runtimeContextMcp` marker to `RuntimeConfigSchema` /
+   `PublicLaunchRuntimeIntent`; keep the `firegrid-runtime-context`
+   concrete declaration + `injectLaunchMcpDeclaration` as host-side
+   helpers; schema/constructor tests.
+2. **Host-SDK** (`packages/host-sdk`): add `FiregridRuntimeContextMcpBaseUrl`
+   service + the bind-time publication primitive; `FiregridMcpServerLayer`
+   fills it from `HttpServer` on bind; move declaration injection into
+   the host start path (`startRuntime` / `claimAndRunRuntimeContextWorkflow`
+   or the reconciler's start/materialization step) keyed on the marker;
+   absent base ⇒ explicit, typed start failure; adjust the binary
+   composition so the address service reaches the reconciler scope.
+3. **CLI** (`packages/cli`): delete `run.ts:379-382` + `:479`
+   pre-`createOrLoad` injection and the dead pre-derivation plumbing;
+   CLI emits only the URL-less marker.
+4. **tiny-firegrid**: resume the paused Codex ACP config + test on the
+   URL-less marker + host-provisioned URL only (Condition 4).
+5. **Findings/Beads**: status is `br`-owned; coordinator updates the
+   ledger. No hand-edit in this PR.
+6. **CI gate**: full gate set (lint + lint:dead + lint:dup + lint:deps,
+   typecheck, per-package test, check:specs/docs, verify,
+   lint:effect-quality). Coordinator reviews at the correctness bar; no
+   self-merge.
+
+## A1.6 — Status of this PR (#344)
+
+This commit delivers the **ratified implementation contract + the
+explicit F-2 answer + the Q3 choice** only. The cross-package
+production edit (A1.5 steps 1–4) is gated on coordinator review of the
+A1.1(b) composition wrinkle at the correctness bar — per Condition 1
+("answer F-2 explicitly before you write the impl"; if a wrinkle
+exists, "specify how the reconciler obtains the bound address") and the
+no-self-merge gate. Implementing the host-layer recomposition before
+that review would be silent scope on an unreviewed architectural
+change.
