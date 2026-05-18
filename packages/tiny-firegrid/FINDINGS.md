@@ -34,9 +34,9 @@ of scope for this package.
 
 | ID | Status | Area | Finding |
 | --- | --- | --- | --- |
-| TFIND-001 | in-progress (Codex Agent 1 — SDD-first: independent fix vs fold into deferred client/host transaction) | client-sdk | `Firegrid.launch()` returns a context handle, not a session handle. |
-| TFIND-002 | in-progress (#327 — framing signed off, Option B) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
-| TFIND-003 | in-progress (#327 — framing signed off, Option B) | client-sdk / host boundary | No remote start request surface. |
+| TFIND-001 | in-progress (#332 — Option 1 signed off; impl SDD next; folded into consolidated client/host) | client-sdk | `Firegrid.launch()` returns a context handle, not a session handle. |
+| TFIND-002 | in-progress (#332 — Option 1 signed off; impl SDD next) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. |
+| TFIND-003 | in-progress (#332 — Option 1 signed off; impl SDD next) | client-sdk / host boundary | No remote start request surface. |
 | TFIND-004 | open | tests / architecture | Tests must not compose client and host in one Effect environment. |
 | TFIND-005 | blocked (keystone — leak-stack first, #326 last) | Effect layer typing | Workflow/table layer composition leaks type precision. |
 | TFIND-006 | resolved (#325) | tiny host coverage | Durable configuration still models a tiny host capability. |
@@ -64,14 +64,14 @@ of scope for this package.
 | TFIND-028 | resolved (#325) | host-sdk / runtime start | `RuntimeStartCapabilityLive` did not capture workflow support services. |
 | TFIND-029 | in-progress (`sidecar/runtime-start-deps`) | host-sdk / runtime start | `RuntimeStartCapabilityLive` should enumerate workflow support dependencies. |
 | TFIND-030 | resolved (#329) | client-sdk / projections | Snapshot agent output events are typed as records, not protocol unions. |
-| TFIND-035 | open (tracked dependent of TFIND-030) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
+| TFIND-035 | in-progress (framing signed off: Q1=A, Q2=1-decoder/2-shapes, Q3=dedicated subpath, Q4=none; OCA3, queued behind TFIND-040 SDD) | protocol / runtime SSOT | Two divergent agent-output envelope decoders; consolidate to one protocol-owned canonical union. |
 | TFIND-031 | in-progress (#331 — Option Y; shared-store gate DISCHARGED, structural proof) | host/toolkit composition | Shared DurableTable tag-family provision missing; masked by TFIND-005 `any`; manifests at 4 prod + 8 test boundaries. |
 | TFIND-032 | superseded (folded into TFIND-031) | host-sdk | `agent-tool-host-live.ts` manifestation of TFIND-031. |
 | TFIND-033 | superseded (folded into TFIND-031) | host-sdk | `commands.ts` manifestation of TFIND-031. |
 | TFIND-034 | superseded (folded into TFIND-031) | host-sdk | `toolkit-layer.ts` manifestation of TFIND-031. |
-| TFIND-038 | open (client/host cluster — enriches TFIND-002) | client-sdk / runtime config | Client session creation cannot express arbitrary public runtime intent (argv/env/ACP/MCP). |
-| TFIND-039 | open (client/host cluster — = deferred host-reconciler transaction) | client-sdk / host split | Client SDK has no client-visible runtime start trigger. |
-| TFIND-040 | open (client-surface family — relates TFIND-008/030) | client-sdk / observations | Client SDK lacks a per-event session observation surface. |
+| TFIND-038 | in-progress (#332 — Option 1 signed off; impl SDD next) | client-sdk / runtime config | Client session creation cannot express arbitrary public runtime intent (argv/env/ACP/MCP). |
+| TFIND-039 | in-progress (#332 — Option 1 signed off; durable start request = the client trigger) | client-sdk / host split | Client SDK has no client-visible runtime start trigger. |
+| TFIND-040 | in-progress (`sidecar/session-observation` — SDD-first; OCA3; attach-point pending #332) | client-sdk / observations | Client SDK lacks a per-event session observation surface. |
 | TFIND-036 | open | MCP / tools | Firegrid MCP toolkit lacks a read-only runtime-state query tool. |
 | TFIND-037 | superseded (duplicate — folded into TFIND-041) | ACP / tool execution | ACP MCP tool calls are provider-executed observations (= the ACP face of TFIND-041). |
 | TFIND-041 | decided B — session-mode owns lifecycle by decision; doc-comment pending | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
@@ -104,7 +104,31 @@ session-shaped handle.
 
 ### TFIND-002: Critical: session creation still requires host identity
 
-status: in-progress (#327 down-payment merged; end-state gated on deferred host transaction)
+status: in-progress (#332 — Option 1 signed off; implementation SDD next)
+
+CONSOLIDATED DECISION (Gurdas, 2026-05-18) — cluster anchor for
+TFIND-001/002/003/038/039 (one root; SDD `#332
+SDD_CONSOLIDATED_CLIENT_HOST_BOUNDARY.md`):
+- **Option 1 chosen**: client writes durable intent
+  (`RuntimeContextRequestRow` w/ full public runtime intent incl.
+  argv/env/agent-protocol/MCP — TFIND-038) + `RuntimeStartRequestRow`
+  (TFIND-039's client-visible trigger); a host-side reconciler binds
+  contexts + claims/runs starts. Activates #327's inert rows; one client
+  path + one host path (no second bridge).
+- **start() = request/ack**; CLI/factory migrate to a **host-owned
+  synchronous start surface in the SAME transaction** (no temporary
+  compat wait-helper). The impl SDD must name that host-owned surface
+  explicitly as the migration target.
+- Option 2 not chosen but **not foreclosed**: a future
+  `startOnCreate: true` flag on the request row can layer
+  "creation⇒execution" later.
+- **LOAD-BEARING for the impl SDD (Gurdas):** name the reconciler
+  failure semantics explicitly — unclaimed `RuntimeContextRequestRow`
+  within a window → claim-window / retry / timeout / abandon model +
+  idempotency + duplicate-start suppression. Not to be handwaved.
+Next: Codex Agent 1 produces the #332 implementation SDD (no production
+code) → coordinator review → Gurdas signoff → then the coordinated
+transaction.
 
 Sidecar (2026-05-17): one coupled seam with TFIND-003. SDD
 `SDD_FIREGRID_CLIENT_HOST_BOUNDARY.md`. **Option B down-payment MERGED**
