@@ -4,12 +4,8 @@ module.exports = {
       name: "no-circular",
       severity: "error",
       comment:
-        "Temporary exception covers the legacy durable-launch secret cycle on main; tracer 001 removes that path.",
-      from: {
-        pathNot: [
-          "^packages/runtime/src/durable-launch/(launcher|resources/secrets)\\.ts$",
-        ],
-      },
+        "No circular dependencies. (The former durable-launch secret-cycle carve-out was removed: that directory was deleted in earlier path-x work.)",
+      from: {},
       to: { circular: true },
     },
     {
