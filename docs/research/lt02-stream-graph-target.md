@@ -10,7 +10,7 @@ handler bodies, imperative timeline emits, read-model upserts, and public
 
 Source inputs were:
 
-- `HANDOFF.md`
+- removed historical handoff notes
 - `docs/replatforming/litmus/LT-02-local-runtime-session-loop.md`
 - `/private/tmp/firegrid-runtime-ergonomics-sdd/docs/proposals/SDD_FIREGRID_RUNTIME_ERGONOMICS.md`
 - `packages/client/README.md`

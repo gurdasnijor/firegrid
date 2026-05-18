@@ -1,6 +1,6 @@
 # Runtime Entry Traversal Map
 
-Source: `HANDOFF.md`, `docs/proposals/SDD_STREAM_FIRST_SUBSTRATE_SIMPLIFICATION.md`, `features/firegrid/stream-first-substrate-simplification.feature.yaml`, `packages/runtime/bin/firegrid.ts`, and `packages/runtime/src/run.ts`.
+Source: removed historical handoff notes, `docs/proposals/SDD_STREAM_FIRST_SUBSTRATE_SIMPLIFICATION.md`, `features/firegrid/stream-first-substrate-simplification.feature.yaml`, `packages/runtime/bin/firegrid.ts`, and `packages/runtime/src/run.ts`.
 
 This map follows `stream-first-substrate-simplification.RUNTIME_TRAVERSAL.1` and `stream-first-substrate-simplification.RUNTIME_TRAVERSAL.2`: start at the runtime entrypoints, descend reachable imports, and stop at the first outdated concept on each branch.
 
