@@ -72,6 +72,8 @@ of scope for this package.
 | TFIND-038 | open (client/host cluster — enriches TFIND-002) | client-sdk / runtime config | Client session creation cannot express arbitrary public runtime intent (argv/env/ACP/MCP). |
 | TFIND-039 | open (client/host cluster — = deferred host-reconciler transaction) | client-sdk / host split | Client SDK has no client-visible runtime start trigger. |
 | TFIND-040 | open (client-surface family — relates TFIND-008/030) | client-sdk / observations | Client SDK lacks a per-event session observation surface. |
+| TFIND-036 | open | MCP / tools | Firegrid MCP toolkit lacks a read-only runtime-state query tool. |
+| TFIND-037 | superseded (duplicate — folded into TFIND-041) | ACP / tool execution | ACP MCP tool calls are provider-executed observations (= the ACP face of TFIND-041). |
 | TFIND-041 | open (architectural — track + probe; relates TFIND-015) | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). |
 
 ## Findings
@@ -838,9 +840,81 @@ Relates to TFIND-008 (separate-process e2e) and consumes TFIND-030's
 typed `AgentOutputEvent` decode. Architectural; track open, scope after
 TFIND-030 lands and the client/host transaction shape is settled.
 
+### TFIND-036: Firegrid MCP toolkit lacks a read-only runtime-state query tool
+
+status: open
+
+The requested scenario wanted a simple read-only tool such as "find the most
+recent runtime run for this context and report its exit code." The current
+canonical toolkit in `packages/host-sdk/src/agent-tools/bindings/tools.ts`
+exposes `sleep`, `wait_for`, session mutation tools, scheduling, and sandbox
+execution, but no direct read/list runtime-state tool.
+
+The first Codex ACP configuration therefore asks the agent to call `sleep`
+with `durationMs: 0`. That exercises the MCP bridge and Firegrid tool surface,
+but it is a weaker operator/user experience than a read-only inspection tool
+and less directly tied to durable runtime state.
+
+Sidecar triage (2026-05-18, surface:153): ingested from Codex coordinator
+(authored on PR #330 branch). Distinct, real toolkit-surface finding;
+independent of the client/host cluster. Open; not yet dispatched (lower
+priority than the keystone + client/host headline). Decide: expose a
+read-only runtime-state query tool vs reads-via-`wait_for`/projections.
+
+### TFIND-037: ACP MCP tool calls are provider-executed observations
+
+status: superseded (duplicate — folded into TFIND-041)
+
+Authored by the Codex coordinator on the PR #330 branch in parallel with
+the canonical TFIND-041 assignment; they are the **same finding** from
+two angles. TFIND-037's evidence (preserved): in
+`packages/host-sdk/src/host/runtime-context-workflow-core.ts` the workflow
+body skips `RuntimeToolUseExecutor` for `ToolUse` when
+`context.runtime.config.agentProtocol === "acp"`; ACP receives MCP servers
+via `AcpSessionLive(..., { mcpServers })`, the ACP process executes MCP
+calls itself and reports provider-executed `ToolUse` observations — a
+different semantics than stdio-jsonl `ToolUse` which Firegrid executes via
+`RuntimeToolUseExecutor`. This is the ACP-specific face of the general
+TFIND-041 statement (execution authority not carried by the event). All
+tracking, the binary decision, and the probe result live under TFIND-041.
+
 ### TFIND-041: ToolUse event lifecycle is under-discriminated
 
-status: open (architectural — track + probe; relates TFIND-015)
+status: open (architectural — paused-and-tracked; binary decision pending Gurdas)
+
+Reconciliation note: TFIND-037 (Codex, PR #330 branch) is the ACP-face
+duplicate of this finding and is superseded into it. This entry is the
+single canonical record.
+
+**Pause-and-track exchange:** the Codex coordinator paused its PR #330
+test, requested an id + canonical tracking before proceeding; coordinator
+assigned TFIND-041 and tracked it; Codex then ran the stdio-jsonl probe
+(below) rather than coding a fix. No production change is being made
+pending the binary decision — this finding is explicitly *track now,
+decide later*.
+
+**The binary choice (explicit) — a Gurdas framing decision:**
+- **(A) Event-level discriminant.** Promote execution authority onto the
+  event itself: split `ToolUse` into `ToolUseRequest` (Firegrid executes
+  via `RuntimeToolUseExecutor`, expects `ToolResult` roundtrip) vs
+  `ToolUseObservation` (provider-executed; observe-only, no roundtrip) —
+  or an explicit `providerExecuted` discriminant. Workflow body becomes
+  codec-agnostic; the `agentProtocol === "acp"` branch is deleted.
+  Cost: protocol/event-contract change rippling through every codec +
+  workflow + consumers.
+- **(B) Session-mode authority, made explicit.** Keep session/codec mode
+  as the authority axis; **document by decision** that workflow ToolUse
+  interpretation is codec/session-aware by design (ACP =
+  observation-only; stdio-jsonl = client-result roundtrip). Cost: ~nil
+  (a documented, intentional decision); the event stays
+  under-discriminated by choice, not by accident.
+
+Current production is (B) **by default, not by decision** — empirically
+confirmed by the probe. The decision is purely A vs B; not blocking any
+workstream. Coordinator recommendation: **(B) made explicit now** as the
+minimum the finding asks (cheap; converts default→decision), and track
+**(A)** as a future-cycle improvement gated on real demand (codec-
+agnostic workflow need / a third codec). Awaiting Gurdas's call.
 
 `ToolUse` is normalized as a shared `AgentOutputEvent`, but execution
 authority is not carried by the event. ACP and stdio-jsonl both emit
