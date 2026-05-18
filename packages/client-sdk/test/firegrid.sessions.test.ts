@@ -10,7 +10,10 @@ import {
   type HostSessionId,
   type HostSessionRow,
 } from "@firegrid/protocol/launch"
-import { encodeRuntimeAgentOutputEnvelope } from "@firegrid/protocol/session-facade"
+import {
+  encodeRuntimeAgentOutputEnvelope,
+  type AgentOutputEvent,
+} from "@firegrid/protocol/session-facade"
 import {
   inputIdForRuntimeIngressRequest,
   type RuntimeInputIntentRow,
@@ -45,7 +48,7 @@ const runtimeConfig = () =>
     agentProtocol: "stdio-jsonl",
   })
 
-const agentOutputRaw = (event: Readonly<Record<string, unknown>>): string =>
+const agentOutputRaw = (event: AgentOutputEvent): string =>
   encodeRuntimeAgentOutputEnvelope(event)
 
 const makeFixture = () => {
@@ -107,7 +110,7 @@ const appendAgentOutput = (
   hostSession: HostSessionRow,
   contextId: string,
   sequence: number,
-  event: Readonly<Record<string, unknown>>,
+  event: AgentOutputEvent,
 ) => {
   if (baseUrl === undefined) throw new Error("server not started")
   return Effect.gen(function* () {
@@ -321,8 +324,8 @@ describe("Firegrid session facade", () => {
           session.contextId,
           5,
           {
-            _tag: "TextChunk",
-            part: { text: "hello" },
+            _tag: "Status",
+            kind: "hello",
           },
         )
         const waited = yield* fiber.await
@@ -340,22 +343,22 @@ describe("Firegrid session facade", () => {
         sessionId: result.snapshot.contextId,
         contextId: result.snapshot.contextId,
         sequence: 5,
-        _tag: "TextChunk",
+        _tag: "Status",
         event: {
-          _tag: "TextChunk",
-          part: { text: "hello" },
+          _tag: "Status",
+          kind: "hello",
         },
       },
     })
     expect(result.snapshot.agentOutputs).toHaveLength(1)
     expect(result.snapshot.agentOutputs[0]).toMatchObject({
       sequence: 5,
-      _tag: "TextChunk",
+      _tag: "Status",
     })
     expect(result.snapshot.events).toHaveLength(1)
     expect(result.snapshot.events[0]?.raw).toBe(agentOutputRaw({
-      _tag: "TextChunk",
-      part: { text: "hello" },
+      _tag: "Status",
+      kind: "hello",
     }))
   })
 
@@ -379,8 +382,8 @@ describe("Firegrid session facade", () => {
           session.contextId,
           6,
           {
-            _tag: "TextChunk",
-            part: { text: "not a permission" },
+            _tag: "Status",
+            kind: "not-a-permission",
           },
         )
         yield* appendAgentOutput(

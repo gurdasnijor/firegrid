@@ -35,6 +35,7 @@ export type {
   RuntimeInputIntentRow,
 } from "@firegrid/protocol/runtime-ingress"
 export type {
+  AgentOutputEvent,
   FiregridSessionId,
   RuntimeAgentOutputEventPayload,
   RuntimeAgentOutputObservation,
