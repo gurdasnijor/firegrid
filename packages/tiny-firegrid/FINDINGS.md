@@ -47,7 +47,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-002 | resolved (#332 — client writes durable intent, no host identity) | client-sdk / host boundary | `sessions.createOrLoad()` still requires host identity. | cat-1 (rubric anchor — client-only frontend hits host-identity wall immediately) |
 | TFIND-003 | resolved (#332 — durable start request + host reconciler) | client-sdk / host boundary | No remote start request surface. | cat-1 (real remote client needs a durable start trigger, not an in-process host capability) |
 | TFIND-004 | unblocked by #332 (client/host now separable; toy realization = toy-maintainer follow-up) | tests / architecture | Tests must not compose client and host in one Effect environment. | cat-1-consequence (real e2e shape; unblocked by cat-1 #332; toy realization = toy follow-up) |
-| TFIND-005 | blocked (keystone — #331 landed; #326 fork(1) swept+cleanup-in-progress; (2) DurableTableProvider API-shape → ARCHITECT, sole merge blocker) | Effect layer typing | Workflow/table layer composition leaks type precision. | cat-2 (rubric anchor — `any` leaks Layer precision through public host factories; type-honesty boundary) |
+| TFIND-005 | FRAMING SIGNED OFF (Gurdas 2026-05-18 — curried shape accepted); #326 = mechanical idiom migration only, verify-then-flip; "fork (2)" EXCISED → TFIND-044 | Effect layer typing | Workflow/table layer composition leaks type precision. | cat-2 (rubric anchor — `any` leaks Layer precision through public host factories; type-honesty boundary) |
 | TFIND-006 | resolved (#325) | tiny host coverage | Durable configuration still models a tiny host capability. | cat-4/toy (toy fidelity — toy should compose production host; no production surface gap; its adoption surfaced cat-1 TFIND-028) |
 | TFIND-007 | resolved (#323) | host-sdk | Host SDK lacks a named host surface type. | cat-2 (rubric anchor — consumers reached into impl to build an unnamed host type) |
 | TFIND-008 | unblocked by #332 (separate-process client/host seam now exists; toy e2e = follow-up) | end-to-end shape | Client and host cannot yet be tested as separate processes end-to-end. | cat-1-consequence (real separate-process e2e; unblocked by #332; toy realization = toy follow-up) |
@@ -86,6 +86,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-041 | resolved (#336 — decision B + by-decision doc-comment landed) | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). | cat-1 (rubric anchor — real architectural shape question; resolution = right-sized by-decision doc-comment, zero behavior change) |
 | TFIND-042 | resolved (#337) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. | cat-4 (test-infra/tooling artifact — cold-start latency; test-infra-only fix, NO production code) |
 | TFIND-043 | open (low priority — test-infra flake, TFIND-042-class) | runtime / test infra | `DurableStreamsWorkflowEngine` VALIDATION.5 flakes under 17-way local turbo contention. | cat-4 (test-infra/tooling artifact — load-contention flake; CI-arbiter, correctly NOT dispatched to a production sidecar) |
+| TFIND-044 | QUEUED-FOR-ARCHITECT (own SDD needed; was TFIND-005 "fork (2)"; excised per the TFIND-005 halt rule) | client-sdk / effect-durable-operators provider | `DurableTableProvider`'s single `ROut` generic cannot carry N heterogeneous precise `DurableTable` `<Self>` identities (`firegridRuntimeTableTags`; flamecast `client/main.tsx:360` TS2322) — a latent precision leak the TFIND-005 `any` was hiding. | cat-2 (real boundary/wrong-shape — a real flamecast consumer hits it; the provider abstraction can't express the precise heterogeneous identity set; needs its own SDD, architect-gated) |
 
 ## Triage Audit (2026-05-18)
 
@@ -289,7 +290,45 @@ in tests and use only the durable backend as shared state.
 
 ### TFIND-005: Workflow layer composition leaks type precision
 
-status: blocked (keystone FULLY ASSEMBLED — #326 single unit, green except fork (2); (2) ARCHITECT decision = the ONLY thing between here and the cascade)
+status: FRAMING SIGNED OFF (Gurdas 2026-05-18) — #326 = mechanical curried-idiom migration ONLY; verify-then-flip; "fork (2)" EXCISED → TFIND-044
+
+**SIGNOFF + RE-SCOPE (Gurdas, 2026-05-18; SDD signoff `349bfd8af` on
+`sidecar/workflow-layer-precision`).** Curried `(ns,schemas)<Self>()`
+shape **accepted** (mirrors `Context.Tag`/`Effect.Service`;
+options-object + `.tag<Self>()` rejected). Binding execution conditions:
+1. **Verify Crux B in practice:** before flip, run BOTH probe arms
+   against the curried shape and confirm pass — (a) `IsAny<ROut>` false,
+   (b) two distinct tables' `ROut` mutually non-assignable.
+2. **Stale-SHA void:** `#322` is in `origin/main` (`a38da9781`); the
+   dispatch's contingency plan guarded a post-#322-impossible condition
+   — void, not papered. Coordinator re-synced.
+3. **Halt rule (load-bearing):** proceed per SDD §"Migration plan"
+   (curry lib + 6 prod + 14 test sites, no other production change). ANY
+   consumer typecheck failure for a reason OTHER than a missing
+   `<Self>()` idiom → HALT + surface as a NEW architectural finding (a
+   latent leak the `any` hid), NOT #326 fix scope, NO forcing/widening
+   cast at the call site.
+4. **Verify-then-flip-ready, not flip-then-verify.** Single PR; per-file
+   commits grouped (lib / runtime / protocol / tests). Flip-ready only
+   after probe + full gate green.
+
+**"fork (2)" is dissolved.** The flamecast `client/main.tsx:360`
+`DurableTableProvider` TS2322 (heterogeneous N-table provider whose
+single `ROut` generic can't carry N precise `<Self>` identities) is a
+non-idiom consumer failure per the halt rule → **excised from #326 and
+filed as TFIND-044** (own SDD, architect-gated). It is no longer a
+coordinator A/B improvisation. #326's flip/merge remains gated on
+TFIND-044 only because flamecast can't be left red in CI — a
+properly-scoped architectural finding now, not a snap decision. Agent 2
+(`155`) dispatched to audit #326 to strict idiom scope + run the probe +
+verify-then-flip; the mechanical dead-cast/inference tail is in-scope
+only where it is the direct consequence of the idiom (no behavior/
+requirement change).
+
+---
+Prior status (preserved for evidence):
+
+status (superseded): blocked (keystone FULLY ASSEMBLED — #326 single unit, green except fork (2); (2) ARCHITECT decision = the ONLY thing between here and the cascade)
 
 #326 ASSEMBLED 2026-05-18: rebased clean (`--onto` dropped 7 superseded
 TFIND-031 WIP; canonical = merged #331) + 5 non-toy curry-precision
@@ -1333,3 +1372,44 @@ Next action: low priority — when convenient, harden VALIDATION.5 against
 load-induced contention (same approach family as TFIND-042's
 deterministic ceiling) or isolate it from the contended local turbo
 lane. Not gating any workstream.
+
+### TFIND-044: DurableTableProvider cannot carry N heterogeneous precise DurableTable identities
+
+status: QUEUED-FOR-ARCHITECT (own SDD needed; was TFIND-005 "fork (2)"; excised 2026-05-18 per the TFIND-005 halt rule)
+
+Triage: **cat-2** (real production boundary / wrong shape). A real
+flamecast consumer hits it: the `DurableTableProvider<ROut,E>` React
+seam (`effect-durable-operators` `react.ts`) consumes
+`firegridRuntimeTableTags` (client-sdk `firegrid.ts:237`), an N-table
+array. Once the TFIND-005 curried idiom makes each table's `<Self>`
+identity precise, a single `ROut` generic can no longer represent the
+heterogeneous set of N distinct precise identities → flamecast
+`client/main.tsx:360` TS2322. This is a latent precision leak the
+TFIND-005 `any` was hiding — surfaced, not introduced, by the idiom.
+
+Provenance: this was tracked as TFIND-005 "fork (2)". Gurdas's
+2026-05-18 TFIND-005 framing signoff established the halt rule: a
+consumer typecheck failure for a reason other than a missing `<Self>()`
+idiom is a NEW architectural finding with its own SDD, not #326 fix
+scope, and the coordinator does NOT improvise the provider API shape.
+So it is filed here, separately.
+
+The shape question (do NOT decide without an SDD + Gurdas framing): a
+heterogeneous variadic / tuple-typed provider that carries N precise
+identities (purist; ripple across client-sdk / effect-durable-operators
+/ flamecast) vs. a coarse aggregate type localized to that one provider
+seam while every table stays precise everywhere else (smaller blast
+radius). Architect-gated; SDD-first; no production code, no call-site
+forcing cast.
+
+Gating relationship: #326 (TFIND-005 mechanical idiom migration) is
+verified flip-READY independently, but its flip/merge is gated on
+TFIND-044's disposition only because flamecast cannot be left red in CI.
+The keystone cascade (TFIND-007-step2 + TFIND-029 / #328) is therefore
+now gated on TFIND-044's SDD + decision, not on a coordinator A/B.
+
+Next action: scope a dedicated SDD for the `DurableTableProvider`
+heterogeneous-identity shape (relate effect-durable-operators
+`react.ts`, client-sdk `firegrid.ts:237`, flamecast
+`client/main.tsx:360`); coordinator reviews framing → Gurdas signoff →
+implement → unblocks #326 flip → keystone cascade.
