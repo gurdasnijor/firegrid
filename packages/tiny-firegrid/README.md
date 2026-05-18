@@ -39,3 +39,7 @@ drive examples through public boundaries: `Stream`, `DurableTable` collection
 facades, `Workflow.make`, `WorkflowEngine`, runtime agent-event-pipeline
 contracts, and host-sdk control-plane contracts. A transition that has to be
 called directly is treated as production-internal machinery, not a model API.
+
+See `FINDINGS.md` for the running tracker of architectural/API gaps surfaced
+while keeping the toy model aligned with production boundaries. Sidecar agents
+should update the stable `TFIND-*` status lines as they address findings.

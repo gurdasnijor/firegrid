@@ -21,6 +21,7 @@
     "@effect/ai": "^0.35.0",
     "@effect/platform": "^0.96.1",
     "@effect/workflow": "0.18.1",
+    "@firegrid/host-sdk": "workspace:*",
     "@firegrid/protocol": "workspace:*",
     "@firegrid/runtime": "workspace:*",
     "effect": "^3.21.2",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@durable-streams/server": "^0.3.1",
+    "@firegrid/client-sdk": "workspace:*",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   }

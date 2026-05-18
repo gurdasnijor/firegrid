@@ -148,6 +148,7 @@ export const startRuntime = (
 export const RuntimeStartCapabilityLive = Layer.effect(
   RuntimeStartCapability,
   Effect.gen(function* () {
+    const captured = yield* Effect.context<never>()
     const contextRead = yield* RuntimeContextRead
     const hostSession = yield* CurrentHostSession
     const registry = yield* RuntimeContextEngineRegistry
@@ -160,7 +161,9 @@ export const RuntimeStartCapabilityLive = Layer.effect(
             hostSession,
             options.contextId,
           )
-          return yield* claimAndRunRuntimeContextWorkflow(context, registry, agentToolHost)
+          return yield* claimAndRunRuntimeContextWorkflow(context, registry, agentToolHost).pipe(
+            Effect.provide(captured),
+          )
         }),
     })
   }),
