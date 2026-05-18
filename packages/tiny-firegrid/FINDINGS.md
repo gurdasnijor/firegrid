@@ -86,7 +86,7 @@ TFIND-012/015 cat-4-wrapping-a-cat-1/2 inversions).
 | TFIND-041 | resolved (#336 — decision B + by-decision doc-comment landed) | runtime / agent-event contract | `ToolUse` event lifecycle is under-discriminated (execution authority via session-mode, not event). | cat-1 (rubric anchor — real architectural shape question; resolution = right-sized by-decision doc-comment, zero behavior change) |
 | TFIND-042 | resolved (#337) | scenarios / test infra | scenario-firegrid CLI `--help` flakes under high local turbo contention. | cat-4 (test-infra/tooling artifact — cold-start latency; test-infra-only fix, NO production code) |
 | TFIND-043 | open (low priority — test-infra flake, TFIND-042-class) | runtime / test infra | `DurableStreamsWorkflowEngine` VALIDATION.5 flakes under 17-way local turbo contention. | cat-4 (test-infra/tooling artifact — load-contention flake; CI-arbiter, correctly NOT dispatched to a production sidecar) |
-| TFIND-044 | QUEUED-FOR-ARCHITECT (own SDD needed; was TFIND-005 "fork (2)"; excised per the TFIND-005 halt rule) | client-sdk / effect-durable-operators provider | `DurableTableProvider`'s single `ROut` generic cannot carry N heterogeneous precise `DurableTable` `<Self>` identities (`firegridRuntimeTableTags`; flamecast `client/main.tsx:360` TS2322) — a latent precision leak the TFIND-005 `any` was hiding. | cat-2 (real boundary/wrong-shape — a real flamecast consumer hits it; the provider abstraction can't express the precise heterogeneous identity set; needs its own SDD, architect-gated) |
+| TFIND-044 | QUEUED-FOR-ARCHITECT (framing = AMENDMENT to existing `SDD_DURABLE_TABLE_REACT_LIVE_QUERY.md` §0, NOT a new SDD; was TFIND-005 "fork (2)") | client-sdk / effect-durable-operators provider | `DurableTableProvider`'s single `ROut` generic cannot carry N heterogeneous precise `DurableTable` `<Self>` identities (`firegridRuntimeTableTags`; flamecast `client/main.tsx:360` TS2322) — a latent precision leak the TFIND-005 `any` was hiding. The provider API/usage WAS SDD'd (REACT_LIVE_QUERY); its generic *type shape* was not. | cat-2 (real boundary/wrong-shape — a real flamecast consumer hits it; the provider abstraction can't express the precise heterogeneous identity set; architect-gated; framing = §0 amendment to the existing provider SDD) |
 | TFIND-045 | QUEUED-FOR-ARCHITECT (own SDD; halt-rule finding surfaced by #326 verify; co-gates #326 flip with TFIND-044) | host-sdk / control-request-reconciler | `RuntimeControlRequestReconcilerEnvironment` (`control-request-reconciler.ts:42-46`) omits `RuntimeOutputTable` + `HostRuntimeContextExecutionEnv` that `reconcileStartRequest:211` transitively requires via `startRuntime()`→`RuntimeContextEngineRegistry` — a genuine missing-dependency the TFIND-005 `any` was masking (Crux-B false-equivalence). | cat-2 (real production correctness — declared Effect env alias incomplete; fails when ambient doesn't supply it, TFIND-028 class; controlled experiment proved NOT branch scope-creep; relates TFIND-029 env-enumeration family, distinct mechanism from TFIND-044) |
 | TFIND-046 | open (low priority — client-sdk ergonomic completeness; annotated in #341 MIGRATION_NOTES) | client-sdk / durable tables | client SDK exposes `FiregridRuntimeTables.ControlPlane` but not the `runtimeControlPlaneStreamUrl` builder needed to instantiate its layer, forcing consumer-shaped code to import the URL helper from `@firegrid/protocol/launch`. | cat-1 (real consumer gap — a client-side live control-plane query, the Flamecast `useDurableTable` pattern, must reach into protocol for the stream URL; low severity but consumer-facing; fix = client-sdk re-export/fold. NOT toy-test-cleanness: a real non-Firegrid consumer hits the identical import) |
 | TFIND-047 | open (filed 2026-05-18 by Gurdas; framing-gated, distinct from TFIND-040) | client-sdk / snapshot observation typing | `RuntimeContextSnapshot["agentOutputs"]` carries weaker typing than runtime-side `RuntimeAgentOutputObservation`: the Codex test needs `asRecord` defensive casts to read `event.part.delta` / `event.part.name` from snapshot rows, while the same fields are properly typed when consumed from `RuntimeOutputTable.events.rows()` directly. | cat-2 (real client-SDK type-precision boundary — the snapshot path loses observation type precision the runtime side has, forcing consumer casts; distinct from TFIND-040 subscription ergonomics; relates TFIND-030/035 SSOT but a deeper `.part.*`/row-shape precision gap not closed by #329) |
@@ -1465,7 +1465,7 @@ lane. Not gating any workstream.
 
 ### TFIND-044: DurableTableProvider cannot carry N heterogeneous precise DurableTable identities
 
-status: QUEUED-FOR-ARCHITECT (own SDD needed; was TFIND-005 "fork (2)"; excised 2026-05-18 per the TFIND-005 halt rule)
+status: QUEUED-FOR-ARCHITECT (framing = AMENDMENT to existing `SDD_DURABLE_TABLE_REACT_LIVE_QUERY.md`, NOT a new SDD; was TFIND-005 "fork (2)"; excised 2026-05-18 per the TFIND-005 halt rule)
 
 Triage: **cat-2** (real production boundary / wrong shape). A real
 flamecast consumer hits it: the `DurableTableProvider<ROut,E>` React
@@ -1498,11 +1498,23 @@ TFIND-044's disposition only because flamecast cannot be left red in CI.
 The keystone cascade (TFIND-007-step2 + TFIND-029 / #328) is therefore
 now gated on TFIND-044's SDD + decision, not on a coordinator A/B.
 
-Next action: scope a dedicated SDD for the `DurableTableProvider`
-heterogeneous-identity shape (relate effect-durable-operators
-`react.ts`, client-sdk `firegrid.ts:237`, flamecast
-`client/main.tsx:360`); coordinator reviews framing → Gurdas signoff →
-implement → unblocks #326 flip → keystone cascade.
+Note (2026-05-18): the `DurableTableProvider` API/usage WAS already
+SDD'd — `docs/proposals/SDD_DURABLE_TABLE_REACT_LIVE_QUERY.md` (props
+`layer`+`tables=[...]`, lifecycle, `useDurableTable`, boundaries; even
+shows the heterogeneous `tables=[ControlPlane, Output]` case). What that
+SDD never specified is the provider's **generic type shape** (`<ROut,E>`)
+— it predates the curry, when identities were `any`. TFIND-044 is that
+unspecified type-level decision, surfaced by the TFIND-005 curry. So it
+is **NOT a new standalone SDD** (would fragment the provider design):
+it is an **amendment to `SDD_DURABLE_TABLE_REACT_LIVE_QUERY.md`** adding
+a §0 generic-identity type-shape decision.
+
+Next action: `155` amends `docs/proposals/SDD_DURABLE_TABLE_REACT_LIVE_QUERY.md`
+with the §0 A/B generic-identity decision (A heterogeneous variadic vs B
+coarse-aggregate localized to the one provider seam), citing flamecast
+`client/main.tsx:360` TS2322, effect-durable-operators `react.ts`,
+client-sdk `firegrid.ts:237`; coordinator reviews framing → Gurdas
+signoff → implement → unblocks #326 flip → keystone cascade.
 
 ### TFIND-045: RuntimeControlRequestReconciler environment alias omits transitively-required tags
 
