@@ -10,11 +10,11 @@ import {
   type DurableWaitRowUpsert,
 } from "@firegrid/runtime/durable-tools"
 import {
-  CurrentHostSession,
-  RuntimeControlPlaneTable,
-  RuntimeOutputTable,
+  type CurrentHostSession,
+  type RuntimeControlPlaneTable,
+  type RuntimeOutputTable,
 } from "@firegrid/protocol/launch"
-import { RuntimeHostConfig } from "./config.ts"
+import { type RuntimeHostConfig } from "./config.ts"
 import {
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"

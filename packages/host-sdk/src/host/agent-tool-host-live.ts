@@ -7,7 +7,7 @@ import {
   type HostSessionRow,
 } from "@firegrid/protocol/launch"
 import type { RuntimeIngressRequest } from "@firegrid/protocol/runtime-ingress"
-import { Context, Effect, Layer } from "effect"
+import { type Context, Effect, Layer } from "effect"
 import {
   AgentToolHost,
   type AgentToolHostService,
