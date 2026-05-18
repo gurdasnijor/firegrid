@@ -141,10 +141,17 @@ const TaggedSourceWaitStreamsLive = Layer.mergeAll(
   ),
 )
 
-const buildLayer = (
+// TFIND-031 Cat A: with the curried `DurableTable`, these fully-closed
+// test layers carry their real precise type. The prior
+// `as Layer<never, unknown, never>` masks only typechecked while
+// `DurableTable.layer` leaked `any`; they hid that the composition
+// genuinely satisfies every requirement (RIn = never) and merely
+// re-exposes the durable substrate tags it materialises (ROut ≠ never).
+// Let the real type flow instead of forcing it.
+const buildLayer = <WIn>(
   streams: Streams,
-  workflowLayer: Layer.Layer<never, unknown, unknown>,
-): Layer.Layer<never, unknown, never> =>
+  workflowLayer: Layer.Layer<never, unknown, WIn>,
+) =>
   workflowLayer.pipe(
     Layer.provideMerge(
       DurableToolsWaitForLive({ streamUrl: streams.waitForUrl }),
@@ -152,19 +159,19 @@ const buildLayer = (
     Layer.provideMerge(TestSourceWaitStreamsLive),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflowUrl,
-    }) as Layer.Layer<never, unknown, unknown>),
+    })),
     Layer.provideMerge(TestSourceTable.layer({
       streamOptions: {
         url: streams.sourceUrl,
         contentType: "application/json",
       },
     })),
-  ) as Layer.Layer<never, unknown, never>
+  )
 
-const buildTaggedLayer = (
+const buildTaggedLayer = <WIn>(
   streams: Streams,
-  workflowLayer: Layer.Layer<never, unknown, unknown>,
-): Layer.Layer<never, unknown, never> =>
+  workflowLayer: Layer.Layer<never, unknown, WIn>,
+) =>
   workflowLayer.pipe(
     Layer.provideMerge(
       DurableToolsWaitForLive({ streamUrl: streams.waitForUrl }),
@@ -172,17 +179,17 @@ const buildTaggedLayer = (
     Layer.provideMerge(TaggedSourceWaitStreamsLive),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflowUrl,
-    }) as Layer.Layer<never, unknown, unknown>),
+    })),
     Layer.provideMerge(TaggedResultTable.layer({
       streamOptions: {
         url: streams.sourceUrl,
         contentType: "application/json",
       },
     })),
-  ) as Layer.Layer<never, unknown, never>
+  )
 
-const runWith = <A, E>(
-  layer: Layer.Layer<never, unknown, never>,
+const runWith = <A, E, ROut>(
+  layer: Layer.Layer<ROut, unknown, never>,
   effect: Effect.Effect<A, E, unknown>,
 ): Promise<A> =>
   Effect.runPromise(

@@ -2,9 +2,10 @@ import { eq } from "@tanstack/db"
 import { createElement } from "react"
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import { DurableTable } from "../src/index.ts"
+import { DurableTable, DurableTableError } from "../src/index.ts"
 import {
   DurableTableProvider,
+  type DurableTableProviderProps,
   useDurableLiveQuery,
   useDurableTable,
   useDurableTableProviderStatus,
@@ -39,7 +40,14 @@ function Executions() {
 
 describe("DurableTable React surface", () => {
   it("effect-durable-operators.REACT.1 effect-durable-operators.REACT.3 effect-durable-operators.REACT.4 exposes typed subpath hooks", () => {
-    const app = createElement(
+    // TFIND-031 Cat C: with the curried `DurableTable`, `ReactWorkflowTable`
+    // is a precise self-typed tag, so React's `createElement` overload
+    // resolution can no longer infer the provider's `ROut`/`E` generics and
+    // falls back to `Layer<unknown, unknown, never>`. Pin the props type
+    // explicitly — the provider itself is generic and correct.
+    const app = createElement<
+      DurableTableProviderProps<ReactWorkflowTable, DurableTableError>
+    >(
       DurableTableProvider,
       {
         fallback: null,
