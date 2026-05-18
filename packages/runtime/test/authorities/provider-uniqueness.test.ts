@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
   DurableWaitCompletionRowLookup,
-  DurableWaitCompletionRows,
   DurableWaitCompletionRowUpsert,
   DurableWaitRows,
   DurableWaitRowLookup,
@@ -83,11 +82,6 @@ const providerEntries = [
     provider: DurableWaitStoreLive,
     backingTable: "DurableToolsTable.completions",
   },
-  {
-    capability: DurableWaitCompletionRows,
-    provider: DurableWaitStoreLive,
-    backingTable: "DurableToolsTable.completions",
-  },
 ] as const satisfies readonly TestProviderEntry[]
 
 const canonicalCapabilityTags = [
@@ -102,7 +96,6 @@ const canonicalCapabilityTags = [
   DurableWaitRows,
   DurableWaitCompletionRowLookup,
   DurableWaitCompletionRowUpsert,
-  DurableWaitCompletionRows,
 ] as const
 
 describe("runtime durable capability provider uniqueness", () => {

@@ -61,12 +61,20 @@ const WaitRowSchema = Schema.Struct({
 export type WaitRow = Schema.Schema.Type<typeof WaitRowSchema>
 
 /**
- * Authoritative record of resolution.
+ * Match/timeout arbitration record for live operation.
  *
- * On crash recovery the router walks `completions` and reconciles each one
- * against the workflow-engine deferred via an idempotent `deferredDone`.
- * `matchedRowPayload` is the raw row from the source collection; decoding
- * through the call-site Schema happens in `wait_for`, not here.
+ * `completeMatch` (match side) and `writeTimeoutCompletion` (timeout side)
+ * read this table to enforce that exactly one of match/timeout writes a
+ * completion; `matchedRowPayload` is the raw row from the source collection
+ * (call-site Schema decoding happens in `wait_for`, not here). The
+ * crash-recovery reconciler that previously also walked this table was
+ * deleted — idempotent `deferredDone` + durable replay sources made it
+ * redundant.
+ *
+ * This table is going away under Shape C: once match/timeout arbitration
+ * moves onto `DurableDeferred.raceAll`, nothing reads `completions` and the
+ * whole table is deleted. Do not add fields or lifecycle here — see
+ * docs/research/durable-tools-vs-workflow-engine-convergence.md.
  *
  * firegrid-durable-tools.WAIT_FOR.7
  * firegrid-durable-tools.SUBSCRIPTION.3

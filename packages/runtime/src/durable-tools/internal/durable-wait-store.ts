@@ -65,11 +65,6 @@ const waitRowsFrom = (
 ): Stream.Stream<WaitRow, unknown> =>
   table.waits.rows()
 
-const waitCompletionRowsFrom = (
-  table: DurableToolsTable["Type"],
-): Stream.Stream<WaitCompletionRow, unknown> =>
-  table.completions.rows()
-
 export class DurableWaitRowLookup extends Context.Tag(
   "@firegrid/runtime/DurableWaitRowLookup",
 )<DurableWaitRowLookup, DurableWaitRowLookupService>() {}
@@ -89,10 +84,6 @@ export class DurableWaitCompletionRowLookup extends Context.Tag(
 export class DurableWaitCompletionRowUpsert extends Context.Tag(
   "@firegrid/runtime/DurableWaitCompletionRowUpsert",
 )<DurableWaitCompletionRowUpsert, DurableWaitCompletionRowUpsertService>() {}
-
-export class DurableWaitCompletionRows extends Context.Tag(
-  "@firegrid/runtime/DurableWaitCompletionRows",
-)<DurableWaitCompletionRows, Stream.Stream<WaitCompletionRow, unknown>>() {}
 
 export const DurableWaitStoreLive = Layer.mergeAll(
   Layer.effect(
@@ -122,9 +113,5 @@ export const DurableWaitStoreLive = Layer.mergeAll(
     Effect.map(DurableToolsTable, table => ({
       upsert: row => upsertCompletionTo(table, row),
     })),
-  ),
-  Layer.effect(
-    DurableWaitCompletionRows,
-    Effect.map(DurableToolsTable, waitCompletionRowsFrom),
   ),
 )

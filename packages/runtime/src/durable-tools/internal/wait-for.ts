@@ -149,6 +149,23 @@ const upsertActiveWait = (
     return row
   })
 
+/**
+ * Resolve the timeout side.
+ *
+ * Returns the matched-row payload (`Option.some`) when a `match` completion
+ * already exists — the timeout side must then resolve as **Match**, never
+ * Timeout. Returns `Option.none()` when the wait genuinely timed out (a
+ * timeout completion is written and the wait flipped to `timed_out`).
+ *
+ * firegrid-durable-tools.TIMEOUT.3 — match preempts timeout.
+ * firegrid-durable-tools.TIMEOUT.4 — a late-firing timeout is a no-op: when
+ *   a match completion is already durably recorded (including the
+ *   completion-written-but-deferredDone-not-yet-fired crash gap that
+ *   firegrid-durable-tools.WAIT_FOR.7 preserves), the timeout cannot win
+ *   the race. The stored `matchedRowPayload` is authoritative, so the
+ *   timeout side resolves directly to that match rather than waiting on the
+ *   match deferred to be re-fired by the live-replay path.
+ */
 const writeTimeoutCompletion = (
   waitName: string,
   waitKey: { readonly executionId: string; readonly name: string },
@@ -156,25 +173,12 @@ const writeTimeoutCompletion = (
   waitUpsert: DurableWaitRowUpsert["Type"],
   completionLookup: DurableWaitCompletionRowLookup["Type"],
   completionUpsert: DurableWaitCompletionRowUpsert["Type"],
-) =>
+): Effect.Effect<Option.Option<unknown>, WaitForError> =>
   Effect.gen(function*() {
-    const existing = yield* Effect.mapError(
-      waitLookup.find(waitKey),
-      (cause) =>
-        waitForError({
-          op: "wait-for/timeout",
-          waitName,
-          message: "failed reading wait row during timeout",
-          cause,
-        }),
-    )
-    if (Option.isNone(existing)) return
-    const current = existing.value
-    if (current.status !== "active") return
-    // firegrid-durable-tools.TIMEOUT.3 — if a match completion was already
-    // written for this wait, skip. The router's deferredDone for the match
-    // will resolve the workflow; we should not overwrite the completion
-    // record with a stale timeout.
+    // Check for an existing completion FIRST, before any wait-status gate.
+    // A `match` completion preempts the timeout regardless of the wait
+    // row's status (covers the WAIT_FOR.7 crash gap where the completion
+    // row is written but the status flip / deferredDone never landed).
     const existingCompletion = yield* Effect.mapError(
       completionLookup.find(waitKey),
       (cause) =>
@@ -185,12 +189,24 @@ const writeTimeoutCompletion = (
           cause,
         }),
     )
-    if (
-      Option.isSome(existingCompletion) &&
-      existingCompletion.value.outcome === "match"
-    ) {
-      return
+    if (Option.isSome(existingCompletion)) {
+      return existingCompletion.value.outcome === "match"
+        ? Option.some(existingCompletion.value.matchedRowPayload)
+        : Option.none()
     }
+    const existing = yield* Effect.mapError(
+      waitLookup.find(waitKey),
+      (cause) =>
+        waitForError({
+          op: "wait-for/timeout",
+          waitName,
+          message: "failed reading wait row during timeout",
+          cause,
+        }),
+    )
+    if (Option.isNone(existing)) return Option.none()
+    const current = existing.value
+    if (current.status !== "active") return Option.none()
     const nowMs = yield* Clock.currentTimeMillis
     yield* Effect.mapError(
       completionUpsert.upsert({
@@ -216,6 +232,7 @@ const writeTimeoutCompletion = (
           cause,
         }),
     )
+    return Option.none()
   })
 
 const decodeMatchPayload = <A>(
@@ -387,7 +404,14 @@ const matchOrTimeoutFlow = <A>(
           Effect.orDie,
         ),
       ),
-      Effect.as<RawOutcome>({ _tag: "Timeout" }),
+      // firegrid-durable-tools.TIMEOUT.3 / .4 — if a match completion is
+      // already recorded, the timeout side resolves as Match using the
+      // authoritative stored payload; it must never win the race as
+      // Timeout once a match exists.
+      Effect.map((preempted): RawOutcome =>
+        Option.isSome(preempted)
+          ? { _tag: "Match", raw: preempted.value }
+          : { _tag: "Timeout" }),
     )
     const raw: RawOutcome = yield* DurableDeferred.raceAll({
       name: raceDeferredNameFor(options.name),

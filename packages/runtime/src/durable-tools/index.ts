@@ -12,7 +12,6 @@ export {
 export { WaitFor, type WaitForOptions } from "./internal/wait-for.ts"
 export {
   DurableWaitCompletionRowLookup,
-  DurableWaitCompletionRows,
   DurableWaitCompletionRowUpsert,
   DurableWaitRows,
   DurableWaitRowLookup,
