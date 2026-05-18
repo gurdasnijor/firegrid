@@ -45,7 +45,7 @@ const layer = (
       )
       return Context.make(WorkflowEngineTable, table).pipe(
         Context.add(WorkflowEngine.WorkflowEngine, engine),
-      ) as Context.Context<WorkflowEngine.WorkflowEngine | WorkflowEngineTable>
+      )
     }),
   ).pipe(
     Layer.provide(WorkflowEngineTable.layer(workflowEngineTableLayerOptions(options))),

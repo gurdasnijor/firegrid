@@ -2,7 +2,7 @@ import { eq } from "@tanstack/db"
 import { createElement } from "react"
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import { DurableTable, DurableTableError } from "../src/index.ts"
+import { DurableTable, type DurableTableError } from "../src/index.ts"
 import {
   DurableTableProvider,
   type DurableTableProviderProps,

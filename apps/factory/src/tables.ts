@@ -145,7 +145,7 @@ const darkFactorySchemas = {
 export class DarkFactoryTable extends DurableTable(
   "darkFactory",
   darkFactorySchemas,
-) {}
+)<DarkFactoryTable>() {}
 
 export type DarkFactoryTableService = DurableTableService<
   typeof darkFactorySchemas
