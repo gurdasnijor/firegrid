@@ -7,7 +7,7 @@ import { Console, Config, Data, Duration, Effect, Layer, Option } from "effect"
 // eslint-disable-next-line no-restricted-imports
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { mkdirSync } from "node:fs"
-import { writeFile } from "node:fs/promises"
+import { stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type {
@@ -86,14 +86,28 @@ interface RunOptions {
   readonly console: boolean
 }
 
-const writeLatest = (runId: string, simulationId: string, runDir: string) =>
-  Effect.promise(() =>
-    writeFile(
+// Only update the latest-pointer if the run produced at least one span.
+// Writing eagerly at run start meant an interrupted / fast-failing run
+// would clobber `latest.json` with a pointer to an empty runDir, and the
+// next `simulate show` (no arg) would TraceFileMissing on the stale
+// pointer. Now this runs as a finalizer after the simulation block — if
+// the trace file is empty or missing, the prior valid pointer is
+// preserved.
+const maybeWriteLatest = (
+  runId: string,
+  simulationId: string,
+  runDir: string,
+  tracePath: string,
+) =>
+  Effect.promise(async () => {
+    const size = await stat(tracePath).then(s => s.size, () => 0)
+    if (size === 0) return
+    await writeFile(
       latestPath,
       JSON.stringify({ runId, simulationId, runDir }, null, 2) + "\n",
       "utf8",
-    ),
-  )
+    )
+  })
 
 export const runSimulation = (
   simulation: TinyFiregridSimulation<unknown>,
@@ -106,19 +120,16 @@ export const runSimulation = (
     const runDir = path.join(runsRoot, runId)
     mkdirSync(runDir, { recursive: true })
 
+    const tracePath = path.join(runDir, "trace.jsonl")
     const destination: TelemetryDestination = options.console
       ? { _tag: "console" }
-      : { _tag: "file", filePath: path.join(runDir, "trace.jsonl") }
+      : { _tag: "file", filePath: tracePath }
 
     const telemetry = TelemetryLive(simulation, runId, {
       namespace,
       durableStreamsBaseUrl: baseUrl,
       destination,
     })
-
-    // Latest-pointer is per-process disk state; not load-bearing for any
-    // downstream tool, just a convenience for `simulate show` with no arg.
-    yield* writeLatest(runId, simulation.id, runDir).pipe(Effect.ignore)
 
     yield* Console.log(`run: ${runId}`)
     yield* Console.log(`dir: ${runDir}`)
@@ -176,5 +187,13 @@ export const runSimulation = (
         },
       }),
       Effect.provide(telemetry),
+      // Conditional finalizer — runs on success, fail, and interrupt.
+      // Only writes latest.json if at least one span actually flushed to
+      // the trace file.
+      Effect.ensuring(
+        maybeWriteLatest(runId, simulation.id, runDir, tracePath).pipe(
+          Effect.ignore,
+        ),
+      ),
     )
   }).pipe(Effect.scoped)

@@ -75,11 +75,24 @@ const formatLine = (s: SpanRecord, depth: number): string => {
 }
 
 const buildTree = (spans: ReadonlyArray<SpanRecord>): string => {
+  // Mid-run / interrupted-run robustness: OTel exports a span only on
+  // `end`, so a sim in flight will have thousands of completed
+  // descendants whose parents (`firegrid.simulation.run`,
+  // `firegrid.side.*`, workflow scopes) haven't ended yet and aren't on
+  // disk. Treat any span whose `parentSpanId` is not present in this
+  // file as a *visual* root so the tree still builds — otherwise the
+  // user gets a blank tree against a 3000-span file and thinks the
+  // viewer is broken.
+  const spanIds = new Set(spans.map(s => s.spanId))
   const byParent = new Map<string | undefined, Array<SpanRecord>>()
   for (const span of spans) {
-    const arr = byParent.get(span.parentSpanId) ?? []
+    const parentKey =
+      span.parentSpanId !== undefined && spanIds.has(span.parentSpanId)
+        ? span.parentSpanId
+        : undefined
+    const arr = byParent.get(parentKey) ?? []
     arr.push(span)
-    byParent.set(span.parentSpanId, arr)
+    byParent.set(parentKey, arr)
   }
   for (const arr of byParent.values()) {
     arr.sort((a, b) => startNs(a) - startNs(b))
@@ -139,11 +152,15 @@ const resolveRunDir = (runId: string | undefined) =>
         () => undefined,
       ),
     )
+    // Follow latest.json only if its target actually has a trace.jsonl —
+    // an interrupted/failed run can leave a populated latest pointing at
+    // an empty runDir, and following that would TraceFileMissing for the
+    // user. Fall through to the directory walk in that case.
     if (latest?.runDir !== undefined) {
-      const exists = yield* Effect.promise(() =>
-        stat(latest.runDir!).then(() => true, () => false),
+      const hasTrace = yield* Effect.promise(() =>
+        stat(path.join(latest.runDir!, "trace.jsonl")).then(() => true, () => false),
       )
-      if (exists) return latest.runDir
+      if (hasTrace) return latest.runDir
     }
     // Most-recent run that actually has a `trace.jsonl`. Skip legacy
     // folders (pre-#426 runner) without erroring — they're archival.
