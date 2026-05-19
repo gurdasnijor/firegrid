@@ -3,38 +3,29 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./src/types.ts",
+  "types": "./src/types.ts",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./src/types.ts",
+      "default": "./src/types.ts"
     }
   },
   "scripts": {
     "build": "tsc",
     "check": "pnpm run typecheck",
-    "demo:s6": "tsx src/bin/demo-s6.ts",
-    "simulate": "tsx src/bin/simulate.ts",
-    "simulate:attach": "tsx src/bin/simulate.ts attach",
-    "simulate:duckdb": "tsx src/bin/simulate.ts duckdb",
-    "simulate:list": "tsx src/bin/simulate.ts list",
-    "simulate:query": "tsx src/bin/simulate.ts query",
-    "simulate:run": "tsx src/bin/simulate.ts run",
-    "simulate:proof": "tsx src/bin/simulate.ts proof",
-    "simulate:runs": "tsx src/bin/simulate.ts runs",
-    "simulate:show": "tsx src/bin/simulate.ts show",
-    "simulate:tail": "tsx src/bin/simulate.ts tail",
+    "simulate": "tsx src/index.ts",
+    "simulate:list": "tsx src/index.ts list",
+    "simulate:run": "tsx src/index.ts run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@effect/ai": "^0.35.0",
+    "@effect/cli": "0.75.1",
+    "@effect/opentelemetry": "0.63.0",
     "@effect/platform": "^0.96.1",
     "@effect/platform-node": "^0.106.0",
-    "@effect/workflow": "0.18.1",
     "@firegrid/host-sdk": "workspace:*",
-    "@firegrid/protocol": "workspace:*",
-    "@firegrid/runtime": "workspace:*",
+    "@opentelemetry/sdk-trace-base": "^2.7.1",
     "effect": "^3.21.2",
     "effect-durable-operators": "workspace:*"
   },

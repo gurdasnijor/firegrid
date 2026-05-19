@@ -11,7 +11,7 @@ import {
   type HostId,
   type HostSessionId,
 } from "@firegrid/protocol/launch"
-import { Clock, Effect, Layer, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import type { DurableTableHeaders } from "effect-durable-operators"
 import { RuntimeHostConfig } from "./config.ts"
 import type { RuntimeHostTopologyOptions } from "./types.ts"
@@ -32,6 +32,8 @@ import {
 } from "./per-context-runtime-output.ts"
 import {
   LocalProcessSandboxProvider,
+  localProcessSpawnEnvFromHostEnv,
+  type LocalProcessSandboxProviderOptions,
   RuntimeEnvResolverPolicy,
   SandboxStdinEmissionClaimLive,
   SandboxSupervisorCommandTable,
@@ -49,6 +51,57 @@ import {
   RuntimeContextEngineRegistryLive,
   RuntimeInputIntentDispatcherLive,
 } from "./runtime-context-engine-registry.ts"
+
+export class FiregridLocalProcess extends Context.Tag(
+  "firegrid/host-sdk/FiregridLocalProcess",
+)<FiregridLocalProcess, LocalProcessSandboxProviderOptions>() {}
+
+export const FiregridLocalProcessFromEnv = (
+  processEnv: Record<string, string | undefined>,
+): Layer.Layer<FiregridLocalProcess> =>
+  Layer.succeed(FiregridLocalProcess, localProcessSpawnEnvFromHostEnv(processEnv))
+
+export const FiregridEnvBindingsFromEnv = (
+  options: {
+    readonly processEnv: Record<string, string | undefined>
+    readonly allow: Iterable<readonly [bindingName: string, envName: string]>
+  },
+): Layer.Layer<RuntimeEnvResolverPolicy> =>
+  RuntimeEnvResolverPolicy.withPolicy({
+    authorizedBindings: options.allow,
+    lookupEnv: name => options.processEnv[name],
+  })
+
+const runtimeEnvResolverPolicyLayer = (
+  envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
+): Layer.Layer<RuntimeEnvResolverPolicy> =>
+  envPolicy ??
+  Layer.unwrapEffect(
+    Effect.map(
+      Effect.serviceOption(RuntimeEnvResolverPolicy),
+      Option.match({
+        onNone: () => RuntimeEnvResolverPolicy.denyAll,
+        onSome: policy => Layer.succeed(RuntimeEnvResolverPolicy, policy),
+      }),
+    ),
+  )
+
+const localProcessSandboxProviderLayer = (
+  options: RuntimeHostTopologyOptions,
+) =>
+  options.localProcessEnv === undefined
+    ? Layer.unwrapEffect(
+      Effect.map(
+        Effect.serviceOption(FiregridLocalProcess),
+        Option.match({
+          onNone: () => LocalProcessSandboxProvider.layer(undefined),
+          onSome: localProcessEnv => LocalProcessSandboxProvider.layer(localProcessEnv),
+        }),
+      ),
+    ).pipe(Layer.provide(NodeContext.layer))
+    : LocalProcessSandboxProvider.layer(options.localProcessEnv).pipe(
+      Layer.provide(NodeContext.layer),
+    )
 
 const RuntimeContextWorkflowSessionLive = Layer.scoped(
   RuntimeContextWorkflowSession,
@@ -143,9 +196,7 @@ const namespaceScopedLayer = (
         ...(options.headers !== undefined ? { headers: options.headers } : {}),
       },
     }),
-    LocalProcessSandboxProvider.layer(options.localProcessEnv).pipe(
-      Layer.provide(NodeContext.layer),
-    ),
+    localProcessSandboxProviderLayer(options),
   )
 
 // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
@@ -240,7 +291,7 @@ export const FiregridRuntimeHostLive = (
   // authorize specific host env vars (e.g. firegrid:run --secret-env)
   // construct a populated policy at the binary boundary and pass it here;
   // daemons that never see --secret-env stay locked down.
-  envPolicy: Layer.Layer<RuntimeEnvResolverPolicy> = RuntimeEnvResolverPolicy.denyAll,
+  envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
 ) => {
   const session = currentHostSessionLayer(options)
   const namespaceScoped = namespaceScopedLayer(options)
@@ -262,7 +313,7 @@ export const FiregridRuntimeHostLive = (
     Layer.provideMerge(RuntimeContextEngineRegistryLive),
     Layer.provideMerge(namespaceScoped),
     Layer.provideMerge(session),
-    Layer.provideMerge(envPolicy),
+    Layer.provideMerge(runtimeEnvResolverPolicyLayer(envPolicy)),
     // TFIND-048: single-owner, host-scoped late-bind channel for the
     // runtime-context MCP base URL. Present (defaulting to `None`) even
     // when the MCP listener is disabled, so the codec start path can

@@ -15,5 +15,6 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/simulations/*.ts", "src/simulations/to-be-migrated/*.ts"]
 }

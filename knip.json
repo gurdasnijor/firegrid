@@ -73,11 +73,16 @@
     "packages/tiny-firegrid": {
       "entry": [
         "src/index.ts",
-        "src/bin/simulate.ts",
-        "src/simulations/*.ts"
+        "src/simulations/*/index.ts"
       ],
       "project": [
         "src/**/*.ts"
+      ],
+      "ignoreFiles": [
+        "src/simulations/to-be-migrated/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "effect-durable-operators"
       ]
     },
     "packages/effect-durable-streams": {

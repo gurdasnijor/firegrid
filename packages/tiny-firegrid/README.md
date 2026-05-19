@@ -1,46 +1,41 @@
 # tiny-firegrid
 
-Executable toy model for Firegrid architecture reasoning.
+Private simulation runner for generating observable Firegrid host/client runs.
 
-This package is private and intentionally not a production dependency. It models
-the post-#315 system as four channels:
+Each runnable simulation lives in a folder under `src/simulations/` with a
+default export from `index.ts`:
 
-1. namespace control: contexts and runtime input intents;
-2. per-context workflow state: deferred input and workflow evidence;
-3. per-context output: agent output rows;
-4. host-process coordination: active engine registry and process-owned state.
+```ts
+import type { TinyFiregridSimulation } from "../../types.ts"
 
-The package mirrors the production package layout where that gives useful
-architectural signal:
+export default {
+  id: "my-simulation",
+  description: "short description",
+  host: env => /* configured FiregridHost layer */,
+  driver: /* Effect requiring Firegrid */,
+} satisfies TinyFiregridSimulation<unknown>
+```
 
-- `src/configurations/`: runnable or typechecked architectural configurations;
-- `src/runtime/`: runtime-facing boundaries, matching `packages/runtime/src`;
-- `src/host-sdk/`: host-sdk-facing boundaries, matching `packages/host-sdk/src`;
-- `src/effect-durable-operators/`: single-process DurableTable facade;
+The driver only receives the `Firegrid` client service. Host configuration stays
+behind the `host(env)` layer so simulations exercise the same network-separated
+client boundary as production callers.
 
-The model imports real `Effect`, `Stream`, `Layer`, `Context`,
-`@effect/workflow`, `@firegrid/runtime`, and `effect-durable-operators` types.
-It does not implement the Firegrid runtime; it makes architectural boundaries
-type-check against the same shapes the production system uses.
+## Commands
 
-`src/effect-durable-operators/DurableTable.ts` is the in-memory adapter. It
-implements the public DurableTable collection facade shape for single-process
-checks, so toy writes still go through `insertOrGet`, `upsert`, `get`, `query`,
-and `rows` instead of bespoke append helpers.
+```bash
+pnpm --filter @firegrid/tiny-firegrid simulate:list
+pnpm --filter @firegrid/tiny-firegrid simulate:run -- codex-acp-tool-calls
+```
 
-The current configuration wires the path end to end: a runtime input intent is
-written to the namespace control plane, an owner-side workflow engine completes
-the runtime-input deferred, `Workflow.make` invokes the runtime-context workflow
-body, the body sends an `AgentInputEvent` through an `AgentSessionService`, and
-sandbox stdout is projected into per-context runtime output observations.
+`simulate:run` starts an embedded Durable Streams test server unless
+`DURABLE_STREAMS_BASE_URL` is set. `FIREGRID_RUNTIME_NAMESPACE` overrides the
+default namespace.
 
-There is intentionally no `simulation/transitions` layer. Tiny-firegrid should
-drive examples through public boundaries: `Stream`, `DurableTable` collection
-facades, `Workflow.make`, `WorkflowEngine`, runtime agent-event-pipeline
-contracts, and host-sdk control-plane contracts. A transition that has to be
-called directly is treated as production-internal machinery, not a model API.
+By default, completed spans are printed to stdout with OpenTelemetry's
+`ConsoleSpanExporter`. Set `OTEL_EXPORTER_OTLP_ENDPOINT` to send traces to an
+OTLP endpoint instead.
 
-Current tiny-firegrid finding/configuration status lives in the Beads DB. Read
-it with `bv --robot-triage` or `br` using the join key `tfind:NNN`.
-`FINDINGS_TRIAGE_RUBRIC.md` remains the triage methodology for classifying
-toy-surfaced architectural/API gaps.
+Each run is emitted under one `firegrid.simulation.run` root span. The runner
+wraps the host and driver in `firegrid.side.host` and `firegrid.side.driver`
+subtrees so viewers can follow one run top-to-bottom without joining separate
+trace roots.
