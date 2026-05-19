@@ -169,6 +169,447 @@ purist choice; this is a recommendation, not a decision.
 - Resolving TFIND-045 (distinct mechanism; `docs/sdds/
   SDD_RECONCILER_ENV_ENUMERATION.md`).
 
+## §0.1 — The load-bearing question (read this first) — TFIND-050 amendment (layer-ROut erasure)
+
+> **Amendment (TFIND-050, framing — architect-gated; Gurdas decides).**
+> §0 (TFIND-044 Option B, signed off) fixed the **`tables`** side of
+> the provider seam (→ the named coarse `AnyDurableTableTag`). It left
+> the **`layer` prop's ROut erasure** under-specified: the
+> implementation chose `Layer.Layer<unknown, E, never>`. That scalar was
+> never separately decided, and it is wrong — but so is the obvious
+> alternative. Escalated from a within-coordinator-authority "2-line
+> correctness fix" to architectural framing because the alternative does
+> not fix the defect, it **relocates** it (§Evidence). No production
+> code is in scope until this §0.1 is decided.
+
+**How must the `DurableTableProvider` seam type the `layer` prop's ROut
+so that BOTH consumer paths typecheck without relocating breakage — the
+flamecast JSX-inference path AND the explicit-props / by-name path —
+given that Effect's `Layer` ROut behaves *contravariantly* for
+value-assignment at this prop?**
+
+The provider runtime is ROut-agnostic (it builds the layer and resolves
+each tag by string key via `Context.unsafeGet` into
+`ReadonlyMap<string, unknown>` — §0's "runtime is already heterogeneous"
+argument). So this is purely a *boundary-acceptance type* decision, not
+a runtime one. It cannot be answered by a code patch: every scalar
+choice has been shown to break one path or the other, so the resolution
+is a design decision over the public provider type.
+
+### The contravariance fact (why no scalar works)
+
+Empirically (curried `#326` shape): `Layer<X, E, never>` is assignable
+to `Layer<Y, E, never>` **iff `Y <: X`** — the ROut position behaves
+contravariantly for value-assignment at this prop. Consequence: a fixed
+scalar `P` in `layer: Layer<P, E, never>` accepts *all* `Layer<X, …>`
+only if `P <: X` for every `X` → `P = never`. `unknown` requires
+`unknown <: X`, which fails for every concrete table identity, so the
+explicit-props / by-name path rejects every real layer.
+
+### §Evidence — falsification (deterministic, cache-cleared, single-variable isolation)
+
+The only variable changed was `react.ts` `layer` ROut; `.tsbuildinfo`
+cleared; recursive typecheck across all workspaces.
+
+- **(a) `unknown`** (current `#348`/main): explicit-props / by-name path
+  **RED**. Under `#326`'s curried world, the `react-types.test.ts`
+  explicit-pin variant →
+  `TS2769`: `Layer<ReactWorkflowTable, DurableTableError, never>` is not
+  assignable to `Layer<unknown, DurableTableError, never>` ("`unknown`
+  is not assignable to `ReactWorkflowTable`"). flamecast's JSX path
+  passes *only* via bidirectional generic inference; the by-name public
+  surface is broken.
+- **(b) `never`**: explicit-props path **GREEN**, but **relocates**
+  breakage to a *second* by-name consumer, `apps/factory` (it imports
+  `DurableTableHeaders` from `effect-durable-operators` root; the
+  exported provider-type change ripples through the package type-graph):
+  `apps/factory/src/bin/live-smoke.ts:160` `TS2769`;
+  `apps/factory/test/factory.test.ts:104` `TS2379`
+  (`Effect<…, unknown>` not assignable to `Effect<…, never>`,
+  `exactOptionalPropertyTypes`); plus one now-unused
+  `eslint-disable`. A pristine-`unknown` isolation run showed
+  `apps/factory` green, proving `react.ts` `unknown↔never` is the sole
+  determinant. Additionally, off pre-curry `origin/main`, `never`
+  cannot be lint-green: `@typescript-eslint/no-unsafe-assignment`
+  tolerates `any→unknown` but not `any→never`, and pre-curry
+  `ReactWorkflowTable.layer()` is `Layer<any, …>` (the TFIND-005 leak,
+  cured only by `#326`).
+
+`never` is therefore **not a fix — it is a breakage relocation**. No
+single scalar reconciles both paths; the shape itself must change.
+
+### Option space (tradeoffs; coordinator recommendation — Gurdas decides)
+
+- **(a) `unknown`** — REJECTED by Evidence (breaks the by-name /
+  explicit-props public surface).
+- **(b) `never`** — REJECTED by Evidence (relocates breakage to
+  `apps/factory`; not lint-green off pre-curry main). Not a fix.
+- **(c1) Decouple ROut — thread the layer's ROut as an inference-only
+  generic, separate from `tables`.** TFIND-044's root defect was
+  `layer` and `tables` *sharing one `ROut`*. §0 Option B fixed `tables`
+  (→ `AnyDurableTableTag`) but *also* collapsed `layer`'s ROut to a
+  scalar, which was unnecessary. If `layer: Layer.Layer<ROut, E,
+  never>` with `ROut` a free generic **inferred per call site**, and
+  `tables: ReadonlyArray<AnyDurableTableTag>` stays decoupled, there is
+  no contravariance trap (TS infers `ROut` = the layer's actual
+  provided set at each call; it is never assigned to a fixed supertype)
+  and no fixed scalar to ripple through the package type-graph.
+  flamecast infers `ROut` from `FiregridBrowserTablesLive`;
+  explicit-props consumers infer or specify. *Tradeoff:* re-introduces
+  a generic parameter to public `DurableTableProviderProps` (the param
+  `#348` removed) — but the original bug was the *shared* ROut, not
+  ROut's existence; decoupling is the precise root-cause fix. *Cannot*
+  reopen the flamecast `TS2322`, because `tables` is no longer
+  `Context.Tag<ROut, any>[]`. Requires impl-time validation (both
+  paths + `apps/factory` + lint).
+- **(c2) Named/branded coarse `Layer` aggregate** — symmetry with
+  `AnyDurableTableTag`: a single documented `AnyDurableTableLayer<E> =
+  Layer.Layer<any, E, never>`, carrying the *same* signed-off
+  justification (one explicit, named, localized coarsening at a seam
+  that is already runtime-erased — categorically distinct from the
+  TFIND-005 diffuse/implicit/unnamed leak). `any` ROut is permissive
+  in both directions, so it should not relocate breakage the way
+  `never` did — but that must be impl-time validated, especially the
+  `apps/factory` package-graph path.
+- **(c3) Per-path / overloaded prop typing** — REJECTED as impractical:
+  a React component cannot ergonomically vary its props type by call
+  path; high complexity, no payoff over (c1)/(c2).
+
+**Recommendation: lean (c1).** It is the *precise* correction of
+TFIND-044's actual root cause (shared ROut), variance-natural (no
+contravariance trap, no scalar, no package-graph scalar ripple), keeps
+`tables` exactly on the signed-off `AnyDurableTableTag`, and reintroduces
+no `any`. Fallback **(c2)** if Gurdas prefers a non-generic public
+`DurableTableProviderProps` and accepts a localized named `any` by
+symmetry with the tables-side decision. (a)/(b) are rejected by
+Evidence. Every (c) option requires post-signoff impl-time validation on
+the exact gate that produced this Evidence (recursive typecheck across
+both consumer paths + `apps/factory` + full lint).
+
+### Non-goals (TFIND-050)
+
+- No production code before §0.1 signoff; no paper, no forcing cast, no
+  scalar chosen to silence one path at another's expense.
+- No change to provider **runtime** (per-key/`unknown` acquisition is
+  correct).
+- Does not reopen §0's tables-side decision — `AnyDurableTableTag`
+  stands.
+- Not `#326` scope — the `react-types.test.ts` arity reconciliation
+  ((b) in the #326 rebase) is separate, correct, and stays in `#326`;
+  `#326`'s flip remains gated on this §0.1.
+
+## §0.2 — Ratified c1 FALSIFIED; reframe required — **SUPERSEDED by §0.3**
+
+> ⚠ **SUPERSEDED — do not act on §0.2 in isolation. Read §0.3.**
+> §0.2's central claim that **c1 is the trigger** of the host-sdk
+> cascade ("c1 sole trigger", §3) is **base-specific and superseded**.
+> It was produced by a now-retired measurement method
+> (`pnpm --recursive` typecheck + error-bucketing) which conflated a
+> rebase-base difference with a react.ts variable. The corrected
+> forensics in **§0.3** — using the **host-sdk-alone `tsc`** method
+> (now the standard) — prove the host-sdk cascade is **c1- and
+> TFIND-050-INDEPENDENT** (`#326`-curry × main, latent in **merged
+> #350 / TFIND-015**). §0.2 is retained verbatim below as the
+> historical record of the c1 falsification (which *is* still valid:
+> ratified c1 was correctly implemented and is not the fix); only its
+> *causal attribution of the host-sdk cascade to c1* is superseded.
+> §0.1's a/b/c1/c2/c3 option space remains the wrong axis for the
+> provider question — that conclusion stands.
+
+> **Status (architect-level — beyond §0.1; coordinator does NOT
+> decide).** Gurdas ratified §0.1 option **(c1)**. It was implemented
+> exactly as ratified and **falsified by the binding §0.1 Evidence
+> gate**. The §0.1 provider-`layer`-type option space (a/b/c1/c2/c3) is
+> the **wrong axis**. This requires an architect reframe.
+> **Reproducer:** branch `sidecar/tfind050-c1-decouple-rout`
+> commit `b7a66e6b8` (kept unpushed as evidence).
+>
+> *(historical §0.2 body follows; see §0.3 for the corrected finding.)*
+
+### 1. What was implemented (ratified c1, exactly)
+
+`ROut` reintroduced as a **decoupled, free, per-call inference-only
+generic** on `DurableTableProvider` / `DurableTableProviderProps` /
+`acquireServices` (`layer: Layer.Layer<ROut, E, never>`); `tables` stays
+the erased `AnyDurableTableTag`; **no default** on `ROut`;
+`useDurableTable` untouched (already `AnyDurableTableTag`-bound,
+source-compatible). No paper, no forcing cast, no default.
+
+### 2. Binding gate result
+
+- **Pre-curry `origin/main`** (necessary, *not* sufficient — §0.1
+  Condition 2): full gate **GREEN** (cache-cleared recursive typecheck
+  all workspaces, lint + lint:dead/dup/deps, effect:diagnostics,
+  semgrep(+test), edo 27 + client-sdk 12 tests).
+- **Post-`#326`-curry overlay** (the gate that produced the §0.1
+  Evidence: `#326` rebased onto current `main` + c1, `.tsbuildinfo`
+  cleared, recursive typecheck + full lint): **FAILED — 29 host-sdk
+  `TS2375`/`TS2379`** (`Effect<…, unknown>` ⊄ `Effect<…, never>`,
+  `exactOptionalPropertyTypes` R-channel). Production src:
+  `packages/host-sdk/src/host/commands.ts:163`,
+  `control-request-reconciler.ts:227`,
+  `agent-tool-host-live.ts:90`; plus 6 host-sdk test files
+  (`env-bindings`, `runtime-codec-event-plane`,
+  `runtime-context-workflow-core`, `start-runtime`,
+  `sync-run-integration`, `two-host-isolation`).
+
+### 3. Deterministic single-variable isolation
+
+Same overlay worktree, `.tsbuildinfo` cleared each run, only `react.ts`
+toggled: **c1 absent → 0 host-sdk errors** (only the expected `#326`
+react-types (b) arity item); **c1 present → 29 host-sdk errors**. c1 is
+the **sole trigger**.
+
+### 4. The falsified premise
+
+§0.1 recommended — and Gurdas ratified — c1 on the reasoning *"`ROut`
+inferred per-call ⇒ no scalar ⇒ no package-graph ripple."* This is
+**empirically false**: the *exported generic itself* cascades into
+host-sdk's cross-package `Effect`-R inference regardless of per-call
+inference. Per-call inference does not contain the ripple.
+
+### 5. The 3-for-3 pattern → wrong axis
+
+| Provider `layer` variant | Post-curry failure |
+| --- | --- |
+| (a) `unknown` (#348) | breaks explicit-props / by-name path (react-types `TS2769`) |
+| (b) `never` | relocates breakage → `apps/factory` (`TS2769`/`TS2379`) |
+| (c1) decoupled per-call generic | cascades `host-sdk` (29 errors, incl. production src) |
+
+Every provider-`layer`-type variant fails in the post-`#326`-curry
+world. The §0.1 option space (a/b/c1/c2/c3) is the **wrong axis**. The
+real instability is **cross-package `Effect`-R inference under
+`exactOptionalPropertyTypes` × the `#326` curry**; the provider type is
+only the *trigger surface*, not the root.
+
+### 6. Traced cascade edges (the actual paths; reproducer `b7a66e6b8`)
+
+Each cascade traced to its exact edge by reading the import graph on
+the reproducer. **Two of the three cascades travel NO import path** —
+they travel the absence of a type-isolation boundary.
+
+**The boundary that is missing.** `effect-durable-operators`:
+`tsconfig` `include: ["src/**/*.ts","test/**/*.ts"]` (so `react.ts` is
+in the package program), `composite` unset, `declaration` unset,
+`noEmit: true`; `package.json` `exports["."].types → ./src/index.ts`
+(**source**, not a built `.d.ts`). Consumers therefore **type-check
+the package's TypeScript source**, with no `composite`
+project-reference / emitted-declaration boundary between `react.ts` and
+the root API. `src/index.ts` re-exports only `./DurableTable.ts` +
+`./Errors.ts` — `react.ts` is **not** in the root import closure.
+
+| Cascade | Exact edge | Import path? | Severable? / cost |
+| --- | --- | --- | --- |
+| **(a) flamecast `TS2322`** | DIRECT: `apps/flamecast/src/client/main.tsx:19` `from "effect-durable-operators/react"` (+ `firegridRuntimeTableTags` from `@firegrid/client-sdk/firegrid:14`; `DurableTableHeaders` from root `:20`). The **only** direct `/react` consumer repo-wide. | Yes — a real, intended import. | **Not severable.** flamecast is the product consumer the provider exists for. (a) is the provider's own type being wrong for a legitimate consumer — a genuine defect, *not* a coupling artifact. |
+| **(b) apps/factory `TS2769`/`TS2379`** | INDIRECT. apps/factory imports **only** `import type { DurableTableHeaders } from "effect-durable-operators"` (root) at `apps/factory/src/bin/env.ts:3` and `src/host.ts:37`. No `/react`, no provider. | **No import path to `react.ts`.** | Severable only by adding the missing isolation boundary (see §7). Cost: see §7 — not cosmetic. |
+| **(c1) host-sdk 29 errors** | INDIRECT, strongest. The 3 cascade src files (`commands.ts`, `control-request-reconciler.ts`, `agent-tool-host-live.ts`) import **nothing** from `effect-durable-operators`. host-sdk's only edo importers (`config-live.ts`, `layers.ts`, `types.ts`) use the **root** specifier; **no `/react` importer exists in host-sdk or its `@firegrid/protocol` / `@firegrid/runtime` closure**. `react.ts` is unreachable by any host-sdk import. | **No import path to `react.ts`.** | Severable only by the §7 boundary. Cost: see §7. |
+
+**Conclusion of the trace:** for (b) and (c1) the edge is **not a
+re-export and not an import** — it is the missing
+declaration/project-reference isolation. Under `pnpm --recursive
+typecheck`, the `effect-durable-operators` program is checked *with
+`react.ts` in it*, and source-resolving consumers observe a
+type-surface that shifts with `react.ts`'s generic shape, flipping
+host-sdk / apps-factory `Effect`-R inference under
+`exactOptionalPropertyTypes`. This is precisely why a *scalar* choice
+can never fix it (a/b/c1/c2/c3 wrong axis) and why the direction must
+be structural isolation.
+
+### 7. Candidate mechanism (x) — CONTINGENT, not the recommendation
+
+**(x) — introduce the missing isolation boundary** so a `react.ts`
+change cannot perturb the type-surface root consumers observe (e.g.
+make `effect-durable-operators` `composite` with emitted declarations,
+or split `/react` into its own TS project / leaf module so consumers
+resolve to a stable `.d.ts` instead of whole source).
+
+- **Viability is CONTINGENT**, not established: it is contingent on
+  the §6 trace (done — confirms the edge *is* the missing boundary,
+  which (x) addresses) **and** on the no-reopen confirmation below.
+  It is **not** ratified, **not** the recommendation. Gurdas reframes;
+  the coordinator does not decide; the executor does not pre-pick or
+  probe a mechanism.
+- **Cost (must be visible before signoff).** The source-`types`
+  resolution (`exports["."].types → ./src/index.ts`, `noEmit`,
+  non-`composite`) is a *deliberate, repo-wide* workspace-DX choice:
+  no build step, instant cross-package types, source-mapped
+  debugging. (x) trades that for type-surface stability and requires
+  monorepo-scope build changes (composite project graph + emitted
+  declarations / a split provider project, build ordering, turbo
+  pipeline). **Not cosmetic; repo-wide blast radius.**
+- **(y)/(z) remain open** (UNRANKED, UNDECIDED): (y) address the
+  `exactOptionalPropertyTypes` × curry `Effect`-R interaction at root
+  (shared cause across the 3 cascades and the TFIND-045 reconciler
+  leak); (z) treat the host-sdk / apps-factory cascades as a broadened
+  TFIND-045-class explicit-R enumeration finding.
+
+### 8. (x) does NOT reopen §0 — confirmed, with STOP-condition
+
+`AnyDurableTableTag` (the §0 / Option B signed-off **tables-side**
+fix) **STANDS**. (x) is a *structural / build-isolation* change — it
+alters **where/how the provider module is compiled and resolved**, not
+**what the tables-side type is**. By construction it does not touch
+`AnyDurableTableTag` or the tables-side typing; the reframe is
+isolation *layered on top of* the signed-off fix, not a redo.
+
+**STOP-condition (binding):** if any concrete (x) mechanism is found
+to require changing `AnyDurableTableTag` or the tables-side decision,
+**STOP and escalate to surface:153 before proceeding** — do not author
+or implement a change that quietly reopens the signed-off §0
+tables-side decision.
+
+**This needs an architect reframe beyond §0.1. The coordinator does not
+decide; §0.1's scalar/generic option space is closed; (x) is a
+contingent candidate pending Gurdas.**
+
+## §0.3 — Corrected forensics (host-sdk-alone `tsc` is the standard; the host-sdk cascade is c1-INDEPENDENT) — read this first
+
+> **Status (architect-owned reframe; coordinator does not decide).**
+> This section corrects §0.2's causal attribution. It is the current
+> authoritative finding. Reader path: §0 (tables-side, signed off) →
+> §0.1 (provider-`layer` erasure question) → §0.2 (c1 falsification —
+> valid that c1 is *not the fix*; **superseded** on *what causes the
+> host-sdk cascade*) → **§0.3 (corrected: the host-sdk cascade is a
+> latent leak in merged #350, independent of c1/TFIND-050).**
+
+### 1. Measurement standard (this supersedes the §0.2 method)
+
+- **Standard:** **host-sdk-alone `tsc --noEmit`** against the
+  `#326`-curried tree, plus `tsc --explainFiles` to confirm program
+  membership. Deterministic, single-program, single-variable.
+- **Superseded:** `pnpm --recursive` typecheck + error-bucketing. It
+  conflated a rebase-base difference with the react.ts variable and
+  produced two now-retired claims: §0.2's "c1 sole trigger", and the
+  earlier bisect window `4bdc81a83..7d73e34c4`. Do not use it for
+  cascade attribution.
+
+### 2. The corrected finding — host-sdk-alone `tsc` / `explainFiles` proof (this is what supersedes §0.2)
+
+Evidence chain (each step deterministic, `.tsbuildinfo` cleared,
+single-variable):
+
+1. **`tsc --explainFiles` on host-sdk:** `react.ts` is **not in
+   host-sdk's TypeScript program**. host-sdk resolves
+   `effect-durable-operators` → `./src/index.ts`; that closure is
+   `DurableTable.ts` / `Errors.ts` only. No `references` / `composite`
+   / `paths`; no `/react` importer in host-sdk or its
+   `@firegrid/protocol`/`@firegrid/runtime` closure. (The only 9
+   "react" lines in the explain log are unrelated —
+   `@effect/experimental/.../Reactivity.d.ts`.)
+2. **host-sdk's own `tsc` alone** (not `pnpm --recursive`) reproduces
+   the 29-error cascade — so it is a real program result, not a
+   runner/ordering artifact.
+3. **Single-variable isolation:** host-sdk-alone with **c1 reverted**
+   (react.ts = base #348) on `#326`-curry rebased onto current main =
+   **still 29**. With main alone (no `#326`) = **0**.
+4. **Anchors (host-sdk-alone, same method):** `#326`-curry on
+   `798821692` → **0**; on `4bdc81a83` → **29**.
+
+⇒ The host-sdk cascade is **c1- and TFIND-050-INDEPENDENT**: it is
+**`#326`-curry × main**. This empirically supersedes §0.2's
+"c1 sole trigger" (which came from the now-retired `pnpm --recursive`
++ error-bucketing method conflating a rebase-base difference with the
+react.ts variable).
+
+### 3. Culprit (empirical bisect, host-sdk-alone)
+
+Anchors: `#326`-curry on `798821692` → **0**; on `4bdc81a83` → **29**.
+True window **`798821692..4bdc81a83`** (the §0.2-era
+`4bdc81a83..7d73e34c4` window is 29-throughout — superseded).
+Bisect pins the transition exactly (`d51a3dd59`→0, `5ecc20d53`→29):
+
+**Culprit = `5ecc20d53` — the merge of #350 / TFIND-015 ("move ACP
+permission authority to workflow").** Its message reads "docs:"; its
+`--stat` is production code:
+`packages/host-sdk/src/host/runtime-context-workflow-core.ts` (+177),
+`runtime-input-deferred.ts` (+34),
+`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts`.
+
+### 4. Mechanism (TFIND-045 class)
+
+#350's `runtime-context-workflow-core.ts` restructure composes cleanly
+on **pre-curry** DurableTable (`any` identities absorb the Effect
+R-channel — which is why #350 merged green: CI runs main *without*
+`#326`'s curry). Under `#326`'s **precise** `<Self>` identities, #350's
+new composition leaks `unknown` into the Effect R-channel at **29
+host-sdk sites** (src: `commands.ts:163`,
+`control-request-reconciler.ts:227`, `agent-tool-host-live.ts:90`; + 6
+host-sdk test files), failing `Effect<…, unknown> ⊄ Effect<…, never>`
+under `exactOptionalPropertyTypes`. This is the **TFIND-045 class**:
+TFIND-005's precise-identity cure removes the `any`-absorbed
+imprecision, exposing a latent requirement/precision leak in already
+merged production src.
+
+### 5. Disposition
+
+- **TFIND-050** (this SDD's §0/§0.1 provider-`layer`/identity question:
+  the a/b/c1/c2/c3 + x/y/z option space, and the **flamecast `(a)`
+  DIRECT-consumer by-name defect**) is **DECOUPLED from the `#326`
+  keystone gate**. It stays **live for flamecast `(a)`** as its own
+  provider-type decision (the §0.1/§0.2 reframe still pending Gurdas) —
+  but it is **no longer on the `#326` critical path** and is **off P0 /
+  not keystone**.
+- **`#326`'s flip now gates on broadened TFIND-045 landing**, not on
+  TFIND-050 and not on a separate new bead. **Broadened TFIND-045 —**
+  *class:* curry-exposed `Effect<…, unknown> ⊄ Effect<…, never>`
+  cascades in **production src**, surfaced by TFIND-005's
+  precise-identity cure removing `any`-absorbed imprecision. *Method:*
+  host-sdk-alone `tsc` against `#326`-curried main (host-sdk first;
+  sweep other packages after). *Scope:* the cascades **only** — not a
+  general precision audit; must not swallow unrelated precision work.
+- `#326` stays unpushed. No paper, no forcing cast, no flip. The #350
+  cascade is in **merged** code (a Gurdas-decided/merged change):
+  fixing/enumerating it is architect/coordinator-directed under
+  broadened TFIND-045, not authored here.
+
+### 6. Disposition mechanism comparison (decision-grade — `tf-uiz`'s decision)
+
+This is the architect decision behind `tf-uiz` (the broadened-TFIND-045
+/ #350-leak disposition that gates `#326`). No mechanism is chosen
+here; Gurdas decides.
+
+**Concrete forensic anchor.** #350's `runtime-context-workflow-core.ts`
+diff **explicitly introduced** a function declared
+`Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError,
+unknown>` — the **R channel is a literal `unknown`** — and **removed**
+a former `… as Effect.Effect<StartRuntimeResult, RuntimeContextError>`
+cast. Pre-curry, `any`-typed DurableTable layers absorbed that
+`unknown` R; post-curry the precise identities cannot discharge it to
+`never`, and it propagates to the 29 consumer sites
+(`commands.ts:163`, `control-request-reconciler.ts:227`,
+`agent-tool-host-live.ts:90`, + 6 host-sdk test files). The leak
+therefore has a **named, small upstream origin in #350's own new
+annotations**, not 29 independent inference accidents.
+
+| Option | Mechanism | Closes cascade w/o composite-ify? | Blast radius | Reopens merged #350/TFIND-015? | Root vs mask | Reversible |
+|---|---|---|---|---|---|---|
+| **y — root R-narrow at #350's source** | Narrow the `, unknown>` R the #350 workflow-core function(s) declare to the precise/`never` set at that source (the TFIND-045/#347 fix shape, applied to its origin). | **Yes** — no build-graph change. | Smallest: the few #350-introduced annotations in `runtime-context-workflow-core.ts`; re-verify host-sdk-alone tsc + sweep. | No — refines #350's *type annotation*, not its runtime/decision. | **Root** (fixes the origin `unknown`). | Yes. |
+| **z — broad explicit-R enumeration** | Enumerate/annotate R at each of the 29 leaking consumer sites (broadened #347). | Yes. | Largest mechanical: 29 host-sdk sites incl. merged tests; sweep other pkgs. | No (consumer-side). | **Mask-ish** — leaves source `unknown`; future curry-precision changes can re-leak. | Yes but noisy. |
+| **x-scoped — boundary at the #350 workflow-core seam** | Deliberate, *named/justified* coarse Effect-R boundary localized to the #350 workflow-core module so precision doesn't propagate. | Yes. | One module. | No. | **Mask** (contained, named — TFIND-005-style anti-pattern risk; must be justified per §0/§8 discipline). | Yes. |
+| **x-broad — revert/rework #350's restructure** | Undo/redo the "move ACP permission authority to workflow" restructure that introduced the `unknown` R. | Yes. | Largest: host-sdk + runtime ACP codec; **reopens TFIND-015**. | **Yes** — reopens a merged Gurdas decision. | Root (removes the construct) but heavy. | Hard. |
+
+**Recommendation (Gurdas decides): lean `y`.** The forensic anchor
+shows the `unknown` R is a *small, named, #350-authored source*
+annotation, not diffuse inference — so narrowing at the source is the
+smallest change that is also root, needs no build-graph/composite
+work, does **not** reopen TFIND-015, and is the same proven shape as
+TFIND-045/#347. `z` is the safe fallback if `y`'s sites cannot be
+narrowed without behavior change. `x-scoped` only if `y`/`z` prove
+infeasible (it masks; carries the §0/§8 localized-coarsening burden).
+`x-broad` only if #350's restructure is fundamentally
+precise-identity-incompatible (reopens a merged decision — highest
+cost/risk).
+
+**Open verification (decision-grade honesty — implementer must
+confirm; not a blocker to the decision):** that **all 29** sites trace
+to the #350-introduced `, unknown>` annotation(s) as a single upstream
+R-source has strong evidence (uniform error shape; the explicit
+`unknown` in #350's diff) but is **not exhaustively bisected to that
+granularity**. If `y` is chosen, the implementer confirms the
+29→source mapping via host-sdk-alone `tsc` while narrowing; if a
+residual subset is independent, those fall to `z`. This does not
+change the recommendation; it scopes `y`'s implementation.
+
 ## Contract
 
 `effect-durable-operators` exposes a read-only TanStack collection view on each
