@@ -30,6 +30,7 @@
   "dependencies": {
     "@effect/ai": "^0.35.0",
     "@effect/platform": "^0.96.1",
+    "@effect/platform-node": "^0.106.0",
     "@effect/workflow": "0.18.1",
     "@firegrid/host-sdk": "workspace:*",
     "@firegrid/protocol": "workspace:*",

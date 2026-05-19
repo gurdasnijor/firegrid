@@ -47,6 +47,7 @@ Override with:
 ```bash
 TINY_FIREGRID_NAMESPACE=...
 TINY_FIREGRID_SIMULATE_DIR=...
+TINY_FIREGRID_TIMEOUT="90 seconds"
 TINY_FIREGRID_RUN_ID=...
 FIREGRID_DURABLE_STREAMS_URL=...
 ```
@@ -88,7 +89,14 @@ pnpm --filter @firegrid/tiny-firegrid simulate:run -- codex-acp-tool-call-pipeli
 ```
 
 `tail` and `attach` stream `.simulate/runs/<run-id>/live-spans.jsonl`, which is
-written as spans end during the simulation.
+written as spans start and end during the simulation. `simulate run` has an
+Effect-level timeout of `90 seconds` by default. Timeout writes
+`simulate.run.timeout` and `simulate.run.failed`; Ctrl-C or SIGTERM writes
+`simulate.run.interrupted` before scoped host and embedded durable-streams
+cleanup. The runner does not synthesize heartbeat or phase events; the live
+stream is runner lifecycle plus real span start/end records. Because the live
+stream is append-only, interrupted runs still leave useful evidence even when
+the finalized DuckDB bundle has not been written yet.
 
 ## Querying tiny-firegrid traces with DuckDB
 

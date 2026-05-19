@@ -55,6 +55,7 @@ components:
       4: Tiny Firegrid simulation artifacts include a DuckDB loader SQL file and stable summary views for quick span inspection.
       5: Tiny Firegrid simulation runners expose tail or attach frontends that stream ended span records for token-efficient agent inspection.
       6: Tiny Firegrid simulation runners start an in-process Durable Streams reference server by default while allowing environment overrides.
+      7: Tiny Firegrid simulation runs have a bounded Effect-level timeout and emit terminal live events for timeout and process interruption.
 
 constraints:
   INVARIANTS:

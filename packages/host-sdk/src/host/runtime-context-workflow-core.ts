@@ -472,6 +472,23 @@ const runReactiveLoop = (
   context: RuntimeContext,
   activityAttempt: number,
 ) => {
+  function followAgentOutput(
+    lastOutputSequence: number,
+    nextInputSequence: number,
+  ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> {
+    return Effect.gen(function*() {
+      const output = yield* nextAgentOutput(context, activityAttempt, lastOutputSequence)
+      const outcome = yield* handleAgentOutput(
+        context,
+        activityAttempt,
+        output,
+        nextInputSequence,
+      )
+      if (outcome._tag === "Exit") return outcome.exit
+      return yield* loop(output.sequence, outcome.nextInputSequence)
+    })
+  }
+
   const loop = (
     lastOutputSequence: number,
     nextInputSequence: number,
@@ -481,30 +498,12 @@ const runReactiveLoop = (
       if (input !== undefined) {
         const inputEvent = yield* decodeRuntimeInputEvent(context, input)
         if (inputEvent._tag === "PermissionResponse") {
-          const output = yield* nextAgentOutput(context, activityAttempt, lastOutputSequence)
-          const outcome = yield* handleAgentOutput(
-            context,
-            activityAttempt,
-            output,
-            nextInputSequence,
-          )
-          if (outcome._tag === "Exit") return outcome.exit
-          return yield* loop(output.sequence, outcome.nextInputSequence)
+          return yield* followAgentOutput(lastOutputSequence, nextInputSequence)
         }
         yield* handleRuntimeInput(context, activityAttempt, input)
         return yield* loop(lastOutputSequence, nextInputSequence + 1)
       }
-
-      const output = yield* nextAgentOutput(context, activityAttempt, lastOutputSequence)
-
-      const outcome = yield* handleAgentOutput(
-        context,
-        activityAttempt,
-        output,
-        nextInputSequence,
-      )
-      if (outcome._tag === "Exit") return outcome.exit
-      return yield* loop(output.sequence, outcome.nextInputSequence)
+      return yield* followAgentOutput(lastOutputSequence, nextInputSequence)
     })
   return loop(-1, 0).pipe(
     Effect.withSpan("firegrid.runtime_context.workflow.reactive_loop", {

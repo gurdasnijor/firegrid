@@ -9,10 +9,10 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   localProcessSpawnEnvFromHostEnv,
 } from "@firegrid/host-sdk"
-import { Effect, Layer } from "effect"
+import * as FileSystem from "@effect/platform/FileSystem"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import { Data, Duration, Effect, Fiber, Layer, Queue, Stream } from "effect"
 import { spawnSync } from "node:child_process"
-import { appendFileSync, existsSync } from "node:fs"
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 import {
   sanitizeTinyTracePathSegment,
@@ -32,6 +32,7 @@ import type { TinyFiregridSimulation, TinyFiregridSimulationEnv } from "../simul
 // firegrid-observability.TINY_FIREGRID_SIMULATIONS.4
 // firegrid-observability.TINY_FIREGRID_SIMULATIONS.5
 // firegrid-observability.TINY_FIREGRID_SIMULATIONS.6
+// firegrid-observability.TINY_FIREGRID_SIMULATIONS.7
 interface RunnerEnv {
   readonly runId: string
   readonly simulationId: string
@@ -40,6 +41,7 @@ interface RunnerEnv {
   readonly runDir: string
   readonly durableStreamsBaseUrl: string
   readonly durableStreamsManaged: boolean
+  readonly timeout: Duration.Duration
   readonly tail: boolean
 }
 
@@ -55,6 +57,8 @@ interface RunManifest {
   readonly updatedAt: string
   readonly namespace: string
   readonly durableStreamsBaseUrl: string
+  readonly timeout: string
+  readonly timeoutMs: number
   readonly runDir: string
   readonly summary?: Record<string, unknown>
   readonly localization?: ReadonlyArray<string>
@@ -78,12 +82,6 @@ interface RunManifest {
   }
 }
 
-interface LiveEvent {
-  readonly ts: string
-  readonly event: string
-  readonly [key: string]: unknown
-}
-
 const usage = [
   "tiny-firegrid simulate",
   "",
@@ -101,6 +99,7 @@ const usage = [
   "  FIREGRID_DURABLE_STREAMS_URL or TINY_FIREGRID_DURABLE_STREAMS_URL",
   "  TINY_FIREGRID_NAMESPACE",
   "  TINY_FIREGRID_SIMULATE_DIR             # defaults to packages/tiny-firegrid/.simulate",
+  "  TINY_FIREGRID_TIMEOUT                 # defaults to \"90 seconds\"",
   "  TINY_FIREGRID_RUN_ID",
 ].join("\n")
 
@@ -122,21 +121,114 @@ const latestPath = (): string => path.join(simulateRoot(), "latest.json")
 
 const runJsonPath = (runDir: string): string => path.join(runDir, "run.json")
 
-const writeLiveEvent = (
-  file: string,
-  event: LiveEvent,
-  tail: boolean,
-): void => {
-  const line = `${JSON.stringify(event)}\n`
-  appendFileSync(file, line)
-  if (tail) globalThis.process.stdout.write(line)
+const defaultSimulationTimeout = "90 seconds"
+
+class SimulationRunTimeout extends Data.TaggedError("SimulationRunTimeout")<{
+  readonly timeout: Duration.Duration
+}> {
+  override get message(): string {
+    return `tiny-firegrid simulation timed out after ${Duration.format(this.timeout)}`
+  }
 }
+
+const runFileSystem = <A, E>(
+  effect: Effect.Effect<A, E, FileSystem.FileSystem>,
+): Promise<A> =>
+  Effect.runPromise(effect.pipe(Effect.provide(NodeFileSystem.layer)))
+
+const ensureDirectory = (dir: string): Promise<void> =>
+  runFileSystem(FileSystem.FileSystem.pipe(
+    Effect.flatMap(fs => fs.makeDirectory(dir, { recursive: true })),
+  ))
+
+const writeFileString = (
+  file: string,
+  contents: string,
+  options?: FileSystem.WriteFileStringOptions,
+): Promise<void> =>
+  runFileSystem(FileSystem.FileSystem.pipe(
+    Effect.flatMap(fs => fs.writeFileString(file, contents, options)),
+  ))
+
+const readFileString = (file: string): Promise<string> =>
+  runFileSystem(FileSystem.FileSystem.pipe(
+    Effect.flatMap(fs => fs.readFileString(file)),
+  ))
+
+const pathExists = (file: string): Promise<boolean> =>
+  runFileSystem(FileSystem.FileSystem.pipe(
+    Effect.flatMap(fs => fs.exists(file)),
+  ))
+
+const readDirectory = (dir: string): Promise<ReadonlyArray<string>> =>
+  runFileSystem(FileSystem.FileSystem.pipe(
+    Effect.flatMap(fs => fs.readDirectory(dir)),
+  ))
+
+interface LiveWriter {
+  readonly write: (event: Record<string, unknown>) => void
+  readonly close: () => Promise<void>
+}
+
+type LiveEventItem =
+  | { readonly _tag: "Event"; readonly event: Record<string, unknown> }
+  | { readonly _tag: "End" }
+
+const liveEventLine = (event: Record<string, unknown>): string =>
+  `${JSON.stringify({ ts: nowIso(), ...event })}\n`
+
+const makeLiveWriter = async (
+  file: string,
+  tail: boolean,
+): Promise<LiveWriter> =>
+  Effect.runPromise(
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const queue = yield* Queue.unbounded<LiveEventItem>()
+      const fiber = yield* Stream.fromQueue(queue).pipe(
+        Stream.takeUntil(item => item._tag === "End"),
+        Stream.runForEach(item => {
+          if (item._tag === "End") return Effect.void
+          const line = liveEventLine(item.event)
+          return fs.writeFileString(file, line, { flag: "a" }).pipe(
+            Effect.zipRight(Effect.sync(() => {
+              if (tail) globalThis.process.stdout.write(line)
+            })),
+          )
+        }),
+        Effect.forkDaemon,
+      )
+      return {
+        write: (event: Record<string, unknown>) => {
+          queue.unsafeOffer({ _tag: "Event", event })
+        },
+        close: () =>
+          Effect.runPromise(
+            Queue.offer(queue, { _tag: "End" }).pipe(
+              Effect.zipRight(Fiber.join(fiber)),
+            ),
+          ),
+      }
+    }).pipe(Effect.provide(NodeFileSystem.layer)),
+  )
 
 const configuredDurableStreamsBaseUrl = (): string | undefined => {
   const value = globalThis.process.env.TINY_FIREGRID_DURABLE_STREAMS_URL ??
     globalThis.process.env.FIREGRID_DURABLE_STREAMS_URL
   if (value !== undefined && value.length > 0) return value
   return undefined
+}
+
+const simulationTimeout = (): Duration.Duration => {
+  const input = globalThis.process.env.TINY_FIREGRID_TIMEOUT ??
+    (globalThis.process.env.TINY_FIREGRID_TIMEOUT_MS === undefined
+      ? defaultSimulationTimeout
+      : `${globalThis.process.env.TINY_FIREGRID_TIMEOUT_MS} millis`)
+  try {
+    return Duration.decode(input as Duration.DurationInput)
+  } catch (cause) {
+    throw new Error(`invalid TINY_FIREGRID_TIMEOUT: ${input}`, { cause })
+  }
 }
 
 interface DurableStreamsConnection {
@@ -176,6 +268,7 @@ const runnerEnvForSimulation = (
   options: {
     readonly durableStreamsBaseUrl: string
     readonly durableStreamsManaged: boolean
+    readonly timeout: Duration.Duration
     readonly tail: boolean
   },
 ): RunnerEnv => {
@@ -192,6 +285,7 @@ const runnerEnvForSimulation = (
     runDir: path.join(runsRoot(), runId),
     durableStreamsBaseUrl: options.durableStreamsBaseUrl,
     durableStreamsManaged: options.durableStreamsManaged,
+    timeout: options.timeout,
     tail: options.tail,
   }
 }
@@ -228,6 +322,8 @@ const manifestForRun = (input: {
     updatedAt: nowIso(),
     namespace: input.env.namespace,
     durableStreamsBaseUrl: input.env.durableStreamsBaseUrl,
+    timeout: Duration.format(input.env.timeout),
+    timeoutMs: Duration.toMillis(input.env.timeout),
     runDir: input.env.runDir,
     ...(input.summary === undefined ? {} : { summary: input.summary }),
     ...(input.localization === undefined ? {} : { localization: input.localization }),
@@ -246,54 +342,16 @@ const manifestForRun = (input: {
 }
 
 const writeManifest = async (manifest: RunManifest): Promise<void> => {
-  await mkdir(manifest.runDir, { recursive: true })
-  await mkdir(simulateRoot(), { recursive: true })
-  await writeFile(runJsonPath(manifest.runDir), `${JSON.stringify(manifest, null, 2)}\n`)
-  await writeFile(latestPath(), `${JSON.stringify({
+  await ensureDirectory(manifest.runDir)
+  await ensureDirectory(simulateRoot())
+  await writeFileString(runJsonPath(manifest.runDir), `${JSON.stringify(manifest, null, 2)}\n`)
+  await writeFileString(latestPath(), `${JSON.stringify({
     runId: manifest.runId,
     simulationId: manifest.simulationId,
     runDir: manifest.runDir,
     status: manifest.status,
     updatedAt: manifest.updatedAt,
   }, null, 2)}\n`)
-}
-
-const preflightDurableStreams = async (
-  env: RunnerEnv,
-  liveSpansJsonl: string,
-): Promise<void> => {
-  writeLiveEvent(liveSpansJsonl, {
-    ts: nowIso(),
-    event: "durable_streams.preflight.start",
-    durableStreamsBaseUrl: env.durableStreamsBaseUrl,
-  }, env.tail)
-  try {
-    const response = await fetch(env.durableStreamsBaseUrl, {
-      method: "GET",
-      signal: AbortSignal.timeout(2_000),
-    })
-    writeLiveEvent(liveSpansJsonl, {
-      ts: nowIso(),
-      event: "durable_streams.preflight.connected",
-      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
-      managed: env.durableStreamsManaged,
-      status: response.status,
-    }, env.tail)
-  } catch (cause) {
-    writeLiveEvent(liveSpansJsonl, {
-      ts: nowIso(),
-      event: "durable_streams.preflight.failed",
-      durableStreamsBaseUrl: env.durableStreamsBaseUrl,
-      error: cause instanceof Error ? cause.message : String(cause),
-    }, env.tail)
-    throw new Error([
-      `durable streams server is not reachable at ${env.durableStreamsBaseUrl}`,
-      env.durableStreamsManaged
-        ? "The runner started an embedded @durable-streams/server, but preflight could not reach it."
-        : "Set FIREGRID_DURABLE_STREAMS_URL to a reachable Durable Streams server, or unset it so the runner starts an embedded server.",
-      "Reference: https://github.com/durable-streams/durable-streams/blob/main/packages/server/README.md",
-    ].join("\n"), { cause })
-  }
 }
 
 const codexLocalProcessEnv = () => {
@@ -332,26 +390,28 @@ const runSimulation = async (
   options: { readonly tail: boolean },
 ): Promise<void> => {
   const durableStreams = await durableStreamsConnection()
+  const timeout = simulationTimeout()
   const requested = runnerEnvForSimulation(simulation.id, {
     ...options,
     durableStreamsBaseUrl: durableStreams.baseUrl,
     durableStreamsManaged: durableStreams.managed,
+    timeout,
   })
   const createdAt = nowIso()
   const running = manifestForRun({ env: requested, simulation, status: "running", createdAt })
   await writeManifest(running)
-  await writeFile(running.trace.liveSpansJsonl, "")
-  writeLiveEvent(running.trace.liveSpansJsonl, {
-    ts: nowIso(),
-    event: "run.started",
+  await writeFileString(running.trace.liveSpansJsonl, "")
+  const live = await makeLiveWriter(running.trace.liveSpansJsonl, requested.tail)
+  live.write({
+    event: "simulate.run.started",
     runId: requested.runId,
     simulationId: requested.simulationId,
     namespace: requested.namespace,
     durableStreamsBaseUrl: requested.durableStreamsBaseUrl,
     durableStreamsManaged: requested.durableStreamsManaged,
+    timeout: Duration.format(requested.timeout),
     runDir: requested.runDir,
-  }, requested.tail)
-  await preflightDurableStreams(requested, running.trace.liveSpansJsonl)
+  })
 
   const env: TinyFiregridSimulationEnv = {
     id: simulation.id,
@@ -363,92 +423,60 @@ const runSimulation = async (
     processEnv: globalThis.process.env,
   }
 
+  console.log(`[tiny-firegrid] durable streams ${requested.durableStreamsBaseUrl}${requested.durableStreamsManaged ? " (embedded)" : " (external)"}`)
   console.log(`[tiny-firegrid] simulate run ${requested.runId}`)
   console.log(`[tiny-firegrid] artifacts ${requested.runDir}`)
-  if (requested.tail) console.log("[tiny-firegrid] tailing ended spans")
+  console.log(`[tiny-firegrid] timeout ${Duration.format(requested.timeout)}`)
+  if (requested.tail) console.log("[tiny-firegrid] tailing span events")
 
-  let phase = "host.launch.pending"
-  let startedSpanCount = 0
-  let endedSpanCount = 0
-  let lastStartedSpanName: string | undefined
-  let lastEndedSpanName: string | undefined
-  // firegrid-observability.TINY_FIREGRID_SIMULATIONS.5
-  // eslint-disable-next-line local/no-production-js-timers -- Bin-only live simulation progress stream for attached agents.
-  const heartbeat = globalThis.setInterval(() => {
-    writeLiveEvent(running.trace.liveSpansJsonl, {
-      ts: nowIso(),
-      event: "run.progress",
+  const abortController = new AbortController()
+  let interruptedBy: NodeJS.Signals | undefined
+  const onProcessSignal = (signal: NodeJS.Signals) => {
+    interruptedBy = signal
+    live.write({
+      event: "simulate.run.interrupted",
       runId: requested.runId,
-      phase,
-      startedSpanCount,
-      endedSpanCount,
-      ...(lastStartedSpanName === undefined ? {} : { lastStartedSpanName }),
-      ...(lastEndedSpanName === undefined ? {} : { lastEndedSpanName }),
-    }, requested.tail)
-  }, 5_000)
+      signal,
+    })
+    abortController.abort(new Error(`tiny-firegrid simulation interrupted by ${signal}`))
+  }
+  globalThis.process.once("SIGINT", onProcessSignal)
+  globalThis.process.once("SIGTERM", onProcessSignal)
 
   try {
     const program = Effect.scoped(
       Effect.gen(function*() {
-        yield* Effect.sync(() =>
-          writeLiveEvent(running.trace.liveSpansJsonl, {
-            ts: nowIso(),
-            event: "host.launch.start",
-            runId: requested.runId,
-          }, requested.tail),
-        )
-        yield* Effect.sync(() => {
-          phase = "host.launch.start"
-        })
         yield* Layer.launch(simulation.makeHost(env)).pipe(
           Effect.forkScoped,
           Effect.asVoid,
         )
-        yield* Effect.sync(() =>
-          writeLiveEvent(running.trace.liveSpansJsonl, {
-            ts: nowIso(),
-            event: "host.launch.forked",
-            runId: requested.runId,
-          }, requested.tail),
-        )
-        yield* Effect.sync(() => {
-          phase = "host.launch.forked"
-        })
-        yield* Effect.sync(() =>
-          writeLiveEvent(running.trace.liveSpansJsonl, {
-            ts: nowIso(),
-            event: "driver.start",
-            runId: requested.runId,
-          }, requested.tail),
-        )
-        yield* Effect.sync(() => {
-          phase = "driver.running"
-        })
         return yield* simulation.driver(env).pipe(
           Effect.provide(clientLayer(env)),
         )
       }),
     )
-    const traced = await Effect.runPromise(runWithTraceRecorder(program, {
-      onSpanStart: span => {
-        startedSpanCount += 1
-        lastStartedSpanName = span.name
-        writeLiveEvent(running.trace.liveSpansJsonl, {
-          ts: nowIso(),
-          event: "span.started",
-          span,
-        }, requested.tail)
-      },
-      onSpanEnd: span => {
-        endedSpanCount += 1
-        lastEndedSpanName = span.name
-        writeLiveEvent(running.trace.liveSpansJsonl, {
-          ts: nowIso(),
-          event: "span.ended",
-          span,
-        }, requested.tail)
-      },
-    }))
+    const traced = await Effect.runPromise(
+      runWithTraceRecorder(program, {
+        onSpanStart: span => {
+          live.write({
+            event: "span.started",
+            span,
+          })
+        },
+        onSpanEnd: span => {
+          live.write({
+            event: "span.ended",
+            span,
+          })
+        },
+      }).pipe(
+        Effect.timeoutFail({
+          duration: requested.timeout,
+          onTimeout: () => new SimulationRunTimeout({ timeout: requested.timeout }),
+        }),
+      ),
+      { signal: abortController.signal },
+    )
     const localization = simulation.localize?.(traced.result)
     const summary = simulation.summarize(traced.result)
     const paths = await writeTinyFiregridTraceRun({
@@ -470,14 +498,26 @@ const runSimulation = async (
       ...(localization === undefined ? {} : { localization }),
     })
     await writeManifest(completed)
-    writeLiveEvent(running.trace.liveSpansJsonl, {
-      ts: nowIso(),
-      event: "run.completed",
+    live.write({
+      event: "simulate.run.completed",
       runId: requested.runId,
       summary,
-    }, requested.tail)
+    })
     printRunSummary(completed, paths)
   } catch (error) {
+    if (error instanceof SimulationRunTimeout) {
+      live.write({
+        event: "simulate.run.timeout",
+        runId: requested.runId,
+        timeout: Duration.format(requested.timeout),
+      })
+    } else if (interruptedBy !== undefined) {
+      live.write({
+        event: "simulate.run.interruption_observed",
+        runId: requested.runId,
+        signal: interruptedBy,
+      })
+    }
     const failed = manifestForRun({
       env: requested,
       simulation,
@@ -486,15 +526,16 @@ const runSimulation = async (
       error: error instanceof Error ? error.stack ?? error.message : String(error),
     })
     await writeManifest(failed)
-    writeLiveEvent(running.trace.liveSpansJsonl, {
-      ts: nowIso(),
-      event: "run.failed",
+    live.write({
+      event: "simulate.run.failed",
       runId: requested.runId,
       error: failed.error,
-    }, requested.tail)
+    })
     throw error
   } finally {
-    globalThis.clearInterval(heartbeat)
+    globalThis.process.off("SIGINT", onProcessSignal)
+    globalThis.process.off("SIGTERM", onProcessSignal)
+    await live.close()
     await durableStreams.close()
   }
 }
@@ -524,7 +565,7 @@ const resolveSimulationOrThrow = (id: string): TinyFiregridSimulation<unknown> =
 }
 
 const readJson = async <A>(file: string): Promise<A> =>
-  JSON.parse(await readFile(file, "utf8")) as A
+  JSON.parse(await readFileString(file)) as A
 
 const missingRunMessage = (): string => [
   "no tiny-firegrid simulation run found",
@@ -535,7 +576,7 @@ const missingRunMessage = (): string => [
 
 const resolveRunManifest = async (selector = "latest"): Promise<RunManifest> => {
   if (selector === "latest") {
-    if (!existsSync(latestPath())) throw new Error(missingRunMessage())
+    if (!(await pathExists(latestPath()))) throw new Error(missingRunMessage())
     const latest = await readJson<{ readonly runDir: string }>(latestPath())
     return readJson<RunManifest>(runJsonPath(latest.runDir))
   }
@@ -544,13 +585,12 @@ const resolveRunManifest = async (selector = "latest"): Promise<RunManifest> => 
     ? selector
     : path.join(runsRoot(), sanitizeTinyTracePathSegment(selector))
   const directRunJson = runJsonPath(directRunDir)
-  if (existsSync(directRunJson)) return readJson<RunManifest>(directRunJson)
+  if (await pathExists(directRunJson)) return readJson<RunManifest>(directRunJson)
 
-  if (existsSync(runsRoot())) {
-    const entries = await readdir(runsRoot(), { withFileTypes: true })
+  if (await pathExists(runsRoot())) {
+    const entries = await readDirectory(runsRoot())
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue
-      const candidate = await readJson<RunManifest>(runJsonPath(path.join(runsRoot(), entry.name))).catch(() => undefined)
+      const candidate = await readJson<RunManifest>(runJsonPath(path.join(runsRoot(), entry))).catch(() => undefined)
       if (candidate?.runId === selector || candidate?.simulationId === selector) return candidate
     }
   }
@@ -559,15 +599,14 @@ const resolveRunManifest = async (selector = "latest"): Promise<RunManifest> => 
 }
 
 const listRuns = async (): Promise<void> => {
-  if (!existsSync(runsRoot())) {
+  if (!(await pathExists(runsRoot()))) {
     console.log("no local simulation runs")
     return
   }
-  const entries = await readdir(runsRoot(), { withFileTypes: true })
+  const entries = await readDirectory(runsRoot())
   const manifests: Array<RunManifest> = []
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const manifest = await readJson<RunManifest>(runJsonPath(path.join(runsRoot(), entry.name))).catch(() => undefined)
+    const manifest = await readJson<RunManifest>(runJsonPath(path.join(runsRoot(), entry))).catch(() => undefined)
     if (manifest !== undefined) manifests.push(manifest)
   }
   manifests.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -576,11 +615,11 @@ const listRuns = async (): Promise<void> => {
   }
 }
 
-const runDuckdb = (
+const runDuckdb = async (
   manifest: RunManifest,
   sql?: string,
-): void => {
-  if (!existsSync(manifest.trace.duckdbSql)) {
+): Promise<void> => {
+  if (!(await pathExists(manifest.trace.duckdbSql))) {
     throw new Error([
       `run ${manifest.runId} has no DuckDB loader yet`,
       `expected loader: ${manifest.trace.duckdbSql}`,
@@ -597,8 +636,8 @@ const runDuckdb = (
   }
 }
 
-const tailRun = (manifest: RunManifest): void => {
-  if (!existsSync(manifest.trace.liveSpansJsonl)) {
+const tailRun = async (manifest: RunManifest): Promise<void> => {
+  if (!(await pathExists(manifest.trace.liveSpansJsonl))) {
     throw new Error(`run ${manifest.runId} has no live span stream: ${manifest.trace.liveSpansJsonl}`)
   }
   const result = spawnSync("tail", ["-n", "+1", "-f", manifest.trace.liveSpansJsonl], {
@@ -646,12 +685,12 @@ const main = async (): Promise<void> => {
     case "tail":
     case "attach": {
       const manifest = await resolveRunManifest(args[0] ?? "latest")
-      tailRun(manifest)
+      await tailRun(manifest)
       return
     }
     case "duckdb": {
       const manifest = await resolveRunManifest(args[0] ?? "latest")
-      runDuckdb(manifest)
+      await runDuckdb(manifest)
       return
     }
     case "query": {
@@ -659,7 +698,7 @@ const main = async (): Promise<void> => {
       const sql = args.length > 1 ? args.slice(1).join(" ") : args.join(" ")
       if (sql.length === 0) throw new Error("missing SQL query")
       const manifest = await resolveRunManifest(selector)
-      runDuckdb(manifest, sql)
+      await runDuckdb(manifest, sql)
       return
     }
     default:

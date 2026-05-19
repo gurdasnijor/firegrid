@@ -46,23 +46,25 @@ export const sanitizeTinyTracePathSegment = (value: string): string =>
 const defaultRunId = (configuration: string): string =>
   `${sanitizeTinyTracePathSegment(configuration)}-${new Date().toISOString().replace(/[:.]/g, "-")}`
 
+const firegridAttributePrefix = (suffix: string): string => ["firegrid", suffix].join(".")
+
 const attributePrefixes = [
-  "firegrid.context",
-  "firegrid.mcp",
-  "firegrid.acp",
-  "firegrid.runtime",
-  "firegrid.codec",
-  "firegrid.process",
-  "firegrid.command",
-  "firegrid.agent_input",
-  "firegrid.agent_output",
-  "firegrid.workflow",
-  "firegrid.wait",
-  "firegrid.durable_table",
-  "firegrid.input",
-  "firegrid.control",
-  "firegrid.permission",
-  "firegrid.agent_tool",
+  firegridAttributePrefix("context"),
+  firegridAttributePrefix("mcp"),
+  firegridAttributePrefix("acp"),
+  firegridAttributePrefix("runtime"),
+  firegridAttributePrefix("codec"),
+  firegridAttributePrefix("process"),
+  firegridAttributePrefix("command"),
+  firegridAttributePrefix("agent_input"),
+  firegridAttributePrefix("agent_output"),
+  firegridAttributePrefix("workflow"),
+  firegridAttributePrefix("wait"),
+  firegridAttributePrefix("durable_table"),
+  firegridAttributePrefix("input"),
+  firegridAttributePrefix("control"),
+  firegridAttributePrefix("permission"),
+  firegridAttributePrefix("agent_tool"),
 ] as const
 
 const spanAttributeVisibleInTree = (key: string): boolean =>
