@@ -1,3 +1,13 @@
+// TFIND-048 — NON-GATING smoke (coordinator correctness-bar ruling,
+// 2026-05-19). The full real-LLM Codex ACP end-to-end. DOCUMENTED
+// FLAKY: a live LLM's tool-use is nondeterministic (observed both a
+// real `sleep` MCP tool call → `FIREGRID_TOOL_RESULT` AND the agent
+// spuriously declaring the tool "not available"). EXCLUDED from the CI
+// gate by filename (`*.smoke.ts`, not `*.test.ts`); NOT deleted — run
+// on demand via `pnpm --filter @firegrid/tiny-firegrid test:smoke`. The
+// DETERMINISTIC CI-gating assertion of the host-provisioning seam is
+// `codex-acp-host-provisioning-seam.test.ts`.
+
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   Firegrid,

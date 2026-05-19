@@ -184,7 +184,11 @@ const codecLayerForProtocol = (
 // pre-`createOrLoad` injection was deleted in the same transaction. If
 // the marker is set but no MCP listener is bound in this host, this is
 // an explicit start failure, never a silent skip.
-const buildRuntimeContextMcpUrl = (
+// Canonical host-side builder for the concrete contextId-scoped MCP URL
+// from the host's OWN bound base. Exported as the TFIND-048
+// host-provisioning seam so the deterministic gating test can assert
+// exactly what the codec start path resolves.
+export const runtimeContextMcpUrlForContext = (
   base: FiregridRuntimeContextMcpBase,
   contextId: string,
 ): string => {
@@ -195,7 +199,12 @@ const buildRuntimeContextMcpUrl = (
   return new URL(route, base.address).toString()
 }
 
-const resolveEffectiveMcpServers = (
+// The exact resolution the codec start path uses to honor the URL-less
+// `runtimeContextMcp` marker. Exported as the deterministic seam under
+// test: given a materialized context + the host's bound MCP base, it
+// returns the host-provisioned `firegrid-runtime-context` declaration
+// (or fails explicitly when the marker is set but no MCP is bound).
+export const resolveEffectiveMcpServers = (
   context: RuntimeContext,
 ): Effect.Effect<
   ReadonlyArray<McpServerDeclaration> | undefined,
@@ -217,7 +226,7 @@ const resolveEffectiveMcpServers = (
       ))
     }
     const injected = firegridRuntimeContextMcpDeclaration(
-      buildRuntimeContextMcpUrl(base.value, context.contextId),
+      runtimeContextMcpUrlForContext(base.value, context.contextId),
     )
     return [
       injected,
