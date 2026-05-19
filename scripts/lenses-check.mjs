@@ -9,10 +9,13 @@
 //
 // Zero-dep, no ESLint coupling (the flat config is ratchet-heavy; this
 // stays a standalone gate). Run: `node scripts/lenses-check.mjs`.
+import { warn, error, log } from "node:console";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ANCHOR_RE = /\/\/\s*LENS:\s*([a-z0-9:-]+)/g;
 const DECL_RE = /^##\s+([a-z0-9:-]+)\s+—\s+(DECISION|PATTERN|BOUNDARY|HAZARD)\s*$/gm;
 const SKIP = new Set(["node_modules", ".git", "dist", "build", ".turbo"]);
@@ -44,10 +47,10 @@ walk(join(ROOT, "packages"));
 const dangling = [...anchors.keys()].filter((n) => !declared.has(n));
 const unanchored = [...declared].filter((n) => !anchors.has(n));
 
-for (const n of unanchored) console.warn(`warn: lens "${n}" declared in LENSES.md has no anchor`);
+for (const n of unanchored) warn(`warn: lens "${n}" declared in LENSES.md has no anchor`);
 if (dangling.length) {
   for (const n of dangling)
-    console.error(`error: anchor "${n}" (${anchors.get(n).join(", ")}) not declared in LENSES.md`);
+    error(`error: anchor "${n}" (${anchors.get(n).join(", ")}) not declared in LENSES.md`);
   process.exit(1);
 }
-console.log(`lenses-check: ${declared.size} declared, ${anchors.size} anchored, ok`);
+log(`lenses-check: ${declared.size} declared, ${anchors.size} anchored, ok`);
