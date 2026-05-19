@@ -97,6 +97,10 @@ bash scripts/task-enter.sh <bead-id> <slug> [--class codex|sidecar]
   # → fresh worktree off origin/main at firegrid-worktrees/<bead>-<slug>,
   #   branch <class>/<bead>-<slug>, bead → in_progress. Deterministic on the
   #   bead id (lanes get renamed; beads don't).
+  # RESUME an existing branch (e.g. PR #326 — preserves its commits, does
+  #   NOT fork off main):  task-enter.sh <bead> <slug> --resume
+  #   Without --resume, an existing branch is REFUSED (never silently
+  #   orphans committed work).
 
 cd ../firegrid-worktrees/<bead>-<slug>      # work + commit ONLY here
 
@@ -114,6 +118,24 @@ bash scripts/task-reap.sh [<branch>]        # after merge, from primary
 bash scripts/beads-sync.sh                  # THE canonical durable sync
   # → lock-serialized (.beads/.sync.lock); the ONLY context that commits
   #   + pushes .beads/issues.jsonl to origin/main. Lanes never do this.
+```
+
+### Deterministic dispatch (coordinator → lanes)
+
+Never hardcode `--surface surface:NNN` — surface numbers renumber
+(coordinator was :153 → :199; oca1 is not durably :155). Dispatch by the
+**stable lane label or the bead id**; the wrapper resolves the current
+ref, sends, and **verifies the agent is running, retrying the Enter** — a
+multi-line paste does NOT submit on a trailing `\n` (it queues as a
+`[Pasted text]` chip), the #1 "message never ran" failure.
+
+```bash
+bash scripts/cmux-dispatch.sh <lane|bead-id> "<message…>"
+  # oca1 / cca2 / coordinator, OR tf-80d (→ its assignee). Resolves
+  # label→current ref, sends, confirms running, fails LOUD if queued.
+bash scripts/cmux-broadcast.sh "<message…>"
+  # fan-out to every oca/cca worker lane (excl. coordinator + self),
+  # per-lane verified; non-zero exit if ANY lane unconfirmed.
 ```
 
 **Guardrail:** `scripts/git-hooks/` + `scripts/install-git-hooks.sh` set
