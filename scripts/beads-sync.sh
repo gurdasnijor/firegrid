@@ -34,13 +34,23 @@ done
 trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 BEADS_DIR="$RR/.beads" br sync --flush-only >/dev/null 2>&1 || true
-git -C "$RR" fetch -q origin main
-git -C "$RR" rev-parse --abbrev-ref HEAD | grep -qx main && git -C "$RR" pull -q --rebase origin main 2>/dev/null || true
 
 if git -C "$RR" diff --quiet -- .beads/issues.jsonl && git -C "$RR" diff --cached --quiet -- .beads/issues.jsonl; then
   echo "beads-sync: issues.jsonl already in sync — nothing to push"
   exit 0
 fi
+
+# Commit the beads change FIRST, then rebase — a dirty issues.jsonl makes
+# `pull --rebase` no-op silently and a moved origin/main then rejects the
+# push (the recurring failure). Commit → fetch → rebase (now clean) → push.
 git -C "$RR" add .beads/issues.jsonl
 git -C "$RR" -c commit.gpgsign=false commit -q -m "$MSG"
-git -C "$RR" push -q origin HEAD:main && echo "✓ beads-sync: issues.jsonl pushed to origin/main"
+git -C "$RR" fetch -q origin main
+git -C "$RR" -c rebase.autoStash=true pull -q --rebase origin main 2>&1 | tail -1 || true
+if git -C "$RR" push origin HEAD:main 2>&1 | tail -1; then
+  echo "✓ beads-sync: issues.jsonl pushed to origin/main"
+else
+  echo "✋ beads-sync: PUSH FAILED — issues.jsonl committed locally but NOT on" >&2
+  echo "   origin/main. Resolve (fetch/rebase) and re-run; the lock is released." >&2
+  exit 1
+fi
