@@ -1,0 +1,14 @@
+# Finding 5: type-safety escape hatches — eslint-disable of no-unsafe-* or
+# @ts-expect-error / @ts-ignore. Density = unresolved type-debt heat map.
+# INFORMATION: each marks a place the type checker was told to look away.
+id: type-safety-eslint-disable
+language: typescript
+severity: info
+rule:
+  kind: comment
+  regex: 'eslint-disable[a-z-]*\s+[^\n]*no-unsafe-(return|assignment|argument|call|member-access)|@ts-(expect-error|ignore)'
+message: "Type-safety escape hatch"
+note: >
+  Counts eslint-disable of no-unsafe-* and @ts-expect-error/@ts-ignore.
+  Not a defect per comment — the footprint and its clustering are the
+  signal (where does type debt concentrate?).

@@ -1,0 +1,13 @@
+# Finding 7: manual scope management — Layer.buildWithScope(...). Hand-rolled
+# scope wiring instead of declarative Layer composition.
+# INFORMATION: footprint of explicit scope plumbing.
+id: manual-scope-buildwithscope
+language: typescript
+severity: info
+rule:
+  pattern: Layer.buildWithScope($$$ARGS)
+message: "Manual Layer.buildWithScope(...)"
+note: >
+  Every site that materializes a layer against an explicit Scope by hand.
+  Inventory only — legitimate in adapters/tests; clustering in substrate
+  composition is the interesting signal.
