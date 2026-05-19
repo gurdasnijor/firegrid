@@ -298,7 +298,23 @@ both consumer paths + `apps/factory` + full lint).
   ((b) in the #326 rebase) is separate, correct, and stays in `#326`;
   `#326`'s flip remains gated on this §0.1.
 
-## §0.2 — Ratified c1 FALSIFIED; reframe required (read this first)
+## §0.2 — Ratified c1 FALSIFIED; reframe required — **SUPERSEDED by §0.3**
+
+> ⚠ **SUPERSEDED — do not act on §0.2 in isolation. Read §0.3.**
+> §0.2's central claim that **c1 is the trigger** of the host-sdk
+> cascade ("c1 sole trigger", §3) is **base-specific and superseded**.
+> It was produced by a now-retired measurement method
+> (`pnpm --recursive` typecheck + error-bucketing) which conflated a
+> rebase-base difference with a react.ts variable. The corrected
+> forensics in **§0.3** — using the **host-sdk-alone `tsc`** method
+> (now the standard) — prove the host-sdk cascade is **c1- and
+> TFIND-050-INDEPENDENT** (`#326`-curry × main, latent in **merged
+> #350 / TFIND-015**). §0.2 is retained verbatim below as the
+> historical record of the c1 falsification (which *is* still valid:
+> ratified c1 was correctly implemented and is not the fix); only its
+> *causal attribution of the host-sdk cascade to c1* is superseded.
+> §0.1's a/b/c1/c2/c3 option space remains the wrong axis for the
+> provider question — that conclusion stands.
 
 > **Status (architect-level — beyond §0.1; coordinator does NOT
 > decide).** Gurdas ratified §0.1 option **(c1)**. It was implemented
@@ -307,6 +323,8 @@ both consumer paths + `apps/factory` + full lint).
 > the **wrong axis**. This requires an architect reframe.
 > **Reproducer:** branch `sidecar/tfind050-c1-decouple-rout`
 > commit `b7a66e6b8` (kept unpushed as evidence).
+>
+> *(historical §0.2 body follows; see §0.3 for the corrected finding.)*
 
 ### 1. What was implemented (ratified c1, exactly)
 
@@ -443,6 +461,88 @@ tables-side decision.
 **This needs an architect reframe beyond §0.1. The coordinator does not
 decide; §0.1's scalar/generic option space is closed; (x) is a
 contingent candidate pending Gurdas.**
+
+## §0.3 — Corrected forensics (host-sdk-alone `tsc` is the standard; the host-sdk cascade is c1-INDEPENDENT) — read this first
+
+> **Status (architect-owned reframe; coordinator does not decide).**
+> This section corrects §0.2's causal attribution. It is the current
+> authoritative finding. Reader path: §0 (tables-side, signed off) →
+> §0.1 (provider-`layer` erasure question) → §0.2 (c1 falsification —
+> valid that c1 is *not the fix*; **superseded** on *what causes the
+> host-sdk cascade*) → **§0.3 (corrected: the host-sdk cascade is a
+> latent leak in merged #350, independent of c1/TFIND-050).**
+
+### 1. Measurement standard (this supersedes the §0.2 method)
+
+- **Standard:** **host-sdk-alone `tsc --noEmit`** against the
+  `#326`-curried tree, plus `tsc --explainFiles` to confirm program
+  membership. Deterministic, single-program, single-variable.
+- **Superseded:** `pnpm --recursive` typecheck + error-bucketing. It
+  conflated a rebase-base difference with the react.ts variable and
+  produced two now-retired claims: §0.2's "c1 sole trigger", and the
+  earlier bisect window `4bdc81a83..7d73e34c4`. Do not use it for
+  cascade attribution.
+
+### 2. The corrected finding
+
+`tsc --explainFiles` proves **`react.ts` is not in host-sdk's
+TypeScript program** (host-sdk resolves `effect-durable-operators` →
+`./src/index.ts`; that closure is `DurableTable.ts`/`Errors.ts` only;
+no `references`/`composite`/`paths`/`/react` importer reaches it).
+host-sdk's **own `tsc`** reproduces the 29-error cascade with c1
+absent. Therefore the host-sdk cascade is **c1- and
+TFIND-050-INDEPENDENT**: it is **`#326`-curry × main**.
+
+### 3. Culprit (empirical bisect, host-sdk-alone)
+
+Anchors: `#326`-curry on `798821692` → **0**; on `4bdc81a83` → **29**.
+True window **`798821692..4bdc81a83`** (the §0.2-era
+`4bdc81a83..7d73e34c4` window is 29-throughout — superseded).
+Bisect pins the transition exactly (`d51a3dd59`→0, `5ecc20d53`→29):
+
+**Culprit = `5ecc20d53` — the merge of #350 / TFIND-015 ("move ACP
+permission authority to workflow").** Its message reads "docs:"; its
+`--stat` is production code:
+`packages/host-sdk/src/host/runtime-context-workflow-core.ts` (+177),
+`runtime-input-deferred.ts` (+34),
+`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts`.
+
+### 4. Mechanism (TFIND-045 class)
+
+#350's `runtime-context-workflow-core.ts` restructure composes cleanly
+on **pre-curry** DurableTable (`any` identities absorb the Effect
+R-channel — which is why #350 merged green: CI runs main *without*
+`#326`'s curry). Under `#326`'s **precise** `<Self>` identities, #350's
+new composition leaks `unknown` into the Effect R-channel at **29
+host-sdk sites** (src: `commands.ts:163`,
+`control-request-reconciler.ts:227`, `agent-tool-host-live.ts:90`; + 6
+host-sdk test files), failing `Effect<…, unknown> ⊄ Effect<…, never>`
+under `exactOptionalPropertyTypes`. This is the **TFIND-045 class**:
+TFIND-005's precise-identity cure removes the `any`-absorbed
+imprecision, exposing a latent requirement/precision leak in already
+merged production src.
+
+### 5. Disposition
+
+- **TFIND-050** (this SDD's §0/§0.1 provider-`layer`/identity question:
+  the a/b/c1/c2/c3 + x/y/z option space, and the **flamecast `(a)`
+  DIRECT-consumer by-name defect**) is **DECOUPLED from the `#326`
+  keystone gate**. It stays **live for flamecast `(a)`** as its own
+  provider-type decision (the §0.1/§0.2 reframe still pending Gurdas) —
+  but it is **no longer on the `#326` critical path** and is **off P0 /
+  not keystone**.
+- **`#326`'s flip now gates on broadened TFIND-045 landing**, not on
+  TFIND-050 and not on a separate new bead. **Broadened TFIND-045 —**
+  *class:* curry-exposed `Effect<…, unknown> ⊄ Effect<…, never>`
+  cascades in **production src**, surfaced by TFIND-005's
+  precise-identity cure removing `any`-absorbed imprecision. *Method:*
+  host-sdk-alone `tsc` against `#326`-curried main (host-sdk first;
+  sweep other packages after). *Scope:* the cascades **only** — not a
+  general precision audit; must not swallow unrelated precision work.
+- `#326` stays unpushed. No paper, no forcing cast, no flip. The #350
+  cascade is in **merged** code (a Gurdas-decided/merged change):
+  fixing/enumerating it is architect/coordinator-directed under
+  broadened TFIND-045, not authored here.
 
 ## Contract
 
