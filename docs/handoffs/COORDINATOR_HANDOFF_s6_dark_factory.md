@@ -65,41 +65,69 @@ finish it.* So:
 
 ---
 
-## 1. The path to actually finish it
+## 1. The path to actually finish it — INSTRUMENT, do not route around
 
-The terminal findings closed *ACP-layer* forcing. They explicitly left **one
-open path**, never pursued: a **non-ACP planner**.
+> **Correction (the previous draft of this section was wrong in spirit).**
+> The earlier version said "build a non-ACP planner to get a live §6." That is
+> the orchestration-shortcut mindset this entire exercise exists to reject.
+> The goal is **not** a green demo — it is to *drive out the real issue and
+> capture the data to address it*. The "ACP cannot force tool-choice"
+> conclusion was reached by **reading the ACP protocol surface (inference)**,
+> not by instrumenting the actual decision point. That is the unfinished work.
 
-### Primary task: a non-ACP planner with forced tool-choice
+### The real unfinished task: instrument the claude-agent-acp model-request boundary
 
-Build a planner that talks to the model API directly (Anthropic and/or OpenAI
-messages API) with **`tool_choice:{type:"any"}` / `"required"`**, where the
-tools are the **Firegrid runtime-context choreography tools** (the same MCP
-toolset, bound directly as model tools rather than via an ACP runtime). The
-model is then *forced* to emit a tool call each turn; the planner loop feeds
-tool results back and continues until §6 terminal.
+We observed only the **symptom at our side of the boundary**: the codec
+(`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts`) instruments
+*what we send* (`firegrid.acp.mcp_server_count`, `mcp_server_names`, the
+`newSession({ mcpServers, _meta:{ disableBuiltInTools, claudeCode:{options:
+{mcpServers}} } })` lowering — ~13 spans) and we saw `tools/call`=0 come back.
+We instrumented **nothing about what claude-agent-acp does with it**, and the
+codec test uses a *fake connection* that never drives the real model-turn path.
 
-Key design constraints (do not violate — see §4 philosophy):
-- The planner still **owns all sequencing**. No app-authored DAG/phase-chain.
-  You are only changing the *transport that forces invocation*, not who decides.
-- It must drive the **public Firegrid surface** (the runtime-context tools /
-  client SDK), not reach into substrate internals — reach-pasts are FINDINGS.
-- It must run against the merged dark-factory substrate + `darkFactory.facts`
-  CallerFact trigger and be observed by the **#401 sectionSixProof harness**
-  (do not weaken the harness; the codec already surfaces canonical tool names
-  via #419).
-- Honest or bust: if the non-ACP planner *also* fails to advance §6, that is a
-  precise new FINDING (HARD HALT, not papered) — but it is the most likely
-  path to a real live §6 because `tool_choice:required` is exactly the lever
-  the ACP layer could not reach.
+`tools/list ×16 but tools/call=0` is **under-determined**. It conflates ≥5
+distinct causes we never instrumented apart:
+1. claude-agent-acp loaded the MCP server but **did not forward its tools into
+   the model request** (governed around `claude-agent-acp` `src/acp-agent.ts`
+   ~L1488 — where the model turn / tools / `tool_choice` are constructed).
+2. tools offered but `tool_choice` defaulted to `auto` → model chose prose.
+3. tool schema/name mismatch → model doesn't treat them as callable.
+4. claude-agent-acp's own injected system prompt steering toward prose/explore.
+5. tool-result round-trip format break → agent abandons after one attempt.
 
-Secondary / alternative avenues if the primary stalls:
-- Evaluate `claude-code` (the CLI agent, not `claude-agent-acp`) or another
-  agent harness that aggressively forces tool use, wired to the Firegrid MCP
-  server. This is agent-runtime selection, not substrate work.
-- The reusable constraint levers (`tf-9q4`/#420), the
-  `DARK_FACTORY_PLANNER_AGENT` switch (#414), and the ACP-force-tool shim
-  (`src/bin/acp-force-tool-shim.mjs`, #424) are all in `main` — build on them.
+We asserted #2 as "architectural / terminal" without measuring it. **Get the
+data:**
+- Read the actual `claude-agent-acp` source at/around `src/acp-agent.ts`
+  ~L1488 (model-turn construction): does it include MCP tools in the Anthropic
+  request? under what condition? what `tool_choice`? what system prompt? Vendor
+  it if needed (`repos/`-style) so it is inspectable and traceable.
+- Add OTEL/tracing **at the decision point**, not just our side: capture the
+  exact model request claude-agent-acp builds (tool list, tool_choice, system
+  prompt) and the model response. Drive the **real production code path**
+  (a real `simulate:run -- dark-factory-pipeline`, not the fake-connection
+  test) and capture this granular data into the trace artifact so the proof
+  matrix's "0/6" is explained *with evidence*, not inference.
+- Distinguish causes #1–#5 with that data. The outcome is a precise,
+  source-verified FINDING (which may well be a Firegrid-codec or
+  MCP-tool-advertisement-shape issue that *is* fixable — #1/#3 are not
+  immutable ACP limits). Capturing and characterizing that **is the
+  deliverable**, per the spirit of the exercise.
+
+### The non-ACP planner is a CONTROL, not the goal
+
+A direct model-API loop with `tool_choice:required` over the same Firegrid
+tools is legitimate **only as a control experiment to isolate one variable**
+(does the model invoke when tools are demonstrably in the request with forced
+choice?) — it confirms/refutes cause #2 vs #1/#3/#4. It is **not** "the path
+to finish" and must never be used to manufacture a green demo while leaving the
+real ACP-path issue uncharacterized. If you build it, build it to *generate
+the contrasting data*, then return to fixing/characterizing the real path.
+
+Reusable assets in `main` to build on (not to route around with): the
+constraint levers (`tf-9q4`/#420), `DARK_FACTORY_PLANNER_AGENT` switch (#414),
+the ACP-force-tool shim (`src/bin/acp-force-tool-shim.mjs`, #424 — it proved a
+*protocol-layer* shim can't force model tool-choice; that is itself a data
+point, not a dead end for instrumentation).
 
 Once a planner advances steps: run `pnpm --filter @firegrid/tiny-firegrid
 demo:s6` and the harness will objectively report which §6 steps are now
@@ -290,16 +318,23 @@ fixing/verifying — the PO's standing preference.
 2. `bash scripts/lane-sweep.sh --json --workspace workspace:2` — see lanes.
 3. `gh pr list --state open` — should be ~0; the substrate is all merged.
 4. Confirm the substrate inventory (§2) is in `main` — do NOT redo it.
-5. Spec the **non-ACP planner** (§1): direct model API loop,
-   `tool_choice:required`, Firegrid runtime-context tools as model tools,
-   planner-owns-sequencing preserved, observed by the #401 harness. Write it as
-   an SDD with the load-bearing question at §0 (house style) if non-trivial;
-   otherwise dispatch directly.
+5. **Instrument the real decision point** (§1) — do NOT route around it. Read
+   the actual `claude-agent-acp` source (`src/acp-agent.ts` ~L1488, the
+   model-turn/tools/tool_choice construction); vendor it so it is inspectable.
+   Add OTEL/tracing that captures the *model request claude-agent-acp builds*
+   (tool list, tool_choice, system prompt) + the model response, on the **real
+   production path** (`simulate:run -- dark-factory-pipeline`, not the
+   fake-connection codec test). Distinguish causes #1–#5 (§1) **with data**.
 6. `br create` the bead, `cmux-dispatch.sh` the lane with the full lifecycle
-   wording (§3c), bead id, and the choreography constraints (§4).
+   wording (§3c), bead id, and the choreography constraints (§4). The
+   deliverable is a **source-verified FINDING** explaining 0/6 with captured
+   evidence — likely a fixable Firegrid-codec / MCP-advertisement-shape issue.
+   The non-ACP planner is only a *control* to isolate one variable (§1).
 7. Iterate: review against the anti-smoketest bar, merge honest greens,
-   surface true blockers to the PO. **Done = a live §6 run with the #401
-   harness reporting required steps `proven:true`, honestly.**
+   surface true blockers to the PO. **Done = the failure is characterized with
+   captured instrumented data and the real issue addressed — a live §6 with
+   the #401 harness `proven:true` honestly is the *consequence*, never the
+   goal pursued by routing around the discovery.**
 
 You are the PO's delegate. Drive it to a *running* factory — not a doc that
 explains why it doesn't run.
