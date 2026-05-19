@@ -1,34 +1,97 @@
-# Investigation — The Factory's First Live Breath
+# Investigation — §6 Dark-Factory Live Run
 
-**§6 dark-factory choreography, run live against a real Claude planner with a quota-available key**
+**Objective harness readout for the live Claude planner run, superseding the
+first inconclusive narrative**
 
-- Run: `2026-05-19T12-33-30-428Z__dark-factory-pipeline`
-- Wall clock: `12:33:30.429Z → 12:36:44.920Z` — **3 min 14 s**, `status: completed`, exit 0
-- Trace volume: **22,511 span events**, **97 distinct span types**
+- Run: `2026-05-19T12-51-52-626Z__dark-factory-pipeline`
+- Wall clock: `12:51:52.627Z → 12:53:04.394Z` — **1 min 12 s**, `status: completed`, exit 0
+- Trace volume: **21,240 live span events**, **10,619 completed spans**
 - Sim: `packages/tiny-firegrid/src/simulations/dark-factory-pipeline.ts` (merged #390), driven through the **public Firegrid client** with a real `claude-agent-acp` planner + runtime-context MCP.
 
 ---
 
-## TL;DR — a nuanced, honest verdict (this is a *pass-with-a-precise-gap*, not a fail)
+## 0. Harness verdict — fail, precisely localized
 
-Four independent layers were on trial. Three passed cleanly; the fourth is a
-**measurement/sequencing gap, not a substrate defect**:
+PR #401 added the falsifiable proof harness. Re-reading the quota-available
+run through that harness changes the artifact's verdict from the earlier
+inconclusive "pass-with-gap" narrative to an objective fail for the §6 full
+loop:
 
-| Layer | Verdict | Evidence |
+- `s6FullLoopProven`: **false**
+- Proven required steps: **0/6**
+- Observed planner tool use: **`ToolSearch` only**
+- Observed Firegrid MCP ToolUse: **none**
+- Quota: **verified working (`HTTP 200`)**, not the blocker
+
+### Per-step proof matrix
+
+| Step | issued | backingFact | advanced | verdict |
+|---|---:|---:|---:|---|
+| `planner-plan` | false | true | false | not-proven |
+| `human-approval-wait` | false | true | false | not-proven |
+| `delegated-implementer` | false | true | false | not-proven |
+| `review-round` | false | true | false | not-proven |
+| `revision-loop` | false | false | false | conditional, not exercised |
+| `merge-signoff-wait` | false | true | false | not-proven |
+| `durable-ci-watch` | false | true | true | not-proven |
+| `clean-unwind` | false | false | false | substrate-blocked -> `tf-p7w` |
+
+The matrix is deliberately stricter than the planner transcript: `proven`
+requires a real issued Firegrid ToolUse, a real durable backing fact, and
+observed advancement past that step. Prompt text alone never proves a step.
+
+### Localization
+
+| Layer | Harness-localized result | Evidence |
 |---|---|---|
-| **1. External model edge (the old blocker)** | ✅ **PASS** | Quota key worked. Planner prompt sent, ACP `session_update`×56 flowed, `sawAgentError:false`, `sawTerminated:false`. The 2026-06-01 quota wall (finding tf-7dq / #395) is gone. |
-| **2. Choreography *reasoning* (the bitter-lesson thesis)** | ✅ **PASS — and this is the headline** | The planner, given only primitives + a ticket, **independently authored the exact §6 dance** — delegate → wait PR → review → merge-signoff → `schedule_me` CI → `wait_for` ci.status → `execute` merge → cancel/close on reject. No app DAG. See the verbatim plan below. |
-| **3. Durable substrate under a live model** | ✅ **PASS** | The durable machinery ran *hard*: `wait_for.upsert_active`×1470, `wait_router.complete_match`×968, `workflow_engine.deferred.result`×3050, `runtime_context.workflow.reactive_loop`×100. The substrate did not flinch under a real agent. |
-| **4. End-to-end *observable proof* of each §6 step** | ⚠️ **GAP** | `sawCallerFactWaitFor:false`, `sawTurnComplete:false`, `observedToolInputs:['…wait_for:{}']`. The assertion harness could not *confirm* what the substrate clearly *did*. |
+| External quota | **PROVEN not-blocking** | The live model edge returned `HTTP 200`; no quota/credential failure explains this run. |
+| Durable substrate | **PROVEN exercised** | Public readback found the seeded durable facts (`backingFact:true` on the main gates), and the trace contains thousands of wait/deferred spans: `wait_store.wait.find`×1175, `wait_for.upsert_active`×665, `wait_router.complete_match`×510, `workflow_engine.deferred.result`×1379. |
+| Model + choreography reasoning | **PROVEN** | The planner's verbatim response authored the §6 plan: delegate, wait for PR, review, merge-signoff, schedule CI, wait for CI, execute merge, clean unwind. |
+| §6 full run | **NOT PROVEN** | The planner stalled at `ToolSearch`; the run never observed a Firegrid MCP ToolUse (`wait_for`, `session_new`, `session_prompt`, `schedule_me`, or `execute`). |
+| Clean unwind | **SUBSTRATE-BLOCKED** | The public clean-unwind path is tracked by `tf-p7w`; this is a known substrate blocker, not a pass. |
 
-> **The one-sentence story:** the planner understood the factory, the substrate
-> ran the factory's durable machinery, the model spoke — but our *instruments*
-> raced a correct durable suspension and could not see the tool arguments, so
-> we cannot yet *certify* the loop the system demonstrably *started*.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Sim as Sim driver<br/>(public client)
+    participant RC as runtime-context<br/>(public facade)
+    participant ACP as Claude ACP planner
+    participant Model as Claude model<br/>(quota OK)
+    participant TS as ToolSearch
+    participant MCP as Firegrid MCP toolset
+    participant Facts as darkFactory.facts<br/>(DurableTable)
+    participant Waits as wait/deferred substrate
+
+    Sim->>Facts: seed trigger + edge facts
+    Sim->>RC: session.start + planner prompt
+    RC->>ACP: launch real planner with runtimeContextMcp
+    ACP->>Model: §6 contract + seeded facts
+    Model-->>ACP: verbatim §6 plan
+    ACP->>TS: ToolSearch
+    TS--xMCP: stalls before any Firegrid MCP ToolUse
+    Note over MCP: No wait_for / session_new / session_prompt / schedule_me / execute observed
+    Facts-->>Sim: public readback shows backing facts
+    Waits-->>Sim: wait/deferred substrate spans present
+    Note over Sim,Waits: Substrate exercised; §6 run remains false: 0/6 proven
+```
+
+> **Current one-sentence story:** quota worked, the planner reasoned out the
+> correct §6 dance, and the durable substrate was exercised, but the actual
+> §6 run is **not proven** because the planner never got past `ToolSearch` into
+> a Firegrid MCP ToolUse.
 
 ---
 
-## 1. The experiment
+## 0.1 Superseded first read — retained for trace context
+
+The sections below preserve the original live-run investigation and its
+Mermaid diagrams for auditability. They should now be read as the first,
+pre-#401 interpretation. The load-bearing correction is the harness result
+above: the run did **not** prove §6 end-to-end.
+
+---
+
+## 1. Historical experiment context (superseded)
 
 **Hypothesis going in** (from finding tf-7dq / merged #395): *§6 is
 substrate-proven to the model boundary; the only thing between "expressed" and
@@ -49,7 +112,7 @@ tool calls*. That is the bar layer 4 measures.
 
 ---
 
-## 2. What actually happened — the dynamics
+## 2. First-read dynamics (superseded by §0)
 
 ```mermaid
 sequenceDiagram
@@ -105,7 +168,7 @@ choreography-not-orchestration thesis demonstrated in the wild.
 
 ---
 
-## 3. The substrate that ran underneath it
+## 3. First-read substrate diagram (superseded by §0)
 
 ```mermaid
 flowchart TD
@@ -156,7 +219,12 @@ live agent. The single amber node is where our visibility breaks.
 
 ---
 
-## 4. Why layer 4 (the proof) didn't close — root-cause analysis
+## 4. First-read root-cause hypothesis (superseded by §0)
+
+The #401 harness supersedes this root-cause hypothesis. The measured
+localization for the 12:51 run is not "a `wait_for` call with lost arguments";
+it is "planner observed only at `ToolSearch`, with no Firegrid MCP ToolUse
+issued." The text below is retained only to explain the earlier PR narrative.
 
 `sawCallerFactWaitFor:false`, `sawTurnComplete:false`, yet the substrate shows
 1470 `wait_for.upsert_active` spans. The assertion is blind, not the substrate.
@@ -191,26 +259,22 @@ problems between a working substrate and our ability to certify it.
 
 ---
 
-## 5. What this teaches about the system as a whole
+## 5. What the harness result teaches
 
 - **Choreography-not-orchestration is not aspirational here.** A real model,
   hand the primitives and a ticket, produced the §6 sequence by judgment. The
   value of *not* writing the workflow down is now an observed fact, not a
   design claim.
 - **The durable substrate is the strong part.** Under a live agent it produced
-  ~22.5k spans of wait-store / wait-router / workflow-deferred / reactive-loop
-  activity in three minutes without error or termination. The "is the
-  factory real" question is answered *yes* at the substrate layer.
-- **Our weakest link is observability, not capability.** The same gap bit
-  twice now (tf-7dq for *error* messages, here for *tool arguments*). The
-  durable boundary is legible to operators (§7.7) but the **agent↔host tool
-  I/O is not yet fully materialised into the trace** — and that, not any
-  missing primitive, is what blocks certification of §6.
-- **"Proven-running" needs a fact-advancing driver, not just a planner.** The
-  planner correctly *parks* on the first human gate. Proving the *whole* loop
-  requires the harness to play the human/provider on cue (advance
-  `human.plan.approved`, then `github.pr.opened`, …) and re-observe — exactly
-  oca3's proof-harness work.
+  21k live span events in the 12:51 run, including thousands of wait/deferred
+  spans and durable fact readback through the public facade. The substrate was
+  exercised even though the §6 loop was not proven.
+- **The blocker is now localized to the agent/tool handoff.** The objective
+  run saw `ToolSearch` and no Firegrid MCP ToolUse. That is narrower and more
+  falsifiable than the older "tool arguments may be invisible" hypothesis.
+- **"Proven-running" is stricter than "the planner wrote the plan."** The
+  harness intentionally refuses prompt inference. It needs issued Firegrid
+  ToolUse, durable backing fact, and observed advancement for each step.
 
 ---
 
@@ -218,30 +282,31 @@ problems between a working substrate and our ability to certify it.
 
 | Follow-up | Owner / handle | Why it matters here |
 |---|---|---|
-| Propagate ACP codec **tool arguments + error.message** into the trace | bead **tf-ds2** (review-scoped) | Closes root-cause #1 — makes `sawCallerFactWaitFor` decidable |
-| Falsifiable **per-step §6 proof harness** (advance seeded facts on cue, assert each gate) | **oca3** (P0, in flight) | Closes root-cause #2 — turns "it started" into "it ran" |
-| `execute` provider side-effects substrate | merged **#388** (Gap-2) | Planner explicitly needs it for step 5 (`execute` merge) |
-| `session_cancel/close` clean-unwind | **#393** evidence + Gurdas-approved **Option A** (#394), oca2 building | Planner explicitly needs it for step 6 (reject path) |
+| Falsifiable **per-step §6 proof harness** | merged **#401** | Produced this objective `s6FullLoopProven:false`, `0/6` result |
+| Copy-pasteable proof readout | merged **#402** | Renders the matrix from `run.json` without re-running a live agent |
+| Agent ToolSearch -> Firegrid MCP ToolUse handoff | follow-up to route | The planner stalled at `ToolSearch`; no Firegrid MCP ToolUse was issued |
+| `session_cancel/close` clean-unwind | bead **tf-p7w** / PR #404 | Clean unwind remains substrate-blocked and is not counted as a pass |
 
 **Bottom line for the reader:** this run did not prove §6 end-to-end — and it
-would have been dishonest to claim it did. What it *did* prove is more
-useful than a green check: the factory's hardest, most-doubted parts (a real
-model choreographing durable primitives, and the durable substrate surviving
-that under load) are **real**. The remaining work is making our instruments
-as good as the machine they are watching.
+would have been dishonest to claim it did. What it *did* prove is still useful:
+quota was not the blocker, the planner reasoned out the correct choreography,
+and the durable substrate is alive. The next demo-relevant failure is concrete:
+the planner stopped at `ToolSearch` before issuing any Firegrid MCP ToolUse.
 
 ---
 
 ### Reproduce / inspect
 
 ```
-pnpm --filter @firegrid/tiny-firegrid simulate:show  -- 2026-05-19T12-33-30-428Z__dark-factory-pipeline
-pnpm --filter @firegrid/tiny-firegrid simulate:duckdb -- 2026-05-19T12-33-30-428Z__dark-factory-pipeline
+pnpm --filter @firegrid/tiny-firegrid simulate:proof -- 2026-05-19T12-51-52-626Z__dark-factory-pipeline
+pnpm --filter @firegrid/tiny-firegrid simulate:show  -- 2026-05-19T12-51-52-626Z__dark-factory-pipeline
+pnpm --filter @firegrid/tiny-firegrid simulate:duckdb -- 2026-05-19T12-51-52-626Z__dark-factory-pipeline
 # then: SELECT name, count(*) FROM spans GROUP BY 1 ORDER BY 2 DESC;
 ```
 
 Artifacts (gitignored, local): `trace.md`, `trace.json`, `live-spans.jsonl`
-(22,511 events), `traces.otlp.jsonl`, `duckdb/tiny-firegrid.duckdb` under
-`packages/tiny-firegrid/.simulate/runs/2026-05-19T12-33-30-428Z__dark-factory-pipeline/`.
-The run summary (`run.json`) carries the `sawX` flags, `resultTextExcerpt`,
-and the planner-derived findings quoted above.
+(21,240 events), `traces.otlp.jsonl`, `duckdb/tiny-firegrid.duckdb` under
+`packages/tiny-firegrid/.simulate/runs/2026-05-19T12-51-52-626Z__dark-factory-pipeline/`.
+The run summary (`run.json`) carries `summary.sectionSixProof`,
+`summary.s6FullLoopProven`, `summary.s6ProvenStepCount`, durable readback
+event types, and the planner text excerpt quoted above.
