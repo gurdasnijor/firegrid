@@ -4,7 +4,7 @@ import {
   type HttpClientResponse,
 } from "@effect/platform"
 import type { HttpClientError } from "@effect/platform/HttpClientError"
-import { Data, Duration, Effect, Schedule } from "effect"
+import { Clock, Data, Duration, Effect, Ref, Schedule } from "effect"
 import type {
   Endpoint,
   HeadersRecord,
@@ -152,6 +152,28 @@ const parseRetryAfter = (raw: string | undefined): number | undefined => {
   return Math.min(deltaMs, 60 * 60 * 1000) // 1-hour cap
 }
 
+const retryErrorTag = (error: unknown): string => {
+  if (typeof error === "object" && error !== null && "_tag" in error) {
+    const tag = (error as { readonly _tag?: unknown })._tag
+    if (typeof tag === "string") return tag
+  }
+  return typeof error
+}
+
+const emitSpanEvent = (
+  name: string,
+  attributes: Record<string, unknown>,
+): Effect.Effect<void> =>
+  Effect.currentSpan.pipe(
+    Effect.zip(Clock.currentTimeMillis),
+    Effect.tap(([span, nowMs]) =>
+      Effect.sync(() => {
+        span.event(name, BigInt(nowMs) * 1_000_000n, attributes)
+      })),
+    Effect.asVoid,
+    Effect.ignore,
+  )
+
 // Exponential backoff (100ms, 200ms, 400ms, ...) capped at 3s per attempt,
 // limited to 4 total retries.
 //
@@ -279,27 +301,47 @@ const executeWithRetry = (
     const url = yield* requestUrlOf(endpoint)
     const headers = yield* buildHeaders(endpoint, callHeaders, extraHeaders)
     const client = yield* HttpClient.HttpClient
+    const attempts = yield* Ref.make(0)
 
     // Single attempt: execute the request and, if the server responded with
     // a retryable status (5xx / 429), pre-sleep any `Retry-After` window
     // and then fail with `RetryableHttpStatus` so `Effect.retry` re-enters
     // the schedule. On non-retryable status we just return the response —
     // the per-op caller inspects the status to map to typed protocol errors.
-    const attempt = client.execute(shape(url, headers)).pipe(
-      Effect.flatMap((res) => {
-        if (!isRetryableStatus(res.status)) return Effect.succeed(res)
-        const retryAfterMs = parseRetryAfter(headerValue(res, "retry-after"))
-        // The schedule's own delay still runs on top of `Retry-After`. In
-        // the common case the schedule's per-step delay (≤ 3s) is small
-        // compared to a server-provided wait, so the extra cost is bounded.
-        const wait = retryAfterMs !== undefined
-          ? Effect.sleep(Duration.millis(retryAfterMs))
-          : Effect.void
-        return wait.pipe(
-          Effect.zipRight(Effect.fail(new RetryableHttpStatus({ response: res }))),
-        )
-      }),
-    )
+    const attempt = Effect.gen(function* () {
+      const attemptNumber = yield* Ref.updateAndGet(attempts, (n) => n + 1)
+      const res = yield* client.execute(shape(url, headers)).pipe(
+        Effect.tapError(error =>
+          emitSpanEvent("retry.attempt", {
+            "firegrid.retry.attempt": attemptNumber,
+            "firegrid.retry.error": retryErrorTag(error),
+          })),
+      )
+      if (!isRetryableStatus(res.status)) {
+        yield* emitSpanEvent("retry.attempt", {
+          "firegrid.retry.attempt": attemptNumber,
+          "firegrid.retry.http_status": res.status,
+          "firegrid.retry.retryable": false,
+        })
+        return res
+      }
+      const retryAfterMs = parseRetryAfter(headerValue(res, "retry-after"))
+      yield* emitSpanEvent("retry.attempt", {
+        "firegrid.retry.attempt": attemptNumber,
+        "firegrid.retry.http_status": res.status,
+        "firegrid.retry.retryable": true,
+        ...(retryAfterMs === undefined ? {} : { "firegrid.retry.retry_after_ms": retryAfterMs }),
+      })
+      // The schedule's own delay still runs on top of `Retry-After`. In
+      // the common case the schedule's per-step delay (≤ 3s) is small
+      // compared to a server-provided wait, so the extra cost is bounded.
+      const wait = retryAfterMs !== undefined
+        ? Effect.sleep(Duration.millis(retryAfterMs))
+        : Effect.void
+      return yield* wait.pipe(
+        Effect.zipRight(Effect.fail(new RetryableHttpStatus({ response: res }))),
+      )
+    })
 
     return yield* attempt.pipe(
       Effect.retry({ schedule: scheduleFor(endpoint), while: isTransient }),
@@ -310,6 +352,9 @@ const executeWithRetry = (
         Effect.succeed(e.response),
       ),
       Effect.mapError((e) => new TransportError({ cause: e })),
+      Effect.withSpan("firegrid.durable_streams.http.request", {
+        kind: "client",
+      }),
     )
   })
 
