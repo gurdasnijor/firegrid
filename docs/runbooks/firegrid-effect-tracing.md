@@ -91,6 +91,10 @@ For actual operator debugging, use all available layers:
 - Use the local-process boundary spans to see process launch, stdout bytes,
   stderr bytes, stdin-backed codec sends, and process exit code without tracing
   inside the external agent.
+- Use codec spans as the protocol boundary: ACP session setup, prompts,
+  permission callbacks, session updates, termination, and stdio-jsonl
+  stdin-send/stdout-decode are all host-observable even when the agent runtime
+  has no internal tracer.
 - Add MCP JSON-RPC method spans at the Firegrid MCP HTTP boundary so
   non-instrumented agents are still observable from the outside.
 - When the agent runtime supports it, pass `OTEL_EXPORTER_OTLP_*`,

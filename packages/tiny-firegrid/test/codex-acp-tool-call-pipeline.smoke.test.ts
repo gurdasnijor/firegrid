@@ -146,6 +146,7 @@ const spanTreeLines = (spans: ReadonlyArray<RecordedSpan>): ReadonlyArray<string
         key.startsWith("firegrid.codec") ||
         key.startsWith("firegrid.process") ||
         key.startsWith("firegrid.command") ||
+        key.startsWith("firegrid.agent_input") ||
         key.startsWith("firegrid.agent_output"))
       .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
       .join(" ")
