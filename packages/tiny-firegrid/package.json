@@ -20,6 +20,7 @@
     "simulate:list": "tsx src/bin/simulate.ts list",
     "simulate:query": "tsx src/bin/simulate.ts query",
     "simulate:run": "tsx src/bin/simulate.ts run",
+    "simulate:proof": "tsx src/bin/simulate.ts proof",
     "simulate:runs": "tsx src/bin/simulate.ts runs",
     "simulate:show": "tsx src/bin/simulate.ts show",
     "simulate:tail": "tsx src/bin/simulate.ts tail",
