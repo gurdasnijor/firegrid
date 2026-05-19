@@ -11,6 +11,8 @@ coverage/
 *.log
 *.tsbuildinfo
 packages/tiny-firegrid/.simulate/
+tooling/analysis/mcp-tool-exposure-trace.json
+tooling/analysis/mcp-tool-exposure-trace.md
 
 # bv (beads viewer) local config and caches
 .bv/

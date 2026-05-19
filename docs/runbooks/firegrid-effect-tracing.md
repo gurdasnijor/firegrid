@@ -11,7 +11,7 @@ The G-MCP-2 smoke and the standalone tiny-firegrid simulation runner use
 `packages/tiny-firegrid/src/simulations/trace-recorder.ts` to install an Effect
 `Tracer` with `Effect.withTracer` and collect ended spans in memory.
 `packages/tiny-firegrid/src/simulations/trace-artifacts.ts` turns those spans
-into reusable run artifacts. The Codex ACP smoke still writes the
+into reusable run artifacts. The Codex ACP smoke can write gitignored
 review-compatible legacy files:
 
 - `tooling/analysis/mcp-tool-exposure-trace.md` for review.
