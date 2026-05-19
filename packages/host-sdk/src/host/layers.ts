@@ -22,6 +22,9 @@ import {
   RuntimeControlRequestReconcilerLive,
 } from "./control-request-reconciler.ts"
 import {
+  FiregridRuntimeContextMcpBaseUrlLive,
+} from "./runtime-context-mcp-base-url.ts"
+import {
   RuntimeContextWorkflowSession,
 } from "./runtime-context-workflow-core.ts"
 import {
@@ -260,6 +263,14 @@ export const FiregridRuntimeHostLive = (
     Layer.provideMerge(namespaceScoped),
     Layer.provideMerge(session),
     Layer.provideMerge(envPolicy),
+    // TFIND-048: single-owner, host-scoped late-bind channel for the
+    // runtime-context MCP base URL. Present (defaulting to `None`) even
+    // when the MCP listener is disabled, so the codec start path can
+    // resolve it and an MCP-marked context on an MCP-less host fails
+    // explicitly. When `FiregridMcpServerLayer` (A) is
+    // `Layer.provideMerge`'d with this host (B), A publishes its bound
+    // address into this same instance.
+    Layer.provideMerge(FiregridRuntimeContextMcpBaseUrlLive),
   )
 }
 

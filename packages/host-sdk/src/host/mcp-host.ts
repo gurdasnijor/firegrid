@@ -48,6 +48,9 @@ import {
   FiregridAgentToolkit,
   FiregridAgentToolkitLayer,
 } from "../agent-tools/index.ts"
+import {
+  publishRuntimeContextMcpBase,
+} from "./runtime-context-mcp-base-url.ts"
 
 /**
  * Effect Config for the host-owned MCP HTTP server's listener
@@ -187,6 +190,14 @@ export const FiregridMcpServerLayer = (
   Layer.mergeAll(
     Layer.scopedDiscard(McpServer.registerToolkit(FiregridAgentToolkit)),
     HttpRouter.Default.serve(),
+    // TFIND-048: on bind, the host late-binds its OWN bound MCP listener
+    // address into the single-purpose `FiregridRuntimeContextMcpBaseUrl`
+    // channel so the host start path can resolve the concrete
+    // `contextId`-scoped URL post-materialization. `HttpServer` is in
+    // scope here via the `provideMerge`'d `NodeHttpServer.layer` below;
+    // `FiregridRuntimeContextMcpBaseUrl` is provided by the runtime host
+    // (B) this layer is `provideMerge`'d with.
+    Layer.scopedDiscard(publishRuntimeContextMcpBase(options.path)),
   ).pipe(
     Layer.provide(FiregridAgentToolkitLayer),
     Layer.provide(FiregridMcpRouteContextLayer),

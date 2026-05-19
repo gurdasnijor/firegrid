@@ -26,6 +26,22 @@ export {
   type FiregridMcpServerLayerOptions,
 } from "./host/mcp-host.ts"
 
+// TFIND-048 host-provisioning seam. Single-purpose, host-scoped
+// late-bind of the runtime-context MCP base URL + the exact resolution
+// the codec start path uses to honor the URL-less `runtimeContextMcp`
+// marker. Exported so the deterministic CI-gating test can assert the
+// seam (host provisions the URL; client predicts none) with zero
+// real-LLM dependence.
+export {
+  FiregridRuntimeContextMcpBaseUrl,
+  FiregridRuntimeContextMcpBaseUrlLive,
+  type FiregridRuntimeContextMcpBase,
+} from "./host/runtime-context-mcp-base-url.ts"
+export {
+  resolveEffectiveMcpServers,
+  runtimeContextMcpUrlForContext,
+} from "./host/runtime-context-session/codec-adapter.ts"
+
 // Host-provided live layers for the runtime-owned executor seam +
 // shared host observation substrate.
 export {

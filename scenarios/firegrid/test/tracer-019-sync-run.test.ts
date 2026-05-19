@@ -252,15 +252,15 @@ const assertSmokeDurableState = (
   expect(context.runtime.config.envBindings).toEqual([
     { name: "CHILD_MARKER_SECRET", ref: "env:FIREGRID_TRACER_PARENT_SECRET" },
   ])
-  expect(context.runtime.config.mcpServers).toEqual([
-    {
-      name: "firegrid-runtime-context",
-      server: {
-        type: "url",
-        url: expect.stringContaining(`/mcp/runtime-context/${encodeURIComponent(contextId)}`),
-      },
-    },
-  ])
+  // TFIND-048: the durable context intent carries ONLY the URL-less
+  // `runtimeContextMcp` marker. The concrete contextId-scoped
+  // `firegrid-runtime-context` URL is host-owned and injected at start
+  // from the host's OWN bound MCP listener — it MUST NOT be baked into
+  // the durable row by the client (the eliminated backwards-lifecycle
+  // smell). Deterministic host-provisioning is asserted by tiny-firegrid
+  // `codex-acp-host-provisioning-seam.test.ts`.
+  expect(context.runtime.config.runtimeContextMcp).toEqual({ enabled: true })
+  expect(context.runtime.config.mcpServers).toBeUndefined()
 
   expect(retained.runs.map(row => row.status)).toEqual(["started", "exited"])
   expect(retained.runs.at(-1)).toMatchObject({

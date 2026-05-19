@@ -13,6 +13,7 @@ import {
   normalizeRuntimeIntent,
   PublicLaunchRequestSchema,
   runtimeAgentProtocolValues,
+  RuntimeContextMcpMarkerSchema,
   RuntimeEventSchema,
 } from "../../src/launch/index.ts"
 
@@ -236,6 +237,31 @@ describe("@firegrid/protocol launch schema", () => {
         },
       },
     ])
+  })
+
+  it("TFIND-048 runtimeContextMcp marker is URL-less and survives normalization", async () => {
+    // The marker carries no url/host/port slot: a client cannot express
+    // the host-owned URL. Excess `url` is rejected at decode.
+    const rejected = Schema.decodeUnknownEither(RuntimeContextMcpMarkerSchema)({
+      enabled: true,
+      url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
+    })
+    expect(Either.isLeft(rejected)).toBe(true)
+
+    const decoded = await Effect.runPromise(decodeLaunchConfig({
+      agentArgv: ["node", "agent.mjs"],
+      runtimeContextMcp: { enabled: true },
+    }))
+    expect(decoded.runtimeContextMcp).toEqual({ enabled: true })
+
+    const normalized = normalizeRuntimeIntent(local.jsonl({
+      argv: ["node", "agent.mjs"],
+      runtimeContextMcp: { enabled: true },
+    }))
+    expect(normalized.config.runtimeContextMcp).toEqual({ enabled: true })
+    // The URL-less marker never materializes an mcpServers entry on its
+    // own — the concrete declaration is host-injected at start.
+    expect(normalized.config.mcpServers).toBeUndefined()
   })
 
   it("firegrid-durable-launch-runtime-operator.JOURNAL_ROWS.3 decodes runtime event rows without parsing provider JSON", () => {
