@@ -199,10 +199,25 @@ const claudeAcpArgv = [
 // codex-acp planner: the launch shape proven in tf-v2z to actually invoke
 // Firegrid MCP tools end-to-end (initialize -> tools/list -> tools/call ->
 // observed ToolUse). OPENAI_API_KEY, not ANTHROPIC.
+// codex-acp ignores ACP `_meta` (A1's claude `disableBuiltInTools` lever
+// does not reach it). codex-acp DOES accept Codex `-c key=value` config
+// overrides; trim the documented non-MCP built-ins (web search, plan tool,
+// apply-patch, view-image) so the planner's surface skews to the Firegrid
+// runtime-context MCP toolset. Codex's core shell tool cannot be removed
+// via config — if codex-acp still explores via shell despite this + the
+// hard-constraint prompt, that is itself the precise finding.
 const codexAcpArgv = [
   "npx",
   "-y",
   "@zed-industries/codex-acp@0.14.0",
+  "-c",
+  "tools.web_search=false",
+  "-c",
+  "include_plan_tool=false",
+  "-c",
+  "include_apply_patch_tool=false",
+  "-c",
+  "include_view_image_tool=false",
 ] as const
 
 const darkFactoryCodexAcpEnvPolicy = (
@@ -819,6 +834,18 @@ const plannerPrompt = (input: {
   }
   return [
     "You are the Smithery dark-factory planner running on Firegrid.",
+    "",
+    "HARD CONSTRAINTS — READ FIRST:",
+    "- Your ONLY available tools are the Firegrid runtime-context tools:",
+    "  wait_for, session_new, session_prompt, schedule_me, execute, sleep,",
+    "  session_cancel, session_close. Nothing else.",
+    "- You have NO filesystem, NO shell, NO repo read/grep/search, NO web,",
+    "  NO MCP-resource browsing. Do NOT attempt to read or explore this",
+    "  repository or list resources — those tools do not exist for you and",
+    "  any such attempt is wasted effort that makes ZERO progress.",
+    "- The ONLY way to make ANY progress on the goal is to CALL the Firegrid",
+    "  tools above. Begin by calling them immediately. Do not explore, do",
+    "  not plan in prose first — issue the first Firegrid tool call now.",
     "",
     "Goal:",
     "Drive the full factory-vision section 6 loop using only Firegrid tools.",
