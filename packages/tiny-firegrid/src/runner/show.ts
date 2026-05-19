@@ -85,7 +85,7 @@ const buildTree = (spans: ReadonlyArray<SpanRecord>): string => {
   // viewer is broken.
   const spanIds = new Set(spans.map(s => s.spanId))
   const byParent = new Map<string | undefined, Array<SpanRecord>>()
-  for (const span of spans) {
+  spans.forEach(span => {
     const parentKey =
       span.parentSpanId !== undefined && spanIds.has(span.parentSpanId)
         ? span.parentSpanId
@@ -93,17 +93,15 @@ const buildTree = (spans: ReadonlyArray<SpanRecord>): string => {
     const arr = byParent.get(parentKey) ?? []
     arr.push(span)
     byParent.set(parentKey, arr)
-  }
-  for (const arr of byParent.values()) {
-    arr.sort((a, b) => startNs(a) - startNs(b))
-  }
+  })
+  byParent.forEach(arr => arr.sort((a, b) => startNs(a) - startNs(b)))
   const out: Array<string> = []
   const walk = (span: SpanRecord, depth: number): void => {
     out.push(formatLine(span, depth))
     const children = byParent.get(span.spanId) ?? []
-    for (const child of children) walk(child, depth + 1)
+    children.forEach(child => walk(child, depth + 1))
   }
-  for (const root of byParent.get(undefined) ?? []) walk(root, 0)
+  ;(byParent.get(undefined) ?? []).forEach(root => walk(root, 0))
   return out.join("\n")
 }
 
@@ -111,12 +109,12 @@ const summary = (spans: ReadonlyArray<SpanRecord>): string => {
   const errored = spans.filter(s => s.status.code === 2).length
   const traceIds = new Set(spans.map(s => s.traceId)).size
   const sides = new Map<string, number>()
-  for (const span of spans) {
+  spans.forEach(span => {
     const side = span.attributes["firegrid.side"]
     if (typeof side === "string") {
       sides.set(side, (sides.get(side) ?? 0) + 1)
     }
-  }
+  })
   const sidesText = [...sides.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([k, v]) => `${k}=${v}`)
@@ -226,7 +224,5 @@ export const listRuns = Effect.gen(function*() {
     yield* Console.log(`(no runs in ${runsRoot})`)
     return
   }
-  for (const dir of dirs) {
-    yield* Console.log(dir)
-  }
+  yield* Effect.forEach(dirs, dir => Console.log(dir), { discard: true })
 })

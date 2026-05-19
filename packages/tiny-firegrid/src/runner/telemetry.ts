@@ -87,9 +87,7 @@ class FileSpanExporter implements SpanExporter {
       return
     }
     try {
-      for (const span of spans) {
-        this.stream.write(spanToJsonLine(span))
-      }
+      spans.forEach(span => this.stream.write(spanToJsonLine(span)))
       resultCallback({ code: 0 })
     } catch (e) {
       resultCallback({ code: 1, error: e as Error })
