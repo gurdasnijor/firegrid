@@ -55,7 +55,10 @@ export {
   type RuntimeControlRequestReconcilerService,
 } from "./control-request-reconciler.ts"
 export {
+  FiregridEnvBindingsFromEnv,
   FiregridLocalHostLive,
+  FiregridLocalProcess,
+  FiregridLocalProcessFromEnv,
   FiregridRuntimeHostLive,
   FiregridRuntimeHostWithWorkflowLive,
   type FiregridHost,

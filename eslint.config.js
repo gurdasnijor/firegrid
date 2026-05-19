@@ -705,6 +705,57 @@ export default tseslint.config(
     },
   },
   {
+    files: ["packages/tiny-firegrid/src/simulations/*/driver.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            ...legacyDurableAgentSubstrateImportPatterns,
+            ...upstreamDurableStreamsImportPatterns,
+            ...historicalFiregridDurableStreamsImportPatterns,
+            {
+              group: ["@firegrid/host-sdk", "@firegrid/host-sdk/*"],
+              message: "Drivers run on the client side; no host imports.",
+            },
+            {
+              group: ["@firegrid/runtime", "@firegrid/runtime/*"],
+              message: "Drivers cannot reach into runtime internals.",
+            },
+            {
+              group: ["@firegrid/protocol", "@firegrid/protocol/*"],
+              message:
+                "Drivers use @firegrid/client-sdk only. If you need missing behavior, add it to the public client surface.",
+            },
+            {
+              group: ["effect-durable-operators", "effect-durable-operators/*"],
+              message: "Drivers do not touch durable tables directly. The host owns those.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["packages/tiny-firegrid/src/simulations/*/host.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            ...legacyDurableAgentSubstrateImportPatterns,
+            ...upstreamDurableStreamsImportPatterns,
+            ...historicalFiregridDurableStreamsImportPatterns,
+            {
+              group: ["@firegrid/client-sdk", "@firegrid/client-sdk/*"],
+              message: "Hosts do not use the client. They provide it.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ["packages/substrate/src/**/*.ts"],
     rules: {
       "no-restricted-imports": [

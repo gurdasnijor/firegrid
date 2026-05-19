@@ -1,12 +1,49 @@
-export * from "./configurations/current-pipeline.ts"
-export * from "./configurations/codex-acp-tool-call-pipeline.ts"
-export * from "./configurations/dispatcher-driven-pipeline.ts"
-export * from "./configurations/durable-streams-backed-pipeline.ts"
-export * from "./configurations/multi-context-pipeline.ts"
-export * from "./configurations/multi-context-production-consuming-pipeline.ts"
-export * from "./configurations/output-journal-pipeline.ts"
-export * from "./configurations/permission-flow-pipeline.ts"
-export * from "./configurations/stdio-jsonl-tool-execution-pipeline.ts"
-export * from "./configurations/wait-for-output-pipeline.ts"
-export * from "./simulations/registry.ts"
-export * from "./simulations/types.ts"
+import { Args, Command, Options } from "@effect/cli"
+import { NodeContext, NodeRuntime } from "@effect/platform-node"
+import { Console, Effect } from "effect"
+import {
+  listSimulations,
+  selectedSimulation,
+} from "./runner/list.ts"
+import { runSimulation } from "./runner/runtime.ts"
+
+const simulationIdArg = Args.text({ name: "simulation-id" }).pipe(Args.optional)
+const timeoutOption = Options.integer("timeout-ms").pipe(
+  Options.withDescription("Abort a simulation run after this many milliseconds"),
+  Options.withDefault(300_000),
+)
+
+const listCommand = Command.make("list", {}, () =>
+  Effect.flatMap(listSimulations, simulations =>
+    Console.log(
+      simulations
+        .map(simulation => `${simulation.id}\t${simulation.description}`)
+        .join("\n"),
+    )))
+
+const runCommand = Command.make(
+  "run",
+  { simulationId: simulationIdArg, timeoutMs: timeoutOption },
+  ({ simulationId, timeoutMs }) =>
+    Effect.flatMap(
+      selectedSimulation(simulationId),
+      simulation => runSimulation(simulation, { timeoutMs }),
+    ),
+)
+
+const command = Command.make("simulate").pipe(
+  Command.withSubcommands([
+    listCommand,
+    runCommand,
+  ]),
+)
+
+const cli = Command.run(command, {
+  name: "Tiny Firegrid simulations",
+  version: "0.0.0",
+})
+
+cli(process.argv).pipe(
+  Effect.provide(NodeContext.layer),
+  NodeRuntime.runMain,
+)
