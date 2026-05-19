@@ -91,6 +91,7 @@ const usage = [
   "  simulate runs                         # local evidence runs",
   "  simulate run [simulation-id] [--tail]  # create a run in .simulate/runs",
   "  simulate show [latest|run-id]          # print run metadata",
+  "  simulate proof [latest|run-id]         # render the §6 dark-factory proof matrix (demo)",
   "  simulate tail [latest|run-id]          # stream ended spans as JSONL",
   "  simulate attach [latest|run-id]        # alias for tail",
   "  simulate duckdb [latest|run-id]        # open DuckDB on an existing run",
@@ -564,6 +565,116 @@ const runSimulation = async (
   }
 }
 
+// --- simulate proof ----------------------------------------------------
+// A DEMO readout. Reads ONLY the run.json summary the dark-factory harness
+// emits (no span re-derivation, no DuckDB, never starts a run). Renders the
+// objective §6 proof matrix as copy-pasteable markdown.
+
+interface S6StepProofView {
+  readonly step: string
+  readonly issued: boolean
+  readonly backingFactPresent: boolean
+  readonly advanced: boolean
+  readonly proven: boolean
+  readonly substrateBlocked: boolean
+  readonly conditional: boolean
+  readonly note: string
+}
+
+interface S6FindingView {
+  readonly id: string
+  readonly status: string
+  readonly evidence: string
+}
+
+interface DarkFactoryProofSummary {
+  readonly s6FullLoopProven: boolean
+  readonly s6ProvenStepCount: number
+  readonly s6RequiredStepCount: number
+  readonly sectionSixProof: ReadonlyArray<S6StepProofView>
+  readonly readbackFactEventTypes: ReadonlyArray<string>
+  readonly findings: ReadonlyArray<S6FindingView>
+}
+
+const asProofSummary = (
+  summary: Record<string, unknown> | undefined,
+): DarkFactoryProofSummary | undefined => {
+  if (summary === undefined) return undefined
+  if (!Array.isArray(summary.sectionSixProof)) return undefined
+  return summary as unknown as DarkFactoryProofSummary
+}
+
+const yn = (value: boolean): string => (value ? "✓" : "–")
+
+const stepVerdict = (step: S6StepProofView): string =>
+  step.substrateBlocked
+    ? "⛔ substrate-blocked"
+    : step.proven
+      ? "✓ PROVEN"
+      : step.conditional
+        ? "❓ conditional"
+        : "✗ not-proven"
+
+const renderProof = (manifest: RunManifest): boolean => {
+  const proof = asProofSummary(manifest.summary)
+  if (proof === undefined) {
+    console.error([
+      `run ${manifest.runId} (${manifest.simulationId}) has no §6 proof summary`,
+      "this readout requires a dark-factory-pipeline run.json with a sectionSixProof.",
+      "create one with:",
+      "  pnpm --filter @firegrid/tiny-firegrid simulate:run -- dark-factory-pipeline",
+    ].join("\n"))
+    return false
+  }
+
+  const rows = proof.sectionSixProof.map(step =>
+    `| ${step.step} | ${yn(step.issued)} | ${yn(step.backingFactPresent)} | ${yn(step.advanced)} | ${stepVerdict(step)} |`)
+
+  const unproven = proof.sectionSixProof.filter(
+    step => !step.proven && !step.conditional,
+  )
+  const findingLines = proof.findings
+    .filter(finding =>
+      finding.id.startsWith("dark-factory.s6.") ||
+      finding.status === "known-gap" ||
+      finding.status === "blocked-external")
+    .map(finding => `- \`${finding.id}\` [${finding.status}]: ${finding.evidence}`)
+
+  const lines = [
+    `## §6 dark-factory proof — ${manifest.runId}`,
+    "",
+    `- simulation: \`${manifest.simulationId}\`  ·  status: \`${manifest.status}\`  ·  namespace: \`${manifest.namespace}\``,
+    "",
+    proof.s6FullLoopProven
+      ? `### ✅ §6 FULL LOOP PROVEN — ${proof.s6ProvenStepCount}/${proof.s6RequiredStepCount} required steps proven-run`
+      : `### ⚠️ §6 NOT fully proven — ${proof.s6ProvenStepCount}/${proof.s6RequiredStepCount} required steps proven-run`,
+    "",
+    "| step | issued | backingFact | advanced | verdict |",
+    "|------|--------|-------------|----------|---------|",
+    ...rows,
+    "",
+    `**Durable readback fact event types (public facade):** ${
+      proof.readbackFactEventTypes.length === 0
+        ? "_none observed_"
+        : proof.readbackFactEventTypes.map(t => `\`${t}\``).join(", ")
+    }`,
+    "",
+    unproven.length === 0
+      ? "_All required steps proven-run._"
+      : `**Un-proven required steps:** ${unproven.map(s => s.step).join(", ")}`,
+    "",
+    findingLines.length === 0
+      ? "_No §6 / substrate findings recorded._"
+      : "**Findings (gaps / un-proven):**",
+    ...(findingLines.length === 0 ? [] : findingLines),
+  ]
+
+  console.log(lines.join("\n"))
+  // A not-fully-proven run is still a VALID readout (falsifiability is the
+  // point). Only a missing proof summary is an error exit.
+  return true
+}
+
 const printRunSummary = (
   manifest: RunManifest,
   paths?: TinyTraceArtifactPaths,
@@ -707,6 +818,12 @@ const main = async (): Promise<void> => {
     case "show": {
       const manifest = await resolveRunManifest(args[0] ?? "latest")
       printRunSummary(manifest)
+      return
+    }
+    case "proof": {
+      const manifest = await resolveRunManifest(args[0] ?? "latest")
+      const rendered = renderProof(manifest)
+      if (!rendered) globalThis.process.exitCode = 1
       return
     }
     case "tail":
