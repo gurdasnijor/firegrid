@@ -60,6 +60,30 @@ export const runtimeStartRequestClaimId = (
 ): string =>
   `start_req_claim:${sanitizeIdSegment(requestId)}:${claimWindowStartedAtMs}`
 
+// tf-4ni Gap (session_cancel/session_close substrate): durable
+// session-lifecycle terminate requests. Same blessed shape as the
+// context/start control requests above — append-only, idempotent by
+// `contextId` so re-issuing cancel/close for the same session records one
+// durable intent, not competing terminations. Host claim/attempt accounting
+// reuses the existing kind-generic claim/completion rows.
+export const runtimeCancelRequestId = (contextId: string): string =>
+  `req_cancel_${sanitizeIdSegment(contextId)}`
+
+export const runtimeCloseRequestId = (contextId: string): string =>
+  `req_close_${sanitizeIdSegment(contextId)}`
+
+export const runtimeCancelRequestClaimId = (
+  requestId: string,
+  claimWindowStartedAtMs: number,
+): string =>
+  `cancel_req_claim:${sanitizeIdSegment(requestId)}:${claimWindowStartedAtMs}`
+
+export const runtimeCloseRequestClaimId = (
+  requestId: string,
+  claimWindowStartedAtMs: number,
+): string =>
+  `close_req_claim:${sanitizeIdSegment(requestId)}:${claimWindowStartedAtMs}`
+
 // firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1
 //
 // The unbound create/load request. `contextId` is the client-computed
@@ -104,7 +128,33 @@ export type RuntimeStartRequestRow = Schema.Schema.Type<
   typeof RuntimeStartRequestRowSchema
 >
 
-export const RuntimeControlRequestKindSchema = Schema.Literal("context", "start")
+// tf-4ni: the session-lifecycle terminate request. Mirrors
+// `RuntimeStartRequestRowSchema` as a durable, client/host-authored row a
+// host observes/claims/executes. `lifecycle` selects cancel vs close. It is
+// NOT a synchronous result: terminal status is read through the existing
+// run/output projections and the kind-generic completion row.
+export const RuntimeLifecycleRequestRowSchema = Schema.Struct({
+  requestId: Schema.String.pipe(DurableTable.primaryKey),
+  contextId: Schema.String,
+  lifecycle: Schema.Literal("cancel", "close"),
+  requestedBy: Schema.optional(Schema.String),
+  createdAt: Schema.String,
+}).annotations({
+  identifier: "firegrid.runtimeLifecycleRequest.row",
+  title: "Runtime lifecycle request row",
+  description:
+    "Client/host-written durable request to cancel or close a RuntimeContext. Host claims and drives the per-context engine to a durable terminal state; not a synchronous result.",
+})
+export type RuntimeLifecycleRequestRow = Schema.Schema.Type<
+  typeof RuntimeLifecycleRequestRowSchema
+>
+
+export const RuntimeControlRequestKindSchema = Schema.Literal(
+  "context",
+  "start",
+  "cancel",
+  "close",
+)
 export type RuntimeControlRequestKind = Schema.Schema.Type<
   typeof RuntimeControlRequestKindSchema
 >
@@ -207,6 +257,44 @@ export const makeRuntimeStartRequestRow = (
   createdAt: options?.createdAt ?? nowIso(),
 })
 
+const controlRequestClaimId = (
+  requestKind: RuntimeControlRequestKind,
+  requestId: string,
+  claimWindowStartedAtMs: number,
+): string => {
+  switch (requestKind) {
+    case "context":
+      return runtimeContextRequestClaimId(requestId, claimWindowStartedAtMs)
+    case "start":
+      return runtimeStartRequestClaimId(requestId, claimWindowStartedAtMs)
+    case "cancel":
+      return runtimeCancelRequestClaimId(requestId, claimWindowStartedAtMs)
+    case "close":
+      return runtimeCloseRequestClaimId(requestId, claimWindowStartedAtMs)
+  }
+}
+
+export const makeRuntimeLifecycleRequestRow = (
+  input: {
+    readonly contextId: string
+    readonly lifecycle: "cancel" | "close"
+    readonly requestedBy?: string
+  },
+  options?: {
+    readonly requestId?: string
+    readonly createdAt?: string
+  },
+): RuntimeLifecycleRequestRow => ({
+  requestId: options?.requestId ??
+    (input.lifecycle === "cancel"
+      ? runtimeCancelRequestId(input.contextId)
+      : runtimeCloseRequestId(input.contextId)),
+  contextId: input.contextId,
+  lifecycle: input.lifecycle,
+  ...(input.requestedBy === undefined ? {} : { requestedBy: input.requestedBy }),
+  createdAt: options?.createdAt ?? nowIso(),
+})
+
 export const makeRuntimeControlRequestClaimRow = (
   input: {
     readonly requestKind: RuntimeControlRequestKind
@@ -219,9 +307,11 @@ export const makeRuntimeControlRequestClaimRow = (
     readonly claimedAtMs: number
   },
 ): RuntimeControlRequestClaimRow => ({
-  claimId: input.requestKind === "context"
-    ? runtimeContextRequestClaimId(input.requestId, input.claimWindowStartedAtMs)
-    : runtimeStartRequestClaimId(input.requestId, input.claimWindowStartedAtMs),
+  claimId: controlRequestClaimId(
+    input.requestKind,
+    input.requestId,
+    input.claimWindowStartedAtMs,
+  ),
   requestKind: input.requestKind,
   requestId: input.requestId,
   contextId: input.contextId,
