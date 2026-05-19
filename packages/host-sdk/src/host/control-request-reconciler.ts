@@ -14,6 +14,7 @@ import {
   type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
 import { Cause, Clock, Context, Duration, Effect, Layer, Option } from "effect"
+import { withRowOtelParent } from "@firegrid/protocol/otel"
 import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import { startRuntime } from "./commands.ts"
 import { RuntimeContextEngineRegistry } from "./runtime-context-engine-registry.ts"
@@ -276,12 +277,15 @@ const reconcileContextRequest = (
     })
   }).pipe(
     Effect.withSpan("firegrid.host.control_request.context.reconcile", {
-      kind: "internal",
+      kind: "consumer",
       attributes: {
         "firegrid.context.id": request.contextId,
         "firegrid.control.request_id": request.requestId,
       },
     }),
+    // Parent ALL spans under this reconcile (the named span + everything it
+    // calls into) to the client-side append span recorded on the row.
+    withRowOtelParent(request),
   )
 
 // Shared claim preamble for reconcilable control requests that act on an
@@ -347,12 +351,13 @@ const reconcileStartRequest = (
     })
   }).pipe(
     Effect.withSpan("firegrid.host.control_request.start.reconcile", {
-      kind: "internal",
+      kind: "consumer",
       attributes: {
         "firegrid.context.id": request.contextId,
         "firegrid.control.request_id": request.requestId,
       },
     }),
+    withRowOtelParent(request),
   )
 
 const activeActivityAttempt = (
@@ -463,13 +468,14 @@ const reconcileLifecycleRequest = (
     yield* recordLifecycleTerminalEvidence(context, request)
   }).pipe(
     Effect.withSpan("firegrid.host.control_request.lifecycle.reconcile", {
-      kind: "internal",
+      kind: "consumer",
       attributes: {
         "firegrid.context.id": request.contextId,
         "firegrid.control.request_id": request.requestId,
         "firegrid.control.lifecycle": request.lifecycle,
       },
     }),
+    withRowOtelParent(request),
   )
 
 const reconcileLifecycleRequestsOnce = (

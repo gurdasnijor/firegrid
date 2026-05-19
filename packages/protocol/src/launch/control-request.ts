@@ -24,6 +24,7 @@
 
 import { DurableTable } from "effect-durable-operators"
 import { Schema } from "effect"
+import { RowOtelContextSchema } from "../otel/row-otel.ts"
 import { PublicLaunchRuntimeIntentSchema } from "./schema.ts"
 
 const nowIso = (): string => new Date().toISOString()
@@ -97,6 +98,8 @@ export const RuntimeContextRequestRowSchema = Schema.Struct({
   runtime: PublicLaunchRuntimeIntentSchema,
   createdBy: Schema.optional(Schema.String),
   createdAt: Schema.String,
+  // firegrid-row-otel-propagation.ROW_OTEL.1
+  _otel: Schema.optional(RowOtelContextSchema),
 }).annotations({
   identifier: "firegrid.runtimeContextRequest.row",
   title: "Runtime context request row",
@@ -118,6 +121,8 @@ export const RuntimeStartRequestRowSchema = Schema.Struct({
   contextId: Schema.String,
   requestedBy: Schema.optional(Schema.String),
   createdAt: Schema.String,
+  // firegrid-row-otel-propagation.ROW_OTEL.1
+  _otel: Schema.optional(RowOtelContextSchema),
 }).annotations({
   identifier: "firegrid.runtimeStartRequest.row",
   title: "Runtime start request row",
@@ -139,6 +144,8 @@ export const RuntimeLifecycleRequestRowSchema = Schema.Struct({
   lifecycle: Schema.Literal("cancel", "close"),
   requestedBy: Schema.optional(Schema.String),
   createdAt: Schema.String,
+  // firegrid-row-otel-propagation.ROW_OTEL.1
+  _otel: Schema.optional(RowOtelContextSchema),
 }).annotations({
   identifier: "firegrid.runtimeLifecycleRequest.row",
   title: "Runtime lifecycle request row",

@@ -1,5 +1,6 @@
 import { DurableTable } from "effect-durable-operators"
 import { Schema } from "effect"
+import { RowOtelContextSchema } from "../otel/row-otel.ts"
 
 export const RuntimeIngressKindSchema = Schema.Literal(
   "message",
@@ -88,6 +89,10 @@ export const RuntimeIngressInputRowSchema = Schema.Struct({
   ...runtimeIngressPayloadFields,
   createdAt: Schema.String,
   sequencedAt: Schema.optional(Schema.String),
+  // firegrid-row-otel-propagation.ROW_OTEL.1 — copied through from the
+  // originating `RuntimeInputIntentRow` by the host sequencer so reactive_loop
+  // input handling can parent back to the client.prompt producer span.
+  _otel: Schema.optional(RowOtelContextSchema),
 })
 export type RuntimeIngressInputRow = Schema.Schema.Type<typeof RuntimeIngressInputRowSchema>
 
@@ -95,6 +100,9 @@ export const RuntimeInputIntentRowSchema = Schema.Struct({
   intentId: Schema.String.pipe(DurableTable.primaryKey),
   ...runtimeIngressPayloadFields,
   createdAt: Schema.String,
+  // firegrid-row-otel-propagation.ROW_OTEL.1 — optional W3C trace context;
+  // legacy/external producers omit it and consumers treat that as "no parent".
+  _otel: Schema.optional(RowOtelContextSchema),
 })
 export type RuntimeInputIntentRow = Schema.Schema.Type<typeof RuntimeInputIntentRowSchema>
 

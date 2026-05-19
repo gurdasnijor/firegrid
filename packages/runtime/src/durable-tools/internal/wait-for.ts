@@ -38,6 +38,7 @@ import {
   type Scope,
 } from "effect"
 import { type DurableTableError } from "effect-durable-operators"
+import { stampRowOtel } from "@firegrid/protocol/otel"
 import { type WaitRow } from "./table.ts"
 import {
   DurableWaitCompletionRowLookup,
@@ -324,19 +325,24 @@ const matchImpl = <A = unknown>(
         })
       }),
     )
-    const baseRow: WaitRow = {
+    // Stamp the wait_registrar trace context onto the wait row BEFORE the
+    // upsert internal span fires — this captures whatever workflow handler
+    // span called wait_for (semantically "the registrar"), not the inner
+    // upsert span. The router-side `complete_match` consumer turns this into
+    // the wait-registrar `SpanLink` on the match span.
+    const baseRow = yield* stampRowOtel({
       waitKey,
       workflowName: instance.workflow.name,
       executionId: instance.executionId,
       deferredName,
       source: options.source,
       trigger: options.trigger,
-      status: "active",
+      status: "active" as const,
       createdAtMs: nowMs,
       ...(options.timeoutMs === undefined
         ? {}
         : { deadlineMs: nowMs + options.timeoutMs }),
-    }
+    } satisfies WaitRow)
     yield* upsertActiveWait(options.name, baseRow, waitLookup, waitUpsert)
     const matchDeferred = matchDeferredFor(deferredName)
     return options.timeoutMs === undefined
