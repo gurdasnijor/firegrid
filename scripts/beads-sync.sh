@@ -68,18 +68,27 @@ done
 trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 BEADS_DIR="$RR/.beads" br sync --flush-only >/dev/null 2>&1 || true
+git -C "$RR" fetch -q origin main
 
-if git -C "$RR" diff --quiet -- .beads/issues.jsonl && git -C "$RR" diff --cached --quiet -- .beads/issues.jsonl; then
-  echo "beads-sync: issues.jsonl already in sync — nothing to push"
-  exit 0
+# Commit any working-tree beads change (if dirty).
+if ! git -C "$RR" diff --quiet -- .beads/issues.jsonl || ! git -C "$RR" diff --cached --quiet -- .beads/issues.jsonl; then
+  git -C "$RR" add .beads/issues.jsonl
+  git -C "$RR" -c commit.gpgsign=false commit -q -m "$MSG"
 fi
 
-# Commit the beads change FIRST, then rebase — a dirty issues.jsonl makes
-# `pull --rebase` no-op silently and a moved origin/main then rejects the
-# push (the recurring failure). Commit → fetch → rebase (now clean) → push.
-git -C "$RR" add .beads/issues.jsonl
-git -C "$RR" -c commit.gpgsign=false commit -q -m "$MSG"
-git -C "$RR" fetch -q origin main
+# "Nothing to do" means DURABLE, not just "working tree == HEAD". The old
+# guard exited here after a failed push left the commit on local HEAD —
+# stranding it forever (every later run saw a clean working tree). Correct
+# test: working tree clean AND local HEAD already an ancestor of
+# origin/main. If a prior sync's commit is stranded (local ahead), fall
+# through and push it.
+if git -C "$RR" diff --quiet -- .beads/issues.jsonl \
+   && git -C "$RR" diff --cached --quiet -- .beads/issues.jsonl \
+   && git -C "$RR" merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
+  echo "beads-sync: issues.jsonl durable on origin/main — nothing to do"
+  exit 0
+fi
+# else: either a fresh commit above, or a stranded prior commit → push it.
 # best-effort rebase; capture its real status (NOT a pipe's — pipelines
 # return the last cmd's exit, which masked failures and produced the
 # "false-success" the br-owner had to ground-truth every time).
