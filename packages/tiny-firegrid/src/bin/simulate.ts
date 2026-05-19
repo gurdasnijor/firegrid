@@ -378,8 +378,7 @@ const writeManifest = async (manifest: RunManifest): Promise<void> => {
 
 const codexLocalProcessEnv = () => {
   const base = localProcessSpawnEnvFromHostEnv(globalThis.process.env)
-  const baselineEnvVars = { ...(base.baselineEnvVars ?? {}) }
-  for (const key of [
+  const baselineEnvVars = [
     "HOME",
     "TMPDIR",
     "TEMP",
@@ -387,10 +386,11 @@ const codexLocalProcessEnv = () => {
     "LOGNAME",
     "NPM_CONFIG_CACHE",
     "npm_config_cache",
-  ]) {
+  ].reduce<Record<string, string>>((envVars, key) => {
     const value = globalThis.process.env[key]
-    if (value !== undefined && value.length > 0) baselineEnvVars[key] = value
-  }
+    if (value !== undefined && value.length > 0) envVars[key] = value
+    return envVars
+  }, { ...(base.baselineEnvVars ?? {}) })
   return {
     ...base,
     baselineEnvVars,
@@ -612,10 +612,13 @@ const resolveRunManifest = async (selector = "latest"): Promise<RunManifest> => 
 
   if (await pathExists(runsRoot())) {
     const entries = await readDirectory(runsRoot())
-    for (const entry of entries) {
-      const candidate = await readJson<RunManifest>(runJsonPath(path.join(runsRoot(), entry))).catch(() => undefined)
-      if (candidate?.runId === selector || candidate?.simulationId === selector) return candidate
-    }
+    const candidates = await Promise.all(entries.map(entry =>
+      readJson<RunManifest>(runJsonPath(path.join(runsRoot(), entry)))
+        .catch(() => undefined),
+    ))
+    const match = candidates.find(candidate =>
+      candidate?.runId === selector || candidate?.simulationId === selector)
+    if (match !== undefined) return match
   }
 
   throw new Error(`unknown tiny-firegrid simulation run: ${selector}`)
@@ -627,15 +630,14 @@ const listRuns = async (): Promise<void> => {
     return
   }
   const entries = await readDirectory(runsRoot())
-  const manifests: Array<RunManifest> = []
-  for (const entry of entries) {
-    const manifest = await readJson<RunManifest>(runJsonPath(path.join(runsRoot(), entry))).catch(() => undefined)
-    if (manifest !== undefined) manifests.push(manifest)
-  }
+  const manifests = (await Promise.all(entries.map(entry =>
+    readJson<RunManifest>(runJsonPath(path.join(runsRoot(), entry)))
+      .catch(() => undefined),
+  ))).filter((manifest): manifest is RunManifest => manifest !== undefined)
   manifests.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-  for (const manifest of manifests) {
+  manifests.forEach(manifest => {
     console.log(`${manifest.runId}\t${manifest.status}\t${manifest.simulationId}\t${manifest.updatedAt}`)
-  }
+  })
 }
 
 const runDuckdb = async (
@@ -688,9 +690,9 @@ const main = async (): Promise<void> => {
   const args = normalizeArgs(rawArgs)
   switch (command) {
     case "list":
-      for (const simulation of tinyFiregridSimulations) {
+      tinyFiregridSimulations.forEach(simulation => {
         console.log(`${simulation.id}\t${simulation.description}`)
-      }
+      })
       return
     case "runs":
       await listRuns()

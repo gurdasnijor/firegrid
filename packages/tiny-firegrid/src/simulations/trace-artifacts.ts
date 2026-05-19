@@ -74,11 +74,11 @@ const spanTreeLines = (
   spans: ReadonlyArray<RecordedSpan>,
 ): ReadonlyArray<string> => {
   const byParent = new Map<string | undefined, Array<RecordedSpan>>()
-  for (const span of spans) {
+  spans.forEach(span => {
     const bucket = byParent.get(span.parentSpanId) ?? []
     bucket.push(span)
     byParent.set(span.parentSpanId, bucket)
-  }
+  })
   const lines: Array<string> = []
   const walk = (span: RecordedSpan, depth: number) => {
     const attrs = Object.entries(span.attributes)
@@ -86,11 +86,13 @@ const spanTreeLines = (
       .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
       .join(" ")
     lines.push(`${"  ".repeat(depth)}- ${span.name} [${span.kind}/${span.status}]${attrs.length === 0 ? "" : ` ${attrs}`}`)
-    for (const child of byParent.get(span.spanId) ?? []) {
+    ;(byParent.get(span.spanId) ?? []).forEach(child => {
       walk(child, depth + 1)
-    }
+    })
   }
-  for (const root of byParent.get(undefined) ?? []) walk(root, 0)
+  ;(byParent.get(undefined) ?? []).forEach(root => {
+    walk(root, 0)
+  })
   return lines
 }
 
