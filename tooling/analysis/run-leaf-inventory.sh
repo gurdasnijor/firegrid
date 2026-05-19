@@ -51,7 +51,7 @@ N=$(jq 'length' "$OUT/leaf-findings.json")
   jq -r '
     group_by(.rule_id)[]
     | "## " + .[0].rule_id + " (" + (length|tostring) + ")\n"
-      + "\n> " + (.[0].notes | gsub("\n";" ") | gsub("  +";" ")) + "\n"
+      + "\n> " + (.[0].notes | gsub("\n";" ") | gsub("  +";" ") | gsub("\\s+$";"")) + "\n"
       + "\n| file | n | lines |\n|---|--:|---|\n"
       + ( group_by(.path) | map( "| `" + .[0].path + "` | " + (length|tostring) + " | "
             + ([.[].line_range[0]|tostring] | join(", ")) + " |" ) | join("\n") )

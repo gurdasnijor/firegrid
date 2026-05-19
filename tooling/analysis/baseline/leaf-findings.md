@@ -1,6 +1,6 @@
 # Architecture Archaeology — Leaf Findings (Phase 1, ast-grep)
 
-_Generated 2026-05-19T05:27:20Z · 269 findings · syntactic inventory only._
+_Generated 2026-05-19T05:27:50Z · 269 findings · syntactic inventory only._
 _Findings are **information, not defects**. No grading: the footprint is the point._
 
 ## Totals by rule
@@ -15,7 +15,7 @@ _Findings are **information, not defects**. No grading: the footprint is the poi
 
 ## double-launder-cast (1)
 
-> `x as unknown as T` erases the source type then asserts the target. Inventory only — some are legitimate boundary adapters; the question is how many, and clustered where. 
+> `x as unknown as T` erases the source type then asserts the target. Inventory only — some are legitimate boundary adapters; the question is how many, and clustered where.
 
 | file | n | lines |
 |---|--:|---|
@@ -23,7 +23,7 @@ _Findings are **information, not defects**. No grading: the footprint is the poi
 
 ## effect-context-in-layer-builder (4)
 
-> Marks where a layer build closes over the ambient context. Whether that capture is re-provided into a deferred handler is the load-bearing question — see finding 2 (ts-morph capture-replay), not resolvable here. 
+> Marks where a layer build closes over the ambient context. Whether that capture is re-provided into a deferred handler is the load-bearing question — see finding 2 (ts-morph capture-replay), not resolvable here.
 
 | file | n | lines |
 |---|--:|---|
@@ -34,7 +34,7 @@ _Findings are **information, not defects**. No grading: the footprint is the poi
 
 ## manual-scope-buildwithscope (2)
 
-> Every site that materializes a layer against an explicit Scope by hand. Inventory only — legitimate in adapters/tests; clustering in substrate composition is the interesting signal. 
+> Every site that materializes a layer against an explicit Scope by hand. Inventory only — legitimate in adapters/tests; clustering in substrate composition is the interesting signal.
 
 | file | n | lines |
 |---|--:|---|
@@ -43,7 +43,7 @@ _Findings are **information, not defects**. No grading: the footprint is the poi
 
 ## tfind-anchor-comment (255)
 
-> Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines. 
+> Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.
 
 | file | n | lines |
 |---|--:|---|
@@ -121,7 +121,7 @@ _Findings are **information, not defects**. No grading: the footprint is the poi
 
 ## type-safety-eslint-disable (7)
 
-> Counts eslint-disable of no-unsafe-* and @ts-expect-error/@ts-ignore. Not a defect per comment — the footprint and its clustering are the signal (where does type debt concentrate?). 
+> Counts eslint-disable of no-unsafe-* and @ts-expect-error/@ts-ignore. Not a defect per comment — the footprint and its clustering are the signal (where does type debt concentrate?).
 
 | file | n | lines |
 |---|--:|---|
