@@ -78,7 +78,7 @@ const query = (runDir, where) => {
   // load.sql prints its own preamble; a marker row delimits our result.
   const sql =
     `SELECT '${MARK}';\n` +
-    `SELECT count(*) AS rows, count(DISTINCT json_extract_string(span_attributes,'$.\"firegrid.context.id\"')) AS contexts ` +
+    `SELECT count(*) AS rows, count(DISTINCT json_extract_string(span_attributes,'$."firegrid.context.id"')) AS contexts ` +
     `FROM tiny_firegrid_spans WHERE ${where};\n` +
     `SELECT '${MARK}';\n` +
     `SELECT DISTINCT span_name FROM tiny_firegrid_spans WHERE ${where} ORDER BY 1 LIMIT 4;`
