@@ -70,6 +70,16 @@
         "src/**/*.ts"
       ]
     },
+    "packages/tiny-firegrid": {
+      "entry": [
+        "src/index.ts",
+        "src/bin/simulate.ts",
+        "src/simulations/*.ts"
+      ],
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
     "packages/effect-durable-streams": {
       "entry": [
         "src/index.ts",
