@@ -1,5 +1,6 @@
 import { codexAcpToolCallSimulation } from "./codex-acp-tool-call-pipeline.ts"
 import type { TinyFiregridSimulation } from "./types.ts"
+import { waitForOutputSimulation } from "./wait-for-output-pipeline.ts"
 
 const eraseSimulationResult = <A>(
   simulation: TinyFiregridSimulation<A>,
@@ -16,6 +17,7 @@ const eraseSimulationResult = <A>(
 
 export const tinyFiregridSimulations = [
   eraseSimulationResult(codexAcpToolCallSimulation),
+  eraseSimulationResult(waitForOutputSimulation),
 ] as const satisfies ReadonlyArray<TinyFiregridSimulation<unknown>>
 
 export type TinyFiregridSimulationId = typeof tinyFiregridSimulations[number]["id"]
