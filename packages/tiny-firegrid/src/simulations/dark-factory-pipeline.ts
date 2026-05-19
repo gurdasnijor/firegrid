@@ -132,6 +132,9 @@ interface DarkFactoryPipelineSimulationResult {
   readonly s6ProvenStepCount: number
   readonly s6RequiredStepCount: number
   readonly s6FullLoopProven: boolean
+  // Informational: gate facts advanced in-sequence in response to the
+  // planner reaching each gate (not proof logic — diagnostics/demo).
+  readonly advancedGateEventTypes: ReadonlyArray<string>
 }
 
 const DarkFactoryFactRowSchema = Schema.Struct({
@@ -346,15 +349,22 @@ const makeFactoryFact = (input: {
   }
 }
 
-const makeSeedFacts = (
+// §6 gate-resolving edge facts. These are NOT seeded up front: each one is
+// appended onto the darkFactory.facts CallerFact stream IN-SEQUENCE, in
+// response to the planner reaching that gate (observed via its wait_for
+// ToolUse). The CallerFact source is a live tail (table.facts.rows()), so a
+// fact written before the planner's wait_for attaches is in the past and
+// never resolves the wait — even a fixed planner would suspend at gate 1
+// forever. Advancing per-gate makes each wait see a fresh post-attach append
+// and the loop progress (advanced:true) once the discovery→invocation stall
+// (oca1) is fixed. The proof contract (#401 sectionSixProof) is unchanged;
+// only the write timing changes.
+const makeGateFacts = (
   env: TinyFiregridSimulationEnv,
   factoryRunKey: string,
 ): ReadonlyArray<DarkFactoryFactRow> => {
   const trigger = makeTriggerFact(env, factoryRunKey)
-  // Edge/provider facts are fixture inputs for planner waits, not a hidden
-  // planner/implementer/reviewer phase chain.
   return [
-    trigger,
     makeFactoryFact({
       env,
       factoryRunKey,
@@ -446,17 +456,14 @@ const seedFactoryFacts = (
   Effect.scoped(
     Effect.gen(function*() {
       const table = yield* DarkFactoryFactTable
-      const facts = makeSeedFacts(env, factoryRunKey)
-      const results = yield* Effect.forEach(facts, fact =>
-        table.facts.insertOrGet(fact).pipe(
-          Effect.map(result => ({ fact, result })),
-        ),
-      )
-      const trigger = results.find(entry =>
-        entry.fact.eventType === "factory.trigger.accepted")
+      // Seed ONLY the trigger up front. Gate facts are advanced in-sequence
+      // (see makeGateFacts) so they land AFTER the planner's wait_for
+      // attaches to the live-tail CallerFact source.
+      const trigger = makeTriggerFact(env, factoryRunKey)
+      const result = yield* table.facts.insertOrGet(trigger)
       return {
-        triggerFactInserted: trigger?.result._tag === "Inserted",
-        seededFactEventTypes: facts.map(fact => fact.eventType),
+        triggerFactInserted: result._tag === "Inserted",
+        seededFactEventTypes: [trigger.eventType],
       }
     }).pipe(
       Effect.provide(
@@ -469,6 +476,53 @@ const seedFactoryFacts = (
       ),
     ),
   )
+
+// Append ONE gate-resolving fact onto the darkFactory.facts CallerFact
+// stream, in response to the planner reaching that gate. Same public
+// DurableTable facade + scoped-provide shape as seedFactoryFacts /
+// readbackFactEventTypes (one lexical provide site — effect-quality safe).
+const advanceGateFact = (
+  env: TinyFiregridSimulationEnv,
+  fact: DarkFactoryFactRow,
+): Effect.Effect<boolean, unknown> =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const table = yield* DarkFactoryFactTable
+      const result = yield* table.facts.insertOrGet(fact)
+      return result._tag === "Inserted"
+    }).pipe(
+      Effect.provide(
+        DarkFactoryFactTable.layer(
+          darkFactoryFactTableLayerOptions({
+            baseUrl: env.durableStreamsBaseUrl,
+            namespace: env.namespace,
+          }),
+        ),
+      ),
+    ),
+  )
+
+// Map a planner wait_for target (substring observed in the ToolUse input) to
+// the gate fact that resolves it. 1:1 with §6 gates, in loop order.
+const gateFactForWait = (
+  env: TinyFiregridSimulationEnv,
+  factoryRunKey: string,
+  waitText: string,
+): DarkFactoryFactRow | undefined => {
+  const gateFacts = makeGateFacts(env, factoryRunKey)
+  const byType = (eventType: string): DarkFactoryFactRow | undefined =>
+    gateFacts.find(fact => fact.eventType === eventType)
+  if (waitText.includes("human.plan.approved")) return byType("human.plan.approved")
+  if (waitText.includes("github.pr.opened")) return byType("github.pr.opened")
+  if (
+    waitText.includes("github.pr.review_approved") ||
+    waitText.includes("github.pr.review_posted")
+  ) return byType("github.pr.review_approved")
+  if (waitText.includes("human.merge.approved")) return byType("human.merge.approved")
+  if (waitText.includes("github.ci.status")) return byType("github.ci.status")
+  if (waitText.includes("github.pr.merged")) return byType("github.pr.merged")
+  return undefined
+}
 
 // Read the app-owned facts BACK through the public DurableTable facade
 // (same surface the planner's wait_for CallerFact resolves against). This
@@ -868,6 +922,7 @@ const darkFactoryDriver = (
     const observedToolInputs: Array<string> = []
     const observedToolUses: Array<ObservedToolUse> = []
     const observedFindings: Array<DarkFactoryFinding> = []
+    const advancedGateEventTypes = new Set<string>()
 
     while ((yield* Clock.currentTimeMillis) < deadline) {
       const next = yield* session.wait.forAgentOutput({
@@ -922,6 +977,35 @@ const darkFactoryDriver = (
                 inputText.includes("human.merge.approved")
               sawCiWatchWait = sawCiWatchWait ||
                 inputText.includes("github.ci.status")
+              // IN-SEQUENCE FACT ADVANCEMENT: the planner just reached this
+              // gate (issued wait_for). Append the matching gate fact NOW so
+              // the wait — which has attached to the live-tail CallerFact
+              // source — sees a fresh post-attach append and resolves, and
+              // the loop progresses to the next gate. A short settle lets the
+              // host process the wait_for and attach before we append.
+              const gateFact = gateFactForWait(env, factoryRunKey, inputText)
+              if (
+                gateFact !== undefined &&
+                !advancedGateEventTypes.has(gateFact.eventType)
+              ) {
+                advancedGateEventTypes.add(gateFact.eventType)
+                yield* Effect.sleep("750 millis")
+                yield* advanceGateFact(env, gateFact).pipe(
+                  Effect.catchAll(cause =>
+                    Effect.sync(() => {
+                      // Surface a precise finding rather than papering: an
+                      // append failure means in-sequence advancement is
+                      // blocked through the public facade.
+                      observedFindings.push({
+                        id: `dark-factory.s6.fact_advance_failed.${gateFact.eventType}`,
+                        status: "blocked-external",
+                        expectedPublicSurface:
+                          `Appending the ${gateFact.eventType} gate fact onto the darkFactory.facts CallerFact stream via the public DurableTable facade should resolve the planner's in-flight wait_for.`,
+                        evidence: stringifyUnknown(cause),
+                      })
+                    })),
+                )
+              }
             }
           }
           break
@@ -1062,6 +1146,7 @@ const darkFactoryDriver = (
       s6FullLoopProven:
         requiredSteps.length > 0 &&
         s6ProvenStepCount === requiredSteps.length,
+      advancedGateEventTypes: [...advancedGateEventTypes],
     }
   })
 
@@ -1116,6 +1201,7 @@ export const darkFactoryPipelineSimulation = {
     sawDurableCiWatch: result.sawDurableCiWatch,
     sawCleanUnwind: result.sawCleanUnwind,
     sectionSixProof: result.sectionSixProof,
+    advancedGateEventTypes: result.advancedGateEventTypes,
   }),
   localize: result => [
     "firegrid-observability.TINY_FIREGRID_SIMULATIONS.8",
