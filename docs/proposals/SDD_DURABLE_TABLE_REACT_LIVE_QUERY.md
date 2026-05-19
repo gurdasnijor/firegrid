@@ -610,6 +610,161 @@ granularity**. If `y` is chosen, the implementer confirms the
 residual subset is independent, those fall to `z`. This does not
 change the recommendation; it scopes `y`'s implementation.
 
+## §0.4 — The defect is the SEAM SHAPE, not any operator at it; re-couples to the `#326` keystone — read this first
+
+> **Status (architect-gated reframe; Gurdas signs off this §0.4;
+> coordinator holds the merge gate; NOT self-merged).** Gurdas's
+> decision: the four-falsification pattern is decision-grade evidence
+> that the **provider seam itself** is the defect, not any individual
+> fix *at* the seam. This section reframes the question from "pick the
+> `layer`-ROut operator" (§0.1's axis) to "correct the seam *shape*".
+> Reader path: §0 (tables-side `AnyDurableTableTag`, signed off) → §0.1
+> (provider-`layer` ROut erasure question; contravariance proof + (a)/(b)
+> Evidence — still valid inputs) → §0.2 (c1 *not the fix*; superseded on
+> host-sdk causal attribution) → §0.3 (host-sdk cascade = `#326`-curry ×
+> merged-#350; that is the **separate** broadened-TFIND-045 / `tf-uiz`
+> track — **unchanged here**) → **§0.4 (the seam-shape reframe; this
+> RE-COUPLES the provider-seam decision to the `#326` keystone via
+> `#326`'s OWN `effect-durable-operators` typecheck — a track
+> independent of the host-sdk/`tf-uiz` one).**
+
+**How must the `DurableTableProvider` seam *encode* the `layer`-side
+ROut so that the boundary is (1) variance-correct for Effect `Layer`'s
+contravariant ROut AND (2) accepts `#326`'s precise self-identity curry
+layers — the exact precision the keystone exists to produce — WITHOUT
+(a) demanding an impossible supertype, (b) forcing a bottom that
+relocates breakage, or (c) threading a public scalar/generic that
+ripples through consumer Effect-R inference; given that four distinct
+operator/input choices at the *current single shared, value-position
+erased seam* have each been independently falsified?**
+
+This is not §0.1's question. §0.1 asked *which scalar/shape* fills the
+one `layer`-ROut slot. The accumulated falsifications show every choice
+at *that slot* fails differently — so the slot itself (TFIND-044 Option
+B collapsed `layer`'s ROut into a single shared scalar/parameter sitting
+in a value-assignment position) is the invariant defect. The decision
+is now over the **seam encoding**, not the operator value.
+
+### Why this RE-COUPLES TFIND-050 to `#326` (correcting §0.3's decoupling — narrowly)
+
+§0.3 decoupled TFIND-050 from the `#326` gate on the (correct) basis
+that the **host-sdk** cascade is `#326`-curry × merged-#350, a track
+that routes to broadened-TFIND-045 / `tf-uiz` = `y`. That remains true
+and is **not** disturbed here. But a fresh, deterministic fresh-`origin/
+main` A/B (cache-bypassed; see §Evidence row (a)) proves the provider
+seam *also* gates `#326` through a **second, independent** path:
+`#326`'s own `effect-durable-operators` typecheck is RED at
+`react-types.test.ts:55` *solely* because the `#326` curry feeds a
+precise `Layer<ReactWorkflowTable, …>` into the merged-#348
+`unknown`-erased seam. That is the edo/by-name cascade, not the
+host-sdk one. **Net: `#326` now gates on BOTH independent tracks —
+(i) broadened-TFIND-045 / `tf-uiz` = `y` (host-sdk; unchanged) AND
+(ii) this §0.4 seam reframe landing (edo/by-name). Neither subsumes the
+other; both must clear before `#326` flips.**
+
+### §Evidence — the four-falsification table (decision-grade)
+
+Every row is a different operator/input at the **same single shared,
+erased `layer`-ROut slot**; each fails differently; the slot is the
+constant. Method per row noted; (a) is freshly re-confirmed by a
+deterministic, cache-bypassed fresh-`origin/main` A/B.
+
+| # | Choice / input at the seam slot | Result | Where | Method / note |
+|---|---|---|---|---|
+| **(a)** | `unknown` (current merged #348 / `origin/main` erased ROut) | **RED** — explicit-props / by-name path | `react-types.test.ts(55,9) TS2769`: `Layer<ReactWorkflowTable, DurableTableError, never>` ⊄ `Layer<unknown, unknown, never>` | **Fresh A/B (this dispatch):** clean `origin/main` `74b5c023b9` edo-**alone** `tsc --noEmit` = **0** at :55; `#326`-curry rebased (`6355b7de6`) edo-alone `tsc` = the TS2769. Turbo "shared worktree cache" emitted a false cross-worktree green — caught & bypassed; tsc-checks-the-test-file confirmed via a deliberate `:56` probe. Re-confirms §0.1 Evidence (a). |
+| **(b)** | `never` | **RELOCATES** — not a fix | `apps/factory/src/bin/live-smoke.ts:160 TS2769`; `apps/factory/test/factory.test.ts:104 TS2379`; + dead `eslint-disable`; also not lint-green pre-curry (`no-unsafe-assignment` `any→never`) | §0.1 §Evidence (b), single-variable, cache-cleared. Unchanged. |
+| **(c1)** | Decoupled inference-only public ROut generic | **RIPPLES** — falsified as the *isolated* seam fix | +29 host-sdk Effect-R sites (`Effect<…, unknown> ⊄ Effect<…, never>`, `exactOptionalPropertyTypes`) | §0.2 base-specific single-variable isolation (base `4bdc81a83`): c1 present → +29, c1 absent → 0. **Honest cross-ref:** §0.3 *supersedes c1 as the cause of the dominant host-sdk cascade* (that is curry×#350, c1-independent, the `tf-uiz`=`y` track). c1 nonetheless stays falsified *as a provider-seam fix* because re-introducing a public ROut generic still threads ROut into consumer Effect-R inference. |
+| **(d)** | The `#326` precise self-identity curry itself, against the *unmodified* #348 seam | **REJECTED at the boundary** | same `react-types.test.ts:55 TS2769` as (a) | This is the keystone delivering its core deliverable (precise `<Self>` identity) and the erased seam refusing exactly that precision. Not a fourth *operator* — the proof that the seam rejects the very precision `#326` exists to produce. |
+
+**Conclusion (decision-grade):** across an impossible supertype
+(`unknown`), a relocating bottom (`never`), a decoupled public generic
+(`c1`), and the real precise input (`#326` curry), the **single
+shared, value-position erased `layer`-ROut slot is the invariant that
+fails**. No operator value at that slot can be correct, because the
+slot is in a contravariant value-assignment position while the runtime
+is genuinely ROut-agnostic (§0's heterogeneous `ReadonlyMap<string,
+unknown>` argument). The fix must change the **encoding**, not the
+operator.
+
+### Option space — at the seam *encoding* (tradeoffs; Gurdas decides)
+
+- **(d1) Existential / opaque-input encoding — RECOMMENDED.** The
+  public boundary stops taking a raw `layer: Layer<ROut, E, never>`
+  prop whose ROut sits in a value-assignment position. Instead it takes
+  an opaque `DurableTableProviderInput<E>` produced by a small exported
+  smart constructor that *captures* the concrete `Layer<X, E, never>`
+  at the build site — `X` is bound there and **never surfaces in
+  `DurableTableProviderProps`**. This turns the runtime's genuine
+  ROut-agnosticism into a *sound existential encoding* instead of an
+  unsound scalar in a contravariant slot. Variance-correct (no
+  `Layer<X>` → fixed-ROut value-assignment anywhere); accepts `#326`'s
+  precise curry layers **by construction** (X inferred at the
+  constructor call); **no public ROut generic** to ripple into
+  consumer Effect-R, so it is orthogonal to the `tf-uiz`=`y` host-sdk
+  track; cannot reopen flamecast `TS2322` (`tables` stays exactly the
+  signed-off `AnyDurableTableTag`). *Tradeoff:* callers compose via the
+  constructor rather than passing `layer` raw — a small, localized,
+  documented ergonomic change. **No `any`, no cast, no paper, no
+  invented/fake layer.**
+- **(d2) c1-shape, CONTINGENT on `tf-uiz`=`y` landing first.** The
+  §0.1 c1 (free per-call inference-only ROut, decoupled from `tables`)
+  was falsified *while the merged-#350 `unknown` R-source was live*.
+  Once `tf-uiz`=`y` narrows that source at its origin, c1 *may* become
+  viable. Explicitly sequenced **after** `y`; requires full
+  re-validation of the host-sdk Effect-R surface post-`y`. Honest: it
+  still re-introduces a public ROut generic and is contingent, not
+  root — kept only because the host-sdk falsification had a removable
+  upstream cause.
+- **(d3) Named/branded coarse `Layer` aggregate (c2 lineage) —
+  FALLBACK.** `AnyDurableTableLayer<E> = Layer.Layer<any, E, never>`:
+  one explicit, named, localized coarsening at a seam that is *already
+  runtime-erased*, carrying the **same** signed-off justification as
+  the tables-side `AnyDurableTableTag` (categorically distinct from the
+  TFIND-005 diffuse/implicit/unnamed leak — §0/§8 discipline). `any`
+  ROut is bidirectionally permissive, so it should not relocate the
+  way `never` did (impl-validate `apps/factory` + host-sdk). A named
+  `any` is acceptable **only** by that established tables-side
+  symmetry; it is the fallback, not the primary recommendation.
+- **(d4) Per-path / overloaded prop typing — REJECTED** (carried from
+  c3: a React component cannot ergonomically vary props by call path;
+  high complexity, no payoff over (d1)/(d3)).
+
+**Recommendation: lean (d1).** It is the only option that makes the
+boundary erasure *sound* — existential quantification of the layer's
+ROut — rather than an operator value that is provably variance-wrong
+(`unknown`/`never`) or ripple-prone (`c1`/any public generic). It is
+the precise root-cause correction of TFIND-044 Option B's actual error
+(collapsing `layer`'s ROut into a shared, value-position scalar), keeps
+`tables` exactly on the signed-off `AnyDurableTableTag`, reintroduces
+no `any`, and is orthogonal to the `tf-uiz`=`y` host-sdk track.
+**(d3)** is the fallback if Gurdas rejects the constructor ergonomic
+and accepts a named localized `any` by tables-side symmetry. **(d2)**
+only as a post-`y` contingent. (a)/(b) are rejected by the §Evidence
+table. Every (d) option requires post-signoff impl-time validation on
+the exact gate that produced this Evidence: edo **both** consumer paths
+(incl. the `#326`-curry `react-types.test.ts:55` site) + `apps/factory`
++ host-sdk-**alone** `tsc` + the full lint chain.
+
+### Non-goals (§0.4)
+
+- No production code before §0.4 signoff. No paper, no forcing cast, no
+  scalar chosen to silence one path at another's expense, no
+  invented/fake layer. (The only admissible `any` is the explicitly
+  named, localized **(d3)** fallback under the tables-side symmetry
+  justification — and only if Gurdas selects it.)
+- Does not reopen §0's tables-side decision (`AnyDurableTableTag`
+  stands), §0.3's host-sdk forensic record, or `tf-uiz`=`y`. The
+  host-sdk curry×#350 cascade remains its own independent track.
+- No change to provider **runtime** (per-key `unknown` acquisition is
+  correct and is *why* an existential encoding is sound).
+- Supersedes §0.1 only on the *shape* axis (its "pick a scalar"
+  framing); §0.1's contravariance proof and (a)/(b) Evidence remain
+  valid inputs to this decision.
+- `#326` stays unpushed/unflipped; the rebased `sidecar-326flip`
+  (`6355b7de6`, react.ts pristine) and `verify-main` worktrees stay
+  exactly as they are until §0.4 is signed off **and** implemented (and
+  `tf-uiz`=`y` lands).
+
 ## Contract
 
 `effect-durable-operators` exposes a read-only TanStack collection view on each
