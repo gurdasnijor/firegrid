@@ -613,3 +613,126 @@ stated so the next session recognizes the pattern early:
    the trace is the evidence.
 5. Periodically step back and ask "is the system still coherent for its
    stated purpose?" — throughput loops do not ask this; the coordinator must.
+
+---
+
+## 9. Closing-turn additional learnings (read; these are the ones that bit hardest)
+
+### 9a. Polish was the danger signal
+
+Every wrong conclusion this arc was *well-written*: the "terminal ACP"
+write-up, the cross-runtime "common cause" finding (#420/#424), the original
+ScenarioSpec proposal, and the previous coordinator's own "actual issues"
+list. Citations, hierarchical structure, sober tone. The *honest* reports
+were rougher and more useful — oca2's "I built Option A and it didn't fix
+it" (#396), oca3's "shim engaged, tools/call still zero" (#424).
+
+**Heuristic for the next coordinator:** treat polish in a closing-out
+artifact as a **yellow flag, not a green one**. Especially if the artifact
+asserts a "terminal" / "architectural" conclusion. The thing that *feels*
+authoritative is exactly where to demand "what data backs this."
+
+### 9b. Throughput mode is the trap, not a sub-symptom of it
+
+"Queue 20 → 0" felt like progress and got optimized. When the substantive
+work is *settle one open question with captured data*, merging PRs is
+motion that crowds out the question. The STATE CHANGE cron's
+*"act/route then re-sweep"* template was throughput-mode wearing
+autonomous-loop clothes; killing the cron was right.
+
+**Heuristic:** automation (or a metric) that rewards *reacting* is
+automation working against the goal when the goal is *verifying*.
+If you find yourself burning down a queue while the load-bearing question
+is unsettled, the queue is not the work.
+
+### 9c. Self-built metrics become theater
+
+`s6FullLoopProven` / "0/6" felt authoritative because we shipped the
+harness. But a metric we invented, instrumented, and then optimized against
+is a closed loop — green or red, it can't tell you anything about the
+actual world it claims to measure. The *trace* (and the unread source) were
+the real evidence; the boolean was a mirror reflecting our own assumptions.
+
+**Heuristic:** if a metric is satisfied by an artifact you also wrote,
+the metric is not evidence. Treat it as a *prompt to look at the trace*,
+not as an answer.
+
+### 9d. Lane reports must land as hypotheses, not findings
+
+A surprising number of "real findings" propagated through the coordinator
+this session were lane diagnoses I (the prior coordinator) restated as
+verified without independent source reads: cca1's TFIND-017 (refuted on
+read), cca1's #417 serial-reconciler mechanism (outcome verified, mechanism
+suspect), oca3's #406 fact-advancement timing story (built on the refuted
+TFIND-017), oca1's "terminal ACP" framing (relocated to the unread Claude
+Agent SDK). The repo has `packages/tiny-firegrid/FINDINGS_TRIAGE_RUBRIC.md`
+explicitly to triage findings *before* routing — and it was not applied
+to any of these. That is a coordinator-hygiene failure separate from the
+meta-rule.
+
+**Heuristic:** every lane-produced "finding" enters as a *hypothesis with
+attached evidence pointer*. Apply the rubric's triage question first; do
+the 60-second source check; only then promote to a finding the next
+session inherits as established.
+
+### 9e. What survived is real (honest balance)
+
+The arc's failure was concentrated in the **§6 interpretation layer** —
+the "terminal ACP" story and the conclusions stacked on top of it. The
+*substrate work* in `main` is real, source-grounded, and useful:
+
+- Gap-3 progressive-localization chain (#393→#396→#404→#417) — fix
+  produces a verifiably green session-lifecycle-unwind sim.
+- Auto-discovery sim registry (#385) — structurally eliminated the
+  fan-out merge-conflict class.
+- Codec `error.message` enrichment (tf-ds2/#403) — real observability fix.
+- Several §7 sims surfaced real properties (#379 stdio-jsonl, #383
+  CallerFact, #388 execute substrate, #391 idempotent intent, #392
+  delegation, #397 action-survives-restart, #399 wait-survives-restart).
+- §5 minimal-slice capstone (#418).
+- task-exit.sh post-rebase safe-path fix (#416).
+- The bead ledger reconciliation (122 closed, 5 real items remain).
+
+**Do not re-do this work.** The next coordinator should treat §2's
+inventory + the §7 cleanup the other agent is doing as durable wins. The
+*one* item that bears re-examination on grounds of mechanism (not outcome)
+is Gap-3/#417 — see §9d's note that its diagnosis shares an author with
+the refuted TFIND-017; the *fix works* (sim flips green) but the *story
+of why* warrants source verification before being cited.
+
+### 9f. The 60-second-grep heuristic (operationalising the meta-rule)
+
+Before accepting any closing-out artifact — yours, a lane's, or another
+agent's — ask:
+
+> *"What single grep or file-read would refute this?"*
+
+If the answer takes **under 60 seconds**, do it before merge / before
+citing the artifact in a decision. The whole §6 thread would have died at:
+
+```
+grep -r 'alwaysLoad' /Users/gnijor/.npm/_npx/*/node_modules/@agentclientprotocol/claude-agent-acp/
+```
+
+— ~5 seconds, zero hits, "terminal ACP" theory dead on the spot. That
+heuristic, applied consistently, is the meta-rule with teeth.
+
+### 9g. The codec→SDK instrumentation is the load-bearing deliverable — not a "different PR"
+
+A late-arc clarification from the PO that's important enough to record
+explicitly: the codec→Claude Agent SDK boundary span and the subprocess
+wire capture (handoff §0a "What the next agent must do" items 2 and 3)
+are **the work this whole exercise was supposed to produce**. The
+simulation runner restructure (the in-flight cleanup PR #426) is
+*supporting infrastructure* — hygiene around doing the work cleanly.
+It is **not a substitute** for the codec instrumentation; treating it
+as such (the way the prior coordinator did, framing the codec work as
+"a separate PR / different scope") is the same evasion pattern as the
+rest of this arc.
+
+**Concretely for the next coordinator:** the codec/subprocess
+instrumentation should land as a **first-class deliverable**, not be
+deferred behind harness work. The runner restructure may land in
+parallel — but the answer to "why doesn't §6 run" comes from one keyed
+run with the codec+subprocess wire captured, not from a more elegant
+runner.
