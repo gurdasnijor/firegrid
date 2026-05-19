@@ -694,33 +694,32 @@ decides the sequence, and code provides durable capabilities.
 `CLAIM-VERIFIED` (trace + source verified, 2026-05-19):
 `packages/tiny-firegrid/src/simulations/dark-factory-pipeline.ts` provides the
 simulation shape for the full factory-vision §6 loop. The simulation composes a
-Firegrid host, seeds an app-owned `darkFactory.facts` trigger row, creates/loads
-the deterministic parent session through the public client facade, enables
-runtime-context MCP, and observes planner output. It expresses clarify, plan
-approval/revision/rejection, implementer delegation, reviewer/council review,
-feedback loops, merge sign-off, durable CI watch, merge, CI failure repair, and
-clean unwind in the planner prompt and fact surface. It does not encode a
-planner/implementer/reviewer/merge phase chain.
+Firegrid host, binds the app-owned `darkFactory.facts` DurableTable as a public
+`CallerFact` wait stream, seeds the trigger plus happy-path human/provider edge
+facts, creates/loads the deterministic parent session through the public client
+facade, enables runtime-context MCP, and observes planner output. It expresses
+clarify, plan approval/revision/rejection, implementer delegation,
+reviewer/council review, feedback loops, merge sign-off, durable CI watch,
+merge, CI failure repair, and clean unwind in the planner prompt and fact
+surface. It does not encode a planner/implementer/reviewer/merge phase chain.
 
 Evidence run
-`2026-05-19T10-48-11-430Z__dark-factory-pipeline` is local under
-`packages/tiny-firegrid/.simulate/runs/2026-05-19T10-48-11-430Z__dark-factory-pipeline/`.
-The trace shows `McpServer.initialize` and `McpServer.tools/list` succeeded
-through the long context-id scoped MCP URL (`firegrid.mcp.http POST
-/runtime-context/:contextId`, HTTP 200). The run then halted before factory
-choreography because the Claude ACP process emitted `Error` with
-`{"message":"ACP prompt failed","cause":{"code":-32603,"name":"RequestError"}}`.
+`2026-05-19T11-41-51-752Z__dark-factory-pipeline` is local under
+`packages/tiny-firegrid/.simulate/runs/2026-05-19T11-41-51-752Z__dark-factory-pipeline/`.
+It uses `@agentclientprotocol/claude-agent-acp@0.36.1` with
+`ANTHROPIC_API_KEY`. The trace shows the public client prompt append succeeded
+with short `inputId` `planner-prompt`, `firegrid.host.codec.start_session`
+started ACP with tools and runtime-context MCP enabled, and
+`McpServer.initialize` plus `McpServer.tools/list` succeeded through the
+context-id scoped MCP URL. The run then halted before factory choreography
+because the Claude ACP process emitted `Error` with
+`{"message":"ACP prompt failed","cause":{"code":-32603,"data":{"errorKind":"unknown"},"name":"RequestError"}}`.
 No Firegrid `ToolUse`, `PermissionRequest`, or `TurnComplete` observation was
 emitted before that error.
 
 The same run records these full-loop choreography-surface findings in its
 summary/localization:
 
-- `dark-factory.wait_for.caller_owned_fact_source`: `wait_for` cannot target
-  app-owned `darkFactory.facts` rows for clarification answers, human
-  approvals, PR events, review verdicts, CI status, merge decisions, and unwind
-  completion; the public schema currently supports `AgentOutput` and
-  `RuntimeRun` only.
 - `dark-factory.execute.provider_side_effect`: provider side effects for PR
   open/find, review/comment upsert, CI fetch, merge, close, and durable
   evidence writes currently hit `unsupportedAgentTool` for `execute`.
@@ -733,10 +732,11 @@ summary/localization:
 
 `CLAIM-PENDING-EVIDENCE`: the full dark-factory loop still needs a real
 tool-use agent/runtime combination that proceeds beyond ACP prompt startup into
-planner-authored `session_new`, `session_prompt`, `wait_for`, `schedule_me`,
-`execute`, `session_cancel`, and `session_close` calls. The simulation must keep
-reporting missing or unsupported choreography surfaces as run findings instead
-of adding app-side orchestration.
+planner-authored `wait_for` over `CallerFact` `darkFactory.facts`,
+`session_new`, `session_prompt`, `schedule_me`, `execute`, `session_cancel`,
+and `session_close` calls. The simulation must keep reporting missing or
+unsupported choreography surfaces as run findings instead of adding app-side
+orchestration.
 
 ## Production Acceptance Substrate
 
