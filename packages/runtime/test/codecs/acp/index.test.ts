@@ -370,6 +370,12 @@ describe("AcpSessionLive", () => {
       ),
     )
 
+    // tf-b6n / A1 (#408 tf-p9s): the codec additively attaches an ACP
+    // `_meta` payload re-advertising the runtime-context MCP server under a
+    // non-colliding alias with `alwaysLoad:true` (+ `disableBuiltInTools`)
+    // so claude-agent-acp loads the Firegrid tools directly instead of
+    // deferring them behind ToolSearch. The ACP `mcpServers` advertisement
+    // is unchanged (non-claude paths unaffected).
     expect(agent.newSessionRequests).toEqual([
       {
         cwd: "/tmp/firegrid-acp-codec-cwd",
@@ -381,6 +387,21 @@ describe("AcpSessionLive", () => {
             headers: [{ name: "authorization", value: "Bearer test" }],
           },
         ],
+        _meta: {
+          disableBuiltInTools: true,
+          claudeCode: {
+            options: {
+              mcpServers: {
+                "firegrid-runtime-context-alwaysload": {
+                  type: "http",
+                  url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
+                  headers: { authorization: "Bearer test" },
+                  alwaysLoad: true,
+                },
+              },
+            },
+          },
+        },
       },
     ])
   })

@@ -145,6 +145,54 @@ const lowerMcpServerDeclaration = (
     })),
 })
 
+// tf-b6n / A1 (#408 tf-p9s): claude-agent-acp (Claude Agent SDK) defers MCP
+// tools behind a `ToolSearch` discovery indirection; the §6 planner stalls
+// after ToolSearch and never issues a Firegrid `tools/call` (#405). The
+// Claude Agent SDK's only no-defer lever is per-MCP-server
+// `McpHttpServerConfig.alwaysLoad:true` ("all tools … always included …
+// never deferred behind tool search"), but claude-agent-acp strips
+// `alwaysLoad` from the ACP-advertised `mcpServers` and its
+// `mcpServers: {...userProvidedOptions, ...acpDerived}` merge overrides any
+// `_meta.claudeCode.options` entry that COLLIDES by server name.
+//
+// So we additively attach an ACP `_meta` payload (reserved namespace; other
+// ACP agents MUST NOT assume values at `_meta` keys, so non-claude paths are
+// unchanged) that re-advertises the same runtime-context MCP server under a
+// NON-COLLIDING alias with `alwaysLoad:true`, and sets `disableBuiltInTools`
+// so the planner's tool set is just the Firegrid catalog (no claude_code
+// built-ins inflating the set past the tool-search threshold). Both are the
+// documented Claude Agent SDK / claude-agent-acp levers; this is the minimal
+// fix fully in Firegrid's control to make §6 actually run.
+const claudeAgentAcpAlwaysLoadMeta = (
+  declarations: ReadonlyArray<AcpMcpServerDeclaration>,
+): { readonly [key: string]: unknown } | undefined => {
+  if (declarations.length === 0) return undefined
+  const mcpServers = Object.fromEntries(
+    declarations.map(declaration => {
+      const headers = declaration.server.headers === undefined
+        ? undefined
+        : Object.fromEntries(
+          declaration.server.headers.map(header => [header.name, header.value]),
+        )
+      return [
+        `${declaration.name}-alwaysload`,
+        {
+          type: "http" as const,
+          url: declaration.server.url,
+          ...(headers === undefined ? {} : { headers }),
+          alwaysLoad: true as const,
+        },
+      ] as const
+    }),
+  )
+  return {
+    // Shrink the planner tool set to the Firegrid catalog so tool-search
+    // does not engage (documented fallback per the A1 finding).
+    disableBuiltInTools: true,
+    claudeCode: { options: { mcpServers } },
+  }
+}
+
 const selectedOptionId = (
   decision: PermissionDecision,
   options: ReadonlyArray<acp.PermissionOption>,
@@ -415,6 +463,15 @@ export const AcpSessionLive = (
           // Tool execution is owned by the ACP agent process or delegated
           // through ACP session.mcpServers/MCP.
           mcpServers: (options.mcpServers ?? []).map(lowerMcpServerDeclaration),
+          // tf-b6n / A1: additive ACP `_meta` so claude-agent-acp loads the
+          // runtime-context MCP tools directly instead of deferring them
+          // behind ToolSearch. Reserved-namespace metadata; non-claude ACP
+          // agents ignore it (no behavior change). Omitted when there are
+          // no MCP servers.
+          ...(() => {
+            const meta = claudeAgentAcpAlwaysLoadMeta(options.mcpServers ?? [])
+            return meta === undefined ? {} : { _meta: meta }
+          })(),
         })).pipe(
           Effect.tap(session =>
             Effect.annotateCurrentSpan({
