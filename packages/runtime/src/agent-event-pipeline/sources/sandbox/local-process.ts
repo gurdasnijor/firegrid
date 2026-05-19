@@ -87,12 +87,15 @@ const LOCAL_PROCESS_BASELINE_ENV_NAMES = [
   "NODE_PATH",
   "NODE_EXTRA_CA_CERTS",
   // npm/npx package resolution + cache (both casings npm emits).
+  // The npm REGISTRY override is deliberately NOT baseline-passed: npx
+  // resolves the default public registry without it, and pointing a
+  // spawned agent at a private/alternate registry is a deliberate
+  // per-host choice that must be an explicit binding (same rationale as
+  // the NODE_OPTIONS exclusion) — not a blanket baseline.
   "NPM_CONFIG_CACHE",
   "npm_config_cache",
   "NPM_CONFIG_PREFIX",
   "npm_config_prefix",
-  "NPM_CONFIG_REGISTRY",
-  "npm_config_registry",
   "NPM_CONFIG_USERCONFIG",
   "npm_config_userconfig",
   // XDG base dirs — used by some packaged node tools for cache/config.
