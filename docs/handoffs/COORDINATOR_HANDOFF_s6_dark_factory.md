@@ -100,47 +100,66 @@ via two different mechanisms**:
    plus `disableBuiltInTools:true`, under `_meta.claudeCode.options.mcpServers`.
 
 This "A1 fix" (`tf-b6n`/#411, framed off `tf-p9s`/#408) is the demo-deadline
-work. Its own comment (lines ~148–165) **states claude-agent-acp's internal
-merge/precedence behavior as fact** ("strips `alwaysLoad`", "the
-`{...userProvided, ...acpDerived}` merge overrides any colliding `_meta`
-entry") — but that was inferred from the protocol surface, **never verified
-against claude-agent-acp source** (`src/acp-agent.ts` ~L1488, the model-turn /
-tools / tool_choice construction). The codec annotates only what *we send*
-(`firegrid.acp.mcp_server_count/_names`); it captures **nothing** about what
-claude-agent-acp forwarded to the model.
+work. Its own comment (lines ~148–165) states claude-agent-acp's internal
+merge/precedence/`alwaysLoad` behavior **as fact** — and that was never
+checked against the package at all.
 
-**Three concrete ways this transformation alone produces the exact symptom
-("discovers tools, plans in prose, never invokes") — none of them an ACP
-limitation:**
-- **Tool-name mismatch.** If the `-alwaysload` alias is the path whose tools
-  reach the model, the model is offered `mcp__<name>-alwaysload__wait_for`
-  while the §6 prompt **and the #401 proof harness** reference `wait_for`. The
-  agent narrates the right call; the advertised tool has a different name → it
-  cannot invoke what it was told to. Self-inflicted prose-vs-invoke.
-- **Deferred-server-wins.** Same URL under two names → claude-agent-acp may
-  keep the non-`alwaysLoad` primary (still ToolSearch-deferred) and drop the
-  alias. We assumed the alias wins; never measured.
-- **Inert `_meta`.** If claude-agent-acp doesn't honor
-  `_meta.disableBuiltInTools` / `claudeCode.options.mcpServers` in this shape,
-  the A1 payload is a no-op and **every "terminal" run was the default
-  deferred behavior** — we concluded "ACP can't" from runs where our fix did
-  nothing and never instrumented that it did nothing.
+### UPDATE — source-verified against `@agentclientprotocol/claude-agent-acp@0.36.1` (the exact pinned version, npx cache)
 
-**Consequence for the handoff:** the §6-run gap is **not** established as an
-ACP-architecture limitation. The leading hypothesis is now: *our own codec
-transformation is malforming what the model is offered.* The first real work
-is to **eliminate this confound**, not to build around it.
+I read `dist/acp-agent.js` of the pinned version. The codec's premises split:
 
-### What the next agent must do (in order)
+**CONFIRMED correct (acp-agent.js):**
+- The merge precedence the codec assumes — `acp-agent.js:1438`:
+  `mcpServers: { ...(userProvidedOptions?.mcpServers || {}), ...mcpServers }`.
+  ACP-derived spreads last, **wins on name collision**. So the codec's trick
+  of using a non-colliding `<name>-alwaysload` key in `_meta.claudeCode.options`
+  *does* survive the merge.
+- `disableBuiltInTools: true` is honored — `acp-agent.js:1402–1406`:
+  `tools = userProvidedOptions?.tools ?? (_meta?.disableBuiltInTools === true
+  ? [] : { type: "preset", preset: "claude_code" })`. Empties built-ins as
+  the codec claims.
+
+**NOT IN THE PACKAGE AT ALL (the load-bearing premise):**
+- **`alwaysLoad`** — zero occurrences across all of
+  `claude-agent-acp@0.36.1/dist/`. claude-agent-acp does **not** read or act
+  on it. It forwards the per-server config (whatever keys, including
+  `alwaysLoad`) untouched into the Claude Agent SDK via the merged `options`
+  passed to `session.query`.
+- **`ToolSearch` / `tool_search` / tool-deferral** — zero occurrences.
+  claude-agent-acp does not defer MCP tools behind any "ToolSearch."
+
+**What that means:** the entire A1 model — *"claude-agent-acp defers MCP
+tools behind ToolSearch; `alwaysLoad:true` un-defers them"* — is about
+behavior **that does not exist in claude-agent-acp**. Both `alwaysLoad` and
+tool-deferral are (at most) properties of the **deeper `@anthropic-ai`
+Claude Agent SDK / `claude_code`** package, which **was never read**. The
+"terminal ACP" conclusion is therefore an assertion about a package nobody
+opened.
+
+The two confirmed levers (merge + `disableBuiltInTools`) **do not address
+tool deferral at all** — they just change what's in the `tools` array and
+which mcpServers entry wins by name. So the A1 fix at the claude-agent-acp
+layer is, with high confidence, **inert with respect to its stated goal**:
+the `alwaysLoad` key it sets is forwarded down to the SDK, and whether *the
+SDK* honors it is open. Every "terminal" run may have been default behavior
+with an A1 payload that did nothing measurable — and we never instrumented
+that it did nothing.
+
+### What the next agent must do (in order — corrected)
 1. **Strip the codec to the minimum.** Advertise the Firegrid MCP server
    **once, plainly, under its real name** (just `lowerMcpServerDeclaration`).
-   Delete the `<name>-alwaysload` alias + the `_meta`/`disableBuiltInTools`
-   speculation (`claudeAgentAcpAlwaysLoadMeta` and its `_meta` spread).
-2. **Read the actual claude-agent-acp source** at `src/acp-agent.ts` ~L1488
-   (vendor it under `repos/` so it's inspectable/traceable): does it forward
-   MCP tools into the model request? under what condition? what `tool_choice`?
-   what system prompt? Replace every "claude-agent-acp does X" *comment* with
-   a source citation or delete the claim.
+   Delete the `<name>-alwaysload` alias + the `_meta` spread + the
+   `claudeAgentAcpAlwaysLoadMeta` helper. The merge-collision rationale they
+   exist for is moot once you advertise once.
+2. **Open the right package this time —
+   `@anthropic-ai/claude-agent-sdk`** (or whichever `claude_code` package
+   claude-agent-acp's `session.query` invokes — find it at
+   `/Users/gnijor/.npm/_npx/902b360216d9b9cc/node_modules/` and trace from
+   acp-agent.js:1438 onward). Specifically: `grep alwaysLoad` and
+   `grep -i 'tool[_-]search\|deferred'`. Does the SDK honor `alwaysLoad` on
+   an HTTP MCP server config? Where (if anywhere) does it defer MCP tools
+   from the model turn? **This is the file nobody opened.** Until it's
+   opened, every "ACP can't" / "terminal" claim is unfounded.
 3. **Instrument the real boundary.** Add OTEL/tracing that captures the
    *resolved tool catalog + exact tool names + `tool_choice` + system prompt*
    claude-agent-acp sends the model, and the model response — on the **real
@@ -166,7 +185,7 @@ that would settle it sitting in the very file being edited.
 > conclusion was reached by **reading the ACP protocol surface (inference)**,
 > not by instrumenting the actual decision point. That is the unfinished work.
 
-### The real unfinished task: instrument the claude-agent-acp model-request boundary
+### The real unfinished task: open the **Claude Agent SDK** (one layer deeper than the codec)
 
 We observed only the **symptom at our side of the boundary**: the codec
 (`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts`) instruments
@@ -409,13 +428,20 @@ fixing/verifying — the PO's standing preference.
 2. `bash scripts/lane-sweep.sh --json --workspace workspace:2` — see lanes.
 3. `gh pr list --state open` — should be ~0; the substrate is all merged.
 4. Confirm the substrate inventory (§2) is in `main` — do NOT redo it.
-5. **Instrument the real decision point** (§1) — do NOT route around it. Read
-   the actual `claude-agent-acp` source (`src/acp-agent.ts` ~L1488, the
-   model-turn/tools/tool_choice construction); vendor it so it is inspectable.
-   Add OTEL/tracing that captures the *model request claude-agent-acp builds*
-   (tool list, tool_choice, system prompt) + the model response, on the **real
-   production path** (`simulate:run -- dark-factory-pipeline`, not the
-   fake-connection codec test). Distinguish causes #1–#5 (§1) **with data**.
+5. **Open the right package, then instrument** (§0a UPDATE + §1). claude-agent-acp
+   has already been read — at v0.36.1 (`/Users/gnijor/.npm/_npx/902b360216d9b9cc/
+   node_modules/@agentclientprotocol/claude-agent-acp/dist/acp-agent.js`)
+   `alwaysLoad` and any "ToolSearch"/tool-deferral concept are **absent**. The
+   `alwaysLoad` key is forwarded untouched into the **deeper Claude Agent SDK**
+   (`@anthropic-ai/claude-agent-sdk` / `claude_code`, invoked via
+   `session.query` in acp-agent.js:1438→onward) — **that** is the package
+   nobody opened, and where the deferral mechanism (if any) lives. Open it,
+   `grep alwaysLoad`, `grep -i 'tool[_-]search\\|deferred'`, trace where MCP
+   tools enter the model request and what `tool_choice` is set. Add OTEL at
+   that boundary on the real production path. Distinguish whether the
+   symptom is (a) SDK-side tool-deferral, (b) `alwaysLoad` actually does
+   nothing anywhere (A1 inert), (c) name mangling, (d) something else —
+   **with captured data**, not inference.
 6. `br create` the bead, `cmux-dispatch.sh` the lane with the full lifecycle
    wording (§3c), bead id, and the choreography constraints (§4). The
    deliverable is a **source-verified FINDING** explaining 0/6 with captured
@@ -518,7 +544,7 @@ stated so the next session recognizes the pattern early:
   in the shared runner? does this assertion blob belong in the contract?* —
   was never asked. Each PR passed alone; the aggregate was incoherent. No one
   owned "is tiny-firegrid still the clean trace-generator it was meant to be."
-- **Confident conclusions asserted on unverified inference — at least four
+- **Confident conclusions asserted on unverified inference — at least five
   times.** (1) the §6 "victory" over-declaration; (2) "no ACP path forces
   tool-choice, terminal" reasoned from the protocol surface, not source;
   (3) the codec's claude-agent-acp merge behavior **stated as fact in code
@@ -526,9 +552,31 @@ stated so the next session recognizes the pattern early:
   TFIND-017 / "`DurableTable.rows()` is a live tail" / #406 fact-advancement
   story** — propagated from a lane report + a bead title + the sim's own
   comment, asserted as a "real substrate finding," then **refuted on actually
-  reading the source** (see the box below). Same shape each time: inference
+  reading the source** (see the box below). (5) **the entire `alwaysLoad` /
+  "ToolSearch deferral" mechanism the codec and the "terminal ACP" conclusion
+  were built on** — when claude-agent-acp@0.36.1 was finally read,
+  `alwaysLoad` and "ToolSearch" do not exist in the package at all; the
+  asserted mechanism lives (if anywhere) in the deeper Claude Agent SDK,
+  which was **never opened** (§0a UPDATE). One `grep` would have killed the
+  whole "terminal ACP" thread at the start. Same shape each time: inference
   promoted to decision-grade because the visible metric (merged PRs /
   "demoable") rewarded closing, not verifying.
+
+- **Meta-lesson the original "actual issues" list demonstrated.** When a
+  prior coordinator (me) re-listed the issues this arc surfaced — #1 §6
+  never ran, #2 codec double-advertisement, #3 instrumentation gap,
+  #4 `rows()` live-tail, #5 codec error.message drop, #6 tiny-firegrid
+  drift, plus resolved Gap-3 — and the PO challenged "what data backs
+  this," **the list collapsed on re-check**: #1 was the symptom, not an
+  issue; #3 was misframed (the boundary is in a package we didn't open,
+  not in our codec); #4 was outright refuted; #5 was already fixed in
+  `main` (tf-ds2/#403, surfaced as "open" by stale propagation); #6 is
+  harness clutter not a substrate bug; #2's mechanism relocated to the
+  unread deeper SDK; Gap-3's outcome is real but its mechanism shares an
+  author with the refuted TFIND-017 and warrants skepticism. **In the
+  whole arc, zero new, real, unresolved Firegrid problems were both
+  characterized and unresolved at the end.** What it actually produced,
+  verified, was the methodology failure itself.
 
 > **⚠ KNOWN MISDIAGNOSIS — do NOT resurrect (source-cited refutation).**
 > The claim "`DurableTable.rows()` is a live tail, so a fact written before a
