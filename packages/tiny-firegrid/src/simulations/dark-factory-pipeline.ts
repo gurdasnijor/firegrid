@@ -31,6 +31,50 @@ interface DarkFactoryFinding {
   readonly evidence: string
 }
 
+// Falsifiable §6 proof. Each step's verdict is derived ONLY from real
+// observed Firegrid spans (ToolUse events seen through the public client
+// wait.forAgentOutput) and real durable rows read back through the public
+// DurableTable facade — never inferred from the planner prompt or text.
+//
+//  - issued            : the required Firegrid ToolUse was actually observed.
+//  - backingFactPresent : the durable CallerFact the step resolves against
+//                         is observable in darkFactory.facts via the public
+//                         table readback (a real row, not a prompt claim).
+//  - advanced          : the planner progressed PAST this step — a strictly
+//                         later-stage step's ToolUse was observed at a higher
+//                         span sequence (proves the wait resolved and the
+//                         loop moved on, not that all waits were dumped).
+//  - proven            : issued && backingFactPresent && advanced (for the
+//                         terminal step, a terminal marker substitutes for
+//                         `advanced`). substrateBlocked steps are NEVER
+//                         proven — they are precise findings, not passes.
+type S6Step =
+  | "planner-plan"
+  | "human-approval-wait"
+  | "delegated-implementer"
+  | "review-round"
+  | "revision-loop"
+  | "merge-signoff-wait"
+  | "durable-ci-watch"
+  | "clean-unwind"
+
+interface S6StepProof {
+  readonly step: S6Step
+  readonly issued: boolean
+  readonly backingFactPresent: boolean
+  readonly advanced: boolean
+  readonly proven: boolean
+  readonly substrateBlocked: boolean
+  readonly conditional: boolean
+  readonly note: string
+}
+
+interface ObservedToolUse {
+  readonly sequence: number
+  readonly name: string
+  readonly text: string
+}
+
 // The §6 choreography is EXPRESSED and the Firegrid path is sound (ACP
 // initialize + session/new + runtime-context MCP attach all succeed). The
 // planner halts at session/prompt. EMPIRICAL FACT (proven by direct
@@ -75,6 +119,19 @@ interface DarkFactoryPipelineSimulationResult {
   readonly observedToolInputs: ReadonlyArray<string>
   readonly resultText: string
   readonly findings: ReadonlyArray<DarkFactoryFinding>
+  // Falsifiable §6 proof (real-span + durable-readback derived).
+  readonly readbackFactEventTypes: ReadonlyArray<string>
+  readonly sectionSixProof: ReadonlyArray<S6StepProof>
+  readonly sawPlannerPlan: boolean
+  readonly sawHumanApprovalWait: boolean
+  readonly sawDelegatedImplementer: boolean
+  readonly sawReviewRound: boolean
+  readonly sawRevisionLoop: boolean
+  readonly sawDurableCiWatch: boolean
+  readonly sawCleanUnwind: boolean
+  readonly s6ProvenStepCount: number
+  readonly s6RequiredStepCount: number
+  readonly s6FullLoopProven: boolean
 }
 
 const DarkFactoryFactRowSchema = Schema.Struct({
@@ -413,6 +470,186 @@ const seedFactoryFacts = (
     ),
   )
 
+// Read the app-owned facts BACK through the public DurableTable facade
+// (same surface the planner's wait_for CallerFact resolves against). This
+// proves the backing rows are real, persisted, and observable — not merely
+// write-acknowledged or asserted by the prompt. Scoped to this run.
+const readbackFactEventTypes = (
+  env: TinyFiregridSimulationEnv,
+): Effect.Effect<ReadonlyArray<string>, unknown> =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const table = yield* DarkFactoryFactTable
+      const rows = yield* table.facts.query(coll => coll.toArray)
+      return rows
+        .filter(row => row.factId.includes(env.runId))
+        .map(row => row.eventType)
+    }).pipe(
+      Effect.provide(
+        DarkFactoryFactTable.layer(
+          darkFactoryFactTableLayerOptions({
+            baseUrl: env.durableStreamsBaseUrl,
+            namespace: env.namespace,
+          }),
+        ),
+      ),
+    ),
+  )
+
+const minSeqWhere = (
+  tools: ReadonlyArray<ObservedToolUse>,
+  predicate: (tool: ObservedToolUse) => boolean,
+): number | undefined => {
+  const matches = tools.filter(predicate).map(tool => tool.sequence)
+  return matches.length === 0 ? undefined : Math.min(...matches)
+}
+
+const hasToolAfter = (
+  tools: ReadonlyArray<ObservedToolUse>,
+  afterSeq: number | undefined,
+  predicate: (tool: ObservedToolUse) => boolean,
+): boolean =>
+  afterSeq !== undefined &&
+  tools.some(tool => tool.sequence > afterSeq && predicate(tool))
+
+const isWaitFor = (target: string) =>
+(tool: ObservedToolUse): boolean =>
+  tool.name === "wait_for" && tool.text.includes(target)
+
+const isToolNamed = (name: string) =>
+(tool: ObservedToolUse): boolean => tool.name === name
+
+// Pure: build the falsifiable §6 proof matrix from observed tool spans,
+// durable readback, and a terminal marker. No prompt inference.
+const buildSectionSixProof = (input: {
+  readonly tools: ReadonlyArray<ObservedToolUse>
+  readonly readbackEventTypes: ReadonlyArray<string>
+  readonly sawTerminalMarker: boolean
+}): ReadonlyArray<S6StepProof> => {
+  const { tools, readbackEventTypes, sawTerminalMarker } = input
+  const backed = (eventType: string): boolean =>
+    readbackEventTypes.includes(eventType)
+
+  const planSeq = minSeqWhere(tools, isWaitFor("human.plan.approved"))
+  const delegateSeq = minSeqWhere(tools, isToolNamed("session_new"))
+  const reviewSeq = minSeqWhere(
+    tools,
+    tool =>
+      tool.name === "wait_for" &&
+      (tool.text.includes("github.pr.review_approved") ||
+        tool.text.includes("github.pr.review_posted")),
+  )
+  const mergeSeq = minSeqWhere(tools, isWaitFor("human.merge.approved"))
+  const ciSeq = minSeqWhere(tools, isWaitFor("github.ci.status"))
+  const revisionSeq = minSeqWhere(
+    tools,
+    tool =>
+      tool.name === "session_prompt" &&
+      reviewSeq !== undefined &&
+      tool.sequence > reviewSeq,
+  )
+
+  const advancedAfter = (seq: number | undefined): boolean =>
+    hasToolAfter(tools, seq, tool => tool.name !== "wait_for") ||
+    hasToolAfter(tools, seq, isWaitFor("github.")) ||
+    hasToolAfter(tools, seq, isWaitFor("human.merge.")) ||
+    hasToolAfter(tools, seq, isWaitFor("github.ci.status"))
+
+  const step = (
+    s: S6Step,
+    issued: boolean,
+    backingFactPresent: boolean,
+    advanced: boolean,
+    extra?: Partial<S6StepProof>,
+  ): S6StepProof => ({
+    step: s,
+    issued,
+    backingFactPresent,
+    advanced,
+    proven:
+      (extra?.substrateBlocked ?? false)
+        ? false
+        : issued && backingFactPresent && advanced,
+    substrateBlocked: extra?.substrateBlocked ?? false,
+    conditional: extra?.conditional ?? false,
+    note: extra?.note ?? "",
+  })
+
+  return [
+    step(
+      "planner-plan",
+      planSeq !== undefined,
+      backed("human.plan.approved"),
+      advancedAfter(planSeq),
+      { note: "Planner reached the plan→approval gate via a real wait_for human.plan.approved ToolUse and progressed past it." },
+    ),
+    step(
+      "human-approval-wait",
+      tools.some(tool =>
+        tool.name === "wait_for" &&
+        tool.text.includes("CallerFact") &&
+        tool.text.includes(darkFactoryFactSource) &&
+        tool.text.includes("human.plan.approved")),
+      backed("human.plan.approved"),
+      advancedAfter(planSeq),
+      { note: "wait_for CallerFact darkFactory.facts human.plan.approved resolved against a real durable row." },
+    ),
+    step(
+      "delegated-implementer",
+      delegateSeq !== undefined,
+      backed("github.pr.opened") || backed("factory.child.session.started"),
+      hasToolAfter(tools, delegateSeq, tool =>
+        tool.name === "session_prompt" || tool.name === "wait_for"),
+      { note: "session_new child delegation observed, followed by session_prompt / pr-opened wait." },
+    ),
+    step(
+      "review-round",
+      reviewSeq !== undefined,
+      backed("github.pr.review_approved") ||
+        backed("github.pr.review_posted"),
+      advancedAfter(reviewSeq),
+      { note: "wait_for github.pr.review_* resolved and the loop advanced to merge/CI." },
+    ),
+    step(
+      "revision-loop",
+      revisionSeq !== undefined,
+      backed("github.pr.review_changes_requested"),
+      revisionSeq !== undefined,
+      {
+        conditional: true,
+        note:
+          "Conditional: the seeded happy path approves review, so a revision round may not be exercised. Not-exercised is NOT a failure; exercised requires a real session_prompt after a review wait.",
+      },
+    ),
+    step(
+      "merge-signoff-wait",
+      mergeSeq !== undefined,
+      backed("human.merge.approved"),
+      advancedAfter(mergeSeq),
+      { note: "wait_for human.merge.approved resolved against a real durable row and advanced to CI watch." },
+    ),
+    step(
+      "durable-ci-watch",
+      ciSeq !== undefined,
+      backed("github.ci.status"),
+      sawTerminalMarker || backed("github.pr.merged"),
+      { note: "wait_for github.ci.status resolved; terminal reached (DARK_FACTORY_TERMINAL or github.pr.merged)." },
+    ),
+    step(
+      "clean-unwind",
+      tools.some(tool =>
+        tool.name === "session_cancel" || tool.name === "session_close"),
+      false,
+      false,
+      {
+        substrateBlocked: true,
+        note:
+          "SUBSTRATE GAP (precise finding, not a pass): host-sdk agent-tool-host-live returns unsupportedAgentTool for session_cancel/session_close, so clean-unwind CANNOT be proven through the public surface yet regardless of planner intent.",
+      },
+    ),
+  ]
+}
+
 const tinyDarkFactoryPipeline = (
   options: DarkFactoryPipelineOptions,
 ): Layer.Layer<FiregridHost, DurableTableError | ServeError, never> => {
@@ -629,6 +866,7 @@ const darkFactoryDriver = (
     let resultText = ""
     const observedToolNames = new Set<string>()
     const observedToolInputs: Array<string> = []
+    const observedToolUses: Array<ObservedToolUse> = []
     const observedFindings: Array<DarkFactoryFinding> = []
 
     while ((yield* Clock.currentTimeMillis) < deadline) {
@@ -662,6 +900,11 @@ const darkFactoryDriver = (
           sawScheduleMe = sawScheduleMe || event.part.name === "schedule_me"
           sawExecuteAttempt = sawExecuteAttempt || event.part.name === "execute"
           const inputText = toolUseText(observation)
+          observedToolUses.push({
+            sequence: observation.sequence,
+            name: event.part.name,
+            text: inputText ?? "",
+          })
           if (inputText !== undefined) {
             observedToolInputs.push(inputText.slice(0, 2_000))
             if (event.part.name === "wait_for") {
@@ -733,6 +976,51 @@ const darkFactoryDriver = (
       ) break
     }
 
+    // Falsifiable §6 proof: derived ONLY from real observed tool spans and a
+    // durable readback through the public facade — never the prompt.
+    const sawTerminalMarker =
+      resultText.includes("DARK_FACTORY_TERMINAL") || sawTurnComplete
+    const readbackEventTypes = yield* readbackFactEventTypes(env).pipe(
+      Effect.catchAll(() => Effect.succeed([] as ReadonlyArray<string>)),
+    )
+    const sectionSixProof = buildSectionSixProof({
+      tools: observedToolUses,
+      readbackEventTypes,
+      sawTerminalMarker,
+    })
+    const proofOf = (s: S6Step): S6StepProof | undefined =>
+      sectionSixProof.find(entry => entry.step === s)
+    const isProven = (s: S6Step): boolean => proofOf(s)?.proven === true
+    const requiredSteps = sectionSixProof.filter(
+      entry => !entry.conditional && !entry.substrateBlocked,
+    )
+    const s6ProvenStepCount = requiredSteps.filter(
+      entry => entry.proven,
+    ).length
+    // Precise findings for required steps that did not prove, and for the
+    // substrate-blocked clean-unwind (never a pass).
+    sectionSixProof
+      .filter(entry => entry.substrateBlocked)
+      .forEach(entry =>
+        observedFindings.push({
+          id: `dark-factory.s6.${entry.step}.substrate_blocked`,
+          status: "known-gap",
+          expectedPublicSurface:
+            `§6 step "${entry.step}" cannot be PROVEN through the public surface yet. ${entry.note}`,
+          evidence: `issued=${String(entry.issued)} (substrate path absent)`,
+        }))
+    requiredSteps
+      .filter(entry => !entry.proven)
+      .forEach(entry =>
+        observedFindings.push({
+          id: `dark-factory.s6.${entry.step}.not_proven`,
+          status: "observed",
+          expectedPublicSurface:
+            `§6 step "${entry.step}" must be observable end-to-end through Firegrid tools + durable facts.`,
+          evidence:
+            `issued=${String(entry.issued)} backingFactPresent=${String(entry.backingFactPresent)} advanced=${String(entry.advanced)} — not PROVEN-run.`,
+        }))
+
     return {
       factoryRunKey,
       plannerContextId: session.contextId,
@@ -743,7 +1031,6 @@ const darkFactoryDriver = (
       sawPlanApprovalWait,
       sawPrOpenedWait,
       sawReviewWait,
-      sawMergeSignoffWait,
       sawCiWatchWait,
       sawImplementerDelegation,
       sawSessionPrompt,
@@ -760,6 +1047,21 @@ const darkFactoryDriver = (
       observedToolInputs,
       resultText,
       findings: [...staticChoreographyFindings, ...observedFindings],
+      readbackFactEventTypes: readbackEventTypes,
+      sectionSixProof,
+      sawPlannerPlan: isProven("planner-plan"),
+      sawHumanApprovalWait: isProven("human-approval-wait"),
+      sawDelegatedImplementer: isProven("delegated-implementer"),
+      sawReviewRound: isProven("review-round"),
+      sawRevisionLoop: proofOf("revision-loop")?.issued === true,
+      sawMergeSignoffWait: isProven("merge-signoff-wait"),
+      sawDurableCiWatch: isProven("durable-ci-watch"),
+      sawCleanUnwind: isProven("clean-unwind"),
+      s6ProvenStepCount,
+      s6RequiredStepCount: requiredSteps.length,
+      s6FullLoopProven:
+        requiredSteps.length > 0 &&
+        s6ProvenStepCount === requiredSteps.length,
     }
   })
 
@@ -802,6 +1104,18 @@ export const darkFactoryPipelineSimulation = {
     observedToolInputs: result.observedToolInputs.slice(0, 20),
     resultTextExcerpt: result.resultText.slice(0, 1_200),
     findings: result.findings,
+    readbackFactEventTypes: result.readbackFactEventTypes,
+    s6FullLoopProven: result.s6FullLoopProven,
+    s6ProvenStepCount: result.s6ProvenStepCount,
+    s6RequiredStepCount: result.s6RequiredStepCount,
+    sawPlannerPlan: result.sawPlannerPlan,
+    sawHumanApprovalWait: result.sawHumanApprovalWait,
+    sawDelegatedImplementer: result.sawDelegatedImplementer,
+    sawReviewRound: result.sawReviewRound,
+    sawRevisionLoop: result.sawRevisionLoop,
+    sawDurableCiWatch: result.sawDurableCiWatch,
+    sawCleanUnwind: result.sawCleanUnwind,
+    sectionSixProof: result.sectionSixProof,
   }),
   localize: result => [
     "firegrid-observability.TINY_FIREGRID_SIMULATIONS.8",
@@ -817,6 +1131,20 @@ export const darkFactoryPipelineSimulation = {
     result.sawAgentError
       ? `Agent error before choreography: ${result.agentError ?? "unknown"}`
       : "No agent Error output observed.",
+    result.s6FullLoopProven
+      ? `§6 FULL LOOP PROVEN: all ${result.s6RequiredStepCount} required steps observed end-to-end through Firegrid tools + durable readback.`
+      : `§6 NOT fully proven: ${result.s6ProvenStepCount}/${result.s6RequiredStepCount} required steps proven-run (clean-unwind is substrate-blocked, revision-loop is conditional).`,
+    `§6 proof matrix (issued/backing/advanced -> proven): ${
+      result.sectionSixProof
+        .map(entry =>
+          `${entry.step}[${entry.issued ? "i" : "-"}${entry.backingFactPresent ? "b" : "-"}${entry.advanced ? "a" : "-"}${entry.substrateBlocked ? "X" : entry.proven ? "✓" : entry.conditional ? "?" : "✗"}]`)
+        .join(" ")
+    }`,
+    `Durable readback fact event types (public facade): ${
+      result.readbackFactEventTypes.length === 0
+        ? "none"
+        : result.readbackFactEventTypes.join(", ")
+    }`,
     ...result.findings.map(finding =>
       `${finding.id}: ${finding.evidence}`),
   ],
