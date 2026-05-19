@@ -232,6 +232,95 @@ as good as the machine they are watching.
 
 ---
 
+## 7. Definitive conclusion
+
+The final demo conclusion is stronger and narrower than the first live-run
+narrative: **the Firegrid substrate required by factory-vision §6 is complete;
+the remaining §6-RUN gap is a cross-runtime agent-side
+plan-in-prose-vs-invoke phenomenon.** This is a research-grade finding, not a
+failed demo.
+
+### Substrate status: complete
+
+Every Firegrid-side gap surfaced during the §6 push has now been closed and
+has a merged evidence pointer:
+
+| Capability / gap | Evidence | Demo meaning |
+|---|---|---|
+| Caller-owned fact waits | #383 | `wait_for` can wait on app-owned `CallerFact` streams, not only runtime output. |
+| Durable `execute` side effects | #388 + #413 real pass | Provider-edge actions can run and record durable results. |
+| Durable identity + restart survival | #381 + #397 | Participant identity, action evidence, and observations survive host restart. |
+| Clean unwind / Gap-3 | #393 → #396 → #404 → #417 | Progressive localization exonerated write topology and materialization; #417 fixed the real root cause: serial reconciler starvation behind long-running `startRuntime()`, plus missing prompt terminal evidence. |
+| Observability | #400 + #403 | Queryable-row observability and ACP tool-arg / error-message propagation are in place. |
+| Falsifiable proof harness | #401 + #402 | The demo can report a per-step §6 proof matrix instead of relying on prose. |
+| Turnkey demo command | #409 | The presenter has a one-command `demo:s6` wrapper. |
+| §5 factory-ready capstone | #418 | The pre-§6 substrate contract is proven by a capstone simulation. |
+
+The substrate is therefore not the residual blocker. It can express durable
+facts, waits, delegation, execute side effects, restart survival, clean unwind,
+and falsifiable observation through the public Firegrid surface.
+
+### §6-RUN status: precisely localized
+
+The unresolved runtime behavior is now source-verified by tf-9q4 / #420 across
+both ACP planner runtimes:
+
+- `codex-acp` and `claude-agent-acp` were run with the planner fully
+  toolset-constrained: no exploration tools, no repo/web/resource browsing, and
+  a hard instruction that progress requires calling Firegrid tools.
+- In both runs the Firegrid runtime-context MCP toolset was discovered
+  (`tools/list` ×16, `register_toolkit` with the Firegrid tool catalog).
+- In both runs the agent reasoned about the right §6 choreography in prose.
+  `claude-agent-acp` narrated the expected sequence — spawn implementer, wait
+  for `github.pr.opened`, review, CI, execute merge, clean unwind — but emitted
+  **zero** `tools/call`.
+- `codex-acp` likewise emitted **zero** `tools/call`; the prior
+  exploration-distraction hypothesis was eliminated.
+
+That common result makes the residual gap **cross-runtime and agent-side**:
+the agents can discover the Firegrid tools and describe the correct factory
+plan, but do not convert the plan into MCP invocation. The missing lever is a
+forced tool-choice / must-call mechanism in the agent runtime, not another
+Firegrid substrate primitive.
+
+Quota is also no longer the explanation. A real-key HTTP200 probe verified the
+model edge was reachable; the residual is not the old quota wall and not a
+Firegrid runtime failure.
+
+```mermaid
+flowchart TD
+    A[§6 dark-factory demo goal] --> B[Firegrid public substrate]
+    B --> C{Substrate primitive needed?}
+    C -->|CallerFact waits| C1[#383 closed]
+    C -->|execute side effect| C2[#388 + #413 closed]
+    C -->|identity / restart| C3[#381 + #397 closed]
+    C -->|clean unwind| C4[#417 closed<br/>root cause: serial reconciler starvation]
+    C -->|observability + proof| C5[#400 #401 #402 #403 closed]
+    C -->|turnkey + capstone| C6[#409 #418 closed]
+    C1 --> D[Substrate complete]
+    C2 --> D
+    C3 --> D
+    C4 --> D
+    C5 --> D
+    C6 --> D
+    D --> E[Live planner runtimes]
+    E --> F[Firegrid tools discovered<br/>tools/list ×16]
+    F --> G[Correct §6 plan narrated in prose]
+    G --> H{MCP tools/call emitted?}
+    H -->|codex-acp| I[0 tools/call]
+    H -->|claude-agent-acp| J[0 tools/call]
+    I --> K[Residual: agent-side<br/>plan-in-prose vs invoke]
+    J --> K
+    K --> L[Needs forced tool-choice / must-call agent runtime]
+```
+
+**Presenter line:** Firegrid reached the point the factory vision needed: the
+substrate is complete and falsifiable. The live §6 demo stops at an agent
+runtime behavior outside Firegrid: two different ACP agents discover the
+Firegrid toolset and narrate the correct plan, but do not invoke the tools.
+
+---
+
 ### Reproduce / inspect
 
 ```
