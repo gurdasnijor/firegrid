@@ -102,6 +102,10 @@ const streamForWait = (
         })),
       Match.tag("AgentOutputAfter", source => streams.agentOutputAfter(source)),
       Match.tag("RuntimeRun", () => streams.runtimeRun),
+      // firegrid-typed-wait-source-redesign.CONTEXT.3 — caller-owned fact
+      // stream selected by app-chosen name; the trigger still does final
+      // row matching in `completeMatch`.
+      Match.tag("CallerFact", source => streams.callerFact(source.stream)),
       Match.exhaustive,
     )).pipe(
       Effect.withSpan("firegrid.durable_tools.wait_router.stream_for_wait", {

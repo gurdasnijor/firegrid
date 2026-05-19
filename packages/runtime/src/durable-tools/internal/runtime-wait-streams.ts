@@ -37,11 +37,42 @@ interface RuntimeWaitStreamsService {
     contextId: string,
   ) => Stream.Stream<RuntimeAgentOutputObservation, unknown>
   readonly runtimeRun: Stream.Stream<RuntimeRunEventRow, unknown>
+  /**
+   * firegrid-typed-wait-source-redesign.CONTEXT.3
+   *
+   * Caller-owned durable fact stream selected by app-chosen name. Empty
+   * when no host composition has bound caller-owned fact streams (the
+   * CallerFact wait then simply times out rather than crashing the
+   * router — the same optional-capability posture as `agentOutputAfter`).
+   */
+  readonly callerFact: (
+    stream: string,
+  ) => Stream.Stream<unknown, unknown>
 }
 
 export class RuntimeWaitStreams extends Context.Tag(
   "@firegrid/runtime/RuntimeWaitStreams",
 )<RuntimeWaitStreams, RuntimeWaitStreamsService>() {}
+
+/**
+ * firegrid-typed-wait-source-redesign.CONTEXT.3
+ * firegrid-typed-wait-source-redesign.TYPED_SOURCES.2
+ *
+ * Host-composition-provided resolver from a caller-owned durable fact
+ * stream name to its concrete durable observation Stream. The runtime does
+ * not own or enumerate app collections; the host that knows the app's
+ * caller-owned `DurableTable` binds it here by name. Consumed by the wait
+ * router through the Effect requirement channel; never exposed on the
+ * agent wait-source expression (TYPED_SOURCES.4 — the agent passes only a
+ * name string, never a table facade).
+ */
+export interface CallerOwnedFactStreamsService {
+  readonly streamFor: (stream: string) => Stream.Stream<unknown, unknown>
+}
+
+export class CallerOwnedFactStreams extends Context.Tag(
+  "@firegrid/runtime/CallerOwnedFactStreams",
+)<CallerOwnedFactStreams, CallerOwnedFactStreamsService>() {}
 
 /**
  * Built from the typed runtime observation tags. Adding a typed source is
@@ -54,6 +85,10 @@ export const RuntimeWaitStreamsLive = Layer.effect(
     const agentOutput = yield* RuntimeAgentOutputEvents
     const agentOutputAfter = yield* Effect.serviceOption(RuntimeAgentOutputAfterEvents)
     const runtimeRun = yield* RuntimeRuns
+    // CONTEXT.3: caller-owned fact streams are an optional host-composition
+    // capability. Absent => CallerFact waits observe an empty stream and
+    // time out (never crash the router).
+    const callerOwnedFactStreams = yield* Effect.serviceOption(CallerOwnedFactStreams)
 
     // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
     //
@@ -134,6 +169,18 @@ export const RuntimeWaitStreamsLive = Layer.effect(
           }),
         ),
       runtimeRun,
+      callerFact: stream =>
+        Option.match(callerOwnedFactStreams, {
+          onNone: () => Stream.empty,
+          onSome: service => service.streamFor(stream),
+        }).pipe(
+          Stream.withSpan("firegrid.runtime_wait_streams.caller_fact", {
+            kind: "internal",
+            attributes: {
+              "firegrid.wait.caller_fact_stream": stream,
+            },
+          }),
+        ),
     }
   }),
 )
