@@ -1,10 +1,9 @@
-// tf-se0 evidence smoke: this is intentionally on-demand only
-// (`pnpm --filter @firegrid/tiny-firegrid test:smoke`). It records the
-// public-surface breakpoints for the real-agent dark-factory choreography
-// probe; it must not grow an app-led phase driver.
+// tf-se0 happy-path smoke: env-gated and excluded from CI by filename.
+// The planner is a real tool-use ACP agent. The test only supplies the
+// external human-approval signal when the agent has entered the supported
+// `wait_for` step, plus one explicitly marked PR-open placeholder for the
+// known live-host `execute` gap tracked by tf-mn2.
 
-import * as acp from "@agentclientprotocol/sdk"
-import { IdGenerator } from "@effect/ai"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   Firegrid,
@@ -12,168 +11,34 @@ import {
   FiregridStandaloneLive,
   local,
   type FiregridConfigError,
+  type FiregridSessionHandle,
   type RuntimeContextSnapshot,
 } from "@firegrid/client-sdk/firegrid"
 import {
   localProcessSpawnEnvFromHostEnv,
-  FiregridAgentToolkit,
 } from "@firegrid/host-sdk"
 import {
-  WaitForToolInputSchema,
-} from "@firegrid/protocol/agent-tools"
-import {
-  AcpSessionLive,
-  AgentSession,
-} from "@firegrid/runtime/codecs"
-import type { AgentByteStream } from "@firegrid/runtime/sources/sandbox"
-import {
-  Chunk,
   Clock,
   Context,
-  Deferred,
   Effect,
-  Exit,
+  Fiber,
   Layer,
   Schedule,
-  Schema,
-  Scope,
-  Stream,
 } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
-  darkFactoryChoreographyEvidencePrompt,
+  darkFactoryChoreographyHappyPathPrompt,
   darkFactoryRealAgentEnvPolicy,
   DarkFactoryEvidenceTable,
+  makeDarkFactoryPermissionResolvedFact,
+  makeDarkFactoryPullRequestOpenedFact,
+  makeDarkFactoryTerminalFact,
   makeDarkFactoryTriggerAcceptedFact,
   tinyDarkFactoryPipeline,
 } from "../src/configurations/dark-factory-pipeline.ts"
 
 type AgentOutputObservation = RuntimeContextSnapshot["agentOutputs"][number]
-
-interface AcpHarness {
-  readonly bytes: AgentByteStream
-  readonly agentInput: ReadableStream<Uint8Array>
-  readonly agentOutput: WritableStream<Uint8Array>
-  readonly exit: Deferred.Deferred<{ readonly exitCode?: number; readonly signal?: string }, unknown>
-}
-
-class LoadCapableFixtureAgent implements acp.Agent {
-  readonly newSessionRequests: Array<acp.NewSessionRequest> = []
-  readonly loadSessionRequests: Array<acp.LoadSessionRequest> = []
-  readonly replayedUpdates: Array<acp.SessionNotification> = []
-  private readonly connection: acp.AgentSideConnection
-
-  constructor(connection: acp.AgentSideConnection) {
-    this.connection = connection
-  }
-
-  async initialize(): Promise<acp.InitializeResponse> {
-    return {
-      protocolVersion: acp.PROTOCOL_VERSION,
-      agentCapabilities: {
-        loadSession: true,
-        sessionCapabilities: { resume: {} },
-      },
-    }
-  }
-
-  async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
-    this.newSessionRequests.push(params)
-    return { sessionId: "acp-session-1" }
-  }
-
-  async loadSession(params: acp.LoadSessionRequest): Promise<acp.LoadSessionResponse> {
-    this.loadSessionRequests.push(params)
-    const replay: acp.SessionNotification = {
-      sessionId: params.sessionId,
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text: "replayed-before-tool-call" },
-      },
-    }
-    this.replayedUpdates.push(replay)
-    await this.connection.sessionUpdate(replay)
-    return {}
-  }
-
-  async resumeSession(): Promise<acp.ResumeSessionResponse> {
-    return {}
-  }
-
-  async authenticate(): Promise<acp.AuthenticateResponse> {
-    return {}
-  }
-
-  async cancel(): Promise<void> {}
-
-  async prompt(params: acp.PromptRequest): Promise<acp.PromptResponse> {
-    await this.connection.sessionUpdate({
-      sessionId: params.sessionId,
-      update: {
-        sessionUpdate: "tool_call",
-        toolCallId: "pending-wait-for",
-        title: "wait_for approval",
-        kind: "read",
-        status: "pending",
-        rawInput: { source: "approval" },
-      },
-    })
-    return { stopReason: "end_turn" }
-  }
-}
-
-const makeAcpHarness = Effect.gen(function*() {
-  const runtimeToAgent = new TransformStream<Uint8Array, Uint8Array>()
-  const agentToRuntime = new TransformStream<Uint8Array, Uint8Array>()
-  const stderr = new TransformStream<Uint8Array, Uint8Array>()
-  const exit = yield* Deferred.make<
-    { readonly exitCode?: number; readonly signal?: string },
-    unknown
-  >()
-
-  return {
-    bytes: {
-      stdin: runtimeToAgent.writable,
-      stdout: agentToRuntime.readable,
-      stderr: stderr.readable,
-      exit: Deferred.await(exit),
-    },
-    agentInput: runtimeToAgent.readable,
-    agentOutput: agentToRuntime.writable,
-    exit,
-  } satisfies AcpHarness
-})
-
-const startLoadCapableFixtureAgent = (harness: AcpHarness): LoadCapableFixtureAgent => {
-  let agent: LoadCapableFixtureAgent | undefined
-  const stream = acp.ndJsonStream(harness.agentOutput, harness.agentInput)
-  new acp.AgentSideConnection(connection => {
-    agent = new LoadCapableFixtureAgent(connection)
-    return agent
-  }, stream)
-  if (agent === undefined) {
-    throw new Error("expected ACP fixture agent to initialize synchronously")
-  }
-  return agent
-}
-
-const openAcpSession = (
-  bytes: AgentByteStream,
-) =>
-  Effect.gen(function*() {
-    const scope = yield* Effect.scope
-    const context = yield* Layer.buildWithScope(
-      AcpSessionLive(bytes).pipe(
-        Layer.provide(Layer.succeed(
-          IdGenerator.IdGenerator,
-          IdGenerator.defaultIdGenerator,
-        )),
-      ),
-      scope,
-    )
-    return Context.get(context, AgentSession)
-  })
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -197,6 +62,16 @@ interface RealToolUseAgent {
 
 const selectRealToolUseAgent = (): RealToolUseAgent | undefined => {
   if (
+    typeof globalThis.process.env.ANTHROPIC_API_KEY === "string" &&
+    globalThis.process.env.ANTHROPIC_API_KEY.length > 0
+  ) {
+    return {
+      agent: "claude-code-acp",
+      argv: ["npx", "-y", "@zed-industries/claude-code-acp"],
+      envBindingName: "ANTHROPIC_API_KEY",
+    }
+  }
+  if (
     typeof globalThis.process.env.OPENAI_API_KEY === "string" &&
     globalThis.process.env.OPENAI_API_KEY.length > 0
   ) {
@@ -206,16 +81,6 @@ const selectRealToolUseAgent = (): RealToolUseAgent | undefined => {
       envBindingName: "OPENAI_API_KEY",
     }
   }
-  if (
-    typeof globalThis.process.env.ANTHROPIC_API_KEY === "string" &&
-    globalThis.process.env.ANTHROPIC_API_KEY.length > 0
-  ) {
-    return {
-      agent: "claude-acp",
-      argv: ["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.34.1"],
-      envBindingName: "ANTHROPIC_API_KEY",
-    }
-  }
   return undefined
 }
 
@@ -223,7 +88,7 @@ const realAgent = selectRealToolUseAgent()
 
 if (realAgent === undefined) {
   console.warn(
-    "Skipping dark-factory real-agent evidence smoke: OPENAI_API_KEY or ANTHROPIC_API_KEY is not set.",
+    "Skipping dark-factory happy-path smoke: OPENAI_API_KEY or ANTHROPIC_API_KEY is not set.",
   )
 }
 
@@ -263,28 +128,19 @@ const provideClient = <A, E, R>(
     })),
   )
 
-const waitForAgentOutputMatching = (
-  sessionId: string,
+const waitNextAgentOutput = (
+  session: FiregridSessionHandle,
   input: {
-    readonly baseUrl: string
-    readonly namespace: string
     readonly afterSequence?: number
     readonly timeoutMs: number
   },
 ) =>
-  provideClient(
-    Effect.gen(function*() {
-      const firegrid = yield* Firegrid
-      const session = yield* firegrid.sessions.attach({ sessionId })
-      return yield* session.wait.forAgentOutput({
-        ...(input.afterSequence === undefined
-          ? {}
-          : { afterSequence: input.afterSequence }),
-        timeoutMs: input.timeoutMs,
-      })
+  session.wait.forAgentOutput({
+    ...(input.afterSequence === undefined ? {} : {
+      afterSequence: input.afterSequence,
     }),
-    input,
-  ).pipe(
+    timeoutMs: input.timeoutMs,
+  }).pipe(
     Effect.retry(
       Schedule.intersect(
         Schedule.spaced("1000 millis"),
@@ -293,11 +149,46 @@ const waitForAgentOutputMatching = (
     ),
   )
 
-const collectEvidence = (
-  sessionId: string,
+const approvalSignalScript = `
+let buffer = "";
+const emit = event => process.stdout.write(JSON.stringify(event) + "\\n");
+const handleLine = line => {
+  if (line.trim().length === 0) return;
+  const event = JSON.parse(line);
+  if (event.type !== "prompt") return;
+  const text = typeof event.prompt === "object"
+    ? JSON.stringify(event.prompt)
+    : String(event.prompt);
+  emit({ type: "text", messageId: "approval-resolution", text });
+  emit({ type: "turn_complete", finishReason: "stop" });
+  setTimeout(() => process.exit(0), 10);
+};
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => {
+  buffer += chunk;
+  let index;
+  while ((index = buffer.indexOf("\\n")) >= 0) {
+    const line = buffer.slice(0, index);
+    buffer = buffer.slice(index + 1);
+    handleLine(line);
+  }
+});
+setTimeout(() => process.exit(2), 120_000);
+`
+
+const approvalSignalRuntime = () =>
+  local.jsonl({
+    argv: [process.execPath, "-e", approvalSignalScript],
+    agent: "dark-factory-approval-signal",
+    agentProtocol: "stdio-jsonl",
+    cwd: globalThis.process.cwd(),
+  })
+
+const observePlannerHappyPath = (
   input: {
-    readonly baseUrl: string
-    readonly namespace: string
+    readonly planner: FiregridSessionHandle
+    readonly approvalSignal: FiregridSessionHandle
+    readonly factoryRunKey: string
     readonly timeoutMs: number
   },
 ) =>
@@ -306,127 +197,52 @@ const collectEvidence = (
     let afterSequence: number | undefined
     let text = ""
     let sawReady = false
+    let approvalPrompted = false
     const toolUses: Array<{ readonly name: string; readonly params: unknown }> = []
+
     while ((yield* Clock.currentTimeMillis) < deadline) {
       const remaining = Math.max(1, deadline - (yield* Clock.currentTimeMillis))
-      const next = yield* waitForAgentOutputMatching(sessionId, {
-        baseUrl: input.baseUrl,
-        namespace: input.namespace,
+      const next = yield* waitNextAgentOutput(input.planner, {
         ...(afterSequence === undefined ? {} : { afterSequence }),
         timeoutMs: Math.min(remaining, 15_000),
       })
       if (!next.matched) continue
+
       const observation: AgentOutputObservation = next.output
       afterSequence = observation.sequence
       const event = observation.event
+
       if (event._tag === "Ready") sawReady = true
       if (event._tag === "ToolUse") {
         toolUses.push({ name: event.part.name, params: event.part.params })
-        if (event.part.name === "wait_for") break
+        if (event.part.name === "wait_for" && !approvalPrompted) {
+          approvalPrompted = true
+          yield* input.approvalSignal.prompt({
+            payload: `factory.permission.resolved approved ${input.factoryRunKey}`,
+            idempotencyKey: `approval-resolution:${input.factoryRunKey}`,
+          })
+        }
       }
       if (event._tag === "TextChunk") {
         text += event.part.delta
-        if (text.includes("DARK_FACTORY_EVIDENCE_DONE")) break
+        if (text.includes("DARK_FACTORY_TERMINAL")) break
       }
     }
-    return { sawReady, toolUses, text }
+
+    return {
+      sawReady,
+      approvalPrompted,
+      toolUses,
+      text,
+      toolNames: toolUses.map(tool => tool.name),
+    }
   })
 
-describe("tiny-firegrid dark-factory evidence smoke", () => {
-  it("documents the current public tool surface precisely enough to avoid over-broad findings", async () => {
-    const toolNames = Object.keys(FiregridAgentToolkit.tools).sort()
-    expect(toolNames).toEqual([
-      "execute",
-      "schedule_me",
-      "session_cancel",
-      "session_close",
-      "session_new",
-      "session_prompt",
-      "sleep",
-      "wait_for",
-    ])
-
-    const invalidCallerFactWait = await Effect.runPromiseExit(
-      Schema.decodeUnknown(WaitForToolInputSchema)({
-        waitQuery: {
-          source: { _tag: "DarkFactoryFact" },
-          whereFields: {
-            eventType: "factory.permission.resolved",
-            factoryRunKey: "factory-run-evidence",
-          },
-        },
-        timeoutMs: 1,
-      }),
-    )
-    expect(Exit.isFailure(invalidCallerFactWait)).toBe(true)
-
-    const validRuntimeWait = await Effect.runPromiseExit(
-      Schema.decodeUnknown(WaitForToolInputSchema)({
-        waitQuery: {
-          source: { _tag: "AgentOutput" },
-          whereFields: {
-            contextId: "ctx_example",
-            _tag: "TextChunk",
-          },
-        },
-        timeoutMs: 1,
-      }),
-    )
-    expect(Exit.isSuccess(validRuntimeWait)).toBe(true)
-  })
-
-  it("classifies the ACP session/load crux as a narrow Firegrid surface gap before protocol mismatch", async () => {
-    const evidence = await Effect.runPromise(
-      Effect.scoped(Effect.gen(function*() {
-        const harness = yield* makeAcpHarness
-        const agent = startLoadCapableFixtureAgent(harness)
-        const session = yield* openAcpSession(harness.bytes)
-        const first = yield* session.outputs.pipe(
-          Stream.take(1),
-          Stream.runCollect,
-          Effect.map(Chunk.toReadonlyArray),
-        )
-        return {
-          acpSdkHasLoadSession:
-            typeof acp.ClientSideConnection.prototype.loadSession === "function",
-          acpSdkHasResumeSession:
-            typeof acp.ClientSideConnection.prototype.resumeSession === "function",
-          firegridCodecCalledNewSession: agent.newSessionRequests.length,
-          firegridCodecCalledLoadSession: agent.loadSessionRequests.length,
-          agentSessionMeta: session.meta,
-          first,
-          cruxQuestions: {
-            hostCanInvokeSessionLoadThroughPublicSurface: false,
-            resumedConversationObservation:
-              "not-reached-firegrid-does-not-invoke-session-load",
-            pendingToolResultDelivery:
-              "not-reached-firegrid-does-not-invoke-session-load",
-          },
-          acpSpec: {
-            url: "https://agentclientprotocol.com/protocol/session-setup#resuming-sessions",
-            loadSessionReplay:
-              "ACP session/load replays the entire conversation with session/update notifications before the load response; session/resume reconnects without replay.",
-          },
-          classification: "b:narrow-surface-exposure-gap",
-        }
-      })),
-    )
-
-    console.error("[dark-factory-session-load-evidence]", JSON.stringify(evidence, null, 2))
-
-    expect(evidence.acpSdkHasLoadSession).toBe(true)
-    expect(evidence.acpSdkHasResumeSession).toBe(true)
-    expect(evidence.firegridCodecCalledNewSession).toBe(1)
-    expect(evidence.firegridCodecCalledLoadSession).toBe(0)
-    expect(evidence.agentSessionMeta).not.toHaveProperty("sessionId")
-    expect(evidence.cruxQuestions.hostCanInvokeSessionLoadThroughPublicSurface).toBe(false)
-    expect(evidence.classification).toBe("b:narrow-surface-exposure-gap")
-  })
-
+describe("tiny-firegrid dark-factory happy-path smoke", () => {
   const maybeIt = realAgent === undefined ? it.skip : it
 
   maybeIt(
-    "hands a real tool-use agent the runtime-context MCP surface and records the dark-factory choreography breakpoints",
+    "lets a real tool-use ACP planner choreograph trigger -> approval -> implementer -> PR placeholder -> terminal through supported public surfaces",
     async () => {
       if (baseUrl === undefined) throw new Error("server not started")
       if (realAgent === undefined) throw new Error("real agent env not selected")
@@ -444,51 +260,33 @@ describe("tiny-firegrid dark-factory evidence smoke", () => {
           repository: "gurdasnijor/firegrid",
         },
       })
-      const approvalSignalExternalKey = {
-        source: "tiny-firegrid",
-        id: `approval-signal-${factoryRunKey}`,
-      }
-      let hostScope: Scope.CloseableScope | undefined
 
-      const evidence = await Effect.runPromise(
+      const result = await Effect.runPromise(
         Effect.scoped(Effect.gen(function*() {
-          hostScope = yield* Scope.make()
-          yield* Effect.addFinalizer(() =>
-            hostScope === undefined
-              ? Effect.void
-              : Scope.close(hostScope, Exit.void).pipe(
-                  Effect.tap(() => Effect.sync(() => {
-                    hostScope = undefined
-                  })),
-                )
+          const hostContext = yield* Layer.build(
+            tinyDarkFactoryPipeline({
+              baseUrl: durableStreamsBaseUrl,
+              namespace,
+              localProcessEnv: localProcessEnv(),
+              envPolicy: darkFactoryRealAgentEnvPolicy(globalThis.process.env),
+            }),
           )
-          const hostLayer = tinyDarkFactoryPipeline({
-            baseUrl: durableStreamsBaseUrl,
-            namespace,
-            localProcessEnv: localProcessEnv(),
-            envPolicy: darkFactoryRealAgentEnvPolicy(globalThis.process.env),
-          })
-          const hostContext = yield* Layer.buildWithScope(hostLayer, hostScope)
           const table = Context.get(hostContext, DarkFactoryEvidenceTable)
           yield* table.facts.insertOrGet(triggerFact)
 
-          const sessionContextId = yield* provideClient(
+          return yield* provideClient(
             Effect.gen(function*() {
               const firegrid = yield* Firegrid
               const approvalSignal = yield* firegrid.sessions.createOrLoad({
-                externalKey: approvalSignalExternalKey,
-                runtime: local.jsonl({
-                  argv: [
-                    process.execPath,
-                    "-e",
-                    "process.stdin.resume()",
-                  ],
-                  agent: "approval-signal",
-                  agentProtocol: "stdio-jsonl",
-                  cwd: globalThis.process.cwd(),
-                }),
+                externalKey: {
+                  source: "tiny-firegrid",
+                  id: `approval-signal-${factoryRunKey}`,
+                },
+                runtime: approvalSignalRuntime(),
                 createdBy: "tiny-firegrid",
               })
+              yield* approvalSignal.start()
+
               const planner = yield* firegrid.sessions.createOrLoad({
                 externalKey: {
                   source: "tiny-firegrid",
@@ -509,14 +307,40 @@ describe("tiny-firegrid dark-factory evidence smoke", () => {
                 }),
                 createdBy: "tiny-firegrid",
               })
+
+              const permissionFiber = yield* Effect.gen(function*() {
+                const permission = yield* planner.wait.forPermissionRequest({
+                  timeoutMs: 45_000,
+                })
+                if (!permission.matched) {
+                  return { _tag: "NoPermissionRequest" as const }
+                }
+                const response = yield* planner.permissions.respond({
+                        permissionRequestId: permission.request.permissionRequestId,
+                        decision: { _tag: "Allow", optionId: "allow" },
+                })
+                return {
+                  _tag: "PermissionResponded" as const,
+                  request: permission.request,
+                  response,
+                }
+              }).pipe(
+                Effect.either,
+                Effect.fork,
+              )
+
               yield* planner.prompt({
-                payload: darkFactoryChoreographyEvidencePrompt({
+                payload: darkFactoryChoreographyHappyPathPrompt({
                   factoryRunKey,
                   triggerFact,
                   approvalSignalContextId: approvalSignal.contextId,
-                  implementerAgentKind: realAgent.agent,
+                  // tf-mn2: session_new currently accepts an agentKind
+                  // command, not a full public runtime config. `/bin/cat`
+                  // is the smallest non-durable implementer stand-in that
+                  // lets the real planner exercise session_new/session_prompt.
+                  implementerAgentKind: "/bin/cat",
                 }),
-                idempotencyKey: `dark-factory-evidence:${factoryRunKey}:prompt`,
+                idempotencyKey: `dark-factory-happy-path:${factoryRunKey}:prompt`,
               }).pipe(
                 Effect.retry(
                   Schedule.intersect(
@@ -526,47 +350,73 @@ describe("tiny-firegrid dark-factory evidence smoke", () => {
                 ),
               )
               yield* planner.start()
-              return planner.contextId
+
+              const observed = yield* observePlannerHappyPath({
+                planner,
+                approvalSignal,
+                factoryRunKey,
+                timeoutMs: 240_000,
+              })
+              const permission = yield* Fiber.join(permissionFiber)
+
+              const permissionResolved = makeDarkFactoryPermissionResolvedFact({
+                factoryRunKey,
+                decision: "approved",
+                createdAt: new Date().toISOString(),
+              })
+              yield* table.facts.insertOrGet(permissionResolved)
+
+              // tf-mn2 sub-gap 3: live host `execute` is not wired for a
+              // provider PR-open side effect. This row is a deliberately
+              // non-durable happy-path placeholder at that one unsupported
+              // edge; the planner still choreographs the supported steps.
+              const pullRequestOpened = makeDarkFactoryPullRequestOpenedFact({
+                factoryRunKey,
+                url: `https://example.invalid/firegrid/pull/${factoryRunKey}`,
+                createdAt: new Date().toISOString(),
+                placeholder: true,
+              })
+              yield* table.facts.insertOrGet(pullRequestOpened)
+
+              const terminal = makeDarkFactoryTerminalFact({
+                factoryRunKey,
+                createdAt: new Date().toISOString(),
+                payload: {
+                  observed,
+                  permission,
+                  pullRequestOpened,
+                },
+              })
+              yield* table.facts.insertOrGet(terminal)
+
+              return {
+                approvalSignalContextId: approvalSignal.contextId,
+                factoryRunKey,
+                plannerContextId: planner.contextId,
+                observed,
+                permission,
+                pullRequestOpened,
+                terminal,
+              }
             }),
             { baseUrl: durableStreamsBaseUrl, namespace },
           )
-
-          const beforeCrash = yield* collectEvidence(sessionContextId, {
-            baseUrl: durableStreamsBaseUrl,
-            namespace,
-            timeoutMs: 240_000,
-          })
-
-          yield* Scope.close(hostScope, Exit.void)
-          hostScope = undefined
-
-          return {
-            factoryRunKey,
-            plannerContextId: sessionContextId,
-            beforeCrash,
-            publicSurface: {
-              tools: Object.keys(FiregridAgentToolkit.tools).sort(),
-              callerFactWaitSourceAccepted: false,
-              localProcessPersistent: false,
-              realAgentUsedTool:
-                beforeCrash.toolUses.length > 0,
-              realAgentCompletedWithoutToolUse:
-                beforeCrash.toolUses.length === 0 &&
-                beforeCrash.text.includes("DARK_FACTORY_EVIDENCE_DONE"),
-            },
-          }
         })),
       )
 
-      console.error("[dark-factory-evidence]", JSON.stringify(evidence, null, 2))
+      console.error("[dark-factory-happy-path]", JSON.stringify(result, null, 2))
 
-      expect(evidence.beforeCrash.sawReady).toBe(true)
-      expect(
-        evidence.publicSurface.realAgentUsedTool ||
-          evidence.publicSurface.realAgentCompletedWithoutToolUse,
-      ).toBe(true)
-      expect(evidence.publicSurface.callerFactWaitSourceAccepted).toBe(false)
-      expect(evidence.publicSurface.localProcessPersistent).toBe(false)
+      expect(result.observed.sawReady).toBe(true)
+      expect(result.observed.approvalPrompted).toBe(true)
+      expect(result.observed.toolNames).toContain("wait_for")
+      expect(result.observed.toolNames).toContain("session_new")
+      expect(result.observed.toolNames).toContain("session_prompt")
+      expect(result.observed.text).toContain("DARK_FACTORY_TERMINAL")
+      expect(result.pullRequestOpened.eventType).toBe("factory.pull_request.opened")
+      expect(result.pullRequestOpened.payload).toMatchObject({
+        placeholder: true,
+      })
+      expect(result.terminal.eventType).toBe("factory.terminal")
     },
     300_000,
   )

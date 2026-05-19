@@ -177,7 +177,45 @@ export const makeDarkFactoryPermissionResolvedFact = (
   payload: { decision: input.decision },
 })
 
-export const darkFactoryChoreographyEvidencePrompt = (
+export const makeDarkFactoryPullRequestOpenedFact = (
+  input: {
+    readonly factoryRunKey: string
+    readonly url: string
+    readonly createdAt: string
+    readonly placeholder: boolean
+  },
+): DarkFactoryFact => ({
+  factKey: `factory.pull_request.opened:${input.factoryRunKey}`,
+  source: "tiny-firegrid",
+  externalEventKey: `pull-request:${input.factoryRunKey}`,
+  externalEntityKey: input.url,
+  eventType: "factory.pull_request.opened",
+  factoryRunKey: input.factoryRunKey,
+  createdAt: input.createdAt,
+  payload: {
+    url: input.url,
+    placeholder: input.placeholder,
+  },
+})
+
+export const makeDarkFactoryTerminalFact = (
+  input: {
+    readonly factoryRunKey: string
+    readonly createdAt: string
+    readonly payload: unknown
+  },
+): DarkFactoryFact => ({
+  factKey: `factory.terminal:${input.factoryRunKey}`,
+  source: "tiny-firegrid",
+  externalEventKey: `terminal:${input.factoryRunKey}`,
+  externalEntityKey: input.factoryRunKey,
+  eventType: "factory.terminal",
+  factoryRunKey: input.factoryRunKey,
+  createdAt: input.createdAt,
+  payload: input.payload,
+})
+
+export const darkFactoryChoreographyHappyPathPrompt = (
   input: {
     readonly factoryRunKey: string
     readonly triggerFact: DarkFactoryFact
@@ -186,18 +224,38 @@ export const darkFactoryChoreographyEvidencePrompt = (
   },
 ): string =>
   [
-    "You are the tiny-firegrid dark-factory evidence probe.",
-    "Use only the Firegrid runtime-context MCP tools available in this session.",
-    "Do not invent success. Continue after tool errors and record each result.",
+    "You are the tiny-firegrid dark-factory planner.",
+    "Use the Firegrid runtime-context MCP server available in this ACP session.",
+    "You drive the happy path. The test only supplies the human approval signal after you wait for it.",
+    "Do not answer before making the required Firegrid tool calls.",
     "",
     `factoryRunKey: ${input.factoryRunKey}`,
     `accepted trigger fact JSON: ${JSON.stringify(input.triggerFact)}`,
     "",
-    "Attempt these steps in order:",
-    "1. Caller-owned approval fact wait: try to wait for a durable app fact with eventType=factory.permission.resolved and this factoryRunKey. If wait_for cannot name caller-owned DurableTable/fact sources, record exactly that.",
-    `2. Delegation: call session_new with agentKind=${JSON.stringify(input.implementerAgentKind)} and a prompt asking the child to report IMPLEMENTER_READY. If it returns a session handle, call session_prompt on that session with a short follow-up. Record whether this is a supported delegation path.`,
-    "3. Provider side effect: call execute for a PR-open-like provider side effect using sandbox.providerName=dark-factory-provider and sandbox.toolName=pull_request.opened. Record whether any public execute path exists.",
-    `4. Durable long wait crux: call wait_for with source AgentOutput and whereFields { "contextId": ${JSON.stringify(input.approvalSignalContextId)}, "_tag": "TextChunk" }, timeoutMs 120000. This simulates a long approval wait whose result may arrive after the local-process agent is gone.`,
+    "Required sequence:",
+    "1. Read the accepted trigger fact above and emit a short text line containing factory.trigger.accepted and the factoryRunKey.",
+    "2. Request approval. If your ACP runtime offers a permission request flow, use it. Then call the Firegrid wait_for tool with exactly this approval query:",
+    JSON.stringify({
+      waitQuery: {
+        source: { _tag: "AgentOutput" },
+        whereFields: {
+          contextId: input.approvalSignalContextId,
+          _tag: "TextChunk",
+        },
+      },
+      timeoutMs: 120_000,
+    }),
+    "3. After wait_for returns matched=true, delegate the implementer by calling session_new with:",
+    JSON.stringify({
+      agentKind: input.implementerAgentKind,
+      prompt: `IMPLEMENTER_READY for ${input.factoryRunKey}`,
+    }),
+    "4. If session_new returns a session handle, call session_prompt on that session with:",
+    JSON.stringify({
+      prompt: `Continue implementer handoff for ${input.factoryRunKey}`,
+    }),
+    "5. PR-open provider execution is not wired in the live host yet (tf-mn2 sub-gap 3). Do not call execute for this smoke; instead emit the terminal marker below as the explicitly marked non-durable happy-path placeholder for factory.pull_request.opened.",
     "",
-    "When you can no longer proceed, respond with one final line starting with DARK_FACTORY_EVIDENCE_DONE followed by compact JSON containing: callerFactWait, delegation, execute, durableResumeCrux.",
+    "Final response format, after the required tool calls:",
+    `DARK_FACTORY_TERMINAL {"factoryRunKey":${JSON.stringify(input.factoryRunKey)},"approval":"approved","implementer":"delegated","pullRequest":"placeholder-opened"}`,
   ].join("\n")
