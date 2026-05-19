@@ -2,16 +2,20 @@ import {
   FiregridConfig,
   FiregridStandaloneLive,
 } from "@firegrid/client-sdk/firegrid"
-import { Config, Data, Duration, Effect, Layer, Option } from "effect"
+import { Console, Config, Data, Duration, Effect, Layer, Option } from "effect"
 // Accepted bin-only local simulation escape hatch.
 // eslint-disable-next-line no-restricted-imports
 import { DurableStreamTestServer } from "@durable-streams/server"
+import { mkdirSync } from "node:fs"
+import { writeFile } from "node:fs/promises"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 import type {
   TinyFiregridHostEnv,
   TinyFiregridSimulation,
 } from "../types.ts"
 import { annotateSide } from "./side.ts"
-import { TelemetryLive } from "./telemetry.ts"
+import { TelemetryLive, type TelemetryDestination } from "./telemetry.ts"
 
 const defaultNamespace = "tiny-firegrid"
 
@@ -45,8 +49,20 @@ const durableStreamsBaseUrl = Effect.gen(function*() {
 const sanitizeSegment = (value: string): string =>
   value.replace(/[^A-Za-z0-9_.-]/g, "-").replace(/-+/g, "-")
 
+// Chronological-first format so `ls .simulate/runs/` reads newest-last by
+// default and tab-completion of "today's runs" actually narrows. Legacy
+// runner used the same shape; we keep it for consistency.
 const newRunId = (simulationId: string): string =>
-  sanitizeSegment(`${simulationId}-${new Date().toISOString().replace(/[:.]/g, "-")}`)
+  `${new Date().toISOString().replace(/[:.]/g, "-")}__${sanitizeSegment(simulationId)}`
+
+// Package-relative .simulate/ root. Resolved off this module's URL so it
+// stays correct regardless of cwd (the script may be invoked from anywhere
+// in the monorepo via `pnpm --filter`).
+const simulateRoot = path.resolve(
+  fileURLToPath(new URL("../../.simulate/", import.meta.url)),
+)
+const runsRoot = path.join(simulateRoot, "runs")
+const latestPath = path.join(simulateRoot, "latest.json")
 
 const firegridClientLayer = (
   durableStreamsBaseUrl: string,
@@ -61,18 +77,54 @@ const firegridClientLayer = (
     ),
   )
 
+interface RunOptions {
+  readonly timeoutMs: number
+  // When true, also emit each completed span to stdout via the OTel
+  // ConsoleSpanExporter. Off by default — the file destination is the
+  // primary artifact; console is an opt-in debugging aid that's noisy
+  // enough to drown the actual signal during a real run.
+  readonly console: boolean
+}
+
+const writeLatest = (runId: string, simulationId: string, runDir: string) =>
+  Effect.promise(() =>
+    writeFile(
+      latestPath,
+      JSON.stringify({ runId, simulationId, runDir }, null, 2) + "\n",
+      "utf8",
+    ),
+  )
+
 export const runSimulation = (
   simulation: TinyFiregridSimulation<unknown>,
-  options: { readonly timeoutMs: number },
+  options: RunOptions,
 ) =>
   Effect.gen(function*() {
     const baseUrl = yield* durableStreamsBaseUrl
     const namespace = yield* NamespaceConfig
     const runId = newRunId(simulation.id)
+    const runDir = path.join(runsRoot, runId)
+    mkdirSync(runDir, { recursive: true })
+
+    const destination: TelemetryDestination = options.console
+      ? { _tag: "console" }
+      : { _tag: "file", filePath: path.join(runDir, "trace.jsonl") }
+
     const telemetry = TelemetryLive(simulation, runId, {
       namespace,
       durableStreamsBaseUrl: baseUrl,
+      destination,
     })
+
+    // Latest-pointer is per-process disk state; not load-bearing for any
+    // downstream tool, just a convenience for `simulate show` with no arg.
+    yield* writeLatest(runId, simulation.id, runDir).pipe(Effect.ignore)
+
+    yield* Console.log(`run: ${runId}`)
+    yield* Console.log(`dir: ${runDir}`)
+    if (destination._tag === "file") {
+      yield* Console.log(`trace: ${destination.filePath}`)
+    }
 
     yield* Effect.gen(function*() {
       yield* Effect.logInfo("simulation starting").pipe(
