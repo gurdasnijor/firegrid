@@ -188,7 +188,7 @@ const nextAgentOutput = (
   context: RuntimeContext,
   activityAttempt: number,
   afterSequence: number,
-): Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError, unknown> =>
+) =>
   waitForAgentOutput(context, activityAttempt, afterSequence).pipe(
     Effect.mapError(cause =>
       asRuntimeContextError(
@@ -380,6 +380,23 @@ const handleRuntimeInput = (
     yield* sendRuntimeInputEvent(context, activityAttempt, row, event)
   })
 
+// TFIND-045 (y — tf-uiz DECIDED): #350 declared these workflow-core
+// functions with an explicit `, unknown>` R-channel. Pre-curry the
+// `any`-typed DurableTable layers absorbed it; post-curry it leaked to
+// 29 host-sdk consumers (`Effect<…, unknown> ⊄ Effect<…, never>` under
+// `exactOptionalPropertyTypes`). Root R-narrow at the #350 source: the
+// non-recursive functions now infer their precise R; the recursive
+// `loop` (which requires an explicit return type) carries the precise
+// R *derived from its real callees* — no hand-enumerated tag list to
+// drift. Type-annotation refinement of the #350 origin only; no
+// runtime change; does not reopen merged TFIND-015.
+type RuntimeContextWorkflowEnv =
+  | Effect.Effect.Context<ReturnType<typeof completedRuntimeInput>>
+  | Effect.Effect.Context<ReturnType<typeof decodeRuntimeInputEvent>>
+  | Effect.Effect.Context<ReturnType<typeof nextAgentOutput>>
+  | Effect.Effect.Context<ReturnType<typeof handleAgentOutput>>
+  | Effect.Effect.Context<ReturnType<typeof handleRuntimeInput>>
+
 const runReactiveLoop = (
   context: RuntimeContext,
   activityAttempt: number,
@@ -387,7 +404,7 @@ const runReactiveLoop = (
   const loop = (
     lastOutputSequence: number,
     nextInputSequence: number,
-  ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> =>
+  ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, RuntimeContextWorkflowEnv> =>
     Effect.gen(function*() {
       const input = yield* completedRuntimeInput(context, nextInputSequence)
       if (input !== undefined) {
@@ -423,7 +440,7 @@ const runReactiveLoop = (
 
 const runWorkflowNativeRuntimeContext = (
   contextId: string,
-): Effect.Effect<StartRuntimeResult, RuntimeContextError, unknown> =>
+) =>
   Effect.gen(function*() {
     const context = yield* readRuntimeContext(contextId)
     const activityAttempt = yield* allocateRuntimeActivityAttempt(context)
