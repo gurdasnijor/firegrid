@@ -109,6 +109,19 @@ bash scripts/task-exit.sh <bead-id> [--decision <PR/SDD url>]
   #   silent stranded work), open/refresh PR, optional signoff:pending.
   #   Does NOT push .beads/issues.jsonl (that races) and does NOT remove
   #   the worktree (PR still in review).
+  #
+  #   POST-REBASE PUSH RULE: a lane MUST rebase onto origin/main before
+  #   merge, which rewrites history so local & origin/<branch> diverge and
+  #   a plain push fails non-fast-forward. task-exit.sh handles this
+  #   automatically: if every origin/<branch> commit has a patch-equivalent
+  #   in local HEAD (a clean rebase of your OWN branch, no remote-only
+  #   commits) it recovers with `--force-with-lease` (race-safe; NEVER
+  #   plain `--force`). If origin/<branch> has commits NOT represented
+  #   locally it is a DIVERGENCE: task-exit HARD-STOPS, refuses to force,
+  #   and surfaces it (do not blind-force — another lane may share the
+  #   branch; investigate `git log HEAD..origin/<branch>`). Either way the
+  #   failure is loud + non-zero — it can no longer be silently missed
+  #   (this was the recurring stranded-work fallout class).
 
 bash scripts/task-reap.sh [<branch>]        # after merge, from primary
   # → removes ONLY clean+merged worktrees, deletes the branch, prunes,
