@@ -10,6 +10,7 @@ coverage/
 .DS_Store
 *.log
 *.tsbuildinfo
+packages/tiny-firegrid/.simulate/
 
 # bv (beads viewer) local config and caches
 .bv/

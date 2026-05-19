@@ -38,6 +38,15 @@ const randomHex = (bytes: number): string => {
   return Array.from(values, value => value.toString(16).padStart(2, "0")).join("")
 }
 
+interface RecordedSpanStart {
+  readonly name: string
+  readonly spanId: string
+  readonly traceId: string
+  readonly parentSpanId?: string
+  readonly kind: Tracer.SpanKind
+  readonly startTimeNanos: string
+}
+
 class RecordingSpan implements Tracer.Span {
   readonly _tag = "Span"
   readonly spanId: string = randomHex(8)
@@ -60,15 +69,27 @@ class RecordingSpan implements Tracer.Span {
     readonly startTime: bigint,
     readonly kind: Tracer.SpanKind,
     private readonly sink: Array<RecordedSpan>,
+    private readonly options?: {
+      readonly onSpanStart?: (span: RecordedSpanStart) => void
+      readonly onSpanEnd?: (span: RecordedSpan) => void
+    },
   ) {
     this.traceId = Option.isSome(parent) ? parent.value.traceId : randomHex(16)
     this.links = [...links]
     this.status = { _tag: "Started", startTime }
+    this.options?.onSpanStart?.({
+      name,
+      spanId: this.spanId,
+      traceId: this.traceId,
+      ...(Option.isSome(parent) ? { parentSpanId: parent.value.spanId } : {}),
+      kind,
+      startTimeNanos: startTime.toString(),
+    })
   }
 
   end(endTime: bigint, exit: Exit.Exit<unknown, unknown>): void {
     this.status = { _tag: "Ended", startTime: this.startTime, endTime, exit }
-    this.sink.push({
+    const recorded = {
       name: this.name,
       spanId: this.spanId,
       traceId: this.traceId,
@@ -83,7 +104,9 @@ class RecordingSpan implements Tracer.Span {
         timeNanos: event.timeNanos.toString(),
         attributes: event.attributes,
       })),
-    })
+    } satisfies RecordedSpan
+    this.sink.push(recorded)
+    this.options?.onSpanEnd?.(recorded)
   }
 
   attribute(key: string, value: unknown): void {
@@ -99,14 +122,17 @@ class RecordingSpan implements Tracer.Span {
   }
 }
 
-const makeTraceRecorder = (): {
+const makeTraceRecorder = (options?: {
+  readonly onSpanStart?: (span: RecordedSpanStart) => void
+  readonly onSpanEnd?: (span: RecordedSpan) => void
+}): {
   readonly spans: ReadonlyArray<RecordedSpan>
   readonly tracer: Tracer.Tracer
 } => {
   const spans: Array<RecordedSpan> = []
   const tracer = Tracer.make({
     span: (name, parent, context, links, startTime, kind) =>
-      new RecordingSpan(name, parent, context, links, startTime, kind, spans),
+      new RecordingSpan(name, parent, context, links, startTime, kind, spans, options),
     context: f => f(),
   })
   return { spans, tracer }
@@ -114,6 +140,10 @@ const makeTraceRecorder = (): {
 
 export const runWithTraceRecorder = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
+  options?: {
+    readonly onSpanStart?: (span: RecordedSpanStart) => void
+    readonly onSpanEnd?: (span: RecordedSpan) => void
+  },
 ): Effect.Effect<
   {
     readonly result: A
@@ -124,7 +154,7 @@ export const runWithTraceRecorder = <A, E, R>(
   R
 > =>
   Effect.gen(function*() {
-    const recorder = makeTraceRecorder()
+    const recorder = makeTraceRecorder(options)
     const supervisor = yield* Supervisor.track
     const result = yield* effect.pipe(
       Effect.withTracer(recorder.tracer),

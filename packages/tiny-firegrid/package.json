@@ -14,6 +14,15 @@
   "scripts": {
     "build": "tsc",
     "check": "pnpm run typecheck && pnpm run test",
+    "simulate": "tsx src/bin/simulate.ts",
+    "simulate:attach": "tsx src/bin/simulate.ts attach",
+    "simulate:duckdb": "tsx src/bin/simulate.ts duckdb",
+    "simulate:list": "tsx src/bin/simulate.ts list",
+    "simulate:query": "tsx src/bin/simulate.ts query",
+    "simulate:run": "tsx src/bin/simulate.ts run",
+    "simulate:runs": "tsx src/bin/simulate.ts runs",
+    "simulate:show": "tsx src/bin/simulate.ts show",
+    "simulate:tail": "tsx src/bin/simulate.ts tail",
     "test": "vitest run",
     "test:smoke": "vitest run --config ./vitest.smoke.config.ts",
     "typecheck": "tsc --noEmit"

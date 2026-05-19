@@ -5,30 +5,160 @@ Firegrid core packages emit Effect spans with `Effect.withSpan` and
 on `@effect/opentelemetry` directly; that boundary is required by
 `firegrid-observability.PACKAGE_BOUNDARY.1`.
 
-## In-repo evidence capture
+## In-repo simulation capture
 
-The G-MCP-2 smoke uses `packages/tiny-firegrid/test/support/trace-recorder.ts`
-to install an Effect `Tracer` with `Effect.withTracer` and collect ended spans
-in memory. It writes two artifacts:
+The G-MCP-2 smoke and the standalone tiny-firegrid simulation runner use
+`packages/tiny-firegrid/src/simulations/trace-recorder.ts` to install an Effect
+`Tracer` with `Effect.withTracer` and collect ended spans in memory.
+`packages/tiny-firegrid/src/simulations/trace-artifacts.ts` turns those spans
+into reusable run artifacts. The Codex ACP smoke still writes the
+review-compatible legacy files:
 
 - `tooling/analysis/mcp-tool-exposure-trace.md` for review.
 - `tooling/analysis/mcp-tool-exposure-trace.json` for scripts and trace-tree
   post-processing.
 
-Run it on demand with live model credentials:
+Standalone simulations store gitignored local evidence assets under
+`packages/tiny-firegrid/.simulate/`:
+
+- `.simulate/latest.json`
+- `.simulate/runs/<run-id>/run.json`
+- `.simulate/runs/<run-id>/trace.md`
+- `.simulate/runs/<run-id>/trace.json`
+- `.simulate/runs/<run-id>/live-spans.jsonl`
+- `.simulate/runs/<run-id>/traces.otlp.jsonl`
+- `.simulate/runs/<run-id>/duckdb/load.sql`
+- `.simulate/runs/<run-id>/duckdb/tiny-firegrid.duckdb`
+
+The preferred interface is the standalone simulation runner, not Vitest:
 
 ```bash
 OPENAI_API_KEY=... \
-pnpm --filter @firegrid/tiny-firegrid exec vitest run \
-  --config ./vitest.smoke.config.ts \
-  test/codex-acp-tool-call-pipeline.smoke.test.ts \
-  --testTimeout 300000 \
-  --hookTimeout 300000
+pnpm --filter @firegrid/tiny-firegrid simulate:run -- codex-acp-tool-call-pipeline
 ```
 
-That recorder is intentionally test-local. It is useful for committed evidence
-because it is deterministic at the trace-export layer and does not require a
-collector, but it is not the production exporter path.
+By default the runner infers:
+
+- namespace: `tiny-run-<simulation-id>-<run-suffix>`
+- run directory: `packages/tiny-firegrid/.simulate/runs/<run-id>`
+
+Override with:
+
+```bash
+TINY_FIREGRID_NAMESPACE=...
+TINY_FIREGRID_SIMULATE_DIR=...
+TINY_FIREGRID_RUN_ID=...
+FIREGRID_DURABLE_STREAMS_URL=...
+```
+
+`simulate run` starts an in-process `DurableStreamTestServer` by default,
+matching the scenario-test pattern. Override the URL with
+`FIREGRID_DURABLE_STREAMS_URL` or `TINY_FIREGRID_DURABLE_STREAMS_URL` to attach
+to an external server instead. Viewer commands such as `show`, `tail`, `duckdb`,
+and `query` operate only on stored runs and never start agent, host, or
+durable-streams processes implicitly. The runner launches the host configuration,
+runs the driver through the public `Firegrid` client surface, captures Effect
+spans, and writes the OTLP/DuckDB bundle. A simulation is a small registry entry:
+
+- `makeHost(env)`: returns the host configuration Layer.
+- `driver(env)`: an Effect that requires only `Firegrid`.
+- `summarize(result)`: turns the driver result into artifact metadata.
+
+That shape keeps host configuration, public-client behavior, and artifact
+capture separated. The existing Codex ACP smoke can remain as compatibility
+evidence, but new system simulations should be added under
+`packages/tiny-firegrid/src/simulations`.
+
+## Viewing tiny-firegrid traces
+
+List available simulations and local runs:
+
+```bash
+pnpm --filter @firegrid/tiny-firegrid simulate:list
+pnpm --filter @firegrid/tiny-firegrid simulate:runs
+pnpm --filter @firegrid/tiny-firegrid simulate:show
+```
+
+For token-efficient agent inspection, tail or attach to ended span records:
+
+```bash
+pnpm --filter @firegrid/tiny-firegrid simulate:tail
+pnpm --filter @firegrid/tiny-firegrid simulate:attach -- <run-id>
+pnpm --filter @firegrid/tiny-firegrid simulate:run -- codex-acp-tool-call-pipeline --tail
+```
+
+`tail` and `attach` stream `.simulate/runs/<run-id>/live-spans.jsonl`, which is
+written as spans end during the simulation.
+
+## Querying tiny-firegrid traces with DuckDB
+
+The generated `traces.otlp.jsonl` file is OTLP JSONL shaped for
+`smithclay/duckdb-otlp`, which reads OpenTelemetry Collector file-export style
+trace exports via `read_otlp_traces(...)`.
+
+Install DuckDB locally, then load the latest tiny-firegrid run:
+
+```bash
+pnpm --filter @firegrid/tiny-firegrid simulate:duckdb
+```
+
+If there is no `latest` run, the command exits with the exact `simulate:run`
+command to create one. It does not silently start a long real-agent simulation.
+
+That command opens:
+
+```text
+packages/tiny-firegrid/.simulate/runs/<run-id>/duckdb/tiny-firegrid.duckdb
+```
+
+with:
+
+```text
+packages/tiny-firegrid/.simulate/runs/<run-id>/duckdb/load.sql
+```
+
+The loader installs and loads the community `otlp` extension, then materializes
+the run into `tiny_firegrid_spans` and creates `tiny_firegrid_span_summary`.
+Useful starting queries:
+
+```sql
+SELECT * FROM tiny_firegrid_span_summary LIMIT 25;
+
+SELECT
+  span_name,
+  round(duration / 1000000.0, 3) AS duration_ms,
+  span_attributes
+FROM tiny_firegrid_spans
+WHERE span_name LIKE 'firegrid.%'
+ORDER BY duration DESC
+LIMIT 50;
+
+SELECT *
+FROM tiny_firegrid_failed_spans
+ORDER BY timestamp;
+```
+
+For one-off queries:
+
+```bash
+pnpm --filter @firegrid/tiny-firegrid simulate:query -- \
+  latest \
+  "SELECT * FROM tiny_firegrid_span_summary LIMIT 25;"
+```
+
+If DuckDB is already open, run:
+
+```sql
+.read packages/tiny-firegrid/.simulate/runs/<run-id>/duckdb/load.sql
+```
+
+or directly query:
+
+```sql
+INSTALL otlp FROM community;
+LOAD otlp;
+SELECT * FROM read_otlp_traces('packages/tiny-firegrid/.simulate/runs/<run-id>/traces.otlp.jsonl');
+```
 
 ## Production or operator traces
 
@@ -77,7 +207,7 @@ Codex agents:
 2. MCP wire e2e: every JSON-RPC request from the external agent to Firegrid's
    MCP server (`initialize`, `tools/list`, `tools/call`) is represented as a
    host span. This does not require agent cooperation and is the next useful
-   G-MCP-2 probe because it would show whether the agent calls `tools/list` and
+   G-MCP-2 simulation because it would show whether the agent calls `tools/list` and
    what response the server returns.
 3. Agent-internal e2e: spans inside the external agent runtime itself,
    including its model/tool planner loop. That requires the agent process to
