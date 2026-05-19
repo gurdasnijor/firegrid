@@ -24,11 +24,22 @@ if [ "$BR" != "main" ] && [ "${FIREGRID_ALLOW_PRIMARY:-}" != "1" ]; then
 fi
 MSG="${1:-chore(beads): canonical sync $(date -u +%FT%TZ)}"
 
-LOCK="$RR/.beads/.sync.lock"
+# Lock lives in the shared .git dir, NOT .beads/ — `br` itself creates
+# .beads/.sync.lock and .beads/.write.lock as 0-byte FILES, which made our
+# `mkdir .beads/.sync.lock` collide forever (the 6× "needs manual pre-clear"
+# tax). .git/ is br-untouched and shared across worktrees (correct scope).
+LOCK="$(cd "$(git -C "$RR" rev-parse --git-common-dir)" && pwd)/firegrid-beads-sync.lock"
+# Self-heal a stale lock (crashed holder): if older than 120s, reap it —
+# never require a manual pre-clear again.
+if [ -d "$LOCK" ]; then
+  age=$(( $(date +%s) - $(stat -f %m "$LOCK" 2>/dev/null || echo 0) ))
+  [ "$age" -gt 120 ] && { echo "beads-sync: reaping stale lock (${age}s old)"; rmdir "$LOCK" 2>/dev/null || rm -rf "$LOCK"; }
+fi
 # mkdir is atomic — a portable, NFS-safe mutex (flock is absent on stock macOS).
 tries=0
 until mkdir "$LOCK" 2>/dev/null; do
-  tries=$((tries+1)); [ "$tries" -gt 60 ] && { echo "beads-sync: lock held >60s ($LOCK) — aborting" >&2; exit 1; }
+  tries=$((tries+1))
+  if [ "$tries" -gt 90 ]; then echo "beads-sync: lock held >90s ($LOCK) — another canonical sync running, aborting" >&2; exit 1; fi
   sleep 1
 done
 trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
@@ -46,9 +57,23 @@ fi
 git -C "$RR" add .beads/issues.jsonl
 git -C "$RR" -c commit.gpgsign=false commit -q -m "$MSG"
 git -C "$RR" fetch -q origin main
-git -C "$RR" -c rebase.autoStash=true pull -q --rebase origin main 2>&1 | tail -1 || true
-if git -C "$RR" push origin HEAD:main 2>&1 | tail -1; then
-  echo "✓ beads-sync: issues.jsonl pushed to origin/main"
+# best-effort rebase; capture its real status (NOT a pipe's — pipelines
+# return the last cmd's exit, which masked failures and produced the
+# "false-success" the br-owner had to ground-truth every time).
+if ! git -C "$RR" -c rebase.autoStash=true pull -q --rebase origin main >/dev/null 2>&1; then
+  echo "beads-sync: rebase onto origin/main had issues — attempting push anyway, will verify" >&2
+fi
+# THE fix: test git push's own exit, not `tail`'s. No pipe.
+if git -C "$RR" push origin HEAD:main >/dev/null 2>&1; then
+  # ground-truth it: the commit must actually be on origin/main now.
+  git -C "$RR" fetch -q origin main
+  if git -C "$RR" merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
+    echo "✓ beads-sync: issues.jsonl pushed AND verified on origin/main"
+  else
+    echo "✋ beads-sync: push reported OK but HEAD is NOT an ancestor of" >&2
+    echo "   origin/main — NOT durable. Re-run after resolving." >&2
+    exit 1
+  fi
 else
   echo "✋ beads-sync: PUSH FAILED — issues.jsonl committed locally but NOT on" >&2
   echo "   origin/main. Resolve (fetch/rebase) and re-run; the lock is released." >&2
