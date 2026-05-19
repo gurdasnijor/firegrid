@@ -52,6 +52,8 @@ import {
   publishRuntimeContextMcpBase,
 } from "./runtime-context-mcp-base-url.ts"
 
+const runtimeContextMcpRouterMaxParamLength = 4096
+
 /**
  * Effect Config for the host-owned MCP HTTP server's listener
  * topology. Process/listener knobs only — no runtime identity.
@@ -264,6 +266,10 @@ export const FiregridMcpServerLayer = (
         host: options.host,
       }),
     ),
+    Layer.provide(HttpRouter.setRouterConfig({
+      // firegrid-local-mcp-run.MCP_ROUTE.1-1
+      maxParamLength: runtimeContextMcpRouterMaxParamLength,
+    })),
     // Quiet the default logger inside the MCP scope; the host's own
     // log surface remains the canonical operator log.
     Layer.provide(Logger.remove(Logger.defaultLogger)),
