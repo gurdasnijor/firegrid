@@ -26,10 +26,27 @@ import type { TinyFiregridSimulation, TinyFiregridSimulationEnv } from "./types.
 
 interface DarkFactoryFinding {
   readonly id: string
-  readonly status: "known-gap" | "observed"
+  readonly status: "known-gap" | "observed" | "blocked-external"
   readonly expectedPublicSurface: string
   readonly evidence: string
 }
+
+// The §6 choreography is EXPRESSED and the Firegrid path is sound (ACP
+// initialize + session/new + runtime-context MCP attach all succeed). The
+// planner halts at session/prompt. EMPIRICAL FACT (proven by direct
+// claude-agent-acp repro — see docs/findings/tf-7dq-...md): claude-agent-acp
+// returns a JSON-RPC error whose `message` carries the real cause
+// ("Internal error: API Error: 400 ... usage limits ... regain access
+// 2026-06-01"), but the @agentclientprotocol/sdk `RequestError` consumed by
+// packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts
+// (`acpPromise` -> `codecError(op,message,cause)`) drops that `message`;
+// only `{code:-32603, data:{errorKind:"unknown"}, name:"RequestError"}`
+// reaches `event.cause`. So the sim CANNOT name the root cause from the
+// surfaced error — that is itself a Firegrid observability gap. The honest
+// classification is therefore the gap, not a guessed quota detector.
+const isOpaqueAcpRequestError = (evidence: string): boolean =>
+  /"errorKind":\s*"unknown"/.test(evidence) &&
+  !/usage limits?\b|API Error|regain access|rate.?limit|quota/i.test(evidence)
 
 interface DarkFactoryPipelineSimulationResult {
   readonly factoryRunKey: string
@@ -180,10 +197,37 @@ const staticChoreographyFindings: ReadonlyArray<DarkFactoryFinding> = [
   },
 ]
 
+// Error / RequestError objects carry their most diagnostic field —
+// `message` (e.g. the Anthropic "API Error: 400 ... usage limits ...") — as
+// a NON-enumerable own property, so `JSON.stringify` silently drops it and
+// the surfaced agent error collapses to `{code,data:{errorKind:"unknown"}}`.
+// Recover those fields (and recurse `cause`) so the recorded evidence is
+// diagnosable from the trace artifact alone. This recovers data that is
+// already present on the object; it does not synthesize anything.
+const diagnosticKeys = ["name", "message", "code", "data", "cause"] as const
+
+const normalizeForLog = (value: unknown, depth = 0): unknown => {
+  if (value === null || typeof value !== "object") return value
+  if (depth > 6) return "[depth-limited]"
+  if (Array.isArray(value)) {
+    return value.map(item => normalizeForLog(item, depth + 1))
+  }
+  const src = value as { readonly [key: string]: unknown }
+  const enumerableKeys = Object.keys(src)
+  const recoveredKeys = diagnosticKeys.filter(
+    key => !enumerableKeys.includes(key) && src[key] !== undefined,
+  )
+  return Object.fromEntries(
+    [...enumerableKeys, ...recoveredKeys].map(
+      key => [key, normalizeForLog(src[key], depth + 1)] as const,
+    ),
+  )
+}
+
 const stringifyUnknown = (value: unknown): string => {
   if (typeof value === "string") return value
   try {
-    return JSON.stringify(value) ?? String(value)
+    return JSON.stringify(normalizeForLog(value)) ?? String(value)
   } catch {
     return String(value)
   }
@@ -665,6 +709,15 @@ const darkFactoryDriver = (
               "Planner can continue from runtime-context MCP initialization into Firegrid tool-driven choreography.",
             evidence: agentError,
           })
+          if (isOpaqueAcpRequestError(agentError)) {
+            observedFindings.push({
+              id: "dark-factory.acp_error_message_not_propagated",
+              status: "blocked-external",
+              expectedPublicSurface:
+                "A failed ACP session/prompt should surface the JSON-RPC error.message so the halt is diagnosable from the trace artifact. Today the @agentclientprotocol/sdk RequestError consumed by packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts (acpPromise -> codecError) drops error.message; only {code:-32603,data:{errorKind:\"unknown\"},name:\"RequestError\"} reaches event.cause. The real cause for this run — external Anthropic account usage limit (regains 2026-06-01 UTC) — was confirmed only by a direct claude-agent-acp repro (see docs/findings/tf-7dq-...). §6 is EXPRESSED and the Firegrid path is sound up to the model turn; it cannot be PROVEN until run with available Anthropic quota.",
+              evidence: agentError,
+            })
+          }
           break
         case "Terminated":
           sawTerminated = true
