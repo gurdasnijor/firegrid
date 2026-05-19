@@ -249,6 +249,7 @@ const stdoutEvents = (
     Stream.decodeText(),
     Stream.splitLines,
     Stream.map(decodeStdoutLine),
+    Stream.withSpan("firegrid.agent_event_pipeline.stdio_jsonl.stdout"),
   )
 
 const terminatedEvent = (
@@ -281,6 +282,7 @@ const outputs = (
       stdoutEvents(bytes.stdout).pipe(
         Stream.merge(terminatedEvent(bytes)),
         Stream.takeUntil(event => event._tag === "Terminated"),
+        Stream.withSpan("firegrid.agent_event_pipeline.stdio_jsonl.outputs"),
       ),
     ),
   )
@@ -299,4 +301,6 @@ export const StdioJsonlSessionLive = (
       send: event => writeJsonLine(bytes.stdin, event),
       outputs: outputs(bytes),
     }),
+  ).pipe(
+    Layer.withSpan("firegrid.agent_event_pipeline.stdio_jsonl.layer"),
   )

@@ -128,9 +128,17 @@ const FiregridMcpRouteContextLayer = Layer.effect(
         const runtimeContext = yield* requireLocalContext(contextId).pipe(
           Effect.provide(captured),
         )
+        yield* Effect.annotateCurrentSpan({
+          "firegrid.context.id": contextId,
+          "firegrid.runtime.agent": runtimeContext.runtime.config.agent ?? "",
+          "firegrid.runtime.agent_protocol": runtimeContext.runtime.config.agentProtocol ?? "",
+        })
         return { contextId, runtimeContext }
       }).pipe(
         Effect.provide(captured),
+        Effect.withSpan("firegrid.mcp.runtime_context.resolve", {
+          kind: "server",
+        }),
       ) as FiregridAgentToolContext["Type"]["resolve"],
     }
   }),
@@ -188,7 +196,17 @@ export const FiregridMcpServerLayer = (
   options: FiregridMcpServerLayerOptions,
 ) =>
   Layer.mergeAll(
-    Layer.scopedDiscard(McpServer.registerToolkit(FiregridAgentToolkit)),
+    Layer.scopedDiscard(
+      McpServer.registerToolkit(FiregridAgentToolkit).pipe(
+        Effect.withSpan("firegrid.mcp.register_toolkit", {
+          kind: "server",
+          attributes: {
+            "firegrid.mcp.tool_count": Object.keys(FiregridAgentToolkit.tools).length,
+            "firegrid.mcp.tool_names": Object.keys(FiregridAgentToolkit.tools).sort().join(","),
+          },
+        }),
+      ),
+    ),
     HttpRouter.Default.serve(),
     // TFIND-048: on bind, the host late-binds its OWN bound MCP listener
     // address into the single-purpose `FiregridRuntimeContextMcpBaseUrl`
@@ -197,7 +215,16 @@ export const FiregridMcpServerLayer = (
     // scope here via the `provideMerge`'d `NodeHttpServer.layer` below;
     // `FiregridRuntimeContextMcpBaseUrl` is provided by the runtime host
     // (B) this layer is `provideMerge`'d with.
-    Layer.scopedDiscard(publishRuntimeContextMcpBase(options.path)),
+    Layer.scopedDiscard(
+      publishRuntimeContextMcpBase(options.path).pipe(
+        Effect.withSpan("firegrid.mcp.publish_runtime_context_base", {
+          kind: "server",
+          attributes: {
+            "firegrid.mcp.path": String(options.path),
+          },
+        }),
+      ),
+    ),
   ).pipe(
     Layer.provide(FiregridAgentToolkitLayer),
     Layer.provide(FiregridMcpRouteContextLayer),

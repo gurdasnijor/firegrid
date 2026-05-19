@@ -150,7 +150,11 @@ const makeAgentByteStreamFromProcess = (
       ),
     )
     return { stdin, stdout, stderr, exit } satisfies AgentByteStream
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.byte_stream", {
+      kind: "internal",
+    }),
+  )
 
 const makeLocalProcessSandboxProvider = (
   commandExecutor: CommandExecutor,

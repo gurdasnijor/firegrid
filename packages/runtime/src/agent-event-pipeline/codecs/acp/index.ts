@@ -324,7 +324,11 @@ export const AcpSessionLive = (
         connection.initialize({
           protocolVersion: acp.PROTOCOL_VERSION,
           clientCapabilities: {},
-        }))
+        })).pipe(
+          Effect.withSpan("firegrid.agent_event_pipeline.acp.initialize", {
+            kind: "client",
+          }),
+        )
 
       const session = yield* acpPromise("newSession", "failed to create ACP session", () =>
         connection.newSession({
@@ -335,7 +339,20 @@ export const AcpSessionLive = (
           // Tool execution is owned by the ACP agent process or delegated
           // through ACP session.mcpServers/MCP.
           mcpServers: (options.mcpServers ?? []).map(lowerMcpServerDeclaration),
-        }))
+        })).pipe(
+          Effect.tap(session =>
+            Effect.annotateCurrentSpan({
+              "firegrid.acp.session_id": session.sessionId,
+              "firegrid.acp.mcp_server_count": options.mcpServers?.length ?? 0,
+              "firegrid.acp.mcp_server_names": (options.mcpServers ?? []).map(server => server.name).join(","),
+            })),
+          Effect.withSpan("firegrid.agent_event_pipeline.acp.new_session", {
+            kind: "client",
+            attributes: {
+              "firegrid.acp.mcp_server_count": options.mcpServers?.length ?? 0,
+            },
+          }),
+        )
       const sessionId = session.sessionId
 
       const sendPrompt = (
@@ -349,6 +366,13 @@ export const AcpSessionLive = (
               messageId: event.correlationId,
               prompt,
             })).pipe(
+              Effect.withSpan("firegrid.agent_event_pipeline.acp.prompt", {
+                kind: "client",
+                attributes: {
+                  "firegrid.acp.session_id": sessionId,
+                  "firegrid.input.correlation_id": event.correlationId,
+                },
+              }),
               Effect.matchEffect({
                 onFailure: error =>
                   Ref.set(currentTextDeltaId, undefined).pipe(
@@ -421,6 +445,7 @@ export const AcpSessionLive = (
       }).pipe(
         Stream.concat(
           Stream.fromQueue(outputEvents).pipe(
+            Stream.withSpan("firegrid.agent_event_pipeline.acp.output_queue"),
             Stream.merge(terminatedEvent(bytes)),
             Stream.takeUntil(event => event._tag === "Terminated"),
           ),
