@@ -14,12 +14,16 @@ Structured companion artifact: `tooling/analysis/mcp-tool-exposure-trace.json`.
 - Codec injected runtime-context MCP URL: "http://127.0.0.1:63365/mcp/runtime-context/ctx_ext_WyJ0aW55LWZpcmVncmlkIiwiY29kZXgtYWNwLXRvb2wtY2FsbCJd"
 - ACP newSession MCP server count: 1
 - ACP newSession MCP server names: "firegrid-runtime-context"
+- MCP initialize method observed: true
+- MCP tools/list method observed: false
+- MCP tools/call method observed: false
 
 ## Localization
 
 - Firegrid host toolkit registration is not empty: the `firegrid.mcp.register_toolkit` span records 8 tools.
 - Codec MCP URL injection is not missing: `firegrid.host.codec.resolve_effective_mcp_servers` records a `firegrid-runtime-context` URL.
 - ACP session setup receives that MCP server declaration: `firegrid.agent_event_pipeline.acp.new_session` records one MCP server named `firegrid-runtime-context`.
+- Effect AI MCP method spans show initialize, but no tools/list or tools/call request reached the Firegrid MCP server.
 - The real Codex ACP agent nevertheless reaches Ready and prints the expected terminal text without Firegrid observing a ToolUse event.
 - Therefore this trace localizes G-MCP-2 downstream of Firegrid's host catalog construction and codec MCP URL injection, at or after ACP agent-side MCP discovery/tool exposure.
 

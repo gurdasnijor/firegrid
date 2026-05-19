@@ -177,6 +177,9 @@ const writeTraceArtifact = async (
     span.attributes["firegrid.mcp.injected_name"] === "firegrid-runtime-context")
   const acpNewSessionSpan = input.spans.find(span =>
     span.name === "firegrid.agent_event_pipeline.acp.new_session")
+  const mcpMethodSpanNames = new Set(input.spans
+    .map(span => span.name)
+    .filter(name => name.startsWith("McpServer.")))
   const observedNoToolUse = input.observed.sawReady &&
     !input.observed.sawSleepToolUse
   const agentReportedToolUnavailable = input.observed.resultText.includes("not available")
@@ -190,12 +193,18 @@ const writeTraceArtifact = async (
     codecInjectedRuntimeContextMcpUrl: injectedMcpSpan?.attributes["firegrid.mcp.injected_url"] ?? null,
     acpNewSessionMcpServerCount: acpNewSessionSpan?.attributes["firegrid.acp.mcp_server_count"] ?? null,
     acpNewSessionMcpServerNames: acpNewSessionSpan?.attributes["firegrid.acp.mcp_server_names"] ?? null,
+    mcpInitializeObserved: mcpMethodSpanNames.has("McpServer.initialize"),
+    mcpToolsListObserved: mcpMethodSpanNames.has("McpServer.tools/list"),
+    mcpToolsCallObserved: mcpMethodSpanNames.has("McpServer.tools/call"),
   }
   const localization = observedNoToolUse
     ? [
       "Firegrid host toolkit registration is not empty: the firegrid.mcp.register_toolkit span records 8 tools.",
       "Codec MCP URL injection is not missing: firegrid.host.codec.resolve_effective_mcp_servers records a firegrid-runtime-context URL.",
       "ACP session setup receives that MCP server declaration: firegrid.agent_event_pipeline.acp.new_session records one MCP server named firegrid-runtime-context.",
+      summary.mcpInitializeObserved && !summary.mcpToolsListObserved && !summary.mcpToolsCallObserved
+        ? "Effect AI MCP method spans show initialize, but no tools/list or tools/call request reached the Firegrid MCP server."
+        : "Inspect the Effect AI McpServer.* method spans to see which JSON-RPC methods reached the Firegrid MCP server.",
       agentReportedToolUnavailable
         ? "The real Codex ACP agent nevertheless reaches Ready, emits no Firegrid ToolUse, and reports firegrid.sleep is not available."
         : agentReportedExpectedResult
@@ -223,6 +232,9 @@ const writeTraceArtifact = async (
     `- Codec injected runtime-context MCP URL: ${JSON.stringify(summary.codecInjectedRuntimeContextMcpUrl)}`,
     `- ACP newSession MCP server count: ${JSON.stringify(summary.acpNewSessionMcpServerCount)}`,
     `- ACP newSession MCP server names: ${JSON.stringify(summary.acpNewSessionMcpServerNames)}`,
+    `- MCP initialize method observed: ${summary.mcpInitializeObserved}`,
+    `- MCP tools/list method observed: ${summary.mcpToolsListObserved}`,
+    `- MCP tools/call method observed: ${summary.mcpToolsCallObserved}`,
     "",
     "## Localization",
     "",

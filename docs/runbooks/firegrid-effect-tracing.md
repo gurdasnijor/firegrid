@@ -97,6 +97,12 @@ For actual operator debugging, use all available layers:
   has no internal tracer.
 - Add MCP JSON-RPC method spans at the Firegrid MCP HTTP boundary so
   non-instrumented agents are still observable from the outside.
+- Effect AI already emits `McpServer.<method>` spans from
+  `repos/effect/packages/ai/ai/src/McpServer.ts` for methods that reach the
+  server (`McpServer.initialize`, `McpServer.tools/list`,
+  `McpServer.tools/call`). If an HTTP POST span has only
+  `McpServer.initialize`, the agent connected but did not discover or call the
+  tool catalog.
 - When the agent runtime supports it, pass `OTEL_EXPORTER_OTLP_*`,
   `OTEL_SERVICE_NAME`, and `OTEL_RESOURCE_ATTRIBUTES` through the sandbox env
   and route it to the same collector.
