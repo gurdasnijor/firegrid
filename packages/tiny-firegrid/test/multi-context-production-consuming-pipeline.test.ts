@@ -6,12 +6,12 @@ import {
   FiregridRuntimeTables,
   FiregridStandaloneLive,
   local,
+  runtimeControlPlaneStreamUrl,
   type FiregridConfigError,
   type FiregridService,
   type FiregridSessionHandle,
   type RuntimeContextSnapshot,
-} from "@firegrid/client-sdk/firegrid"
-import { runtimeControlPlaneStreamUrl } from "@firegrid/protocol/launch"
+} from "@firegrid/client-sdk"
 import {
   encodeRuntimeAgentOutputEnvelope,
 } from "@firegrid/protocol/session-facade"

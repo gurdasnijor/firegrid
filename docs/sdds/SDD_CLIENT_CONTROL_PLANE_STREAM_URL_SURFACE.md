@@ -12,7 +12,7 @@ Coordinator recommendation: choose **B: expose the namespace-scoped control-plan
 
 ## Status
 
-Status: draft framing for coordinator/Gurdas signoff. No production code is in scope for this PR.
+Status: Gurdas signed off narrow Option B. This PR now carries the implementation record plus the client SDK public-surface fix.
 
 Finding: TFIND-046, Beads `tf-76s`, label `tfind:046`, factory-supports, priority P3.
 

@@ -11,6 +11,7 @@ export {
   PreloadError,
   firegridRuntimeTableTags,
   local,
+  runtimeControlPlaneStreamUrl,
   type ClientOptions,
   type FiregridError,
   type FiregridPermissionsClient,
