@@ -98,6 +98,8 @@ const outputTargetForSource = (
       })
     case "RuntimeRun":
       return Effect.fail("tiny-firegrid wait_for output pipeline only models AgentOutput sources")
+    case "CallerFact":
+      return Effect.fail("tiny-firegrid wait_for output pipeline only models AgentOutput sources")
   }
 }
 

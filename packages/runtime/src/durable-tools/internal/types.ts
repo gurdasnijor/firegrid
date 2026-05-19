@@ -54,10 +54,28 @@ export const RuntimeRunWaitSourceSchema = Schema.Struct({
   _tag: Schema.Literal("RuntimeRun"),
 })
 
+/**
+ * firegrid-typed-wait-source-redesign.CONTEXT.3
+ *
+ * Caller-owned durable observation. `stream` is the app-chosen stable name
+ * of a caller-owned durable fact stream; the host composition that knows
+ * the app's collection binds the concrete stream behind this name through
+ * the `CallerOwnedFactStreams` capability (TYPED_SOURCES.2). This is not a
+ * runtime-authority internal and not a stringly registry for runtime-owned
+ * sources (REJECTION.3 targets the runtime wait abstraction default; caller
+ * facts are inherently app-named because the runtime cannot enumerate app
+ * collections).
+ */
+export const CallerFactWaitSourceSchema = Schema.Struct({
+  _tag: Schema.Literal("CallerFact"),
+  stream: Schema.String,
+})
+
 export const RuntimeWaitSourceSchema = Schema.Union(
   AgentOutputWaitSourceSchema,
   AgentOutputAfterWaitSourceSchema,
   RuntimeRunWaitSourceSchema,
+  CallerFactWaitSourceSchema,
 )
 export type RuntimeWaitSource = Schema.Schema.Type<
   typeof RuntimeWaitSourceSchema

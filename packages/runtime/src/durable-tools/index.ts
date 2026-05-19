@@ -11,6 +11,10 @@ export {
 } from "./internal/table.ts"
 export { WaitFor, type WaitForOptions } from "./internal/wait-for.ts"
 export {
+  CallerOwnedFactStreams,
+  type CallerOwnedFactStreamsService,
+} from "./internal/runtime-wait-streams.ts"
+export {
   DurableWaitCompletionRowLookup,
   DurableWaitCompletionRowUpsert,
   DurableWaitRows,
@@ -30,6 +34,7 @@ export {
   type FieldEqualsTrigger,
   AgentOutputWaitSourceSchema,
   RuntimeRunWaitSourceSchema,
+  CallerFactWaitSourceSchema,
   RuntimeWaitSourceSchema,
   type RuntimeWaitSource,
   type WaitForOutcome,

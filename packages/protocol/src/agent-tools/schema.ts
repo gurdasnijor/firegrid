@@ -92,19 +92,33 @@ export type SleepToolOutput = Schema.Schema.Type<typeof SleepToolOutputSchema>
 /**
  * firegrid-typed-wait-source-redesign.TYPED_SOURCES.1
  * firegrid-typed-wait-source-redesign.MIGRATION.5
+ * firegrid-typed-wait-source-redesign.CONTEXT.3
  *
  * Typed runtime wait-source discriminator. The agent names a supported
- * runtime observation by variant; it cannot pass an arbitrary source string.
- * First supported set is `AgentOutput` and `RuntimeRun` only.
+ * observation by variant; it cannot pass an arbitrary source string.
+ *
+ * - `AgentOutput` / `RuntimeRun` are runtime-owned observations.
+ * - `CallerFact` is a caller-owned durable observation (CONTEXT.3): the
+ *   agent names an app-owned durable fact stream by its stable `stream`
+ *   name and matches rows with the same `whereFields` predicate as the
+ *   runtime sources. This expression carries only a stream NAME — it does
+ *   NOT expose a DurableTable facade or any table-taking helper, so
+ *   TYPED_SOURCES.4 holds. The host composition that knows the app's
+ *   caller-owned collection wires the concrete stream behind this name;
+ *   the agent surface stays a typed discriminator.
  */
 export const RuntimeWaitSourceSchema = Schema.Union(
   Schema.Struct({ _tag: Schema.Literal("AgentOutput") }),
   Schema.Struct({ _tag: Schema.Literal("RuntimeRun") }),
+  Schema.Struct({
+    _tag: Schema.Literal("CallerFact"),
+    stream: Schema.String.pipe(Schema.minLength(1)),
+  }),
 ).annotations({
   identifier: "firegrid.agentTool.runtimeWaitSource",
   title: "Runtime wait source",
   description:
-    "Supported runtime observation a wait_for can select: AgentOutput or RuntimeRun.",
+    "Observation a wait_for can select: AgentOutput, RuntimeRun, or a caller-owned durable fact stream named by CallerFact.stream.",
 })
 export type RuntimeWaitSource = Schema.Schema.Type<
   typeof RuntimeWaitSourceSchema
