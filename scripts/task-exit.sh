@@ -46,11 +46,61 @@ fi
 
 # 4. push the branch — FAIL LOUD. A swallowed push = stranded work, the
 #    exact failure this lifecycle exists to prevent.
-if git -C "$RR" push -u origin "$BR" 2>&1; then
-  echo "✓ pushed $BR"
-else
-  echo "✋ PUSH FAILED for $BR — your work is NOT on the remote. This task is" >&2
-  echo "   NOT done. Resolve (rebase on origin/main, retry) before exiting." >&2
+#
+#    Recurring fallout class: a lane rebases its branch onto origin/main
+#    (required before merge), which rewrites history so the local branch
+#    and origin/<BR> DIVERGE. A plain `git push` then fails non-fast-
+#    forward; the old "rebase on origin/main, retry" hint does NOT help
+#    (the branch is already rebased) so the lane loops and the work
+#    strands with no PR. Handle it explicitly:
+#      • clean rebase of our OWN remote branch (every origin/<BR> commit
+#        has a patch-equivalent in local HEAD, i.e. no remote-only work)
+#        → recover with --force-with-lease (race-safe; NEVER plain --force)
+#      • remote has commits NOT represented locally → DIVERGENCE, hard
+#        stop + surface (refuse to clobber; another lane may share it)
+#      • any other push failure → loud, actionable, non-zero
+push_lane_branch() {
+  if git -C "$RR" push -u origin "$BR" 2>&1; then
+    echo "✓ pushed $BR"
+    return 0
+  fi
+  if ! git -C "$RR" ls-remote --exit-code --heads origin "$BR" >/dev/null 2>&1; then
+    echo "✋ PUSH FAILED for $BR and no remote branch exists — NOT a rebase/" >&2
+    echo "   non-ff case (auth, network, or a rejecting hook). Work is NOT" >&2
+    echo "   pushed; task NOT done. Resolve and re-run task-exit." >&2
+    return 1
+  fi
+  # refresh the remote-tracking ref so the lease + divergence check are
+  # against the true current remote, not a stale local view.
+  git -C "$RR" fetch -q origin "+refs/heads/$BR:refs/remotes/origin/$BR" 2>/dev/null || true
+  # `git cherry HEAD origin/$BR`: lists each origin/$BR commit; '+' = NO
+  # patch-equivalent in local HEAD (remote-only work we'd destroy), '-' =
+  # already represented locally (the rebased commits). Any '+' ⇒ divergence.
+  foreign="$(git -C "$RR" cherry HEAD "origin/$BR" 2>/dev/null | grep -c '^+' || true)"
+  if [ "${foreign:-1}" != "0" ]; then
+    echo "✋ PUSH FAILED for $BR — origin/$BR has ${foreign} commit(s) with no" >&2
+    echo "   equivalent in your local branch. This is a DIVERGENCE, not a" >&2
+    echo "   clean rebase — REFUSING to force (would clobber work; another" >&2
+    echo "   lane may share this branch). Investigate, do NOT blind-force:" >&2
+    echo "     git -C \"$RR\" log --oneline HEAD..origin/$BR" >&2
+    echo "   Work is NOT pushed; task NOT done." >&2
+    return 1
+  fi
+  local remote_sha
+  remote_sha="$(git -C "$RR" rev-parse "origin/$BR" 2>/dev/null)"
+  echo "  ↻ $BR was rebased (local is a clean rebase of origin/$BR; no" >&2
+  echo "    remote-only commits) — recovering with --force-with-lease." >&2
+  if git -C "$RR" push --force-with-lease="$BR:$remote_sha" -u origin "$BR" 2>&1; then
+    echo "✓ pushed $BR (force-with-lease, post-rebase safe path)"
+    return 0
+  fi
+  echo "✋ PUSH FAILED for $BR even with --force-with-lease — the remote ref" >&2
+  echo "   moved since fetch (lease broke / concurrent push) or a hook" >&2
+  echo "   rejected it. Work is NOT pushed; task NOT done. Re-fetch, verify" >&2
+  echo "   no foreign commits, retry task-exit." >&2
+  return 1
+}
+if ! push_lane_branch; then
   exit 1
 fi
 if command -v gh >/dev/null 2>&1; then
