@@ -36,6 +36,11 @@ components:
       4: WaitRouterLive does not live in the agent event-pipeline subscribers folder unless it consumes agent event-pipeline vocabulary as its primary semantic role.
       5: The first typed-router cutover preserves the existing workflowName, executionId, and deferredName resume path; DurableDeferred token migration is a separate follow-up if it reduces workflow-engine coupling.
 
+  SIMULATION:
+    requirements:
+      1: The wait-for-output tiny simulation exercises AgentOutput and AgentOutputAfter typed source selection against deterministic per-context output rows and records the selected durable target for each claim.
+      2: Wait-source divergence is recorded as a failed claim status with a finding in the simulation artifact rather than normalized by the driver or described only in chat.
+
   APP_FACTS:
     requirements:
       1: Caller-owned app facts that need durable waiting are modeled as app-owned durable projection waits, not as runtime source-registration internals.
