@@ -197,6 +197,53 @@ describe("runtime providers/sandboxes local-process", () => {
     }
   })
 
+  it("tf-pgn TFIND-054 passes the npx/node-packaged-agent baseline through localProcessSpawnEnvFromHostEnv without leaking arbitrary host env or secrets", () => {
+    const hostEnv: Record<string, string | undefined> = {
+      PATH: "/usr/bin:/bin",
+      HOME: "/home/operator",
+      TMPDIR: "/tmp/operator",
+      USER: "operator",
+      LOGNAME: "operator",
+      LANG: "en_US.UTF-8",
+      NODE_PATH: "/opt/node_modules",
+      NODE_EXTRA_CA_CERTS: "/etc/ssl/corp.pem",
+      NPM_CONFIG_CACHE: "/home/operator/.npm",
+      npm_config_cache: "/home/operator/.npm",
+      XDG_CACHE_HOME: "/home/operator/.cache",
+      // Must NOT pass through: arbitrary host var, a secret, the
+      // deliberately-excluded behavior-injection vector, and the
+      // deliberately-excluded npm registry override.
+      ANTHROPIC_API_KEY: "sk-secret-should-not-leak",
+      SOME_RANDOM_HOST_VAR: "should-not-leak",
+      NODE_OPTIONS: "--require /tmp/evil.js",
+      npm_config_registry: "https://private.example.com",
+    }
+
+    const baselineEnvVars =
+      localProcessSpawnEnvFromHostEnv(hostEnv).baselineEnvVars ?? {}
+
+    // Packaged npx/node agent baseline IS passed through.
+    expect(baselineEnvVars).toMatchObject({
+      PATH: "/usr/bin:/bin",
+      HOME: "/home/operator",
+      TMPDIR: "/tmp/operator",
+      USER: "operator",
+      LOGNAME: "operator",
+      LANG: "en_US.UTF-8",
+      NODE_PATH: "/opt/node_modules",
+      NODE_EXTRA_CA_CERTS: "/etc/ssl/corp.pem",
+      NPM_CONFIG_CACHE: "/home/operator/.npm",
+      npm_config_cache: "/home/operator/.npm",
+      XDG_CACHE_HOME: "/home/operator/.cache",
+    })
+    // Secrets / arbitrary host env / NODE_OPTIONS / npm registry
+    // override are NOT in the baseline (deliberate exclusions).
+    expect(baselineEnvVars.ANTHROPIC_API_KEY).toBeUndefined()
+    expect(baselineEnvVars.SOME_RANDOM_HOST_VAR).toBeUndefined()
+    expect(baselineEnvVars.NODE_OPTIONS).toBeUndefined()
+    expect(baselineEnvVars.npm_config_registry).toBeUndefined()
+  })
+
   it("firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6 sketches a provider helper without host stream or process authority", () => {
     expect(localProcess({
       cwd: "/workspace",
