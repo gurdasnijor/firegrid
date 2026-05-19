@@ -55,8 +55,8 @@
     "verify": "pnpm run typecheck && pnpm run lint && pnpm run lint:dead && pnpm run lint:dup && pnpm run lint:deps && pnpm run lint:effect-quality && pnpm run lint:semgrep:test && pnpm run lint:semgrep && pnpm run test",
     "toy:coverage:check": "bash scripts/tiny-config-prod-coverage.sh --check"
   },
-  "dependencies": {},
   "devDependencies": {
+    "@ast-grep/cli": "^0.42.2",
     "@durable-streams/server": "^0.3.1",
     "@effect/eslint-plugin": "^0.3.2",
     "@effect/language-service": "^0.85.1",
