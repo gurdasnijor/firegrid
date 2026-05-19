@@ -3,15 +3,24 @@ import {
   local,
   type RuntimeAgentOutputObservation,
 } from "@firegrid/client-sdk/firegrid"
+import type { ServeError } from "@effect/platform/HttpServerError"
 import {
-  darkFactoryClaudeAcpEnvPolicy,
-  darkFactoryFactTableLayerOptions,
-  DarkFactoryFactTable,
-  tinyDarkFactoryPipeline,
-  type DarkFactoryFactRow,
-} from "../configurations/dark-factory-pipeline.ts"
+  ensurePathInput,
+  FiregridMcpServerLayer,
+  FiregridRuntimeHostLive,
+  type FiregridHost,
+  RuntimeEnvResolverPolicy,
+  type RuntimeHostTopologyOptions,
+} from "@firegrid/host-sdk"
+import { durableStreamUrl } from "@firegrid/protocol/launch"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/durable-tools"
+import { Clock, Effect, Layer, Schedule, Schema, Stream } from "effect"
+import {
+  DurableTable,
+  type DurableTableLayerOptions,
+} from "effect-durable-operators"
+import type { DurableTableError } from "effect-durable-operators"
 import type { TinyFiregridSimulation, TinyFiregridSimulationEnv } from "./types.ts"
-import { Clock, Effect, Schedule } from "effect"
 
 /* eslint-disable local/no-fixed-polling -- firegrid-observability.TINY_FIREGRID_SIMULATIONS.1 public-client simulation observation backoff. */
 
@@ -28,6 +37,16 @@ interface DarkFactoryPipelineSimulationResult {
   readonly triggerFactInserted: boolean
   readonly seededFactEventTypes: ReadonlyArray<string>
   readonly fullLoopStages: ReadonlyArray<string>
+  readonly sawCallerFactWaitFor: boolean
+  readonly sawPlanApprovalWait: boolean
+  readonly sawPrOpenedWait: boolean
+  readonly sawReviewWait: boolean
+  readonly sawMergeSignoffWait: boolean
+  readonly sawCiWatchWait: boolean
+  readonly sawImplementerDelegation: boolean
+  readonly sawSessionPrompt: boolean
+  readonly sawScheduleMe: boolean
+  readonly sawExecuteAttempt: boolean
   readonly sawReady: boolean
   readonly sawPermissionRequest: boolean
   readonly sawTurnComplete: boolean
@@ -36,11 +55,67 @@ interface DarkFactoryPipelineSimulationResult {
   readonly sawTerminated: boolean
   readonly terminatedExitCode: number | undefined
   readonly observedToolNames: ReadonlyArray<string>
+  readonly observedToolInputs: ReadonlyArray<string>
   readonly resultText: string
   readonly findings: ReadonlyArray<DarkFactoryFinding>
 }
 
-const claudeAcpArgv = ["claude-agent-acp"] as const
+const DarkFactoryFactRowSchema = Schema.Struct({
+  factId: Schema.String.pipe(DurableTable.primaryKey),
+  source: Schema.String,
+  externalEventKey: Schema.String,
+  externalEntityKey: Schema.String,
+  eventType: Schema.String,
+  contextId: Schema.optional(Schema.String),
+  correlationId: Schema.String,
+  stage: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.String),
+  parentFactId: Schema.optional(Schema.String),
+  payload: Schema.Unknown,
+  acceptedAt: Schema.String,
+})
+
+type DarkFactoryFactRow = Schema.Schema.Type<typeof DarkFactoryFactRowSchema>
+
+class DarkFactoryFactTable extends DurableTable("darkFactory", {
+  facts: DarkFactoryFactRowSchema,
+}) {}
+
+const darkFactoryFactTableLayerOptions = (options: {
+  readonly baseUrl: string
+  readonly namespace: string
+}): DurableTableLayerOptions => ({
+  streamOptions: {
+    url: durableStreamUrl(options.baseUrl, `${options.namespace}.darkFactory`),
+    contentType: "application/json",
+  },
+  txTimeoutMs: 2_000,
+})
+
+interface DarkFactoryPipelineOptions {
+  readonly baseUrl: string
+  readonly namespace?: string
+  readonly hostId?: string
+  readonly mcpHost?: string
+  readonly mcpPort?: number
+  readonly mcpPath?: string
+  readonly localProcessEnv?: RuntimeHostTopologyOptions["localProcessEnv"]
+  readonly envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>
+}
+
+const darkFactoryClaudeAcpEnvPolicy = (
+  env: NodeJS.ProcessEnv,
+): Layer.Layer<RuntimeEnvResolverPolicy> =>
+  RuntimeEnvResolverPolicy.withPolicy({
+    authorizedBindings: [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
+    lookupEnv: name => env[name],
+  })
+
+const claudeAcpArgv = [
+  "npx",
+  "-y",
+  "@agentclientprotocol/claude-agent-acp@0.36.1",
+] as const
 
 const darkFactorySource = "linear.oauth"
 const darkFactoryFactSource = "darkFactory.facts"
@@ -88,14 +163,6 @@ const darkFactoryFactEventTypes = [
 
 const staticChoreographyFindings: ReadonlyArray<DarkFactoryFinding> = [
   {
-    id: "dark-factory.wait_for.caller_owned_fact_source",
-    status: "known-gap",
-    expectedPublicSurface:
-      "wait_for can target app-owned darkFactory.facts rows for clarification answers, human approvals, PR events, review verdicts, CI status, merge decisions, and unwind completion.",
-    evidence:
-      "packages/protocol/src/agent-tools/schema.ts exposes wait_for RuntimeWaitSource as AgentOutput | RuntimeRun only.",
-  },
-  {
     id: "dark-factory.execute.provider_side_effect",
     status: "known-gap",
     expectedPublicSurface:
@@ -127,6 +194,7 @@ const makeFactoryRunKey = (env: TinyFiregridSimulationEnv): string =>
 
 const makeTriggerFact = (
   env: TinyFiregridSimulationEnv,
+  factoryRunKey: string,
 ): DarkFactoryFactRow => {
   const externalEntityKey = `issue-${env.runId}`
   return {
@@ -135,7 +203,7 @@ const makeTriggerFact = (
     externalEventKey: `trigger-${env.runId}`,
     externalEntityKey,
     eventType: "factory.trigger.accepted",
-    correlationId: env.runId,
+    correlationId: factoryRunKey,
     stage: "trigger",
     status: "accepted",
     acceptedAt: new Date().toISOString(),
@@ -146,20 +214,149 @@ const makeTriggerFact = (
       title: "Dark Factory tiny-firegrid choreography simulation",
       url: "https://linear.example/tiny-firegrid/TF-SIM-1",
       description:
-        "Exercise the fully imagined dark-factory choreography path without an app-authored phase chain. The planner must use Firegrid tools where public surfaces exist and report gaps where they do not.",
+        "Exercise factory-vision section 6 through Firegrid agent tools. The planner owns sequencing and must report public-surface gaps instead of relying on app orchestration.",
       repoHint,
     },
   }
 }
 
-const seedTriggerFact = (
+const makeFactoryFact = (input: {
+  readonly env: TinyFiregridSimulationEnv
+  readonly factoryRunKey: string
+  readonly eventType: string
+  readonly stage: string
+  readonly status: string
+  readonly payload: unknown
+  readonly parentFactId?: string
+}): DarkFactoryFactRow => {
+  const externalEntityKey = `issue-${input.env.runId}`
+  return {
+    factId: `${darkFactorySource}:${input.env.runId}:${input.eventType}`,
+    source: darkFactorySource,
+    externalEventKey: `${input.eventType}:${input.env.runId}`,
+    externalEntityKey,
+    eventType: input.eventType,
+    correlationId: input.factoryRunKey,
+    stage: input.stage,
+    status: input.status,
+    ...(input.parentFactId === undefined ? {} : { parentFactId: input.parentFactId }),
+    payload: input.payload,
+    acceptedAt: new Date().toISOString(),
+  }
+}
+
+const makeSeedFacts = (
   env: TinyFiregridSimulationEnv,
-): Effect.Effect<boolean, unknown> =>
+  factoryRunKey: string,
+): ReadonlyArray<DarkFactoryFactRow> => {
+  const trigger = makeTriggerFact(env, factoryRunKey)
+  // Edge/provider facts are fixture inputs for planner waits, not a hidden
+  // planner/implementer/reviewer phase chain.
+  return [
+    trigger,
+    makeFactoryFact({
+      env,
+      factoryRunKey,
+      eventType: "human.plan.approved",
+      stage: "plan-approval",
+      status: "approved",
+      parentFactId: trigger.factId,
+      payload: {
+        approver: "tiny-firegrid.edge",
+        decision: "approved",
+        reason:
+          "Simulation approval fact; planner must still observe it through wait_for CallerFact.",
+      },
+    }),
+    makeFactoryFact({
+      env,
+      factoryRunKey,
+      eventType: "github.pr.opened",
+      stage: "pr-opened",
+      status: "opened",
+      parentFactId: trigger.factId,
+      payload: {
+        repo: repoHint,
+        number: 1776,
+        head: "factory/tf-sim-1",
+        url: "https://github.example/gurdasnijor/firegrid/pull/1776",
+      },
+    }),
+    makeFactoryFact({
+      env,
+      factoryRunKey,
+      eventType: "github.pr.review_approved",
+      stage: "review",
+      status: "approved",
+      parentFactId: trigger.factId,
+      payload: {
+        reviewer: "tiny-reviewer",
+        kind: "single",
+        summary: "Simulation review approval fact.",
+      },
+    }),
+    makeFactoryFact({
+      env,
+      factoryRunKey,
+      eventType: "human.merge.approved",
+      stage: "merge-signoff",
+      status: "approved",
+      parentFactId: trigger.factId,
+      payload: {
+        approver: "tiny-firegrid.edge",
+        decision: "approved",
+      },
+    }),
+    makeFactoryFact({
+      env,
+      factoryRunKey,
+      eventType: "github.ci.status",
+      stage: "ci-watch",
+      status: "green",
+      parentFactId: trigger.factId,
+      payload: {
+        provider: "github-actions",
+        state: "green",
+        sha: "tiny-firegrid-simulated-sha",
+      },
+    }),
+    makeFactoryFact({
+      env,
+      factoryRunKey,
+      eventType: "github.pr.merged",
+      stage: "merge",
+      status: "merged",
+      parentFactId: trigger.factId,
+      payload: {
+        mergedBy: "tiny-firegrid.edge",
+        mergeSha: "tiny-firegrid-simulated-merge-sha",
+      },
+    }),
+  ]
+}
+
+const seedFactoryFacts = (
+  env: TinyFiregridSimulationEnv,
+  factoryRunKey: string,
+): Effect.Effect<{
+  readonly triggerFactInserted: boolean
+  readonly seededFactEventTypes: ReadonlyArray<string>
+}, unknown> =>
   Effect.scoped(
     Effect.gen(function*() {
       const table = yield* DarkFactoryFactTable
-      const result = yield* table.facts.insertOrGet(makeTriggerFact(env))
-      return result._tag === "Inserted"
+      const facts = makeSeedFacts(env, factoryRunKey)
+      const results = yield* Effect.forEach(facts, fact =>
+        table.facts.insertOrGet(fact).pipe(
+          Effect.map(result => ({ fact, result })),
+        ),
+      )
+      const trigger = results.find(entry =>
+        entry.fact.eventType === "factory.trigger.accepted")
+      return {
+        triggerFactInserted: trigger?.result._tag === "Inserted",
+        seededFactEventTypes: facts.map(fact => fact.eventType),
+      }
     }).pipe(
       Effect.provide(
         DarkFactoryFactTable.layer(
@@ -171,6 +368,52 @@ const seedTriggerFact = (
       ),
     ),
   )
+
+const tinyDarkFactoryPipeline = (
+  options: DarkFactoryPipelineOptions,
+): Layer.Layer<FiregridHost, DurableTableError | ServeError, never> => {
+  const namespace = options.namespace ?? `tiny-dark-factory-${globalThis.crypto.randomUUID()}`
+  const hostId = options.hostId ?? "host-a"
+  const mcpHost = options.mcpHost ?? "127.0.0.1"
+  const mcpPath = options.mcpPath ?? "/mcp"
+  const facts = DarkFactoryFactTable.layer(
+    darkFactoryFactTableLayerOptions({ baseUrl: options.baseUrl, namespace }),
+  )
+  const callerFacts = Layer.effect(
+    CallerOwnedFactStreams,
+    Effect.map(DarkFactoryFactTable, table => ({
+      streamFor: (stream: string) =>
+        stream === darkFactoryFactSource ? table.facts.rows() : Stream.empty,
+    })),
+  ).pipe(Layer.provide(facts))
+  const appFacts = Layer.merge(facts, callerFacts)
+  const host = FiregridRuntimeHostLive(
+    {
+      durableStreamsBaseUrl: options.baseUrl,
+      namespace,
+      hostId,
+      hostSessionId: `${hostId}-session`,
+      input: true,
+      ...(options.localProcessEnv === undefined
+        ? {}
+        : { localProcessEnv: options.localProcessEnv }),
+    },
+    options.envPolicy ?? RuntimeEnvResolverPolicy.denyAll,
+  ).pipe(Layer.provideMerge(appFacts))
+
+  // firegrid-observability.TINY_FIREGRID_SIMULATIONS.8
+  // Public host factories infer an internal layer surface wider than FiregridHost.
+  return Layer.discard(
+    FiregridMcpServerLayer({
+      host: mcpHost,
+      port: options.mcpPort ?? 0,
+      path: ensurePathInput(mcpPath),
+    }),
+  ).pipe(
+    Layer.provideMerge(host),
+    Layer.provideMerge(appFacts),
+  ) as Layer.Layer<FiregridHost, DurableTableError | ServeError, never>
+}
 
 const plannerPrompt = (input: {
   readonly env: TinyFiregridSimulationEnv
@@ -189,27 +432,33 @@ const plannerPrompt = (input: {
     "You are the Smithery dark-factory planner running on Firegrid.",
     "",
     "Goal:",
-    "Turn the Linear issue below into a reviewed, permissioned, CI-green, merged engineering result when approvals allow it.",
-    "You own sequencing. There is no hidden workflow DAG. Decide the next action",
-    "from durable facts, runtime history, repository state, and human decisions.",
+    "Drive the full factory-vision section 6 loop using only Firegrid tools.",
+    "You own sequencing. There is no hidden workflow DAG or app driver.",
     "",
     "Factory run:",
     `- parentContextId: ${input.parentContextId}`,
     `- factoryRunKey: ${input.factoryRunKey}`,
     `- factSource: ${darkFactoryFactSource}`,
     `- fullLoopStages: ${fullLoopStages.join(" -> ")}`,
-    "- runtime sources:",
-    "  - firegrid.runtime.runs",
-    "  - firegrid.runtime.output.events",
-    "  - firegrid.runtime.output.logs",
-    "  - firegrid.runtime.ingress.inputs",
-    "  - firegrid.runtime.ingress.deliveries",
-    "  - firegrid.runtime.agent-output-events",
     "",
     "Accepted trigger fact already written at the app edge:",
     JSON.stringify(input.triggerFact, null, 2),
     "",
-    "App-owned durable fact event types the edge/provider mocks may write:",
+    "Simulation edge facts are preseeded for the happy-path human/provider decisions.",
+    "You must still observe each gate through wait_for; do not infer success from this prompt.",
+    "Use this exact wait_for shape for app-owned facts:",
+    JSON.stringify({
+      waitQuery: {
+        source: { _tag: "CallerFact", stream: darkFactoryFactSource },
+        whereFields: {
+          correlationId: input.factoryRunKey,
+          eventType: "human.plan.approved",
+        },
+      },
+      timeoutMs: 30_000,
+    }, null, 2),
+    "",
+    "App-owned durable fact event types:",
     ...darkFactoryFactEventTypes.map(eventType => `- ${eventType}`),
     "",
     "Linear issue:",
@@ -224,51 +473,42 @@ const plannerPrompt = (input: {
     `- repoHint: ${repoHint}`,
     `- deterministicBranch: factory/${payload.linearIdentifier.toLowerCase()}`,
     "",
-    "Provider capabilities available through execute, if advertised:",
-    "- github.openPullRequest",
-    "- github.findPrByHead",
-    "- github.fetchPr",
-    "- github.fetchPrDiff",
-    "- github.upsertPrComment",
-    "- github.fetchCiStatus",
-    "- github.closePullRequest",
-    "- github.squashMergePullRequest",
-    "- linear.postComment",
-    "- linear.closeRun",
-    "",
-    "Full §6 choreography contract:",
+    "Full section 6 choreography contract:",
     "1. Ticket arrives: read the accepted trigger fact and decide whether the ticket is actionable.",
-    "2. Optional clarify: if the ticket is ambiguous, ask a focused question and wait durably for human.clarification.answered. If the public wait surface cannot target that fact, report the gap.",
-    "3. Plan: produce a concise plan and request human approval before implementation. Prefer ACP PermissionRequest if available; otherwise wait for human.plan.approved or human.plan.rejected.",
-    "4. Revision loop: on human.plan.revision_requested or rejection-with-feedback, revise the plan and request approval again. On clean rejection, close the run cleanly and unwind child work.",
-    "5. Implementer delegation: use session_new for the implementer with the plan, issue context, repo, deterministic branch, parent context id, and fact correlation ids. Wait for the implementer to report github.pr.opened or terminal failure.",
-    "6. Review selection: when a PR exists, decide review shape. A typo gets one reviewer. Architectural or high-risk work gets multiple reviewer sessions with distinct prompts and, if expressible, distinct agent/model backends.",
-    "7. Review loop: wait for review verdicts. If changes are requested, use session_prompt to send feedback to the implementer and wait for a PR revision or updated github.pr.opened/github.ci.status fact.",
-    "8. Merge sign-off: after review approval, request human.merge.approved or human.merge.rejected. On rejection, unwind cleanly.",
-    "9. CI watch: after merge approval, wait durably for github.ci.status green. Use schedule_me for bounded rechecks when no durable CI event has arrived. On failure, prompt the implementer with CI evidence and wait for a fix.",
-    "10. Merge: when CI is green and merge is approved, use execute only if a merge provider capability is available, then wait for github.pr.merged evidence.",
-    "11. Clean unwind: on rejection at any gate, cancel or close child sessions with session_cancel/session_close where available, record a terminal outcome, and leave durable history inspectable.",
+    "2. Optional clarify: if ambiguous, ask a focused question and wait_for human.clarification.answered.",
+    "3. Plan: produce a concise plan, then wait_for human.plan.approved, human.plan.rejected, or factory.plan.revision_requested.",
+    "4. Revision loop: on revision or rejection-with-feedback, revise the plan and request approval again. On clean rejection, unwind child work.",
+    "5. Implementer delegation: call session_new with the plan, issue context, repo, branch, parent context id, and factoryRunKey. Then wait_for github.pr.opened.",
+    "6. Review selection: decide one reviewer versus multi-reviewer council. A typo gets one reviewer; architectural/high-risk work gets multiple reviewer sessions if expressible.",
+    "7. Review loop: wait_for github.pr.review_approved or github.pr.review_changes_requested. If changes are requested, session_prompt feedback to the implementer and wait for a revision. For this seeded happy path, still make one session_prompt call to the implementer after review approval asking for a merge-ready branch note.",
+    "8. Merge sign-off: wait_for human.merge.approved or human.merge.rejected. On rejection, unwind cleanly.",
+    "9. CI watch: call schedule_me once for a bounded CI recheck, then wait_for github.ci.status green. On failure, prompt the implementer with CI evidence and wait for a fix.",
+    "10. Merge: when CI is green and merge is approved, call execute for github.squashMergePullRequest. If execute reports unsupported, emit DARK_FACTORY_FINDING for the missing provider side-effect surface and halt. If execute succeeds, wait_for github.pr.merged.",
+    "11. Clean unwind: on rejection at any gate, use session_cancel/session_close where available, record a terminal outcome, and leave durable history inspectable.",
     "",
     "Tool-use rules:",
-    `1. Use wait_for over ${darkFactoryFactSource} or Firegrid runtime observation sources for human gates, CI/provider facts, child session status, and external events. Do not rely on callback URLs or hidden comments for resume.`,
+    `1. Use wait_for over ${darkFactoryFactSource} for human gates, provider facts, review verdicts, CI status, merge evidence, and unwind evidence.`,
     "2. Use session_new to create implementer, reviewer, council, and QA child sessions when needed.",
     "3. Use session_prompt for follow-up work on an existing child session.",
     "4. Use schedule_me for future self rechecks, especially CI still pending or provider eventual consistency.",
     "5. Use execute only for advertised provider/sandbox capabilities. Record or wait for durable facts that confirm side effects.",
     "6. Use sleep only as short local backoff; do not use it for human or provider waits.",
-    "7. If blocked, emit a clear permission request or wait_for target describing exactly what fact/input will resume the run.",
     "",
     "Hard halt rule for this simulation:",
     "If a needed step is not expressible through the Firegrid tools you can see, do not invent an app-side workflow or pretend progress.",
     "Instead write one line beginning with DARK_FACTORY_FINDING and name: what you needed, what public tool/channel you expected, and what is missing.",
+    "When the loop reaches a terminal state, write one line beginning with DARK_FACTORY_TERMINAL and include factoryRunKey, final status, PR number, review status, merge sign-off status, CI status, and any halted gap.",
     "",
-    "Start by:",
-    "1. Inspecting the ticket and repository hint.",
-    "2. Deciding whether clarification is needed.",
-    "3. Producing a concise implementation plan if actionable.",
-    "4. Requesting plan approval, or waiting on a human.plan.approved / human.plan.rejected fact if permission requests are unavailable.",
+    "Start now by deciding whether clarification is needed. If it is actionable without clarification, produce the plan and call wait_for for human.plan.approved.",
   ].join("\n")
 }
+
+const toolUseText = (
+  observation: RuntimeAgentOutputObservation,
+): string | undefined =>
+  observation.event._tag === "ToolUse"
+    ? `${observation.event.part.name}:${stringifyUnknown(observation.event.part.params)}`
+    : undefined
 
 const darkFactoryDriver = (
   env: TinyFiregridSimulationEnv,
@@ -281,8 +521,11 @@ const darkFactoryDriver = (
     }
 
     const firegrid = yield* Firegrid
-    const triggerFactInserted = yield* seedTriggerFact(env)
     const factoryRunKey = makeFactoryRunKey(env)
+    // The driver seeds durable edge facts and then only observes; the planner
+    // remains responsible for every supported section 6 choreography step.
+    const seeded = yield* seedFactoryFacts(env, factoryRunKey)
+    const triggerFact = makeTriggerFact(env, factoryRunKey)
     const session = yield* firegrid.sessions.createOrLoad({
       externalKey: {
         source: "tiny-firegrid.dark-factory",
@@ -301,14 +544,15 @@ const darkFactoryDriver = (
       createdBy: "tiny-firegrid-simulation",
     })
 
-    yield* session.prompt({
-      payload: plannerPrompt({
+    yield* firegrid.sessions.prompt({
+      sessionId: session.contextId,
+      prompt: plannerPrompt({
         env,
         parentContextId: session.contextId,
         factoryRunKey,
-        triggerFact: makeTriggerFact(env),
+        triggerFact,
       }),
-      idempotencyKey: `${env.runId}:planner-prompt`,
+      inputId: "planner-prompt",
     }).pipe(
       Effect.retry(
         Schedule.intersect(
@@ -319,9 +563,19 @@ const darkFactoryDriver = (
     )
     yield* session.start()
 
-    const deadline = (yield* Clock.currentTimeMillis) + 75_000
+    const deadline = (yield* Clock.currentTimeMillis) + 180_000
     let afterSequence: number | undefined
     let sawReady = false
+    let sawCallerFactWaitFor = false
+    let sawPlanApprovalWait = false
+    let sawPrOpenedWait = false
+    let sawReviewWait = false
+    let sawMergeSignoffWait = false
+    let sawCiWatchWait = false
+    let sawImplementerDelegation = false
+    let sawSessionPrompt = false
+    let sawScheduleMe = false
+    let sawExecuteAttempt = false
     let sawPermissionRequest = false
     let sawTurnComplete = false
     let sawAgentError = false
@@ -330,6 +584,7 @@ const darkFactoryDriver = (
     let terminatedExitCode: number | undefined
     let resultText = ""
     const observedToolNames = new Set<string>()
+    const observedToolInputs: Array<string> = []
     const observedFindings: Array<DarkFactoryFinding> = []
 
     while ((yield* Clock.currentTimeMillis) < deadline) {
@@ -355,9 +610,35 @@ const darkFactoryDriver = (
         case "PermissionRequest":
           sawPermissionRequest = true
           break
-        case "ToolUse":
+        case "ToolUse": {
           observedToolNames.add(event.part.name)
+          sawImplementerDelegation = sawImplementerDelegation ||
+            event.part.name === "session_new"
+          sawSessionPrompt = sawSessionPrompt || event.part.name === "session_prompt"
+          sawScheduleMe = sawScheduleMe || event.part.name === "schedule_me"
+          sawExecuteAttempt = sawExecuteAttempt || event.part.name === "execute"
+          const inputText = toolUseText(observation)
+          if (inputText !== undefined) {
+            observedToolInputs.push(inputText.slice(0, 2_000))
+            if (event.part.name === "wait_for") {
+              sawCallerFactWaitFor = sawCallerFactWaitFor ||
+                (inputText.includes("CallerFact") &&
+                  inputText.includes(darkFactoryFactSource))
+              sawPlanApprovalWait = sawPlanApprovalWait ||
+                inputText.includes("human.plan.approved")
+              sawPrOpenedWait = sawPrOpenedWait ||
+                inputText.includes("github.pr.opened")
+              sawReviewWait = sawReviewWait ||
+                (inputText.includes("github.pr.review_approved") ||
+                  inputText.includes("github.pr.review_posted"))
+              sawMergeSignoffWait = sawMergeSignoffWait ||
+                inputText.includes("human.merge.approved")
+              sawCiWatchWait = sawCiWatchWait ||
+                inputText.includes("github.ci.status")
+            }
+          }
           break
+        }
         case "TextChunk": {
           resultText += event.part.delta
           if (event.part.delta.includes("DARK_FACTORY_FINDING")) {
@@ -391,20 +672,30 @@ const darkFactoryDriver = (
           break
       }
       if (
-        sawPermissionRequest ||
         sawTurnComplete ||
         sawAgentError ||
         sawTerminated ||
-        resultText.includes("DARK_FACTORY_FINDING")
+        resultText.includes("DARK_FACTORY_FINDING") ||
+        resultText.includes("DARK_FACTORY_TERMINAL")
       ) break
     }
 
     return {
       factoryRunKey,
       plannerContextId: session.contextId,
-      triggerFactInserted,
-      seededFactEventTypes: ["factory.trigger.accepted"],
+      triggerFactInserted: seeded.triggerFactInserted,
+      seededFactEventTypes: seeded.seededFactEventTypes,
       fullLoopStages: [...fullLoopStages],
+      sawCallerFactWaitFor,
+      sawPlanApprovalWait,
+      sawPrOpenedWait,
+      sawReviewWait,
+      sawMergeSignoffWait,
+      sawCiWatchWait,
+      sawImplementerDelegation,
+      sawSessionPrompt,
+      sawScheduleMe,
+      sawExecuteAttempt,
       sawReady,
       sawPermissionRequest,
       sawTurnComplete,
@@ -413,6 +704,7 @@ const darkFactoryDriver = (
       sawTerminated,
       terminatedExitCode,
       observedToolNames: [...observedToolNames].sort(),
+      observedToolInputs,
       resultText,
       findings: [...staticChoreographyFindings, ...observedFindings],
     }
@@ -421,7 +713,7 @@ const darkFactoryDriver = (
 export const darkFactoryPipelineSimulation = {
   id: "dark-factory-pipeline",
   description:
-    "Launches a real Claude ACP planner with Firegrid runtime-context MCP, seeds an app-owned darkFactory.facts trigger, and observes the fully imagined factory-vision §6 loop without an app-authored phase chain.",
+    "Launches a real Claude ACP planner with Firegrid runtime-context MCP, binds app-owned darkFactory.facts as a CallerFact stream, seeds edge facts, and observes the fully imagined factory-vision section 6 loop without an app-authored phase chain.",
   makeHost: env =>
     tinyDarkFactoryPipeline({
       baseUrl: env.durableStreamsBaseUrl,
@@ -436,6 +728,16 @@ export const darkFactoryPipelineSimulation = {
     triggerFactInserted: result.triggerFactInserted,
     seededFactEventTypes: result.seededFactEventTypes,
     fullLoopStages: result.fullLoopStages,
+    sawCallerFactWaitFor: result.sawCallerFactWaitFor,
+    sawPlanApprovalWait: result.sawPlanApprovalWait,
+    sawPrOpenedWait: result.sawPrOpenedWait,
+    sawReviewWait: result.sawReviewWait,
+    sawMergeSignoffWait: result.sawMergeSignoffWait,
+    sawCiWatchWait: result.sawCiWatchWait,
+    sawImplementerDelegation: result.sawImplementerDelegation,
+    sawSessionPrompt: result.sawSessionPrompt,
+    sawScheduleMe: result.sawScheduleMe,
+    sawExecuteAttempt: result.sawExecuteAttempt,
     sawReady: result.sawReady,
     sawPermissionRequest: result.sawPermissionRequest,
     sawTurnComplete: result.sawTurnComplete,
@@ -444,7 +746,8 @@ export const darkFactoryPipelineSimulation = {
     sawTerminated: result.sawTerminated,
     terminatedExitCode: result.terminatedExitCode,
     observedToolNames: result.observedToolNames,
-    resultTextExcerpt: result.resultText.slice(0, 1200),
+    observedToolInputs: result.observedToolInputs.slice(0, 20),
+    resultTextExcerpt: result.resultText.slice(0, 1_200),
     findings: result.findings,
   }),
   localize: result => [
@@ -453,6 +756,8 @@ export const darkFactoryPipelineSimulation = {
     "firegrid-observability.TINY_FIREGRID_SIMULATIONS.9",
     "firegrid-observability.TINY_FIREGRID_SIMULATIONS.9-1",
     `Full loop stages expressed in planner prompt: ${result.fullLoopStages.join(" -> ")}`,
+    `CallerFact wait observed: ${String(result.sawCallerFactWaitFor)}`,
+    `Section 6 coverage: planApproval=${String(result.sawPlanApprovalWait)}, prOpened=${String(result.sawPrOpenedWait)}, review=${String(result.sawReviewWait)}, mergeSignoff=${String(result.sawMergeSignoffWait)}, ci=${String(result.sawCiWatchWait)}, sessionNew=${String(result.sawImplementerDelegation)}, sessionPrompt=${String(result.sawSessionPrompt)}, scheduleMe=${String(result.sawScheduleMe)}, execute=${String(result.sawExecuteAttempt)}`,
     result.observedToolNames.length === 0
       ? "No planner Firegrid tool use was observed before the simulation observation window ended; inspect MCP tools/list and ACP spans in the trace artifact."
       : `Planner tool use observed: ${result.observedToolNames.join(", ")}`,
