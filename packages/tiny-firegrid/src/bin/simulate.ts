@@ -22,7 +22,8 @@ import {
 import { runWithTraceRecorder } from "../simulations/trace-recorder.ts"
 import {
   findTinyFiregridSimulation,
-  tinyFiregridSimulations,
+  loadTinyFiregridSimulations,
+  tinyFiregridSimulationList,
 } from "../simulations/registry.ts"
 import type { TinyFiregridSimulation, TinyFiregridSimulationEnv } from "../simulations/types.ts"
 
@@ -677,7 +678,7 @@ const parseRunArgs = (
 ): { readonly id: string; readonly tail: boolean } => {
   const tail = args.includes("--tail") || args.includes("--attach")
   const positional = args.filter(arg => arg !== "--" && arg !== "--tail" && arg !== "--attach")
-  const id = positional[0] ?? tinyFiregridSimulations[0]?.id
+  const id = positional[0] ?? tinyFiregridSimulationList()[0]?.id
   if (id === undefined) throw new Error("no simulations registered")
   return { id, tail }
 }
@@ -688,9 +689,10 @@ const normalizeArgs = (args: ReadonlyArray<string>): ReadonlyArray<string> =>
 const main = async (): Promise<void> => {
   const [, , command, ...rawArgs] = globalThis.process.argv
   const args = normalizeArgs(rawArgs)
+  await loadTinyFiregridSimulations()
   switch (command) {
     case "list":
-      tinyFiregridSimulations.forEach(simulation => {
+      tinyFiregridSimulationList().forEach(simulation => {
         console.log(`${simulation.id}\t${simulation.description}`)
       })
       return
