@@ -693,18 +693,18 @@ decides the sequence, and code provides durable capabilities.
 
 `CLAIM-VERIFIED` (trace + source verified, 2026-05-19):
 `packages/tiny-firegrid/src/simulations/dark-factory-pipeline.ts` provides the
-simulation shape for the full factory-vision §6 loop. The simulation composes a
-Firegrid host, seeds an app-owned `darkFactory.facts` trigger row, creates/loads
-the deterministic parent session through the public client facade, enables
-runtime-context MCP, and observes planner output. It expresses clarify, plan
-approval/revision/rejection, implementer delegation, reviewer/council review,
-feedback loops, merge sign-off, durable CI watch, merge, CI failure repair, and
-clean unwind in the planner prompt and fact surface. It does not encode a
-planner/implementer/reviewer/merge phase chain.
+self-contained simulation shape for the full factory-vision §6 loop. The
+simulation composes a Firegrid host, seeds an app-owned `darkFactory.facts`
+trigger row, creates/loads the deterministic parent session through the public
+client facade, enables runtime-context MCP, and observes planner output. It
+expresses clarify, plan approval/revision/rejection, implementer delegation,
+reviewer/council review, feedback loops, merge sign-off, durable CI watch,
+merge, CI failure repair, and clean unwind in the planner prompt and fact
+surface. It does not encode a planner/implementer/reviewer/merge phase chain.
 
 Evidence run
-`2026-05-19T10-48-11-430Z__dark-factory-pipeline` is local under
-`packages/tiny-firegrid/.simulate/runs/2026-05-19T10-48-11-430Z__dark-factory-pipeline/`.
+`2026-05-19T11-16-34-404Z__dark-factory-pipeline` is local under
+`packages/tiny-firegrid/.simulate/runs/2026-05-19T11-16-34-404Z__dark-factory-pipeline/`.
 The trace shows `McpServer.initialize` and `McpServer.tools/list` succeeded
 through the long context-id scoped MCP URL (`firegrid.mcp.http POST
 /runtime-context/:contextId`, HTTP 200). The run then halted before factory
@@ -712,6 +712,20 @@ choreography because the Claude ACP process emitted `Error` with
 `{"message":"ACP prompt failed","cause":{"code":-32603,"name":"RequestError"}}`.
 No Firegrid `ToolUse`, `PermissionRequest`, or `TurnComplete` observation was
 emitted before that error.
+
+`CLAIM-VERIFIED`: the prompt-startup failure is classified as
+`claude-acp-prompt-request-error-after-firegrid-mcp-rpc-success`, not a
+Firegrid MCP RPC middleware failure. Trace evidence in the run shows
+`firegrid.mcp.register_toolkit` exposed 8 tools, Firegrid injected
+`firegrid-runtime-context`, Claude ACP (`claude-code/2.1.91`) called
+`McpServer.initialize` and `McpServer.tools/list` successfully, then
+`firegrid.agent_event_pipeline.acp.prompt` failed at
+`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts:391` with ACP
+`RequestError` `-32603`. Source evidence: `repos/effect/packages/rpc/src/RpcMiddleware.ts`
+defines request middleware/provides for RPC handlers, and
+`repos/effect/packages/ai/ai/src/McpServer.ts` handles
+`initialize`/`tools/list` through that RPC server. Since those RPC handlers
+completed successfully, `RpcMiddleware` is not the failing seam for this run.
 
 The same run records these full-loop choreography-surface findings in its
 summary/localization:
@@ -729,14 +743,18 @@ summary/localization:
   `unsupportedAgentTool`.
 - `dark-factory.agent_error_before_choreography`: Claude ACP reaches
   runtime-context MCP discovery but fails the prompt request before planner
-  tool-use choreography begins.
+  tool-use choreography begins. The run artifact records the classification
+  above and the ACP status events observed before the failure
+  (`available_commands_update`, `usage_update`).
 
 `CLAIM-PENDING-EVIDENCE`: the full dark-factory loop still needs a real
 tool-use agent/runtime combination that proceeds beyond ACP prompt startup into
 planner-authored `session_new`, `session_prompt`, `wait_for`, `schedule_me`,
-`execute`, `session_cancel`, and `session_close` calls. The simulation must keep
-reporting missing or unsupported choreography surfaces as run findings instead
-of adding app-side orchestration.
+`execute`, `session_cancel`, and `session_close` calls. The tf-0du support
+slice owns the currently blocked public tool gaps for caller-owned fact waits,
+provider `execute`, and `session_cancel`/`session_close`. Until that support
+lands, the simulation must keep reporting missing or unsupported choreography
+surfaces as run findings instead of adding app-side orchestration.
 
 ## Production Acceptance Substrate
 

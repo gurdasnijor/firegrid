@@ -4,14 +4,22 @@ import {
   type RuntimeAgentOutputObservation,
 } from "@firegrid/client-sdk/firegrid"
 import {
-  darkFactoryClaudeAcpEnvPolicy,
-  darkFactoryFactTableLayerOptions,
-  DarkFactoryFactTable,
-  tinyDarkFactoryPipeline,
-  type DarkFactoryFactRow,
-} from "../configurations/dark-factory-pipeline.ts"
+  ensurePathInput,
+  FiregridMcpServerLayer,
+  FiregridRuntimeHostLive,
+  type FiregridHost,
+  RuntimeEnvResolverPolicy,
+  type RuntimeHostTopologyOptions,
+} from "@firegrid/host-sdk"
+import { durableStreamUrl } from "@firegrid/protocol/launch"
 import type { TinyFiregridSimulation, TinyFiregridSimulationEnv } from "./types.ts"
-import { Clock, Effect, Schedule } from "effect"
+import type { ServeError } from "@effect/platform/HttpServerError"
+import { Clock, Effect, Layer, Schedule, Schema } from "effect"
+import {
+  DurableTable,
+  type DurableTableLayerOptions,
+} from "effect-durable-operators"
+import type { DurableTableError } from "effect-durable-operators"
 
 /* eslint-disable local/no-fixed-polling -- firegrid-observability.TINY_FIREGRID_SIMULATIONS.1 public-client simulation observation backoff. */
 
@@ -22,12 +30,18 @@ interface DarkFactoryFinding {
   readonly evidence: string
 }
 
+interface DarkFactoryStatusEvent {
+  readonly kind: string
+  readonly payloadExcerpt: string | undefined
+}
+
 interface DarkFactoryPipelineSimulationResult {
   readonly factoryRunKey: string
   readonly plannerContextId: string
   readonly triggerFactInserted: boolean
   readonly seededFactEventTypes: ReadonlyArray<string>
   readonly fullLoopStages: ReadonlyArray<string>
+  readonly agentErrorClassification: string | undefined
   readonly sawReady: boolean
   readonly sawPermissionRequest: boolean
   readonly sawTurnComplete: boolean
@@ -36,8 +50,106 @@ interface DarkFactoryPipelineSimulationResult {
   readonly sawTerminated: boolean
   readonly terminatedExitCode: number | undefined
   readonly observedToolNames: ReadonlyArray<string>
+  readonly observedStatusEvents: ReadonlyArray<DarkFactoryStatusEvent>
   readonly resultText: string
   readonly findings: ReadonlyArray<DarkFactoryFinding>
+}
+
+const DarkFactoryFactRowSchema = Schema.Struct({
+  factId: Schema.String.pipe(DurableTable.primaryKey),
+  source: Schema.String,
+  externalEventKey: Schema.String,
+  externalEntityKey: Schema.String,
+  eventType: Schema.String,
+  contextId: Schema.optional(Schema.String),
+  correlationId: Schema.String,
+  stage: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.String),
+  parentFactId: Schema.optional(Schema.String),
+  payload: Schema.Unknown,
+  acceptedAt: Schema.String,
+})
+
+type DarkFactoryFactRow = Schema.Schema.Type<typeof DarkFactoryFactRowSchema>
+
+class DarkFactoryFactTable extends DurableTable("darkFactory", {
+  facts: DarkFactoryFactRowSchema,
+}) {}
+
+const darkFactoryFactTableLayerOptions = (options: {
+  readonly baseUrl: string
+  readonly namespace: string
+}): DurableTableLayerOptions => ({
+  streamOptions: {
+    url: durableStreamUrl(options.baseUrl, `${options.namespace}.darkFactory`),
+    contentType: "application/json",
+  },
+  txTimeoutMs: 2_000,
+})
+
+interface DarkFactoryPipelineOptions {
+  readonly baseUrl: string
+  readonly namespace?: string
+  readonly hostId?: string
+  readonly mcpHost?: string
+  readonly mcpPort?: number
+  readonly mcpPath?: string
+  readonly localProcessEnv?: RuntimeHostTopologyOptions["localProcessEnv"]
+  readonly envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>
+}
+
+const darkFactoryClaudeAcpEnvPolicy = (
+  env: NodeJS.ProcessEnv,
+): Layer.Layer<RuntimeEnvResolverPolicy> =>
+  RuntimeEnvResolverPolicy.withPolicy({
+    authorizedBindings: [["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"]],
+    lookupEnv: name => env[name],
+  })
+
+const tinyDarkFactoryPipeline = (
+  options: DarkFactoryPipelineOptions,
+): Layer.Layer<
+  FiregridHost,
+  DurableTableError | ServeError,
+  never
+> => {
+  const namespace = options.namespace ?? `tiny-dark-factory-${crypto.randomUUID()}`
+  const hostId = options.hostId ?? "host-a"
+  const mcpHost = options.mcpHost ?? "127.0.0.1"
+  const mcpPath = options.mcpPath ?? "/mcp"
+  const host = FiregridRuntimeHostLive(
+    {
+      durableStreamsBaseUrl: options.baseUrl,
+      namespace,
+      hostId,
+      hostSessionId: `${hostId}-session`,
+      input: true,
+      ...(options.localProcessEnv === undefined
+        ? {}
+        : { localProcessEnv: options.localProcessEnv }),
+    },
+    options.envPolicy ?? RuntimeEnvResolverPolicy.denyAll,
+  )
+  const facts = DarkFactoryFactTable.layer(
+    darkFactoryFactTableLayerOptions({ baseUrl: options.baseUrl, namespace }),
+  )
+
+  // firegrid-observability.TINY_FIREGRID_SIMULATIONS.8
+  // App-owned simulation state is composed beside the host; the planner still
+  // owns sequencing through the exposed tool layer.
+  // TFIND-005: production host factories still return a layer whose public
+  // surface is `FiregridHost` but whose inferred output channel is `any`.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  return Layer.discard(
+    FiregridMcpServerLayer({
+      host: mcpHost,
+      port: options.mcpPort ?? 0,
+      path: ensurePathInput(mcpPath),
+    }),
+  ).pipe(
+    Layer.provideMerge(host),
+    Layer.provideMerge(facts),
+  )
 }
 
 const claudeAcpArgv = ["claude-agent-acp"] as const
@@ -45,6 +157,12 @@ const claudeAcpArgv = ["claude-agent-acp"] as const
 const darkFactorySource = "linear.oauth"
 const darkFactoryFactSource = "darkFactory.facts"
 const repoHint = "gurdasnijor/firegrid"
+const agentErrorClassification =
+  "claude-acp-prompt-request-error-after-firegrid-mcp-rpc-success"
+const agentErrorClassificationEvidence = [
+  "Trace evidence: firegrid.mcp.register_toolkit exposes 8 tools, Firegrid injects firegrid-runtime-context, Claude ACP user-agent calls McpServer.initialize and McpServer.tools/list successfully over HTTP 200, then firegrid.agent_event_pipeline.acp.prompt fails at packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts:391 with ACP RequestError -32603.",
+  "Source evidence: repos/effect/packages/rpc/src/RpcMiddleware.ts defines request middleware/provides for RPC handlers, and repos/effect/packages/ai/ai/src/McpServer.ts handles initialize/tools/list through that RPC server. Successful initialize/tools/list rules out Firegrid MCP RPC middleware as the failing seam for this run.",
+].join(" ")
 
 const fullLoopStages = [
   "trigger",
@@ -330,7 +448,9 @@ const darkFactoryDriver = (
     let terminatedExitCode: number | undefined
     let resultText = ""
     const observedToolNames = new Set<string>()
+    const observedStatusEvents: Array<DarkFactoryStatusEvent> = []
     const observedFindings: Array<DarkFactoryFinding> = []
+    let errorClassification: string | undefined
 
     while ((yield* Clock.currentTimeMillis) < deadline) {
       const next = yield* session.wait.forAgentOutput({
@@ -358,6 +478,14 @@ const darkFactoryDriver = (
         case "ToolUse":
           observedToolNames.add(event.part.name)
           break
+        case "Status":
+          observedStatusEvents.push({
+            kind: event.kind,
+            payloadExcerpt: event.payload === undefined
+              ? undefined
+              : stringifyUnknown(event.payload).slice(0, 1200),
+          })
+          break
         case "TextChunk": {
           resultText += event.part.delta
           if (event.part.delta.includes("DARK_FACTORY_FINDING")) {
@@ -377,12 +505,13 @@ const darkFactoryDriver = (
         case "Error":
           sawAgentError = true
           agentError = stringifyUnknown(event.cause)
+          errorClassification = agentErrorClassification
           observedFindings.push({
             id: "dark-factory.agent_error_before_choreography",
             status: "observed",
             expectedPublicSurface:
               "Planner can continue from runtime-context MCP initialization into Firegrid tool-driven choreography.",
-            evidence: agentError,
+            evidence: `${agentError}; classification=${agentErrorClassification}; ${agentErrorClassificationEvidence}`,
           })
           break
         case "Terminated":
@@ -405,6 +534,7 @@ const darkFactoryDriver = (
       triggerFactInserted,
       seededFactEventTypes: ["factory.trigger.accepted"],
       fullLoopStages: [...fullLoopStages],
+      agentErrorClassification: errorClassification,
       sawReady,
       sawPermissionRequest,
       sawTurnComplete,
@@ -413,6 +543,7 @@ const darkFactoryDriver = (
       sawTerminated,
       terminatedExitCode,
       observedToolNames: [...observedToolNames].sort(),
+      observedStatusEvents,
       resultText,
       findings: [...staticChoreographyFindings, ...observedFindings],
     }
@@ -444,6 +575,8 @@ export const darkFactoryPipelineSimulation = {
     sawTerminated: result.sawTerminated,
     terminatedExitCode: result.terminatedExitCode,
     observedToolNames: result.observedToolNames,
+    observedStatusEvents: result.observedStatusEvents,
+    agentErrorClassification: result.agentErrorClassification,
     resultTextExcerpt: result.resultText.slice(0, 1200),
     findings: result.findings,
   }),
@@ -457,8 +590,16 @@ export const darkFactoryPipelineSimulation = {
       ? "No planner Firegrid tool use was observed before the simulation observation window ended; inspect MCP tools/list and ACP spans in the trace artifact."
       : `Planner tool use observed: ${result.observedToolNames.join(", ")}`,
     result.sawAgentError
-      ? `Agent error before choreography: ${result.agentError ?? "unknown"}`
+      ? `Agent error before choreography: ${result.agentError ?? "unknown"} (${result.agentErrorClassification ?? "unclassified"})`
       : "No agent Error output observed.",
+    result.agentErrorClassification === agentErrorClassification
+      ? agentErrorClassificationEvidence
+      : "No prompt-error classification recorded.",
+    result.observedStatusEvents.length === 0
+      ? "No ACP Status events observed."
+      : `ACP Status events observed: ${
+        result.observedStatusEvents.map(status => status.kind).join(", ")
+      }`,
     ...result.findings.map(finding =>
       `${finding.id}: ${finding.evidence}`),
   ],
