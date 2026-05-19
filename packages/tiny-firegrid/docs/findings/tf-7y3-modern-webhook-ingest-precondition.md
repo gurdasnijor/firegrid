@@ -1,96 +1,64 @@
-# FINDING — tf-7y3: no modern PUBLIC surface for verified-webhook-ingest
+# FINDING — tf-7y3: factory-vision §8 gap for verified-webhook-ingest
 
-Status: HARD HALT (precondition failed — capability does not exist on the
-public surface). No simulation was built; building one would require a
-forbidden reach-past.
+Status: DELIVERED. The §7.1 attempt sim was built and run through the
+PUBLIC Firegrid client/host surface only (no `src/configurations/` import,
+no `@firegrid/runtime` verified-webhook-ingest adapter, no ownership
+redesign). Two sub-capabilities are publicly expressible; three are NOT
+expressible without reaching past the public surface. Per factory-vision
+§8 the attempt is the evidence: this records a precise substrate gap.
 
-## Dispatch claim under test
+Sim: `packages/tiny-firegrid/src/simulations/verified-webhook-ingest-pipeline.ts`
+(registered). Trace artifact is the deliverable.
 
-> Build a MODERN verified-webhook-ingest simulation … through the PUBLIC
-> Firegrid surface (NOT the old `packages/runtime/src/verified-webhook-ingest`
-> runtime adapter — use the modern client/host surface). Firegrid owns HMAC
-> verify + deterministic `[source,externalEventKey]` keying + idempotent
-> insert-or-get + conflict rejection; product owns route/secret/status.
+## Attempt: external event -> durable verified fact, public surface only
 
-## Ground-truth evidence (origin/main, this worktree)
+A real product consumer was wired as: product owns route/secret/status and
+verifies HMAC itself; Firegrid public surface is asked to provide the
+deterministic `[source,externalEventKey]` keyed, idempotent, conflict-
+rejecting, observable durable fact.
 
-1. The verified-webhook-ingest capability exists in exactly one place:
-   `packages/runtime/src/verified-webhook-ingest/`
-   (`adapter.ts`, `keys.ts`, `table.ts`, `index.ts`, `README.md`).
+## Empirical result (sim run, completed)
 
-2. It is re-exported only from the runtime package:
-   `packages/runtime/src/index.ts:108–122` —
-   `ingestVerifiedWebhook`, `VerifiedWebhookFactTable`,
-   `VerifiedWebhookFactKeySchema`, `VerifiedWebhookIngestConfig`,
-   `VerifiedWebhookIngestError`, `verifiedWebhookFactTableLayerOptions`, etc.
+| Sub-capability                         | Public-surface verdict |
+|----------------------------------------|------------------------|
+| HMAC verify on public surface          | NO (`hmacVerifyOnPublicSurface=false`) — product code only; no HMAC/verify symbol on `@firegrid/client-sdk` or `@firegrid/host-sdk`. |
+| Deterministic `[source,key]` handle    | YES (`deterministicSourceKey=true`) — `sessions.createOrLoad` derives a stable `ctx_ext_<base64url([source,id])>` (`firegrid.ts:543`, `sessionContextIdForExternalKey`). |
+| Idempotent insert-or-get               | YES (`idempotentInsertOrGet=true`) — same externalKey twice -> identical contextId; one durable handle. |
+| Conflict rejection on differing payload | NO (`conflictRejection=false`) — proven: same key + different payload hash (`hashA=43cd6862` vs `hashB=cc603e86`) -> `rejected=false, silentlyAliasedToSameContext=true`. `createOrLoad` keys ONLY on `[source,id]`; payload is never bound to the key; no conflict primitive. |
+| Fact observable to a public `wait_for` | NO (`factObservableViaPublicWait=false`) — only `wait.forAgentOutput` / `wait.forPermissionRequest` exist publicly; neither is a wait over a verified product fact (an ingest produces no agent output). |
 
-3. The PUBLIC client/host surface has NO such capability:
-   - `packages/client-sdk/src/firegrid.ts`: the only `insertOrGet` calls are
-     for runtime control-plane intents (`inputIntents`, `contextRequests`,
-     `startRequests`) — not a webhook/verified-fact API. No `hmac`,
-     `webhook`, `externalEventKey`, or verified-fact symbol anywhere in
-     `packages/client-sdk/src` or `packages/host-sdk/src`.
-   - `DurableTableHeaders` appears on client/host only as a config/header
-     type, not as a public DurableTable insert-or-get/conflict primitive a
-     product could call to create a verified webhook fact.
-   - `wait_for` on the public surface is only an in-session **agent tool
-     binding** (`packages/host-sdk/src/agent-tools/bindings/tools.ts:129`,
-     `WaitForTool`), not a public client waiter over an arbitrary verified
-     webhook fact.
+Overall: `publicSurfaceExpressible=false`.
 
-4. The old adapter's own README contradicts the dispatch's ownership
-   framing: it states the tracer is "not a Firegrid webhook product",
-   Firegrid does "not own HTTP routes … source secrets …", and HMAC
-   verification lives in the runtime-owned `ingestVerifiedWebhook`
-   verifier/translator — i.e. runtime-owned, not a PUBLIC client/host
-   product surface.
+## The precise gap (the §8 information)
 
-## Why this is a HARD HALT, not a build
+The public surface CAN express a deterministic, idempotent
+`[source,externalEventKey]` durable handle (the runtime CONTEXT created by
+`sessions.createOrLoad`). It CANNOT, without reaching past the public
+surface into the runtime-owned `@firegrid/runtime` verified-webhook-ingest
+adapter:
 
-A "modern public-surface" simulation is not expressible. The only two ways
-to make it run both violate the dispatch and the toy-build discipline:
+1. verify the webhook HMAC (absent from the public surface — product- or
+   runtime-owned);
+2. bind the payload to the key and REJECT a same-key / different-payload
+   re-ingest (the closest public primitive, `createOrLoad`, silently
+   aliases differing payloads to the same context — a correctness hazard
+   if misused as a "verified fact");
+3. observe the verified fact through a public `wait_for` (no fact-level
+   public wait exists; only agent-output/permission waits).
 
-- (a) Import `@firegrid/runtime`'s `ingestVerifiedWebhook` /
-  `VerifiedWebhookFactTable` — the explicitly-forbidden old adapter
-  (reach-past into runtime internals).
-- (b) Re-implement runtime-owned HMAC verify + `[source,externalEventKey]`
-  keying + idempotent insert-or-get + conflict rejection by hand inside the
-  toy — papering over a missing public capability (the TFIND-049 / Slice-4
-  burn: "modeling open ≠ capability built").
+## Ownership note (unchanged)
 
-Either path produces a green sim that misrepresents the public surface as
-owning a capability it does not expose.
+This is a substrate-gap finding, NOT an ownership redesign and NOT a
+migration of the runtime adapter. Whether these three should become neutral
+public substrate primitives, or remain runtime-owned with a product seam,
+is a coordinator/OWNERSHIP.md decision. The toy does not pre-decide it.
 
-## What the substrate is actually missing (the architectural ask)
+## Routing
 
-For factory-vision §7.1 to be buildable on the public surface as dispatched,
-Firegrid would need a PUBLIC client/host primitive that lets a product:
+Coordinator decision (structured loop, `signoff:pending`):
+- accept as the §7.1/§8 deliverable and file the three gaps; and/or
+- decide whether to promote a neutral public verified-fact primitive
+  (deterministic-keyed, payload-bound, conflict-rejecting, wait-observable)
+  vs. keep it runtime-owned behind a product seam.
 
-- present an already-routed external request + a product-held secret and
-  have Firegrid perform HMAC verification (verifier owned by Firegrid,
-  secret owned by product);
-- derive the deterministic `[source, externalEventKey]` fact key;
-- idempotently insert-or-get the verified fact (same key twice → one fact);
-- reject a same-key / different-payload-hash conflict;
-- expose the verified fact to a public `wait_for`/observe path
-  (not the in-session agent tool binding).
-
-None of these are on `@firegrid/client-sdk` or `@firegrid/host-sdk` today.
-Whether they SHOULD be public substrate vs. remain runtime-owned is an
-ownership decision for the coordinator (cf. the Firegrid-substrate-boundary
-rule and OWNERSHIP.md), not something a toy should pre-decide by reaching
-past.
-
-## Recommended routing
-
-Coordinator decision required (structured decision loop). Options:
-
-1. Re-scope tf-7y3 to a SUBSTRATE GAP finding: "no public verified-webhook
-   ingest surface; only runtime-adapter exists" — and (separately) decide
-   whether to promote a neutral public primitive.
-2. If a `wait_for`-observable verified-fact path is wanted as a *toy probe*
-   of the EXISTING runtime adapter, that is a different (allowed) task that
-   explicitly targets `@firegrid/runtime` — not "the modern public
-   surface", and must be re-dispatched as such.
-
-No papering, no reach-past taken. Halted and surfaced.
+No papering, no reach-past taken. Attempt made, gap recorded with evidence.
