@@ -50,7 +50,7 @@ RANKED="$(printf '%s' "$ALL" | jq -c --argjson blockers "$BLOCKERS" '
   . as $all
   | [ .[]
       | . as $b | $b.id as $outer
-      | select(any(.labels[]?; . == "signoff:pending"))
+      | select(.status != "closed" and any(.labels[]?; . == "signoff:pending"))
       | { id, status, priority, title,
           pr:       ([.labels[]? | select(startswith("pr-"))][0] // null),
           tfind:    ([.labels[]? | select(startswith("tfind:"))][0] // null),
