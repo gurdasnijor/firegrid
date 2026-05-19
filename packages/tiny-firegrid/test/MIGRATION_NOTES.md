@@ -27,7 +27,7 @@ Scope:
 
 - None blocking for `durable-streams-backed-pipeline`.
 - The old test asserted a direct host-internal replay result from `RuntimeStartCapability.start`. The consumer surface does not expose that synchronous host result. The migrated test asserts the same restart property through durable client-visible state instead: `session.start()` is idempotent after restart and the completed snapshot contains no duplicate outputs.
-- The test composes `FiregridRuntimeTables.ControlPlane` from the client SDK, but still imports `runtimeControlPlaneStreamUrl` from `@firegrid/protocol/launch` to build the table layer. This is public and not host-bound, but it is a candidate for a client SDK re-export so consumer-shaped tests do not need to import protocol URL helpers directly.
+- The multi-context production-consuming test composes `FiregridRuntimeTables.ControlPlane` and `runtimeControlPlaneStreamUrl` from the client SDK. The helper is namespace-scoped control-plane plumbing, not host-bound stream authority.
 - Codex ACP migration is paused on TFIND-048. Its runtime intent needs a route-scoped MCP URL before `sessions.createOrLoad`, but the context-id / MCP-route URL lifecycle is still an architectural framing issue. Migrating Codex without a new reach-past is blocked until that lifecycle is decided and exposed through the public surface.
 - None blocking for `permission-flow-pipeline`; the public session permission surface was sufficient after the TFIND-015 implementation landed.
 

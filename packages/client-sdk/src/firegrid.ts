@@ -224,7 +224,7 @@ export class Firegrid extends Context.Tag("@firegrid/client/Firegrid")<
   FiregridService
 >() {}
 
-export { local }
+export { local, runtimeControlPlaneStreamUrl }
 
 export const FiregridRuntimeTables = {
   ControlPlane: RuntimeControlPlaneTable,

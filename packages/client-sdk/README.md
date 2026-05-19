@@ -21,6 +21,7 @@ import {
   FiregridRuntimeTables,
   firegridRuntimeTableTags,
   local,
+  runtimeControlPlaneStreamUrl,
 } from "@firegrid/client-sdk"
 ```
 
@@ -35,6 +36,7 @@ import {
 | `FiregridRuntimeTables` | DurableTable tag map for `ControlPlane` and `Output`. Runtime input is host/workflow owned and is not exposed here as a browser-write table. |
 | `firegridRuntimeTableTags` | Table tag list for advanced compositions that provide all required table layers. |
 | `local` | Helper constructors for local-process runtime intents. |
+| `runtimeControlPlaneStreamUrl` | Namespace-scoped control-plane stream URL helper for advanced client table composition. Host-owned/per-context stream URL builders are not part of the client SDK surface. |
 
 ## Is It Browser Safe?
 
