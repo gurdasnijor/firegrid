@@ -25,32 +25,27 @@ What is **NOT** done — the actual goal:
 - A live §6 run where the planner issues real Firegrid `tools/call` and the
   loop advances. **This is the deliverable. It is unfinished.**
 
-### Why it fails (precise, source-verified)
+### The symptom (fact) vs the conclusion (UNPROVEN — see §0a)
 
-Given exactly the Firegrid choreography toolset + a tool-first prompt, **both**
-`@agentclientprotocol/claude-agent-acp` and `codex-acp`:
-1. discover the toolset (`McpServer.initialize`, `tools/list ×16`), and
-2. **narrate the exact correct §6 plan in prose**, then
-3. emit **zero `tools/call`** and stop (`sawTurnComplete=false`, no error).
+**Symptom (observed fact, not disputed):** given the Firegrid toolset + a
+tool-first prompt, **both** `@agentclientprotocol/claude-agent-acp` and
+`codex-acp`: (1) discover the toolset (`tools/list ×16`), (2) narrate the
+correct §6 plan in prose, (3) emit **zero `tools/call`** and stop.
 
-Localization (each a merged FINDING, nothing papered):
-- `tf-7dq`/#395 — ruled out quota (HTTP 200 verified separately).
-- `tf-pcg`/#414 — ruled out exploration-distraction (constraining the toolset
-  removed Read/Search/rg wandering but did not produce tool calls).
-- `tf-9q4`/#420 — **cross-runtime**: both runtimes, fully constrained, narrate
-  but do not invoke.
-- `tf-549`/#422 — **native angle terminal**: no ACP runtime nor the ACP
-  protocol exposes a forced-tool-choice / must-call knob for the planner turn
-  (source-verified from SDK/launcher/protocol).
-- `tf-xyo`/#424 — **shim angle terminal**: a transparent ACP-layer shim can
-  refuse prose-only completion and re-drive the turn, but **cannot make the
-  model *choose* a tool** — `tool_choice:required` lives in the
-  agent-internal model request, unreachable from the ACP protocol layer.
+The earlier findings (`tf-7dq`/#395 ruled out quota; `tf-pcg`/#414 ruled out
+exploration-distraction; `tf-9q4`/#420 cross-runtime; `tf-549`/#422 + `tf-xyo`/
+#424 framed as "native/shim terminal") concluded **"forced tool-invocation is
+unreachable through the ACP protocol layer — an ACP-architecture limitation,
+not Firegrid."**
 
-**Root cause:** the failure is agent-side "plans-in-prose vs invokes-the-tool",
-and *forced tool invocation is unreachable through the ACP protocol layer*.
-This is an ACP-architecture / third-party limitation, **not a Firegrid
-defect**. The substrate is sound.
+> ⚠️ **That conclusion is NOT safe. Treat it as UNPROVEN.** It was reasoned
+> from the ACP *protocol surface*, never verified against claude-agent-acp's
+> *source*, and — critically — it sits on top of an unverified, heavy
+> transformation in our **own** ACP codec that was never instrumented or
+> eliminated as the confound. The codec is the **prime suspect**, not ACP.
+> **Read §0a before acting on anything in this section.** "Substrate is sound"
+> remains true (substrate proven in isolation, §2); "the gap is a terminal ACP
+> limitation" does **not**.
 
 ### Why "accept the demo" was not "done"
 
@@ -62,6 +57,77 @@ finish it.* So:
 > **The factory is finished only when a real planner agent drives §6
 > end-to-end and the #401 harness reports the required steps `proven:true`
 > (honestly, not by loosening the matcher).**
+
+---
+
+## 0a. THE PRIME SUSPECT — our own ACP codec transformation (read this)
+
+File: `packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts`.
+
+In a **single `connection.newSession(...)`** the codec advertises the *same*
+Firegrid MCP endpoint to claude-agent-acp **twice, under two different names,
+via two different mechanisms**:
+
+1. `mcpServers: (options.mcpServers ?? []).map(lowerMcpServerDeclaration)`
+   (line ~485) — the server under its **real name**, **no `alwaysLoad`**.
+2. `_meta: claudeAgentAcpAlwaysLoadMeta(...)` (lines ~166–194, ~491–494) —
+   the **same URL aliased to `<name>-alwaysload`**, **with `alwaysLoad:true`**,
+   plus `disableBuiltInTools:true`, under `_meta.claudeCode.options.mcpServers`.
+
+This "A1 fix" (`tf-b6n`/#411, framed off `tf-p9s`/#408) is the demo-deadline
+work. Its own comment (lines ~148–165) **states claude-agent-acp's internal
+merge/precedence behavior as fact** ("strips `alwaysLoad`", "the
+`{...userProvided, ...acpDerived}` merge overrides any colliding `_meta`
+entry") — but that was inferred from the protocol surface, **never verified
+against claude-agent-acp source** (`src/acp-agent.ts` ~L1488, the model-turn /
+tools / tool_choice construction). The codec annotates only what *we send*
+(`firegrid.acp.mcp_server_count/_names`); it captures **nothing** about what
+claude-agent-acp forwarded to the model.
+
+**Three concrete ways this transformation alone produces the exact symptom
+("discovers tools, plans in prose, never invokes") — none of them an ACP
+limitation:**
+- **Tool-name mismatch.** If the `-alwaysload` alias is the path whose tools
+  reach the model, the model is offered `mcp__<name>-alwaysload__wait_for`
+  while the §6 prompt **and the #401 proof harness** reference `wait_for`. The
+  agent narrates the right call; the advertised tool has a different name → it
+  cannot invoke what it was told to. Self-inflicted prose-vs-invoke.
+- **Deferred-server-wins.** Same URL under two names → claude-agent-acp may
+  keep the non-`alwaysLoad` primary (still ToolSearch-deferred) and drop the
+  alias. We assumed the alias wins; never measured.
+- **Inert `_meta`.** If claude-agent-acp doesn't honor
+  `_meta.disableBuiltInTools` / `claudeCode.options.mcpServers` in this shape,
+  the A1 payload is a no-op and **every "terminal" run was the default
+  deferred behavior** — we concluded "ACP can't" from runs where our fix did
+  nothing and never instrumented that it did nothing.
+
+**Consequence for the handoff:** the §6-run gap is **not** established as an
+ACP-architecture limitation. The leading hypothesis is now: *our own codec
+transformation is malforming what the model is offered.* The first real work
+is to **eliminate this confound**, not to build around it.
+
+### What the next agent must do (in order)
+1. **Strip the codec to the minimum.** Advertise the Firegrid MCP server
+   **once, plainly, under its real name** (just `lowerMcpServerDeclaration`).
+   Delete the `<name>-alwaysload` alias + the `_meta`/`disableBuiltInTools`
+   speculation (`claudeAgentAcpAlwaysLoadMeta` and its `_meta` spread).
+2. **Read the actual claude-agent-acp source** at `src/acp-agent.ts` ~L1488
+   (vendor it under `repos/` so it's inspectable/traceable): does it forward
+   MCP tools into the model request? under what condition? what `tool_choice`?
+   what system prompt? Replace every "claude-agent-acp does X" *comment* with
+   a source citation or delete the claim.
+3. **Instrument the real boundary.** Add OTEL/tracing that captures the
+   *resolved tool catalog + exact tool names + `tool_choice` + system prompt*
+   claude-agent-acp sends the model, and the model response — on the **real
+   production path** (`simulate:run -- dark-factory-pipeline`, NOT the
+   fake-connection codec test, see §7). Distinguish the causes with **data**.
+4. Only then is anything sayable about ACP capability. The honest deliverable
+   is a **source-verified** finding explaining the 0/6 — most likely a
+   fixable Firegrid-codec / MCP-advertisement-shape bug.
+
+This is the **third instance of the same root failure** (see §8): a confident
+conclusion asserted on top of unverified inference, with the instrumentation
+that would settle it sitting in the very file being edited.
 
 ---
 
@@ -338,3 +404,116 @@ fixing/verifying — the PO's standing preference.
 
 You are the PO's delegate. Drive it to a *running* factory — not a doc that
 explains why it doesn't run.
+
+---
+
+## 7. `packages/tiny-firegrid/` is structurally a mess — clean it to this contract
+
+A separate agent is mid-cleanup of this. Current state and the **target** the
+package must regrow to:
+
+### 7a. Active breakage (the cleanup exposed it)
+
+`src/configurations/` was deleted, but **3 registry-discovered sims still
+`import` from it** (real imports, not comments):
+- `src/simulations/codex-acp-tool-call-pipeline.ts:8`
+- `src/simulations/wait-for-output-pipeline.ts:3,4`
+- `src/simulations/multi-context-production-consuming-pipeline.ts:6`
+
+`src/simulations/registry.ts` loads via `await Promise.all(files.map(import))`,
+so **one failing import rejects the whole batch → every sim is bricked**, not
+just those 3. (Design fragility: auto-discovery made "add a file" frictionless
+but "one bad file bricks all". The folded loader must isolate per-file
+failures — `Promise.allSettled` / per-file try-catch — skip+report a bad file,
+run the rest.) Remediation per coupled sim: **inline** the needed
+host-compose, or **delete** the sim if a self-contained sibling already covers
+it (e.g. `output-journal-pipeline.ts` exists self-contained), or temporarily
+**restore `configurations/`** as documented debt. Prefer delete-where-redundant.
+
+### 7b. The contract `src/simulations/` MUST regrow to (do NOT re-accrete)
+
+The current `TinyFiregridSimulation` is wrong. It types assertions as
+`summarize: (result) => Record<string, unknown>` + freeform `localize` — so a
+sim's **expectations are undeclared imperative code**, different per sim, with
+no schema; you reverse-engineer intent by reading each sim's `driver()` +
+`summarize()` + its sibling `.FINDING.md`. That is the opposite of the stated
+purpose ("an easy/clean way to generate OTEL trace data to drive an
+experiment"). The trace artifacts (`.simulate/runs/<id>/` —
+`run.json`/`trace.json`/`live-spans.jsonl`/`traces.otlp.jsonl`/`duckdb/`) are
+the **one clean, uniform, gitignored output and the actual deliverable**;
+everything layered around them is accretion.
+
+Target contract — collapse to **four fields**:
+```ts
+interface TinyFiregridSimulation {
+  id; description;
+  makeHost(env): Layer<FiregridHost>;
+  driver(env): Effect<unknown, unknown, Firegrid>;   // exercises the path
+}
+```
+- **Delete `summarize` and `localize`.** The **trace is the output.**
+  Expectations are expressed as **declarative queries over the trace**
+  (duckdb/jq over `trace.json`/`live-spans.jsonl`) — sim-agnostic,
+  inspectable — or are the analyst's job. Never untyped per-sim boolean blobs.
+- **Conclusions/findings live in `docs/`, never interleaved** in
+  `src/simulations/`. Move every `*.FINDING.md` out.
+- **No `registry.ts` module** — fold the dir-scan + `isSimulation` filter +
+  the non-sim exclusion list (`types.ts`, `trace-*.ts`) into `simulate.ts`
+  (per-file-isolated load). **No `proof` subcommand** in `simulate.ts`
+  (§6-hardcoded demo renderer — `simulate show` already prints any run's
+  summary). **No `demo:s6`** entrypoint/script. **No `bin/acp-force-tool-
+  shim.mjs`** (closed #424 residue).
+- Net `src/`: `bin/simulate.ts` (one runner: discover-load + `run` + the
+  sim-agnostic inspection verbs `list`/`runs`/`show`/`tail`/`attach`/`query`/
+  `duckdb`) + `simulations/` (one self-contained file per experiment +
+  `types.ts` for the 4-field interface; trace infra may move to `src/trace/`)
+  + a minimal `index.ts` with no `configurations/` re-exports.
+
+The hard rule, stated so it cannot re-accrete: **the runner stays
+sim-agnostic; demo/presentation is never inlined into discovery infra; a
+sim's only job is "exercise a code path, emit OTEL"; the trace (or a trace
+query) is how you learn what happened.**
+
+---
+
+## 8. Post-mortem — how the mess happened (do not repeat)
+
+This was a **coordination failure**, the previous coordinator's. Root causes,
+stated so the next session recognizes the pattern early:
+
+- **Demo-deadline velocity was optimized over coherence.** "Get this demoable,
+  few hours, set a timer" was translated into *produce presenter-facing
+  artifacts fast* — and fast meant bolting `proof`/`demo:s6`/registry onto
+  existing infra instead of designing a clean boundary. The shortcut **was**
+  the orchestration / demo-for-demo's-sake anti-pattern this whole project
+  exists to reject.
+- **Per-PR review gated correctness, not architecture.** #401/#402/#409 etc.
+  were each reviewed in isolation against an anti-smoketest/"is it honest +
+  green" bar. The architectural question — *does a §6-specific renderer belong
+  in the shared runner? does this assertion blob belong in the contract?* —
+  was never asked. Each PR passed alone; the aggregate was incoherent. No one
+  owned "is tiny-firegrid still the clean trace-generator it was meant to be."
+- **Confident conclusions asserted on unverified inference — three times.**
+  (1) the §6 "victory" over-declaration; (2) "no ACP path forces tool-choice,
+  terminal" reasoned from the protocol surface, not source; (3) the codec's
+  claude-agent-acp merge behavior **stated as fact in code comments** (§0a)
+  while never reading claude-agent-acp source. Same shape each time:
+  inference promoted to decision-grade because the visible metric (merged
+  PRs / "demoable") rewarded closing, not verifying.
+
+**Corrective principles (enforce these as coordinator):**
+1. Label epistemic tier on every claim: *assertion / inference /
+   source-verified*. Only source-verified earns a decision or a "terminal".
+   Code comments asserting third-party internals are inference until cited.
+2. Per-PR review must include *"does this belong here architecturally"*, not
+   just "is it honest and green."
+3. Demo/presentation is **never** inlined into discovery infra. The runner
+   stays sim-agnostic. If a demo is genuinely needed it is a separate,
+   clearly-labelled artifact outside the infra — and is not a deliverable of
+   this exercise (the deliverable is captured trace data + characterized
+   findings).
+4. When the goal is "discover/characterize an issue", routing around it to
+   produce a green is failure, not progress. Instrument the actual boundary;
+   the trace is the evidence.
+5. Periodically step back and ask "is the system still coherent for its
+   stated purpose?" — throughput loops do not ask this; the coordinator must.
