@@ -6,6 +6,7 @@ import {
   Option,
   Supervisor,
   Tracer,
+  type FiberStatus,
 } from "effect"
 
 export interface RecordedSpan {
@@ -29,6 +30,8 @@ export interface FiberSnapshot {
   readonly id: string
   readonly status: string
 }
+
+const fiberStatusLabel = (status: FiberStatus.FiberStatus): string => status._tag
 
 const randomHex = (bytes: number): string => {
   const values = new Uint8Array(bytes)
@@ -134,7 +137,7 @@ export const runWithTraceRecorder = <A, E, R>(
           Fiber.status(fiber).pipe(
             Effect.map(status => ({
               id: String(Fiber.id(fiber)),
-              status: String(status),
+              status: fiberStatusLabel(status),
             })),
           )),
       ),

@@ -122,6 +122,10 @@ const traceArtifactPath = path.resolve(
   globalThis.process.cwd(),
   "../../tooling/analysis/mcp-tool-exposure-trace.md",
 )
+const traceJsonArtifactPath = path.resolve(
+  globalThis.process.cwd(),
+  "../../tooling/analysis/mcp-tool-exposure-trace.json",
+)
 
 const spanTreeLines = (spans: ReadonlyArray<RecordedSpan>): ReadonlyArray<string> => {
   const byParent = new Map<string | undefined, Array<RecordedSpan>>()
@@ -173,6 +177,27 @@ const writeTraceArtifact = async (
   const observedNoToolUse = input.observed.sawReady &&
     !input.observed.sawSleepToolUse &&
     input.observed.resultText.includes("not available")
+  const summary = {
+    agentReachedReady: input.observed.sawReady,
+    agentEmittedFiregridSleepToolUse: input.observed.sawSleepToolUse,
+    agentTextExcerpt: input.observed.resultText.slice(0, 600),
+    hostToolkitToolCount: firegridToolCatalogSpan?.attributes["firegrid.mcp.tool_count"] ?? null,
+    hostToolkitToolNames: firegridToolCatalogSpan?.attributes["firegrid.mcp.tool_names"] ?? null,
+    codecInjectedRuntimeContextMcpUrl: injectedMcpSpan?.attributes["firegrid.mcp.injected_url"] ?? null,
+    acpNewSessionMcpServerCount: acpNewSessionSpan?.attributes["firegrid.acp.mcp_server_count"] ?? null,
+    acpNewSessionMcpServerNames: acpNewSessionSpan?.attributes["firegrid.acp.mcp_server_names"] ?? null,
+  }
+  const localization = observedNoToolUse
+    ? [
+      "Firegrid host toolkit registration is not empty: the firegrid.mcp.register_toolkit span records 8 tools.",
+      "Codec MCP URL injection is not missing: firegrid.host.codec.resolve_effective_mcp_servers records a firegrid-runtime-context URL.",
+      "ACP session setup receives that MCP server declaration: firegrid.agent_event_pipeline.acp.new_session records one MCP server named firegrid-runtime-context.",
+      "The real Codex ACP agent nevertheless reaches Ready, emits no Firegrid ToolUse, and reports firegrid.sleep is not available.",
+      "Therefore this trace localizes G-MCP-2 downstream of Firegrid's host catalog construction and codec MCP URL injection, at or after ACP agent-side MCP discovery/tool exposure.",
+    ]
+    : [
+      "The observed run did not reproduce the zero-tool symptom; inspect the span tree and raw spans.",
+    ]
   const content = [
     "# G-MCP-2 MCP Tool Exposure Trace",
     "",
@@ -180,26 +205,18 @@ const writeTraceArtifact = async (
     "",
     "## Summary",
     "",
-    `- Agent reached Ready: ${input.observed.sawReady}`,
-    `- Agent emitted Firegrid sleep ToolUse: ${input.observed.sawSleepToolUse}`,
-    `- Agent text excerpt: ${JSON.stringify(input.observed.resultText.slice(0, 600))}`,
-    `- Host toolkit span tool count: ${JSON.stringify(firegridToolCatalogSpan?.attributes["firegrid.mcp.tool_count"] ?? null)}`,
-    `- Host toolkit span tool names: ${JSON.stringify(firegridToolCatalogSpan?.attributes["firegrid.mcp.tool_names"] ?? null)}`,
-    `- Codec injected runtime-context MCP URL: ${JSON.stringify(injectedMcpSpan?.attributes["firegrid.mcp.injected_url"] ?? null)}`,
-    `- ACP newSession MCP server count: ${JSON.stringify(acpNewSessionSpan?.attributes["firegrid.acp.mcp_server_count"] ?? null)}`,
-    `- ACP newSession MCP server names: ${JSON.stringify(acpNewSessionSpan?.attributes["firegrid.acp.mcp_server_names"] ?? null)}`,
+    `- Agent reached Ready: ${summary.agentReachedReady}`,
+    `- Agent emitted Firegrid sleep ToolUse: ${summary.agentEmittedFiregridSleepToolUse}`,
+    `- Agent text excerpt: ${JSON.stringify(summary.agentTextExcerpt)}`,
+    `- Host toolkit span tool count: ${JSON.stringify(summary.hostToolkitToolCount)}`,
+    `- Host toolkit span tool names: ${JSON.stringify(summary.hostToolkitToolNames)}`,
+    `- Codec injected runtime-context MCP URL: ${JSON.stringify(summary.codecInjectedRuntimeContextMcpUrl)}`,
+    `- ACP newSession MCP server count: ${JSON.stringify(summary.acpNewSessionMcpServerCount)}`,
+    `- ACP newSession MCP server names: ${JSON.stringify(summary.acpNewSessionMcpServerNames)}`,
     "",
     "## Localization",
     "",
-    observedNoToolUse
-      ? [
-        "- Firegrid host toolkit registration is not empty: the `firegrid.mcp.register_toolkit` span records 8 tools.",
-        "- Codec MCP URL injection is not missing: `firegrid.host.codec.resolve_effective_mcp_servers` records a `firegrid-runtime-context` URL.",
-        "- ACP session setup receives that MCP server declaration: `firegrid.agent_event_pipeline.acp.new_session` records one MCP server named `firegrid-runtime-context`.",
-        "- The real Codex ACP agent nevertheless reaches Ready, emits no Firegrid ToolUse, and reports `firegrid.sleep` is not available.",
-        "- Therefore this trace localizes G-MCP-2 downstream of Firegrid's host catalog construction and codec MCP URL injection, at or after ACP agent-side MCP discovery/tool exposure.",
-      ].join("\n")
-      : "- The observed run did not reproduce the zero-tool symptom; inspect the span tree and raw spans below.",
+    ...localization.map(line => `- ${line}`),
     "",
     "## Span Tree",
     "",
@@ -220,6 +237,13 @@ const writeTraceArtifact = async (
   ].join("\n")
   await mkdir(path.dirname(traceArtifactPath), { recursive: true })
   await writeFile(traceArtifactPath, content)
+  await writeFile(traceJsonArtifactPath, JSON.stringify({
+    summary,
+    localization,
+    spanTree: spanTreeLines(input.spans),
+    fibers: input.fibers,
+    spans: input.spans,
+  }, null, 2))
 }
 
 describe("tiny-firegrid Codex ACP MCP tool-call pipeline", () => {
