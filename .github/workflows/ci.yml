@@ -1,7 +1,15 @@
 name: CI
 
 on:
+  # Explicit dispatch: task-exit.sh self-heals a DRAFT PR whose
+  # `pull_request` event was suppressed (GitHub does not start Actions
+  # from events created by some automation tokens) by dispatching CI
+  # directly on the branch ref, so the merge gate always has a run.
+  workflow_dispatch:
+  # Enumerated so draft-open AND draft→ready both deterministically
+  # trigger the gate (ready_for_review is NOT a default activity type).
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches:
       - main
