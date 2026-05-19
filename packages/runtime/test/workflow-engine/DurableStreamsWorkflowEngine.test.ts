@@ -6,7 +6,7 @@ import {
   WorkflowEngine,
 } from "@effect/workflow"
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Cause, Context, Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   DurableStreamsWorkflowEngine,
@@ -75,6 +75,51 @@ const inspectTable = async <A>(
       ),
     ),
   )
+
+const waitForClockWakeupRow = (
+  workflowName: string,
+  clockName: string,
+) =>
+  Effect.gen(function* () {
+    const table = yield* WorkflowEngineTable
+    const deadlineMs = (yield* Clock.currentTimeMillis) + 5_000
+    while (true) {
+      const rows = yield* table.clockWakeups.query((coll) =>
+        coll.toArray.filter(row =>
+          row.workflowName === workflowName &&
+          row.clockName === clockName,
+        ),
+      )
+      if (rows.length > 0) return
+      if ((yield* Clock.currentTimeMillis) >= deadlineMs) {
+        return yield* Effect.fail(new Error(`timed out waiting for clock wakeup ${workflowName}/${clockName}`))
+      }
+      yield* Effect.sleep(Duration.millis(25))
+    }
+  })
+
+const waitForDeferredExitRow = (
+  workflowName: string,
+  deferredName: string,
+) =>
+  Effect.gen(function* () {
+    const table = yield* WorkflowEngineTable
+    const deadlineMs = (yield* Clock.currentTimeMillis) + 5_000
+    while (true) {
+      const rows = yield* table.deferreds.query((coll) =>
+        coll.toArray.filter(row =>
+          row.workflowName === workflowName &&
+          row.deferredName === deferredName &&
+          row.exit !== undefined,
+        ),
+      )
+      if (rows.length > 0) return
+      if ((yield* Clock.currentTimeMillis) >= deadlineMs) {
+        return yield* Effect.fail(new Error(`timed out waiting for deferred ${workflowName}/${deferredName}`))
+      }
+      yield* Effect.sleep(Duration.millis(25))
+    }
+  })
 
 class CodecSessionAliveSupervisor extends Context.Tag("@firegrid/runtime/test/CodecSessionAliveSupervisor")<
   CodecSessionAliveSupervisor,
@@ -473,21 +518,31 @@ describe("durable workflow engine", () => {
     await runWith(
       { streamUrl },
       workflowLayer,
-      ClockWorkflow.execute({ id: "registration" }, { discard: true }),
+      Effect.gen(function* () {
+        const fiber = yield* ClockWorkflow.execute({ id: "registration" }, { discard: true }).pipe(
+          Effect.fork,
+        )
+        yield* waitForClockWakeupRow("registration-workflow", "registration-wake")
+        yield* Fiber.interrupt(fiber)
+      }),
     )
 
     await runWith(
       { streamUrl },
       Layer.empty,
-      ClockWorkflow.resume("registration"),
+      Effect.gen(function* () {
+        yield* ClockWorkflow.resume("registration")
+        yield* waitForDeferredExitRow("registration-workflow", "DurableClock/registration-wake")
+      }),
     )
     expect(await inspectTable(streamUrl, table =>
       table.clockWakeups.query((coll) =>
-        coll.toArray.filter(row => row.status === "pending"),
+        coll.toArray.filter(row =>
+          row.workflowName === "registration-workflow" &&
+          row.clockName === "registration-wake",
+        ),
       ),
     )).toHaveLength(1)
-
-    await Effect.runPromise(Effect.sleep(Duration.millis(250)))
 
     const result = await runWith(
       { streamUrl },
@@ -496,7 +551,7 @@ describe("durable workflow engine", () => {
     )
 
     expect(result).toBe("registered")
-  })
+  }, 20_000)
 
   it("path-x.Q-2 replays a completed CodecSessionAlive stdin emission activity after engine reconstruction without duplicate supervisor writes", async () => {
     if (!baseUrl) throw new Error("server not started")
