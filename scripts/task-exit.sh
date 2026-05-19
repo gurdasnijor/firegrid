@@ -59,6 +59,36 @@ if command -v gh >/dev/null 2>&1; then
   else
     gh pr create --head "$BR" --fill --draft 2>&1 | tail -1 || echo "  ⚠ open the PR manually"
   fi
+
+  # CI-trigger guarantee. A task-exit DRAFT PR is the merge gate, so it
+  # MUST have a CI run immediately. GitHub does not start Actions from a
+  # `pull_request` event created by some automation tokens, which strands
+  # the gate with 0 check-runs until a human nudge (#380/#381: 0 runs
+  # ever, even after `gh pr ready`). Self-heal, cause-agnostically: if no
+  # workflow run is associated with the pushed head SHA shortly after PR
+  # open, dispatch CI explicitly on this branch ref (ci.yml exposes
+  # `workflow_dispatch`). Conditional so we do NOT double-run CI (and
+  # double the bill) when the pull_request event DID fire.
+  HEAD_SHA="$(git -C "$RR" rev-parse HEAD)"
+  ci_runs_for_head() {
+    gh api "repos/{owner}/{repo}/actions/runs?head_sha=$HEAD_SHA&per_page=1" \
+      --jq '.total_count' 2>/dev/null || echo 0
+  }
+  RUNS=0
+  for _wait in 1 2; do
+    sleep 8
+    RUNS="$(ci_runs_for_head)"
+    [ "${RUNS:-0}" != "0" ] && break
+  done
+  if [ "${RUNS:-0}" = "0" ]; then
+    if gh workflow run "CI" --ref "$BR" >/dev/null 2>&1; then
+      echo "  ↻ no CI run for $HEAD_SHA — dispatched CI on $BR (gate self-heal)"
+    else
+      echo "  ⚠ no CI run for $HEAD_SHA and 'gh workflow run CI' failed — trigger the gate manually" >&2
+    fi
+  else
+    echo "  ✓ CI run present for $HEAD_SHA (gate triggered)"
+  fi
 fi
 
 cat <<EOF
