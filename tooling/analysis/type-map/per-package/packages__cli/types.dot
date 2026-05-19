@@ -1,0 +1,19 @@
+digraph pkg {
+  rankdir=LR; node [shape=box,fontsize=9,style=filled];
+  "packages/cli::firegridHostLayer" [fillcolor="#ffffff",style="filled",color="#2ca02c",label="firegridHostLayer\n(layer-instance)"];
+  "packages/cli::FiregridCliUsageError" [fillcolor="#ffffff",style="filled",color="#2ca02c",label="FiregridCliUsageError\n(other)"];
+  "packages/cli::FiregridRunError" [fillcolor="#ffffff",style="filled",color="#2ca02c",label="FiregridRunError\n(other)"];
+  "packages/cli::RawRunConfig" [fillcolor="#ffffff",style="filled",color="#2ca02c",label="RawRunConfig\n(interface)"];
+  "packages/cli::DurableStreamsEndpoint" [fillcolor="#ffffff",style="filled",color="#2ca02c",label="DurableStreamsEndpoint\n(interface)"];
+  "packages/cli::StartConfig" [fillcolor="#ffffff",style="filled",color="#2ca02c",label="StartConfig\n(interface)"];
+  "packages/cli::ReadyRecord" [fillcolor="#ffffff",style="filled",color="#2ca02c",label="ReadyRecord\n(interface)"];
+  "packages/cli::CliExternalKey" [fillcolor="#ffffff",style="filled",color="#2ca02c",label="CliExternalKey\n(type-alias)"];
+  "packages/host-sdk::FiregridMcpServerListenerConfig" [fillcolor="#f0f0f0",style="filled,dashed",color="#e377c2",label="FiregridMcpServerListenerConfig\n(type-alias · ext)"];
+  "packages/protocol::RuntimeAgentProtocol" [fillcolor="#f0f0f0",style="filled,dashed",color="#7f7f7f",label="RuntimeAgentProtocol\n(type-alias · ext)"];
+  "packages/protocol::RuntimeEnvBinding" [fillcolor="#f0f0f0",style="filled,dashed",color="#7f7f7f",label="RuntimeEnvBinding\n(type-alias · ext)"];
+  "packages/protocol::LaunchConfig" [fillcolor="#f0f0f0",style="filled,dashed",color="#7f7f7f",label="LaunchConfig\n(type-alias · ext)"];
+  "packages/cli::firegridHostLayer" -> "packages/host-sdk::FiregridMcpServerListenerConfig";
+  "packages/cli::RawRunConfig" -> "packages/protocol::RuntimeAgentProtocol";
+  "packages/cli::RawRunConfig" -> "packages/protocol::RuntimeEnvBinding";
+  "packages/cli::StartConfig" -> "packages/protocol::LaunchConfig";
+}
