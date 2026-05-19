@@ -1,9 +1,25 @@
 # SDD: session_cancel/session_close terminal append-point
 
-Status: **DECISION PENDING — Gurdas-gated.** Load-bearing architectural
-choice; not to be unilaterally settled + shipped. No substrate PR until
-§0 is decided. Status authority: bead `tf-jri`. Evidence: PR #393
-(merged §8 Gap-3 artifact) + `docs/research/tf-4ni-session-lifecycle-unwind.FINDING.md`.
+Status: **Option A DECIDED (Gurdas 2026-05-19) — but EMPIRICALLY
+EXONERATED as the locus; HARD HALT, re-scope to substrate.** Status
+authority: bead `tf-jri` (decision) / `tf-auk` / `tf-p7w`. Evidence: PR
+#393 (merged §8 artifact), `docs/research/tf-4ni-session-lifecycle-unwind.FINDING.md`,
+`tf-auk-optionA-insufficient.FINDING.md`,
+`tf-p7w-host-seam-materialization.FINDING.md`.
+
+> **tf-p7w UPDATE (2026-05-19) — write-topology EXONERATED.** Option A
+> (committed control-intent append) and two further independent write
+> mechanisms — including a **byte-for-byte client-equivalent durable
+> write to the exact reconciler stream URL** — were all built and run.
+> All three: `session_cancel` host span success, agent emits the
+> tool_use, yet `lifecycle_request_count:0` while client context/start
+> reconcile in the same run. `lifecycleRequests` is a schema-derived
+> materialized collection like the working ones (missing-registration
+> ruled out). Conclusion: the blocker is **NOT the host-seam write
+> path**; it is reconciler-side `DurableTable` materialization/ingestion
+> for the new collection. Substrate-level investigation required — see
+> `tf-p7w-host-seam-materialization.FINDING.md`. Substrate recorded, NOT
+> shipped (sim honestly RED). HARD HALT.
 
 ## §0 — The load-bearing question (decide this first)
 

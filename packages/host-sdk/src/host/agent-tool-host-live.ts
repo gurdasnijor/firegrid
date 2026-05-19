@@ -3,9 +3,12 @@ import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
   local,
+  makeRuntimeLifecycleRequestRow,
   normalizeRuntimeIntent,
+  runtimeControlPlaneStreamUrl,
   type HostSessionRow,
 } from "@firegrid/protocol/launch"
+import { RuntimeHostConfig } from "./config.ts"
 import type { RuntimeIngressRequest } from "@firegrid/protocol/runtime-ingress"
 import {
   SandboxProvider,
@@ -176,6 +179,11 @@ const runtimeHostAgentToolHostService = (captured: {
   readonly contextRead: RuntimeContextReadService
   readonly hostSession: HostSessionRow
   readonly controlTable: RuntimeControlPlaneTable["Type"]
+  // tf-p7w Gap-3: host durable-streams coordinates so the lifecycle
+  // control-request is written through the SAME client-equivalent
+  // durable RuntimeControlPlaneTable backing the reconciler reads.
+  readonly durableStreamsBaseUrl: string
+  readonly namespace: string
   readonly registry: RuntimeContextEngineRegistry["Type"]
   readonly agentToolHost: AgentToolHostService
   // TFIND-031: ambient host durable substrate captured at layer-build
@@ -288,11 +296,89 @@ const runtimeHostAgentToolHostService = (captured: {
         },
       }),
     ),
-  cancelSession: ({ toolUseId }) =>
-    unsupportedAgentTool(toolUseId, "session_cancel"),
-  closeSession: ({ toolUseId }) =>
-    unsupportedAgentTool(toolUseId, "session_close"),
+  // tf-p7w Gap-3 (Option A, real fix): the durable session-lifecycle
+  // terminate request is written through a client-EQUIVALENT durable
+  // RuntimeControlPlaneTable bound to the exact control-plane stream URL
+  // the reconciler reads (mirroring the proven client context/start
+  // write topology). The merged #393/#396 findings localized the cause:
+  // the host agent-tool seam's layer-materialized `captured.controlTable`
+  // does not propagate host-originated rows into the reconciler-read
+  // durable backing; the client path does because it writes that exact
+  // durable-streams stream. So we do precisely what the client does.
+  cancelSession: ({ toolUseId, sessionId }) =>
+    appendCommittedLifecycleRequest(captured, {
+      contextId: sessionId,
+      lifecycle: "cancel",
+    }).pipe(
+      Effect.mapError(cause =>
+        toolExecutionFailed(toolUseId, "session_cancel", cause)),
+      Effect.withSpan("firegrid.host.agent_tool.session_cancel", {
+        kind: "internal",
+        attributes: {
+          "firegrid.context.id": sessionId,
+          "firegrid.agent_tool.tool_use_id": toolUseId,
+        },
+      }),
+    ),
+  closeSession: ({ toolUseId, sessionId }) =>
+    appendCommittedLifecycleRequest(captured, {
+      contextId: sessionId,
+      lifecycle: "close",
+    }).pipe(
+      Effect.mapError(cause =>
+        toolExecutionFailed(toolUseId, "session_close", cause)),
+      Effect.withSpan("firegrid.host.agent_tool.session_close", {
+        kind: "internal",
+        attributes: {
+          "firegrid.context.id": sessionId,
+          "firegrid.agent_tool.tool_use_id": toolUseId,
+        },
+      }),
+    ),
 })
+
+// Client-equivalent committed control-plane write. The client appends
+// context/start requests through a `RuntimeControlPlaneTable` bound to
+// `runtimeControlPlaneStreamUrl({baseUrl, namespace})` — the exact
+// durable-streams stream the host control-request reconciler polls. The
+// agent-tool seam's ambient `captured.controlTable` (layer-materialized
+// for in-process consumers) demonstrably does NOT surface host-written
+// rows to that reconciler view (#393/#396 findings). Writing through a
+// fresh table bound to the same stream URL removes that divergence: it
+// is byte-for-byte the client's proven write topology.
+const appendCommittedLifecycleRequest = (
+  captured: {
+    readonly durableStreamsBaseUrl: string
+    readonly namespace: string
+  },
+  request: {
+    readonly contextId: string
+    readonly lifecycle: "cancel" | "close"
+  },
+): Effect.Effect<void, unknown> =>
+  Effect.scoped(
+    Effect.gen(function*() {
+      const row = makeRuntimeLifecycleRequestRow({
+        contextId: request.contextId,
+        lifecycle: request.lifecycle,
+        requestedBy: "agent-tool",
+      })
+      const table = yield* RuntimeControlPlaneTable
+      yield* table.lifecycleRequests.insertOrGet(row).pipe(Effect.asVoid)
+    }).pipe(
+      Effect.provide(
+        RuntimeControlPlaneTable.layer({
+          streamOptions: {
+            url: runtimeControlPlaneStreamUrl({
+              baseUrl: captured.durableStreamsBaseUrl,
+              namespace: captured.namespace,
+            }),
+            contentType: "application/json",
+          },
+        }),
+      ),
+    ),
+  )
 
 const requireLocalContextWithHostCapabilities = (
   captured: {
@@ -359,6 +445,7 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
     const contextRead = yield* RuntimeContextRead
     const hostSession = yield* CurrentHostSession
     const controlTable = yield* RuntimeControlPlaneTable
+    const hostConfig = yield* RuntimeHostConfig
     const registry = yield* RuntimeContextEngineRegistry
     // TFIND-031: capture the ambient host durable substrate so the
     // deferred child-context workflow (run later, outside this gen) can
@@ -373,6 +460,8 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
       contextRead,
       hostSession,
       controlTable,
+      durableStreamsBaseUrl: hostConfig.durableStreamsBaseUrl,
+      namespace: hostConfig.namespace,
       registry,
       hostContext,
       sandboxProvider,
