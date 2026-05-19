@@ -65,8 +65,9 @@ The trace localizes the failure:
   injected runtime-context MCP URL named `firegrid-runtime-context`.
 - `firegrid.agent_event_pipeline.acp.new_session` records one ACP MCP server
   named `firegrid-runtime-context`.
-- The agent reaches Ready but emits no Firegrid `ToolUse`; its text says the
-  `firegrid.sleep` tool is not available in the active tool list.
+- The agent reaches Ready but emits no Firegrid `ToolUse`; in the refreshed
+  tf-sd8 trace it prints the expected terminal text without Firegrid observing
+  the corresponding tool call.
 
 Conclusion: G-MCP-2 is downstream of Firegrid host catalog construction and
 codec MCP URL injection. The current evidence points at or after ACP
