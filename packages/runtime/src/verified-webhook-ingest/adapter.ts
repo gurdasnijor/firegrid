@@ -329,7 +329,7 @@ export const ingestVerifiedWebhook = (
 > =>
   // Effect.gen infers the precise service tag class structurally here, but the
   // eslint type-aware rule sees part of the generator plumbing as unsafe.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+   
   Effect.gen(function*() {
     const headers = normalizeHeaders(request.headers)
     yield* verifySignature(request, headers)

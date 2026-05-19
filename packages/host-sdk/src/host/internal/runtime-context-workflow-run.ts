@@ -26,7 +26,11 @@ export const StartRuntimeResultSchema = Schema.Struct({
 })
 
 export type RuntimeExitEvidence = Schema.Schema.Type<typeof RuntimeExitEvidence>
-export type StartRuntimeResult = Schema.Schema.Type<typeof StartRuntimeResultSchema>
+// Local Schema-derived alias (used by the run helpers below). The
+// `export` became dead once tf-uiz=`y` dropped the
+// `Effect<…, StartRuntimeResult, …>` pin in `runtime-context-workflow-core`;
+// the public result type is `host/types.ts`'s `StartRuntimeResult`.
+type StartRuntimeResult = Schema.Schema.Type<typeof StartRuntimeResultSchema>
 
 export const allocateRuntimeActivityAttempt = (
   context: RuntimeContext,

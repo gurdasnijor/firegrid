@@ -73,11 +73,7 @@ const provideActiveEngine = <A, E, R>(
   effect.pipe(
     Effect.provideService(WorkflowEngine.WorkflowEngine, handle.engine),
     Effect.provideService(WorkflowEngineTable, handle.table),
-  ) as Effect.Effect<
-    A,
-    E,
-    Exclude<Exclude<R, WorkflowEngine.WorkflowEngine>, WorkflowEngineTable>
-  >
+  )
 
 const closeActiveEngine = (
   engines: Ref.Ref<Map<string, ActiveRuntimeContextEngine>>,

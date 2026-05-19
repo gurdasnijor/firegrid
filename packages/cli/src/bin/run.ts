@@ -445,7 +445,7 @@ const hostMcpLayer = (
     // The workspace package export resolves at runtime through the source
     // export map; eslint's root project widens this composed layer. Keep the
     // coercion explicit rather than hiding it behind no-unsafe-return.
-    return layer as Layer.Layer<HttpServer.HttpServer, unknown, never>
+    return layer
   }
 
 const hostAndMcpLayer = (

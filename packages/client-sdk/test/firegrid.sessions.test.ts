@@ -115,7 +115,7 @@ const materializeContextRequest = (
   hostSession: HostSessionRow,
   contextId: string,
 ): Effect.Effect<RuntimeContext, unknown, RuntimeControlPlaneTable> =>
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+   
   Effect.gen(function*() {
     const table = yield* RuntimeControlPlaneTable
     const request = yield* table.contextRequests.get(runtimeContextRequestId(contextId))
@@ -201,7 +201,7 @@ const readRuntimeInputIntent = (
 describe("Firegrid session facade", () => {
   it("firegrid-session-fact-client-surfaces.SESSION_IDENTITY.3 firegrid-session-fact-client-surfaces.CLIENT_SESSION.4 createOrLoad is idempotent and exposes sessionId with contextId alias", async () => {
     const fixture = makeFixture()
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+     
     const effect: Effect.Effect<
       {
         readonly first: FiregridSessionHandle
@@ -510,7 +510,7 @@ describe("Firegrid session facade", () => {
 
   it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.2 records an attached start request acknowledgement", async () => {
     const fixture = makeFixture()
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+     
     const effect: Effect.Effect<
       {
         readonly ack: RuntimeStartRequestAck

@@ -44,7 +44,6 @@ import {
 import { agentInputEventFromRuntimeIngressRow } from "./runtime-ingress-transform.ts"
 import {
   type RuntimeExitEvidence,
-  type StartRuntimeResult,
   RuntimeContextWorkflowPayload,
   StartRuntimeResultSchema,
   allocateRuntimeActivityAttempt,
