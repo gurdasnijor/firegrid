@@ -246,16 +246,42 @@ It never mutates or auto-acts — it detects and notifies. It is correct
 *because* it is external to the coordinator: pull fails on coordinator
 vigilance; this does not depend on it.
 
-**Making it live (the runner).** The detector is fully deterministic — **no
-LLM needed** — so the runner is plain **cron**, not a `loop`/`schedule` skill
-(those burn tokens wrapping a deterministic script). A crontab entry every
-~3 min runs `state-watch.sh --once --notify <coord> --workspace <ws>` with
-absolute binary paths, `HOME` set, and a lockfile (cron has a minimal env;
-no `CMUX_WORKSPACE_ID`, hence the explicit `--workspace`). v1 pings the
-coordinator on every delta; v2 (a persistence counter → escalate to the
-human if the same delta is unactioned across K checks) is the next
-increment. Until the cron is installed, run `state-watch.sh --once`
-manually alongside each sweep.
+**Making it live (the runner) — one command:**
+
+```bash
+bash scripts/install-state-watch-cron.sh            # every 3 min, → coordinator
+bash scripts/install-state-watch-cron.sh --every 5 --coord coordinator
+bash scripts/install-state-watch-cron.sh --remove   # unwire
+```
+
+It installs a user-crontab entry that runs `scripts/state-watch-cron.sh`,
+the cron-safe wrapper: it hard-sets `PATH` (cron has none — resolves
+`cmux`/`gh`/`jq`/`br` by absolute dir), `HOME` (cmux socket discovery),
+single-flights with a lock, and **skips the tick entirely if cmux is
+unreachable** (laptop asleep / app closed) so a delta is never consumed
+into the baseline while undeliverable. Deltas are delivered via
+`cmux-dispatch.sh` (stable-label resolve + verify-submit — *not*
+state-watch's raw `--notify`, which has the renumber/paste-Enter bugs).
+Everything is logged to
+`${XDG_STATE_HOME:-$HOME/.local/state}/firegrid-state-watch/cron.log`.
+
+**SINGLE-CONSUMER RULE (critical):** state-watch is edge-triggered against
+ONE snapshot. Once the cron is installed it is the **sole** thing that runs
+state-watch. The coordinator must **NOT** also run `state-watch.sh --once`
+— two consumers race the snapshot and silently drop deltas. The coordinator
+reacts to the cron's cmux ping; it still runs lane-sweep / signoff-queue /
+dispatch-gap on demand, just never state-watch.
+
+macOS note: cron does not fire while the machine is asleep and the wrapper
+no-ops when cmux is down — so the coordinator should still do **one** full
+manual sweep (lane-sweep + a single `state-watch.sh --once`) at session
+resume to catch anything that changed while the runner was dark, then go
+back to pure react-to-ping. (`launchd` is the more sleep-robust runner if
+that gap matters — same wrapper, different scheduler.)
+
+v1 (now): ping the coordinator on every delta. v2 (next): a persistence
+counter that escalates to the human if the same delta is unactioned across
+K checks.
 
 ## When something looks empty or wrong
 
