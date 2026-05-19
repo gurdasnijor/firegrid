@@ -78,7 +78,7 @@ const ActionEvidenceRowSchema = Schema.Struct({
 })
 type ActionEvidenceRow = Schema.Schema.Type<typeof ActionEvidenceRowSchema>
 
-class ActionEvidenceTable extends DurableTable("tiny.actionAndRemember", {
+class ActionEvidenceTable extends DurableTable<ActionEvidenceTable>()("tiny.actionAndRemember", {
   evidence: ActionEvidenceRowSchema,
 }) {}
 
@@ -377,7 +377,7 @@ const makeHost = (
       },
       txTimeoutMs: 2_000,
     }),
-  ) as Layer.Layer<FiregridHost, unknown>
+  )
 }
 
 export const actionAndRememberSimulation = {

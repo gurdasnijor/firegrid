@@ -77,7 +77,7 @@ const DarkFactoryFactRowSchema = Schema.Struct({
 
 type DarkFactoryFactRow = Schema.Schema.Type<typeof DarkFactoryFactRowSchema>
 
-class DarkFactoryFactTable extends DurableTable("darkFactory", {
+class DarkFactoryFactTable extends DurableTable<DarkFactoryFactTable>()("darkFactory", {
   facts: DarkFactoryFactRowSchema,
 }) {}
 
@@ -412,7 +412,7 @@ const tinyDarkFactoryPipeline = (
   ).pipe(
     Layer.provideMerge(host),
     Layer.provideMerge(appFacts),
-  ) as Layer.Layer<FiregridHost, DurableTableError | ServeError, never>
+  )
 }
 
 const plannerPrompt = (input: {

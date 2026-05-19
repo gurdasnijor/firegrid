@@ -159,7 +159,11 @@ const buildLayer = (
         contentType: "application/json",
       },
     })),
-  ) as Layer.Layer<never, unknown, never>
+    // tf-c68: under the precise `DurableTable<Self>()` curry, `*.layer`
+    // outputs are no longer `any`, so this loose test-harness erasure must
+    // go through `unknown` (the same idiom this scaffold already uses for
+    // its stream/Stream stubs).
+  ) as unknown as Layer.Layer<never, unknown, never>
 
 const buildTaggedLayer = (
   streams: Streams,
@@ -179,7 +183,9 @@ const buildTaggedLayer = (
         contentType: "application/json",
       },
     })),
-  ) as Layer.Layer<never, unknown, never>
+    // tf-c68: see buildLayer — precise curry `*.layer` outputs require the
+    // `unknown` hop for this loose-harness erasure.
+  ) as unknown as Layer.Layer<never, unknown, never>
 
 const runWith = <A, E>(
   layer: Layer.Layer<never, unknown, never>,

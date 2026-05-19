@@ -148,7 +148,7 @@ const inlineIdempotentOneIntentHost = (
   const hostId = "host-a"
   // TFIND-005: production host factories still return a layer whose public
   // surface is `FiregridHost` but whose inferred output channel is `any`.
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+   
   return FiregridRuntimeHostLive({
     durableStreamsBaseUrl: env.durableStreamsBaseUrl,
     namespace: env.namespace,
