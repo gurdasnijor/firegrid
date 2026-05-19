@@ -259,13 +259,23 @@ blocking factor (`bv --robot-insights` `topk_set`/`coverage_set`), the
 [docs/contributing/beads-operating-guide.md](docs/contributing/beads-operating-guide.md).
 Point coordinators there.
 
-**Signoff protocol (every lane):** when you queue a decision for a human,
-`br update <id> --add-label signoff:pending --add-label pr-<NNN>` *and* append
-a `DECISION:`/`READ:` block to the bead **description** (not a comment —
-comments are not in `issues.jsonl`). The decisioner drains via
-`bash scripts/signoff-queue.sh` (read-only, ranked keystone-first) and clears
-with `br label remove <id> -l signoff:pending`. The coordinator stays
-read-only: it routes, it does not mutate `br`.
+**Signoff protocol (every lane) — structured, no prose to parse:** when you
+queue a decision for a human:
+
+```bash
+br update <id> --add-label signoff:pending --add-label pr-<NNN> \
+  --external-ref https://github.com/gurdasnijor/firegrid/pull/<NNN>
+br dep add <gated-id> <id>     # the bead must `blocks` whatever it gates
+```
+
+The decisioner drains via `bash scripts/signoff-queue.sh` (read-only, ranked
+keystone-first; `show <id>` for full context) and decides with the **single
+structured transition** `br close <id> --reason "DECIDED: <verdict>"` — which
+records the verdict *and* auto-unblocks every dependent via the graph (no
+label-removal step that fails to propagate). Deliberation (options/reasoning)
+stays in the PR/SDD at `external_ref` — read-material, never parsed for state.
+The coordinator stays read-only: it routes, it does not mutate `br`. Full
+model: `docs/contributing/decisions.md`.
 
 ### Bead-graph hygiene policy (added 2026-05-09 by `beads_rust-30ci`)
 

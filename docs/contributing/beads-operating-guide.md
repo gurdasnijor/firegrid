@@ -107,69 +107,74 @@ Reading is via the two surfaces above. `scripts/beads-import-findings.sh` was
 the one-time migration; its `FINDINGS.md`/`CONFIGS.md` inputs were deleted in
 #354, so it is no longer re-runnable — never invoke it to "update" state.
 
-## Signoff queue (draining decisions)
+## Signoff queue (the structured decision model)
 
-When the bottleneck is *signoff-drain* (work blocked on a human decision, not
-on engineering capacity), make that queue a first-class, ranked, queryable
-thing — no new infra, just one label + the decisioner tool.
+A decision is **structured beads state, not prose to parse.** Earlier this was
+a `DECISION:`/`READ:` block grepped out of the description with a
+heading-bisecting SDD scraper — three parsing bugs in one sitting. Deleted.
+Every field of a decision now has a structured home:
 
-**Convention — the owning lane applies this when it queues a decision:**
+| Decision concept | Structured beads primitive |
+|---|---|
+| awaiting a ruling | label **`signoff:pending`** + status open/in_progress |
+| where to read | **`external_ref`** — one URL (the PR/SDD). Open it; never parse it. |
+| what it gates | real **`blocks` dependency edges** (the graph) |
+| the verdict | **`br close <id> --reason "DECIDED: …"`** |
+
+The close is the whole point: `br close --reason` records the verdict
+structurally **and** the dependency graph auto-unblocks every dependent. There
+is no "remove a label" step that fails to propagate — *the gate is the edge*.
+The old bug (decided, but the keystone stayed blocked) is now structurally
+impossible.
+
+**Owning lane — on queuing a decision (all structured, no prose):**
 
 ```bash
-br update <id> --add-label signoff:pending --add-label pr-<NNN>
-# then APPEND to the bead description (not a comment — comments are NOT in
-# issues.jsonl, so the drain query can't see them):
-#   === SIGNOFF ===
-#   DECISION: <one line: exactly what is being decided>
-#   READ: PR#<n> <doc path> §<section>
+br update <id> --add-label signoff:pending --add-label pr-<NNN> \
+  --external-ref https://github.com/gurdasnijor/firegrid/pull/<NNN>
+# ensure the bead actually `blocks` whatever the decision gates:
+br dep add <gated-id> <id>          # <gated-id> depends on <id>
 ```
 
-`signoff:pending` and `pr-<NNN>` are **binary signals** — no judgment, the
-worker can always set them. The DECISION/READ block lives in the
-**description** because that is on the reliable `issues.jsonl` surface;
-`br comments` are not, so the queue could not surface them.
+The bead **title** is the topic; the deliberation (options, reasoning) lives
+in the PR/SDD at `external_ref` — that is fine *as read-material*. The mistake
+was ever treating that prose as the decision *state*. Deliberation = prose in
+the PR; decision = structured bead.
 
-**Decisioner tool (read-only):**
+**Decisioner tool (read-only — pure structured query, no markdown parsed):**
 
 ```bash
 bash scripts/signoff-queue.sh            # ranked digest, keystone first
 bash scripts/signoff-queue.sh --json     # structured
-bash scripts/signoff-queue.sh show tf-qy4   # full context for ONE item
+bash scripts/signoff-queue.sh show tf-qy4   # one item: topic, gates, ref, PR state
 ```
 
-The digest prints each pending item with its DECISION, READ pointer, and the
-exact sign-off command. `show <tf-id|TFIND-NNN|#PR>` is the drill-down: it
-renders the DECISION, the live PR state (`draft/state/mergeable/ci`, verbatim
-— `mergeable` is eventually-consistent, never interpreted), **and the actual
-SDD section(s) the `READ:` line names, pulled verbatim from the PR head** (the
-SDD lives in the open PR, not main; falls back to working tree, then
-`gh pr diff`). Section extraction is heading-shape tolerant (`## §0.1 —`,
-`### 7.`, …) and bounds each section at the next same-or-higher heading. So
-"show me the thing I'm deciding" is one command, no context switch.
+Each row shows `topic` (title), `gates` (computed from the dependency graph),
+`read` (`external_ref`), and the **one** command: `br close <id> --reason
+"DECIDED: <verdict>"`. `show` adds verbatim PR state and the dep-decouple
+alternative (`br dep remove <gated> <id>`) for the rare case the decision must
+not close the bead.
 
-Items missing the block render `⚠ NONE RECORDED` — the signal to bounce it
-back to the owning lane, not to decide blind.
+**Ranking is NOT raw bv order.** bv `topk_set` is 1-hop marginal and
+under-weights a transitively-load-bearing keystone. Order: `keystone` label →
+`bv … blockers_to_clear` membership → priority → age. Priority is advisory;
+`keystone` is authoritative.
 
-**Ranking is NOT raw bv order.** bv's `topk_set` is 1-hop marginal gain and
-under-weights a keystone whose value is transitive (e.g. TFIND-050 gates the
-TFIND-005 → #326 → #328 cascade but shows marginal +1). The tool ranks:
-`keystone` label → membership in `bv … blockers_to_clear` → priority → age.
-Priority is **advisory**; the `keystone` label is the authoritative
-load-bearing signal.
+**Roles:**
 
-**Ownership (clean under the coordinator's no-br-mutations constraint):**
+- *Owning lane* — writer: sets `signoff:pending` + `pr-` + `external_ref` and
+  the `blocks` edge on queuing. No prose contract to get wrong.
+- *Coordinator* — read-only router: runs `signoff-queue.sh`, routes
+  `signoff:pending` → decisioner, missing `external_ref` → bounce to lane.
+  Never mutates `br`.
+- *Decisioner / br-owner* — closer: `br close <id> --reason "DECIDED: …"`.
+  That single transition is the verdict **and** the unblock. (If impl is still
+  owed *on that bead*, instead `br dep remove <gated> <id>` to decouple just
+  the gate and keep it open.) Staleness backstop: `bv --robot-alerts` /
+  `--robot-label-health` on `signoff:pending`.
 
-- *Owning lane* applies `signoff:pending`/`pr-` + the DECISION block on queuing.
-- *Coordinator* is read-only: runs `signoff-queue.sh`, routes
-  signoff-blocked → decisioner, eng-blocked → worker. No `br` writes.
-- *Decisioner / br-owner* clears on signoff: `br label remove <id> -l
-  signoff:pending` then advance/close per the decision. **This removal step
-  is owned — if it lapses, decided-but-uncleared items inflate the queue as
-  false debt.** Backstop: `bv --robot-alerts` / `--robot-label-health` on the
-  `signoff:pending` label surfaces staleness (undrained *or* uncleared).
-
-Note: `jq` over `issues.jsonl` here is **not an exception** — it is one of the
-two first-class surfaces. Only ad-hoc `br … --json` is prohibited.
+`jq` over `issues.jsonl` is one of the two first-class surfaces — not an
+exception. Only ad-hoc `br … --json` is prohibited.
 
 ## When something looks empty or wrong
 
