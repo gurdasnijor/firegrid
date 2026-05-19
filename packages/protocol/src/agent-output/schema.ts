@@ -52,34 +52,51 @@ export const AgentCapabilitiesSchema = Schema.Struct({
 })
 export type AgentCapabilities = Schema.Schema.Type<typeof AgentCapabilitiesSchema>
 
-export const AgentOutputEventSchema = Schema.Union(
-  Schema.TaggedStruct("Ready", { capabilities: AgentCapabilitiesSchema }),
-  Schema.TaggedStruct("TextChunk", {
-    part: AgentTextDeltaPartSchema,
-  }),
-  Schema.TaggedStruct("ToolUse", {
-    // firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.2
-    part: AgentToolCallPartSchema,
-  }),
-  Schema.TaggedStruct("PermissionRequest", {
+export const AgentReadyEventSchema = Schema.TaggedStruct("Ready", {
+  capabilities: AgentCapabilitiesSchema,
+})
+export const AgentTextChunkEventSchema = Schema.TaggedStruct("TextChunk", {
+  part: AgentTextDeltaPartSchema,
+})
+export const AgentToolUseEventSchema = Schema.TaggedStruct("ToolUse", {
+  // firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.2
+  part: AgentToolCallPartSchema,
+})
+export const AgentPermissionRequestEventSchema = Schema.TaggedStruct(
+  "PermissionRequest",
+  {
     permissionRequestId: Schema.String,
     toolUseId: Schema.String,
     options: Schema.Array(PermissionOptionSchema),
-  }),
-  Schema.TaggedStruct("TurnComplete", {
+  },
+)
+export const AgentTurnCompleteEventSchema = Schema.TaggedStruct(
+  "TurnComplete",
+  {
     finishReason: StopReasonSchema,
     messageId: Schema.optional(Schema.String),
-  }),
-  Schema.TaggedStruct("Status", {
-    kind: Schema.String,
-    payload: Schema.optional(Schema.Unknown),
-  }),
-  Schema.TaggedStruct("Error", {
-    cause: Schema.Unknown,
-    recoverable: Schema.Boolean,
-  }),
-  Schema.TaggedStruct("Terminated", {
-    exitCode: Schema.optional(Schema.Number),
-  }),
+  },
+)
+export const AgentStatusEventSchema = Schema.TaggedStruct("Status", {
+  kind: Schema.String,
+  payload: Schema.optional(Schema.Unknown),
+})
+export const AgentErrorEventSchema = Schema.TaggedStruct("Error", {
+  cause: Schema.Unknown,
+  recoverable: Schema.Boolean,
+})
+export const AgentTerminatedEventSchema = Schema.TaggedStruct("Terminated", {
+  exitCode: Schema.optional(Schema.Number),
+})
+
+export const AgentOutputEventSchema = Schema.Union(
+  AgentReadyEventSchema,
+  AgentTextChunkEventSchema,
+  AgentToolUseEventSchema,
+  AgentPermissionRequestEventSchema,
+  AgentTurnCompleteEventSchema,
+  AgentStatusEventSchema,
+  AgentErrorEventSchema,
+  AgentTerminatedEventSchema,
 )
 export type AgentOutputEvent = Schema.Schema.Type<typeof AgentOutputEventSchema>

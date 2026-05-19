@@ -7,7 +7,15 @@ import {
 import { PublicLaunchRuntimeIntentSchema } from "../launch/schema.ts"
 import { firegridProjection } from "../operations/schema.ts"
 import {
+  AgentErrorEventSchema,
   AgentOutputEventSchema,
+  AgentPermissionRequestEventSchema,
+  AgentReadyEventSchema,
+  AgentStatusEventSchema,
+  AgentTerminatedEventSchema,
+  AgentTextChunkEventSchema,
+  AgentToolUseEventSchema,
+  AgentTurnCompleteEventSchema,
   type AgentOutputEvent,
 } from "../agent-output/index.ts"
 
@@ -247,14 +255,6 @@ const RuntimePermissionRequestEventSchema = Schema.Struct({
   options: Schema.Array(RuntimePermissionOptionSchema),
 })
 
-const RuntimeToolUseEventSchema = Schema.Struct({
-  _tag: Schema.Literal("ToolUse"),
-  part: Schema.Struct({
-    id: Schema.String.pipe(Schema.minLength(1)),
-    name: Schema.String.pipe(Schema.minLength(1)),
-  }),
-})
-
 const RuntimeAgentOutputObservationBaseFields = {
   source: Schema.Literal(FiregridRuntimeObservationSourceNames.agentOutputEvents),
   sessionId: FiregridSessionIdSchema,
@@ -264,18 +264,65 @@ const RuntimeAgentOutputObservationBaseFields = {
     Schema.greaterThanOrEqualTo(1),
   ),
   sequence: Schema.Number.pipe(Schema.int(), Schema.greaterThanOrEqualTo(0)),
-  // TFIND-030: observation `event` is the typed public union, not a record.
-  event: AgentOutputEventSchema,
 } as const
 
-export const RuntimeAgentOutputObservationSchema = Schema.Struct({
-  ...RuntimeAgentOutputObservationBaseFields,
-  _tag: Schema.String.pipe(Schema.minLength(1)),
+const RuntimeAgentOutputObservationSupplementalFields = {
   permissionRequestId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
   toolUseId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
   toolName: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
   options: Schema.optional(Schema.Array(RuntimePermissionOptionSchema)),
-}).annotations({
+} as const
+
+export const RuntimeAgentOutputObservationSchema = Schema.Union(
+  Schema.Struct({
+    ...RuntimeAgentOutputObservationBaseFields,
+    ...RuntimeAgentOutputObservationSupplementalFields,
+    _tag: Schema.Literal("Ready"),
+    event: AgentReadyEventSchema,
+  }),
+  Schema.Struct({
+    ...RuntimeAgentOutputObservationBaseFields,
+    ...RuntimeAgentOutputObservationSupplementalFields,
+    _tag: Schema.Literal("TextChunk"),
+    event: AgentTextChunkEventSchema,
+  }),
+  Schema.Struct({
+    ...RuntimeAgentOutputObservationBaseFields,
+    ...RuntimeAgentOutputObservationSupplementalFields,
+    _tag: Schema.Literal("ToolUse"),
+    event: AgentToolUseEventSchema,
+  }),
+  Schema.Struct({
+    ...RuntimeAgentOutputObservationBaseFields,
+    ...RuntimeAgentOutputObservationSupplementalFields,
+    _tag: Schema.Literal("PermissionRequest"),
+    event: AgentPermissionRequestEventSchema,
+  }),
+  Schema.Struct({
+    ...RuntimeAgentOutputObservationBaseFields,
+    ...RuntimeAgentOutputObservationSupplementalFields,
+    _tag: Schema.Literal("TurnComplete"),
+    event: AgentTurnCompleteEventSchema,
+  }),
+  Schema.Struct({
+    ...RuntimeAgentOutputObservationBaseFields,
+    ...RuntimeAgentOutputObservationSupplementalFields,
+    _tag: Schema.Literal("Status"),
+    event: AgentStatusEventSchema,
+  }),
+  Schema.Struct({
+    ...RuntimeAgentOutputObservationBaseFields,
+    ...RuntimeAgentOutputObservationSupplementalFields,
+    _tag: Schema.Literal("Error"),
+    event: AgentErrorEventSchema,
+  }),
+  Schema.Struct({
+    ...RuntimeAgentOutputObservationBaseFields,
+    ...RuntimeAgentOutputObservationSupplementalFields,
+    _tag: Schema.Literal("Terminated"),
+    event: AgentTerminatedEventSchema,
+  }),
+).annotations({
   identifier: "firegrid.operation.session.agentOutputObservation",
   title: "Runtime agent-output observation",
   description:
@@ -294,6 +341,7 @@ export const RuntimePermissionRequestObservationSchema = Schema.Struct({
   permissionRequestId: Schema.String.pipe(Schema.minLength(1)),
   toolUseId: Schema.String.pipe(Schema.minLength(1)),
   options: Schema.Array(RuntimePermissionOptionSchema),
+  event: AgentPermissionRequestEventSchema,
 }).annotations({
   identifier: "firegrid.operation.session.permissionRequestObservation",
   title: "Runtime permission request observation",
@@ -402,30 +450,42 @@ export const runtimeAgentOutputObservationFromRow = (
       contextId: contextIds.value.contextId,
       activityAttempt: row.activityAttempt,
       sequence: row.sequence,
-      _tag: event._tag,
-      event,
     }
-    if (event._tag === "PermissionRequest") {
-      const decoded = Schema.decodeUnknownEither(RuntimePermissionRequestEventSchema)(event)
-      if (Either.isLeft(decoded)) return Option.none()
-      return Option.some({
-        ...base,
-        _tag: "PermissionRequest",
-        permissionRequestId: decoded.right.permissionRequestId,
-        toolUseId: decoded.right.toolUseId,
-        options: decoded.right.options,
-      })
+
+    switch (event._tag) {
+      case "Ready":
+        return Option.some({ ...base, _tag: "Ready", event })
+      case "TextChunk":
+        return Option.some({ ...base, _tag: "TextChunk", event })
+      case "ToolUse":
+        return Option.some({
+          ...base,
+          _tag: "ToolUse",
+          event,
+          toolUseId: event.part.id,
+          toolName: event.part.name,
+        })
+      case "PermissionRequest": {
+        const decoded = Schema.decodeUnknownEither(RuntimePermissionRequestEventSchema)(event)
+        if (Either.isLeft(decoded)) return Option.none()
+        return Option.some({
+          ...base,
+          _tag: "PermissionRequest",
+          event: decoded.right,
+          permissionRequestId: decoded.right.permissionRequestId,
+          toolUseId: decoded.right.toolUseId,
+          options: decoded.right.options,
+        })
+      }
+      case "TurnComplete":
+        return Option.some({ ...base, _tag: "TurnComplete", event })
+      case "Status":
+        return Option.some({ ...base, _tag: "Status", event })
+      case "Error":
+        return Option.some({ ...base, _tag: "Error", event })
+      case "Terminated":
+        return Option.some({ ...base, _tag: "Terminated", event })
     }
-    if (event._tag === "ToolUse") {
-      const decoded = Schema.decodeUnknownEither(RuntimeToolUseEventSchema)(event)
-      if (Either.isLeft(decoded)) return Option.some(base)
-      return Option.some({
-        ...base,
-        toolUseId: decoded.right.part.id,
-        toolName: decoded.right.part.name,
-      })
-    }
-    return Option.some(base)
   })
 
 export const runtimePermissionRequestObservationFromAgentOutput = (

@@ -1,4 +1,4 @@
-import { Prompt } from "@effect/ai"
+import { Prompt, Response } from "@effect/ai"
 import { describe, expect, it } from "vitest"
 import { Option, Schema, SchemaAST } from "effect"
 import {
@@ -9,6 +9,7 @@ import { getFiregridProjectionMetadata } from "../../src/operations/schema.ts"
 import { FiregridClientOperations } from "../../src/session-facade/operations.ts"
 import {
   RuntimePermissionRequestObservationSchema,
+  type RuntimeAgentOutputObservation,
   FiregridSessionIdSchema,
   RuntimeContextIdSchema,
   SessionAttachInputSchema,
@@ -173,6 +174,69 @@ describe("session facade protocol schema", () => {
       toolUseId: "tool-1",
       toolName: "wait_for",
     })
+  })
+
+  it("TFIND-047 exposes correlated agent-output observation narrowing from the outer tag", () => {
+    const textDeltaFromObservation = (
+      observation: RuntimeAgentOutputObservation,
+    ): string | undefined => {
+      if (observation._tag !== "TextChunk") return undefined
+      return observation.event.part.delta
+    }
+    const toolNameFromObservation = (
+      observation: RuntimeAgentOutputObservation,
+    ): string | undefined => {
+      if (observation._tag !== "ToolUse") return undefined
+      return observation.event.part.name
+    }
+
+    const text = runtimeAgentOutputObservationFromRow({
+      eventId: {
+        contextId: "ctx_text",
+        activityAttempt: 1,
+        target: "events",
+        sequence: 1,
+      },
+      contextId: "ctx_text",
+      activityAttempt: 1,
+      sequence: 1,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt: "2026-05-16T00:00:00.000Z",
+      raw: encodeRuntimeAgentOutputEnvelope({
+        _tag: "TextChunk",
+        part: Response.textDeltaPart({ id: "part-1", delta: "hello" }),
+      }),
+    })
+    const tool = runtimeAgentOutputObservationFromRow({
+      eventId: {
+        contextId: "ctx_tool",
+        activityAttempt: 1,
+        target: "events",
+        sequence: 2,
+      },
+      contextId: "ctx_tool",
+      activityAttempt: 1,
+      sequence: 2,
+      source: "stdout",
+      format: "jsonl",
+      receivedAt: "2026-05-16T00:00:00.000Z",
+      raw: encodeRuntimeAgentOutputEnvelope({
+        _tag: "ToolUse",
+        part: Prompt.toolCallPart({
+          id: "tool-1",
+          name: "wait_for",
+          params: {},
+          providerExecuted: false,
+        }),
+      }),
+    })
+
+    expect(Option.isSome(text)).toBe(true)
+    expect(Option.isSome(tool)).toBe(true)
+    if (Option.isNone(text) || Option.isNone(tool)) return
+    expect(textDeltaFromObservation(text.value)).toBe("hello")
+    expect(toolNameFromObservation(tool.value)).toBe("wait_for")
   })
 
   it("firegrid-session-fact-client-surfaces.RUNTIME_OBSERVATION.2 projects PermissionRequest options and resume anchors", () => {

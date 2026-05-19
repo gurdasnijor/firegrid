@@ -14,7 +14,7 @@ Coordinator recommendation: choose **B: make the observation envelope a correlat
 
 ## Status
 
-Status: draft framing for coordinator/Gurdas signoff. No production code is in scope for this PR.
+Status: Gurdas signed off Option B, correlated observation union. This PR now carries the implementation record plus the public type fix.
 
 Finding: TFIND-047, Beads `tf-j94`, label `tfind:047`, factory-supports, priority P2.
 
