@@ -92,7 +92,14 @@ const closeActiveEngine = (
       return next
     })
     yield* Scope.close(handle.scope, Exit.void)
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.host.runtime_context.engine.close", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": contextId,
+      },
+    }),
+  )
 
 const appendIntentToEngine = (
   handle: ActiveRuntimeContextEngine,
@@ -112,6 +119,14 @@ const appendIntentToEngine = (
         intent.contextId,
         cause,
       )),
+  ).pipe(
+    Effect.withSpan("firegrid.host.runtime_context.engine.append_intent", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": intent.contextId,
+        "firegrid.input.intent_id": intent.intentId,
+      },
+    }),
   )
 
 export const RuntimeContextEngineRegistryLive = Layer.scoped(
@@ -139,7 +154,15 @@ export const RuntimeContextEngineRegistryLive = Layer.scoped(
       Effect.gen(function*() {
         const current = yield* Ref.get(engines)
         const existing = current.get(context.contextId)
-        if (existing !== undefined) return existing
+        if (existing !== undefined) {
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.runtime_context.engine.existing": true,
+          })
+          return existing
+        }
+        yield* Effect.annotateCurrentSpan({
+          "firegrid.runtime_context.engine.existing": false,
+        })
         if (context.host.hostId !== hostSession.hostId) {
           return yield* Effect.fail(asRuntimeContextError(
             "runtime-context.engine.claim",
@@ -174,7 +197,15 @@ export const RuntimeContextEngineRegistryLive = Layer.scoped(
         }
         yield* Ref.update(engines, map => new Map([...map, [context.contextId, handle]]))
         return handle
-      })
+      }).pipe(
+        Effect.withSpan("firegrid.host.runtime_context.engine.claim_active", {
+          kind: "internal",
+          attributes: {
+            "firegrid.context.id": context.contextId,
+            "firegrid.host.id": hostSession.hostId,
+          },
+        }),
+      )
 
     const startOrAttach = (
       context: RuntimeContext,
@@ -183,7 +214,14 @@ export const RuntimeContextEngineRegistryLive = Layer.scoped(
         const handle = yield* claimActive(context)
         yield* reconcile(context)
         return handle
-      })
+      }).pipe(
+        Effect.withSpan("firegrid.host.runtime_context.engine.start_or_attach", {
+          kind: "internal",
+          attributes: {
+            "firegrid.context.id": context.contextId,
+          },
+        }),
+      )
 
     const get = (
       contextId: string,
@@ -207,19 +245,45 @@ export const RuntimeContextEngineRegistryLive = Layer.scoped(
             context.contextId,
           ),
         )
+        yield* Effect.annotateCurrentSpan({
+          "firegrid.input.intent_count": intents.length,
+        })
         yield* Effect.forEach(intents, intent => appendIntentToEngine(handle, intent), {
           discard: true,
         })
-      })
+      }).pipe(
+        Effect.withSpan("firegrid.host.runtime_context.engine.reconcile", {
+          kind: "internal",
+          attributes: {
+            "firegrid.context.id": context.contextId,
+          },
+        }),
+      )
 
     const dispatchIntent = (
       intent: RuntimeInputIntentRow,
     ): Effect.Effect<Option.Option<RuntimeIngressInputRow>, RuntimeContextError> =>
       Effect.gen(function*() {
         const handle = yield* get(intent.contextId)
-        if (Option.isNone(handle)) return Option.none()
+        if (Option.isNone(handle)) {
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.runtime_context.engine.active": false,
+          })
+          return Option.none()
+        }
+        yield* Effect.annotateCurrentSpan({
+          "firegrid.runtime_context.engine.active": true,
+        })
         return Option.some(yield* appendIntentToEngine(handle.value, intent))
-      })
+      }).pipe(
+        Effect.withSpan("firegrid.host.runtime_context.engine.dispatch_intent", {
+          kind: "internal",
+          attributes: {
+            "firegrid.context.id": intent.contextId,
+            "firegrid.input.intent_id": intent.intentId,
+          },
+        }),
+      )
 
     return RuntimeContextEngineRegistry.of({
       startOrAttach,
@@ -240,6 +304,9 @@ export const RuntimeInputIntentDispatcherLive = Layer.scopedDiscard(
     const table = yield* RuntimeControlPlaneTable
     const registry = yield* RuntimeContextEngineRegistry
     yield* table.inputIntents.rows().pipe(
+      Stream.withSpan("firegrid.host.runtime_input_intent.dispatcher", {
+        kind: "internal",
+      }),
       Stream.runForEach(intent =>
         registry.dispatchIntent(intent).pipe(
           Effect.catchAll(cause =>

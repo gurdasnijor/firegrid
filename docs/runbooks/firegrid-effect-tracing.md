@@ -105,11 +105,50 @@ For actual operator debugging, use all available layers:
   tool catalog.
 - When the agent runtime supports it, pass `OTEL_EXPORTER_OTLP_*`,
   `OTEL_SERVICE_NAME`, and `OTEL_RESOURCE_ATTRIBUTES` through the sandbox env
-  and route it to the same collector.
+  and route it to the same collector. Follow ACP's Agent Telemetry Export RFD:
+  use standard OTLP environment variables for subprocess agents, keep telemetry
+  out-of-band from ACP stdio, and do not override existing user-provided
+  `OTEL_*` variables. User-configured telemetry export takes precedence over a
+  Firegrid-provided local collector.
 - Treat host/agent trace joining as best-effort unless the agent runtime
   explicitly accepts W3C trace context. Without that support, the reliable join
   key is the Firegrid context id plus MCP request spans, not a single shared
   trace id.
+
+## Critical span boundaries
+
+The highest-leverage Firegrid spans are now at the places where causality can
+break:
+
+- Public client session entry: `sessions.createOrLoad`, `prompt`, and `start`
+  root spans establish the trace that host work should inherit.
+- Host reconciliation: runtime control request reconciliation, claim, context
+  materialization, start request handling, and completion writes show whether a
+  client request was never claimed, claimed by another host, abandoned, or
+  completed.
+- Runtime context engine registry: `startOrAttach`, `claimActive`,
+  `reconcile`, input-intent dispatch, deferred append, and engine close show
+  whether a context has a live workflow engine and whether input reached it.
+- Runtime context workflow body: native workflow registration/run,
+  session start/send activities, output waits, input deferred checks,
+  permission-response waits, output handling, input handling, tool-use
+  activities, and the reactive loop show the decisions the context workflow
+  made between durable observations.
+- Workflow engine runtime: execution `execute`, `resume`, `poll`, `interrupt`,
+  activity claims/execution, deferred result/done, and durable clock scheduling
+  connect Firegrid host spans to workflow execution ids.
+- DurableTable facade: layer acquire plus `insert`, `upsert`, `delete`,
+  `insertOrGet`, `get`, `query`, `rows`, `subscribe`, producer-fenced append,
+  and `awaitTxId` spans carry table namespace, collection, durable type,
+  primary-key field, and operation metadata. This is the consistency-debugging
+  layer for "row written vs row observed" questions.
+- Runtime output: per-context output append/read spans and runtime-output
+  journal streams show whether agent output was written, decoded, and made
+  observable to waits/subscribers.
+- Durable waits: wait row lookup/upsert, completion lookup/upsert, wait router
+  source selection, attach, initial check, trigger match, and deferred
+  completion show whether `wait_for` persisted, attached to a source, observed
+  a row, matched predicates, and notified the workflow.
 
 ## Span quality rules
 

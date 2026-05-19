@@ -40,6 +40,11 @@ interface RuntimeAgentOutputAfterEventsService {
 const runtimeOutputEvents = (
   table: RuntimeOutputTable["Type"],
 ): Stream.Stream<RuntimeEventRow, DurableTableError> => table.events.rows()
+  .pipe(
+    Stream.withSpan("firegrid.runtime_output.journal.events", {
+      kind: "internal",
+    }),
+  )
 
 const runtimeAgentOutputEvents = (
   table: RuntimeOutputTable["Type"],
@@ -47,6 +52,9 @@ const runtimeAgentOutputEvents = (
   runtimeOutputEvents(table).pipe(
     Stream.map(runtimeAgentOutputObservationFromRow),
     Stream.filterMap(value => value),
+    Stream.withSpan("firegrid.runtime_output.journal.agent_output", {
+      kind: "internal",
+    }),
   )
 
 export class RuntimeAgentOutputEvents extends Context.Tag(

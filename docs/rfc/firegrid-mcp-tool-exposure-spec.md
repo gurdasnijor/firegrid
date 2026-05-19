@@ -78,9 +78,19 @@ codec injection.
 
 Remaining unknown: whether the ACP agent never calls `tools/list`, calls the
 wrong URL/transport, silently drops the returned catalog, or exposes the tools
-under names the prompt/config does not reference. The next probe should add
-method-level MCP HTTP/JSON-RPC tracing around `initialize`, `tools/list`, and
-`tools/call`.
+under names the prompt/config does not reference. The trace surface now includes
+method-level MCP HTTP/JSON-RPC spans plus Effect AI's `McpServer.<method>` spans
+for `initialize`, `tools/list`, and `tools/call`; the next probe should use
+those spans to classify the unknown without adding app-side orchestration.
+
+The supporting trace surface also covers Firegrid's durable boundaries:
+runtime-control-plane authorities, host reconciliation, runtime context engine
+registry, workflow engine execution/resume/deferred/clock operations,
+per-context runtime output, durable wait store/router operations, and the
+shared DurableTable action facade with table/collection/durable-type metadata.
+That coverage is intended to answer consistency questions directly: whether a
+row was written, whether a subscriber observed it, whether a wait matched it,
+and whether the workflow resumed from the corresponding durable deferred.
 
 ## G-MCP-3..N - Per-tool end-to-end verification
 

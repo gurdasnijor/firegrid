@@ -103,7 +103,16 @@ const streamForWait = (
       Match.tag("AgentOutputAfter", source => streams.agentOutputAfter(source)),
       Match.tag("RuntimeRun", () => streams.runtimeRun),
       Match.exhaustive,
-    ))
+    )).pipe(
+      Effect.withSpan("firegrid.durable_tools.wait_router.stream_for_wait", {
+        kind: "internal",
+        attributes: {
+          "firegrid.workflow.execution_id": wait.waitKey.executionId,
+          "firegrid.wait.name": wait.waitKey.name,
+          "firegrid.wait.source": wait.source._tag,
+        },
+      }),
+    )
 
 /**
  * firegrid-durable-tools.SUBSCRIPTION.3
@@ -131,7 +140,11 @@ const completeMatch = (
       return
     }
 
-    if (!evaluateFieldEquals(wait.trigger, row)) return
+    const matched = evaluateFieldEquals(wait.trigger, row)
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.wait.trigger_matched": matched,
+    })
+    if (!matched) return
 
     // firegrid-durable-tools.TIMEOUT.3 — if a timeout completion was already
     // written for this wait, skip; the timeout path will resolve the
@@ -181,7 +194,16 @@ const completeMatch = (
       ...current.value,
       status: "completed",
     })
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.durable_tools.wait_router.complete_match", {
+      kind: "internal",
+      attributes: {
+        "firegrid.workflow.execution_id": wait.waitKey.executionId,
+        "firegrid.wait.name": wait.waitKey.name,
+        "firegrid.wait.source": wait.source._tag,
+      },
+    }),
+  )
 
 /**
  * firegrid-durable-tools.SUBSCRIPTION.1/2
@@ -202,6 +224,14 @@ const attachWaitToSource = (
 ) =>
   Effect.gen(function*() {
     yield* source.pipe(
+      Stream.withSpan("firegrid.durable_tools.wait_router.attach_source", {
+        kind: "internal",
+        attributes: {
+          "firegrid.workflow.execution_id": wait.waitKey.executionId,
+          "firegrid.wait.name": wait.waitKey.name,
+          "firegrid.wait.source": wait.source._tag,
+        },
+      }),
       Stream.runForEach((row) => {
         return completeMatch(
           wait,
@@ -223,7 +253,16 @@ const attachWaitToSource = (
         )
       }),
     )
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.durable_tools.wait_router.attach_wait", {
+      kind: "internal",
+      attributes: {
+        "firegrid.workflow.execution_id": wait.waitKey.executionId,
+        "firegrid.wait.name": wait.waitKey.name,
+        "firegrid.wait.source": wait.source._tag,
+      },
+    }),
+  )
 
 /**
  * Forks a source-attached worker for each newly-seen active wait. The
@@ -277,10 +316,22 @@ const startRouter = Effect.gen(function*() {
         completionUpsert,
         engine,
       )
-    })
+    }).pipe(
+      Effect.withSpan("firegrid.durable_tools.wait_router.initial_check", {
+        kind: "internal",
+        attributes: {
+          "firegrid.workflow.execution_id": wait.waitKey.executionId,
+          "firegrid.wait.name": wait.waitKey.name,
+          "firegrid.wait.source": wait.source._tag,
+        },
+      }),
+    )
 
   // firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.8
   yield* waitRows.pipe(
+    Stream.withSpan("firegrid.durable_tools.wait_router.active_wait_rows", {
+      kind: "internal",
+    }),
     Stream.filter(wait => wait.status === "active"),
     Stream.runForEach((wait) =>
       Effect.gen(function*() {
@@ -331,7 +382,11 @@ const startRouter = Effect.gen(function*() {
       )),
     Effect.forkScoped,
   )
-})
+}).pipe(
+  Effect.withSpan("firegrid.durable_tools.wait_router.start", {
+    kind: "internal",
+  }),
+)
 
 type WaitRouterRequirements =
   | DurableWaitCompletionRowLookup

@@ -124,7 +124,17 @@ const writeCompletion = (
         contextId: request.contextId,
       }),
     )
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.host.control_request.completion.write", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": request.contextId,
+        "firegrid.control.request_id": request.requestId,
+        "firegrid.control.request_kind": requestKind,
+        "firegrid.control.completion_status": input.status,
+      },
+    }),
+  )
 
 const skipOrAbandonTerminalRequest = (
   requestKind: RuntimeControlRequestKind,
@@ -158,7 +168,17 @@ const abandon = (
       completedAtMs: nowMs,
       message: `request abandoned after ${abandonAfterMs}ms`,
     })
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.host.control_request.abandon", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": request.contextId,
+        "firegrid.control.request_id": request.requestId,
+        "firegrid.control.request_kind": requestKind,
+        "firegrid.control.abandon_after_ms": abandonAfterMs,
+      },
+    }),
+  )
 
 const winClaim = (
   requestKind: RuntimeControlRequestKind,
@@ -182,8 +202,20 @@ const winClaim = (
         claimedAtMs: nowMs,
       }),
     )
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.control.claim_won": result._tag === "Inserted",
+    })
     return result._tag === "Inserted"
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.host.control_request.claim", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": request.contextId,
+        "firegrid.control.request_id": request.requestId,
+        "firegrid.control.request_kind": requestKind,
+      },
+    }),
+  )
 
 const reconcileContextRequest = (
   request: RuntimeContextRequestRow,
@@ -218,7 +250,15 @@ const reconcileContextRequest = (
       hostId: session.hostId,
       completedAtMs,
     })
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.host.control_request.context.reconcile", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": request.contextId,
+        "firegrid.control.request_id": request.requestId,
+      },
+    }),
+  )
 
 const reconcileStartRequest = (
   request: RuntimeStartRequestRow,
@@ -254,7 +294,15 @@ const reconcileStartRequest = (
       exitCode: result.exitCode,
       ...(result.signal === undefined ? {} : { signal: result.signal }),
     })
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.host.control_request.start.reconcile", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": request.contextId,
+        "firegrid.control.request_id": request.requestId,
+      },
+    }),
+  )
 
 export const reconcileRuntimeControlRequestsOnce = (
   options: RuntimeControlRequestReconcilerOptions = {},
@@ -272,18 +320,28 @@ export const reconcileRuntimeControlRequestsOnce = (
   return Effect.gen(function*() {
     const table = yield* runtimeControlPlaneTable
     const contextRequests = yield* table.contextRequests.query((coll) => coll.toArray)
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.control.context_request_count": contextRequests.length,
+    })
     yield* Effect.forEach(
       contextRequests,
       request => reconcileContextRequest(request, resolved),
       { discard: true },
     )
     const startRequests = yield* table.startRequests.query((coll) => coll.toArray)
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.control.start_request_count": startRequests.length,
+    })
     yield* Effect.forEach(
       startRequests,
       request => reconcileStartRequest(request, resolved),
       { discard: true },
     )
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.host.control_request.reconcile_once", {
+      kind: "internal",
+    }),
+  )
 }
 
 export const runRuntimeControlRequestReconciler = (

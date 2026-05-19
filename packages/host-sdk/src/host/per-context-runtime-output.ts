@@ -68,6 +68,14 @@ const appendEventRow = (
   ).pipe(
     Effect.flatten,
     Effect.provide(perContextRuntimeOutputTableLayer(hostConfig, context)),
+    Effect.withSpan("firegrid.runtime_output.per_context.event.append", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.runtime.activity_attempt": row.activityAttempt,
+        "firegrid.runtime.output.sequence": row.sequence,
+      },
+    }),
   )
 
 export const PerContextRuntimeOutputWriterLive = Layer.effect(
@@ -98,6 +106,14 @@ export const PerContextRuntimeOutputWriterLive = Layer.effect(
         ).pipe(
           Effect.flatten,
           Effect.provide(perContextRuntimeOutputTableLayer(hostConfig, context)),
+          Effect.withSpan("firegrid.runtime_output.per_context.log.append", {
+            kind: "internal",
+            attributes: {
+              "firegrid.context.id": context.contextId,
+              "firegrid.runtime.activity_attempt": row.activityAttempt,
+              "firegrid.runtime.output.sequence": row.sequence,
+            },
+          }),
         ),
     })),
 )
@@ -136,6 +152,14 @@ export const PerContextRuntimeAgentOutputAfterEventsLive = Layer.effect(
             contextId: source.contextId,
             host: { streamPrefix: hostSession.streamPrefix },
           })),
+          Effect.withSpan("firegrid.runtime_output.per_context.agent_output.initial", {
+            kind: "internal",
+            attributes: {
+              "firegrid.context.id": source.contextId,
+              "firegrid.runtime.activity_attempt": source.activityAttempt,
+              "firegrid.runtime.output.after_sequence": source.afterSequence,
+            },
+          }),
         ),
       after: source =>
         Stream.unwrap(
@@ -152,6 +176,14 @@ export const PerContextRuntimeAgentOutputAfterEventsLive = Layer.effect(
             contextId: source.contextId,
             host: { streamPrefix: hostSession.streamPrefix },
           })),
+          Stream.withSpan("firegrid.runtime_output.per_context.agent_output.after", {
+            kind: "internal",
+            attributes: {
+              "firegrid.context.id": source.contextId,
+              "firegrid.runtime.activity_attempt": source.activityAttempt,
+              "firegrid.runtime.output.after_sequence": source.afterSequence,
+            },
+          }),
         ),
       // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
       //
@@ -172,6 +204,12 @@ export const PerContextRuntimeAgentOutputAfterEventsLive = Layer.effect(
             contextId,
             host: { streamPrefix: hostSession.streamPrefix },
           })),
+          Stream.withSpan("firegrid.runtime_output.per_context.agent_output.for_context", {
+            kind: "internal",
+            attributes: {
+              "firegrid.context.id": contextId,
+            },
+          }),
         ),
     })
   }),

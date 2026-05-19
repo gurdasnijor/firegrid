@@ -18,5 +18,9 @@ export const HostOwnedDurableToolsWaitForLive = Layer.unwrapEffect(
       }),
       ...(config.headers === undefined ? {} : { headers: config.headers }),
     })
-  }),
+  }).pipe(
+    Effect.withSpan("firegrid.host.durable_tools.wait_for.layer", {
+      kind: "internal",
+    }),
+  ),
 )
