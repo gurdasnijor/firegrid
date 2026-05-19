@@ -88,6 +88,9 @@ Codex agents:
 For actual operator debugging, use all available layers:
 
 - Provide `NodeSdk.layer` in the Firegrid host process.
+- Use the local-process boundary spans to see process launch, stdout bytes,
+  stderr bytes, stdin-backed codec sends, and process exit code without tracing
+  inside the external agent.
 - Add MCP JSON-RPC method spans at the Firegrid MCP HTTP boundary so
   non-instrumented agents are still observable from the outside.
 - When the agent runtime supports it, pass `OTEL_EXPORTER_OTLP_*`,

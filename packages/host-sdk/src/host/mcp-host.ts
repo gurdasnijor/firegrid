@@ -26,7 +26,7 @@
  */
 
 import { IdGenerator, McpServer } from "@effect/ai"
-import { HttpRouter } from "@effect/platform"
+import { HttpMiddleware, HttpRouter } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
 import {
   ContextNotFound,
@@ -192,6 +192,14 @@ const firegridMcpRpcSerializationLayer = Layer.succeed(
   firegridMcpJsonRpcSerialization,
 )
 
+const runtimeContextMcpSpanName = (url: string, method: string): string => {
+  const path = url.split("?")[0] ?? url
+  if (path.includes("/runtime-context/")) {
+    return `firegrid.mcp.http ${method} /runtime-context/:contextId`
+  }
+  return `firegrid.mcp.http ${method} ${path}`
+}
+
 export const FiregridMcpServerLayer = (
   options: FiregridMcpServerLayerOptions,
 ) =>
@@ -259,6 +267,8 @@ export const FiregridMcpServerLayer = (
     // Quiet the default logger inside the MCP scope; the host's own
     // log surface remains the canonical operator log.
     Layer.provide(Logger.remove(Logger.defaultLogger)),
+    HttpMiddleware.withSpanNameGenerator(request =>
+      runtimeContextMcpSpanName(request.url, request.method)),
   )
 
 export const ensurePathInput = (path: string): HttpRouter.PathInput => {

@@ -109,6 +109,17 @@ const buildCommand = (
     return built
   })
 
+const commandSpanAttributes = (
+  sandbox: Sandbox,
+  command: SandboxCommand,
+): Record<string, unknown> => ({
+  "firegrid.process.provider": providerName,
+  "firegrid.process.id": sandbox.id,
+  "firegrid.command.executable": command.argv[0] ?? "",
+  "firegrid.command.arg_count": command.argv.length,
+  "firegrid.command.stdin_configured": command.stdin !== undefined,
+})
+
 // firegrid agent-io: convert an @effect/platform Process's Effect-shaped
 // stdio into the WHATWG web streams that codecs consume. stdout/stderr
 // are Effect Streams; we run them through Stream.toReadableStream.
@@ -138,16 +149,31 @@ const makeAgentByteStreamFromProcess = (
       },
     })
     const stdout: ReadableStream<Uint8Array> = Stream.toReadableStreamRuntime(runtime)(
-      process.stdout,
+      process.stdout.pipe(
+        Stream.withSpan("firegrid.agent_event_pipeline.source.local_process.stdout_bytes", {
+          kind: "producer",
+        }),
+      ),
     ) as ReadableStream<Uint8Array>
     const stderr: ReadableStream<Uint8Array> = Stream.toReadableStreamRuntime(runtime)(
-      process.stderr,
+      process.stderr.pipe(
+        Stream.withSpan("firegrid.agent_event_pipeline.source.local_process.stderr_bytes", {
+          kind: "producer",
+        }),
+      ),
     ) as ReadableStream<Uint8Array>
     const exit = process.exitCode.pipe(
       Effect.map(exitCode => ({ exitCode: Number(exitCode) })),
+      Effect.tap(exit =>
+        Effect.annotateCurrentSpan({
+          "firegrid.process.exit_code": exit.exitCode,
+        })),
       Effect.mapError(cause =>
         commandError("openBytePipe.exit", "local process failed while waiting for exit", cause),
       ),
+      Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.exit", {
+        kind: "internal",
+      }),
     )
     return { stdin, stdout, stderr, exit } satisfies AgentByteStream
   }).pipe(
@@ -226,6 +252,11 @@ const makeLocalProcessSandboxProvider = (
           Stream.concat(exit),
         )
       }),
+    ).pipe(
+      Stream.withSpan("firegrid.agent_event_pipeline.source.local_process.stream", {
+        kind: "producer",
+        attributes: commandSpanAttributes(sandbox, command),
+      }),
     )
 
   // firegrid agent-io: byte-pipe variant.
@@ -258,7 +289,12 @@ const makeLocalProcessSandboxProvider = (
         (p) => p.kill().pipe(Effect.ignore),
       )
       return yield* makeAgentByteStreamFromProcess(process)
-    })
+    }).pipe(
+      Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.open_byte_pipe", {
+        kind: "producer",
+        attributes: commandSpanAttributes(sandbox, command),
+      }),
+    )
 
   const execute = (
     sandbox: Sandbox,
@@ -286,7 +322,16 @@ const makeLocalProcessSandboxProvider = (
         stdout: stdout.join("\n"),
         stderr: stderr.join("\n"),
       }
-    }))
+    }).pipe(
+      Effect.tap(result =>
+        Effect.annotateCurrentSpan({
+          "firegrid.process.exit_code": result.exitCode,
+        })),
+      Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.execute", {
+        kind: "producer",
+        attributes: commandSpanAttributes(sandbox, command),
+      }),
+    ))
 
   return makeSandboxProviderService({
     name: providerName,
