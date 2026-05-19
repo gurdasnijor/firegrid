@@ -56,6 +56,10 @@ components:
       5: Tiny Firegrid simulation runners expose tail or attach frontends that stream ended span records for token-efficient agent inspection.
       6: Tiny Firegrid simulation runners start an in-process Durable Streams reference server by default while allowing environment overrides.
       7: Tiny Firegrid simulation runs have a bounded Effect-level timeout and emit terminal live events for timeout and process interruption.
+      8: The dark-factory Tiny Firegrid simulation launches a real tool-enumerating ACP planner with runtime-context MCP enabled, seeds a mocked app-owned durable trigger fact, starts the deterministic parent session through the public Firegrid client, and observes planner output without app-authored phase chaining.
+      8-1: The dark-factory simulation records unsupported choreography-surface gaps in its run summary or localization instead of compensating with an app-led planner, implementer, review, approval, or PR-open phase chain.
+      9: The dark-factory Tiny Firegrid simulation expresses the full factory-vision §6 loop as planner prompt and app-owned fact surface, including clarify, plan approval/revision/rejection, implementer delegation, reviewer/council review, feedback loops, merge sign-off, durable CI watch, merge, failure repair, and clean unwind.
+      9-1: The full dark-factory simulation observes planner-authored tool calls and terminal/error outputs only; the simulation driver must not encode the §6 planner-to-implementer-to-review-to-merge sequence as an app-authored DAG.
 
 constraints:
   INVARIANTS:
