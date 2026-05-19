@@ -236,6 +236,24 @@ const status = (
   ...(payload === undefined ? {} : { payload }),
 })
 
+// tf-2p4: ACP `tool_call`/`tool_call_update` carry no canonical tool-name
+// field — only a human `title` (mapping.ts documents this). For
+// MCP-bridged tools the ACP client uses the standard
+// `mcp__<server>__<tool>` identifier convention (source-verified:
+// docs/investigations/2026-05-19-s6-dark-factory-live-run.md observed
+// `mcp__firegrid-runtime-context__wait_for`). Surface the CANONICAL MCP
+// tool name (the `<tool>` segment) so strict, exact-match harnesses
+// (the #401 §6 proof) see the truth instead of the display title.
+// Deterministic + backward-compatible: a non-`mcp__` title (e.g.
+// "lookup", "edit config") is returned unchanged. No matcher loosening
+// — the codec emits the canonical identifier; the harness stays strict.
+const canonicalAcpToolName = (title: string): string => {
+  const segments = title.split("__")
+  return segments.length >= 3 && segments[0] === "mcp"
+    ? segments.slice(2).join("__")
+    : title
+}
+
 const mapSessionUpdate = (
   params: acp.SessionNotification,
   textDeltaId: (messageId: string | undefined) => Effect.Effect<string>,
@@ -262,7 +280,7 @@ const mapSessionUpdate = (
         _tag: "ToolUse" as const,
         part: Prompt.toolCallPart({
           id: update.toolCallId,
-          name: update.title,
+          name: canonicalAcpToolName(update.title),
           params: update.rawInput,
           providerExecuted: true,
         }),
@@ -286,7 +304,9 @@ const mapSessionUpdate = (
               _tag: "ToolUse" as const,
               part: Prompt.toolCallPart({
                 id: update.toolCallId,
-                name: update.title ?? "tool_call",
+                name: update.title === undefined || update.title === null
+                  ? "tool_call"
+                  : canonicalAcpToolName(update.title),
                 params: update.rawInput,
                 providerExecuted: true,
               }),

@@ -223,6 +223,41 @@ class CancelFixtureAgent extends FixtureAgent {
   }
 }
 
+// tf-2p4: emits an MCP-bridged tool_call the way a real ACP client does
+// (the `mcp__<server>__<tool>` identifier convention, source-verified
+// against docs/investigations/2026-05-19-s6-dark-factory-live-run.md).
+class McpFiregridToolCallAgent extends FixtureAgent {
+  override async prompt(params: acp.PromptRequest): Promise<acp.PromptResponse> {
+    this.prompts.push(params)
+    this.resolvePromptStarted()
+    await this.connection.sessionUpdate({
+      sessionId: params.sessionId,
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "mcp-call-1",
+        title: "mcp__firegrid-runtime-context__wait_for",
+        kind: "other",
+        status: "pending",
+        rawInput: { source: { _tag: "CallerFact", stream: "darkFactory.facts" } },
+      },
+    })
+    await this.connection.sessionUpdate({
+      sessionId: params.sessionId,
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "mcp-call-1",
+        title: "mcp__firegrid-runtime-context__wait_for",
+        status: "completed",
+        rawInput: { source: { _tag: "CallerFact", stream: "darkFactory.facts" } },
+      },
+    })
+    return {
+      stopReason: "end_turn",
+      ...(params.messageId === undefined ? {} : { userMessageId: params.messageId }),
+    }
+  }
+}
+
 const makeHarness = Effect.gen(function*() {
   const runtimeToAgent = new TransformStream<Uint8Array, Uint8Array>()
   const agentToRuntime = new TransformStream<Uint8Array, Uint8Array>()
@@ -462,6 +497,37 @@ describe("AcpSessionLive", () => {
         messageId: "prompt-1",
       },
     ])
+  })
+
+  it("tf-2p4 surfaces the canonical MCP tool name (not the mcp__server__tool ACP title) for tool_call and tool_call_update", async () => {
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const harness = yield* makeHarness
+          startAgent(harness, connection => new McpFiregridToolCallAgent(connection))
+          const session = yield* openSession(harness.bytes)
+          const fiber = yield* collectOutputs(session, 4).pipe(Effect.fork)
+          yield* session.send({
+            _tag: "Prompt",
+            correlationId: "prompt-1",
+            prompt: userMessage("go"),
+          })
+          return yield* Fiber.join(fiber)
+        }),
+      ),
+    )
+
+    const toolUses = result.filter(
+      (event): event is Extract<AgentOutputEvent, { _tag: "ToolUse" }> =>
+        event._tag === "ToolUse",
+    )
+    // Both the tool_call and the rawInput-bearing tool_call_update emit a
+    // ToolUse, and both surface the CANONICAL name, not the ACP title.
+    expect(toolUses.length).toBeGreaterThanOrEqual(2)
+    for (const toolUse of toolUses) {
+      expect(toolUse.part.name).toBe("wait_for")
+      expect(toolUse.part.name).not.toBe("mcp__firegrid-runtime-context__wait_for")
+    }
   })
 
   it("sends UserMessage content to ACP without role filtering at runtime", async () => {
