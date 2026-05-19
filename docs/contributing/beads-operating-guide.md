@@ -283,6 +283,36 @@ v1 (now): ping the coordinator on every delta. v2 (next): a persistence
 counter that escalates to the human if the same delta is unactioned across
 K checks.
 
+### Two crons — they are opposites, don't conflate
+
+| | `state-watch-cron` | `beads-sync-cron` |
+|---|---|---|
+| does | **observes** deltas, pings coordinator | **persists** `.beads/issues.jsonl` → origin/main |
+| writes SoT? | never (read-only) | yes (the durable decision record) |
+| needs cmux? | yes (skips tick if down) | no (br+git only — runs even cmux down) |
+| install | `install-state-watch-cron.sh` | `install-beads-sync-cron.sh` |
+
+Running only state-watch-cron leaves beads-sync unowned → the "stranded
+decision state" fire recurs. Both are operator-installed.
+
+**Canonical beads-sync owner is bound (separation of duties).**
+`.beads/.beads-owner` (committed) = `cron`. `beads-sync.sh` then **refuses**
+unless invoked by the beads-sync cron (which sets `FG_BEADS_OWNER=1`) — the
+coordinator and lanes are structurally blocked from pushing the SoT, so the
+router can never also own the durable decision record. Deliberate
+br-owner/admin op: `FG_BEADS_OWNER=1` (audited to
+`.git/firegrid-beads-owner-override.log`). Install (operator, once):
+
+```bash
+bash scripts/install-beads-sync-cron.sh            # every 5 min
+bash scripts/install-beads-sync-cron.sh --remove
+```
+
+`beads-sync.sh` exits clean ("nothing to push") when unchanged, so a tick
+with no delta is a sub-second no-op (one log line, no commit). It is
+self-locking (self-healing `.git` lock — never the old `.beads/.sync.lock`
+collision) and ground-truth-verifies the push (no false-success).
+
 ## When something looks empty or wrong
 
 1. Don't suppress stderr. Re-run without `2>/dev/null` and read the error.

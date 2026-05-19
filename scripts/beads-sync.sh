@@ -22,6 +22,29 @@ if [ "$BR" != "main" ] && [ "${FIREGRID_ALLOW_PRIMARY:-}" != "1" ]; then
   echo "✋ beads-sync: primary is on '$BR', not main. Get it to main first (or FIREGRID_ALLOW_PRIMARY=1)." >&2
   exit 1
 fi
+# Canonical-owner enforcement (opt-in: only enforced once .beads/.beads-owner
+# exists, so this is backward-compatible). Separation of duties — the
+# coordinator/router must NOT also own the durable decision record.
+OWNER_FILE="$RR/.beads/.beads-owner"
+if [ -f "$OWNER_FILE" ]; then
+  OWNER="$(tr -d ' \n' < "$OWNER_FILE" 2>/dev/null)"
+  case "$OWNER" in
+    cron)
+      [ "${FG_BEADS_OWNER:-}" = "1" ] || {
+        echo "✋ beads-sync: canonical owner is 'cron'. Only the beads-sync" >&2
+        echo "   cron may run this (it sets FG_BEADS_OWNER=1). The coordinator" >&2
+        echo "   and lanes must not. Deliberate br-owner op: FG_BEADS_OWNER=1" >&2
+        echo "   (audited)." >&2
+        exit 1; }
+      [ "${FG_BEADS_OWNER:-}" = "1" ] && [ -z "${FG_BEADS_CRON:-}" ] \
+        && printf '%s manual FG_BEADS_OWNER override by %s\n' "$(date -u +%FT%TZ)" "$(git config user.email 2>/dev/null || echo unknown)" \
+        >> "$(git -C "$RR" rev-parse --absolute-git-dir)/firegrid-beads-owner-override.log" 2>/dev/null || true ;;
+    *)
+      [ "${FG_BEADS_OWNER_ID:-}" = "$OWNER" ] || {
+        echo "✋ beads-sync: canonical owner is '$OWNER'. Set FG_BEADS_OWNER_ID=$OWNER to run (you are not it)." >&2
+        exit 1; } ;;
+  esac
+fi
 MSG="${1:-chore(beads): canonical sync $(date -u +%FT%TZ)}"
 
 # Lock lives in the shared .git dir, NOT .beads/ — `br` itself creates

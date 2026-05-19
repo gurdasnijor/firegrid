@@ -115,9 +115,13 @@ bash scripts/task-reap.sh [<branch>]        # after merge, from primary
   #   and surfaces any bead still open for a merged branch. NEVER discards
   #   dirty/unmerged work — it reports and keeps it.
 
-bash scripts/beads-sync.sh                  # THE canonical durable sync
-  # → lock-serialized (.beads/.sync.lock); the ONLY context that commits
-  #   + pushes .beads/issues.jsonl to origin/main. Lanes never do this.
+#  beads-sync is OWNED by the beads-sync cron (.beads/.beads-owner=cron).
+#  scripts/beads-sync.sh REFUSES unless run by that cron — the coordinator
+#  and lanes are structurally blocked from pushing the SoT (separation of
+#  duties). Install: scripts/install-beads-sync-cron.sh (operator, once).
+#  It self-locks (self-healing .git lock), ground-truth-verifies the push,
+#  and is a sub-second no-op when nothing changed. Deliberate br-owner op:
+#  FG_BEADS_OWNER=1 (audited). Lanes/coordinator NEVER run beads-sync.
 ```
 
 ### Deterministic dispatch (coordinator → lanes)
