@@ -15,6 +15,7 @@ import { Cause, Clock, Context, Duration, Effect, Layer, Option } from "effect"
 import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import { startRuntime } from "./commands.ts"
 import type { RuntimeContextEngineRegistry } from "./runtime-context-engine-registry.ts"
+import type { RuntimeContextWorkflowSession } from "./runtime-context-workflow-core.ts"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 
 const runtimeControlPlaneTable: Effect.Effect<
@@ -60,6 +61,14 @@ type RuntimeControlRequestReconcilerEnvironment =
   | AgentToolHost
   | RuntimeOutputTable
   | HostRuntimeContextExecutionEnv
+  // TFIND-045 (y residual-z, tf-uiz DECIDED y; verdict-authorized):
+  // y root-narrow at #350 workflow-core makes RuntimeContextWorkflowSession
+  // a precise transitive requirement of startRuntime()->claimAndRun...;
+  // startRuntime does not Effect.provide a captured env, so the
+  // reconciler env alias must declare it (broadened-#347 explicit-R).
+  // Provided at runtime by the composed Firegrid host layer
+  // (RuntimeContextWorkflowSessionLive).
+  | RuntimeContextWorkflowSession
 
 export interface RuntimeControlRequestReconcilerService {
   readonly reconcileOnce: (

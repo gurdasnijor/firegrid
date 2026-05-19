@@ -18,6 +18,7 @@ import type { StartRuntimeOptions } from "./types.ts"
 import {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowPayload,
+  RuntimeContextWorkflowSession,
 } from "./runtime-context-workflow-core.ts"
 import {
   readRuntimeContext,
@@ -153,7 +154,9 @@ export const RuntimeStartCapabilityLive = Layer.effect(
     // the composed Firegrid host layer) so the deferred `start` closure
     // can re-provide it. `never` here was only sound while
     // `DurableTable.layer` leaked `any`.
-    const captured = yield* Effect.context<HostRuntimeContextExecutionEnv>()
+    const captured = yield* Effect.context<
+      HostRuntimeContextExecutionEnv | RuntimeContextWorkflowSession
+    >()
     const contextRead = yield* RuntimeContextRead
     const hostSession = yield* CurrentHostSession
     const registry = yield* RuntimeContextEngineRegistry

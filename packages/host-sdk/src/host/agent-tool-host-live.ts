@@ -35,6 +35,7 @@ import { executeRuntimeContextWorkflow } from "./internal/run-context-workflow.t
 import {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowPayload,
+  RuntimeContextWorkflowSession,
 } from "./runtime-context-workflow-core.ts"
 import {
   runtimeContextWorkflowSupportLayer,
@@ -78,7 +79,9 @@ const runtimeHostAgentToolHostService = (captured: {
   readonly agentToolHost: AgentToolHostService
   // TFIND-031: ambient host durable substrate captured at layer-build
   // time, re-provided into the deferred child-context workflow run.
-  readonly hostContext: Context.Context<HostRuntimeContextExecutionEnv>
+  readonly hostContext: Context.Context<
+    HostRuntimeContextExecutionEnv | RuntimeContextWorkflowSession
+  >
 }): AgentToolHostService => ({
   spawnChildContext: ({
     parentContextId,
@@ -215,7 +218,9 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
     // TFIND-031: capture the ambient host durable substrate so the
     // deferred child-context workflow (run later, outside this gen) can
     // re-provide it. Always present here via the composed host layer.
-    const hostContext = yield* Effect.context<HostRuntimeContextExecutionEnv>()
+    const hostContext = yield* Effect.context<
+      HostRuntimeContextExecutionEnv | RuntimeContextWorkflowSession
+    >()
     const service: AgentToolHostService = runtimeHostAgentToolHostService({
       contextInsert,
       contextRead,
