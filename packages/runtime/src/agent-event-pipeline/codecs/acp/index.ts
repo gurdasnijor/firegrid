@@ -45,12 +45,41 @@ export const AcpCapabilities: AgentCapabilities = {
   customStatus: ["tool_call_update"],
 }
 
+// tf-ds2: a thrown ACP failure carries the real reason in a JSON-RPC
+// `{ code, message, data }` error (jsonrpc.d.ts) or a plain `Error`. The
+// static op message ("ACP prompt failed") is not legible in the trace; the
+// underlying agent message (e.g. a provider quota error) lives in `cause`.
+// Extract it so it can be composed into the human-readable message
+// additively — `cause` is still preserved unchanged.
+const jsonRpcErrorMessage = (cause: unknown): string | undefined => {
+  if (typeof cause === "string") return cause.length > 0 ? cause : undefined
+  if (typeof cause !== "object" || cause === null) return undefined
+  const record = cause as {
+    readonly message?: unknown
+    readonly code?: unknown
+    readonly data?: unknown
+  }
+  const message = typeof record.message === "string" && record.message.length > 0
+    ? record.message
+    : undefined
+  if (message === undefined) return undefined
+  const code = typeof record.code === "number" ? ` (code ${record.code})` : ""
+  const data = record.data === undefined
+    ? ""
+    : `: ${typeof record.data === "string" ? record.data : JSON.stringify(record.data)}`
+  return `${message}${code}${data}`
+}
+
 const codecError = (op: string, message: string, cause?: unknown): AgentCodecError => {
   const details = cause === undefined ? {} : { cause }
+  const underlying = cause === undefined ? undefined : jsonRpcErrorMessage(cause)
   return new AgentCodecError({
     codec,
     op,
-    message,
+    // tf-ds2: surface the underlying agent/JSON-RPC reason in the message
+    // so the trace artifact is legible (factory-vision §7.7). Additive —
+    // no behavior change; `cause` is unchanged.
+    message: underlying === undefined ? message : `${message}: ${underlying}`,
     ...details,
   })
 }
@@ -190,8 +219,33 @@ const mapSessionUpdate = (
           providerExecuted: true,
         }),
       }])),
+    // tf-ds2: ACP agents commonly send the initial `tool_call` with status
+    // `pending` and NO `rawInput`, then stream the real arguments (and
+    // `rawOutput`) in subsequent `tool_call_update` notifications
+    // (schema/types.gen: ToolCallUpdate.rawInput?). Collapsing every update
+    // to an opaque `status` dropped those arguments, so the trace showed
+    // tool inputs as `{}`. When an update carries `rawInput`, also emit a
+    // ToolUse so `observedToolInputs` is real. This is observation-only:
+    // the runtime-context workflow skips the tool executor for the `acp`
+    // protocol (ACP tool calls are provider-executed), so this changes
+    // nothing but observability.
     Match.when({ sessionUpdate: "tool_call_update" }, update =>
-      Effect.succeed([status("tool_call_update", update)])),
+      Effect.succeed(
+        update.rawInput === undefined
+          ? [status("tool_call_update", update)]
+          : [
+            {
+              _tag: "ToolUse" as const,
+              part: Prompt.toolCallPart({
+                id: update.toolCallId,
+                name: update.title ?? "tool_call",
+                params: update.rawInput,
+                providerExecuted: true,
+              }),
+            },
+            status("tool_call_update", update),
+          ],
+      )),
     Match.orElse(update => Effect.succeed([status(update.sessionUpdate, update)])),
   )
 }
@@ -398,7 +452,12 @@ export const AcpSessionLive = (
               Effect.matchEffect({
                 onFailure: error =>
                   Ref.set(currentTextDeltaId, undefined).pipe(
-                    Effect.zipRight(emitEffect(recoverableError("ACP prompt failed", error.cause))),
+                    // tf-ds2: `error.message` is now the enriched
+                    // "ACP prompt failed: <underlying JSON-RPC message>"
+                    // (codecError), so the surfaced Error event / trace
+                    // `agentError` carries the real reason, not the static
+                    // op string. `error.cause` preserved unchanged.
+                    Effect.zipRight(emitEffect(recoverableError(error.message, error.cause))),
                   ),
                 onSuccess: response =>
                   Ref.set(currentTextDeltaId, undefined).pipe(
