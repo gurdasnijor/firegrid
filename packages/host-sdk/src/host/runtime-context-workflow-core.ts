@@ -550,6 +550,7 @@ const runWorkflowNativeRuntimeContext = (
         "firegrid.context.id": contextId,
       },
     }),
+    Effect.annotateSpans("firegrid.context.id", contextId),
   )
 
 export const RuntimeContextWorkflowNative = Workflow.make({

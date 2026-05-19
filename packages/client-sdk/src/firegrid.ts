@@ -266,6 +266,7 @@ const withClientSpan = <A, E, R>(
       kind: "client",
       attributes,
     }),
+    Effect.annotateSpans("firegrid.side", "sdk"),
   )
 
 interface ResolvedConfig {

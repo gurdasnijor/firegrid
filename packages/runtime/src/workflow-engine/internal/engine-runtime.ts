@@ -23,6 +23,22 @@ const orDieTable = <A>(
   // eslint-disable-next-line no-restricted-syntax -- workflow engine adapter exposes upstream WorkflowEngine APIs, which cannot carry table errors.
   Effect.orDie(effect)
 
+const runtimeContextExecutionPrefix = "runtime-context:"
+
+const contextIdFromWorkflowExecutionId = (executionId: string): string | undefined =>
+  executionId.startsWith(runtimeContextExecutionPrefix)
+    ? executionId.slice(runtimeContextExecutionPrefix.length)
+    : undefined
+
+const annotateWorkflowExecutionSpans =
+  (executionId: string) =>
+  <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
+    const contextId = contextIdFromWorkflowExecutionId(executionId)
+    return contextId === undefined
+      ? self
+      : self.pipe(Effect.annotateSpans("firegrid.context.id", contextId))
+  }
+
 export const makeWorkflowEngine = (
   table: WorkflowEngineTableService,
   workerId: string,
@@ -67,6 +83,7 @@ export const makeWorkflowEngine = (
             "firegrid.workflow.worker_id": workerId,
           },
         }),
+        annotateWorkflowExecutionSpans(row.executionId),
       )
 
     const fireClockWakeup = (row: WorkflowClockWakeupRow) =>
@@ -94,6 +111,7 @@ export const makeWorkflowEngine = (
             "firegrid.workflow.clock.name": row.clockName,
           },
         }),
+        annotateWorkflowExecutionSpans(row.executionId),
       )
 
     const scheduleClockWakeup = (row: WorkflowClockWakeupRow) =>
@@ -114,6 +132,7 @@ export const makeWorkflowEngine = (
             "firegrid.workflow.clock.deadline_ms": row.deadlineMs,
           },
         }),
+        annotateWorkflowExecutionSpans(row.executionId),
       )
 
     const recoverPendingClockWakeups = Effect.gen(function* () {
@@ -184,6 +203,7 @@ export const makeWorkflowEngine = (
             "firegrid.workflow.execution_id": executionId,
           },
         }),
+        annotateWorkflowExecutionSpans(executionId),
       )
 
     const engine = WorkflowEngine.makeUnsafe({
@@ -247,6 +267,7 @@ export const makeWorkflowEngine = (
               "firegrid.workflow.discard": options.discard === true,
             },
           }),
+          annotateWorkflowExecutionSpans(options.executionId),
         ),
       poll: (_workflow, executionId) =>
         Effect.gen(function* () {
@@ -264,6 +285,7 @@ export const makeWorkflowEngine = (
               "firegrid.workflow.name": _workflow.name,
             },
           }),
+          annotateWorkflowExecutionSpans(executionId),
         ),
       interrupt: (_workflow, executionId) =>
         Effect.gen(function* () {
@@ -281,6 +303,7 @@ export const makeWorkflowEngine = (
               "firegrid.workflow.name": _workflow.name,
             },
           }),
+          annotateWorkflowExecutionSpans(executionId),
         ),
       resume: (_workflow, executionId) => resume(executionId),
       activityExecute: (activity, attempt) =>
@@ -391,6 +414,7 @@ export const makeWorkflowEngine = (
           Effect.withSpan("firegrid.workflow_engine.deferred.done", {
             kind: "internal",
           }),
+          annotateWorkflowExecutionSpans(options.executionId),
         ),
       scheduleClock: (workflow, options) =>
         Effect.gen(function* () {
@@ -424,6 +448,7 @@ export const makeWorkflowEngine = (
           Effect.withSpan("firegrid.workflow_engine.clock.schedule", {
             kind: "internal",
           }),
+          annotateWorkflowExecutionSpans(options.executionId),
         ),
     })
 

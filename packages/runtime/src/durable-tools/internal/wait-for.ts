@@ -54,6 +54,7 @@ import {
   type WaitForError,
   waitForError,
 } from "./types.ts"
+import { waitKeySpanAttributes } from "./observability.ts"
 
 const RawMatchSchema = Schema.Struct({
   _tag: Schema.Literal("Match"),
@@ -152,8 +153,7 @@ const upsertActiveWait = (
     Effect.withSpan("firegrid.durable_tools.wait_for.upsert_active", {
       kind: "internal",
       attributes: {
-        "firegrid.workflow.execution_id": row.executionId,
-        "firegrid.wait.name": waitName,
+        ...waitKeySpanAttributes({ executionId: row.executionId, name: waitName }),
         "firegrid.wait.source": row.source._tag,
         "firegrid.wait.has_timeout": row.deadlineMs !== undefined,
       },

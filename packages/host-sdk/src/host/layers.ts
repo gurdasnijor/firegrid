@@ -322,6 +322,7 @@ export const FiregridRuntimeHostLive = (
     // `Layer.provideMerge`'d with this host (B), A publishes its bound
     // address into this same instance.
     Layer.provideMerge(FiregridRuntimeContextMcpBaseUrlLive),
+    Layer.annotateSpans("firegrid.side", "host"),
   )
 }
 

@@ -117,6 +117,13 @@ const requestTimedOut = (
   abandonAfterMs: number,
 ): boolean => nowMs - createdAtMs(requestCreatedAt) >= abandonAfterMs
 
+type ReconcileOutcome = "noop" | "claimed" | "advanced" | "completed" | "errored"
+
+const annotateReconcileOutcome = (outcome: ReconcileOutcome) =>
+  Effect.annotateCurrentSpan({
+    "firegrid.control.reconcile.outcome": outcome,
+  })
+
 type ControlRequest =
   | RuntimeContextRequestRow
   | RuntimeStartRequestRow
@@ -481,7 +488,7 @@ const reconcileLifecycleRequest = (
 const reconcileLifecycleRequestsOnce = (
   resolved: ResolvedRuntimeControlRequestReconcilerOptions,
 ): Effect.Effect<
-  void,
+  number,
   unknown,
   | CurrentHostSession
   | RuntimeControlPlaneTable
@@ -499,10 +506,14 @@ const reconcileLifecycleRequestsOnce = (
       request => reconcileLifecycleRequest(request, resolved),
       { discard: true },
     )
+    yield* annotateReconcileOutcome(lifecycleRequests.length === 0 ? "noop" : "completed")
+    return lifecycleRequests.length
   }).pipe(
+    Effect.tapError(() => annotateReconcileOutcome("errored")),
     Effect.withSpan("firegrid.host.control_request.lifecycle.reconcile_once", {
       kind: "internal",
     }),
+    Effect.annotateSpans("firegrid.side", "host"),
   )
 
 export const reconcileRuntimeControlRequestsOnce = (
@@ -520,7 +531,7 @@ export const reconcileRuntimeControlRequestsOnce = (
       request => reconcileContextRequest(request, resolved),
       { discard: true },
     )
-    yield* reconcileLifecycleRequestsOnce(resolved)
+    const lifecycleRequestCount = yield* reconcileLifecycleRequestsOnce(resolved)
     const startRequests = yield* table.startRequests.query((coll) => coll.toArray)
     yield* Effect.annotateCurrentSpan({
       "firegrid.control.start_request_count": startRequests.length,
@@ -530,10 +541,15 @@ export const reconcileRuntimeControlRequestsOnce = (
       request => reconcileStartRequest(request, resolved),
       { discard: true },
     )
+    yield* annotateReconcileOutcome(
+      contextRequests.length + lifecycleRequestCount + startRequests.length === 0 ? "noop" : "completed",
+    )
   }).pipe(
+    Effect.tapError(() => annotateReconcileOutcome("errored")),
     Effect.withSpan("firegrid.host.control_request.reconcile_once", {
       kind: "internal",
     }),
+    Effect.annotateSpans("firegrid.side", "host"),
   )
 }
 
@@ -546,7 +562,7 @@ export const runRuntimeControlRequestReconciler = (
   )
   const resolved = resolveOptions(options)
   const loop = <R>(
-    effect: Effect.Effect<void, unknown, R>,
+    effect: Effect.Effect<unknown, unknown, R>,
     spanName: string,
   ): Effect.Effect<never, never, R> =>
     effect.pipe(

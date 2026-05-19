@@ -167,6 +167,7 @@ const codecLayerForProtocol = (
             "firegrid.mcp.server_count": effectiveMcpServers?.length ?? 0,
           },
         }),
+        Layer.annotateSpans("firegrid.side", "codec"),
       )),
     Match.when("acp", () =>
       AcpSessionLive(bytes, {
@@ -196,6 +197,7 @@ const codecLayerForProtocol = (
             "firegrid.mcp.server_names": (effectiveMcpServers ?? []).map(server => server.name).join(","),
           },
         }),
+        Layer.annotateSpans("firegrid.side", "codec"),
       )),
     Match.exhaustive,
   )
@@ -420,6 +422,7 @@ export const makeCodecRuntimeContextWorkflowSessionService:
               "firegrid.activity_attempt": activityAttempt,
             },
           }),
+          Effect.annotateSpans("firegrid.side", "codec"),
         )
 
     const sendCommand = SessionCommon.makeRuntimeContextSessionCommandSender<CodecRuntimeContextSession>({
