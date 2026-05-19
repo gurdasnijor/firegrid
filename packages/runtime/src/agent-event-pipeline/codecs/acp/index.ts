@@ -193,6 +193,25 @@ const claudeAgentAcpAlwaysLoadMeta = (
   }
 }
 
+const codecSdkCallAttributes = (
+  request: acp.NewSessionRequest,
+  declarations: ReadonlyArray<AcpMcpServerDeclaration>,
+) => {
+  const mcpServerNames = (request.mcpServers ?? [])
+    .map(server => server.name)
+    .sort()
+  return {
+    "firegrid.codec.resolved_tools": mcpServerNames,
+    "firegrid.codec.agent": codec,
+    "firegrid.codec.agent_protocol": "acp",
+    "firegrid.acp.mcp_server_count": mcpServerNames.length,
+    "firegrid.acp.mcp_server_names": mcpServerNames,
+    "firegrid.acp.claude_code_always_load_aliases": declarations
+      .map(declaration => `${declaration.name}-alwaysload`)
+      .sort(),
+  }
+}
+
 const selectedOptionId = (
   decision: PermissionDecision,
   options: ReadonlyArray<acp.PermissionOption>,
@@ -474,36 +493,36 @@ export const AcpSessionLive = (
           }),
         )
 
+      const mcpServerDeclarations = options.mcpServers ?? []
+      const newSessionRequest: acp.NewSessionRequest = {
+        cwd: options.cwd ?? globalThis.process.cwd(),
+        // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7
+        // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9
+        // ACP does not consume FiregridAgentToolkit directly.
+        // Tool execution is owned by the ACP agent process or delegated
+        // through ACP session.mcpServers/MCP.
+        mcpServers: mcpServerDeclarations.map(lowerMcpServerDeclaration),
+        // tf-b6n / A1: additive ACP `_meta` so Claude Agent SDK loads the
+        // runtime-context MCP tools directly instead of deferring them
+        // behind ToolSearch. Reserved-namespace metadata; non-claude ACP
+        // agents ignore it (no behavior change). Omitted when there are
+        // no MCP servers.
+        ...(() => {
+          const meta = claudeAgentAcpAlwaysLoadMeta(mcpServerDeclarations)
+          return meta === undefined ? {} : { _meta: meta }
+        })(),
+      }
       const session = yield* acpPromise("newSession", "failed to create ACP session", () =>
-        connection.newSession({
-          cwd: options.cwd ?? globalThis.process.cwd(),
-          // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7
-          // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9
-          // ACP does not consume FiregridAgentToolkit directly.
-          // Tool execution is owned by the ACP agent process or delegated
-          // through ACP session.mcpServers/MCP.
-          mcpServers: (options.mcpServers ?? []).map(lowerMcpServerDeclaration),
-          // tf-b6n / A1: additive ACP `_meta` so claude-agent-acp loads the
-          // runtime-context MCP tools directly instead of deferring them
-          // behind ToolSearch. Reserved-namespace metadata; non-claude ACP
-          // agents ignore it (no behavior change). Omitted when there are
-          // no MCP servers.
-          ...(() => {
-            const meta = claudeAgentAcpAlwaysLoadMeta(options.mcpServers ?? [])
-            return meta === undefined ? {} : { _meta: meta }
-          })(),
-        })).pipe(
+        connection.newSession(newSessionRequest)).pipe(
           Effect.tap(session =>
             Effect.annotateCurrentSpan({
               "firegrid.acp.session_id": session.sessionId,
-              "firegrid.acp.mcp_server_count": options.mcpServers?.length ?? 0,
-              "firegrid.acp.mcp_server_names": (options.mcpServers ?? []).map(server => server.name).join(","),
+              "firegrid.acp.mcp_server_count": mcpServerDeclarations.length,
+              "firegrid.acp.mcp_server_names": mcpServerDeclarations.map(server => server.name).join(","),
             })),
-          Effect.withSpan("firegrid.agent_event_pipeline.acp.new_session", {
+          Effect.withSpan("firegrid.codec.sdk.call", {
             kind: "client",
-            attributes: {
-              "firegrid.acp.mcp_server_count": options.mcpServers?.length ?? 0,
-            },
+            attributes: codecSdkCallAttributes(newSessionRequest, mcpServerDeclarations),
           }),
         )
       const sessionId = session.sessionId

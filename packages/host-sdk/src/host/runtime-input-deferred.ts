@@ -6,6 +6,7 @@ import {
   type RuntimeIngressInputRow,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
+import type { RowOtelContext } from "@firegrid/protocol/otel"
 import {
   WorkflowEngineTable,
 } from "@firegrid/runtime/workflow-engine"
@@ -89,6 +90,10 @@ const runtimeInputRowsForContext = (
 export const appendRuntimeInputDeferred = (
   request: RuntimeIngressRequest,
   context: RuntimeContext,
+  // Optional trace context propagated from the originating intent row. The
+  // sequencer copies it onto the sequenced ingress row so the reactive_loop
+  // input handler can parent back to the client.prompt producer span.
+  intentOtel?: RowOtelContext,
 ): Effect.Effect<
   RuntimeIngressInputRow,
   Error,
@@ -121,6 +126,7 @@ export const appendRuntimeInputDeferred = (
       status: "sequenced",
       sequence: nextSequence,
       sequencedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
+      ...(intentOtel === undefined ? {} : { _otel: intentOtel }),
     }
     const engine = yield* workflowEngine
     const deferredName = runtimeInputDeferredName(context.contextId, nextSequence)

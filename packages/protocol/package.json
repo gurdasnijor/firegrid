@@ -25,6 +25,10 @@
       "types": "./src/operations/index.ts",
       "default": "./src/operations/index.ts"
     },
+    "./otel": {
+      "types": "./src/otel/index.ts",
+      "default": "./src/otel/index.ts"
+    },
     "./agent-tools": {
       "types": "./src/agent-tools/index.ts",
       "default": "./src/agent-tools/index.ts"

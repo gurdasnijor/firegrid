@@ -43,6 +43,7 @@ import {
   type RuntimeInputIntentRow,
   type RuntimeIngressRequest,
 } from "@firegrid/protocol/runtime-ingress"
+import { stampRowOtel } from "@firegrid/protocol/otel"
 import {
   runtimeAgentOutputObservationFromRow,
   runtimePermissionRequestObservationFromAgentOutput,
@@ -265,6 +266,7 @@ const withClientSpan = <A, E, R>(
       kind: "client",
       attributes,
     }),
+    Effect.annotateSpans("firegrid.side", "sdk"),
   )
 
 interface ResolvedConfig {
@@ -638,12 +640,25 @@ const make = (config: ResolvedConfig) =>
           })
         }
         const intent = makeRuntimeInputIntentRow(request)
-        const result = yield* control.inputIntents.insertOrGet(intent).pipe(
+        // Capture the producer-side trace context INSIDE the producer span so
+        // the stamped traceparent points at that span (consumer becomes its
+        // descendant via the row carrier).
+        const stamped = yield* stampRowOtel(intent)
+        const result = yield* control.inputIntents.insertOrGet(stamped).pipe(
           Effect.mapError(cause =>
             new AppendError({ contextId: request.contextId, cause })),
         )
-        return result._tag === "Found" ? result.row : intent
-      })
+        return result._tag === "Found" ? result.row : stamped
+      }).pipe(
+        Effect.withSpan("firegrid.client.runtime_input_intent.append", {
+          kind: "producer",
+          attributes: {
+            "firegrid.context.id": request.contextId,
+            "firegrid.input.kind": request.kind,
+            "firegrid.input.idempotency_key": request.idempotencyKey ?? "",
+          },
+        }),
+      )
 
     const appendRuntimeContextRequest = (
       input: {
@@ -653,12 +668,19 @@ const make = (config: ResolvedConfig) =>
       },
     ): Effect.Effect<void, AppendError> =>
       Effect.gen(function* () {
-        const row = makeRuntimeContextRequestRow(input)
-        yield* control.contextRequests.insertOrGet(row).pipe(
+        const stamped = yield* stampRowOtel(makeRuntimeContextRequestRow(input))
+        yield* control.contextRequests.insertOrGet(stamped).pipe(
           Effect.mapError(cause =>
           new AppendError({ contextId: input.contextId, cause })),
         )
-      })
+      }).pipe(
+        Effect.withSpan("firegrid.client.runtime_context_request.append", {
+          kind: "producer",
+          attributes: {
+            "firegrid.context.id": input.contextId,
+          },
+        }),
+      )
 
     const createContextRequest = (
       contextId: string,
@@ -676,7 +698,8 @@ const make = (config: ResolvedConfig) =>
     ): Effect.Effect<RuntimeStartRequestAck, AppendError> =>
       Effect.gen(function* () {
         const row = makeRuntimeStartRequestRow({ contextId })
-        const result = yield* control.startRequests.insertOrGet(row).pipe(
+        const stamped = yield* stampRowOtel(row)
+        const result = yield* control.startRequests.insertOrGet(stamped).pipe(
           Effect.mapError(cause => new AppendError({ contextId, cause })),
         )
         return makeRuntimeStartRequestAck({
@@ -684,7 +707,14 @@ const make = (config: ResolvedConfig) =>
           contextId,
           inserted: result._tag === "Inserted",
         })
-      })
+      }).pipe(
+        Effect.withSpan("firegrid.client.runtime_start_request.append", {
+          kind: "producer",
+          attributes: {
+            "firegrid.context.id": contextId,
+          },
+        }),
+      )
 
     const appendPermissionResponseIntent = (
       request: {

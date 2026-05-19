@@ -9,6 +9,7 @@ import {
   RuntimeIngressInputRowSchema,
   type RuntimeIngressInputRow,
 } from "@firegrid/protocol/runtime-ingress"
+import { withRowOtelParent } from "@firegrid/protocol/otel"
 import {
   Context,
   Cause,
@@ -365,11 +366,15 @@ const awaitPermissionResponseInput = (
         },
       ))
     }
-    yield* sendRuntimeInputEvent(context, activityAttempt, row, event)
+    yield* sendRuntimeInputEvent(context, activityAttempt, row, event).pipe(
+      // Parent the dispatched permission-response send back to the client's
+      // `permissions.respond` producer span recorded on the input row.
+      withRowOtelParent(row),
+    )
     return inputSequence + 1
   }).pipe(
     Effect.withSpan("firegrid.runtime_context.workflow.permission_response.await", {
-      kind: "internal",
+      kind: "consumer",
       attributes: {
         "firegrid.context.id": context.contextId,
         "firegrid.runtime.activity_attempt": activityAttempt,
@@ -458,7 +463,7 @@ const handleRuntimeInput = (
     yield* sendRuntimeInputEvent(context, activityAttempt, row, event)
   }).pipe(
     Effect.withSpan("firegrid.runtime_context.workflow.input.handle", {
-      kind: "internal",
+      kind: "consumer",
       attributes: {
         "firegrid.context.id": context.contextId,
         "firegrid.runtime.activity_attempt": activityAttempt,
@@ -466,6 +471,9 @@ const handleRuntimeInput = (
         "firegrid.input.sequence": row.sequence ?? -1,
       },
     }),
+    // Parent this input handle (and everything it sends downstream) to the
+    // original client.prompt producer span recorded on the row.
+    withRowOtelParent(row),
   )
 
 const runReactiveLoop = (
@@ -542,6 +550,7 @@ const runWorkflowNativeRuntimeContext = (
         "firegrid.context.id": contextId,
       },
     }),
+    Effect.annotateSpans("firegrid.context.id", contextId),
   )
 
 export const RuntimeContextWorkflowNative = Workflow.make({

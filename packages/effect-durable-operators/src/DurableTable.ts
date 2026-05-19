@@ -279,6 +279,9 @@ const actionName = (
   operation: GeneratedOperation,
 ): string => `${collectionKey}.${operation}`
 
+const rowCountForQueryResult = (value: unknown): number | undefined =>
+  Array.isArray(value) ? value.length : undefined
+
 // effect-durable-operators.TABLE.24
 const requireString = (
   collection: CompiledCollection,
@@ -919,6 +922,14 @@ const makeFacade = <Row extends object, Key>(options: {
         try: () => build(readableCollection),
         catch: (cause) => new DurableTableError({ table: tableName, cause }),
       }).pipe(
+        Effect.tap((result) => {
+          const rowCount = rowCountForQueryResult(result)
+          return rowCount === undefined
+            ? Effect.void
+            : Effect.annotateCurrentSpan({
+              "firegrid.durable_table.query.row_count": rowCount,
+            })
+        }),
         Effect.withSpan("firegrid.durable_table.query", {
           kind: "internal",
           attributes: {

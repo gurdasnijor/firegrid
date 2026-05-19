@@ -22,6 +22,7 @@ import {
   type DurableTableLayerOptions,
   type DurableTableService,
 } from "effect-durable-operators"
+import { RowOtelContextSchema } from "@firegrid/protocol/otel"
 import { type WaitKey, WaitKeyEncoded } from "./keys.ts"
 import {
   FieldEqualsTriggerSchema,
@@ -57,6 +58,11 @@ const WaitRowSchema = Schema.Struct({
   status: WaitStatusSchema,
   createdAtMs: Schema.Number,
   deadlineMs: Schema.optional(Schema.Number),
+  // firegrid-row-otel-propagation.ROW_OTEL.1 — trace context captured at
+  // wait_for registration time, surfaced to the router as a SpanLink on
+  // `complete_match` (the row-arrival is the parent; the registrar is the
+  // additional causal predecessor).
+  _otel: Schema.optional(RowOtelContextSchema),
 })
 export type WaitRow = Schema.Schema.Type<typeof WaitRowSchema>
 
