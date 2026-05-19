@@ -46,6 +46,7 @@ import {
   DurableWaitRowLookup,
   DurableWaitRowUpsert,
 } from "./durable-wait-store.ts"
+import { emitSpanEvent, waitRowId } from "./span-events.ts"
 import {
   type FieldEqualsTrigger,
   FieldEqualsTriggerSchema,
@@ -343,7 +344,21 @@ const matchImpl = <A = unknown>(
         ? {}
         : { deadlineMs: nowMs + options.timeoutMs }),
     } satisfies WaitRow)
-    yield* upsertActiveWait(options.name, baseRow, waitLookup, waitUpsert)
+    // #429 produces the wait-registrar trace context via stampRowOtel above;
+    // #428 emits a `wait.registered` span event with elapsed time. Both
+    // compose: the row is stamped before insert; the event fires after the
+    // upsert returns the registered row so elapsed_ms is measured against
+    // the row's persisted createdAtMs.
+    const registeredRow = yield* upsertActiveWait(options.name, baseRow, waitLookup, waitUpsert)
+    const registeredAtMs = yield* Clock.currentTimeMillis
+    yield* emitSpanEvent("wait.registered", {
+      "firegrid.workflow.execution_id": registeredRow.executionId,
+      "firegrid.wait.name": registeredRow.waitKey.name,
+      "firegrid.wait.row_id": waitRowId(registeredRow.waitKey),
+      "firegrid.wait.source": registeredRow.source._tag,
+      "firegrid.wait.status": registeredRow.status,
+      "firegrid.wait.elapsed_ms": Math.max(0, registeredAtMs - registeredRow.createdAtMs),
+    })
     const matchDeferred = matchDeferredFor(deferredName)
     return options.timeoutMs === undefined
       ? yield* matchOnlyFlow(options, matchDeferred)
@@ -356,7 +371,16 @@ const matchImpl = <A = unknown>(
         completionUpsert,
         waitKey,
       )
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.durable_tools.wait_for.match", {
+      kind: "internal",
+      attributes: {
+        "firegrid.wait.name": options.name,
+        "firegrid.wait.source": options.source._tag,
+        "firegrid.wait.has_timeout": options.timeoutMs !== undefined,
+      },
+    }),
+  )
 
 const matchOnlyFlow = <A>(
   options: WaitForOptions<A>,
@@ -462,16 +486,7 @@ const matchOrTimeoutFlow = <A>(
       ),
       Match.exhaustive,
     )
-  }).pipe(
-    Effect.withSpan("firegrid.durable_tools.wait_for.match", {
-      kind: "internal",
-      attributes: {
-        "firegrid.wait.name": options.name,
-        "firegrid.wait.source": options.source._tag,
-        "firegrid.wait.has_timeout": options.timeoutMs !== undefined,
-      },
-    }),
-  )
+  })
 
 export const WaitFor = {
   match: matchImpl,

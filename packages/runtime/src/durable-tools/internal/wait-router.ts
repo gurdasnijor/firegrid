@@ -69,6 +69,7 @@ import {
   DurableWaitRows,
   DurableWaitRowUpsert,
 } from "./durable-wait-store.ts"
+import { emitSpanEvent, waitRowId } from "./span-events.ts"
 import { evaluateFieldEquals, type FieldEqualsTrigger } from "./types.ts"
 import { matchDeferredFor } from "./wait-for.ts"
 
@@ -222,6 +223,13 @@ const completeMatch = (
     yield* waitUpsert.upsert({
       ...current.value,
       status: "completed",
+    })
+    yield* emitSpanEvent("wait.satisfied", {
+      "firegrid.workflow.execution_id": wait.waitKey.executionId,
+      "firegrid.wait.name": wait.waitKey.name,
+      "firegrid.wait.row_id": waitRowId(wait.waitKey),
+      "firegrid.wait.source": wait.source._tag,
+      "firegrid.wait.elapsed_ms": Math.max(0, completedAtMs - current.value.createdAtMs),
     })
   }).pipe(
     Effect.withSpan("firegrid.durable_tools.wait_router.complete_match", {
