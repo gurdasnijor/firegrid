@@ -14,6 +14,7 @@ import {
 } from "./runtime-substrate.ts"
 import type { ActiveRuntimeContextEngine } from "./runtime-context-engine-registry.ts"
 
+// LENS: host-sdk:rcws-rin-cycle — executor stays provideMerge'd; the RIN-shaped cycle is deliberate (see LENSES.md)
 // TFIND-031 (Option Y, layer-composition-order fix): BOTH the workflow
 // body (`RuntimeContextWorkflowNativeLayer`) and the tool executor
 // (`RuntimeToolUseExecutorLive`) capture the durable-wait family via

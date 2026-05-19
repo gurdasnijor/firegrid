@@ -39,6 +39,7 @@ type RuntimeToolUseExecutorHostEnvironment =
   | DurableWaitCompletionRowUpsert
   | AgentToolHost
 
+// LENS: host-sdk:captured-context-relay — whole-context capture+re-provide is a deliberate bulk relay; canonical of 5 (see LENSES.md)
 // TFIND-031: the host-provided durable substrate that a per-context
 // workflow execution genuinely requires. Deferred-execution seams
 // (`Effect.context<…>()` captured at Layer-build time and re-provided

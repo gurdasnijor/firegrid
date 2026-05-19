@@ -611,6 +611,7 @@ const make = (config: ResolvedConfig) =>
         })
       })
 
+    // LENS: client-sdk:intent-not-state — client appends a durable intent row; host reconciles it into state (see LENSES.md)
     const appendRuntimeInputIntent = (
       request: RuntimeIngressRequest,
     ): Effect.Effect<RuntimeInputIntentRow, AppendError> =>

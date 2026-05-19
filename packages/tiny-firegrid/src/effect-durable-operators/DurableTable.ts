@@ -10,6 +10,7 @@ const collectionFromRows = <Row extends object>(
 ): DurableTableCollection<Row> =>
   ({ toArray: rows }) as unknown as DurableTableCollection<Row>
 
+// LENS: durable-table:self-curry — table factory preserves per-table identity through the provider seam (see LENSES.md)
 export const makeMemoryDurableCollectionFacade = <Row extends object, Key extends string>(
   keyOf: (row: Row) => Key,
 ): Effect.Effect<DurableTableCollectionFacade<Row, Key>> =>

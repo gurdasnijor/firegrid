@@ -1,3 +1,4 @@
+// LENS: host-sdk:mcp-tool-transport-verification-gap — tool-transport path not covered by transport-level assertions; test-green ≠ bytes crossed (see LENSES.md)
 /**
  * Host-owned localhost MCP server for the Firegrid agent toolkit.
  *

@@ -84,6 +84,7 @@ const createdAtMs = (createdAt: string): number => {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+// LENS: runtime:claim-first-effects — claim → execution → terminal append order is the RFC §13 crash-safety contract (see LENSES.md)
 const claimWindowStartedAtMs = (
   nowMs: number,
   claimWindowMs: number,

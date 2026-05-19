@@ -15,6 +15,7 @@
     "effect:patch": "effect-language-service patch",
     "effect:unpatch": "effect-language-service unpatch",
     "firegrid": "tsx packages/cli/src/bin/run.ts",
+    "lenses:check": "node scripts/lenses-check.mjs",
     "firegrid:env": "node --env-file-if-exists=.env --import tsx packages/cli/src/bin/run.ts",
     "firegrid:host": "tsx packages/cli/src/bin/index.ts",
     "firegrid:host:env": "node --env-file-if-exists=.env --import tsx packages/cli/src/bin/index.ts",

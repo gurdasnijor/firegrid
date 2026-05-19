@@ -14,6 +14,7 @@
  *    this package only provides the live layer.
  */
 
+// LENS: packages:public-vs-internal — this entry is the package contract; deep internal-path imports reach past it (see LENSES.md)
 // Host composition, config, commands, sync-run, env policy.
 export * from "./host/index.ts"
 
