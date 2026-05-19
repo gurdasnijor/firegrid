@@ -518,13 +518,36 @@ stated so the next session recognizes the pattern early:
   in the shared runner? does this assertion blob belong in the contract?* —
   was never asked. Each PR passed alone; the aggregate was incoherent. No one
   owned "is tiny-firegrid still the clean trace-generator it was meant to be."
-- **Confident conclusions asserted on unverified inference — three times.**
-  (1) the §6 "victory" over-declaration; (2) "no ACP path forces tool-choice,
-  terminal" reasoned from the protocol surface, not source; (3) the codec's
-  claude-agent-acp merge behavior **stated as fact in code comments** (§0a)
-  while never reading claude-agent-acp source. Same shape each time:
-  inference promoted to decision-grade because the visible metric (merged
-  PRs / "demoable") rewarded closing, not verifying.
+- **Confident conclusions asserted on unverified inference — at least four
+  times.** (1) the §6 "victory" over-declaration; (2) "no ACP path forces
+  tool-choice, terminal" reasoned from the protocol surface, not source;
+  (3) the codec's claude-agent-acp merge behavior **stated as fact in code
+  comments** (§0a) while never reading claude-agent-acp source; (4) **the
+  TFIND-017 / "`DurableTable.rows()` is a live tail" / #406 fact-advancement
+  story** — propagated from a lane report + a bead title + the sim's own
+  comment, asserted as a "real substrate finding," then **refuted on actually
+  reading the source** (see the box below). Same shape each time: inference
+  promoted to decision-grade because the visible metric (merged PRs /
+  "demoable") rewarded closing, not verifying.
+
+> **⚠ KNOWN MISDIAGNOSIS — do NOT resurrect (source-cited refutation).**
+> The claim "`DurableTable.rows()` is a live tail, so a fact written before a
+> `wait_for` attaches is lost" is **false**. Source:
+> `packages/effect-durable-operators/src/DurableTable.ts:143` — contract:
+> *"Current non-deleted rows **plus** live non-deleted row changes"*; impl
+> ~line 769 — `subscribeChanges(handler, { **includeInitialState: true** })`.
+> `rows()` replays current rows then tails; pre-attach facts ARE delivered.
+> Therefore **#406's "fact-advancement timing" change is a workaround built on
+> a misdiagnosis**, and almost certainly moot (if the planner never issues
+> `wait_for` — the real #2/#3 issue — fact *timing* is irrelevant; there is
+> nothing to advance). One honest residual: a CallerFact `wait_for` resolves
+> through the **host-supplied `CallerOwnedFactStreams.callerFact` resolver**
+> (`packages/runtime/src/durable-tools/internal/runtime-wait-streams.ts`),
+> which was **not** read — so "the §6 wait path loses pre-attach facts" is
+> *uninstrumented/unknown*, NOT established. Do not treat TFIND-017, the
+> `tf-eoi` bead, or merged #406 as evidence of a real `rows()` defect. If the
+> CallerFact wait path is ever suspect, instrument that resolver — don't
+> re-derive the refuted `rows()` story.
 
 **Corrective principles (enforce these as coordinator):**
 1. Label epistemic tier on every claim: *assertion / inference /
