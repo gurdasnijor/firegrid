@@ -131,6 +131,28 @@ class SimulationRunTimeout extends Data.TaggedError("SimulationRunTimeout")<{
   }
 }
 
+const isSimulationRunTimeout = (error: unknown): error is SimulationRunTimeout =>
+  error instanceof SimulationRunTimeout ||
+  (typeof error === "object" &&
+    error !== null &&
+    "_tag" in error &&
+    error._tag === "SimulationRunTimeout" &&
+    "timeout" in error)
+
+const simulationRunTimeoutDuration = (
+  error: unknown,
+  fallback: Duration.Duration,
+): Duration.Duration | undefined => {
+  if (isSimulationRunTimeout(error)) return error.timeout
+  if (
+    error instanceof Error &&
+    error.message.startsWith("tiny-firegrid simulation timed out after ")
+  ) {
+    return fallback
+  }
+  return undefined
+}
+
 const runFileSystem = <A, E>(
   effect: Effect.Effect<A, E, FileSystem.FileSystem>,
 ): Promise<A> =>
@@ -505,11 +527,12 @@ const runSimulation = async (
     })
     printRunSummary(completed, paths)
   } catch (error) {
-    if (error instanceof SimulationRunTimeout) {
+    const timeoutDuration = simulationRunTimeoutDuration(error, requested.timeout)
+    if (timeoutDuration !== undefined) {
       live.write({
         event: "simulate.run.timeout",
         runId: requested.runId,
-        timeout: Duration.format(requested.timeout),
+        timeout: Duration.format(timeoutDuration),
       })
     } else if (interruptedBy !== undefined) {
       live.write({
