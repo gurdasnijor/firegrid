@@ -31,7 +31,36 @@ import {
   Schema,
   Stream,
 } from "effect"
+import { rowOtelExternalSpan } from "@firegrid/protocol/otel"
+import type { ExternalSpan, SpanLink } from "effect/Tracer"
 import { RuntimeWaitStreams } from "./runtime-wait-streams.ts"
+
+// firegrid-row-otel-propagation.ROW_OTEL.2 — the wait router has two causal
+// predecessors. Parent = row-arrival; link = wait registrar. Either may be
+// missing on legacy rows; the resulting span options simply omit those keys.
+const completeMatchSpanOptions = (
+  wait: { readonly _otel?: unknown },
+  row: unknown,
+): {
+  readonly parent?: ExternalSpan
+  readonly links?: ReadonlyArray<SpanLink>
+} => {
+  const parent = rowOtelExternalSpan(row)
+  const registrarSpan = rowOtelExternalSpan(wait)
+  const links: ReadonlyArray<SpanLink> = registrarSpan === undefined
+    ? []
+    : [
+      {
+        _tag: "SpanLink",
+        span: registrarSpan,
+        attributes: { "firegrid.wait.predecessor": "registrar" },
+      },
+    ]
+  return {
+    ...(parent === undefined ? {} : { parent }),
+    ...(links.length === 0 ? {} : { links }),
+  }
+}
 import { type WaitRow } from "./table.ts"
 import {
   DurableWaitCompletionRowLookup,
@@ -200,12 +229,13 @@ const completeMatch = (
     })
   }).pipe(
     Effect.withSpan("firegrid.durable_tools.wait_router.complete_match", {
-      kind: "internal",
+      kind: "consumer",
       attributes: {
         "firegrid.workflow.execution_id": wait.waitKey.executionId,
         "firegrid.wait.name": wait.waitKey.name,
         "firegrid.wait.source": wait.source._tag,
       },
+      ...completeMatchSpanOptions(wait, row),
     }),
   )
 

@@ -110,6 +110,7 @@ const appendIntentToEngine = (
     appendRuntimeInputDeferred(
       runtimeInputIntentToRuntimeIngressRequest(intent),
       handle.context,
+      intent._otel,
     ),
   ).pipe(
     Effect.mapError(cause =>

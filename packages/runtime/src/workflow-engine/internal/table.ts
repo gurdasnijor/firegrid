@@ -5,6 +5,7 @@ import {
   type DurableTableLayerOptions,
   type DurableTableService,
 } from "effect-durable-operators"
+import { RowOtelContextSchema } from "@firegrid/protocol/otel"
 
 export interface WorkflowEngineDurableStateOptions {
   readonly streamUrl: string
@@ -23,6 +24,10 @@ const WorkflowExecutionRowSchema = Schema.Struct({
   suspended: Schema.Boolean,
   cause: Schema.optional(Schema.Unknown),
   finalResult: Schema.optional(Schema.Unknown),
+  // firegrid-row-otel-propagation.ROW_OTEL.1 — trace context captured at the
+  // first `engine.execute` write; later `resume` calls (including cross-host
+  // wake-ups) re-hydrate it as the parent of the workflow body span.
+  _otel: Schema.optional(RowOtelContextSchema),
 })
 export type WorkflowExecutionRow = Schema.Schema.Type<typeof WorkflowExecutionRowSchema>
 

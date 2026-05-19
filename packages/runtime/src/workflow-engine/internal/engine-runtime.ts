@@ -2,6 +2,7 @@ import { DurableDeferred, Workflow, WorkflowEngine } from "@effect/workflow"
 import type { Scope } from "effect"
 import { Clock, Duration, Effect, Exit, Fiber, Match, Option } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
+import { stampRowOtel, withRowOtelParent } from "@firegrid/protocol/otel"
 import {
   decodeWorkflowResult,
   encodeWorkflowResult,
@@ -163,6 +164,17 @@ export const makeWorkflowEngine = (
             }),
           ),
           Effect.forkIn(entry.scope),
+          Effect.withSpan("firegrid.workflow_engine.execution.resume.body", {
+            kind: "consumer",
+            attributes: {
+              "firegrid.workflow.execution_id": executionId,
+              "firegrid.workflow.name": row.workflowName,
+            },
+          }),
+          // Parent the resumed workflow body (and the deferred fork beneath it)
+          // back to whoever first wrote the execution row via `engine.execute`.
+          // Row-scoped — runs inside the gen so `row` is in scope.
+          withRowOtelParent(row),
         )
         running.set(executionId, fiber)
       }).pipe(
@@ -199,14 +211,18 @@ export const makeWorkflowEngine = (
             return (yield* decodeWorkflowResult(workflow, existing.finalResult)) as never
           }
           if (!existing) {
-            yield* orDieTable(table.executions.upsert({
+            // Stamp the caller's trace context onto the execution row so a
+            // later `resume` (possibly on a different host generation) can
+            // parent the workflow body span back to whoever invoked execute.
+            const stamped = yield* stampRowOtel({
               executionId: options.executionId,
               workflowName: workflow.name,
               payload: options.payload,
               parentExecutionId: options.parent?.executionId,
               interrupted: false,
               suspended: false,
-            }))
+            })
+            yield* orDieTable(table.executions.upsert(stamped))
           }
           yield* resume(options.executionId)
           const fiber = running.get(options.executionId)
@@ -224,7 +240,7 @@ export const makeWorkflowEngine = (
           return new Workflow.Suspended({}) as never
         }).pipe(
           Effect.withSpan("firegrid.workflow_engine.execution.execute", {
-            kind: "internal",
+            kind: "producer",
             attributes: {
               "firegrid.workflow.execution_id": options.executionId,
               "firegrid.workflow.name": workflow.name,
