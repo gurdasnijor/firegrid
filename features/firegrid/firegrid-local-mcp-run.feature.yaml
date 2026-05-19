@@ -27,6 +27,7 @@ components:
   MCP_ROUTE:
     requirements:
       1: The printed MCP URL has the route shape /mcp/runtime-context/:contextId by default.
+      1-1: The route accepts Firegrid-generated RuntimeContext ids without rejecting them due to HTTP router path-parameter length limits.
       2: Tool catalog and execution are provided by FiregridMcpServerLayer and Effect AI McpServer composition; the local command does not implement JSON-RPC, tools/list, or tools/call.
       3: Firegrid-launched agents receive the generated route-scoped Firegrid MCP server in their launch configuration by default when the selected adapter/backend supports MCP setup.
       4: User-provided MCP servers are additive to Firegrid's generated runtime-context MCP server; callers do not need to pass Firegrid's own MCP URL explicitly.
