@@ -1,9 +1,12 @@
 # SDD: session_cancel/session_close terminal append-point
 
-Status: **DECISION PENDING — Gurdas-gated.** Load-bearing architectural
-choice; not to be unilaterally settled + shipped. No substrate PR until
-§0 is decided. Status authority: bead `tf-jri`. Evidence: PR #393
-(merged §8 Gap-3 artifact) + `docs/research/tf-4ni-session-lifecycle-unwind.FINDING.md`.
+Status: **DECIDED: Option A (Gurdas 2026-05-19)** — append
+session_cancel/session_close terminal on a committed control-intent path,
+mirroring the client; do NOT append inside the uncommitted tool-use
+activity. Substrate lands as a separate gated PR (bead `tf-auk`). Status
+authority: bead `tf-jri` (decision) / `tf-auk` (implementation).
+Evidence: PR #393 (merged §8 Gap-3 artifact) +
+`docs/research/tf-4ni-session-lifecycle-unwind.FINDING.md`.
 
 ## §0 — The load-bearing question (decide this first)
 
