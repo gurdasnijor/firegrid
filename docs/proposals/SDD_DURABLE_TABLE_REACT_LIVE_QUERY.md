@@ -483,15 +483,33 @@ contingent candidate pending Gurdas.**
   earlier bisect window `4bdc81a83..7d73e34c4`. Do not use it for
   cascade attribution.
 
-### 2. The corrected finding
+### 2. The corrected finding — host-sdk-alone `tsc` / `explainFiles` proof (this is what supersedes §0.2)
 
-`tsc --explainFiles` proves **`react.ts` is not in host-sdk's
-TypeScript program** (host-sdk resolves `effect-durable-operators` →
-`./src/index.ts`; that closure is `DurableTable.ts`/`Errors.ts` only;
-no `references`/`composite`/`paths`/`/react` importer reaches it).
-host-sdk's **own `tsc`** reproduces the 29-error cascade with c1
-absent. Therefore the host-sdk cascade is **c1- and
-TFIND-050-INDEPENDENT**: it is **`#326`-curry × main**.
+Evidence chain (each step deterministic, `.tsbuildinfo` cleared,
+single-variable):
+
+1. **`tsc --explainFiles` on host-sdk:** `react.ts` is **not in
+   host-sdk's TypeScript program**. host-sdk resolves
+   `effect-durable-operators` → `./src/index.ts`; that closure is
+   `DurableTable.ts` / `Errors.ts` only. No `references` / `composite`
+   / `paths`; no `/react` importer in host-sdk or its
+   `@firegrid/protocol`/`@firegrid/runtime` closure. (The only 9
+   "react" lines in the explain log are unrelated —
+   `@effect/experimental/.../Reactivity.d.ts`.)
+2. **host-sdk's own `tsc` alone** (not `pnpm --recursive`) reproduces
+   the 29-error cascade — so it is a real program result, not a
+   runner/ordering artifact.
+3. **Single-variable isolation:** host-sdk-alone with **c1 reverted**
+   (react.ts = base #348) on `#326`-curry rebased onto current main =
+   **still 29**. With main alone (no `#326`) = **0**.
+4. **Anchors (host-sdk-alone, same method):** `#326`-curry on
+   `798821692` → **0**; on `4bdc81a83` → **29**.
+
+⇒ The host-sdk cascade is **c1- and TFIND-050-INDEPENDENT**: it is
+**`#326`-curry × main**. This empirically supersedes §0.2's
+"c1 sole trigger" (which came from the now-retired `pnpm --recursive`
++ error-bucketing method conflating a rebase-base difference with the
+react.ts variable).
 
 ### 3. Culprit (empirical bisect, host-sdk-alone)
 
@@ -543,6 +561,54 @@ merged production src.
   cascade is in **merged** code (a Gurdas-decided/merged change):
   fixing/enumerating it is architect/coordinator-directed under
   broadened TFIND-045, not authored here.
+
+### 6. Disposition mechanism comparison (decision-grade — `tf-uiz`'s decision)
+
+This is the architect decision behind `tf-uiz` (the broadened-TFIND-045
+/ #350-leak disposition that gates `#326`). No mechanism is chosen
+here; Gurdas decides.
+
+**Concrete forensic anchor.** #350's `runtime-context-workflow-core.ts`
+diff **explicitly introduced** a function declared
+`Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError,
+unknown>` — the **R channel is a literal `unknown`** — and **removed**
+a former `… as Effect.Effect<StartRuntimeResult, RuntimeContextError>`
+cast. Pre-curry, `any`-typed DurableTable layers absorbed that
+`unknown` R; post-curry the precise identities cannot discharge it to
+`never`, and it propagates to the 29 consumer sites
+(`commands.ts:163`, `control-request-reconciler.ts:227`,
+`agent-tool-host-live.ts:90`, + 6 host-sdk test files). The leak
+therefore has a **named, small upstream origin in #350's own new
+annotations**, not 29 independent inference accidents.
+
+| Option | Mechanism | Closes cascade w/o composite-ify? | Blast radius | Reopens merged #350/TFIND-015? | Root vs mask | Reversible |
+|---|---|---|---|---|---|---|
+| **y — root R-narrow at #350's source** | Narrow the `, unknown>` R the #350 workflow-core function(s) declare to the precise/`never` set at that source (the TFIND-045/#347 fix shape, applied to its origin). | **Yes** — no build-graph change. | Smallest: the few #350-introduced annotations in `runtime-context-workflow-core.ts`; re-verify host-sdk-alone tsc + sweep. | No — refines #350's *type annotation*, not its runtime/decision. | **Root** (fixes the origin `unknown`). | Yes. |
+| **z — broad explicit-R enumeration** | Enumerate/annotate R at each of the 29 leaking consumer sites (broadened #347). | Yes. | Largest mechanical: 29 host-sdk sites incl. merged tests; sweep other pkgs. | No (consumer-side). | **Mask-ish** — leaves source `unknown`; future curry-precision changes can re-leak. | Yes but noisy. |
+| **x-scoped — boundary at the #350 workflow-core seam** | Deliberate, *named/justified* coarse Effect-R boundary localized to the #350 workflow-core module so precision doesn't propagate. | Yes. | One module. | No. | **Mask** (contained, named — TFIND-005-style anti-pattern risk; must be justified per §0/§8 discipline). | Yes. |
+| **x-broad — revert/rework #350's restructure** | Undo/redo the "move ACP permission authority to workflow" restructure that introduced the `unknown` R. | Yes. | Largest: host-sdk + runtime ACP codec; **reopens TFIND-015**. | **Yes** — reopens a merged Gurdas decision. | Root (removes the construct) but heavy. | Hard. |
+
+**Recommendation (Gurdas decides): lean `y`.** The forensic anchor
+shows the `unknown` R is a *small, named, #350-authored source*
+annotation, not diffuse inference — so narrowing at the source is the
+smallest change that is also root, needs no build-graph/composite
+work, does **not** reopen TFIND-015, and is the same proven shape as
+TFIND-045/#347. `z` is the safe fallback if `y`'s sites cannot be
+narrowed without behavior change. `x-scoped` only if `y`/`z` prove
+infeasible (it masks; carries the §0/§8 localized-coarsening burden).
+`x-broad` only if #350's restructure is fundamentally
+precise-identity-incompatible (reopens a merged decision — highest
+cost/risk).
+
+**Open verification (decision-grade honesty — implementer must
+confirm; not a blocker to the decision):** that **all 29** sites trace
+to the #350-introduced `, unknown>` annotation(s) as a single upstream
+R-source has strong evidence (uniform error shape; the explicit
+`unknown` in #350's diff) but is **not exhaustively bisected to that
+granularity**. If `y` is chosen, the implementer confirms the
+29→source mapping via host-sdk-alone `tsc` while narrowing; if a
+residual subset is independent, those fall to `z`. This does not
+change the recommendation; it scopes `y`'s implementation.
 
 ## Contract
 
