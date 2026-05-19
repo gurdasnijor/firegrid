@@ -6,6 +6,31 @@
 
 ---
 
+## ★ THE META-PROCESS RULE (governs everything below)
+
+> **Do not make assumptions in the absence of data. When you don't know:
+> (1) locate exactly where the data gap is, (2) instrument/trace that
+> boundary, (3) run a simulation to GATHER that data, (4) only then
+> conclude — from the data.**
+
+Inference is a *hypothesis to be instrumented*, never a conclusion to act on.
+"It probably works this way / it's an ACP limitation / accept the demo" are
+all assumptions; each one in this arc was made where the instrumentation to
+settle it was *available and not done*. This is the entire reason
+`tiny-firegrid` exists: generate trace data to drive an experiment. Every
+failure here (the §6 over-declaration; "no ACP path forces tool-choice,
+terminal"; the codec's claude-agent-acp merge behavior asserted as fact in
+comments; "accept the substrate-complete demo") was the same violation:
+**a data gap filled with an assumption instead of a trace.**
+
+When you catch yourself (or a lane) writing "this is because…", "X can't…",
+"it's terminal", or a code comment asserting third-party behavior — STOP.
+Name the data gap. Instrument it. Run the sim. Then write the conclusion with
+the artifact that proves it. A confident conclusion with no captured evidence
+is the bug, not the finding.
+
+---
+
 ## 0. STATUS: NOT DONE — the honest failure
 
 **The north star (factory-vision §6) has never executed live.** Every live
