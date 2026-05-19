@@ -50,11 +50,10 @@ schedule_me, execute`.
 
 ## G-MCP-2 - Discovery silent-mismatch
 
-`VERIFIED-FAILING` (generated trace artifacts):
-the Codex ACP smoke writes gitignored
-`tooling/analysis/mcp-tool-exposure-trace.md` and
-`tooling/analysis/mcp-tool-exposure-trace.json` evidence files for local review.
-For the exporter model, see `docs/runbooks/firegrid-effect-tracing.md`.
+`VERIFIED-FAILING` (generated simulation artifacts):
+the Codex ACP tiny-firegrid simulation writes gitignored local evidence under
+`packages/tiny-firegrid/.simulate/runs/<run-id>/`. For the exporter model, see
+`docs/runbooks/firegrid-effect-tracing.md`.
 
 The trace localizes the failure:
 - `firegrid.mcp.register_toolkit` records the host toolkit with 8 tools:

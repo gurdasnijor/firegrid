@@ -7,16 +7,11 @@ on `@effect/opentelemetry` directly; that boundary is required by
 
 ## In-repo simulation capture
 
-The G-MCP-2 smoke and the standalone tiny-firegrid simulation runner use
+The standalone tiny-firegrid simulation runner uses
 `packages/tiny-firegrid/src/simulations/trace-recorder.ts` to install an Effect
 `Tracer` with `Effect.withTracer` and collect ended spans in memory.
 `packages/tiny-firegrid/src/simulations/trace-artifacts.ts` turns those spans
-into reusable run artifacts. The Codex ACP smoke can write gitignored
-review-compatible legacy files:
-
-- `tooling/analysis/mcp-tool-exposure-trace.md` for review.
-- `tooling/analysis/mcp-tool-exposure-trace.json` for scripts and trace-tree
-  post-processing.
+into reusable run artifacts.
 
 Standalone simulations store gitignored local evidence assets under
 `packages/tiny-firegrid/.simulate/`:
@@ -52,8 +47,8 @@ TINY_FIREGRID_RUN_ID=...
 FIREGRID_DURABLE_STREAMS_URL=...
 ```
 
-`simulate run` starts an in-process `DurableStreamTestServer` by default,
-matching the scenario-test pattern. Override the URL with
+`simulate run` starts an in-process `DurableStreamTestServer` by default.
+Override the URL with
 `FIREGRID_DURABLE_STREAMS_URL` or `TINY_FIREGRID_DURABLE_STREAMS_URL` to attach
 to an external server instead. Viewer commands such as `show`, `tail`, `duckdb`,
 and `query` operate only on stored runs and never start agent, host, or
@@ -66,8 +61,7 @@ spans, and writes the OTLP/DuckDB bundle. A simulation is a small registry entry
 - `summarize(result)`: turns the driver result into artifact metadata.
 
 That shape keeps host configuration, public-client behavior, and artifact
-capture separated. The existing Codex ACP smoke can remain as compatibility
-evidence, but new system simulations should be added under
+capture separated. New system simulations should be added under
 `packages/tiny-firegrid/src/simulations`.
 
 ## Viewing tiny-firegrid traces

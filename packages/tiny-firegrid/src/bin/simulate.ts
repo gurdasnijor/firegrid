@@ -3,7 +3,7 @@ import {
   FiregridStandaloneLive,
 } from "@firegrid/client-sdk/firegrid"
 // firegrid-observability.TINY_FIREGRID_SIMULATIONS.6
-// Accepted bin-only local simulation escape hatch, matching scenario tests.
+// Accepted bin-only local simulation escape hatch.
 // eslint-disable-next-line no-restricted-imports
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {

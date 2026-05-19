@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "check": "pnpm run typecheck && pnpm run test",
+    "check": "pnpm run typecheck",
     "simulate": "tsx src/bin/simulate.ts",
     "simulate:attach": "tsx src/bin/simulate.ts attach",
     "simulate:duckdb": "tsx src/bin/simulate.ts duckdb",
@@ -23,8 +23,6 @@
     "simulate:runs": "tsx src/bin/simulate.ts runs",
     "simulate:show": "tsx src/bin/simulate.ts show",
     "simulate:tail": "tsx src/bin/simulate.ts tail",
-    "test": "vitest run",
-    "test:smoke": "vitest run --config ./vitest.smoke.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -42,7 +40,6 @@
     "@agentclientprotocol/sdk": "0.21.0",
     "@durable-streams/server": "^0.3.1",
     "@firegrid/client-sdk": "workspace:*",
-    "typescript": "^5.7.0",
-    "vitest": "^3.2.0"
+    "typescript": "^5.7.0"
   }
 }

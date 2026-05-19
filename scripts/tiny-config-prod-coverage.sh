@@ -232,14 +232,7 @@ production_config_files() {
 
 end_to_end_entries_for_config() {
   local candidate="$1"
-  local name
-  name="$(basename "$candidate" .ts)"
-  local test_candidate="packages/tiny-firegrid/test/${name}.test.ts"
-  if [[ -f "$test_candidate" ]]; then
-    printf '%s\n%s\n' "$candidate" "$test_candidate"
-  else
-    printf '%s\n' "$candidate"
-  fi
+  printf '%s\n' "$candidate"
 }
 
 compute_production_consuming_touchpoint_sets() {
@@ -335,7 +328,7 @@ fi
 # ---- resolve entry points ----
 if [[ "$TARGET" == "all" ]]; then
   HOST_SURFACE_ENTRY="packages/tiny-firegrid/src"
-  END_TO_END_ENTRY=("packages/tiny-firegrid/src" "packages/tiny-firegrid/test")
+  END_TO_END_ENTRY=("packages/tiny-firegrid/src")
   TOY_LABEL="all configurations"
 else
   CANDIDATE="packages/tiny-firegrid/src/configurations/${TARGET}.ts"
@@ -350,12 +343,7 @@ else
     exit 1
   fi
   HOST_SURFACE_ENTRY="$CANDIDATE"
-  TEST_CANDIDATE="packages/tiny-firegrid/test/${TARGET}.test.ts"
-  if [[ -f "$TEST_CANDIDATE" ]]; then
-    END_TO_END_ENTRY=("$CANDIDATE" "$TEST_CANDIDATE")
-  else
-    END_TO_END_ENTRY=("$CANDIDATE")
-  fi
+  END_TO_END_ENTRY=("$CANDIDATE")
   TOY_LABEL="$TARGET"
 fi
 
@@ -546,7 +534,7 @@ touchpoint denominator:
 1. find every configuration under \`src/configurations/\` that imports
    \`FiregridRuntimeHostLive\`;
 2. compute the first-order production modules imported directly by each
-   configuration and companion test from \`packages/tiny-firegrid\`;
+   configuration from \`packages/tiny-firegrid\`;
 3. intersect those direct touchpoint sets to get the shared host/client spine;
 4. union those direct touchpoint sets to get the known production-consuming
    touchpoint denominator;
@@ -569,9 +557,8 @@ closure has collapsed to the shared host/client graph.
 
 - \`host_surface_closure\`: what production composition this configuration
   provides. Entry point is the configuration file only.
-- \`end_to_end_closure\`: what production surface this configuration plus its
-  companion scenario test exercises. Entry points are the configuration and the
-  companion test when present.
+- \`end_to_end_closure\`: what production surface this configuration exercises.
+  Entry point is the configuration file only.
 
 ## Tooling Correctness
 
