@@ -1,0 +1,20 @@
+# Finding 1: Effect.context<T>() captured inside a Layer constructor body.
+# Syntactic shape only — does NOT resolve whether the captured context is
+# later re-provided (that join is Phase 2 / ts-morph, finding 2).
+# INFORMATION: presence is a footprint signal, not a defect.
+id: effect-context-in-layer-builder
+language: typescript
+severity: info
+rule:
+  pattern: Effect.context<$T>()
+  inside:
+    any:
+      - pattern: Layer.effect($$$)
+      - pattern: Layer.scoped($$$)
+      - pattern: Layer.unwrapEffect($$$)
+    stopBy: end
+message: "Effect.context<$T>() captured inside a Layer builder (T=$T)"
+note: >
+  Marks where a layer build closes over the ambient context. Whether that
+  capture is re-provided into a deferred handler is the load-bearing
+  question — see finding 2 (ts-morph capture-replay), not resolvable here.

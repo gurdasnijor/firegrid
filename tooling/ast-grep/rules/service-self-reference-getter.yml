@@ -1,0 +1,18 @@
+# Finding 3: service self-reference via getter —
+#   const S = factory({ ..., get m() { return S } ... })
+# Metavariable $S is reused (capture-and-bind site == getter return), so
+# ast-grep enforces the self-reference textually. Variant returns
+# (`return S;`, arrow getters) may be missed — noted, not forced to ts-morph.
+# INFORMATION: designed-in self-reference; may indicate a layer-cycle root.
+id: service-self-reference-getter
+language: typescript
+severity: info
+rule:
+  any:
+    - pattern: const $S = $F({ $$$ get $M() { return $S } $$$ })
+    - pattern: const $S = $F({ $$$ get $M() { return $S; } $$$ })
+message: "Service '$S' construction contains a getter '$M' returning itself"
+note: >
+  A service whose construction args include a getter that returns the very
+  binding being constructed. Often the structural seed of a recursive
+  service / layer cycle (cf. finding 10). Footprint, not verdict.

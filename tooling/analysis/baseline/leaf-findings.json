@@ -1,0 +1,3241 @@
+[
+  {
+    "rule_id": "double-launder-cast",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/effect-durable-operators/DurableTable.ts",
+    "line_range": [
+      11,
+      11
+    ],
+    "captures": {
+      "T": "DurableTableCollection<Row>",
+      "E": "({ toArray: rows })"
+    },
+    "snippet": "({ toArray: rows }) as unknown as DurableTableCollection<Row>",
+    "notes": "`x as unknown as T` erases the source type then asserts the target. Inventory only — some are legitimate boundary adapters; the question is how many, and clustered where.\n"
+  },
+  {
+    "rule_id": "effect-context-in-layer-builder",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+    "line_range": [
+      218,
+      218
+    ],
+    "captures": {
+      "T": "HostRuntimeContextExecutionEnv"
+    },
+    "snippet": "const hostContext = yield* Effect.context<HostRuntimeContextExecutionEnv>()",
+    "notes": "Marks where a layer build closes over the ambient context. Whether that capture is re-provided into a deferred handler is the load-bearing question — see finding 2 (ts-morph capture-replay), not resolvable here.\n"
+  },
+  {
+    "rule_id": "effect-context-in-layer-builder",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/commands.ts",
+    "line_range": [
+      156,
+      156
+    ],
+    "captures": {
+      "T": "HostRuntimeContextExecutionEnv"
+    },
+    "snippet": "const captured = yield* Effect.context<HostRuntimeContextExecutionEnv>()",
+    "notes": "Marks where a layer build closes over the ambient context. Whether that capture is re-provided into a deferred handler is the load-bearing question — see finding 2 (ts-morph capture-replay), not resolvable here.\n"
+  },
+  {
+    "rule_id": "effect-context-in-layer-builder",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/mcp-host.ts",
+    "line_range": [
+      115,
+      117
+    ],
+    "captures": {
+      "T": "CurrentHostSession | RuntimeControlPlaneTable"
+    },
+    "snippet": "const captured = yield* Effect.context<\n      CurrentHostSession | RuntimeControlPlaneTable\n    >()",
+    "notes": "Marks where a layer build closes over the ambient context. Whether that capture is re-provided into a deferred handler is the load-bearing question — see finding 2 (ts-morph capture-replay), not resolvable here.\n"
+  },
+  {
+    "rule_id": "effect-context-in-layer-builder",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-substrate.ts",
+    "line_range": [
+      94,
+      94
+    ],
+    "captures": {
+      "T": "RuntimeToolUseExecutorHostEnvironment"
+    },
+    "snippet": "const captured = yield* Effect.context<RuntimeToolUseExecutorHostEnvironment>()",
+    "notes": "Marks where a layer build closes over the ambient context. Whether that capture is re-provided into a deferred handler is the load-bearing question — see finding 2 (ts-morph capture-replay), not resolvable here.\n"
+  },
+  {
+    "rule_id": "manual-scope-buildwithscope",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-engine-registry.ts",
+    "line_range": [
+      152,
+      162
+    ],
+    "captures": {},
+    "snippet": "const engineContext = yield* Layer.buildWithScope(\n          DurableStreamsWorkflowEngine.layer({\n            streamUrl: runtimeContextWorkflowStreamUrl({\n              baseUrl: config.durableStreamsBaseUrl,\n              namespace: config.namespace,\n              contextId: context.contextId,\n            }),\n            ...(config.headers === undefined ? {} : { headers: config.headers }),\n          }),\n          engineScope,\n        ).pipe(",
+    "notes": "Every site that materializes a layer against an explicit Scope by hand. Inventory only — legitimate in adapters/tests; clustering in substrate composition is the interesting signal.\n"
+  },
+  {
+    "rule_id": "manual-scope-buildwithscope",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
+    "line_range": [
+      271,
+      274
+    ],
+    "captures": {},
+    "snippet": "const sessionContext = yield* Layer.buildWithScope(\n            codecLayer,\n            deps.scope,\n          ).pipe(",
+    "notes": "Every site that materializes a layer against an explicit Scope by hand. Inventory only — legitimate in adapters/tests; clustering in substrate composition is the interesting signal.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      1,
+      1
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      2,
+      2
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      3,
+      3
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      4,
+      4
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      5,
+      5
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      476,
+      476
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      736,
+      736
+    ],
+    "captures": {},
+    "snippet": "// firegrid-session-fact-client-surfaces.SESSION_IDENTITY.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      737,
+      737
+    ],
+    "captures": {},
+    "snippet": "// firegrid-session-fact-client-surfaces.CLIENT_SESSION.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      789,
+      789
+    ],
+    "captures": {},
+    "snippet": "// firegrid-session-fact-client-surfaces.CLIENT_SESSION.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      790,
+      790
+    ],
+    "captures": {},
+    "snippet": "// firegrid-session-fact-client-surfaces.SESSION_IDENTITY.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      796,
+      796
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      797,
+      797
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.6",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      804,
+      804
+    ],
+    "captures": {},
+    "snippet": "// firegrid-agent-ingress.INGRESS.6",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/client-sdk/src/firegrid.ts",
+    "line_range": [
+      842,
+      842
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/bindings/index.ts",
+    "line_range": [
+      1,
+      9
+    ],
+    "captures": {},
+    "snippet": "/**\n * `@firegrid/host-sdk/agent-tools/bindings`\n *\n * BINDING side of the agent-tool boundary\n * (`firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6`): protocol-schema → Effect AI\n * `Tool`/`Toolkit` values, the MCP-facing failure schema, the structured\n * tool-error schemas, and the bridge-scoped routing-context tag. No host\n * execution or lowering.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/bindings/tool-error.ts",
+    "line_range": [
+      1,
+      16
+    ],
+    "captures": {},
+    "snippet": "/**\n * Structured agent-tool error types.\n *\n * `toolUseToEffect` catches every arm failure and emits a `ToolResult`\n * input event with `isError: true`. The workflow does NOT fail for tool\n * failures — the agent gets a structured error and decides what to do.\n *\n * `ToolError` is the tagged union match arms surface internally; the\n * outer lowering converts each variant into a `ToolResult` event with a\n * codec-friendly content payload using `toolErrorResult`.\n *\n * Implements:\n *  - agent-codec-runtime-tools.md/agent-tool-layer-phase-2 §\"Tool error semantics\"\n *  - firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.3\n *    (typed expected results; retryable vs terminal failures)\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/bindings/tools.ts",
+    "line_range": [
+      1,
+      22
+    ],
+    "captures": {},
+    "snippet": "/**\n * Canonical Firegrid agent tools as Effect AI `Tool` values plus a single\n * `Toolkit.make(...)` allowlist (`FiregridAgentToolkit`).\n *\n * BINDING side of the agent-tool boundary\n * (`firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6`): pure protocol-schema →\n * Effect AI `Tool`/`Toolkit` values, the MCP-facing failure schema, and\n * the bridge-scoped routing-context tag. No host execution, lowering, or\n * durable side effects live here — that is the `../execution` module.\n *\n * Adding a tool requires (a) a protocol Effect Schema in\n * `@firegrid/protocol/agent-tools`, (b) a new `Tool.make(...)` here with\n * `setParameters` / `setSuccess` pointing at that schema, (c) inclusion\n * in `Toolkit.make(...)`, and (d) a handler in `FiregridAgentToolkitLayer`\n * (in `../execution`) routing through `toolUseToEffect`.\n *\n * Implements (feature spec):\n *  - firegrid-workflow-driven-runtime.PHASE_6_AGENT_TOOLS.1..5\n *  - firegrid-workflow-driven-runtime.AGENT_TOOL_BOUNDARIES.5 (one\n *    schema source of truth in `@firegrid/protocol`)\n *  - firegrid-host-sdk.AGENT_TOOL_BOUNDARY.1..2\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/execution/index.ts",
+    "line_range": [
+      1,
+      9
+    ],
+    "captures": {},
+    "snippet": "/**\n * `@firegrid/host-sdk/agent-tools/execution`\n *\n * EXECUTION side of the agent-tool boundary\n * (`firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6`): host-side `ToolUse` →\n * `ToolResult` lowering (`toolUseToEffect`), the `AgentToolHost` host\n * capability seam, and the toolkit handler Layer that wires registered tools\n * through the lowering.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/execution/tool-host.ts",
+    "line_range": [
+      1,
+      25
+    ],
+    "captures": {},
+    "snippet": "/**\n * `AgentToolHost` — narrow Context service for the host-specific bits of\n * the canonical tool surface that need wiring the lowering function\n * itself does not own.\n *\n * Specifically, the `spawn` family lowers onto `Workflow.execute` over\n * `RuntimeContextWorkflow`, which lives in `runtime-host` and would\n * create a module cycle if imported here. The `execute` arm routes a\n * sandbox-neutral `SandboxRef` to a `SandboxProvider`-backed Effect; the\n * routing policy (which provider serves which `providerName`, how to\n * shape a `SandboxCommand` from the tool-specific `input`) is also a\n * host-side concern.\n *\n * This is NOT a dynamic registry — the interface is a small, static\n * service tag with one method per host-coupled tool family. New tools\n * still require a `Tool.make(...)` entry in `FiregridAgentToolkit` and\n * a matching arm in `tool-use-to-effect.ts`. The Live `AgentToolHost`\n * layer composes runtime primitives; tests provide a stub layer.\n *\n * Implements:\n *  - agent-codec-runtime-tools.md/agent-tool-layer-phase-2 §\"PR sequencing\",\n *    §\"`schedule_me` host-specific append wiring\"\n *  - firegrid-scheduling-tool-bindings.PACKAGE_PLACEMENT.2 (mount Layers\n *    live on @firegrid/runtime)\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts",
+    "line_range": [
+      1,
+      30
+    ],
+    "captures": {},
+    "snippet": "/**\n * `toolUseToEffect` — host-side lowering for the canonical Firegrid\n * agent tools.\n *\n * Given a Phase 1 `ToolUse` output event:\n *   1. Switch on `event.part.name` against the canonical tool name set.\n *   2. Decode `event.part.params` against the matching protocol Effect Schema\n *      from `@firegrid/protocol/agent-tools`.\n *   3. Dispatch the validated invocation to the matching arm.\n *   4. Catch every failure (unknown name, decode error, tool-arm error,\n *      defect) and surface it as a `ToolResult` input event with\n *      `isError: true`.\n *\n * Per `agent-codec-runtime-tools.md/agent-tool-layer-phase-2.md`:\n *  - Tool failures are NOT workflow failures — the agent receives a\n *    structured error and decides what to do next.\n *  - The outer `Effect` error channel is `never`. New arms MUST NOT use\n *    `Effect.orDie` or defects to satisfy that constraint; they must\n *    return typed expected errors that the outer wrapper converts to a\n *    `ToolResult` event.\n *  - `FiregridAgentToolkit` (the Effect AI `Toolkit.make` allowlist in\n *    `tools.ts`) is the public exposure contract. This `name`-switch\n *    is the host implementation: a new tool requires a protocol Effect\n *    Schema, a `Tool.make` entry in the toolkit, and a new arm here.\n *\n * Anchors:\n *  - firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.3\n *  - firegrid-scheduling-tool-bindings.IDENTICAL_DURABLE_LOWERING.1\n *  - firegrid-workflow-driven-runtime.PHASE_4_TEMPORAL_WORKFLOWS.1..3\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts",
+    "line_range": [
+      216,
+      216
+    ],
+    "captures": {},
+    "snippet": "// firegrid-typed-wait-source-redesign.WAIT_ROUTER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts",
+    "line_range": [
+      323,
+      323
+    ],
+    "captures": {},
+    "snippet": "// firegrid-factory-aligned-agent-tools.SESSION.7",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts",
+    "line_range": [
+      552,
+      572
+    ],
+    "captures": {},
+    "snippet": "/**\n * Host-side lowering of a Phase 1 `ToolUse` output event to a\n * `ToolResult` input event. Errors are caught and surfaced as\n * `ToolResult` events with `isError: true`. The outer error channel is\n * `never`: tool failures are NOT workflow failures.\n *\n   * Dispatch switches on `event.part.name` and decodes against the canonical\n * protocol input Schema for that name. Each arm receives the typed\n * decoded input from its `@firegrid/protocol/agent-tools` schema and\n * returns the typed output declared by the same protocol module — so a\n * future schema change breaks the corresponding arm at compile time\n * rather than hiding behind an `as` cast. Adding a tool requires\n * (a) a protocol Effect Schema, (b) a new `case` here pointing at a\n * typed arm, and (c) a matching `Tool.make(...)` entry in\n * `FiregridAgentToolkit` (the exposure manifest in `tools.ts`).\n *\n * Implements:\n *  - SDD_FIREGRID_AGENT_TOOLS_MCP_BRIDGE.md §\"Runtime Semantics\"\n *  - firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.3\n *  - firegrid-scheduling-tool-bindings.IDENTICAL_DURABLE_LOWERING.1\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
+    "line_range": [
+      1,
+      10
+    ],
+    "captures": {},
+    "snippet": "/**\n * EXECUTION side of the agent-tool boundary\n * (`firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6`): the per-call workflow that\n * gives `toolUseToEffect` a `WorkflowEngine.WorkflowInstance`, and the\n * toolkit handler Layer that routes every registered tool through the\n * host-side lowering.\n *\n * The binding values (`Tool`/`Toolkit`, failure schema, routing tag) live\n * in `../bindings`; this module composes them with host execution.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
+    "line_range": [
+      101,
+      101
+    ],
+    "captures": {},
+    "snippet": "// TFIND-031 (Option Y): the ephemeral tool-call workflow body",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts",
+    "line_range": [
+      118,
+      118
+    ],
+    "captures": {},
+    "snippet": "// TFIND-031: includes the full host durable substrate",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/agent-tools/index.ts",
+    "line_range": [
+      1,
+      10
+    ],
+    "captures": {},
+    "snippet": "/**\n * `@firegrid/host-sdk/agent-tools`\n *\n * Convenience barrel re-exporting the agent-tool BINDING surface\n * (`./bindings`) and the EXECUTION surface (`./execution`). Per\n * `firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6` the two concerns are kept in\n * separate modules; consumers that only need bindings (e.g. codec/MCP\n * exposure) should import `@firegrid/host-sdk/agent-tools/bindings`\n * directly.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+    "line_range": [
+      43,
+      43
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.HOST_SPLIT.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+    "line_range": [
+      79,
+      79
+    ],
+    "captures": {},
+    "snippet": "// TFIND-031: ambient host durable substrate captured at layer-build",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+    "line_range": [
+      96,
+      96
+    ],
+    "captures": {},
+    "snippet": "// firegrid-factory-aligned-agent-tools.SESSION.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+    "line_range": [
+      97,
+      97
+    ],
+    "captures": {},
+    "snippet": "// firegrid-factory-aligned-agent-tools.SESSION.6",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+    "line_range": [
+      120,
+      120
+    ],
+    "captures": {},
+    "snippet": "// TFIND-031: discharge the host durable substrate the deferred",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+    "line_range": [
+      133,
+      133
+    ],
+    "captures": {},
+    "snippet": "// firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/agent-tool-host-live.ts",
+    "line_range": [
+      215,
+      215
+    ],
+    "captures": {},
+    "snippet": "// TFIND-031: capture the ambient host durable substrate so the",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/commands.ts",
+    "line_range": [
+      134,
+      134
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/commands.ts",
+    "line_range": [
+      135,
+      135
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/commands.ts",
+    "line_range": [
+      152,
+      152
+    ],
+    "captures": {},
+    "snippet": "// TFIND-031: capture the host durable substrate (always provided by",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/config-live.ts",
+    "line_range": [
+      6,
+      6
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.HOST_SPLIT.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/config-live.ts",
+    "line_range": [
+      8,
+      8
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/control-request-reconciler.ts",
+    "line_range": [
+      44,
+      44
+    ],
+    "captures": {},
+    "snippet": "// TFIND-045: `reconcileStartRequest` calls `startRuntime()`, which",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/control-request-reconciler.ts",
+    "line_range": [
+      47,
+      47
+    ],
+    "captures": {},
+    "snippet": "// Before TFIND-005's curry, `RuntimeOutputTable`'s tag identity was",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/control-request-reconciler.ts",
+    "line_range": [
+      53,
+      53
+    ],
+    "captures": {},
+    "snippet": "// once TFIND-029 (#328) makes `RuntimeStartCapabilityLive`'s",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/index.ts",
+    "line_range": [
+      1,
+      1
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.HOST_HARDENING.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/internal/run-context-workflow.ts",
+    "line_range": [
+      1,
+      1
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/internal/run-context-workflow.ts",
+    "line_range": [
+      2,
+      2
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/internal/runtime-context-helpers.ts",
+    "line_range": [
+      17,
+      17
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/internal/runtime-context-helpers.ts",
+    "line_range": [
+      21,
+      21
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/internal/runtime-context-helpers.ts",
+    "line_range": [
+      24,
+      24
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.HOST_HARDENING.5",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/internal/runtime-context-helpers.ts",
+    "line_range": [
+      56,
+      56
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.HOST_HARDENING.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/internal/runtime-context-workflow-run.ts",
+    "line_range": [
+      9,
+      9
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.HOST_SPLIT.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/layers.ts",
+    "line_range": [
+      89,
+      89
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/layers.ts",
+    "line_range": [
+      90,
+      90
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/layers.ts",
+    "line_range": [
+      96,
+      96
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/layers.ts",
+    "line_range": [
+      130,
+      130
+    ],
+    "captures": {},
+    "snippet": "// firegrid-agent-ingress.HOST.7",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/layers.ts",
+    "line_range": [
+      151,
+      151
+    ],
+    "captures": {},
+    "snippet": "// firegrid-typed-wait-source-redesign.WAIT_ROUTER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/layers.ts",
+    "line_range": [
+      266,
+      266
+    ],
+    "captures": {},
+    "snippet": "// TFIND-048: single-owner, host-scoped late-bind channel for the",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/layers.ts",
+    "line_range": [
+      282,
+      282
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/layers.ts",
+    "line_range": [
+      283,
+      283
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/mcp-host.ts",
+    "line_range": [
+      1,
+      26
+    ],
+    "captures": {},
+    "snippet": "/**\n * Host-owned localhost MCP server for the Firegrid agent toolkit.\n *\n * Composes `@effect/ai/McpServer.layerHttp` and\n * `McpServer.registerToolkit(FiregridAgentToolkit)` directly behind an\n * `@effect/platform-node/NodeHttpServer` bound to a loopback host. The\n * MCP HTTP listener is an Effect Layer in the host process's scope; it\n * starts and stops with `NodeRuntime.runMain`. There is no separate\n * `firegrid:mcp` binary, no stdio shim, no supervisor protocol, no\n * custom MCP router, no wrapper toolkit, no manual `tools/list` or\n * `tools/call` handler.\n *\n * Implements (SDD):\n *  - SDD_FIREGRID_AGENT_TOOLS_MCP_BRIDGE.md §\"V1: Host-Owned Localhost MCP Server\"\n *\n * Implements (feature spec):\n *  - firegrid-workflow-driven-runtime.PHASE_7_MCP_HOST_SERVER.1..10\n *  - firegrid-workflow-driven-runtime.VALIDATION.5\n *\n * Runtime-context routing scope:\n *  The listener mounts Effect AI's MCP HTTP protocol at\n *  `/mcp/runtime-context/:contextId`. The route parameter is the\n *  request authority; it is not an env var and not a tool argument.\n *  Tool calls resolve that route value through `requireLocalContext`\n *  before any workflow, sandbox, or host tool service is touched.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/mcp-host.ts",
+    "line_range": [
+      119,
+      119
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.MCP_CONTEXT_ROUTING.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/mcp-host.ts",
+    "line_range": [
+      120,
+      120
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.MCP_CONTEXT_ROUTING.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/mcp-host.ts",
+    "line_range": [
+      160,
+      160
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.MCP_TRANSPORT_COMPAT.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/mcp-host.ts",
+    "line_range": [
+      193,
+      193
+    ],
+    "captures": {},
+    "snippet": "// TFIND-048: on bind, the host late-binds its OWN bound MCP listener",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/mcp-host.ts",
+    "line_range": [
+      207,
+      207
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.MCP_TRANSPORT_COMPAT.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/per-context-runtime-output.ts",
+    "line_range": [
+      156,
+      156
+    ],
+    "captures": {},
+    "snippet": "// firegrid-typed-wait-source-redesign.WAIT_ROUTER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-mcp-base-url.ts",
+    "line_range": [
+      1,
+      27
+    ],
+    "captures": {},
+    "snippet": "/**\n * TFIND-048 (SDD_MCP_ROUTE_URL_LIFECYCLE Amendment 1 §A1.1):\n * single-purpose host late-bind of the Firegrid runtime-context MCP\n * server's bound base address.\n *\n * SINGLE-PURPOSE — DO NOT GENERALIZE. This service carries ONLY the\n * runtime-context MCP base URL (Option-typed). It is deliberately NOT a\n * generic \"host late-bound fact\" channel / host-fact bus: a generic\n * Deferred/SubscriptionRef-of-arbitrary-host-fact would turn a\n * single-purpose primitive into an ambient one (the ambient-leak\n * anti-pattern). The value type, the tag name, and `publish`'s single\n * caller (`FiregridMcpServerLayer`, which owns the bound `HttpServer`)\n * keep it structurally hard for any future consumer to reach through\n * this for some other host-owned fact. If another host fact ever needs\n * late-binding, add its OWN single-purpose primitive — do not widen\n * this one.\n *\n * Why this exists: in the only supported host topology the MCP listener\n * (`FiregridMcpServerLayer`, \"A\") is `Layer.provideMerge`'d with the\n * runtime host (\"B\") that builds the reconciler / per-context engine.\n * Process co-location is guaranteed, but `A`'s bound `HttpServer`\n * (including the OS-chosen port when `port:0`) is NOT in `B`'s\n * construction scope. This service is the single-owner channel by which\n * the host late-binds its OWN bound MCP address to its OWN start path —\n * never a client prediction. Host-scoped only: this tag must never\n * appear on a client-surface type.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
+    "line_range": [
+      145,
+      145
+    ],
+    "captures": {},
+    "snippet": "// TFIND-048: the host-resolved effective MCP server list. This is the",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
+    "line_range": [
+      178,
+      178
+    ],
+    "captures": {},
+    "snippet": "// TFIND-048 (SDD_MCP_ROUTE_URL_LIFECYCLE Amendment 1 §A1.2/§A1.3):",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-session/codec-adapter.ts",
+    "line_range": [
+      188,
+      188
+    ],
+    "captures": {},
+    "snippet": "// from the host's OWN bound base. Exported as the TFIND-048",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-session/common.ts",
+    "line_range": [
+      44,
+      44
+    ],
+    "captures": {},
+    "snippet": "// TFIND-048: host-scoped late-bind of the runtime-context MCP base",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-workflow-core.ts",
+    "line_range": [
+      291,
+      291
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-agent-event-pipeline.INGREDIENTS.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-workflow-core.ts",
+    "line_range": [
+      292,
+      292
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-workflow-core.ts",
+    "line_range": [
+      293,
+      293
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-workflow-core.ts",
+    "line_range": [
+      325,
+      325
+    ],
+    "captures": {},
+    "snippet": "// TFIND-041 (decided): session/codec mode is the INTENTIONAL,",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-workflow-core.ts",
+    "line_range": [
+      456,
+      456
+    ],
+    "captures": {},
+    "snippet": "// TFIND-031 (Option Y): capture the execution-scoped workflow",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-context-workflow-support.ts",
+    "line_range": [
+      17,
+      17
+    ],
+    "captures": {},
+    "snippet": "// TFIND-031 (Option Y, layer-composition-order fix): BOTH the workflow",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-substrate.ts",
+    "line_range": [
+      42,
+      42
+    ],
+    "captures": {},
+    "snippet": "// TFIND-031: the host-provided durable substrate that a per-context",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-substrate.ts",
+    "line_range": [
+      58,
+      58
+    ],
+    "captures": {},
+    "snippet": "// TFIND-031 (Option Y, execution-scoped): the workflow-body capture",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-substrate.ts",
+    "line_range": [
+      73,
+      73
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.HOST_HARDENING.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-substrate.ts",
+    "line_range": [
+      74,
+      74
+    ],
+    "captures": {},
+    "snippet": "// firegrid-typed-wait-source-redesign.WAIT_ROUTER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-substrate.ts",
+    "line_range": [
+      75,
+      75
+    ],
+    "captures": {},
+    "snippet": "// firegrid-typed-wait-source-redesign.REJECTION.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/runtime-substrate.ts",
+    "line_range": [
+      88,
+      88
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/sync-run.ts",
+    "line_range": [
+      40,
+      40
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/sync-run.ts",
+    "line_range": [
+      41,
+      41
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/host/types.ts",
+    "line_range": [
+      25,
+      25
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/index.ts",
+    "line_range": [
+      1,
+      15
+    ],
+    "captures": {},
+    "snippet": "/**\n * `@firegrid/host-sdk`\n *\n * Host-plane composition for Firegrid: host layer composition, agent\n * provider installation, route-scoped MCP exposure, agent-tool bindings,\n * runtime start capability, and the live `RuntimeToolUseExecutor` layer.\n *\n * Boundary (`firegrid-host-sdk.PACKAGE_GRAPH.4`,\n * `firegrid-host-sdk.TOOL_EXECUTOR_SEAM`):\n *  - imports `@firegrid/protocol`, `@firegrid/runtime`, `@effect/ai`,\n *    `@effect/platform-node`, `@modelcontextprotocol/sdk`;\n *  - never imports `@firegrid/client-sdk` or `@firegrid/cli`;\n *  - `@firegrid/runtime` owns the `RuntimeToolUseExecutor` capability tag;\n *    this package only provides the live layer.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/index.ts",
+    "line_range": [
+      29,
+      29
+    ],
+    "captures": {},
+    "snippet": "// TFIND-048 host-provisioning seam. Single-purpose, host-scoped",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/host-sdk/src/index.ts",
+    "line_range": [
+      54,
+      54
+    ],
+    "captures": {},
+    "snippet": "// per firegrid-host-sdk.AGENT_TOOL_BOUNDARY.6; also reachable via the",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/agent-output/schema.ts",
+    "line_range": [
+      1,
+      14
+    ],
+    "captures": {},
+    "snippet": "/**\n * Canonical normalized agent-output event union (single source of truth).\n *\n * TFIND-035: this is the ONE definition of `AgentOutputEvent` + its part\n * sub-schemas. It lives in `@firegrid/protocol` (browser-safe,\n * runtime-source-free) because the dependency graph is one-directional —\n * `@firegrid/runtime` and `@firegrid/client-sdk` depend on\n * `@firegrid/protocol`, never the reverse. `@firegrid/runtime`'s\n * `agent-event-pipeline/events/contract.ts` re-exports these names for\n * back-compat; this module is the authority.\n *\n * Part payloads reuse the same `@effect/ai` Prompt/Response contracts the\n * runtime encoder/codecs use, so the durable wire form is identical.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/agent-output/schema.ts",
+    "line_range": [
+      62,
+      62
+    ],
+    "captures": {},
+    "snippet": "// firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/agent-tools/schema.ts",
+    "line_range": [
+      1,
+      22
+    ],
+    "captures": {},
+    "snippet": "/**\n * Shared Effect Schemas for Firegrid agent-tool inputs and outputs.\n *\n * `@firegrid/protocol` is the source of truth for the shape of every\n * public Firegrid agent-tool. Phase 2 builds an explicit exposure\n * manifest (`FiregridAgentTools`) over these schemas; codec catalog\n * projection uses `Schema.encodedSchema` and `Schema.annotations` to\n * derive agent-facing JSON catalogs from the same Effect Schemas\n * declared here.\n *\n * This module defines *only* the input and output shapes that the\n * canonical Firegrid agent-tool surface exposes. It does NOT:\n *   - declare descriptors (Phase 2 owns the explicit exposure manifest),\n *   - declare match-arm lowering (Phase 2 owns toolUseToEffect),\n *   - reflect every protocol row family as a tool surface.\n *\n * Anchors:\n *   - firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.1\n *   - firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.4\n *   - firegrid-scheduling-tool-bindings.PACKAGE_PLACEMENT.1\n *   - firegrid-platform-invariants.BOUNDARY.1\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/agent-tools/schema.ts",
+    "line_range": [
+      92,
+      99
+    ],
+    "captures": {},
+    "snippet": "/**\n * firegrid-typed-wait-source-redesign.TYPED_SOURCES.1\n * firegrid-typed-wait-source-redesign.MIGRATION.5\n *\n * Typed runtime wait-source discriminator. The agent names a supported\n * runtime observation by variant; it cannot pass an arbitrary source string.\n * First supported set is `AgentOutput` and `RuntimeRun` only.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/authority.ts",
+    "line_range": [
+      1,
+      1
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/authority.ts",
+    "line_range": [
+      2,
+      2
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/authority.ts",
+    "line_range": [
+      3,
+      3
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.SCHEMA_STREAM_AUTHORITY.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/control-request.ts",
+    "line_range": [
+      1,
+      1
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/control-request.ts",
+    "line_range": [
+      2,
+      2
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/control-request.ts",
+    "line_range": [
+      6,
+      6
+    ],
+    "captures": {},
+    "snippet": "// TFIND-002 / TFIND-003 (Option B, additive): a remote client must be able",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/control-request.ts",
+    "line_range": [
+      63,
+      63
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/control-request.ts",
+    "line_range": [
+      86,
+      86
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      1,
+      1
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      2,
+      2
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      3,
+      3
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      4,
+      4
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      5,
+      5
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      6,
+      6
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      7,
+      7
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      24,
+      36
+    ],
+    "captures": {},
+    "snippet": "/**\n * Current host session identity for the host scope.\n *\n * Required `Context.Tag` (no undefined default): code that needs the\n * host session must run inside a scope that provides\n * `CurrentHostSession`. Long-lived host-owned layers — workflow\n * engine, host ingress, host output, durable-tools — read this tag\n * once at acquisition time and derive their backing streams from\n * `session.streamPrefix`.\n *\n * firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.1\n * firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.2\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      41,
+      52
+    ],
+    "captures": {},
+    "snippet": "/**\n * Current runtime context for the request/workflow fiber scope.\n *\n * Required `Context.Tag` (no undefined default). Context-routed\n * services either read this tag at method time or build a fresh\n * per-context layer inside the localized scope. The proposal\n * explicitly forbids capturing a `RuntimeContext` in a shared layer\n * memoized across contexts.\n *\n * firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.1\n * firegrid-host-context-authority.EFFECT_SCOPED_CONTEXT.3\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      69,
+      76
+    ],
+    "captures": {},
+    "snippet": "/**\n * Context authority errors.\n *\n * firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.4\n *\n * Schema-tagged so call sites construct canonical tagged errors via\n * `new ContextNotLocal({...})` rather than hand-writing payload objects.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      100,
+      107
+    ],
+    "captures": {},
+    "snippet": "/**\n * Resolve a RuntimeContext by id. Fails with `ContextNotFound` for\n * missing contexts. Does NOT require the context to be local — prompt\n * append routes through this operator so it can write durable ingress\n * for a context bound to another host.\n *\n * firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      151,
+      169
+    ],
+    "captures": {},
+    "snippet": "/**\n * Insert a host-bound RuntimeContext row.\n *\n * Reads `CurrentHostSession` to fill the host binding, samples the\n * Effect `Clock` for `boundAtMs`, then upserts the row through the\n * normal `RuntimeControlPlaneTable.contexts` action. The Clock\n * dependency is the standard Effect test-time dependency for\n * deterministic timestamps; it is NOT a Firegrid authority service.\n *\n * Idempotent on `contextId`: an `upsert` matches the proposal's\n * behavior of letting the caller treat fresh-ctx generation as their\n * own concern while keeping the operator transactional with respect\n * to the host binding.\n *\n * firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2\n * firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.1\n *\n * @deprecated firegrid-runtime-agent-event-pipeline.TRANSACTIONAL_CUTOVER.3-2\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      189,
+      195
+    ],
+    "captures": {},
+    "snippet": "/**\n * Resolve a RuntimeContext and require its host binding to name the\n * `CurrentHostSession`. Fails with `ContextNotLocal` before any local\n * host services are exposed when the context belongs to another host.\n *\n * firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/host-context-authority.ts",
+    "line_range": [
+      218,
+      228
+    ],
+    "captures": {},
+    "snippet": "/**\n * Provide a resolved RuntimeContext through `CurrentRuntimeContext`\n * for the rest of the fiber. Callers compose:\n *\n *   yield* program.pipe(provideRuntimeContext(runtimeContext))\n *\n * rather than threading the context value through every host-owned\n * layer constructor.\n *\n * firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.3\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      141,
+      141
+    ],
+    "captures": {},
+    "snippet": "// TFIND-048 (SDD_MCP_ROUTE_URL_LIFECYCLE Amendment 1 §A1.2): the",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      199,
+      199
+    ],
+    "captures": {},
+    "snippet": "// TFIND-048: URL-less, host-owned runtime-context MCP attachment.",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      273,
+      273
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-launch-runtime-operator.LAUNCH_ROWS.8",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      316,
+      316
+    ],
+    "captures": {},
+    "snippet": "// firegrid-local-mcp-run.CLI_HELP.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      346,
+      346
+    ],
+    "captures": {},
+    "snippet": "// firegrid-local-mcp-run.LAUNCH_CONFIG.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      352,
+      352
+    ],
+    "captures": {},
+    "snippet": "// firegrid-local-mcp-run.LAUNCH_CONFIG.6",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      355,
+      355
+    ],
+    "captures": {},
+    "snippet": "// firegrid-local-mcp-run.LAUNCH_CONFIG.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      357,
+      357
+    ],
+    "captures": {},
+    "snippet": "// TFIND-048: URL-less host-owned runtime-context MCP attachment.",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      366,
+      366
+    ],
+    "captures": {},
+    "snippet": "// firegrid-local-mcp-run.CLI_HELP.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      403,
+      403
+    ],
+    "captures": {},
+    "snippet": "// firegrid-local-mcp-run.MCP_ROUTE.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      404,
+      404
+    ],
+    "captures": {},
+    "snippet": "// firegrid-local-mcp-run.MCP_ROUTE.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      405,
+      405
+    ],
+    "captures": {},
+    "snippet": "// firegrid-local-mcp-run.LAUNCH_CONFIG.5",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      412,
+      412
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      413,
+      413
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/schema.ts",
+    "line_range": [
+      414,
+      414
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/table.ts",
+    "line_range": [
+      153,
+      153
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/launch/table.ts",
+    "line_range": [
+      154,
+      154
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-context-authority.RUNTIME_CONTEXT_HOST_AUTHORITY.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/session-facade/index.ts",
+    "line_range": [
+      1,
+      1
+    ],
+    "captures": {},
+    "snippet": "// TFIND-035: the agent-output union is canonical at",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/session-facade/schema.ts",
+    "line_range": [
+      216,
+      216
+    ],
+    "captures": {},
+    "snippet": "// TFIND-030 (Q2 strict): the envelope `event` is parsed against the typed",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/session-facade/schema.ts",
+    "line_range": [
+      427,
+      427
+    ],
+    "captures": {},
+    "snippet": "// TFIND-030 (Q2 strict): yields the typed union or `Option.none()`. A stored",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/protocol/src/session-facade/schema.ts",
+    "line_range": [
+      441,
+      441
+    ],
+    "captures": {},
+    "snippet": "// TFIND-030: `event` is already the typed `AgentOutputEvent` union here",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/AgentAdapter.ts",
+    "line_range": [
+      15,
+      15
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_SURFACE.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/AgentAdapter.ts",
+    "line_range": [
+      16,
+      16
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_ERRORS.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/AgentAdapter.ts",
+    "line_range": [
+      20,
+      20
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_SURFACE.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/AgentAdapter.ts",
+    "line_range": [
+      21,
+      21
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_SURFACE.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/AgentAdapter.ts",
+    "line_range": [
+      36,
+      36
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_SURFACE.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/LanguageModelAdapter.ts",
+    "line_range": [
+      19,
+      19
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.LANGUAGE_MODEL_ADAPTER.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/LanguageModelAdapter.ts",
+    "line_range": [
+      21,
+      21
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.LANGUAGE_MODEL_ADAPTER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/LanguageModelAdapter.ts",
+    "line_range": [
+      22,
+      22
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_ERRORS.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/LanguageModelAdapter.ts",
+    "line_range": [
+      27,
+      27
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_SURFACE.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      32,
+      32
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      76,
+      76
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.6",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      77,
+      77
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.9",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      117,
+      117
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.7",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      168,
+      168
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.14",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      184,
+      184
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      185,
+      185
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      227,
+      227
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.6",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      228,
+      228
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.12",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      294,
+      294
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.14",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      325,
+      325
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      326,
+      326
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.13",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      346,
+      346
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.9",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      430,
+      430
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.7",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      451,
+      451
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.8",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      455,
+      455
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      456,
+      456
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      457,
+      457
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.5",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      498,
+      498
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/adapter.ts",
+    "line_range": [
+      499,
+      499
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/mapping.ts",
+    "line_range": [
+      10,
+      10
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/mapping.ts",
+    "line_range": [
+      13,
+      13
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/mapping.ts",
+    "line_range": [
+      14,
+      14
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.10",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/mapping.ts",
+    "line_range": [
+      73,
+      73
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/acp/mapping.ts",
+    "line_range": [
+      99,
+      99
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.11",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/current-turn.ts",
+    "line_range": [
+      8,
+      8
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.CURRENT_TURN.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/current-turn.ts",
+    "line_range": [
+      9,
+      9
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.CURRENT_TURN.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/errors.ts",
+    "line_range": [
+      3,
+      3
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_ERRORS.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/errors.ts",
+    "line_range": [
+      15,
+      15
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_ERRORS.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/errors.ts",
+    "line_range": [
+      25,
+      25
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_ERRORS.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/errors.ts",
+    "line_range": [
+      33,
+      33
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_ERRORS.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/errors.ts",
+    "line_range": [
+      39,
+      39
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_ERRORS.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/errors.ts",
+    "line_range": [
+      45,
+      45
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_ERRORS.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-adapters/errors.ts",
+    "line_range": [
+      56,
+      56
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ADAPTER_ERRORS.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/authorities/runtime-output-journal.ts",
+    "line_range": [
+      25,
+      25
+    ],
+    "captures": {},
+    "snippet": "// firegrid-typed-wait-source-redesign.WAIT_ROUTER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts",
+    "line_range": [
+      332,
+      332
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts",
+    "line_range": [
+      333,
+      333
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/codecs/acp/mapping.ts",
+    "line_range": [
+      12,
+      12
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-native-agents.ACP_ADAPTER.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/codecs/contract.ts",
+    "line_range": [
+      15,
+      23
+    ],
+    "captures": {},
+    "snippet": "/**\n * Error category for codec-level failures: framing errors, protocol\n * violations, capability mismatches, unexpected EOF. The codec is\n * responsible for distinguishing fatal failures (which fail the output\n * Stream with `AgentCodecError`) from recoverable ones (which surface\n * as `Error` output events).\n * firegrid-agent-io-effect-ai-alignment.LOCAL_LIFECYCLE_EVENTS.2\n * firegrid-agent-io-effect-ai-alignment.EFFECT_AI_BOUNDARIES.2\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/codecs/contract.ts",
+    "line_range": [
+      41,
+      45
+    ],
+    "captures": {},
+    "snippet": "/**\n   * firegrid-runtime-boundary-reconciliation.CODEC_SESSION.2\n   * firegrid-runtime-agent-event-pipeline.STAGES.3-7\n   * firegrid-runtime-agent-event-pipeline.STAGES.3-8\n   */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/events/contract.ts",
+    "line_range": [
+      1,
+      21
+    ],
+    "captures": {},
+    "snippet": "/**\n * Normalized agent I/O event contract.\n *\n * Codecs translate per-protocol wire formats (ACP, stdio-jsonl, future)\n * into and out of these events. Model-content payloads use Effect AI\n * Prompt/Response contracts; Firegrid owns only lifecycle/control\n * envelopes around the agent process.\n * firegrid-agent-io-effect-ai-alignment.LOCAL_LIFECYCLE_EVENTS.1\n * firegrid-agent-io-effect-ai-alignment.EFFECT_AI_BOUNDARIES.3\n *\n * This module owns the normalized agent I/O event types. The agent\n * tools layer (`packages/runtime/src/agent-tools`) owns the canonical\n * `FiregridAgentToolkit` (`Toolkit.make` allowlist over Effect AI\n * `Tool.make` values) and the host-side lowering of `ToolUse` events.\n *\n * Anchors:\n *   - firegrid-platform-invariants.AUTHORITY.4 (external decisions\n *     flow through documented authority surfaces),\n *   - firegrid-scheduling-tool-bindings.NEUTRAL_TOOL_BINDING_SHAPE.2\n *     (suspension/result vocabulary stays substrate-neutral).\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/events/contract.ts",
+    "line_range": [
+      54,
+      54
+    ],
+    "captures": {},
+    "snippet": "// firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/events/contract.ts",
+    "line_range": [
+      61,
+      61
+    ],
+    "captures": {},
+    "snippet": "// firegrid-agent-io-effect-ai-alignment.DURABLE_PAYLOAD_ALIGNMENT.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/events/contract.ts",
+    "line_range": [
+      79,
+      79
+    ],
+    "captures": {},
+    "snippet": "// firegrid TFIND-035: the agent-output event union and its part",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/events/stage-contracts.ts",
+    "line_range": [
+      3,
+      3
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-agent-event-pipeline.STAGES.8",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/events/stage-contracts.ts",
+    "line_range": [
+      10,
+      10
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-agent-event-pipeline.STAGES.8",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/events/stage-contracts.ts",
+    "line_range": [
+      17,
+      17
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-agent-event-pipeline.STAGES.8",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/sources/sandbox/effect-ai.ts",
+    "line_range": [
+      77,
+      77
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-inprocess-provider.EXECUTION.1-1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/sources/sandbox/effect-ai.ts",
+    "line_range": [
+      122,
+      122
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-inprocess-provider.EXECUTION.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/sources/sandbox/effect-ai.ts",
+    "line_range": [
+      146,
+      146
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-inprocess-provider.SANDBOX_PROVIDER.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/sources/sandbox/effect-ai.ts",
+    "line_range": [
+      150,
+      150
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-inprocess-provider.SANDBOX_PROVIDER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/sources/sandbox/effect-ai.ts",
+    "line_range": [
+      151,
+      151
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-inprocess-provider.SANDBOX_PROVIDER.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/sources/sandbox/local-process.ts",
+    "line_range": [
+      219,
+      219
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.6",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/sources/sandbox/local-process.ts",
+    "line_range": [
+      292,
+      292
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/sources/sandbox/local-process.ts",
+    "line_range": [
+      293,
+      293
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.4",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/sources/sandbox/local-process.ts",
+    "line_range": [
+      294,
+      294
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-launch-runtime-operator.SANDBOX_PROVIDERS.5",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/subscribers/runtime-tool-use-executor.ts",
+    "line_range": [
+      27,
+      27
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-sdk.TOOL_EXECUTOR_SEAM.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/subscribers/runtime-tool-use-executor.ts",
+    "line_range": [
+      28,
+      28
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-sdk.TOOL_EXECUTOR_SEAM.3",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/agent-event-pipeline/subscribers/runtime-tool-use-executor.ts",
+    "line_range": [
+      29,
+      29
+    ],
+    "captures": {},
+    "snippet": "// firegrid-host-sdk.PACKAGE_GRAPH.6",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/DurableToolsWaitFor.ts",
+    "line_range": [
+      1,
+      14
+    ],
+    "captures": {},
+    "snippet": "/**\n * Public composition entrypoint for the durable-tools `wait_for` surface.\n *\n * Implements:\n *  - firegrid-durable-tools.RUNTIME_BOUNDARY.1 — once per runtime-host scope\n *  - firegrid-durable-tools.RUNTIME_BOUNDARY.4 — the runtime host provides\n *    the wait router and durable wait store alongside the workflow-engine\n *    and ingress layers\n *  - firegrid-durable-tools.PUBLIC_SURFACE.5 — wait/completion rows stay\n *    runtime-only; this module is not re-exported from @firegrid/client\n *  - firegrid-typed-wait-source-redesign.WAIT_ROUTER.1 — the router consumes\n *    `RuntimeWaitStreams`; the runtime-owned observation tags it needs remain\n *    requirements satisfied by the host substrate\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/durable-wait-store.ts",
+    "line_range": [
+      10,
+      10
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.5",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/durable-wait-store.ts",
+    "line_range": [
+      11,
+      11
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.7",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/durable-wait-store.ts",
+    "line_range": [
+      12,
+      12
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.9",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/durable-wait-store.ts",
+    "line_range": [
+      13,
+      13
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.11",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/keys.ts",
+    "line_range": [
+      1,
+      10
+    ],
+    "captures": {},
+    "snippet": "/**\n * Composite primary key encoding for durable-tools tables.\n *\n * Implements:\n *  - firegrid-durable-tools.BOUNDARIES.6 — Schema.transformOrFail to a JSON\n *    tuple, with ParseResult.fail on malformed input. Mirrors the strict\n *    composite-key pattern in `packages/protocol/src/launch/table.ts`. The\n *    `RuntimeInputDeliveryKey` separator pattern is intentionally not\n *    extended here.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/runtime-wait-streams.ts",
+    "line_range": [
+      1,
+      12
+    ],
+    "captures": {},
+    "snippet": "/**\n * Router-private bundle of the concrete runtime observation streams a typed\n * wait source can select.\n *\n * Implements:\n *  - firegrid-typed-wait-source-redesign.TYPED_SOURCES.2 — the router consumes\n *    concrete Stream capability tags through the Effect requirement channel\n *  - firegrid-typed-wait-source-redesign.WAIT_ROUTER.1 — no public service;\n *    a Layer-provided input to WaitRouterLive\n *  - firegrid-typed-wait-source-redesign.DESIGN.1/.2 — stock Effect surfaces\n *    only (Context.Tag + Layer + Stream); no source-registry wrapper family\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/runtime-wait-streams.ts",
+    "line_range": [
+      58,
+      58
+    ],
+    "captures": {},
+    "snippet": "// firegrid-typed-wait-source-redesign.WAIT_ROUTER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/table.ts",
+    "line_range": [
+      1,
+      16
+    ],
+    "captures": {},
+    "snippet": "/**\n * Durable-tools runtime-private DurableTable: `waits` and `completions`.\n *\n * Implements:\n *  - firegrid-durable-tools.RUNTIME_BOUNDARY.1 — once per runtime-host scope\n *  - firegrid-durable-tools.RUNTIME_BOUNDARY.2 — lives under @firegrid/runtime\n *  - firegrid-durable-tools.BOUNDARIES.5 — no DurableConsumer / Projection\n *    revival\n *  - firegrid-durable-tools.BOUNDARIES.7 — writes via DurableTable generated\n *    actions; no raw stream append helpers\n *  - firegrid-durable-tools.BOUNDARIES.8 — no fenced-claim widening; dispatch\n *    idempotency is provided by deterministic wait keys and the per-dispatch\n *    re-check\n *  - firegrid-durable-tools.BOUNDARIES.9 — single declaration; no client\n *    duplicate\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/table.ts",
+    "line_range": [
+      40,
+      49
+    ],
+    "captures": {},
+    "snippet": "/**\n * A durable wait intent.\n *\n * `workflowName`, `executionId`, and `deferredName` together identify the\n * `@effect/workflow` deferred that wait_for awaits and the router resolves.\n *\n * firegrid-durable-tools.WAIT_FOR.2\n * firegrid-durable-tools.WAIT_FOR.6\n * firegrid-durable-tools.LIFECYCLE.1\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/table.ts",
+    "line_range": [
+      63,
+      81
+    ],
+    "captures": {},
+    "snippet": "/**\n * Match/timeout arbitration record for live operation.\n *\n * `completeMatch` (match side) and `writeTimeoutCompletion` (timeout side)\n * read this table to enforce that exactly one of match/timeout writes a\n * completion; `matchedRowPayload` is the raw row from the source collection\n * (call-site Schema decoding happens in `wait_for`, not here). The\n * crash-recovery reconciler that previously also walked this table was\n * deleted — idempotent `deferredDone` + durable replay sources made it\n * redundant.\n *\n * This table is going away under Shape C: once match/timeout arbitration\n * moves onto `DurableDeferred.raceAll`, nothing reads `completions` and the\n * whole table is deleted. Do not add fields or lifecycle here — see\n * docs/research/durable-tools-vs-workflow-engine-convergence.md.\n *\n * firegrid-durable-tools.WAIT_FOR.7\n * firegrid-durable-tools.SUBSCRIPTION.3\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/types.ts",
+    "line_range": [
+      1,
+      7
+    ],
+    "captures": {},
+    "snippet": "/**\n * Shared schemas and error types for the durable-tools `wait_for` surface.\n *\n * Implements (selectively):\n *  - firegrid-durable-tools.SUBSCRIPTION.4 — AND-of-fieldEquals trigger DSL\n *  - firegrid-durable-tools.LIFECYCLE.1 — wait status enum\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/types.ts",
+    "line_range": [
+      11,
+      17
+    ],
+    "captures": {},
+    "snippet": "/**\n * firegrid-durable-tools.SUBSCRIPTION.4\n *\n * Trigger expressivity for v0 is an AND of scalar field-equality predicates\n * over decoded row paths. No OR, NOT, range, lambda, contains, or defaulted\n * path traversal.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/types.ts",
+    "line_range": [
+      31,
+      41
+    ],
+    "captures": {},
+    "snippet": "/**\n * firegrid-typed-wait-source-redesign.TYPED_SOURCES.1\n * firegrid-typed-wait-source-redesign.TYPED_SOURCES.3\n * firegrid-typed-wait-source-redesign.TYPED_SOURCES.6\n *\n * Schema-backed wait-source discriminator persisted on the wait row. The\n * variant selects which runtime observation stream the router observes; the\n * `FieldEqualsTrigger` value still decides which rows on that stream match.\n * First supported set is `AgentOutput` and `RuntimeRun` only; `RuntimeContext`\n * is deferred until a product flow needs context-state waiting.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/types.ts",
+    "line_range": [
+      66,
+      70
+    ],
+    "captures": {},
+    "snippet": "/**\n * firegrid-durable-tools.LIFECYCLE.1\n *\n * v0 wait status enum. No `paused`.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/types.ts",
+    "line_range": [
+      82,
+      86
+    ],
+    "captures": {},
+    "snippet": "/**\n * Public discriminated outcome returned by `WaitFor.match`.\n *\n * firegrid-durable-tools.WAIT_FOR.4\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/types.ts",
+    "line_range": [
+      118,
+      124
+    ],
+    "captures": {},
+    "snippet": "/**\n * firegrid-durable-tools.SUBSCRIPTION.4\n *\n * Evaluate the AND-of-fieldEquals trigger against a decoded source row.\n * Path traversal uses plain Record indexing; absent fields are treated as\n * non-matches (no defaulted traversal — SUBSCRIPTION.6).\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      1,
+      23
+    ],
+    "captures": {},
+    "snippet": "/**\n * Workflow-handler-facing `wait_for` surface: `WaitFor.match`.\n *\n * Implements:\n *  - firegrid-durable-tools.WAIT_FOR.1 — handler-callable; suspends until\n *    match or optional timeout\n *  - firegrid-durable-tools.WAIT_FOR.2 — deterministic wait key from\n *    (executionId, name)\n *  - firegrid-durable-tools.WAIT_FOR.3 — call-site decode of raw payload via\n *    optional `resultSchema`\n *  - firegrid-durable-tools.WAIT_FOR.4 — discriminated Match | Timeout\n *  - firegrid-durable-tools.WAIT_FOR.5 — runtime-only surface; not exposed via\n *    @firegrid/client\n *  - firegrid-durable-tools.WAIT_FOR.6 — single resolution across replay\n *  - firegrid-durable-tools.TIMEOUT.1 — uses @effect/workflow clock semantics\n *  - firegrid-durable-tools.TIMEOUT.2 — typed timeout exit\n *  - firegrid-durable-tools.TIMEOUT.3/4 — match preempts timeout; late-fire\n *    is a no-op via the wait-row re-check\n *  - firegrid-durable-tools.LIFECYCLE.2 — per-dispatch wait re-check (timeout\n *    side; the router enforces the match side)\n *  - firegrid-durable-tools.EFFECT_IDIOMS.2 — Clock.currentTimeMillis\n *  - firegrid-durable-tools.EFFECT_IDIOMS.3 — Match.tag dispatch\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      88,
+      93
+    ],
+    "captures": {},
+    "snippet": "/**\n   * Unique within the workflow execution. Combined with `executionId` to form\n   * the durable wait identity.\n   *\n   * firegrid-durable-tools.WAIT_FOR.2\n   */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      95,
+      98
+    ],
+    "captures": {},
+    "snippet": "/**\n   * Typed runtime wait source. Selects which runtime observation stream the\n   * router observes. firegrid-typed-wait-source-redesign.TYPED_SOURCES.1\n   */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      100,
+      105
+    ],
+    "captures": {},
+    "snippet": "/**\n   * AND-of-scalar-equality predicates over decoded row paths.\n   *\n   * firegrid-durable-tools.SUBSCRIPTION.4\n   * firegrid-durable-tools.SUBSCRIPTION.6\n   */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      107,
+      112
+    ],
+    "captures": {},
+    "snippet": "/**\n   * Optional call-site decoder. If omitted, the matched row is returned as\n   * `unknown`. Any Effect Schema whose decoded type is `A` is accepted; the\n   * encoded form is unconstrained because the router emits the raw row\n   * payload as `unknown` (firegrid-durable-tools.SUBSCRIPTION.3).\n   */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      115,
+      119
+    ],
+    "captures": {},
+    "snippet": "/**\n   * Optional timeout. Implemented through `DurableClock.sleep`.\n   *\n   * firegrid-durable-tools.TIMEOUT.1\n   */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      152,
+      168
+    ],
+    "captures": {},
+    "snippet": "/**\n * Resolve the timeout side.\n *\n * Returns the matched-row payload (`Option.some`) when a `match` completion\n * already exists — the timeout side must then resolve as **Match**, never\n * Timeout. Returns `Option.none()` when the wait genuinely timed out (a\n * timeout completion is written and the wait flipped to `timed_out`).\n *\n * firegrid-durable-tools.TIMEOUT.3 — match preempts timeout.\n * firegrid-durable-tools.TIMEOUT.4 — a late-firing timeout is a no-op: when\n *   a match completion is already durably recorded (including the\n *   completion-written-but-deferredDone-not-yet-fired crash gap that\n *   firegrid-durable-tools.WAIT_FOR.7 preserves), the timeout cannot win\n *   the race. The stored `matchedRowPayload` is authoritative, so the\n *   timeout side resolves directly to that match rather than waiting on the\n *   match deferred to be re-fired by the live-replay path.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      260,
+      267
+    ],
+    "captures": {},
+    "snippet": "/**\n * firegrid-durable-tools.WAIT_FOR.1\n *\n * The single workflow-handler-facing entrypoint. Persists a wait intent,\n * suspends on the match deferred (and, with `timeoutMs`, races against a\n * DurableClock sleep), then decodes the raw matched-row payload at the call\n * site.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      295,
+      295
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-tools.WAIT_FOR.2",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      369,
+      369
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-tools.TIMEOUT.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      370,
+      370
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-tools.TIMEOUT.3 — raceAll captures the first writer to",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      392,
+      392
+    ],
+    "captures": {},
+    "snippet": "// sleep completes. firegrid-durable-tools.TIMEOUT.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-for.ts",
+    "line_range": [
+      407,
+      407
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-tools.TIMEOUT.3 / .4 — if a match completion is",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-router.ts",
+    "line_range": [
+      1,
+      20
+    ],
+    "captures": {},
+    "snippet": "/**\n * Wait router — a scoped subscriber driver that resolves `wait_for`\n * deferreds when source-collection rows match the wait's trigger.\n *\n * Implements:\n *  - firegrid-durable-tools.SUBSCRIPTION.1 — `subscribeChanges(..., { includeInitialState: true })`\n *    drives a single match-evaluation code path for initial state + live changes\n *  - firegrid-durable-tools.SUBSCRIPTION.2 — no snapshot-then-subscribe\n *  - firegrid-durable-tools.SUBSCRIPTION.3 — write a completion row with the\n *    raw matched-row payload; resolve the workflow-engine deferred with that\n *    raw payload\n *  - firegrid-durable-tools.SUBSCRIPTION.7 — composed as a scoped runtime worker\n *  - firegrid-durable-tools.LIFECYCLE.2/3/5 — per-dispatch wait re-check;\n *    retired waits never dispatch; source-fiber leakage is tolerated\n *  - firegrid-durable-tools.PUBLIC_SURFACE.1 — the router never starts a\n *    workflow execution\n *  - firegrid-durable-tools.BOUNDARIES.3 — discovery channel is\n *    `subscribeChanges`, not `Effect.sleep` polling\n *  - firegrid-durable-tools.EFFECT_IDIOMS.2 — `Clock.currentTimeMillis`\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-router.ts",
+    "line_range": [
+      46,
+      59
+    ],
+    "captures": {},
+    "snippet": "/**\n * firegrid-typed-wait-source-redesign.WAIT_ROUTER.1\n *\n * The non-After `AgentOutput` variant carries no contextId on the\n * source itself — the SDD model is \"source selects the stream, the\n * `FieldEqualsTrigger` value decides which rows match\", and every\n * supported `AgentOutput` wait scopes itself with a `contextId`\n * predicate (the agent-tool schema example, the workflow callers, and\n * the per-context reshape all assume it). Post-#315 there is no\n * host-wide output stream, so the router resolves the per-context\n * output stream by this predicate. Absence is handled by the\n * fail-fast guard at the `wait_for` tool boundary\n * (`tool-use-to-effect.ts`), not here.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-router.ts",
+    "line_range": [
+      74,
+      84
+    ],
+    "captures": {},
+    "snippet": "/**\n * firegrid-typed-wait-source-redesign.TYPED_SOURCES.2\n * firegrid-typed-wait-source-redesign.TYPED_SOURCES.3\n *\n * Select the concrete runtime observation stream for a persisted typed\n * wait. Adding a variant is one `Match.tag` arm plus one\n * `RuntimeWaitStreams` field. `AgentOutput` is routed to the\n * per-context output stream selected by the wait trigger's contextId\n * predicate (see `contextIdFromTrigger`); the trigger still does the\n * final row matching in `completeMatch`.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-router.ts",
+    "line_range": [
+      108,
+      114
+    ],
+    "captures": {},
+    "snippet": "/**\n * firegrid-durable-tools.SUBSCRIPTION.3\n *\n * Resolve the wait's match deferred with the raw row payload. Idempotent in\n * the workflow engine — repeated calls with the same deferred name are\n * no-ops after the first.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-router.ts",
+    "line_range": [
+      125,
+      125
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-tools.LIFECYCLE.2 — re-read at dispatch boundary.",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-router.ts",
+    "line_range": [
+      136,
+      136
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-tools.TIMEOUT.3 — if a timeout completion was already",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-router.ts",
+    "line_range": [
+      156,
+      156
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-tools.WAIT_FOR.7",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-router.ts",
+    "line_range": [
+      186,
+      193
+    ],
+    "captures": {},
+    "snippet": "/**\n * firegrid-durable-tools.SUBSCRIPTION.1/2\n *\n * Attach a single subscription per (waitKey, source) to the typed runtime\n * stream selected for the wait. The stream is the canonical\n * includeInitialState observation — the router does not perform any prior\n * snapshot read.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-router.ts",
+    "line_range": [
+      245,
+      245
+    ],
+    "captures": {},
+    "snippet": "// firegrid-durable-tools.WAIT_FOR.7",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-router.ts",
+    "line_range": [
+      282,
+      282
+    ],
+    "captures": {},
+    "snippet": "// firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.8",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/durable-tools/internal/wait-router.ts",
+    "line_range": [
+      345,
+      359
+    ],
+    "captures": {},
+    "snippet": "/**\n * firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.3\n * firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.6\n * firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.10\n * firegrid-durable-tools.SUBSCRIPTION.7\n * firegrid-durable-tools.RUNTIME_BOUNDARY.4\n * firegrid-typed-wait-source-redesign.WAIT_ROUTER.1\n * firegrid-typed-wait-source-redesign.WAIT_ROUTER.2\n * firegrid-typed-wait-source-redesign.WAIT_ROUTER.4\n *\n * Scoped subscriber driver. It provides no public service; the `never` output\n * channel makes the wait-router role visible in the Effect type. Source\n * selection is a typed `Match.value` over `RuntimeWaitStreams`, not a string\n * registry lookup.\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/index.ts",
+    "line_range": [
+      28,
+      28
+    ],
+    "captures": {},
+    "snippet": "// firegrid-effect-ai-inprocess-provider.SANDBOX_PROVIDER.1",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/verified-webhook-ingest/adapter.ts",
+    "line_range": [
+      1,
+      14
+    ],
+    "captures": {},
+    "snippet": "/**\n * Tiny verified webhook ingest adapter.\n *\n * Implements:\n *  - firegrid-verified-webhook-ingest.INGEST.1\n *  - firegrid-verified-webhook-ingest.INGEST.2\n *  - firegrid-verified-webhook-ingest.INGEST.3\n *  - firegrid-verified-webhook-ingest.INGEST.4\n *  - firegrid-verified-webhook-ingest.INGEST.5\n *  - firegrid-verified-webhook-ingest.INGEST.6\n *  - firegrid-verified-webhook-ingest.INGEST.7\n *  - firegrid-verified-webhook-ingest.BOUNDARIES.1\n *  - firegrid-verified-webhook-ingest.BOUNDARIES.2\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/verified-webhook-ingest/keys.ts",
+    "line_range": [
+      1,
+      7
+    ],
+    "captures": {},
+    "snippet": "/**\n * Composite primary key for verified webhook facts.\n *\n * Implements:\n *  - firegrid-verified-webhook-ingest.FACTS.2\n *  - firegrid-durable-tools.BOUNDARIES.6\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/runtime/src/verified-webhook-ingest/table.ts",
+    "line_range": [
+      1,
+      9
+    ],
+    "captures": {},
+    "snippet": "/**\n * Runtime-owned verified webhook fact table.\n *\n * Implements:\n *  - firegrid-verified-webhook-ingest.FACTS.1\n *  - firegrid-verified-webhook-ingest.FACTS.2\n *  - firegrid-verified-webhook-ingest.FACTS.3\n *  - firegrid-verified-webhook-ingest.WAIT_INTEGRATION.1\n */",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/codex-acp-tool-call-pipeline.ts",
+    "line_range": [
+      24,
+      24
+    ],
+    "captures": {},
+    "snippet": "// TFIND-048: the pre-baked `codexAcpToolCallMcpUrl` helper was deleted.",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/codex-acp-tool-call-pipeline.ts",
+    "line_range": [
+      61,
+      61
+    ],
+    "captures": {},
+    "snippet": "// TFIND-005: production host factories still return a layer whose public",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/durable-streams-backed-pipeline.ts",
+    "line_range": [
+      22,
+      22
+    ],
+    "captures": {},
+    "snippet": "// TFIND-005: production host factories still return a layer whose public",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/multi-context-production-consuming-pipeline.ts",
+    "line_range": [
+      21,
+      21
+    ],
+    "captures": {},
+    "snippet": "// TFIND-005: production host factories still return a layer whose public",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/output-journal-pipeline.ts",
+    "line_range": [
+      21,
+      21
+    ],
+    "captures": {},
+    "snippet": "// TFIND-005: production host factories still return a layer whose public",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/permission-flow-pipeline.ts",
+    "line_range": [
+      21,
+      21
+    ],
+    "captures": {},
+    "snippet": "// TFIND-005: production host factories still return a layer whose public",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "tfind-anchor-comment",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/stdio-jsonl-tool-execution-pipeline.ts",
+    "line_range": [
+      21,
+      21
+    ],
+    "captures": {},
+    "snippet": "// TFIND-005: production host factories still return a layer whose public",
+    "notes": "Anchors marking historical pain / decisions. Their per-file density is the heat map — read counts-by-file, not individual lines.\n"
+  },
+  {
+    "rule_id": "type-safety-eslint-disable",
+    "severity": "info",
+    "path": "packages/runtime/src/verified-webhook-ingest/adapter.ts",
+    "line_range": [
+      332,
+      332
+    ],
+    "captures": {},
+    "snippet": "// eslint-disable-next-line @typescript-eslint/no-unsafe-return",
+    "notes": "Counts eslint-disable of no-unsafe-* and @ts-expect-error/@ts-ignore. Not a defect per comment — the footprint and its clustering are the signal (where does type debt concentrate?).\n"
+  },
+  {
+    "rule_id": "type-safety-eslint-disable",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/codex-acp-tool-call-pipeline.ts",
+    "line_range": [
+      63,
+      63
+    ],
+    "captures": {},
+    "snippet": "// eslint-disable-next-line @typescript-eslint/no-unsafe-return",
+    "notes": "Counts eslint-disable of no-unsafe-* and @ts-expect-error/@ts-ignore. Not a defect per comment — the footprint and its clustering are the signal (where does type debt concentrate?).\n"
+  },
+  {
+    "rule_id": "type-safety-eslint-disable",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/durable-streams-backed-pipeline.ts",
+    "line_range": [
+      24,
+      24
+    ],
+    "captures": {},
+    "snippet": "// eslint-disable-next-line @typescript-eslint/no-unsafe-return",
+    "notes": "Counts eslint-disable of no-unsafe-* and @ts-expect-error/@ts-ignore. Not a defect per comment — the footprint and its clustering are the signal (where does type debt concentrate?).\n"
+  },
+  {
+    "rule_id": "type-safety-eslint-disable",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/multi-context-production-consuming-pipeline.ts",
+    "line_range": [
+      23,
+      23
+    ],
+    "captures": {},
+    "snippet": "// eslint-disable-next-line @typescript-eslint/no-unsafe-return",
+    "notes": "Counts eslint-disable of no-unsafe-* and @ts-expect-error/@ts-ignore. Not a defect per comment — the footprint and its clustering are the signal (where does type debt concentrate?).\n"
+  },
+  {
+    "rule_id": "type-safety-eslint-disable",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/output-journal-pipeline.ts",
+    "line_range": [
+      23,
+      23
+    ],
+    "captures": {},
+    "snippet": "// eslint-disable-next-line @typescript-eslint/no-unsafe-return",
+    "notes": "Counts eslint-disable of no-unsafe-* and @ts-expect-error/@ts-ignore. Not a defect per comment — the footprint and its clustering are the signal (where does type debt concentrate?).\n"
+  },
+  {
+    "rule_id": "type-safety-eslint-disable",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/permission-flow-pipeline.ts",
+    "line_range": [
+      23,
+      23
+    ],
+    "captures": {},
+    "snippet": "// eslint-disable-next-line @typescript-eslint/no-unsafe-return",
+    "notes": "Counts eslint-disable of no-unsafe-* and @ts-expect-error/@ts-ignore. Not a defect per comment — the footprint and its clustering are the signal (where does type debt concentrate?).\n"
+  },
+  {
+    "rule_id": "type-safety-eslint-disable",
+    "severity": "info",
+    "path": "packages/tiny-firegrid/src/configurations/stdio-jsonl-tool-execution-pipeline.ts",
+    "line_range": [
+      23,
+      23
+    ],
+    "captures": {},
+    "snippet": "// eslint-disable-next-line @typescript-eslint/no-unsafe-return",
+    "notes": "Counts eslint-disable of no-unsafe-* and @ts-expect-error/@ts-ignore. Not a defect per comment — the footprint and its clustering are the signal (where does type debt concentrate?).\n"
+  }
+]
