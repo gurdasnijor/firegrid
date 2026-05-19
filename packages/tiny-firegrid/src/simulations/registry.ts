@@ -58,39 +58,49 @@ export const loadTinyFiregridSimulations = async (): Promise<
     .filter(file => file.endsWith(".ts") && !NON_SIMULATION_FILES.has(file))
     .sort()
 
-  const byId = new Map<string, TinyFiregridSimulation<unknown>>()
-  for (const file of files) {
-    const moduleNamespace = (await import(
-      new URL(file, import.meta.url).href,
-    )) as Record<string, unknown>
-    for (const exported of Object.values(moduleNamespace)) {
-      if (!isSimulation(exported)) continue
-      const erased = eraseSimulationResult(exported)
-      const existing = byId.get(erased.id)
-      if (existing !== undefined) {
-        throw new Error(
-          `duplicate tiny-firegrid simulation id "${erased.id}" ` +
-            `(check ${file} against an earlier file)`,
-        )
-      }
-      byId.set(erased.id, erased)
-    }
-  }
+  const modules = await Promise.all(
+    files.map(
+      file =>
+        import(new URL(file, import.meta.url).href) as Promise<
+          Record<string, unknown>
+        >,
+    ),
+  )
 
-  cache = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id))
-  return cache
-}
+  const found = modules.flatMap((moduleNamespace, index) =>
+    Object.values(moduleNamespace)
+      .filter(isSimulation)
+      .map(simulation => ({
+        file: files[index] ?? "",
+        sim: eraseSimulationResult(simulation),
+      })),
+  )
 
-export const tinyFiregridSimulationList = (): ReadonlyArray<
-  TinyFiregridSimulation<unknown>
-> => {
-  if (cache === undefined) {
-    throw new Error(
-      "tiny-firegrid simulations not loaded; await loadTinyFiregridSimulations() first",
+  const duplicate = found.find(
+    (entry, index) =>
+      found.findIndex(other => other.sim.id === entry.sim.id) !== index,
+  )
+  if (duplicate !== undefined) {
+    return Promise.reject(
+      new Error(
+        `duplicate tiny-firegrid simulation id "${duplicate.sim.id}" ` +
+          `(check ${duplicate.file} against an earlier file)`,
+      ),
     )
   }
+
+  cache = found
+    .map(entry => entry.sim)
+    .sort((a, b) => a.id.localeCompare(b.id))
   return cache
 }
+
+// Returns the discovered set. Callers (the CLI in src/bin/simulate.ts) always
+// `await loadTinyFiregridSimulations()` before using this, so an empty list
+// here only ever means "load not awaited yet" — not a runtime error path.
+export const tinyFiregridSimulationList = (): ReadonlyArray<
+  TinyFiregridSimulation<unknown>
+> => cache ?? []
 
 export type TinyFiregridSimulationId = string
 
