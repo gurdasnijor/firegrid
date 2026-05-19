@@ -7,7 +7,12 @@ import {
   type HostSessionRow,
 } from "@firegrid/protocol/launch"
 import type { RuntimeIngressRequest } from "@firegrid/protocol/runtime-ingress"
-import { type Context, Effect, Layer } from "effect"
+import {
+  SandboxProvider,
+  type SandboxCommand,
+  type SandboxProviderService,
+} from "@firegrid/runtime/sources/sandbox"
+import { type Context, Effect, Layer, Option, Schema } from "effect"
 import {
   AgentToolHost,
   type AgentToolHostService,
@@ -61,6 +66,95 @@ const unsupportedAgentTool = (
     }),
   )
 
+// firegrid-schema-projection-contract — the `execute` agent tool input is
+// sandbox-neutral `Schema.Unknown` at the protocol boundary; shaping it
+// into a concrete `SandboxCommand` is a host-execution concern (see
+// tool-host.ts docstring). This is the host-side command contract: a
+// non-empty argv plus optional cwd/env/stdin. Decode failures surface as
+// an actionable ToolExecutionFailed, never a defect.
+const ExecuteCommandInputSchema = Schema.Struct({
+  argv: Schema.NonEmptyArray(Schema.String),
+  cwd: Schema.optional(Schema.String),
+  envVars: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.String }),
+  ),
+  stdin: Schema.optional(Schema.String),
+})
+
+const sandboxCommandFromInput = (
+  toolUseId: string,
+  input: unknown,
+): Effect.Effect<SandboxCommand, ReturnType<typeof toolExecutionFailed>> =>
+  Schema.decodeUnknown(ExecuteCommandInputSchema)(input).pipe(
+    Effect.map((decoded): SandboxCommand => ({
+      argv: decoded.argv,
+      ...(decoded.cwd === undefined ? {} : { cwd: decoded.cwd }),
+      ...(decoded.envVars === undefined ? {} : { envVars: decoded.envVars }),
+      ...(decoded.stdin === undefined ? {} : { stdin: decoded.stdin }),
+    })),
+    Effect.mapError(cause =>
+      toolExecutionFailed(
+        toolUseId,
+        "execute",
+        new Error(
+          "execute input must be { argv: non-empty string[], cwd?, envVars?, stdin? }",
+          { cause },
+        ),
+      )),
+  )
+
+// firegrid-schema-projection-contract — provider side-effect execution.
+// `SandboxProvider` is reached as an OPTIONAL build-time capability
+// (mirrors Gap-1 `CallerOwnedFactStreams`): it is composed in the host
+// `namespaceScopedLayer` and is in scope where `RuntimeHostAgentToolHostLive`
+// is built, but it is intentionally NOT added to the narrow
+// `HostRuntimeContextExecutionEnv` deferred-capture type (TFIND-031). The
+// agent surface stays the sandbox-neutral `execute` tool only — no client
+// method, no widening of the protected deferred-capture boundary.
+const runProviderExecute = (
+  sandboxProvider: Option.Option<SandboxProviderService>,
+  args: {
+    readonly toolUseId: string
+    readonly labels: Record<string, string>
+    readonly workingDir?: string
+    readonly input: unknown
+  },
+): Effect.Effect<unknown, ReturnType<typeof toolExecutionFailed>> =>
+  Option.match(sandboxProvider, {
+    onNone: () =>
+      Effect.fail(toolExecutionFailed(
+        args.toolUseId,
+        "execute",
+        new Error(
+          "execute requires a SandboxProvider in the host composition; none is provided",
+        ),
+      )),
+    onSome: provider =>
+      Effect.gen(function*() {
+        const command = yield* sandboxCommandFromInput(args.toolUseId, args.input)
+        const sandbox = yield* provider.getOrCreate({
+          labels: args.labels,
+          ...(args.workingDir === undefined
+            ? {}
+            : { workingDir: args.workingDir }),
+        }).pipe(
+          Effect.mapError(cause =>
+            toolExecutionFailed(args.toolUseId, "execute", cause)),
+        )
+        return yield* provider.execute(sandbox, command).pipe(
+          Effect.mapError(cause =>
+            toolExecutionFailed(args.toolUseId, "execute", cause)),
+        )
+      }),
+  }).pipe(
+    Effect.withSpan("firegrid.host.agent_tool.execute", {
+      kind: "internal",
+      attributes: {
+        "firegrid.agent_tool.tool_use_id": args.toolUseId,
+      },
+    }),
+  )
+
 const childContextIdForToolUse = (
   parentContextId: string,
   toolUseId: string,
@@ -87,6 +181,10 @@ const runtimeHostAgentToolHostService = (captured: {
   // TFIND-031: ambient host durable substrate captured at layer-build
   // time, re-provided into the deferred child-context workflow run.
   readonly hostContext: Context.Context<HostRuntimeContextExecutionEnv>
+  // Gap-2: optional provider side-effect capability resolved at
+  // layer-build time. NOT part of `hostContext` — never re-provided into
+  // the deferred child-context workflow capture (TFIND-031 boundary held).
+  readonly sandboxProvider: Option.Option<SandboxProviderService>
 }): AgentToolHostService => ({
   spawnChildContext: ({
     parentContextId,
@@ -142,9 +240,33 @@ const runtimeHostAgentToolHostService = (captured: {
       }),
     ),
   spawnChildContexts: ({ toolUseId }) => unsupportedAgentTool(toolUseId, "spawn_all"),
-  executeSandboxTool: ({ toolUseId }) => unsupportedAgentTool(toolUseId, "execute"),
-  executeSessionCapability: ({ toolUseId }) =>
-    unsupportedAgentTool(toolUseId, "execute"),
+  executeSandboxTool: ({ toolUseId, sandbox, input }) =>
+    runProviderExecute(captured.sandboxProvider, {
+      toolUseId,
+      labels: {
+        firegridSandboxProvider: sandbox.providerName,
+        firegridSandboxTool: sandbox.toolName,
+      },
+      input,
+    }),
+  executeSessionCapability: ({ toolUseId, sessionId, capability, input }) =>
+    requireLocalContextWithHostCapabilities(captured, sessionId).pipe(
+      Effect.mapError(cause =>
+        toolExecutionFailed(toolUseId, "execute", cause)),
+      Effect.flatMap(context =>
+        runProviderExecute(captured.sandboxProvider, {
+          toolUseId,
+          labels: {
+            firegridRuntimeContextId: context.contextId,
+            firegridSessionCapabilityKind: capability.kind,
+            firegridSessionCapabilityName: capability.name,
+          },
+          ...(context.runtime.config.cwd === undefined
+            ? {}
+            : { workingDir: context.runtime.config.cwd }),
+          input,
+        })),
+    ),
   appendSessionPrompt: ({ toolUseId, sessionId, inputId, prompt }) =>
     // firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2
     appendIngressWithHostCapabilities(captured, {
@@ -242,6 +364,10 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
     // deferred child-context workflow (run later, outside this gen) can
     // re-provide it. Always present here via the composed host layer.
     const hostContext = yield* Effect.context<HostRuntimeContextExecutionEnv>()
+    // Gap-2: optional provider side-effect capability. Resolved at
+    // layer-build time, NOT folded into `hostContext` — the TFIND-031
+    // deferred-capture boundary stays narrow.
+    const sandboxProvider = yield* Effect.serviceOption(SandboxProvider)
     const service: AgentToolHostService = runtimeHostAgentToolHostService({
       contextInsert,
       contextRead,
@@ -249,6 +375,7 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
       controlTable,
       registry,
       hostContext,
+      sandboxProvider,
       get agentToolHost() {
         return service
       },
