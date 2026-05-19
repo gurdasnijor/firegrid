@@ -66,6 +66,38 @@ For local debugging, replace the OTLP exporter with
 harnesses may choose exporters and sampling policy; reusable Firegrid packages
 only emit spans.
 
+## Full e2e traces through real agent runtimes
+
+There are three different meanings of "end-to-end" for real ACP, Claude, and
+Codex agents:
+
+1. Host e2e: client SDK -> Firegrid host -> workflow -> codec -> sandbox
+   process boundary -> Firegrid MCP server. This PR enables that path with
+   Effect spans. Install an OpenTelemetry Layer in the host process to export it.
+2. MCP wire e2e: every JSON-RPC request from the external agent to Firegrid's
+   MCP server (`initialize`, `tools/list`, `tools/call`) is represented as a
+   host span. This does not require agent cooperation and is the next useful
+   G-MCP-2 probe because it would show whether the agent calls `tools/list` and
+   what response the server returns.
+3. Agent-internal e2e: spans inside the external agent runtime itself,
+   including its model/tool planner loop. That requires the agent process to
+   support OpenTelemetry or another trace exporter. Firegrid can pass exporter
+   env vars through the local process sandbox, but it cannot manufacture
+   internal Codex or Claude spans from the host process.
+
+For actual operator debugging, use all available layers:
+
+- Provide `NodeSdk.layer` in the Firegrid host process.
+- Add MCP JSON-RPC method spans at the Firegrid MCP HTTP boundary so
+  non-instrumented agents are still observable from the outside.
+- When the agent runtime supports it, pass `OTEL_EXPORTER_OTLP_*`,
+  `OTEL_SERVICE_NAME`, and `OTEL_RESOURCE_ATTRIBUTES` through the sandbox env
+  and route it to the same collector.
+- Treat host/agent trace joining as best-effort unless the agent runtime
+  explicitly accepts W3C trace context. Without that support, the reliable join
+  key is the Firegrid context id plus MCP request spans, not a single shared
+  trace id.
+
 ## Span quality rules
 
 - Use stable span names for substrate boundaries, not call-site prose.

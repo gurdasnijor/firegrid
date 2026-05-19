@@ -2,7 +2,6 @@ import {
   Effect,
   Exit,
   Fiber,
-  Layer,
   Option,
   Supervisor,
   Tracer,
@@ -26,7 +25,7 @@ export interface RecordedSpan {
   }>
 }
 
-export interface FiberSnapshot {
+interface FiberSnapshot {
   readonly id: string
   readonly status: string
 }
@@ -100,7 +99,7 @@ class RecordingSpan implements Tracer.Span {
   }
 }
 
-export const makeTraceRecorder = (): {
+const makeTraceRecorder = (): {
   readonly spans: ReadonlyArray<RecordedSpan>
   readonly tracer: Tracer.Tracer
 } => {
@@ -144,7 +143,3 @@ export const runWithTraceRecorder = <A, E, R>(
     )
     return { result, spans: recorder.spans, fibers }
   })
-
-export const TraceRecorderLive = (recorder: {
-  readonly tracer: Tracer.Tracer
-}): Layer.Layer<never> => Layer.setTracer(recorder.tracer)
