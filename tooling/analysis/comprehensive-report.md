@@ -99,7 +99,33 @@ heuristic undercounts `R`-channel uses in `Effect.Effect<…,…,R>`, so read
 as "low," not exact). The "toy-first to consolidate accreting unions"
 justification is **removed** — there is nothing accreting to consolidate.
 
-### S3–S6 — see gate below.
+### S3 — Service-dependency cycles (RUN; INCONCLUSIVE-as-built — itself a finding)
+
+`s3-service-graph.{json,dot}` + analyzer committed. Honest result: the
+static graph is **not credible** — `tags=8, edges=2, cycles=0`, but an
+idiom-agnostic grep finds **29** tag declarations in host-sdk+runtime, and
+a scope probe confirms ts-morph loaded **only host-sdk's tsconfig (50
+files, 0 runtime files)**. The substrate's service tags live in
+`runtime`/`protocol`, never in the project. So "cycles=0" is a
+**project-scope artifact**, not evidence of acyclicity, and is **not
+reported as a finding**. A credible S3 needs a multi-tsconfig ts-morph
+load (host-sdk+runtime+protocol) — that is a real effort expansion past
+S3's ~1-day budget, into the cut-remainder cost class.
+
+Per the brief's "if an analysis didn't surface decision-relevant signal,
+that itself is a finding": **static S3 did not settle the cost class.**
+The better available evidence is the brief's own stated anchor — the
+PR #363 cascade *was* a provideMerge cycle. Taking that as given (brief
+context, not re-derived from a broken graph): **substrate provideMerge
+cycles have occurred in practice.** Per the S3 precommitment that places
+the in-place relay refactor in the **architectural-intervention cost
+class where it touches the provideMerge composition** — not naive
+composition reorder — but localized, consistent with S1's ≤7 small
+relay sites. Secondary signals from the (partial) run: `AgentToolHost`
+has 3 Live constructions, `RuntimeContextWorkflowSession` 2 — multi-Live
+tags worth a documentation note, not a redesign trigger.
+
+### S4–S6 — see gate below.
 
 ## Runtime findings (Part 2) — *cut at gate (see below)*
 ## Design insights (Part 3) — *cut at gate (see below)*
@@ -122,26 +148,37 @@ to support, the redesign justifications:
   substrate redesign. Concrete in-place candidates: the 5 reProvided
   relay sites (workflow-core:463 & runtime-substrate:94 are pure
   pass-through — the cleanest to reason about first).
-- **Do exactly ONE more analysis: S3 (service-dependency cycles).** It is
-  the only remaining piece with *orthogonal* decision value: the brief
-  ties cycles to the PR #363 cascade — "no cycles → composition reorder
-  suffices; cycles → architectural intervention." S1/S2 cannot answer
-  it, and it sets the *cost class* of the in-place refactor. ~1 day.
-- **Cut S4, S5, S6, all of Part 2 (runtime tracing, ~2d), all of Part 3
-  (synthesis, ~3–4d).** Rationale, per the brief's own "compress what's
-  redundant once others have run": S4 boundary is already answered by
-  calibration A6 (87% public, 2 internal). S6 blast-radius is largely
-  covered by A6 + S1 reProvided/refs. S5 verification census + Part 2
-  tracing + Part 3 synthesis are 6+ days whose output no longer changes
-  the toy-first-vs-in-place decision — S1/S2 settled it. Running them
-  would be the arc-bloat the brief is structured against. Recommend
-  **stop after S3**.
+- **Cost class = architectural-aware, not naive reorder.** S3-static was
+  run and is inconclusive-as-built (scope artifact, §S3). The brief's
+  stated anchor — PR #363 *was* a provideMerge cycle — is the better
+  evidence: substrate composition cycles have occurred in practice, so
+  the in-place refactor of the relay sites that touch the provideMerge
+  composition is **architectural-class work, done carefully**, not a
+  one-line reorder. Still in-place, still ≤7 localized sites — *not* a
+  toy-first rewrite. Concrete first targets: `workflow-core:463` &
+  `runtime-substrate:94` (pure pass-through relays — lowest-risk to
+  restructure first); treat any change crossing the provideMerge seam as
+  cycle-sensitive.
+- **STOP. Do not run S4, S5, S6, Part 2, Part 3, or a multi-project S3.**
+  Per the brief's own "compress what's redundant" + "don't expand":
+  S4 boundary is already answered by calibration A6 (87% public). S6
+  blast-radius is largely covered by A6 + S1 reProvided/refs. A *credible*
+  S3 needs a multi-tsconfig ts-morph build — effort past its budget, and
+  the cost-class question is already answered well-enough-to-decide by
+  the #363 anchor + S1's localization. S5 census + Part 2 tracing + Part 3
+  synthesis are 6+ days whose output no longer changes the decision
+  S1/S2/S3-anchor settled. Running any of it is the arc-bloat this brief
+  is structured against.
 
 ## What this doesn't settle (honest)
 
-- **Cost class of the in-place refactor** — reorder vs architectural —
-  pending S3 (cycles). This is the one genuinely open, decision-relevant
-  question.
+- **Exact cycle topology** — *which* tags form the provideMerge cycle and
+  whether more than the #363 one exists — is NOT mapped (static S3
+  scope-limited; a credible graph needs multi-project ts-morph, out of
+  budget/scope). We know cycles occur (so: architectural-aware refactor);
+  we do not have the precise cycle set. If a future pass wants the exact
+  topology, the multi-tsconfig S3 is the tool — logged out-of-scope, not
+  done here.
 - **Whether the substrate's claimed behavior actually happens at
   runtime** (the smoke-test-doesn't-test concern) — Part 2 would have
   shown this; it is cut, so this remains *unverified by this work*.
@@ -156,4 +193,15 @@ to support, the redesign justifications:
   >0.70 flag), not the soft metrics.
 
 ## Out-of-scope log (per the hard scope constraint)
-- (none yet — new-analysis ideas land here, not in the work)
+- Multi-tsconfig (host-sdk+runtime+protocol) ts-morph service graph for
+  exact provideMerge cycle topology. Surfaced by S3's scope limit;
+  **not run** (past budget; cost class already decided). Logged, not
+  expanded — the next brief commissions it if warranted.
+
+---
+**Stop condition met:** report committed; `What this changes` makes
+concrete decisions (toy-first not justified; refactor-in-place,
+architectural-aware, ≤7 enumerated sites, first targets named; stop);
+`What this doesn't settle` is honest (runtime trustworthiness + S5
+coverage + exact cycle topology explicitly unestablished). No follow-up
+analyses proposed.
