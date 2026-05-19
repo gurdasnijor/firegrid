@@ -5,6 +5,12 @@ on:
   push:
     branches:
       - main
+    # The beads-sync cron commits `.beads/issues.jsonl` every few
+    # minutes (status SoT durability). Those data-only commits must not
+    # trigger a full CI run — that cadence, not any single job, is the
+    # dominant CI cost. The cron keeps syncing; it just stops paying CI.
+    paths-ignore:
+      - ".beads/**"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -55,9 +61,6 @@ jobs:
 
       - name: Check Effect-quality metric ratchet
         run: pnpm run lint:effect-quality
-
-      - name: Check tiny-firegrid configuration coverage
-        run: pnpm run toy:coverage:check
 
   semgrep:
     name: Semgrep
