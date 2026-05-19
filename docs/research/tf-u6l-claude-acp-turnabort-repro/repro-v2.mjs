@@ -7,11 +7,16 @@
 // only against the Firegrid MCP (=> Firegrid-side response shape)?
 //
 // Usage: ANTHROPIC_API_KEY=$(cat ~/.firegrid-anthropic-key) node repro-v2.mjs
+// Node globals imported from `node:*` (repo convention; flat ESLint config
+// does not honor `/* eslint-env node */`).
 import { spawn } from "node:child_process"
 import { createServer } from "node:http"
 import { createRequire } from "node:module"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import path from "node:path"
+import { log as nodeLog } from "node:console"
+import process from "node:process"
+import { setTimeout, clearTimeout } from "node:timers"
 
 // pnpm: @modelcontextprotocol/sdk + zod are workspace deps of
 // packages/runtime; this repro lives under docs/, so anchor resolution at
@@ -32,7 +37,7 @@ const { z } = await import(pathToFileURL(sdkReq.resolve("zod")).href)
 
 const t0 = Date.now()
 const dt = () => `${((Date.now() - t0) / 1000).toFixed(2)}s`
-const log = (...a) => console.log(`[${dt()}]`, ...a)
+const log = (...a) => nodeLog(`[${dt()}]`, ...a)
 
 // --- minimal stub MCP HTTP server (stateless) ---
 let toolCalls = 0
@@ -107,7 +112,7 @@ child.stdout.on("data", d => {
 
 const finish = (result) => {
   log("=== RESULT ===")
-  console.log(JSON.stringify({ ...result, stubToolCalls: toolCalls, stderrTail: stderrBuf.slice(-2000) }, null, 2))
+  nodeLog(JSON.stringify({ ...result, stubToolCalls: toolCalls, stderrTail: stderrBuf.slice(-2000) }, null, 2))
   setTimeout(() => process.exit(0), 500)
 }
 const hard = setTimeout(() => { log("HARD TIMEOUT — kill"); child.kill("SIGKILL"); finish({ verdict: "HARD_TIMEOUT" }) }, 180_000)

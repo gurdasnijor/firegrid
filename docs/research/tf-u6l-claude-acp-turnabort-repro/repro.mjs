@@ -7,9 +7,15 @@
 // wall-clock timing of the abort.
 //
 // Usage: ANTHROPIC_API_KEY=$(cat ~/.firegrid-anthropic-key) node repro.mjs
+//
+// Node globals are imported from `node:*` (repo convention; the flat
+// ESLint config does not honor `/* eslint-env node */`).
 import { spawn } from "node:child_process"
+import { log as nodeLog } from "node:console"
+import process from "node:process"
+import { setTimeout, clearTimeout } from "node:timers"
 
-const log = (...a) => console.log(`[${new Date().toISOString()}]`, ...a)
+const log = (...a) => nodeLog(`[${new Date().toISOString()}]`, ...a)
 const t0 = Date.now()
 const dt = () => `${((Date.now() - t0) / 1000).toFixed(2)}s`
 
@@ -90,7 +96,7 @@ const main = async () => {
   const finish = (extra) => {
     clearTimeout(hardTimeout)
     log("=== RESULT ===")
-    console.log(JSON.stringify({ ...result, ...extra, stderrTail: stderrBuf.slice(-2000) }, null, 2))
+    nodeLog(JSON.stringify({ ...result, ...extra, stderrTail: stderrBuf.slice(-2000) }, null, 2))
     setTimeout(() => process.exit(0), 500)
   }
 
