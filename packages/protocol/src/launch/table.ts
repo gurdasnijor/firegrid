@@ -194,12 +194,12 @@ const runtimeOutputSchemas = {
   logs: RuntimeLogLineRowSchema,
 } as const
 
-export class RuntimeControlPlaneTable extends DurableTable(
+export class RuntimeControlPlaneTable extends DurableTable<RuntimeControlPlaneTable>()(
   "firegrid.runtime",
   runtimeControlPlaneSchemas,
 ) {}
 
-export class RuntimeOutputTable extends DurableTable(
+export class RuntimeOutputTable extends DurableTable<RuntimeOutputTable>()(
   "firegrid.runtimeOutput",
   runtimeOutputSchemas,
 ) {}

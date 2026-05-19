@@ -167,7 +167,7 @@ const TestSourceRowSchema = Schema.Struct({
 })
 type TestSourceRow = Schema.Schema.Type<typeof TestSourceRowSchema>
 
-class TestSourceTable extends DurableTable("agent-tools.test.source", {
+class TestSourceTable extends DurableTable<TestSourceTable>()("agent-tools.test.source", {
   rows: TestSourceRowSchema,
 }) {}
 

@@ -61,7 +61,7 @@ const WorkflowExecution = Schema.Struct({
 })
 type WorkflowExecution = Schema.Schema.Type<typeof WorkflowExecution>
 
-class WorkflowTable extends DurableTable("workflow", {
+class WorkflowTable extends DurableTable<WorkflowTable>()("workflow", {
   executions: WorkflowExecution,
 }) {}
 
@@ -158,7 +158,7 @@ describe("DurableTable", () => {
 
   it("effect-durable-operators.TABLE.7 supports direct primaryKey(schema) form", () => {
     expect(() => {
-      class DirectPrimaryKeyTable extends DurableTable("direct", {
+      class DirectPrimaryKeyTable extends DurableTable<DirectPrimaryKeyTable>()("direct", {
         rows: Schema.Struct({
           id: DurableTable.primaryKey(Schema.String),
           value: Schema.Number,
@@ -170,7 +170,7 @@ describe("DurableTable", () => {
 
   it("effect-durable-operators.TABLE.8 fails loudly for zero or multiple primary keys", () => {
     expect(() => {
-      class MissingPrimaryKeyTable extends DurableTable("missing", {
+      class MissingPrimaryKeyTable extends DurableTable<MissingPrimaryKeyTable>()("missing", {
         rows: Schema.Struct({
           id: Schema.String,
           value: Schema.Number,
@@ -180,7 +180,7 @@ describe("DurableTable", () => {
     }).toThrow(/exactly one DurableTable\.primaryKey/)
 
     expect(() => {
-      class MultiplePrimaryKeyTable extends DurableTable("multiple", {
+      class MultiplePrimaryKeyTable extends DurableTable<MultiplePrimaryKeyTable>()("multiple", {
         rows: Schema.Struct({
           id: Schema.String.pipe(DurableTable.primaryKey),
           otherId: Schema.String.pipe(DurableTable.primaryKey),
@@ -192,7 +192,7 @@ describe("DurableTable", () => {
 
   it("effect-durable-operators.TABLE.10 rejects collection names reserved by the table service", () => {
     expect(() => {
-      class ReservedCollectionTable extends DurableTable("reserved", {
+      class ReservedCollectionTable extends DurableTable<ReservedCollectionTable>()("reserved", {
         awaitTxId: Schema.Struct({
           id: Schema.String.pipe(DurableTable.primaryKey),
         }),
@@ -580,7 +580,7 @@ describe("DurableTable", () => {
       },
     )
 
-    class BadInsertOrGetKeyTable extends DurableTable("badInsertOrGetKey", {
+    class BadInsertOrGetKeyTable extends DurableTable<BadInsertOrGetKeyTable>()("badInsertOrGetKey", {
       rows: Schema.Struct({
         id: NumericEncodedKey.pipe(DurableTable.primaryKey),
         value: Schema.String,
@@ -696,7 +696,7 @@ describe("DurableTable", () => {
       },
     )
 
-    class ActivityRequestTable extends DurableTable("insertOrGetComposite", {
+    class ActivityRequestTable extends DurableTable<ActivityRequestTable>()("insertOrGetComposite", {
       requests: Schema.Struct({
         requestKey: RequestKey.pipe(DurableTable.primaryKey),
         owner: Schema.String,
@@ -949,7 +949,7 @@ describe("DurableTable", () => {
       },
     )
 
-    class CheckpointTable extends DurableTable("compositeKeyTest", {
+    class CheckpointTable extends DurableTable<CheckpointTable>()("compositeKeyTest", {
       checkpoints: Schema.Struct({
         key: CompositeKey.pipe(DurableTable.primaryKey),
         claimedAt: Schema.String,
@@ -1140,7 +1140,7 @@ describe("DurableTable", () => {
       },
     )
 
-    class WaitsTable extends DurableTable("compositeKeyTofail", {
+    class WaitsTable extends DurableTable<WaitsTable>()("compositeKeyTofail", {
       waits: Schema.Struct({
         waitKey: WaitKey.pipe(DurableTable.primaryKey),
         deferredName: Schema.String,
@@ -1274,7 +1274,7 @@ describe("DurableTable", () => {
       },
     )
 
-    class BadKeyTable extends DurableTable("badKey", {
+    class BadKeyTable extends DurableTable<BadKeyTable>()("badKey", {
       rows: Schema.Struct({
         id: NumericEncodedKey.pipe(DurableTable.primaryKey),
         value: Schema.String,

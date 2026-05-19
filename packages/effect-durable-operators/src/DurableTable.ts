@@ -185,20 +185,6 @@ export type DurableTableService<Schemas extends TableSchemas<Schemas>> = {
   ) => Effect.Effect<void, DurableTableError>
 }
 
-// `Self` is bound to the resulting tag class so consumers' Effects that
-// `yield* MyTable` get a precise requirements channel instead of `unknown`.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type DurableTableTagClass<Schemas extends TableSchemas<Schemas>, Self = any> =
-  Context.TagClass<
-    Self,
-    string,
-    DurableTableService<Schemas>
-  > & {
-    readonly namespace: string
-    readonly layer: (
-      options: LayerOptions,
-    ) => Layer.Layer<Self, DurableTableError>
-  }
 
 type CompiledCollection = {
   readonly collectionKey: string
@@ -1082,37 +1068,54 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
     }),
   )
 
-const defineDurableTable = <const Schemas extends TableSchemas<Schemas>>(
+// effect-durable-operators.TABLE.6
+//
+// `Self`-curry factory (the idiomatic Effect tag-class-factory shape, as
+// used by `HttpApiMiddleware.Tag<Self>()(id, options)` and
+// `Schema.TaggedError<Self>()(tag, fields)`): the consumer threads its
+// own class as `Self` at the declaration site —
+//
+//   class MyTable extends DurableTable<MyTable>()("ns", schemas) {}
+//
+// so the resulting tag's Identifier is the consumer's class, never `any`.
+// This closes TFIND-005 honestly: there is no `Self = any` default and no
+// load-bearing `as unknown as DurableTableTagClass` cast at the factory
+// boundary. `yield* MyTable` yields `R = MyTable` (precise), and
+// `MyTable.layer(...)` / `MyTable.namespace` / `MyTable["Type"]` keep
+// working exactly as with a plain `Context.Tag` class — every existing
+// use site is unchanged. The single internal `as unknown as
+// Context.Tag<Self, …>` inside `layer` is an honest, local
+// acknowledgement of a TS expressivity gap ("this class is its own tag
+// whose Identifier is the consumer-supplied `Self`"), not a hiding of
+// `any` — `Self` is forced precise by the curry at every call site.
+const defineDurableTable = <Self>() =>
+<const Schemas extends TableSchemas<Schemas>>(
   namespace: string,
   schemas: Schemas,
-): DurableTableTagClass<Schemas> => {
+) => {
   const table = compileTable(namespace, schemas)
   const tagKey = `effect-durable-operators/DurableTable/${namespace}`
 
-  // Self-reference: the class is its own Identifier so `yield* MyTable`
-  // produces R = MyTable rather than R = unknown. The forward reference
-  // to `DurableTableTag` inside the Context.Tag generics is the canonical
-  // Effect pattern and works because class declarations are hoisted.
   class DurableTableTag extends Context.Tag(tagKey)<
-    DurableTableTag,
+    Self,
     DurableTableService<Schemas>
   >() {
     static readonly namespace = namespace
 
     static layer(
-      this: Context.Tag<DurableTableTag, DurableTableService<Schemas>>,
       options: LayerOptions,
-    ) {
+    ): Layer.Layer<Self, DurableTableError> {
       return Layer.scoped(
-        this,
-        makeService(table, options).pipe(
-          Effect.map((service) => this.of(service)),
-        ),
+        DurableTableTag as unknown as Context.Tag<
+          Self,
+          DurableTableService<Schemas>
+        >,
+        makeService(table, options),
       )
     }
   }
 
-  return DurableTableTag as unknown as DurableTableTagClass<Schemas>
+  return DurableTableTag
 }
 
 export const DurableTable = Object.assign(defineDurableTable, {

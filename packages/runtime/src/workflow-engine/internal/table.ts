@@ -73,7 +73,7 @@ const workflowEngineSchemas = {
   clockWakeups: WorkflowClockWakeupRowSchema,
 } as const
 
-export class WorkflowEngineTable extends DurableTable(
+export class WorkflowEngineTable extends DurableTable<WorkflowEngineTable>()(
   "firegrid.workflow",
   workflowEngineSchemas,
 ) {}

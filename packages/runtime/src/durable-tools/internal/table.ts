@@ -94,7 +94,7 @@ const durableToolsSchemas = {
   completions: WaitCompletionRowSchema,
 } as const
 
-export class DurableToolsTable extends DurableTable(
+export class DurableToolsTable extends DurableTable<DurableToolsTable>()(
   "firegrid.durableTools",
   durableToolsSchemas,
 ) {}

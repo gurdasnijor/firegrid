@@ -19,7 +19,7 @@ const sandboxSupervisorCommandSchemas = {
   stdinEmissionClaims: StdinEmissionClaimRowSchema,
 } as const
 
-export class SandboxSupervisorCommandTable extends DurableTable(
+export class SandboxSupervisorCommandTable extends DurableTable<SandboxSupervisorCommandTable>()(
   "firegrid.sandboxSupervisor",
   sandboxSupervisorCommandSchemas,
 ) {}

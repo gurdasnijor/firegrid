@@ -105,13 +105,20 @@ const failReactHook = (error: unknown): never => {
   throw error
 }
 
-export interface DurableTableProviderProps<E> {
+export interface DurableTableProviderProps<ROut, E> {
   readonly children?: ReactNode
   readonly fallback?: ReactNode
-  // ROut erased to `unknown` at this seam: the layer's precise provided
-  // identities are resolved per-tag by string key below and re-narrowed
-  // at `useDurableTable` (TFIND-044 Option B — see `AnyDurableTableTag`).
-  readonly layer: Layer.Layer<unknown, E, never>
+  // `ROut` is a free generic *inferred per call site* from the supplied
+  // layer — never assigned to a fixed supertype — so the precise
+  // `DurableTable<Self>()` identities a composed layer provides flow
+  // through without the `Layer<precise> ⊄ Layer<unknown>` contravariance
+  // trap. The provider is genuinely ROut-agnostic at runtime: it resolves
+  // each tag by string `key` into a `ReadonlyMap<string, unknown>` below
+  // and consumers re-narrow per tag at `useDurableTable`. `tables` stays
+  // the signed-off, named `AnyDurableTableTag` aggregate (TFIND-044
+  // Option B); only the `layer` side is decoupled here. No cast, no
+  // `any`, no invented layer.
+  readonly layer: Layer.Layer<ROut, E, never>
   readonly onError?: (error: unknown) => void
   readonly tables: ReadonlyArray<AnyDurableTableTag>
 }
@@ -122,8 +129,8 @@ const closeScope = (scope: Scope.CloseableScope): void => {
   void Effect.runPromise(Scope.close(scope, Exit.void))
 }
 
-const acquireServices = <E>(options: {
-  readonly layer: Layer.Layer<unknown, E, never>
+const acquireServices = <ROut, E>(options: {
+  readonly layer: Layer.Layer<ROut, E, never>
   readonly tables: ReadonlyArray<AnyDurableTableTag>
 }): Effect.Effect<
   {
@@ -156,8 +163,8 @@ const acquireServices = <E>(options: {
  * Builds the supplied DurableTable layer once for this provider lifetime and
  * closes the backing Effect Scope when the provider unmounts.
  */
-export function DurableTableProvider<E>(
-  props: DurableTableProviderProps<E>,
+export function DurableTableProvider<ROut, E>(
+  props: DurableTableProviderProps<ROut, E>,
 ): ReactNode {
   const [state, setState] = useState<DurableTableReactState>({ status: "loading" })
   const [initialOptions] = useState(() => ({
@@ -227,9 +234,22 @@ export function useDurableTableProviderStatus(): DurableTableProviderStatus {
  *
  * Retrieves a shared DurableTable service acquired by DurableTableProvider.
  */
-export function useDurableTable<Tag extends AnyDurableTableTag>(
-  table: Tag,
-): Context.Tag.Service<Tag> {
+// `Service` is captured *directly* from the tag's Service type parameter
+// (`Context.Tag<any, Service>`), not via the deferred
+// `Context.Tag.Service<Tag>` conditional. Under the precise
+// `DurableTable<Self>()` curry, `Self` is a self-referential class, so
+// `Context.Tag.Service<typeof Tag>` stays an unresolved conditional that
+// `@tanstack/react-db`'s deep query-builder inference cannot see through
+// (it degraded the collection row to `Ref<object | …>`). A direct
+// inference variable resolves eagerly. `tables` still uses the
+// signed-off named `AnyDurableTableTag`; the `any` here is only the
+// Identifier position of that same seam (heterogeneous-by-design), not a
+// new `any`/cast/paper.
+export function useDurableTable<Service>(
+  table: AnyDurableTableTag &
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Identifier position only; same heterogeneous-by-design seam as `AnyDurableTableTag` (TFIND-044 Option B). Captures `Service` directly for eager inference.
+    Context.Tag<any, Service>,
+): Service {
   const state = useContext(DurableTableReactContext)
   if (state === undefined || state.status === "loading") {
     return failReactHook(new Error("DurableTableProvider is not ready"))
@@ -244,5 +264,5 @@ export function useDurableTable<Tag extends AnyDurableTableTag>(
     )
   }
 
-  return state.services.get(table.key) as Context.Tag.Service<Tag>
+  return state.services.get(table.key) as Service
 }

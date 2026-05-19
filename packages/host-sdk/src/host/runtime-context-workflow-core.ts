@@ -16,6 +16,7 @@ import {
   Layer,
   Predicate,
   Schema,
+  type Scope,
 } from "effect"
 import { WaitFor } from "@firegrid/runtime/durable-tools"
 import type { RuntimeContextWorkflowExecutionEnv } from "./runtime-substrate.ts"
@@ -213,7 +214,12 @@ const nextAgentOutput = (
   context: RuntimeContext,
   activityAttempt: number,
   afterSequence: number,
-): Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError, unknown> =>
+) =>
+  // TFIND-005 / tf-uiz=`y`: the `, unknown>` R-pin #350 added was an
+  // artifact that only typechecked while `DurableTable` leaked `Self=any`.
+  // Under the precise `DurableTable<Self>()` curry, inference yields the
+  // true required environment here (discharged by
+  // `runtimeContextWorkflowSupportLayer`). No pin, no cast.
   waitForAgentOutput(context, activityAttempt, afterSequence).pipe(
     Effect.mapError(cause =>
       asRuntimeContextError(
@@ -472,11 +478,44 @@ const runReactiveLoop = (
   context: RuntimeContext,
   activityAttempt: number,
 ) => {
-  function followAgentOutput(
+  // `loop` is recursive, so it needs an explicit return type (inference
+  // cannot close the cycle). tf-uiz=`y`: its precise required environment
+  // is the execution-scoped workflow substrate
+  // (`RuntimeContextWorkflowExecutionEnv`), discharged by
+  // `runtimeContextWorkflowSupportLayer` — not the `, unknown>` artifact
+  // #350 pinned while `DurableTable` leaked `Self=any`.
+  const loop = (
     lastOutputSequence: number,
     nextInputSequence: number,
-  ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> {
-    return Effect.gen(function*() {
+  ): Effect.Effect<
+    RuntimeExitEvidence,
+    RuntimeContextError,
+    | Scope.Scope
+    | WorkflowEngine.WorkflowEngine
+    | WorkflowEngine.WorkflowInstance
+    | RuntimeToolUseExecutor
+    | RuntimeContextWorkflowExecutionEnv
+    | RuntimeContextWorkflowSession
+  > =>
+    Effect.gen(function*() {
+      const input = yield* completedRuntimeInput(context, nextInputSequence)
+      if (input !== undefined) {
+        const inputEvent = yield* decodeRuntimeInputEvent(context, input)
+        if (inputEvent._tag === "PermissionResponse") {
+          const output = yield* nextAgentOutput(context, activityAttempt, lastOutputSequence)
+          const outcome = yield* handleAgentOutput(
+            context,
+            activityAttempt,
+            output,
+            nextInputSequence,
+          )
+          if (outcome._tag === "Exit") return outcome.exit
+          return yield* loop(output.sequence, outcome.nextInputSequence)
+        }
+        yield* handleRuntimeInput(context, activityAttempt, input)
+        return yield* loop(lastOutputSequence, nextInputSequence + 1)
+      }
+
       const output = yield* nextAgentOutput(context, activityAttempt, lastOutputSequence)
       const outcome = yield* handleAgentOutput(
         context,
@@ -486,24 +525,6 @@ const runReactiveLoop = (
       )
       if (outcome._tag === "Exit") return outcome.exit
       return yield* loop(output.sequence, outcome.nextInputSequence)
-    })
-  }
-
-  const loop = (
-    lastOutputSequence: number,
-    nextInputSequence: number,
-  ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> =>
-    Effect.gen(function*() {
-      const input = yield* completedRuntimeInput(context, nextInputSequence)
-      if (input !== undefined) {
-        const inputEvent = yield* decodeRuntimeInputEvent(context, input)
-        if (inputEvent._tag === "PermissionResponse") {
-          return yield* followAgentOutput(lastOutputSequence, nextInputSequence)
-        }
-        yield* handleRuntimeInput(context, activityAttempt, input)
-        return yield* loop(lastOutputSequence, nextInputSequence + 1)
-      }
-      return yield* followAgentOutput(lastOutputSequence, nextInputSequence)
     })
   return loop(-1, 0).pipe(
     Effect.withSpan("firegrid.runtime_context.workflow.reactive_loop", {
@@ -518,7 +539,10 @@ const runReactiveLoop = (
 
 const runWorkflowNativeRuntimeContext = (
   contextId: string,
-): Effect.Effect<StartRuntimeResult, RuntimeContextError, unknown> =>
+) =>
+  // tf-uiz=`y`: drop #350's `, unknown>` artifact pin; inference yields
+  // the precise required environment, discharged by
+  // `runtimeContextWorkflowSupportLayer`.
   Effect.gen(function*() {
     const context = yield* readRuntimeContext(contextId)
     const activityAttempt = yield* allocateRuntimeActivityAttempt(context)
@@ -562,7 +586,17 @@ export const RuntimeContextWorkflowNativeLayer = Layer.scopedDiscard(
     // store; see SDD proof). Deferred handler runs later, outside this
     // gen, so it must re-provide the captured substrate. `never` was
     // only sound while `DurableTable.layer` leaked `any`.
-    const captured = yield* Effect.context<RuntimeContextWorkflowExecutionEnv>()
+    //
+    // tf-uiz=`y` follow-through: the reactive loop genuinely requires
+    // `RuntimeContextWorkflowSession` (the precise curry exposes what
+    // `Self=any` formerly absorbed). It is provided around this host
+    // layer (`RuntimeContextWorkflowSessionLive`, `layers.ts`), so it is
+    // in scope here and is captured into the same re-provided context —
+    // discharging it inside the deferred handler instead of letting it
+    // leak out into the agent-tool-host / commands / reconciler seams.
+    const captured = yield* Effect.context<
+      RuntimeContextWorkflowExecutionEnv | RuntimeContextWorkflowSession
+    >()
     yield* engine.register(RuntimeContextWorkflowNative, ({ contextId }) =>
       runWorkflowNativeRuntimeContext(contextId).pipe(
         Effect.provide(captured),

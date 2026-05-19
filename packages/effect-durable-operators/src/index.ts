@@ -23,7 +23,6 @@ export type {
   DurableTableHeaders,
   InsertOrGetResult as DurableTableInsertOrGetResult,
   DurableTableService,
-  DurableTableTagClass,
   LayerOptions as DurableTableLayerOptions,
   PrimaryKeyOf as DurableTablePrimaryKeyOf,
   RowOf as DurableTableRowOf,

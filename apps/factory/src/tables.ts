@@ -142,7 +142,7 @@ const darkFactorySchemas = {
   runs: DarkFactoryRunSchema,
 } as const
 
-export class DarkFactoryTable extends DurableTable(
+export class DarkFactoryTable extends DurableTable<DarkFactoryTable>()(
   "darkFactory",
   darkFactorySchemas,
 ) {}

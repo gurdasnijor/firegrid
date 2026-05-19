@@ -5,12 +5,14 @@ import { Schema } from "effect"
 import { DurableTable } from "../src/index.ts"
 import {
   DurableTableProvider,
+  type DurableTableProviderProps,
   useDurableLiveQuery,
   useDurableTable,
   useDurableTableProviderStatus,
 } from "../src/react.ts"
+import type { DurableTableError } from "../src/index.ts"
 
-class ReactWorkflowTable extends DurableTable("react-workflow", {
+class ReactWorkflowTable extends DurableTable<ReactWorkflowTable>()("react-workflow", {
   executions: Schema.Struct({
     executionId: Schema.String.pipe(DurableTable.primaryKey),
     workflowName: Schema.String,
@@ -39,7 +41,15 @@ function Executions() {
 
 describe("DurableTable React surface", () => {
   it("effect-durable-operators.REACT.1 effect-durable-operators.REACT.3 effect-durable-operators.REACT.4 exposes typed subpath hooks", () => {
-    const app = createElement(
+    // Explicit-props (by-name) path: `react-types.test.ts` is a `.ts`
+    // file so it cannot use JSX, and `React.createElement` does not
+    // infer a generic component's own type parameters from its props.
+    // flamecast uses JSX and infers `ROut` from the layer; here the
+    // by-name path pins the concrete props type. This is the legitimate
+    // explicit-props usage of the seam — no cast, no `any`, no paper.
+    const app = createElement<
+      DurableTableProviderProps<ReactWorkflowTable, DurableTableError>
+    >(
       DurableTableProvider,
       {
         fallback: null,

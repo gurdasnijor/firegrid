@@ -57,7 +57,7 @@ const TestRowSchema = Schema.Struct({
 })
 type TestRow = Schema.Schema.Type<typeof TestRowSchema>
 
-class TestSourceTable extends DurableTable("test.source", {
+class TestSourceTable extends DurableTable<TestSourceTable>()("test.source", {
   rows: TestRowSchema,
 }) {}
 
@@ -71,7 +71,7 @@ const TaggedResultRowSchema = Schema.Struct({
 })
 type _TaggedResultRow = Schema.Schema.Type<typeof TaggedResultRowSchema>
 
-class TaggedResultTable extends DurableTable("test.tagged", {
+class TaggedResultTable extends DurableTable<TaggedResultTable>()("test.tagged", {
   rows: TaggedResultRowSchema,
 }) {}
 
