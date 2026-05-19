@@ -57,6 +57,11 @@ const executeRuntimeContextWorkflowForContextId = (
   contextId: string,
 ) =>
   Effect.gen(function*() {
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.context.id": contextId,
+      "firegrid.workflow.name": RuntimeContextWorkflowNative.name,
+      "firegrid.workflow.execution_id": runtimeContextWorkflowExecutionId(contextId),
+    })
     const result = yield* executeRuntimeContextWorkflow(engine, RuntimeContextWorkflowNative, {
       executionId: runtimeContextWorkflowExecutionId(contextId),
       payload: RuntimeContextWorkflowPayload.make({
@@ -65,7 +70,14 @@ const executeRuntimeContextWorkflowForContextId = (
     })
     if (result.failure !== undefined) return yield* Effect.fail(result.failure)
     return result
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.host.runtime_context.workflow.execute", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": contextId,
+      },
+    }),
+  )
 
 const claimAndRunRuntimeContextWorkflow = (
   context: Parameters<RuntimeContextEngineRegistry["Type"]["claimActive"]>[0],
@@ -73,6 +85,12 @@ const claimAndRunRuntimeContextWorkflow = (
   agentToolHost: AgentToolHostService,
 ) =>
   Effect.gen(function*() {
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.context.id": context.contextId,
+      "firegrid.runtime.agent": context.runtime.config.agent ?? "",
+      "firegrid.runtime.agent_protocol": context.runtime.config.agentProtocol ?? "",
+      "firegrid.runtime_context_mcp.enabled": context.runtime.config.runtimeContextMcp?.enabled === true,
+    })
     const handle = yield* registry.claimActive(context)
     yield* registry.reconcile(context)
     return yield* executeRuntimeContextWorkflowForContextId(handle.engine, context.contextId).pipe(
@@ -81,6 +99,12 @@ const claimAndRunRuntimeContextWorkflow = (
     )
   }).pipe(
     Effect.withClock(runtimeExecutionClock),
+    Effect.withSpan("firegrid.host.runtime_context.claim_and_run", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+      },
+    }),
   )
 
 const insertRuntimeInputIntent = (
@@ -144,7 +168,14 @@ export const startRuntime = (
     const registry = yield* RuntimeContextEngineRegistry
     const agentToolHost = yield* AgentToolHost
     return yield* claimAndRunRuntimeContextWorkflow(context, registry, agentToolHost)
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.host.runtime_context.start", {
+      kind: "server",
+      attributes: {
+        "firegrid.context.id": options.contextId,
+      },
+    }),
+  )
 
 export const RuntimeStartCapabilityLive = Layer.effect(
   RuntimeStartCapability,
@@ -161,6 +192,9 @@ export const RuntimeStartCapabilityLive = Layer.effect(
     return RuntimeStartCapability.of({
       start: options =>
         Effect.gen(function* () {
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.context.id": options.contextId,
+          })
           const context = yield* requireLocalRuntimeContextWithHostSession(
             contextRead,
             hostSession,
@@ -169,7 +203,14 @@ export const RuntimeStartCapabilityLive = Layer.effect(
           return yield* claimAndRunRuntimeContextWorkflow(context, registry, agentToolHost).pipe(
             Effect.provide(captured),
           )
-        }),
+        }).pipe(
+          Effect.withSpan("firegrid.host.runtime_start_capability.start", {
+            kind: "server",
+            attributes: {
+              "firegrid.context.id": options.contextId,
+            },
+          }),
+        ),
     })
   }),
 )

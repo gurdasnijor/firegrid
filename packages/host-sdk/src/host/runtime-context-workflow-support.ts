@@ -50,4 +50,10 @@ export const runtimeContextWorkflowSupportLayer = (
     Layer.provideMerge(Layer.succeed(WorkflowEngine.WorkflowEngine, handle.engine)),
     Layer.provideMerge(Layer.succeed(WorkflowEngineTable, handle.table)),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
+    Layer.withSpan("firegrid.host.runtime_context.workflow_support.layer", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": handle.context.contextId,
+      },
+    }),
   )

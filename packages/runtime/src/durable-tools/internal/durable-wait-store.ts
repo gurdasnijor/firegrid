@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, type Stream } from "effect"
+import { Context, Effect, Layer, Option, Stream } from "effect"
 import type { WaitKey } from "./keys.ts"
 import {
   DurableToolsTable,
@@ -63,7 +63,11 @@ const upsertCompletionTo = (
 const waitRowsFrom = (
   table: DurableToolsTable["Type"],
 ): Stream.Stream<WaitRow, unknown> =>
-  table.waits.rows()
+  table.waits.rows().pipe(
+    Stream.withSpan("firegrid.durable_tools.wait_store.wait_rows", {
+      kind: "internal",
+    }),
+  )
 
 export class DurableWaitRowLookup extends Context.Tag(
   "@firegrid/runtime/DurableWaitRowLookup",
@@ -89,13 +93,37 @@ export const DurableWaitStoreLive = Layer.mergeAll(
   Layer.effect(
     DurableWaitRowLookup,
     Effect.map(DurableToolsTable, table => ({
-      find: waitKey => findWaitIn(table, waitKey),
+      find: waitKey =>
+        findWaitIn(table, waitKey).pipe(
+          Effect.tap((row) =>
+            Effect.annotateCurrentSpan({
+              "firegrid.wait.row_found": Option.isSome(row),
+            })),
+          Effect.withSpan("firegrid.durable_tools.wait_store.wait.find", {
+            kind: "internal",
+            attributes: {
+              "firegrid.workflow.execution_id": waitKey.executionId,
+              "firegrid.wait.name": waitKey.name,
+            },
+          }),
+        ),
     })),
   ),
   Layer.effect(
     DurableWaitRowUpsert,
     Effect.map(DurableToolsTable, table => ({
-      upsert: row => upsertWaitTo(table, row),
+      upsert: row =>
+        upsertWaitTo(table, row).pipe(
+          Effect.withSpan("firegrid.durable_tools.wait_store.wait.upsert", {
+            kind: "internal",
+            attributes: {
+              "firegrid.workflow.execution_id": row.waitKey.executionId,
+              "firegrid.wait.name": row.waitKey.name,
+              "firegrid.wait.status": row.status,
+              "firegrid.wait.source": row.source._tag,
+            },
+          }),
+        ),
     })),
   ),
   Layer.effect(
@@ -105,13 +133,36 @@ export const DurableWaitStoreLive = Layer.mergeAll(
   Layer.effect(
     DurableWaitCompletionRowLookup,
     Effect.map(DurableToolsTable, table => ({
-      find: waitKey => findCompletionIn(table, waitKey),
+      find: waitKey =>
+        findCompletionIn(table, waitKey).pipe(
+          Effect.tap((row) =>
+            Effect.annotateCurrentSpan({
+              "firegrid.wait.completion_found": Option.isSome(row),
+            })),
+          Effect.withSpan("firegrid.durable_tools.wait_store.completion.find", {
+            kind: "internal",
+            attributes: {
+              "firegrid.workflow.execution_id": waitKey.executionId,
+              "firegrid.wait.name": waitKey.name,
+            },
+          }),
+        ),
     })),
   ),
   Layer.effect(
     DurableWaitCompletionRowUpsert,
     Effect.map(DurableToolsTable, table => ({
-      upsert: row => upsertCompletionTo(table, row),
+      upsert: row =>
+        upsertCompletionTo(table, row).pipe(
+          Effect.withSpan("firegrid.durable_tools.wait_store.completion.upsert", {
+            kind: "internal",
+            attributes: {
+              "firegrid.workflow.execution_id": row.waitKey.executionId,
+              "firegrid.wait.name": row.waitKey.name,
+              "firegrid.wait.outcome": row.outcome,
+            },
+          }),
+        ),
     })),
   ),
 )

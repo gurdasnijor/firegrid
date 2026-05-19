@@ -210,6 +210,9 @@ const terminatedEvent = (
     Effect.mapError(cause =>
       codecError("exit", "failed waiting for ACP process exit", cause),
     ),
+    Effect.withSpan("firegrid.agent_event_pipeline.acp.exit", {
+      kind: "consumer",
+    }),
     Stream.fromEffect,
   )
 
@@ -231,8 +234,6 @@ export const AcpSessionLive = (
       >(new Map())
       const emitEffect = (event: AgentOutputEvent): Effect.Effect<void> =>
         Queue.offer(outputEvents, event).pipe(Effect.asVoid)
-      const emit = (event: AgentOutputEvent): Promise<void> =>
-        runPromise(emitEffect(event))
       const textDeltaId = (
         messageId: string | undefined,
       ): Effect.Effect<string> => {
@@ -296,22 +297,43 @@ export const AcpSessionLive = (
       })
 
       const client: acp.Client = {
-        requestPermission: async params => {
-          const permissionRequestId = await runPromise(makePermissionRequestId(idGenerator))
-          const deferred = await runPromise(openPermissionDecision(permissionRequestId))
-          await emit({
-            _tag: "PermissionRequest",
-            permissionRequestId,
-            toolUseId: params.toolCall.toolCallId,
-            options: mapPermissionOptions(params.options),
-          })
-          const decision = await runPromise(awaitPermissionDecision(permissionRequestId, deferred))
-          return permissionResponse(decision, params.options)
-        },
+        requestPermission: params =>
+          runPromise(
+            Effect.gen(function*() {
+              const permissionRequestId = yield* makePermissionRequestId(idGenerator)
+              const deferred = yield* openPermissionDecision(permissionRequestId)
+              yield* emitEffect({
+                _tag: "PermissionRequest",
+                permissionRequestId,
+                toolUseId: params.toolCall.toolCallId,
+                options: mapPermissionOptions(params.options),
+              })
+              const decision = yield* awaitPermissionDecision(permissionRequestId, deferred)
+              return permissionResponse(decision, params.options)
+            }).pipe(
+              Effect.withSpan("firegrid.agent_event_pipeline.acp.permission_request", {
+                kind: "consumer",
+                attributes: {
+                  "firegrid.agent_output.tool_id": params.toolCall.toolCallId,
+                },
+              }),
+            ),
+          ),
         sessionUpdate: async params => {
           await runPromise(
             mapSessionUpdate(params, textDeltaId).pipe(
+              Effect.tap(events =>
+                Effect.annotateCurrentSpan({
+                  "firegrid.agent_output.tag": events.map(event => event._tag).join(","),
+                  "firegrid.acp.session_update": params.update.sessionUpdate,
+                })),
               Effect.flatMap(events => Effect.forEach(events, emitEffect, { discard: true })),
+              Effect.withSpan("firegrid.agent_event_pipeline.acp.session_update", {
+                kind: "consumer",
+                attributes: {
+                  "firegrid.acp.session_update": params.update.sessionUpdate,
+                },
+              }),
             ),
           )
         },
@@ -324,7 +346,11 @@ export const AcpSessionLive = (
         connection.initialize({
           protocolVersion: acp.PROTOCOL_VERSION,
           clientCapabilities: {},
-        }))
+        })).pipe(
+          Effect.withSpan("firegrid.agent_event_pipeline.acp.initialize", {
+            kind: "client",
+          }),
+        )
 
       const session = yield* acpPromise("newSession", "failed to create ACP session", () =>
         connection.newSession({
@@ -335,7 +361,20 @@ export const AcpSessionLive = (
           // Tool execution is owned by the ACP agent process or delegated
           // through ACP session.mcpServers/MCP.
           mcpServers: (options.mcpServers ?? []).map(lowerMcpServerDeclaration),
-        }))
+        })).pipe(
+          Effect.tap(session =>
+            Effect.annotateCurrentSpan({
+              "firegrid.acp.session_id": session.sessionId,
+              "firegrid.acp.mcp_server_count": options.mcpServers?.length ?? 0,
+              "firegrid.acp.mcp_server_names": (options.mcpServers ?? []).map(server => server.name).join(","),
+            })),
+          Effect.withSpan("firegrid.agent_event_pipeline.acp.new_session", {
+            kind: "client",
+            attributes: {
+              "firegrid.acp.mcp_server_count": options.mcpServers?.length ?? 0,
+            },
+          }),
+        )
       const sessionId = session.sessionId
 
       const sendPrompt = (
@@ -349,6 +388,13 @@ export const AcpSessionLive = (
               messageId: event.correlationId,
               prompt,
             })).pipe(
+              Effect.withSpan("firegrid.agent_event_pipeline.acp.prompt", {
+                kind: "client",
+                attributes: {
+                  "firegrid.acp.session_id": sessionId,
+                  "firegrid.input.correlation_id": event.correlationId,
+                },
+              }),
               Effect.matchEffect({
                 onFailure: error =>
                   Ref.set(currentTextDeltaId, undefined).pipe(
@@ -376,14 +422,25 @@ export const AcpSessionLive = (
       ): Effect.Effect<void, AgentCodecError> =>
         Effect.gen(function*() {
           yield* completePermissionDecision(event.permissionRequestId, event.decision)
-        })
+        }).pipe(
+          Effect.withSpan("firegrid.agent_event_pipeline.acp.permission_response", {
+            kind: "producer",
+            attributes: {
+              "firegrid.agent_input.tag": event._tag,
+            },
+          }),
+        )
 
       const sendCancel = (): Effect.Effect<void, AgentCodecError> =>
         Effect.gen(function*() {
           yield* cancelPendingPermissions
           yield* acpPromise("cancel", "failed to cancel ACP session", () =>
             connection.cancel({ sessionId }))
-        })
+        }).pipe(
+          Effect.withSpan("firegrid.agent_event_pipeline.acp.cancel", {
+            kind: "producer",
+          }),
+        )
 
       const sendTerminate = (): Effect.Effect<void, AgentCodecError> =>
         Effect.acquireUseRelease(
@@ -395,6 +452,10 @@ export const AcpSessionLive = (
                 codecError("terminate", "failed to close ACP byte stream stdin", cause),
             }),
           writer => Effect.sync(() => writer.releaseLock()),
+        ).pipe(
+          Effect.withSpan("firegrid.agent_event_pipeline.acp.terminate", {
+            kind: "producer",
+          }),
         )
 
       const sendToolResult = (): Effect.Effect<void, AgentCodecError> =>
@@ -403,6 +464,10 @@ export const AcpSessionLive = (
             "send",
             "ACP ToolResult input is out-of-band for this codec slice",
           ),
+        ).pipe(
+          Effect.withSpan("firegrid.agent_event_pipeline.acp.tool_result", {
+            kind: "producer",
+          }),
         )
 
       const send = (event: AgentInputEvent): Effect.Effect<void, AgentCodecError> =>
@@ -421,6 +486,7 @@ export const AcpSessionLive = (
       }).pipe(
         Stream.concat(
           Stream.fromQueue(outputEvents).pipe(
+            Stream.withSpan("firegrid.agent_event_pipeline.acp.output_queue"),
             Stream.merge(terminatedEvent(bytes)),
             Stream.takeUntil(event => event._tag === "Terminated"),
           ),

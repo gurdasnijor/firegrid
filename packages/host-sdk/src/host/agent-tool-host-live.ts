@@ -51,7 +51,15 @@ const unsupportedAgentTool = (
     toolUseId,
     name,
     new Error(`${name} is not wired by RuntimeHostAgentToolHostLive in this slice`),
-  ))
+  )).pipe(
+    Effect.withSpan("firegrid.host.agent_tool.unsupported", {
+      kind: "internal",
+      attributes: {
+        "firegrid.agent_tool.name": name,
+        "firegrid.agent_tool.tool_use_id": toolUseId,
+      },
+    }),
+  )
 
 const childContextIdForToolUse = (
   parentContextId: string,
@@ -124,6 +132,14 @@ const runtimeHostAgentToolHostService = (captured: {
       // host layer; `any` previously hid the requirement.
       Effect.provide(captured.hostContext),
       Effect.mapError(cause => toolExecutionFailed(toolUseId, "session_new", cause)),
+      Effect.withSpan("firegrid.host.agent_tool.session_new", {
+        kind: "internal",
+        attributes: {
+          "firegrid.context.parent_id": parentContextId,
+          "firegrid.agent_tool.tool_use_id": toolUseId,
+          "firegrid.agent.kind": agentKind,
+        },
+      }),
     ),
   spawnChildContexts: ({ toolUseId }) => unsupportedAgentTool(toolUseId, "spawn_all"),
   executeSandboxTool: ({ toolUseId }) => unsupportedAgentTool(toolUseId, "execute"),
@@ -138,8 +154,18 @@ const runtimeHostAgentToolHostService = (captured: {
       authoredBy: "workflow",
       payload: prompt,
       idempotencyKey: inputId,
-    }).pipe(Effect.mapError(cause =>
-      toolExecutionFailed(toolUseId, "session_prompt", cause))),
+    }).pipe(
+      Effect.mapError(cause =>
+        toolExecutionFailed(toolUseId, "session_prompt", cause)),
+      Effect.withSpan("firegrid.host.agent_tool.session_prompt", {
+        kind: "internal",
+        attributes: {
+          "firegrid.context.id": sessionId,
+          "firegrid.input.id": inputId,
+          "firegrid.agent_tool.tool_use_id": toolUseId,
+        },
+      }),
+    ),
   cancelSession: ({ toolUseId }) =>
     unsupportedAgentTool(toolUseId, "session_cancel"),
   closeSession: ({ toolUseId }) =>

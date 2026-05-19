@@ -136,7 +136,15 @@ const runCodecStderrJournal = (
         })),
       Stream.runDrain,
     )
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.agent_event_pipeline.codec.stderr_journal", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.activity_attempt": activityAttempt,
+      },
+    }),
+  )
 
 const codecLayerForProtocol = (
   bytes: AgentByteStream,
@@ -150,7 +158,16 @@ const codecLayerForProtocol = (
   effectiveMcpServers: ReadonlyArray<McpServerDeclaration> | undefined,
 ): Layer.Layer<AgentSession, AgentCodecError> =>
   Match.value(protocol).pipe(
-    Match.when("stdio-jsonl", () => StdioJsonlSessionLive(bytes)),
+    Match.when("stdio-jsonl", () =>
+      StdioJsonlSessionLive(bytes).pipe(
+        Layer.withSpan("firegrid.agent_event_pipeline.codec.layer", {
+          attributes: {
+            "firegrid.context.id": context.contextId,
+            "firegrid.codec.protocol": protocol,
+            "firegrid.mcp.server_count": effectiveMcpServers?.length ?? 0,
+          },
+        }),
+      )),
     Match.when("acp", () =>
       AcpSessionLive(bytes, {
         ...(context.runtime.config.cwd === undefined ? {} : { cwd: context.runtime.config.cwd }),
@@ -171,6 +188,14 @@ const codecLayerForProtocol = (
         }),
       }).pipe(
         Layer.provide(Layer.succeed(IdGenerator.IdGenerator, IdGenerator.defaultIdGenerator)),
+        Layer.withSpan("firegrid.agent_event_pipeline.codec.layer", {
+          attributes: {
+            "firegrid.context.id": context.contextId,
+            "firegrid.codec.protocol": protocol,
+            "firegrid.mcp.server_count": effectiveMcpServers?.length ?? 0,
+            "firegrid.mcp.server_names": (effectiveMcpServers ?? []).map(server => server.name).join(","),
+          },
+        }),
       )),
     Match.exhaustive,
   )
@@ -210,10 +235,15 @@ export const resolveEffectiveMcpServers = (
   ReadonlyArray<McpServerDeclaration> | undefined,
   RuntimeContextError,
   FiregridRuntimeContextMcpBaseUrl
-> =>
+  > =>
   Effect.gen(function* () {
     const declared = context.runtime.config.mcpServers
     if (context.runtime.config.runtimeContextMcp?.enabled !== true) {
+      yield* Effect.annotateCurrentSpan({
+        "firegrid.context.id": context.contextId,
+        "firegrid.runtime_context_mcp.enabled": false,
+        "firegrid.mcp.declared_count": declared?.length ?? 0,
+      })
       return declared
     }
     const baseService = yield* FiregridRuntimeContextMcpBaseUrl
@@ -228,11 +258,28 @@ export const resolveEffectiveMcpServers = (
     const injected = firegridRuntimeContextMcpDeclaration(
       runtimeContextMcpUrlForContext(base.value, context.contextId),
     )
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.context.id": context.contextId,
+      "firegrid.runtime_context_mcp.enabled": true,
+      "firegrid.mcp.bound_address": base.value.address,
+      "firegrid.mcp.base_path": base.value.basePath,
+      "firegrid.mcp.injected_name": injected.name,
+      "firegrid.mcp.injected_url": injected.server.url,
+      "firegrid.mcp.declared_count": declared?.length ?? 0,
+    })
     return [
       injected,
       ...(declared ?? []).filter(existing => existing.name !== injected.name),
     ]
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.host.codec.resolve_effective_mcp_servers", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.runtime_context_mcp.enabled": context.runtime.config.runtimeContextMcp?.enabled === true,
+      },
+    }),
+  )
 
 export const makeCodecRuntimeContextWorkflowSessionService:
   Effect.Effect<
@@ -247,6 +294,13 @@ export const makeCodecRuntimeContextWorkflowSessionService:
       _key: string,
     ) =>
         Effect.gen(function* () {
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.context.id": context.contextId,
+            "firegrid.activity_attempt": activityAttempt,
+            "firegrid.runtime.agent": context.runtime.config.agent ?? "",
+            "firegrid.runtime.agent_protocol": context.runtime.config.agentProtocol ?? "",
+            "firegrid.runtime_context_mcp.enabled": context.runtime.config.runtimeContextMcp?.enabled === true,
+          })
           const bytes = yield* Scope.extend(
             SessionCommon.openRuntimeContextByteStream(context).pipe(Effect.provide(deps.captured)),
             deps.scope,
@@ -281,6 +335,12 @@ export const makeCodecRuntimeContextWorkflowSessionService:
               )),
           )
           const agentSession = Context.get(sessionContext, AgentSession)
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.codec.kind": agentSession.meta.kind,
+            "firegrid.codec.tools": agentSession.meta.capabilities.tools,
+            "firegrid.codec.permissions": agentSession.meta.capabilities.permissions,
+            "firegrid.codec.tool_use_mode": agentSession.toolUseMode,
+          })
           const session: CodecRuntimeContextSession = {
             context,
             activityAttempt,
@@ -298,6 +358,13 @@ export const makeCodecRuntimeContextWorkflowSessionService:
                 Effect.forkIn(deps.scope),
               )
               yield* agentSession.outputs.pipe(
+                Stream.withSpan("firegrid.agent_event_pipeline.codec.outputs", {
+                  attributes: {
+                    "firegrid.context.id": context.contextId,
+                    "firegrid.activity_attempt": activityAttempt,
+                    "firegrid.codec.kind": agentSession.meta.kind,
+                  },
+                }),
                 Stream.mapError(cause =>
                   asRuntimeContextError(
                     `agent-codec.${cause.op}`,
@@ -310,13 +377,31 @@ export const makeCodecRuntimeContextWorkflowSessionService:
                   { sequence, event },
                 ] as const),
                 Stream.mapEffect(({ sequence, event }) =>
-                  deps.writer.appendAgentEvent(context, activityAttempt, sequence, event).pipe(
-                    mapRuntimeContextError(
-                      "runtime-output.codec.write",
-                      "failed to write codec runtime output row",
-                      context.contextId,
-                    ),
-                    Effect.as(event),
+                  Effect.gen(function*() {
+                    yield* Effect.annotateCurrentSpan({
+                      "firegrid.context.id": context.contextId,
+                      "firegrid.activity_attempt": activityAttempt,
+                      "firegrid.output.sequence": sequence,
+                      "firegrid.agent_output.tag": event._tag,
+                      ...(event._tag === "ToolUse" ? { "firegrid.agent_output.tool_name": event.part.name } : {}),
+                    })
+                    return yield* deps.writer.appendAgentEvent(context, activityAttempt, sequence, event).pipe(
+                      mapRuntimeContextError(
+                        "runtime-output.codec.write",
+                        "failed to write codec runtime output row",
+                        context.contextId,
+                      ),
+                      Effect.as(event),
+                    )
+                  }).pipe(
+                    Effect.withSpan("firegrid.agent_event_pipeline.subscriber.runtime_output", {
+                      kind: "producer",
+                      attributes: {
+                        "firegrid.context.id": context.contextId,
+                        "firegrid.output.sequence": sequence,
+                        "firegrid.agent_output.tag": event._tag,
+                      },
+                    }),
                   )),
                 Stream.takeUntil(event => event._tag === "Terminated"),
                 Stream.runDrain,
@@ -327,7 +412,15 @@ export const makeCodecRuntimeContextWorkflowSessionService:
               )
             }),
           }
-        })
+        }).pipe(
+          Effect.withSpan("firegrid.host.codec.start_session", {
+            kind: "internal",
+            attributes: {
+              "firegrid.context.id": context.contextId,
+              "firegrid.activity_attempt": activityAttempt,
+            },
+          }),
+        )
 
     const sendCommand = SessionCommon.makeRuntimeContextSessionCommandSender<CodecRuntimeContextSession>({
       ownerKind: "codec",

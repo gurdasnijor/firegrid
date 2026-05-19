@@ -127,6 +127,13 @@ const startSessionActivity = (
       return { _tag: "Started" as const, evidence }
     }).pipe(
       Effect.catchAll(error => Effect.succeed({ _tag: "Failed" as const, error })),
+      Effect.withSpan("firegrid.runtime_context.workflow.session.start", {
+        kind: "internal",
+        attributes: {
+          "firegrid.context.id": context.contextId,
+          "firegrid.runtime.activity_attempt": activityAttempt,
+        },
+      }),
     ),
   })
 
@@ -144,7 +151,16 @@ const sendSessionActivity = (
       const session = yield* RuntimeContextWorkflowSession
       // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.5
       return yield* session.send(context, activityAttempt, command)
-    }),
+    }).pipe(
+      Effect.withSpan("firegrid.runtime_context.workflow.session.send", {
+        kind: "internal",
+        attributes: {
+          "firegrid.context.id": context.contextId,
+          "firegrid.runtime.activity_attempt": activityAttempt,
+          "firegrid.runtime.command_id": command.commandId,
+        },
+      }),
+    ),
   })
 
 const outputWaitName = (
@@ -182,7 +198,16 @@ const waitForAgentOutput = (
       afterSequence,
     },
     trigger: [],
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.output.wait", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.runtime.activity_attempt": activityAttempt,
+        "firegrid.runtime.output.after_sequence": afterSequence,
+      },
+    }),
+  )
 
 const nextAgentOutput = (
   context: RuntimeContext,
@@ -219,13 +244,29 @@ const completedRuntimeInput = (
     )
     if (exit === undefined) return undefined
     return yield* exit
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.input.completed", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.input.sequence": sequence,
+      },
+    }),
+  )
 
 const awaitRuntimeInput = (
   context: RuntimeContext,
   sequence: number,
 ) =>
-  DurableDeferred.await(runtimeInputDeferredFor(context.contextId, sequence))
+  DurableDeferred.await(runtimeInputDeferredFor(context.contextId, sequence)).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.input.await", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.input.sequence": sequence,
+      },
+    }),
+  )
 
 const runToolUseActivity = (
   context: RuntimeContext,
@@ -247,6 +288,14 @@ const runToolUseActivity = (
             Cause.squash(cause),
           ),
         ))),
+      Effect.withSpan("firegrid.runtime_context.workflow.tool_use.activity", {
+        kind: "internal",
+        attributes: {
+          "firegrid.context.id": context.contextId,
+          "firegrid.agent_tool.name": event.part.name,
+          "firegrid.agent_tool.tool_use_id": event.part.id,
+        },
+      }),
     ),
   })
 
@@ -262,6 +311,13 @@ const decodeRuntimeInputEvent = (
         context.contextId,
         cause,
       )),
+    Effect.withSpan("firegrid.runtime_context.workflow.input.decode", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.input.id": row.inputId,
+      },
+    }),
   )
 
 const sendRuntimeInputEvent = (
@@ -311,7 +367,17 @@ const awaitPermissionResponseInput = (
     }
     yield* sendRuntimeInputEvent(context, activityAttempt, row, event)
     return inputSequence + 1
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.permission_response.await", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.runtime.activity_attempt": activityAttempt,
+        "firegrid.permission.request_id": permissionRequestId,
+        "firegrid.input.sequence": inputSequence,
+      },
+    }),
+  )
 
 const handleAgentOutput = (
   context: RuntimeContext,
@@ -321,6 +387,10 @@ const handleAgentOutput = (
 ) =>
   Effect.gen(function*() {
     const event = observation.event
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.agent_output.event_tag": event._tag,
+      "firegrid.runtime.output.sequence": observation.sequence,
+    })
     if (event._tag === "ToolUse") {
       // TFIND-041 (decided): session/codec mode is the INTENTIONAL,
       // by-decision authority for the ToolUse execution lifecycle — it is
@@ -368,7 +438,15 @@ const handleAgentOutput = (
       }
     }
     return { _tag: "Continue" as const, nextInputSequence }
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.output.handle", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.runtime.activity_attempt": activityAttempt,
+      },
+    }),
+  )
 
 const handleRuntimeInput = (
   context: RuntimeContext,
@@ -378,37 +456,28 @@ const handleRuntimeInput = (
   Effect.gen(function*() {
     const event = yield* decodeRuntimeInputEvent(context, row)
     yield* sendRuntimeInputEvent(context, activityAttempt, row, event)
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.input.handle", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.runtime.activity_attempt": activityAttempt,
+        "firegrid.input.id": row.inputId,
+        "firegrid.input.sequence": row.sequence ?? -1,
+      },
+    }),
+  )
 
 const runReactiveLoop = (
   context: RuntimeContext,
   activityAttempt: number,
 ) => {
-  const loop = (
+  function followAgentOutput(
     lastOutputSequence: number,
     nextInputSequence: number,
-  ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> =>
-    Effect.gen(function*() {
-      const input = yield* completedRuntimeInput(context, nextInputSequence)
-      if (input !== undefined) {
-        const inputEvent = yield* decodeRuntimeInputEvent(context, input)
-        if (inputEvent._tag === "PermissionResponse") {
-          const output = yield* nextAgentOutput(context, activityAttempt, lastOutputSequence)
-          const outcome = yield* handleAgentOutput(
-            context,
-            activityAttempt,
-            output,
-            nextInputSequence,
-          )
-          if (outcome._tag === "Exit") return outcome.exit
-          return yield* loop(output.sequence, outcome.nextInputSequence)
-        }
-        yield* handleRuntimeInput(context, activityAttempt, input)
-        return yield* loop(lastOutputSequence, nextInputSequence + 1)
-      }
-
+  ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> {
+    return Effect.gen(function*() {
       const output = yield* nextAgentOutput(context, activityAttempt, lastOutputSequence)
-
       const outcome = yield* handleAgentOutput(
         context,
         activityAttempt,
@@ -418,7 +487,33 @@ const runReactiveLoop = (
       if (outcome._tag === "Exit") return outcome.exit
       return yield* loop(output.sequence, outcome.nextInputSequence)
     })
-  return loop(-1, 0)
+  }
+
+  const loop = (
+    lastOutputSequence: number,
+    nextInputSequence: number,
+  ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> =>
+    Effect.gen(function*() {
+      const input = yield* completedRuntimeInput(context, nextInputSequence)
+      if (input !== undefined) {
+        const inputEvent = yield* decodeRuntimeInputEvent(context, input)
+        if (inputEvent._tag === "PermissionResponse") {
+          return yield* followAgentOutput(lastOutputSequence, nextInputSequence)
+        }
+        yield* handleRuntimeInput(context, activityAttempt, input)
+        return yield* loop(lastOutputSequence, nextInputSequence + 1)
+      }
+      return yield* followAgentOutput(lastOutputSequence, nextInputSequence)
+    })
+  return loop(-1, 0).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.reactive_loop", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.runtime.activity_attempt": activityAttempt,
+      },
+    }),
+  )
 }
 
 const runWorkflowNativeRuntimeContext = (
@@ -440,7 +535,14 @@ const runWorkflowNativeRuntimeContext = (
     )
     if ("failure" in exit && exit.failure !== undefined) return exit
     return yield* writeRunExitedResult(context, activityAttempt, exit)
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.native.run", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": contextId,
+      },
+    }),
+  )
 
 export const RuntimeContextWorkflowNative = Workflow.make({
   name: "firegrid.runtime-context",
@@ -465,5 +567,9 @@ export const RuntimeContextWorkflowNativeLayer = Layer.scopedDiscard(
       runWorkflowNativeRuntimeContext(contextId).pipe(
         Effect.provide(captured),
       ))
-  }),
+  }).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.native.register", {
+      kind: "internal",
+    }),
+  ),
 )

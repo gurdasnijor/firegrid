@@ -94,12 +94,30 @@ export const RuntimeWaitStreamsLive = Layer.effect(
               ),
               service.after(source),
             ),
-        }),
+        }).pipe(
+          Stream.withSpan("firegrid.runtime_wait_streams.agent_output_after", {
+            kind: "internal",
+            attributes: {
+              "firegrid.context.id": source.contextId,
+              "firegrid.runtime.activity_attempt": source.activityAttempt,
+              "firegrid.runtime.output.after_sequence": source.afterSequence,
+            },
+          }),
+        ),
       initialAgentOutputAfter: source =>
         Option.match(agentOutputAfter, {
           onNone: () => Effect.succeed(Option.none()),
           onSome: service => service.initial(source),
-        }),
+        }).pipe(
+          Effect.withSpan("firegrid.runtime_wait_streams.agent_output_after.initial", {
+            kind: "internal",
+            attributes: {
+              "firegrid.context.id": source.contextId,
+              "firegrid.runtime.activity_attempt": source.activityAttempt,
+              "firegrid.runtime.output.after_sequence": source.afterSequence,
+            },
+          }),
+        ),
       agentOutputForContext: contextId =>
         Option.match(agentOutputAfter, {
           onNone: () =>
@@ -107,7 +125,14 @@ export const RuntimeWaitStreamsLive = Layer.effect(
               Stream.filter((row) => row.contextId === contextId),
             ),
           onSome: service => service.forContext(contextId),
-        }),
+        }).pipe(
+          Stream.withSpan("firegrid.runtime_wait_streams.agent_output.for_context", {
+            kind: "internal",
+            attributes: {
+              "firegrid.context.id": contextId,
+            },
+          }),
+        ),
       runtimeRun,
     }
   }),

@@ -77,7 +77,14 @@ const runtimeInputRowsForContext = (
         row.executionId === runtimeContextWorkflowExecutionId(contextId) &&
         row.deferredName.startsWith(`runtime-context/${contextId}/input/`))
       .flatMap(row => decodeStoredInputRow(row.exit))
-      .filter(row => row.contextId === contextId))
+      .filter(row => row.contextId === contextId)).pipe(
+        Effect.withSpan("firegrid.host.runtime_input.deferred.rows_for_context", {
+          kind: "internal",
+          attributes: {
+            "firegrid.context.id": contextId,
+          },
+        }),
+      )
 
 export const appendRuntimeInputDeferred = (
   request: RuntimeIngressRequest,
@@ -126,12 +133,22 @@ export const appendRuntimeInputDeferred = (
         exit: Exit.succeed(sequenced),
       },
     )
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.input.sequence": nextSequence,
+    })
     return sequenced
   }).pipe(
     Effect.mapError(cause =>
       cause instanceof Error
         ? cause
         : new Error("failed appending runtime input deferred", { cause })),
+    Effect.withSpan("firegrid.host.runtime_input.deferred.append", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.input.id": request.inputId,
+      },
+    }),
   )
   return append
 }

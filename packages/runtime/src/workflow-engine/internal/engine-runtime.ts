@@ -52,33 +52,68 @@ export const makeWorkflowEngine = (
             Match.exhaustive,
           ),
         ),
+        Effect.tap((claim) =>
+          Effect.annotateCurrentSpan({
+            "firegrid.workflow.activity.claim_worker_id": claim.workerId,
+            "firegrid.workflow.activity.claim_owned": claim.workerId === workerId,
+          })),
+        Effect.withSpan("firegrid.workflow_engine.activity.claim", {
+          kind: "internal",
+          attributes: {
+            "firegrid.workflow.execution_id": row.executionId,
+            "firegrid.workflow.activity.name": row.activityName,
+            "firegrid.workflow.activity.attempt": row.attempt,
+            "firegrid.workflow.worker_id": workerId,
+          },
+        }),
       )
 
-    const fireClockWakeup = Effect.fnUntraced(function*(row: WorkflowClockWakeupRow) {
-      const current = yield* orDieTable(table.clockWakeups.get(row.clockKey).pipe(
-        Effect.map(Option.getOrUndefined),
-      ))
-      if (!current || current.status !== "pending") return
-      yield* orDieTable(table.clockWakeups.upsert({
-        ...current,
-        status: "fired",
-      }))
-      yield* engine.deferredDone(DurableDeferred.make(current.deferredName), {
-        workflowName: current.workflowName,
-        executionId: current.executionId,
-        deferredName: current.deferredName,
-        exit: Exit.void,
-      })
-    })
-
-    const scheduleClockWakeup = Effect.fnUntraced(function*(row: WorkflowClockWakeupRow) {
-      const nowMs = yield* Clock.currentTimeMillis
-      yield* fireClockWakeup(row).pipe(
-        Effect.delay(Duration.millis(Math.max(0, row.deadlineMs - nowMs))),
-        Effect.forkIn(engineScope),
-        Effect.asVoid,
+    const fireClockWakeup = (row: WorkflowClockWakeupRow) =>
+      Effect.gen(function*() {
+        const current = yield* orDieTable(table.clockWakeups.get(row.clockKey).pipe(
+          Effect.map(Option.getOrUndefined),
+        ))
+        if (!current || current.status !== "pending") return
+        yield* orDieTable(table.clockWakeups.upsert({
+          ...current,
+          status: "fired",
+        }))
+        yield* engine.deferredDone(DurableDeferred.make(current.deferredName), {
+          workflowName: current.workflowName,
+          executionId: current.executionId,
+          deferredName: current.deferredName,
+          exit: Exit.void,
+        })
+      }).pipe(
+        Effect.withSpan("firegrid.workflow_engine.clock.fire", {
+          kind: "internal",
+          attributes: {
+            "firegrid.workflow.execution_id": row.executionId,
+            "firegrid.workflow.name": row.workflowName,
+            "firegrid.workflow.clock.name": row.clockName,
+          },
+        }),
       )
-    })
+
+    const scheduleClockWakeup = (row: WorkflowClockWakeupRow) =>
+      Effect.gen(function*() {
+        const nowMs = yield* Clock.currentTimeMillis
+        yield* fireClockWakeup(row).pipe(
+          Effect.delay(Duration.millis(Math.max(0, row.deadlineMs - nowMs))),
+          Effect.forkIn(engineScope),
+          Effect.asVoid,
+        )
+      }).pipe(
+        Effect.withSpan("firegrid.workflow_engine.clock.schedule_wakeup", {
+          kind: "internal",
+          attributes: {
+            "firegrid.workflow.execution_id": row.executionId,
+            "firegrid.workflow.name": row.workflowName,
+            "firegrid.workflow.clock.name": row.clockName,
+            "firegrid.workflow.clock.deadline_ms": row.deadlineMs,
+          },
+        }),
+      )
 
     const recoverPendingClockWakeups = Effect.gen(function* () {
       const pending = yield* orDieTable(table.clockWakeups.query((coll) =>
@@ -89,88 +124,114 @@ export const makeWorkflowEngine = (
       }
     })
 
-    const resume = Effect.fnUntraced(function*(executionId: string) {
-      const row = yield* orDieTable(table.executions.get(executionId).pipe(
-        Effect.map(Option.getOrUndefined),
-      ))
-      if (!row || row.finalResult !== undefined) return
-      const entry = workflows.get(row.workflowName)
-      if (!entry) return
-      const current = running.get(executionId)?.unsafePoll()
-      if (!current) {
-        if (running.has(executionId)) return
-      } else if (current._tag === "Success" && current.value._tag !== "Suspended") {
-        return
-      }
+    const resume = (executionId: string) =>
+      Effect.gen(function*() {
+        const row = yield* orDieTable(table.executions.get(executionId).pipe(
+          Effect.map(Option.getOrUndefined),
+        ))
+        if (!row || row.finalResult !== undefined) return
+        const entry = workflows.get(row.workflowName)
+        if (!entry) return
+        const current = running.get(executionId)?.unsafePoll()
+        if (!current) {
+          if (running.has(executionId)) return
+        } else if (current._tag === "Success" && current.value._tag !== "Suspended") {
+          return
+        }
 
-      const instance = WorkflowEngine.WorkflowInstance.initial(entry.workflow, executionId)
-      Object.assign(instance, { interrupted: row.interrupted, cause: row.cause as typeof instance.cause })
+        const instance = WorkflowEngine.WorkflowInstance.initial(entry.workflow, executionId)
+        Object.assign(instance, { interrupted: row.interrupted, cause: row.cause as typeof instance.cause })
 
-      const fiber = yield* entry.execute(row.payload as object, executionId).pipe(
-        Workflow.intoResult,
-        Effect.provideService(WorkflowEngine.WorkflowInstance, instance),
-        Effect.provideService(WorkflowEngine.WorkflowEngine, engine),
-        Effect.tap(result =>
-          Effect.gen(function* () {
-            const latest = (yield* orDieTable(table.executions.get(executionId).pipe(
-              Effect.map(Option.getOrUndefined),
-            ))) ?? row
-            const finalResult = result._tag === "Complete"
-              ? yield* encodeWorkflowResult(entry.workflow, result)
-              : undefined
-            yield* orDieTable(table.executions.upsert({
-              ...latest,
-              interrupted: instance.interrupted,
-              suspended: result._tag === "Suspended", ...(result._tag === "Suspended" && result.cause !== undefined ? { cause: result.cause } : {}),
-              ...(finalResult !== undefined ? { finalResult } : {}),
-            }))
-          }),
-        ),
-        Effect.forkIn(entry.scope),
+        const fiber = yield* entry.execute(row.payload as object, executionId).pipe(
+          Workflow.intoResult,
+          Effect.provideService(WorkflowEngine.WorkflowInstance, instance),
+          Effect.provideService(WorkflowEngine.WorkflowEngine, engine),
+          Effect.tap(result =>
+            Effect.gen(function* () {
+              const latest = (yield* orDieTable(table.executions.get(executionId).pipe(
+                Effect.map(Option.getOrUndefined),
+              ))) ?? row
+              const finalResult = result._tag === "Complete"
+                ? yield* encodeWorkflowResult(entry.workflow, result)
+                : undefined
+              yield* orDieTable(table.executions.upsert({
+                ...latest,
+                interrupted: instance.interrupted,
+                suspended: result._tag === "Suspended", ...(result._tag === "Suspended" && result.cause !== undefined ? { cause: result.cause } : {}),
+                ...(finalResult !== undefined ? { finalResult } : {}),
+              }))
+            }),
+          ),
+          Effect.forkIn(entry.scope),
+        )
+        running.set(executionId, fiber)
+      }).pipe(
+        Effect.withSpan("firegrid.workflow_engine.execution.resume", {
+          kind: "internal",
+          attributes: {
+            "firegrid.workflow.execution_id": executionId,
+          },
+        }),
       )
-      running.set(executionId, fiber)
-    })
 
     const engine = WorkflowEngine.makeUnsafe({
-      register: Effect.fnUntraced(function*(workflow, execute) {
-        workflows.set(workflow.name, {
-          workflow,
-          execute,
-          scope: yield* Effect.scope,
-        })
-      }),
-      execute: Effect.fnUntraced(function*(workflow, options) {
-        const existing = yield* orDieTable(table.executions.get(options.executionId).pipe(
-          Effect.map(Option.getOrUndefined),
-        ))
-        if (existing?.finalResult !== undefined) {
-          return (yield* decodeWorkflowResult(workflow, existing.finalResult)) as never
-        }
-        if (!existing) {
-          yield* orDieTable(table.executions.upsert({
-            executionId: options.executionId,
-            workflowName: workflow.name,
-            payload: options.payload,
-            parentExecutionId: options.parent?.executionId,
-            interrupted: false,
-            suspended: false,
-          }))
-        }
-        yield* resume(options.executionId)
-        const fiber = running.get(options.executionId)
-        if (options.discard) {
-          if (fiber) yield* Fiber.join(fiber)
-          return undefined as never
-        }
-        if (fiber) return (yield* Fiber.join(fiber)) as never
-        const afterResume = yield* orDieTable(table.executions.get(options.executionId).pipe(
-          Effect.map(Option.getOrUndefined),
-        ))
-        if (afterResume?.finalResult !== undefined) {
-          return (yield* decodeWorkflowResult(workflow, afterResume.finalResult)) as never
-        }
-        return new Workflow.Suspended({}) as never
-      }),
+      register: (workflow, execute) =>
+        Effect.gen(function*() {
+          workflows.set(workflow.name, {
+            workflow,
+            execute,
+            scope: yield* Effect.scope,
+          })
+        }).pipe(
+          Effect.withSpan("firegrid.workflow_engine.workflow.register", {
+            kind: "internal",
+            attributes: {
+              "firegrid.workflow.name": workflow.name,
+            },
+          }),
+        ),
+      execute: (workflow, options) =>
+        Effect.gen(function*() {
+          const existing = yield* orDieTable(table.executions.get(options.executionId).pipe(
+            Effect.map(Option.getOrUndefined),
+          ))
+          if (existing?.finalResult !== undefined) {
+            return (yield* decodeWorkflowResult(workflow, existing.finalResult)) as never
+          }
+          if (!existing) {
+            yield* orDieTable(table.executions.upsert({
+              executionId: options.executionId,
+              workflowName: workflow.name,
+              payload: options.payload,
+              parentExecutionId: options.parent?.executionId,
+              interrupted: false,
+              suspended: false,
+            }))
+          }
+          yield* resume(options.executionId)
+          const fiber = running.get(options.executionId)
+          if (options.discard) {
+            if (fiber) yield* Fiber.join(fiber)
+            return undefined as never
+          }
+          if (fiber) return (yield* Fiber.join(fiber)) as never
+          const afterResume = yield* orDieTable(table.executions.get(options.executionId).pipe(
+            Effect.map(Option.getOrUndefined),
+          ))
+          if (afterResume?.finalResult !== undefined) {
+            return (yield* decodeWorkflowResult(workflow, afterResume.finalResult)) as never
+          }
+          return new Workflow.Suspended({}) as never
+        }).pipe(
+          Effect.withSpan("firegrid.workflow_engine.execution.execute", {
+            kind: "internal",
+            attributes: {
+              "firegrid.workflow.execution_id": options.executionId,
+              "firegrid.workflow.name": workflow.name,
+              "firegrid.workflow.discard": options.discard === true,
+            },
+          }),
+        ),
       poll: (_workflow, executionId) =>
         Effect.gen(function* () {
           const row = yield* orDieTable(table.executions.get(executionId).pipe(
@@ -179,7 +240,15 @@ export const makeWorkflowEngine = (
           return row?.finalResult === undefined
             ? undefined
             : yield* decodeWorkflowResult(_workflow, row.finalResult)
-        }),
+        }).pipe(
+          Effect.withSpan("firegrid.workflow_engine.execution.poll", {
+            kind: "internal",
+            attributes: {
+              "firegrid.workflow.execution_id": executionId,
+              "firegrid.workflow.name": _workflow.name,
+            },
+          }),
+        ),
       interrupt: (_workflow, executionId) =>
         Effect.gen(function* () {
           const row = yield* orDieTable(table.executions.get(executionId).pipe(
@@ -188,69 +257,108 @@ export const makeWorkflowEngine = (
           if (!row) return
           yield* orDieTable(table.executions.upsert({ ...row, interrupted: true }))
           yield* resume(executionId)
-        }),
+        }).pipe(
+          Effect.withSpan("firegrid.workflow_engine.execution.interrupt", {
+            kind: "internal",
+            attributes: {
+              "firegrid.workflow.execution_id": executionId,
+              "firegrid.workflow.name": _workflow.name,
+            },
+          }),
+        ),
       resume: (_workflow, executionId) => resume(executionId),
-      activityExecute: Effect.fnUntraced(function*(activity, attempt) {
-        const instance = yield* WorkflowEngine.WorkflowInstance
-        const activityKey = `${instance.executionId}/${activity.name}/${attempt}`
-        const row = yield* orDieTable(table.activities.get(activityKey).pipe(
-          Effect.map(Option.getOrUndefined),
-        ))
-        if (row?.result !== undefined) {
-          const result = reviveEncodedResult(row.result)
-          if (result._tag !== "Suspended") return result
-        }
+      activityExecute: (activity, attempt) =>
+        Effect.gen(function*() {
+          const instance = yield* WorkflowEngine.WorkflowInstance
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.workflow.execution_id": instance.executionId,
+            "firegrid.workflow.name": instance.workflow.name,
+          })
+          const activityKey = `${instance.executionId}/${activity.name}/${attempt}`
+          const row = yield* orDieTable(table.activities.get(activityKey).pipe(
+            Effect.map(Option.getOrUndefined),
+          ))
+          if (row?.result !== undefined) {
+            const result = reviveEncodedResult(row.result)
+            if (result._tag !== "Suspended") return result
+          }
 
-        const claim = yield* orDieTable(claimActivity({
-          claimKey: activityKey,
-          executionId: instance.executionId,
-          activityName: activity.name,
-          attempt,
-          workerId,
-          claimedAtMs: Date.now(),
-        }))
-        const completedAfterClaim = yield* orDieTable(table.activities.get(activityKey).pipe(
-          Effect.map(Option.getOrUndefined),
-        ))
-        if (completedAfterClaim?.result !== undefined) {
-          const result = reviveEncodedResult(completedAfterClaim.result)
-          if (result._tag !== "Suspended") return result
-        }
-        if (claim.workerId !== workerId) {
-          return new Workflow.Suspended({})
-        }
-
-        const activityInstance = WorkflowEngine.WorkflowInstance.initial(
-          instance.workflow,
-          instance.executionId,
-        )
-        activityInstance.interrupted = instance.interrupted
-        const result = yield* activity.executeEncoded.pipe(
-          Workflow.intoResult,
-          Effect.provideService(WorkflowEngine.WorkflowInstance, activityInstance),
-        )
-        const existingActivity = yield* orDieTable(table.activities.get(activityKey))
-        if (Option.isNone(existingActivity)) {
-          yield* orDieTable(table.activities.upsert({
-            activityKey,
+          const claimedAtMs = yield* Clock.currentTimeMillis
+          const claim = yield* orDieTable(claimActivity({
+            claimKey: activityKey,
             executionId: instance.executionId,
             activityName: activity.name,
             attempt,
-            result,
+            workerId,
+            claimedAtMs,
           }))
-        }
-        return result
-      }),
-      deferredResult: Effect.fnUntraced(function*(deferred) {
-        const instance = yield* WorkflowEngine.WorkflowInstance
-        const key = `${instance.executionId}/${deferred.name}`
-        const row = yield* orDieTable(table.deferreds.get(key).pipe(
-          Effect.map(Option.getOrUndefined),
-        ))
-        return row?.exit === undefined ? undefined : reviveExit(row.exit)
-      }),
+          const completedAfterClaim = yield* orDieTable(table.activities.get(activityKey).pipe(
+            Effect.map(Option.getOrUndefined),
+          ))
+          if (completedAfterClaim?.result !== undefined) {
+            const result = reviveEncodedResult(completedAfterClaim.result)
+            if (result._tag !== "Suspended") return result
+          }
+          if (claim.workerId !== workerId) {
+            return new Workflow.Suspended({})
+          }
+
+          const activityInstance = WorkflowEngine.WorkflowInstance.initial(
+            instance.workflow,
+            instance.executionId,
+          )
+          activityInstance.interrupted = instance.interrupted
+          const result = yield* activity.executeEncoded.pipe(
+            Workflow.intoResult,
+            Effect.provideService(WorkflowEngine.WorkflowInstance, activityInstance),
+          )
+          const existingActivity = yield* orDieTable(table.activities.get(activityKey))
+          if (Option.isNone(existingActivity)) {
+            yield* orDieTable(table.activities.upsert({
+              activityKey,
+              executionId: instance.executionId,
+              activityName: activity.name,
+              attempt,
+              result,
+            }))
+          }
+          return result
+        }).pipe(
+          Effect.withSpan("firegrid.workflow_engine.activity.execute", {
+            kind: "internal",
+            attributes: {
+              "firegrid.workflow.activity.name": activity.name,
+              "firegrid.workflow.activity.attempt": attempt,
+            },
+          }),
+        ),
+      deferredResult: deferred =>
+        Effect.gen(function*() {
+          const instance = yield* WorkflowEngine.WorkflowInstance
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.workflow.execution_id": instance.executionId,
+            "firegrid.workflow.name": instance.workflow.name,
+          })
+          const key = `${instance.executionId}/${deferred.name}`
+          const row = yield* orDieTable(table.deferreds.get(key).pipe(
+            Effect.map(Option.getOrUndefined),
+          ))
+          return row?.exit === undefined ? undefined : reviveExit(row.exit)
+        }).pipe(
+          Effect.withSpan("firegrid.workflow_engine.deferred.result", {
+            kind: "internal",
+            attributes: {
+              "firegrid.workflow.deferred.name": deferred.name,
+            },
+          }),
+        ),
       deferredDone: options =>
         Effect.gen(function* () {
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.workflow.execution_id": options.executionId,
+            "firegrid.workflow.name": options.workflowName,
+            "firegrid.workflow.deferred.name": options.deferredName,
+          })
           const key = `${options.executionId}/${options.deferredName}`
           const existingDeferred = yield* orDieTable(table.deferreds.get(key))
           if (Option.isNone(existingDeferred)) {
@@ -263,9 +371,18 @@ export const makeWorkflowEngine = (
             }))
           }
           yield* resume(options.executionId)
-        }),
+        }).pipe(
+          Effect.withSpan("firegrid.workflow_engine.deferred.done", {
+            kind: "internal",
+          }),
+        ),
       scheduleClock: (workflow, options) =>
         Effect.gen(function* () {
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.workflow.execution_id": options.executionId,
+            "firegrid.workflow.name": workflow.name,
+            "firegrid.workflow.clock.name": options.clock.name,
+          })
           // workflow-engine-durable-state.VALIDATION.3
           const key = `${options.executionId}/${options.clock.name}`
           const nowMs = yield* Clock.currentTimeMillis
@@ -287,7 +404,11 @@ export const makeWorkflowEngine = (
                 : Effect.void),
             Match.exhaustive,
           )
-        }),
+        }).pipe(
+          Effect.withSpan("firegrid.workflow_engine.clock.schedule", {
+            kind: "internal",
+          }),
+        ),
     })
 
     yield* recoverPendingClockWakeups

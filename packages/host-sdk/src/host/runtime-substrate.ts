@@ -83,6 +83,9 @@ export const HostRuntimeObservationSubstrateLive = HostOwnedDurableToolsWaitForL
     PerContextRuntimeAgentOutputAfterEventsLive,
     RuntimeControlPlaneRecorderLive,
   )),
+  Layer.withSpan("firegrid.host.runtime_substrate.observation.layer", {
+    kind: "internal",
+  }),
 )
 
 // firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2
@@ -109,11 +112,27 @@ export const RuntimeToolUseExecutorLive = Layer.effect(
             Effect.provideService(Scope.Scope, currentScope),
           )
         }).pipe(
+          Effect.tap(result =>
+            Effect.annotateCurrentSpan({
+              "firegrid.agent_output.tool_name": event.part.name,
+              "firegrid.agent_output.tool_result_failure": result.part.isFailure,
+            })),
+          Effect.withSpan("firegrid.host.runtime_substrate.tool_use.execute", {
+            kind: "internal",
+            attributes: {
+              "firegrid.context.id": context.contextId,
+              "firegrid.agent_output.tool_name": event.part.name,
+            },
+          }),
           Effect.catchAllDefect(defect =>
             Effect.succeed(toolErrorResult(
               toolExecutionFailed(event.part.id, event.part.name, defect),
             ))),
-        ),
+      ),
     })
+  }),
+).pipe(
+  Layer.withSpan("firegrid.host.runtime_substrate.tool_use_executor.layer", {
+    kind: "internal",
   }),
 )

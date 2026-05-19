@@ -47,6 +47,16 @@ components:
       4: Production tracing may be sampled; Firegrid does not rely on span data as the only copy of a correctness-critical identifier; correctness identifiers belong in durable row metadata first and may also be mirrored into span attributes for operator convenience.
       5: Optional durable trace rows, if added by a later spec, remain a debug or read materialization; they do not decide wait eligibility, claim ownership, terminal state, or authorization.
 
+  TINY_FIREGRID_SIMULATIONS:
+    requirements:
+      1: Tiny Firegrid simulation configurations are host-only Layers; simulation drivers interact with the running system through the public Firegrid client surface.
+      2: Tiny Firegrid simulation runners infer default namespaces and gitignored local evidence run directories from the stable simulation id while allowing environment overrides.
+      3: Tiny Firegrid simulation runners write OTLP JSONL trace artifacts to disk so DuckDB can load them through reader-style OTLP extensions.
+      4: Tiny Firegrid simulation artifacts include a DuckDB loader SQL file and stable summary views for quick span inspection.
+      5: Tiny Firegrid simulation runners expose tail or attach frontends that stream ended span records for token-efficient agent inspection.
+      6: Tiny Firegrid simulation runners start an in-process Durable Streams reference server by default while allowing environment overrides.
+      7: Tiny Firegrid simulation runs have a bounded Effect-level timeout and emit terminal live events for timeout and process interruption.
+
 constraints:
   INVARIANTS:
     requirements:

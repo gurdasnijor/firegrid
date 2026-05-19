@@ -255,6 +255,18 @@ const compareJournalRows = (
 
 const makeContextId = (): string => `ctx_${crypto.randomUUID()}`
 
+const withClientSpan = <A, E, R>(
+  name: string,
+  attributes: Record<string, unknown>,
+  self: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  self.pipe(
+    Effect.withSpan(name, {
+      kind: "client",
+      attributes,
+    }),
+  )
+
 interface ResolvedConfig {
   readonly baseUrl: string
   readonly namespace: string | undefined
@@ -738,8 +750,14 @@ const make = (config: ResolvedConfig) =>
       sessionId,
       contextId: sessionId,
       prompt: request =>
-        Effect.gen(function* () {
+        withClientSpan("firegrid.client.session.prompt", {
+          "firegrid.session.id": sessionId,
+        }, Effect.gen(function* () {
           const decoded = yield* decodeSessionHandlePromptInput(request)
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.context.id": sessionId,
+            "firegrid.input.idempotency_key": decoded.idempotencyKey ?? "",
+          })
           return yield* appendRuntimeInputIntent({
             contextId: sessionId,
             kind: "message",
@@ -748,9 +766,12 @@ const make = (config: ResolvedConfig) =>
             idempotencyKey: decoded.idempotencyKey,
             ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
           })
-        }),
+        })),
       start: () =>
-        appendRuntimeStartRequest(sessionId),
+        withClientSpan("firegrid.client.session.start", {
+          "firegrid.session.id": sessionId,
+          "firegrid.context.id": sessionId,
+        }, appendRuntimeStartRequest(sessionId)),
       snapshot: () => readSnapshot(sessionId),
       wait: {
         forAgentOutput: request =>
@@ -775,13 +796,22 @@ const make = (config: ResolvedConfig) =>
       FiregridSessionHandle,
       LaunchInputError | AppendError
     > =>
-      Effect.gen(function* () {
+      withClientSpan("firegrid.client.session.create_or_load", {
+        "firegrid.external_key.source": request.externalKey.source,
+        "firegrid.external_key.id": request.externalKey.id,
+      }, Effect.gen(function* () {
         const decoded = yield* decodeSessionCreateOrLoadInput(request)
         const runtime = yield* decodePublicLaunchRuntimeIntent(decoded.runtime)
         const contextId = sessionContextIdForExternalKey(decoded.externalKey)
+        yield* Effect.annotateCurrentSpan({
+          "firegrid.context.id": contextId,
+          "firegrid.runtime.agent": runtime.config.agent ?? "",
+          "firegrid.runtime.agent_protocol": runtime.config.agentProtocol ?? "",
+          "firegrid.runtime_context_mcp.enabled": runtime.config.runtimeContextMcp?.enabled === true,
+        })
         yield* createContextRequest(contextId, runtime, decoded.createdBy)
         return makeSessionHandle(contextId)
-      })
+      }))
 
     const attachSession = (
       request: SessionAttachInput,
@@ -808,8 +838,14 @@ const make = (config: ResolvedConfig) =>
       sessions: {
         attach: attachSession,
         createOrLoad: createOrLoadSession,
-        prompt: request => Effect.gen(function* () {
+        prompt: request => withClientSpan("firegrid.client.session.prompt", {
+          "firegrid.session.id": request.sessionId,
+        }, Effect.gen(function* () {
           const decoded = yield* decodeSessionPromptInput(request)
+          yield* Effect.annotateCurrentSpan({
+            "firegrid.context.id": decoded.sessionId,
+            "firegrid.input.id": decoded.inputId ?? "",
+          })
           const intent = yield* appendRuntimeInputIntent({
             inputId: decoded.inputId,
             contextId: decoded.sessionId,
@@ -824,7 +860,7 @@ const make = (config: ResolvedConfig) =>
             sessionId: decoded.sessionId,
             inputId: intent.intentId,
           }
-        }),
+        })),
       },
       permissions: {
         respond: request => Effect.gen(function* () {

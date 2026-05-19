@@ -7,8 +7,8 @@ import {
   type RuntimeContextIntent,
   type RuntimeRunEventRow,
 } from "@firegrid/protocol/launch"
-import { Clock, Context, Effect, Layer } from "effect"
-import type { Option, Stream } from "effect"
+import { Clock, Context, Effect, Layer, Stream } from "effect"
+import type { Option } from "effect"
 import { authorityNowIso } from "./time.ts"
 
 export interface RuntimeContextInsertService {
@@ -66,6 +66,16 @@ const insertLocalContextTo = (
         createdAtMs,
       })),
     Effect.tap(context => table.contexts.upsert(context)),
+    Effect.tap(context =>
+      Effect.annotateCurrentSpan({
+        "firegrid.context.id": context.contextId,
+      })),
+    Effect.withSpan("firegrid.runtime_control_plane.context.insert", {
+      kind: "producer",
+      attributes: {
+        "firegrid.context.id": options.contextId,
+      },
+    }),
   )
 
 const allocateActivityAttemptTo = (
@@ -84,12 +94,33 @@ const allocateActivityAttemptTo = (
       .map(row => row.activityAttempt)
       .sort((left, right) => left - right)[0]
     return inProgress ?? rows.reduce((max, row) => Math.max(max, row.activityAttempt + 1), 1)
-  })
+  }).pipe(
+    Effect.tap(activityAttempt =>
+      Effect.annotateCurrentSpan({
+        "firegrid.runtime.activity_attempt": activityAttempt,
+      })),
+    Effect.withSpan("firegrid.runtime_control_plane.run.allocate_attempt", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+      },
+    }),
+  )
 
 const upsertRunEventTo = (
   table: RuntimeControlPlaneTable["Type"],
   row: RuntimeRunEventRow,
-) => table.runs.upsert(row)
+) =>
+  table.runs.upsert(row).pipe(
+    Effect.withSpan("firegrid.runtime_control_plane.run.upsert_event", {
+      kind: "producer",
+      attributes: {
+        "firegrid.context.id": row.contextId,
+        "firegrid.runtime.activity_attempt": row.activityAttempt,
+        "firegrid.runtime.run_status": row.status,
+      },
+    }),
+  )
 
 const recordStartedTo = (
   table: RuntimeControlPlaneTable["Type"],
@@ -164,11 +195,21 @@ const recordFailedTo = (
 
 const runtimeContexts = (
   table: RuntimeControlPlaneTable["Type"],
-): Stream.Stream<RuntimeContext, unknown> => table.contexts.rows()
+): Stream.Stream<RuntimeContext, unknown> =>
+  table.contexts.rows().pipe(
+    Stream.withSpan("firegrid.runtime_control_plane.context.rows", {
+      kind: "consumer",
+    }),
+  )
 
 const runtimeRuns = (
   table: RuntimeControlPlaneTable["Type"],
-): Stream.Stream<RuntimeRunEventRow, unknown> => table.runs.rows()
+): Stream.Stream<RuntimeRunEventRow, unknown> =>
+  table.runs.rows().pipe(
+    Stream.withSpan("firegrid.runtime_control_plane.run.rows", {
+      kind: "consumer",
+    }),
+  )
 
 const contextInsertFromTable = (
   table: RuntimeControlPlaneTable["Type"],
@@ -181,7 +222,15 @@ const contextInsertFromTable = (
 const contextReadFromTable = (
   table: RuntimeControlPlaneTable["Type"],
 ): RuntimeContextReadService => ({
-  readContext: contextId => table.contexts.get(contextId),
+  readContext: contextId =>
+    table.contexts.get(contextId).pipe(
+      Effect.withSpan("firegrid.runtime_control_plane.context.read", {
+        kind: "consumer",
+        attributes: {
+          "firegrid.context.id": contextId,
+        },
+      }),
+    ),
 })
 
 const runtimeRunAppendAndGetFromTable = (

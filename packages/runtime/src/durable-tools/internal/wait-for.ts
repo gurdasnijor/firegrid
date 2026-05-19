@@ -147,7 +147,17 @@ const upsertActiveWait = (
       }),
     )
     return row
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.durable_tools.wait_for.upsert_active", {
+      kind: "internal",
+      attributes: {
+        "firegrid.workflow.execution_id": row.executionId,
+        "firegrid.wait.name": waitName,
+        "firegrid.wait.source": row.source._tag,
+        "firegrid.wait.has_timeout": row.deadlineMs !== undefined,
+      },
+    }),
+  )
 
 /**
  * Resolve the timeout side.
@@ -233,7 +243,15 @@ const writeTimeoutCompletion = (
         }),
     )
     return Option.none()
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.durable_tools.wait_for.timeout_completion.write", {
+      kind: "internal",
+      attributes: {
+        "firegrid.workflow.execution_id": waitKey.executionId,
+        "firegrid.wait.name": waitName,
+      },
+    }),
+  )
 
 const decodeMatchPayload = <A>(
   waitName: string,
@@ -438,7 +456,16 @@ const matchOrTimeoutFlow = <A>(
       ),
       Match.exhaustive,
     )
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.durable_tools.wait_for.match", {
+      kind: "internal",
+      attributes: {
+        "firegrid.wait.name": options.name,
+        "firegrid.wait.source": options.source._tag,
+        "firegrid.wait.has_timeout": options.timeoutMs !== undefined,
+      },
+    }),
+  )
 
 export const WaitFor = {
   match: matchImpl,

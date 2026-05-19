@@ -477,12 +477,14 @@ const makeActionDefinitions = (
 
 const runAction = (
   tableName: string,
+  collection: CompiledCollection,
   actions: TableActionMap,
-  name: string,
+  operation: GeneratedOperation,
   params: unknown,
 ): Effect.Effect<void, DurableTableError> =>
   Effect.tryPromise({
     try: async () => {
+      const name = actionName(collection.collectionKey, operation)
       const action = actions[name]
       if (action === undefined) {
         await Promise.reject(new Error(`unknown DurableTable action: ${name}`))
@@ -491,7 +493,19 @@ const runAction = (
       await action(params).isPersisted.promise
     },
     catch: (cause) => new DurableTableError({ table: tableName, cause }),
-  }).pipe(Effect.asVoid)
+  }).pipe(
+    Effect.asVoid,
+    Effect.withSpan("firegrid.durable_table.action", {
+      kind: "internal",
+      attributes: {
+        "firegrid.durable_table.name": tableName,
+        "firegrid.durable_table.collection": collection.collectionKey,
+        "firegrid.durable_table.durable_type": collection.durableType,
+        "firegrid.durable_table.primary_key": collection.primaryKey,
+        "firegrid.durable_table.operation": operation,
+      },
+    }),
+  )
 
 /**
  * effect-durable-operators.TABLE.18
@@ -552,7 +566,21 @@ const appendInsertWithPrimaryKeyFence = (options: {
     producerId,
     producerEpoch: 0,
     producerSeq: 0,
-  }).pipe(Effect.provide(FetchHttpClient.layer))
+  }).pipe(
+    Effect.tap((result) =>
+      Effect.annotateCurrentSpan({
+        "firegrid.durable_table.producer_append.result": result._tag,
+      })),
+    Effect.withSpan("firegrid.durable_table.producer_append", {
+      kind: "internal",
+      attributes: {
+        "firegrid.durable_table.collection": collection.collectionKey,
+        "firegrid.durable_table.durable_type": collection.durableType,
+        "firegrid.durable_table.primary_key": collection.primaryKey,
+      },
+    }),
+    Effect.provide(FetchHttpClient.layer),
+  )
   return streamOptions.fetch === undefined
     ? append
     : append.pipe(
@@ -759,12 +787,22 @@ const makeFacade = <Row extends object, Key>(options: {
         return Effect.sync(() => {
           if (unsubscribe !== undefined) unsubscribe()
         })
-      }),
+      }).pipe(
+        Stream.withSpan("firegrid.durable_table.rows", {
+          kind: "internal",
+          attributes: {
+            "firegrid.durable_table.name": tableName,
+            "firegrid.durable_table.collection": collection.collectionKey,
+            "firegrid.durable_table.durable_type": collection.durableType,
+          },
+        }),
+      ),
     insert: (row) =>
       runAction(
         tableName,
+        collection,
         actions,
-        actionName(collection.collectionKey, "insert"),
+        "insert",
         row,
       ),
     insertOrGet: (row) =>
@@ -821,19 +859,34 @@ const makeFacade = <Row extends object, Key>(options: {
             ? cause
             : new DurableTableError({ table: tableName, cause }),
         ),
+        Effect.tap((result) =>
+          Effect.annotateCurrentSpan({
+            "firegrid.durable_table.insert_or_get.result": result._tag,
+          })),
+        Effect.withSpan("firegrid.durable_table.insert_or_get", {
+          kind: "internal",
+          attributes: {
+            "firegrid.durable_table.name": tableName,
+            "firegrid.durable_table.collection": collection.collectionKey,
+            "firegrid.durable_table.durable_type": collection.durableType,
+            "firegrid.durable_table.primary_key": collection.primaryKey,
+          },
+        }),
       ),
     upsert: (row) =>
       runAction(
         tableName,
+        collection,
         actions,
-        actionName(collection.collectionKey, "upsert"),
+        "upsert",
         row,
       ),
     delete: (key) =>
       runAction(
         tableName,
+        collection,
         actions,
-        actionName(collection.collectionKey, "delete"),
+        "delete",
         key,
       ),
     get: (key) =>
@@ -846,12 +899,35 @@ const makeFacade = <Row extends object, Key>(options: {
             : Option.some(decodeRowForRead(collection, value))
         },
         catch: (cause) => new DurableTableError({ table: tableName, cause }),
-      }),
+      }).pipe(
+        Effect.tap((row) =>
+          Effect.annotateCurrentSpan({
+            "firegrid.durable_table.row_found": Option.isSome(row),
+          })),
+        Effect.withSpan("firegrid.durable_table.get", {
+          kind: "internal",
+          attributes: {
+            "firegrid.durable_table.name": tableName,
+            "firegrid.durable_table.collection": collection.collectionKey,
+            "firegrid.durable_table.durable_type": collection.durableType,
+            "firegrid.durable_table.primary_key": collection.primaryKey,
+          },
+        }),
+      ),
     query: (build) =>
       Effect.try({
         try: () => build(readableCollection),
         catch: (cause) => new DurableTableError({ table: tableName, cause }),
-      }),
+      }).pipe(
+        Effect.withSpan("firegrid.durable_table.query", {
+          kind: "internal",
+          attributes: {
+            "firegrid.durable_table.name": tableName,
+            "firegrid.durable_table.collection": collection.collectionKey,
+            "firegrid.durable_table.durable_type": collection.durableType,
+          },
+        }),
+      ),
     subscribe: <A>(
       subscribe: (
         coll: TanStackCollection<Row, string>,
@@ -870,7 +946,16 @@ const makeFacade = <Row extends object, Key>(options: {
         return Effect.sync(() => {
           if (unsubscribe !== undefined) unsubscribe()
         })
-      }),
+      }).pipe(
+        Stream.withSpan("firegrid.durable_table.subscribe", {
+          kind: "internal",
+          attributes: {
+            "firegrid.durable_table.name": tableName,
+            "firegrid.durable_table.collection": collection.collectionKey,
+            "firegrid.durable_table.durable_type": collection.durableType,
+          },
+        }),
+      ),
   }
 }
 
@@ -975,11 +1060,25 @@ const makeService = <Schemas extends TableSchemas<Schemas>>(
             try: () => db.utils.awaitTxId(txid, timeoutMs),
             catch: (cause) =>
               new DurableTableError({ table: table.namespace, cause }),
-          }),
+          }).pipe(
+            Effect.withSpan("firegrid.durable_table.await_tx_id", {
+              kind: "internal",
+              attributes: {
+                "firegrid.durable_table.namespace": table.namespace,
+              },
+            }),
+          ),
         ...collectionFacades,
       }
 
       return service as DurableTableService<Schemas>
+    }),
+    Effect.withSpan("firegrid.durable_table.layer.acquire", {
+      kind: "internal",
+      attributes: {
+        "firegrid.durable_table.namespace": table.namespace,
+        "firegrid.durable_table.collection_count": table.collections.length,
+      },
     }),
   )
 

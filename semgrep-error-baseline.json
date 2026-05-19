@@ -6,11 +6,6 @@
       "line": 150
     },
     {
-      "ruleId": "firegrid-no-date-now",
-      "path": "packages/runtime/src/workflow-engine/internal/engine-runtime.ts",
-      "line": 210
-    },
-    {
       "ruleId": "firegrid-no-random-durable-identity",
       "path": "packages/runtime/src/workflow-engine/DurableStreamsWorkflowEngine.ts",
       "line": 27

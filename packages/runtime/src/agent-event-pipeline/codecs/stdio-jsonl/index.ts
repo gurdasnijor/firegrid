@@ -235,7 +235,14 @@ const writeJsonLine = (
         }),
       writer => Effect.sync(() => writer.releaseLock()),
     )
-  })
+  }).pipe(
+    Effect.withSpan("firegrid.agent_event_pipeline.stdio_jsonl.send", {
+      kind: "producer",
+      attributes: {
+        "firegrid.agent_input.tag": event._tag,
+      },
+    }),
+  )
 
 const stdoutEvents = (
   stdout: ReadableStream<Uint8Array>,
@@ -248,7 +255,17 @@ const stdoutEvents = (
   }).pipe(
     Stream.decodeText(),
     Stream.splitLines,
-    Stream.map(decodeStdoutLine),
+    Stream.mapEffect(line =>
+      Effect.sync(() => decodeStdoutLine(line)).pipe(
+        Effect.tap(event =>
+          Effect.annotateCurrentSpan({
+            "firegrid.agent_output.tag": event._tag,
+          })),
+        Effect.withSpan("firegrid.agent_event_pipeline.stdio_jsonl.decode_line", {
+          kind: "consumer",
+        }),
+      )),
+    Stream.withSpan("firegrid.agent_event_pipeline.stdio_jsonl.stdout"),
   )
 
 const terminatedEvent = (
@@ -267,6 +284,9 @@ const terminatedEvent = (
           cause,
         ),
       ),
+      Effect.withSpan("firegrid.agent_event_pipeline.stdio_jsonl.exit", {
+        kind: "consumer",
+      }),
     ),
   )
 
@@ -281,6 +301,7 @@ const outputs = (
       stdoutEvents(bytes.stdout).pipe(
         Stream.merge(terminatedEvent(bytes)),
         Stream.takeUntil(event => event._tag === "Terminated"),
+        Stream.withSpan("firegrid.agent_event_pipeline.stdio_jsonl.outputs"),
       ),
     ),
   )
@@ -299,4 +320,6 @@ export const StdioJsonlSessionLive = (
       send: event => writeJsonLine(bytes.stdin, event),
       outputs: outputs(bytes),
     }),
+  ).pipe(
+    Layer.withSpan("firegrid.agent_event_pipeline.stdio_jsonl.layer"),
   )
