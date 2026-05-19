@@ -21,6 +21,7 @@ import {
 } from "effect-durable-operators"
 import type { DurableTableError } from "effect-durable-operators"
 import type { TinyFiregridSimulation, TinyFiregridSimulationEnv } from "./types.ts"
+import { fileURLToPath } from "node:url"
 
 /* eslint-disable local/no-fixed-polling -- firegrid-observability.TINY_FIREGRID_SIMULATIONS.1 public-client simulation observation backoff. */
 
@@ -224,6 +225,24 @@ interface PlannerProfile {
   readonly envPolicy: Layer.Layer<RuntimeEnvResolverPolicy>
 }
 
+// Additive: DARK_FACTORY_FORCE_TOOL_SHIM=1 wraps the planner argv with the
+// thin ACP forced-tool-call shim (node bin/acp-force-tool-shim.mjs). Default
+// off → argv unchanged. Substrate untouched; only the planner process is
+// interposed.
+const acpForceToolShimPath = fileURLToPath(
+  new URL("../bin/acp-force-tool-shim.mjs", import.meta.url),
+)
+
+const maybeWrapWithForceToolShim = (
+  processEnv: NodeJS.ProcessEnv,
+  argv: ReadonlyArray<string>,
+): ReadonlyArray<string> => {
+  const on = (processEnv.DARK_FACTORY_FORCE_TOOL_SHIM ?? "").trim()
+  return on === "1" || on.toLowerCase() === "true"
+    ? [globalThis.process.execPath, acpForceToolShimPath, "--", ...argv]
+    : argv
+}
+
 const selectPlannerProfile = (
   processEnv: NodeJS.ProcessEnv,
 ): PlannerProfile => {
@@ -233,7 +252,7 @@ const selectPlannerProfile = (
   if (selector === "codex-acp" || selector === "codex") {
     return {
       kind: "codex-acp",
-      argv: [...codexAcpArgv],
+      argv: maybeWrapWithForceToolShim(processEnv, [...codexAcpArgv]),
       agent: "codex-acp",
       envVarName: "OPENAI_API_KEY",
       envPolicy: darkFactoryCodexAcpEnvPolicy(processEnv),
@@ -241,7 +260,7 @@ const selectPlannerProfile = (
   }
   return {
     kind: "claude-agent-acp",
-    argv: [...claudeAcpArgv],
+    argv: maybeWrapWithForceToolShim(processEnv, [...claudeAcpArgv]),
     agent: "claude-acp",
     envVarName: "ANTHROPIC_API_KEY",
     envPolicy: darkFactoryClaudeAcpEnvPolicy(processEnv),
