@@ -283,13 +283,14 @@ export const makeWorkflowEngine = (
             if (result._tag !== "Suspended") return result
           }
 
+          const claimedAtMs = yield* Clock.currentTimeMillis
           const claim = yield* orDieTable(claimActivity({
             claimKey: activityKey,
             executionId: instance.executionId,
             activityName: activity.name,
             attempt,
             workerId,
-            claimedAtMs: Date.now(),
+            claimedAtMs,
           }))
           const completedAfterClaim = yield* orDieTable(table.activities.get(activityKey).pipe(
             Effect.map(Option.getOrUndefined),
