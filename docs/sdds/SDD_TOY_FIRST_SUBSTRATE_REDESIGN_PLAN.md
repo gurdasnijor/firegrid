@@ -11,7 +11,10 @@ public-surface exposure, not protocol mismatch. ACP and its SDK support
 `runtimeContextMcp` URL-less host injection is the intended public wiring; the
 missing seams are Firegrid public session load/wire-id handling, caller-owned
 fact waits, and live-host `execute`. Delegation is not a gap because
-`session_new` / `session_prompt` are the supported path.
+`session_new` / `session_prompt` are the supported path. Preconditions:
+real-agent `runtimeContextMcp` must reliably expose the Firegrid toolset to the
+agent before any agent-driven delegation, durable wait, or action slice can be
+trusted.
 
 ## 1. Invariants
 
@@ -47,11 +50,15 @@ fact waits, and live-host `execute`. Delegation is not a gap because
    cannot teach the toy to double-execute.
 4. **Observability.** Make transitions readable early; later capabilities must
    not add invisible state.
-5. **Action-and-remember.** Add the first side-effect-shaped behavior only after
+5. **Toolset visibility gate.** Before choreography-dependent work, run a
+   deterministic real-agent probe that distinguishes real runtime-context MCP
+   bridge-not-ready from the documented `.smoke`/CI-excluded Codex ACP flake
+   where a live LLM spuriously says the tool is unavailable.
+6. **Action-and-remember.** Add the first side-effect-shaped behavior only after
    facts, identity, idempotency, and observation exist.
-6. **Participant delegation.** Add child participant creation/addressing after
+7. **Participant delegation.** Add child participant creation/addressing after
    action memory so delegation does not need host-sdk-style hidden launch state.
-7. **Durable waits.** Add suspension last because it is the most likely place to
+8. **Durable waits.** Add suspension last because it is the most likely place to
    smuggle capture-and-replay. It must compose from facts, identity, triggers,
    actions, delegation, and observation.
 
@@ -104,14 +111,18 @@ above, stop. Do not continue to the next capability, do not patch around the
 type error, and do not widen an environment union. Reconsider the public
 primitive shape first.
 
-cca2's current smoke reinforces this gate: even the minimal ACP path can fail
-because expected Firegrid MCP tools are not available through the public route;
-`claude-agent-acp` reached `Ready` without observable tool/text, and the
-`zed` bridge was paused before conclusion. The toy must make these failures
-obvious as missing public primitives or bridge capability mismatches, not solve
-them by importing host internals. Session/load replay belongs to the tf-vao
-line: ACP replays conversation through `session/update` on load, but Firegrid
-does not yet expose public wire-sessionId/load.
+cca2's current smoke is ambiguous and must stay that way until the visibility
+gate runs: the existing Codex ACP sleep smoke also failed here with "Firegrid
+sleep MCP tool unavailable", but that can mean either a real runtime-context
+MCP bridge-readiness problem or the documented `.smoke`/CI-excluded Codex ACP
+failure mode where a live LLM spuriously says the tool is unavailable.
+`claude-agent-acp` reached `Ready` without observable tool/text, and the `zed`
+bridge was paused before conclusion. The toy must disambiguate with the
+deterministic probe, then make real bridge failures visible as missing public
+primitive/bridge capability, not solve them by importing host internals.
+Session/load replay belongs to the tf-vao line: ACP replays conversation
+through `session/update` on load, but Firegrid does not yet expose public
+wire-sessionId/load.
 
 ## 5. Stop Condition
 
@@ -125,3 +136,8 @@ pattern, hidden host import, broad deferred environment capture, eslint-disable,
 or private protocol state. That means the production substrate was load-bearing
 after all; pause the toy and ask Gurdas whether to expose the missing primitive
 or change the invariant.
+
+Separately escalate substrate readiness if the deterministic toolset-visibility
+probe cannot show that a real agent reliably sees the Firegrid toolset through
+`runtimeContextMcp`. That is not capture-and-replay accretion; it is a failed
+precondition for agent-driven capabilities.
