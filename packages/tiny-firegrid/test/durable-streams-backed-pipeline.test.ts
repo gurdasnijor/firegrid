@@ -141,6 +141,22 @@ const waitForMaterializedContext = (
     10_000,
   )
 
+const waitForIntent = (
+  control: ControlPlaneService,
+  session: FiregridSessionHandle,
+  intentId: string,
+) =>
+  firstWithinOrFail(
+    control.inputIntents.rows().pipe(
+      Stream.filter(row =>
+        row.contextId === session.contextId &&
+        row.intentId === intentId,
+      ),
+    ),
+    `intent ${intentId}`,
+    10_000,
+  )
+
 const waitForExitedRun = (
   control: ControlPlaneService,
   session: FiregridSessionHandle,
@@ -249,6 +265,83 @@ describe("tiny-firegrid durable-streams-backed pipeline", () => {
       result.session.contextId,
       result.session.contextId,
     ])
+  })
+
+  it("reconciles durable input written before the per-context engine is active", async () => {
+    if (baseUrl === undefined) throw new Error("server not started")
+
+    const durableStreamsBaseUrl = baseUrl
+    const namespace = `tiny-startup-reconcile-${crypto.randomUUID()}`
+
+    const materialized = await runWithPublicClient(({ control, firegrid }) => Effect.gen(function*() {
+      const session = yield* firegrid.sessions.createOrLoad({
+        externalKey: { source: "tiny-firegrid", id: "startup-reconcile" },
+        runtime: runtime(promptDrivenAgentScript(["reconciled"])),
+        createdBy: "tiny-firegrid",
+      })
+      yield* launchHost(tinyDurableStreamsBackedPipeline({
+        baseUrl: durableStreamsBaseUrl,
+        namespace,
+      }))
+      const context = yield* waitForMaterializedContext(control, session)
+      const snapshot = yield* session.snapshot()
+      return { context, session, snapshot }
+    }), { baseUrl: durableStreamsBaseUrl, namespace })
+
+    expect(materialized.context).toMatchObject({
+      contextId: materialized.session.contextId,
+    })
+    expect(materialized.snapshot.runs).toEqual([])
+    expect(materialized.snapshot.agentOutputs).toEqual([])
+
+    const queued = await runWithPublicClient(({ control, firegrid }) => Effect.gen(function*() {
+      const session = yield* firegrid.sessions.attach({
+        sessionId: materialized.session.sessionId,
+      })
+      const intent = yield* session.prompt({
+        payload: { type: "text", text: "queued while host is offline" },
+        idempotencyKey: "startup-reconcile-turn-1",
+      })
+      const observedIntent = yield* waitForIntent(control, session, intent.intentId)
+      const snapshot = yield* session.snapshot()
+      return { intent, observedIntent, session, snapshot }
+    }), { baseUrl: durableStreamsBaseUrl, namespace })
+
+    expect(queued.observedIntent).toMatchObject({
+      intentId: queued.intent.intentId,
+      contextId: materialized.session.contextId,
+      kind: "message",
+    })
+    expect(queued.snapshot.agentOutputs).toEqual([])
+
+    const reconciled = await runWithPublicClient(({ control, firegrid }) => Effect.gen(function*() {
+      const session = yield* firegrid.sessions.attach({
+        sessionId: materialized.session.sessionId,
+      })
+      const started = yield* session.start()
+      yield* launchHost(tinyDurableStreamsBackedPipeline({
+        baseUrl: durableStreamsBaseUrl,
+        namespace,
+      }))
+      const firstOutput = yield* session.wait.forAgentOutput({ timeoutMs: 10_000 })
+      yield* waitForExitedRun(control, session, 0)
+      const snapshot = yield* session.snapshot()
+      return { firstOutput, session, snapshot, started }
+    }), { baseUrl: durableStreamsBaseUrl, namespace })
+
+    expect(reconciled.started).toMatchObject({
+      contextId: materialized.session.contextId,
+      inserted: true,
+    })
+    expect(reconciled.firstOutput).toMatchObject({
+      matched: true,
+      output: {
+        contextId: materialized.session.contextId,
+        sequence: 0,
+      },
+    })
+    expect(textDeltas(reconciled.snapshot)).toEqual(["reconciled"])
+    expect(reconciled.snapshot.agentOutputs.map(row => row.sequence)).toEqual([0, 1])
   })
 
   it("restarts the host without duplicating completed output", async () => {
