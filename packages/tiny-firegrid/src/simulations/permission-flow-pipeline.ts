@@ -65,15 +65,27 @@ const claudeAcpArgv = [
   "@zed-industries/claude-code-acp@0.16.2",
 ] as const
 
-const promptForGatedToolCall = [
-  "You have a shell/Bash tool available in this ACP session.",
-  "Make EXACTLY ONE shell tool call: run the command",
-  "`echo FIREGRID_PERMISSION_PROBE`.",
-  "Do not read or write any files. Do not call any other tool, and do",
-  "not call any tool more than once.",
-  "After that single command's result returns, reply with exactly this",
-  "line and nothing else: FIREGRID_PERMISSION_RESULT done=true",
-].join("\n")
+// tf-e1d / tf-v2z: the prior probe (`echo FIREGRID_PERMISSION_PROBE`) is a
+// read-only command claude-code-acp AUTO-PERMITS in its default ACP
+// posture, so it never emits `session/request_permission` and the durable
+// human-gate round-trip is never exercised (the §413 keyed REAL finding).
+// Drive a genuinely permission-GATED operation instead: a state-changing
+// FILE WRITE, which Claude Code's default permission mode reliably gates
+// behind an approval request. Written to an absolute /tmp path so the
+// repo/worktree is not polluted and the op is unambiguously side-effecting.
+const permissionProbePath = (runId: string): string =>
+  `/tmp/firegrid_permission_probe_${runId.replace(/[^A-Za-z0-9_-]/g, "_")}`
+
+const promptForGatedToolCall = (runId: string): string =>
+  [
+    "You have a shell/Bash tool available in this ACP session.",
+    "Make EXACTLY ONE shell tool call that WRITES A FILE: run the command",
+    `\`printf 'FIREGRID_PERMISSION_PROBE' > ${permissionProbePath(runId)}\`.`,
+    "This is a state-changing file write and should require approval.",
+    "Do not call any other tool, and do not call any tool more than once.",
+    "After that single command's result returns, reply with exactly this",
+    "line and nothing else: FIREGRID_PERMISSION_RESULT done=true",
+  ].join("\n")
 
 const permissionFlowDriver = (
   env: TinyFiregridSimulationEnv,
@@ -107,7 +119,7 @@ const permissionFlowDriver = (
     })
 
     yield* session.prompt({
-      payload: promptForGatedToolCall,
+      payload: promptForGatedToolCall(env.runId),
       idempotencyKey: `${env.runId}:turn-1`,
     }).pipe(
       Effect.retry(
