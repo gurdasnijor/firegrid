@@ -49,13 +49,56 @@ export const localProcess = (
   config,
 })
 
+// tf-pgn (TFIND-054): `buildCommand` unsets ALL inherited host env, then
+// re-applies only this allow-list + explicit bindings. PATH alone is
+// insufficient for a packaged npx/node agent (e.g. claude-agent-acp run
+// via `npx`): npx/node resolution, cache, and tempfiles need HOME,
+// TMPDIR, and npm_config_* or the packaged agent mis-behaves. This is an
+// explicit, named, non-secret allow-list — NOT an arbitrary host-env
+// passthrough. Secrets stay out (they flow only through explicit
+// envBindings / RuntimeEnvResolverPolicy). `NODE_OPTIONS` is
+// deliberately excluded: it injects arbitrary node behavior into the
+// spawned agent and is not needed for npx/node resolution; a host that
+// needs it must bind it explicitly.
 const LOCAL_PROCESS_BASELINE_ENV_NAMES = [
+  // Executable + shell resolution (cross-platform).
   "PATH",
   "Path",
   "SystemRoot",
   "WINDIR",
   "PATHEXT",
   "COMSPEC",
+  "SHELL",
+  // Home / profile — node, npm, and npx read config + cache from here.
+  "HOME",
+  "USERPROFILE",
+  // Temp dirs — npx extracts/downloads packages here; node os.tmpdir().
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  // Benign identity — some node tooling requires a user/login name.
+  "USER",
+  "LOGNAME",
+  "USERNAME",
+  // Locale — some node CLIs misbehave with an unset locale.
+  "LANG",
+  "LC_ALL",
+  // Node module resolution / corporate TLS trust.
+  "NODE_PATH",
+  "NODE_EXTRA_CA_CERTS",
+  // npm/npx package resolution + cache (both casings npm emits).
+  "NPM_CONFIG_CACHE",
+  "npm_config_cache",
+  "NPM_CONFIG_PREFIX",
+  "npm_config_prefix",
+  "NPM_CONFIG_REGISTRY",
+  "npm_config_registry",
+  "NPM_CONFIG_USERCONFIG",
+  "npm_config_userconfig",
+  // XDG base dirs — used by some packaged node tools for cache/config.
+  "XDG_CACHE_HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
 ] as const
 
 export const localProcessSpawnEnvFromHostEnv = (
