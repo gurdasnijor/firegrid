@@ -3,6 +3,7 @@ import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
   local,
+  makeRuntimeLifecycleRequestRow,
   normalizeRuntimeIntent,
   type HostSessionRow,
 } from "@firegrid/protocol/launch"
@@ -12,7 +13,7 @@ import {
   type SandboxCommand,
   type SandboxProviderService,
 } from "@firegrid/runtime/sources/sandbox"
-import { type Context, Effect, Layer, Option, Schema } from "effect"
+import { type Context, Effect, Fiber, Layer, Option, Schema } from "effect"
 import {
   AgentToolHost,
   type AgentToolHostService,
@@ -288,11 +289,73 @@ const runtimeHostAgentToolHostService = (captured: {
         },
       }),
     ),
-  cancelSession: ({ toolUseId }) =>
-    unsupportedAgentTool(toolUseId, "session_cancel"),
-  closeSession: ({ toolUseId }) =>
-    unsupportedAgentTool(toolUseId, "session_close"),
+  // tf-auk Gap-3, Option A (Gurdas-approved): the durable
+  // session-lifecycle terminate request is appended on a COMMITTED
+  // control-intent path, mirroring how the client appends
+  // context/start requests OUTSIDE any workflow activity. The append is
+  // forked onto a daemon fiber (detached from the agent-tool-use
+  // activity scope) and joined, so it commits independently of the
+  // tool-use activity's (non-)completion or re-execution — then the
+  // out-of-activity control-request reconciler observes it. NOT a raw
+  // in-activity insert (the merged #393 FINDING's diagnosed failure).
+  cancelSession: ({ toolUseId, sessionId }) =>
+    appendCommittedLifecycleRequest(captured, {
+      contextId: sessionId,
+      lifecycle: "cancel",
+    }).pipe(
+      Effect.mapError(cause =>
+        toolExecutionFailed(toolUseId, "session_cancel", cause)),
+      Effect.withSpan("firegrid.host.agent_tool.session_cancel", {
+        kind: "internal",
+        attributes: {
+          "firegrid.context.id": sessionId,
+          "firegrid.agent_tool.tool_use_id": toolUseId,
+        },
+      }),
+    ),
+  closeSession: ({ toolUseId, sessionId }) =>
+    appendCommittedLifecycleRequest(captured, {
+      contextId: sessionId,
+      lifecycle: "close",
+    }).pipe(
+      Effect.mapError(cause =>
+        toolExecutionFailed(toolUseId, "session_close", cause)),
+      Effect.withSpan("firegrid.host.agent_tool.session_close", {
+        kind: "internal",
+        attributes: {
+          "firegrid.context.id": sessionId,
+          "firegrid.agent_tool.tool_use_id": toolUseId,
+        },
+      }),
+    ),
 })
+
+// Option A committed append: perform the durable lifecycle control-request
+// insert on a daemon fiber detached from the enclosing agent-tool-use
+// workflow activity, then join it. The write therefore commits like the
+// client's out-of-activity append (the demonstrably-correct path that the
+// control-request reconciler observes) rather than being entangled with an
+// activity that may never commit / is re-executed.
+const appendCommittedLifecycleRequest = (
+  captured: {
+    readonly controlTable: RuntimeControlPlaneTable["Type"]
+  },
+  request: {
+    readonly contextId: string
+    readonly lifecycle: "cancel" | "close"
+  },
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function*() {
+    const row = makeRuntimeLifecycleRequestRow({
+      contextId: request.contextId,
+      lifecycle: request.lifecycle,
+      requestedBy: "agent-tool",
+    })
+    const fiber = yield* captured.controlTable.lifecycleRequests
+      .insertOrGet(row)
+      .pipe(Effect.asVoid, Effect.forkDaemon)
+    yield* Fiber.join(fiber)
+  })
 
 const requireLocalContextWithHostCapabilities = (
   captured: {

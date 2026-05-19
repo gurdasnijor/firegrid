@@ -8,6 +8,18 @@ authority: bead `tf-jri` (decision) / `tf-auk` (implementation).
 Evidence: PR #393 (merged §8 Gap-3 artifact) +
 `docs/research/tf-4ni-session-lifecycle-unwind.FINDING.md`.
 
+> **POST-DECISION REFUTATION (tf-auk, 2026-05-19) — Option A
+> necessary-but-INSUFFICIENT; RE-DECISION PENDING.** Option A was built
+> faithfully (committed append detached from the tool-use activity via
+> forkDaemon+join). The `session-lifecycle-unwind` sim is **still RED**:
+> the host-seam-written lifecycle request remains invisible to the
+> reconciler (`lifecycle_request_count:0`) while client-written
+> context/start requests reconcile in the same run. The blocker is NOT
+> the activity-commit boundary — it is a host-seam→reconciler durable
+> visibility/materialization gap. See
+> `docs/research/tf-auk-optionA-insufficient.FINDING.md`. Substrate
+> recorded, NOT shipped as proven. HARD HALT — Gurdas re-decision needed.
+
 ## §0 — The load-bearing question (decide this first)
 
 **Where must the durable `session_cancel` / `session_close` terminal

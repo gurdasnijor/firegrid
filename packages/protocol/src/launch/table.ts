@@ -8,6 +8,7 @@ import {
   RuntimeControlRequestClaimRowSchema,
   RuntimeControlRequestCompletionRowSchema,
   RuntimeContextRequestRowSchema,
+  RuntimeLifecycleRequestRowSchema,
   RuntimeStartRequestRowSchema,
 } from "./control-request.ts"
 import {
@@ -175,6 +176,7 @@ const runtimeControlPlaneSchemas = {
   inputIntents: RuntimeInputIntentRowSchema,
   contextRequests: RuntimeContextRequestRowSchema,
   startRequests: RuntimeStartRequestRowSchema,
+  lifecycleRequests: RuntimeLifecycleRequestRowSchema,
   controlRequestClaims: RuntimeControlRequestClaimRowSchema,
   controlRequestCompletions: RuntimeControlRequestCompletionRowSchema,
 } as const
