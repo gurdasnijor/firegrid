@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Firegrid guardrail — the PRIMARY checkout must stay on `main`.
+#
+# Lane work belongs in a dedicated worktree (scripts/task-enter.sh). A lane
+# squatting the primary on its branch stranded decision state and produced
+# recurring concurrent-beads-sync races. The convention got forgotten; this
+# makes forgetting impossible.
+#
+# Detection is path-independent: a checkout is the primary iff its git-dir ==
+# git-common-dir (linked worktrees have a separate git-dir under
+# .git/worktrees/<name>). So this same hook is a no-op in every worktree and
+# only ever fires in the primary.
+#
+# Carve-out: the canonical beads-sync legitimately commits on `main` from the
+# primary (allowed — branch==main). For a deliberate br-owner/admin op on a
+# non-main primary, FIREGRID_ALLOW_PRIMARY=1 overrides it and is logged.
+set -u
+# Symlink-immune primary detection: compare git's RAW outputs (no cd/pwd —
+# resolving paths breaks under /tmp→/private/tmp etc. and fails OPEN).
+# Primary: --git-dir == --git-common-dir (both ".git"). Linked worktree:
+# --git-dir is .../.git/worktrees/<name>, --git-common-dir is .../.git.
+gd="$(git rev-parse --git-dir 2>/dev/null || true)"
+gc="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+[ -n "$gd" ] && [ -n "$gc" ] || exit 0
+
+if [ "$gd" = "$gc" ]; then                                # PRIMARY checkout
+  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+  if [ "$branch" != "main" ]; then
+    if [ "${FIREGRID_ALLOW_PRIMARY:-}" = "1" ]; then
+      logdir="$(git rev-parse --absolute-git-dir 2>/dev/null || echo .)"
+      printf '%s FIREGRID_ALLOW_PRIMARY override on branch=%s by=%s\n' \
+        "$(date -u +%FT%TZ)" "$branch" "$(git config user.email 2>/dev/null || echo unknown)" \
+        >> "$logdir/firegrid-primary-override.log" 2>/dev/null || true
+      echo "⚠ FIREGRID_ALLOW_PRIMARY: primary op on '$branch' permitted (logged)." >&2
+      exit 0
+    fi
+    echo "✋ BLOCKED: the primary checkout is on '$branch', not 'main'." >&2
+    echo "   Lane work goes in a worktree:" >&2
+    echo "     bash scripts/task-enter.sh <bead-id> <slug>" >&2
+    echo "   Deliberate br-owner/admin op only: FIREGRID_ALLOW_PRIMARY=1 (logged)." >&2
+    exit 1
+  fi
+fi
+exit 0

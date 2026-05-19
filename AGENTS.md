@@ -83,6 +83,45 @@ If the harness places you in a fresh worktree (`.claude/worktrees/<name>/`),
 the branch is auto-named `worktree-<name>`. Rename it before pushing if you
 want a more descriptive branch (`git branch -m worktree-foo opus/foo-pr1`).
 
+## Task lifecycle (worktree-enforced — use the wrappers)
+
+Lane work NEVER happens in the primary checkout. A lane squatting the
+primary on its branch stranded decision state and produced recurring
+concurrent-beads-sync races; the convention got forgotten, so it is now
+enforced structurally. Worktrees are siblings in `../firegrid-worktrees/`
+(NOT in-root — keeps the second tree out of pnpm-workspace / jscpd / knip /
+effect-quality / depcruise scanners; sibling = zero carve-outs).
+
+```bash
+bash scripts/task-enter.sh <bead-id> <slug> [--class codex|sidecar]
+  # → fresh worktree off origin/main at firegrid-worktrees/<bead>-<slug>,
+  #   branch <class>/<bead>-<slug>, bead → in_progress. Deterministic on the
+  #   bead id (lanes get renamed; beads don't).
+
+cd ../firegrid-worktrees/<bead>-<slug>      # work + commit ONLY here
+
+bash scripts/task-exit.sh <bead-id> [--decision <PR/SDD url>]
+  # → local beads flush, commit, PUSH (fails LOUD if push fails — no
+  #   silent stranded work), open/refresh PR, optional signoff:pending.
+  #   Does NOT push .beads/issues.jsonl (that races) and does NOT remove
+  #   the worktree (PR still in review).
+
+bash scripts/task-reap.sh [<branch>]        # after merge, from primary
+  # → removes ONLY clean+merged worktrees, deletes the branch, prunes,
+  #   and surfaces any bead still open for a merged branch. NEVER discards
+  #   dirty/unmerged work — it reports and keeps it.
+
+bash scripts/beads-sync.sh                  # THE canonical durable sync
+  # → lock-serialized (.beads/.sync.lock); the ONLY context that commits
+  #   + pushes .beads/issues.jsonl to origin/main. Lanes never do this.
+```
+
+**Guardrail:** `scripts/git-hooks/` + `scripts/install-git-hooks.sh` set
+`core.hooksPath` so a commit/push from the primary checkout while it is NOT
+on `main` is **blocked** (symlink-immune primary detection; no-op in every
+worktree). Deliberate br-owner/admin op: `FIREGRID_ALLOW_PRIMARY=1` (logged).
+The br-owner runs `install-git-hooks.sh` once in the primary to activate it.
+
 ## Effect / `@effect/*` Version Pins
 
 `packages/runtime/src/workflow-engine/internal/engine-runtime.ts` is written

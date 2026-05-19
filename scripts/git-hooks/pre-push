@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Same guardrail as pre-commit (primary must stay on main). pre-push receives
+# refs on stdin/args; the branch+primary check ignores them, so delegate.
+exec "$(dirname "$0")/pre-commit"
