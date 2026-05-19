@@ -180,6 +180,23 @@ const hostOwnedOutputLayer = (
       })),
   )
 
+// firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
+//
+// The host scope splits into two strata so the workflow/session layer
+// can self-discharge `RuntimeContextWorkflowSession` (RCWS):
+//
+//  - `hostInfra`  : the RCWS-FREE substrate the session layer itself
+//                   depends on (`PerContextRuntimeOutputWriter`,
+//                   `SandboxStdinEmissionClaim`, host-owned tables).
+//  - `agentToolHost`: `RuntimeHostAgentToolHostLive`, which captures the
+//                   ambient `… | RuntimeContextWorkflowSession` context
+//                   (TFIND-031 deferred re-provide) and therefore must be
+//                   layered ON TOP of the session layer, not beside it.
+//
+// Keeping `RuntimeHostAgentToolHostLive` out of `hostInfra` is what
+// breaks the previously-circular wiring (host scope needs RCWS, RCWS
+// needs host scope): only the agent-tool host needs RCWS, and neither
+// `PerContextRuntimeOutputWriter` nor `SandboxStdinEmissionClaim` does.
 const hostScopedLayer = (
   options: RuntimeHostTopologyOptions,
 ) => {
@@ -191,18 +208,18 @@ const hostScopedLayer = (
     hostOwnedOutputLayer(sharedOptions),
     hostOwnedSandboxCommandLayer(sharedOptions),
   )
-  const hostServices = Layer.mergeAll(
+  const hostInfra = Layer.mergeAll(
     PerContextRuntimeOutputWriterLive,
-    RuntimeHostAgentToolHostLive.pipe(
-      Layer.provide(RuntimeControlPlaneRecorderLive),
+    SandboxStdinEmissionClaimLive.pipe(
+      Layer.provideMerge(hostTables),
     ),
   ).pipe(
     Layer.provideMerge(hostTables),
   )
-  const stdinClaim = SandboxStdinEmissionClaimLive.pipe(
-    Layer.provideMerge(hostTables),
+  const agentToolHost = RuntimeHostAgentToolHostLive.pipe(
+    Layer.provide(RuntimeControlPlaneRecorderLive),
   )
-  return Layer.mergeAll(hostServices, stdinClaim)
+  return { hostInfra, agentToolHost }
 }
 
 // firegrid-host-surface (docs/sdds/SDD_FIREGRID_HOST_SURFACE.md)
@@ -241,10 +258,38 @@ export const FiregridRuntimeHostLive = (
 ) => {
   const session = currentHostSessionLayer(options)
   const namespaceScoped = namespaceScopedLayer(options)
-  const hostScoped = hostScopedLayer(options)
+  const { hostInfra, agentToolHost } = hostScopedLayer(options)
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
+  //
+  // RCWS self-discharge wiring (single shared instance set):
+  //  1. `innerBase` builds the RCWS-free substrate (`hostInfra`) wired with
+  //     its `CurrentHostSession` / `RuntimeHostConfig` / `SandboxProvider` /
+  //     `RuntimeEnvResolverPolicy` suppliers, so it is a fully-built input
+  //     to the session layer.
+  //  2. `rcwsWithInfra` runs `RuntimeContextWorkflowSessionLive` against
+  //     that base; `provideMerge` keeps the substrate visible while adding
+  //     RCWS to the output channel (RCWS no longer leaks into `RIn`).
+  //  3. `agentToolHostProvided` layers the RCWS-capturing agent-tool host
+  //     ON TOP of `rcwsWithInfra` (and the engine registry), so its ambient
+  //     `… | RuntimeContextWorkflowSession` requirement is discharged by the
+  //     same single RCWS instance.
+  //  4. The top reconciler/start/dispatcher services consume that fully
+  //     self-contained layer; the composite's `RIn` is `never` and its
+  //     `ROut` is unchanged (still provides `FiregridHost` + internals).
+  const innerBase = hostInfra.pipe(
+    Layer.provideMerge(namespaceScoped),
+    Layer.provideMerge(session),
+    Layer.provideMerge(envPolicy),
+  )
+  const rcwsWithInfra = RuntimeContextWorkflowSessionLive.pipe(
+    Layer.provideMerge(innerBase),
+  )
+  const agentToolHostProvided = agentToolHost.pipe(
+    Layer.provideMerge(RuntimeContextEngineRegistryLive),
+    Layer.provideMerge(rcwsWithInfra),
+  )
   return Layer.mergeAll(
     RuntimeInputIntentDispatcherLive,
     RuntimeStartCapabilityLive,
@@ -253,13 +298,8 @@ export const FiregridRuntimeHostLive = (
       ? []
       : [RuntimeControlRequestReconcilerDaemonLive]),
   ).pipe(
-    Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
-    Layer.provideMerge(hostScoped),
-    Layer.provideMerge(RuntimeContextEngineRegistryLive),
-    Layer.provideMerge(namespaceScoped),
-    Layer.provideMerge(session),
-    Layer.provideMerge(envPolicy),
+    Layer.provideMerge(agentToolHostProvided),
   )
 }
 

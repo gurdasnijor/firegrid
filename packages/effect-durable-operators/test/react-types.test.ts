@@ -2,10 +2,9 @@ import { eq } from "@tanstack/db"
 import { createElement } from "react"
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
-import { DurableTable, type DurableTableError } from "../src/index.ts"
+import { DurableTable } from "../src/index.ts"
 import {
   DurableTableProvider,
-  type DurableTableProviderProps,
   useDurableLiveQuery,
   useDurableTable,
   useDurableTableProviderStatus,
@@ -40,14 +39,16 @@ function Executions() {
 
 describe("DurableTable React surface", () => {
   it("effect-durable-operators.REACT.1 effect-durable-operators.REACT.3 effect-durable-operators.REACT.4 exposes typed subpath hooks", () => {
-    // TFIND-031 Cat C: with the curried `DurableTable`, `ReactWorkflowTable`
-    // is a precise self-typed tag, so React's `createElement` overload
-    // resolution can no longer infer the provider's `ROut`/`E` generics and
-    // falls back to `Layer<unknown, unknown, never>`. Pin the props type
-    // explicitly — the provider itself is generic and correct.
-    const app = createElement<
-      DurableTableProviderProps<ReactWorkflowTable, DurableTableError>
-    >(
+    // TFIND-044 (#348, merged): `DurableTableProvider` is now a
+    // single-generic `<E>` provider (`tables` is the erased
+    // `ReadonlyArray<AnyDurableTableTag>` seam; `layer` erases ROut).
+    // The explicit props pin #326 added (for the pre-#348 curried
+    // world) is unnecessary under the merged provider — drop it and
+    // let `createElement` infer (the working inference path; the
+    // explicit by-name path is the separately-tracked TFIND-050
+    // provider-erasure defect, decoupled from this keystone). #326
+    // rebase mechanical reconciliation; runtime assertion unchanged.
+    const app = createElement(
       DurableTableProvider,
       {
         fallback: null,
