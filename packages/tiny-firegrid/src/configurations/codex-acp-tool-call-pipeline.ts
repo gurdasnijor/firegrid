@@ -21,19 +21,10 @@ interface CodexAcpToolCallPipelineOptions {
   readonly envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>
 }
 
-export const codexAcpToolCallMcpUrl = (
-  input: {
-    readonly host: string
-    readonly port: number
-    readonly path: string
-    readonly contextId: string
-  },
-): string => {
-  const route = `${ensurePathInput(input.path).replace(/\/+$/, "")}/runtime-context/${
-    encodeURIComponent(input.contextId)
-  }`
-  return new URL(route, `http://${input.host}:${input.port}`).toString()
-}
+// TFIND-048: the pre-baked `codexAcpToolCallMcpUrl` helper was deleted.
+// The client no longer expresses the MCP URL; it sends the URL-less
+// `runtimeContextMcp` marker and the host injects the concrete
+// contextId-scoped URL at start from its own bound MCP listener.
 
 export const codexAcpOpenAiEnvPolicy = (
   env: NodeJS.ProcessEnv,

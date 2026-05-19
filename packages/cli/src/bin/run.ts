@@ -46,8 +46,6 @@ import type { DurableTableHeaders } from "@firegrid/protocol"
 import {
   decodeLaunchConfig,
   decodeLaunchSecretEnvCliValue,
-  firegridRuntimeContextMcpDeclaration,
-  injectLaunchMcpDeclaration,
   LaunchCliHelp,
   runtimeAgentProtocolValues,
   type LaunchConfig,
@@ -71,7 +69,6 @@ import {
   startRuntime,
 } from "@firegrid/host-sdk"
 import { Firegrid, FiregridConfig, FiregridLive, local } from "@firegrid/client-sdk/firegrid"
-import { sessionContextIdForExternalKey } from "@firegrid/protocol/session-facade"
 import { Cause, Console, Data, Effect, Either, Exit, Layer, Option, ParseResult } from "effect"
 
 class FiregridCliUsageError extends Data.TaggedError("FiregridCliUsageError")<{
@@ -205,9 +202,10 @@ const decodeCliRunConfig = (
 // firegrid-workflow-driven-runtime.PHASE_2_SYNC_RUN.8
 // CLI session identity. Each `firegrid run`/`start` invocation is a fresh
 // caller-owned session, so the externalKey id is a generated uuid; the
-// source distinguishes the two CLI entrypoints. contextId is derived
-// deterministically from the externalKey (the same derivation client-sdk
-// uses internally), which the caller needs up-front for MCP URL injection.
+// source distinguishes the two CLI entrypoints. TFIND-048: the CLI no
+// longer pre-derives the contextId to bake an MCP URL — the host owns
+// the runtime-context MCP URL and injects it post-materialization at
+// start. The CLI only expresses the URL-less marker.
 type CliExternalKey = { readonly source: string; readonly id: string }
 
 const cliExternalKey = (kind: "run" | "start"): CliExternalKey => ({
@@ -215,8 +213,15 @@ const cliExternalKey = (kind: "run" | "start"): CliExternalKey => ({
   id: crypto.randomUUID(),
 })
 
-const cliContextId = (externalKey: CliExternalKey): string =>
-  sessionContextIdForExternalKey(externalKey)
+// TFIND-048: the CLI requests the host-owned runtime-context MCP server
+// via the URL-less marker (replacing the deleted pre-`createOrLoad`
+// `injectLaunchMcpDeclaration`). Both `firegrid run` and `firegrid start`
+// attach it by default, mirroring the prior always-inject behavior; the
+// host resolves and injects the concrete contextId-scoped URL at start.
+const withRuntimeContextMcpMarker = (config: LaunchConfig): LaunchConfig => ({
+  ...config,
+  runtimeContextMcp: { enabled: true },
+})
 
 // sessions.createOrLoad expects `runtime: PublicLaunchRuntimeIntent`. The CLI
 // decodes a LaunchConfig from argv; the protocol-owned `local` builder
@@ -229,6 +234,7 @@ const launchConfigToPublicRuntimeIntent = (config: LaunchConfig) => {
     cwd: config.cwd,
     envBindings: config.envBindings,
     mcpServers: config.mcpServers,
+    runtimeContextMcp: config.runtimeContextMcp,
   }
   const present = Object.fromEntries(
     Object.entries(optional).filter((entry) => entry[1] !== undefined),
@@ -374,12 +380,11 @@ const seedContextAndPrintReady = (
 ) =>
   Effect.gen(function* () {
     const externalKey = cliExternalKey("start")
-    const contextId = cliContextId(externalKey)
     const address = yield* HttpServer.addressFormattedWith((addr) => Effect.succeed(addr))
-    const runConfig = injectLaunchMcpDeclaration(
-      config.runConfig,
-      firegridRuntimeContextMcpDeclaration(mcpUrl(address, config.mcpPath, contextId)),
-    )
+    // TFIND-048: express the URL-less marker; the in-process host injects
+    // the concrete contextId-scoped URL at start. No pre-`createOrLoad`
+    // injection, no contextId pre-derivation.
+    const runConfig = withRuntimeContextMcpMarker(config.runConfig)
     // `firegrid start` seeds the session and keeps the host alive for MCP
     // clients; it does not run to completion (no session.start()).
     const firegrid = yield* Firegrid
@@ -471,16 +476,14 @@ const runWithMcp = (
         runConfig: config,
       }
       const context = yield* Layer.build(hostMcpLayer(durableStreams, hostConfig))
-      const address = yield* HttpServer.addressFormattedWith((addr) => Effect.succeed(addr)).pipe(
-        Effect.provide(context),
-      )
       const externalKey = cliExternalKey("run")
-      const contextId = cliContextId(externalKey)
-      const normalized = injectLaunchMcpDeclaration(
-        config,
-        firegridRuntimeContextMcpDeclaration(mcpUrl(address, hostConfig.mcpPath, contextId)),
-      )
-      return yield* executeRun(normalized, externalKey).pipe(
+      // TFIND-048: express the URL-less marker; the in-process host
+      // injects the concrete contextId-scoped URL at start. No
+      // pre-`createOrLoad` injection, no contextId pre-derivation.
+      return yield* executeRun(
+        withRuntimeContextMcpMarker(config),
+        externalKey,
+      ).pipe(
         Effect.provide(context),
       )
     }),
