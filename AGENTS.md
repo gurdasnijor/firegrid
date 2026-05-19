@@ -183,6 +183,16 @@ construction; the only valid idle-on-purpose is an audited
 `DISPATCH_GAP_PARKED="lane:reason …"` override. Full contract:
 `docs/contributing/beads-operating-guide.md` → Dispatch gap.
 
+**Push detection (`scripts/state-watch.sh`):** the pull tools above only
+help when run. `state-watch.sh --once` is the edge-triggered detector —
+diffs structured state vs a per-machine snapshot and emits only deltas
+(`signoff_new`/`closed`/`unblocked`/`lane_idle`/`gap_open`), exit 3 on
+change. Run by an *external* cron (deterministic — no LLM) with
+`--notify <coord-surface>` to ping the coordinator the moment a lane
+goes idle or a decision is needed, instead of waiting for its next
+sweep. Full model: `docs/contributing/beads-operating-guide.md` →
+Push detection.
+
 **Lane labels are the short tab names** (`coordinator`, `oca1`, `oca2`,
 `cca1`, `cca2`). These double as the beads join key.
 

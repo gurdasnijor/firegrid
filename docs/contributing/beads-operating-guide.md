@@ -213,6 +213,50 @@ this and `cmux send`s the coordinator on exit 3) — self-policing repeats the
 failure. The cadence gate (`dispatch-gap.sh || don't-report-clear`) is a
 tripwire, not enforcement.
 
+## Push detection (state-watch — edge-triggered, prevents sticking)
+
+`lane-sweep` / `signoff-queue` / `dispatch-gap` are all **pull** (level-
+triggered) — they only help when the coordinator runs them, so a tunneled
+coordinator means lanes stay stuck until its next sweep. `state-watch.sh` is
+the **push** (edge-triggered) layer: it runs *external* to the coordinator
+and pings only when state actually moves.
+
+```bash
+bash scripts/state-watch.sh --once                       # print deltas since last check
+bash scripts/state-watch.sh --once --json
+bash scripts/state-watch.sh --once --notify surface:153 --workspace workspace:2
+```
+
+How it works:
+
+1. **Snapshot** — structured only: `.beads/issues.jsonl` (status / signoff /
+   dependency edges) + `dispatch-gap.sh --json` + `lane-sweep.sh --json`.
+2. **Diff** vs the previous snapshot (per-machine watcher memory at
+   `${XDG_STATE_HOME:-$HOME/.local/state}/firegrid-state-watch/`, outside the
+   repo).
+3. **Classify edges:** `signoff_new` (decision now needed), `closed`
+   (decision/work landed → check unblocks), `unblocked` (freshly
+   dispatchable), `lane_idle` (a lane went `running:true→false` — the
+   stuck/done-and-silent signal), `gap_open` (dispatch gap opened).
+4. **Exit 3** on any delta (the primitive a runner gates on), `0` otherwise.
+   With `--notify <surface>` it `cmux send`s the coordinator **only on a
+   delta** — signal, not periodic noise it learns to ignore.
+
+It never mutates or auto-acts — it detects and notifies. It is correct
+*because* it is external to the coordinator: pull fails on coordinator
+vigilance; this does not depend on it.
+
+**Making it live (the runner).** The detector is fully deterministic — **no
+LLM needed** — so the runner is plain **cron**, not a `loop`/`schedule` skill
+(those burn tokens wrapping a deterministic script). A crontab entry every
+~3 min runs `state-watch.sh --once --notify <coord> --workspace <ws>` with
+absolute binary paths, `HOME` set, and a lockfile (cron has a minimal env;
+no `CMUX_WORKSPACE_ID`, hence the explicit `--workspace`). v1 pings the
+coordinator on every delta; v2 (a persistence counter → escalate to the
+human if the same delta is unactioned across K checks) is the next
+increment. Until the cron is installed, run `state-watch.sh --once`
+manually alongside each sweep.
+
 ## When something looks empty or wrong
 
 1. Don't suppress stderr. Re-run without `2>/dev/null` and read the error.
