@@ -14,9 +14,11 @@ Related:
 - ACP Session Setup: <https://agentclientprotocol.com/protocol/session-setup>
 - cca2 / PR #365 dark-factory smoke, TFIND-055 classification: (b) narrow
   public surface-exposure gap
-- oca3 bead `tf-7dq`: active §6 dark-factory Claude-ACP startup halt work
-  (expressed -> running), which is resolving the same adapter session recovery
-  seam framed here
+- oca3 bead `tf-c8w`: active §6 dark-factory proof harness, converging
+  the same adapter session recovery seam framed here
+- PR #398 live §6 dark-factory investigation: external model quota and
+  observability explained the earlier non-running symptom; the durable
+  substrate/model/choreography path was not disproved by that run
 
 ## §0 -- The load-bearing question, read this first
 
@@ -39,10 +41,16 @@ capabilities, but a `persistent:false` ACP agent still needs a public, durable
 protocol path for recovery when a synchronous MCP call outlives the original
 agent process.
 
-`tf-7dq` is the active implementation/proof lane for the same seam: the §6
-dark-factory Claude-ACP startup halt is the bottom-up symptom of adapter session
-ownership and recovery not yet being proved end-to-end. This SDD should converge
-with that lane rather than spawn a duplicate solution track.
+`tf-c8w` is the active proof-harness lane for the same seam. The live §6
+investigation captured in PR #398 changes the evidence posture: the earlier
+non-running symptom was explained by an external model quota edge plus a precise
+observability gap, not by a demonstrated failure of the durable substrate. The
+run showed the external model edge working once quota was available, the planner
+authoring the §6 choreography, and durable waits/workflow-deferred machinery
+running under the live agent; the remaining proof gap is observing a correct
+durable suspension/result path clearly enough to make ACP adapter recovery
+falsifiable. This SDD should converge with `tf-c8w` rather than spawn a duplicate
+solution track.
 
 Delegation is **not** one of the three blocking gaps. The factory planner can
 delegate with `session_new` plus `session_prompt`; `spawn`/`spawn_all` may be
@@ -94,6 +102,24 @@ asserts `newSession` lowering with MCP server declarations
 (`packages/runtime/test/codecs/acp/index.test.ts:332-385`). That is valid
 coverage for current launch behavior; it does not prove restart/reload
 semantics.
+
+### 1a. Live §6 proof evidence: #398 / `tf-c8w` narrows the blocker
+
+The live §6 dark-factory investigation in PR #398 is important because it
+prevents over-reading the earlier Claude-ACP startup halt as a substrate failure.
+With quota available, the external model edge produced no `agentError`, the real
+planner authored the expected §6 choreography, and the durable substrate path
+(`wait_for`, wait router, workflow-deferred machinery) ran under a live agent.
+The remaining evidence gap was observability: the run could not assert the
+correct durable suspension/result lifecycle clearly enough because the relevant
+tool-use arguments were captured as `{}` in the trace evidence.
+
+That means §0 should not reopen caller-fact waits or `execute`, and should not
+reclassify delegation as missing. The remaining load-bearing question is the
+ACP adapter recovery contract: after live owner loss, can Firegrid recover,
+classify, resume, or terminalize the adapter session and its in-flight
+choreography turn through the public Firegrid session surface? `tf-c8w` is the
+active proof harness for making that question falsifiable.
 
 ### 2. RESOLVED by PR #383: `wait_for` can wait on caller-owned facts
 
@@ -373,9 +399,9 @@ inputs rather than duplicate work:
    lifecycle. It may block only under an adapter profile Firegrid can reattach
    and prove; otherwise the public contract must surface a durable
    terminal/recovered result path rather than depending on a live process.
-5. The `tf-7dq` §6 Claude-ACP startup halt investigation and this SDD converge
-   on the same adapter recovery seam, so implementation evidence from `tf-7dq`
-   updates this decision packet instead of creating a parallel solution.
+5. The `tf-c8w` §6 proof harness and this SDD converge on the same adapter
+   recovery seam, so implementation evidence from `tf-c8w` updates this
+   decision packet instead of creating a parallel solution.
 6. Delegation tests continue to use `session_new` / `session_prompt` as the
    factory path, so the implementation does not accidentally broaden this SDD
    into a spawn/spawn_all redesign.
