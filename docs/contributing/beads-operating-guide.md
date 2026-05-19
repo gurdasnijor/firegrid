@@ -176,6 +176,43 @@ under-weights a transitively-load-bearing keystone. Order: `keystone` label →
 `jq` over `issues.jsonl` is one of the two first-class surfaces — not an
 exception. Only ad-hoc `br … --json` is prohibited.
 
+## Dispatch gap (idle-by-neglect enforcement)
+
+The other coordinator failure mode: ready work goes unassigned while lanes
+sit idle, because coordinator attention tunnels on forensics/keystone. Same
+class as the signoff loop — a job that survives being neglected because
+nothing structurally forbids it. The fix is the same shape: make the gap an
+exit-code primitive, not a vibe.
+
+```bash
+bash scripts/dispatch-gap.sh            # human report + exit code
+bash scripts/dispatch-gap.sh --json     # structured
+```
+
+Inputs are both already structured: `lane-sweep --json` (idle worker lanes =
+`running==false AND beads==0`) × `br ready` (ready ⇒ already unblocked ⇒
+keystone-independent; filter `assignee==null`). The **exit code is the
+contract**:
+
+- `exit 0` — no idle lane, or no unassigned ready work. OK to report status.
+- `exit 3` — DISPATCH GAP: idle capacity coexists with unassigned ready work.
+
+**Invariant:** a coordinator status that claims "lanes correctly idle /
+parked" while `dispatch-gap.sh` exits 3 is invalid by construction. Either
+assign before reporting, or record an audited per-lane override:
+
+```bash
+DISPATCH_GAP_PARKED="oca1:forensics cca1:reserved" bash scripts/dispatch-gap.sh
+```
+
+It **never auto-assigns** (wrong-lane work is worse than the gap) — it refuses
+to let the gap hide. The hard signal is `running`; `beads==0` is soft and
+depends on the `--assignee` tagging discipline, so the durable enforcement is
+an *external* watcher (a `loop`/cron independent of the coordinator that runs
+this and `cmux send`s the coordinator on exit 3) — self-policing repeats the
+failure. The cadence gate (`dispatch-gap.sh || don't-report-clear`) is a
+tripwire, not enforcement.
+
 ## When something looks empty or wrong
 
 1. Don't suppress stderr. Re-run without `2>/dev/null` and read the error.

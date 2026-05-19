@@ -175,6 +175,14 @@ query — PRs not yet beaded (framing PRs queued for signoff) appear there, not
 here. Run it on a cadence rather than waiting for a `cmux send` that may never
 come.
 
+**Dispatch-gap gate (every cycle, after lane-sweep):** run
+`bash scripts/dispatch-gap.sh`. Exit 3 = idle worker lane(s) coexist with
+unassigned ready work — **assign before reporting status**. A status that
+claims lanes are "correctly idle/parked" while this exits 3 is invalid by
+construction; the only valid idle-on-purpose is an audited
+`DISPATCH_GAP_PARKED="lane:reason …"` override. Full contract:
+`docs/contributing/beads-operating-guide.md` → Dispatch gap.
+
 **Lane labels are the short tab names** (`coordinator`, `oca1`, `oca2`,
 `cca1`, `cca2`). These double as the beads join key.
 
