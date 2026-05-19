@@ -1,8 +1,7 @@
 # SDD: Durable Agent-Driven Choreography Surface
 
 Status: framing draft -- architect-gated. Gurdas decides §0. This is an
-SDD-only PR; no implementation code, no bead claim, and no merge without
-coordinator signoff.
+SDD-only PR; no implementation code, and no merge without coordinator signoff.
 
 Related:
 
@@ -15,33 +14,35 @@ Related:
 - ACP Session Setup: <https://agentclientprotocol.com/protocol/session-setup>
 - cca2 / PR #365 dark-factory smoke, TFIND-055 classification: (b) narrow
   public surface-exposure gap
+- oca3 bead `tf-7dq`: active §6 dark-factory Claude-ACP startup halt work
+  (expressed -> running), which is resolving the same adapter session recovery
+  seam framed here
 
 ## §0 -- The load-bearing question, read this first
 
-**How should Firegrid expose the durable agent-driven choreography surface so a
-real tool-use agent can choreograph the factory loop entirely through the public
-surface?**
+**How should Firegrid expose ACP adapter session recovery so a real tool-use
+agent can durably suspend, recover, and resume choreography through the public
+Firegrid session surface after live process loss?**
 
-Coordinator recommendation: expose one public, durable choreography seam over
-three coupled gaps:
+Gurdas-gated coordinator recommendation: keep the public contract centered on
+Firegrid session identity plus typed promptability/recovery state, while the
+runtime privately persists enough adapter identity and reattach profile to use
+ACP `session/load` or `session/resume` when the adapter supports it. Do not
+expose raw ACP wire session ids as the public control contract.
 
-1. **Adapter session recovery seam:** Firegrid must persist enough adapter
-   session identity and reattach profile to recover an ACP-backed session via
-   protocol `session/load` or `session/resume`, while exposing only Firegrid
-   session identity, live-promptability, and typed not-live/recovered states to
-   apps and agents. Do not expose raw ACP wire session ids as the public control
-   contract.
-2. **Caller-owned fact wait seam:** `wait_for` must be able to target
-   declared caller-owned durable facts/projections, not only built-in
-   `RuntimeRun` and `AgentOutput` streams. The Firegrid shape should be typed
-   EventPlane/DurableTable projection waits, not Fireline's generic channel
-   registry copied wholesale.
-3. **Durable execute seam:** the advertised `execute` tool must lower through
-   a host-owned durable execution target registry with claim/terminal records,
-   or be removed from the public tool catalog until it is real. For dark
-   factory readiness, the recommendation is to implement the seam, because the
-   planner needs a public way to invoke named execution targets without
-   reaching past the facade.
+This is now the single open dark-factory public-surface blocker from the original
+three-gap packet. The other two gaps were closed after this SDD was first
+written: PR #383 added typed `CallerFact` waits, and PR #388 landed the durable
+`execute` side-effect seam. Those resolved facts sharpen rather than broaden the
+question: the factory loop can now wait on caller-owned facts and execute bounded
+capabilities, but a `persistent:false` ACP agent still needs a public, durable
+protocol path for recovery when a synchronous MCP call outlives the original
+agent process.
+
+`tf-7dq` is the active implementation/proof lane for the same seam: the §6
+dark-factory Claude-ACP startup halt is the bottom-up symptom of adapter session
+ownership and recovery not yet being proved end-to-end. This SDD should converge
+with that lane rather than spawn a duplicate solution track.
 
 Delegation is **not** one of the three blocking gaps. The factory planner can
 delegate with `session_new` plus `session_prompt`; `spawn`/`spawn_all` may be
@@ -94,39 +95,50 @@ asserts `newSession` lowering with MCP server declarations
 coverage for current launch behavior; it does not prove restart/reload
 semantics.
 
-### 2. `wait_for` cannot wait on caller-owned durable facts
+### 2. RESOLVED by PR #383: `wait_for` can wait on caller-owned facts
 
-The public agent-tool schema intentionally narrowed `RuntimeWaitSource` to the
-first supported set: `AgentOutput` and `RuntimeRun` only
-(`packages/protocol/src/agent-tools/schema.ts:92-108`). The lowering rejects
-invalid predicates and then calls `WaitFor.match` with that built-in source
-(`packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts:174-255`).
+This section is no longer an open gap. PR #383 (`tf-0du`) added the typed
+`CallerFact` source to `RuntimeWaitSource`: `AgentOutput` and `RuntimeRun` remain
+runtime-owned observations, while `CallerFact` names a caller-owned durable fact
+stream by stable `stream` name
+(`packages/protocol/src/agent-tools/schema.ts:92-123`). The runtime wait streams
+layer now has an optional `CallerOwnedFactStreams` host-composition capability
+that resolves that stream name to a concrete durable observation stream
+(`packages/runtime/src/durable-tools/internal/runtime-wait-streams.ts:40-75`),
+and the wait router dispatches the `CallerFact` variant rather than rejecting it
+(`packages/runtime/src/durable-tools/internal/wait-router.ts:104-108`).
 
-That is the right typed direction from
-`SDD_FIREGRID_TYPED_WAIT_SOURCE_REDESIGN.md`, but it is insufficient for the
-factory loop. The planner needs to wait on app-owned facts such as "Linear
-plan approval resolved", "provider callback received", or "factory run phase
-terminalized". Those are not necessarily `AgentOutput` rows and should not be
-smuggled into agent output just to make `wait_for` see them.
+The residual design constraint remains useful but is not a blocker for §0: the
+agent-facing surface carries a typed source discriminator and a stream name, not
+a DurableTable facade or an arbitrary string channel registry. That preserves the
+ownership frame from `SDD_FIREGRID_TYPED_WAIT_SOURCE_REDESIGN.md` while letting
+the factory planner wait on app-owned facts such as human approvals, provider
+callbacks, and factory phase projections.
 
-This also explains why TFIND-053 was retracted: the missing thing is not a
-separate agent read API. The intended action surface is public `sessions.*`
-plus the runtime-context MCP toolset. The actual gap is that this toolset does
-not yet expose caller-owned durable fact waits.
+This also explains why TFIND-053 was retracted: the missing thing was not a
+separate agent read API. The intended action surface is public `sessions.*` plus
+the runtime-context MCP toolset. With `CallerFact` in place, caller-owned durable
+fact waits are no longer the open dark-factory blocker.
 
-### 3. `execute` is exposed but not live-host implemented
+### 3. RESOLVED by PR #388: `execute` has a live durable side-effect seam
 
-`execute` appears in the protocol operation catalog
-(`packages/protocol/src/agent-tools/schema.ts:638-650`) and the tool dispatcher
-accepts `"execute"` (`packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts:632-635`).
+This section is no longer an open gap. PR #388 (`tf-i20`) replaced the stale
+"catalog only" state with a live host-owned execution seam. The protocol still
+advertises `execute` as a sandbox-neutral operation
+(`packages/protocol/src/agent-tools/schema.ts:510-587`), and the dispatcher still
+routes the tool to `AgentToolHost`
+(`packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts:461-477` and
+`:632-635`). The live host now implements `executeSandboxTool` and
+`executeSessionCapability` through `runProviderExecute`
+(`packages/host-sdk/src/host/agent-tool-host-live.ts:106-156` and `:243-269`)
+instead of returning `unsupportedAgentTool` for the execute paths.
 
-The live runtime host returns unsupported for both sandbox and session-capability
-execute paths (`packages/host-sdk/src/host/agent-tool-host-live.ts:128-131`).
-That makes `execute` a public affordance without a production-backed durable
-side-effect path. For factory readiness, this is a surface-exposure gap, not a
-reason to reframe delegation: `session_new` and `session_prompt` are the
-delegation tools that matter for the factory loop, while `execute` is the
-named execution target seam.
+The residual nuance is capability availability, not public-surface absence: a
+host composition still needs a `SandboxProvider`/capability to execute against,
+and absence fails as a typed tool execution failure
+(`packages/host-sdk/src/host/agent-tool-host-live.ts:123-131`). That is the
+right narrowed boundary for factory readiness: `execute` is a bounded advertised
+capability path, not arbitrary provider access and not a delegation substitute.
 
 ## §2 -- Top-Down RFC Guarantee Shortfalls
 
@@ -182,10 +194,10 @@ are durable waits, where the UI observes projections and appends decisions
 (`:106-125`), and the waiting operation resumes by durable state observation
 rather than private callback (`:226-245`).
 
-Firegrid satisfies part of this for runtime-owned events, but not for
-caller-owned factory facts through the public `wait_for` tool. The planner
-cannot express "wait until this app-owned approval/projection row appears" as
-a first-class public durable wait today.
+Firegrid now satisfies this for caller-owned factory facts through the typed
+`CallerFact` source added in PR #383. The remaining gap is not fact-wait
+expressiveness; it is recovering the live adapter/tool-use session that issued
+the wait when the original ACP process is gone.
 
 ### Choreography-first application layer
 
@@ -197,10 +209,10 @@ Each primitive must append durable trace/session records before suspension,
 fanout, or external work, and must be observable by humans and agents through
 stream-derived observation.
 
-Firegrid currently exposes much of the tool vocabulary, but the durable
-agent-driven seam is incomplete across the three gaps above. The public
-surface lets host code choreograph; it does not yet let a real tool-use agent
-choreograph the whole factory loop without relying on live-process continuity
+Firegrid currently exposes much of the tool vocabulary, and PR #383/#388 closed
+the caller-fact wait and execute surface gaps. The durable agent-driven seam is
+still incomplete at adapter session recovery: the public surface must let a real
+tool-use agent continue choreography without relying on live-process continuity
 or app/private reach-pasts.
 
 ## §3 -- Firegrid-Specific Alignment Needed In The RFC Frame
@@ -212,17 +224,17 @@ Firegrid's chosen substrate vocabulary before implementation:
    factory path can use `session_new` / `session_prompt`. Treat delegation as
    satisfied for this SDD unless a later product requirement needs batch
    fanout ergonomics.
-2. **State wait vocabulary:** the RFC's `state.changes(query)` should map to
-   declared Firegrid EventPlane/DurableTable projections. Do not copy
-   Fireline's broad stringly channel registry into Firegrid's public protocol.
+2. **State wait vocabulary:** PR #383 mapped the RFC's `state.changes(query)`
+   shape to declared caller-owned fact streams via typed `CallerFact`; do not
+   copy Fireline's broad stringly channel registry into Firegrid's public
+   protocol.
 3. **Session recovery vocabulary:** ACP now distinguishes `loadSession` for
    `session/load` and `sessionCapabilities.resume` for `session/resume`.
    Firegrid should store adapter capabilities and profile decisions, while
    public clients/agents use Firegrid session identity and promptability state.
-4. **Execute vocabulary:** the RFC's `execute(sandbox, input)` must become a
-   Firegrid host-policy target. The public target name must resolve through a
-   declared capability or sandbox registry with durable claim/terminal records,
-   not an arbitrary process escape hatch.
+4. **Execute vocabulary:** PR #388 made the RFC's `execute(sandbox, input)` a
+   Firegrid host-policy target. The remaining alignment point is to keep it as a
+   bounded capability/sandbox path, not an arbitrary process escape hatch.
 5. **Trace vocabulary:** Firegrid may use existing runtime output, durable
    wait, and session projection rows rather than introducing a separate
    Fireline-style `agent.suspended` row name, but the observable lifecycle must
@@ -318,63 +330,58 @@ suspension sentinel and later re-enter the session with the result, or block
 only under an adapter profile that Firegrid can actually reattach and prove.
 Silent live-process dependence is not an acceptable contract.
 
-### Gap B: caller-owned DurableTable/EventPlane waits
+### Resolved Gap B: caller-owned durable fact waits
 
-**B1. Add arbitrary source strings to `wait_for`.** Rejected. This recreates
-the registry shape that `SDD_FIREGRID_TYPED_WAIT_SOURCE_REDESIGN.md` rejected.
+PR #383 chose the B3-shaped direction: `RuntimeWaitSource` now includes typed
+`CallerFact` sources resolved by host-composed caller-owned fact streams. The
+original rejected options still stand as guardrails: do not add arbitrary source
+strings, and do not force factory facts into `AgentOutput`.
 
-**B2. Force factory facts into `AgentOutput`.** Rejected. It would make agent
-output a dumping ground for app-owned provider facts and blur ownership.
+This resolved gap should not remain in §0. It is evidence that the decomposition
+was right, and that the remaining decision can focus narrowly on ACP adapter
+session recovery.
 
-**B3. Extend `RuntimeWaitSource` with declared caller-owned projection
-sources.** Recommended. The app/host should declare public waitable sources
-for its EventPlane or DurableTable projections. Agent-facing `wait_for` should
-continue using schema-backed discriminated variants, with field predicates
-restricted to declared scalar/indexed fields and snapshot-first wait semantics.
+### Resolved Gap C: `execute`
 
-The design should preserve the current good part of `wait_for`: typed source
-variants and invalid-input rejection. It should widen the source family, not
-fall back to open-ended channel names.
+PR #388 landed the C3-shaped direction additively: live host `execute` resolves
+through a bounded sandbox/provider or session capability seam and reports typed
+failures when no capability is composed. The original rejected options still
+stand as guardrails: do not treat `execute` as delegation, and do not make it an
+arbitrary provider escape hatch.
 
-### Gap C: `execute`
-
-**C1. Remove `execute` from the public tool catalog until implemented.**
-Acceptable as a short-term honesty fix, but it leaves the factory planner
-without the named execution seam the RFC expects.
-
-**C2. Treat `execute` as an alias for `session_prompt`.** Rejected. Delegation
-and execution are different capabilities. A child session is an agent
-conversation; execute is a named target/tool/sandbox side effect with its own
-claim, policy, and terminal result.
-
-**C3. Implement host-owned durable execute target registry.** Recommended.
-`execute` should resolve a named target through host policy, claim externally
-visible work before side effects, dispatch the sandbox/tool capability, and
-append durable success/failure/timeout/cancel records. The returned tool
-result should be derived from that durable terminal state. This can borrow
-Fireline's "Call through registry" idea without importing its generic channel
-shape.
+This resolved gap should not remain in §0 either. The open follow-up is only how
+ACP-backed agent sessions survive owner loss and resume/terminalize the
+choreography turn through Firegrid's public session surface.
 
 ## §6 -- Acceptance Bar For The Follow-Up Implementation
 
-The implementation that follows this framing should prove these behaviors:
+The implementation that follows this framing should prove the still-open
+adapter recovery behaviors, and should treat the resolved wait/execute seams as
+inputs rather than duplicate work:
 
 1. An ACP adapter that advertises `loadSession: true` can be cold-restarted,
    loaded by protocol session id, replay session updates, and expose a
    recovered Firegrid promptable state without exposing raw ACP ids to app
    code as the control surface.
-2. An ACP adapter that does not support load/resume cannot be treated as
+2. An ACP adapter that advertises `sessionCapabilities.resume` can reconnect
+   through ACP `session/resume` when its negotiated profile makes that sound,
+   and Firegrid records the resulting promptability/recovery state durably.
+3. An ACP adapter that does not support load/resume cannot be treated as
    promptable after owner loss; Firegrid emits a typed not-live or terminal
    recovery record before accepting new prompt/tool work against that session.
-3. A `wait_for` tool call can wait on a declared caller-owned factory
-   fact/projection, with snapshot-first behavior and timeout terminal state
-   derived from durable rows.
-4. `execute` either has a real host-owned durable implementation with
-   claim-before-side-effect semantics, or the public catalog stops advertising
-   it for the runtime-context toolset.
-5. Delegation tests continue to use `session_new` / `session_prompt` as the
+4. A long-running MCP tool call has an explicit durable suspension/recovery
+   lifecycle. It may block only under an adapter profile Firegrid can reattach
+   and prove; otherwise the public contract must surface a durable
+   terminal/recovered result path rather than depending on a live process.
+5. The `tf-7dq` §6 Claude-ACP startup halt investigation and this SDD converge
+   on the same adapter recovery seam, so implementation evidence from `tf-7dq`
+   updates this decision packet instead of creating a parallel solution.
+6. Delegation tests continue to use `session_new` / `session_prompt` as the
    factory path, so the implementation does not accidentally broaden this SDD
    into a spawn/spawn_all redesign.
+7. `CallerFact` waits from PR #383 and `execute` from PR #388 remain accepted
+   substrate inputs; regressions there are bugs in those seams, not new §0
+   decision questions.
 
 ## §7 -- Merge Gate
 
