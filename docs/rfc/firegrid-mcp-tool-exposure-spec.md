@@ -50,37 +50,67 @@ schedule_me, execute`.
 
 ## G-MCP-2 - Discovery silent-mismatch
 
-`VERIFIED-FAILING` (generated simulation artifacts):
+`VERIFIED` (trace + source verified, 2026-05-19):
 the Codex ACP tiny-firegrid simulation writes gitignored local evidence under
 `packages/tiny-firegrid/.simulate/runs/<run-id>/`. For the exporter model, see
 `docs/runbooks/firegrid-effect-tracing.md`.
 
-The trace localizes the failure:
-- `firegrid.mcp.register_toolkit` records the host toolkit with 8 tools:
-  `execute,schedule_me,session_cancel,session_close,session_new,session_prompt,sleep,wait_for`.
-- `firegrid.mcp.publish_runtime_context_base` records the host MCP base
-  publication.
-- `firegrid.host.codec.resolve_effective_mcp_servers` records a context-scoped
-  injected runtime-context MCP URL named `firegrid-runtime-context`.
-- `firegrid.agent_event_pipeline.acp.new_session` records one ACP MCP server
-  named `firegrid-runtime-context`.
-- Effect AI's `McpServer.*` method spans record `McpServer.initialize`, but no
-  `McpServer.tools/list` or `McpServer.tools/call`.
-- The agent reaches Ready but emits no Firegrid `ToolUse`; in the refreshed
-  tf-sd8 trace it prints the expected terminal text without Firegrid observing
-  the corresponding tool call.
+Classification result:
+- Pre-fix run
+  `2026-05-19T10-04-19-042Z__codex-acp-tool-call-pipeline` proved a
+  Firegrid-side route exposure bug: the host registered 8 tools and injected
+  `firegrid-runtime-context`, Codex ACP called the injected URL, and an
+  independent JSON-RPC client against that same URL also received HTTP 404
+  before any `McpServer.initialize` span. A short control URL
+  `/mcp/runtime-context/test` initialized successfully with
+  `capabilities.tools`, which localized the failure to the route parameter
+  length of Firegrid-generated context ids rather than catalog construction or
+  serialization.
+- Firegrid fix: `FiregridMcpServerLayer` now raises the Effect HTTP router
+  `maxParamLength` for the MCP listener
+  (`packages/host-sdk/src/host/mcp-host.ts:55`,
+  `packages/host-sdk/src/host/mcp-host.ts:269`). This satisfies
+  `firegrid-local-mcp-run.MCP_ROUTE.1-1`.
+- Post-fix run
+  `2026-05-19T10-13-30-441Z__codex-acp-tool-call-pipeline` classified the
+  remaining Codex ACP behavior as **(a) agent never calls `tools/list`**:
+  Codex ACP attempted OAuth discovery, then emitted `McpServer.initialize` and
+  two successful `firegrid.mcp.http POST /runtime-context/:contextId` spans at
+  10:13:41Z, with no agent-originated `McpServer.tools/list` or
+  `McpServer.tools/call`.
+- The same run's independent known-good `@modelcontextprotocol/sdk`
+  `Client` + `StreamableHTTPClientTransport` probe against the same captured
+  long context URL emitted `McpServer.initialize` and `McpServer.tools/list` at
+  10:14:19Z. The initialize response advertised `capabilities.tools`, and
+  `listTools()` returned all 8 tools:
+  `sleep, wait_for, session_new, session_prompt, session_cancel,
+  session_close, schedule_me, execute`.
 
-Conclusion: G-MCP-2 is downstream of Firegrid host catalog construction and
-codec MCP URL injection. The current evidence points at or after ACP
-agent-side MCP discovery/tool exposure, not at an empty host catalog or missing
-codec injection.
+Verdict:
+- The first failure was **Firegrid-side** and fixed by making the route accept
+  Firegrid-generated context-id path parameters.
+- After that fix, G-MCP-2 is **agent-side for codex-acp@0.14.0**: the agent
+  connects to the correct URL and receives a valid initialize response, but
+  does not enumerate the tool catalog. This refutes (b), (c), and (d) for the
+  post-fix Firegrid surface: the URL/transport works for a known-good client,
+  the returned catalog contains the expected tool names, and Codex ACP never
+  requests the catalog it could drop or remap.
 
-Remaining unknown: whether the ACP agent never calls `tools/list`, calls the
-wrong URL/transport, silently drops the returned catalog, or exposes the tools
-under names the prompt/config does not reference. The trace surface now includes
-method-level MCP HTTP/JSON-RPC spans plus Effect AI's `McpServer.<method>` spans
-for `initialize`, `tools/list`, and `tools/call`; the next probe should use
-those spans to classify the unknown without adding app-side orchestration.
+Source grounding:
+- `@effect/rpc` creates request spans after resolving the request tag and
+  before the handler result is returned
+  (`repos/effect/packages/rpc/src/RpcServer.ts:229`,
+  `repos/effect/packages/rpc/src/RpcServer.ts:293`), so absence of
+  `McpServer.tools/list` before the independent probe is real host evidence.
+- Effect AI advertises `capabilities.tools` when server tools exist and handles
+  `tools/list` from the same server state
+  (`repos/effect/packages/ai/ai/src/McpServer.ts:1263`,
+  `repos/effect/packages/ai/ai/src/McpServer.ts:1270`,
+  `repos/effect/packages/ai/ai/src/McpServer.ts:1315`).
+- The router-param limit mechanism is source-verified by Effect's own
+  `setRouterConfig` test
+  (`repos/effect/packages/platform-node/test/HttpServer.test.ts:725`,
+  `repos/effect/packages/platform-node/test/HttpServer.test.ts:737`).
 
 The supporting trace surface also covers Firegrid's durable boundaries:
 runtime-control-plane authorities, host reconciliation, runtime context engine
