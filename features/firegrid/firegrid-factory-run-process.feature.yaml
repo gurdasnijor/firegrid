@@ -68,6 +68,14 @@ components:
       2: The hosted smoke records the accepted trigger, one planner dispatch/completion, one human gate request/resolution, one implementer dispatch/completion, and one PR-opened or PR-shaped result row in durable state.
       3: The smoke can use live provider-shaped manual callbacks when full provider access is unavailable, but it must still exercise durable fact or EventPlane writes, waits, resume, projections, and runtime/session observation rather than fixture-only in-memory state.
 
+  TINY_DARK_FACTORY_PIPELINE:
+    requirements:
+      1: The tiny-firegrid dark-factory pipeline exposes app-owned trigger, prompt, permission, output, pull-request, terminal, and projection rows through the public DurableTable primitive.
+      2: The tiny-firegrid dark-factory pipeline creates or loads planner and implementer sessions with deterministic factoryRunKey-derived external keys through the public session facade.
+      3: "The tiny-firegrid dark-factory pipeline runs the PoC-parity phase chain as a config-local app-led escape hatch: accepted trigger, planner prompt, permission request, permission resolution, implementer prompt, pull request opened, and terminal projection."
+      4: The tiny-firegrid dark-factory pipeline resumes after a process stop while waiting for approval by reading durable rows and public runtime/session observations rather than in-memory state.
+      5: The tiny-firegrid dark-factory pipeline is CI-runnable without provider credentials by using deterministic local stub agents at the runtime edge.
+
 constraints:
   BOUNDARIES:
     requirements:
