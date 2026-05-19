@@ -135,6 +135,8 @@ interface DarkFactoryPipelineSimulationResult {
   // Informational: gate facts advanced in-sequence in response to the
   // planner reaching each gate (not proof logic — diagnostics/demo).
   readonly advancedGateEventTypes: ReadonlyArray<string>
+  // Informational: which agent drove the §6 planner this run.
+  readonly plannerAgentKind: string
 }
 
 const DarkFactoryFactRowSchema = Schema.Struct({
@@ -193,6 +195,58 @@ const claudeAcpArgv = [
   "-y",
   "@agentclientprotocol/claude-agent-acp@0.36.1",
 ] as const
+
+// codex-acp planner: the launch shape proven in tf-v2z to actually invoke
+// Firegrid MCP tools end-to-end (initialize -> tools/list -> tools/call ->
+// observed ToolUse). OPENAI_API_KEY, not ANTHROPIC.
+const codexAcpArgv = [
+  "npx",
+  "-y",
+  "@zed-industries/codex-acp@0.14.0",
+] as const
+
+const darkFactoryCodexAcpEnvPolicy = (
+  env: NodeJS.ProcessEnv,
+): Layer.Layer<RuntimeEnvResolverPolicy> =>
+  RuntimeEnvResolverPolicy.withPolicy({
+    authorizedBindings: [["OPENAI_API_KEY", "OPENAI_API_KEY"]],
+    lookupEnv: name => env[name],
+  })
+
+// Additive planner-agent switch. DARK_FACTORY_PLANNER_AGENT=codex-acp (or
+// "codex") launches the §6 planner as codex-acp; anything else / unset keeps
+// the existing claude-agent-acp behavior unchanged (default preserved).
+interface PlannerProfile {
+  readonly kind: "claude-agent-acp" | "codex-acp"
+  readonly argv: ReadonlyArray<string>
+  readonly agent: string
+  readonly envVarName: string
+  readonly envPolicy: Layer.Layer<RuntimeEnvResolverPolicy>
+}
+
+const selectPlannerProfile = (
+  processEnv: NodeJS.ProcessEnv,
+): PlannerProfile => {
+  const selector = (processEnv.DARK_FACTORY_PLANNER_AGENT ?? "")
+    .trim()
+    .toLowerCase()
+  if (selector === "codex-acp" || selector === "codex") {
+    return {
+      kind: "codex-acp",
+      argv: [...codexAcpArgv],
+      agent: "codex-acp",
+      envVarName: "OPENAI_API_KEY",
+      envPolicy: darkFactoryCodexAcpEnvPolicy(processEnv),
+    }
+  }
+  return {
+    kind: "claude-agent-acp",
+    argv: [...claudeAcpArgv],
+    agent: "claude-acp",
+    envVarName: "ANTHROPIC_API_KEY",
+    envPolicy: darkFactoryClaudeAcpEnvPolicy(processEnv),
+  }
+}
 
 const darkFactorySource = "linear.oauth"
 const darkFactoryFactSource = "darkFactory.facts"
@@ -849,9 +903,11 @@ const darkFactoryDriver = (
   env: TinyFiregridSimulationEnv,
 ): Effect.Effect<DarkFactoryPipelineSimulationResult, unknown, Firegrid> =>
   Effect.gen(function*() {
-    if (env.processEnv.ANTHROPIC_API_KEY === undefined || env.processEnv.ANTHROPIC_API_KEY.length === 0) {
+    const planner = selectPlannerProfile(env.processEnv)
+    const plannerKey = env.processEnv[planner.envVarName]
+    if (plannerKey === undefined || plannerKey.length === 0) {
       return yield* Effect.fail(new Error(
-        "dark-factory-pipeline requires ANTHROPIC_API_KEY for claude-agent-acp",
+        `dark-factory-pipeline requires ${planner.envVarName} for the ${planner.kind} planner`,
       ))
     }
 
@@ -867,12 +923,12 @@ const darkFactoryDriver = (
         id: factoryRunKey,
       },
       runtime: local.jsonl({
-        argv: [...claudeAcpArgv],
-        agent: "claude-acp",
+        argv: [...planner.argv],
+        agent: planner.agent,
         agentProtocol: "acp",
         cwd: globalThis.process.cwd(),
         envBindings: [
-          { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
+          { name: planner.envVarName, ref: `env:${planner.envVarName}` },
         ],
         runtimeContextMcp: { enabled: true },
       }),
@@ -1147,6 +1203,7 @@ const darkFactoryDriver = (
         requiredSteps.length > 0 &&
         s6ProvenStepCount === requiredSteps.length,
       advancedGateEventTypes: [...advancedGateEventTypes],
+      plannerAgentKind: planner.kind,
     }
   })
 
@@ -1159,7 +1216,7 @@ export const darkFactoryPipelineSimulation = {
       baseUrl: env.durableStreamsBaseUrl,
       namespace: env.namespace,
       localProcessEnv: env.localProcessEnv,
-      envPolicy: darkFactoryClaudeAcpEnvPolicy(env.processEnv),
+      envPolicy: selectPlannerProfile(env.processEnv).envPolicy,
     }),
   driver: darkFactoryDriver,
   summarize: result => ({
@@ -1202,6 +1259,7 @@ export const darkFactoryPipelineSimulation = {
     sawCleanUnwind: result.sawCleanUnwind,
     sectionSixProof: result.sectionSixProof,
     advancedGateEventTypes: result.advancedGateEventTypes,
+    plannerAgentKind: result.plannerAgentKind,
   }),
   localize: result => [
     "firegrid-observability.TINY_FIREGRID_SIMULATIONS.8",
