@@ -14,6 +14,10 @@ import { Clock, Effect, Schedule } from "effect"
 interface CodexAcpToolCallSimulationResult {
   readonly sawReady: boolean
   readonly sawSleepToolUse: boolean
+  // Every ToolUse part.name the real agent surfaced (evidence: answers
+  // "did a real MCP tool-call round-trip happen, and under what name").
+  readonly observedToolNames: ReadonlyArray<string>
+  readonly sawAnyToolUse: boolean
   readonly resultText: string
 }
 
@@ -72,9 +76,10 @@ const codexAcpToolCallDriver = (
     let sawSleepToolUse = false
     let resultText = ""
     let afterSequence: number | undefined
+    const observedToolNames = new Set<string>()
 
     while (
-      !(sawReady && sawSleepToolUse &&
+      !(sawReady && observedToolNames.size > 0 &&
         resultText.includes("FIREGRID_TOOL_RESULT"))
     ) {
       if ((yield* Clock.currentTimeMillis) >= deadline) break
@@ -94,13 +99,20 @@ const codexAcpToolCallDriver = (
       afterSequence = observation.sequence
       const event = observation.event
       if (event._tag === "Ready") sawReady = true
-      if (event._tag === "ToolUse" && event.part.name === "sleep") {
-        sawSleepToolUse = true
+      if (event._tag === "ToolUse") {
+        observedToolNames.add(event.part.name)
+        if (event.part.name === "sleep") sawSleepToolUse = true
       }
       if (event._tag === "TextChunk") resultText += event.part.delta
     }
 
-    return { sawReady, sawSleepToolUse, resultText }
+    return {
+      sawReady,
+      sawSleepToolUse,
+      observedToolNames: [...observedToolNames].sort(),
+      sawAnyToolUse: observedToolNames.size > 0,
+      resultText,
+    }
   })
 
 export const codexAcpToolCallSimulation = {
@@ -118,17 +130,25 @@ export const codexAcpToolCallSimulation = {
   summarize: result => ({
     sawReady: result.sawReady,
     sawSleepToolUse: result.sawSleepToolUse,
+    sawAnyToolUse: result.sawAnyToolUse,
+    observedToolNames: result.observedToolNames,
     resultTextExcerpt: result.resultText.slice(0, 600),
   }),
   localize: result =>
-    result.sawReady && !result.sawSleepToolUse
+    result.sawSleepToolUse
       ? [
-        "The host and client flow reached agent Ready, but no Firegrid sleep ToolUse was observed.",
-        "Query MCP and codec spans to determine whether tools/list or tools/call reached the host.",
+        "REAL-BEHAVIOR PASS: the real codex-acp agent issued a Firegrid `sleep` ToolUse round-trip and the terminal result was observed through the public client.",
       ]
-      : [
-        "Inspect the DuckDB span tables for the host, codec, MCP, workflow, and durable-table path taken by this run.",
-      ],
+      : result.sawAnyToolUse
+        ? [
+          "PARTIAL: a real MCP ToolUse round-trip WAS observed but not under the name `sleep`.",
+          `Observed ToolUse names: ${result.observedToolNames.join(", ")}.`,
+          "Finding: the agent exercised the tool path but the asserted Firegrid tool name `sleep` was not the surfaced ToolUse part.name — inspect the ACP tool_call -> Firegrid MCP tool-name mapping in the codec, or whether the agent chose a different advertised tool.",
+        ]
+        : [
+          "The host and client flow reached agent Ready, but NO ToolUse was observed at all.",
+          "Query MCP and codec spans to determine whether tools/list or tools/call reached the host.",
+        ],
 } satisfies TinyFiregridSimulation<CodexAcpToolCallSimulationResult>
 
 /* eslint-enable local/no-fixed-polling */
