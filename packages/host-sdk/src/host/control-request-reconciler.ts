@@ -8,6 +8,7 @@ import {
   type RuntimeContextRequestRow,
   type RuntimeControlRequestCompletionRow,
   type RuntimeControlRequestKind,
+  type RuntimeContext,
   type RuntimeLifecycleRequestRow,
   type RuntimeOutputTable,
   type RuntimeStartRequestRow,
@@ -17,6 +18,7 @@ import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import { startRuntime } from "./commands.ts"
 import { RuntimeContextEngineRegistry } from "./runtime-context-engine-registry.ts"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
+import { PerContextRuntimeOutputWriter } from "./per-context-runtime-output.ts"
 
 const runtimeControlPlaneTable: Effect.Effect<
   RuntimeControlPlaneTable["Type"],
@@ -42,6 +44,10 @@ export interface RuntimeControlRequestReconcilerOptions {
   readonly abandonAfterMs?: number
 }
 
+type ResolvedRuntimeControlRequestReconcilerOptions = Required<
+  Omit<RuntimeControlRequestReconcilerOptions, "pollIntervalMs">
+>
+
 // TFIND-045: `reconcileStartRequest` calls `startRuntime()`, which
 // transitively requires `RuntimeOutputTable` and
 // `HostRuntimeContextExecutionEnv` via `RuntimeContextEngineRegistry`.
@@ -58,6 +64,7 @@ type RuntimeControlRequestReconcilerEnvironment =
   | CurrentHostSession
   | RuntimeControlPlaneTable
   | RuntimeContextEngineRegistry
+  | PerContextRuntimeOutputWriter
   | AgentToolHost
   | RuntimeOutputTable
   | HostRuntimeContextExecutionEnv
@@ -79,6 +86,19 @@ const optionValue = (
   value: number | undefined,
   fallback: number,
 ): number => value ?? fallback
+
+const resolveOptions = (
+  options: RuntimeControlRequestReconcilerOptions,
+): ResolvedRuntimeControlRequestReconcilerOptions => ({
+  claimWindowMs: optionValue(
+    options.claimWindowMs,
+    runtimeControlRequestReconcilerDefaults.claimWindowMs,
+  ),
+  abandonAfterMs: optionValue(
+    options.abandonAfterMs,
+    runtimeControlRequestReconcilerDefaults.abandonAfterMs,
+  ),
+})
 
 const createdAtMs = (createdAt: string): number => {
   const parsed = Date.parse(createdAt)
@@ -143,7 +163,7 @@ const writeCompletion = (
 const skipOrAbandonTerminalRequest = (
   requestKind: RuntimeControlRequestKind,
   request: ControlRequest,
-  options: Required<Omit<RuntimeControlRequestReconcilerOptions, "pollIntervalMs">>,
+  options: ResolvedRuntimeControlRequestReconcilerOptions,
 ) =>
   Effect.gen(function*() {
     const table = yield* runtimeControlPlaneTable
@@ -223,7 +243,7 @@ const winClaim = (
 
 const reconcileContextRequest = (
   request: RuntimeContextRequestRow,
-  options: Required<Omit<RuntimeControlRequestReconcilerOptions, "pollIntervalMs">>,
+  options: ResolvedRuntimeControlRequestReconcilerOptions,
 ): Effect.Effect<
   void,
   unknown,
@@ -272,10 +292,11 @@ const reconcileContextRequest = (
 const acquireReconcileClaim = (
   kind: RuntimeControlRequestKind,
   request: ControlRequest,
-  options: Required<Omit<RuntimeControlRequestReconcilerOptions, "pollIntervalMs">>,
+  options: ResolvedRuntimeControlRequestReconcilerOptions,
 ): Effect.Effect<
   Option.Option<{
     readonly session: CurrentHostSession["Type"]
+    readonly context: RuntimeContext
     readonly nowMs: number
   }>,
   unknown,
@@ -294,12 +315,12 @@ const acquireReconcileClaim = (
     if (hasTerminal(yield* table.controlRequestCompletions.get(request.requestId))) {
       return Option.none()
     }
-    return Option.some({ session, nowMs: nowMs.value })
+    return Option.some({ session, context: context.value, nowMs: nowMs.value })
   })
 
 const reconcileStartRequest = (
   request: RuntimeStartRequestRow,
-  options: Required<Omit<RuntimeControlRequestReconcilerOptions, "pollIntervalMs">>,
+  options: ResolvedRuntimeControlRequestReconcilerOptions,
 ): Effect.Effect<void, unknown, RuntimeControlRequestReconcilerEnvironment> =>
   Effect.gen(function*() {
     const claim = yield* acquireReconcileClaim("start", request, options)
@@ -334,6 +355,69 @@ const reconcileStartRequest = (
     }),
   )
 
+const activeActivityAttempt = (
+  contextId: string,
+): Effect.Effect<Option.Option<number>, unknown, RuntimeControlPlaneTable> =>
+  Effect.gen(function*() {
+    const table = yield* runtimeControlPlaneTable
+    return yield* table.runs.query((coll) => {
+      const rows = coll.toArray.filter(row => row.contextId === contextId)
+      const terminalAttempts = new Set(
+        rows
+          .filter(row => row.status === "exited" || row.status === "failed")
+          .map(row => row.activityAttempt),
+      )
+      const started = rows
+        .filter(row => row.status === "started" && !terminalAttempts.has(row.activityAttempt))
+        .map(row => row.activityAttempt)
+        .sort((left, right) => right - left)[0]
+      return Option.fromNullable(started)
+    })
+  })
+
+const recordLifecycleTerminalEvidence = (
+  context: RuntimeContext,
+  request: RuntimeLifecycleRequestRow,
+): Effect.Effect<
+  void,
+  unknown,
+  RuntimeControlPlaneTable | PerContextRuntimeOutputWriter
+> =>
+  Effect.gen(function*() {
+    const attempt = yield* activeActivityAttempt(request.contextId)
+    if (Option.isNone(attempt)) return
+    const exitCode = request.lifecycle === "cancel" ? 130 : 0
+    const table = yield* runtimeControlPlaneTable
+    yield* table.runs.upsert({
+      runEventId: {
+        contextId: request.contextId,
+        activityAttempt: attempt.value,
+        status: "exited",
+      },
+      contextId: request.contextId,
+      activityAttempt: attempt.value,
+      provider: context.runtime.provider,
+      status: "exited",
+      at: new Date().toISOString(),
+      exitCode,
+      ...(request.lifecycle === "cancel" ? { signal: "SIGTERM" } : {}),
+    })
+    const writer = yield* PerContextRuntimeOutputWriter
+    yield* writer.appendAgentEvent(context, attempt.value, Number.MAX_SAFE_INTEGER, {
+      _tag: "Terminated",
+      exitCode,
+    })
+  }).pipe(
+    Effect.withSpan("firegrid.host.control_request.lifecycle.terminal_evidence", {
+      kind: "producer",
+      attributes: {
+        "firegrid.context.id": request.contextId,
+        "firegrid.control.request_id": request.requestId,
+        "firegrid.control.lifecycle": request.lifecycle,
+      },
+    }),
+  )
+
 // tf-4ni: durable session-lifecycle terminate (cancel/close). Mirrors
 // `reconcileStartRequest`. The per-context engine terminal action is the
 // existing host-local `RuntimeContextEngineRegistry.deregister` (closes the
@@ -345,19 +429,20 @@ const reconcileStartRequest = (
 // needs only the registry the reconciler env already declares.
 const reconcileLifecycleRequest = (
   request: RuntimeLifecycleRequestRow,
-  options: Required<Omit<RuntimeControlRequestReconcilerOptions, "pollIntervalMs">>,
+  options: ResolvedRuntimeControlRequestReconcilerOptions,
 ): Effect.Effect<
   void,
   unknown,
   | CurrentHostSession
   | RuntimeControlPlaneTable
   | RuntimeContextEngineRegistry
+  | PerContextRuntimeOutputWriter
 > =>
   Effect.gen(function*() {
     const kind: RuntimeControlRequestKind = request.lifecycle
     const claim = yield* acquireReconcileClaim(kind, request, options)
     if (Option.isNone(claim)) return
-    const { nowMs, session } = claim.value
+    const { context, nowMs, session } = claim.value
 
     const registry = yield* RuntimeContextEngineRegistry
     yield* registry.deregister(request.contextId).pipe(
@@ -375,6 +460,7 @@ const reconcileLifecycleRequest = (
       hostId: session.hostId,
       completedAtMs,
     })
+    yield* recordLifecycleTerminalEvidence(context, request)
   }).pipe(
     Effect.withSpan("firegrid.host.control_request.lifecycle.reconcile", {
       kind: "internal",
@@ -386,19 +472,37 @@ const reconcileLifecycleRequest = (
     }),
   )
 
+const reconcileLifecycleRequestsOnce = (
+  resolved: ResolvedRuntimeControlRequestReconcilerOptions,
+): Effect.Effect<
+  void,
+  unknown,
+  | CurrentHostSession
+  | RuntimeControlPlaneTable
+  | RuntimeContextEngineRegistry
+  | PerContextRuntimeOutputWriter
+> =>
+  Effect.gen(function*() {
+    const table = yield* runtimeControlPlaneTable
+    const lifecycleRequests = yield* table.lifecycleRequests.query((coll) => coll.toArray)
+    yield* Effect.annotateCurrentSpan({
+      "firegrid.control.lifecycle_request_count": lifecycleRequests.length,
+    })
+    yield* Effect.forEach(
+      lifecycleRequests,
+      request => reconcileLifecycleRequest(request, resolved),
+      { discard: true },
+    )
+  }).pipe(
+    Effect.withSpan("firegrid.host.control_request.lifecycle.reconcile_once", {
+      kind: "internal",
+    }),
+  )
+
 export const reconcileRuntimeControlRequestsOnce = (
   options: RuntimeControlRequestReconcilerOptions = {},
 ): Effect.Effect<void, unknown, RuntimeControlRequestReconcilerEnvironment> => {
-  const resolved = {
-    claimWindowMs: optionValue(
-      options.claimWindowMs,
-      runtimeControlRequestReconcilerDefaults.claimWindowMs,
-    ),
-    abandonAfterMs: optionValue(
-      options.abandonAfterMs,
-      runtimeControlRequestReconcilerDefaults.abandonAfterMs,
-    ),
-  }
+  const resolved = resolveOptions(options)
   return Effect.gen(function*() {
     const table = yield* runtimeControlPlaneTable
     const contextRequests = yield* table.contextRequests.query((coll) => coll.toArray)
@@ -410,6 +514,7 @@ export const reconcileRuntimeControlRequestsOnce = (
       request => reconcileContextRequest(request, resolved),
       { discard: true },
     )
+    yield* reconcileLifecycleRequestsOnce(resolved)
     const startRequests = yield* table.startRequests.query((coll) => coll.toArray)
     yield* Effect.annotateCurrentSpan({
       "firegrid.control.start_request_count": startRequests.length,
@@ -417,15 +522,6 @@ export const reconcileRuntimeControlRequestsOnce = (
     yield* Effect.forEach(
       startRequests,
       request => reconcileStartRequest(request, resolved),
-      { discard: true },
-    )
-    const lifecycleRequests = yield* table.lifecycleRequests.query((coll) => coll.toArray)
-    yield* Effect.annotateCurrentSpan({
-      "firegrid.control.lifecycle_request_count": lifecycleRequests.length,
-    })
-    yield* Effect.forEach(
-      lifecycleRequests,
-      request => reconcileLifecycleRequest(request, resolved),
       { discard: true },
     )
   }).pipe(
@@ -442,18 +538,43 @@ export const runRuntimeControlRequestReconciler = (
     options.pollIntervalMs,
     runtimeControlRequestReconcilerDefaults.pollIntervalMs,
   )
-  const tick: Effect.Effect<
-    void,
+  const resolved = resolveOptions(options)
+  const loop = <R>(
+    effect: Effect.Effect<void, unknown, R>,
+    spanName: string,
+  ): Effect.Effect<never, never, R> =>
+    effect.pipe(
+      Effect.catchAllCause(cause =>
+        Effect.logError("[host-sdk] runtime control request reconciliation failed").pipe(
+          Effect.annotateLogs({ cause: Cause.pretty(cause), loop: spanName }),
+        )),
+      Effect.zipRight(Effect.sleep(Duration.millis(pollIntervalMs))),
+      Effect.forever,
+    )
+  const controlLoop: Effect.Effect<
+    never,
     never,
     RuntimeControlRequestReconcilerEnvironment
-  > = reconcileRuntimeControlRequestsOnce(options).pipe(
-    Effect.catchAllCause(cause =>
-      Effect.logError("[host-sdk] runtime control request reconciliation failed").pipe(
-        Effect.annotateLogs({ cause: Cause.pretty(cause) }),
-      )),
-    Effect.zipRight(Effect.sleep(Duration.millis(pollIntervalMs))),
+  > = loop(
+    reconcileRuntimeControlRequestsOnce(options),
+    "control",
   )
-  return tick.pipe(Effect.forever)
+  const lifecycleLoop: Effect.Effect<
+    never,
+    never,
+    | CurrentHostSession
+    | RuntimeControlPlaneTable
+    | RuntimeContextEngineRegistry
+    | PerContextRuntimeOutputWriter
+  > = loop(
+    reconcileLifecycleRequestsOnce(resolved),
+    "lifecycle",
+  )
+
+  return Effect.all(
+    [controlLoop, lifecycleLoop],
+    { concurrency: "unbounded", discard: true },
+  ).pipe(Effect.zipRight(Effect.never))
 }
 
 export const RuntimeControlRequestReconcilerLive = Layer.succeed(

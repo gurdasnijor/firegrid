@@ -296,15 +296,13 @@ const runtimeHostAgentToolHostService = (captured: {
         },
       }),
     ),
-  // tf-p7w Gap-3 (Option A, real fix): the durable session-lifecycle
-  // terminate request is written through a client-EQUIVALENT durable
-  // RuntimeControlPlaneTable bound to the exact control-plane stream URL
-  // the reconciler reads (mirroring the proven client context/start
-  // write topology). The merged #393/#396 findings localized the cause:
-  // the host agent-tool seam's layer-materialized `captured.controlTable`
-  // does not propagate host-originated rows into the reconciler-read
-  // durable backing; the client path does because it writes that exact
-  // durable-streams stream. So we do precisely what the client does.
+  // tf-p7w Gap-3 (Option A): write the durable session-lifecycle
+  // terminate request through a committed RuntimeControlPlaneTable bound
+  // to the exact control-plane stream URL the reconciler reads. Later
+  // tf-p7w source verification exonerated DurableTable materialization;
+  // this append-site still carries the required "outside the tool-use
+  // activity commit" property, while the reconciler owns starvation-free
+  // lifecycle consumption.
   cancelSession: ({ toolUseId, sessionId }) =>
     appendCommittedLifecycleRequest(captured, {
       contextId: sessionId,
@@ -340,12 +338,10 @@ const runtimeHostAgentToolHostService = (captured: {
 // Client-equivalent committed control-plane write. The client appends
 // context/start requests through a `RuntimeControlPlaneTable` bound to
 // `runtimeControlPlaneStreamUrl({baseUrl, namespace})` — the exact
-// durable-streams stream the host control-request reconciler polls. The
-// agent-tool seam's ambient `captured.controlTable` (layer-materialized
-// for in-process consumers) demonstrably does NOT surface host-written
-// rows to that reconciler view (#393/#396 findings). Writing through a
-// fresh table bound to the same stream URL removes that divergence: it
-// is byte-for-byte the client's proven write topology.
+// durable-streams stream the host control-request reconciler polls.
+// This keeps session lifecycle requests on the same committed public
+// control-plane path rather than relying on the enclosing tool-use
+// activity to commit before the clean-unwind request becomes visible.
 const appendCommittedLifecycleRequest = (
   captured: {
     readonly durableStreamsBaseUrl: string
