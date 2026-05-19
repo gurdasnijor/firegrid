@@ -183,7 +183,7 @@ const handleTool = <Output>(
       return yield* Effect.fail(error)
     }
     return result.part.result as Output
-  })
+  }).pipe(Effect.annotateSpans("firegrid.side", "agent-tools"))
 
 /**
  * Pull a structured `ToolError` out of `ToolResult.part.result`. The
@@ -241,4 +241,4 @@ export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer(
       handleTool<ScheduleMeToolOutput>(captured, "schedule_me", params),
     execute: (params: ExecuteToolInput) => handleTool<ExecuteToolOutput>(captured, "execute", params),
   })),
-)
+).pipe(Layer.annotateSpans("firegrid.side", "agent-tools"))

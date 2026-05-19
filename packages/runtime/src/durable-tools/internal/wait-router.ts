@@ -28,9 +28,9 @@ import {
   Match,
   Option,
   Ref,
-  Schema,
   Stream,
 } from "effect"
+import { encodeWaitKey, waitSpanAttributes } from "./observability.ts"
 import { RuntimeWaitStreams } from "./runtime-wait-streams.ts"
 import { type WaitRow } from "./table.ts"
 import {
@@ -110,11 +110,7 @@ const streamForWait = (
     )).pipe(
       Effect.withSpan("firegrid.durable_tools.wait_router.stream_for_wait", {
         kind: "internal",
-        attributes: {
-          "firegrid.workflow.execution_id": wait.waitKey.executionId,
-          "firegrid.wait.name": wait.waitKey.name,
-          "firegrid.wait.source": wait.source._tag,
-        },
+        attributes: waitSpanAttributes(wait),
       }),
     )
 
@@ -201,11 +197,7 @@ const completeMatch = (
   }).pipe(
     Effect.withSpan("firegrid.durable_tools.wait_router.complete_match", {
       kind: "internal",
-      attributes: {
-        "firegrid.workflow.execution_id": wait.waitKey.executionId,
-        "firegrid.wait.name": wait.waitKey.name,
-        "firegrid.wait.source": wait.source._tag,
-      },
+      attributes: waitSpanAttributes(wait),
     }),
   )
 
@@ -230,11 +222,7 @@ const attachWaitToSource = (
     yield* source.pipe(
       Stream.withSpan("firegrid.durable_tools.wait_router.attach_source", {
         kind: "internal",
-        attributes: {
-          "firegrid.workflow.execution_id": wait.waitKey.executionId,
-          "firegrid.wait.name": wait.waitKey.name,
-          "firegrid.wait.source": wait.source._tag,
-        },
+        attributes: waitSpanAttributes(wait),
       }),
       Stream.runForEach((row) => {
         return completeMatch(
@@ -260,11 +248,7 @@ const attachWaitToSource = (
   }).pipe(
     Effect.withSpan("firegrid.durable_tools.wait_router.attach_wait", {
       kind: "internal",
-      attributes: {
-        "firegrid.workflow.execution_id": wait.waitKey.executionId,
-        "firegrid.wait.name": wait.waitKey.name,
-        "firegrid.wait.source": wait.source._tag,
-      },
+      attributes: waitSpanAttributes(wait),
     }),
   )
 
@@ -295,12 +279,6 @@ const startRouter = Effect.gen(function*() {
   // re-derives the match, idempotent deferredDone makes the re-fire a
   // no-op). See docs/research/durable-tools-vs-workflow-engine-convergence.md.
 
-  const encodeWaitKey = Schema.encodeSync(
-    Schema.Struct({
-      executionId: Schema.String,
-      name: Schema.String,
-    }),
-  )
   const attached = yield* Ref.make(new Set<string>())
 
   const completeInitialIfPresent = (
@@ -323,11 +301,7 @@ const startRouter = Effect.gen(function*() {
     }).pipe(
       Effect.withSpan("firegrid.durable_tools.wait_router.initial_check", {
         kind: "internal",
-        attributes: {
-          "firegrid.workflow.execution_id": wait.waitKey.executionId,
-          "firegrid.wait.name": wait.waitKey.name,
-          "firegrid.wait.source": wait.source._tag,
-        },
+        attributes: waitSpanAttributes(wait),
       }),
     )
 
@@ -339,12 +313,7 @@ const startRouter = Effect.gen(function*() {
     Stream.filter(wait => wait.status === "active"),
     Stream.runForEach((wait) =>
       Effect.gen(function*() {
-        const encoded = JSON.stringify(
-          encodeWaitKey({
-            executionId: wait.waitKey.executionId,
-            name: wait.waitKey.name,
-          }),
-        )
+        const encoded = encodeWaitKey(wait.waitKey)
         const set = yield* Ref.get(attached)
         if (set.has(encoded)) return
         // Mark before forking so concurrent emits of the same wait do not

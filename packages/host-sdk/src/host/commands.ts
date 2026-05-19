@@ -77,6 +77,7 @@ const executeRuntimeContextWorkflowForContextId = (
         "firegrid.context.id": contextId,
       },
     }),
+    Effect.annotateSpans("firegrid.side", "host"),
   )
 
 const claimAndRunRuntimeContextWorkflow = (
@@ -105,6 +106,7 @@ const claimAndRunRuntimeContextWorkflow = (
         "firegrid.context.id": context.contextId,
       },
     }),
+    Effect.annotateSpans("firegrid.side", "host"),
   )
 
 const insertRuntimeInputIntent = (
@@ -175,6 +177,7 @@ export const startRuntime = (
         "firegrid.context.id": options.contextId,
       },
     }),
+    Effect.annotateSpans("firegrid.side", "host"),
   )
 
 export const RuntimeStartCapabilityLive = Layer.effect(
@@ -210,6 +213,7 @@ export const RuntimeStartCapabilityLive = Layer.effect(
               "firegrid.context.id": options.contextId,
             },
           }),
+          Effect.annotateSpans("firegrid.side", "host"),
         ),
     })
   }),

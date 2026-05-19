@@ -31,6 +31,8 @@ components:
       3: Attribute names do not encode product vocabulary; no session, provider, model, tenant, prompt, permission, tool, capability, sandbox, agent, ACP, MCP, AgentSpec, or product-specific identifier appears in Firegrid-native attribute names.
       4: Static attributes known at span open are passed through `Effect.withSpan` options; attributes that are only known after operation start use `Effect.annotateCurrentSpan` inside the active span.
       5: Attribute values that may contain secret material are filtered or redacted before annotation; substrate attributes do not become a side channel for secret leak.
+      6: Scope-known substrate correlation values such as context id and Firegrid side are applied as propagating span annotations so descendant spans carry the same correlation attributes without per-call threading.
+      7: Span names remain low-cardinality templates; operation ids, context ids, workflow execution ids, wait keys, attempts, row counts, and reconcile outcomes are represented as attributes rather than embedded in span names.
 
   ERROR_TERMINAL_CORRELATION:
     requirements:

@@ -467,4 +467,4 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
     })
     return service
   }),
-)
+).pipe(Layer.annotateSpans("firegrid.side", "agent-tools"))

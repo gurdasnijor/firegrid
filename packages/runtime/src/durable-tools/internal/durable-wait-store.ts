@@ -1,5 +1,6 @@
 import { Context, Effect, Layer, Option, Stream } from "effect"
 import type { WaitKey } from "./keys.ts"
+import { waitKeySpanAttributes } from "./observability.ts"
 import {
   DurableToolsTable,
   findWaitByKey,
@@ -101,10 +102,7 @@ export const DurableWaitStoreLive = Layer.mergeAll(
             })),
           Effect.withSpan("firegrid.durable_tools.wait_store.wait.find", {
             kind: "internal",
-            attributes: {
-              "firegrid.workflow.execution_id": waitKey.executionId,
-              "firegrid.wait.name": waitKey.name,
-            },
+            attributes: waitKeySpanAttributes(waitKey),
           }),
         ),
     })),
@@ -117,8 +115,7 @@ export const DurableWaitStoreLive = Layer.mergeAll(
           Effect.withSpan("firegrid.durable_tools.wait_store.wait.upsert", {
             kind: "internal",
             attributes: {
-              "firegrid.workflow.execution_id": row.waitKey.executionId,
-              "firegrid.wait.name": row.waitKey.name,
+              ...waitKeySpanAttributes(row.waitKey),
               "firegrid.wait.status": row.status,
               "firegrid.wait.source": row.source._tag,
             },
@@ -141,10 +138,7 @@ export const DurableWaitStoreLive = Layer.mergeAll(
             })),
           Effect.withSpan("firegrid.durable_tools.wait_store.completion.find", {
             kind: "internal",
-            attributes: {
-              "firegrid.workflow.execution_id": waitKey.executionId,
-              "firegrid.wait.name": waitKey.name,
-            },
+            attributes: waitKeySpanAttributes(waitKey),
           }),
         ),
     })),
@@ -157,8 +151,7 @@ export const DurableWaitStoreLive = Layer.mergeAll(
           Effect.withSpan("firegrid.durable_tools.wait_store.completion.upsert", {
             kind: "internal",
             attributes: {
-              "firegrid.workflow.execution_id": row.waitKey.executionId,
-              "firegrid.wait.name": row.waitKey.name,
+              ...waitKeySpanAttributes(row.waitKey),
               "firegrid.wait.outcome": row.outcome,
             },
           }),

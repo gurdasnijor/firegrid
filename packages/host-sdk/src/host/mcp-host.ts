@@ -199,7 +199,7 @@ const runtimeContextMcpSpanName = (url: string, method: string): string => {
   if (path.includes("/runtime-context/")) {
     return `firegrid.mcp.http ${method} /runtime-context/:contextId`
   }
-  return `firegrid.mcp.http ${method} ${path}`
+  return `firegrid.mcp.http ${method}`
 }
 
 export const FiregridMcpServerLayer = (

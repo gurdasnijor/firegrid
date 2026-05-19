@@ -297,7 +297,7 @@ const makeLocalProcessSandboxProvider = (
           Stream.merge(stdin),
           Stream.concat(exit),
         )
-      }),
+      }).pipe(Effect.annotateSpans("firegrid.side", "subprocess")),
     ).pipe(
       Stream.withSpan("firegrid.agent_event_pipeline.source.local_process.stream", {
         kind: "producer",
@@ -340,6 +340,7 @@ const makeLocalProcessSandboxProvider = (
         kind: "producer",
         attributes: commandSpanAttributes(sandbox, command),
       }),
+      Effect.annotateSpans("firegrid.side", "subprocess"),
     )
 
   const execute = (
@@ -377,6 +378,7 @@ const makeLocalProcessSandboxProvider = (
         kind: "producer",
         attributes: commandSpanAttributes(sandbox, command),
       }),
+      Effect.annotateSpans("firegrid.side", "subprocess"),
     ))
 
   return makeSandboxProviderService({
@@ -403,5 +405,5 @@ export const LocalProcessSandboxProvider = {
       Effect.map(CommandExecutorTag, commandExecutor =>
         makeLocalProcessSandboxProvider(commandExecutor, options),
       ),
-    ),
+    ).pipe(Layer.annotateSpans("firegrid.side", "subprocess")),
 }
