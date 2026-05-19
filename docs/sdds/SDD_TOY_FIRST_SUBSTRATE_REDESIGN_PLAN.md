@@ -5,7 +5,13 @@ gate. SDD/plan only: no implementation, no self-merge.
 
 Inputs: PR #366 durable agent-driven choreography SDD, cca2 / PR #365 tiny-firegrid
 smoke, RFC restart/choreography guarantees, and Fireline choreography/resume
-prior art.
+prior art. cca2 classifies the current dark-factory gap as (b): narrow
+public-surface exposure, not protocol mismatch. ACP and its SDK support
+`session/load` and wire session ids, app-owned `DurableTable` facts work, and
+`runtimeContextMcp` URL-less host injection is the intended public wiring; the
+missing seams are Firegrid public session load/wire-id handling, caller-owned
+fact waits, and live-host `execute`. Delegation is not a gap because
+`session_new` / `session_prompt` are the supported path.
 
 ## 1. Invariants
 
@@ -55,6 +61,15 @@ and must read like a public-talk demo. It must not port
 hidden host internals. If a primitive is not cleanly exposed, the toy writes the
 clean local version instead of reaching past the public surface.
 
+Today's public happy path is the baseline: client/app code can use
+`sessions.createOrLoad`, `prompt`, `start`, `snapshot`,
+`wait.forAgentOutput`, `wait.forPermissionRequest`, and
+`permissions.respond`; agent tools live-supported for this plan are
+`sleep`, `wait_for` over runtime observations, `session_new`, and
+`session_prompt`. The catalog also names `schedule_me`, cancel/close, and
+`execute`; this plan treats unsupported catalog entries as evidence to expose
+or remove, not as things the toy may reach around.
+
 ## 3. Capability Growth And Temptations
 
 | Capability | Likely substrate growth | Temptation to reject |
@@ -90,9 +105,13 @@ type error, and do not widen an environment union. Reconsider the public
 primitive shape first.
 
 cca2's current smoke reinforces this gate: even the minimal ACP path can fail
-because expected Firegrid MCP tools are not available through the public route.
-The toy must make that failure obvious as a missing public primitive, not solve
-it by importing host internals.
+because expected Firegrid MCP tools are not available through the public route;
+`claude-agent-acp` reached `Ready` without observable tool/text, and the
+`zed` bridge was paused before conclusion. The toy must make these failures
+obvious as missing public primitives or bridge capability mismatches, not solve
+them by importing host internals. Session/load replay belongs to the tf-vao
+line: ACP replays conversation through `session/update` on load, but Firegrid
+does not yet expose public wire-sessionId/load.
 
 ## 5. Stop Condition
 
@@ -106,4 +125,3 @@ pattern, hidden host import, broad deferred environment capture, eslint-disable,
 or private protocol state. That means the production substrate was load-bearing
 after all; pause the toy and ask Gurdas whether to expose the missing primitive
 or change the invariant.
-
