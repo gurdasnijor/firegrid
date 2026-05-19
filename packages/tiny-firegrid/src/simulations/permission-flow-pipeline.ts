@@ -79,6 +79,15 @@ const permissionFlowDriver = (
   env: TinyFiregridSimulationEnv,
 ): Effect.Effect<PermissionFlowSimulationResult, unknown, Firegrid> =>
   Effect.gen(function*() {
+    // Env-gate: claude-code-acp cannot drive a prompt turn without a key.
+    // Fail FAST + explicitly when absent (mirrors dark-factory-pipeline)
+    // instead of spawning the agent and hanging to the runner timeout
+    // (~90s). The real-key path is untouched; this only fires keyless.
+    if (env.processEnv.ANTHROPIC_API_KEY === undefined || env.processEnv.ANTHROPIC_API_KEY.length === 0) {
+      return yield* Effect.fail(new Error(
+        "permission-flow-pipeline requires ANTHROPIC_API_KEY for claude-code-acp",
+      ))
+    }
     const firegrid = yield* Firegrid
     const session = yield* firegrid.sessions.createOrLoad({
       externalKey: {

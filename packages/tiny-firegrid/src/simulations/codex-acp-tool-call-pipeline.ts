@@ -39,6 +39,15 @@ const codexAcpToolCallDriver = (
   env: TinyFiregridSimulationEnv,
 ): Effect.Effect<CodexAcpToolCallSimulationResult, unknown, Firegrid> =>
   Effect.gen(function*() {
+    // Env-gate: codex-acp cannot run without its key. Fail FAST +
+    // explicitly when absent (mirrors dark-factory-pipeline) instead of
+    // spawning the agent and hanging to the runner timeout (~90s). The
+    // real-key path is untouched; this only fires keyless.
+    if (env.processEnv.OPENAI_API_KEY === undefined || env.processEnv.OPENAI_API_KEY.length === 0) {
+      return yield* Effect.fail(new Error(
+        "codex-acp-tool-call-pipeline requires OPENAI_API_KEY for codex-acp",
+      ))
+    }
     const firegrid = yield* Firegrid
     const session = yield* firegrid.sessions.createOrLoad({
       externalKey: {

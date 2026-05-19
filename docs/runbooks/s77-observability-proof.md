@@ -91,3 +91,49 @@ Descriptive proof of the §7.7 *capability*, not a behavioral assertion
 about any one choreography's correctness. It proves the factory is
 legible from outside: what happened is inspectable through the operator
 query surface.
+
+## Keyed sims & keyless CI (env-gate contract)
+
+The Anthropic/OpenAI keys live in local lanes' `~/.zshenv`; **CI runners
+do not have them and must not** (never bake a key into CI).
+
+**CI reality (verified, stated honestly):** no key-dependent sim is
+executed by CI. There is no `packages/tiny-firegrid/test/` dir, the
+tiny-firegrid `test` script is empty (`turbo run test` runs none of
+them), `ci.yml` invokes no `simulate`/`proof`/`demo`, and the §7.7
+check above audits only deterministic completing sims (agent-gated
+classes are `optional`, never forced). So today there is **no false CI
+failure** from missing keys — this section is defense-in-depth + the
+contract for local/demo keyless runs and any future smoke wrapper.
+
+**Driver contract:** a keyed sim run without its key **fails fast with
+an explicit authoritative reason**, it does not silently hang. Uniform
+guard (mirrors `dark-factory-pipeline`):
+
+| sim | key | keyless behavior |
+|---|---|---|
+| `dark-factory-pipeline` | `ANTHROPIC_API_KEY` | fast `Effect.fail` "requires ANTHROPIC_API_KEY for claude-agent-acp" |
+| `permission-flow-pipeline` | `ANTHROPIC_API_KEY` | fast `Effect.fail` "requires ANTHROPIC_API_KEY for claude-code-acp" (was a silent ~90s `SimulationRunTimeout` before this guard) |
+| `codex-acp-tool-call-pipeline` | `OPENAI_API_KEY` | fast `Effect.fail` "requires OPENAI_API_KEY for codex-acp" (was a silent ~90s timeout) |
+| `execute-provider-side-effect-pipeline` | — none — | **not key-dependent**: agent-free deterministic stdio-jsonl child; completes hermetically. (Correcting a mis-categorization: it requires no key.) |
+
+The guard fires **only** when the key is absent; the real-key
+assertion is untouched (no weakening). Failure is non-zero on purpose:
+a keyed proof sim that "passed" without its key would prove nothing —
+faking exit-0 success would be papering and would hollow out the §6 /
+§7.7 proofs.
+
+**The exit-0 "skip" belongs at the test-harness layer, not the driver.**
+Any future smoke test that wraps a keyed sim must env-gate with the
+established `.smoke` discipline — `const maybeIt = hasKey() ? it :
+it.skip` (skip with an explicit reason, suite exits 0) — exactly as the
+codex-acp `.smoke` pattern does for `OPENAI_API_KEY`. Do not move the
+exit-0 into the sim itself.
+
+**`demo:s6` / `simulate proof` keyless:** `demo:s6` runs
+`dark-factory-pipeline` (now fails fast with the authoritative reason),
+prints `re-run with a valid ANTHROPIC_API_KEY`, and propagates the
+non-zero exit; it does not render a proof from a non-existent run. This
+is correct degrade behavior and is **not** run by CI. `simulate proof`
+on a run with no §6 summary reports `run … has no §6 proof summary`
+(non-zero) — also correct, also not CI-run.
