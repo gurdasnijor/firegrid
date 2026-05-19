@@ -14,6 +14,7 @@
   "scripts": {
     "build": "tsc",
     "check": "pnpm run typecheck",
+    "demo:s6": "tsx src/bin/demo-s6.ts",
     "simulate": "tsx src/bin/simulate.ts",
     "simulate:attach": "tsx src/bin/simulate.ts attach",
     "simulate:duckdb": "tsx src/bin/simulate.ts duckdb",
