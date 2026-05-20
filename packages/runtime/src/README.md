@@ -65,16 +65,7 @@ These are intentionally not agent event-pipeline stages:
 - `streams/`: substrate-neutral runtime observation source schemas and
   observation stream capability tags. Consumers such as wait routers and
   future channel registries use this folder for typed stream selection without
-  depending on durable-tools ownership.
-- `durable-tools/`: durable coordination operator boundary — `WaitFor.match`,
-  durable wait rows, and the wait-owned router. `wait_for` is the first
-  durable tool
-  (`firegrid-typed-wait-source-redesign.CONTEXT.4`).
-  `WaitFor.match` accepts an empty trigger as an any-row match. Combined with
-  `timeoutMs: 0`, this is the discovery probe for an already-present row:
-  initial-state replay can return a source row, while an empty source resolves
-  as `Timeout` without adding a peek, list-stream, or schema-introspection
-  primitive.
+  depending on workflow ownership.
 - `workflow-engine/`: workflow substrate adapter and runtime-owned workflow
   definitions (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
   Host packages install live workflow Layers and provide topology; they do not

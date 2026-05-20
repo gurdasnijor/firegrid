@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest"
 import {
-  DurableWaitRows,
-  DurableWaitRowLookup,
-  DurableWaitRowUpsert,
-  DurableWaitStoreLive,
-} from "../../src/durable-tools/internal/durable-wait-store.ts"
-import {
   RuntimeContextInsert,
   RuntimeContextRead,
   RuntimeContexts,
@@ -55,27 +49,6 @@ const providerEntries = [
     provider: RuntimeControlPlaneRecorderLive,
     backingTable: "RuntimeControlPlaneTable.runs",
   },
-  {
-    capability: DurableWaitRowLookup,
-    provider: DurableWaitStoreLive,
-    backingTable: "DurableToolsTable.waits",
-  },
-  {
-    capability: DurableWaitRowUpsert,
-    provider: DurableWaitStoreLive,
-    backingTable: "DurableToolsTable.waits",
-  },
-  {
-    capability: DurableWaitRows,
-    provider: DurableWaitStoreLive,
-    backingTable: "DurableToolsTable.waits",
-  },
-  // Shape C Step 2 + Step 3 (docs/research/durable-tools-vs-workflow-engine-convergence.md):
-  // the `DurableToolsTable.completions` backing table is gone — match/timeout
-  // arbitration is `DurableDeferred.raceAll`'s race deferred, idempotent
-  // first-writer-wins via `engine.deferredDone`. The previously-tested
-  // `DurableWaitCompletionRow{Lookup,Upsert}` capability tags + their provider
-  // entries were deleted with the table.
 ] as const satisfies readonly TestProviderEntry[]
 
 const canonicalCapabilityTags = [
@@ -85,13 +58,10 @@ const canonicalCapabilityTags = [
   RuntimeContexts,
   RuntimeRuns,
   RuntimeRunAppendAndGet,
-  DurableWaitRowLookup,
-  DurableWaitRowUpsert,
-  DurableWaitRows,
 ] as const
 
 describe("runtime durable capability provider uniqueness", () => {
-  it("firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.5 firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.7 firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.9 firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.11 firegrid-runtime-agent-event-pipeline.ENFORCEMENT.1 firegrid-runtime-agent-event-pipeline.ENFORCEMENT.5 firegrid-runtime-agent-event-pipeline.ENFORCEMENT.5-1 maps each durable capability tag value to one real provider layer value", () => {
+  it("firegrid-runtime-agent-event-pipeline.ENFORCEMENT.1 firegrid-runtime-agent-event-pipeline.ENFORCEMENT.5 maps each durable capability tag value to one real provider layer value", () => {
     const tags = providerEntries.map(entry => entry.capability)
     expect(tags).toEqual(canonicalCapabilityTags)
     expect(new Set(tags).size).toBe(tags.length)

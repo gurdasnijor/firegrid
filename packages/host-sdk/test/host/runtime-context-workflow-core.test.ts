@@ -1,6 +1,5 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
 import { Prompt } from "@effect/ai"
-import { Workflow } from "@effect/workflow"
 import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
@@ -14,7 +13,7 @@ import {
   type RuntimeEventRow,
   type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
-import { Effect, Fiber, Layer, Option, Ref, Schema, Stream } from "effect"
+import { Effect, Fiber, Layer, Option, Ref, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeControlPlaneRecorderLive,
@@ -32,7 +31,10 @@ import {
   runtimeAgentOutputObservationFromRow,
   type AgentInputEvent,
 } from "@firegrid/runtime/events"
-import { DurableToolsTable, DurableToolsWaitForLive, WaitFor } from "@firegrid/runtime/durable-tools"
+import {
+  WaitForWorkflow,
+  WaitForWorkflowLayer,
+} from "@firegrid/runtime/workflows"
 import {
   RuntimeContextWorkflowNative,
   RuntimeContextWorkflowNativeLayer,
@@ -48,7 +50,7 @@ import {
   FiregridRuntimeHostWithWorkflowLive,
 } from "../../src/host/layers.ts"
 import {
-  HostRuntimeObservationSubstrateLive,
+  HostRuntimeObservationStreamsLive,
 } from "../../src/host/runtime-substrate.ts"
 import { RuntimeHostConfig } from "../../src/host/config.ts"
 import {
@@ -189,27 +191,6 @@ const logRow = (input: {
   raw: "startup log",
 })
 
-const agentOutputAfterWaitName = (
-  contextId: string,
-  activityAttempt: number,
-  afterSequence: number,
-) => `runtime-context/${contextId}/output-after/${activityAttempt}/${afterSequence}`
-
-const waitUntilActiveWait = (
-  name: string,
-) =>
-  Effect.gen(function*() {
-    const table = yield* DurableToolsTable
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      const rows = yield* table.waits.query((coll) =>
-        coll.toArray.filter(row =>
-          row.waitKey.name === name && row.status === "active"))
-      if (rows.length > 0) return rows[0]!
-      yield* Effect.sleep("25 millis")
-    }
-    return yield* Effect.fail(new Error(`wait row did not become active: ${name}`))
-  })
-
 // tf-uo2c: gate tests on workflow body entry instead of a particular active
 // wait row. This keeps synchronization stable across pre-collapse WaitFor and
 // post-collapse direct observation bodies.
@@ -228,9 +209,9 @@ const waitUntilWorkflowStarted = (
       if (rows.length > 0) return rows[0]!
       yield* Effect.sleep("25 millis")
     }
-    return yield* Effect.fail(new Error(
+    return yield* Effect.dieMessage(
       `workflow body did not record a started run row: ${contextId}/${activityAttempt}`,
-    ))
+    )
   })
 
 const waitUntilActivityCompleted = (
@@ -245,9 +226,9 @@ const waitUntilActivityCompleted = (
       if (rows.length > 0) return rows[0]!
       yield* Effect.sleep("25 millis")
     }
-    return yield* Effect.fail(new Error(
+    return yield* Effect.dieMessage(
       `workflow activity did not complete: ${activityName}`,
-    ))
+    )
   })
 
 const startedEvidence = (
@@ -337,7 +318,6 @@ const runtimeContextWorkflowTestLayer = (input: {
   readonly namespace: string
   readonly hostId: HostId
   readonly workflowUrl: string
-  readonly waitUrl: string
   readonly controlUrl: string
   readonly outputUrl: string
   readonly sessionLayer: Layer.Layer<RuntimeContextWorkflowSession>
@@ -358,7 +338,6 @@ const runtimeContextWorkflowTestLayer = (input: {
           }),
         }),
     })),
-    Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: input.waitUrl })),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(RuntimeAgentOutputEventsLayer),
     Layer.provideMerge(testHostWideRuntimeAgentOutputAfterEventsLive),
@@ -410,28 +389,17 @@ describe("workflow-native runtime-context core", () => {
       },
     }
 
-    const AgentOutputAfterWorkflow = Workflow.make({
-      name: "path-x-agent-output-after-initial",
-      payload: Schema.Struct({ contextId: Schema.String }),
-      success: Schema.Unknown,
-      error: Schema.Unknown,
-      idempotencyKey: payload => payload.contextId,
-    })
-    const workflowLayer = AgentOutputAfterWorkflow.toLayer(({ contextId: payloadContextId }) =>
-      Effect.gen(function*() {
-        const outcome = yield* WaitFor.match({
-          name: agentOutputAfterWaitName(payloadContextId, activityAttempt, -1),
-          source: {
-            _tag: "AgentOutputAfter",
-            contextId: payloadContextId,
-            activityAttempt,
-            afterSequence: -1,
-          },
-          trigger: [],
-        })
-        if (outcome._tag === "Timeout") return yield* Effect.fail("unexpected timeout")
-        return outcome.row
-      }))
+    const layer = WaitForWorkflowLayer.pipe(
+      Layer.provideMerge(HostRuntimeObservationStreamsLive),
+      Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
+        streamUrl: streamUrl(`${namespace}.test.workflow`),
+      })),
+      Layer.provideMerge(FiregridRuntimeHostWithWorkflowLive({
+        durableStreamsBaseUrl: baseUrl,
+        namespace,
+        hostId,
+      })),
+    )
 
     const result = await Effect.runPromise(
       Effect.scoped(
@@ -443,19 +411,21 @@ describe("workflow-native runtime-context core", () => {
             0,
             { _tag: "Terminated", exitCode: 0 },
           )
-          return yield* AgentOutputAfterWorkflow.execute({ contextId })
-        }).pipe(
-          Effect.provide(workflowLayer),
-          Effect.provide(HostRuntimeObservationSubstrateLive),
-          Effect.provide(DurableStreamsWorkflowEngine.layer({
-            streamUrl: streamUrl(`${namespace}.test.workflow`),
-          })),
-          Effect.provide(FiregridRuntimeHostWithWorkflowLive({
-            durableStreamsBaseUrl: baseUrl,
-            namespace,
-            hostId,
-          })),
-        ),
+          const outcome = yield* WaitForWorkflow.execute({
+            executionKey: `agent-output-initial:${contextId}`,
+            source: {
+              _tag: "AgentOutputAfter",
+              contextId,
+              activityAttempt,
+              afterSequence: -1,
+            },
+            trigger: [],
+          })
+          if (outcome._tag === "Timeout") {
+            return yield* Effect.fail("unexpected timeout")
+          }
+          return outcome.raw
+        }).pipe(Effect.provide(layer)),
       ),
     )
 
@@ -487,37 +457,33 @@ describe("workflow-native runtime-context core", () => {
       },
     }
 
-    const AgentOutputAfterWorkflow = Workflow.make({
-      name: "path-x-agent-output-after-live",
-      payload: Schema.Struct({ contextId: Schema.String }),
-      success: Schema.Unknown,
-      error: Schema.Unknown,
-      idempotencyKey: payload => payload.contextId,
-    })
-    const workflowLayer = AgentOutputAfterWorkflow.toLayer(({ contextId: payloadContextId }) =>
-      Effect.gen(function*() {
-        const outcome = yield* WaitFor.match({
-          name: agentOutputAfterWaitName(payloadContextId, activityAttempt, -1),
-          source: {
-            _tag: "AgentOutputAfter",
-            contextId: payloadContextId,
-            activityAttempt,
-            afterSequence: -1,
-          },
-          trigger: [],
-        })
-        if (outcome._tag === "Timeout") return yield* Effect.fail("unexpected timeout")
-        return outcome.row
-      }))
+    const layer = WaitForWorkflowLayer.pipe(
+      Layer.provideMerge(HostRuntimeObservationStreamsLive),
+      Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
+        streamUrl: streamUrl(`${namespace}.test.workflow`),
+      })),
+      Layer.provideMerge(FiregridRuntimeHostWithWorkflowLive({
+        durableStreamsBaseUrl: baseUrl,
+        namespace,
+        hostId,
+      })),
+    )
 
     const result = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function*() {
-          const fiber = yield* AgentOutputAfterWorkflow.execute({ contextId }).pipe(
+          const fiber = yield* WaitForWorkflow.execute({
+            executionKey: `agent-output-live:${contextId}`,
+            source: {
+              _tag: "AgentOutputAfter",
+              contextId,
+              activityAttempt,
+              afterSequence: -1,
+            },
+            trigger: [],
+          }).pipe(
             Effect.forkScoped,
           )
-          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, activityAttempt, -1))
-          yield* Effect.sleep("100 millis")
           const writer = yield* PerContextRuntimeOutputWriter
           yield* writer.appendAgentEvent(
             context,
@@ -525,19 +491,12 @@ describe("workflow-native runtime-context core", () => {
             0,
             { _tag: "Terminated", exitCode: 0 },
           )
-          return yield* Fiber.join(fiber)
-        }).pipe(
-          Effect.provide(workflowLayer),
-          Effect.provide(HostRuntimeObservationSubstrateLive),
-          Effect.provide(DurableStreamsWorkflowEngine.layer({
-            streamUrl: streamUrl(`${namespace}.test.workflow`),
-          })),
-          Effect.provide(FiregridRuntimeHostWithWorkflowLive({
-            durableStreamsBaseUrl: baseUrl,
-            namespace,
-            hostId,
-          })),
-        ),
+          const outcome = yield* Fiber.join(fiber)
+          if (outcome._tag === "Timeout") {
+            return yield* Effect.fail("unexpected timeout")
+          }
+          return outcome.raw
+        }).pipe(Effect.provide(layer)),
       ),
     )
 
@@ -555,7 +514,6 @@ describe("workflow-native runtime-context core", () => {
     const hostId = "host-a" as HostId
     const contextId = `ctx_${crypto.randomUUID()}`
     const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
-    const waitUrl = streamUrl(`${namespace}.host-a.waits`)
     const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
     const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
     const sessionEvents = { starts: [] as Array<string>, reattaches: [] as Array<string>, emissions: [] as Array<string> }
@@ -563,7 +521,6 @@ describe("workflow-native runtime-context core", () => {
       namespace,
       hostId,
       workflowUrl,
-      waitUrl,
       controlUrl,
       outputUrl,
       sessionLayer: reconstructableSessionLayer(sessionEvents),
@@ -600,7 +557,6 @@ describe("workflow-native runtime-context core", () => {
     const hostId = "host-a" as HostId
     const contextId = `ctx_${crypto.randomUUID()}`
     const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
-    const waitUrl = streamUrl(`${namespace}.host-a.waits`)
     const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
     const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
     const beforeRestart = { starts: [] as Array<string>, reattaches: [] as Array<string>, emissions: [] as Array<string> }
@@ -618,7 +574,6 @@ describe("workflow-native runtime-context core", () => {
             namespace,
             hostId,
             workflowUrl,
-            waitUrl,
             controlUrl,
             outputUrl,
             sessionLayer: reconstructableSessionLayer(beforeRestart),
@@ -658,7 +613,6 @@ describe("workflow-native runtime-context core", () => {
             namespace,
             hostId,
             workflowUrl,
-            waitUrl,
             controlUrl,
             outputUrl,
             sessionLayer: reconstructableSessionLayer(afterRestart),
@@ -681,7 +635,6 @@ describe("workflow-native runtime-context core", () => {
     const hostId = "host-a" as HostId
     const contextId = `ctx_${crypto.randomUUID()}`
     const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
-    const waitUrl = streamUrl(`${namespace}.host-a.waits`)
     const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
     const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
     const sent: Array<RuntimeContextSessionCommand> = []
@@ -690,7 +643,6 @@ describe("workflow-native runtime-context core", () => {
       namespace,
       hostId,
       workflowUrl,
-      waitUrl,
       controlUrl,
       outputUrl,
       sessionLayer: RuntimeContextWorkflowSession.layer({
@@ -754,7 +706,6 @@ describe("workflow-native runtime-context core", () => {
     const hostId = "host-a" as HostId
     const contextId = `ctx_${crypto.randomUUID()}`
     const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
-    const waitUrl = streamUrl(`${namespace}.host-a.waits`)
     const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
     const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
     const beforeRestart = { starts: [] as Array<string>, reattaches: [] as Array<string>, emissions: [] as Array<string> }
@@ -788,16 +739,15 @@ describe("workflow-native runtime-context core", () => {
               if (beforeRestart.emissions.length >= 1) return
               yield* Effect.sleep("25 millis")
             }
-            return yield* Effect.fail(new Error(
+            return yield* Effect.dieMessage(
               `workflow body did not emit ToolResult before restart: ${contextId}`,
-            ))
+            )
           })
         }).pipe(
           Effect.provide(runtimeContextWorkflowTestLayer({
             namespace,
             hostId,
             workflowUrl,
-            waitUrl,
             controlUrl,
             outputUrl,
             sessionLayer: reconstructableSessionLayer(beforeRestart),
@@ -823,7 +773,6 @@ describe("workflow-native runtime-context core", () => {
             namespace,
             hostId,
             workflowUrl,
-            waitUrl,
             controlUrl,
             outputUrl,
             sessionLayer: reconstructableSessionLayer(afterRestart),
@@ -844,7 +793,6 @@ describe("workflow-native runtime-context core", () => {
     const hostId = "host-a" as HostId
     const contextId = `ctx_${crypto.randomUUID()}`
     const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
-    const waitUrl = streamUrl(`${namespace}.host-a.waits`)
     const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
     const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
     const beforeRestart: Array<RuntimeContextSessionCommand> = []
@@ -891,7 +839,6 @@ describe("workflow-native runtime-context core", () => {
             namespace,
             hostId,
             workflowUrl,
-            waitUrl,
             controlUrl,
             outputUrl,
             sessionLayer: sessionLayer(beforeRestart),
@@ -923,7 +870,7 @@ describe("workflow-native runtime-context core", () => {
             `firegrid.runtime-context.state.${contextId}.1.input.0`,
           )
           if (afterRestart.length === 0) {
-            return yield* Effect.fail(new Error("permission response was not sent after replay"))
+            return yield* Effect.dieMessage("permission response was not sent after replay")
           }
           yield* output.events.upsert(outputRow({
             contextId,
@@ -937,7 +884,6 @@ describe("workflow-native runtime-context core", () => {
             namespace,
             hostId,
             workflowUrl,
-            waitUrl,
             controlUrl,
             outputUrl,
             sessionLayer: sessionLayer(afterRestart),
@@ -969,7 +915,6 @@ describe("workflow-native runtime-context core", () => {
     let toolRuns = 0
 
     const workflowUrl = streamUrl(`${namespace}.host-a.workflow`)
-    const waitUrl = streamUrl(`${namespace}.host-a.waits`)
     const controlUrl = streamUrl(`${namespace}.firegrid.runtime`)
     const outputUrl = streamUrl(`${namespace}.host-a.runtimeOutput`)
 
@@ -999,8 +944,7 @@ describe("workflow-native runtime-context core", () => {
             }
           }),
       })),
-      Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: waitUrl })),
-      Layer.provideMerge(RuntimeControlPlaneRecorderLive),
+    Layer.provideMerge(RuntimeControlPlaneRecorderLive),
       Layer.provideMerge(RuntimeAgentOutputEventsLayer),
       Layer.provideMerge(testHostWideRuntimeAgentOutputAfterEventsLive),
       Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),

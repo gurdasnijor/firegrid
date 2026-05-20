@@ -70,7 +70,7 @@ const toolCallWorkflowSupportLayer = (
   | WorkflowEngineTable
 > =>
   // TFIND-031 (Option Y): the ephemeral tool-call workflow body
-  // (`toolUseToEffect` — `WaitFor.match`, child workflows) genuinely
+  // (`toolUseToEffect` — WaitForWorkflow, child workflows) genuinely
   // requires the runtime observation substrate. Like
   // `runtimeContextWorkflowSupportLayer`, this execution-scoped support
   // layer must SELF-CONTAIN that substrate (one materialized store,

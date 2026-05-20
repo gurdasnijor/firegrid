@@ -4,7 +4,7 @@ Host-side Firegrid runtime package.
 
 The runtime observes durable control-plane and ingress tables, starts sandbox
 providers, writes runtime output rows, owns the workflow engine, and exposes
-runtime-only durable tools.
+runtime-owned workflow definitions.
 
 For the stable operational map of the runtime package, see
 [Runtime Architecture](ARCHITECTURE.md). The SDDs remain decision records.
@@ -19,19 +19,13 @@ import {
 } from "@firegrid/runtime/runtime-host"
 
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
-
-import {
-  DurableToolsWaitForLive,
-  WaitFor,
-  RuntimeWaitSourceSchema,
-} from "@firegrid/runtime/durable-tools"
 ```
 
 | Subpath | Purpose |
 | --- | --- |
 | `@firegrid/runtime/runtime-host` | Runtime host Layer, config, `startRuntime`, and ingress helpers. |
 | `@firegrid/runtime/workflow-engine` | Durable `@effect/workflow` engine backed by Firegrid tables. |
-| `@firegrid/runtime/durable-tools` | Runtime-only durable tools, currently `WaitFor.match`. |
+| `@firegrid/runtime/workflows` | Runtime-owned workflow definitions such as `WaitForWorkflow` and runtime-context workflows. |
 
 ## Runtime Host
 
@@ -129,7 +123,7 @@ secret values as CLI flags. The production-shaped smoke runbook is
 ## Runtime With Workflow
 
 `FiregridRuntimeHostWithWorkflowLive` adds the durable workflow engine to the
-host layer. Use it when workflows or durable tools need
+host layer. Use it when workflows need
 `WorkflowEngine.WorkflowEngine`.
 
 ```ts
@@ -142,23 +136,11 @@ const Live = FiregridRuntimeHostWithWorkflowLive({
 })
 ```
 
-## Durable Tools
-
-`@firegrid/runtime/durable-tools` currently ships `WaitFor.match`, a
-workflow-handler primitive that persists a wait row and resumes when the
-subscription router observes a matching row in a registered DurableTable
-source collection.
-
-Read the detailed durable-tools guide:
-
-- [durable-tools README](src/durable-tools/README.md)
-- [Durable tools SDD](../../docs/proposals/SDD_FIREGRID_DURABLE_TOOLS.md)
-
 ## Boundary Rules
 
 - Runtime product code uses shared DurableTable declarations, not raw
   `@durable-streams/client` or `@durable-streams/state`.
 - Provider-specific behavior lives with providers, not in protocol.
-- Runtime-private workflow and durable-tool tables stay in this package.
+- Runtime-private workflow tables stay in this package.
 - Acquire runtime layers once per host scope; do not create table layers per
   row operation.

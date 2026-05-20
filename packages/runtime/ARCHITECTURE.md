@@ -8,8 +8,8 @@ package is organized and how new code should fit it.
 
 `@firegrid/runtime` is the host-side runtime package. It owns runtime host
 composition, local agent process execution, codec sessions, durable runtime
-output and ingress authorities, durable waits, workflow-engine integration,
-runtime agent tools, runtime agent adapters, source registration, and adjacent
+output and ingress authorities, workflow-engine integration,
+runtime agent tools, runtime agent adapters, observation streams, and adjacent
 host-only adapters such as verified webhook ingest.
 
 Browser-safe and app-facing session observation belongs in `@firegrid/client`.
@@ -27,7 +27,7 @@ callers. Prefer explicit subpaths in new code:
 | --- | --- |
 | `@firegrid/runtime/runtime-host` | Runtime host layers, config-derived host layers, `startRuntime`, ingress helpers, app source registration, and local-process env policy. |
 | `@firegrid/runtime/workflow-engine` | Firegrid-backed `@effect/workflow` engine adapter and its durable state row types. |
-| `@firegrid/runtime/durable-tools` | Runtime durable coordination operators, currently `WaitFor.match`, source registration primitives, and wait row capabilities. |
+| `@firegrid/runtime/workflows` | Runtime-owned workflow definitions, payload schemas, outcome schemas, and execution-id helpers. |
 | `@firegrid/runtime/events` | Normalized runtime agent event contracts and envelope helpers. |
 | `@firegrid/runtime/codecs` | Scoped codec session contracts and concrete ACP / stdio JSONL session layers. |
 | `@firegrid/runtime/agent-tools` | Firegrid agent tool schemas as Effect AI tools, MCP projection, host-coupled tool services, and tool-use lowering. |
@@ -51,14 +51,13 @@ docs-only metadata, compatibility aliases, or tests.
 | `src/agent-event-pipeline/subscribers/` | Historical subscriber boundary; runtime-context routing now lives in the host workflow/session owner. |
 | `src/authorities/` | Runtime control-plane authorities for contexts and runs. |
 | `src/host/` | Runtime host topology, command entrypoints, config-derived layers, host-owned table wiring, and host-coupled tool services. |
-| `src/durable-tools/` | Durable-tools bounded context: `WaitFor.match` operator, wait row authority, typed `RuntimeWaitSource` selection, `RuntimeWaitStreams`, and the wait router. `wait_for` is the first durable tool inside it. |
 | `src/workflow-engine/` | Firegrid durable-table adapter for `@effect/workflow`. |
 | `src/agent-tools/` | Runtime tool catalog, MCP host projection, scheduled input workflow, and tool lowering. |
 | `src/agent-adapters/` | Runtime-facing agent adapter facades and ACP mapping. |
 | `src/verified-webhook-ingest/` | Adjacent verified webhook fact ingest adapter. |
 
 `agent-event-pipeline/` is the only folder that should grow stage-like runtime
-event pipeline code. Host, waits, workflow engine, tools, adapters, source
+event pipeline code. Host, workflow engine, tools, adapters, source
 registration, verified ingest, and control-plane authorities are adjacent
 bounded contexts, not pipeline stages.
 
@@ -135,7 +134,6 @@ Runtime-owned durable writes are grouped by authority provider:
 | --- | --- |
 | Runtime output events and logs | `RuntimeAgentOutputEventsLayer` and read-side output tags in `agent-event-pipeline/authorities/runtime-output-journal.ts`. |
 | Runtime contexts and run events | `RuntimeControlPlaneRecorderLive` in `src/authorities/`. |
-| Durable wait rows and completions | `DurableWaitStoreLive` in `src/durable-tools/`. |
 
 Authority modules expose concrete write capabilities and concrete read
 observation surfaces. The read side is a typed `Stream` capability tag.
@@ -147,47 +145,18 @@ channel. For example, tool routing consumes runtime agent-output observations
 and an ingress append capability; it does not receive a runtime output table
 facade.
 
-`WaitFor.match` persists a typed `RuntimeWaitSource` discriminator
-(`AgentOutput` | `RuntimeRun`) on the wait row. The wait router resolves it
-without a source-name registry:
+`WaitForWorkflow` accepts a typed `RuntimeObservationSource` discriminator
+(`AgentOutput` | `AgentOutputAfter` | `RuntimeRun` | `CallerFact`). The
+workflow body resolves it through runtime observation streams:
 
 ```txt
-typed authority stream tags (RuntimeAgentOutputEvents, RuntimeRuns)
-  -> RuntimeWaitStreamsLive (Effect requirement channel)
-  -> wait router Match.value(source) selects the concrete stream
+typed authority stream tags (RuntimeAgentOutputEvents, RuntimeRuns, CallerOwnedFactStreams)
+  -> RuntimeObservationStreamsLive (Effect requirement channel)
+  -> WaitForWorkflow selects the concrete stream
 ```
 
-Adding a runtime wait source is one `RuntimeWaitSource` variant, one
-`RuntimeWaitStreams` field, and one router `Match` arm. There is no
-`SourceCollections` registry and no app source-name registration; app-owned
-facts use app-local projection waits over app-owned `DurableTable` rows.
-`RuntimeContext` waiting is deferred until a product flow needs it.
-
-## Durable Tools
-
-`src/durable-tools/` is a durable coordination operator boundary, not an agent
-event pipeline subscriber folder. `wait_for` is the first durable tool in it.
-
-The split is:
-
-- `WaitFor.match` is the workflow-handler operator. It writes or updates a wait
-  row, races workflow deferred completion with optional timeout, decodes the
-  matched payload at the call site, and returns `Match | Timeout`.
-- Durable wait row capability tags expose row lookup, row upsert, completion
-  lookup, completion upsert, and row streams without encoding lifecycle policy
-  into the provider.
-- The wait router is a wait-owned scoped driver. It observes active waits,
-  resolves registered source handles by name, evaluates triggers against source
-  rows, writes completion rows, updates wait status, and resolves workflow
-  deferreds.
-- Host-owned durable tools are composed under `src/host/` so wait rows use the
-  host's stream prefix.
-
-`docs/sdds/SDD_FIREGRID_DURABLE_WAIT_EXTRACTION.md` is a staged roadmap for
-possible extraction to `effect-durable-operators`. No wait code moves until a
-second consumer or extraction trigger proves the generic boundary. Firegrid
-runtime keeps source registration layers, runtime source names, tool bindings,
-and host adapters that depend on Firegrid vocabulary.
+Adding a runtime wait source is one `RuntimeObservationSource` variant, one
+`RuntimeObservationStreams` field, and one workflow `switch` arm.
 
 ## Host Composition
 
@@ -200,7 +169,7 @@ and host adapters that depend on Firegrid vocabulary.
 - local-process env resolver policy and host app source registration;
 - host-coupled tool services.
 
-Host layers compose runtime authorities, source registrations, durable waits,
+Host layers compose runtime authorities, observation streams,
 workflow engine, sandbox provider, runtime config, and current host session.
 Command handlers call narrow capabilities supplied by the layer; they should
 not construct runtime tables per operation.
@@ -221,7 +190,7 @@ rows or pipeline lifecycle.
 `src/verified-webhook-ingest/` is an adjacent external ingress/source adapter.
 It owns verified webhook fact schemas, key encoding, table declaration, and an
 ingest adapter. It can be observed by durable waits through normal source
-registration patterns, but it is not part of the agent event pipeline.
+stream patterns, but it is not part of the agent event pipeline.
 
 ## App Consumer Patterns
 

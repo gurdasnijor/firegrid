@@ -3,7 +3,6 @@
  *
  * Implements:
  *  - firegrid-verified-webhook-ingest.FACTS.2
- *  - firegrid-durable-tools.BOUNDARIES.6
  */
 
 import { ParseResult, Schema } from "effect"

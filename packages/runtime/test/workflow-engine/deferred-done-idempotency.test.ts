@@ -4,16 +4,12 @@
  *
  * This is a *Firegrid engine* property, not an upstream `@effect/workflow`
  * guarantee — upstream `DurableDeferred.done` specifies no idempotency
- * semantics. `durable-tools` relies on it directly: `reconcile.ts` re-issues
- * `deferredDone` on crash recovery and the wait router can fire match-side and
- * timeout-side completions for the same wait. If this invariant regresses,
- * `WaitFor.match` silently loses its exactly-once resolution guarantee.
+ * semantics. Runtime-owned workflows rely on it when replay re-drives a
+ * completion activity after an earlier completion already won. If this
+ * invariant regresses, restart replay can lose exactly-once resolution.
  *
- * See docs/research/durable-tools-vs-workflow-engine-convergence.md and
- * the implementation at
+ * See the implementation at
  * packages/runtime/src/workflow-engine/internal/engine-runtime.ts:252-266.
- *
- * Spec: firegrid-durable-tools.WAIT_FOR.6, firegrid-durable-tools.WAIT_FOR.7
  *
  * Harness mirrors DurableStreamsWorkflowEngine.test.ts: a real local
  * @durable-streams server, fresh per-test stream URLs, async `it` +
@@ -88,7 +84,7 @@ const inspectTable = async <A>(
   )
 
 describe("engine.deferredDone idempotency", () => {
-  it("firegrid-durable-tools.WAIT_FOR.7 keeps the first exit when deferredDone is called twice with different exits (router double-fire / reconcile re-drive)", async () => {
+  it("keeps the first exit when deferredDone is called twice with different exits", async () => {
     if (!baseUrl) throw new Error("server not started")
     const streamUrl = `${baseUrl}/v1/stream/deferred-idem-success-${crypto.randomUUID()}`
     const deferredName = "idem-approval"
@@ -166,7 +162,7 @@ describe("engine.deferredDone idempotency", () => {
     expect(deferredRows).toHaveLength(1)
   })
 
-  it("firegrid-durable-tools.WAIT_FOR.7 keeps a first failure exit even when a later success completion arrives", async () => {
+  it("keeps a first failure exit even when a later success completion arrives", async () => {
     if (!baseUrl) throw new Error("server not started")
     const streamUrl = `${baseUrl}/v1/stream/deferred-idem-failure-${crypto.randomUUID()}`
     const deferredName = "idem-approval-fail"

@@ -123,8 +123,7 @@ export const SleepTool = Tool.make(operationToolName(FiregridAgentToolOperations
 
 /**
  * `wait_for` — wait until a matching durable event appears.
- * Lowers onto the durable-tools `WaitFor.match` surface in
- * `toolUseToEffect`.
+ * Lowers onto the runtime-owned `WaitForWorkflow` surface in `toolUseToEffect`.
  */
 export const WaitForTool = Tool.make(operationToolName(FiregridAgentToolOperations.waitFor.metadata, "wait_for"), {
   description: operationDescription(FiregridAgentToolOperations.waitFor),

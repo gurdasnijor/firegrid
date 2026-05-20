@@ -10,7 +10,7 @@ import {
   type FiregridHost,
 } from "@firegrid/host-sdk"
 import { durableStreamUrl } from "@firegrid/protocol/launch"
-import { CallerOwnedFactStreams } from "@firegrid/runtime/durable-tools"
+import { CallerOwnedFactStreams } from "@firegrid/runtime/streams"
 import { DurableTable, type DurableTableLayerOptions } from "effect-durable-operators"
 import { Clock, Effect, Layer, Schedule, Schema, Stream } from "effect"
 import type { TinyFiregridSimulation, TinyFiregridSimulationEnv } from "../../types.ts"
