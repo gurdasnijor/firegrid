@@ -54,10 +54,10 @@ import {
   RuntimeInputIntentDispatcherLive,
 } from "./runtime-context-workflow-runtime.ts"
 import {
-  type ChannelRegistry,
-} from "./channel-registry.ts"
+  type ChannelInventory,
+} from "./channel.ts"
 import {
-  SessionSelfChannelRegistryLive,
+  SessionSelfChannelsLive,
 } from "./channels/session-self/index.ts"
 
 export class FiregridLocalProcess extends Context.Tag(
@@ -292,7 +292,7 @@ export type FiregridHost =
   | CurrentHostSession
   | RuntimeControlPlaneTable
   | RuntimeOutputTable
-  | ChannelRegistry
+  | ChannelInventory
 
 export const FiregridRuntimeHostLive = (
   options: RuntimeHostTopologyOptions,
@@ -306,7 +306,7 @@ export const FiregridRuntimeHostLive = (
   const session = currentHostSessionLayer(options)
   const namespaceScoped = namespaceScopedLayer(options)
   const hostScoped = hostScopedLayer(options)
-  const channelRegistry = SessionSelfChannelRegistryLive(options.channels)
+  const hostChannels = SessionSelfChannelsLive(options.channels)
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
@@ -315,7 +315,7 @@ export const FiregridRuntimeHostLive = (
     RuntimeStartCapabilityLive,
     RuntimeControlRequestReconcilerLive,
     RuntimeControlRequestWorkflowEngineLive,
-    channelRegistry,
+    hostChannels,
     ...(options.controlRequestReconciler === false
       ? []
       : [RuntimeControlRequestReconcilerDaemonLive]),
@@ -397,7 +397,9 @@ export const FiregridLocalHostLive = (
     ...(options.controlRequestReconciler === undefined
       ? {}
       : { controlRequestReconciler: options.controlRequestReconciler }),
-    ...(options.channels === undefined ? {} : { channels: options.channels }),
+    ...(options.channels === undefined
+      ? {}
+      : { channels: options.channels }),
   }
   return FiregridRuntimeHostWithWorkflowLive(composed, envPolicy)
 }

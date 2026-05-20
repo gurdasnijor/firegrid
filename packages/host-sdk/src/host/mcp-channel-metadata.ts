@@ -1,9 +1,10 @@
 import { McpSchema, McpServer } from "@effect/ai"
 import { Effect, JSONSchema } from "effect"
 import {
-  ChannelRegistry,
+  ChannelInventory,
+  channelMetadata,
   type ChannelMetadata,
-} from "./channel-registry.ts"
+} from "./channel.ts"
 
 const channelInventoryExtensionKey = "x-firegrid-channels"
 const waitForToolName = "wait_for"
@@ -127,9 +128,10 @@ export const enrichRuntimeContextMcpToolWithChannelMetadata = (
 
 export const enrichRuntimeContextMcpToolsListWithChannelMetadata =
   Effect.gen(function* () {
-    const registry = yield* ChannelRegistry
     const mcpServer = yield* McpServer.McpServer
-    const inventory = runtimeContextMcpChannelInventory(registry.metadata())
+    const channelInventory = yield* ChannelInventory
+    const metadata = channelInventory.channels.map(channelMetadata)
+    const inventory = runtimeContextMcpChannelInventory(metadata)
 
     const waitForTool = mcpServer.tools.find(tool => tool.name === waitForToolName)
     if (waitForTool === undefined) return

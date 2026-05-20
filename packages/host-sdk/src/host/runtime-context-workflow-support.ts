@@ -13,7 +13,7 @@ import {
   type HostRuntimeContextExecutionEnv,
   RuntimeToolUseExecutorLive,
 } from "./runtime-substrate.ts"
-import type { ChannelRegistry } from "./channel-registry.ts"
+import type { ChannelInventory } from "./channel.ts"
 
 // TFIND-031 (Option Y, layer-composition-order fix): BOTH the workflow
 // body (`RuntimeContextWorkflowNativeLayer`) and the tool executor
@@ -38,7 +38,7 @@ export const runtimeContextWorkflowSupportLayer = (
   never,
   unknown,
   | HostRuntimeContextExecutionEnv
-  | ChannelRegistry
+  | ChannelInventory
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngineTable
 > =>

@@ -1,5 +1,5 @@
-import { Context, Effect, Layer, Option, Schema } from "effect"
-import type { Stream } from "effect"
+import { Context, Layer, Option, Schema } from "effect"
+import type { Effect, Stream } from "effect"
 
 export const ChannelDirectionSchema = Schema.Literal(
   "ingress",
@@ -15,7 +15,6 @@ export const ChannelSourceClassSchema = Schema.Literal(
 )
 export type ChannelSourceClass = Schema.Schema.Type<typeof ChannelSourceClassSchema>
 
-// firegrid-agent-body-plan.CHANNEL_REGISTRY.1
 export const ChannelTargetSchema = Schema.String.pipe(
   Schema.minLength(1),
   Schema.brand("ChannelTarget"),
@@ -24,8 +23,6 @@ export type ChannelTarget = Schema.Schema.Type<typeof ChannelTargetSchema>
 
 export const makeChannelTarget = (target: string): ChannelTarget =>
   Schema.decodeUnknownSync(ChannelTargetSchema)(target)
-
-export const FactoryEventsChannelTarget = makeChannelTarget("factory.events")
 
 export const FactoryEventSchema = Schema.Struct({
   eventType: Schema.String,
@@ -115,6 +112,35 @@ export type ChannelRegistration =
   | BidirectionalChannel
   | CallableChannel
 
+export interface ChannelInventoryService {
+  readonly channels: ReadonlyArray<ChannelRegistration>
+}
+
+export class ChannelInventory extends Context.Tag(
+  "firegrid/host-sdk/ChannelInventory",
+)<ChannelInventory, ChannelInventoryService>() {}
+
+export const makeChannelInventory = (
+  channels: Iterable<ChannelRegistration>,
+): ChannelInventoryService => ({
+  channels: Array.from(channels),
+})
+
+export const ChannelInventoryLive = (
+  channels: Iterable<ChannelRegistration> = [],
+): Layer.Layer<ChannelInventory> =>
+  Layer.succeed(ChannelInventory, makeChannelInventory(channels))
+
+export const findChannel = (
+  inventory: ChannelInventoryService,
+  target: ChannelTarget | string,
+): Option.Option<ChannelRegistration> => {
+  const normalized = String(target)
+  return Option.fromNullable(
+    inventory.channels.find(channel => channel.target === normalized),
+  )
+}
+
 export type ChannelMetadata =
   | {
     readonly target: ChannelTarget
@@ -141,23 +167,9 @@ export type ChannelMetadata =
     readonly responseSchema: Schema.Schema.Any
   }
 
-export interface ChannelRegistryService {
-  readonly list: () => ReadonlyArray<ChannelRegistration>
-  readonly metadata: () => ReadonlyArray<ChannelMetadata>
-  readonly get: (target: ChannelTarget | string) => Option.Option<ChannelRegistration>
-  readonly getMetadata: (target: ChannelTarget | string) => Option.Option<ChannelMetadata>
-  readonly require: (
-    target: ChannelTarget | string,
-  ) => Effect.Effect<ChannelRegistration, UnknownChannelTarget>
-}
-
-export class ChannelRegistry extends Context.Tag(
-  "firegrid/host-sdk/ChannelRegistry",
-)<ChannelRegistry, ChannelRegistryService>() {}
-
-const normalizeTarget = (target: ChannelTarget | string): string => target
-
-const channelMetadata = (registration: ChannelRegistration): ChannelMetadata => {
+export const channelMetadata = (
+  registration: ChannelRegistration,
+): ChannelMetadata => {
   switch (registration.direction) {
     case "ingress":
       return {
@@ -283,51 +295,3 @@ export const makeCallableChannel = <
     call: options.call,
   },
 })
-
-// firegrid-agent-body-plan.CHANNEL_REGISTRY.5
-export const makeFactoryEventsChannel = <S extends Schema.Schema.Any>(
-  options: {
-    readonly schema: S
-    readonly stream: Stream.Stream<Schema.Schema.Type<S>, unknown, never>
-  },
-): IngressChannel<S> =>
-  makeIngressChannel({
-    target: FactoryEventsChannelTarget,
-    schema: options.schema,
-    stream: options.stream,
-  })
-
-export const makeChannelRegistry = (
-  registrations: Iterable<ChannelRegistration>,
-): ChannelRegistryService => {
-  const ordered = Array.from(registrations)
-  const byTarget = new Map<string, ChannelRegistration>()
-  const metadataByTarget = new Map<string, ChannelMetadata>()
-  ordered.forEach((registration) => {
-    const key = normalizeTarget(registration.target)
-    if (!byTarget.has(key)) {
-      byTarget.set(key, registration)
-      metadataByTarget.set(key, channelMetadata(registration))
-    }
-  })
-  return {
-    list: () => ordered,
-    metadata: () => ordered.map(channelMetadata),
-    get: target => Option.fromNullable(byTarget.get(normalizeTarget(target))),
-    getMetadata: target =>
-      Option.fromNullable(metadataByTarget.get(normalizeTarget(target))),
-    require: target => {
-      const key = normalizeTarget(target)
-      return Option.match(Option.fromNullable(byTarget.get(key)), {
-        onNone: () => Effect.fail(new UnknownChannelTarget({ target: key })),
-        onSome: registration => Effect.succeed(registration),
-      })
-    },
-  }
-}
-
-// firegrid-agent-body-plan.CHANNEL_REGISTRY.2
-export const ChannelRegistryLive = (
-  registrations: Iterable<ChannelRegistration> = [],
-): Layer.Layer<ChannelRegistry> =>
-  Layer.sync(ChannelRegistry, () => makeChannelRegistry(registrations))

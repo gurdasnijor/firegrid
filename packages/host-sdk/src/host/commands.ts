@@ -42,7 +42,7 @@ import {
   runtimeContextWorkflowSupportLayer,
 } from "./runtime-context-workflow-support.ts"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
-import type { ChannelRegistry } from "./channel-registry.ts"
+import type { ChannelInventory } from "./channel.ts"
 
 type RuntimeIngressAppendEnvironment =
   | RuntimeContextRead
@@ -190,7 +190,9 @@ export const RuntimeStartCapabilityLive = Layer.effect(
     // the composed Firegrid host layer) so the deferred `start` closure
     // can re-provide it. `never` here was only sound while
     // `DurableTable.layer` leaked `any`.
-    const captured = yield* Effect.context<HostRuntimeContextExecutionEnv | ChannelRegistry>()
+    const captured = yield* Effect.context<
+      HostRuntimeContextExecutionEnv | ChannelInventory
+    >()
     const contextRead = yield* RuntimeContextRead
     const hostSession = yield* CurrentHostSession
     const runtime = yield* RuntimeContextWorkflowRuntime

@@ -10,7 +10,7 @@ import {
   type BidirectionalChannel,
   type ChannelSourceClass,
   type ChannelTarget,
-} from "./channel-registry.ts"
+} from "./channel.ts"
 
 export const EventChannelSourceClasses = [
   "static-source",

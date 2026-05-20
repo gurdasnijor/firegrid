@@ -7,10 +7,13 @@ components:
   CHANNEL_REGISTRY:
     requirements:
       1: Host SDK exposes an opaque ChannelTarget string token schema for agent-facing channel addresses.
-      2: Host SDK exposes a ChannelRegistry service that registers channel targets with ingress, egress, or call direction metadata.
-      3: Channel registry metadata exposes the channel schema shape needed by downstream tool metadata without exposing substrate bindings.
-      4: Channel registrations bind ingress channels to typed streams, egress channels to append targets, and call channels to request-response handlers.
-      5: The factory.events channel can be registered through host composition as an ingress channel without exposing CallerFact or stream names to agent-visible metadata.
+      2:
+        requirement: Host SDK exposes a ChannelRegistry service that registers channel targets with ingress, egress, or call direction metadata.
+        deprecated: true
+      2-1: Host SDK exposes each channel binding as its own Effect Context.Tag provided by host Layer composition.
+      3: Channel Tag metadata exposes the channel schema shape needed by downstream tool metadata without exposing substrate bindings.
+      4: Channel Tags bind ingress channels to typed streams, egress channels to append targets, and call channels to request-response handlers.
+      5: The factory.events channel can be provided through host composition as an ingress channel without exposing CallerFact or stream names to agent-visible metadata.
   MCP_CHANNEL_METADATA:
     requirements:
       1: Runtime-context MCP tools/list metadata exposes the registered channel inventory with channel name, direction, and schema information.
@@ -49,15 +52,15 @@ components:
     requirements:
       1: The wait_for agent-tool input schema accepts channel, optional match, and optional timeoutMs fields.
       2: The wait_for agent-tool input schema does not expose source, source._tag, or stream fields.
-      3: wait_for resolves its channel field through the host ChannelRegistry and only accepts ingress channel registrations.
+      3: wait_for resolves its channel field through the MCP-edge string-to-Tag adapter and only accepts ingress-capable channel Tags.
       4: wait_for accepts an omitted match as a channel discovery request and accepts timeoutMs:0 as an immediate discovery bound.
       5: wait_for returns matched channel rows as matched:true event payloads and timeout results as matched:false timedOut:true.
   SLICE_D_VERBS:
     requirements:
       1: FiregridAgentToolkit exposes send, call, and wait_for_any as agent-facing tools.
-      2: The send tool resolves only egress channels and appends a payload decoded by the registered channel schema.
-      3: The call tool resolves call channel registrations and dispatches requests decoded by the registered request schema, while preserving the approval channel fallback.
-      4: The wait_for_any tool resolves only ingress channels, races the descriptors, and returns the first winner index, channel, and result.
+      2: The send tool resolves only egress-capable channel Tags and appends a payload decoded by the channel schema.
+      3: The call tool resolves call channel Tags and dispatches requests decoded by the request schema, while preserving the approval channel fallback.
+      4: The wait_for_any tool resolves only ingress-capable channel Tags, races the descriptors, and returns the first winner index, channel, and result.
 
   SESSION_LOG:
     requirements:

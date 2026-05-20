@@ -6,9 +6,8 @@ import {
 } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
+  channelMetadata,
   eventChannelFromCollection,
-  makeChannelRegistry,
-  type EventChannel,
 } from "../../src/host/index.ts"
 
 const EventRowSchema = Schema.Struct({
@@ -72,14 +71,12 @@ describe("event(name) channel", () => {
         collection: table.events,
       })
 
-      const registry = makeChannelRegistry([channel])
       const agentVisibleWaitInput = { channel: "event.plan.ready" }
       const agentVisibleSendInput = {
         channel: "event.plan.ready",
         payload: { note: "ready" },
       }
-      const registered = yield* registry.require(agentVisibleWaitInput.channel)
-      const event = registered as EventChannel<typeof EventRowSchema>
+      const event = channel
 
       expect(event.kind).toBe("event")
       expect(event.eventName).toBe("plan.ready")
@@ -88,9 +85,7 @@ describe("event(name) channel", () => {
       expect(event.sourceClasses).toEqual(["static-source", "predicate-eligible"])
       expect(event.schema).toBe(EventRowSchema)
 
-      const metadata = Option.getOrThrow(
-        registry.getMetadata(agentVisibleWaitInput.channel),
-      )
+      const metadata = channelMetadata(channel)
       expect(metadata.direction).toBe("bidirectional")
       if (metadata.direction !== "bidirectional") {
         return

@@ -137,10 +137,8 @@ export interface AgentToolHostService {
   ) => Effect.Effect<unknown, ToolExecutionFailedError>
 
   /**
-   * Approval call-channel adapter. This is intentionally narrower than the
-   * eventual dynamic ChannelRegistry call surface: Phase 2 Slice C.4 only
-   * binds approval.* targets to the existing permission request/response
-   * substrate.
+   * Approval call-channel adapter. Phase 2 Slice C.4 binds approval.*
+   * targets to the existing permission request/response substrate.
    */
   readonly callApprovalChannel: (
     params: CallApprovalChannelParams,
