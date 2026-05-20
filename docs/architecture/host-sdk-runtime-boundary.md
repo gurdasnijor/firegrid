@@ -298,23 +298,54 @@ Moving infra out of `host-sdk` must not make dark-factory harder to compose. The
 consumer story should stay:
 
 ```ts
-Layer.mergeAll(
-  FiregridRuntimeHostLive(options),
-  FiregridMcpServerLayer(mcpOptions),
+const ChannelsLive = Layer.mergeAll(
   LinearWebhookLive(...),
   HumanApprovalChannelLive(...),
 )
+
+Layer.mergeAll(
+  FiregridRuntimeHostLive(options).pipe(
+    Layer.provideMerge(ChannelsLive),
+  ),
+  FiregridMcpServerLayer(mcpOptions).pipe(
+    Layer.provideMerge(ChannelsLive),
+  ),
+)
 ```
 
-The difference is what those Layers provide. Today, host-sdk often exposes or
-contains the execution machinery directly. Under this framing, host-sdk
-composition helpers provide semantic capabilities and runtime-owned services.
-The app still composes one host layer; it does not import workflow definitions
-or durable table facades.
+The exact composition shape may change as channel Layers become first-class.
+The invariant is that channel Layers are ordinary Effect services provided into
+host/MCP/toolkit layers that need them; they are not a mutable registry passed
+around as application state. Today, host-sdk often exposes or contains the
+execution machinery directly. Under this framing, host-sdk composition helpers
+provide semantic capabilities and runtime-owned services. The app still
+composes one host layer; it does not import workflow definitions or durable
+table facades.
 
 That preserves ergonomics while improving testability: tests can provide a fake
 channel tag, fake runtime execution service, or fake protocol capability
 without booting the full host workflow engine.
+
+## Risk Surfaces
+
+### Runtime-to-host callback pressure
+
+If runtime execution needs something host-specific, it must not import
+`@firegrid/host-sdk`. Invert the dependency with a runtime-owned capability tag
+and a host-sdk-provided live Layer. This is the existing `RuntimeToolUseExecutor`
+shape: runtime owns the seam; host-sdk owns the host-bound implementation.
+
+Apply the same pattern for future substrate-to-host needs:
+
+```text
+runtime workflow / adapter / execution service
+  -> requires RuntimeOwnedCapability Tag
+  -> host-sdk provides RuntimeOwnedCapabilityLive from host topology
+```
+
+Do not solve these edges by moving host composition into runtime or by letting
+runtime import host-sdk. That would recreate the package cycle the firewall is
+meant to prevent.
 
 ## Implementation Sequence
 
