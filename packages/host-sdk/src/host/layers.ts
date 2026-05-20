@@ -51,6 +51,10 @@ import {
   RuntimeContextEngineRegistryLive,
   RuntimeInputIntentDispatcherLive,
 } from "./runtime-context-engine-registry.ts"
+import {
+  ChannelRegistryLive,
+  type ChannelRegistry,
+} from "./channel-registry.ts"
 
 export class FiregridLocalProcess extends Context.Tag(
   "firegrid/host-sdk/FiregridLocalProcess",
@@ -283,6 +287,7 @@ export type FiregridHost =
   | CurrentHostSession
   | RuntimeControlPlaneTable
   | RuntimeOutputTable
+  | ChannelRegistry
 
 export const FiregridRuntimeHostLive = (
   options: RuntimeHostTopologyOptions,
@@ -296,6 +301,7 @@ export const FiregridRuntimeHostLive = (
   const session = currentHostSessionLayer(options)
   const namespaceScoped = namespaceScopedLayer(options)
   const hostScoped = hostScopedLayer(options)
+  const channelRegistry = ChannelRegistryLive(options.channels)
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
@@ -313,6 +319,7 @@ export const FiregridRuntimeHostLive = (
     Layer.provideMerge(RuntimeContextEngineRegistryLive),
     Layer.provideMerge(namespaceScoped),
     Layer.provideMerge(session),
+    Layer.provideMerge(channelRegistry),
     Layer.provideMerge(runtimeEnvResolverPolicyLayer(envPolicy)),
     // TFIND-048: single-owner, host-scoped late-bind channel for the
     // runtime-context MCP base URL. Present (defaulting to `None`) even
@@ -368,6 +375,7 @@ export const FiregridLocalHostLive = (
     readonly headers?: DurableTableHeaders
     readonly localProcessEnv?: RuntimeHostTopologyOptions["localProcessEnv"]
     readonly controlRequestReconciler?: boolean
+    readonly channels?: RuntimeHostTopologyOptions["channels"]
   },
   envPolicy?: Layer.Layer<RuntimeEnvResolverPolicy>,
 ) => {
@@ -383,6 +391,7 @@ export const FiregridLocalHostLive = (
     ...(options.controlRequestReconciler === undefined
       ? {}
       : { controlRequestReconciler: options.controlRequestReconciler }),
+    ...(options.channels === undefined ? {} : { channels: options.channels }),
   }
   return FiregridRuntimeHostWithWorkflowLive(composed, envPolicy)
 }

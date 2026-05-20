@@ -6,6 +6,34 @@ export type {
 } from "./types.ts"
 
 export {
+  ChannelDirectionSchema,
+  ChannelRegistry,
+  ChannelRegistryLive,
+  ChannelTargetSchema,
+  FactoryEventSchema,
+  FactoryEventsChannelTarget,
+  UnknownChannelTarget,
+  makeAfferentChannel,
+  makeCallableChannel,
+  makeChannelRegistry,
+  makeChannelTarget,
+  makeEfferentChannel,
+  makeFactoryEventsChannel,
+  type AfferentChannel,
+  type AppendTargetBinding,
+  type CallableChannel,
+  type CallTargetBinding,
+  type ChannelDirection,
+  type ChannelMetadata,
+  type ChannelRegistration,
+  type ChannelRegistryService,
+  type ChannelTarget,
+  type EfferentChannel,
+  type FactoryEvent,
+  type TypedStreamBinding,
+} from "./channel-registry.ts"
+
+export {
   ContextNotFound,
   ContextNotLocal,
   CurrentHostSession,
