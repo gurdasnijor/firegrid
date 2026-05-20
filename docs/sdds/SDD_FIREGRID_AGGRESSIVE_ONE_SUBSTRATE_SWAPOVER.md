@@ -69,6 +69,13 @@ The replacement evidence is already strong enough:
 - INV-6 recommends keeping today's `Activity.make + Stream.runHead` shape for
   find-first waits. Do not add alpha/beta/gamma Activity primitives tonight.
 
+Phase 0 refined the runtime-context production body beyond INV-1's raw
+`zipLatest` shape. Wave-2A proved permission request/response routing works with
+the two existing streams. Wave-2C proved `zipLatest` waits for both sides to
+initialize and should not be used as if each emitted pair is semantically
+correlated. Therefore Phase 1 Lane 1 should use a merge-shaped event stream with
+explicit durable state, not a bare or sentinel-seeded `zipLatest` pair handler.
+
 The only important precision correction is INV-3: it proves restart replay for
 the old `WaitFor.match` / wait-router shape, not directly for the new
 `WaitForWorkflow` shape. That does not block the swapover. It becomes a final
@@ -98,13 +105,13 @@ one-substrate direction.
 Question:
 
 - Can permission-response intents be consumed as ordinary runtime input stream
-  events in the stream-zip body, or does the body need a separate permission
-  stream?
+  events in the runtime-context stream body, or does the body need a separate
+  permission stream?
 
 Work:
 
-- Build a tiny-firegrid stream-zip body sim that triggers a permission request
-  mid-flight.
+- Build a tiny-firegrid runtime-context stream body sim that triggers a
+  permission request mid-flight.
 - Drive a permission response.
 - Prove one of these shapes:
   - `GREEN-zip-2`: widened `runtimeInputStream` carries permission responses.
@@ -122,28 +129,35 @@ Phase 1 effect:
   through the output/event handler and defers approval-channelization to Phase 2
   Lane 5. It must not block the substrate deletion on a permission redesign.
 
-### Wave-2B: Stream-Zip Body Restart-Replay
+### Wave-2B: Runtime Body Restart-Replay
 
 Question:
 
-- Does `Stream.zipLatest(...).runForEach(...)` inside the runtime-context
-  workflow body continue correctly across a scoped host bounce?
+- Does the runtime-context stream body continue correctly across a scoped host
+  bounce, including replay of previously observed input/output rows?
 
 Work:
 
-- Combine the INV-1 stream-zip body with the INV-3 scoped-bounce pattern.
+- Combine the INV-1 stream-body sim with the INV-3 scoped-bounce pattern.
 - Start the runtime-context workflow.
 - Push inputs and outputs.
 - Bounce the host scope while the body is mid-stream.
 - Push additional rows after restart.
 - Assert continued handling by the same context workflow.
+- If possible, run the converged merge-shaped state-machine variant described
+  in Phase 1 Lane 1. If the sim only covers the raw INV-1 `zipLatest` body, its
+  verdict must be recorded as `GREEN-substrate-restart-resumes;
+  STATE-MACHINE-VARIANT-NEEDS-VALIDATION-IN-LANE-1`.
 
 Verdict:
 
 - `GREEN`: Phase 1 Lane 1 can claim restart-replay coverage.
+- `GREEN-substrate-restart-resumes; STATE-MACHINE-VARIANT-NEEDS-VALIDATION-IN-LANE-1`:
+  Phase 1 can continue, but Lane 1 must validate the durable state-machine
+  variant in its own tests before integration fan-in.
 - `IDENTIFIED-DRIVER-PATTERN`: Phase 1 can continue if the remaining issue is
   sim-driver setup rather than substrate semantics; record the driver pattern.
-- `RED`: Phase 1 Lane 1 does not fan out until the stream-zip replay shape is
+- `RED`: Phase 1 Lane 1 does not fan out until the runtime-body replay shape is
   corrected.
 
 ### Wave-2C: `Stream.zipLatest` Empty-Side Semantics
@@ -164,10 +178,12 @@ Work:
 Phase 1 effect:
 
 - If `zipLatest` requires both sides to emit before the first pair, Lane 1 must
-  seed each side with an initial sentinel or use the exact variant proven by
-  Wave-2C. It must not silently introduce an input-before-output stall.
-- If one-sided emission is supported, Lane 1 may use the simple two-stream
-  INV-1 shape directly.
+  not use bare `zipLatest` as the production event driver.
+- The preferred production shape is `Stream.merge` over side-tagged input and
+  output streams, with handler state deciding what each event means.
+- If Lane 1 keeps any `zipLatest` variant, it must prove why that variant cannot
+  stall on an input-only or output-only first event and cannot treat a pair as a
+  semantic correlation.
 
 ## Phase 1: Collapse To One Substrate
 
@@ -192,13 +208,17 @@ Owns:
 
 Work:
 
-- Port INV-1 into the production runtime-context workflow body.
+- Port INV-1's one-substrate intent into the production runtime-context workflow
+  body, refined by Phase 0's merge/correlation findings.
 - Replace `waitForAgentOutput`, `nextAgentOutput`, and the recursive reactive
-  output wait loop with:
+  output wait loop with a side-tagged merged stream:
 
 ```ts
-Stream.zipLatest(runtimeInputStream, runtimeOutputStream).pipe(
-  Stream.runForEach(pair => handleRuntimeContextPair(pair)),
+Stream.merge(
+  runtimeInputStream.pipe(Stream.map(event => ({ _tag: "Input" as const, event }))),
+  runtimeOutputStream.pipe(Stream.map(event => ({ _tag: "Output" as const, event }))),
+).pipe(
+  Stream.runForEach(event => handleRuntimeContextEvent(event)),
 )
 ```
 
@@ -208,6 +228,17 @@ Stream.zipLatest(runtimeInputStream, runtimeOutputStream).pipe(
 - Stop using `WaitFor.match` for `AgentOutputAfter`.
 - Stop using per-row output wait deferreds for the runtime-context body's own
   observation waits.
+- Treat the merged stream as an "event arrived" signal, not as a semantic pair.
+  The handler must correlate permission requests/responses and other paired
+  events by stable ids / sequences, not by latest-opposite-side value.
+- Store handler state durably. The state must survive replay and host bounce:
+  last processed input sequence, last processed output sequence, pending
+  permission requests, pending permission responses, and any other in-flight
+  correlation state. Do not use an ephemeral `Ref.make(state)` as the authority.
+- Preferred durable state shape: one-at-a-time Activity-result fold, where each
+  processed event transition writes an Activity result and restart reconstructs
+  state by folding those Activity result records. If Lane 1 chooses another
+  shape, it must prove equivalent replay behavior in its tests.
 - Follow the Wave-2A permission verdict exactly:
   - `GREEN-zip-2`: consume permission responses as ordinary runtime input
     stream events.
@@ -216,8 +247,8 @@ Stream.zipLatest(runtimeInputStream, runtimeOutputStream).pipe(
     preserve current observable permission behavior through the output/event
     handler.
 - Follow the Wave-2C empty-side verdict exactly. If `zipLatest` requires both
-  sides to emit before the first pair, seed the body streams or use the proven
-  variant; do not introduce an input-before-output stall.
+  sides to emit before the first pair, prefer the merged event stream above. Do
+  not introduce an input-before-output stall.
 
 Acceptance:
 
@@ -225,9 +256,13 @@ Acceptance:
   `runtime-context-workflow-core.ts`.
 - `workflow-core-paths` no longer emits
   `firegrid.runtime_context.workflow.output.wait`.
-- INV-1-style stream-zip body spans appear.
-- Wave-2B stream-zip restart-replay is `GREEN` or the coordinator explicitly
-  accepts an `IDENTIFIED-DRIVER-PATTERN` bound for the integration branch.
+- Runtime-context body spans show the merged event driver and durable
+  state-transition handling.
+- Wave-2B runtime-body restart-replay is `GREEN` or the coordinator explicitly
+  accepts either an `IDENTIFIED-DRIVER-PATTERN` bound or the
+  `GREEN-substrate-restart-resumes; STATE-MACHINE-VARIANT-NEEDS-VALIDATION-IN-LANE-1`
+  bound. In the latter case, Lane 1's own tests must validate the durable
+  state-machine variant before integration fan-in.
 
 ### Lane 2: Agent-Tool `WaitForWorkflow`
 
@@ -339,7 +374,7 @@ Old spans are zero:
 
 New spans are present:
 
-- stream-zip runtime body spans
+- merged runtime body + durable state-transition spans
 - workflow execution for `firegrid.agent_tools.wait_for`
 - workflow-engine Activity execution
 - `DurableDeferred.raceAll`
@@ -375,7 +410,8 @@ Phase 1 is complete when:
   reflected in Lane 1.
 - `packages/runtime/src/durable-tools/` is deleted.
 - No production code imports or calls `WaitFor.match`.
-- The runtime-context body is stream-zip + handler.
+- The runtime-context body is a merged event stream + durable state-machine
+  handler.
 - Agent-tool `wait_for` is `engine.execute(WaitForWorkflow, ...)`.
 - `workflow-core-paths` completes with old spans at zero and new spans present.
 - Dark-factory still reaches its terminal finding path on the integration
@@ -557,9 +593,9 @@ Use existing beads where they already fit:
 Create new beads only where the existing graph lacks a concrete owner:
 
 - Phase 0 Wave-2A: permission-stream consumption sim.
-- Phase 0 Wave-2B: stream-zip body restart-replay sim.
+- Phase 0 Wave-2B: runtime body restart-replay sim.
 - Phase 0 Wave-2C: `Stream.zipLatest` empty-side source-read / minimal sim.
-- Phase 1 Lane 1: production runtime-context stream-zip body.
+- Phase 1 Lane 1: production runtime-context merged stream body.
 - Phase 1 Lane 2: production `WaitForWorkflow` and `wait_for` cutover.
 - Phase 1 Lane 3: type/env/export cleanup.
 - Phase 1 Lane 4: delete `durable-tools/`.
