@@ -3,6 +3,8 @@ import {
   local,
 } from "@firegrid/client-sdk/firegrid"
 import { Effect } from "effect"
+import { mkdirSync } from "node:fs"
+import { join } from "node:path"
 
 const claudeAcpArgv = [
   "npx",
@@ -18,6 +20,22 @@ const promptForFactoryLoop = [
   "If a needed step is not expressible or cannot proceed, write one line beginning with DARK_FACTORY_FINDING and name the missing public surface.",
 ].join("\n")
 
+// tf-v7t: per-session agent cwd. The codec-adapter writes the project-
+// local `.mcp.json` + `.claude/settings.json` here before the agent
+// process spawns (per the tf-s8y verdict / PR #444). The directory must
+// (a) exist and (b) be distinct per run so configuration files don't
+// leak across runs or pollute the repo root.
+const makeAgentCwd = (): string => {
+  const dir = join(
+    globalThis.process.cwd(),
+    ".simulate",
+    "agent-cwd",
+    `dark-factory-${Date.now()}`,
+  )
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
 export const darkFactoryDriver: Effect.Effect<
   void,
   unknown,
@@ -25,6 +43,8 @@ export const darkFactoryDriver: Effect.Effect<
 > =
   Effect.gen(function*() {
     const firegrid = yield* Firegrid
+    const cwd = makeAgentCwd()
+
     const session = yield* firegrid.sessions.createOrLoad({
       externalKey: {
         source: "tiny-firegrid.dark-factory",
@@ -34,14 +54,23 @@ export const darkFactoryDriver: Effect.Effect<
         argv: [...claudeAcpArgv],
         agent: "claude-acp",
         agentProtocol: "acp",
-        cwd: globalThis.process.cwd(),
+        cwd,
         envBindings: [
           { name: "ANTHROPIC_API_KEY", ref: "env:ANTHROPIC_API_KEY" },
         ],
+        // tf-v7t: marker triggers the codec-adapter's MCP URL
+        // materialization AND `.mcp.json` write into `cwd`. Replaces the
+        // prior ACP `_meta` `-alwaysload` alias injection — tools surface
+        // to the agent under natural `mcp__firegrid__<tool>` names.
         runtimeContextMcp: { enabled: true },
       }),
       createdBy: "tiny-firegrid-simulation",
     })
+
+    // Wait for the host reconciler to materialize the RuntimeContext row
+    // before sending the prompt (codec-adapter's URL resolution +
+    // .mcp.json write happens at start, which needs the row).
+    yield* session.whenReady
 
     yield* firegrid.sessions.prompt({
       sessionId: session.contextId,

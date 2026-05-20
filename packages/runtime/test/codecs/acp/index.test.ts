@@ -405,37 +405,26 @@ describe("AcpSessionLive", () => {
       ),
     )
 
-    // tf-b6n / A1 (#408 tf-p9s): the codec additively attaches an ACP
-    // `_meta` payload re-advertising the runtime-context MCP server under a
-    // non-colliding alias with `alwaysLoad:true` (+ `disableBuiltInTools`)
-    // so claude-agent-acp loads the Firegrid tools directly instead of
-    // deferring them behind ToolSearch. The ACP `mcpServers` advertisement
-    // is unchanged (non-claude paths unaffected).
+    // tf-v7t (post-tf-s8y verdict / PR #444): the codec NO LONGER
+    // advertises MCP servers via either the ACP-standard
+    // `NewSessionRequest.mcpServers` field OR the
+    // `_meta.claudeCode.options.mcpServers` `-alwaysload` alias hack.
+    // MCP advertisement moved to project-local `.mcp.json` written by
+    // the host-sdk codec adapter (`mcp-json-writer.ts`); tools surface
+    // under natural `mcp__firegrid__<tool>` names via the SDK's
+    // `settingSources: ["user","project","local"]` load path (set by
+    // claude-agent-acp at `acp-agent.js:1414`).
+    //
+    // The `_meta` channel retains ONLY the tool-policy half —
+    // `disableBuiltInTools: true` — keyed on declarations being non-
+    // empty (the signal "Firegrid MCP is in play, constrain tools").
+    // claude-agent-acp@0.36.1 reads this at `acp-agent.js:1400-1406`.
     expect(agent.newSessionRequests).toEqual([
       {
         cwd: "/tmp/firegrid-acp-codec-cwd",
-        mcpServers: [
-          {
-            type: "http",
-            name: "firegrid-runtime-context",
-            url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
-            headers: [{ name: "authorization", value: "Bearer test" }],
-          },
-        ],
+        mcpServers: [],
         _meta: {
           disableBuiltInTools: true,
-          claudeCode: {
-            options: {
-              mcpServers: {
-                "firegrid-runtime-context-alwaysload": {
-                  type: "http",
-                  url: "http://127.0.0.1:54321/mcp/runtime-context/ctx_test",
-                  headers: { authorization: "Bearer test" },
-                  alwaysLoad: true,
-                },
-              },
-            },
-          },
         },
       },
     ])

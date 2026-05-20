@@ -52,6 +52,7 @@ import {
   FiregridRuntimeContextMcpBaseUrl,
   type FiregridRuntimeContextMcpBase,
 } from "../runtime-context-mcp-base-url.ts"
+import { writeFiregridMcpJson } from "./mcp-json-writer.ts"
 
 interface CodecRuntimeContextSession extends SessionCommon.RuntimeContextSessionRecord {
   readonly agentSession: AgentSession["Type"]
@@ -260,6 +261,31 @@ export const resolveEffectiveMcpServers = (
     const injected = firegridRuntimeContextMcpDeclaration(
       runtimeContextMcpUrlForContext(base.value, context.contextId),
     )
+    const effectiveDeclarations = [
+      injected,
+      ...(declared ?? []).filter(existing => existing.name !== injected.name),
+    ]
+    // tf-v7t: write project-local .mcp.json + .claude/settings.json to
+    // the agent's cwd. Replaces the codec's _meta -alwaysload alias hack
+    // (per tf-s8y verdict / PR #444). Skipped when no cwd is configured —
+    // the codec falls back to globalThis.process.cwd() in that case, and
+    // writing .mcp.json into the host's own cwd would pollute the repo;
+    // such callers are pre-tf-v7t shape and still go via the (now empty)
+    // ACP _meta channel without effect.
+    const agentCwd = context.runtime.config.cwd
+    if (agentCwd !== undefined) {
+      yield* writeFiregridMcpJson({
+        cwd: agentCwd,
+        declarations: effectiveDeclarations,
+      }).pipe(
+        Effect.mapError(cause =>
+          asRuntimeContextError(
+            "agent-codec.write-mcp-json",
+            cause.message,
+            context.contextId,
+          )),
+      )
+    }
     yield* Effect.annotateCurrentSpan({
       "firegrid.context.id": context.contextId,
       "firegrid.runtime_context_mcp.enabled": true,
@@ -268,11 +294,10 @@ export const resolveEffectiveMcpServers = (
       "firegrid.mcp.injected_name": injected.name,
       "firegrid.mcp.injected_url": injected.server.url,
       "firegrid.mcp.declared_count": declared?.length ?? 0,
+      "firegrid.mcp.json_written": agentCwd !== undefined,
+      "firegrid.mcp.json_cwd": agentCwd ?? "",
     })
-    return [
-      injected,
-      ...(declared ?? []).filter(existing => existing.name !== injected.name),
-    ]
+    return effectiveDeclarations
   }).pipe(
     Effect.withSpan("firegrid.host.codec.resolve_effective_mcp_servers", {
       kind: "internal",

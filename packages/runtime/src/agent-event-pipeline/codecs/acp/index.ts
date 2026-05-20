@@ -131,65 +131,40 @@ const mapPermissionOptions = (
     name: option.name,
   }))
 
-const lowerMcpServerDeclaration = (
-  declaration: AcpMcpServerDeclaration,
-): acp.McpServer => ({
-  type: "http",
-  name: declaration.name,
-  url: declaration.server.url,
-  headers: declaration.server.headers === undefined
-    ? []
-    : declaration.server.headers.map(header => ({
-      name: header.name,
-      value: header.value,
-    })),
-})
-
-// tf-b6n / A1 (#408 tf-p9s): claude-agent-acp (Claude Agent SDK) defers MCP
-// tools behind a `ToolSearch` discovery indirection; the §6 planner stalls
-// after ToolSearch and never issues a Firegrid `tools/call` (#405). The
-// Claude Agent SDK's only no-defer lever is per-MCP-server
-// `McpHttpServerConfig.alwaysLoad:true` ("all tools … always included …
-// never deferred behind tool search"), but claude-agent-acp strips
-// `alwaysLoad` from the ACP-advertised `mcpServers` and its
-// `mcpServers: {...userProvidedOptions, ...acpDerived}` merge overrides any
-// `_meta.claudeCode.options` entry that COLLIDES by server name.
+// tf-v7t (post-tf-s8y verdict / PR #444): the `_meta` payload now carries
+// ONLY the tool-policy half of what it used to. MCP-server advertisement
+// has moved to project-local `.mcp.json` written by the host-sdk codec
+// adapter (`runtime-context-session/mcp-json-writer.ts`).
 //
-// So we additively attach an ACP `_meta` payload (reserved namespace; other
-// ACP agents MUST NOT assume values at `_meta` keys, so non-claude paths are
-// unchanged) that re-advertises the same runtime-context MCP server under a
-// NON-COLLIDING alias with `alwaysLoad:true`, and sets `disableBuiltInTools`
-// so the planner's tool set is just the Firegrid catalog (no claude_code
-// built-ins inflating the set past the tool-search threshold). Both are the
-// documented Claude Agent SDK / claude-agent-acp levers; this is the minimal
-// fix fully in Firegrid's control to make §6 actually run.
-const claudeAgentAcpAlwaysLoadMeta = (
+// Why split:
+//
+// (a) Tool-policy half — `disableBuiltInTools: true`. Shrinks the agent's
+//     tool set to the Firegrid catalog so the model doesn't fall back to
+//     `Read`/`Bash`/`Grep`/`Glob` exploration. Stays on the ACP `_meta`
+//     channel; claude-agent-acp@0.36.1 honors it at `acp-agent.js:1400-1406`
+//     (`tools = ... params._meta?.disableBuiltInTools === true ? [] : ...`).
+//     No project-local settings.json field exposes this; `_meta` is the
+//     only path.
+//
+// (b) MCP-advertisement half — the old `-alwaysload` alias hack. tf-s8y
+//     proved the native `.mcp.json` path works end-to-end: agent invoked
+//     `mcp__firegrid__wait_for` under its natural name (no alias), with
+//     `alwaysLoad: true` as a first-class field of `McpHttpServerConfig`
+//     (`@anthropic-ai/claude-agent-sdk@0.3.143/sdk.d.ts:951-961`).
+//     `.mcp.json` is loaded by the SDK via `settingSources` (set at
+//     `acp-agent.js:1414`), so the codec no longer touches MCP servers
+//     via `_meta.claudeCode.options.mcpServers` or via the ACP-standard
+//     `NewSessionRequest.mcpServers` field.
+//
+// The `declarations` argument is retained purely as a SIGNAL: when
+// non-empty, MCP is in play, so we want `disableBuiltInTools: true`. The
+// declarations themselves are NOT serialized into the request.
+const claudeAgentAcpToolPolicyMeta = (
   declarations: ReadonlyArray<AcpMcpServerDeclaration>,
 ): { readonly [key: string]: unknown } | undefined => {
   if (declarations.length === 0) return undefined
-  const mcpServers = Object.fromEntries(
-    declarations.map(declaration => {
-      const headers = declaration.server.headers === undefined
-        ? undefined
-        : Object.fromEntries(
-          declaration.server.headers.map(header => [header.name, header.value]),
-        )
-      return [
-        `${declaration.name}-alwaysload`,
-        {
-          type: "http" as const,
-          url: declaration.server.url,
-          ...(headers === undefined ? {} : { headers }),
-          alwaysLoad: true as const,
-        },
-      ] as const
-    }),
-  )
   return {
-    // Shrink the planner tool set to the Firegrid catalog so tool-search
-    // does not engage (documented fallback per the A1 finding).
     disableBuiltInTools: true,
-    claudeCode: { options: { mcpServers } },
   }
 }
 
@@ -211,43 +186,37 @@ const sha256Prefix = (text: string): Effect.Effect<string> =>
   })
 
 // firegrid.codec.tool_choice: best Firegrid-side approximation of the
-// SDK-level tool_choice — captures the codec's stance on tool constraint
-// (disableBuiltInTools strips the agent's built-in toolset, always-load
-// aliases force MCP tools out from behind ToolSearch). The literal
-// `tool_choice` value the underlying LLM SDK sets is not visible at the
-// ACP boundary — it lives inside the agent process. The wire capture
-// (tf-ofq) is the complementary observation channel.
+// SDK-level tool_choice — captures the codec's stance on tool constraint.
+// Post-tf-v7t: `disableBuiltInTools` is the only lever the codec still
+// drives; MCP advertisement (and the previous `always_load:N` accounting)
+// moved to project-local `.mcp.json` written by the host-sdk codec
+// adapter. The literal `tool_choice` value the underlying LLM SDK sets
+// is not visible at the ACP boundary — it lives inside the agent
+// process. The wire capture (tf-ofq) is the complementary observation
+// channel.
 const codecToolChoice = (
   declarations: ReadonlyArray<AcpMcpServerDeclaration>,
-): string => {
-  const meta = claudeAgentAcpAlwaysLoadMeta(declarations)
-  if (meta === undefined) return "default"
-  const parts: Array<string> = []
-  if ((meta as { disableBuiltInTools?: boolean }).disableBuiltInTools === true) {
-    parts.push("disable_built_in")
-  }
-  if (declarations.length > 0) {
-    parts.push(`always_load:${declarations.length}`)
-  }
-  return parts.length === 0 ? "default" : parts.join(",")
-}
+): string => declarations.length === 0 ? "default" : "disable_built_in"
 
 const codecSdkCallAttributes = (
   request: acp.NewSessionRequest,
   declarations: ReadonlyArray<AcpMcpServerDeclaration>,
 ) => {
-  const mcpServerNames = (request.mcpServers ?? [])
-    .map(server => server.name)
-    .sort()
+  // tf-v7t: declaration-derived names. The ACP-standard
+  // `request.mcpServers` channel is now empty (MCP advertisement moved
+  // to .mcp.json), so we report what was advertised via .mcp.json — the
+  // declaration names — rather than what's on the ACP wire.
+  const mcpServerNames = declarations.map(d => d.name).sort()
   return {
     "firegrid.codec.resolved_tools": mcpServerNames,
     "firegrid.codec.agent": codec,
     "firegrid.codec.agent_protocol": "acp",
     "firegrid.codec.tool_choice": codecToolChoice(declarations),
-    "firegrid.acp.mcp_server_count": mcpServerNames.length,
-    "firegrid.acp.mcp_server_names": mcpServerNames,
-    "firegrid.acp.claude_code_always_load_aliases": declarations
-      .map(declaration => `${declaration.name}-alwaysload`)
+    "firegrid.codec.mcp_registration":
+      declarations.length === 0 ? "none" : "mcp_json",
+    "firegrid.acp.mcp_server_count": (request.mcpServers ?? []).length,
+    "firegrid.acp.mcp_server_names": (request.mcpServers ?? [])
+      .map(server => server.name)
       .sort(),
   }
 }
@@ -536,19 +505,25 @@ export const AcpSessionLive = (
       const mcpServerDeclarations = options.mcpServers ?? []
       const newSessionRequest: acp.NewSessionRequest = {
         cwd: options.cwd ?? globalThis.process.cwd(),
-        // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.7
-        // firegrid-runtime-agent-event-pipeline.TOOL_DISPATCH.9
-        // ACP does not consume FiregridAgentToolkit directly.
-        // Tool execution is owned by the ACP agent process or delegated
-        // through ACP session.mcpServers/MCP.
-        mcpServers: mcpServerDeclarations.map(lowerMcpServerDeclaration),
-        // tf-b6n / A1: additive ACP `_meta` so Claude Agent SDK loads the
-        // runtime-context MCP tools directly instead of deferring them
-        // behind ToolSearch. Reserved-namespace metadata; non-claude ACP
-        // agents ignore it (no behavior change). Omitted when there are
-        // no MCP servers.
+        // tf-v7t: MCP server advertisement moved to project-local
+        // `.mcp.json` written by the host-sdk codec adapter
+        // (`runtime-context-session/mcp-json-writer.ts`). The codec no
+        // longer populates either the ACP-standard `mcpServers` channel
+        // or the `_meta.claudeCode.options.mcpServers` channel. The
+        // `mcpServerDeclarations` array is retained as a SIGNAL for the
+        // tool-policy `_meta` (see `claudeAgentAcpToolPolicyMeta` below).
+        // Empty array preserves the ACP-protocol-required shape; the SDK
+        // discovers Firegrid tools via `.mcp.json` and the documented
+        // `settingSources: ["user","project","local"]` set by
+        // claude-agent-acp at `acp-agent.js:1414`.
+        mcpServers: [],
+        // tf-v7t: tool-policy ACP `_meta` only. Sets
+        // `disableBuiltInTools: true` so the agent's tool set is just
+        // the Firegrid catalog. Reserved-namespace metadata; non-claude
+        // ACP agents ignore it. Omitted when there are no MCP servers
+        // (no constraint signal).
         ...(() => {
-          const meta = claudeAgentAcpAlwaysLoadMeta(mcpServerDeclarations)
+          const meta = claudeAgentAcpToolPolicyMeta(mcpServerDeclarations)
           return meta === undefined ? {} : { _meta: meta }
         })(),
       }
@@ -560,11 +535,16 @@ export const AcpSessionLive = (
       const requestPayloadHash = yield* sha256Prefix(JSON.stringify(newSessionRequest))
       const session = yield* acpPromise("newSession", "failed to create ACP session", () =>
         connection.newSession(newSessionRequest)).pipe(
+          // tf-v7t: declarations-derived attributes go on the codec
+          // namespace (what we advertised, via .mcp.json); the
+          // firegrid.acp.* attributes (set by codecSdkCallAttributes
+          // below) reflect what's actually on the ACP wire — both are
+          // now distinct things post-tf-v7t.
           Effect.tap(session =>
             Effect.annotateCurrentSpan({
               "firegrid.acp.session_id": session.sessionId,
-              "firegrid.acp.mcp_server_count": mcpServerDeclarations.length,
-              "firegrid.acp.mcp_server_names": mcpServerDeclarations.map(server => server.name).join(","),
+              "firegrid.codec.mcp_server_count": mcpServerDeclarations.length,
+              "firegrid.codec.mcp_server_names": mcpServerDeclarations.map(server => server.name).join(","),
             })),
           Effect.withSpan("firegrid.codec.sdk.call", {
             kind: "client",
