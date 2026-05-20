@@ -5,8 +5,15 @@ export const ChannelDirectionSchema = Schema.Literal(
   "afferent",
   "efferent",
   "call",
+  "bidirectional",
 )
 export type ChannelDirection = Schema.Schema.Type<typeof ChannelDirectionSchema>
+
+export const ChannelSourceClassSchema = Schema.Literal(
+  "static-source",
+  "predicate-eligible",
+)
+export type ChannelSourceClass = Schema.Schema.Type<typeof ChannelSourceClassSchema>
 
 // firegrid-agent-body-plan.CHANNEL_REGISTRY.1
 export const ChannelTargetSchema = Schema.String.pipe(
@@ -61,6 +68,7 @@ export interface AfferentChannel<
   readonly target: ChannelTarget
   readonly direction: "afferent"
   readonly schema: S
+  readonly sourceClass?: ChannelSourceClass
   readonly binding: TypedStreamBinding<S>
 }
 
@@ -71,6 +79,23 @@ export interface EfferentChannel<
   readonly direction: "efferent"
   readonly schema: S
   readonly binding: AppendTargetBinding<S>
+}
+
+export interface BidirectionalChannel<
+  S extends Schema.Schema.Any = Schema.Schema.Any,
+> {
+  readonly target: ChannelTarget
+  readonly direction: "bidirectional"
+  readonly directions: readonly ["afferent", "efferent"]
+  readonly schema: S
+  readonly sourceClasses: ReadonlyArray<ChannelSourceClass>
+  readonly binding: {
+    readonly _tag: "Bidirectional"
+    readonly stream: Stream.Stream<Schema.Schema.Type<S>, unknown, never>
+    readonly append: (
+      payload: Schema.Schema.Type<S>,
+    ) => Effect.Effect<void, unknown, never>
+  }
 }
 
 export interface CallableChannel<
@@ -87,6 +112,7 @@ export interface CallableChannel<
 export type ChannelRegistration =
   | AfferentChannel
   | EfferentChannel
+  | BidirectionalChannel
   | CallableChannel
 
 export type ChannelMetadata =
@@ -94,11 +120,19 @@ export type ChannelMetadata =
     readonly target: ChannelTarget
     readonly direction: "afferent"
     readonly schema: Schema.Schema.Any
+    readonly sourceClass?: ChannelSourceClass
   }
   | {
     readonly target: ChannelTarget
     readonly direction: "efferent"
     readonly schema: Schema.Schema.Any
+  }
+  | {
+    readonly target: ChannelTarget
+    readonly direction: "bidirectional"
+    readonly directions: readonly ["afferent", "efferent"]
+    readonly schema: Schema.Schema.Any
+    readonly sourceClasses: ReadonlyArray<ChannelSourceClass>
   }
   | {
     readonly target: ChannelTarget
@@ -130,12 +164,23 @@ const channelMetadata = (registration: ChannelRegistration): ChannelMetadata => 
         target: registration.target,
         direction: registration.direction,
         schema: registration.schema,
+        ...(registration.sourceClass === undefined
+          ? {}
+          : { sourceClass: registration.sourceClass }),
       }
     case "efferent":
       return {
         target: registration.target,
         direction: registration.direction,
         schema: registration.schema,
+      }
+    case "bidirectional":
+      return {
+        target: registration.target,
+        direction: registration.direction,
+        directions: registration.directions,
+        schema: registration.schema,
+        sourceClasses: registration.sourceClasses,
       }
     case "call":
       return {
@@ -151,6 +196,7 @@ export const makeAfferentChannel = <S extends Schema.Schema.Any>(
   options: {
     readonly target: ChannelTarget | string
     readonly schema: S
+    readonly sourceClass?: ChannelSourceClass
     readonly stream: Stream.Stream<Schema.Schema.Type<S>, unknown, never>
   },
 ): AfferentChannel<S> => ({
@@ -159,6 +205,9 @@ export const makeAfferentChannel = <S extends Schema.Schema.Any>(
     : options.target,
   direction: "afferent",
   schema: options.schema,
+  ...(options.sourceClass === undefined
+    ? {}
+    : { sourceClass: options.sourceClass }),
   binding: {
     _tag: "TypedStream",
     stream: options.stream,
@@ -181,6 +230,31 @@ export const makeEfferentChannel = <S extends Schema.Schema.Any>(
   schema: options.schema,
   binding: {
     _tag: "AppendTarget",
+    append: options.append,
+  },
+})
+
+export const makeBidirectionalChannel = <S extends Schema.Schema.Any>(
+  options: {
+    readonly target: ChannelTarget | string
+    readonly schema: S
+    readonly sourceClasses: ReadonlyArray<ChannelSourceClass>
+    readonly stream: Stream.Stream<Schema.Schema.Type<S>, unknown, never>
+    readonly append: (
+      payload: Schema.Schema.Type<S>,
+    ) => Effect.Effect<void, unknown, never>
+  },
+): BidirectionalChannel<S> => ({
+  target: typeof options.target === "string"
+    ? makeChannelTarget(options.target)
+    : options.target,
+  direction: "bidirectional",
+  directions: ["afferent", "efferent"],
+  schema: options.schema,
+  sourceClasses: options.sourceClasses,
+  binding: {
+    _tag: "Bidirectional",
+    stream: options.stream,
     append: options.append,
   },
 })

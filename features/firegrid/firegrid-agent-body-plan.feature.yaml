@@ -60,9 +60,18 @@ components:
       3: "The `session.log` binding persists rows through a DurableTable collection supplied by host composition."
       4: "`session.log` exposes no afferent/read binding to the agent surface."
 
+  EVENT_CHANNEL:
+    requirements:
+      1: Host code can declare an `event(name)` channel with an opaque channel target.
+      2: An `event(name)` channel exposes both afferent and efferent bindings for the same channel target.
+      3: The channel registration exposes the caller-declared event schema as metadata.
+      4: The channel registration can classify event observations as static-source and predicate-eligible.
+      5: The channel registration reads and appends through the host-owned CallerFact stream binding without exposing the CallerFact stream name to agents.
+
 constraints:
   SLICE_BOUNDARY:
     requirements:
       1: Phase 2 Slice A is additive and does not change the wait_for tool input schema or tool-use lowering.
       2: Phase 2 Slice C.3 wraps DurableTable rows without redesigning DurableTable rows or subscribe primitives.
       3: Phase 2 Lane 2 changes the wait_for channel-addressed tool surface but does not publish channel inventory metadata through MCP tools/list.
+      4: Phase 2 Slice C.2 adds event channel bindings without implementing the agent-facing send, call, wait_for, or wait_for_any verbs.
