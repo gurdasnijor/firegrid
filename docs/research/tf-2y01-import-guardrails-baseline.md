@@ -107,14 +107,15 @@ The scan mirrors for runtime-to-host-sdk and client-sdk-to-runtime reported zero
 
 ## Current Hard-Gate Carveouts
 
-The raw hard flip showed that Lanes B/C did not fully eliminate all host-sdk substrate imports before this slice. Those violations are not mechanical in scope for `tf-wtgc`; they are the remaining boundary-refactor surface. The hard rules now exclude only these existing debt files, so new host-sdk files and any non-carved-out import sites fail immediately:
+The raw hard flip showed that Lanes B/C did not fully eliminate all host-sdk substrate imports before this slice. Those violations are not mechanical in scope for `tf-wtgc`; they are the remaining boundary-refactor surface. The hard rules now exclude only these existing debt files, so new host-sdk files and any non-carved-out import sites fail immediately.
+
+Current count after `tf-1glx`: 11 files.
 
 | Carved-out file | Remaining substrate import class |
 |---|---|
-| `packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts` | durable-tools predicate helper |
+| `packages/host-sdk/src/agent-tools/execution/tool-use-to-effect.ts` | workflow clock / workflow definitions |
 | `packages/host-sdk/src/agent-tools/execution/toolkit-layer.ts` | workflow definitions |
 | `packages/host-sdk/src/host/control-request-reconciler.ts` | workflow engine and workflow definitions |
-| `packages/host-sdk/src/host/host-owned-durable-tools.ts` | durable-tools layer |
 | `packages/host-sdk/src/host/index.ts` | workflow definitions re-export |
 | `packages/host-sdk/src/host/internal/runtime-context-helpers.ts` | workflow definitions |
 | `packages/host-sdk/src/host/internal/runtime-context-workflow-run.ts` | workflow definitions |
@@ -133,7 +134,7 @@ The package-direction mirror rules have no carveouts:
 
 Remove entries from `currentHostSdkSubstrateDebt` as the owning refactors land:
 
-1. Lane B moves the execution arms out of `agent-tools/execution` or replaces the durable-tools import with a sanctioned runtime capability.
+1. Lane B moves the execution arms out of `agent-tools/execution` or replaces workflow-substrate imports with sanctioned runtime capabilities.
 2. Lane C moves workflow definitions/execution mechanics out of host-sdk or replaces direct workflow-engine/workflow-definition imports with sanctioned runtime-owned capability tags.
 3. The durable-tools deletion path removes `host-owned-durable-tools.ts` and any `@firegrid/runtime/durable-tools` imports.
 4. Channel binding work wraps `session-log-channel.ts` durable table access behind a sanctioned runtime capability or moves that substrate access below the boundary.
@@ -172,4 +173,32 @@ Removed files:
 
 ```text
 (none)
+```
+
+## tf-1glx Retry After Durable-Tools Deletion
+
+Date: 2026-05-20
+
+Base: current `origin/main` for `codex/tf-1glx-ratchet-carveouts-retry`, after PR #519 (`ec639aad8`) deleted durable-tools.
+
+Result: 1 carveout removed. The list moves from 12 files to 11 files.
+
+Removed carveout:
+
+```text
+packages/host-sdk/src/host/host-owned-durable-tools.ts
+```
+
+Why removed: the file no longer exists after the final durable-tools deletion. Removing its carveout keeps `pnpm run lint:deps` green. The old durable-tools carveout for `tool-use-to-effect.ts` is also gone, but that file still needs a carveout for workflow-substrate imports.
+
+No-carveout probe after #519:
+
+```text
+x 23 dependency violations (23 errors, 0 warnings). 219 modules, 529 dependencies cruised.
+```
+
+Normal gate after removing the stale carveout:
+
+```text
+✔ no dependency violations found (219 modules, 529 dependencies cruised)
 ```
