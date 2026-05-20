@@ -2,6 +2,7 @@ import { McpSchema } from "@effect/ai"
 import { Effect, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import {
+  makeBidirectionalChannel,
   makeCallableChannel,
   makeEfferentChannel,
   makeFactoryEventsChannel,
@@ -44,6 +45,13 @@ describe("runtime-context MCP channel metadata", () => {
         schema: NotifySchema,
         append: () => Effect.void,
       }),
+      makeBidirectionalChannel({
+        target: "event.plan.ready",
+        schema: FactoryEventRowSchema,
+        sourceClasses: ["static-source", "predicate-eligible"],
+        stream: Stream.empty,
+        append: () => Effect.void,
+      }),
       makeCallableChannel({
         target: "approval.operator",
         requestSchema: ApprovalRequestSchema,
@@ -56,10 +64,13 @@ describe("runtime-context MCP channel metadata", () => {
     expect(inventory.map(entry => [entry.name, entry.direction])).toEqual([
       ["factory.events", "afferent"],
       ["notification.operator", "efferent"],
+      ["event.plan.ready", "bidirectional"],
       ["approval.operator", "call"],
     ])
     expect(inventory[0]?.schema).toHaveProperty("row")
     expect(inventory[1]?.schema).toHaveProperty("payload")
+    expect(inventory[2]?.schema).toHaveProperty("row")
+    expect(inventory[2]?.schema).toHaveProperty("payload")
     const callEntry = inventory.find(entry => entry.direction === "call")
     expect(callEntry).toBeDefined()
     if (callEntry === undefined) {

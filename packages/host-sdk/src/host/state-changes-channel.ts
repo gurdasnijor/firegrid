@@ -25,6 +25,7 @@ export const stateChangesChannel = <S extends Schema.Schema.Any>(
   const channel = makeAfferentChannel({
     target: options.target,
     schema: options.schema,
+    sourceClass: "static-source",
     // firegrid-agent-body-plan.STATE_CHANGES.4
     stream: options.rows(),
   })

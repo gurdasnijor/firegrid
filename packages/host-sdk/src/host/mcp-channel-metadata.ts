@@ -21,6 +21,14 @@ type RuntimeContextMcpChannelInventoryEntry =
   }
   | {
     readonly name: string
+    readonly direction: "bidirectional"
+    readonly schema: {
+      readonly row: JSONSchema.JsonSchema7Root
+      readonly payload: JSONSchema.JsonSchema7Root
+    }
+  }
+  | {
+    readonly name: string
     readonly direction: "call"
     readonly schema: {
       readonly request: JSONSchema.JsonSchema7Root
@@ -48,6 +56,15 @@ export const runtimeContextMcpChannelInventory = (
           name: entry.target,
           direction: entry.direction,
           schema: { payload: schemaJson(entry.schema) },
+        }
+      case "bidirectional":
+        return {
+          name: entry.target,
+          direction: entry.direction,
+          schema: {
+            row: schemaJson(entry.schema),
+            payload: schemaJson(entry.schema),
+          },
         }
       case "call":
         return {
