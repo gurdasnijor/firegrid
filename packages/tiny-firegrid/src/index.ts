@@ -6,6 +6,7 @@ import {
   selectedSimulation,
 } from "./runner/list.ts"
 import { runSimulation } from "./runner/runtime.ts"
+import { showPerf } from "./runner/perf.ts"
 import { listRuns, showRun } from "./runner/show.ts"
 
 // Required argument — no default-sim fallback. Implicit alphabetical-first
@@ -32,6 +33,23 @@ const watchOption = Options.boolean("watch").pipe(
   Options.withDefault(false),
 )
 const runIdArg = Args.text({ name: "run-id" }).pipe(Args.optional)
+const requiredRunIdArg = Args.text({ name: "run-id" })
+const topOption = Options.integer("top").pipe(
+  Options.withDescription("Number of top self-time spans to print"),
+  Options.withDefault(15),
+)
+const idleThresholdOption = Options.integer("idle-threshold-ms").pipe(
+  Options.withDescription("Minimum no-span gap duration to report"),
+  Options.withDefault(5_000),
+)
+const findingDraftOption = Options.boolean("finding-draft").pipe(
+  Options.withDescription("Emit idle-gap finding-source draft material to stderr"),
+  Options.withDefault(false),
+)
+const findingThresholdOption = Options.integer("finding-threshold-ms").pipe(
+  Options.withDescription("Minimum idle gap duration for finding-source drafts"),
+  Options.withDefault(30_000),
+)
 
 const listCommand = Command.make("list", {}, () =>
   Effect.flatMap(listSimulations, simulations =>
@@ -73,9 +91,28 @@ const showCommand = Command.make(
 // run?" vs "what have I run?" — each have one obvious command.
 const runsCommand = Command.make("runs", {}, () => listRuns)
 
+const perfCommand = Command.make(
+  "perf",
+  {
+    runId: requiredRunIdArg,
+    top: topOption,
+    idleThresholdMs: idleThresholdOption,
+    findingDraft: findingDraftOption,
+    findingThresholdMs: findingThresholdOption,
+  },
+  ({ runId, top, idleThresholdMs, findingDraft, findingThresholdMs }) =>
+    showPerf(runId, {
+      top,
+      idleThresholdMs,
+      findingDraft,
+      findingThresholdMs,
+    }),
+)
+
 const command = Command.make("simulate").pipe(
   Command.withSubcommands([
     listCommand,
+    perfCommand,
     runCommand,
     showCommand,
     runsCommand,

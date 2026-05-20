@@ -63,6 +63,8 @@ components:
       9: The dark-factory Tiny Firegrid simulation expresses the full factory-vision §6 loop as planner prompt and app-owned fact surface, including clarify, plan approval/revision/rejection, implementer delegation, reviewer/council review, feedback loops, merge sign-off, durable CI watch, merge, failure repair, and clean unwind.
       9-1: The full dark-factory simulation observes planner-authored tool calls and terminal/error outputs only; the simulation driver must not encode the §6 planner-to-implementer-to-review-to-merge sequence as an app-authored DAG.
       10: The action-and-remember Tiny Firegrid simulation invokes the advertised execute capability through public protocol and host-sdk seams, records the result as app-owned durable evidence, and makes the row observable to a later evidence wait and participant history read; inability to do so is reported as a finding in the run artifact rather than compensated by configuration reach-past.
+      11: The Tiny Firegrid simulation CLI exposes a post-hoc perf command that reads a run trace JSONL artifact and reports top spans by self-time, HTTP route rolls, and idle gaps with start timestamp, end timestamp, and duration.
+      12: Idle gaps above a caller-selected finding threshold are first-class finding sources that can emit draft finding material only through an explicit operator flag and never silently mutate finding files.
 
 constraints:
   INVARIANTS:

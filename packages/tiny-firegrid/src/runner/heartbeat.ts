@@ -43,6 +43,7 @@ import type {
   ReadableSpan,
   SpanProcessor,
 } from "@opentelemetry/sdk-trace-base"
+import { nsFromHrTime, nsToMs } from "./trace.ts"
 
 interface HeartbeatOptions {
   /**
@@ -128,7 +129,7 @@ const formatEventLine = (
 ): string => {
   const elapsedMs = nowMs - startMs
   const side = (span.attributes["firegrid.side"] as string | undefined) ?? "-"
-  const durationMs = (span.duration[0] * 1000) + (span.duration[1] / 1e6)
+  const durationMs = nsToMs(nsFromHrTime(span.duration))
   return `[${formatElapsed(elapsedMs)}] [${side}] ${span.name} (${durationMs.toFixed(1)}ms)`
 }
 

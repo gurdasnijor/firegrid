@@ -7,160 +7,116 @@ on `@effect/opentelemetry` directly; that boundary is required by
 
 ## In-repo simulation capture
 
-The standalone tiny-firegrid simulation runner uses
-`packages/tiny-firegrid/src/simulations/trace-recorder.ts` to install an Effect
-`Tracer` with `Effect.withTracer` and collect ended spans in memory.
-`packages/tiny-firegrid/src/simulations/trace-artifacts.ts` turns those spans
-into reusable run artifacts.
+The tiny-firegrid simulation runner installs `@effect/opentelemetry/NodeSdk`
+in the simulation process and writes one JSON object per ended span to
+`packages/tiny-firegrid/.simulate/runs/<run-id>/trace.jsonl`.
+`firegrid-observability.TINY_FIREGRID_SIMULATIONS.3` makes that JSONL trace the
+durable local evidence artifact; `simulate:show`, `simulate:runs`, and
+`simulate:perf` are derived views over the same file.
 
-Standalone simulations store gitignored local evidence assets under
-`packages/tiny-firegrid/.simulate/`:
-
-- `.simulate/latest.json`
-- `.simulate/runs/<run-id>/run.json`
-- `.simulate/runs/<run-id>/trace.md`
-- `.simulate/runs/<run-id>/trace.json`
-- `.simulate/runs/<run-id>/live-spans.jsonl`
-- `.simulate/runs/<run-id>/traces.otlp.jsonl`
-- `.simulate/runs/<run-id>/duckdb/load.sql`
-- `.simulate/runs/<run-id>/duckdb/tiny-firegrid.duckdb`
-
-The preferred interface is the standalone simulation runner, not Vitest:
+The preferred interface is the tiny-firegrid CLI, not Vitest:
 
 ```bash
-OPENAI_API_KEY=... \
-pnpm --filter @firegrid/tiny-firegrid simulate:run -- codex-acp-tool-call-pipeline
+pnpm --filter @firegrid/tiny-firegrid simulate:run codex-acp-tool-calls
 ```
 
 By default the runner infers:
 
-- namespace: `tiny-run-<simulation-id>-<run-suffix>`
+- namespace: `tiny-firegrid`
 - run directory: `packages/tiny-firegrid/.simulate/runs/<run-id>`
+- trace file: `packages/tiny-firegrid/.simulate/runs/<run-id>/trace.jsonl`
 
 Override with:
 
 ```bash
-TINY_FIREGRID_NAMESPACE=...
-TINY_FIREGRID_SIMULATE_DIR=...
-TINY_FIREGRID_TIMEOUT="90 seconds"
-TINY_FIREGRID_RUN_ID=...
-FIREGRID_DURABLE_STREAMS_URL=...
+FIREGRID_RUNTIME_NAMESPACE=...
+DURABLE_STREAMS_BASE_URL=...
 ```
 
-`simulate run` starts an in-process `DurableStreamTestServer` by default.
-Override the URL with
-`FIREGRID_DURABLE_STREAMS_URL` or `TINY_FIREGRID_DURABLE_STREAMS_URL` to attach
-to an external server instead. Viewer commands such as `show`, `tail`, `duckdb`,
-and `query` operate only on stored runs and never start agent, host, or
-durable-streams processes implicitly. The runner launches the host configuration,
-runs the driver through the public `Firegrid` client surface, captures Effect
-spans, and writes the OTLP/DuckDB bundle. A simulation is a small registry entry:
+`simulate:run` starts an in-process `DurableStreamTestServer` by default.
+Setting `DURABLE_STREAMS_BASE_URL` attaches to an external Durable Streams
+server instead. The runner launches the host configuration, runs the driver
+through the public `Firegrid` client surface, and writes spans through the file
+exporter. A simulation is a small registry entry under
+`packages/tiny-firegrid/src/simulations/<id>/index.ts`:
 
-- `makeHost(env)`: returns the host configuration Layer.
-- `driver(env)`: an Effect that requires only `Firegrid`.
-- `summarize(result)`: turns the driver result into artifact metadata.
+- `id`: stable simulation id.
+- `description`: catalog text shown by `simulate:list`.
+- `host(env)`: returns the host configuration Layer.
+- `driver`: an Effect that requires only `Firegrid`.
 
 That shape keeps host configuration, public-client behavior, and artifact
-capture separated. New system simulations should be added under
-`packages/tiny-firegrid/src/simulations`.
+capture separated. New runnable simulations should use a dedicated
+`<id>/{index,driver,host}.ts` folder under
+`packages/tiny-firegrid/src/simulations/`. Legacy pre-runner simulations remain
+under `src/simulations/to-be-migrated/` and are intentionally hidden from
+`simulate:list`.
 
 ## Viewing tiny-firegrid traces
 
-List available simulations and local runs:
+List available simulations and local runs, then render a stored run as a
+markdown tree:
 
 ```bash
 pnpm --filter @firegrid/tiny-firegrid simulate:list
 pnpm --filter @firegrid/tiny-firegrid simulate:runs
 pnpm --filter @firegrid/tiny-firegrid simulate:show
+pnpm --filter @firegrid/tiny-firegrid simulate:show <run-id>
 ```
 
-For token-efficient agent inspection, tail or attach to ended span records:
+`simulate:show` resolves the latest usable run when no run id is supplied,
+skips legacy run folders without `trace.jsonl`, and treats spans whose parent
+has not been exported as visual roots. That keeps interrupted or still-flushing
+runs inspectable instead of producing an empty tree.
+
+For post-hoc performance inspection:
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:tail
-pnpm --filter @firegrid/tiny-firegrid simulate:attach -- <run-id>
-pnpm --filter @firegrid/tiny-firegrid simulate:run -- codex-acp-tool-call-pipeline --tail
+pnpm --filter @firegrid/tiny-firegrid simulate:perf <run-id>
+pnpm --filter @firegrid/tiny-firegrid simulate:perf <run-id> \
+  --top 20 \
+  --idle-threshold-ms 1000 \
+  --finding-threshold-ms 30000 \
+  --finding-draft
 ```
 
-`tail` and `attach` stream `.simulate/runs/<run-id>/live-spans.jsonl`, which is
-written as spans start and end during the simulation. `simulate run` has an
-Effect-level timeout of `90 seconds` by default. Timeout writes
-`simulate.run.timeout` and `simulate.run.failed`; Ctrl-C or SIGTERM writes
-`simulate.run.interrupted` before scoped host and embedded durable-streams
-cleanup. The runner does not synthesize heartbeat or phase events; the live
-stream is runner lifecycle plus real span start/end records. Because the live
-stream is append-only, interrupted runs still leave useful evidence even when
-the finalized DuckDB bundle has not been written yet.
+`simulate:perf` implements
+`firegrid-observability.TINY_FIREGRID_SIMULATIONS.11` and reports top spans by
+self-time, HTTP route rolls, and idle gaps with start timestamp, end timestamp,
+and duration. Idle gaps are finding sources, not just operator convenience.
+`firegrid-observability.TINY_FIREGRID_SIMULATIONS.12` requires draft finding
+material to be explicit and non-mutating: `--finding-draft` writes the draft to
+stderr and never edits `docs/findings/` or any findings file silently.
 
-## Querying tiny-firegrid traces with DuckDB
-
-The generated `traces.otlp.jsonl` file is OTLP JSONL shaped for
-`smithclay/duckdb-otlp`, which reads OpenTelemetry Collector file-export style
-trace exports via `read_otlp_traces(...)`.
-
-Install DuckDB locally, then load the latest tiny-firegrid run:
+While a run is active, the file exporter is paired with an adaptive stderr
+heartbeat. The heartbeat fires only when the trace destination is
+`.simulate/runs/<run-id>/trace.jsonl`; `--console` or
+`OTEL_EXPORTER_OTLP_ENDPOINT` already provide their own activity signal.
 
 ```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:duckdb
+pnpm --filter @firegrid/tiny-firegrid simulate:run codex-acp-tool-calls --watch
 ```
 
-If there is no `latest` run, the command exits with the exact `simulate:run`
-command to create one. It does not silently start a long real-agent simulation.
+Without `--watch`, the heartbeat prints bounded digest lines every 2-10s.
+With `--watch`, it also emits one compact line per completed span. The heartbeat
+is intentionally not a streaming tree; use `simulate:show` or an external
+OTLP-aware tool for structural trace inspection.
 
-That command opens:
+## Runner trace helpers
 
-```text
-packages/tiny-firegrid/.simulate/runs/<run-id>/duckdb/tiny-firegrid.duckdb
-```
+Trace readers should use `packages/tiny-firegrid/src/runner/trace.ts` rather
+than duplicating JSONL parsing or hrtime tuple math:
 
-with:
+- `SpanRecord`: the JSONL span shape written by the file exporter.
+- `resolveRunDir` and `readTraceSpans`: shared latest/run-id resolution and
+  parsing used by `simulate:show` and `simulate:perf`.
+- `nsFromHrTime`, `startNs`, `endNs`, and `durationNs`: bigint helpers for
+  OpenTelemetry hrtime tuples.
 
-```text
-packages/tiny-firegrid/.simulate/runs/<run-id>/duckdb/load.sql
-```
-
-The loader installs and loads the community `otlp` extension, then materializes
-the run into `tiny_firegrid_spans` and creates `tiny_firegrid_span_summary`.
-Useful starting queries:
-
-```sql
-SELECT * FROM tiny_firegrid_span_summary LIMIT 25;
-
-SELECT
-  span_name,
-  round(duration / 1000000.0, 3) AS duration_ms,
-  span_attributes
-FROM tiny_firegrid_spans
-WHERE span_name LIKE 'firegrid.%'
-ORDER BY duration DESC
-LIMIT 50;
-
-SELECT *
-FROM tiny_firegrid_failed_spans
-ORDER BY timestamp;
-```
-
-For one-off queries:
-
-```bash
-pnpm --filter @firegrid/tiny-firegrid simulate:query -- \
-  latest \
-  "SELECT * FROM tiny_firegrid_span_summary LIMIT 25;"
-```
-
-If DuckDB is already open, run:
-
-```sql
-.read packages/tiny-firegrid/.simulate/runs/<run-id>/duckdb/load.sql
-```
-
-or directly query:
-
-```sql
-INSTALL otlp FROM community;
-LOAD otlp;
-SELECT * FROM read_otlp_traces('packages/tiny-firegrid/.simulate/runs/<run-id>/traces.otlp.jsonl');
-```
+The `hrtime-number-arithmetic` ast-grep rule enforces this convention in CI.
+Direct `span.startTime[0] * ...`, `span.endTime[0] * ...`, or
+`span.duration[0] * ...` arithmetic is blocked because converting seconds to
+nanoseconds in number space loses precision beyond roughly 26 hours.
 
 ## Production or operator traces
 
