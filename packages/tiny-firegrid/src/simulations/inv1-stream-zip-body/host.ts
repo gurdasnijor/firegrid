@@ -68,6 +68,7 @@ import {
 } from "../../../../host-sdk/src/host/internal/run-context-workflow.ts"
 import {
   allocateRuntimeActivityAttempt,
+  agentInputEventFromRuntimeIngressRow,
   failAfterWritingRunFailed,
   RuntimeContextWorkflowPayload,
   StartRuntimeResultSchema,
@@ -76,7 +77,7 @@ import {
   writeRunExitedResult,
   writeRunFailedResult,
   writeRunStarted,
-} from "../../../../host-sdk/src/host/internal/runtime-context-workflow-run.ts"
+} from "@firegrid/runtime/workflows"
 import {
   readRuntimeContext,
   runtimeContextWorkflowExecutionId,
@@ -85,9 +86,6 @@ import {
 import {
   RuntimeContextWorkflowRuntime,
 } from "../../../../host-sdk/src/host/runtime-context-workflow-runtime.ts"
-import {
-  agentInputEventFromRuntimeIngressRow,
-} from "../../../../host-sdk/src/host/runtime-ingress-transform.ts"
 import {
   HostRuntimeObservationSubstrateLive,
   RuntimeToolUseExecutorLive,
