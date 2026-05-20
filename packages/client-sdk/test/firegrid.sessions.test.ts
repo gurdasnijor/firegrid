@@ -440,6 +440,49 @@ describe("Firegrid session facade", () => {
     }))
   })
 
+  it("tf-85bs session.wait.forAgentOutput auto-threads afterSequence across sequential calls on the same handle", async () => {
+    const fixture = makeFixture()
+
+    const result = await runWithClient(
+      fixture,
+      Effect.gen(function* () {
+        const firegrid = yield* Firegrid
+        const session = yield* firegrid.sessions.createOrLoad({
+          externalKey: { source: "linear", id: "LIN-autothread" },
+          runtime: runtimeConfig(),
+        })
+        yield* materializeContextRequest(fixture.hostSession, session.contextId)
+        yield* appendAgentOutput(
+          fixture.hostSession,
+          session.contextId,
+          5,
+          { _tag: "Status", kind: "first" },
+        )
+        const first = yield* session.wait.forAgentOutput({ timeoutMs: 2_000 })
+        yield* appendAgentOutput(
+          fixture.hostSession,
+          session.contextId,
+          6,
+          { _tag: "Status", kind: "second" },
+        )
+        const second = yield* session.wait.forAgentOutput({ timeoutMs: 2_000 })
+        return { first, second }
+      }),
+    )
+
+    expect(result.first).toMatchObject({
+      matched: true,
+      output: { sequence: 5, _tag: "Status", event: { kind: "first" } },
+    })
+    // Without auto-threading the second call would immediately re-match sequence=5;
+    // with auto-threading the handle's tracked sequence (5) becomes the implicit
+    // afterSequence, so the second call returns the next observation (sequence=6).
+    expect(result.second).toMatchObject({
+      matched: true,
+      output: { sequence: 6, _tag: "Status", event: { kind: "second" } },
+    })
+  })
+
   it("firegrid-schema-projection-contract.CLIENT_READ_PROJECTION.4 waits for PermissionRequest over normalized agentOutputEvents", async () => {
     const fixture = makeFixture()
 
