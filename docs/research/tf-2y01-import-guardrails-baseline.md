@@ -139,3 +139,37 @@ Remove entries from `currentHostSdkSubstrateDebt` as the owning refactors land:
 4. Channel binding work wraps `session-log-channel.ts` durable table access behind a sanctioned runtime capability or moves that substrate access below the boundary.
 
 After each cleanup, delete the corresponding carveout and re-run `pnpm run lint:deps`. The target end state is an empty `currentHostSdkSubstrateDebt` list with all four scan rules still at `severity: "error"`.
+
+## tf-6ezj Recheck
+
+Date: 2026-05-20
+
+Base: current `origin/main` for `codex/tf-6ezj-ratchet-carveouts-down`.
+
+Result: no carveouts removed. The list remains 12 files.
+
+All 12 carved-out files still exist under `packages/host-sdk/`. A no-carveout dependency-cruiser probe still reports 25 hard violations across the same files, so each existing carveout remains necessary on current main.
+
+Command:
+
+```bash
+pnpm exec depcruise --config /tmp/tf-6ezj-dependency-cruiser-no-carveouts.cjs packages
+```
+
+No-carveout result:
+
+```text
+x 25 dependency violations (25 errors, 0 warnings). 234 modules, 576 dependencies cruised.
+```
+
+Normal gate result with the existing carveouts:
+
+```text
+✔ no dependency violations found (234 modules, 576 dependencies cruised)
+```
+
+Removed files:
+
+```text
+(none)
+```
