@@ -23,6 +23,14 @@ const consoleOption = Options.boolean("console").pipe(
   ),
   Options.withDefault(false),
 )
+const watchOption = Options.boolean("watch").pipe(
+  Options.withDescription(
+    "In addition to the periodic stderr heartbeat, emit a compact one-line "
+      + "summary per completed span (interactive debugging). Only meaningful "
+      + "when destination is the JSONL file; ignored under --console / OTLP.",
+  ),
+  Options.withDefault(false),
+)
 const runIdArg = Args.text({ name: "run-id" }).pipe(Args.optional)
 
 const listCommand = Command.make("list", {}, () =>
@@ -39,14 +47,16 @@ const runCommand = Command.make(
     simulationId: simulationIdArg,
     timeoutMs: timeoutOption,
     consoleExporter: consoleOption,
+    watch: watchOption,
   },
-  ({ simulationId, timeoutMs, consoleExporter }) =>
+  ({ simulationId, timeoutMs, consoleExporter, watch }) =>
     Effect.flatMap(
       selectedSimulation(simulationId),
       simulation =>
         runSimulation(simulation, {
           timeoutMs,
           console: consoleExporter,
+          watch,
         }),
     ),
 )
