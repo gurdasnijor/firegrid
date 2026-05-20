@@ -12,7 +12,7 @@ export const buildProject = () => {
     skipAddingFilesFromTsConfig: true,
   })
 
-  for (const workspaceRoot of ["packages", "apps"]) {
+  for (const workspaceRoot of ["packages"]) {
     const workspaceDir = join(repoRoot, workspaceRoot)
     if (!existsSync(workspaceDir)) continue
     for (const entry of readdirSync(workspaceDir, { withFileTypes: true })) {

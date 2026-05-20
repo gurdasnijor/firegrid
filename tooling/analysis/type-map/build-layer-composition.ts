@@ -22,7 +22,7 @@ mkdirSync(join(ROOT, OUT), { recursive: true });
 
 // ── project (shared boilerplate) ────────────────────────────────────
 const paths: Record<string, string[]> = {};
-for (const root of ["packages", "apps"] as const) {
+for (const root of ["packages"] as const) {
   if (!existsSync(join(ROOT, root))) continue;
   for (const d of readdirSync(join(ROOT, root))) {
     const pj = join(ROOT, root, d, "package.json");
@@ -40,8 +40,8 @@ for (const root of ["packages", "apps"] as const) {
   }
 }
 const pkgOf = (fp: string): string => {
-  const m = relative(ROOT, fp).match(/^(packages|apps)\/([^/]+)\//);
-  return m ? `${m[1]}/${m[2]}` : "?";
+  const m = relative(ROOT, fp).match(/^packages\/([^/]+)\//);
+  return m ? `packages/${m[1]}` : "?";
 };
 const project = new Project({
   skipAddingFilesFromTsConfig: true,
@@ -55,13 +55,13 @@ const project = new Project({
 });
 project.addSourceFilesAtPaths([
   "packages/*/src/**/*.ts", "packages/*/src/**/*.tsx",
-  "apps/*/src/**/*.ts", "apps/*/src/**/*.tsx",
   "!**/*.test.ts", "!**/*.test.tsx", "!**/*.spec.ts", "!**/*.d.ts",
   "!**/test/**", "!**/__tests__/**", "!**/*.gen.ts", "!**/generated/**",
 ]);
 
-const inScope = (fp: string) => /\/(packages|apps)\/[^/]+\/src\//.test(fp);
+const inScope = (fp: string) => /\/packages\/[^/]+\/src\//.test(fp);
 const strip = (s: string) => s.replace(/<[^]*$/, "").replace(/\s+/g, "").trim();
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const loc = (n: Node) =>
   `${relative(ROOT, n.getSourceFile().getFilePath())}:${n.getStartLineNumber()}`;
 
@@ -205,7 +205,8 @@ for (const sf of project.getSourceFiles()) {
       if (thisLayer) {
         for (const [otherTag, otherLayer] of tagToLayer) {
           if (otherLayer === thisLayer) continue;
-          if (new RegExp(`yield\\*\\s+${otherTag}\\b|\\b${otherTag}\\.pipe|provide\\w*\\([^)]*\\b${otherTag}\\b`).test(body))
+          const tagPattern = escapeRegExp(otherTag);
+          if (new RegExp(`yield\\*\\s+${tagPattern}\\b|\\b${tagPattern}\\.pipe|provide\\w*\\([^)]*\\b${tagPattern}\\b`).test(body))
             pushEdge(otherLayer, thisLayer, "requires", at);
         }
       }

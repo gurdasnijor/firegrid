@@ -17,8 +17,8 @@ import { existsSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import process from "node:process"
 
-// pnpm-workspace.yaml globs: packages/*, apps/*, scenarios/*
-const workspaceRoots = ["packages", "apps", "scenarios"]
+// pnpm-workspace.yaml globs: packages/*
+const workspaceRoots = ["packages"]
 
 const testFilePattern = /\.(?:test|spec)\.(?:c|m)?[jt]sx?$/u
 
@@ -26,7 +26,7 @@ const testFilePattern = /\.(?:test|spec)\.(?:c|m)?[jt]sx?$/u
 const testDirNames = new Set(["__tests__", "__test__"])
 
 // Documented, intentional exceptions. Keep empty. Format:
-//   "apps/example": "why — docs/contributing/quality-gates.md#section"
+//   "packages/example": "why — docs/contributing/quality-gates.md#section"
 const documentedExceptions = new Map()
 
 const failures = []

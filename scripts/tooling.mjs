@@ -14,12 +14,12 @@ const ARCH_EXCLUDE =
 
 const archTargets = {
   workspace: {
-    paths: ["packages", "apps"],
+    paths: ["packages"],
     output: "docs/dependency-graph.mmd",
-    collapse: "^(packages|apps)/[^/]+/src/[^/]+",
+    collapse: "^packages/[^/]+/src/[^/]+",
   },
   "workspace-detail": {
-    paths: ["packages", "apps"],
+    paths: ["packages"],
     output: "docs/dependency-graph-detail.mmd",
   },
   client: {
@@ -40,15 +40,6 @@ const archTargets = {
   "runtime-detail": {
     paths: ["packages/runtime/src"],
     output: "docs/dependency-graph-runtime-detail.mmd",
-  },
-  flamecast: {
-    paths: ["apps/flamecast/src"],
-    output: "docs/dependency-graph-flamecast.mmd",
-    collapse: "^apps/flamecast/src/[^/]+",
-  },
-  "flamecast-detail": {
-    paths: ["apps/flamecast/src"],
-    output: "docs/dependency-graph-flamecast-detail.mmd",
   },
 }
 
@@ -116,8 +107,6 @@ const checkSpecs = () => {
 const effectDiagnostics = () => {
   const projects = [
     ...readdirSync("packages").map(name => join("packages", name, "tsconfig.json")),
-    ...readdirSync("apps").map(name => join("apps", name, "tsconfig.json")),
-    ...readdirSync("scenarios").map(name => join("scenarios", name, "tsconfig.json")),
   ].filter(path => {
     try {
       return statSync(path).isFile()
@@ -185,13 +174,13 @@ const depcruise = (target) => {
 
 const archDeps = (target) => {
   if (target === "all") {
-    for (const name of ["workspace", "client", "protocol", "runtime", "flamecast"]) {
+    for (const name of ["workspace", "client", "protocol", "runtime"]) {
       depcruise(name)
     }
     return
   }
   if (target === "detail") {
-    for (const name of ["workspace-detail", "runtime-detail", "flamecast-detail"]) {
+    for (const name of ["workspace-detail", "runtime-detail"]) {
       depcruise(name)
     }
     return

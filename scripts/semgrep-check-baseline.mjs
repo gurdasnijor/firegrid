@@ -30,7 +30,6 @@ const result = spawnSync("semgrep", [
   "--config",
   ".semgrep.yml",
   "packages",
-  "apps",
 ], {
   cwd: repoRoot,
   encoding: "utf8",

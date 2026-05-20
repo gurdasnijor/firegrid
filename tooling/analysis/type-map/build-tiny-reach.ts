@@ -19,7 +19,7 @@ const TINY = "packages/tiny-firegrid";
 
 // ── project + declarations + edges (mirror of build-type-map.ts) ────
 const paths: Record<string, string[]> = {};
-for (const root of ["packages", "apps"] as const) {
+for (const root of ["packages"] as const) {
   if (!existsSync(join(ROOT, root))) continue;
   for (const d of readdirSync(join(ROOT, root))) {
     const pj = join(ROOT, root, d, "package.json");
@@ -37,8 +37,8 @@ for (const root of ["packages", "apps"] as const) {
   }
 }
 const pkgOf = (fp: string): string => {
-  const m = relative(ROOT, fp).match(/^(packages|apps)\/([^/]+)\//);
-  return m ? `${m[1]}/${m[2]}` : "?";
+  const m = relative(ROOT, fp).match(/^packages\/([^/]+)\//);
+  return m ? `packages/${m[1]}` : "?";
 };
 const project = new Project({
   skipAddingFilesFromTsConfig: true,
@@ -52,7 +52,6 @@ const project = new Project({
 });
 project.addSourceFilesAtPaths([
   "packages/*/src/**/*.ts", "packages/*/src/**/*.tsx",
-  "apps/*/src/**/*.ts", "apps/*/src/**/*.tsx",
   "!**/*.test.ts", "!**/*.test.tsx", "!**/*.spec.ts", "!**/*.d.ts",
   "!**/test/**", "!**/__tests__/**", "!**/*.gen.ts", "!**/generated/**",
 ]);
@@ -70,7 +69,7 @@ const reg = (name: string, kind: Kind, node: Node, sf: string) => {
 };
 for (const sf of project.getSourceFiles()) {
   const fp = sf.getFilePath();
-  if (!/\/(packages|apps)\/[^/]+\/src\//.test(fp)) continue;
+  if (!/\/packages\/[^/]+\/src\//.test(fp)) continue;
   for (const i of sf.getInterfaces()) reg(i.getName(), "interface", i, fp);
   for (const t of sf.getTypeAliases()) {
     const rhs = t.getTypeNode()?.getText() ?? "";
@@ -141,7 +140,7 @@ if (existsSync(catPath)) {
 }
 const isPublic = (id: string) => cls.get(id) === "PUBLIC";
 
-// substrate = packages/* except tiny-firegrid (apps are consumers, excluded)
+// substrate = packages/* except tiny-firegrid (deleted app workspaces are excluded)
 const substratePkgs = [...new Set([...idMeta.values()].map((m) => m.pkg))]
   .filter((p) => p.startsWith("packages/") && p !== TINY).sort();
 const isSubstrate = (id: string) => substratePkgs.includes(idMeta.get(id)?.pkg ?? "");
@@ -223,7 +222,7 @@ unreached substrate PUBLIC in a dashed sidebar), \`tiny-firegrid-reach-full.dot\
   mapped-type indirection not traversed — reach is a **lower bound**).
 - PUBLIC classification joined from \`catalog.json\` (Analysis B):
   ${surfaceJoined ? "joined" : "**NOT available — run build-surface.ts first**"}.
-- "substrate" = \`packages/*\` excluding \`${TINY}\`; apps are consumers
+- "substrate" = \`packages/*\` excluding \`${TINY}\`; deleted app workspaces are excluded
   and excluded. Substrate packages: ${substratePkgs.map((p) => `\`${p}\``).join(", ")}.
 
 ## Reach

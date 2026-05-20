@@ -9,15 +9,9 @@ The entrypoint takes one local-process command after `--`, creates a
 owns, calls `startRuntime(contextId)`, blocks until the runtime exits, and
 exits with the runtime execution's exit code.
 
-The production-shaped tracer for this path is:
-
-```sh
-pnpm smoke:firegrid-run
-```
-
-That scenario starts a local Durable Streams test server, invokes the root
-`pnpm firegrid:run` script, and then reads retained durable rows to prove the
-context, ingress, run, and output evidence.
+The historical scenario-owned tracer for this path was removed with the
+obsolete scenario package. Use the manual command shape below until a
+replacement smoke exists outside that package.
 
 ## Configuration
 
@@ -37,13 +31,7 @@ Or copy the root `.env.example` to `.env`, fill it in, and use
 
 ## Local Smoke Command
 
-The scenario-owned local smoke covers the full Tracer B path:
-
-```sh
-pnpm smoke:firegrid-run
-```
-
-It invokes the production root command with this shape:
+Run the production root command with this shape:
 
 ```sh
 pnpm firegrid:run \
@@ -117,17 +105,6 @@ unset FIREGRID_ELECTRIC_SMOKE_NAMESPACE
 # Or stable namespace for retained-state inspection in Electric Cloud.
 export FIREGRID_ELECTRIC_SMOKE_NAMESPACE="tracer-019-sync-run-stable"
 ```
-
-Run:
-
-```sh
-pnpm smoke:firegrid-run
-```
-
-When `FIREGRID_ELECTRIC_SMOKE` is not `1`, or the Electric service URL/token are
-not present, the Electric scenario is skipped. The local smoke still runs.
-When it does run, the same probe also fails if the launched agent can read
-host-only `FIREGRID_DURABLE_STREAMS_TOKEN`.
 
 Manual Electric command shape:
 

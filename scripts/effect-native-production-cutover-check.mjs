@@ -5,7 +5,7 @@ import process from "node:process"
 
 // effect-native-production-cutover.GUARDRAILS.1
 // effect-native-production-cutover.GUARDRAILS.2
-const roots = ["packages", "apps", "scenarios"]
+const roots = ["packages"]
 const skippedDirectories = new Set([
   "node_modules",
   "dist",
