@@ -14,10 +14,16 @@ Related:
 
 ## Purpose
 
-This document is an insurance policy for the next wave of findings. The current
-Phase 1 plan should keep moving: fix the narrow recycle bug, prove the
-`WaitForWorkflow` shape, and collapse `durable-tools/` if the proofs turn
-green.
+This document is a decision-triggered design track. The engine-native
+primitives have standalone architectural value: thinner body-plan lowering,
+recycle-safe-by-construction waits, lower composition overhead, and cleaner
+`durable-tools/` deletion. The decision triggers below gate work allocation, not
+the value of the design. Even if no trigger fires, this track is positive
+expected value whenever there is idle engine capacity.
+
+The current Phase 1 plan should keep moving regardless: fix the narrow recycle
+bug, prove the `WaitForWorkflow` shape, and collapse `durable-tools/` if the
+proofs turn green.
 
 If the next findings show the same class of recycle/replay leak in multiple
 places, Firegrid should lean harder into the foundation it owns:
@@ -98,6 +104,56 @@ The narrow PR #469 fix should enforce this invariant first. The engine-native
 primitive track below exists if that invariant is not enough, or if later
 findings show the same composition leak repeats.
 
+## Discriminator Mechanism
+
+The engine must choose a concrete discriminator for recycle versus cancellation.
+This is the load-bearing detail that prevents the invariant above from turning
+dead workflows into workflows that resurrect on the next engine generation.
+
+The viable mechanisms are:
+
+1. **Engine-local recycle flag.** An engine-internal `recycling: Ref<boolean>`
+   is set during intentional scope close. In-flight Activities catch their
+   interrupt, check the flag, and return `Workflow.Suspended` only while the
+   flag is set.
+2. **Durable cancellation source of truth.** A terminal cancellation API writes
+   a durable cancellation marker on the execution row. Recovery refuses to
+   resume cancelled executions. Scope-close without a cancellation marker is
+   recycle.
+3. **Interrupt-cause inspection.** The engine tags its own recycle interrupt
+   with a distinguishable interruptor, similar to the
+   `ClusterWorkflowEngine.ts` client-interrupt discriminator. Activities inspect
+   `Cause.interruptors` to decide whether an interrupt is recycle or user
+   cancellation.
+
+Recommendation: use (2) plus (1). The durable cancellation marker is the
+authoritative "this execution is dead" record across generations. The
+engine-local recycle flag is the fast in-process signal during scope close. Do
+not rely on interrupt-cause inspection alone; in-process recycle may not carry a
+stable distinct interruptor.
+
+## Replay Determinism Contract
+
+All engine extension primitives must satisfy this contract:
+
+> Given the same workflow execution, durable substrate state, and primitive
+> call, replay/recycle/restart returns the same result.
+
+Concrete constraints:
+
+- Predicates are schema-defined data, not arbitrary JavaScript functions.
+  Examples: `{ fieldEquals }`, `{ schemaMatch }`, or another small union the
+  engine owns and can index.
+- Timeouts are persisted as absolute deadlines, not relative durations
+  recomputed on replay.
+- Predicate evaluation reads durable row fields only. It must not read
+  wall-clock time, random values, process-local refs, or non-durable state.
+- Source offsets / "from now" semantics are explicit fields in the source or
+  predicate descriptor.
+
+Workflow behavior that cannot satisfy this contract is not an engine extension.
+It should remain a workflow body composed over deterministic extensions.
+
 ## Extension Surface Shape
 
 Do not change the upstream `WorkflowEngine` interface casually. Add a
@@ -105,8 +161,12 @@ Firegrid-specific extension service next to it:
 
 ```ts
 export interface FiregridWorkflowEngineExtensions {
-  readonly streamWait: <A>(options: StreamWaitOptions<A>) => Effect.Effect<StreamWaitOutcome<A>>
-  readonly streamWaitAny: <A>(options: StreamWaitAnyOptions<A>) => Effect.Effect<StreamWaitAnyOutcome<A>>
+  readonly streamWait: <A>(
+    options: StreamWaitOptions<A>,
+  ) => Effect.Effect<StreamWaitOutcome<A>>
+  readonly streamWaitAny: <A>(
+    options: StreamWaitAnyOptions<A>,
+  ) => Effect.Effect<StreamWaitAnyOutcome<A>>
   readonly reducer: <State, Event>(options: ReducerOptions<State, Event>) => Effect.Effect<State>
   readonly signal: (options: SignalOptions) => Effect.Effect<void>
 }
@@ -118,6 +178,26 @@ extension tag explicitly.
 
 This keeps upstream compatibility while admitting that Firegrid's durable stream
 engine has domain-specific semantics.
+
+Every extension primitive must emit stable, documented spans. The perf harness
+and future investigations should be able to grep against them. Span convention:
+
+```text
+firegrid.engine.<primitive_name>.<phase>
+```
+
+Examples:
+
+- `firegrid.engine.stream_wait.intent_persisted`
+- `firegrid.engine.stream_wait.match`
+- `firegrid.engine.stream_wait.timeout`
+- `firegrid.engine.wait_for_any.winner`
+- `firegrid.engine.reducer.checkpoint`
+
+New durable rows owned by these primitives must carry a schema version field.
+Replay of older workflow executions is a first-class invariant: future versions
+must either decode prior row versions or ship a migration that rewrites prior
+rows before deployment.
 
 ## Candidate Primitives
 
@@ -131,8 +211,8 @@ Concept:
 yield* FiregridWorkflowEngineExtensions.streamWait({
   name,
   source,
-  predicate,
-  timeoutMs,
+  predicate, // schema-defined data, not a function
+  deadline,
   success,
 })
 ```
@@ -189,7 +269,10 @@ Semantics:
 
 - `resume-from-start`: current `Activity.make` behavior, but recycle becomes
   `Workflow.Suspended`, not a branch failure.
-- `checkpoint-state`: activity provides engine-owned checkpoints/cursor writes.
+- `checkpoint-state`: **deferred.** Design when the first consumer requires it.
+  Open questions: are checkpoints initiated by the engine on a policy, or
+  emitted explicitly by the activity body? Does the checkpoint carry stream
+  cursor, user state, or both?
 - `fail-cleanly`: activity declares that recycle is a real failure.
 
 Payoff:
@@ -267,6 +350,24 @@ Start the engine-native primitive track if any of these become true:
 Until a trigger fires, keep the narrow Phase 1 fix moving. Do not pause the
 one-substrate collapse just to design engine-native primitives.
 
+## Migration Paths
+
+The coordinator should choose deliberately among these paths if this track is
+activated:
+
+1. **Path A — Sequential.** Phase 1 Lane 2 ships `WaitForWorkflow` after the
+   recycle fix. `streamWait` lands later and migrates the agent-tool lowering.
+   This unblocks deletion fastest.
+2. **Path B — Parallel-converge.** The engine-primitive track races Lane 2. If
+   `streamWait` lands first, Lane 2 targets it directly; otherwise Lane 2 ships
+   `WaitForWorkflow` and migrates later.
+3. **Path C — Block on engine primitive.** Hold Lane 2 until `streamWait`
+   lands, so the cutover never ships `WaitForWorkflow`.
+
+Current default: Path A. Path B is acceptable if idle engine capacity appears.
+Path C should require an explicit coordinator decision because it delays the
+Phase 1 deletion path.
+
 ## Non-Goals
 
 - Do not fork or edit vendored `repos/effect`.
@@ -293,8 +394,12 @@ Acceptance:
 - user cancellation does not resume after engine generation restart.
 - old `WaitForWorkflow` PR #469 sim remains as the regression case that
   justified the primitive, not as the implementation target.
-- `simulate:perf` reports span/write counts for `streamWait` versus
-  `WaitForWorkflow`.
+- `simulate:perf` shows `streamWait` performs at most half the durable writes per
+  wait operation compared with `WaitForWorkflow`'s
+  `Activity + raceAll + DurableClock` composition.
+- Replay traces for `streamWait` use at most 30% of the spans of the composition
+  replay path. If the primitive is equivalent or worse on writes/spans, regress
+  the design rather than shipping it as an architectural simplification.
 
 ## Relationship To Current Phase 1
 
@@ -313,6 +418,11 @@ If both land, the body-plan layer can choose:
 - short term: `wait_for` lowers to `WaitForWorkflow`;
 - long term: `wait_for` lowers to `streamWait`;
 - both implementations are measured by the same tiny-firegrid replay/perf sims.
+
+If the engine-primitive track lands during Phase 1 execution, Lane 4's
+`durable-tools/` deletion becomes cleaner: the aggressive SDD's
+`WaitForWorkflow` wrapper also becomes a removal candidate, and the agent-tool
+surface can lower directly to `streamWait`.
 
 The architecture direction stays the same: one durable substrate, owned by the
 workflow engine. The only question is how much of the body-plan verb set becomes
