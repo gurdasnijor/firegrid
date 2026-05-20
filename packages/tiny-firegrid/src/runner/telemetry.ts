@@ -7,8 +7,8 @@ import {
   SimpleSpanProcessor,
   type ReadableSpan,
   type SpanExporter,
+  type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base"
-import type { HeartbeatProcessor } from "./heartbeat-processor.ts"
 import { execSync } from "node:child_process"
 import { createWriteStream, readFileSync, type WriteStream } from "node:fs"
 import path from "node:path"
@@ -155,19 +155,19 @@ const fileTelemetryLive = (
     readonly namespace: string
     readonly durableStreamsBaseUrl: string
     readonly filePath: string
-    readonly heartbeat: HeartbeatProcessor | undefined
+    readonly heartbeatProcessor: SpanProcessor | undefined
   },
 ) =>
   NodeSdk.layer(() => ({
     resource: resource(simulation, runId, options),
     // Multi-processor pattern: file exporter is the durable artifact;
-    // heartbeat processor (constructed by the runner so it can drive the
-    // ticker fiber) is the stderr liveness signal. Both fire on every
+    // the heartbeat processor (a thin Queue-adapter constructed by
+    // makeHeartbeat) is the stderr liveness signal. Both fire on every
     // span end; only the file's batch processor buffers.
-    spanProcessor: options.heartbeat !== undefined
+    spanProcessor: options.heartbeatProcessor !== undefined
       ? [
         new BatchSpanProcessor(new FileSpanExporter(options.filePath)),
-        options.heartbeat,
+        options.heartbeatProcessor,
       ]
       : new BatchSpanProcessor(new FileSpanExporter(options.filePath)),
   }))
@@ -199,7 +199,7 @@ export const TelemetryLive = (
     readonly namespace: string
     readonly durableStreamsBaseUrl: string
     readonly destination: TelemetryDestination
-    readonly heartbeat: HeartbeatProcessor | undefined
+    readonly heartbeatProcessor: SpanProcessor | undefined
   },
 ): Layer.Layer<never, unknown> =>
   Layer.unwrapEffect(

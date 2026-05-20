@@ -25,7 +25,7 @@ import type {
   TinyFiregridHostEnv,
   TinyFiregridSimulation,
 } from "../types.ts"
-import { HeartbeatProcessor } from "./heartbeat-processor.ts"
+import { makeHeartbeat } from "./heartbeat.ts"
 import { annotateSide } from "./side.ts"
 import { TelemetryLive, type TelemetryDestination } from "./telemetry.ts"
 
@@ -171,26 +171,22 @@ export const runSimulation = (
     // Heartbeat only fires when destination is file. OTLP + console
     // already have their own activity signal (remote backend / stdout
     // spam); heartbeat exists specifically to make the invisible-file
-    // path observable. Constructed here (not inside telemetry.ts) so the
-    // runner holds the reference and can drive the ticker fiber via
-    // Effect.sleep — Effect ownership of scheduling, no JS timers.
+    // path observable. `makeHeartbeat` owns the Queue + Refs + ticker
+    // fiber + finalizer in its own scope; the runner just takes the
+    // processor handle and forwards it to TelemetryLive.
     const heartbeat = destination._tag === "file"
-      ? new HeartbeatProcessor({ perEvent: options.watch })
+      ? yield* makeHeartbeat({
+        minInterval: Duration.seconds(2),
+        maxInterval: Duration.seconds(10),
+        perEvent: options.watch,
+      })
       : undefined
     const telemetry = TelemetryLive(simulation, runId, {
       namespace,
       durableStreamsBaseUrl: baseUrl,
       destination,
-      heartbeat,
+      heartbeatProcessor: heartbeat?.processor,
     })
-    if (heartbeat !== undefined) {
-      yield* Effect.gen(function*() {
-        while (true) {
-          yield* Effect.sleep(Duration.millis(heartbeat.intervalMs()))
-          heartbeat.emitDigest()
-        }
-      }).pipe(Effect.forkScoped, Effect.asVoid)
-    }
     const hostEnv: TinyFiregridHostEnv = {
       simulationId: simulation.id,
       runId,
