@@ -50,9 +50,9 @@ import {
   makeRawRuntimeContextWorkflowSessionService,
 } from "./runtime-context-session/raw-adapter.ts"
 import {
-  RuntimeContextEngineRegistryLive,
+  RuntimeContextWorkflowRuntimeLive,
   RuntimeInputIntentDispatcherLive,
-} from "./runtime-context-engine-registry.ts"
+} from "./runtime-context-workflow-runtime.ts"
 import {
   type ChannelRegistry,
 } from "./channel-registry.ts"
@@ -323,7 +323,7 @@ export const FiregridRuntimeHostLive = (
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(hostScoped),
-    Layer.provideMerge(RuntimeContextEngineRegistryLive),
+    Layer.provideMerge(RuntimeContextWorkflowRuntimeLive),
     Layer.provideMerge(namespaceScoped),
     Layer.provideMerge(session),
     Layer.provideMerge(runtimeEnvResolverPolicyLayer(envPolicy)),

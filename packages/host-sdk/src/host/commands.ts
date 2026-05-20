@@ -1,9 +1,10 @@
-import type { WorkflowEngine } from "@effect/workflow"
+import { WorkflowEngine } from "@effect/workflow"
 import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
   RuntimeStartCapability,
   requireLocalContext,
+  type RuntimeContext,
 } from "@firegrid/protocol/launch"
 import {
   makeRuntimeIngressInputRow,
@@ -31,8 +32,8 @@ import {
   type RuntimeIngressError,
 } from "@firegrid/runtime/errors"
 import {
-  RuntimeContextEngineRegistry,
-} from "./runtime-context-engine-registry.ts"
+  RuntimeContextWorkflowRuntime,
+} from "./runtime-context-workflow-runtime.ts"
 import {
   AgentToolHost,
   type AgentToolHostService,
@@ -41,6 +42,7 @@ import {
   runtimeContextWorkflowSupportLayer,
 } from "./runtime-context-workflow-support.ts"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
+import type { ChannelRegistry } from "./channel-registry.ts"
 
 type RuntimeIngressAppendEnvironment =
   | RuntimeContextRead
@@ -53,10 +55,10 @@ const runtimeControlPlaneTable: Effect.Effect<
 > = RuntimeControlPlaneTable
 
 const executeRuntimeContextWorkflowForContextId = (
-  engine: WorkflowEngine.WorkflowEngine["Type"],
   contextId: string,
 ) =>
   Effect.gen(function*() {
+    const engine = yield* WorkflowEngine.WorkflowEngine
     yield* Effect.annotateCurrentSpan({
       "firegrid.context.id": contextId,
       "firegrid.workflow.name": RuntimeContextWorkflowNative.name,
@@ -81,8 +83,8 @@ const executeRuntimeContextWorkflowForContextId = (
   )
 
 const claimAndRunRuntimeContextWorkflow = (
-  context: Parameters<RuntimeContextEngineRegistry["Type"]["claimActive"]>[0],
-  registry: RuntimeContextEngineRegistry["Type"],
+  context: RuntimeContext,
+  runtime: RuntimeContextWorkflowRuntime["Type"],
   agentToolHost: AgentToolHostService,
 ) =>
   Effect.gen(function*() {
@@ -92,12 +94,13 @@ const claimAndRunRuntimeContextWorkflow = (
       "firegrid.runtime.agent_protocol": context.runtime.config.agentProtocol ?? "",
       "firegrid.runtime_context_mcp.enabled": context.runtime.config.runtimeContextMcp?.enabled === true,
     })
-    const handle = yield* registry.claimActive(context)
-    yield* registry.reconcile(context)
-    return yield* executeRuntimeContextWorkflowForContextId(handle.engine, context.contextId).pipe(
-      Effect.provide(runtimeContextWorkflowSupportLayer(handle, agentToolHost)),
-      Effect.ensuring(registry.deregister(context.contextId)),
-    )
+    return yield* runtime.run({
+      context,
+      workflowName: RuntimeContextWorkflowNative.name,
+      supportLayer: runtimeContextWorkflowSupportLayer(context.contextId, agentToolHost),
+      effect: executeRuntimeContextWorkflowForContextId(context.contextId),
+      deregisterOnExit: true,
+    })
   }).pipe(
     Effect.withClock(runtimeExecutionClock),
     Effect.withSpan("firegrid.host.runtime_context.claim_and_run", {
@@ -167,9 +170,9 @@ export const startRuntime = (
   // scope; it is not a tool-arg or env-var check.
   Effect.gen(function* () {
     const context = yield* requireLocalContext(options.contextId)
-    const registry = yield* RuntimeContextEngineRegistry
+    const runtime = yield* RuntimeContextWorkflowRuntime
     const agentToolHost = yield* AgentToolHost
-    return yield* claimAndRunRuntimeContextWorkflow(context, registry, agentToolHost)
+    return yield* claimAndRunRuntimeContextWorkflow(context, runtime, agentToolHost)
   }).pipe(
     Effect.withSpan("firegrid.host.runtime_context.start", {
       kind: "server",
@@ -187,10 +190,10 @@ export const RuntimeStartCapabilityLive = Layer.effect(
     // the composed Firegrid host layer) so the deferred `start` closure
     // can re-provide it. `never` here was only sound while
     // `DurableTable.layer` leaked `any`.
-    const captured = yield* Effect.context<HostRuntimeContextExecutionEnv>()
+    const captured = yield* Effect.context<HostRuntimeContextExecutionEnv | ChannelRegistry>()
     const contextRead = yield* RuntimeContextRead
     const hostSession = yield* CurrentHostSession
-    const registry = yield* RuntimeContextEngineRegistry
+    const runtime = yield* RuntimeContextWorkflowRuntime
     const agentToolHost = yield* AgentToolHost
     return RuntimeStartCapability.of({
       start: options =>
@@ -203,7 +206,7 @@ export const RuntimeStartCapabilityLive = Layer.effect(
             hostSession,
             options.contextId,
           )
-          return yield* claimAndRunRuntimeContextWorkflow(context, registry, agentToolHost).pipe(
+          return yield* claimAndRunRuntimeContextWorkflow(context, runtime, agentToolHost).pipe(
             Effect.provide(captured),
           )
         }).pipe(

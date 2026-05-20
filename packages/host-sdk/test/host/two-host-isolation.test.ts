@@ -9,21 +9,22 @@
 // Two-host smoke: two FiregridRuntimeHostWithWorkflowLive layers in
 // the same namespace, each configured with a distinct hostId. Each
 // host runs its own runtime context end-to-end. We then verify that
-// workflow rows appear in the context-derived workflow stream for the
-// owning context and not in another context's stream, and that the
+// workflow rows appear in the host-owned workflow stream for the
+// owning host and not in another host's stream, and that the
 // local-authority gate rejects a cross-host startRuntime call before
 // any workflow/output rows are written.
 
 import { DurableStreamTestServer } from "@durable-streams/server"
+import { access, readFile } from "node:fs/promises"
 import {
   RuntimeControlPlaneTable,
+  hostOwnedStreamUrl,
   local,
   makeHostStreamPrefix,
   normalizeRuntimeIntent,
-  runtimeContextWorkflowStreamUrl,
   type HostId,
 } from "@firegrid/protocol/launch"
-import { Effect, Either } from "effect"
+import { Cause, Effect, Either, Exit } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   FiregridRuntimeHostWithWorkflowLive,
@@ -78,10 +79,10 @@ const seedContext = (input: {
     Effect.scoped,
   ))
 
-const queryContextWorkflow = (input: {
+const queryHostWorkflow = (input: {
   readonly baseUrl: string
   readonly namespace: string
-  readonly contextId: string
+  readonly hostId: HostId
 }) =>
   Effect.gen(function* () {
     const table = yield* WorkflowEngineTable
@@ -92,10 +93,13 @@ const queryContextWorkflow = (input: {
   }).pipe(
     Effect.provide(WorkflowEngineTable.layer({
       streamOptions: {
-        url: runtimeContextWorkflowStreamUrl({
+        url: hostOwnedStreamUrl({
           baseUrl: input.baseUrl,
-          namespace: input.namespace,
-          contextId: input.contextId,
+          prefix: makeHostStreamPrefix({
+            namespace: input.namespace,
+            hostId: input.hostId,
+          }),
+          segment: "workflow",
         }),
         contentType: "application/json",
       },
@@ -104,7 +108,29 @@ const queryContextWorkflow = (input: {
   )
 
 describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream isolation", () => {
-  it("firegrid-workflow-driven-runtime.BOUNDARIES.6 each host writes workflow rows only to the context-derived workflow stream it owns", async () => {
+  it("firegrid-workflow-driven-runtime.VALIDATION.7-2 removes the RuntimeContextEngineRegistry application surface", async () => {
+    await expect(
+      access(new URL("../../src/host/runtime-context-engine-registry.ts", import.meta.url)),
+    ).rejects.toThrow()
+
+    const sourceFiles = [
+      "commands.ts",
+      "agent-tool-host-live.ts",
+      "control-request-reconciler.ts",
+      "channels/session-self/index.ts",
+      "../agent-tools/execution/toolkit-layer.ts",
+    ]
+    const contents = await Promise.all(
+      sourceFiles.map(file =>
+        readFile(new URL(`../../src/host/${file}`, import.meta.url), "utf8"),
+      ),
+    )
+
+    expect(contents.join("\n")).not.toContain("RuntimeContextEngineRegistry")
+    expect(contents.join("\n")).not.toContain("runtime-context-engine-registry")
+  })
+
+  it("firegrid-workflow-driven-runtime.BOUNDARIES.6-1 each host writes workflow rows only to its host-owned workflow stream", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `two-host-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
@@ -132,8 +158,7 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
     })
 
     // Each host runs its own context end-to-end. The runtime host's
-    // workflow engine is bound to the context-derived workflow stream
-    // for the context it owns.
+    // workflow engine is bound to that host's workflow stream.
     await Effect.runPromise(
       startRuntime({ contextId: contextA }).pipe(
         Effect.provide(FiregridRuntimeHostWithWorkflowLive({
@@ -153,25 +178,71 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
       ),
     )
 
-    // Read each context's workflow stream directly and confirm the
-    // execution id present is the one belonging to that context.
+    // Read each host's workflow stream directly and confirm the
+    // execution id present is the one belonging to that host's context.
     // Workflow execution id format mirrors the runtime host's
     // `runtime-context:${contextId}` shape.
     const resultA = await Effect.runPromise(
-      queryContextWorkflow({ baseUrl, namespace, contextId: contextA }),
+      queryHostWorkflow({ baseUrl, namespace, hostId: hostA }),
     )
     const resultB = await Effect.runPromise(
-      queryContextWorkflow({ baseUrl, namespace, contextId: contextB }),
+      queryHostWorkflow({ baseUrl, namespace, hostId: hostB }),
     )
 
     expect(resultA.executionIds).toEqual([`runtime-context:${contextA}`])
     expect(resultB.executionIds).toEqual([`runtime-context:${contextB}`])
 
-    // Cross-context check: context A's stream MUST NOT carry context
-    // B's workflow row. The per-context stream is now the durable
-    // workflow isolation boundary.
+    // Cross-host check: host A's stream MUST NOT carry host B's
+    // workflow row. The host-owned stream is now the durable workflow
+    // isolation boundary.
     expect(resultA.executionIds).not.toContain(`runtime-context:${contextB}`)
     expect(resultB.executionIds).not.toContain(`runtime-context:${contextA}`)
+  })
+
+  it("firegrid-workflow-driven-runtime.VALIDATION.7-1 one host-scoped engine owns multiple context executions", async () => {
+    if (!baseUrl) throw new Error("server not started")
+    const namespace = `two-context-one-host-${crypto.randomUUID()}`
+    const hostA = `host_A_${crypto.randomUUID()}` as HostId
+    const controlPlaneStreamUrl = `${baseUrl}/v1/stream/${namespace}.firegrid.runtime`
+
+    const childArgv = [process.execPath, "-e", "process.exit(0)"]
+    const contextA = await seedContext({
+      controlPlaneStreamUrl,
+      hostId: hostA,
+      namespace,
+      argv: childArgv,
+    })
+    const contextB = await seedContext({
+      controlPlaneStreamUrl,
+      hostId: hostA,
+      namespace,
+      argv: childArgv,
+    })
+
+    const exit = await Effect.runPromiseExit(
+      Effect.all([
+        startRuntime({ contextId: contextA }),
+        startRuntime({ contextId: contextB }),
+      ], { concurrency: "unbounded" }).pipe(
+        Effect.provide(FiregridRuntimeHostWithWorkflowLive({
+          durableStreamsBaseUrl: baseUrl,
+          namespace,
+          hostId: hostA,
+        })),
+      ),
+    )
+    if (Exit.isFailure(exit)) {
+      throw new Error(Cause.pretty(exit.cause))
+    }
+
+    const result = await Effect.runPromise(
+      queryHostWorkflow({ baseUrl, namespace, hostId: hostA }),
+    )
+
+    expect(new Set(result.executionIds)).toEqual(new Set([
+      `runtime-context:${contextA}`,
+      `runtime-context:${contextB}`,
+    ]))
   })
 
   it("firegrid-host-context-authority.RUNTIME_CONTEXT_PRIMITIVES.2 startRuntime rejects a context bound to another host before any host-owned row is written", async () => {
@@ -214,11 +285,11 @@ describe("firegrid-host-context-authority.VALIDATION.1 two-host workflow stream 
       })
     }
 
-    // Verify contextA's workflow stream is empty: the gate fired
+    // Verify hostB's workflow stream is empty: the gate fired
     // before engine.execute, so no `runtime-context:contextA` row
-    // was inserted into the per-context workflow stream.
+    // was inserted into the foreign host-owned workflow stream.
     const contextState = await Effect.runPromise(
-      queryContextWorkflow({ baseUrl, namespace, contextId: contextA }),
+      queryHostWorkflow({ baseUrl, namespace, hostId: hostB }),
     )
     expect(contextState.executionIds).not.toContain(`runtime-context:${contextA}`)
 

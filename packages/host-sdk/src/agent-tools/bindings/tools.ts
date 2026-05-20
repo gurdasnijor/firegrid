@@ -90,7 +90,7 @@ export class FiregridAgentToolContext extends Context.Tag(
  * `toolUseToEffect` body a `WorkflowEngine.WorkflowInstance`.
  *
  * The execution layer resolves the route-scoped runtime context and runs the
- * tool-call workflow on that context's active per-context engine.
+ * tool-call workflow on that context's active host-scoped RuntimeContext engine.
  */
 const FiregridToolDependencies: Array<
   | typeof FiregridAgentToolContext
@@ -234,7 +234,7 @@ export const SessionCloseTool = Tool.make(operationToolName(FiregridAgentToolOpe
 /**
  * `schedule_me` — schedule a future prompt to the same agent context.
  * Lowers through `DurableClock.sleep` and the canonical host prompt append
- * seam; the active per-context engine or startup reconciliation owns runtime
+ * seam; the active host-scoped RuntimeContext engine or startup reconciliation owns runtime
  * input delivery.
  */
 export const ScheduleMeTool = Tool.make(operationToolName(FiregridAgentToolOperations.scheduleMe.metadata, "schedule_me"), {

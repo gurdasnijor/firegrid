@@ -10,7 +10,8 @@
  */
 
 import { IdGenerator, Prompt } from "@effect/ai"
-import { Workflow, WorkflowEngine } from "@effect/workflow"
+import { Workflow } from "@effect/workflow"
+import type { WorkflowEngine } from "@effect/workflow"
 import type * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
 import {
   provideRuntimeContext,
@@ -21,7 +22,7 @@ import {
 } from "../../host/runtime-substrate.ts"
 import { ToolResultEventSchema } from "@firegrid/runtime/events"
 import { type Context, Effect, Layer, Schema } from "effect"
-import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
+import type { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
 import { toolExecutionFailed } from "../bindings/tool-error.ts"
 import {
   FiregridAgentToolContext,
@@ -31,9 +32,8 @@ import {
 import { AgentToolHost } from "./tool-host.ts"
 import { toolUseToEffect } from "./tool-use-to-effect.ts"
 import {
-  RuntimeContextEngineRegistry,
-  type ActiveRuntimeContextEngine,
-} from "../../host/runtime-context-engine-registry.ts"
+  RuntimeContextWorkflowRuntime,
+} from "../../host/runtime-context-workflow-runtime.ts"
 import type { ChannelRegistry } from "../../host/channel-registry.ts"
 
 const TOOL_USE_ID_PREFIX = "mcp"
@@ -79,9 +79,15 @@ export const ToolCallWorkflowLayer = ToolCallWorkflow.toLayer(
 )
 
 const toolCallWorkflowSupportLayer = (
-  handle: ActiveRuntimeContextEngine,
   agentToolHost: AgentToolHost["Type"],
-) =>
+): Layer.Layer<
+  never,
+  unknown,
+  | HostRuntimeContextExecutionEnv
+  | ChannelRegistry
+  | WorkflowEngine.WorkflowEngine
+  | WorkflowEngineTable
+> =>
   // TFIND-031 (Option Y): the ephemeral tool-call workflow body
   // (`toolUseToEffect` — `WaitFor.match`, child workflows) genuinely
   // requires the runtime observation substrate. Like
@@ -91,10 +97,9 @@ const toolCallWorkflowSupportLayer = (
   // only typechecked while `DurableTable.layer` leaked `any`; with
   // precise typing the real requirement must be discharged here, not
   // re-surfaced onto every MCP tool handler.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.layer still leaks any through substrate layers; the declared Layer R channel is the intended capability boundary.
   ToolCallWorkflowLayer.pipe(
     Layer.provideMerge(HostRuntimeObservationSubstrateLive),
-    Layer.provideMerge(Layer.succeed(WorkflowEngine.WorkflowEngine, handle.engine)),
-    Layer.provideMerge(Layer.succeed(WorkflowEngineTable, handle.table)),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
   )
 
@@ -103,7 +108,7 @@ const toolCallWorkflowSupportLayer = (
 // is provided inside the tool-call workflow support layer instead of
 // leaking onto every MCP tool handler.
 type ToolCallHostEnvironment =
-  | RuntimeContextEngineRegistry
+  | RuntimeContextWorkflowRuntime
   | AgentToolHost
   | ChannelRegistry
   | HostRuntimeContextExecutionEnv
@@ -146,16 +151,14 @@ const handleTool = <Output>(
     }
     const runtimeContext = resolved.runtimeContext
     const result = yield* Effect.gen(function*() {
-      const registry = yield* RuntimeContextEngineRegistry
+      const workflowRuntime = yield* RuntimeContextWorkflowRuntime
       const agentToolHost = yield* AgentToolHost
-      const handle = yield* registry.startOrAttach(runtimeContext).pipe(
-        Effect.mapError(cause =>
-          toolExecutionFailed(toolUseId, toolName, cause)),
-      )
-      return yield* execute.pipe(
-        provideRuntimeContext(runtimeContext),
-        Effect.provide(toolCallWorkflowSupportLayer(handle, agentToolHost)),
-      )
+      return yield* workflowRuntime.run({
+        context: runtimeContext,
+        workflowName: ToolCallWorkflow.name,
+        supportLayer: toolCallWorkflowSupportLayer(agentToolHost),
+        effect: execute.pipe(provideRuntimeContext(runtimeContext)),
+      })
     }).pipe(
       Effect.mapError(cause =>
         toolExecutionFailed(toolUseId, toolName, cause)),
@@ -206,7 +209,7 @@ const extractToolFailure = (content: unknown): FiregridMcpToolFailure => {
  *
  * Host services are captured once when the MCP layer is built; each handler
  * still resolves its route-scoped runtime context at call time and then runs
- * the tool-call workflow on that context's active per-context engine.
+ * the tool-call workflow on that context's active host-scoped RuntimeContext engine.
  */
 export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer(
   Effect.map(Effect.context<ToolCallHostEnvironment>(), captured => ({

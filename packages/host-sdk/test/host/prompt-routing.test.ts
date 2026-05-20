@@ -2,11 +2,11 @@ import { Prompt } from "@effect/ai"
 import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   RuntimeControlPlaneTable,
+  hostOwnedStreamUrl,
   local,
   makeHostStreamPrefix,
   normalizeRuntimeIntent,
   runtimeControlPlaneStreamUrl,
-  runtimeContextWorkflowStreamUrl,
   type HostId,
 } from "@firegrid/protocol/launch"
 import {
@@ -24,8 +24,9 @@ import {
   appendRuntimeIngress,
 } from "../../src/host/index.ts"
 import {
-  RuntimeContextEngineRegistry,
-} from "../../src/host/runtime-context-engine-registry.ts"
+  RuntimeContextInput,
+  RuntimeContextWorkflowRuntime,
+} from "../../src/host/runtime-context-workflow-runtime.ts"
 
 let server: DurableStreamTestServer | undefined
 let baseUrl: string | undefined
@@ -80,11 +81,18 @@ const controlPlaneLayer = (input: {
 const workflowTableLayer = (input: {
   readonly namespace: string
   readonly baseUrl: string
-  readonly contextId: string
+  readonly hostId: HostId
 }) =>
   WorkflowEngineTable.layer({
     streamOptions: {
-      url: runtimeContextWorkflowStreamUrl(input),
+      url: hostOwnedStreamUrl({
+        baseUrl: input.baseUrl,
+        prefix: makeHostStreamPrefix({
+          namespace: input.namespace,
+          hostId: input.hostId,
+        }),
+        segment: "workflow",
+      }),
       contentType: "application/json",
     },
   })
@@ -116,6 +124,7 @@ const decodeInputRows = (value: unknown): ReadonlyArray<RuntimeIngressInputRow> 
 const readContextDeferredInputs = (input: {
   readonly namespace: string
   readonly baseUrl: string
+  readonly hostId: HostId
   readonly contextId: string
 }): Promise<ReadonlyArray<RuntimeIngressInputRow>> =>
   Effect.runPromise(
@@ -123,7 +132,7 @@ const readContextDeferredInputs = (input: {
       const table = yield* WorkflowEngineTable
       return yield* table.deferreds.query((coll) =>
         coll.toArray
-          .filter(row => row.deferredName.includes("/input/"))
+          .filter(row => row.deferredName.includes(`runtime-context/${input.contextId}/input/`))
           .flatMap(row => decodeInputRows(row.exit)))
     }).pipe(
       Effect.provide(workflowTableLayer(input)),
@@ -135,6 +144,7 @@ const waitForContextDeferredInputs = async (
   input: {
     readonly namespace: string
     readonly baseUrl: string
+    readonly hostId: HostId
     readonly contextId: string
   },
   count: number,
@@ -178,7 +188,7 @@ const runWithHost = <A, E, R>(
     ),
   )
 
-describe("firegrid-workflow-driven-runtime.VALIDATION.8 per-context runtime input intents", () => {
+describe("firegrid-workflow-driven-runtime.VALIDATION.8 runtime input intents", () => {
   it("appends a durable intent without owner-host workflow stream routing when no local engine is active", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `prompt-routing-${crypto.randomUUID()}`
@@ -212,10 +222,10 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 per-context runtime inpu
     })
 
     expect(await Effect.runPromise(intentIds({ baseUrl, namespace }))).toEqual(["input-cross-host"])
-    expect(await readContextDeferredInputs({ baseUrl, namespace, contextId })).toEqual([])
+    expect(await readContextDeferredInputs({ baseUrl, namespace, hostId: hostA, contextId })).toEqual([])
   })
 
-  it("reconciles durable intents when the owning per-context engine starts", async () => {
+  it("reconciles durable intents when the owning host-scoped engine starts", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `prompt-routing-reconcile-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
@@ -245,14 +255,15 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 per-context runtime inpu
           const table = yield* RuntimeControlPlaneTable
           const context = yield* table.contexts.get(contextId)
           if (context._tag === "None") return yield* Effect.fail(new Error("missing context"))
-          const registry = yield* RuntimeContextEngineRegistry
-          yield* registry.claimActive(context.value)
-          yield* registry.reconcile(context.value)
+          const runtime = yield* RuntimeContextWorkflowRuntime
+          const input = yield* RuntimeContextInput
+          yield* runtime.ensureActive(context.value)
+          yield* input.reconcile(context.value)
         }),
       ),
     )
 
-    expect((await readContextDeferredInputs({ baseUrl, namespace, contextId })).map(row => ({
+    expect((await readContextDeferredInputs({ baseUrl, namespace, hostId: hostA, contextId })).map(row => ({
       inputId: row.inputId,
       sequence: row.sequence,
       status: row.status,
@@ -263,7 +274,7 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 per-context runtime inpu
     }])
   })
 
-  it("dispatches session_prompt through the active local per-context engine", async () => {
+  it("dispatches session_prompt through the active local host-scoped engine", async () => {
     if (!baseUrl) throw new Error("server not started")
     const namespace = `prompt-routing-session-${crypto.randomUUID()}`
     const hostA = `host_A_${crypto.randomUUID()}` as HostId
@@ -284,8 +295,8 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 per-context runtime inpu
           const table = yield* RuntimeControlPlaneTable
           const context = yield* table.contexts.get(contextId)
           if (context._tag === "None") return yield* Effect.fail(new Error("missing context"))
-          const registry = yield* RuntimeContextEngineRegistry
-          yield* registry.claimActive(context.value)
+          const runtime = yield* RuntimeContextWorkflowRuntime
+          yield* runtime.ensureActive(context.value)
           const host = yield* AgentToolHost
           yield* host.appendSessionPrompt({
             toolUseId: "tool-session-prompt",
@@ -299,7 +310,7 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 per-context runtime inpu
       ),
     )
 
-    expect((await waitForContextDeferredInputs({ baseUrl, namespace, contextId }, 1)).map(row => ({
+    expect((await waitForContextDeferredInputs({ baseUrl, namespace, hostId: hostA, contextId }, 1)).map(row => ({
       inputId: row.inputId,
       authoredBy: row.authoredBy,
       sequence: row.sequence,
@@ -344,6 +355,7 @@ describe("firegrid-workflow-driven-runtime.VALIDATION.8 per-context runtime inpu
     expect((await readContextDeferredInputs({
       baseUrl,
       namespace,
+      hostId,
       contextId: result.session.childContextId,
     })).map(row => ({
       contextId: row.contextId,

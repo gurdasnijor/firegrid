@@ -17,7 +17,7 @@
  *
  * Why this exists: in the only supported host topology the MCP listener
  * (`FiregridMcpServerLayer`, "A") is `Layer.provideMerge`'d with the
- * runtime host ("B") that builds the reconciler / per-context engine.
+ * runtime host ("B") that builds the reconciler / host-scoped RuntimeContext engine.
  * Process co-location is guaranteed, but `A`'s bound `HttpServer`
  * (including the OS-chosen port when `port:0`) is NOT in `B`'s
  * construction scope. This service is the single-owner channel by which

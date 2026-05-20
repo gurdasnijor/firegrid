@@ -2,12 +2,12 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import {
   RuntimeControlPlaneTable,
   RuntimeOutputTable,
+  hostOwnedStreamUrl,
   local,
   makeHostStreamPrefix,
   normalizeRuntimeIntent,
   runtimeControlPlaneStreamUrl,
   runtimeContextOutputStreamUrl,
-  runtimeContextWorkflowStreamUrl,
   type HostId,
   type RuntimeAgentProtocol,
 } from "@firegrid/protocol/launch"
@@ -118,14 +118,17 @@ const outputTableLayer = (input: {
 
 const workflowTableLayer = (input: {
   readonly namespace: string
-  readonly contextId: string
+  readonly hostId: HostId
 }) =>
   WorkflowEngineTable.layer({
     streamOptions: {
-      url: runtimeContextWorkflowStreamUrl({
+      url: hostOwnedStreamUrl({
         baseUrl: baseUrl!,
-        namespace: input.namespace,
-        contextId: input.contextId,
+        prefix: makeHostStreamPrefix({
+          namespace: input.namespace,
+          hostId: input.hostId,
+        }),
+        segment: "workflow",
       }),
       contentType: "application/json",
     },
@@ -191,6 +194,7 @@ const waitForAgentEventInContextStream = (
 
 const waitForWorkflowDeferred = (input: {
   readonly namespace: string
+  readonly hostId: HostId
   readonly contextId: string
   readonly deferredName: string
 }) =>
@@ -491,6 +495,7 @@ new acp.AgentSideConnection(connection => new Agent(connection), stream)
         })
         const deferred = yield* waitForWorkflowDeferred({
           namespace,
+          hostId,
           contextId,
           deferredName: runtimeInputDeferredName(contextId, 1),
         })
