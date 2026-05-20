@@ -65,6 +65,17 @@ That is not a reason to abandon one substrate. It is evidence that some
 body-plan verbs may want engine-native support instead of fragile userland
 composition over lower-level primitives.
 
+A second motivating case is operational, not just semantic. Existing
+pre-engine-era polling loops, notably
+`packages/host-sdk/src/host/control-request-reconciler.ts`, burn idle CPU and
+durable-storage round trips while imposing a multi-second latency floor on
+control-plane operations. At idle steady state, each host runs control and
+lifecycle loops on 5s intervals and repeatedly scans request tables even when
+there is no work. `streamWait` is the engine-native replacement for that shape:
+event-driven dispatch on row append, zero polling traffic while idle, and
+append-to-action latency governed by the stream substrate rather than the next
+timer tick.
+
 ## Firegrid Already Owns This Layer
 
 `ClusterWorkflowEngine.ts` is useful precedent, not a template to copy blindly.
@@ -414,8 +425,9 @@ Mitigation ladder, in order:
 1. Replace composed waits with `streamWait` / `streamWaitAny` so the engine
    writes one durable intent and one durable result instead of Activity claims,
    deferred rows, clock rows, and race result rows.
-2. Attach stream observers directly in the engine and re-attach them on recycle,
-   avoiding poll loops or userland `Stream.runHead` fibers for hot waits.
+2. Replace `Clock.sleep(...).pipe(Effect.forever)` polling loops with
+   engine-attached `streamWait` observers that re-attach on recycle, avoiding
+   idle table scans and userland `Stream.runHead` fibers for hot waits.
 3. Use predicate optimization hints for hot paths. Bare Effect `Predicate<Row>`
    remains correct; Firegrid-owned factory predicates may attach index metadata
    so the engine can avoid row-by-row scans.
@@ -442,6 +454,11 @@ Start the engine-native primitive track if any of these become true:
    correct but too expensive at expected event rates.
 5. Performance gating shows Firegrid non-LLM substrate latency at or above the
    ratio thresholds in the Performance Trigger section.
+6. A host-sdk polling loop over durable tables is on a Phase-2/P0 path and can
+   be replaced by event-driven engine dispatch. The first concrete candidate is
+   `control-request-reconciler.ts`: collapsing it into request-specific
+   workflows removes idle scans, eliminates the 0-5s control-plane latency
+   floor, and moves multi-host coordination into the workflow engine.
 
 Until a trigger fires, keep the narrow Phase 1 fix moving. Do not pause the
 one-substrate collapse just to design engine-native primitives.
