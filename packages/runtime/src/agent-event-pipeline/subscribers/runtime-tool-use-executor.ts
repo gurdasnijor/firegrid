@@ -1,5 +1,9 @@
-import type { WorkflowEngine } from "@effect/workflow"
-import { Context, Layer, type Effect } from "effect"
+import { DurableClock, type WorkflowEngine } from "@effect/workflow"
+import type {
+  SleepToolInput,
+  SleepToolOutput,
+} from "@firegrid/protocol/agent-tools"
+import { Context, Duration, Effect, Layer } from "effect"
 import type { Scope } from "effect"
 import type {
   AgentInputEvent,
@@ -33,4 +37,55 @@ export class RuntimeToolUseExecutor extends Context.Tag(
   static layer = (
     service: RuntimeToolUseExecutorService,
   ): Layer.Layer<RuntimeToolUseExecutor> => Layer.succeed(this, service)
+}
+
+export interface RuntimeToolExecutionContext {
+  readonly contextId: string
+  readonly toolUseId: string
+}
+
+export type RuntimeAgentToolExecutionError =
+  | {
+    readonly _tag: "InvalidToolInput"
+    readonly reason: string
+    readonly cause?: unknown
+  }
+  | {
+    readonly _tag: "ToolExecutionFailed"
+    readonly cause: unknown
+  }
+  | {
+    readonly _tag: "UnsupportedTool"
+    readonly reason: string
+  }
+
+export interface RuntimeAgentToolExecutionService {
+  readonly sleep: (
+    params: RuntimeToolExecutionContext & {
+      readonly input: SleepToolInput
+    },
+  ) => Effect.Effect<
+    SleepToolOutput,
+    RuntimeAgentToolExecutionError,
+    WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
+  >
+}
+
+// firegrid-host-sdk.PACKAGE_GRAPH.6
+// firegrid-workflow-driven-runtime.PHASE_6_AGENT_TOOLS.9
+export const makeRuntimeAgentToolExecutionService = (): RuntimeAgentToolExecutionService => ({
+  sleep: ({ toolUseId, input }) =>
+    DurableClock.sleep({
+      name: `tool:${toolUseId}`,
+      duration: Duration.millis(input.durationMs),
+      inMemoryThreshold: Duration.zero,
+    }).pipe(Effect.as<SleepToolOutput>({ slept: true })),
+})
+
+export class RuntimeAgentToolExecution extends Context.Tag(
+  "@firegrid/runtime/RuntimeAgentToolExecution",
+)<RuntimeAgentToolExecution, RuntimeAgentToolExecutionService>() {
+  static layer = (
+    service: RuntimeAgentToolExecutionService,
+  ): Layer.Layer<RuntimeAgentToolExecution> => Layer.succeed(this, service)
 }

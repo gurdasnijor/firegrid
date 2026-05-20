@@ -37,6 +37,7 @@ import {
   makeIngressChannel,
   makeCallableChannel,
   makeEgressChannel,
+  RuntimeAgentToolExecutionLive,
   type ChannelRegistration,
 } from "../../src/host/index.ts"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
@@ -209,6 +210,7 @@ const buildLayer = (
   channels: Iterable<ChannelRegistration> = [],
 ) => {
   return RunToolWorkflowLayer.pipe(
+    Layer.provideMerge(RuntimeAgentToolExecutionLive),
     Layer.provideMerge(hostLayer),
     Layer.provideMerge(TestChannelInventoryLive(channels)),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
@@ -280,7 +282,7 @@ describe("toolUseToEffect — name dispatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("toolUseToEffect — sleep arm", () => {
-  it("composes DurableClock.sleep and emits { slept: true }", async () => {
+  it("firegrid-workflow-driven-runtime.PHASE_6_AGENT_TOOLS.9 composes DurableClock.sleep and emits { slept: true }", async () => {
     const streams = makeStreams("sleep")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),

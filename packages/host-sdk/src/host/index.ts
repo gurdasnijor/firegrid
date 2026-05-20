@@ -99,6 +99,9 @@ export {
   type HostProjectionObserverOptions,
 } from "./projection-observer.ts"
 export {
+  RuntimeAgentToolExecutionLive,
+} from "./runtime-substrate.ts"
+export {
   EventChannelSourceClasses,
   eventChannel,
   eventChannelFromCollection,

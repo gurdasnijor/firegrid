@@ -88,6 +88,10 @@ import {
   type AgentOutputEvent,
 } from "@firegrid/runtime/events"
 import {
+  RuntimeAgentToolExecution,
+  type RuntimeAgentToolExecutionError,
+} from "@firegrid/runtime/tool-executor"
+import {
   evaluateFieldEquals,
   type FieldEqualsTrigger,
 } from "@firegrid/runtime/durable-tools"
@@ -248,6 +252,26 @@ const decodeChannelValue = <S extends Schema.Schema.Any>(
       toolInvalidInputFromParseError(toolUseId, name, cause)),
   )
 
+const runtimeAgentToolExecutionErrorToToolError = (
+  toolUseId: string,
+  name: string,
+  error: RuntimeAgentToolExecutionError,
+): ToolError => {
+  switch (error._tag) {
+    case "InvalidToolInput":
+      return {
+        _tag: "ToolInvalidInput",
+        toolUseId,
+        name,
+        reason: error.reason,
+      }
+    case "ToolExecutionFailed":
+      return toolExecutionFailed(toolUseId, name, error.cause)
+    case "UnsupportedTool":
+      return toolExecutionFailed(toolUseId, name, error.reason)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Per-arm runners
 //
@@ -260,19 +284,27 @@ const decodeChannelValue = <S extends Schema.Schema.Any>(
 // ---------------------------------------------------------------------------
 
 const runSleepTool = (
+  ctx: ToolLoweringContext,
   toolUseId: string,
   input: SleepToolInput,
 ): Effect.Effect<
   SleepToolOutput,
   ToolError,
-  WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
+  | RuntimeAgentToolExecution
+  | WorkflowEngine.WorkflowEngine
+  | WorkflowEngine.WorkflowInstance
 > =>
-  // firegrid-workflow-driven-runtime.PHASE_4_TEMPORAL_WORKFLOWS.1
-  DurableClock.sleep({
-    name: `tool:${toolUseId}`,
-    duration: Duration.millis(input.durationMs),
-    inMemoryThreshold: Duration.zero,
-  }).pipe(Effect.as<SleepToolOutput>({ slept: true }))
+  Effect.gen(function* () {
+    const execution = yield* RuntimeAgentToolExecution
+    return yield* execution.sleep({
+      contextId: ctx.contextId,
+      toolUseId,
+      input,
+    }).pipe(
+      Effect.mapError(error =>
+        runtimeAgentToolExecutionErrorToToolError(toolUseId, "sleep", error)),
+    )
+  })
 
 const runWaitForTool = (
   toolUseId: string,
@@ -776,6 +808,7 @@ type ToolEnvironment =
   | WorkflowEngine.WorkflowInstance
   | ChannelInventory
   | AgentToolHost
+  | RuntimeAgentToolExecution
 
 /**
  * Decode `event.part.params` against the concrete `@firegrid/protocol`
@@ -859,7 +892,7 @@ export const toolUseToEffect = (
   switch (event.part.name) {
     case "sleep":
       return dispatchTool(event, "sleep", SleepToolInputSchema, (input) =>
-        runSleepTool(event.part.id, input),
+        runSleepTool(ctx, event.part.id, input),
       )
     case "wait_for":
       return dispatchTool(event, "wait_for", WaitForToolInputSchema, (input) =>

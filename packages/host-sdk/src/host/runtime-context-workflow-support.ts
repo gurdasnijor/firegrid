@@ -10,6 +10,7 @@ import {
 } from "./runtime-context-workflow-core.ts"
 import {
   HostRuntimeObservationSubstrateLive,
+  RuntimeAgentToolExecutionLive,
   type HostRuntimeContextExecutionEnv,
   RuntimeToolUseExecutorLive,
 } from "./runtime-substrate.ts"
@@ -48,6 +49,7 @@ export const runtimeContextWorkflowSupportLayer = (
     Layer.provideMerge(
       RuntimeToolUseExecutorLive.pipe(
         Layer.provide(HostRuntimeObservationSubstrateLive),
+        Layer.provideMerge(RuntimeAgentToolExecutionLive),
       ),
     ),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),

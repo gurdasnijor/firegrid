@@ -18,6 +18,7 @@ import {
 } from "@firegrid/protocol/launch"
 import {
   HostRuntimeObservationSubstrateLive,
+  RuntimeAgentToolExecutionLive,
   type HostRuntimeContextExecutionEnv,
 } from "../../host/runtime-substrate.ts"
 import { ToolResultEventSchema } from "@firegrid/runtime/events"
@@ -100,6 +101,7 @@ const toolCallWorkflowSupportLayer = (
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable.layer still leaks any through substrate layers; the declared Layer R channel is the intended capability boundary.
   ToolCallWorkflowLayer.pipe(
     Layer.provideMerge(HostRuntimeObservationSubstrateLive),
+    Layer.provideMerge(RuntimeAgentToolExecutionLive),
     Layer.provideMerge(Layer.succeed(AgentToolHost, agentToolHost)),
   )
 
