@@ -26,6 +26,8 @@
 
 import { Context, type Effect, Layer } from "effect"
 import type {
+  ApprovalCallOutput,
+  ApprovalCallRequest,
   SandboxRef,
   SessionCapabilityRef,
   SessionStatus,
@@ -77,6 +79,13 @@ export interface ExecuteSessionCapabilityParams {
   readonly input: unknown
 }
 
+export interface CallApprovalChannelParams {
+  readonly toolUseId: string
+  readonly contextId: string
+  readonly channel: string
+  readonly request: ApprovalCallRequest
+}
+
 export interface AppendSessionPromptParams {
   readonly toolUseId: string
   readonly sessionId: string
@@ -126,6 +135,16 @@ export interface AgentToolHostService {
   readonly executeSessionCapability: (
     params: ExecuteSessionCapabilityParams,
   ) => Effect.Effect<unknown, ToolExecutionFailedError>
+
+  /**
+   * Approval call-channel adapter. This is intentionally narrower than the
+   * eventual dynamic ChannelRegistry call surface: Phase 2 Slice C.4 only
+   * binds approval.* targets to the existing permission request/response
+   * substrate.
+   */
+  readonly callApprovalChannel: (
+    params: CallApprovalChannelParams,
+  ) => Effect.Effect<ApprovalCallOutput, ToolExecutionFailedError>
 
   /**
    * Append a prompt to an existing RuntimeContext-backed session. This is the

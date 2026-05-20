@@ -140,6 +140,11 @@ const fakeHost = (
     }),
   executeSandboxTool: () => Effect.succeed<unknown>({ ok: true }),
   executeSessionCapability: () => Effect.succeed<unknown>({ ok: true }),
+  callApprovalChannel: () =>
+    Effect.succeed({
+      matched: false,
+      timedOut: true,
+    }),
   appendSessionPrompt: () => Effect.void,
   cancelSession: ({ toolUseId }) =>
     Effect.fail(toolExecutionFailed(
@@ -740,6 +745,84 @@ describe("toolUseToEffect — execute arm", () => {
       kind: "terminal",
       name: "primary",
       input: { command: "pwd" },
+    })
+  })
+})
+
+describe("toolUseToEffect — call approval arm", () => {
+  it("firegrid-agent-body-plan.APPROVAL_CALL.1 routes approval.* calls through AgentToolHost.callApprovalChannel", async () => {
+    const streams = makeStreams("call-approval")
+    const host = fakeHost({
+      callApprovalChannel: ({ contextId, channel, request }) =>
+        Effect.succeed({
+          matched: true,
+          request: {
+            contextId,
+            activityAttempt: 1,
+            sequence: 4,
+            permissionRequestId: "permission-1",
+            toolUseId: "tool-needing-permission",
+            options: [
+              {
+                optionId: "allow_once",
+                kind: "allow_once",
+                name: "Allow once",
+              },
+            ],
+          },
+          response: {
+            responded: true,
+            contextId,
+            permissionRequestId: "permission-1",
+            inputId: `${channel}:${request.decision._tag}`,
+          },
+        }),
+    })
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(host)),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-call",
+          event: toolUse("tool-call", "call", {
+            channel: "approval.operator",
+            request: {
+              decision: { _tag: "Allow", optionId: "allow_once" },
+            },
+          }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toMatchObject({
+      matched: true,
+      response: {
+        responded: true,
+        contextId: "ctx-call",
+        permissionRequestId: "permission-1",
+        inputId: "approval.operator:Allow",
+      },
+    })
+  })
+
+  it("firegrid-agent-body-plan.APPROVAL_CALL.4 rejects non-approval channel targets until the generic registry call binding lands", async () => {
+    const streams = makeStreams("call-non-approval")
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(fakeHost())),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-call-invalid",
+          event: toolUse("tool-call-invalid", "call", {
+            channel: "factory.events",
+            request: {
+              decision: { _tag: "Allow" },
+            },
+          }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(true)
+    expect(resultContent(result)).toMatchObject({
+      error: { _tag: "ToolInvalidInput", name: "call" },
     })
   })
 })

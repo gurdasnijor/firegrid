@@ -29,6 +29,7 @@ import {
   RuntimeContextWorkflowSession,
 } from "./runtime-context-workflow-core.ts"
 import {
+  PerContextRuntimeAgentOutputAfterEventsLive,
   PerContextRuntimeOutputWriterLive,
 } from "./per-context-runtime-output.ts"
 import {
@@ -254,6 +255,7 @@ const hostScopedLayer = (
     PerContextRuntimeOutputWriterLive,
     RuntimeHostAgentToolHostLive.pipe(
       Layer.provide(RuntimeControlPlaneRecorderLive),
+      Layer.provideMerge(PerContextRuntimeAgentOutputAfterEventsLive),
     ),
   ).pipe(
     Layer.provideMerge(hostTables),

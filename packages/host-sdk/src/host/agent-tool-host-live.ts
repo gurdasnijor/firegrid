@@ -15,7 +15,7 @@ import {
   type SandboxCommand,
   type SandboxProviderService,
 } from "@firegrid/runtime/sources/sandbox"
-import { type Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, type Context, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
 import {
   AgentToolHost,
   type AgentToolHostService,
@@ -47,6 +47,14 @@ import {
 import {
   runtimeContextWorkflowSupportLayer,
 } from "./runtime-context-workflow-support.ts"
+import {
+  RuntimeAgentOutputAfterEvents,
+  type RuntimeAgentOutputObservation,
+} from "@firegrid/runtime/runtime-output"
+import type {
+  ApprovalCallPermissionRequest,
+  ApprovalCallRequest,
+} from "@firegrid/protocol/agent-tools"
 
 // firegrid-runtime-boundary-reconciliation.HOST_SPLIT.3
 // Host-coupled AgentToolHost live behavior lives here instead of the host
@@ -186,6 +194,7 @@ const runtimeHostAgentToolHostService = (captured: {
   readonly namespace: string
   readonly registry: RuntimeContextEngineRegistry["Type"]
   readonly agentToolHost: AgentToolHostService
+  readonly agentOutputEvents: RuntimeAgentOutputAfterEvents["Type"]
   // TFIND-031: ambient host durable substrate captured at layer-build
   // time, re-provided into the deferred child-context workflow run.
   readonly hostContext: Context.Context<HostRuntimeContextExecutionEnv>
@@ -274,6 +283,56 @@ const runtimeHostAgentToolHostService = (captured: {
           input,
         })),
     ),
+  callApprovalChannel: ({ toolUseId, contextId, channel, request }) =>
+    Effect.gen(function*() {
+      if (!channel.startsWith("approval.")) {
+        return yield* Effect.fail(
+          new Error(`unsupported approval channel target: ${channel}`),
+        )
+      }
+      yield* requireLocalContextWithHostCapabilities(captured, contextId)
+      const matched = yield* waitForApprovalPermissionRequest(
+        captured.agentOutputEvents,
+        contextId,
+        request,
+      )
+      if (Option.isNone(matched)) {
+        return { matched: false, timedOut: true } as const
+      }
+      const permission = matched.value
+      const idempotencyKey = request.idempotencyKey ??
+        `permission-response:${contextId}:${permission.permissionRequestId}`
+      const row = yield* appendIngressWithHostCapabilities(captured, {
+        contextId,
+        kind: "required_action_result",
+        authoredBy: "client",
+        payload: {
+          _tag: "PermissionResponse",
+          permissionRequestId: permission.permissionRequestId,
+          decision: request.decision,
+        },
+        idempotencyKey,
+      })
+      return {
+        matched: true,
+        request: permission,
+        response: {
+          responded: true,
+          contextId,
+          permissionRequestId: permission.permissionRequestId,
+          inputId: row.inputId,
+        },
+      } as const
+    }).pipe(
+      Effect.mapError(cause => toolExecutionFailed(toolUseId, "call", cause)),
+      Effect.withSpan("firegrid.host.agent_tool.call.approval", {
+        kind: "internal",
+        attributes: {
+          "firegrid.context.id": contextId,
+          "firegrid.agent_tool.tool_use_id": toolUseId,
+        },
+      }),
+    ),
   appendSessionPrompt: ({ toolUseId, sessionId, inputId, prompt }) =>
     // firegrid-factory-aligned-agent-tools.PROMPT_DISPATCH.2
     appendIngressWithHostCapabilities(captured, {
@@ -284,6 +343,7 @@ const runtimeHostAgentToolHostService = (captured: {
       payload: prompt,
       idempotencyKey: inputId,
     }).pipe(
+      Effect.asVoid,
       Effect.mapError(cause =>
         toolExecutionFailed(toolUseId, "session_prompt", cause)),
       Effect.withSpan("firegrid.host.agent_tool.session_prompt", {
@@ -333,6 +393,45 @@ const runtimeHostAgentToolHostService = (captured: {
       }),
     ),
 })
+
+const permissionRequestFromObservation = (
+  observation: RuntimeAgentOutputObservation,
+): Option.Option<ApprovalCallPermissionRequest> => {
+  if (observation._tag !== "PermissionRequest") return Option.none()
+  const event = observation.event
+  if (event._tag !== "PermissionRequest") return Option.none()
+  return Option.some({
+    contextId: observation.contextId,
+    activityAttempt: observation.activityAttempt,
+    sequence: observation.sequence,
+    permissionRequestId: event.permissionRequestId,
+    toolUseId: event.toolUseId,
+    options: event.options,
+  })
+}
+
+const waitForApprovalPermissionRequest = (
+  agentOutputEvents: RuntimeAgentOutputAfterEvents["Type"],
+  contextId: string,
+  request: ApprovalCallRequest,
+): Effect.Effect<Option.Option<ApprovalCallPermissionRequest>, unknown> => {
+  const wait = agentOutputEvents.forContext(contextId).pipe(
+    Stream.filter(observation =>
+      request.afterSequence === undefined ||
+      observation.sequence > request.afterSequence,
+    ),
+    Stream.filterMap(permissionRequestFromObservation),
+    Stream.runHead,
+  )
+  return request.timeoutMs === undefined
+    ? wait
+    : Effect.raceFirst(
+      wait,
+      Clock.sleep(Duration.millis(request.timeoutMs)).pipe(
+        Effect.as(Option.none<ApprovalCallPermissionRequest>()),
+      ),
+    )
+}
 
 // Client-equivalent committed control-plane write. The client appends
 // context/start requests through a `RuntimeControlPlaneTable` bound to
@@ -403,7 +502,6 @@ const appendIngressWithHostCapabilities = (
       RuntimeContextEngineRegistry,
       captured.registry,
     ),
-    Effect.asVoid,
   )
 
 const startChildContextWorkflow = (
@@ -442,6 +540,7 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
     const controlTable = yield* RuntimeControlPlaneTable
     const hostConfig = yield* RuntimeHostConfig
     const registry = yield* RuntimeContextEngineRegistry
+    const agentOutputEvents = yield* RuntimeAgentOutputAfterEvents
     // TFIND-031: capture the ambient host durable substrate so the
     // deferred child-context workflow (run later, outside this gen) can
     // re-provide it. Always present here via the composed host layer.
@@ -458,6 +557,7 @@ export const RuntimeHostAgentToolHostLive = Layer.effect(
       durableStreamsBaseUrl: hostConfig.durableStreamsBaseUrl,
       namespace: hostConfig.namespace,
       registry,
+      agentOutputEvents,
       hostContext,
       sandboxProvider,
       get agentToolHost() {

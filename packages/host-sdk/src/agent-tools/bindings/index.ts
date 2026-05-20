@@ -22,6 +22,7 @@ export {
   unknownToolResult,
 } from "./tool-error.ts"
 export {
+  CallTool,
   ExecuteTool,
   FiregridAgentToolContext,
   FiregridAgentToolkit,

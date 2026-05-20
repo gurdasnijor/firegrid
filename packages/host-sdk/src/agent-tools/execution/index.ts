@@ -12,6 +12,7 @@ export {
   AgentToolHost,
   type AgentToolHostService,
   type AppendSessionPromptParams,
+  type CallApprovalChannelParams,
   type ExecuteSandboxToolParams,
   type ExecuteSessionCapabilityParams,
   type SessionLifecycleParams,

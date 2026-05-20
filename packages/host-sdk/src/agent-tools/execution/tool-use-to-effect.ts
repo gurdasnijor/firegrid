@@ -32,6 +32,7 @@
 import { DurableClock, type WorkflowEngine } from "@effect/workflow"
 import { Prompt } from "@effect/ai"
 import {
+  CallToolInputSchema,
   ExecuteToolInputSchema,
   ScheduleMeToolInputSchema,
   SessionCancelToolInputSchema,
@@ -42,6 +43,8 @@ import {
   SpawnAllToolInputSchema,
   SpawnToolInputSchema,
   WaitForToolInputSchema,
+  type CallToolInput,
+  type CallToolOutput,
   type RuntimeWaitQuery,
   type ExecuteToolInput,
   type ScheduleMeToolInput,
@@ -477,6 +480,31 @@ const runExecuteTool = (
     })
   })
 
+const runCallTool = (
+  ctx: ToolLoweringContext,
+  toolUseId: string,
+  input: CallToolInput,
+): Effect.Effect<CallToolOutput, ToolError, AgentToolHost> =>
+  Effect.gen(function*() {
+    const host = yield* AgentToolHost
+    // firegrid-agent-body-plan.APPROVAL_CALL.4
+    if (!input.channel.startsWith("approval.")) {
+      return yield* Effect.fail({
+        _tag: "ToolInvalidInput" as const,
+        toolUseId,
+        name: "call",
+        reason:
+          "call currently supports approval.* channel targets only in this slice.",
+      })
+    }
+    return yield* host.callApprovalChannel({
+      toolUseId,
+      contextId: ctx.contextId,
+      channel: input.channel,
+      request: input.request,
+    })
+  })
+
 // ---------------------------------------------------------------------------
 // Typed protocol-schema dispatch
 // ---------------------------------------------------------------------------
@@ -626,6 +654,10 @@ export const toolUseToEffect = (
     case "execute":
       return dispatchTool(event, "execute", ExecuteToolInputSchema, (input) =>
         runExecuteTool(event.part.id, input),
+      )
+    case "call":
+      return dispatchTool(event, "call", CallToolInputSchema, (input) =>
+        runCallTool(ctx, event.part.id, input),
       )
     default:
       return Effect.succeed(unknownToolResult(event.part.id, event.part.name))

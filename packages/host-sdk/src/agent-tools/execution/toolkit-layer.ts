@@ -12,6 +12,8 @@
 import { IdGenerator, Prompt } from "@effect/ai"
 import { Workflow, WorkflowEngine } from "@effect/workflow"
 import {
+  type CallToolInput,
+  type CallToolOutput,
   type ExecuteToolOutput,
   type ExecuteToolInput,
   type ScheduleMeToolInput,
@@ -238,5 +240,6 @@ export const FiregridAgentToolkitLayer = FiregridAgentToolkit.toLayer(
     schedule_me: (params: ScheduleMeToolInput) =>
       handleTool<ScheduleMeToolOutput>(captured, "schedule_me", params),
     execute: (params: ExecuteToolInput) => handleTool<ExecuteToolOutput>(captured, "execute", params),
+    call: (params: CallToolInput) => handleTool<CallToolOutput>(captured, "call", params),
   })),
 ).pipe(Layer.annotateSpans("firegrid.side", "agent-tools"))

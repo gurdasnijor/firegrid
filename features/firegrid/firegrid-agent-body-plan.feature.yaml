@@ -20,6 +20,13 @@ components:
       4: The channel registration reads through the existing DurableTable rows stream for that collection.
       5: Channel consumers can wait on the opaque channel target without knowing the underlying DurableTable name or durable stream name.
 
+  APPROVAL_CALL:
+    requirements:
+      1: The agent tool surface exposes a `call` operation addressed by an opaque approval channel target.
+      2: The approval call request carries a permission decision plus optional timeout, sequence, and idempotency controls.
+      3: The host approval adapter waits for a matching PermissionRequest on the current runtime context and responds by appending a PermissionResponse intent.
+      4: Approval call targets outside the approval channel family are rejected until generic callable-channel dispatch is implemented.
+
 constraints:
   SLICE_BOUNDARY:
     requirements:

@@ -234,6 +234,18 @@ export const ExecuteTool = Tool.make(operationToolName(FiregridAgentToolOperatio
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
+ * `call` — invoke an approval call channel.
+ * Lowers onto `AgentToolHost.callApprovalChannel` in `toolUseToEffect`.
+ */
+export const CallTool = Tool.make(operationToolName(FiregridAgentToolOperations.call.metadata, "call"), {
+  description: operationDescription(FiregridAgentToolOperations.call),
+  dependencies: FiregridToolDependencies,
+})
+  .setParameters(FiregridAgentToolOperations.call.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.call.outputSchema)
+  .setFailure(FiregridMcpToolFailureSchema)
+
+/**
  * Canonical Firegrid agent toolkit. The single source of truth for tool
  * exposure: codecs publish this set, MCP `tools/list` projects this
  * set, and `toolUseToEffect` switches on `event.part.name` against the
@@ -251,4 +263,5 @@ export const FiregridAgentToolkit = Toolkit.make(
   SessionCloseTool,
   ScheduleMeTool,
   ExecuteTool,
+  CallTool,
 )
