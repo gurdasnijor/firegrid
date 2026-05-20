@@ -50,6 +50,10 @@ Each run writes one JSON-line-per-span file to
 `.simulate/runs/<runId>/trace.jsonl`. That file is the durable artifact;
 everything else is derived from it.
 
+For the Firegrid tracing contract behind those spans, including the
+`Effect.annotateSpans` side-propagation rule and runtime/package boundaries,
+see [`docs/runbooks/firegrid-effect-tracing.md`](../../docs/runbooks/firegrid-effect-tracing.md).
+
 - `simulate:show <runId?>` renders a parent/child span tree with elapsed times
   and a `firegrid.side` annotation per node.
 - `simulate:perf <runId>` prints top spans by self-time, HTTP route rolls,
