@@ -13,6 +13,23 @@ Sources are the **exact pinned versions** from the npx cache:
 - `@agentclientprotocol/claude-agent-acp@0.36.1`
 - `@anthropic-ai/claude-agent-sdk@0.3.143` (transitive dep of the above)
 
+## Scope of "ruled out" — IMPORTANT CAVEAT
+
+The verdicts below are scoped to the **ACP-mediated MCP path** we use today
+(`NewSessionRequest.mcpServers` + `_meta.claudeCode.options.mcpServers` with
+`-alwaysload` aliases). There is a SECOND viable path — native `.mcp.json` /
+`claude mcp add` / stdio MCP — that the SDK supports first-class via
+`settingSources: ["user", "project", "local"]` (already requested at
+`acp-agent.js:1414`) and `sdk.d.ts:4023-4029` (`enabledMcpjsonServers`,
+`enableAllProjectMcpServers`). That alternative is a **different mechanism**
+through cause #1 (different tool naming — `mcp__firegrid__<x>` vs
+`mcp__firegrid-alwaysload__<x>`; first-class `alwaysLoad` field vs alias
+workaround; native settingSources load timing vs ACP-merge timing).
+
+The P0 spike `tf-s8y` drives `simulate:run -- dark-factory-pipeline` over the
+native MCP path to test this directly. The verdicts here are correct for the
+ACP-mediated path; they are not a blanket "MCP can't be the cause" statement.
+
 ## TL;DR
 
 Of the five candidate causes for `tools/call=0` enumerated in
@@ -20,7 +37,7 @@ Of the five candidate causes for `tools/call=0` enumerated in
 
 | Cause | Verdict | Mechanism |
 |---|---|---|
-| **#1** claude-agent-acp loaded MCP but didn't forward tools to the model | **RULED OUT (structural)** | `acp-agent.js:1438` merges our `_meta.claudeCode.options.mcpServers` payload with `request.mcpServers`; both reach the SDK. `sdk.d.ts:957` confirms `alwaysLoad:true` does what the codec assumes — tools always in the prompt, never deferred behind tool search. |
+| **#1** claude-agent-acp loaded MCP but didn't forward tools to the model | **RULED OUT for ACP path; OPEN for native MCP path (see tf-s8y)** | `acp-agent.js:1438` merges our `_meta.claudeCode.options.mcpServers` payload with `request.mcpServers`; both reach the SDK. `sdk.d.ts:957` confirms `alwaysLoad:true` does what the codec assumes — tools always in the prompt, never deferred behind tool search. Tool naming through this path is prefix-renamed (`mcp__firegrid-alwaysload__<tool>`); the native path avoids this and is tested by spike tf-s8y. |
 | **#2** `tool_choice` defaulted to `auto` → model chose prose | **CONFIRMED as a real SDK gap** | `rg 'tool_choice\|toolChoice' sdk.d.ts` = **0 hits**. The SDK does not expose `tool_choice` in its public typed surface. tf-549's conclusion re-confirmed against this exact pin. |
 | **#3** tool schema/name mismatch | **NOT INVESTIGATED here** — needs the instrumentation lane's wire capture |
 | **#4** claude-agent-acp's system-prompt steering toward prose/explore | **STRUCTURALLY LOCKED** | `acp-agent.js:1371-1387`: default = `{type:"preset", preset:"claude_code"}`. Custom `_meta.systemPrompt` allows forwarding `append`/`excludeDynamicSections` only; `type:"preset"` and `preset:"claude_code"` are force-set on the merged object. No override path through ACP `_meta`. |
