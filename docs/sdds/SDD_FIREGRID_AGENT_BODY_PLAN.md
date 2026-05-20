@@ -21,6 +21,43 @@ This SDD reframes the agent tool surface as a **body plan**: a typed inventory o
 
 This is the same shape Fireline already implements at the substrate-neutral layer (`channel: ChannelTarget`), elevated by the channels-as-nervous-system framing in Fireline's vault, with concrete additions surfaced by tonight's dark-factory live run.
 
+## Architectural Boundary: Channels Above Workflow Infrastructure
+
+Channels are the application/agent-facing transport abstraction. Workflows are
+the lower-tier durable execution substrate that makes channel operations
+replayable, suspendable, and restart-safe.
+
+The intended layering is:
+
+```text
+agent / app code
+  -> semantic channel handle
+  -> host channel registry / binding
+  -> workflow engine, stream substrate, durable table CDC, clock, signal infra
+```
+
+The forbidden layering is:
+
+```text
+agent / app code
+  -> workflow handle / execution id / stream URL / durable table CDC details
+  -> manual engine or substrate wiring
+```
+
+In other words: workflows belong in the infrastructure tier, like a database
+driver or queue client. Application and agent code should not pass workflow
+handles around as naked coordination objects. Host composition may register
+channel bindings backed by workflows, durable streams, tables, clocks, webhooks,
+human approval queues, or future engine-native primitives, but the agent-facing
+surface remains the channel handle plus the fixed verbs in this SDD.
+
+This distinction matters for the Phase 1 bridge. A temporary
+`wait_for(source/query) -> WaitForWorkflow` cutover is acceptable as a substrate
+collapse step because it removes the `durable-tools` wait-router. It is not the
+final body-plan surface. Phase 2 must continue to hide `source._tag`, stream
+names, workflow execution ids, engine services, and table CDC details behind
+registered channels.
+
 ## Problem (substrate currently leaks into the agent)
 
 Tonight's `dark-factory` live run (against a real `claude-agent-acp@0.36.1` planner, with PR #446's codec rationalization landed) made the leak concrete. From `tf-h1gm-dark-factory-honest-halt.FINDING.md`:

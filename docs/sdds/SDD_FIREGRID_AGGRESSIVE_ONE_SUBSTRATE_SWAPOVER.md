@@ -439,6 +439,14 @@ Goal: build the agent-facing channel abstraction directly on the workflow-engine
 substrate from Phase 1. The agent sees semantic channels and a small verb set,
 not substrate source taxonomy.
 
+Phase 2 is not a handoff from channels to workflows. It is the opposite:
+channels become the stable application/agent-facing transport abstraction, and
+workflows remain below that boundary as infrastructure. Channel bindings may be
+implemented by workflow executions, engine-native waits, durable table CDC,
+runtime output streams, clocks, or signal queues, but agents and ordinary app
+code must not receive workflow handles, execution ids, stream URLs, or table
+subscription details.
+
 This phase should begin immediately after Phase 1 compiles and the sims pass.
 Do not reintroduce a dynamic wait-router to implement channels.
 
@@ -497,6 +505,9 @@ Acceptance:
 - MCP `tools/list` for `wait_for` contains `channel`, optional `match`, and
   optional `timeoutMs`.
 - MCP `tools/list` does not contain `source`, `source._tag`, or `stream`.
+- MCP `tools/list` and tool input schemas do not contain workflow execution ids,
+  engine service names, table names, CDC/subscription handles, or other
+  lower-tier substrate coordinates.
 - Dark-factory can call `wait_for(channel: "factory.events", timeoutMs: 0)` and
   observe the seeded fact.
 

@@ -25,6 +25,25 @@ The divergence is the complexity spiral. Every overlapping subsystem accumulates
 
 **Resolve the divergence: there is one substrate, the workflow engine.** "Durable wait" is expressed as a workflow execution on that engine. No bridge. No second runtime. No bespoke wait-store. The agent-tool `wait_for` becomes a workflow whose body uses `DurableDeferred.raceAll` over an Activity-that-does-Stream.runHead and a DurableClock.sleep — primitives the engine already has.
 
+This is a substrate claim, not a presentation-layer claim. The workflow engine
+is the lower-tier implementation surface, comparable to a database driver,
+queue, or CDC engine. It should not become the vocabulary exposed to agents or
+ordinary application code. The body-plan layer above this SDD still exposes
+semantic channels; host bindings lower those channels onto workflow executions,
+durable streams, tables, clocks, and future engine-native primitives.
+
+Therefore the Phase 1 `wait_for(source/query) -> WaitForWorkflow` cutover is a
+pre-channel bridge. It removes `durable-tools/` and proves the workflow engine
+can own durable suspension. It does not bless workflow handles, execution ids,
+stream URLs, or table CDC details as agent-facing transports. Phase 2 must put
+the channel registry back on top of the workflow substrate:
+
+```text
+wait_for(channel)
+  -> host channel registry resolves binding
+  -> workflow / engine primitive executes durable wait
+```
+
 ### Why this works specifically because the engine is stream-backed
 
 This SDD's shape is **not portable to `ClusterWorkflowEngine`**. The load-bearing property is that `DurableStreamsWorkflowEngine`'s engine-state and the application's stream-state are the same thing — durable streams. The left branch (runtime-context body as a stream-fold) only composes with engine replay because re-folding the stream IS re-running the body; nothing else needs to be replayed.
