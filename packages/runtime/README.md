@@ -125,11 +125,6 @@ pnpm firegrid:run --cwd "$PWD" --prompt "hello" -- node agent.mjs
 Use `pnpm firegrid:run:env` to load the root `.env` file. Do not pass tokens or
 secret values as CLI flags. The production-shaped smoke runbook is
 [Firegrid Run - Synchronous MVP](../../docs/runbooks/firegrid-run-sync-mvp.md).
-The short local smoke command is:
-
-```sh
-pnpm smoke:firegrid-run
-```
 
 ## Runtime With Workflow
 

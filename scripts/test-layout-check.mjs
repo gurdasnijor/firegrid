@@ -17,8 +17,8 @@ import { existsSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import process from "node:process"
 
-// pnpm-workspace.yaml globs: packages/*, apps/*, scenarios/*
-const workspaceRoots = ["packages", "apps", "scenarios"]
+// pnpm-workspace.yaml globs: packages/*, apps/*
+const workspaceRoots = ["packages", "apps"]
 
 const testFilePattern = /\.(?:test|spec)\.(?:c|m)?[jt]sx?$/u
 

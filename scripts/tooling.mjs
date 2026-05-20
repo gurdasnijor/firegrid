@@ -117,7 +117,6 @@ const effectDiagnostics = () => {
   const projects = [
     ...readdirSync("packages").map(name => join("packages", name, "tsconfig.json")),
     ...readdirSync("apps").map(name => join("apps", name, "tsconfig.json")),
-    ...readdirSync("scenarios").map(name => join("scenarios", name, "tsconfig.json")),
   ].filter(path => {
     try {
       return statSync(path).isFile()

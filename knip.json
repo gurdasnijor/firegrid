@@ -65,11 +65,6 @@
         "src/**/*.{ts,tsx,mts}"
       ]
     },
-    "scenarios/firegrid": {
-      "project": [
-        "src/**/*.ts"
-      ]
-    },
     "packages/tiny-firegrid": {
       "entry": [
         "src/index.ts",
