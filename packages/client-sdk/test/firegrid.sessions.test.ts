@@ -349,7 +349,7 @@ describe("Firegrid session facade", () => {
     expect(stored).toMatchObject(result.intent)
   })
 
-  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6 whenReady completes from RuntimeContext projection state before prompt append", async () => {
+  it("firegrid-session-fact-client-surfaces.CLIENT_SESSION.6 firegrid-session-fact-client-surfaces.CLIENT_SESSION.6-1 whenReady completes from RuntimeContext projection state before prompt append", async () => {
     const fixture = makeFixture()
 
     const result = await runWithClient(
