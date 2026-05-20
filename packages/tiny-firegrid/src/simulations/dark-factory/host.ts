@@ -1,17 +1,36 @@
 import type { ServeError } from "@effect/platform/HttpServerError"
 import {
+  ApprovalCallOutputSchema,
+  ApprovalCallRequestSchema,
+} from "@firegrid/protocol/agent-tools"
+import {
   CallerOwnedFactStreams,
+  ChannelInventoryLive,
+  dmChannel,
+  eventChannelTarget,
   ensurePathInput,
   FiregridMcpServerLayer,
   FiregridRuntimeHostLive,
+  makeBidirectionalChannel,
+  makeCallableChannel,
+  makeIngressChannel,
+  notificationChannel,
   type FiregridHost,
+  type BidirectionalChannel,
+  type CallableChannel,
+  type ChannelRegistration,
+  type EgressChannel,
+  type HumanMessageSchema,
+  type HumanMessage,
+  type IngressChannel,
   RuntimeEnvResolverPolicy,
   durableStreamUrl,
 } from "@firegrid/host-sdk"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Context, Effect, Layer, Schema, Stream } from "effect"
 import {
   DurableTable,
   type DurableTableLayerOptions,
+  type DurableTableService,
 } from "effect-durable-operators"
 import type { DurableTableError } from "effect-durable-operators"
 import type { TinyFiregridHostEnv } from "../../types.ts"
@@ -37,9 +56,56 @@ const DarkFactoryFactRowSchema = Schema.Struct({
 
 type DarkFactoryFactRow = Schema.Schema.Type<typeof DarkFactoryFactRowSchema>
 
-class DarkFactoryFactTable extends DurableTable("darkFactory", {
+const PlanReadyEventRowSchema = Schema.Struct({
+  eventId: Schema.String.pipe(DurableTable.primaryKey),
+  name: Schema.Literal("plan.ready"),
+  payload: Schema.Unknown,
+  contextId: Schema.optional(Schema.String),
+  correlationId: Schema.optional(Schema.String),
+  createdAt: Schema.String,
+})
+
+const OperatorMessageRowSchema = Schema.Struct({
+  messageId: Schema.String.pipe(DurableTable.primaryKey),
+  handle: Schema.String,
+  body: Schema.String,
+  payload: Schema.optional(Schema.Unknown),
+  createdAt: Schema.String,
+})
+
+const DarkFactoryTableSchemas = {
   facts: DarkFactoryFactRowSchema,
-}) {}
+  operatorMessages: OperatorMessageRowSchema,
+  operatorNotifications: OperatorMessageRowSchema,
+  planReadyEvents: PlanReadyEventRowSchema,
+} as const
+
+type DarkFactoryFactTableService = DurableTableService<typeof DarkFactoryTableSchemas>
+
+class DarkFactoryFactTable extends DurableTable("darkFactory", DarkFactoryTableSchemas) {}
+
+class FactoryEventsChannel extends Context.Tag(
+  "dark-factory/events",
+)<FactoryEventsChannel, IngressChannel<typeof DarkFactoryFactRowSchema>>() {}
+
+class PlanReadyEventChannel extends Context.Tag(
+  "dark-factory/plan-ready",
+)<PlanReadyEventChannel, BidirectionalChannel<typeof PlanReadyEventRowSchema>>() {}
+
+class DmOperatorIngressChannel extends Context.Tag(
+  "dark-factory/dm-operator-ingress",
+)<DmOperatorIngressChannel, IngressChannel<typeof HumanMessageSchema>>() {}
+
+class NotificationOperatorEgressChannel extends Context.Tag(
+  "dark-factory/notification-operator-egress",
+)<NotificationOperatorEgressChannel, EgressChannel<typeof HumanMessageSchema>>() {}
+
+class ApprovalOperatorChannel extends Context.Tag(
+  "dark-factory/approval-operator",
+)<
+  ApprovalOperatorChannel,
+  CallableChannel<typeof ApprovalCallRequestSchema, typeof ApprovalCallOutputSchema>
+>() {}
 
 const darkFactoryFactTableLayerOptions = (options: {
   readonly baseUrl: string
@@ -104,6 +170,168 @@ const seedTriggerFactLayer = (
     }),
   ).pipe(Layer.provide(facts))
 
+const darkFactoryTableEffect = <A>(
+  facts: Layer.Layer<DarkFactoryFactTable, DurableTableError>,
+  f: (table: DarkFactoryFactTableService) => A,
+): Effect.Effect<A, DurableTableError> =>
+  Effect.provide(
+    Effect.map(DarkFactoryFactTable, f),
+    facts,
+  ) as Effect.Effect<A, DurableTableError>
+
+const rowsFromDarkFactoryTable = <A>(
+  facts: Layer.Layer<DarkFactoryFactTable, DurableTableError>,
+  f: (table: DarkFactoryFactTableService) => Stream.Stream<A, DurableTableError>,
+): Stream.Stream<A, DurableTableError, never> =>
+  Stream.unwrap(darkFactoryTableEffect(facts, f))
+
+const humanMessageFromRow = (
+  row: Schema.Schema.Type<typeof OperatorMessageRowSchema>,
+): HumanMessage =>
+  row.payload === undefined
+    ? { handle: row.handle, body: row.body }
+    : { handle: row.handle, body: row.body, payload: row.payload }
+
+const operatorMessageRowFromPayload = (
+  prefix: string,
+  payload: HumanMessage,
+): Schema.Schema.Type<typeof OperatorMessageRowSchema> =>
+  payload.payload === undefined
+    ? {
+      messageId: `${prefix}:${crypto.randomUUID()}`,
+      handle: payload.handle,
+      body: payload.body,
+      createdAt: new Date().toISOString(),
+    }
+    : {
+      messageId: `${prefix}:${crypto.randomUUID()}`,
+      handle: payload.handle,
+      body: payload.body,
+      payload: payload.payload,
+      createdAt: new Date().toISOString(),
+    }
+
+interface DarkFactoryChannels {
+  readonly factoryEvents: IngressChannel<typeof DarkFactoryFactRowSchema>
+  readonly planReady: BidirectionalChannel<typeof PlanReadyEventRowSchema>
+  readonly dmOperator: IngressChannel<typeof HumanMessageSchema>
+  readonly notificationOperator: EgressChannel<typeof HumanMessageSchema>
+  readonly approvalOperator: CallableChannel<
+    typeof ApprovalCallRequestSchema,
+    typeof ApprovalCallOutputSchema
+  >
+}
+
+const makeDarkFactoryChannels = (
+  facts: Layer.Layer<DarkFactoryFactTable, DurableTableError>,
+): DarkFactoryChannels => {
+  const factoryEvents = makeIngressChannel({
+    target: "factory.events",
+    schema: DarkFactoryFactRowSchema,
+    sourceClass: "static-source",
+    stream: rowsFromDarkFactoryTable(facts, table => table.facts.rows()),
+  })
+  const planReady = makeBidirectionalChannel({
+    target: eventChannelTarget("plan.ready"),
+    schema: PlanReadyEventRowSchema,
+    sourceClasses: ["static-source", "predicate-eligible"],
+    stream: rowsFromDarkFactoryTable(
+      facts,
+      table => table.planReadyEvents.rows(),
+    ),
+    append: row =>
+      darkFactoryTableEffect(
+        facts,
+        table => table.planReadyEvents.insert(row),
+      ).pipe(Effect.flatten),
+  })
+  const dmOperatorPair = dmChannel({
+    handle: "operator",
+    incoming: rowsFromDarkFactoryTable(
+      facts,
+      table =>
+        table.operatorMessages.rows().pipe(
+          Stream.filter(row => row.handle === "operator"),
+          Stream.map(humanMessageFromRow),
+        ),
+    ),
+    send: payload =>
+      darkFactoryTableEffect(
+        facts,
+        table =>
+          table.operatorMessages.insert(
+            operatorMessageRowFromPayload("dm.operator", payload),
+          ),
+      ).pipe(Effect.flatten),
+  })
+  const notificationOperatorPair = notificationChannel({
+    handle: "operator",
+    incoming: Stream.empty,
+    send: payload =>
+      darkFactoryTableEffect(
+        facts,
+        table =>
+          table.operatorNotifications.insert(
+            operatorMessageRowFromPayload("notification.operator", payload),
+          ),
+      ).pipe(Effect.flatten),
+  })
+  const approvalOperator = makeCallableChannel({
+    target: "approval.operator",
+    requestSchema: ApprovalCallRequestSchema,
+    responseSchema: ApprovalCallOutputSchema,
+    call: () => Effect.succeed({ matched: false, timedOut: true } as const),
+  })
+  return {
+    factoryEvents,
+    planReady,
+    dmOperator: dmOperatorPair.ingress,
+    notificationOperator: notificationOperatorPair.egress,
+    approvalOperator,
+  }
+}
+
+const darkFactoryChannelRegistrations = (
+  channels: DarkFactoryChannels,
+): ReadonlyArray<ChannelRegistration> => [
+  channels.factoryEvents,
+  channels.planReady,
+  channels.dmOperator,
+  channels.notificationOperator,
+  channels.approvalOperator,
+]
+
+const darkFactoryChannelTagsLive = (
+  channels: DarkFactoryChannels,
+): Layer.Layer<
+  | FactoryEventsChannel
+  | PlanReadyEventChannel
+  | DmOperatorIngressChannel
+  | NotificationOperatorEgressChannel
+  | ApprovalOperatorChannel
+> =>
+  Layer.mergeAll(
+    Layer.succeed(FactoryEventsChannel, channels.factoryEvents),
+    Layer.succeed(PlanReadyEventChannel, channels.planReady),
+    Layer.succeed(DmOperatorIngressChannel, channels.dmOperator),
+    Layer.succeed(NotificationOperatorEgressChannel, channels.notificationOperator),
+    Layer.succeed(ApprovalOperatorChannel, channels.approvalOperator),
+  )
+
+const darkFactoryChannelsLive = (
+  channels: DarkFactoryChannels,
+): Layer.Layer<
+  | FactoryEventsChannel
+  | PlanReadyEventChannel
+  | DmOperatorIngressChannel
+  | NotificationOperatorEgressChannel
+  | ApprovalOperatorChannel
+> =>
+  Layer.mergeAll(
+    ChannelInventoryLive(darkFactoryChannelRegistrations(channels)),
+    darkFactoryChannelTagsLive(channels),
+  )
+
 export const darkFactoryHost = (
   env: TinyFiregridHostEnv,
 ): Layer.Layer<FiregridHost, DurableTableError | ServeError, never> => {
@@ -127,6 +355,8 @@ export const darkFactoryHost = (
   ).pipe(Layer.provide(facts))
   const seedTriggerFact = seedTriggerFactLayer(env, facts)
   const appFacts = Layer.mergeAll(facts, callerFacts, seedTriggerFact)
+  const channels = makeDarkFactoryChannels(facts)
+  const channelsLive = darkFactoryChannelsLive(channels)
   const host = FiregridRuntimeHostLive(
     {
       durableStreamsBaseUrl: env.durableStreamsBaseUrl,
@@ -134,9 +364,13 @@ export const darkFactoryHost = (
       hostId,
       hostSessionId: `${hostId}-session`,
       input: true,
+      channels: darkFactoryChannelRegistrations(channels),
     },
     darkFactoryEnvPolicy(env.processEnv),
-  ).pipe(Layer.provideMerge(appFacts))
+  ).pipe(
+    Layer.provideMerge(appFacts),
+    Layer.provideMerge(channelsLive),
+  )
 
   // firegrid-observability.TINY_FIREGRID_SIMULATIONS.8
   // Public host factories infer an internal layer surface wider than FiregridHost.
@@ -149,5 +383,6 @@ export const darkFactoryHost = (
   ).pipe(
     Layer.provideMerge(host),
     Layer.provideMerge(appFacts),
+    Layer.provideMerge(channelsLive),
   ) as Layer.Layer<FiregridHost, DurableTableError | ServeError, never>
 }
