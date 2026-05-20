@@ -57,10 +57,12 @@ some host-scoped fiber completes that signal.
 
 When a simulation needs to stop early after demonstrated success or a specific
 observed condition, fork a named observer fiber from the host layer. That fiber
-may consume `session.wait.forAgentOutput` or a future stream surface and yield
-`env.stopSignal.complete` when its predicate fires. Keep that observer separate
-from the driver: the driver remains a pure client loop, the trace remains the
-output, and the host scope owns the observer lifetime.
+should use `hostProjectionObserver` from `@firegrid/host-sdk` when the condition
+is visible in per-context runtime-output rows, then yield
+`env.stopSignal.complete` when its predicate fires. The helper stamps
+`firegrid.wait.bucket="projection"` on the observer span. Keep that observer
+separate from the driver: the driver remains a pure client loop, the trace
+remains the output, and the host scope owns the observer lifetime.
 
 ## Triage rubric
 

@@ -1,19 +1,6 @@
 import { Firegrid, local } from "@firegrid/client-sdk/firegrid"
-import { Clock, Effect, Schedule } from "effect"
+import { Effect } from "effect"
 import { factCorrelationId, factEventType, factSource } from "./host.ts"
-
-/* eslint-disable local/no-fixed-polling -- public-client simulation retry backoff; same SDK readiness gap as codex-acp-tool-calls, tracked under session.whenReady follow-up. */
-
-interface WaitPreAttachResult {
-  readonly sessionId: string
-  readonly observedToolNames: ReadonlyArray<string>
-  readonly sawWaitForCall: boolean
-  readonly sawPermissionRequest: boolean
-  readonly permissionAllowed: boolean
-  readonly sawResultMarker: boolean
-  readonly sawTurnComplete: boolean
-  readonly resultText: string
-}
 
 // claude-agent-acp is the agent that surfaces the §6 ToolSearch /
 // alwaysLoad behavior the codec is trying to work around. Same prompt
@@ -51,11 +38,7 @@ const promptForWaitForCall = [
   "where <json> is the matched row. Then stop.",
 ].join("\n")
 
-export const waitPreAttachDriver: Effect.Effect<
-  WaitPreAttachResult,
-  unknown,
-  Firegrid
-> = Effect.gen(function*() {
+export const waitPreAttachDriver: Effect.Effect<void, unknown, Firegrid> = Effect.gen(function*() {
   const firegrid = yield* Firegrid
   const session = yield* firegrid.sessions.createOrLoad({
     externalKey: {
@@ -75,84 +58,20 @@ export const waitPreAttachDriver: Effect.Effect<
     createdBy: "tiny-firegrid-simulation",
   })
 
+  yield* session.whenReady
   yield* session.prompt({
     payload: promptForWaitForCall,
     idempotencyKey: "wait-pre-attach-roundtrip:turn-1",
-  }).pipe(
-    Effect.retry(
-      Schedule.intersect(
-        Schedule.spaced("1000 millis"),
-        Schedule.recurs(60),
-      ),
-    ),
-  )
+  })
   yield* session.start()
 
-  const deadline = (yield* Clock.currentTimeMillis) + 180_000
   let afterSequence: number | undefined
-  let sawWaitForCall = false
-  let sawPermissionRequest = false
-  let permissionAllowed = false
-  let sawResultMarker = false
-  let sawTurnComplete = false
-  let resultText = ""
-  const observedToolNames = new Set<string>()
-
-  while (!sawResultMarker && !sawTurnComplete) {
-    if ((yield* Clock.currentTimeMillis) >= deadline) break
+  while (true) {
     const next = yield* session.wait.forAgentOutput({
       ...(afterSequence === undefined ? {} : { afterSequence }),
       timeoutMs: 15_000,
-    }).pipe(
-      Effect.retry(
-        Schedule.intersect(
-          Schedule.spaced("1000 millis"),
-          Schedule.recurs(5),
-        ),
-      ),
-    )
+    })
     if (!next.matched) continue
-    const observation = next.output
-    afterSequence = observation.sequence
-    const event = observation.event
-    if (event._tag === "ToolUse") {
-      observedToolNames.add(event.part.name)
-      // claude-agent-acp issues tool calls under an MCP-prefixed name
-      // (`mcp__firegrid-runtime-context__wait_for`). Match the suffix
-      // rather than the bare name.
-      if (event.part.name === "wait_for" || event.part.name.endsWith("__wait_for")) {
-        sawWaitForCall = true
-      }
-    }
-    if (event._tag === "PermissionRequest") {
-      // claude-agent-acp surfaces every tool call through a permission
-      // gate. Without an answer the agent stalls indefinitely. For this
-      // MRC we auto-allow so the tool actually executes and we can
-      // observe the wait_router's pre-attach delivery behavior.
-      sawPermissionRequest = true
-      const decision = yield* session.permissions.respond({
-        permissionRequestId: event.permissionRequestId,
-        decision: { _tag: "Allow", optionId: "allow" },
-      }).pipe(Effect.either)
-      if (decision._tag === "Right") permissionAllowed = true
-    }
-    if (event._tag === "TextChunk") {
-      resultText += event.part.delta
-      if (resultText.includes("FIREGRID_WAIT_OBSERVED")) sawResultMarker = true
-    }
-    if (event._tag === "TurnComplete") sawTurnComplete = true
-  }
-
-  return {
-    sessionId: session.contextId,
-    observedToolNames: [...observedToolNames].sort(),
-    sawWaitForCall,
-    sawPermissionRequest,
-    permissionAllowed,
-    sawResultMarker,
-    sawTurnComplete,
-    resultText,
+    afterSequence = next.output.sequence
   }
 })
-
-/* eslint-enable local/no-fixed-polling */
