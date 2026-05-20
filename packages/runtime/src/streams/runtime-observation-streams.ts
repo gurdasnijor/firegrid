@@ -29,6 +29,12 @@ export interface RuntimeObservationStreamsService {
   ) => Stream.Stream<unknown, unknown>
 }
 
+/**
+ * Runtime-owned inversion seam for workflow definitions below the host-sdk
+ * boundary. Host composition provides Live Layers that adapt host-authored
+ * observation sources into this tag; see
+ * `docs/architecture/host-sdk-runtime-boundary.md` § Risk Surfaces.
+ */
 export class RuntimeObservationStreams extends Context.Tag(
   "@firegrid/runtime/RuntimeObservationStreams",
 )<RuntimeObservationStreams, RuntimeObservationStreamsService>() {}

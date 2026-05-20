@@ -33,9 +33,18 @@ export {
   RuntimeLifecycleWorkflowPayload,
   RuntimeStartWorkflow,
   RuntimeStartWorkflowPayload,
+  WaitForWorkflow,
+  WaitForWorkflowLayer,
+  WaitForWorkflowMatchOutcomeSchema,
+  WaitForWorkflowOutcomeSchema,
+  WaitForWorkflowPayloadSchema,
+  WaitForWorkflowTimeoutOutcomeSchema,
   runtimeControlRequestWorkflowExecutionId,
   runtimeControlRequestWorkflowStreamUrl,
+  waitForWorkflowExecutionId,
   type RuntimeControlRequestDispatchOutcome,
+  type WaitForWorkflowOutcome,
+  type WaitForWorkflowPayload,
 } from "./workflow-engine/workflows/index.ts"
 export {
   AgentOutputAfterObservationSourceSchema,
