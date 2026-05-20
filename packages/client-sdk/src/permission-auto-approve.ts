@@ -51,7 +51,7 @@ export const autoApproveSessionPermissions = <E = never, R = never>(
   Effect.gen(function*() {
     const afterSequence = yield* Ref.make<number | undefined>(undefined)
     const timeoutMs = options.timeoutMs ?? defaultTimeoutMs
-    yield* Effect.forever(Effect.gen(function*() {
+    return yield* Effect.forever(Effect.gen(function*() {
       const after = yield* Ref.get(afterSequence)
       const result = yield* session.wait.forPermissionRequest({
         ...(after === undefined ? {} : { afterSequence: after }),
