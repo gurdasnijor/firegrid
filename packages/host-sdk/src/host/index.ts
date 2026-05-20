@@ -99,6 +99,14 @@ export {
   type HumanMessage,
 } from "./human-channel.ts"
 export {
+  SessionLogChannelTarget,
+  SessionLogRowSchema,
+  sessionLogChannel,
+  sessionLogChannelFromCollection,
+  type SessionLogChannel,
+  type SessionLogRow,
+} from "./session-log-channel.ts"
+export {
   RuntimeControlRequestReconciler,
   RuntimeControlRequestReconcilerDaemonLive,
   RuntimeControlRequestReconcilerLive,
