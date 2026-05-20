@@ -2,14 +2,14 @@ import type {
   DurableTableCollectionFacade,
 } from "effect-durable-operators"
 import { DurableTable } from "effect-durable-operators"
-import { Schema } from "effect"
+import { Context, Schema } from "effect"
 import type { Effect } from "effect"
 import {
   makeChannelTarget,
   makeEgressChannel,
   type ChannelTarget,
   type EgressChannel,
-} from "./channel-registry.ts"
+} from "./channel.ts"
 
 export const SessionLogChannelTarget = makeChannelTarget("session.log")
 
@@ -29,6 +29,10 @@ export type SessionLogChannel = EgressChannel<typeof SessionLogRowSchema> & {
   readonly kind: "session.log"
   readonly storage: "durable-table"
 }
+
+export class SessionLogChannelTag extends Context.Tag(
+  "firegrid/host-sdk/channels/session.log",
+)<SessionLogChannelTag, SessionLogChannel>() {}
 
 export const sessionLogChannel = (
   options: {

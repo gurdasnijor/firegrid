@@ -93,13 +93,15 @@ import {
 } from "@firegrid/runtime/durable-tools"
 import { AgentToolHost } from "./tool-host.ts"
 import {
-  ChannelRegistry,
+  ChannelInventory,
   type IngressChannel,
   type CallableChannel,
   type ChannelDirection,
   type ChannelRegistration,
   type EgressChannel,
-} from "../../host/channel-registry.ts"
+  UnknownChannelTarget,
+  findChannel,
+} from "../../host/channel.ts"
 import {
   toolErrorResult,
   toolExecutionFailed,
@@ -198,17 +200,19 @@ const requireChannelDirection = <Direction extends ChannelDirection>(
   channel: string,
   expected: Direction,
 ): Effect.Effect<
-  Extract<ChannelRegistration, { readonly direction: Direction }>,
+  ChannelRegistration,
   ToolError,
-  ChannelRegistry
+  ChannelInventory
 > =>
   Effect.gen(function* () {
-    const registry = yield* ChannelRegistry
-    const registration = yield* registry.require(channel).pipe(
+    const registration = yield* channelDispatch(channel).pipe(
       Effect.mapError(cause =>
         unknownChannelInvalid(toolUseId, name, channel, cause)),
     )
-    if (registration.direction !== expected) {
+    const supported = registration.direction === expected ||
+      (registration.direction === "bidirectional" &&
+        (expected === "ingress" || expected === "egress"))
+    if (!supported) {
       return yield* Effect.fail(directionInvalid(
         toolUseId,
         name,
@@ -217,10 +221,18 @@ const requireChannelDirection = <Direction extends ChannelDirection>(
         registration.direction,
       ))
     }
-    return registration as Extract<
-      ChannelRegistration,
-      { readonly direction: Direction }
-    >
+    return registration
+  })
+
+const channelDispatch = (
+  channel: string,
+): Effect.Effect<ChannelRegistration, UnknownChannelTarget, ChannelInventory> =>
+  Effect.gen(function* () {
+    const inventory = yield* ChannelInventory
+    return yield* Option.match(findChannel(inventory, channel), {
+      onNone: () => Effect.fail(new UnknownChannelTarget({ target: channel })),
+      onSome: registration => Effect.succeed(registration),
+    })
   })
 
 const decodeChannelValue = <S extends Schema.Schema.Any>(
@@ -270,7 +282,7 @@ const runWaitForTool = (
   ToolError,
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
-  | ChannelRegistry
+  | ChannelInventory
 > => {
   // `match` is typed `Record<string, unknown>` because schema-level
   // scalar refinement would prevent codecs from publishing the JSON shape
@@ -292,8 +304,7 @@ const runWaitForTool = (
 
   const timeout: WaitForToolOutput = { matched: false, timedOut: true }
   const waitForChannel = Effect.gen(function*() {
-    const registry = yield* ChannelRegistry
-    const registration = yield* registry.require(input.channel).pipe(
+    const registration = yield* channelDispatch(input.channel).pipe(
       Effect.mapError((): ToolError => ({
         _tag: "ToolInvalidInput",
         toolUseId,
@@ -301,7 +312,10 @@ const runWaitForTool = (
         reason: `unknown channel: ${input.channel}`,
       })),
     )
-    if (registration.direction !== "ingress") {
+    if (
+      registration.direction !== "ingress" &&
+      registration.direction !== "bidirectional"
+    ) {
       return yield* Effect.fail({
         _tag: "ToolInvalidInput" as const,
         toolUseId,
@@ -376,7 +390,7 @@ const waitForIngressChannel = <S extends Schema.Schema.Any>(
 const runSendTool = (
   toolUseId: string,
   input: SendToolInput,
-): Effect.Effect<SendToolOutput, ToolError, ChannelRegistry> =>
+): Effect.Effect<SendToolOutput, ToolError, ChannelInventory> =>
   Effect.gen(function* () {
     const channel = (yield* requireChannelDirection(
       toolUseId,
@@ -401,7 +415,7 @@ const runSendTool = (
 const runRegisteredCallChannel = (
   toolUseId: string,
   input: CallToolInput,
-): Effect.Effect<CallToolOutput, ToolError, ChannelRegistry> =>
+): Effect.Effect<CallToolOutput, ToolError, ChannelInventory> =>
   Effect.gen(function* () {
     const channel = (yield* requireChannelDirection(
       toolUseId,
@@ -432,7 +446,7 @@ const waitForAnyDescriptorToEffect = (
 ): Effect.Effect<
   WaitForAnyToolOutput,
   ToolError,
-  ChannelRegistry
+  ChannelInventory
 > =>
   Effect.gen(function* () {
     const channel = (yield* requireChannelDirection(
@@ -465,7 +479,7 @@ const waitForAnyDescriptorToEffect = (
 const runWaitForAnyTool = (
   toolUseId: string,
   input: WaitForAnyToolInput,
-): Effect.Effect<WaitForAnyToolOutput, ToolError, ChannelRegistry> => {
+): Effect.Effect<WaitForAnyToolOutput, ToolError, ChannelInventory> => {
   // firegrid-agent-body-plan.SLICE_D_VERBS.4
   // firegrid-agent-body-plan.SLICE_BOUNDARY.4
   const raced = Effect.raceAll(
@@ -713,18 +727,17 @@ const runCallTool = (
   ctx: ToolLoweringContext,
   toolUseId: string,
   input: CallToolInput,
-): Effect.Effect<CallToolOutput, ToolError, AgentToolHost | ChannelRegistry> =>
+): Effect.Effect<CallToolOutput, ToolError, AgentToolHost | ChannelInventory> =>
   Effect.gen(function* () {
-    const registry = yield* ChannelRegistry
-    const registered = registry.get(input.channel)
-    if (Option.isSome(registered)) {
-      if (registered.value.direction !== "call") {
+    const registered = yield* Effect.either(channelDispatch(input.channel))
+    if (registered._tag === "Right") {
+      if (registered.right.direction !== "call") {
         return yield* Effect.fail(directionInvalid(
           toolUseId,
           "call",
           input.channel,
           "call",
-          registered.value.direction,
+          registered.right.direction,
         ))
       }
       return yield* runRegisteredCallChannel(toolUseId, input)
@@ -761,7 +774,7 @@ const runCallTool = (
 type ToolEnvironment =
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngine.WorkflowInstance
-  | ChannelRegistry
+  | ChannelInventory
   | AgentToolHost
 
 /**

@@ -34,7 +34,7 @@ import { toolUseToEffect } from "./tool-use-to-effect.ts"
 import {
   RuntimeContextWorkflowRuntime,
 } from "../../host/runtime-context-workflow-runtime.ts"
-import type { ChannelRegistry } from "../../host/channel-registry.ts"
+import type { ChannelInventory } from "../../host/channel.ts"
 
 const TOOL_USE_ID_PREFIX = "mcp"
 
@@ -84,7 +84,7 @@ const toolCallWorkflowSupportLayer = (
   never,
   unknown,
   | HostRuntimeContextExecutionEnv
-  | ChannelRegistry
+  | ChannelInventory
   | WorkflowEngine.WorkflowEngine
   | WorkflowEngineTable
 > =>
@@ -110,7 +110,7 @@ const toolCallWorkflowSupportLayer = (
 type ToolCallHostEnvironment =
   | RuntimeContextWorkflowRuntime
   | AgentToolHost
-  | ChannelRegistry
+  | ChannelInventory
   | HostRuntimeContextExecutionEnv
 
 /**

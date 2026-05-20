@@ -8,7 +8,7 @@ import {
   type ChannelRegistration,
   type ChannelTarget,
   type EgressChannel,
-} from "./channel-registry.ts"
+} from "./channel.ts"
 
 const HumanHandleSchema = Schema.String.pipe(Schema.minLength(1))
 

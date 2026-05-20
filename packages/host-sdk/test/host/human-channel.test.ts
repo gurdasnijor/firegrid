@@ -1,11 +1,11 @@
-import { Chunk, Effect, Option, Stream } from "effect"
+import { Chunk, Effect, Stream } from "effect"
 import type { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
+  channelMetadata,
   dmChannel,
   humanChannelRegistrations,
   humanChannelTarget,
-  makeChannelRegistry,
   notificationChannel,
   type HumanMessageSchema,
 } from "../../src/host/index.ts"
@@ -29,8 +29,7 @@ describe("human channels", () => {
         sent.push(payload)
       }),
     })
-    const registry = makeChannelRegistry(dm.registrations)
-    const metadata = registry.metadata()
+    const metadata = dm.registrations.map(channelMetadata)
 
     expect(dm.target).toBe("dm.operator")
     expect(metadata.map(entry => [entry.target, entry.direction])).toEqual([
@@ -54,7 +53,7 @@ describe("human channels", () => {
     const egress = dm.registrations[1]
     await Effect.runPromise(egress.binding.append(message("operator", "reply")))
     expect(sent).toEqual([message("operator", "reply")])
-    expect(Option.getOrThrow(registry.getMetadata("dm.operator")).direction).toBe("ingress")
+    expect(metadata[0]?.direction).toBe("ingress")
   })
 
   it("firegrid-agent-body-plan.HUMAN_CHANNELS.2 firegrid-agent-body-plan.HUMAN_CHANNELS.3 firegrid-agent-body-plan.HUMAN_CHANNELS.4 registers notification(handle) as paired ingress/egress bindings at one opaque target", async () => {
@@ -67,10 +66,10 @@ describe("human channels", () => {
         sent.push(payload)
       }),
     })
-    const registry = makeChannelRegistry(notification.registrations)
+    const metadata = notification.registrations.map(channelMetadata)
 
     expect(notification.target).toBe("notification.operator")
-    expect(registry.metadata().map(entry => [entry.target, entry.direction])).toEqual([
+    expect(metadata.map(entry => [entry.target, entry.direction])).toEqual([
       ["notification.operator", "ingress"],
       ["notification.operator", "egress"],
     ])

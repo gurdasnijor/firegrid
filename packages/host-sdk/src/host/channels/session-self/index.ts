@@ -11,12 +11,13 @@ import type {
 } from "@firegrid/runtime/workflow-engine"
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect"
 import {
-  ChannelRegistry,
+  ChannelInventory,
+  makeChannelInventory,
+  type IngressChannel,
   makeIngressChannel,
-  makeChannelRegistry,
   makeChannelTarget,
   type ChannelRegistration,
-} from "../../channel-registry.ts"
+} from "../../channel.ts"
 import {
   RuntimeContextCheckpointSource,
   type RuntimeContextWorkflowCheckpointHandle,
@@ -24,6 +25,14 @@ import {
 
 export const SessionSelfLifecycleChannelTarget = makeChannelTarget("session.self.lifecycle")
 export const SessionSelfCheckpointChannelTarget = makeChannelTarget("session.self.checkpoint")
+
+export class SessionSelfLifecycleChannel extends Context.Tag(
+  "firegrid/host-sdk/channels/session.self.lifecycle",
+)<SessionSelfLifecycleChannel, IngressChannel<typeof SessionSelfLifecycleEventSchema>>() {}
+
+export class SessionSelfCheckpointChannel extends Context.Tag(
+  "firegrid/host-sdk/channels/session.self.checkpoint",
+)<SessionSelfCheckpointChannel, IngressChannel<typeof SessionSelfCheckpointEventSchema>>() {}
 
 export const SessionSelfLifecycleEventSchema = Schema.Struct({
   channel: Schema.Literal("session.self.lifecycle"),
@@ -305,7 +314,10 @@ export const makeSessionSelfChannels = (
     readonly control: RuntimeControlPlaneTable["Type"]
     readonly checkpoints: RuntimeContextCheckpointSource["Type"]
   },
-): ReadonlyArray<ChannelRegistration> => [
+): readonly [
+  IngressChannel<typeof SessionSelfLifecycleEventSchema>,
+  IngressChannel<typeof SessionSelfCheckpointEventSchema>,
+] => [
   // firegrid-agent-body-plan.SESSION_SELF.1
   makeIngressChannel({
     target: SessionSelfLifecycleChannelTarget,
@@ -325,41 +337,36 @@ export const makeSessionSelfChannels = (
   }),
 ]
 
-const appendDefaultChannels = (
-  explicit: ReadonlyArray<ChannelRegistration>,
-  defaults: ReadonlyArray<ChannelRegistration>,
-): ReadonlyArray<ChannelRegistration> => {
-  const explicitTargets = new Set(explicit.map(channel => channel.target))
-  return [
-    ...explicit,
-    ...defaults.filter(channel => !explicitTargets.has(channel.target)),
-  ]
-}
-
-const makeSessionSelfChannelRegistry = (
-  registrations: ReadonlyArray<ChannelRegistration>,
-): Effect.Effect<
-  ChannelRegistry["Type"],
+const makeSessionSelfChannelsEffect: Effect.Effect<
+  readonly [
+    IngressChannel<typeof SessionSelfLifecycleEventSchema>,
+    IngressChannel<typeof SessionSelfCheckpointEventSchema>,
+  ],
   never,
   RuntimeControlPlaneTable | RuntimeContextCheckpointSource
-> =>
+> =
   Effect.context<RuntimeControlPlaneTable | RuntimeContextCheckpointSource>().pipe(
     Effect.map((context) => {
       const control = Context.get(context, RuntimeControlPlaneTable)
       const checkpoints = Context.get(context, RuntimeContextCheckpointSource)
-      const defaults = makeSessionSelfChannels({ control, checkpoints })
-      return makeChannelRegistry(appendDefaultChannels(registrations, defaults))
+      return makeSessionSelfChannels({ control, checkpoints })
     }),
   )
 
-export const SessionSelfChannelRegistryLive = (
+export const SessionSelfChannelsLive = (
   registrations: ReadonlyArray<ChannelRegistration> = [],
 ): Layer.Layer<
-  ChannelRegistry,
+  SessionSelfLifecycleChannel | SessionSelfCheckpointChannel | ChannelInventory,
   never,
   RuntimeControlPlaneTable | RuntimeContextCheckpointSource
-> =>
-  Layer.effect(
-    ChannelRegistry,
-    makeSessionSelfChannelRegistry(registrations),
-  )
+> => Layer.unwrapEffect(
+  Effect.map(makeSessionSelfChannelsEffect, ([lifecycle, checkpoint]) =>
+    Layer.mergeAll(
+      Layer.succeed(SessionSelfLifecycleChannel, lifecycle),
+      Layer.succeed(SessionSelfCheckpointChannel, checkpoint),
+      Layer.succeed(
+        ChannelInventory,
+        makeChannelInventory([...registrations, lifecycle, checkpoint]),
+      ),
+    )),
+)

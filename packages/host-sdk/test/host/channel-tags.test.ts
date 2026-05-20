@@ -1,5 +1,6 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Chunk, Effect, Either, Fiber, Option, Schema, Stream } from "effect"
+import { Chunk, Effect, Fiber, Option, Schema, Stream } from "effect"
+import { access, readFile } from "node:fs/promises"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   local,
@@ -9,20 +10,18 @@ import {
   type HostId,
 } from "@firegrid/protocol/launch"
 import {
-  ChannelRegistry,
-  ChannelRegistryLive,
-  FactoryEventsChannelTarget,
+  ChannelInventory,
+  channelMetadata,
+  findChannel,
   FiregridRuntimeHostWithWorkflowLive,
-  SessionSelfCheckpointChannelTarget,
-  SessionSelfLifecycleChannelTarget,
-  UnknownChannelTarget,
   makeCallableChannel,
-  makeChannelRegistry,
   makeChannelTarget,
   makeEgressChannel,
-  makeFactoryEventsChannel,
-  type SessionSelfCheckpointEvent,
-  type SessionSelfLifecycleEvent,
+  makeIngressChannel,
+  SessionSelfCheckpointChannel,
+  SessionSelfCheckpointChannelTarget,
+  SessionSelfLifecycleChannel,
+  SessionSelfLifecycleChannelTarget,
 } from "../../src/host/index.ts"
 import {
   RuntimeContextCheckpointSource,
@@ -60,7 +59,7 @@ afterEach(async () => {
   baseUrl = undefined
 })
 
-describe("ChannelRegistry", () => {
+describe("channel Tags", () => {
   it("firegrid-agent-body-plan.CHANNEL_REGISTRY.1 decodes ChannelTarget as an opaque non-empty string token", () => {
     const target = makeChannelTarget("factory.events")
 
@@ -68,34 +67,33 @@ describe("ChannelRegistry", () => {
     expect(() => makeChannelTarget("")).toThrow()
   })
 
-  it("firegrid-agent-body-plan.CHANNEL_REGISTRY.2 firegrid-agent-body-plan.CHANNEL_REGISTRY.3 firegrid-agent-body-plan.CHANNEL_REGISTRY.4 registers direction, schema metadata, and hidden bindings", async () => {
+  it("firegrid-agent-body-plan.CHANNEL_REGISTRY.2 firegrid-agent-body-plan.CHANNEL_REGISTRY.3 firegrid-agent-body-plan.CHANNEL_REGISTRY.4 provides channels through their own Tags without binding metadata", async () => {
     const factoryEvent = {
       eventType: "factory.run.approved",
       payload: { approved: true },
     }
     const emitted: Array<Schema.Schema.Type<typeof NotifySchema>> = []
-    const registry = makeChannelRegistry([
-      makeFactoryEventsChannel({
-        schema: FactoryEventRowSchema,
-        stream: Stream.succeed(factoryEvent),
-      }),
-      makeEgressChannel({
-        target: "notification.operator",
-        schema: NotifySchema,
-        append: payload =>
-          Effect.sync(() => {
-            emitted.push(payload)
-          }),
-      }),
-      makeCallableChannel({
-        target: "approval.operator",
-        requestSchema: ApprovalRequestSchema,
-        responseSchema: ApprovalResponseSchema,
-        call: request => Effect.succeed({ approved: request.prompt.length > 0 }),
-      }),
-    ])
+    const factory = makeIngressChannel({
+      target: "factory.events",
+      schema: FactoryEventRowSchema,
+      stream: Stream.succeed(factoryEvent),
+    })
+    const notify = makeEgressChannel({
+      target: "notification.operator",
+      schema: NotifySchema,
+      append: payload =>
+        Effect.sync(() => {
+          emitted.push(payload)
+        }),
+    })
+    const approval = makeCallableChannel({
+      target: "approval.operator",
+      requestSchema: ApprovalRequestSchema,
+      responseSchema: ApprovalResponseSchema,
+      call: request => Effect.succeed({ approved: request.prompt.length > 0 }),
+    })
 
-    const metadata = registry.metadata()
+    const metadata = [factory, notify, approval].map(channelMetadata)
     expect(metadata.map(entry => entry.direction)).toEqual([
       "ingress",
       "egress",
@@ -105,64 +103,37 @@ describe("ChannelRegistry", () => {
       expect("binding" in entry).toBe(false)
     }
 
-    const factoryRegistration = await Effect.runPromise(
-      registry.require(FactoryEventsChannelTarget),
-    )
-    expect(factoryRegistration.direction).toBe("ingress")
-    if (factoryRegistration.direction !== "ingress") {
-      return
-    }
     const rows = await Effect.runPromise(
-      Stream.runCollect(factoryRegistration.binding.stream).pipe(
+      Stream.runCollect(factory.binding.stream).pipe(
         Effect.map(Chunk.toReadonlyArray),
       ),
     )
     expect(rows).toEqual([factoryEvent])
 
-    const notify = await Effect.runPromise(
-      registry.require("notification.operator"),
-    )
-    expect(notify.direction).toBe("egress")
-    if (notify.direction !== "egress") {
-      return
-    }
     await Effect.runPromise(notify.binding.append({ message: "ready" }))
     expect(emitted).toEqual([{ message: "ready" }])
 
-    const approval = await Effect.runPromise(
-      registry.require("approval.operator"),
-    )
-    expect(approval.direction).toBe("call")
-    if (approval.direction !== "call") {
-      return
-    }
     await expect(
       Effect.runPromise(approval.binding.call({ prompt: "Ship?" })),
     ).resolves.toEqual({ approved: true })
-
-    const missing = await Effect.runPromise(Effect.either(registry.require("missing")))
-    expect(Either.isLeft(missing)).toBe(true)
-    if (Either.isLeft(missing)) {
-      expect(missing.left).toBeInstanceOf(UnknownChannelTarget)
-    }
   })
 
-  it("firegrid-agent-body-plan.CHANNEL_REGISTRY.5 composes factory.events through the host layer without CallerFact or stream metadata", async () => {
+  it("firegrid-agent-body-plan.CHANNEL_REGISTRY.5 composes factory.events as a host channel Layer without CallerFact or stream metadata", async () => {
     expect(baseUrl).toBeDefined()
     const durableStreamsBaseUrl = baseUrl ?? ""
-    const channel = makeFactoryEventsChannel({
+    const channel = makeIngressChannel({
+      target: "factory.events",
       schema: FactoryEventRowSchema,
       stream: Stream.empty,
     })
     const hostId = `host_${crypto.randomUUID()}` as HostId
-    const namespace = `channel-registry-${crypto.randomUUID()}`
+    const namespace = `channel-tags-${crypto.randomUUID()}`
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
-        const registry = yield* ChannelRegistry
-        const metadata = Option.getOrThrow(
-          registry.getMetadata(FactoryEventsChannelTarget),
-        )
+        const inventory = yield* ChannelInventory
+        const provided = Option.getOrThrow(findChannel(inventory, "factory.events"))
+        const metadata = channelMetadata(provided)
         return {
           direction: metadata.direction,
           target: metadata.target,
@@ -188,7 +159,7 @@ describe("ChannelRegistry", () => {
     expect(result.text).not.toContain("stream")
   })
 
-  it("firegrid-agent-body-plan.SESSION_SELF.1 firegrid-agent-body-plan.SESSION_SELF.2 firegrid-agent-body-plan.SESSION_SELF.3 registers session.self lifecycle and checkpoint channels without substrate metadata", async () => {
+  it("firegrid-agent-body-plan.SESSION_SELF.1 firegrid-agent-body-plan.SESSION_SELF.2 firegrid-agent-body-plan.SESSION_SELF.3 provides session.self lifecycle and checkpoint channels without substrate metadata", async () => {
     expect(baseUrl).toBeDefined()
     const durableStreamsBaseUrl = baseUrl ?? ""
     const hostId = `host_${crypto.randomUUID()}` as HostId
@@ -199,30 +170,14 @@ describe("ChannelRegistry", () => {
     const observed = await Effect.runPromise(
       Effect.gen(function* () {
         const control = yield* RuntimeControlPlaneTable
-        const registry = yield* ChannelRegistry
         const workflowRuntime = yield* RuntimeContextWorkflowRuntime
         const checkpoints = yield* RuntimeContextCheckpointSource
-        const lifecycleMetadata = Option.getOrThrow(
-          registry.getMetadata(SessionSelfLifecycleChannelTarget),
-        )
-        const checkpointMetadata = Option.getOrThrow(
-          registry.getMetadata(SessionSelfCheckpointChannelTarget),
-        )
-        const lifecycle = yield* registry.require(SessionSelfLifecycleChannelTarget)
-        const checkpoint = yield* registry.require(SessionSelfCheckpointChannelTarget)
-        if (lifecycle.direction !== "ingress" || checkpoint.direction !== "ingress") {
-          return yield* Effect.fail(new Error("session.self channels must be ingress"))
-        }
-        const lifecycleStream = lifecycle.binding.stream as Stream.Stream<
-          SessionSelfLifecycleEvent,
-          unknown,
-          never
-        >
-        const checkpointStream = checkpoint.binding.stream as Stream.Stream<
-          SessionSelfCheckpointEvent,
-          unknown,
-          never
-        >
+        const lifecycle = yield* SessionSelfLifecycleChannel
+        const checkpoint = yield* SessionSelfCheckpointChannel
+        const lifecycleMetadata = channelMetadata(lifecycle)
+        const checkpointMetadata = channelMetadata(checkpoint)
+        const lifecycleStream = lifecycle.binding.stream
+        const checkpointStream = checkpoint.binding.stream
         const lifecycleFiber = yield* lifecycleStream.pipe(
           Stream.filter(event =>
             event.event.contextId === contextId &&
@@ -306,7 +261,7 @@ describe("ChannelRegistry", () => {
     expect(observed.lifecycleDirection).toBe("ingress")
     expect(observed.checkpointDirection).toBe("ingress")
     expect(observed.lifecycleEvent).toMatchObject({
-      channel: "session.self.lifecycle",
+      channel: SessionSelfLifecycleChannelTarget,
       event: {
         contextId,
         status: "started",
@@ -314,7 +269,7 @@ describe("ChannelRegistry", () => {
     })
     expect(observed.checkpointEvent).toMatchObject({
       _tag: "Execution",
-      channel: "session.self.checkpoint",
+      channel: SessionSelfCheckpointChannelTarget,
       contextId,
       workflowName: "firegrid.runtime-context",
     })
@@ -326,20 +281,16 @@ describe("ChannelRegistry", () => {
     expect(observed.checkpointText).not.toContain("stream")
   })
 
-  it("firegrid-agent-body-plan.SLICE_BOUNDARY.1 provides the registry as an additive host layer", async () => {
-    const channel = makeFactoryEventsChannel({
-      schema: FactoryEventRowSchema,
-      stream: Stream.empty,
-    })
-
-    const registry = await Effect.runPromise(
-      Effect.gen(function* () {
-        return yield* ChannelRegistry
-      }).pipe(
-        Effect.provide(ChannelRegistryLive([channel])),
-      ),
-    )
-
-    expect(Option.isSome(registry.get("factory.events"))).toBe(true)
+  it("firegrid-agent-body-plan.CHANNEL_REGISTRY.2-1 removes the ChannelRegistry service surface", async () => {
+    await expect(
+      access(new URL("../../src/host/channel-registry.ts", import.meta.url)),
+    ).rejects.toThrow()
+    const sourceFiles = await Promise.all([
+      "../../src/agent-tools/execution/tool-use-to-effect.ts",
+      "../../src/host/layers.ts",
+      "../../src/host/mcp-channel-metadata.ts",
+    ].map(path => readFile(new URL(path, import.meta.url), "utf8")))
+    expect(sourceFiles.join("\n")).not.toContain("ChannelRegistry")
+    expect(sourceFiles.join("\n")).not.toContain("channel-registry")
   })
 })

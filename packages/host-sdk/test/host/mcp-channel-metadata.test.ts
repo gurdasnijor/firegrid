@@ -2,12 +2,12 @@ import { McpSchema } from "@effect/ai"
 import { Effect, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import {
+  channelMetadata,
   makeBidirectionalChannel,
   makeCallableChannel,
   makeEgressChannel,
-  makeFactoryEventsChannel,
-  makeChannelRegistry,
-} from "../../src/host/channel-registry.ts"
+  makeIngressChannel,
+} from "../../src/host/channel.ts"
 import {
   enrichRuntimeContextMcpToolWithChannelMetadata,
   runtimeContextMcpChannelInventory,
@@ -35,8 +35,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 describe("runtime-context MCP channel metadata", () => {
   it("firegrid-agent-body-plan.MCP_CHANNEL_METADATA.1 projects name, direction, and schema for registered channels", () => {
-    const registry = makeChannelRegistry([
-      makeFactoryEventsChannel({
+    const channels = [
+      makeIngressChannel({
+        target: "factory.events",
         schema: FactoryEventRowSchema,
         stream: Stream.empty,
       }),
@@ -58,8 +59,8 @@ describe("runtime-context MCP channel metadata", () => {
         responseSchema: ApprovalResponseSchema,
         call: () => Effect.succeed({ approved: true }),
       }),
-    ])
-    const inventory = runtimeContextMcpChannelInventory(registry.metadata())
+    ]
+    const inventory = runtimeContextMcpChannelInventory(channels.map(channelMetadata))
 
     expect(inventory.map(entry => [entry.name, entry.direction])).toEqual([
       ["factory.events", "ingress"],
@@ -87,7 +88,8 @@ describe("runtime-context MCP channel metadata", () => {
   })
 
   it("firegrid-agent-body-plan.MCP_CHANNEL_METADATA.1 firegrid-agent-body-plan.MCP_CHANNEL_METADATA.2 firegrid-agent-body-plan.MCP_CHANNEL_METADATA.3 enriches wait_for tools/list metadata without substrate names", async () => {
-    const channel = makeFactoryEventsChannel({
+    const channel = makeIngressChannel({
+      target: "factory.events",
       schema: FactoryEventRowSchema,
       stream: Stream.empty,
     })

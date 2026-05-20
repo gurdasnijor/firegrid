@@ -3,17 +3,21 @@ import type {
   ProjectionStream,
 } from "effect-durable-operators"
 import type { DurableTableError } from "effect-durable-operators"
-import type { Schema } from "effect"
+import { Context, type Schema } from "effect"
 import {
   makeIngressChannel,
   type IngressChannel,
   type ChannelTarget,
-} from "./channel-registry.ts"
+} from "./channel.ts"
 
 export type StateChangesChannel<S extends Schema.Schema.Any> = IngressChannel<S> & {
   readonly kind: "state.changes"
   readonly sourceClass: "static-source"
 }
+
+export class StateRowsChannel extends Context.Tag(
+  "firegrid/host-sdk/channels/state.rows",
+)<StateRowsChannel, StateChangesChannel<Schema.Schema.Any>>() {}
 
 export const stateChangesChannel = <S extends Schema.Schema.Any>(
   options: {

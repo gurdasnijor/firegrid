@@ -31,10 +31,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { AgentOutputEvent, ToolResultEvent } from "@firegrid/runtime/events"
 import { AgentToolCallPartSchema, ToolResultEventSchema } from "@firegrid/runtime/events"
 import {
-  ChannelRegistry,
+  ChannelInventory,
+  makeChannelInventory,
+  makeBidirectionalChannel,
   makeIngressChannel,
   makeCallableChannel,
-  makeChannelRegistry,
   makeEgressChannel,
   type ChannelRegistration,
 } from "../../src/host/index.ts"
@@ -175,22 +176,20 @@ class TestSourceTable extends DurableTable("agent-tools.test.source", {
   rows: TestSourceRowSchema,
 }) {}
 
-const TEST_EVENTS_CHANNEL = "test.events"
+const TEST_EVENTS_CHANNEL = "factory.events"
 
-const TestChannelRegistryLive = (
+const TestChannelInventoryLive = (
   channels: Iterable<ChannelRegistration> = [],
 ) => Layer.effect(
-  ChannelRegistry,
+  ChannelInventory,
   Effect.gen(function* () {
     const table = yield* TestSourceTable
-    return makeChannelRegistry([
-      makeIngressChannel({
-        target: TEST_EVENTS_CHANNEL,
-        schema: TestSourceRowSchema,
-        stream: table.rows.rows(),
-      }),
-      ...channels,
-    ])
+    const factoryEvents = makeIngressChannel({
+      target: TEST_EVENTS_CHANNEL,
+      schema: TestSourceRowSchema,
+      stream: table.rows.rows(),
+    })
+    return makeChannelInventory([factoryEvents, ...channels])
   }),
 )
 
@@ -208,10 +207,10 @@ const buildLayer = (
   streams: Streams,
   hostLayer: Layer.Layer<AgentToolHost>,
   channels: Iterable<ChannelRegistration> = [],
-) =>
-  RunToolWorkflowLayer.pipe(
+) => {
+  return RunToolWorkflowLayer.pipe(
     Layer.provideMerge(hostLayer),
-    Layer.provideMerge(TestChannelRegistryLive(channels)),
+    Layer.provideMerge(TestChannelInventoryLive(channels)),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflowUrl,
     })),
@@ -222,6 +221,7 @@ const buildLayer = (
       },
     })),
   )
+}
 
 const runWith = <A, E, ROut>(
   layer: Layer.Layer<ROut, unknown, never>,
@@ -464,7 +464,7 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
     const streams = makeStreams("send")
     const appended: Array<SendPayload> = []
     const channel = makeEgressChannel({
-      target: "events.out",
+      target: "notification.operator",
       schema: SendPayloadSchema,
       append: payload =>
         Effect.sync(() => {
@@ -472,12 +472,16 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
         }),
     })
     const result = await runWith(
-      buildLayer(streams, AgentToolHost.layer(fakeHost()), [channel]),
+      buildLayer(
+        streams,
+        AgentToolHost.layer(fakeHost()),
+        [channel],
+      ),
       Effect.gen(function* () {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-send",
           event: toolUse("tool-send", "send", {
-            channel: "events.out",
+            channel: "notification.operator",
             payload: { id: "event-1", message: "ready" },
           }),
         })
@@ -486,7 +490,7 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
     expect(resultIsError(result)).toBe(false)
     expect(resultContent(result)).toEqual({
       sent: true,
-      channel: "events.out",
+      channel: "notification.operator",
     })
     expect(appended).toEqual([{ id: "event-1", message: "ready" }])
   })
@@ -494,17 +498,21 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
   it("firegrid-agent-body-plan.SLICE_BOUNDARY.4 rejects send on an ingress channel", async () => {
     const streams = makeStreams("send-wrong-direction")
     const channel = makeIngressChannel({
-      target: "state.in",
+      target: "state.rows",
       schema: WaitForAnyRowSchema,
       stream: Stream.empty,
     })
     const result = await runWith(
-      buildLayer(streams, AgentToolHost.layer(fakeHost()), [channel]),
+      buildLayer(
+        streams,
+        AgentToolHost.layer(fakeHost()),
+        [channel],
+      ),
       Effect.gen(function* () {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-send-wrong-direction",
           event: toolUse("tool-send-wrong-direction", "send", {
-            channel: "state.in",
+            channel: "state.rows",
             payload: { id: "event-1", message: "ready" },
           }),
         })
@@ -520,7 +528,7 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
     const streams = makeStreams("call")
     let observed: CallRequest | undefined
     const channel = makeCallableChannel({
-      target: "approval.ask",
+      target: "approval.operator",
       requestSchema: CallRequestSchema,
       responseSchema: CallResponseSchema,
       call: request =>
@@ -535,7 +543,7 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-call",
           event: toolUse("tool-call", "call", {
-            channel: "approval.ask",
+            channel: "approval.operator",
             request: { prompt: "approve" },
           }),
         })
@@ -549,24 +557,35 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
   it("firegrid-agent-body-plan.SLICE_D_VERBS.4 races ingress descriptors and returns the first winner", async () => {
     const streams = makeStreams("wait-for-any")
     const slow = makeIngressChannel({
-      target: "state.slow",
+      target: "state.rows",
       schema: WaitForAnyRowSchema,
       stream: Stream.never,
     })
-    const fast = makeIngressChannel({
-      target: "state.fast",
-      schema: WaitForAnyRowSchema,
-      stream: Stream.make({ id: "row-fast", status: "ready" }),
-    })
+    const fast = {
+      ...makeBidirectionalChannel({
+        target: "event.plan.ready",
+        schema: WaitForAnyRowSchema,
+        sourceClasses: ["static-source", "predicate-eligible"],
+        stream: Stream.make({ id: "row-fast", status: "ready" }),
+        append: () => Effect.void,
+      }),
+      kind: "event" as const,
+      eventName: "plan.ready",
+      callerFactStream: "test.events",
+    }
     const result = await runWith(
-      buildLayer(streams, AgentToolHost.layer(fakeHost()), [slow, fast]),
+      buildLayer(
+        streams,
+        AgentToolHost.layer(fakeHost()),
+        [slow, fast],
+      ),
       Effect.gen(function* () {
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-wait-for-any",
           event: toolUse("tool-wait-for-any", "wait_for_any", {
             channels: [
-              { channel: "state.slow", match: { status: "ready" } },
-              { channel: "state.fast", match: { status: "ready" } },
+              { channel: "state.rows", match: { status: "ready" } },
+              { channel: "event.plan.ready", match: { status: "ready" } },
             ],
           }),
         })
@@ -575,7 +594,7 @@ describe("toolUseToEffect — Slice D channel verb arms", () => {
     expect(resultIsError(result)).toBe(false)
     expect(resultContent(result)).toEqual({
       winnerIndex: 1,
-      channel: "state.fast",
+      channel: "event.plan.ready",
       result: { id: "row-fast", status: "ready" },
     })
   })

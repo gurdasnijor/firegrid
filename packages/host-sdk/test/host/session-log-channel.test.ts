@@ -1,16 +1,14 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
-import { Effect, Option } from "effect"
+import { Effect } from "effect"
 import {
   DurableTable,
   type DurableTableLayerOptions,
 } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
-  makeChannelRegistry,
-  SessionLogChannelTarget,
+  channelMetadata,
   SessionLogRowSchema,
   sessionLogChannelFromCollection,
-  type SessionLogChannel,
 } from "../../src/host/index.ts"
 
 class SessionLogTestTable extends DurableTable("sessionLogChannelTest", {
@@ -59,11 +57,8 @@ describe("session.log channel", () => {
       const channel = sessionLogChannelFromCollection({
         collection: table.rows,
       })
-      const registry = makeChannelRegistry([channel])
-      const registered = yield* registry.require(SessionLogChannelTarget)
-      const metadata = Option.getOrThrow(
-        registry.getMetadata(SessionLogChannelTarget),
-      )
+      const registered = channel
+      const metadata = channelMetadata(channel)
 
       expect(channel.target).toBe("session.log")
       expect(channel.kind).toBe("session.log")
@@ -77,8 +72,7 @@ describe("session.log channel", () => {
       expect("stream" in registered.binding).toBe(false)
       expect("binding" in metadata).toBe(false)
 
-      const sessionLog = registered as SessionLogChannel
-      yield* sessionLog.binding.append({
+      yield* registered.binding.append({
         logId: "log-1",
         contextId: "ctx-session-log",
         message: "planned next action",

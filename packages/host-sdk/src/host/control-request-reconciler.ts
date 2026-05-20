@@ -31,7 +31,7 @@ import { RuntimeContextWorkflowRuntime } from "./runtime-context-workflow-runtim
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 import { PerContextRuntimeOutputWriter } from "./per-context-runtime-output.ts"
 import { RuntimeHostConfig } from "./config.ts"
-import type { ChannelRegistry } from "./channel-registry.ts"
+import type { ChannelInventory } from "./channel.ts"
 
 const runtimeControlPlaneTable: Effect.Effect<
   RuntimeControlPlaneTable["Type"],
@@ -91,7 +91,7 @@ type RuntimeControlRequestReconcilerEnvironment =
   | CurrentHostSession
   | RuntimeControlPlaneTable
   | RuntimeContextWorkflowRuntime
-  | ChannelRegistry
+  | ChannelInventory
   | PerContextRuntimeOutputWriter
   | AgentToolHost
   | RuntimeOutputTable
@@ -220,7 +220,7 @@ type RuntimeControlRequestWorkflowExecutionEnv =
   | CurrentHostSession
   | RuntimeControlPlaneTable
   | RuntimeContextWorkflowRuntime
-  | ChannelRegistry
+  | ChannelInventory
   | PerContextRuntimeOutputWriter
   | AgentToolHost
   | RuntimeOutputTable
@@ -371,7 +371,7 @@ const runStartRequestSideEffect = (
   | CurrentHostSession
   | RuntimeControlPlaneTable
   | RuntimeContextWorkflowRuntime
-  | ChannelRegistry
+  | ChannelInventory
   | AgentToolHost
   | RuntimeOutputTable
   | HostRuntimeContextExecutionEnv
@@ -483,7 +483,7 @@ const runLifecycleRequestSideEffect = (
   | CurrentHostSession
   | RuntimeControlPlaneTable
   | RuntimeContextWorkflowRuntime
-  | ChannelRegistry
+  | ChannelInventory
   | PerContextRuntimeOutputWriter
 > =>
   Effect.gen(function*() {

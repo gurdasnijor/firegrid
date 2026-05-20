@@ -6,9 +6,8 @@ import {
 } from "effect-durable-operators"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
-  makeChannelRegistry,
+  channelMetadata,
   stateChangesChannelFromCollection,
-  type StateChangesChannel,
 } from "../../src/host/index.ts"
 
 const StateRowSchema = Schema.Struct({
@@ -68,18 +67,14 @@ describe("state.changes channel", () => {
           collection: table.rows,
         })
 
-        const registry = makeChannelRegistry([channel])
         const agentVisibleWaitInput = { channel: "state.rows" }
-        const registered = yield* registry.require(agentVisibleWaitInput.channel)
-        const stateChanges = registered as StateChangesChannel<typeof StateRowSchema>
+        const stateChanges = channel
 
         expect(stateChanges.kind).toBe("state.changes")
         expect(stateChanges.direction).toBe("ingress")
         expect(stateChanges.sourceClass).toBe("static-source")
         expect(stateChanges.schema).toBe(StateRowSchema)
-        const metadata = Option.getOrThrow(
-          registry.getMetadata(agentVisibleWaitInput.channel),
-        )
+        const metadata = channelMetadata(channel)
         expect(metadata.direction).toBe("ingress")
         if (metadata.direction !== "ingress") {
           return
