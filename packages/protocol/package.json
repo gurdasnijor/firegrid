@@ -36,6 +36,10 @@
     "./agent-output": {
       "types": "./src/agent-output/index.ts",
       "default": "./src/agent-output/index.ts"
+    },
+    "./observations": {
+      "types": "./src/observations/index.ts",
+      "default": "./src/observations/index.ts"
     }
   },
   "files": [

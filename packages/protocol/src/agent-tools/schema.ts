@@ -36,18 +36,18 @@ export {
   type FiregridOperationEntry,
   type FiregridProjectionMetadata,
 } from "../operations/schema.ts"
-
-export const FiregridRuntimeObservationSourceNames = {
-  runtimeRuns: "firegrid.runtime.runs",
-  runtimeOutputEvents: "firegrid.runtime.output.events",
-  runtimeOutputLogs: "firegrid.runtime.output.logs",
-  runtimeIngressInputs: "firegrid.runtime.ingress.inputs",
-  runtimeIngressDeliveries: "firegrid.runtime.ingress.deliveries",
-  agentOutputEvents: "firegrid.runtime.agent-output-events",
-} as const
-
-export type FiregridRuntimeObservationSourceName =
-  typeof FiregridRuntimeObservationSourceNames[keyof typeof FiregridRuntimeObservationSourceNames]
+// firegrid-schema-projection-contract.CLIENT_PROJECTION.6
+// Compatibility shim: runtime observation source names are protocol observation
+// metadata, not agent-tool input/output schema. Keep this import path stable
+// for existing bindings while callers migrate to `@firegrid/protocol/observations`.
+// TODO(tf-yka4): remove after binding callers import the neutral observation module.
+export {
+  FiregridRuntimeObservationSourceNames,
+  type FiregridRuntimeObservationSourceName,
+} from "../observations/schema.ts"
+// Follow-up migration should update protocol/session/client callers first.
+// This re-export preserves value identity for legacy imports during the slice.
+// Keep the shim local so tool schemas below remain behaviorally unchanged.
 
 // ---------------------------------------------------------------------------
 // sleep
