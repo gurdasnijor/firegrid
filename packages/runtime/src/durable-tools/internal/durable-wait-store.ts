@@ -32,6 +32,10 @@ export interface DurableWaitRowUpsertService {
 
 const findWaitIn = findWaitByKey
 
+const durableWaitBucketAttribute = {
+  "firegrid.wait.bucket": "durable",
+} as const
+
 const upsertWaitTo = (
   table: DurableToolsTable["Type"],
   row: WaitRow,
@@ -43,6 +47,7 @@ const waitRowsFrom = (
   table.waits.rows().pipe(
     Stream.withSpan("firegrid.durable_tools.wait_store.wait_rows", {
       kind: "internal",
+      attributes: durableWaitBucketAttribute,
     }),
   )
 
@@ -70,7 +75,10 @@ export const DurableWaitStoreLive = Layer.mergeAll(
             })),
           Effect.withSpan("firegrid.durable_tools.wait_store.wait.find", {
             kind: "internal",
-            attributes: waitKeySpanAttributes(waitKey),
+            attributes: {
+              ...durableWaitBucketAttribute,
+              ...waitKeySpanAttributes(waitKey),
+            },
           }),
         ),
     })),
@@ -83,6 +91,7 @@ export const DurableWaitStoreLive = Layer.mergeAll(
           Effect.withSpan("firegrid.durable_tools.wait_store.wait.upsert", {
             kind: "internal",
             attributes: {
+              ...durableWaitBucketAttribute,
               ...waitKeySpanAttributes(row.waitKey),
               "firegrid.wait.status": row.status,
               "firegrid.wait.source": row.source._tag,
