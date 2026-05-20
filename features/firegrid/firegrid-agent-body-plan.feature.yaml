@@ -1,0 +1,18 @@
+feature:
+  name: firegrid-agent-body-plan
+  product: firegrid
+  description: Present agent body-plan verbs through opaque, host-declared channels while keeping substrate routing details inside the host plane.
+
+components:
+  CHANNEL_REGISTRY:
+    requirements:
+      1: Host SDK exposes an opaque ChannelTarget string token schema for agent-facing channel addresses.
+      2: Host SDK exposes a ChannelRegistry service that registers channel targets with afferent, efferent, or call direction metadata.
+      3: Channel registry metadata exposes the channel schema shape needed by downstream tool metadata without exposing substrate bindings.
+      4: Channel registrations bind afferent channels to typed streams, efferent channels to append targets, and call channels to request-response handlers.
+      5: The factory.events channel can be registered through host composition as an afferent channel without exposing CallerFact or stream names to agent-visible metadata.
+
+constraints:
+  SLICE_BOUNDARY:
+    requirements:
+      1: Phase 2 Slice A is additive and does not change the wait_for tool input schema or tool-use lowering.

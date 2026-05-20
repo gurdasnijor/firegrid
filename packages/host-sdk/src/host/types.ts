@@ -1,5 +1,6 @@
 import type { DurableTableHeaders } from "effect-durable-operators"
 import type { LocalProcessSandboxProviderOptions } from "@firegrid/runtime/sources/sandbox"
+import type { ChannelRegistration } from "./channel-registry.ts"
 
 export interface RuntimeHostConfigValue {
   readonly inputEnabled: boolean
@@ -38,4 +39,5 @@ export interface RuntimeHostTopologyOptions {
   readonly input?: boolean
   readonly localProcessEnv?: LocalProcessSandboxProviderOptions
   readonly controlRequestReconciler?: boolean
+  readonly channels?: ReadonlyArray<ChannelRegistration>
 }
