@@ -207,7 +207,7 @@ const idleGaps = (
   return gaps
 }
 
-const analyzePerf = (
+export const analyzePerf = (
   spans: ReadonlyArray<SpanRecord>,
   options: Pick<PerfOptions, "top" | "idleThresholdMs" | "findingThresholdMs">,
   runId: string,
@@ -302,15 +302,31 @@ const renderFindingDraft = (report: PerfReport, thresholdMs: number): string => 
   ].join("\n")
 }
 
+interface PerfOutput {
+  readonly stdout: string
+  readonly stderr: string | undefined
+}
+
+export const formatPerfOutput = (
+  report: PerfReport,
+  options: Pick<PerfOptions, "findingDraft" | "findingThresholdMs">,
+): PerfOutput => ({
+  stdout: renderReport(report),
+  stderr: options.findingDraft
+    ? renderFindingDraft(report, options.findingThresholdMs)
+    : undefined,
+})
+
 export const showPerf = (runId: string, options: PerfOptions) =>
   Effect.gen(function*() {
     const runDir = yield* resolveRunDir(runId)
     const spans = yield* readTraceSpans(runDir)
     // firegrid-observability.TINY_FIREGRID_SIMULATIONS.11
     const report = analyzePerf(spans, options, path.basename(runDir), tracePathForRunDir(runDir))
-    yield* Console.log(renderReport(report))
+    const output = formatPerfOutput(report, options)
+    yield* Console.log(output.stdout)
     // firegrid-observability.TINY_FIREGRID_SIMULATIONS.12
-    if (options.findingDraft) {
-      yield* Console.error(renderFindingDraft(report, options.findingThresholdMs))
+    if (output.stderr !== undefined) {
+      yield* Console.error(output.stderr)
     }
   })
