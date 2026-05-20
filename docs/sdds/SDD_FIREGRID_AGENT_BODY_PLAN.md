@@ -272,6 +272,23 @@ type LinearWebhookChannel = IngressChannel<LinearWebhook>
 type ApprovalChannel = CallableChannel<ApprovalRequest, ApprovalResponse>
 ```
 
+Firegrid channel types are semantic tagged-union capabilities, not aliases for
+`effect/Channel`. Effect's `Channel` is a lower-level stream/sink transducer
+primitive; pulling that name into the agent surface or channel binding
+vocabulary would conflate body-plan semantics with implementation plumbing.
+Use ordinary substrate shapes behind the Firegrid channel boundary:
+
+```ts
+type IngressSource<Row, E, R> = () => Stream.Stream<Row, E, R>
+type EgressSink<Req, E, R> = (request: Req) => Effect.Effect<void, E, R>
+type CallableHandler<Req, Res, E, R> = (request: Req) => Effect.Effect<Res, E, R>
+```
+
+If a concrete adapter later benefits from `effect/Channel` internally, it may
+use it below this boundary and expose a `Stream`, sink, or effectful handler to
+the Firegrid channel layer. Do not import `effect/Channel` into channel
+registry, agent-tool schema, or body-plan vocabulary.
+
 `packages/effect-durable-operators/src/DurableTable.ts` already exposes the
 right substrate shape: `CollectionFacade<Row>.rows()` returns a branded
 `ProjectionStream<Row>` — current rows plus live non-deleted row changes. That
