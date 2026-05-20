@@ -17,6 +17,12 @@ components:
       2: The factory.events tools/list metadata entry exposes its row schema without exposing substrate storage names.
       3: Channel metadata enrichment is limited to MCP tool metadata and does not replace the Effect AI toolkit or tool-call handlers.
 
+  SESSION_SELF:
+    requirements:
+      1: Host SDK registers session.self.lifecycle as an afferent static-source channel with a declared lifecycle event schema.
+      2: Host SDK registers session.self.checkpoint as an afferent static-source channel with a declared workflow checkpoint event schema.
+      3: Session self channel metadata exposes schema and direction without exposing workflow-engine table, stream, or span substrate details.
+
   STATE_CHANGES:
     requirements:
       1: Host code can declare a `state.changes` channel with an opaque channel target for a DurableTable collection.

@@ -32,6 +32,16 @@ export {
   type FactoryEvent,
   type TypedStreamBinding,
 } from "./channel-registry.ts"
+export {
+  SessionSelfChannelRegistryLive,
+  SessionSelfCheckpointChannelTarget,
+  SessionSelfCheckpointEventSchema,
+  SessionSelfLifecycleChannelTarget,
+  SessionSelfLifecycleEventSchema,
+  makeSessionSelfChannels,
+  type SessionSelfCheckpointEvent,
+  type SessionSelfLifecycleEvent,
+} from "./channels/session-self/index.ts"
 
 export {
   ContextNotFound,
