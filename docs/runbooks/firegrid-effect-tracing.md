@@ -194,9 +194,9 @@ await Effect.runPromise(
 
 For local debugging, replace the OTLP exporter with
 `ConsoleSpanExporter` and `SimpleSpanProcessor` from
-`@opentelemetry/sdk-trace-base`. Product packages, tracer apps, and smoke
-harnesses may choose exporters and sampling policy; reusable Firegrid packages
-only emit spans.
+`@opentelemetry/sdk-trace-base`. Product packages and smoke harnesses may
+choose exporters and sampling policy; reusable Firegrid packages only emit
+spans.
 
 ## Full e2e traces through real agent runtimes
 

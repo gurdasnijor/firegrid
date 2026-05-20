@@ -13,7 +13,7 @@ SG_CFG="tooling/ast-grep/sgconfig.yml"
 OUT="tooling/analysis/baseline"
 mkdir -p "$OUT"
 SCOPE=(packages/host-sdk/src packages/runtime/src packages/client-sdk/src \
-       packages/protocol/src packages/tiny-firegrid/src apps/factory/src)
+       packages/protocol/src packages/tiny-firegrid/src)
 
 RAW="$(pnpm -s exec ast-grep scan -c "$SG_CFG" "${SCOPE[@]}" --json 2>/dev/null || echo '[]')"
 [ -n "$RAW" ] || RAW='[]'

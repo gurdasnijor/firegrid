@@ -22,7 +22,7 @@ const OUT = "tooling/analysis/type-map";
 // ── project (incl. tests this time, so test refs are visible) ───────
 const paths: Record<string, string[]> = {};
 const entryFiles: string[] = [];
-for (const root of ["packages", "apps"] as const) {
+for (const root of ["packages"] as const) {
   if (!existsSync(join(ROOT, root))) continue;
   for (const d of readdirSync(join(ROOT, root))) {
     const pj = join(ROOT, root, d, "package.json");
@@ -46,8 +46,8 @@ for (const root of ["packages", "apps"] as const) {
   }
 }
 const pkgOf = (fp: string): string => {
-  const m = relative(ROOT, fp).match(/^(packages|apps)\/([^/]+)\//);
-  return m ? `${m[1]}/${m[2]}` : "?";
+  const m = relative(ROOT, fp).match(/^packages\/([^/]+)\//);
+  return m ? `packages/${m[1]}` : "?";
 };
 const isTestFile = (fp: string) =>
   /\.(test|spec)\.tsx?$/.test(fp) || /\/(test|__tests__)\//.test(fp);
@@ -64,7 +64,6 @@ const project = new Project({
 });
 project.addSourceFilesAtPaths([
   "packages/*/src/**/*.ts", "packages/*/src/**/*.tsx",
-  "apps/*/src/**/*.ts", "apps/*/src/**/*.tsx",
   "!**/*.d.ts", "!**/*.gen.ts", "!**/generated/**",
 ]);
 
@@ -98,7 +97,7 @@ const add = (name: string, kind: Kind, decl: Node, nameNode: Node, sf: string) =
 
 for (const sf of project.getSourceFiles()) {
   const fp = sf.getFilePath();
-  if (!/\/(packages|apps)\/[^/]+\/src\//.test(fp) || isTestFile(fp)) continue;
+  if (!/\/packages\/[^/]+\/src\//.test(fp) || isTestFile(fp)) continue;
   for (const i of sf.getInterfaces()) add(i.getName(), "interface", i, i.getNameNode(), fp);
   for (const t of sf.getTypeAliases()) {
     const rhs = t.getTypeNode()?.getText() ?? "";

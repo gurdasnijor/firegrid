@@ -11,7 +11,7 @@ pnpm analysis:leaf       # → tooling/analysis/baseline/leaf-findings.{json,md}
 ```
 
 Reproducible: same tree in → same output. Scope: `packages/{host-sdk,
-runtime,client-sdk,protocol,tiny-firegrid}/src`, `apps/factory/src`.
+runtime,client-sdk,protocol,tiny-firegrid}/src`.
 
 ## Add a rule
 

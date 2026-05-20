@@ -1,6 +1,6 @@
 // Codebase type catalog + static composition map. Mechanical, not a plan.
 //
-// One ts-morph Project over ALL packages/*/src + apps/*/src (tests,
+// One ts-morph Project over ALL packages/*/src (tests,
 // *.d.ts, generated, node_modules, repos/effect excluded). Cross-package
 // symbol resolution is via a synthesized tsconfig `paths` map built from
 // each package.json `exports` (no node_modules dependency for OUR types).
@@ -19,10 +19,10 @@ const OUT = "tooling/analysis/type-map";
 mkdirSync(join(ROOT, OUT, "per-package"), { recursive: true });
 
 // ── 1. package map → synthesized paths ──────────────────────────────
-type Pkg = { name: string; dir: string; root: "packages" | "apps" };
+type Pkg = { name: string; dir: string; root: "packages" };
 const pkgs: Pkg[] = [];
 const paths: Record<string, string[]> = {};
-for (const root of ["packages", "apps"] as const) {
+for (const root of ["packages"] as const) {
   if (!existsSync(join(ROOT, root))) continue;
   for (const d of readdirSync(join(ROOT, root))) {
     const pj = join(ROOT, root, d, "package.json");
@@ -42,8 +42,8 @@ for (const root of ["packages", "apps"] as const) {
 }
 const pkgOf = (fp: string): string => {
   const r = relative(ROOT, fp);
-  const m = r.match(/^(packages|apps)\/([^/]+)\//);
-  return m ? `${m[1]}/${m[2]}` : "?";
+  const m = r.match(/^packages\/([^/]+)\//);
+  return m ? `packages/${m[1]}` : "?";
 };
 
 // ── 2. project ──────────────────────────────────────────────────────
@@ -67,8 +67,6 @@ const project = new Project({
 project.addSourceFilesAtPaths([
   "packages/*/src/**/*.ts",
   "packages/*/src/**/*.tsx",
-  "apps/*/src/**/*.ts",
-  "apps/*/src/**/*.tsx",
   "!**/*.test.ts",
   "!**/*.test.tsx",
   "!**/*.spec.ts",
@@ -116,7 +114,7 @@ const add = (
 
 for (const sf of project.getSourceFiles()) {
   const fp = sf.getFilePath();
-  if (!/\/(packages|apps)\/[^/]+\/src\//.test(fp)) continue;
+  if (!/\/packages\/[^/]+\/src\//.test(fp)) continue;
 
   for (const i of sf.getInterfaces())
     add(i.getName(), "interface", i, fp,
@@ -209,7 +207,7 @@ const tagByName = new Map<string, string>();
 for (const r of recs) if (r.kind === "context-tag") tagByName.set(r.name, r.id);
 const svcEdges = new Set<string>();
 for (const sf of project.getSourceFiles()) {
-  if (!/\/(packages|apps)\/[^/]+\/src\//.test(sf.getFilePath())) continue;
+  if (!/\/packages\/[^/]+\/src\//.test(sf.getFilePath())) continue;
   sf.forEachDescendant((n) => {
     if (!Node.isCallExpression(n)) return;
     if (!/^Layer\.(effect|scoped|succeed|sync|effectDiscard)$/.test(n.getExpression().getText())) return;
@@ -383,13 +381,13 @@ for (const e of compEdges) {
 }
 const protocolInternalOnly = protocolIds.filter((id) => !refdFromOutsideProtocol.has(id));
 
-// host-sdk types referenced from apps/ or other consumer packages
+// host-sdk types referenced from consumer packages
 const hostSdkConsumed = new Set<string>();
 for (const e of compEdges) {
   const [a, b] = e.split("->");
   const rb = recById.get(b), ra = recById.get(a);
   if (rb?.pkg === "packages/host-sdk" && ra && ra.pkg !== "packages/host-sdk" &&
-    (ra.pkg.startsWith("apps/") || ra.pkg.startsWith("packages/")))
+    ra.pkg.startsWith("packages/"))
     hostSdkConsumed.add(`${b}  ← ${a}`);
 }
 
@@ -483,7 +481,7 @@ internal-only (no resolved cross-package referrer):
 ${protocolInternalOnly.slice(0, 60).map((id) => `- \`${id}\` (${recById.get(id)?.kind})`).join("\n") || "(none)"}
 ${protocolInternalOnly.length > 60 ? `\n…and ${protocolInternalOnly.length - 60} more (see catalog.json).` : ""}
 
-## \`packages/host-sdk\` types referenced from apps/ or consumer packages
+## \`packages/host-sdk\` types referenced from consumer packages
 
 ${hostSdkConsumed.size} cross-package consumption edges into host-sdk:
 

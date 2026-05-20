@@ -32,7 +32,7 @@ module.exports = {
       comment:
         "Runtime host internals must be consumed through the host barrel or @firegrid/runtime/runtime-host public subpath, not direct file imports.",
       from: {
-        path: "^(packages|apps)/.*/src",
+        path: "^packages/.*/src",
         pathNot: "^packages/runtime/src/host/",
       },
       to: {
@@ -47,7 +47,7 @@ module.exports = {
       comment:
         "runtime-errors.ts is runtime-internal support. External packages should use @firegrid/runtime public exports, not the source file.",
       from: {
-        path: "^(packages|apps)/.*/src",
+        path: "^packages/.*/src",
         pathNot: [
           "^packages/runtime/src/",
           "^packages/host-sdk/src/host/",
@@ -105,10 +105,10 @@ module.exports = {
       comment:
         "Production code must not import from test files. Factor shared helpers into production or test utility modules instead.",
       from: {
-        path: "^(packages|apps)/.*/src",
+        path: "^packages/.*/src",
         pathNot: [
           "\\.test\\.(?:ts|tsx|mts)$",
-          "^(packages|apps)/.*/src/__tests__/",
+          "^packages/.*/src/__tests__/",
         ],
       },
       to: {
@@ -177,22 +177,13 @@ module.exports = {
       to: { path: "^packages/(client-sdk|host-sdk|cli|runtime)/src" },
     },
     {
-      // firegrid-architecture-boundary.DEPENDENCY_GRAPH.6
-      name: "packages-no-apps",
-      severity: "error",
-      comment:
-        "Reusable packages must not import workspace apps. Apps may depend downward on packages, not the reverse.",
-      from: { path: "^packages/.*/src" },
-      to: { path: "^apps/.*/src" },
-    },
-    {
       // firegrid-architecture-boundary.DEPENDENCY_GRAPH.7
       name: "durable-streams-imports-contained",
       severity: "error",
       comment:
         "Only @firegrid/durable-streams may import the underlying Durable Streams packages; app exemptions must be explicit and mechanically guarded.",
       from: {
-        path: "^(packages|apps)/.*/src",
+        path: "^packages/.*/src",
         pathNot: "^packages/durable-streams/src",
       },
       to: {
@@ -275,27 +266,11 @@ module.exports = {
       from: { path: "^packages/cli/src" },
       to: { path: "^packages/runtime/src" },
     },
-    {
-      name: "flamecast-client-no-runtime-source",
-      severity: "error",
-      comment:
-        "Browser-side Flamecast code must not import runtime source; durable observation should go through browser-safe state/client surfaces.",
-      from: { path: "^apps/flamecast/src/client" },
-      to: { path: "^packages/runtime/src" },
-    },
-    {
-      name: "flamecast-shared-no-runtime-source",
-      severity: "error",
-      comment:
-        "Flamecast shared browser/runtime modules must not import runtime source directly.",
-      from: { path: "^apps/flamecast/src/shared" },
-      to: { path: "^packages/runtime/src" },
-    },
   ],
   options: {
     tsConfig: { fileName: "tsconfig.eslint.json" },
     doNotFollow: { path: "node_modules" },
-    includeOnly: "^(packages|apps)/.*/src",
+    includeOnly: "^packages/.*/src",
     enhancedResolveOptions: { exportsFields: ["exports"] },
   },
 }

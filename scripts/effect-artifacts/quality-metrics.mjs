@@ -20,7 +20,6 @@ import { toRepoPath } from "./project.mjs"
 
 const PRODUCTION_SOURCE_PREFIXES = [
   "packages/",
-  "apps/",
 ]
 
 const isCodePath = (path) =>
