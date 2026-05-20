@@ -107,17 +107,21 @@ Activity.subscribed<E>(name: string, sourceSchema: Schema<E>)(
 
 **Semantics (proposed):** the engine subscribes to the source on the workflow's behalf and invokes the handler per event. After the handler's Effect succeeds, the engine durably acks that event (last-ack cursor). The workflow body doesn't `yield*` to get a value — the activity IS the subscription. The workflow terminates when… **the handler signals completion?** This is ambiguous from the bead description; see open questions.
 
-Body LOC for the use case (assuming termination via Effect.fail signaling done — but this is a stretch of the proposed shape):
+Body LOC for the use case (assuming termination via `Option<A>` return from the handler — Option.some=done-with-value, Option.none=continue; per OLA-2026-05-20 refinement, avoids semantically-dishonest `Effect.fail` for "we got what we wanted"):
 
 ```ts
-const Watch = Activity.subscribed("watch", CallerFactSchema)(
-  (event) => isMatch(event) ? appendMarker(event).pipe(Effect.flatMap(() => done)) : Effect.void,
+const Watch = Activity.subscribed("watch", CallerFactSchema, MatchSchema)(
+  (event) => isMatch(event)
+    ? appendMarker(event).pipe(Effect.as(Option.some({ matched: event })))
+    : Effect.succeed(Option.none()),
 )
 // body:
-Effect.gen(function*() { yield* Watch })
+Effect.gen(function*() {
+  const final = yield* Watch       // engine returns the some-value that terminated the fold
+})
 ```
 
-LOC: ~3 (if `done` signaling is provided). But the use case doesn't actually return a value — it's a side-effect-only model.
+LOC: ~4. Note: this nudges β to LOOK MORE LIKE γ (it has a value channel via the Option), which is exactly what makes β awkward for "find-first-match" — see "Open design questions" + the §3.5 ergonomics-honesty note below.
 
 **Engine surface delta from `Activity.make`:**
 - Engine owns subscription lifecycle (subscribe/ack/unsubscribe).
@@ -133,12 +137,12 @@ LOC: ~3 (if `done` signaling is provided). But the use case doesn't actually ret
 **Span density expectation:** highest of the three. Per-event durability is expensive on noisy streams.
 
 **Open design questions:**
-- Termination mechanism. The proposed shape doesn't have a value channel, so the workflow can't observe "we're done" via `yield*`. Possible answers:
-  - Handler returns a tagged union with `{ _tag: "Continue" } | { _tag: "Done", value: A }`.
-  - Handler throws a special `SubscriptionDone` error caught by the engine.
-  - A separate `Activity.subscribed.untilFirst` variant.
-- All three answers make β look more like α or γ.
-- Side-effect-on-event handler is incompatible with workflow body wanting the match's payload; you'd have to write the payload through a side channel (durable table?) and read it back.
+- Termination mechanism. The proposed shape (per OLA-2026-05-20) is **`(event) => Effect<Option<A>>`**: `Option.none` continues, `Option.some(a)` terminates and surfaces `a` to the workflow body. This is the idiomatic Effect answer and avoids `Effect.fail`-for-termination dishonesty.
+- That mechanism, however, demonstrates β's structural mismatch with "find-first-match": once you add the value channel, β collapses ergonomically toward γ (fold-with-done-state). β's natural home is **subscribe-forever** patterns where the handler genuinely returns `void` and the engine durably acks every event.
+
+### §3.5 β ergonomics-honesty note
+
+The Option-returning sugar layer (per Q3) IS a fair stand-in for an engine-integrated β when the question is "ergonomic LOC + body shape". But it BIASES β favorably for this use case in a subtle way: the sugar can implement the Option-based termination as `Stream.runFold`-with-early-exit inside an `Activity.make`, which is exactly today's baseline pattern in a different syntactic suit. The FINDING must call this out: if the comparison were "subscribe + side-effect every event forever, no termination" — the most natural β use case — β would be the runaway winner on LOC and engine-integration cleanliness, but it would be measuring a use case the bead doesn't ask about.
 
 ## §4 γ — `Activity.folded`
 
@@ -202,9 +206,17 @@ LOC: ~5-6. Comparable to α.
 - γ is reasonable for "compute aggregate over stream" but heavyweight for "find first matching".
 - Today's `Activity.make + Stream.runHead` may already be competitive if (i) restart-replay during in-flight activity is rare AND (ii) re-opening the source is cheap (Durable Streams typically supports this efficiently for caller-owned facts).
 
-## §6 Test rig (build plan)
+## §6 Test rig (build plan) — OLA-confirmed 2026-05-20
 
-**Scope decision (load-bearing — gate for OLA at FINDING):** sub-sims will NOT drive through claude-agent-acp. The bead's use case ("agent waits for first matching fact on a CallerFact stream + emits a marker on match") uses "agent" loosely; the LOAD-BEARING comparison is the **workflow body**, not the LLM agent's tool-call lowering. Driving with claude-agent-acp would add ~$LLM cost × 3 + multi-minute traces per sim with NO incremental signal on the four comparison dimensions. Direct workflow execution via `Workflow.execute` (per `DurableStreamsWorkflowEngine.test.ts:155` pattern + INV-2's planned shape) suffices.
+**Scope decisions (OLA-confirmed):**
+
+- **Q1 driver:** drive through `claude-agent-acp` per the `workflow-core-paths` pattern. The bead's "agent waits…" naturally refers to the LLM; this matches the sim runner's shape without fighting it. **OLA proposed a one-LLM-three-workflows refinement** (one session calls `wait_for` three times against `alpha-source/beta-source/gamma-source` streams, host routes each to its shape). **Lane 6 fallback to three separate LLM sessions stands**: per-channel routing requires either the not-yet-landed ChannelRegistry (`tf-lawq`, blocked on `tf-auuv`) or sim-local wait_for-handler-swapping that isn't a recognized pattern today. Three separate sub-sims each with their own short LLM run cost ≈ $0.10-0.30 total — bounded.
+
+- **Q2 sugar layer:** approximate α/β/γ as sugar wrappers around `Activity.make` + side `DurableTable` for "engine-owned" cursor/state. The FINDING must include a §[Sugar-layer assumptions] subsection per OLA — see §6.5 below.
+
+- **Q3 β done-signal:** `(event) => Effect<Option<A>>` (`Option.some` terminates with value; `Option.none` continues). Per §3 + §3.5.
+
+- **Q4 strict-3:** four sub-sims total (`baseline + α + β + γ`).
 
 **Three sub-sims** under `packages/tiny-firegrid/src/simulations/`:
 
@@ -234,7 +246,34 @@ tf-ui4l-activity-shape-gamma/      { index, host, driver }.ts
 
 **Heuristic for "engine implementation surface needed (d)":** count the new types/methods each shape would require in `@effect/workflow` if natively supported. Source: §2/§3/§4 "Engine surface delta" sections above + the sugar layer's footprint as a proxy.
 
-## §7 Open coordinator gates (for OLA)
+## §6.5 Sugar-layer assumptions (per OLA Q2 refinement)
+
+The sugar wrappers stand in for engine-integrated primitives. They are NOT cost-equivalent to a real engine implementation; the FINDING's numbers are **shape indicators**, not definitive engine cost. Assumptions surfaced for honesty:
+
+- **Cursor/state durability:** sugar writes cursor (α) / state (γ) / ack (β) into a sim-local `DurableTable`. Engine-integrated versions would likely use the same Durable Streams backing (workflows already store activity exits there), but possibly with:
+  - **Different write granularity** — engine might batch cursor updates across multiple emits before fsyncing; sugar writes once per emit.
+  - **Different write path** — engine could write into the workflow's existing exit-row sidecar field rather than a separate table.
+  - **Different replay semantics** — engine may have access to in-memory cursor state synced with the durable record; sugar reads the durable record fresh on each replay.
+
+- **Activity restart-replay:** today's `Activity.make` durably stores the *exit*. The sugar layer simulates "engine resumes with cursor" by reading the cursor on activity start and seeding the stream. This is a **valid behavior model** but the OPERATIONAL cost of an engine-integrated equivalent could be lower (no fresh durable-table read per resume; cursor lives in workflow execution state).
+
+- **β handler error/cancellation propagation:** sugar implements the Option<A> termination via `Stream.runFold`-with-`Stream.runHead`-style early exit inside `Activity.make`. Engine-integrated β would have its own fiber lifecycle for the subscription; failure semantics may differ (e.g., engine could retry the handler per-event without retrying the whole subscription).
+
+- **Span density:** sugar emits its own `firegrid.activity.streamed.cursor_write` / `.subscribed.ack` / `.folded.state_write` spans by hand. An engine implementation might emit these from a single internal site with different naming + attributes. The COUNT should be comparable; the NAMES + attribute shape are sugar-author choices.
+
+The FINDING's recommendation table must lead with the bolded caveat: *"Sugar-layer indicators, not definitive engine-integration costs."*
+
+## §7 Open coordinator gates (for OLA) — RESOLVED 2026-05-20
+
+All four gates resolved per OLA-2026-05-20 reply:
+- Q1: stay with (a) three sub-sims with LLM driver; OLA's one-LLM-three-workflows refinement deferred (requires ChannelRegistry, blocked).
+- Q2: sugar layer + §6.5 honesty subsection (added above).
+- Q3: β done-signal via `Effect<Option<A>>` (Option.some=done, Option.none=continue).
+- Q4: strict-3-plus-baseline.
+
+Net behavior: proceed to implementation with these defaults; any further gates surface mid-build via the same channel.
+
+(Original §7 prompt-text preserved below for record.)
 
 1. **Scope (no-LLM-agent driver):** §6 above. Reject ⇒ I add a claude-agent-acp variant of one sub-sim only, used as a sanity check that the workflow-body lowering still wire-works under real-agent tool-call pressure. Three full LLM-driven runs adds ~10× cost for marginal incremental signal.
 2. **Sugar-layer vs engine-patch:** §6 above. Reject ⇒ I scope down to α only and actually extend `@effect/workflow`. β and γ become paper-design-only.
