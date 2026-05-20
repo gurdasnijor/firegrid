@@ -1,6 +1,6 @@
 import { DurableDeferred, Workflow, WorkflowEngine } from "@effect/workflow"
 import type { Scope } from "effect"
-import { Clock, Duration, Effect, Exit, Fiber, Match, Option } from "effect"
+import { Cause, Clock, Duration, Effect, Exit, Fiber, Match, Option } from "effect"
 import type { DurableTableError } from "effect-durable-operators"
 import { stampRowOtel, withRowOtelParent } from "@firegrid/protocol/otel"
 import {
@@ -53,7 +53,10 @@ export const makeWorkflowEngine = (
       ) => Effect.Effect<unknown, unknown, WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance>
       scope: Scope.Scope
     }>()
-    const running = new Map<string, Fiber.RuntimeFiber<Workflow.Result<unknown, unknown>, never>>()
+    const running = new Map<string, {
+      fiber: Fiber.RuntimeFiber<Workflow.Result<unknown, unknown>, never>
+      instance: WorkflowEngine.WorkflowInstance["Type"]
+    }>()
 
     const claimActivity = (row: WorkflowActivityClaimRow) =>
       table.activityClaims.insertOrGet(row).pipe(
@@ -144,6 +147,11 @@ export const makeWorkflowEngine = (
       }
     })
 
+    const isExecutionInterrupted = (executionId: string) =>
+      orDieTable(table.executions.get(executionId).pipe(
+        Effect.map(row => Option.getOrUndefined(row)?.interrupted === true),
+      ))
+
     const resume = (executionId: string) =>
       Effect.gen(function*() {
         const row = yield* orDieTable(table.executions.get(executionId).pipe(
@@ -152,7 +160,7 @@ export const makeWorkflowEngine = (
         if (!row || row.finalResult !== undefined) return
         const entry = workflows.get(row.workflowName)
         if (!entry) return
-        const current = running.get(executionId)?.unsafePoll()
+        const current = running.get(executionId)?.fiber.unsafePoll()
         if (!current) {
           if (running.has(executionId)) return
         } else if (current._tag === "Success" && current.value._tag !== "Suspended") {
@@ -162,7 +170,21 @@ export const makeWorkflowEngine = (
         const instance = WorkflowEngine.WorkflowInstance.initial(entry.workflow, executionId)
         Object.assign(instance, { interrupted: row.interrupted, cause: row.cause as typeof instance.cause })
 
-        const fiber = yield* entry.execute(row.payload as object, executionId).pipe(
+        const executeEffect: Effect.Effect<
+          unknown,
+          unknown,
+          WorkflowEngine.WorkflowEngine | WorkflowEngine.WorkflowInstance
+        > = row.interrupted
+          ? Effect.interrupt
+          : entry.execute(row.payload as object, executionId)
+
+        const fiber = yield* executeEffect.pipe(
+          Effect.onExit(() => {
+            if (!instance.interrupted) return Effect.void
+            instance.suspended = false
+            return Effect.withFiberRuntime<void>((fiber) =>
+              Effect.interruptible(Fiber.interrupt(fiber)))
+          }),
           Workflow.intoResult,
           Effect.provideService(WorkflowEngine.WorkflowInstance, instance),
           Effect.provideService(WorkflowEngine.WorkflowEngine, engine),
@@ -195,7 +217,7 @@ export const makeWorkflowEngine = (
           // Row-scoped — runs inside the gen so `row` is in scope.
           withRowOtelParent(row),
         )
-        running.set(executionId, fiber)
+        running.set(executionId, { fiber, instance })
       }).pipe(
         Effect.withSpan("firegrid.workflow_engine.execution.resume", {
           kind: "internal",
@@ -245,7 +267,7 @@ export const makeWorkflowEngine = (
             yield* orDieTable(table.executions.upsert(stamped))
           }
           yield* resume(options.executionId)
-          const fiber = running.get(options.executionId)
+          const fiber = running.get(options.executionId)?.fiber
           if (options.discard) {
             if (fiber) yield* Fiber.join(fiber)
             return undefined as never
@@ -294,6 +316,11 @@ export const makeWorkflowEngine = (
           ))
           if (!row) return
           yield* orDieTable(table.executions.upsert({ ...row, interrupted: true }))
+          const current = running.get(executionId)
+          if (current !== undefined) {
+            current.instance.interrupted = true
+            yield* Fiber.interrupt(current.fiber).pipe(Effect.ignore)
+          }
           yield* resume(executionId)
         }).pipe(
           Effect.withSpan("firegrid.workflow_engine.execution.interrupt", {
@@ -350,7 +377,17 @@ export const makeWorkflowEngine = (
           const result = yield* activity.executeEncoded.pipe(
             Workflow.intoResult,
             Effect.provideService(WorkflowEngine.WorkflowInstance, activityInstance),
+            Effect.catchAllCause((cause) =>
+              Effect.gen(function* () {
+                const interrupted = yield* isExecutionInterrupted(
+                  instance.executionId,
+                )
+                return Cause.isInterruptedOnly(cause) && !interrupted
+                  ? new Workflow.Suspended({})
+                  : yield* Effect.failCause(cause)
+              })),
           )
+          if (result._tag === "Suspended") return result
           const existingActivity = yield* orDieTable(table.activities.get(activityKey))
           if (Option.isNone(existingActivity)) {
             yield* orDieTable(table.activities.upsert({
@@ -398,6 +435,14 @@ export const makeWorkflowEngine = (
             "firegrid.workflow.name": options.workflowName,
             "firegrid.workflow.deferred.name": options.deferredName,
           })
+          if (
+            options.deferredName.startsWith("raceAll/") &&
+            Exit.isFailure(options.exit) &&
+            Cause.isInterruptedOnly(options.exit.cause) &&
+            !(yield* isExecutionInterrupted(options.executionId))
+          ) {
+            return
+          }
           const key = `${options.executionId}/${options.deferredName}`
           const existingDeferred = yield* orDieTable(table.deferreds.get(key))
           if (Option.isNone(existingDeferred)) {
