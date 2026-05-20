@@ -75,8 +75,11 @@ These are intentionally not agent event-pipeline stages:
   initial-state replay can return a source row, while an empty source resolves
   as `Timeout` without adding a peek, list-stream, or schema-introspection
   primitive.
-- `workflow-engine/`: workflow substrate adapter
-  (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
+- `workflow-engine/`: workflow substrate adapter and runtime-owned workflow
+  definitions (`firegrid-runtime-boundary-reconciliation.NAMESPACE_BOUNDARY.4`).
+  Host packages install live workflow Layers and provide topology; they do not
+  own workflow names, payload schemas, success/error schemas, or
+  idempotency/execution-id helpers.
 - `agent-tools/`: tool schemas, lowering, MCP exposure, and host-coupled live
   services.
 - `agent-adapters/`: projections over codec sessions
