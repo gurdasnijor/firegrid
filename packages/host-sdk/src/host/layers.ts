@@ -254,13 +254,10 @@ const hostScopedLayer = (
     hostOwnedOutputLayer(sharedOptions),
     hostOwnedSandboxCommandLayer(sharedOptions),
   )
-  const hostServices = Layer.mergeAll(
-    PerContextRuntimeOutputWriterLive,
-    RuntimeHostAgentToolHostLive.pipe(
-      Layer.provide(RuntimeControlPlaneRecorderLive),
-      Layer.provideMerge(PerContextRuntimeAgentOutputAfterEventsLive),
-    ),
-  ).pipe(
+  const hostServices = RuntimeHostAgentToolHostLive.pipe(
+    Layer.provide(RuntimeControlPlaneRecorderLive),
+    Layer.provideMerge(PerContextRuntimeAgentOutputAfterEventsLive),
+    Layer.provideMerge(PerContextRuntimeOutputWriterLive),
     Layer.provideMerge(hostTables),
   )
   const stdinClaim = SandboxStdinEmissionClaimLive.pipe(
@@ -311,18 +308,20 @@ export const FiregridRuntimeHostLive = (
   // firegrid-workflow-driven-runtime.PHASE_1_CONTEXT_WORKFLOW.8
   // Production host composition installs the native workflow/session path
   // directly; deleted legacy runner/subscriber symbols are not fallback paths.
-  return Layer.mergeAll(
-    RuntimeInputIntentDispatcherLive,
-    RuntimeStartCapabilityLive,
-    RuntimeControlRequestSideEffectsLive,
-    RuntimeControlRequestControlPlaneLive({
-      durableStreamsBaseUrl: options.durableStreamsBaseUrl,
-      namespace: options.namespace,
-      ...(options.headers !== undefined ? { headers: options.headers } : {}),
-      daemon: options.controlRequestReconciler !== false,
-    }),
-    hostChannels,
-  ).pipe(
+  const hostPublic = RuntimeInputIntentDispatcherLive.pipe(
+    Layer.provideMerge(RuntimeStartCapabilityLive),
+    Layer.provideMerge(hostChannels),
+  )
+  const controlPlane = RuntimeControlRequestControlPlaneLive({
+    durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+    namespace: options.namespace,
+    ...(options.headers !== undefined ? { headers: options.headers } : {}),
+    daemon: options.controlRequestReconciler !== false,
+  }).pipe(
+    Layer.provideMerge(RuntimeControlRequestSideEffectsLive),
+  )
+  return controlPlane.pipe(
+    Layer.provideMerge(hostPublic),
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(hostScoped),

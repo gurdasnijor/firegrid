@@ -17,6 +17,7 @@ import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 const activeActivityAttempt = (
   contextId: string,
 ): Effect.Effect<Option.Option<number>, unknown, RuntimeControlPlaneTable> =>
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable query still leaks `any` in the requirement channel; the declared Effect type is the intended host capability boundary.
   Effect.gen(function*() {
     const table = yield* RuntimeControlPlaneTable
     return yield* table.runs.query((coll) => {
@@ -42,6 +43,7 @@ const recordLifecycleTerminalEvidence = (
   unknown,
   RuntimeControlPlaneTable | PerContextRuntimeOutputWriter
 > =>
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- DurableTable writes still leak `any` in the requirement channel; the declared Effect type is the intended host capability boundary.
   Effect.gen(function*() {
     const attempt = yield* activeActivityAttempt(request.contextId)
     if (Option.isNone(attempt)) return
@@ -77,7 +79,7 @@ const recordLifecycleTerminalEvidence = (
     }),
   )
 
-export const RuntimeControlRequestSideEffectsLive = Layer.effect(
+export const RuntimeControlRequestSideEffectsLive = Layer.scoped(
   RuntimeControlRequestSideEffects,
   Effect.gen(function*() {
     const runtime = yield* RuntimeContextWorkflowRuntime
