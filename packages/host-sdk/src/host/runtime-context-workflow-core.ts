@@ -15,17 +15,22 @@ import {
   Cause,
   Effect,
   Layer,
+  Option,
   Predicate,
+  Ref,
   Schema,
 } from "effect"
-import { WaitFor } from "@firegrid/runtime/durable-tools"
 import type { RuntimeContextWorkflowExecutionEnv } from "./runtime-substrate.ts"
 import {
   AgentInputEventSchema,
+  AgentOutputEventSchema,
   type AgentInputEvent,
   type AgentOutputEvent,
   type RuntimeAgentOutputObservation,
 } from "@firegrid/runtime/events"
+import {
+  RuntimeAgentOutputAfterEvents,
+} from "@firegrid/runtime/runtime-output"
 import {
   RuntimeContextError,
   asRuntimeContextError,
@@ -43,6 +48,7 @@ import {
 } from "./internal/runtime-context-helpers.ts"
 import { agentInputEventFromRuntimeIngressRow } from "./runtime-ingress-transform.ts"
 import {
+  RuntimeExitEvidence as RuntimeExitEvidenceSchema,
   type RuntimeExitEvidence,
   type StartRuntimeResult,
   RuntimeContextWorkflowPayload,
@@ -164,12 +170,6 @@ const sendSessionActivity = (
     ),
   })
 
-const outputWaitName = (
-  contextId: string,
-  activityAttempt: number,
-  afterSequence: number,
-) => `runtime-context/${contextId}/output-after/${activityAttempt}/${afterSequence}`
-
 const inputWaitName = (
   contextId: string,
   sequence: number,
@@ -189,53 +189,19 @@ export const runtimeInputDeferredFor = (
     success: RuntimeIngressInputRowSchema,
   })
 
-const waitForAgentOutput = (
+const awaitRuntimeInput = (
   context: RuntimeContext,
-  activityAttempt: number,
-  afterSequence: number,
+  sequence: number,
 ) =>
-  WaitFor.match<RuntimeAgentOutputObservation>({
-    name: outputWaitName(context.contextId, activityAttempt, afterSequence),
-    source: {
-      _tag: "AgentOutputAfter",
-      contextId: context.contextId,
-      activityAttempt,
-      afterSequence,
-    },
-    trigger: [],
-  }).pipe(
-    Effect.withSpan("firegrid.runtime_context.workflow.output.wait", {
+  DurableDeferred.await(runtimeInputDeferredFor(context.contextId, sequence)).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.input.await", {
       kind: "internal",
       attributes: {
         ...workflowWaitBucketAttribute,
         "firegrid.context.id": context.contextId,
-        "firegrid.runtime.activity_attempt": activityAttempt,
-        "firegrid.runtime.output.after_sequence": afterSequence,
+        "firegrid.input.sequence": sequence,
       },
     }),
-  )
-
-const nextAgentOutput = (
-  context: RuntimeContext,
-  activityAttempt: number,
-  afterSequence: number,
-): Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError, unknown> =>
-  waitForAgentOutput(context, activityAttempt, afterSequence).pipe(
-    Effect.mapError(cause =>
-      asRuntimeContextError(
-        "runtime-context.output.wait",
-        "failed waiting for runtime-context output",
-        context.contextId,
-        cause,
-      )),
-    Effect.flatMap((result): Effect.Effect<RuntimeAgentOutputObservation, RuntimeContextError> =>
-      result._tag === "Timeout"
-        ? asRuntimeContextError(
-          "runtime-context.wait.timeout",
-          "runtime-context output wait timed out unexpectedly",
-          context.contextId,
-        )
-        : Effect.succeed(result.row)),
   )
 
 const completedRuntimeInput = (
@@ -260,20 +226,116 @@ const completedRuntimeInput = (
     }),
   )
 
-const awaitRuntimeInput = (
+const RuntimeAgentOutputObservationSchema = Schema.Struct({
+  contextId: Schema.String,
+  activityAttempt: Schema.Number,
+  sequence: Schema.Number,
+  _tag: Schema.Literal(
+    "Ready",
+    "TextChunk",
+    "ToolUse",
+    "PermissionRequest",
+    "TurnComplete",
+    "Status",
+    "Error",
+    "Terminated",
+  ),
+  event: AgentOutputEventSchema,
+  permissionRequestId: Schema.optional(Schema.String),
+  toolUseId: Schema.optional(Schema.String),
+  toolName: Schema.optional(Schema.String),
+}) as unknown as Schema.Schema<RuntimeAgentOutputObservation>
+
+const runtimeOutputAfterSource = (
   context: RuntimeContext,
-  sequence: number,
+  activityAttempt: number,
+  afterSequence: number,
+) => ({
+  _tag: "AgentOutputAfter",
+  contextId: context.contextId,
+  activityAttempt,
+  afterSequence,
+} as const)
+
+const completedRuntimeOutput = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  afterSequence: number,
 ) =>
-  DurableDeferred.await(runtimeInputDeferredFor(context.contextId, sequence)).pipe(
-    Effect.withSpan("firegrid.runtime_context.workflow.input.await", {
-      kind: "internal",
-      attributes: {
-        ...workflowWaitBucketAttribute,
-        "firegrid.context.id": context.contextId,
-        "firegrid.input.sequence": sequence,
-      },
-    }),
-  )
+  Effect.gen(function*() {
+    const events = yield* RuntimeAgentOutputAfterEvents
+    return yield* events.initial(runtimeOutputAfterSource(context, activityAttempt, afterSequence)).pipe(
+      Effect.mapError(cause =>
+        asRuntimeContextError(
+          "runtime-context.output.initial",
+          "failed checking initial runtime output observation",
+          context.contextId,
+          cause,
+        )),
+      Effect.withSpan("firegrid.runtime_context.workflow.output.completed", {
+        kind: "internal",
+        attributes: {
+          "firegrid.context.id": context.contextId,
+          "firegrid.runtime.activity_attempt": activityAttempt,
+          "firegrid.runtime.output.after_sequence": afterSequence,
+        },
+      }),
+    )
+  })
+
+type RuntimeContextMergedEvent =
+  | { readonly _tag: "Input"; readonly event: RuntimeIngressInputRow }
+  | { readonly _tag: "Output"; readonly event: RuntimeAgentOutputObservation }
+
+const PendingPermissionResponseSchema = Schema.Struct({
+  permissionRequestId: Schema.String,
+  row: RuntimeIngressInputRowSchema,
+  event: AgentInputEventSchema,
+})
+type PendingPermissionResponse = Schema.Schema.Type<typeof PendingPermissionResponseSchema>
+
+const RuntimeContextEventStateSchema = Schema.Struct({
+  lastProcessedInputSequence: Schema.Number,
+  lastProcessedOutputSequence: Schema.Number,
+  pendingPermissionRequests: Schema.Array(Schema.String),
+  pendingPermissionResponses: Schema.Array(PendingPermissionResponseSchema),
+  exitEvidence: Schema.optional(RuntimeExitEvidenceSchema),
+})
+type RuntimeContextEventState = Schema.Schema.Type<typeof RuntimeContextEventStateSchema>
+
+const RuntimeContextTransitionActionSchema = Schema.Union(
+  Schema.TaggedStruct("None", {}),
+  Schema.TaggedStruct("SendRuntimeInput", {
+    row: RuntimeIngressInputRowSchema,
+    event: AgentInputEventSchema,
+  }),
+  Schema.TaggedStruct("SendPermissionResponse", {
+    permissionRequestId: Schema.String,
+    row: RuntimeIngressInputRowSchema,
+    event: AgentInputEventSchema,
+  }),
+  Schema.TaggedStruct("RunToolUse", {
+    output: RuntimeAgentOutputObservationSchema,
+  }),
+)
+type RuntimeContextTransitionAction = Schema.Schema.Type<
+  typeof RuntimeContextTransitionActionSchema
+>
+
+const RuntimeContextTransitionResultSchema = Schema.Struct({
+  state: RuntimeContextEventStateSchema,
+  action: RuntimeContextTransitionActionSchema,
+})
+type RuntimeContextTransitionResult = Schema.Schema.Type<
+  typeof RuntimeContextTransitionResultSchema
+>
+
+const initialRuntimeContextEventState: RuntimeContextEventState = {
+  lastProcessedInputSequence: -1,
+  lastProcessedOutputSequence: -1,
+  pendingPermissionRequests: [],
+  pendingPermissionResponses: [],
+}
 
 const runToolUseActivity = (
   context: RuntimeContext,
@@ -344,58 +406,10 @@ const sendRuntimeInputEvent = (
     `firegrid.runtime-context.session.send.runtime-input.${row.inputId}`,
   )
 
-const awaitPermissionResponseInput = (
-  context: RuntimeContext,
-  activityAttempt: number,
-  permissionRequestId: string,
-  inputSequence: number,
-) =>
-  Effect.gen(function*() {
-    // firegrid-runtime-agent-event-pipeline.INGREDIENTS.4
-    // firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-2
-    // firegrid-runtime-agent-event-pipeline.INGREDIENTS.4-3
-    const row = yield* awaitRuntimeInput(context, inputSequence)
-    const event = yield* decodeRuntimeInputEvent(context, row)
-    if (
-      event._tag !== "PermissionResponse" ||
-      event.permissionRequestId !== permissionRequestId
-    ) {
-      return yield* Effect.fail(asRuntimeContextError(
-        "runtime-context.permission.response",
-        "permission response did not match the pending permission request",
-        context.contextId,
-        {
-          expectedPermissionRequestId: permissionRequestId,
-          inputId: row.inputId,
-          sequence: inputSequence,
-          event,
-        },
-      ))
-    }
-    yield* sendRuntimeInputEvent(context, activityAttempt, row, event).pipe(
-      // Parent the dispatched permission-response send back to the client's
-      // `permissions.respond` producer span recorded on the input row.
-      withRowOtelParent(row),
-    )
-    return inputSequence + 1
-  }).pipe(
-    Effect.withSpan("firegrid.runtime_context.workflow.permission_response.await", {
-      kind: "consumer",
-      attributes: {
-        ...workflowWaitBucketAttribute,
-        "firegrid.context.id": context.contextId,
-        "firegrid.runtime.activity_attempt": activityAttempt,
-        "firegrid.permission.request_id": permissionRequestId,
-        "firegrid.input.sequence": inputSequence,
-      },
-    }),
-  )
-
-const handleAgentOutput = (
+const handleToolUseOutput = (
   context: RuntimeContext,
   activityAttempt: number,
   observation: RuntimeAgentOutputObservation,
-  nextInputSequence: number,
 ) =>
   Effect.gen(function*() {
     const event = observation.event
@@ -417,7 +431,7 @@ const handleAgentOutput = (
       // is a tracked, deliberately-deferred future option, not the
       // current contract.
       if (context.runtime.config.agentProtocol === "acp") {
-        return { _tag: "Continue" as const, nextInputSequence }
+        return
       }
       const result = yield* runToolUseActivity(context, event)
       yield* sendSessionActivity(
@@ -430,26 +444,7 @@ const handleAgentOutput = (
         },
         `firegrid.runtime-context.session.send.tool-result.${event.part.id}`,
       )
-      return { _tag: "Continue" as const, nextInputSequence }
     }
-    if (event._tag === "PermissionRequest") {
-      const afterPermissionResponse = yield* awaitPermissionResponseInput(
-        context,
-        activityAttempt,
-        event.permissionRequestId,
-        nextInputSequence,
-      )
-      return { _tag: "Continue" as const, nextInputSequence: afterPermissionResponse }
-    }
-    if (event._tag === "Terminated") {
-      return {
-        _tag: "Exit" as const,
-        exit: {
-          exitCode: event.exitCode ?? 0,
-        },
-      }
-    }
-    return { _tag: "Continue" as const, nextInputSequence }
   }).pipe(
     Effect.withSpan("firegrid.runtime_context.workflow.output.handle", {
       kind: "internal",
@@ -464,9 +459,9 @@ const handleRuntimeInput = (
   context: RuntimeContext,
   activityAttempt: number,
   row: RuntimeIngressInputRow,
+  event: AgentInputEvent,
 ) =>
   Effect.gen(function*() {
-    const event = yield* decodeRuntimeInputEvent(context, row)
     yield* sendRuntimeInputEvent(context, activityAttempt, row, event)
   }).pipe(
     Effect.withSpan("firegrid.runtime_context.workflow.input.handle", {
@@ -483,45 +478,315 @@ const handleRuntimeInput = (
     withRowOtelParent(row),
   )
 
-const runReactiveLoop = (
-  context: RuntimeContext,
-  activityAttempt: number,
-) => {
-  function followAgentOutput(
-    lastOutputSequence: number,
-    nextInputSequence: number,
-  ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> {
-    return Effect.gen(function*() {
-      const output = yield* nextAgentOutput(context, activityAttempt, lastOutputSequence)
-      const outcome = yield* handleAgentOutput(
-        context,
-        activityAttempt,
-        output,
-        nextInputSequence,
-      )
-      if (outcome._tag === "Exit") return outcome.exit
-      return yield* loop(output.sequence, outcome.nextInputSequence)
-    })
+const withoutPermissionRequest = (
+  state: RuntimeContextEventState,
+  permissionRequestId: string,
+) => state.pendingPermissionRequests.filter(id => id !== permissionRequestId)
+
+const withPermissionRequest = (
+  state: RuntimeContextEventState,
+  permissionRequestId: string,
+) =>
+  state.pendingPermissionRequests.includes(permissionRequestId)
+    ? state.pendingPermissionRequests
+    : [...state.pendingPermissionRequests, permissionRequestId]
+
+const withoutPermissionResponse = (
+  state: RuntimeContextEventState,
+  permissionRequestId: string,
+) =>
+  state.pendingPermissionResponses.filter(response =>
+    response.permissionRequestId !== permissionRequestId)
+
+const withPermissionResponse = (
+  state: RuntimeContextEventState,
+  response: PendingPermissionResponse,
+) => [
+  ...withoutPermissionResponse(state, response.permissionRequestId),
+  response,
+]
+
+const transitionInputEvent = (
+  state: RuntimeContextEventState,
+  row: RuntimeIngressInputRow,
+  event: AgentInputEvent,
+): RuntimeContextTransitionResult => {
+  const sequence = row.sequence ?? -1
+  const nextState = {
+    ...state,
+    lastProcessedInputSequence: sequence,
+  }
+  if (event._tag !== "PermissionResponse") {
+    return {
+      state: nextState,
+      action: { _tag: "SendRuntimeInput", row, event },
+    }
   }
 
-  const loop = (
-    lastOutputSequence: number,
-    nextInputSequence: number,
-  ): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> =>
-    Effect.gen(function*() {
-      const input = yield* completedRuntimeInput(context, nextInputSequence)
-      if (input !== undefined) {
-        const inputEvent = yield* decodeRuntimeInputEvent(context, input)
-        if (inputEvent._tag === "PermissionResponse") {
-          return yield* followAgentOutput(lastOutputSequence, nextInputSequence)
-        }
-        yield* handleRuntimeInput(context, activityAttempt, input)
-        return yield* loop(lastOutputSequence, nextInputSequence + 1)
+  if (state.pendingPermissionRequests.includes(event.permissionRequestId)) {
+    return {
+      state: {
+        ...nextState,
+        pendingPermissionRequests: withoutPermissionRequest(state, event.permissionRequestId),
+      },
+      action: {
+        _tag: "SendPermissionResponse",
+        permissionRequestId: event.permissionRequestId,
+        row,
+        event,
+      },
+    }
+  }
+
+  return {
+    state: {
+      ...nextState,
+      pendingPermissionResponses: withPermissionResponse(state, {
+        permissionRequestId: event.permissionRequestId,
+        row,
+        event,
+      }),
+    },
+    action: { _tag: "None" },
+  }
+}
+
+const transitionOutputEvent = (
+  context: RuntimeContext,
+  state: RuntimeContextEventState,
+  output: RuntimeAgentOutputObservation,
+): RuntimeContextTransitionResult => {
+  const nextState = {
+    ...state,
+    lastProcessedOutputSequence: output.sequence,
+  }
+  const event = output.event
+  if (event._tag === "PermissionRequest") {
+    const pendingResponse = state.pendingPermissionResponses.find(response =>
+      response.permissionRequestId === event.permissionRequestId)
+    if (pendingResponse !== undefined) {
+      return {
+        state: {
+          ...nextState,
+          pendingPermissionRequests: withoutPermissionRequest(state, event.permissionRequestId),
+          pendingPermissionResponses: withoutPermissionResponse(state, event.permissionRequestId),
+        },
+        action: {
+          _tag: "SendPermissionResponse",
+          permissionRequestId: event.permissionRequestId,
+          row: pendingResponse.row,
+          event: pendingResponse.event,
+        },
       }
-      return yield* followAgentOutput(lastOutputSequence, nextInputSequence)
-    })
-  return loop(-1, 0).pipe(
-    Effect.withSpan("firegrid.runtime_context.workflow.reactive_loop", {
+    }
+    return {
+      state: {
+        ...nextState,
+        pendingPermissionRequests: withPermissionRequest(state, event.permissionRequestId),
+      },
+      action: { _tag: "None" },
+    }
+  }
+  if (event._tag === "ToolUse" && context.runtime.config.agentProtocol !== "acp") {
+    return {
+      state: nextState,
+      action: { _tag: "RunToolUse", output },
+    }
+  }
+  if (event._tag === "Terminated") {
+    return {
+      state: {
+        ...nextState,
+        exitEvidence: {
+          exitCode: event.exitCode ?? 0,
+        },
+      },
+      action: { _tag: "None" },
+    }
+  }
+  return {
+    state: nextState,
+    action: { _tag: "None" },
+  }
+}
+
+const transitionActivityName = (
+  contextId: string,
+  activityAttempt: number,
+  state: RuntimeContextEventState,
+  event: RuntimeContextMergedEvent,
+) => {
+  const side = event._tag === "Input" ? "input" : "output"
+  const sequence = event._tag === "Input"
+    ? event.event.sequence ?? -1
+    : event.event.sequence
+  return `firegrid.runtime-context.state.${contextId}.${activityAttempt}.${side}.${sequence}.after.${
+    state.lastProcessedInputSequence
+  }.${state.lastProcessedOutputSequence}`
+}
+
+const runtimeContextEventSpanAttributes = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  event: RuntimeContextMergedEvent,
+) => ({
+  "firegrid.context.id": context.contextId,
+  "firegrid.runtime.activity_attempt": activityAttempt,
+  "firegrid.runtime_context.event_side": event._tag,
+  "firegrid.input.sequence": event._tag === "Input" ? event.event.sequence ?? -1 : -1,
+  "firegrid.runtime.output.sequence": event._tag === "Output" ? event.event.sequence : -1,
+}) as const
+
+const transitionRuntimeContextEventActivity = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  state: RuntimeContextEventState,
+  event: RuntimeContextMergedEvent,
+) =>
+  Activity.make({
+    name: transitionActivityName(context.contextId, activityAttempt, state, event),
+    success: RuntimeContextTransitionResultSchema,
+    error: RuntimeContextError,
+    execute: Effect.gen(function*() {
+      if (event._tag === "Input") {
+        const decoded = yield* decodeRuntimeInputEvent(context, event.event)
+        return transitionInputEvent(state, event.event, decoded)
+      }
+      return transitionOutputEvent(context, state, event.event)
+    }).pipe(
+      Effect.withSpan("firegrid.runtime_context.workflow.state.transition", {
+        kind: "internal",
+        attributes: runtimeContextEventSpanAttributes(context, activityAttempt, event),
+      }),
+    ),
+  })
+
+const applyRuntimeContextTransitionAction = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  action: RuntimeContextTransitionAction,
+) => {
+  switch (action._tag) {
+    case "None":
+      return Effect.void
+    case "SendRuntimeInput":
+      return handleRuntimeInput(context, activityAttempt, action.row, action.event)
+    case "SendPermissionResponse":
+      return sendRuntimeInputEvent(context, activityAttempt, action.row, action.event).pipe(
+        withRowOtelParent(action.row),
+        Effect.withSpan("firegrid.runtime_context.workflow.permission_response.send", {
+          kind: "consumer",
+          attributes: {
+            "firegrid.context.id": context.contextId,
+            "firegrid.runtime.activity_attempt": activityAttempt,
+            "firegrid.permission.request_id": action.permissionRequestId,
+            "firegrid.input.sequence": action.row.sequence ?? -1,
+          },
+        }),
+      )
+    case "RunToolUse":
+      return handleToolUseOutput(context, activityAttempt, action.output)
+  }
+}
+
+const eventAlreadyProcessed = (
+  state: RuntimeContextEventState,
+  event: RuntimeContextMergedEvent,
+) =>
+  event._tag === "Input"
+    ? (event.event.sequence ?? -1) <= state.lastProcessedInputSequence
+    : event.event.sequence <= state.lastProcessedOutputSequence
+
+const completedRuntimeContextEvent = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  state: RuntimeContextEventState,
+) =>
+  Effect.gen(function*() {
+    const input = yield* completedRuntimeInput(
+      context,
+      state.lastProcessedInputSequence + 1,
+    )
+    if (input !== undefined) {
+      return Option.some<RuntimeContextMergedEvent>({ _tag: "Input", event: input })
+    }
+    const output = yield* completedRuntimeOutput(
+      context,
+      activityAttempt,
+      state.lastProcessedOutputSequence,
+    )
+    return Option.map(output, (event): RuntimeContextMergedEvent => ({ _tag: "Output", event }))
+  })
+
+const awaitNextRuntimeContextEvent = (
+  context: RuntimeContext,
+  state: RuntimeContextEventState,
+) =>
+  awaitRuntimeInput(context, state.lastProcessedInputSequence + 1).pipe(
+    Effect.map(event => ({ _tag: "Input" as const, event })),
+    Effect.withSpan("firegrid.runtime_context.workflow.event.await", {
+      kind: "internal",
+      attributes: {
+        "firegrid.context.id": context.contextId,
+        "firegrid.input.sequence": state.lastProcessedInputSequence + 1,
+      },
+    }),
+  )
+
+const handleRuntimeContextEvent = (
+  context: RuntimeContext,
+  activityAttempt: number,
+  stateRef: Ref.Ref<RuntimeContextEventState>,
+  event: RuntimeContextMergedEvent,
+) =>
+  Effect.gen(function*() {
+    const current = yield* Ref.get(stateRef)
+    if (eventAlreadyProcessed(current, event)) {
+      yield* Effect.annotateCurrentSpan({
+        "firegrid.runtime_context.event_skipped": true,
+      })
+      return true
+    }
+    const transition = yield* transitionRuntimeContextEventActivity(
+      context,
+      activityAttempt,
+      current,
+      event,
+    )
+    yield* applyRuntimeContextTransitionAction(context, activityAttempt, transition.action)
+    yield* Ref.set(stateRef, transition.state)
+    return transition.state.exitEvidence === undefined
+  }).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.event.handle", {
+      kind: "internal",
+      attributes: runtimeContextEventSpanAttributes(context, activityAttempt, event),
+    }),
+  )
+
+const runMergedEventLoop = (
+  context: RuntimeContext,
+  activityAttempt: number,
+): Effect.Effect<RuntimeExitEvidence, RuntimeContextError, unknown> =>
+  Effect.gen(function*() {
+    const stateRef = yield* Ref.make(initialRuntimeContextEventState)
+    let shouldContinue = true
+    while (shouldContinue) {
+      const state = yield* Ref.get(stateRef)
+      const completed = yield* completedRuntimeContextEvent(context, activityAttempt, state)
+      const event = Option.isSome(completed)
+        ? completed.value
+        : yield* awaitNextRuntimeContextEvent(context, state)
+      shouldContinue = yield* handleRuntimeContextEvent(
+        context,
+        activityAttempt,
+        stateRef,
+        event,
+      )
+    }
+    const state = yield* Ref.get(stateRef)
+    return state.exitEvidence ?? { exitCode: 0 }
+  }).pipe(
+    Effect.withSpan("firegrid.runtime_context.workflow.event_stream.run", {
       kind: "internal",
       attributes: {
         "firegrid.context.id": context.contextId,
@@ -529,7 +794,6 @@ const runReactiveLoop = (
       },
     }),
   )
-}
 
 const runWorkflowNativeRuntimeContext = (
   contextId: string,
@@ -544,7 +808,7 @@ const runWorkflowNativeRuntimeContext = (
       if (start._tag === "Failed") {
         return yield* writeRunFailedResult(context, activityAttempt, start.error)
       }
-      return yield* runReactiveLoop(context, activityAttempt)
+      return yield* runMergedEventLoop(context, activityAttempt)
     }).pipe(
       Effect.catchAll(failAfterWritingRunFailed(context, activityAttempt)),
     )
