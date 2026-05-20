@@ -5,12 +5,12 @@ import type {
 import type { DurableTableError } from "effect-durable-operators"
 import type { Schema } from "effect"
 import {
-  makeAfferentChannel,
-  type AfferentChannel,
+  makeIngressChannel,
+  type IngressChannel,
   type ChannelTarget,
 } from "./channel-registry.ts"
 
-export type StateChangesChannel<S extends Schema.Schema.Any> = AfferentChannel<S> & {
+export type StateChangesChannel<S extends Schema.Schema.Any> = IngressChannel<S> & {
   readonly kind: "state.changes"
   readonly sourceClass: "static-source"
 }
@@ -22,7 +22,7 @@ export const stateChangesChannel = <S extends Schema.Schema.Any>(
     readonly rows: () => ProjectionStream<Schema.Schema.Type<S> & object, DurableTableError>
   },
 ): StateChangesChannel<S> => {
-  const channel = makeAfferentChannel({
+  const channel = makeIngressChannel({
     target: options.target,
     schema: options.schema,
     sourceClass: "static-source",

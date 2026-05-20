@@ -94,11 +94,11 @@ import {
 import { AgentToolHost } from "./tool-host.ts"
 import {
   ChannelRegistry,
-  type AfferentChannel,
+  type IngressChannel,
   type CallableChannel,
   type ChannelDirection,
   type ChannelRegistration,
-  type EfferentChannel,
+  type EgressChannel,
 } from "../../host/channel-registry.ts"
 import {
   toolErrorResult,
@@ -301,15 +301,15 @@ const runWaitForTool = (
         reason: `unknown channel: ${input.channel}`,
       })),
     )
-    if (registration.direction !== "afferent") {
+    if (registration.direction !== "ingress") {
       return yield* Effect.fail({
         _tag: "ToolInvalidInput" as const,
         toolUseId,
         name: "wait_for",
-        reason: `wait_for requires an afferent channel: ${input.channel}`,
+        reason: `wait_for requires an ingress channel: ${input.channel}`,
       })
     }
-    const channel = registration as AfferentChannel
+    const channel = registration as IngressChannel
     const match = Stream.runHead(
       channel.binding.stream.pipe(
         Stream.filter((row) => evaluateFieldEquals(adapted.trigger, row)),
@@ -344,8 +344,8 @@ const runWaitForTool = (
   return waitForChannel
 }
 
-const appendEfferentPayload = <S extends Schema.Schema.Any>(
-  channel: EfferentChannel<S>,
+const appendEgressPayload = <S extends Schema.Schema.Any>(
+  channel: EgressChannel<S>,
   payload: Schema.Schema.Type<S>,
 ): Effect.Effect<void, unknown, never> => channel.binding.append(payload)
 
@@ -358,8 +358,8 @@ const callCallableChannel = <
 ): Effect.Effect<Schema.Schema.Type<Response>, unknown, never> =>
   channel.binding.call(request)
 
-const waitForAfferentChannel = <S extends Schema.Schema.Any>(
-  channel: AfferentChannel<S>,
+const waitForIngressChannel = <S extends Schema.Schema.Any>(
+  channel: IngressChannel<S>,
   trigger: FieldEqualsTrigger,
 ): Effect.Effect<Schema.Schema.Type<S>, unknown, never> =>
   channel.binding.stream.pipe(
@@ -382,8 +382,8 @@ const runSendTool = (
       toolUseId,
       "send",
       input.channel,
-      "efferent",
-    )) as unknown as EfferentChannel<RuntimeChannelSchema>
+      "egress",
+    )) as unknown as EgressChannel<RuntimeChannelSchema>
     const payload = yield* decodeChannelValue(
       toolUseId,
       "send",
@@ -392,7 +392,7 @@ const runSendTool = (
     )
     // firegrid-agent-body-plan.SLICE_D_VERBS.2
     // firegrid-agent-body-plan.SLICE_BOUNDARY.4
-    yield* appendEfferentPayload(channel, payload).pipe(
+    yield* appendEgressPayload(channel, payload).pipe(
       Effect.mapError(cause => toolExecutionFailed(toolUseId, "send", cause)),
     )
     return { sent: true, channel: input.channel }
@@ -439,8 +439,8 @@ const waitForAnyDescriptorToEffect = (
       toolUseId,
       "wait_for_any",
       descriptor.channel,
-      "afferent",
-    )) as unknown as AfferentChannel<RuntimeChannelSchema>
+      "ingress",
+    )) as unknown as IngressChannel<RuntimeChannelSchema>
     const adapted = waitQueryToTrigger(descriptor.match)
     if (adapted._tag === "NonScalar") {
       return yield* Effect.fail({
@@ -451,7 +451,7 @@ const waitForAnyDescriptorToEffect = (
           `wait_for_any match values must be string, number, or boolean (got non-scalar: ${describeTriggerFailures(adapted.failures)})`,
       })
     }
-    const result = yield* waitForAfferentChannel(channel, adapted.trigger).pipe(
+    const result = yield* waitForIngressChannel(channel, adapted.trigger).pipe(
       Effect.mapError(cause =>
         toolExecutionFailed(toolUseId, "wait_for_any", cause)),
     )

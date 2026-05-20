@@ -135,7 +135,7 @@ export const WaitForTool = Tool.make(operationToolName(FiregridAgentToolOperatio
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
- * `send` — append a payload to an efferent channel.
+ * `send` — append a payload to an egress channel.
  * firegrid-agent-body-plan.SLICE_D_VERBS.1
  */
 export const SendTool = Tool.make(operationToolName(FiregridAgentToolOperations.send.metadata, "send"), {
@@ -147,7 +147,7 @@ export const SendTool = Tool.make(operationToolName(FiregridAgentToolOperations.
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
- * `wait_for_any` — race waits over afferent channels and return the first
+ * `wait_for_any` — race waits over ingress channels and return the first
  * matching row.
  * firegrid-agent-body-plan.SLICE_D_VERBS.1
  */

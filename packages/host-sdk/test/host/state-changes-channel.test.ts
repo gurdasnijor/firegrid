@@ -59,7 +59,7 @@ const runWithTable = <A, E>(
   )
 
 describe("state.changes channel", () => {
-  it("firegrid-agent-body-plan.STATE_CHANGES.1 firegrid-agent-body-plan.STATE_CHANGES.2 firegrid-agent-body-plan.STATE_CHANGES.3 firegrid-agent-body-plan.STATE_CHANGES.4 firegrid-agent-body-plan.STATE_CHANGES.5 wraps DurableTable rows behind an opaque afferent static-source channel", async () => {
+  it("firegrid-agent-body-plan.STATE_CHANGES.1 firegrid-agent-body-plan.STATE_CHANGES.2 firegrid-agent-body-plan.STATE_CHANGES.3 firegrid-agent-body-plan.STATE_CHANGES.4 firegrid-agent-body-plan.STATE_CHANGES.5 wraps DurableTable rows behind an opaque ingress static-source channel", async () => {
     const program = Effect.gen(function* () {
         const table = yield* StateChangesTestTable
         const channel = stateChangesChannelFromCollection({
@@ -74,14 +74,14 @@ describe("state.changes channel", () => {
         const stateChanges = registered as StateChangesChannel<typeof StateRowSchema>
 
         expect(stateChanges.kind).toBe("state.changes")
-        expect(stateChanges.direction).toBe("afferent")
+        expect(stateChanges.direction).toBe("ingress")
         expect(stateChanges.sourceClass).toBe("static-source")
         expect(stateChanges.schema).toBe(StateRowSchema)
         const metadata = Option.getOrThrow(
           registry.getMetadata(agentVisibleWaitInput.channel),
         )
-        expect(metadata.direction).toBe("afferent")
-        if (metadata.direction !== "afferent") {
+        expect(metadata.direction).toBe("ingress")
+        if (metadata.direction !== "ingress") {
           return
         }
         expect(metadata.schema).toBe(StateRowSchema)

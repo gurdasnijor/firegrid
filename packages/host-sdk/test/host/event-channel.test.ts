@@ -84,7 +84,7 @@ describe("event(name) channel", () => {
       expect(event.kind).toBe("event")
       expect(event.eventName).toBe("plan.ready")
       expect(event.direction).toBe("bidirectional")
-      expect(event.directions).toEqual(["afferent", "efferent"])
+      expect(event.directions).toEqual(["ingress", "egress"])
       expect(event.sourceClasses).toEqual(["static-source", "predicate-eligible"])
       expect(event.schema).toBe(EventRowSchema)
 

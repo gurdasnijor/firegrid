@@ -167,7 +167,7 @@ export const SendToolInputSchema = Schema.Struct({
 }).annotations({
   identifier: "firegrid.agentTool.send.input",
   title: "Send tool input",
-  description: "Append a payload to an efferent channel.",
+  description: "Append a payload to an egress channel.",
   examples: [
     {
       channel: "factory.events",
@@ -196,7 +196,7 @@ export const WaitForAnyMatchSchema = Schema.Record({
 }).annotations({
   identifier: "firegrid.agentTool.waitForAny.match",
   title: "Wait-for-any match",
-  description: "Field-equality predicates applied to one afferent channel row.",
+  description: "Field-equality predicates applied to one ingress channel row.",
 })
 export type WaitForAnyMatch = Schema.Schema.Type<typeof WaitForAnyMatchSchema>
 
@@ -217,7 +217,7 @@ export const WaitForAnyToolInputSchema = Schema.Struct({
 }).annotations({
   identifier: "firegrid.agentTool.waitForAny.input",
   title: "Wait-for-any tool input",
-  description: "Race waits over multiple afferent channel descriptors.",
+  description: "Race waits over multiple ingress channel descriptors.",
   examples: [
     {
       channels: [

@@ -11,12 +11,12 @@ const waitForToolName = "wait_for"
 type RuntimeContextMcpChannelInventoryEntry =
   | {
     readonly name: string
-    readonly direction: "afferent"
+    readonly direction: "ingress"
     readonly schema: { readonly row: JSONSchema.JsonSchema7Root }
   }
   | {
     readonly name: string
-    readonly direction: "efferent"
+    readonly direction: "egress"
     readonly schema: { readonly payload: JSONSchema.JsonSchema7Root }
   }
   | {
@@ -45,13 +45,13 @@ export const runtimeContextMcpChannelInventory = (
 ): ReadonlyArray<RuntimeContextMcpChannelInventoryEntry> =>
   metadata.map(entry => {
     switch (entry.direction) {
-      case "afferent":
+      case "ingress":
         return {
           name: entry.target,
           direction: entry.direction,
           schema: { row: schemaJson(entry.schema) },
         }
-      case "efferent":
+      case "egress":
         return {
           name: entry.target,
           direction: entry.direction,

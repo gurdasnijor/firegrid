@@ -17,7 +17,7 @@ Related specs / docs:
 
 Capture a corrective design for Firegrid's agent-facing tool surface. The current surface conflates **substrate addressing** (`source._tag: "CallerFact", stream: "..."`) with **agent-facing semantics**. The substrate has the right machinery — durable rows, claim-first execution, projection streams, awakeable suspension, workflow deferred resume — but it leaks upward as the agent's mental model.
 
-This SDD reframes the agent tool surface as a **body plan**: a typed inventory of *senses* (afferent channels), *faculties* (efferent channels + the `call` paired req-resp pattern), and a small fixed verb count. Channels are opaque-to-the-agent typed handles registered by the host; substrate addressing happens entirely behind the channel boundary.
+This SDD reframes the agent tool surface as a **body plan**: a typed inventory of *senses* (ingress channels), *faculties* (egress channels + the `call` paired req-resp pattern), and a small fixed verb count. Channels are opaque-to-the-agent typed handles registered by the host; substrate addressing happens entirely behind the channel boundary.
 
 This is the same shape Fireline already implements at the substrate-neutral layer (`channel: ChannelTarget`), elevated by the channels-as-nervous-system framing in Fireline's vault, with concrete additions surfaced by tonight's dark-factory live run.
 
@@ -39,7 +39,7 @@ The agent honestly halted (`DARK_FACTORY_FINDING` per the prompt's halt-honestly
 
 5. **No interoception.** The agent cannot perceive its own lifecycle, budget, or checkpoint state. It cannot self-modulate. (`session.self.*` is absent from the agent tool surface.)
 
-6. **No peer-pheromone channel.** `event(name)` (named ad-hoc afferent + efferent on the durable log) is not exposed. Inter-agent indirect coordination — the choreography thesis's strongest case — requires either piggy-backing on `CallerFact` streams (substrate-leaky) or out-of-band orchestration (which the choreography model rejects).
+6. **No peer-pheromone channel.** `event(name)` (named ad-hoc ingress + egress on the durable log) is not exposed. Inter-agent indirect coordination — the choreography thesis's strongest case — requires either piggy-backing on `CallerFact` streams (substrate-leaky) or out-of-band orchestration (which the choreography model rejects).
 
 7. **Wait-router and durable-tools record names are substrate-shaped, not body-plan-shaped.** Fireline's contract names the records `fireline.agent.suspended` and `fireline.agent.resumed`. Firegrid emits `durable_tools.wait_for.upsert_active` and `wait_router.complete_match`. Functionally analogous; semantically misaligned with the spec.
 
@@ -49,7 +49,7 @@ This SDD is the synthesis of three reference frames:
 
 1. **Fireline's `choreography-and-combinators.fireline.md`** — substrate-neutral primitive set. Six canonical verbs (`sleep`, `wait_for`, `spawn`, `spawn_all`, `schedule_me`, `execute`) with opaque `ChannelTarget` / `SandboxTarget` / `agent: String` addressing. Every primitive emits a canonical `suspended` + `resumed` record pair carrying the operation, channel, and result.
 
-2. **Fireline's `channels-as-nervous-system.md`** — the mental model that elevates "what tools should the agent have?" into "what is the agent's body plan?" Channels are typed afferent (sensory) or efferent (motor) pathways. The agent reasons about senses and faculties, not tools. The substrate (the spinal cord) makes durable suspension possible without burning compute.
+2. **Fireline's `channels-as-nervous-system.md`** — the mental model that elevates "what tools should the agent have?" into "what is the agent's body plan?" Channels are typed ingress (sensory) or egress (motor) pathways. The agent reasons about senses and faculties, not tools. The substrate (the spinal cord) makes durable suspension possible without burning compute.
 
 3. **Smithery Forge's `tools/index.ts`** — empirical reference for product-shape composition over a substrate. Forge hides substrate verbs entirely; agents see `send_message(to, text, {wait_for_reply})`, `wait_for_message(from, timeout)`, `memory.{...}`, `update_plan(..., {requestApproval})`, `delegate(task, {maxBudget, maxTurns})`. Each is a semantic verb that composes substrate ops (awakeable, sleep, state, emit) under a typed name. The agent never sees "stream," "awakeable," or "sandbox-provider."
 
@@ -90,44 +90,44 @@ The verb count is **fixed and small**, aligned with the Fireline canonical primi
 | Verb | Direction | Suspends? | Result shape |
 |---|---|---|---|
 | `sleep(duration, reason?)` | (internal — time channel) | yes | `WaitOutcome` (time elapsed) |
-| `wait_for(channel: ChannelTarget, match?, timeoutMs?)` | afferent | yes | `WaitOutcome { matched, eventJson?, reason? }` |
-| `wait_for_any([channelDescriptor...], timeoutMs?)` | afferent (multi) | yes | `{ winnerIndex, channel, result }` |
-| `send(channel: WritableChannel, payload)` | efferent (fire-and-forget) | no | `{ ok }` (best-effort) |
-| `call(channel: CallableChannel, request)` | efferent + paired afferent | yes | response payload |
-| `schedule_me(when, prompt)` | efferent (time.schedule) | no (resumes via new session later) | `{ scheduledAt }` |
+| `wait_for(channel: ChannelTarget, match?, timeoutMs?)` | ingress | yes | `WaitOutcome { matched, eventJson?, reason? }` |
+| `wait_for_any([channelDescriptor...], timeoutMs?)` | ingress (multi) | yes | `{ winnerIndex, channel, result }` |
+| `send(channel: WritableChannel, payload)` | egress (fire-and-forget) | no | `{ ok }` (best-effort) |
+| `call(channel: CallableChannel, request)` | egress + paired ingress | yes | response payload |
+| `schedule_me(when, prompt)` | egress (time.schedule) | no (resumes via new session later) | `{ scheduledAt }` |
 | `spawn(agent, prompt, opts?)` | (peer — not a channel; ACP-native) | yes | `SpawnResult` |
 | `spawn_all([tasks])` | (peer multi) | yes | `SpawnResult[]` |
-| `execute(sandbox, input)` | efferent (sandbox channel) | yes | `ExecuteResult` |
+| `execute(sandbox, input)` | egress (sandbox channel) | yes | `ExecuteResult` |
 
 **Total: 9 verbs.** Strict superset of Fireline's 6 (adds `send`, `call`, `wait_for_any` as first-class verbs per the channels-as-nervous-system doc's sensory-integration and motor patterns).
 
-- `send` vs `call`: biological-style distinction. `send` is fire-and-forget into an efferent channel (broadcast, notification, log). `call` is the paired request-response pattern (approval, gated review, ask-permission). `call` suspends durably waiting on its paired response.
+- `send` vs `call`: biological-style distinction. `send` is fire-and-forget into an egress channel (broadcast, notification, log). `call` is the paired request-response pattern (approval, gated review, ask-permission). `call` suspends durably waiting on its paired response.
 - `wait_for_any` is sensory integration — the agent waits on multiple channels concurrently, acts on whichever fires first. The brain doesn't dedicate one process per modality.
 
 **No new verbs are needed beyond these nine.** Tonight's "discovery gap" (peek / list-streams / schema-introspection) dissolves at the verb layer: it becomes a property of how channels are *declared* (schema-carrying registration) and how `wait_for` is *invoked* (`match` is optional; `timeoutMs: 0` + no match returns latest-or-none).
 
 ## Channel Inventory
 
-The channels are the body plan's typed inventory. Each channel is registered at the host layer with: a name (opaque to the agent), a direction (afferent / efferent / call), a typed payload schema, and a substrate-side binding (which durable-table / runtime-state / awakeable mechanism backs it).
+The channels are the body plan's typed inventory. Each channel is registered at the host layer with: a name (opaque to the agent), a direction (ingress / egress / call), a typed payload schema, and a substrate-side binding (which durable-table / runtime-state / awakeable mechanism backs it).
 
 Cross-referencing the channels-as-nervous-system doc against Firegrid today:
 
 | Channel | Direction | Biological analogue | Firegrid substrate binding (existing) | Status |
 |---|---|---|---|---|
-| `time.elapsed(duration)` | afferent | circadian | `Effect.sleep` / `DurableClock` | wraps `sleep`; needs naming as a channel for `wait_for_any` composition |
-| `time.at(instant)` | afferent | scheduled alarm | `DurableClock` | not exposed |
-| `time.schedule(prompt, when)` | efferent | "I'll wake at dawn" | `schedule_me` substrate | exists as verb-bound; rename to channel-bound |
-| `state.changes(collection)` | afferent | proprioception | `DurableTable.rows()` | substantive add — wrap rows-stream as channel; schema-carrying via collection type |
-| `state.control` | afferent | vestibular reorientation | snapshot / reset substrate | substantive add |
-| `session.self.lifecycle` | afferent | interoception | `firegrid.runtime_context.workflow.*` spans | **substantive add — high leverage** |
-| `session.self.checkpoint` | afferent | interoception | workflow checkpoint substrate | substantive add |
-| `webhook.intent(name)` | afferent | hearing | (no current binding; closest: `CallerFact` streams) | substantive add or rename of `CallerFact` |
-| `event(name)` | afferent + efferent | pheromone | `CallerFact` streams reshaped | substantive add — high leverage for choreography |
-| `dm(handle)` (human channel) | afferent | conversation | (no binding) | substantive add — human-loop sense |
-| `notification(handle)` (human channel) | efferent | speech | (no binding) | substantive add — human-loop faculty |
+| `time.elapsed(duration)` | ingress | circadian | `Effect.sleep` / `DurableClock` | wraps `sleep`; needs naming as a channel for `wait_for_any` composition |
+| `time.at(instant)` | ingress | scheduled alarm | `DurableClock` | not exposed |
+| `time.schedule(prompt, when)` | egress | "I'll wake at dawn" | `schedule_me` substrate | exists as verb-bound; rename to channel-bound |
+| `state.changes(collection)` | ingress | proprioception | `DurableTable.rows()` | substantive add — wrap rows-stream as channel; schema-carrying via collection type |
+| `state.control` | ingress | vestibular reorientation | snapshot / reset substrate | substantive add |
+| `session.self.lifecycle` | ingress | interoception | `firegrid.runtime_context.workflow.*` spans | **substantive add — high leverage** |
+| `session.self.checkpoint` | ingress | interoception | workflow checkpoint substrate | substantive add |
+| `webhook.intent(name)` | ingress | hearing | (no current binding; closest: `CallerFact` streams) | substantive add or rename of `CallerFact` |
+| `event(name)` | ingress + egress | pheromone | `CallerFact` streams reshaped | substantive add — high leverage for choreography |
+| `dm(handle)` (human channel) | ingress | conversation | (no binding) | substantive add — human-loop sense |
+| `notification(handle)` (human channel) | egress | speech | (no binding) | substantive add — human-loop faculty |
 | `approval(handle)` (human channel) | call (req+resp) | asking permission | `PermissionRequest`/`PermissionResponse` substrate | exists as substrate; not channel-shaped at agent surface |
-| `sandbox.<name>` | efferent | skeletal motor | `executeSandboxTool` | exists as verb-bound (`execute`); align as channel |
-| `session.log` | efferent | memory consolidation | runtime input intent / agent output rows | substantive add |
+| `sandbox.<name>` | egress | skeletal motor | `executeSandboxTool` | exists as verb-bound (`execute`); align as channel |
+| `session.log` | egress | memory consolidation | runtime input intent / agent output rows | substantive add |
 
 **Net of "substantive add" items:** seven new channels to introduce, three existing channels to rename/realign. The verb layer above doesn't change shape — each new channel is consumable by existing `wait_for` / `send` / `call`.
 
@@ -136,16 +136,16 @@ Cross-referencing the channels-as-nervous-system doc against Firegrid today:
 The doc's typed-verb constraint must be carried into Firegrid's type system. The proposed types:
 
 ```ts
-type ChannelDirection = "afferent" | "efferent" | "call"
+type ChannelDirection = "ingress" | "egress" | "call"
 
-interface AfferentChannel<Schema> {
-  readonly direction: "afferent"
+interface IngressChannel<Schema> {
+  readonly direction: "ingress"
   readonly id: string                 // opaque to agent; host-registered
   readonly schema: SchemaTag<Schema>  // declared at body-plan time
 }
 
-interface EfferentChannel<Schema> {
-  readonly direction: "efferent"
+interface EgressChannel<Schema> {
+  readonly direction: "egress"
   readonly id: string
   readonly schema: SchemaTag<Schema>  // payload type the agent emits
 }
@@ -158,18 +158,18 @@ interface CallableChannel<Req, Resp> {
 }
 
 type ChannelTarget =
-  | AfferentChannel<any>
-  | EfferentChannel<any>
+  | IngressChannel<any>
+  | EgressChannel<any>
   | CallableChannel<any, any>
 
 // The verb signatures enforce direction:
 declare function wait_for<Schema>(
-  channel: AfferentChannel<Schema>,
+  channel: IngressChannel<Schema>,
   options?: { match?: Partial<Schema>; timeoutMs?: number },
 ): Effect<WaitOutcome<Schema>>
 
 declare function send<Schema>(
-  channel: EfferentChannel<Schema>,
+  channel: EgressChannel<Schema>,
   payload: Schema,
 ): Effect<{ ok: true }>
 
@@ -179,7 +179,7 @@ declare function call<Req, Resp>(
 ): Effect<Resp>
 ```
 
-The compile-time enforcement means `send(state.changes(...), ...)` is rejected at the type level (state writes go through the dedicated `memory()` middleware path per the doc); `wait_for(notification, ...)` is rejected (notifications are efferent-only); `call(time.elapsed, ...)` is rejected (time isn't callable).
+The compile-time enforcement means `send(state.changes(...), ...)` is rejected at the type level (state writes go through the dedicated `memory()` middleware path per the doc); `wait_for(notification, ...)` is rejected (notifications are egress-only); `call(time.elapsed, ...)` is rejected (time isn't callable).
 
 ## What this is, in one diagram (Firegrid-specific)
 
@@ -203,7 +203,7 @@ Substrate (hidden from agent):
   Workflow checkpoints ─┘
   Sandbox providers ─→ sandbox.<name> channel binding
   ACP session/request_permission ─→ approval(human) call channel
-  CallerFact streams ─→ event(name) afferent+efferent channel
+  CallerFact streams ─→ event(name) ingress+egress channel
 ```
 
 The agent never sees the bottom layer. The substrate is **how channels stay durable**, not what the agent reasons about.
@@ -259,7 +259,7 @@ The migration is staged so each slice is independently shippable and falsifiable
 
 - `packages/runtime/src/durable-tools/internal/types.ts` — `WaitForToolInput` schema rewrite (replace `source: SourceSchema` with `channel: ChannelTargetSchema`).
 - `packages/runtime/src/durable-tools/internal/wait-for.ts` — translate `ChannelTarget` → substrate source at handler entry; rest of the file is unchanged.
-- `packages/host-sdk/src/host/channel-registry.ts` (NEW) — host-side registry of `name → AfferentChannel | EfferentChannel | CallableChannel`. Channels registered at host startup; the registry is what `resolveEffectiveMcpServers`-style logic consults.
+- `packages/host-sdk/src/host/channel-registry.ts` (NEW) — host-side registry of `name → IngressChannel | EgressChannel | CallableChannel`. Channels registered at host startup; the registry is what `resolveEffectiveMcpServers`-style logic consults.
 - `packages/host-sdk/src/host/agent-tools/bindings/tools.ts` — toolkit binding for `wait_for` updated to publish typed channel options based on registered inventory.
 - `packages/runtime/test/durable-tools/...` — update test fixtures.
 
@@ -283,10 +283,10 @@ The migration is staged so each slice is independently shippable and falsifiable
 Each of the substantive channel types from the table above is its own slice. Suggested order by leverage:
 
 1. **`session.self.lifecycle` / `session.self.checkpoint`** (interoception) — highest unique-to-choreography value. Substrate exists; agent-facing channel wrapper is the new piece.
-2. **`event(name)`** (peer pheromone) — the choreography thesis's strongest case. Reshape `CallerFact` into a typed event channel with explicit `name` + schema registration; both afferent and efferent.
+2. **`event(name)`** (peer pheromone) — the choreography thesis's strongest case. Reshape `CallerFact` into a typed event channel with explicit `name` + schema registration; both ingress and egress.
 3. **`state.changes(collection)`** (proprioception) — wrap `DurableTable.rows()` as a typed channel; schema is the collection's row schema. Solves the discovery problem structurally — channel declaration carries its own type.
 4. **`approval(handle)`** (call channel) — replaces the ad-hoc permission flow tonight's driver auto-approver covers. The host registers an `approval(...)` channel; ACP `session/request_permission` is routed through it; the agent sees `call(approval, {prompt, options})` as a verb-bound faculty.
-5. **`dm` / `notification`** (human conversation) — the human-channel pair. Probably built first as a generic `{afferent dm + efferent notification + call approval}` triad parameterized by handle.
+5. **`dm` / `notification`** (human conversation) — the human-channel pair. Probably built first as a generic `{ingress dm + egress notification + call approval}` triad parameterized by handle.
 6. **`session.log`** (own marker / memory consolidation) — cheapest add; lets the agent annotate its own history.
 7. **`webhook.intent(name)`** — rename or augment the existing `CallerFact` semantic for the external-HTTP-event case.
 
@@ -296,9 +296,9 @@ Each slice is its own bead, ~one to two files per channel, plus a test fixture i
 
 Once Slice A lands (channels are first-class typed handles), the new verbs are mechanical additions to `FiregridAgentToolkit`:
 
-- `send` — append-fact-shaped, governed by per-channel append-allow policy on the registry. Direction-enforced at the type level (only `EfferentChannel` accepted).
+- `send` — append-fact-shaped, governed by per-channel append-allow policy on the registry. Direction-enforced at the type level (only `EgressChannel` accepted).
 - `call` — composes `send` (request) + `wait_for` (response) under a paired-channel handle. Suspends durably; resumes when the response row appears on the call channel's response side. This is what tonight's `call(approval, ...)` would have looked like if it existed.
-- `wait_for_any` — accepts an array of `AfferentChannel` (or call-channel response-side) descriptors with optional per-channel `match`. Returns the first-firing channel's result + a discriminator (`{ winnerIndex, channel, result }`). Substrate: races N `wait_for`s and cancels the losers.
+- `wait_for_any` — accepts an array of `IngressChannel` (or call-channel response-side) descriptors with optional per-channel `match`. Returns the first-firing channel's result + a discriminator (`{ winnerIndex, channel, result }`). Substrate: races N `wait_for`s and cancels the losers.
 
 **Affected files:**
 
@@ -340,7 +340,7 @@ Recommendation: (b) initially for migration safety; (a) once consumers are migra
 
 1. **Channel registration is a host-startup concern.** Today's tiny-firegrid host (e.g., `dark-factory/host.ts`) declares MCP server URLs and seeds facts. Should channel registration sit alongside that, or move into a separate host composition step? Recommend: it goes alongside, since channel inventory IS the body plan. **Resolved-by-Shape-A note:** once `wait_router` folds inline into the workflow body, the channel registry's substrate side becomes "tell the workflow body which observation streams to race over" — a single configuration site rather than a registry-plus-router split.
 2. **How does `event(name)` schema get declared?** A typed channel needs a schema. Either: (a) channels are registered with an explicit Effect Schema; (b) channels are registered with a JSON Schema; (c) typed via the `DurableTable` row type when backed by a collection. Recommend (c) where possible, (a) for hand-declared events.
-3. **`spawn` is "synaptic, not channel" per the doc.** Should `spawn` remain a verb that doesn't go through the channel layer, or should there be a `peer(name)` channel? Recommend: stays as a verb (matching the doc), but a `peer.lifecycle(child_id)` *afferent* channel exists so the parent can `wait_for_any([peer.lifecycle(c1), peer.lifecycle(c2)])` for fastest-child semantics.
+3. **`spawn` is "synaptic, not channel" per the doc.** Should `spawn` remain a verb that doesn't go through the channel layer, or should there be a `peer(name)` channel? Recommend: stays as a verb (matching the doc), but a `peer.lifecycle(child_id)` *ingress* channel exists so the parent can `wait_for_any([peer.lifecycle(c1), peer.lifecycle(c2)])` for fastest-child semantics.
 4. **Permission-channel routing**: today the ACP permission gate triggers a runtime workflow that awaits a `PermissionResponse` row. After the migration, that wiring is "the substrate side of the `approval` channel." Confirm this aligns with `SDD_PERMISSION_CODEC_AUTHORITY.md`'s invariants.
 5. **Wire format for `match` and `eventJson`**: Fireline's TS schema encodes match/event as string-encoded JSON (`matchJson`, `eventJson`); the Rust side carries parsed `Value`. Firegrid is TS-only currently — should we adopt the string-encoded form for spec parity, or use typed JSON Schema values directly? Recommend typed values internally with string-encoded only at the ACP wire boundary.
 6. **Migration of existing `CallerFact` consumers**: dark-factory, the wait-pre-attach-roundtrip sim, and any in-flight consumers all need their channel declarations migrated. Is a single batch migration acceptable, or do we want a deprecation period?
