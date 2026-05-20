@@ -63,6 +63,11 @@ const fakeHost = (
     }),
   executeSandboxTool: () => Effect.succeed<unknown>({ ok: true }),
   executeSessionCapability: () => Effect.succeed<unknown>({ ok: true }),
+  callApprovalChannel: () =>
+    Effect.succeed({
+      matched: false,
+      timedOut: true,
+    }),
   appendSessionPrompt: () => Effect.void,
   cancelSession: () => Effect.fail({
     _tag: "ToolExecutionFailed",
@@ -124,6 +129,7 @@ describe("FiregridAgentToolkit", () => {
   it("firegrid-factory-aligned-agent-tools.SESSION.6 exposes the session-plane tool catalog", () => {
     expect(Object.keys(FiregridAgentToolkit.tools).sort()).toEqual(
       [
+        "call",
         "execute",
         "schedule_me",
         "session_cancel",
@@ -174,6 +180,7 @@ describe("FiregridAgentToolkit", () => {
       ["session_close", FiregridAgentToolkit.tools.session_close, FiregridAgentToolOperations.sessionClose],
       ["schedule_me", FiregridAgentToolkit.tools.schedule_me, FiregridAgentToolOperations.scheduleMe],
       ["execute", FiregridAgentToolkit.tools.execute, FiregridAgentToolOperations.execute],
+      ["call", FiregridAgentToolkit.tools.call, FiregridAgentToolOperations.call],
     ] as const
 
     for (const [name, tool, operation] of projections) {

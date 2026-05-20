@@ -7,6 +7,10 @@
 import { Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
+  ApprovalCallOutputSchema,
+  ApprovalCallRequestSchema,
+  CallToolInputSchema,
+  CallToolOutputSchema,
   RuntimeWaitQuerySchema,
   ExecuteToolInputSchema,
   ExecuteToolOutputSchema,
@@ -376,6 +380,65 @@ describe("agent-tool schemas — execute", () => {
   it("output accepts any unknown payload", async () => {
     const decoded = await decodes(ExecuteToolOutputSchema, { foo: 1 })
     expect(decoded).toEqual({ foo: 1 })
+  })
+})
+
+describe("agent-tool schemas — call approval", () => {
+  it("firegrid-agent-body-plan.APPROVAL_CALL.1 decodes approval-channel call input", async () => {
+    const decoded = await decodes(CallToolInputSchema, {
+      channel: "approval.operator",
+      request: {
+        decision: { _tag: "Allow", optionId: "allow_once" },
+        timeoutMs: 1000,
+      },
+    })
+    expect(decoded.channel).toBe("approval.operator")
+    expect(decoded.request.decision._tag).toBe("Allow")
+  })
+
+  it("firegrid-agent-body-plan.APPROVAL_CALL.1 rejects an empty call channel target", async () => {
+    const error = await rejects(CallToolInputSchema, {
+      channel: "",
+      request: {
+        decision: { _tag: "Allow" },
+      },
+    })
+    expect(error).toBeDefined()
+  })
+
+  it("firegrid-agent-body-plan.APPROVAL_CALL.2 decodes approval request and output variants", async () => {
+    const request = await decodes(ApprovalCallRequestSchema, {
+      decision: { _tag: "Deny", reason: "no" },
+      afterSequence: 2,
+    })
+    expect(request.afterSequence).toBe(2)
+
+    const matched = await decodes(ApprovalCallOutputSchema, {
+      matched: true,
+      request: {
+        contextId: "ctx-1",
+        activityAttempt: 1,
+        sequence: 3,
+        permissionRequestId: "permission-1",
+        toolUseId: "tool-1",
+        options: [
+          { optionId: "allow_once", kind: "allow_once", name: "Allow once" },
+        ],
+      },
+      response: {
+        responded: true,
+        contextId: "ctx-1",
+        permissionRequestId: "permission-1",
+        inputId: "input-1",
+      },
+    })
+    expect(matched.matched).toBe(true)
+
+    const timedOut = await decodes(CallToolOutputSchema, {
+      matched: false,
+      timedOut: true,
+    })
+    expect(timedOut).toEqual({ matched: false, timedOut: true })
   })
 })
 

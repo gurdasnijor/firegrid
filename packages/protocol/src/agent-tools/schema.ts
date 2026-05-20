@@ -26,6 +26,7 @@ import {
   defineFiregridOperation,
   firegridProjection,
 } from "../operations/schema.ts"
+import { PermissionOptionSchema } from "../agent-output/schema.ts"
 
 export {
   defineFiregridOperation,
@@ -649,6 +650,99 @@ export type PermissionRespondOutput = Schema.Schema.Type<
   typeof PermissionRespondOutputSchema
 >
 
+// ---------------------------------------------------------------------------
+// call(approval)
+// ---------------------------------------------------------------------------
+
+const ApprovalCallNonEmptyStringSchema = Schema.String.pipe(Schema.minLength(1))
+const ApprovalCallNonNegativeIntSchema = Schema.Number.pipe(
+  Schema.int(),
+  Schema.greaterThanOrEqualTo(0),
+)
+const ApprovalCallActivityAttemptSchema = Schema.Number.pipe(
+  Schema.int(),
+  Schema.greaterThanOrEqualTo(1),
+)
+
+export const ApprovalCallRequestSchema = Schema.Struct({
+  decision: PermissionDecisionSchema,
+  afterSequence: Schema.optional(ApprovalCallNonNegativeIntSchema),
+  timeoutMs: Schema.optional(ApprovalCallNonNegativeIntSchema),
+  idempotencyKey: Schema.optional(ApprovalCallNonEmptyStringSchema),
+}).annotations({
+  identifier: "firegrid.agentTool.call.approval.request",
+  title: "Approval call request",
+  description:
+    "Approval-channel request: wait for a pending PermissionRequest and respond with the supplied decision.",
+})
+export type ApprovalCallRequest = Schema.Schema.Type<
+  typeof ApprovalCallRequestSchema
+>
+
+export const ApprovalCallPermissionRequestSchema = Schema.Struct({
+  contextId: ApprovalCallNonEmptyStringSchema,
+  activityAttempt: ApprovalCallActivityAttemptSchema,
+  sequence: ApprovalCallNonNegativeIntSchema,
+  permissionRequestId: ApprovalCallNonEmptyStringSchema,
+  toolUseId: ApprovalCallNonEmptyStringSchema,
+  options: Schema.Array(PermissionOptionSchema),
+}).annotations({
+  identifier: "firegrid.agentTool.call.approval.permissionRequest",
+  title: "Approval call permission request",
+  description:
+    "Normalized PermissionRequest selected by the approval call channel.",
+})
+export type ApprovalCallPermissionRequest = Schema.Schema.Type<
+  typeof ApprovalCallPermissionRequestSchema
+>
+
+export const ApprovalCallOutputSchema = Schema.Union(
+  Schema.Struct({
+    matched: Schema.Literal(true),
+    request: ApprovalCallPermissionRequestSchema,
+    response: PermissionRespondOutputSchema,
+  }),
+  Schema.Struct({
+    matched: Schema.Literal(false),
+    timedOut: Schema.Literal(true),
+  }),
+).annotations({
+  identifier: "firegrid.agentTool.call.approval.output",
+  title: "Approval call output",
+  description:
+    "Result of waiting for and responding to a PermissionRequest via the approval channel.",
+})
+export type ApprovalCallOutput = Schema.Schema.Type<
+  typeof ApprovalCallOutputSchema
+>
+
+export const CallToolInputSchema = Schema.Struct({
+  channel: ApprovalCallNonEmptyStringSchema,
+  request: ApprovalCallRequestSchema,
+}).annotations({
+  identifier: "firegrid.agentTool.call.input",
+  title: "Call tool input",
+  description:
+    "Invoke a callable channel. This slice wires approval.* targets to the permission request/response substrate.",
+  examples: [
+    {
+      channel: "approval.operator",
+      request: { decision: { _tag: "Allow", optionId: "allow_once" } },
+    },
+  ],
+  ...firegridProjection({
+    operationId: "channel.call",
+    toolName: "call",
+  }),
+})
+export type CallToolInput = Schema.Schema.Type<typeof CallToolInputSchema>
+
+export const CallToolOutputSchema = ApprovalCallOutputSchema.annotations({
+  identifier: "firegrid.agentTool.call.output",
+  title: "Call tool output",
+})
+export type CallToolOutput = Schema.Schema.Type<typeof CallToolOutputSchema>
+
 export const FiregridAgentToolOperations = {
   sleep: defineFiregridOperation(SleepToolInputSchema, SleepToolOutputSchema),
   waitFor: defineFiregridOperation(WaitForToolInputSchema, WaitForToolOutputSchema),
@@ -662,4 +756,5 @@ export const FiregridAgentToolOperations = {
   scheduleMe: defineFiregridOperation(ScheduleMeToolInputSchema, ScheduleMeToolOutputSchema),
   execute: defineFiregridOperation(ExecuteToolInputSchema, ExecuteToolOutputSchema),
   permissionRespond: defineFiregridOperation(PermissionRespondInputSchema, PermissionRespondOutputSchema),
+  call: defineFiregridOperation(CallToolInputSchema, CallToolOutputSchema),
 } as const
