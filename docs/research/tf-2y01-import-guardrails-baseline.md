@@ -109,7 +109,7 @@ The scan mirrors for runtime-to-host-sdk and client-sdk-to-runtime reported zero
 
 The raw hard flip showed that Lanes B/C did not fully eliminate all host-sdk substrate imports before this slice. Those violations are not mechanical in scope for `tf-wtgc`; they are the remaining boundary-refactor surface. The hard rules now exclude only these existing debt files, so new host-sdk files and any non-carved-out import sites fail immediately.
 
-Current count after `tf-1glx`: 11 files.
+Current count after `tf-emxk`: 9 files.
 
 | Carved-out file | Remaining substrate import class |
 |---|---|
@@ -118,10 +118,8 @@ Current count after `tf-1glx`: 11 files.
 | `packages/host-sdk/src/host/control-request-reconciler.ts` | workflow engine and workflow definitions |
 | `packages/host-sdk/src/host/index.ts` | workflow definitions re-export |
 | `packages/host-sdk/src/host/internal/runtime-context-helpers.ts` | workflow definitions |
-| `packages/host-sdk/src/host/internal/runtime-context-workflow-run.ts` | workflow definitions |
 | `packages/host-sdk/src/host/runtime-context-workflow-core.ts` | workflow definitions |
 | `packages/host-sdk/src/host/runtime-context-workflow-runtime.ts` | workflow engine |
-| `packages/host-sdk/src/host/runtime-ingress-transform.ts` | workflow definitions |
 | `packages/host-sdk/src/host/runtime-input-deferred.ts` | workflow engine |
 | `packages/host-sdk/src/host/session-log-channel.ts` | durable table facade |
 
@@ -198,6 +196,35 @@ x 23 dependency violations (23 errors, 0 warnings). 219 modules, 529 dependencie
 ```
 
 Normal gate after removing the stale carveout:
+
+```text
+✔ no dependency violations found (219 modules, 529 dependencies cruised)
+```
+
+## tf-emxk Shim Retirement
+
+Date: 2026-05-20
+
+Base: current `origin/main` for `codex/tf-emxk-shim-retirement-ratchet`.
+
+Result: 2 carveouts removed. The list moves from 11 files to 9 files.
+
+Removed shim carveouts:
+
+```text
+packages/host-sdk/src/host/internal/runtime-context-workflow-run.ts
+packages/host-sdk/src/host/runtime-ingress-transform.ts
+```
+
+Why removed: both files were pure re-export shims to `@firegrid/runtime/workflows`. Their only active imports were in tiny-firegrid simulations, and those imports now use the canonical runtime workflow subpath directly.
+
+No-carveout probe after shim retirement:
+
+```text
+x 19 dependency violations (19 errors, 0 warnings). 219 modules, 529 dependencies cruised.
+```
+
+Normal gate after removing the two shim carveouts:
 
 ```text
 ✔ no dependency violations found (219 modules, 529 dependencies cruised)

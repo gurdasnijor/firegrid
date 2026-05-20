@@ -69,6 +69,7 @@ import {
 import {
   RuntimeContextWorkflowPayload,
   StartRuntimeResultSchema,
+  agentInputEventFromRuntimeIngressRow,
   allocateRuntimeActivityAttempt,
   failAfterWritingRunFailed,
   type RuntimeExitEvidence,
@@ -76,7 +77,7 @@ import {
   writeRunExitedResult,
   writeRunFailedResult,
   writeRunStarted,
-} from "../../../../host-sdk/src/host/internal/runtime-context-workflow-run.ts"
+} from "@firegrid/runtime/workflows"
 // nosemgrep: firegrid-runtime-no-host-internal-imports-outside-host -- simulation intentionally probes private runtime-context workflow composition before production promotion.
 import {
   readRuntimeContext,
@@ -95,9 +96,6 @@ import {
   RuntimeContextWorkflowSession,
   runtimeInputDeferredFor,
 } from "../../../../host-sdk/src/host/runtime-context-workflow-core.ts"
-import {
-  agentInputEventFromRuntimeIngressRow,
-} from "../../../../host-sdk/src/host/runtime-ingress-transform.ts"
 import type { TinyFiregridHostEnv } from "../../types.ts"
 
 const hostId = "host-a" as HostId

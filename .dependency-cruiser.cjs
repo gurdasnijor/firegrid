@@ -22,10 +22,8 @@ const currentHostSdkSubstrateDebt = [
   "^packages/host-sdk/src/host/control-request-reconciler\\.ts$",
   "^packages/host-sdk/src/host/index\\.ts$",
   "^packages/host-sdk/src/host/internal/runtime-context-helpers\\.ts$",
-  "^packages/host-sdk/src/host/internal/runtime-context-workflow-run\\.ts$",
   "^packages/host-sdk/src/host/runtime-context-workflow-core\\.ts$",
   "^packages/host-sdk/src/host/runtime-context-workflow-runtime\\.ts$",
-  "^packages/host-sdk/src/host/runtime-ingress-transform\\.ts$",
   "^packages/host-sdk/src/host/runtime-input-deferred\\.ts$",
   "^packages/host-sdk/src/host/session-log-channel\\.ts$",
 ]
