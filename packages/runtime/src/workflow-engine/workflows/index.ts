@@ -23,3 +23,36 @@ export {
   type WaitForWorkflowOutcome,
   type WaitForWorkflowPayload,
 } from "./wait-for.ts"
+export {
+  RuntimeContextWorkflowNative,
+  RuntimeContextWorkflowNativeLayer,
+  RuntimeContextWorkflowSession,
+  runtimeInputDeferredFor,
+  runtimeInputDeferredName,
+  type RuntimeContextSessionCommand,
+  type RuntimeContextSessionCommandAccepted,
+  type RuntimeContextSessionStartedEvidence,
+  type RuntimeContextWorkflowExecutionEnv,
+  type RuntimeContextWorkflowSessionService,
+} from "./runtime-context.ts"
+export {
+  RuntimeContextWorkflowPayload,
+  readRuntimeContext,
+  runtimeContextWorkflowExecutionId,
+  allocateRuntimeActivityAttempt,
+  failAfterWritingRunFailed,
+  RuntimeExitEvidence,
+  StartRuntimeResultSchema,
+  writeRunExitedResult,
+  writeRunFailedResult,
+  writeRunStarted,
+  type StartRuntimeResult,
+} from "./runtime-context-run.ts"
+export {
+  agentInputEventFromRuntimeIngressRow,
+} from "./runtime-ingress-transform.ts"
+export {
+  ToolCallWorkflow,
+  ToolCallWorkflowPayloadSchema,
+  type ToolCallWorkflowPayload,
+} from "./tool-call.ts"

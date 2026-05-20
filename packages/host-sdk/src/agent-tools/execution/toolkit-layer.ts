@@ -10,7 +10,6 @@
  */
 
 import { IdGenerator, Prompt } from "@effect/ai"
-import { Workflow } from "@effect/workflow"
 import type { WorkflowEngine } from "@effect/workflow"
 import type * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
 import {
@@ -21,8 +20,8 @@ import {
   RuntimeAgentToolExecutionLive,
   type HostRuntimeContextExecutionEnv,
 } from "../../host/runtime-substrate.ts"
-import { ToolResultEventSchema } from "@firegrid/runtime/events"
-import { type Context, Effect, Layer, Schema } from "effect"
+import { ToolCallWorkflow } from "@firegrid/runtime/workflows"
+import { type Context, Effect, Layer } from "effect"
 import type { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
 import { toolExecutionFailed } from "../bindings/tool-error.ts"
 import {
@@ -39,29 +38,7 @@ import type { ChannelInventory } from "../../host/channel.ts"
 
 const TOOL_USE_ID_PREFIX = "mcp"
 
-// ---------------------------------------------------------------------------
-// Tool-call workflow — required only so `toolUseToEffect` runs inside a
-// `WorkflowEngine.WorkflowInstance`
-// ---------------------------------------------------------------------------
-//
-// `@effect/workflow`'s `DurableClock.sleep` (and therefore the `sleep` arm,
-// `WaitFor.match`, and any child workflow execution in `toolUseToEffect`)
-// requires the `WorkflowInstance` service in its `R` channel, and
-// `WorkflowInstance` is only produced inside a registered workflow body
-// (`Workflow.toLayer(...)`). This ephemeral per-call workflow exists
-// solely to satisfy that requirement.
-
-export const ToolCallWorkflow = Workflow.make({
-  name: "firegrid.agent-tool-call",
-  payload: Schema.Struct({
-    contextId: Schema.String,
-    toolUseId: Schema.String,
-    toolName: Schema.String,
-    input: Schema.Unknown,
-  }),
-  success: ToolResultEventSchema,
-  idempotencyKey: ({ toolUseId }) => toolUseId,
-})
+export { ToolCallWorkflow } from "@firegrid/runtime/workflows"
 
 export const ToolCallWorkflowLayer = ToolCallWorkflow.toLayer(
   ({ contextId, toolUseId, toolName, input }) =>
