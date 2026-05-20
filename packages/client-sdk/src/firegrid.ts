@@ -61,7 +61,7 @@ import {
   type SessionPermissionRespondInput,
 } from "@firegrid/protocol/session-facade"
 import type { DurableTableHeaders } from "@firegrid/protocol"
-import { Clock, Context, Data, Duration, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Clock, Context, Data, Duration, Effect, Layer, Option, Ref, Schema, Stream } from "effect"
 import { projectionWait } from "./internal/projection-wait.ts"
 import { FiregridClientOperations } from "./operations.ts"
 
@@ -787,65 +787,93 @@ const make = (config: ResolvedConfig) =>
 
     const makeSessionHandle = (
       sessionId: FiregridSessionId,
-    ): FiregridSessionHandle => ({
-      // firegrid-session-fact-client-surfaces.SESSION_IDENTITY.1
-      // firegrid-session-fact-client-surfaces.CLIENT_SESSION.4
-      sessionId,
-      contextId: sessionId,
-      // firegrid-session-fact-client-surfaces.CLIENT_SESSION.6
-      whenReady: withClientSpan("firegrid.client.session.when_ready", {
-        "firegrid.session.id": sessionId,
-        "firegrid.context.id": sessionId,
-        "firegrid.wait.bucket": "projection",
-      }, waitUntilContextReady(sessionId)),
-      prompt: request =>
-        withClientSpan("firegrid.client.session.prompt", {
-          "firegrid.session.id": sessionId,
-        }, Effect.gen(function* () {
-          const decoded = yield* decodeSessionHandlePromptInput(request)
-          yield* Effect.annotateCurrentSpan({
-            "firegrid.context.id": sessionId,
-            "firegrid.input.idempotency_key": decoded.idempotencyKey ?? "",
-          })
-          return yield* appendRuntimeInputIntent({
-            contextId: sessionId,
-            kind: "message",
-            authoredBy: "client",
-            payload: decoded.payload,
-            idempotencyKey: decoded.idempotencyKey,
-            ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
-          })
-        })),
-      start: () =>
-        withClientSpan("firegrid.client.session.start", {
-          "firegrid.session.id": sessionId,
-          "firegrid.context.id": sessionId,
-        }, appendRuntimeStartRequest(sessionId)),
-      snapshot: () => readSnapshot(sessionId),
-      wait: {
-        forAgentOutput: request =>
+    ): Effect.Effect<FiregridSessionHandle> =>
+      Effect.gen(function* () {
+        // Per-session-handle tracking of the last agent-output sequence
+        // observed by wait.forAgentOutput. Defaultizes afterSequence so a
+        // driver loop ("give me the next agent output") actually waits
+        // instead of immediately re-matching the first observation. An
+        // explicit request.afterSequence still overrides the tracked value
+        // so callers can rewind/replay. Mirrors the structural readiness
+        // pattern of whenReady (PR #435).
+        const lastAgentOutputSequence = yield* Ref.make<number | undefined>(undefined)
+        const forAgentOutput = (
+          request?: SessionAgentOutputWaitInput,
+        ): Effect.Effect<
+          SessionAgentOutputWaitOutput,
+          LaunchInputError | PreloadError
+        > =>
           withClientSpan("firegrid.client.session.wait.for_agent_output", {
             "firegrid.session.id": sessionId,
             "firegrid.context.id": sessionId,
             "firegrid.wait.bucket": "projection",
-          }, waitForAgentOutput(sessionId, request)),
-        forPermissionRequest: request =>
-          withClientSpan("firegrid.client.session.wait.for_permission_request", {
+          }, Effect.gen(function* () {
+            const tracked = yield* Ref.get(lastAgentOutputSequence)
+            const effective: SessionAgentOutputWaitInput | undefined =
+              request?.afterSequence !== undefined || tracked === undefined
+                ? request
+                : { ...request, afterSequence: tracked }
+            const result = yield* waitForAgentOutput(sessionId, effective)
+            if (result.matched) {
+              yield* Ref.set(lastAgentOutputSequence, result.output.sequence)
+            }
+            return result
+          }))
+        return {
+          // firegrid-session-fact-client-surfaces.SESSION_IDENTITY.1
+          // firegrid-session-fact-client-surfaces.CLIENT_SESSION.4
+          sessionId,
+          contextId: sessionId,
+          // firegrid-session-fact-client-surfaces.CLIENT_SESSION.6
+          whenReady: withClientSpan("firegrid.client.session.when_ready", {
             "firegrid.session.id": sessionId,
             "firegrid.context.id": sessionId,
             "firegrid.wait.bucket": "projection",
-          }, waitForPermissionRequest(sessionId, request)),
-      },
-      permissions: {
-        respond: request =>
-          Effect.gen(function* () {
-            const decoded = yield* decodeSessionPermissionRespondInput(request)
-            return yield* appendDecodedPermissionResponseIntent(
-              permissionResponseInput(sessionId, decoded),
-            )
-          }),
-      },
-    })
+          }, waitUntilContextReady(sessionId)),
+          prompt: request =>
+            withClientSpan("firegrid.client.session.prompt", {
+              "firegrid.session.id": sessionId,
+            }, Effect.gen(function* () {
+              const decoded = yield* decodeSessionHandlePromptInput(request)
+              yield* Effect.annotateCurrentSpan({
+                "firegrid.context.id": sessionId,
+                "firegrid.input.idempotency_key": decoded.idempotencyKey ?? "",
+              })
+              return yield* appendRuntimeInputIntent({
+                contextId: sessionId,
+                kind: "message",
+                authoredBy: "client",
+                payload: decoded.payload,
+                idempotencyKey: decoded.idempotencyKey,
+                ...(decoded.metadata === undefined ? {} : { metadata: decoded.metadata }),
+              })
+            })),
+          start: () =>
+            withClientSpan("firegrid.client.session.start", {
+              "firegrid.session.id": sessionId,
+              "firegrid.context.id": sessionId,
+            }, appendRuntimeStartRequest(sessionId)),
+          snapshot: () => readSnapshot(sessionId),
+          wait: {
+            forAgentOutput,
+            forPermissionRequest: request =>
+              withClientSpan("firegrid.client.session.wait.for_permission_request", {
+                "firegrid.session.id": sessionId,
+                "firegrid.context.id": sessionId,
+                "firegrid.wait.bucket": "projection",
+              }, waitForPermissionRequest(sessionId, request)),
+          },
+          permissions: {
+            respond: request =>
+              Effect.gen(function* () {
+                const decoded = yield* decodeSessionPermissionRespondInput(request)
+                return yield* appendDecodedPermissionResponseIntent(
+                  permissionResponseInput(sessionId, decoded),
+                )
+              }),
+          },
+        }
+      })
 
     const createOrLoadSession = (
       request: SessionCreateOrLoadInput,
@@ -867,7 +895,7 @@ const make = (config: ResolvedConfig) =>
           "firegrid.runtime_context_mcp.enabled": runtime.config.runtimeContextMcp?.enabled === true,
         })
         yield* createContextRequest(contextId, runtime, decoded.createdBy)
-        return makeSessionHandle(contextId)
+        return yield* makeSessionHandle(contextId)
       }))
 
     const attachSession = (
@@ -875,7 +903,7 @@ const make = (config: ResolvedConfig) =>
     ): Effect.Effect<FiregridSessionHandle, LaunchInputError> =>
       // firegrid-session-fact-client-surfaces.CLIENT_SESSION.1
       // firegrid-session-fact-client-surfaces.SESSION_IDENTITY.3
-      Effect.map(decodeSessionAttachInput(request), decoded =>
+      Effect.flatMap(decodeSessionAttachInput(request), decoded =>
         makeSessionHandle(decoded.sessionId))
 
     return Firegrid.of({
