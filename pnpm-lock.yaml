@@ -449,6 +449,12 @@ importers:
       '@firegrid/host-sdk':
         specifier: workspace:*
         version: link:../host-sdk
+      '@firegrid/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@firegrid/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@opentelemetry/sdk-trace-base':
         specifier: ^2.7.1
         version: 2.7.1(@opentelemetry/api@1.9.1)

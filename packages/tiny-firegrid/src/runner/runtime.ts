@@ -2,7 +2,18 @@ import {
   FiregridConfig,
   FiregridStandaloneLive,
 } from "@firegrid/client-sdk/firegrid"
-import { Console, Config, Data, Duration, Effect, Layer, Option } from "effect"
+import {
+  Console,
+  Config,
+  Deferred,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Option,
+  Ref,
+} from "effect"
 // Accepted bin-only local simulation escape hatch.
 // eslint-disable-next-line no-restricted-imports
 import { DurableStreamTestServer } from "@durable-streams/server"
@@ -26,9 +37,28 @@ const DurableStreamsBaseUrlConfig = Config.string("DURABLE_STREAMS_BASE_URL").pi
   Config.option,
 )
 
-class SimulationTimeout extends Data.TaggedClass("SimulationTimeout")<{
-  readonly ms: number
-}> {}
+type SimulationOutcome =
+  | { readonly _tag: "DriverCompleted" }
+  | { readonly _tag: "StopSignaled" }
+  | { readonly _tag: "TimedOut" }
+
+const SimulationOutcome = {
+  DriverCompleted: (): SimulationOutcome => ({ _tag: "DriverCompleted" }),
+  StopSignaled: (): SimulationOutcome => ({ _tag: "StopSignaled" }),
+  TimedOut: (): SimulationOutcome => ({ _tag: "TimedOut" }),
+}
+
+interface LatestPointerWriteFailed {
+  readonly _tag: "LatestPointerWriteFailed"
+  readonly cause: unknown
+}
+
+const latestPointerWriteFailed = (
+  cause: unknown,
+): LatestPointerWriteFailed => ({
+  _tag: "LatestPointerWriteFailed",
+  cause,
+})
 
 const durableStreamsBaseUrl = Effect.gen(function*() {
   const configured = yield* DurableStreamsBaseUrlConfig
@@ -99,15 +129,26 @@ const maybeWriteLatest = (
   runDir: string,
   tracePath: string,
 ) =>
-  Effect.promise(async () => {
-    const size = await stat(tracePath).then(s => s.size, () => 0)
-    if (size === 0) return
-    await writeFile(
-      latestPath,
-      JSON.stringify({ runId, simulationId, runDir }, null, 2) + "\n",
-      "utf8",
-    )
-  })
+  Effect.tryPromise({
+    try: async () => {
+      const size = await stat(tracePath).then(s => s.size, () => 0)
+      if (size === 0) return false
+      await writeFile(
+        latestPath,
+        JSON.stringify({ runId, simulationId, runDir }, null, 2) + "\n",
+        "utf8",
+      )
+      return true
+    },
+    catch: latestPointerWriteFailed,
+  }).pipe(
+    Effect.tap(written =>
+      written
+        ? Effect.logDebug("latest pointer updated")
+        : Effect.void,
+    ),
+    Effect.asVoid,
+  )
 
 export const runSimulation = (
   simulation: TinyFiregridSimulation<unknown>,
@@ -130,6 +171,8 @@ export const runSimulation = (
       durableStreamsBaseUrl: baseUrl,
       destination,
     })
+    const stopSignal = yield* Deferred.make<void>()
+    const sigintCount = yield* Ref.make(0)
 
     yield* Console.log(`run: ${runId}`)
     yield* Console.log(`dir: ${runDir}`)
@@ -153,28 +196,79 @@ export const runSimulation = (
         namespace,
         durableStreamsBaseUrl: baseUrl,
         processEnv: globalThis.process.env,
+        stopSignal: {
+          complete: Deferred.complete(stopSignal, Effect.void).pipe(
+            Effect.asVoid,
+          ),
+        },
       }
+
+      const onSigint = Ref.updateAndGet(sigintCount, n => n + 1).pipe(
+        Effect.flatMap(count =>
+          count === 1
+            ? Deferred.complete(stopSignal, Effect.void).pipe(Effect.asVoid)
+            : Effect.sync(() => globalThis.process.exit(130)),
+        ),
+      )
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          const handler = () => {
+            Effect.runFork(onSigint)
+          }
+          globalThis.process.on("SIGINT", handler)
+          return handler
+        }),
+        handler => Effect.sync(() => {
+          globalThis.process.off("SIGINT", handler)
+        }),
+      )
 
       yield* Layer.launch(simulation.host(hostEnv)).pipe(
         annotateSide("host"),
         Effect.forkScoped,
       )
 
-      yield* simulation.driver.pipe(
+      const driver = simulation.driver.pipe(
         Effect.provide(firegridClientLayer(baseUrl, namespace)),
         annotateSide("driver"),
-        Effect.timeoutFail({
+      )
+      const outcome = yield* Effect.raceWith(
+        driver,
+        Deferred.await(stopSignal),
+        {
+          onSelfDone: (exit, stopFiber) =>
+            Fiber.interrupt(stopFiber).pipe(
+              Effect.zipRight(
+                Exit.matchEffect(exit, {
+                  onFailure: cause => Effect.failCause(cause),
+                  onSuccess: () =>
+                    Effect.succeed(SimulationOutcome.DriverCompleted()),
+                }),
+              ),
+            ),
+          onOtherDone: (_exit, driverFiber) =>
+            Fiber.interrupt(driverFiber).pipe(
+              Effect.as(SimulationOutcome.StopSignaled()),
+            ),
+        },
+      ).pipe(
+        Effect.timeoutTo({
           duration: Duration.millis(options.timeoutMs),
-          onTimeout: () => new SimulationTimeout({ ms: options.timeoutMs }),
+          onTimeout: SimulationOutcome.TimedOut,
+          onSuccess: outcome => outcome,
         }),
       )
 
-      yield* Effect.logInfo("simulation completed").pipe(
+      yield* Effect.annotateCurrentSpan({
+        "firegrid.simulation.outcome": outcome._tag,
+      })
+      yield* Effect.logInfo("simulation stopped").pipe(
         Effect.annotateLogs({
           runId,
           simulationId: simulation.id,
           namespace,
           baseUrl,
+          outcome: outcome._tag,
         }),
       )
     }).pipe(

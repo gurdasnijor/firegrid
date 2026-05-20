@@ -85,6 +85,23 @@ not verified ground-truth.
   inherits the dimension. This lets you filter "everything the host did under
   this driver call" with one attribute predicate.
 
+## Stopping a simulation
+
+Stop is an external signal, not an in-driver predicate. Drivers should drive
+the public client surface and then keep waiting for output; they should not
+branch on `TextChunk` markers, `ToolUse` names, terminal strings, or success
+conditions to decide when the run is done.
+
+The runner provides `env.stopSignal.complete` to the host callback. When a
+simulation needs early stop on demonstrated success, fork a named observer
+fiber from the host layer scope. That observer may consume host-scoped
+substrate signals such as per-context runtime-output rows, then yield
+`env.stopSignal.complete` when its predicate fires. The driver remains a pure
+poll loop with `Effect.Effect<void, _, Firegrid>`.
+
+This keeps the stop decision in a separately named structural fiber where the
+trace can show it, instead of hiding it inside client-driver control flow.
+
 ## What does not go in this package
 
 - Production observability fixes (template-izing host-sdk span names, adding

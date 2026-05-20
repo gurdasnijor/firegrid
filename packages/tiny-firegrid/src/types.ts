@@ -6,12 +6,17 @@ import type {
 } from "@firegrid/host-sdk"
 import type { Effect, Layer } from "effect"
 
+export interface TinyFiregridStopSignal {
+  readonly complete: Effect.Effect<void>
+}
+
 export interface TinyFiregridHostEnv {
   readonly simulationId: string
   readonly runId: string
   readonly namespace: string
   readonly durableStreamsBaseUrl: string
   readonly processEnv: NodeJS.ProcessEnv
+  readonly stopSignal: TinyFiregridStopSignal
 }
 
 export interface TinyFiregridSimulation<A, E = unknown> {
