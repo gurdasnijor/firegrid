@@ -1,8 +1,13 @@
-# Coordinator Handoff — §6 Dark-Factory (NOT DONE)
+# Coordinator Handoff — §6 Dark-Factory (§6 LIVE)
 
 > Read this top to bottom before doing anything. The previous coordinator
 > over-declared victory; the autonomous factory **does not run yet**. Your job
 > is to finish it. The substrate is done; the agent-invocation path is not.
+>
+> **2026-05-20 update:** superseded by §10 arc closure. The historical record
+> below is intentionally preserved; where it says "not done" or frames §9g as
+> load-bearing, read it as pre-closure context unless the newer sections say
+> otherwise.
 
 ---
 
@@ -31,11 +36,21 @@ is the bug, not the finding.
 
 ---
 
-## 0. STATUS: NOT DONE — the honest failure
+## 0. STATUS: §6 LIVE — arc closed 2026-05-20
 
-**The north star (factory-vision §6) has never executed live.** Every live
+**Superseded by §10 arc closure — see 2026-05-20.** The factory ran live
+against real `@agentclientprotocol/claude-agent-acp@0.36.1` planner traffic in
+PR #446 (`tf-v7t`, PR head `36fbc8d2`). OA's live verification observed 3,176
+`agent-tools` side spans, 7 server-side `McpServer.tools/call` executions, and
+149 durable waits registered and matched (`wait_for.upsert_active` / `wait_for.match`).
+The 4-minute run stopped because dark-factory only seeded the initial trigger
+fact; subsequent step-fact seeders are tracked separately by `tf-t2a5`.
+
+Historical pre-closure record follows:
+
+**The north star (factory-vision §6) had never executed live.** Every live
 dark-factory run produced `s6FullLoopProven=false`, **0/6 required steps**. A
-real planner agent has *never once* driven the ticket→clarify→plan→
+real planner agent had *never once* driven the ticket→clarify→plan→
 human-approval→delegate→review→revision→merge-signoff→durable-CI-watch→merge→
 clean-unwind loop through Firegrid tools.
 
@@ -172,6 +187,38 @@ that it did nothing.
 This is the **third instance of the same root failure** (see §8): a confident
 conclusion asserted on top of unverified inference, with the instrumentation
 that would settle it sitting in the very file being edited.
+
+---
+
+## 0c. THE PERMISSION-GATE REVELATION — the actual Layer-4 GAP
+
+The 2026-05-19 "Layer 4 GAP" was not a missing Firegrid wait primitive and not
+a terminal ACP inability to call tools. It was the policy boundary:
+`claude-agent-acp@0.36.1` gates every MCP tool invocation through its
+`canUseTool` callback and ACP `session/request_permission`.
+
+Source-verified path:
+
+- `@agentclientprotocol/claude-agent-acp@0.36.1/dist/acp-agent.js:1008-1118`
+  defines `canUseTool(sessionId)` and calls `this.client.requestPermission(...)`
+  for normal tool use.
+- `acp-agent.js:1393` passes `canUseTool: this.canUseTool(sessionId)` into the
+  Claude Agent SDK query options.
+- Firegrid's ACP codec forwards that request as a `PermissionRequest`
+  observation and waits for a driver decision
+  (`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts:480-493`).
+
+That makes the **driver** the policy authority. Dark-factory's driver had no
+permission handler, so the planner did invoke the Firegrid MCP tool but then
+waited indefinitely for permission. PR #446 (`tf-v7t`, open PR head
+`36fbc8d2`) adds the missing loop: fork `session.wait.forPermissionRequest`,
+thread `afterSequence`, and call `session.permissions.respond({ decision:
+{ _tag: "Allow" } })` before the agent starts. In that closed-harness sim, the
+permission policy is intentionally "allow Firegrid MCP tools" because the sim's
+purpose is to prove the §6 workflow path, not human authorization UX.
+
+This is the permission-gate revelation captured separately in
+`docs/research/tf-eup2-permission-gate-revelation.FINDING.md`.
 
 ---
 
@@ -717,22 +764,32 @@ grep -r 'alwaysLoad' /Users/gnijor/.npm/_npx/*/node_modules/@agentclientprotocol
 — ~5 seconds, zero hits, "terminal ACP" theory dead on the spot. That
 heuristic, applied consistently, is the meta-rule with teeth.
 
-### 9g. The codec→SDK instrumentation is the load-bearing deliverable — not a "different PR"
+### 9g. RESOLVED — see §10 arc closure
 
-A late-arc clarification from the PO that's important enough to record
-explicitly: the codec→Claude Agent SDK boundary span and the subprocess
-wire capture (handoff §0a "What the next agent must do" items 2 and 3)
-are **the work this whole exercise was supposed to produce**. The
-simulation runner restructure (the in-flight cleanup PR #426) is
-*supporting infrastructure* — hygiene around doing the work cleanly.
-It is **not a substitute** for the codec instrumentation; treating it
-as such (the way the prior coordinator did, framing the codec work as
-"a separate PR / different scope") is the same evasion pattern as the
-rest of this arc.
+§9g instrumentation lane was UNNECESSARY for §6 resolution; only cause #2
+remains and is an SDK gap out of our control.
 
-**Concretely for the next coordinator:** the codec/subprocess
-instrumentation should land as a **first-class deliverable**, not be
-deferred behind harness work. The runner restructure may land in
-parallel — but the answer to "why doesn't §6 run" comes from one keyed
-run with the codec+subprocess wire captured, not from a more elegant
-runner.
+---
+
+## 10. ARC CLOSURE — 2026-05-20
+
+The §6 arc closed through a source→measurement→fix sequence, not through a
+single final rewrite:
+
+| PR | Bead | Status / ref | Role in the arc |
+|---|---|---|---|
+| #441 | `tf-3ek` | merged `3108ad502f866e533d44106b40a54cf815ad0aa0` | 60-second-grep baseline: source-verified the codec→SDK assumptions and narrowed the candidate-cause matrix. |
+| #444 | `tf-s8y` | open spike, head `fd22e5b2ad854a13db8e8ed0e5377abcd16356a2` | Falsifiable `.mcp.json` spike: proved native project MCP registration produced real Firegrid tool calls. |
+| #446 | `tf-v7t` | open production PR, head `36fbc8d2eaf52e49c76a85d7a8804387af8ce9dc` | Production codec split (`.mcp.json` for MCP, `_meta` for tool policy) plus the dark-factory permission auto-approve handler. |
+| #447 | `tf-9ut` | merged `9f7d0cc95d2d2c8687c0910a0298861b2de13f70` | Empirical workflow-core-paths sim: separated candidate `complete_match` pressure from `wait.satisfied` completions and ruled out the stale orphan-parent baseline after #445. |
+| #448 | `tf-85bs` | merged `bc75af27403191cfc00f3770933e671d990b0256` | Hot-loop fix: auto-threaded `afterSequence` in session handle waits so repeated waits do not re-read the first observation forever. |
+
+Methodology summary: `tf-3ek` started with the cheap refutation pass
+(60-second grep/source read). `tf-s8y` converted the strongest remaining
+theory into a falsifiable spike. `tf-v7t` carried the spike result into the
+production codec shape and added the missing permission policy loop. `tf-9ut`
+then exercised related workflow-core wait paths empirically instead of
+promoting a trace-shape inference to a decision. `tf-85bs` closed the
+hot-loop discovered by those live runs. The remaining timeout in PR #446 is
+not "§6 cannot drive tools"; it is the app-domain fact-seeding gap tracked by
+`tf-t2a5`.
