@@ -14,7 +14,7 @@ const probeHost = "127.0.0.1"
 const probePath = "/mcp"
 export const probeToolName = "stdio_probe"
 export const probeResultMarker = "FIREGRID_STDIO_JSONL_PROBE_TOOL_CALLED"
-export const codecStdioJsonlProbePort = 41_000 + ((portSeed[0] ?? 0) % 18_000)
+const codecStdioJsonlProbePort = 41_000 + ((portSeed[0] ?? 0) % 18_000)
 export const codecStdioJsonlProbeUrl =
   `http://${probeHost}:${codecStdioJsonlProbePort}${probePath}`
 
