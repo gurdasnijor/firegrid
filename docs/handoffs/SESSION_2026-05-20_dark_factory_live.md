@@ -1,6 +1,8 @@
-# Session Handoff — 2026-05-20 — dark-factory ran §6 live, body-plan SDD drafted
+# Session Handoff — 2026-05-20 — §6 ran live; body-plan SDD; one-substrate SDD; sim-based de-risk dispatch
 
 This is a session-arc capture, not a coordinator-state handoff (the latter is `docs/handoffs/COORDINATOR_HANDOFF_s6_dark_factory.md`). The intent is to make tonight's process *legible* to a future session — what was tried, what worked, what didn't, and what patterns generalize. Read this BEFORE inheriting from the canonical coordinator handoff if you want the "how" alongside the "what."
+
+**The session arc swung architecturally further than the initial framing.** What started as "fix §6's tools/call=0" ended as: two cooperating SDDs (presentation layer + substrate layer), a 6-investigation tiny-firegrid dispatch validating ~2400-line deletion before touching production code, and an explicitly-named architectural pattern ("stream-native virtual object") that informs the SMI-1992 experimental design. Each turn unlocked the next.
 
 ## Where the session started
 
@@ -35,6 +37,34 @@ This is a session-arc capture, not a coordinator-state handoff (the latter is `d
 | 19 | Bead set for body-plan migration created with full dependency graph (tf-lawq Slice A → 6 channel beads + Slice D verbs; tf-o38e Slice B and tf-v1q2 Slice E independent) | beads tf-lawq, tf-o38e, tf-gnp1...tf-xl6k, tf-ynd4, tf-v1q2 |
 | 20 | Closed superseded beads (tf-zkwg substrate-leaky peek; tf-alca one-off discovery fix) per the structural reframing | bead closures with "DECIDED:" reasons |
 | 21 | Fixed semgrep `firegrid-no-date-now` finding (one finding on my changes; Date.now → randomUUID) | PR #446 commit 840f23a2f |
+| 22 | Gurdas flagged tech debt across `runtime-context-workflow-core.ts` + `internal/run-context-workflow.ts` + `internal/runtime-context-workflow-run.ts` + `runtime-context-workflow-support.ts` — "single workflow instance + single stream model removed the need for coordination gymnastics, but the CODE still carries the multi-deferred-multi-wait machinery from the pre-single-instance era" | inline reframe; second architectural pivot |
+| 23 | Drafted `SDD_FIREGRID_WORKFLOW_BODY_DEFERRED_INPUT_REWRITE` (skeleton) framing it as "design the engine-contract bridge for stream-blocked workflow bodies." This was the WRONG framing. | committed transiently; rm'd before push |
+| 24 | Gurdas reframed AGAIN: "no separate runtime — `durable-tools/` should just be executing on the workflow runtime. Divergence across durable runtimes is what's kept us mired in this complexity spiral." Pointed at `ClusterWorkflowEngine.ts` as the template + `DurableStreamsWorkflowEngine.test.ts` as the evidence. THIRD architectural pivot. | inline; load-bearing reframe |
+| 25 | Read `ClusterWorkflowEngine.ts` (660 lines) + `DurableStreamsWorkflowEngine.test.ts` (932 lines) + `durable-tools/` (~2500 lines). Verified the bridge layer's only function is to translate observation streams into engine `DurableDeferred` via a forked subscription fiber — duplicating what the engine already supports natively. | source-read |
+| 26 | Rewrote SDD as `SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md` — collapse `durable-tools/` (~2500 lines) onto the engine. Agent-tool `wait_for` becomes `engine.execute(WaitForWorkflow, ...)` whose body is `DurableDeferred.raceAll([Activity(Stream.runHead), DurableClock.sleep])`. Runtime-context body becomes `Stream.zipLatest + runForEach`. NO engine API changes. Net -2400 lines. | PR #446 |
+| 27 | Peer-review (from another agent) raised four pressure-tests: source-as-offset durability, raceAll losing-branch crash-coverage, nested-vs-inlined tradeoff, the "no WaitFor.match" claim doing real work. Engaged with each; lifted the META insight (stream-backed engine is the load-bearing enabler — not portable to ClusterWorkflowEngine) into the SDD. | SDD commits 573f7c64d, ad6910d4c |
+| 28 | Gurdas flagged: "since DurableStreamsWorkflowEngine is ours, we have free reign to rethink `Activity.ts` semantics." Named α (streamed) / β (subscribed) / γ (folded) Activity shapes as a deliberately-deferred future SDD; current SDD lands on existing engine surface unchanged. | SDD commit ad6910d4c |
+| 29 | Gurdas connected the per-context workflow to Restate's Virtual Object pattern: same identity + single-writer-per-key, stream-as-state instead of K/V. Named the pattern **stream-native virtual object** in the SDD; two-ledger-vs-one is what makes the stream-fold body work as substrate-of-truth. | SDD commit 129f2c0aa |
+| 30 | Updated PR #446 title + body to be docs-headlined. The codec change is now framed as empirical evidence motivating the SDDs, not the headline. | gh pr edit 446 |
+| 31 | Gurdas surfaced the de-risk opportunity: tiny-firegrid is the substrate where engineers can compose Firegrid from any pieces, drive it against real claude-agent-acp, capture data — WITHOUT touching production code or rewriting tests. Cost-asymmetric pattern that matches what worked tonight (tf-s8y spike before tf-v7t production). | inline reframe |
+| 32 | Drafted + dispatched 6-investigation coordinator dispatch: INV-1 stream-zip body; INV-2 WaitForWorkflow nested execution; INV-3 restart-replay durability; INV-4 channel registry + opaque ChannelTarget; INV-5 cross-agent event(name) choreography; INV-6 Activity α/β/γ ergonomic comparison. Each is a self-contained sim under `packages/tiny-firegrid/src/simulations/<inv-name>/` with FINDING artifact. Wave-1 parallel: INV-1+2+4. | cmux-dispatch to coordinator |
+
+## The architectural-trajectory pattern (worth naming)
+
+The session walked through **five distinct architectural simplifications**, each unlocked by the previous:
+
+1. **Native MCP path** (tf-s8y → tf-v7t): kill the codec `_meta` MCP injection. Use `.mcp.json` per the documented user-facing path.
+2. **Channels-as-nervous-system** (body-plan SDD): don't leak substrate verbs to the agent surface. Channels = typed afferent/efferent pathways; verbs operate over channels.
+3. **Stream-native runtime-context body** (one-substrate SDD left branch): collapse the body's coordination machinery — `Stream.zipLatest(inputs, outputs).runForEach(handle)`. No per-row deferreds. No `WaitFor.match`. No wait-router.
+4. **One-substrate workflow engine** (one-substrate SDD right branch): collapse `durable-tools/` onto the engine. Agent-tool wait_for IS a workflow execution. No bridge layer.
+5. **Stream-native virtual object** (one-substrate SDD framing): name the pattern. Restate-shape VO identity + concurrency, with stream-as-state instead of K/V. Two-ledger reconciliation avoided structurally.
+
+Plus a process-level move:
+6. **Cost-asymmetric de-risking via tiny-firegrid sims** (the coordinator dispatch): validate the SDDs' architectural claims empirically against a real planner in sim BEFORE touching production code OR rewriting tests. The same pattern that worked tonight (spike before refactor) lifted to architectural scale.
+
+**Pattern observation**: each simplification was structurally forced by recognizing what we'd ALREADY paid for but hadn't COLLECTED. The substrate divergence (durable-tools/ + workflow-engine) was paid for the moment `DurableStreamsWorkflowEngine` shipped as a sibling to `ClusterWorkflowEngine`. The body-plan-richness-as-independent-variable was paid for the moment Firegrid adopted a channel-typed observation model. Each move was collection, not invention.
+
+**Future sessions**: when the user makes a reframing comment, treat it as "you've already paid for this; collect it." Don't defend the prior model.
 
 ## What I observe made it work — calibrated, not flattering
 
@@ -98,10 +128,35 @@ Several times Gurdas pushed back with high-leverage corrections:
 - "ok kinda works?" (calibrated me back to honest scoring)
 - "this is huge" (signal that I'd undersold)
 - "once we have that durable time foundation nailed down to less moving parts"
+- "im not convinced that we need our own runtime for this outside of what we get with the workflow engine either though"
+- "since we built DurableStreamsWorkflowEngine, we have free reign to even rethink the semantics of Activity.ts"
+- "we could actually start dispatching investigations to already happen against this architecture"
 
 Each of these was a vector correction. None were rejections of the work. The pattern: high autonomy on execution, surgical interventions on framing.
 
 Future sessions: when the user makes a framing comment, treat it as a higher-priority signal than your own current direction. They have context you don't.
+
+### 9. Peer-review integration without ego defense
+
+Mid-session, another agent peer-reviewed the architecture diagram and raised four pressure-test questions. Three had real answers I could give from source (source-as-offset principle, raceAll inheritance, nested-vs-inlined tradeoff); one needed acknowledgment as a known inherited concern (PR #315 crash-coverage state). The META observation in the peer review (stream-backed engine as the load-bearing enabler) was sharper than my SDD draft had named — and the right move was to LIFT it into the SDD rather than respond defensively.
+
+Future sessions: peer reviews land as load-bearing input regardless of source. If they make your draft more precise, amend the draft. If they refute it, walk back per the named-failure-mode rule.
+
+### 10. Cost-asymmetric de-risking via simulation
+
+The session's closing move was dispatching 6 tiny-firegrid investigations that empirically validate the SDDs' architectural claims BEFORE touching production code. Tonight's tactical work (tf-s8y spike → tf-v7t production) was the same pattern at small scale. The dispatch lifts it to architectural scale.
+
+The lesson: **when an SDD makes structural claims about substrate behavior, build a sim that falsifies them.** If the sim says GREEN, the production refactor becomes near-mechanical. If RED, you learned it for the cost of one sim, not multi-PR rework. The substrate is built for this exact purpose — tiny-firegrid is the de-risk substrate.
+
+Future sessions: when reaching for an SDD-driven implementation arc that touches production architecture, ask first: *can a tiny-firegrid sim falsify the structural claims independently?* If yes, that sim is the right opening move.
+
+### 11. Freedom-naming without freedom-using (when scope discipline matters)
+
+At one point in the session, Gurdas pointed out we own `DurableStreamsWorkflowEngine` and therefore have freedom to rethink Activity's semantics (α streamed / β subscribed / γ folded shapes). The temptation was to amend the SDD to USE that freedom. The correct move was to NAME the freedom in the SDD as a deliberately-deferred future SDD, keeping the current SDD's scope contained.
+
+Naming a freedom without using it is its own discipline. It tells future sessions: "this option exists, we know about it, here's why we're not taking it yet, here's what landing it would look like." That's different from omitting the option (which would be lying by omission) and different from taking the option (which would scope-creep the current work).
+
+Future sessions: when a user surfaces an architectural freedom mid-SDD, ask whether to USE it or just NAME it. The default should be name + defer unless the current SDD's acceptance criteria require taking it.
 
 ## What I did wrong and corrected
 
@@ -119,7 +174,9 @@ Honest list:
 
 6. **Date.now() in driver semgrep finding** — used `Date.now()` for the per-session cwd suffix. Should have used `randomUUID()` (or Clock if in Effect context). Caught by semgrep; fixed.
 
-These mistakes weren't load-bearing in retrospect because they were caught and corrected within the same session, but the pattern is: **catching a mistake on the SECOND look is normal; the discipline is doing a second look.**
+7. **Drafted `SDD_FIREGRID_WORKFLOW_BODY_DEFERRED_INPUT_REWRITE` with the wrong framing** — "design the engine-contract bridge for stream-blocked workflow bodies." Got committed transiently, then Gurdas reframed: the correct move was "delete the substrate divergence entirely; agent-tool wait_for IS a workflow execution." Walked back, rewrote as `SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md` per the named-failure-mode rule. The mistake didn't ship; it surfaced because I named "design a bridge" in chat first and Gurdas refuted that framing before I'd written the wrong-shaped implementation.
+
+These mistakes weren't load-bearing in retrospect because they were caught and corrected within the same session, but the pattern is: **catching a mistake on the SECOND look is normal; the discipline is doing a second look.** And: **drafting in chat first invites the user-correction loop that catches wrong-framings before they ossify into committed artifacts.**
 
 ## Patterns to repeat next session
 
@@ -149,7 +206,7 @@ PRs touched / opened:
 - **PR #438** — tf-ewo runner heartbeat refactor. MERGED.
 - **PR #441** — tf-3ek codec→SDK source-verified baseline FINDING. Draft.
 - **PR #444** — tf-s8y native `.mcp.json` spike. Draft (verdict-bearing, intentionally not landing).
-- **PR #446** — tf-v7t codec rationalization + driver permission auto-approver + tf-h1gm FINDING + SDD_FIREGRID_AGENT_BODY_PLAN + this handoff doc. **Tonight's landing unit.**
+- **PR #446** — Tonight's landing unit. Headline retitled to "§6 dark-factory ran live + architecture SDDs (one-substrate workflow engine, agent body plan, stream-native VO)." Carries codec rationalization + driver permission auto-approver + tf-h1gm FINDING + body-plan SDD + one-substrate SDD + this handoff doc.
 
 Beads opened:
 
@@ -159,7 +216,9 @@ Beads opened:
 - `tf-h1gm` — FINDING capture (PR #446 docs/research/)
 - `tf-zkwg` — substrate-leaky peek (CLOSED as superseded)
 - `tf-alca` — one-off discovery fix (CLOSED as superseded)
-- `tf-lawq` — Slice A: ChannelRegistry + opaque ChannelTarget. P1. Gated on tf-qoyg.
+- `tf-qoyg` — Shape A narrow halt (CLOSED via path (C) WIDEN — superseded by one-substrate SDD)
+- `tf-auuv` — **P0: Implement SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE** (6-PR sequencing). Replaces the earlier "deferred-input rewrite" framing.
+- `tf-lawq` — Slice A: ChannelRegistry + opaque ChannelTarget. P1. Now gated on tf-auuv (was tf-qoyg).
 - `tf-o38e` — Slice B: lift empty-predicate gate. P1. Independent.
 - `tf-gnp1` — Slice C.1: session.self.* interoception. P1. Gated on Slice A.
 - `tf-fmwg` — Slice C.2: event(name). P1. Gated on Slice A.
@@ -170,21 +229,48 @@ Beads opened:
 - `tf-ynd4` — Slice D: send/call/wait_for_any verbs. P1. Gated on Slice A.
 - `tf-v1q2` — Slice E: canonical record names. P2. Independent.
 
-Docs:
+Docs (all on PR #446):
 
-- `docs/research/tf-h1gm-dark-factory-honest-halt.FINDING.md` — full agent reasoning trail + diagnosis
-- `docs/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md` — body-plan presentation-layer architecture
+- `docs/research/tf-h1gm-dark-factory-honest-halt.FINDING.md` — full agent reasoning trail + diagnosis; 2026-05-19 cause-#5 "streaming parse race" diagnosis FORMALLY REFUTED (mechanism was the permission gate)
+- `docs/sdds/SDD_FIREGRID_AGENT_BODY_PLAN.md` (~370 lines, with substrate-prereq amendments referencing the one-substrate SDD) — body-plan presentation-layer architecture; channels-as-nervous-system reframing; 9-verb fixed inventory + N-channel inventory with direction-enforced types
+- `docs/sdds/SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md` (~270 lines, with 4 peer-review amendments + Activity-rethink-deferred amendment + stream-native-VO framing) — substrate-layer architecture; collapse durable-tools/ onto the workflow engine; net -2400 lines target
 - `docs/handoffs/SESSION_2026-05-20_dark_factory_live.md` — this doc
+
+Coordinator dispatches:
+
+- DARK_FACTORY_FINDING outcome + 5-cause matrix updated (3 settled by source, 1 empirically resolved by tf-s8y, 1 refuted by tonight's trace).
+- §9g instrumentation lane recommended CLOSED without opening.
+- P0 status dispatch with comprehensive arc summary.
+- tf-v7t verdict + follow-up bead structure.
+- (C) WIDEN decision on tf-qoyg with SDD pointer.
+- **6-investigation de-risk dispatch** — INV-1 stream-zip body / INV-2 WaitForWorkflow nested / INV-3 restart-replay / INV-4 channel registry / INV-5 cross-agent event(name) / INV-6 Activity α/β/γ. Wave-1 parallel: INV-1+2+4 (~1.5-2 days wallclock with 3 lanes).
+
+Memory entries (loaded in future sessions via MEMORY.md):
+
+- `project_session_2026-05-20_dark_factory_live` — session project state
+- `feedback_60_sec_grep_before_instrumentation` — read pinned source before reaching for spans
+- `feedback_dont_leak_substrate_to_agent_surface` — channel-typed addressing; substrate verbs at the agent surface are an antipattern
+- `feedback_calibrated_progress_reporting` — distinguish wire-mentions from completed calls; treat user "kinda works?" as re-look signal
+- `feedback_walkback_names_the_old_models_failure_mode` — when a reframe makes your prior proposal wrong, name what was wrong before substituting
 
 ## How to resume from here
 
 If you're a future session inheriting this state:
 
-1. **Status check first.** `gh pr view 446 --json state` — if it's merged, the codec rationalization + permission auto-approver are on main. If it's still open, the SDD lives on the branch only.
-2. **Check tf-qoyg.** Lane 1's Shape A narrow is the substrate prerequisite for body-plan Slice A. If it's merged, Slice A (tf-lawq) is unblocked.
-3. **Tonight-independent work first.** tf-o38e (lift empty-predicate gate) and tf-v1q2 (canonical record names) don't depend on tf-qoyg. Either is a small, satisfying first move.
-4. **Read tf-h1gm FINDING before doing any §6 work.** It captures what the agent diagnosed and what mechanism actually unblocked §6 (the permission gate, NOT the streaming JSON parse race the 2026-05-19 investigation hypothesized).
-5. **Read `SDD_FIREGRID_AGENT_BODY_PLAN` substrate-prerequisites section before any Slice A work.** It explicitly distinguishes static-source-inline from dynamic-source-predicate-eligible; the channel registry needs to encode this split.
-6. **§9g instrumentation lane is closed without opening.** Recommended in tf-h1gm. Don't re-open without contradicting evidence.
+1. **Status check first.** `gh pr view 446 --json state` — if it's merged, the codec rationalization + permission auto-approver are on main, AND the SDDs are on main. If it's still open, both artifacts live on the branch only.
+2. **Read SDDs in this order**: (a) `SDD_FIREGRID_ONE_SUBSTRATE_WORKFLOW_ENGINE.md` first — substrate layer, defines the workflow-engine-as-One-Substrate premise + the stream-native VO framing. (b) `SDD_FIREGRID_AGENT_BODY_PLAN.md` second — presentation layer, sits on top.
+3. **Check the 6 sim investigations.** Coordinator dispatched on the architectural-de-risk plan. If those have started + delivered FINDINGs, you have empirical confirmation of the SDDs' structural claims. If they haven't, that's the first work to drive — `br ready` should show them as P1 beads in flight.
+4. **Tonight-independent work that's safe to land in parallel with the sims**: `tf-o38e` (lift empty-predicate gate, single-line schema change) and `tf-v1q2` (canonical record-pair emit, additive). Either is a small, satisfying first move that doesn't depend on the substrate collapse or the sim findings.
+5. **`tf-auuv` is the substrate-collapse implementation bead** — P0, 6 PRs sequenced per the SDD. Don't start the production work until the sim investigations come back GREEN. tf-auuv blocks `tf-lawq` (Slice A) which blocks the rest of the body-plan migration.
+6. **Read `tf-h1gm` FINDING before doing any §6 work.** It captures what the agent diagnosed and what mechanism actually unblocked §6 (the permission gate, NOT the streaming JSON parse race the 2026-05-19 investigation hypothesized).
+7. **§9g instrumentation lane is closed without opening.** Recommended in tf-h1gm + the coordinator dispatch. Don't re-open without contradicting evidence.
+8. **Lane 1's tf-qoyg work is closed via (C) WIDEN** — the path was reshaped into the broader one-substrate collapse. The empirical findings from tf-qoyg's prototype (in-sim AgentOutputAfter spans go 127→0, Fiber.join hangs on stream-blocked workflow body) ARE the evidence the one-substrate SDD operates against. Don't restart tf-qoyg; do read its halt doc as one of the SDD's design inputs.
 
-The factory is no longer a black box; it's a substrate with a thin presentation-layer reframe pending. The path from here is structural, not exploratory.
+The factory is no longer a black box. The substrate is named (stream-native VOs). The presentation layer is designed (channels). The implementation sequencing is known (6-PR collapse, then body-plan migration). The architectural risk is being de-risked in sim BEFORE any production refactor. The path from here is structural execution, not architectural exploration.
+
+The next session's leverage move, in priority order:
+
+1. **Drive INV-1+2+4 (Wave 1 of the coordinator dispatch) to FINDING completion.** Empirical confirmation that the SDD claims hold. ~1.5-2 days wallclock with 3 lanes; cost of being wrong drops by orders of magnitude.
+2. **Land Step 1 of the SDD's implementation sequencing** (`waitUntilWorkflowStarted` test helper promotion) — pre-collapse-no-op behavior change that makes Steps 2-5 safer. ~50 lines.
+3. **Drive INV-3+5 (Wave 2)** — restart-replay durability + cross-agent event(name) choreography. Both surface evidence for the SDDs AND inform SMI-1992's experimental writeup.
+4. **Substrate-collapse PRs land in their sequenced order** once Wave 1 findings are GREEN.
