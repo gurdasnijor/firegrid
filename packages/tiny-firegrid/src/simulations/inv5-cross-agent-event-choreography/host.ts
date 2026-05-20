@@ -52,7 +52,6 @@ import {
 } from "effect-durable-operators"
 // durable-lint-allow-control-plane: sim-local HTTP MCP listener factory
 import { createServer } from "node:http"
-import { randomUUID } from "node:crypto"
 import type { TinyFiregridHostEnv } from "../../types.ts"
 
 // ---------------------------------------------------------------------------
@@ -155,7 +154,7 @@ const inv5EmitToolkitHandlerLayer = Inv5EmitToolkit.toLayer(
   Effect.map(Inv5EventTable, (table) => ({
     emit_event: (input: Schema.Schema.Type<typeof Inv5EmitInputSchema>) =>
       Effect.gen(function* () {
-        const eventId = `inv5:${input.name}:${randomUUID()}`
+        const eventId = `inv5:${input.name}:${crypto.randomUUID()}`
         const emittedAt = new Date().toISOString()
         yield* table.events.insertOrGet({
           eventId,
