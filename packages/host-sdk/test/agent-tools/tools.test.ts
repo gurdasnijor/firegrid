@@ -132,12 +132,14 @@ describe("FiregridAgentToolkit", () => {
         "call",
         "execute",
         "schedule_me",
+        "send",
         "session_cancel",
         "session_close",
         "session_new",
         "session_prompt",
         "sleep",
         "wait_for",
+        "wait_for_any",
       ],
     )
   })
@@ -174,6 +176,7 @@ describe("FiregridAgentToolkit", () => {
     const projections = [
       ["sleep", FiregridAgentToolkit.tools.sleep, FiregridAgentToolOperations.sleep],
       ["wait_for", FiregridAgentToolkit.tools.wait_for, FiregridAgentToolOperations.waitFor],
+      ["send", FiregridAgentToolkit.tools.send, FiregridAgentToolOperations.send],
       ["session_new", FiregridAgentToolkit.tools.session_new, FiregridAgentToolOperations.sessionCreate],
       ["session_prompt", FiregridAgentToolkit.tools.session_prompt, FiregridAgentToolOperations.sessionPrompt],
       ["session_cancel", FiregridAgentToolkit.tools.session_cancel, FiregridAgentToolOperations.sessionCancel],
@@ -181,6 +184,7 @@ describe("FiregridAgentToolkit", () => {
       ["schedule_me", FiregridAgentToolkit.tools.schedule_me, FiregridAgentToolOperations.scheduleMe],
       ["execute", FiregridAgentToolkit.tools.execute, FiregridAgentToolOperations.execute],
       ["call", FiregridAgentToolkit.tools.call, FiregridAgentToolOperations.call],
+      ["wait_for_any", FiregridAgentToolkit.tools.wait_for_any, FiregridAgentToolOperations.waitForAny],
     ] as const
 
     for (const [name, tool, operation] of projections) {

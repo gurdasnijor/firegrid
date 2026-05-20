@@ -20,6 +20,8 @@ import {
   SandboxRefSchema,
   ScheduleMeToolInputSchema,
   ScheduleMeToolOutputSchema,
+  SendToolInputSchema,
+  SendToolOutputSchema,
   SessionCancelToolInputSchema,
   SessionCancelToolOutputSchema,
   SessionCloseToolInputSchema,
@@ -36,6 +38,8 @@ import {
   SpawnTaskSchema,
   SpawnToolInputSchema,
   SpawnToolOutputSchema,
+  WaitForAnyToolInputSchema,
+  WaitForAnyToolOutputSchema,
   WaitForToolMatchSchema,
   WaitForToolInputSchema,
   WaitForToolOutputSchema,
@@ -173,6 +177,18 @@ describe("schema projection metadata", () => {
   })
 
   it("firegrid-schema-projection-contract.SCHEMA_CATALOG.3 compatibility-exports existing schemas as catalog entries", () => {
+    expect(FiregridAgentToolOperations.send.inputSchema).toBe(
+      SendToolInputSchema,
+    )
+    expect(FiregridAgentToolOperations.send.outputSchema).toBe(
+      SendToolOutputSchema,
+    )
+    expect(FiregridAgentToolOperations.waitForAny.inputSchema).toBe(
+      WaitForAnyToolInputSchema,
+    )
+    expect(FiregridAgentToolOperations.waitForAny.outputSchema).toBe(
+      WaitForAnyToolOutputSchema,
+    )
     expect(FiregridAgentToolOperations.sessionPrompt.inputSchema).toBe(
       SessionPromptToolInputSchema,
     )
@@ -406,7 +422,7 @@ describe("agent-tool schemas — execute", () => {
 })
 
 describe("agent-tool schemas — call approval", () => {
-  it("firegrid-agent-body-plan.APPROVAL_CALL.1 decodes approval-channel call input", async () => {
+  it("firegrid-agent-body-plan.SLICE_D_VERBS.1 firegrid-agent-body-plan.SLICE_D_VERBS.3 decodes generic call input", async () => {
     const decoded = await decodes(CallToolInputSchema, {
       channel: "approval.operator",
       request: {
@@ -415,7 +431,10 @@ describe("agent-tool schemas — call approval", () => {
       },
     })
     expect(decoded.channel).toBe("approval.operator")
-    expect(decoded.request.decision._tag).toBe("Allow")
+    expect(decoded.request).toEqual({
+      decision: { _tag: "Allow", optionId: "allow_once" },
+      timeoutMs: 1000,
+    })
   })
 
   it("firegrid-agent-body-plan.APPROVAL_CALL.1 rejects an empty call channel target", async () => {
@@ -461,6 +480,54 @@ describe("agent-tool schemas — call approval", () => {
       timedOut: true,
     })
     expect(timedOut).toEqual({ matched: false, timedOut: true })
+  })
+})
+
+describe("agent-tool schemas — Slice D channel verbs", () => {
+  it("firegrid-agent-body-plan.SLICE_D_VERBS.1 firegrid-agent-body-plan.SLICE_D_VERBS.2 decodes send input and output", async () => {
+    const input = await decodes(SendToolInputSchema, {
+      channel: "factory.events",
+      payload: { eventType: "ready", payload: { ok: true } },
+    })
+    expect(input.channel).toBe("factory.events")
+    expect(input.payload).toEqual({
+      eventType: "ready",
+      payload: { ok: true },
+    })
+
+    const output = await decodes(SendToolOutputSchema, {
+      sent: true,
+      channel: "factory.events",
+    })
+    expect(output).toEqual({ sent: true, channel: "factory.events" })
+  })
+
+  it("firegrid-agent-body-plan.SLICE_D_VERBS.1 firegrid-agent-body-plan.SLICE_D_VERBS.4 decodes wait_for_any input and output", async () => {
+    const input = await decodes(WaitForAnyToolInputSchema, {
+      channels: [
+        { channel: "state.changes", match: { status: "ready" } },
+        { channel: "factory.events" },
+      ],
+      timeoutMs: 250,
+    })
+    expect(input.channels).toHaveLength(2)
+    expect(input.channels[0]?.match).toEqual({ status: "ready" })
+
+    const output = await decodes(WaitForAnyToolOutputSchema, {
+      winnerIndex: 1,
+      channel: "factory.events",
+      result: { eventType: "approved" },
+    })
+    expect(output).toEqual({
+      winnerIndex: 1,
+      channel: "factory.events",
+      result: { eventType: "approved" },
+    })
+  })
+
+  it("firegrid-agent-body-plan.SLICE_D_VERBS.4 requires at least one wait_for_any descriptor", async () => {
+    const error = await rejects(WaitForAnyToolInputSchema, { channels: [] })
+    expect(error).toBeDefined()
   })
 })
 

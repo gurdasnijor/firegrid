@@ -26,14 +26,17 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import { Prompt } from "@effect/ai"
 import { Workflow } from "@effect/workflow"
 import { DurableTable } from "effect-durable-operators"
-import { Effect, Fiber, Layer, Schema } from "effect"
+import { Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { AgentOutputEvent, ToolResultEvent } from "@firegrid/runtime/events"
 import { AgentToolCallPartSchema, ToolResultEventSchema } from "@firegrid/runtime/events"
 import {
   ChannelRegistry,
   makeAfferentChannel,
+  makeCallableChannel,
   makeChannelRegistry,
+  makeEfferentChannel,
+  type ChannelRegistration,
 } from "../../src/host/index.ts"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import {
@@ -174,7 +177,9 @@ class TestSourceTable extends DurableTable("agent-tools.test.source", {
 
 const TEST_EVENTS_CHANNEL = "test.events"
 
-const TestChannelRegistryLive = Layer.effect(
+const TestChannelRegistryLive = (
+  channels: Iterable<ChannelRegistration> = [],
+) => Layer.effect(
   ChannelRegistry,
   Effect.gen(function* () {
     const table = yield* TestSourceTable
@@ -184,6 +189,7 @@ const TestChannelRegistryLive = Layer.effect(
         schema: TestSourceRowSchema,
         stream: table.rows.rows(),
       }),
+      ...channels,
     ])
   }),
 )
@@ -201,10 +207,11 @@ const TestChannelRegistryLive = Layer.effect(
 const buildLayer = (
   streams: Streams,
   hostLayer: Layer.Layer<AgentToolHost>,
+  channels: Iterable<ChannelRegistration> = [],
 ) =>
   RunToolWorkflowLayer.pipe(
     Layer.provideMerge(hostLayer),
-    Layer.provideMerge(TestChannelRegistryLive),
+    Layer.provideMerge(TestChannelRegistryLive(channels)),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflowUrl,
     })),
@@ -428,6 +435,148 @@ describe("toolUseToEffect — wait_for arm", () => {
     expect(resultIsError(result)).toBe(true)
     expect(resultContent(result)).toMatchObject({
       error: { _tag: "ToolInvalidInput", name: "wait_for" },
+    })
+  })
+})
+
+const SendPayloadSchema = Schema.Struct({
+  id: Schema.String,
+  message: Schema.String,
+})
+type SendPayload = Schema.Schema.Type<typeof SendPayloadSchema>
+
+const CallRequestSchema = Schema.Struct({
+  prompt: Schema.String,
+})
+type CallRequest = Schema.Schema.Type<typeof CallRequestSchema>
+
+const CallResponseSchema = Schema.Struct({
+  approved: Schema.Boolean,
+})
+
+const WaitForAnyRowSchema = Schema.Struct({
+  id: Schema.String,
+  status: Schema.String,
+})
+
+describe("toolUseToEffect — Slice D channel verb arms", () => {
+  it("firegrid-agent-body-plan.SLICE_D_VERBS.2 appends decoded payloads only through efferent channels", async () => {
+    const streams = makeStreams("send")
+    const appended: Array<SendPayload> = []
+    const channel = makeEfferentChannel({
+      target: "events.out",
+      schema: SendPayloadSchema,
+      append: payload =>
+        Effect.sync(() => {
+          appended.push(payload)
+        }),
+    })
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(fakeHost()), [channel]),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-send",
+          event: toolUse("tool-send", "send", {
+            channel: "events.out",
+            payload: { id: "event-1", message: "ready" },
+          }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toEqual({
+      sent: true,
+      channel: "events.out",
+    })
+    expect(appended).toEqual([{ id: "event-1", message: "ready" }])
+  })
+
+  it("firegrid-agent-body-plan.SLICE_BOUNDARY.4 rejects send on an afferent channel", async () => {
+    const streams = makeStreams("send-wrong-direction")
+    const channel = makeAfferentChannel({
+      target: "state.in",
+      schema: WaitForAnyRowSchema,
+      stream: Stream.empty,
+    })
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(fakeHost()), [channel]),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-send-wrong-direction",
+          event: toolUse("tool-send-wrong-direction", "send", {
+            channel: "state.in",
+            payload: { id: "event-1", message: "ready" },
+          }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(true)
+    expect(resultContent(result)).toMatchObject({
+      error: { _tag: "ToolInvalidInput", name: "send" },
+    })
+  })
+
+  it("firegrid-agent-body-plan.SLICE_D_VERBS.3 dispatches decoded requests through registered call channels", async () => {
+    const streams = makeStreams("call")
+    let observed: CallRequest | undefined
+    const channel = makeCallableChannel({
+      target: "approval.ask",
+      requestSchema: CallRequestSchema,
+      responseSchema: CallResponseSchema,
+      call: request =>
+        Effect.sync(() => {
+          observed = request
+          return { approved: request.prompt === "approve" }
+        }),
+    })
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(fakeHost()), [channel]),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-call",
+          event: toolUse("tool-call", "call", {
+            channel: "approval.ask",
+            request: { prompt: "approve" },
+          }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toEqual({ approved: true })
+    expect(observed).toEqual({ prompt: "approve" })
+  })
+
+  it("firegrid-agent-body-plan.SLICE_D_VERBS.4 races afferent descriptors and returns the first winner", async () => {
+    const streams = makeStreams("wait-for-any")
+    const slow = makeAfferentChannel({
+      target: "state.slow",
+      schema: WaitForAnyRowSchema,
+      stream: Stream.never,
+    })
+    const fast = makeAfferentChannel({
+      target: "state.fast",
+      schema: WaitForAnyRowSchema,
+      stream: Stream.make({ id: "row-fast", status: "ready" }),
+    })
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(fakeHost()), [slow, fast]),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-wait-for-any",
+          event: toolUse("tool-wait-for-any", "wait_for_any", {
+            channels: [
+              { channel: "state.slow", match: { status: "ready" } },
+              { channel: "state.fast", match: { status: "ready" } },
+            ],
+          }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(false)
+    expect(resultContent(result)).toEqual({
+      winnerIndex: 1,
+      channel: "state.fast",
+      result: { id: "row-fast", status: "ready" },
     })
   })
 })
@@ -804,7 +953,7 @@ describe("toolUseToEffect — call approval arm", () => {
     })
   })
 
-  it("firegrid-agent-body-plan.APPROVAL_CALL.4 rejects non-approval channel targets until the generic registry call binding lands", async () => {
+  it("firegrid-agent-body-plan.APPROVAL_CALL.4 rejects unknown non-approval channel targets", async () => {
     const streams = makeStreams("call-non-approval")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),

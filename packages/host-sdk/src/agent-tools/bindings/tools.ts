@@ -135,6 +135,31 @@ export const WaitForTool = Tool.make(operationToolName(FiregridAgentToolOperatio
   .setFailure(FiregridMcpToolFailureSchema)
 
 /**
+ * `send` — append a payload to an efferent channel.
+ * firegrid-agent-body-plan.SLICE_D_VERBS.1
+ */
+export const SendTool = Tool.make(operationToolName(FiregridAgentToolOperations.send.metadata, "send"), {
+  description: operationDescription(FiregridAgentToolOperations.send),
+  dependencies: FiregridToolDependencies,
+})
+  .setParameters(FiregridAgentToolOperations.send.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.send.outputSchema)
+  .setFailure(FiregridMcpToolFailureSchema)
+
+/**
+ * `wait_for_any` — race waits over afferent channels and return the first
+ * matching row.
+ * firegrid-agent-body-plan.SLICE_D_VERBS.1
+ */
+export const WaitForAnyTool = Tool.make(operationToolName(FiregridAgentToolOperations.waitForAny.metadata, "wait_for_any"), {
+  description: operationDescription(FiregridAgentToolOperations.waitForAny),
+  dependencies: FiregridToolDependencies,
+})
+  .setParameters(FiregridAgentToolOperations.waitForAny.inputSchema)
+  .setSuccess(FiregridAgentToolOperations.waitForAny.outputSchema)
+  .setFailure(FiregridMcpToolFailureSchema)
+
+/**
  * `spawn` — run a child RuntimeContextWorkflow and await its terminal
  * state. Lowers onto `AgentToolHost.spawnChildContext` in
  * `toolUseToEffect`.
@@ -257,6 +282,7 @@ export const CallTool = Tool.make(operationToolName(FiregridAgentToolOperations.
 export const FiregridAgentToolkit = Toolkit.make(
   SleepTool,
   WaitForTool,
+  SendTool,
   SessionNewTool,
   SessionPromptTool,
   SessionCancelTool,
@@ -264,4 +290,5 @@ export const FiregridAgentToolkit = Toolkit.make(
   ScheduleMeTool,
   ExecuteTool,
   CallTool,
+  WaitForAnyTool,
 )
