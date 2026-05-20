@@ -479,6 +479,61 @@ const matchValue = (
     : undefined
 }
 
+const assertScenarioGreen = (
+  verdict: ScenarioVerdict,
+  expected: {
+    readonly outcome: "Match" | "Timeout"
+    readonly value?: string
+    readonly deadlinePreserved?: true
+  },
+): Effect.Effect<void, Error> => {
+  if (!verdict.replayCompleted) {
+    return Effect.fail(
+      new Error(
+        `${verdict.scenario} did not complete replay: ${verdict.failureMessage ?? "no failure message"}`,
+      ),
+    )
+  }
+  if (verdict.outcome !== expected.outcome) {
+    return Effect.fail(
+      new Error(
+        `${verdict.scenario} outcome ${verdict.outcome ?? "missing"} !== ${expected.outcome}`,
+      ),
+    )
+  }
+  if (expected.value !== undefined && verdict.value !== expected.value) {
+    return Effect.fail(
+      new Error(
+        `${verdict.scenario} value ${verdict.value ?? "missing"} !== ${expected.value}`,
+      ),
+    )
+  }
+  if (expected.deadlinePreserved === true && verdict.timeoutClockDeadlinePreserved !== true) {
+    return Effect.fail(
+      new Error(`${verdict.scenario} did not preserve timeout clock deadline`),
+    )
+  }
+  return Effect.void
+}
+
+const assertProbeGreen = (
+  result: ProbeResult,
+): Effect.Effect<ProbeResult, Error> =>
+  Effect.all([
+    assertScenarioGreen(result.alreadyWrittenAfterRestart, {
+      outcome: "Match",
+      value: "matched-before-gen2",
+    }),
+    assertScenarioGreen(result.liveAfterRestart, {
+      outcome: "Match",
+      value: "matched-after-gen2",
+    }),
+    assertScenarioGreen(result.timeoutAfterRestart, {
+      outcome: "Timeout",
+      deadlinePreserved: true,
+    }),
+  ]).pipe(Effect.as(result))
+
 const runProbe = (
   env: TinyFiregridHostEnv,
 ): Effect.Effect<ProbeResult, unknown> => {
@@ -543,6 +598,7 @@ const publishResult = (
   env: TinyFiregridHostEnv,
 ): Effect.Effect<void, unknown> =>
   runProbe(env).pipe(
+    Effect.flatMap(assertProbeGreen),
     Effect.matchCauseEffect({
       onFailure: (cause) =>
         Effect.sync(() => {
