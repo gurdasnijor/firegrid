@@ -208,9 +208,33 @@ Substrate (hidden from agent):
 
 The agent never sees the bottom layer. The substrate is **how channels stay durable**, not what the agent reasons about.
 
+## Substrate prerequisites (this SDD presents on top of a simplified substrate)
+
+This SDD is a **presentation-layer reframing**, not a substrate redesign. The migration only delivers its promised "fewer ways to wait for things" simplification IF the substrate underneath has been consolidated first. Otherwise channel-typed `wait_for` becomes a fourth wait surface alongside the existing `wait_router` / `DurableToolsTable` / workflow-engine-deferred trio — adding indirection rather than removing it.
+
+Empirical baseline for the substrate cleanup work is captured in Lane 1's `tf-9ut` finding: `docs/research/tf-9ut-workflow-core-paths-empirical-finding.md` (on worktree `tf-qoyg-s6-shape-a-narrow-agentoutputafter`). Key facts that this SDD operates against:
+
+- **Both `WaitFor.match` call sites fire from a single sim.** The runtime-context workflow body's `waitForAgentOutput` path AND the agent-tool `wait_for` lowering path both run live in one trace (146 `runtime_context.workflow.output.wait` spans + 2 CallerFact `wait_for.match` spans). Either path's refactor can be empirically validated by one sim.
+- **The orphan-parent observability bug is fixed by #445.** On current-main, raw `complete_match` is 0/125 orphaned, completion-only `complete_match` is 0/18 orphaned. The pre-#445 halt-trace numbers (`108/119 raw orphaned`, `6/14 completion-only orphaned`) are **stale baseline evidence** and must not be used as Shape A motivation.
+- **`complete_match` count is candidate evaluation pressure, not completion count.** Only `complete_match` spans that emit a `wait.satisfied` event are actual wait completions (125 candidates → 18 satisfied in the sim). Body-plan SDD success criteria must use the satisfied-only baseline; raw `complete_match` orphan ratio is misleading.
+- **Shape A footprint is mechanically bounded at the runtime-context call site.** The non-tool `AgentOutputAfter` wait currently routed through `WaitFor.match` would fold inline at `waitForAgentOutput` / `nextAgentOutput` / `runReactiveLoop` in `runtime-context-workflow-core.ts:188-234`. The agent-tool `wait_for` surface (`tool-use-to-effect.ts:190-241`) is separate and remains dynamic-source + scalar-AND predicate + optional timeout — *that's the surface this SDD's Slice A operates against*.
+- **Shape A is coupled to the deferred-input rewrite** per `docs/research/durable-tools-vs-workflow-engine-convergence.md:83-89`. The convergence doc says Shape A "should ride with the deferred-input rewrite." Body-plan SDD's substrate dependency therefore includes both.
+
+### Required substrate work BEFORE this SDD's Slice A starts
+
+1. **Shape A landing** — `AgentOutputAfter` waits fold inline into the runtime-context workflow body's `DurableDeferred.raceAll`. Removes `wait_router` as a long-running router for the runtime-output observation case. Tracked under `tf-slb` (P1, in-flight Lane 1).
+2. **Deferred-input rewrite landing** — coupled per the convergence doc. Currently has source plumbing in `runtime-context-engine-registry.ts:106-118 / :265-280 / :303-315` and `runtime-context-workflow-core.ts:178-184 / :236-270` but no TODO/FIXME marker in `runtime-context-workflow-core.ts` — empirical evidence is "in-flight not declared," not "planned but unstarted."
+3. **External-worker reattach-after-restart path empirically exercised** — tf-9ut explicitly did NOT exercise this. Before declaring Shape A complete, a sim that bounces the host process while a wait is pending must be added (the wait_store / durable wait index has to be load-bearing for that path).
+
+After (1)+(2)+(3) land, the substrate has ONE canonical wait path: workflow-body `DurableDeferred.raceAll` over the typed observation streams. Channel-typed `wait_for` then sits as a thin presentation wrapper over THAT single path — not a fourth one.
+
+### What this means for the body-plan migration's Slice A ordering
+
+The migration plan below is sequenced assuming the substrate prerequisites have landed. If the body-plan migration is started before substrate consolidation, the Slice A channel registry has to dual-route into both the old `wait_router` substrate and the new workflow-body inline path — defeating the simplification. **Don't start Slice A until tf-slb (Shape A) lands.**
+
 ## Migration Plan
 
-The migration is staged so each slice is independently shippable and falsifiable.
+The migration is staged so each slice is independently shippable and falsifiable. Slice A is gated on the substrate prerequisites above; Slices B-E can land in parallel with Slice A once it starts.
 
 ### Slice A — Substrate refactor: opaque `ChannelTarget` for `wait_for`
 
@@ -299,7 +323,7 @@ Recommendation: (b) initially for migration safety; (a) once consumers are migra
 
 ## Open questions
 
-1. **Channel registration is a host-startup concern.** Today's tiny-firegrid host (e.g., `dark-factory/host.ts`) declares MCP server URLs and seeds facts. Should channel registration sit alongside that, or move into a separate host composition step? Recommend: it goes alongside, since channel inventory IS the body plan.
+1. **Channel registration is a host-startup concern.** Today's tiny-firegrid host (e.g., `dark-factory/host.ts`) declares MCP server URLs and seeds facts. Should channel registration sit alongside that, or move into a separate host composition step? Recommend: it goes alongside, since channel inventory IS the body plan. **Resolved-by-Shape-A note:** once `wait_router` folds inline into the workflow body, the channel registry's substrate side becomes "tell the workflow body which observation streams to race over" — a single configuration site rather than a registry-plus-router split.
 2. **How does `event(name)` schema get declared?** A typed channel needs a schema. Either: (a) channels are registered with an explicit Effect Schema; (b) channels are registered with a JSON Schema; (c) typed via the `DurableTable` row type when backed by a collection. Recommend (c) where possible, (a) for hand-declared events.
 3. **`spawn` is "synaptic, not channel" per the doc.** Should `spawn` remain a verb that doesn't go through the channel layer, or should there be a `peer(name)` channel? Recommend: stays as a verb (matching the doc), but a `peer.lifecycle(child_id)` *afferent* channel exists so the parent can `wait_for_any([peer.lifecycle(c1), peer.lifecycle(c2)])` for fastest-child semantics.
 4. **Permission-channel routing**: today the ACP permission gate triggers a runtime workflow that awaits a `PermissionResponse` row. After the migration, that wiring is "the substrate side of the `approval` channel." Confirm this aligns with `SDD_PERMISSION_CODEC_AUTHORITY.md`'s invariants.
@@ -308,6 +332,9 @@ Recommendation: (b) initially for migration safety; (a) once consumers are migra
 
 ## Cross-references
 
+- `tf-9ut` empirical finding (`docs/research/tf-9ut-workflow-core-paths-empirical-finding.md` on worktree `tf-qoyg-s6-shape-a-narrow-agentoutputafter`) — substrate baseline this SDD operates against. Establishes that #445 fixed the orphan-parent observability bug, that both `WaitFor.match` paths exercise from a single sim, and that Shape A footprint is mechanically bounded at the runtime-context call site.
+- `tf-slb` (P1, in-flight, Lane 1) — Shape A collapse of `wait_router` into workflow-body `DurableDeferred.raceAll`. Direct prerequisite for this SDD's Slice A.
+- `docs/research/durable-tools-vs-workflow-engine-convergence.md:83-89` — convergence doc; couples Shape A to the deferred-input rewrite.
 - `SDD_CHOREOGRAPHY_FACADE.md` — overlapping scope; this SDD extends the choreography facade into the explicit body-plan / channels-as-nervous-system framing.
 - `SDD_FIREGRID_TYPED_WAIT_SOURCE_REDESIGN.md` — the prior typed-wait-source work; this SDD subsumes it by replacing typed source taxonomy with the channel registry.
 - `SDD_FIREGRID_RUNTIME_AGENT_EVENT_PIPELINE.md` — the agent-event pipeline this SDD's channels read from / write to.
