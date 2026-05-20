@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process"
 import { error, log } from "node:console"
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import process from "node:process"
 import { join } from "node:path"
 
@@ -11,6 +11,9 @@ const DOC_TRAILING_WHITESPACE = /[ \t]$/
 
 const ARCH_EXCLUDE =
   "(^|/)(.*\\.test\\.(ts|tsx|mts)|__tests__|dist|build|coverage)(/|$)"
+const EFFECT_DIAGNOSTICS_BASELINE = ".effect-diagnostics-baseline.json"
+const EFFECT_DIAGNOSTIC_LINE =
+  /^(?<file>[^()\n]+)\((?<line>\d+),(?<column>\d+)\): (?<severity>error|warning|message) effect\((?<code>[^)]+)\): (?<message>.*)$/
 
 const archTargets = {
   workspace: {
@@ -104,7 +107,127 @@ const checkSpecs = () => {
   ])
 }
 
-const effectDiagnostics = () => {
+const emptyEffectCounts = () => ({ error: 0, warning: 0, message: 0 })
+
+const effectDiagnosticKey = (entry) =>
+  [
+    entry.project,
+    entry.file,
+    String(entry.line),
+    String(entry.column),
+    entry.severity,
+    entry.code,
+    entry.message,
+  ].join("\u0000")
+
+const summarizeEffectDiagnostics = (entries) =>
+  entries.reduce((counts, entry) => {
+    counts[entry.severity] += 1
+    return counts
+  }, emptyEffectCounts())
+
+const effectDiagnosticEntryMap = (entries) => {
+  const counts = new Map()
+  for (const entry of entries) {
+    const key = effectDiagnosticKey(entry)
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  return counts
+}
+
+const parseEffectDiagnostics = (project, output) =>
+  output
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      const match = EFFECT_DIAGNOSTIC_LINE.exec(line)
+      if (match === null) return []
+      return [{
+        project,
+        file: match.groups.file,
+        line: Number(match.groups.line),
+        column: Number(match.groups.column),
+        severity: match.groups.severity,
+        code: match.groups.code,
+        message: match.groups.message,
+      }]
+    })
+
+const loadEffectDiagnosticsBaseline = () => {
+  if (!existsSync(EFFECT_DIAGNOSTICS_BASELINE)) {
+    error(`Missing ${EFFECT_DIAGNOSTICS_BASELINE}. Run pnpm run effect:diagnostics:baseline to capture the current baseline.`)
+    process.exit(1)
+  }
+  const baseline = JSON.parse(readFileSync(EFFECT_DIAGNOSTICS_BASELINE, "utf8"))
+  if (!Array.isArray(baseline.entries)) {
+    error(`Invalid ${EFFECT_DIAGNOSTICS_BASELINE}: expected entries array.`)
+    process.exit(1)
+  }
+  return baseline
+}
+
+const formatEffectCounts = (counts) =>
+  `${counts.error} errors, ${counts.warning} warnings and ${counts.message} messages`
+
+const compareEffectDiagnosticsToBaseline = (currentEntries) => {
+  const baseline = loadEffectDiagnosticsBaseline()
+  const baselineCounts = effectDiagnosticEntryMap(baseline.entries)
+  const currentCounts = effectDiagnosticEntryMap(currentEntries)
+  const additions = []
+
+  for (const entry of currentEntries) {
+    const key = effectDiagnosticKey(entry)
+    const remaining = baselineCounts.get(key) ?? 0
+    if (remaining > 0) {
+      baselineCounts.set(key, remaining - 1)
+      continue
+    }
+    const emitted = currentCounts.get(key) ?? 0
+    if (emitted > 0) {
+      additions.push(entry)
+      currentCounts.set(key, emitted - 1)
+    }
+  }
+
+  const currentSummary = summarizeEffectDiagnostics(currentEntries)
+  const baselineSummary = baseline.counts ?? summarizeEffectDiagnostics(baseline.entries)
+  if (additions.length === 0) {
+    log(
+      `Effect diagnostics baseline OK: current=${formatEffectCounts(currentSummary)}, baseline=${formatEffectCounts(baselineSummary)}`,
+    )
+    return
+  }
+
+  const additionSummary = summarizeEffectDiagnostics(additions)
+  error(
+    `Effect diagnostics regression: ${formatEffectCounts(additionSummary)} above baseline.`,
+  )
+  for (const entry of additions) {
+    error(
+      `${entry.file}:${String(entry.line)}:${String(entry.column)} ${entry.severity} effect(${entry.code}) ${entry.message}`,
+    )
+  }
+  process.exit(1)
+}
+
+const writeEffectDiagnosticsBaseline = (entries) => {
+  const sortedEntries = [...entries].sort((a, b) =>
+    effectDiagnosticKey(a).localeCompare(effectDiagnosticKey(b)))
+  const baseline = {
+    version: 1,
+    command: "pnpm run effect:diagnostics:baseline",
+    counts: summarizeEffectDiagnostics(sortedEntries),
+    entries: sortedEntries,
+  }
+  writeFileSync(
+    EFFECT_DIAGNOSTICS_BASELINE,
+    `${JSON.stringify(baseline, null, 2)}\n`,
+  )
+  log(
+    `Wrote ${EFFECT_DIAGNOSTICS_BASELINE}: ${formatEffectCounts(baseline.counts)}`,
+  )
+}
+
+const effectDiagnostics = (mode) => {
   const projects = [
     ...readdirSync("packages").map(name => join("packages", name, "tsconfig.json")),
   ].filter(path => {
@@ -115,7 +238,7 @@ const effectDiagnostics = () => {
     }
   })
 
-  let status = 0
+  const entries = []
   for (const project of projects) {
     log(`== ${project} ==`)
     const result = spawnSync("effect-language-service", [
@@ -125,16 +248,27 @@ const effectDiagnostics = () => {
       "--format",
       "text",
     ], {
-      stdio: "inherit",
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
     })
     if (result.error !== undefined) {
       error(result.error.message)
       process.exit(1)
     }
-    if (result.status !== 0) status = result.status ?? 1
+    if (result.stdout.length > 0) process.stdout.write(result.stdout)
+    if (result.stderr.length > 0) process.stderr.write(result.stderr)
+    entries.push(
+      ...parseEffectDiagnostics(project, `${result.stdout}\n${result.stderr}`),
+    )
   }
-  process.exit(status)
+
+  if (mode === "--update-baseline") {
+    writeEffectDiagnosticsBaseline(entries)
+    return
+  }
+
+  compareEffectDiagnosticsToBaseline(entries)
 }
 
 const depcruise = (target) => {
@@ -192,7 +326,7 @@ const [group, command, target] = process.argv.slice(2)
 
 if (group === "check" && command === "specs") checkSpecs()
 else if (group === "check" && command === "docs") checkDocs()
-else if (group === "effect" && command === "diagnostics") effectDiagnostics()
+else if (group === "effect" && command === "diagnostics") effectDiagnostics(target)
 else if (group === "arch" && command === "deps" && target !== undefined) {
   archDeps(target)
 } else {
