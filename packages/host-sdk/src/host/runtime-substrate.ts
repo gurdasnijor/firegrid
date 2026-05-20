@@ -4,8 +4,6 @@ import {
   RuntimeControlPlaneRecorderLive,
 } from "@firegrid/runtime/control-plane"
 import {
-  type DurableWaitCompletionRowLookup,
-  type DurableWaitCompletionRowUpsert,
   type DurableWaitRowLookup,
   type DurableWaitRowUpsert,
 } from "@firegrid/runtime/durable-tools"
@@ -35,8 +33,6 @@ import {
 type RuntimeToolUseExecutorHostEnvironment =
   | DurableWaitRowLookup
   | DurableWaitRowUpsert
-  | DurableWaitCompletionRowLookup
-  | DurableWaitCompletionRowUpsert
   | AgentToolHost
 
 // TFIND-031: the host-provided durable substrate that a per-context
@@ -67,8 +63,6 @@ export type RuntimeContextWorkflowExecutionEnv =
   | HostRuntimeContextExecutionEnv
   | DurableWaitRowLookup
   | DurableWaitRowUpsert
-  | DurableWaitCompletionRowLookup
-  | DurableWaitCompletionRowUpsert
 
 // firegrid-runtime-boundary-reconciliation.HOST_HARDENING.2
 // firegrid-typed-wait-source-redesign.WAIT_ROUTER.1

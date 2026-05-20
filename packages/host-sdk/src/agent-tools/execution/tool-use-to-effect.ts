@@ -78,8 +78,6 @@ import {
 } from "@firegrid/runtime/events"
 import {
   WaitFor,
-  type DurableWaitCompletionRowLookup,
-  type DurableWaitCompletionRowUpsert,
   type DurableWaitRowLookup,
   type DurableWaitRowUpsert,
   type FieldEqualsTrigger,
@@ -181,8 +179,6 @@ const runWaitForTool = (
   | WorkflowEngine.WorkflowInstance
   | DurableWaitRowLookup
   | DurableWaitRowUpsert
-  | DurableWaitCompletionRowLookup
-  | DurableWaitCompletionRowUpsert
   | Scope.Scope
 > => {
   // `whereFields` is typed `Record<string, unknown>` because schema-level
@@ -490,8 +486,6 @@ type ToolEnvironment =
   | WorkflowEngine.WorkflowInstance
   | DurableWaitRowLookup
   | DurableWaitRowUpsert
-  | DurableWaitCompletionRowLookup
-  | DurableWaitCompletionRowUpsert
   | Scope.Scope
   | AgentToolHost
 

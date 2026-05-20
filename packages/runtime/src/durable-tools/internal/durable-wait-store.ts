@@ -4,7 +4,6 @@ import { waitKeySpanAttributes } from "./observability.ts"
 import {
   DurableToolsTable,
   findWaitByKey,
-  type WaitCompletionRow,
   type WaitRow,
 } from "./table.ts"
 
@@ -12,6 +11,13 @@ import {
 // firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.7
 // firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.9
 // firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.11
+//
+// Shape C (Step 2 + Step 3 — docs/research/durable-tools-vs-workflow-engine-convergence.md):
+// the durable-wait store collapses to the minimal pending-wait index. The
+// `WaitCompletionRow` family of tags (Lookup + Upsert) was deleted along with
+// the underlying table — `DurableDeferred.raceAll`'s race deferred is the
+// arbiter; idempotent `engine.deferredDone` makes the second arbitration
+// mechanism redundant.
 export interface DurableWaitRowLookupService {
   readonly find: (
     waitKey: WaitKey,
@@ -24,42 +30,12 @@ export interface DurableWaitRowUpsertService {
   ) => Effect.Effect<void, unknown>
 }
 
-export interface DurableWaitCompletionRowLookupService {
-  readonly find: (
-    waitKey: WaitKey,
-  ) => Effect.Effect<Option.Option<WaitCompletionRow>, unknown>
-}
-
-export interface DurableWaitCompletionRowUpsertService {
-  readonly upsert: (
-    row: WaitCompletionRow,
-  ) => Effect.Effect<void, unknown>
-}
-
 const findWaitIn = findWaitByKey
-
-const findCompletionIn = (
-  table: DurableToolsTable["Type"],
-  waitKey: WaitKey,
-) =>
-  table.completions.query((coll) =>
-    Option.fromNullable(
-      coll.toArray.find(
-        (completion) =>
-          completion.waitKey.executionId === waitKey.executionId &&
-          completion.waitKey.name === waitKey.name,
-      ),
-    ))
 
 const upsertWaitTo = (
   table: DurableToolsTable["Type"],
   row: WaitRow,
 ) => table.waits.upsert(row)
-
-const upsertCompletionTo = (
-  table: DurableToolsTable["Type"],
-  row: WaitCompletionRow,
-) => table.completions.upsert(row)
 
 const waitRowsFrom = (
   table: DurableToolsTable["Type"],
@@ -81,14 +57,6 @@ export class DurableWaitRowUpsert extends Context.Tag(
 export class DurableWaitRows extends Context.Tag(
   "@firegrid/runtime/DurableWaitRows",
 )<DurableWaitRows, Stream.Stream<WaitRow, unknown>>() {}
-
-export class DurableWaitCompletionRowLookup extends Context.Tag(
-  "@firegrid/runtime/DurableWaitCompletionRowLookup",
-)<DurableWaitCompletionRowLookup, DurableWaitCompletionRowLookupService>() {}
-
-export class DurableWaitCompletionRowUpsert extends Context.Tag(
-  "@firegrid/runtime/DurableWaitCompletionRowUpsert",
-)<DurableWaitCompletionRowUpsert, DurableWaitCompletionRowUpsertService>() {}
 
 export const DurableWaitStoreLive = Layer.mergeAll(
   Layer.effect(
@@ -126,36 +94,5 @@ export const DurableWaitStoreLive = Layer.mergeAll(
   Layer.effect(
     DurableWaitRows,
     Effect.map(DurableToolsTable, waitRowsFrom),
-  ),
-  Layer.effect(
-    DurableWaitCompletionRowLookup,
-    Effect.map(DurableToolsTable, table => ({
-      find: waitKey =>
-        findCompletionIn(table, waitKey).pipe(
-          Effect.tap((row) =>
-            Effect.annotateCurrentSpan({
-              "firegrid.wait.completion_found": Option.isSome(row),
-            })),
-          Effect.withSpan("firegrid.durable_tools.wait_store.completion.find", {
-            kind: "internal",
-            attributes: waitKeySpanAttributes(waitKey),
-          }),
-        ),
-    })),
-  ),
-  Layer.effect(
-    DurableWaitCompletionRowUpsert,
-    Effect.map(DurableToolsTable, table => ({
-      upsert: row =>
-        upsertCompletionTo(table, row).pipe(
-          Effect.withSpan("firegrid.durable_tools.wait_store.completion.upsert", {
-            kind: "internal",
-            attributes: {
-              ...waitKeySpanAttributes(row.waitKey),
-              "firegrid.wait.outcome": row.outcome,
-            },
-          }),
-        ),
-    })),
   ),
 )

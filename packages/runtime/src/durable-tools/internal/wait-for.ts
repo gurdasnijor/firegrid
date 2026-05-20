@@ -14,12 +14,27 @@
  *  - firegrid-durable-tools.WAIT_FOR.6 — single resolution across replay
  *  - firegrid-durable-tools.TIMEOUT.1 — uses @effect/workflow clock semantics
  *  - firegrid-durable-tools.TIMEOUT.2 — typed timeout exit
- *  - firegrid-durable-tools.TIMEOUT.3/4 — match preempts timeout; late-fire
- *    is a no-op via the wait-row re-check
- *  - firegrid-durable-tools.LIFECYCLE.2 — per-dispatch wait re-check (timeout
- *    side; the router enforces the match side)
+ *  - firegrid-durable-tools.TIMEOUT.3/4 — match preempts timeout; arbitrated
+ *    by `DurableDeferred.raceAll`'s race deferred (Shape C Step 2 — no
+ *    completion-table read/write needed; idempotent `engine.deferredDone` +
+ *    first-writer-wins on the race deferred make exactly-once safe)
+ *  - firegrid-durable-tools.LIFECYCLE.2 — per-dispatch wait re-check (the
+ *    router enforces the match side; the timeout side has no wait-row work
+ *    to do under Shape C)
  *  - firegrid-durable-tools.EFFECT_IDIOMS.2 — Clock.currentTimeMillis
  *  - firegrid-durable-tools.EFFECT_IDIOMS.3 — Match.tag dispatch
+ *
+ * Shape C Step 2 + Step 3 (docs/research/durable-tools-vs-workflow-engine-convergence.md):
+ * the timeout side no longer reads `WaitCompletionRow` to preempt itself and
+ * no longer writes a timeout completion row — the `completions` table is
+ * gone. Arbitration is the existing `DurableDeferred.raceAll` race deferred,
+ * which is idempotent-first-writer-wins. If a match has been recorded on the
+ * match deferred before the timeout's `DurableClock.sleep` ends, the
+ * match-side fiber awakes (Firegrid engine guarantees idempotent
+ * `deferredDone` and synchronous awaiter wake on resume) and writes Match to
+ * the race deferred; the timeout-side's later Timeout write loses the race.
+ * The previous "read completions to preempt" branch was a second mechanism
+ * the convergence doc confirmed redundant.
  */
 
 import {
@@ -41,8 +56,6 @@ import { type DurableTableError } from "effect-durable-operators"
 import { stampRowOtel } from "@firegrid/protocol/otel"
 import { type WaitRow } from "./table.ts"
 import {
-  DurableWaitCompletionRowLookup,
-  DurableWaitCompletionRowUpsert,
   DurableWaitRowLookup,
   DurableWaitRowUpsert,
 } from "./durable-wait-store.ts"
@@ -162,91 +175,39 @@ const upsertActiveWait = (
   )
 
 /**
- * Resolve the timeout side.
+ * Mark a timed-out wait row as `timed_out` for the router's lifecycle
+ * re-check (firegrid-durable-tools.LIFECYCLE.2).
  *
- * Returns the matched-row payload (`Option.some`) when a `match` completion
- * already exists — the timeout side must then resolve as **Match**, never
- * Timeout. Returns `Option.none()` when the wait genuinely timed out (a
- * timeout completion is written and the wait flipped to `timed_out`).
+ * Shape C Step 2: this no longer participates in match/timeout arbitration
+ * — the race is decided by `DurableDeferred.raceAll`'s race deferred. The
+ * status flip is a best-effort observability/lifecycle update only; failures
+ * are logged but do not change the timeout's outcome. The wait row is still
+ * required (router restart re-attach, doc lines 54-59) and is the durable
+ * artifact the per-dispatch re-check reads to skip retired/completed waits.
  *
- * firegrid-durable-tools.TIMEOUT.3 — match preempts timeout.
- * firegrid-durable-tools.TIMEOUT.4 — a late-firing timeout is a no-op: when
- *   a match completion is already durably recorded (including the
- *   completion-written-but-deferredDone-not-yet-fired crash gap that
- *   firegrid-durable-tools.WAIT_FOR.7 preserves), the timeout cannot win
- *   the race. The stored `matchedRowPayload` is authoritative, so the
- *   timeout side resolves directly to that match rather than waiting on the
- *   match deferred to be re-fired by the live-replay path.
+ * firegrid-durable-tools.TIMEOUT.3 — the race deferred is the arbiter.
+ * firegrid-durable-tools.TIMEOUT.4 — a late-firing timeout is a no-op via
+ *   the `engine.deferredResult(raceDeferred)` short-circuit at the top of
+ *   `DurableDeferred.raceAll` on replay; no completion-row scan needed.
  */
-const writeTimeoutCompletion = (
+const markWaitTimedOut = (
   waitName: string,
   waitKey: { readonly executionId: string; readonly name: string },
   waitLookup: DurableWaitRowLookup["Type"],
   waitUpsert: DurableWaitRowUpsert["Type"],
-  completionLookup: DurableWaitCompletionRowLookup["Type"],
-  completionUpsert: DurableWaitCompletionRowUpsert["Type"],
-): Effect.Effect<Option.Option<unknown>, WaitForError> =>
+): Effect.Effect<void, never> =>
   Effect.gen(function*() {
-    // Check for an existing completion FIRST, before any wait-status gate.
-    // A `match` completion preempts the timeout regardless of the wait
-    // row's status (covers the WAIT_FOR.7 crash gap where the completion
-    // row is written but the status flip / deferredDone never landed).
-    const existingCompletion = yield* Effect.mapError(
-      completionLookup.find(waitKey),
-      (cause) =>
-        waitForError({
-          op: "wait-for/timeout",
-          waitName,
-          message: "failed reading existing completion row",
-          cause,
-        }),
-    )
-    if (Option.isSome(existingCompletion)) {
-      return existingCompletion.value.outcome === "match"
-        ? Option.some(existingCompletion.value.matchedRowPayload)
-        : Option.none()
-    }
-    const existing = yield* Effect.mapError(
-      waitLookup.find(waitKey),
-      (cause) =>
-        waitForError({
-          op: "wait-for/timeout",
-          waitName,
-          message: "failed reading wait row during timeout",
-          cause,
-        }),
-    )
-    if (Option.isNone(existing)) return Option.none()
+    const existing = yield* waitLookup.find(waitKey)
+    if (Option.isNone(existing)) return
     const current = existing.value
-    if (current.status !== "active") return Option.none()
-    const nowMs = yield* Clock.currentTimeMillis
-    yield* Effect.mapError(
-      completionUpsert.upsert({
-        waitKey,
-        outcome: "timeout",
-        completedAtMs: nowMs,
-      }),
-      (cause) =>
-        waitForError({
-          op: "wait-for/timeout",
-          waitName,
-          message: "failed writing timeout completion row",
-          cause,
-        }),
-    )
-    yield* Effect.mapError(
-      waitUpsert.upsert({ ...current, status: "timed_out" }),
-      (cause) =>
-        waitForError({
-          op: "wait-for/timeout",
-          waitName,
-          message: "failed marking wait timed_out",
-          cause,
-        }),
-    )
-    return Option.none()
+    if (current.status !== "active") return
+    yield* waitUpsert.upsert({ ...current, status: "timed_out" })
   }).pipe(
-    Effect.withSpan("firegrid.durable_tools.wait_for.timeout_completion.write", {
+    Effect.catchAll(cause =>
+      Effect.logWarning("[durable-tools] wait-for/timeout: failed marking wait timed_out").pipe(
+        Effect.annotateLogs({ waitName, cause }),
+      )),
+    Effect.withSpan("firegrid.durable_tools.wait_for.timeout.mark_wait", {
       kind: "internal",
       attributes: {
         "firegrid.workflow.execution_id": waitKey.executionId,
@@ -292,8 +253,6 @@ type MatchImplResult<A> = Effect.Effect<
   | WorkflowEngine.WorkflowInstance
   | DurableWaitRowLookup
   | DurableWaitRowUpsert
-  | DurableWaitCompletionRowLookup
-  | DurableWaitCompletionRowUpsert
   | Scope.Scope
 >
 
@@ -304,8 +263,6 @@ const matchImpl = <A = unknown>(
     const instance = yield* WorkflowEngine.WorkflowInstance
     const waitLookup = yield* DurableWaitRowLookup
     const waitUpsert = yield* DurableWaitRowUpsert
-    const completionLookup = yield* DurableWaitCompletionRowLookup
-    const completionUpsert = yield* DurableWaitCompletionRowUpsert
     const waitKey = {
       executionId: instance.executionId,
       name: options.name,
@@ -367,8 +324,6 @@ const matchImpl = <A = unknown>(
         matchDeferred,
         waitLookup,
         waitUpsert,
-        completionLookup,
-        completionUpsert,
         waitKey,
       )
   }).pipe(
@@ -405,8 +360,6 @@ const matchOrTimeoutFlow = <A>(
   matchDeferred: ReturnType<typeof matchDeferredFor>,
   waitLookup: DurableWaitRowLookup["Type"],
   waitUpsert: DurableWaitRowUpsert["Type"],
-  completionLookup: DurableWaitCompletionRowLookup["Type"],
-  completionUpsert: DurableWaitCompletionRowUpsert["Type"],
   waitKey: { readonly executionId: string; readonly name: string },
 ): Effect.Effect<
   WaitForOutcome<A>,
@@ -415,10 +368,17 @@ const matchOrTimeoutFlow = <A>(
 > =>
   Effect.gen(function*() {
     // firegrid-durable-tools.TIMEOUT.1
-    // firegrid-durable-tools.TIMEOUT.3 — raceAll captures the first writer to
-    // the race deferred and interrupts the loser. Internal timeout-write
-    // errors are turned into defects so the race deferred carries a Never
-    // error channel and matches `Schema.Never`.
+    // firegrid-durable-tools.TIMEOUT.3 / .4 — Shape C Step 2: the race
+    // deferred is the sole arbiter. `DurableDeferred.raceAll` builds a
+    // durable race deferred and writes the first-completer's exit to it
+    // (idempotent-first-writer-wins via Firegrid's `engine.deferredDone`,
+    // finding #1 of the convergence doc). Match wakes when the router fires
+    // `matchDeferred`; timeout wakes when `DurableClock.sleep` returns. The
+    // previous "timeout-side reads completions to preempt" branch is removed
+    // — it was a redundant second mechanism. The wait row's status flip to
+    // `timed_out` runs after `raceAll` resolves and is observability /
+    // lifecycle re-check support only (not arbitration). raceAll carries
+    // `Schema.Never` on its error channel, so both sides must be infallible.
     const matchSide: Effect.Effect<
       RawOutcome,
       never,
@@ -440,26 +400,7 @@ const matchOrTimeoutFlow = <A>(
       // sleep completes. firegrid-durable-tools.TIMEOUT.1
       inMemoryThreshold: Duration.zero,
     }).pipe(
-      Effect.zipRight(
-        writeTimeoutCompletion(
-          options.name,
-          waitKey,
-          waitLookup,
-          waitUpsert,
-          completionLookup,
-          completionUpsert,
-        ).pipe(
-          Effect.orDie,
-        ),
-      ),
-      // firegrid-durable-tools.TIMEOUT.3 / .4 — if a match completion is
-      // already recorded, the timeout side resolves as Match using the
-      // authoritative stored payload; it must never win the race as
-      // Timeout once a match exists.
-      Effect.map((preempted): RawOutcome =>
-        Option.isSome(preempted)
-          ? { _tag: "Match", raw: preempted.value }
-          : { _tag: "Timeout" }),
+      Effect.as({ _tag: "Timeout" as const }),
     )
     const raw: RawOutcome = yield* DurableDeferred.raceAll({
       name: raceDeferredNameFor(options.name),
@@ -482,7 +423,13 @@ const matchOrTimeoutFlow = <A>(
       Match.tag(
         "Timeout",
         (): Effect.Effect<WaitForOutcome<A>> =>
-          Effect.succeed({ _tag: "Timeout" } satisfies WaitForOutcome<A>),
+          // Best-effort lifecycle flip: mark the wait row `timed_out` for
+          // the router's per-dispatch re-check. raceAll has already decided
+          // the outcome; this write is observability only and any error is
+          // logged (see `markWaitTimedOut`), never failing the wait.
+          markWaitTimedOut(options.name, waitKey, waitLookup, waitUpsert).pipe(
+            Effect.as({ _tag: "Timeout" } satisfies WaitForOutcome<A>),
+          ),
       ),
       Match.exhaustive,
     )
