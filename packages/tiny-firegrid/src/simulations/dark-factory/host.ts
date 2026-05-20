@@ -112,6 +112,13 @@ export const darkFactoryHost = (
   const hostId = "host-a"
   const mcpHost = "127.0.0.1"
   const mcpPath = "/mcp"
+  // tf-s8y P0 spike: pin MCP port so the driver can construct the same
+  // URL it writes into the per-session .mcp.json. Production would
+  // resolve via FiregridRuntimeContextMcpBaseUrl; this is intentional
+  // spike hygiene — fail loud on port collision, no silent ephemeral
+  // drift. The pinned value matches FIREGRID_SPIKE_MCP_PORT in the
+  // driver.
+  const mcpPort = 54321
   const facts = DarkFactoryFactTable.layer(
     darkFactoryFactTableLayerOptions({
       baseUrl: env.durableStreamsBaseUrl,
@@ -143,7 +150,7 @@ export const darkFactoryHost = (
   return Layer.discard(
     FiregridMcpServerLayer({
       host: mcpHost,
-      port: 0,
+      port: mcpPort,
       path: ensurePathInput(mcpPath),
     }),
   ).pipe(
