@@ -14,12 +14,14 @@ import {
   type RuntimeEventRow,
   type RuntimeLogLineRow,
 } from "@firegrid/protocol/launch"
-import { Effect, Fiber, Layer, Ref, Schema } from "effect"
+import { Effect, Fiber, Layer, Ref, Schema, Stream } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   RuntimeControlPlaneRecorderLive,
 } from "@firegrid/runtime/control-plane"
 import {
+  RuntimeAgentOutputAfterEvents,
+  RuntimeAgentOutputEvents,
   RuntimeAgentOutputEventsLayer,
 } from "@firegrid/runtime/runtime-output"
 import {
@@ -96,6 +98,33 @@ const hostConfigLayer = (namespace: string) =>
     namespace,
   })
 
+// tf-uo2c: the hand-rolled runtime-context workflow tests write agent output
+// rows through their host-wide RuntimeOutputTable. Production host composition
+// uses the per-context output substrate, so this test adapter keeps the test
+// surface explicit without changing production code.
+const testHostWideRuntimeAgentOutputAfterEventsLive = Layer.effect(
+  RuntimeAgentOutputAfterEvents,
+  Effect.map(RuntimeAgentOutputEvents, agentOutput =>
+    RuntimeAgentOutputAfterEvents.of({
+      initial: source =>
+        Stream.runHead(agentOutput.pipe(
+          Stream.filter((row) =>
+            row.contextId === source.contextId &&
+            row.activityAttempt === source.activityAttempt &&
+            row.sequence > source.afterSequence),
+        )),
+      after: source =>
+        agentOutput.pipe(
+          Stream.filter((row) =>
+            row.contextId === source.contextId &&
+            row.activityAttempt === source.activityAttempt &&
+            row.sequence > source.afterSequence),
+        ),
+      forContext: contextId =>
+        agentOutput.pipe(Stream.filter(row => row.contextId === contextId)),
+    })),
+).pipe(Layer.provide(RuntimeAgentOutputEventsLayer))
+
 const outputRow = (input: {
   readonly contextId: string
   readonly activityAttempt: number
@@ -156,6 +185,29 @@ const waitUntilActiveWait = (
       yield* Effect.sleep("25 millis")
     }
     return yield* Effect.fail(new Error(`wait row did not become active: ${name}`))
+  })
+
+// tf-uo2c: gate tests on workflow body entry instead of a particular active
+// wait row. This keeps synchronization stable across pre-collapse WaitFor and
+// post-collapse direct observation bodies.
+const waitUntilWorkflowStarted = (
+  contextId: string,
+  activityAttempt: number,
+) =>
+  Effect.gen(function*() {
+    const control = yield* RuntimeControlPlaneTable
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const rows = yield* control.runs.query((coll) =>
+        coll.toArray.filter(row =>
+          row.contextId === contextId &&
+          row.activityAttempt === activityAttempt &&
+          row.status === "started"))
+      if (rows.length > 0) return rows[0]!
+      yield* Effect.sleep("25 millis")
+    }
+    return yield* Effect.fail(new Error(
+      `workflow body did not record a started run row: ${contextId}/${activityAttempt}`,
+    ))
   })
 
 const startedEvidence = (
@@ -269,6 +321,7 @@ const runtimeContextWorkflowTestLayer = (input: {
     Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: input.waitUrl })),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
     Layer.provideMerge(RuntimeAgentOutputEventsLayer),
+    Layer.provideMerge(testHostWideRuntimeAgentOutputAfterEventsLive),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: input.workflowUrl,
       ...(input.workerId === undefined ? {} : { workerId: input.workerId }),
@@ -484,7 +537,7 @@ describe("workflow-native runtime-context core", () => {
           const output = yield* RuntimeOutputTable
           yield* control.contexts.upsert(seededRuntimeContext({ namespace, hostId, contextId }))
           yield* executeNativeRuntimeContext(contextId, { discard: true })
-          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
+          yield* waitUntilWorkflowStarted(contextId, 1)
           yield* executeNativeRuntimeContext(contextId, { discard: true })
           yield* output.events.upsert(outputRow({
             contextId,
@@ -519,7 +572,7 @@ describe("workflow-native runtime-context core", () => {
           const control = yield* RuntimeControlPlaneTable
           yield* control.contexts.upsert(seededRuntimeContext({ namespace, hostId, contextId }))
           yield* executeNativeRuntimeContext(contextId, { discard: true })
-          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
+          yield* waitUntilWorkflowStarted(contextId, 1)
         }).pipe(
           Effect.provide(runtimeContextWorkflowTestLayer({
             namespace,
@@ -620,7 +673,7 @@ describe("workflow-native runtime-context core", () => {
           const context = seededRuntimeContext({ namespace, hostId, contextId })
           yield* control.contexts.upsert(context)
           yield* executeNativeRuntimeContext(contextId, { discard: true })
-          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
+          yield* waitUntilWorkflowStarted(contextId, 1)
           yield* appendRuntimeInputDeferred({
             contextId,
             inputId: "input-prompt-1",
@@ -674,7 +727,7 @@ describe("workflow-native runtime-context core", () => {
           const output = yield* RuntimeOutputTable
           yield* control.contexts.upsert(seededRuntimeContext({ namespace, hostId, contextId }))
           yield* executeNativeRuntimeContext(contextId, { discard: true })
-          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, -1))
+          yield* waitUntilWorkflowStarted(contextId, 1)
           yield* output.events.upsert(outputRow({
             contextId,
             activityAttempt: 1,
@@ -690,7 +743,15 @@ describe("workflow-native runtime-context core", () => {
             },
           }))
           yield* executeNativeRuntimeContext(contextId, { discard: true })
-          yield* waitUntilActiveWait(agentOutputAfterWaitName(contextId, 1, 0))
+          yield* Effect.gen(function*() {
+            for (let attempt = 0; attempt < 40; attempt += 1) {
+              if (beforeRestart.emissions.length >= 1) return
+              yield* Effect.sleep("25 millis")
+            }
+            return yield* Effect.fail(new Error(
+              `workflow body did not emit ToolResult before restart: ${contextId}`,
+            ))
+          })
         }).pipe(
           Effect.provide(runtimeContextWorkflowTestLayer({
             namespace,
@@ -779,6 +840,7 @@ describe("workflow-native runtime-context core", () => {
       Layer.provideMerge(DurableToolsWaitForLive({ streamUrl: waitUrl })),
       Layer.provideMerge(RuntimeControlPlaneRecorderLive),
       Layer.provideMerge(RuntimeAgentOutputEventsLayer),
+      Layer.provideMerge(testHostWideRuntimeAgentOutputAfterEventsLive),
       Layer.provideMerge(DurableStreamsWorkflowEngine.layer({ streamUrl: workflowUrl })),
       Layer.provideMerge(RuntimeControlPlaneTable.layer({
         streamOptions: { url: controlUrl, contentType: "application/json" },
