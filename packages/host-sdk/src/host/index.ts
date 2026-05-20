@@ -88,6 +88,17 @@ export {
   type StateChangesChannel,
 } from "./state-changes-channel.ts"
 export {
+  HumanMessageSchema,
+  dmChannel,
+  humanChannelPair,
+  humanChannelRegistrations,
+  humanChannelTarget,
+  notificationChannel,
+  type HumanChannelKind,
+  type HumanChannelPair,
+  type HumanMessage,
+} from "./human-channel.ts"
+export {
   RuntimeControlRequestReconciler,
   RuntimeControlRequestReconcilerDaemonLive,
   RuntimeControlRequestReconcilerLive,

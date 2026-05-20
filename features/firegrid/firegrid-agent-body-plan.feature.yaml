@@ -32,6 +32,13 @@ components:
       3: The host approval adapter waits for a matching PermissionRequest on the current runtime context and responds by appending a PermissionResponse intent.
       4: Approval call targets outside the approval channel family are rejected until generic callable-channel dispatch is implemented.
 
+  HUMAN_CHANNELS:
+    requirements:
+      1: Host code can declare a `dm(handle)` channel as paired afferent and efferent registrations at the same opaque channel target.
+      2: Host code can declare a `notification(handle)` channel as paired afferent and efferent registrations at the same opaque channel target.
+      3: Human channel schemas are substrate-neutral message envelopes that do not expose provider or MCP transport details.
+      4: Human channel bindings are supplied at host composition time as incoming streams plus outgoing append targets.
+
 constraints:
   SLICE_BOUNDARY:
     requirements:
