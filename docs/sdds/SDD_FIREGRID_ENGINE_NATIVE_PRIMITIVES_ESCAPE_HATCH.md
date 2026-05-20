@@ -25,6 +25,14 @@ The current Phase 1 plan should keep moving regardless: fix the narrow recycle
 bug, prove the `WaitForWorkflow` shape, and collapse `durable-tools/` if the
 proofs turn green.
 
+This SDD also pre-commits the mitigation path for the upcoming performance
+gating phase. If Firegrid's non-LLM workflow substrate latency becomes a
+meaningful fraction of the external LLM network round trip, the engine-native
+primitive track should move from "architectural escape hatch" to active
+performance work. The system should not spend a material share of an agent turn
+on local wait bookkeeping while the actual model call is the dominant
+irreducible latency.
+
 If the next findings show the same class of recycle/replay leak in multiple
 places, Firegrid should lean harder into the foundation it owns:
 
@@ -369,6 +377,57 @@ Payoff:
 This is lower priority than `streamWait` and `reducer` because the fact-stream
 path is still a good choreography substrate.
 
+## Performance Trigger And Mitigation Ladder
+
+The performance gate should compare Firegrid substrate latency against live LLM
+network latency in the same class of run. The useful question is not whether
+Firegrid adds any overhead; it is whether local durable coordination starts
+consuming a meaningful share of the latency budget that should be dominated by
+external model/network time.
+
+Initial trigger threshold:
+
+- **P1 trigger:** p95 Firegrid non-LLM substrate latency per agent turn or wait
+  operation is at least 10% of p95 LLM network round-trip latency in the same
+  scenario class.
+- **P0 trigger:** p95 Firegrid non-LLM substrate latency is at least 20% of p95
+  LLM network round-trip latency, or one local coordination primitive accounts
+  for at least 10% by itself.
+
+The exact percentages can be recalibrated after the first live perf baseline,
+but the gate must remain ratio-based. Absolute millisecond thresholds alone are
+misleading because LLM latency changes by model, provider, region, and network
+conditions.
+
+Measurement shape:
+
+- `pnpm --filter @firegrid/tiny-firegrid simulate:perf` reports local substrate
+  spans, durable writes, replay reads, and scheduler delays.
+- live dark-factory / ACP traces provide the LLM network-latency denominator
+  when API keys and subprocesses are available.
+- if live LLM calls are unavailable, the perf gate may use a recorded or
+  coordinator-approved LLM latency baseline, but the report must label that
+  denominator as synthetic.
+
+Mitigation ladder, in order:
+
+1. Replace composed waits with `streamWait` / `streamWaitAny` so the engine
+   writes one durable intent and one durable result instead of Activity claims,
+   deferred rows, clock rows, and race result rows.
+2. Attach stream observers directly in the engine and re-attach them on recycle,
+   avoiding poll loops or userland `Stream.runHead` fibers for hot waits.
+3. Use predicate optimization hints for hot paths. Bare Effect `Predicate<Row>`
+   remains correct; Firegrid-owned factory predicates may attach index metadata
+   so the engine can avoid row-by-row scans.
+4. Coalesce durable lifecycle writes where correctness permits: wait intent,
+   deadline, match result, and loser cancellation should not require a cascade
+   of independent rows when the engine owns the primitive.
+5. Move high-rate event folds to `reducer` with explicit checkpoint policy so
+   state is durable without writing one Activity result for every tiny event
+   unless that granularity is required.
+6. Keep stable spans under `firegrid.engine.<primitive_name>.<phase>` so every
+   mitigation proves the latency source it removed.
+
 ## Decision Triggers
 
 Start the engine-native primitive track if any of these become true:
@@ -381,6 +440,8 @@ Start the engine-native primitive track if any of these become true:
    `wait_for_any`, `send`, `call`, or channel correlation.
 4. `simulate:perf` shows the durable Activity-result fold for Lane 1 is
    correct but too expensive at expected event rates.
+5. Performance gating shows Firegrid non-LLM substrate latency at or above the
+   ratio thresholds in the Performance Trigger section.
 
 Until a trigger fires, keep the narrow Phase 1 fix moving. Do not pause the
 one-substrate collapse just to design engine-native primitives.
