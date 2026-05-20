@@ -6,7 +6,6 @@ import {
   local,
 } from "@firegrid/client-sdk/firegrid"
 import {
-  reconcileRuntimeControlRequestsOnce,
   resolveEffectiveMcpServers,
   type FiregridRuntimeContextMcpBaseUrl,
   type FiregridHost,
@@ -172,7 +171,6 @@ describe("dark-factory sleep + wait_for substrate smoke", () => {
         expect(session.contextId).toBe(expectedContextId)
         expect(session.contextId).not.toBe("dark-factory")
 
-        yield* reconcileRuntimeControlRequestsOnce()
         yield* session.whenReady
         const snapshot = yield* session.snapshot()
         expect(snapshot.contextId).toBe(expectedContextId)

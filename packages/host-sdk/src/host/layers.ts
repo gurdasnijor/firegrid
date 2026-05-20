@@ -18,10 +18,11 @@ import type { RuntimeHostTopologyOptions } from "./types.ts"
 import { RuntimeHostAgentToolHostLive } from "./agent-tool-host-live.ts"
 import { RuntimeStartCapabilityLive } from "./commands.ts"
 import {
-  RuntimeControlRequestReconcilerDaemonLive,
-  RuntimeControlRequestReconcilerLive,
-  RuntimeControlRequestWorkflowEngineLive,
-} from "./control-request-reconciler.ts"
+  RuntimeControlRequestControlPlaneLive,
+} from "@firegrid/runtime/control-plane"
+import {
+  RuntimeControlRequestSideEffectsLive,
+} from "./control-request-side-effects.ts"
 import {
   FiregridRuntimeContextMcpBaseUrlLive,
 } from "./runtime-context-mcp-base-url.ts"
@@ -313,12 +314,14 @@ export const FiregridRuntimeHostLive = (
   return Layer.mergeAll(
     RuntimeInputIntentDispatcherLive,
     RuntimeStartCapabilityLive,
-    RuntimeControlRequestReconcilerLive,
-    RuntimeControlRequestWorkflowEngineLive,
+    RuntimeControlRequestSideEffectsLive,
+    RuntimeControlRequestControlPlaneLive({
+      durableStreamsBaseUrl: options.durableStreamsBaseUrl,
+      namespace: options.namespace,
+      ...(options.headers !== undefined ? { headers: options.headers } : {}),
+      daemon: options.controlRequestReconciler !== false,
+    }),
     hostChannels,
-    ...(options.controlRequestReconciler === false
-      ? []
-      : [RuntimeControlRequestReconcilerDaemonLive]),
   ).pipe(
     Layer.provideMerge(RuntimeContextWorkflowSessionLive),
     Layer.provideMerge(RuntimeControlPlaneRecorderLive),
