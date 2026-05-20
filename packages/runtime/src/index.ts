@@ -1,4 +1,9 @@
 export {
+  RuntimeContextError,
+  asRuntimeContextError,
+  mapRuntimeContextError,
+} from "./runtime-errors.ts"
+export {
   type RuntimeAgentOutputObservation as RuntimeAuthorityAgentOutputObservation,
 } from "./agent-event-pipeline/authorities/runtime-output-public.ts"
 export {
