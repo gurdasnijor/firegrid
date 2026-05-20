@@ -35,6 +35,25 @@ The fact that `Workflows.layerDurableStreams` was authored as a sibling to `Clus
 
 This is a Firegrid-specific affordance, not a `@effect/workflow` shape — worth being honest about up front.
 
+### The per-context workflow is a stream-native virtual object
+
+The structural shape of Firegrid's per-context workflow lines up with Restate's [Virtual Object](https://docs.restate.dev/foundations/services#virtual-object) pattern at the **identity + concurrency** layer:
+
+- Keyed identity (contextId)
+- Single-writer-per-key (one workflow execution per context, enforced by the engine + claim machinery)
+- Durable state attached to the key
+
+What differs is the **state substrate**: Restate VOs hold K/V state journaled separately from the engine's execution history. Firegrid per-context workflows hold state implicitly as the fold of the durable input/output streams — the engine's execution history and the application's state history are the same ledger.
+
+That difference is what makes the reactive body work as a stream-fold:
+
+- A VO-shape with K/V state would force the body to consult a separate K/V journal at every fold step; the engine's replay-from-start semantics and the VO's K/V cursor would diverge into two ledgers needing reconciliation. The body's `Stream.zipLatest(inputs, outputs).runForEach(handle)` couldn't survive replay without bridge code re-creating the divergence this SDD just collapsed.
+- The stream-as-state substrate has ONE ledger. Re-folding the stream IS replay. The body's state is implicit in the cursor + the fold's deterministic step function. No K/V journal to reconcile.
+
+The honest name for the per-context workflow is therefore "**stream-native virtual object**" — same keyed-identity + single-writer-per-key contract that makes VOs reasonable to reason about, with a state substrate chosen specifically because it natively supports stream-fold semantics. The `WaitForWorkflow` is similarly a **transient stream-native VO** (keyed by executionId, single-writer, scoped lifetime, terminates with a value via the race).
+
+This framing has an architectural payoff: Restate VOs are orchestration-native (clients call methods → engine dispatches → state read/write → return value; RPC-shaped). Stream-native VOs are choreography-native (agents emit onto streams → VO subscribes via fold → emits onto other streams; event-driven). The two coexist on the same identity/concurrency contracts; the channel layer (per `SDD_FIREGRID_AGENT_BODY_PLAN.md`) is the natural interop boundary if Firegrid VOs ever need to call out to K/V-shape services or vice versa.
+
 ## The converged shape
 
 ### Agent-tool `wait_for` — a workflow execution
