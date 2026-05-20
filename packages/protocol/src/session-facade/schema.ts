@@ -1,9 +1,9 @@
 import type { RuntimeEventRow } from "../launch/index.ts"
 import { Either, Option, Schema } from "effect"
 import {
-  FiregridRuntimeObservationSourceNames,
   PermissionDecisionSchema,
 } from "../agent-tools/schema.ts"
+import { FiregridRuntimeObservationSourceNames } from "../observations/schema.ts"
 import { PublicLaunchRuntimeIntentSchema } from "../launch/schema.ts"
 import { firegridProjection } from "../operations/schema.ts"
 import {

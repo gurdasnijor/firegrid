@@ -2,19 +2,21 @@ import {
   RuntimeInputIntentRowSchema,
 } from "../runtime-ingress/schema.ts"
 import {
-  FiregridRuntimeObservationSourceNames,
   PermissionDecisionSchema,
   PermissionRespondInputSchema,
   PermissionRespondOutputSchema,
   SessionPromptToolInputSchema,
   SessionPromptToolOutputSchema,
-  type FiregridRuntimeObservationSourceName,
   type PermissionDecision,
   type PermissionRespondInput,
   type PermissionRespondOutput,
   type SessionPromptToolInput,
   type SessionPromptToolOutput,
 } from "../agent-tools/schema.ts"
+import {
+  FiregridRuntimeObservationSourceNames,
+  type FiregridRuntimeObservationSourceName,
+} from "../observations/schema.ts"
 import { defineFiregridOperation } from "../operations/schema.ts"
 import {
   SessionAgentOutputWaitInputSchema,
