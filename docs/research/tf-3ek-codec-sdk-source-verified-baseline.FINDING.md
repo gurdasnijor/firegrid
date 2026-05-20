@@ -26,7 +26,7 @@ Of the five candidate causes for `tools/call=0` enumerated in
 | **#4** claude-agent-acp's system-prompt steering toward prose/explore | **STRUCTURALLY LOCKED** | `acp-agent.js:1371-1387`: default = `{type:"preset", preset:"claude_code"}`. Custom `_meta.systemPrompt` allows forwarding `append`/`excludeDynamicSections` only; `type:"preset"` and `preset:"claude_code"` are force-set on the merged object. No override path through ACP `_meta`. |
 | **#5** tool-result round-trip break / streaming parse race | **PARTIALLY EVIDENCED — different mechanism than handoff framing** | The 2026-05-19 live run (see below) captured `observedToolInputs:['…wait_for:{}']` — the planner *did* call `wait_for`, but the assertion harness raced streaming JSON tool_use blocks and observed empty args. That is a **measurement gap in tiny-firegrid's harness**, not "model didn't invoke tools." |
 
-**Net: causes #1 and #4 are off-the-table by source; #2 is real-and-fixed-at-SDK-API-level (no public knob); #3 requires wire capture; #5 reconciles partly to a harness streaming-parse race rather than a model behavior.**
+**Net (ACP-mediated path): cause #4 is off-the-table by source; #2 is real-and-fixed-at-SDK-API-level (no public knob); #3 requires wire capture; #5 reconciles partly to a harness streaming-parse race rather than a model behavior. Cause #1 is "ruled out for the path we use today" — the native `.mcp.json` / stdio MCP path is a different mechanism through it and is being tested by spike tf-s8y.**
 
 ## What the codec actually sends (source: `packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts:148-194`)
 
@@ -131,6 +131,10 @@ one stake; the instrumentation lane's FINDING will be another.
 
 ## Cross-references
 
+- `tf-s8y` (P0 SPIKE) — drives §6 via native `.mcp.json` / stdio MCP
+  registration to test the alternative path through cause #1. Either
+  outcome narrows scope: green ⇒ cause #1 localized to ACP `_meta`
+  plumbing; red ⇒ MCP-path eliminated as variable, §9g scope narrows.
 - `tf-549` — TERMINAL FINDING that established "no ACP path exposes
   forced tool-choice" — re-confirmed against pin 0.36.1 / SDK 0.3.143.
 - `tf-p9s` — A1 finding on the `alwaysLoad` strategy; confirmed structurally
