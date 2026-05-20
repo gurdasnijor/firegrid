@@ -104,6 +104,7 @@ constraints:
       7: Per-context engine tests prove duplicate cross-host start or attach for the same contextId is rejected before a second engine is provisioned, while same-owner attach is idempotent.
       8: Runtime input intent tests prove a client or non-owner host can append an intent and the owning host's local dispatcher completes the active per-context workflow deferred without appendRuntimeIngressToOwner or owner-host workflow stream URL routing.
       9: The runtime control request reconciler daemon continues polling and can activate a newly appended context start request while a prior long-running RuntimeContextWorkflow start request remains active.
+      10: The workflow-core-paths simulation gate fails if legacy durable-tools wait-router spans are present and requires trace evidence for runtime-context body execution, durable state transitions, agent-tool wait_for workflow execution, workflow Activity execution, DurableDeferred.raceAll completion, and DurableClock.sleep scheduling.
 
   AGENT_TOOL_BOUNDARIES:
     requirements:

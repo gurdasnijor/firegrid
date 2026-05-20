@@ -364,6 +364,18 @@ Work:
 - Run dark-factory as a coordinator-triggered smoke on the integration branch,
   not as a required per-lane check, because it needs live ACP/provider setup.
 
+Gate command:
+
+```bash
+bash scripts/phase1-workflow-core-paths-gate.sh
+```
+
+For an already-captured run:
+
+```bash
+bash scripts/phase1-workflow-core-paths-gate.sh <run-id>
+```
+
 Acceptance:
 
 Old spans are zero:
