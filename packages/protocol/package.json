@@ -25,6 +25,10 @@
       "types": "./src/operations/index.ts",
       "default": "./src/operations/index.ts"
     },
+    "./projection": {
+      "types": "./src/projection/index.ts",
+      "default": "./src/projection/index.ts"
+    },
     "./otel": {
       "types": "./src/otel/index.ts",
       "default": "./src/otel/index.ts"

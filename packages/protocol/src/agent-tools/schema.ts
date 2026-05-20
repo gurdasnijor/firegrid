@@ -22,20 +22,20 @@
  */
 
 import { Schema } from "effect"
-import {
-  defineFiregridOperation,
-  firegridProjection,
-} from "../operations/schema.ts"
+import { firegridProjection } from "../projection/schema.ts"
+import { defineFiregridOperation } from "../operations/schema.ts"
 import { PermissionOptionSchema } from "../agent-output/schema.ts"
 
 export {
   defineFiregridOperation,
+  type FiregridOperationEntry,
+} from "../operations/schema.ts"
+export {
   firegridProjection,
   FiregridProjectionAnnotationId,
   getFiregridProjectionMetadata,
-  type FiregridOperationEntry,
   type FiregridProjectionMetadata,
-} from "../operations/schema.ts"
+} from "../projection/schema.ts"
 // firegrid-schema-projection-contract.CLIENT_PROJECTION.6
 // Compatibility shim: runtime observation source names are protocol observation
 // metadata, not agent-tool input/output schema. Keep this import path stable

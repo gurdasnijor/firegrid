@@ -1,11 +1,13 @@
 import { Option, SchemaAST, type Schema } from "effect"
+import { getFiregridProjectionMetadata } from "../projection/schema.ts"
+import type { FiregridProjectionMetadata } from "../projection/schema.ts"
 
-export interface FiregridProjectionMetadata {
-  readonly operationId: string
-  readonly toolName?: string
-  readonly clientName?: string
-  readonly cliName?: string
-}
+export {
+  FiregridProjectionAnnotationId,
+  firegridProjection,
+  getFiregridProjectionMetadata,
+  type FiregridProjectionMetadata,
+} from "../projection/schema.ts"
 
 export interface FiregridOperationEntry<
   InputSchema extends Schema.Schema.Any,
@@ -17,25 +19,6 @@ export interface FiregridOperationEntry<
   readonly description: string
   readonly examples: ReadonlyArray<unknown>
 }
-
-export const FiregridProjectionAnnotationId: unique symbol = Symbol.for(
-  "firegrid/annotation/Projection",
-)
-
-export const firegridProjection = (
-  metadata: FiregridProjectionMetadata,
-) => ({
-  [FiregridProjectionAnnotationId]: metadata,
-})
-
-export const getFiregridProjectionMetadata = (
-  schema: { readonly ast: SchemaAST.AST },
-): Option.Option<FiregridProjectionMetadata> =>
-  Option.fromNullable(
-    schema.ast.annotations[FiregridProjectionAnnotationId] as
-      | FiregridProjectionMetadata
-      | undefined,
-  )
 
 const annotationString = (
   ast: SchemaAST.AST,
