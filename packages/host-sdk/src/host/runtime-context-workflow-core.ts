@@ -175,6 +175,10 @@ const inputWaitName = (
   sequence: number,
 ) => `runtime-context/${contextId}/input/${sequence}`
 
+const workflowWaitBucketAttribute = {
+  "firegrid.wait.bucket": "workflow",
+} as const
+
 export const runtimeInputDeferredName = inputWaitName
 
 export const runtimeInputDeferredFor = (
@@ -203,6 +207,7 @@ const waitForAgentOutput = (
     Effect.withSpan("firegrid.runtime_context.workflow.output.wait", {
       kind: "internal",
       attributes: {
+        ...workflowWaitBucketAttribute,
         "firegrid.context.id": context.contextId,
         "firegrid.runtime.activity_attempt": activityAttempt,
         "firegrid.runtime.output.after_sequence": afterSequence,
@@ -263,6 +268,7 @@ const awaitRuntimeInput = (
     Effect.withSpan("firegrid.runtime_context.workflow.input.await", {
       kind: "internal",
       attributes: {
+        ...workflowWaitBucketAttribute,
         "firegrid.context.id": context.contextId,
         "firegrid.input.sequence": sequence,
       },
@@ -376,6 +382,7 @@ const awaitPermissionResponseInput = (
     Effect.withSpan("firegrid.runtime_context.workflow.permission_response.await", {
       kind: "consumer",
       attributes: {
+        ...workflowWaitBucketAttribute,
         "firegrid.context.id": context.contextId,
         "firegrid.runtime.activity_attempt": activityAttempt,
         "firegrid.permission.request_id": permissionRequestId,

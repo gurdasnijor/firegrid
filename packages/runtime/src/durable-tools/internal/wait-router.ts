@@ -80,6 +80,10 @@ import { emitSpanEvent, waitRowId } from "./span-events.ts"
 import { evaluateFieldEquals, type FieldEqualsTrigger } from "./types.ts"
 import { matchDeferredFor } from "./wait-for.ts"
 
+const durableWaitBucketAttribute = {
+  "firegrid.wait.bucket": "durable",
+} as const
+
 /**
  * firegrid-typed-wait-source-redesign.WAIT_ROUTER.1
  *
@@ -147,7 +151,10 @@ const streamForWait = (
     )).pipe(
       Effect.withSpan("firegrid.durable_tools.wait_router.stream_for_wait", {
         kind: "internal",
-        attributes: waitSpanAttributes(wait),
+        attributes: {
+          ...durableWaitBucketAttribute,
+          ...waitSpanAttributes(wait),
+        },
       }),
     )
 
@@ -226,7 +233,10 @@ const completeMatch = (
       // the wait-registrar (a separate causal predecessor) rides as a
       // span link, not a parent.
       kind: "consumer",
-      attributes: waitSpanAttributes(wait),
+      attributes: {
+        ...durableWaitBucketAttribute,
+        ...waitSpanAttributes(wait),
+      },
       ...completeMatchSpanOptions(wait, row),
     }),
   )
@@ -329,7 +339,10 @@ const startRouter = Effect.gen(function*() {
     }).pipe(
       Effect.withSpan("firegrid.durable_tools.wait_router.initial_check", {
         kind: "internal",
-        attributes: waitSpanAttributes(wait),
+        attributes: {
+          ...durableWaitBucketAttribute,
+          ...waitSpanAttributes(wait),
+        },
       }),
     )
 
@@ -389,6 +402,7 @@ const startRouter = Effect.gen(function*() {
 }).pipe(
   Effect.withSpan("firegrid.durable_tools.wait_router.start", {
     kind: "internal",
+    attributes: durableWaitBucketAttribute,
   }),
 )
 

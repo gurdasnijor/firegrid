@@ -82,6 +82,10 @@ const RawTimeoutSchema = Schema.Struct({
 const RawOutcomeSchema = Schema.Union(RawMatchSchema, RawTimeoutSchema)
 type RawOutcome = Schema.Schema.Type<typeof RawOutcomeSchema>
 
+const durableWaitBucketAttribute = {
+  "firegrid.wait.bucket": "durable",
+} as const
+
 /**
  * The match deferred carries the raw matched-row payload — `Schema.Unknown`
  * because the router does not decode through a call-site schema
@@ -167,6 +171,7 @@ const upsertActiveWait = (
     Effect.withSpan("firegrid.durable_tools.wait_for.upsert_active", {
       kind: "internal",
       attributes: {
+        ...durableWaitBucketAttribute,
         ...waitKeySpanAttributes({ executionId: row.executionId, name: waitName }),
         "firegrid.wait.source": row.source._tag,
         "firegrid.wait.has_timeout": row.deadlineMs !== undefined,
@@ -210,6 +215,7 @@ const markWaitTimedOut = (
     Effect.withSpan("firegrid.durable_tools.wait_for.timeout.mark_wait", {
       kind: "internal",
       attributes: {
+        ...durableWaitBucketAttribute,
         "firegrid.workflow.execution_id": waitKey.executionId,
         "firegrid.wait.name": waitName,
       },
@@ -330,6 +336,7 @@ const matchImpl = <A = unknown>(
     Effect.withSpan("firegrid.durable_tools.wait_for.match", {
       kind: "internal",
       attributes: {
+        ...durableWaitBucketAttribute,
         "firegrid.wait.name": options.name,
         "firegrid.wait.source": options.source._tag,
         "firegrid.wait.has_timeout": options.timeoutMs !== undefined,
