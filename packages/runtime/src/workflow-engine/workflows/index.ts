@@ -12,3 +12,14 @@ export {
   runtimeControlRequestWorkflowStreamUrl,
   type RuntimeControlRequestDispatchOutcome,
 } from "./runtime-control-request.ts"
+export {
+  WaitForWorkflow,
+  WaitForWorkflowLayer,
+  WaitForWorkflowMatchOutcomeSchema,
+  WaitForWorkflowOutcomeSchema,
+  WaitForWorkflowPayloadSchema,
+  WaitForWorkflowTimeoutOutcomeSchema,
+  waitForWorkflowExecutionId,
+  type WaitForWorkflowOutcome,
+  type WaitForWorkflowPayload,
+} from "./wait-for.ts"
