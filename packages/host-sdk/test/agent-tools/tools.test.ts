@@ -23,12 +23,9 @@
  */
 
 import { IdGenerator, McpServer } from "@effect/ai"
-import {
-  FiregridAgentToolOperations,
-  SessionNewToolInputSchema,
-  SleepToolInputSchema,
-} from "@firegrid/protocol/agent-tools"
-import { Effect, Layer, Schema } from "effect"
+import * as AgentToolSchemas from "@firegrid/protocol/agent-tools"
+import { getFiregridProjectionMetadata } from "@firegrid/protocol/projection"
+import { Effect, Layer, Option, Schema, SchemaAST } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   AgentToolHost,
@@ -150,7 +147,7 @@ describe("FiregridAgentToolkit", () => {
       Schema.decodeUnknown(SleepTool.parametersSchema)(sleepInput),
     )
     const decodedViaProtocol = await Effect.runPromise(
-      Schema.decodeUnknown(SleepToolInputSchema)(sleepInput),
+      Schema.decodeUnknown(AgentToolSchemas.SleepToolInputSchema)(sleepInput),
     )
     expect(decodedViaTool).toEqual(decodedViaProtocol)
   })
@@ -167,32 +164,37 @@ describe("FiregridAgentToolkit", () => {
       )(sessionInput),
     )
     const decodedViaProtocol = await Effect.runPromise(
-      Schema.decodeUnknown(SessionNewToolInputSchema)(sessionInput),
+      Schema.decodeUnknown(AgentToolSchemas.SessionNewToolInputSchema)(sessionInput),
     )
     expect(decodedViaTool).toEqual(decodedViaProtocol)
   })
 
-  it("firegrid-schema-projection-contract.TOOL_PROJECTION.1 firegrid-schema-projection-contract.TOOL_PROJECTION.3 projects every tool from the schema catalog", () => {
+  it("firegrid-schema-projection-contract.SCHEMA_CATALOG.5 firegrid-schema-projection-contract.TOOL_PROJECTION.3 projects every tool from schema annotations without FiregridOperationEntry", () => {
     const projections = [
-      ["sleep", FiregridAgentToolkit.tools.sleep, FiregridAgentToolOperations.sleep],
-      ["wait_for", FiregridAgentToolkit.tools.wait_for, FiregridAgentToolOperations.waitFor],
-      ["send", FiregridAgentToolkit.tools.send, FiregridAgentToolOperations.send],
-      ["session_new", FiregridAgentToolkit.tools.session_new, FiregridAgentToolOperations.sessionCreate],
-      ["session_prompt", FiregridAgentToolkit.tools.session_prompt, FiregridAgentToolOperations.sessionPrompt],
-      ["session_cancel", FiregridAgentToolkit.tools.session_cancel, FiregridAgentToolOperations.sessionCancel],
-      ["session_close", FiregridAgentToolkit.tools.session_close, FiregridAgentToolOperations.sessionClose],
-      ["schedule_me", FiregridAgentToolkit.tools.schedule_me, FiregridAgentToolOperations.scheduleMe],
-      ["execute", FiregridAgentToolkit.tools.execute, FiregridAgentToolOperations.execute],
-      ["call", FiregridAgentToolkit.tools.call, FiregridAgentToolOperations.call],
-      ["wait_for_any", FiregridAgentToolkit.tools.wait_for_any, FiregridAgentToolOperations.waitForAny],
+      ["sleep", FiregridAgentToolkit.tools.sleep, AgentToolSchemas.SleepToolInputSchema, AgentToolSchemas.SleepToolOutputSchema],
+      ["wait_for", FiregridAgentToolkit.tools.wait_for, AgentToolSchemas.WaitForToolInputSchema, AgentToolSchemas.WaitForToolOutputSchema],
+      ["send", FiregridAgentToolkit.tools.send, AgentToolSchemas.SendToolInputSchema, AgentToolSchemas.SendToolOutputSchema],
+      ["session_new", FiregridAgentToolkit.tools.session_new, AgentToolSchemas.SessionNewToolInputSchema, AgentToolSchemas.SessionNewToolOutputSchema],
+      ["session_prompt", FiregridAgentToolkit.tools.session_prompt, AgentToolSchemas.SessionPromptToolInputSchema, AgentToolSchemas.SessionPromptToolOutputSchema],
+      ["session_cancel", FiregridAgentToolkit.tools.session_cancel, AgentToolSchemas.SessionCancelToolInputSchema, AgentToolSchemas.SessionCancelToolOutputSchema],
+      ["session_close", FiregridAgentToolkit.tools.session_close, AgentToolSchemas.SessionCloseToolInputSchema, AgentToolSchemas.SessionCloseToolOutputSchema],
+      ["schedule_me", FiregridAgentToolkit.tools.schedule_me, AgentToolSchemas.ScheduleMeToolInputSchema, AgentToolSchemas.ScheduleMeToolOutputSchema],
+      ["execute", FiregridAgentToolkit.tools.execute, AgentToolSchemas.ExecuteToolInputSchema, AgentToolSchemas.ExecuteToolOutputSchema],
+      ["call", FiregridAgentToolkit.tools.call, AgentToolSchemas.CallToolInputSchema, AgentToolSchemas.CallToolOutputSchema],
+      ["wait_for_any", FiregridAgentToolkit.tools.wait_for_any, AgentToolSchemas.WaitForAnyToolInputSchema, AgentToolSchemas.WaitForAnyToolOutputSchema],
     ] as const
 
-    for (const [name, tool, operation] of projections) {
+    for (const [name, tool, inputSchema, outputSchema] of projections) {
+      const metadata = Option.getOrThrow(
+        getFiregridProjectionMetadata(inputSchema),
+      )
+      const description =
+        inputSchema.ast.annotations[SchemaAST.DescriptionAnnotationId]
       expect(tool.name).toBe(name)
-      expect(tool.name).toBe(operation.metadata.toolName)
-      expect(tool.parametersSchema).toBe(operation.inputSchema)
-      expect(tool.successSchema).toBe(operation.outputSchema)
-      expect(tool.description).toBe(operation.description)
+      expect(tool.name).toBe(metadata.toolName)
+      expect(tool.parametersSchema).toBe(inputSchema)
+      expect(tool.successSchema).toBe(outputSchema)
+      expect(tool.description).toBe(description)
     }
   })
 })

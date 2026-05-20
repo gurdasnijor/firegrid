@@ -1,4 +1,4 @@
-import { getFiregridProjectionMetadata } from "@firegrid/protocol/operations"
+import { getFiregridProjectionMetadata } from "@firegrid/protocol/projection"
 import {
   SessionCreateOrLoadInputSchema,
   SessionHandlePromptInputSchema,
