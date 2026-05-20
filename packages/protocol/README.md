@@ -1,11 +1,18 @@
 # `@firegrid/protocol`
 
-Browser-safe shared schemas and DurableTable declarations.
+Browser-safe shared schemas, operation contracts, and DurableTable
+declarations.
 
 This package owns durable row contracts that must be shared between apps,
 `@firegrid/client`, and `@firegrid/runtime`. It does not start processes,
 create runtime services, import raw Durable Streams packages, or own provider
 delivery policy.
+
+`@firegrid/protocol` is the source of truth for projection surfaces. Client SDK
+methods, CLI flags/help, MCP tools, and future REST, gRPC, or JSON-RPC adapters
+should all bind from these schemas instead of cloning their own contracts. The
+projection may change the caller experience, but the underlying launch,
+session, observation, and channel contracts should remain protocol-owned.
 
 ## Public Subpaths
 
@@ -63,6 +70,8 @@ import {
 - Keep protocol browser-safe.
 - Put shared DurableTable declarations here only when both client/app and
   runtime need the same row contract.
+- Put operation schemas here when more than one binding projects the same
+  contract, such as TypeScript client, CLI, MCP, REST, gRPC, or JSON-RPC.
 - Runtime-private tables, workflow-engine state, durable-tool rows, and
   provider delivery policy stay in `@firegrid/runtime`.
 - Do not add `@durable-streams/*` imports to this package.
