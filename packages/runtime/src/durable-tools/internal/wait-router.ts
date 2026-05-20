@@ -239,6 +239,23 @@ const completeMatch = (
  * includeInitialState observation — the router does not perform any prior
  * snapshot read.
  */
+// tf-gc7 leaf fix: this function previously wrapped both `source.pipe(...)`
+// and the outer gen in `Effect.withSpan("...attach_source", ...)` +
+// `Effect.withSpan("...attach_wait", ...)`. Both spans were per-wait and
+// long-lived (lifetime = the wait's subscription, which for in-flight waits
+// stays open until host scope close). Those spans were the orphan-parent
+// shape `wait_router.complete_match` referenced through ambient context when
+// the wait outlived the trace's batch-export window — measured 113/125
+// (90.4%) orphan parents on the `wait-pre-attach-roundtrip` reproducer.
+//
+// Each `completeMatch` invocation has its own short-lived
+// `Effect.withSpan("...complete_match", { kind: "consumer", parent: ... })`
+// in this file; removing the long-lived wrappers shifts complete_match's
+// ambient parent up to `wait_router.start` (a one-shot bootstrap span that
+// closes once the router forks its main loop — short-lived, exports
+// cleanly). The router's registration-replay role (docs/research/durable-
+// tools-vs-workflow-engine-convergence.md lines 54-59) is preserved — only
+// the observability wrappers go away.
 const attachWaitToSource = (
   wait: WaitRow,
   source: Stream.Stream<unknown, unknown>,
@@ -246,35 +263,24 @@ const attachWaitToSource = (
   waitUpsert: DurableWaitRowUpsert["Type"],
   engine: WorkflowEngine.WorkflowEngine["Type"],
 ) =>
-  Effect.gen(function*() {
-    yield* source.pipe(
-      Stream.withSpan("firegrid.durable_tools.wait_router.attach_source", {
-        kind: "internal",
-        attributes: waitSpanAttributes(wait),
-      }),
-      Stream.runForEach((row) => {
-        return completeMatch(
-          wait,
-          row,
-          waitLookup,
-          waitUpsert,
-          engine,
-        ).pipe(
-          Effect.catchAll((cause) =>
-            Effect.logWarning(
-              "[durable-tools] router failed to complete wait",
-            ).pipe(Effect.annotateLogs({
-              waitName: wait.waitKey.name,
-              cause,
-            })),
-          ),
-        )
-      }),
-    )
-  }).pipe(
-    Effect.withSpan("firegrid.durable_tools.wait_router.attach_wait", {
-      kind: "internal",
-      attributes: waitSpanAttributes(wait),
+  source.pipe(
+    Stream.runForEach((row) => {
+      return completeMatch(
+        wait,
+        row,
+        waitLookup,
+        waitUpsert,
+        engine,
+      ).pipe(
+        Effect.catchAll((cause) =>
+          Effect.logWarning(
+            "[durable-tools] router failed to complete wait",
+          ).pipe(Effect.annotateLogs({
+            waitName: wait.waitKey.name,
+            cause,
+          })),
+        ),
+      )
     }),
   )
 
@@ -328,10 +334,15 @@ const startRouter = Effect.gen(function*() {
     )
 
   // firegrid-runtime-boundary-reconciliation.WAITS_BOUNDARY.8
+  //
+  // tf-gc7 leaf fix: this pipe previously started with
+  // `Stream.withSpan("...active_wait_rows", ...)`. That span was the
+  // outer-router subscription wrapper and was long-lived for the host
+  // scope (the router's main loop never naturally completes — it's
+  // `Effect.forkScoped`-d at the bottom). Removing it lets the forked
+  // fiber inherit ambient from `wait_router.start` (short-lived bootstrap),
+  // not from a host-lifetime parent that won't export until shutdown.
   yield* waitRows.pipe(
-    Stream.withSpan("firegrid.durable_tools.wait_router.active_wait_rows", {
-      kind: "internal",
-    }),
     Stream.filter(wait => wait.status === "active"),
     Stream.runForEach((wait) =>
       Effect.gen(function*() {
