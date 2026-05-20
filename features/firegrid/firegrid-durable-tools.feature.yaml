@@ -21,6 +21,7 @@ components:
       2: The subscription router does not perform a snapshot query followed by a separate live subscribe.
       3: The subscription router evaluates the wait's trigger against each row change and, on match, writes a wait completion row recording the raw matched-row payload and completes the workflow-engine deferred with that raw payload; the router does not decode the payload against a call-site schema.
       4: Trigger expressivity for v0 is an AND of scalar field-equality predicates over decoded row paths, expressed as ReadonlyArray of { path, equals } where equals is a string, number, or boolean.
+      4-1: An empty field-equality trigger array is valid and matches any source row; callers may use it for any-row observations without adding a separate peek or list primitive.
       5: OR is expressed by registering multiple subscriptions; the trigger DSL itself does not include OR within a single subscription.
       6: The trigger DSL does not include NOT, range comparison, arbitrary lambda predicates, array membership, or defaulted path traversal in v0.
       7: The subscription router is composed as a scoped runtime worker through the runtime-host Layer rather than as a public service facade.
@@ -29,6 +30,7 @@ components:
     requirements:
       1: An optional wait timeout uses the existing @effect/workflow clock semantics (for example DurableClock) for durable suspension and wake-up; the router does not manipulate workflow clock storage or fire-due-clocks workers directly, and no separate ToolTimersTable is introduced.
       2: A timeout firing marks the wait as timed_out and completes the workflow-engine deferred with a typed timeout exit distinguishable from a match exit.
+      2-1: "A zero-millisecond timeout resolves through the normal match-versus-timeout outcome immediately: initial-state replay may produce Match for an already-present source row, while an empty source produces Timeout."
       3: A match resume preempts a pending timeout firing such that a single wait identity resolves at most once between match and timeout.
       4: >-
         A timeout firing for a wait that already has a recorded match completion is a no-op for the timeout outcome — including the crash gap where the match completion row is written but the workflow-engine deferred has not yet been re-fired and the wait row is still active: the timeout side resolves as that match using the authoritative stored matched-row payload and never produces a timeout resume.
