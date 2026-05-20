@@ -748,12 +748,13 @@ describe("durable workflow engine", () => {
     }
   })
 
-  it("workflow-engine-durable-state.VALIDATION.7 persists interrupted state without cancelling the stored execution", async () => {
+  it("tf-gyxc keeps user-interrupted workflows terminal across engine reconstruction", async () => {
     if (!baseUrl) throw new Error("server not started")
     const streamUrl = `${baseUrl}/v1/stream/workflow-interrupt-${crypto.randomUUID()}`
     const Gate = DurableDeferred.make("interrupt-gate", {
       success: Schema.String,
     })
+    let token: DurableDeferred.Token | undefined
     const InterruptWorkflow = Workflow.make({
       name: "interrupt-workflow",
       payload: Schema.Struct({ id: Schema.String }),
@@ -761,7 +762,10 @@ describe("durable workflow engine", () => {
       idempotencyKey: payload => payload.id,
     })
     const workflowLayer = InterruptWorkflow.toLayer(() =>
-      DurableDeferred.await(Gate),
+      Effect.gen(function* () {
+        token = yield* DurableDeferred.token(Gate)
+        return yield* DurableDeferred.await(Gate)
+      }),
     )
     const executionId = await Effect.runPromise(InterruptWorkflow.executionId({ id: "interrupt" }))
 
@@ -775,6 +779,8 @@ describe("durable workflow engine", () => {
       workflowLayer,
       InterruptWorkflow.interrupt(executionId),
     )
+    if (!token) throw new Error("expected deferred token")
+    const interruptedToken = token
 
     const row = await inspectTable(streamUrl, table =>
       table.executions.get(executionId),
@@ -782,7 +788,29 @@ describe("durable workflow engine", () => {
     expect(row._tag).toBe("Some")
     if (row._tag === "Some") {
       expect(row.value.interrupted).toBe(true)
-      expect(row.value.finalResult).toBeUndefined()
+    }
+
+    const afterRestart = await runWith(
+      { streamUrl },
+      workflowLayer,
+      Effect.gen(function* () {
+        yield* DurableDeferred.succeed(Gate, {
+          token: interruptedToken,
+          value: "should-not-resume",
+        })
+        return yield* InterruptWorkflow.execute({ id: "interrupt" }).pipe(Effect.exit)
+      }),
+    )
+
+    expect(Exit.isFailure(afterRestart)).toBe(true)
+    const finalRow = await inspectTable(streamUrl, table =>
+      table.executions.get(executionId),
+    )
+    expect(finalRow._tag).toBe("Some")
+    if (finalRow._tag === "Some") {
+      expect(finalRow.value.interrupted).toBe(true)
+      expect(finalRow.value.finalResult).toBeDefined()
+      expect(JSON.stringify(finalRow.value.finalResult)).not.toContain("should-not-resume")
     }
   })
 
@@ -883,6 +911,16 @@ describe("durable workflow engine", () => {
     expect(first).toMatchObject({ _tag: "Left", left: "activity-denied" })
     expect(replay).toMatchObject({ _tag: "Left", left: "activity-denied" })
     expect(runs).toBe(1)
+    const executionId = await Effect.runPromise(ActivityFailureWorkflow.executionId({ id: "activity-fail" }))
+    const activity = await inspectTable(streamUrl, table =>
+      table.activities.get(`${executionId}/fail-once/1`),
+    )
+    expect(activity._tag).toBe("Some")
+    if (activity._tag === "Some") {
+      const result = activity.value.result as { readonly _tag?: string }
+      expect(result._tag).toBe("Complete")
+      expect(JSON.stringify(result)).toContain("activity-denied")
+    }
   })
 
   it("workflow-engine-durable-state.VALIDATION.9 persists SuspendOnFailure causes across engine reconstruction", async () => {
