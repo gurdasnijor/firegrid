@@ -26,6 +26,7 @@ export type {
   DurableTableTagClass,
   LayerOptions as DurableTableLayerOptions,
   PrimaryKeyOf as DurableTablePrimaryKeyOf,
+  ProjectionStream,
   RowOf as DurableTableRowOf,
 } from "./DurableTable.ts"
 export { DurableTableError } from "./Errors.ts"
