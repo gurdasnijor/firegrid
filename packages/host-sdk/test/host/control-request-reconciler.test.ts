@@ -1,4 +1,5 @@
 import { DurableStreamTestServer } from "@durable-streams/server"
+import { WorkflowEngineTable } from "@firegrid/runtime/workflow-engine"
 import {
   RuntimeControlPlaneTable,
   local,
@@ -12,11 +13,13 @@ import {
   type HostId,
   type HostSessionId,
 } from "@firegrid/protocol/launch"
-import { Effect, Option } from "effect"
+import { Effect, Fiber, Option } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   FiregridRuntimeHostWithWorkflowLive,
   reconcileRuntimeControlRequestsOnce,
+  runtimeControlRequestWorkflowExecutionId,
+  runtimeControlRequestWorkflowStreamUrl,
   runtimeControlRequestReconcilerDefaults,
   runRuntimeControlRequestReconciler,
   type RuntimeControlRequestReconcilerOptions,
@@ -31,6 +34,9 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  ;(server as unknown as {
+    server?: { closeAllConnections?: () => void }
+  } | undefined)?.server?.closeAllConnections?.()
   await server?.stop()
   server = undefined
   baseUrl = undefined
@@ -40,6 +46,17 @@ const controlPlaneLayer = (namespace: string) =>
   RuntimeControlPlaneTable.layer({
     streamOptions: {
       url: runtimeControlPlaneStreamUrl({
+        baseUrl: baseUrl!,
+        namespace,
+      }),
+      contentType: "application/json",
+    },
+  })
+
+const controlRequestWorkflowLayer = (namespace: string) =>
+  WorkflowEngineTable.layer({
+    streamOptions: {
+      url: runtimeControlRequestWorkflowStreamUrl({
         baseUrl: baseUrl!,
         namespace,
       }),
@@ -175,6 +192,17 @@ const readControlPlane = (
     Effect.scoped,
   )
 
+const readControlRequestWorkflow = (namespace: string) =>
+  Effect.gen(function* () {
+    const table = yield* WorkflowEngineTable
+    const executions = yield* table.executions.query((coll) => coll.toArray)
+    const activityClaims = yield* table.activityClaims.query((coll) => coll.toArray)
+    return { executions, activityClaims }
+  }).pipe(
+    Effect.provide(controlRequestWorkflowLayer(namespace)),
+    Effect.scoped,
+  )
+
 const runReconcilerOnce = (
   namespace: string,
   hostId: HostId,
@@ -198,7 +226,9 @@ describe("Runtime control request reconciler", () => {
     const contextId = `ctx_${crypto.randomUUID()}`
     const createdAt = new Date().toISOString()
 
-    await Effect.runPromise(seedRequests(namespace, contextId, createdAt))
+    const { contextRequest, startRequest } = await Effect.runPromise(
+      seedRequests(namespace, contextId, createdAt),
+    )
     await Effect.runPromise(runReconcilerOnce(namespace, hostId))
 
     const state = await Effect.runPromise(readControlPlane(namespace, contextId))
@@ -207,8 +237,21 @@ describe("Runtime control request reconciler", () => {
       createdBy: "control-request-reconciler-test",
       host: { hostId },
     })
-    expect(state.claims.map(row => row.requestKind)).toEqual(
-      expect.arrayContaining(["context", "start"]),
+    expect(state.claims).toHaveLength(0)
+    const workflow = await Effect.runPromise(readControlRequestWorkflow(namespace))
+    expect(workflow.executions.map(row => row.executionId)).toEqual(
+      expect.arrayContaining([
+        runtimeControlRequestWorkflowExecutionId("context", contextRequest.requestId),
+        runtimeControlRequestWorkflowExecutionId("start", startRequest.requestId),
+      ]),
+    )
+    expect(workflow.activityClaims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          executionId: runtimeControlRequestWorkflowExecutionId("context", contextRequest.requestId),
+          workerId: hostId,
+        }),
+      ]),
     )
     expect(state.completions).toHaveLength(2)
     expect(state.completions).toEqual(
@@ -275,7 +318,7 @@ describe("Runtime control request reconciler", () => {
     expect(afterRetry.completions).toHaveLength(2)
   })
 
-  it("elects exactly one claim winner per request window under concurrent scans", async () => {
+  it("elects one workflow activity owner for context provisioning under concurrent scans", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `control-request-claim-race-${crypto.randomUUID()}`
     const contextId = `ctx_${crypto.randomUUID()}`
@@ -293,15 +336,24 @@ describe("Runtime control request reconciler", () => {
     ))
 
     const state = await Effect.runPromise(readControlPlane(namespace, contextId))
-    const contextClaims = state.claims.filter(row => row.requestKind === "context")
-    const startClaims = state.claims.filter(row => row.requestKind === "start")
-    expect(new Set(contextClaims.map(row => row.claimId)).size).toBe(contextClaims.length)
-    expect(new Set(startClaims.map(row => row.claimId)).size).toBe(startClaims.length)
-    expect(contextClaims).toHaveLength(1)
-    expect(startClaims).toHaveLength(1)
+    expect(state.claims).toHaveLength(0)
+    const workflow = await Effect.runPromise(readControlRequestWorkflow(namespace))
+    expect(workflow.activityClaims.filter(row =>
+      row.executionId === runtimeControlRequestWorkflowExecutionId(
+        "context",
+        `req_ctx_${contextId}`,
+      ))).toHaveLength(1)
+    expect(workflow.executions.map(row => row.executionId)).toEqual(
+      expect.arrayContaining([
+        runtimeControlRequestWorkflowExecutionId("context", `req_ctx_${contextId}`),
+        runtimeControlRequestWorkflowExecutionId("start", `req_start_${contextId}`),
+      ]),
+    )
+    expect(state.completions.filter(row => row.requestKind === "context")).toHaveLength(1)
+    expect(state.completions.filter(row => row.requestKind === "start")).toHaveLength(1)
   })
 
-  it("re-eligible claim-window expiry lets a second host win the next window", async () => {
+  it("ignores legacy claim-window rows because workflow executions now own coordination", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `control-request-window-retry-${crypto.randomUUID()}`
     const contextId = `ctx_${crypto.randomUUID()}`
@@ -335,15 +387,24 @@ describe("Runtime control request reconciler", () => {
 
     const state = await Effect.runPromise(readControlPlane(namespace, contextId))
     const contextClaims = state.claims.filter(row => row.requestKind === "context")
-    expect(contextClaims).toHaveLength(2)
-    expect(contextClaims.map(row => row.hostId)).toEqual(expect.arrayContaining([hostA, hostB]))
-    expect(contextClaims.find(row => row.hostId === hostB)?.claimWindowStartedAtMs).toBeGreaterThan(
-      60_000,
-    )
+    expect(contextClaims).toHaveLength(1)
+    expect(contextClaims[0]?.hostId).toBe(hostA)
     expect(Option.getOrUndefined(state.context)).toMatchObject({
       contextId,
       host: { hostId: hostB },
     })
+    const workflow = await Effect.runPromise(readControlRequestWorkflow(namespace))
+    expect(workflow.activityClaims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          executionId: runtimeControlRequestWorkflowExecutionId(
+            "context",
+            seeded.contextRequest.requestId,
+          ),
+          workerId: hostB,
+        }),
+      ]),
+    )
   })
 
   it("request not lost: materializes context idempotently with insertOrGet and never blind-upserts an existing host binding", async () => {
@@ -434,7 +495,7 @@ describe("Runtime control request reconciler", () => {
     expect(state.completions).toHaveLength(0)
   })
 
-  it("firegrid-workflow-driven-runtime.VALIDATION.9 keeps polling while long-running start requests are active", async () => {
+  it("firegrid-workflow-driven-runtime.VALIDATION.9 keeps dispatching while long-running start requests are active", async () => {
     if (baseUrl === undefined) throw new Error("server not started")
     const namespace = `control-request-concurrent-start-${crypto.randomUUID()}`
     const hostId = `host_${crypto.randomUUID()}` as HostId
@@ -452,7 +513,7 @@ process.on("SIGINT", shutdown)
 process.stdin.on("end", shutdown)
 process.stdin.resume()
 setInterval(() => {}, 1_000)
-setTimeout(shutdown, 30_000)
+setTimeout(shutdown, 8_000)
 `,
       ],
     })
@@ -460,10 +521,10 @@ setTimeout(shutdown, 30_000)
     const state = await Effect.runPromise(
       Effect.gen(function* () {
         yield* insertRequests(firstContextId, new Date().toISOString(), runtime)
-        yield* runRuntimeControlRequestReconciler({
+        const reconciler = yield* runRuntimeControlRequestReconciler({
           pollIntervalMs: 25,
           claimWindowMs: 60_000,
-        }).pipe(Effect.forkScoped)
+        }).pipe(Effect.fork)
         yield* waitForStartedRuns([firstContextId])
 
         yield* insertRequests(secondContextId, new Date().toISOString(), runtime)
@@ -471,6 +532,7 @@ setTimeout(shutdown, 30_000)
         const table = yield* RuntimeControlPlaneTable
         const completions = yield* table.controlRequestCompletions.query((coll) =>
           coll.toArray.filter(row => row.requestKind === "start"))
+        yield* Fiber.interrupt(reconciler)
         return { runs, completions }
       }).pipe(
         Effect.provide(FiregridRuntimeHostWithWorkflowLive({

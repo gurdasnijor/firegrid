@@ -2,9 +2,13 @@ import {
   CurrentHostSession,
   RuntimeControlPlaneTable,
   makeLocalRuntimeContextForHostSession,
-  makeRuntimeControlRequestClaimRow,
   makeRuntimeControlRequestCompletionRow,
   normalizeRuntimeIntent,
+  RuntimeControlRequestCompletionRowSchema,
+  RuntimeContextRequestRowSchema,
+  RuntimeLifecycleRequestRowSchema,
+  RuntimeStartRequestRowSchema,
+  runtimeContextWorkflowStreamUrl,
   type RuntimeContextRequestRow,
   type RuntimeControlRequestCompletionRow,
   type RuntimeControlRequestKind,
@@ -13,13 +17,16 @@ import {
   type RuntimeOutputTable,
   type RuntimeStartRequestRow,
 } from "@firegrid/protocol/launch"
-import { Cause, Clock, Context, Duration, Effect, Layer, Option, type Scope } from "effect"
+import { Activity, Workflow, WorkflowEngine } from "@effect/workflow"
+import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
+import { Cause, Clock, Context, Duration, Effect, Layer, Option, Schema, Stream, type Scope } from "effect"
 import { withRowOtelParent } from "@firegrid/protocol/otel"
 import type { AgentToolHost } from "../agent-tools/execution/tool-host.ts"
 import { startRuntime } from "./commands.ts"
 import { RuntimeContextEngineRegistry } from "./runtime-context-engine-registry.ts"
 import type { HostRuntimeContextExecutionEnv } from "./runtime-substrate.ts"
 import { PerContextRuntimeOutputWriter } from "./per-context-runtime-output.ts"
+import { RuntimeHostConfig } from "./config.ts"
 
 const runtimeControlPlaneTable: Effect.Effect<
   RuntimeControlPlaneTable["Type"],
@@ -35,9 +42,7 @@ const currentHostSession: Effect.Effect<
 
 export const runtimeControlRequestReconcilerDefaults = {
   pollIntervalMs: 5_000,
-  claimWindowMs: 60_000,
   abandonAfterMs: 600_000,
-  startRequestConcurrency: "unbounded" as const,
   startRequestExecution: "await" as const,
 } as const
 
@@ -45,15 +50,25 @@ type StartRequestExecution = "await" | "background"
 
 export interface RuntimeControlRequestReconcilerOptions {
   readonly pollIntervalMs?: number
+  /**
+   * @deprecated Control request ownership moved to workflow Activity claims.
+   * This remains accepted so older callers do not break while the public
+   * request-row compatibility surface settles.
+   */
   readonly claimWindowMs?: number
-  readonly abandonAfterMs?: number
+  /**
+   * @deprecated Request dispatch now starts workflow executions; execution
+   * concurrency is owned by DurableStreamsWorkflowEngine.
+   */
   readonly startRequestConcurrency?: number | "unbounded"
+  readonly abandonAfterMs?: number
   readonly startRequestExecution?: StartRequestExecution
 }
 
-type ResolvedRuntimeControlRequestReconcilerOptions = Required<
-  Omit<RuntimeControlRequestReconcilerOptions, "pollIntervalMs">
->
+type ResolvedRuntimeControlRequestReconcilerOptions = {
+  readonly abandonAfterMs: number
+  readonly startRequestExecution: StartRequestExecution
+}
 
 // TFIND-045: `reconcileStartRequest` calls `startRuntime()`, which
 // transitively requires `RuntimeOutputTable` and
@@ -75,6 +90,7 @@ type RuntimeControlRequestReconcilerEnvironment =
   | AgentToolHost
   | RuntimeOutputTable
   | HostRuntimeContextExecutionEnv
+  | RuntimeControlRequestWorkflowEngine
   | Scope.Scope
 
 export interface RuntimeControlRequestReconcilerService {
@@ -98,16 +114,10 @@ const optionValue = (
 const resolveOptions = (
   options: RuntimeControlRequestReconcilerOptions,
 ): ResolvedRuntimeControlRequestReconcilerOptions => ({
-  claimWindowMs: optionValue(
-    options.claimWindowMs,
-    runtimeControlRequestReconcilerDefaults.claimWindowMs,
-  ),
   abandonAfterMs: optionValue(
     options.abandonAfterMs,
     runtimeControlRequestReconcilerDefaults.abandonAfterMs,
   ),
-  startRequestConcurrency: options.startRequestConcurrency ??
-    runtimeControlRequestReconcilerDefaults.startRequestConcurrency,
   startRequestExecution: options.startRequestExecution ??
     runtimeControlRequestReconcilerDefaults.startRequestExecution,
 })
@@ -116,11 +126,6 @@ const createdAtMs = (createdAt: string): number => {
   const parsed = Date.parse(createdAt)
   return Number.isFinite(parsed) ? parsed : 0
 }
-
-const claimWindowStartedAtMs = (
-  nowMs: number,
-  claimWindowMs: number,
-): number => Math.floor(nowMs / claimWindowMs) * claimWindowMs
 
 const requestTimedOut = (
   requestCreatedAt: string,
@@ -156,17 +161,17 @@ const writeCompletion = (
     readonly signal?: string
     readonly message?: string
   },
-): Effect.Effect<void, unknown, RuntimeControlPlaneTable> =>
+): Effect.Effect<RuntimeControlRequestCompletionRow, unknown, RuntimeControlPlaneTable> =>
   Effect.gen(function*() {
     const table = yield* runtimeControlPlaneTable
-    yield* table.controlRequestCompletions.insertOrGet(
-      makeRuntimeControlRequestCompletionRow({
-        ...input,
-        requestKind,
-        requestId: request.requestId,
-        contextId: request.contextId,
-      }),
-    )
+    const row = makeRuntimeControlRequestCompletionRow({
+      ...input,
+      requestKind,
+      requestId: request.requestId,
+      contextId: request.contextId,
+    })
+    const result = yield* table.controlRequestCompletions.insertOrGet(row)
+    return result._tag === "Found" ? result.row : row
   }).pipe(
     Effect.withSpan("firegrid.host.control_request.completion.write", {
       kind: "internal",
@@ -179,33 +184,15 @@ const writeCompletion = (
     }),
   )
 
-const skipOrAbandonTerminalRequest = (
-  requestKind: RuntimeControlRequestKind,
-  request: ControlRequest,
-  options: ResolvedRuntimeControlRequestReconcilerOptions,
-) =>
-  Effect.gen(function*() {
-    const table = yield* runtimeControlPlaneTable
-    const nowMs = yield* Clock.currentTimeMillis
-    if (hasTerminal(yield* table.controlRequestCompletions.get(request.requestId))) {
-      return Option.none<number>()
-    }
-    if (requestTimedOut(request.createdAt, nowMs, options.abandonAfterMs)) {
-      yield* abandon(requestKind, request, nowMs, options.abandonAfterMs)
-      return Option.none<number>()
-    }
-    return Option.some(nowMs)
-  })
-
 const abandon = (
   requestKind: RuntimeControlRequestKind,
   request: ControlRequest,
   nowMs: number,
   abandonAfterMs: number,
-): Effect.Effect<void, unknown, CurrentHostSession | RuntimeControlPlaneTable> =>
+): Effect.Effect<RuntimeControlRequestCompletionRow, unknown, CurrentHostSession | RuntimeControlPlaneTable> =>
   Effect.gen(function*() {
     const session = yield* currentHostSession
-    yield* writeCompletion(requestKind, request, {
+    return yield* writeCompletion(requestKind, request, {
       status: "abandoned",
       hostId: session.hostId,
       completedAtMs: nowMs,
@@ -223,60 +210,160 @@ const abandon = (
     }),
   )
 
-const winClaim = (
+const RuntimeContextProvisionWorkflowPayload = Schema.Struct({
+  request: RuntimeContextRequestRowSchema,
+  abandonAfterMs: Schema.Number,
+})
+
+const RuntimeStartWorkflowPayload = Schema.Struct({
+  request: RuntimeStartRequestRowSchema,
+  abandonAfterMs: Schema.Number,
+})
+
+const RuntimeLifecycleWorkflowPayload = Schema.Struct({
+  request: RuntimeLifecycleRequestRowSchema,
+  abandonAfterMs: Schema.Number,
+})
+
+const RuntimeControlRequestClaimedOutcomeSchema = Schema.Struct({
+  _tag: Schema.Literal("Claimed"),
+  hostId: Schema.String,
+})
+
+const RuntimeControlRequestDoneOutcomeSchema = Schema.Struct({
+  _tag: Schema.Literal("Done"),
+})
+
+const RuntimeControlRequestDispatchOutcomeSchema = Schema.Union(
+  RuntimeControlRequestClaimedOutcomeSchema,
+  RuntimeControlRequestDoneOutcomeSchema,
+)
+type RuntimeControlRequestDispatchOutcome = Schema.Schema.Type<
+  typeof RuntimeControlRequestDispatchOutcomeSchema
+>
+
+export const RuntimeContextProvisionWorkflow = Workflow.make({
+  name: "firegrid.runtime-control.context-provision",
+  payload: RuntimeContextProvisionWorkflowPayload,
+  success: RuntimeControlRequestCompletionRowSchema,
+  error: Schema.Never,
+  idempotencyKey: ({ request }) => runtimeControlRequestWorkflowExecutionId("context", request.requestId),
+})
+
+export const RuntimeStartWorkflow = Workflow.make({
+  name: "firegrid.runtime-control.start",
+  payload: RuntimeStartWorkflowPayload,
+  success: RuntimeControlRequestDispatchOutcomeSchema,
+  error: Schema.Never,
+  idempotencyKey: ({ request }) => runtimeControlRequestWorkflowExecutionId("start", request.requestId),
+})
+
+export const RuntimeLifecycleWorkflow = Workflow.make({
+  name: "firegrid.runtime-control.lifecycle",
+  payload: RuntimeLifecycleWorkflowPayload,
+  success: RuntimeControlRequestDispatchOutcomeSchema,
+  error: Schema.Never,
+  idempotencyKey: ({ request }) =>
+    runtimeControlRequestWorkflowExecutionId(request.lifecycle, request.requestId),
+})
+
+export const runtimeControlRequestWorkflowExecutionId = (
+  requestKind: RuntimeControlRequestKind,
+  requestId: string,
+): string => `runtime-control:${requestKind}:${requestId}`
+
+export const runtimeControlRequestWorkflowStreamUrl = (input: {
+  readonly baseUrl: string
+  readonly namespace: string
+}): string => runtimeContextWorkflowStreamUrl({
+  ...input,
+  contextId: "__control_requests__",
+})
+
+type RuntimeControlRequestWorkflowExecutionEnv =
+  | CurrentHostSession
+  | RuntimeControlPlaneTable
+  | RuntimeContextEngineRegistry
+  | PerContextRuntimeOutputWriter
+  | AgentToolHost
+  | RuntimeOutputTable
+  | HostRuntimeContextExecutionEnv
+
+interface RuntimeControlRequestWorkflowEngineService {
+  readonly contextProvision: (
+    request: RuntimeContextRequestRow,
+    options: ResolvedRuntimeControlRequestReconcilerOptions,
+  ) => Effect.Effect<void, unknown, Scope.Scope>
+  readonly start: (
+    request: RuntimeStartRequestRow,
+    options: ResolvedRuntimeControlRequestReconcilerOptions,
+  ) => Effect.Effect<void, unknown, Scope.Scope>
+  readonly lifecycle: (
+    request: RuntimeLifecycleRequestRow,
+    options: ResolvedRuntimeControlRequestReconcilerOptions,
+  ) => Effect.Effect<void, unknown, Scope.Scope>
+}
+
+export class RuntimeControlRequestWorkflowEngine extends Context.Tag(
+  "@firegrid/host-sdk/RuntimeControlRequestWorkflowEngine",
+)<RuntimeControlRequestWorkflowEngine, RuntimeControlRequestWorkflowEngineService>() {}
+
+const terminalOrAbandonedCompletion = (
   requestKind: RuntimeControlRequestKind,
   request: ControlRequest,
-  nowMs: number,
-  claimWindowMs: number,
-): Effect.Effect<boolean, unknown, CurrentHostSession | RuntimeControlPlaneTable> =>
+  abandonAfterMs: number,
+): Effect.Effect<Option.Option<RuntimeControlRequestCompletionRow>, unknown, CurrentHostSession | RuntimeControlPlaneTable> =>
+  Effect.gen(function*() {
+    const table = yield* runtimeControlPlaneTable
+    const terminal = yield* table.controlRequestCompletions.get(request.requestId)
+    if (Option.isSome(terminal)) return terminal
+    const nowMs = yield* Clock.currentTimeMillis
+    if (!requestTimedOut(request.createdAt, nowMs, abandonAfterMs)) {
+      return Option.none()
+    }
+    return Option.some(yield* abandon(requestKind, request, nowMs, abandonAfterMs))
+  })
+
+const localContextForRequest = (
+  request: ControlRequest,
+): Effect.Effect<Option.Option<RuntimeContext>, unknown, CurrentHostSession | RuntimeControlPlaneTable> =>
   Effect.gen(function*() {
     const table = yield* runtimeControlPlaneTable
     const session = yield* currentHostSession
-    const windowStartedAtMs = claimWindowStartedAtMs(nowMs, claimWindowMs)
-    const result = yield* table.controlRequestClaims.insertOrGet(
-      makeRuntimeControlRequestClaimRow({
-        requestKind,
-        requestId: request.requestId,
-        contextId: request.contextId,
-        hostId: session.hostId,
-        hostSessionId: session.hostSessionId,
-        claimWindowStartedAtMs: windowStartedAtMs,
-        claimWindowExpiresAtMs: windowStartedAtMs + claimWindowMs,
-        claimedAtMs: nowMs,
-      }),
-    )
-    yield* Effect.annotateCurrentSpan({
-      "firegrid.control.claim_won": result._tag === "Inserted",
-    })
-    return result._tag === "Inserted"
-  }).pipe(
-    Effect.withSpan("firegrid.host.control_request.claim", {
-      kind: "internal",
-      attributes: {
-        "firegrid.context.id": request.contextId,
-        "firegrid.control.request_id": request.requestId,
-        "firegrid.control.request_kind": requestKind,
-      },
-    }),
-  )
+    const context = yield* table.contexts.get(request.contextId)
+    if (Option.isNone(context)) return Option.none()
+    return context.value.host.hostId === session.hostId ? context : Option.none()
+  })
 
-const reconcileContextRequest = (
+const failedCompletionFromCause = (
+  kind: RuntimeControlRequestKind,
+  request: ControlRequest,
+  cause: Cause.Cause<unknown>,
+): Effect.Effect<RuntimeControlRequestCompletionRow, unknown, CurrentHostSession | RuntimeControlPlaneTable> =>
+  Effect.gen(function*() {
+    const session = yield* currentHostSession
+    const completedAtMs = yield* Clock.currentTimeMillis
+    return yield* writeCompletion(kind, request, {
+      status: "failed",
+      hostId: session.hostId,
+      completedAtMs,
+      message: Cause.pretty(cause),
+    })
+  })
+
+const provisionContextRequest = (
   request: RuntimeContextRequestRow,
-  options: ResolvedRuntimeControlRequestReconcilerOptions,
+  abandonAfterMs: number,
 ): Effect.Effect<
-  void,
-  unknown,
+  RuntimeControlRequestCompletionRow,
+  never,
   CurrentHostSession | RuntimeControlPlaneTable
 > =>
   Effect.gen(function*() {
+    const terminal = yield* terminalOrAbandonedCompletion("context", request, abandonAfterMs)
+    if (Option.isSome(terminal)) return terminal.value
     const table = yield* runtimeControlPlaneTable
     const session = yield* currentHostSession
-    const nowMs = yield* skipOrAbandonTerminalRequest("context", request, options)
-    if (Option.isNone(nowMs)) return
-
-    if (!(yield* winClaim("context", request, nowMs.value, options.claimWindowMs))) return
-    if (hasTerminal(yield* table.controlRequestCompletions.get(request.requestId))) return
-
     const runtimeContext = yield* makeLocalRuntimeContextForHostSession(
       session,
       normalizeRuntimeIntent(request.runtime),
@@ -288,107 +375,96 @@ const reconcileContextRequest = (
     )
     yield* table.contexts.insertOrGet(runtimeContext)
     const completedAtMs = yield* Clock.currentTimeMillis
-    yield* writeCompletion("context", request, {
+    return yield* writeCompletion("context", request, {
       status: "succeeded",
       hostId: session.hostId,
       completedAtMs,
     })
   }).pipe(
-    Effect.withSpan("firegrid.host.control_request.context.reconcile", {
+    Effect.catchAllCause(cause =>
+      failedCompletionFromCause("context", request, cause).pipe(Effect.orDie)),
+    Effect.withSpan("firegrid.host.control_request.context.workflow", {
       kind: "consumer",
       attributes: {
         "firegrid.context.id": request.contextId,
         "firegrid.control.request_id": request.requestId,
       },
     }),
-    // Parent ALL spans under this reconcile (the named span + everything it
-    // calls into) to the client-side append span recorded on the row.
     withRowOtelParent(request),
   )
 
-// Shared claim preamble for reconcilable control requests that act on an
-// already-existing context (start, cancel, close): resolve the host
-// session, skip/abandon terminal, require the context to exist, win the
-// first-writer claim, and re-check terminal. `Option.none` ⇒ the caller
-// returns early. Extracted so the start/lifecycle arms do not duplicate it.
-const acquireReconcileClaim = (
+const claimContextBoundRequest = (
   kind: RuntimeControlRequestKind,
-  request: ControlRequest,
-  options: ResolvedRuntimeControlRequestReconcilerOptions,
+  request: RuntimeStartRequestRow | RuntimeLifecycleRequestRow,
+  abandonAfterMs: number,
 ): Effect.Effect<
-  Option.Option<{
-    readonly session: CurrentHostSession["Type"]
-    readonly context: RuntimeContext
-    readonly nowMs: number
-  }>,
-  unknown,
+  RuntimeControlRequestDispatchOutcome,
+  never,
   CurrentHostSession | RuntimeControlPlaneTable
 > =>
   Effect.gen(function*() {
-    const table = yield* runtimeControlPlaneTable
+    const terminal = yield* terminalOrAbandonedCompletion(kind, request, abandonAfterMs)
+    if (Option.isSome(terminal)) return { _tag: "Done" } as const
+    const context = yield* localContextForRequest(request)
+    if (Option.isNone(context)) return { _tag: "Done" } as const
     const session = yield* currentHostSession
-    const nowMs = yield* skipOrAbandonTerminalRequest(kind, request, options)
-    if (Option.isNone(nowMs)) return Option.none()
-    const context = yield* table.contexts.get(request.contextId)
-    if (Option.isNone(context)) return Option.none()
-    if (context.value.host.hostId !== session.hostId) return Option.none()
-    if (!(yield* winClaim(kind, request, nowMs.value, options.claimWindowMs))) {
-      return Option.none()
-    }
-    if (hasTerminal(yield* table.controlRequestCompletions.get(request.requestId))) {
-      return Option.none()
-    }
-    return Option.some({ session, context: context.value, nowMs: nowMs.value })
-  })
+    return { _tag: "Claimed" as const, hostId: session.hostId }
+  }).pipe(
+    Effect.catchAllCause(cause =>
+      failedCompletionFromCause(kind, request, cause).pipe(
+        Effect.as({ _tag: "Done" } as const),
+        Effect.orDie,
+      )),
+    Effect.withSpan("firegrid.host.control_request.claim.workflow", {
+      kind: "consumer",
+      attributes: {
+        "firegrid.context.id": request.contextId,
+        "firegrid.control.request_id": request.requestId,
+        "firegrid.control.request_kind": kind,
+      },
+    }),
+    withRowOtelParent(request),
+  )
 
-const reconcileStartRequest = (
+const runStartRequestSideEffect = (
   request: RuntimeStartRequestRow,
-  options: ResolvedRuntimeControlRequestReconcilerOptions,
-): Effect.Effect<void, unknown, RuntimeControlRequestReconcilerEnvironment> =>
+): Effect.Effect<
+  void,
+  unknown,
+  | CurrentHostSession
+  | RuntimeControlPlaneTable
+  | RuntimeContextEngineRegistry
+  | AgentToolHost
+  | RuntimeOutputTable
+  | HostRuntimeContextExecutionEnv
+  | Scope.Scope
+> =>
   Effect.gen(function*() {
-    const claim = yield* acquireReconcileClaim("start", request, options)
-    if (Option.isNone(claim)) return
-    const { nowMs, session } = claim.value
-
-    const runStartRequest = Effect.gen(function*() {
-      const result = yield* startRuntime({ contextId: request.contextId }).pipe(
-        Effect.tapError(cause =>
-          writeCompletion("start", request, {
+    if (yield* requestIsTerminal(request)) return
+    const session = yield* currentHostSession
+    const result = yield* startRuntime({ contextId: request.contextId }).pipe(
+      Effect.tapError(cause =>
+        Effect.gen(function*() {
+          const completedAtMs = yield* Clock.currentTimeMillis
+          yield* writeCompletion("start", request, {
             status: "failed",
             hostId: session.hostId,
-            completedAtMs: nowMs,
+            completedAtMs,
             message: cause instanceof Error ? cause.message : String(cause),
-          })),
-      )
-      const completedAtMs = yield* Clock.currentTimeMillis
-      yield* writeCompletion("start", request, {
-        status: "succeeded",
-        hostId: session.hostId,
-        completedAtMs,
-        activityAttempt: result.activityAttempt,
-        exitCode: result.exitCode,
-        ...(result.signal === undefined ? {} : { signal: result.signal }),
-      })
+          })
+        })),
+    )
+    const completedAtMs = yield* Clock.currentTimeMillis
+    yield* writeCompletion("start", request, {
+      status: "succeeded",
+      hostId: session.hostId,
+      completedAtMs,
+      activityAttempt: result.activityAttempt,
+      exitCode: result.exitCode,
+      ...(result.signal === undefined ? {} : { signal: result.signal }),
     })
-
-    if (options.startRequestExecution === "background") {
-      yield* runStartRequest.pipe(
-        Effect.catchAllCause(cause =>
-          Effect.logError("[host-sdk] runtime control request start failed").pipe(
-            Effect.annotateLogs({
-              contextId: request.contextId,
-              requestId: request.requestId,
-              cause: Cause.pretty(cause),
-            }),
-          )),
-        Effect.forkScoped,
-      )
-      return
-    }
-
-    yield* runStartRequest
   }).pipe(
-    Effect.withSpan("firegrid.host.control_request.start.reconcile", {
+    Effect.withSpan("firegrid.host.control_request.start.side_effect", {
       kind: "consumer",
       attributes: {
         "firegrid.context.id": request.contextId,
@@ -461,18 +537,8 @@ const recordLifecycleTerminalEvidence = (
     }),
   )
 
-// tf-4ni: durable session-lifecycle terminate (cancel/close). Mirrors
-// `reconcileStartRequest`. The per-context engine terminal action is the
-// existing host-local `RuntimeContextEngineRegistry.deregister` (closes the
-// active engine scope; safe no-op if this host generation holds no active
-// engine). The durable, cross-host-observable terminal state is the
-// kind-generic completion row written to `RuntimeControlPlaneTable` — it
-// survives host generations exactly like the context/start completion. No
-// `SandboxProvider`/`HostRuntimeContextExecutionEnv` widening: deregister
-// needs only the registry the reconciler env already declares.
-const reconcileLifecycleRequest = (
+const runLifecycleRequestSideEffect = (
   request: RuntimeLifecycleRequestRow,
-  options: ResolvedRuntimeControlRequestReconcilerOptions,
 ): Effect.Effect<
   void,
   unknown,
@@ -483,29 +549,22 @@ const reconcileLifecycleRequest = (
 > =>
   Effect.gen(function*() {
     const kind: RuntimeControlRequestKind = request.lifecycle
-    const claim = yield* acquireReconcileClaim(kind, request, options)
-    if (Option.isNone(claim)) return
-    const { context, nowMs, session } = claim.value
-
+    if (yield* requestIsTerminal(request)) return
+    const context = yield* localContextForRequest(request)
+    if (Option.isNone(context)) return
+    const session = yield* currentHostSession
     const registry = yield* RuntimeContextEngineRegistry
-    yield* registry.deregister(request.contextId).pipe(
-      Effect.tapErrorCause(cause =>
-        writeCompletion(kind, request, {
-          status: "failed",
-          hostId: session.hostId,
-          completedAtMs: nowMs,
-          message: Cause.pretty(cause),
-        })),
-    )
+    yield* registry.deregister(request.contextId)
     const completedAtMs = yield* Clock.currentTimeMillis
     yield* writeCompletion(kind, request, {
       status: "succeeded",
       hostId: session.hostId,
       completedAtMs,
     })
-    yield* recordLifecycleTerminalEvidence(context, request)
+    yield* recordLifecycleTerminalEvidence(context.value, request)
   }).pipe(
-    Effect.withSpan("firegrid.host.control_request.lifecycle.reconcile", {
+    Effect.tapErrorCause(cause => failedCompletionFromCause(request.lifecycle, request, cause)),
+    Effect.withSpan("firegrid.host.control_request.lifecycle.workflow", {
       kind: "consumer",
       attributes: {
         "firegrid.context.id": request.contextId,
@@ -516,15 +575,214 @@ const reconcileLifecycleRequest = (
     withRowOtelParent(request),
   )
 
+const controlRequestActivityName = (
+  requestKind: RuntimeControlRequestKind,
+  requestId: string,
+): string => `runtime-control/${requestKind}/${requestId}`
+
+const logWorkflowDispatchFailure = (
+  requestKind: RuntimeControlRequestKind,
+  request: ControlRequest,
+  cause: Cause.Cause<unknown>,
+) =>
+  Effect.logError("[host-sdk] runtime control request workflow failed").pipe(
+    Effect.annotateLogs({
+      contextId: request.contextId,
+      requestId: request.requestId,
+      requestKind,
+      cause: Cause.pretty(cause),
+    }),
+  )
+
+export const RuntimeControlRequestWorkflowEngineLive = Layer.scoped(
+  RuntimeControlRequestWorkflowEngine,
+  Effect.gen(function*() {
+    const config = yield* RuntimeHostConfig
+    const session = yield* currentHostSession
+    const scope = yield* Effect.scope
+    const engineContext = yield* Layer.buildWithScope(
+      DurableStreamsWorkflowEngine.layer({
+        streamUrl: runtimeControlRequestWorkflowStreamUrl({
+          baseUrl: config.durableStreamsBaseUrl,
+          namespace: config.namespace,
+        }),
+        workerId: session.hostId,
+        ...(config.headers === undefined ? {} : { headers: config.headers }),
+      }),
+      scope,
+    )
+    const engine = Context.get(engineContext, WorkflowEngine.WorkflowEngine)
+    const captured = yield* Effect.context<RuntimeControlRequestWorkflowExecutionEnv>()
+
+    yield* engine.register(RuntimeContextProvisionWorkflow, ({ request, abandonAfterMs }) =>
+      Activity.make({
+        name: controlRequestActivityName("context", request.requestId),
+        success: RuntimeControlRequestCompletionRowSchema,
+        execute: provisionContextRequest(request, abandonAfterMs).pipe(
+          Effect.provide(captured),
+        ),
+      }))
+    yield* engine.register(RuntimeStartWorkflow, ({ request, abandonAfterMs }) =>
+      claimContextBoundRequest("start", request, abandonAfterMs).pipe(
+        Effect.provide(captured),
+      ))
+    yield* engine.register(RuntimeLifecycleWorkflow, ({ request, abandonAfterMs }) =>
+      claimContextBoundRequest(request.lifecycle, request, abandonAfterMs).pipe(
+        Effect.provide(captured),
+      ))
+
+    const runContextProvision = (
+      request: RuntimeContextRequestRow,
+      options: ResolvedRuntimeControlRequestReconcilerOptions,
+    ) =>
+      engine.execute(RuntimeContextProvisionWorkflow, {
+        executionId: runtimeControlRequestWorkflowExecutionId("context", request.requestId),
+        payload: { request, abandonAfterMs: options.abandonAfterMs },
+      }).pipe(Effect.asVoid)
+
+    const runStart = (
+      request: RuntimeStartRequestRow,
+      options: ResolvedRuntimeControlRequestReconcilerOptions,
+    ) => {
+      const run = Effect.gen(function*() {
+        const outcome = yield* engine.execute(RuntimeStartWorkflow, {
+          executionId: runtimeControlRequestWorkflowExecutionId("start", request.requestId),
+          payload: { request, abandonAfterMs: options.abandonAfterMs },
+        })
+        if (outcome._tag !== "Claimed" || outcome.hostId !== session.hostId) return
+        yield* runStartRequestSideEffect(request).pipe(Effect.provide(captured))
+      })
+      return options.startRequestExecution === "background"
+        ? run.pipe(
+          Effect.catchAllCause(cause =>
+            Cause.isInterruptedOnly(cause)
+              ? Effect.interrupt
+              : logWorkflowDispatchFailure("start", request, cause)),
+          Effect.forkIn(scope),
+          Effect.asVoid,
+        )
+        : run
+    }
+
+    const runLifecycle = (
+      request: RuntimeLifecycleRequestRow,
+      options: ResolvedRuntimeControlRequestReconcilerOptions,
+    ) => Effect.gen(function*() {
+      const outcome = yield* engine.execute(RuntimeLifecycleWorkflow, {
+        executionId: runtimeControlRequestWorkflowExecutionId(request.lifecycle, request.requestId),
+        payload: { request, abandonAfterMs: options.abandonAfterMs },
+      })
+      if (outcome._tag !== "Claimed" || outcome.hostId !== session.hostId) return
+      yield* runLifecycleRequestSideEffect(request).pipe(Effect.provide(captured))
+    })
+
+    return RuntimeControlRequestWorkflowEngine.of({
+      contextProvision: runContextProvision,
+      start: runStart,
+      lifecycle: runLifecycle,
+    })
+  }).pipe(
+    Effect.withSpan("firegrid.host.control_request.workflow_engine.layer", {
+      kind: "internal",
+    }),
+  ),
+)
+
+const requestIsTerminal = (
+  request: ControlRequest,
+): Effect.Effect<boolean, unknown, RuntimeControlPlaneTable> =>
+  Effect.gen(function*() {
+    const table = yield* runtimeControlPlaneTable
+    return hasTerminal(yield* table.controlRequestCompletions.get(request.requestId))
+  })
+
+const shouldDispatchContextBoundRequest = (
+  request: ControlRequest,
+  options: ResolvedRuntimeControlRequestReconcilerOptions,
+): Effect.Effect<boolean, unknown, CurrentHostSession | RuntimeControlPlaneTable> =>
+  Effect.gen(function*() {
+    if (yield* requestIsTerminal(request)) return false
+    const nowMs = yield* Clock.currentTimeMillis
+    if (requestTimedOut(request.createdAt, nowMs, options.abandonAfterMs)) return true
+    return Option.isSome(yield* localContextForRequest(request))
+  })
+
+const reconcileContextRequest = (
+  request: RuntimeContextRequestRow,
+  options: ResolvedRuntimeControlRequestReconcilerOptions,
+): Effect.Effect<void, unknown, RuntimeControlRequestWorkflowEngine | Scope.Scope> =>
+  RuntimeControlRequestWorkflowEngine.pipe(
+    Effect.flatMap(engine => engine.contextProvision(request, options)),
+    Effect.withSpan("firegrid.host.control_request.context.dispatch", {
+      kind: "producer",
+      attributes: {
+        "firegrid.context.id": request.contextId,
+        "firegrid.control.request_id": request.requestId,
+      },
+    }),
+  )
+
+const reconcileContextBoundRequest = (
+  request: RuntimeStartRequestRow | RuntimeLifecycleRequestRow,
+  options: ResolvedRuntimeControlRequestReconcilerOptions,
+  dispatch: (
+    engine: RuntimeControlRequestWorkflowEngine["Type"],
+  ) => Effect.Effect<void, unknown, Scope.Scope>,
+  spanName: string,
+  attributes: Record<string, string>,
+): Effect.Effect<
+  void,
+  unknown,
+  CurrentHostSession | RuntimeControlPlaneTable | RuntimeControlRequestWorkflowEngine | Scope.Scope
+> =>
+  Effect.gen(function*() {
+    if (!(yield* shouldDispatchContextBoundRequest(request, options))) return
+    const engine = yield* RuntimeControlRequestWorkflowEngine
+    yield* dispatch(engine)
+  }).pipe(
+    Effect.withSpan(spanName, {
+      kind: "producer",
+      attributes,
+    }),
+  )
+
+const reconcileStartRequest = (
+  request: RuntimeStartRequestRow,
+  options: ResolvedRuntimeControlRequestReconcilerOptions,
+) =>
+  reconcileContextBoundRequest(
+    request,
+    options,
+    engine => engine.start(request, options),
+    "firegrid.host.control_request.start.dispatch",
+    {
+      "firegrid.context.id": request.contextId,
+      "firegrid.control.request_id": request.requestId,
+    },
+  )
+
+const reconcileLifecycleRequest = (
+  request: RuntimeLifecycleRequestRow,
+  options: ResolvedRuntimeControlRequestReconcilerOptions,
+) =>
+  reconcileContextBoundRequest(
+    request,
+    options,
+    engine => engine.lifecycle(request, options),
+    "firegrid.host.control_request.lifecycle.dispatch",
+    {
+        "firegrid.context.id": request.contextId,
+        "firegrid.control.request_id": request.requestId,
+        "firegrid.control.lifecycle": request.lifecycle,
+    },
+  )
+
 const reconcileLifecycleRequestsOnce = (
   resolved: ResolvedRuntimeControlRequestReconcilerOptions,
 ): Effect.Effect<
   number,
   unknown,
-  | CurrentHostSession
-  | RuntimeControlPlaneTable
-  | RuntimeContextEngineRegistry
-  | PerContextRuntimeOutputWriter
+  CurrentHostSession | RuntimeControlPlaneTable | RuntimeControlRequestWorkflowEngine | Scope.Scope
 > =>
   Effect.gen(function*() {
     const table = yield* runtimeControlPlaneTable
@@ -570,7 +828,7 @@ export const reconcileRuntimeControlRequestsOnce = (
     yield* Effect.forEach(
       startRequests,
       request => reconcileStartRequest(request, resolved),
-      { concurrency: resolved.startRequestConcurrency, discard: true },
+      { discard: true },
     )
     yield* annotateReconcileOutcome(
       contextRequests.length + lifecycleRequestCount + startRequests.length === 0 ? "noop" : "completed",
@@ -587,51 +845,75 @@ export const reconcileRuntimeControlRequestsOnce = (
 export const runRuntimeControlRequestReconciler = (
   options: RuntimeControlRequestReconcilerOptions = {},
 ): Effect.Effect<never, never, RuntimeControlRequestReconcilerEnvironment> => {
-  const pollIntervalMs = optionValue(
-    options.pollIntervalMs,
-    runtimeControlRequestReconcilerDefaults.pollIntervalMs,
-  )
   const daemonOptions = {
     startRequestExecution: "background" as const,
     ...options,
   }
   const resolved = resolveOptions(daemonOptions)
-  const loop = <R>(
+  const restartOnFailure = <R>(
     effect: Effect.Effect<unknown, unknown, R>,
-    spanName: string,
+    streamName: string,
   ): Effect.Effect<never, never, R> =>
     effect.pipe(
       Effect.catchAllCause(cause =>
-        Effect.logError("[host-sdk] runtime control request reconciliation failed").pipe(
-          Effect.annotateLogs({ cause: Cause.pretty(cause), loop: spanName }),
-        )),
-      Effect.zipRight(Effect.sleep(Duration.millis(pollIntervalMs))),
+        Cause.isInterruptedOnly(cause)
+          ? Effect.interrupt
+          : Effect.logError("[host-sdk] runtime control request reconciliation failed").pipe(
+            Effect.annotateLogs({ cause: Cause.pretty(cause), stream: streamName }),
+            Effect.zipRight(Effect.sleep(Duration.seconds(1))),
+          )),
       Effect.forever,
     )
-  const controlLoop: Effect.Effect<
-    never,
-    never,
-    RuntimeControlRequestReconcilerEnvironment
-  > = loop(
-    reconcileRuntimeControlRequestsOnce(daemonOptions),
-    "control",
-  )
-  const lifecycleLoop: Effect.Effect<
-    never,
-    never,
-    | CurrentHostSession
-    | RuntimeControlPlaneTable
-    | RuntimeContextEngineRegistry
-    | PerContextRuntimeOutputWriter
-  > = loop(
-    reconcileLifecycleRequestsOnce(resolved),
-    "lifecycle",
-  )
+  const reconcileStartsForContext = (contextId: string) =>
+    Effect.gen(function*() {
+      const table = yield* runtimeControlPlaneTable
+      const startRequests = yield* table.startRequests.query((coll) =>
+        coll.toArray.filter(request => request.contextId === contextId))
+      yield* Effect.forEach(
+        startRequests,
+        request => reconcileStartRequest(request, resolved),
+        { discard: true },
+      )
+    })
+  const contextRows = Effect.gen(function*() {
+    const table = yield* runtimeControlPlaneTable
+    yield* table.contextRequests.rows().pipe(
+      Stream.runForEach(request =>
+        reconcileContextRequest(request, resolved).pipe(
+          Effect.zipRight(reconcileStartsForContext(request.contextId)),
+        )),
+    )
+  })
+  const startRows = Effect.gen(function*() {
+    const table = yield* runtimeControlPlaneTable
+    yield* table.startRequests.rows().pipe(
+      Stream.runForEach(request => reconcileStartRequest(request, resolved)),
+    )
+  })
+  const lifecycleRows = Effect.gen(function*() {
+    const table = yield* runtimeControlPlaneTable
+    yield* table.lifecycleRequests.rows().pipe(
+      Stream.runForEach(request => reconcileLifecycleRequest(request, resolved)),
+    )
+  })
 
-  return Effect.all(
-    [controlLoop, lifecycleLoop],
-    { concurrency: "unbounded", discard: true },
-  ).pipe(Effect.zipRight(Effect.never))
+  return reconcileRuntimeControlRequestsOnce(daemonOptions).pipe(
+    Effect.catchAllCause(cause =>
+      Cause.isInterruptedOnly(cause)
+        ? Effect.interrupt
+        : Effect.logError("[host-sdk] runtime control request startup reconciliation failed").pipe(
+          Effect.annotateLogs({ cause: Cause.pretty(cause) }),
+        )),
+    Effect.zipRight(Effect.all(
+      [
+        restartOnFailure(contextRows, "context"),
+        restartOnFailure(startRows, "start"),
+        restartOnFailure(lifecycleRows, "lifecycle"),
+      ],
+      { concurrency: "unbounded", discard: true },
+    )),
+    Effect.zipRight(Effect.never),
+  )
 }
 
 export const RuntimeControlRequestReconcilerLive = Layer.succeed(
@@ -644,4 +926,6 @@ export const RuntimeControlRequestReconcilerLive = Layer.succeed(
 
 export const RuntimeControlRequestReconcilerDaemonLive = Layer.scopedDiscard(
   Effect.forkScoped(runRuntimeControlRequestReconciler()).pipe(Effect.asVoid),
+).pipe(
+  Layer.provideMerge(RuntimeControlRequestWorkflowEngineLive),
 )

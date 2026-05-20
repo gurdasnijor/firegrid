@@ -20,6 +20,7 @@ import { RuntimeStartCapabilityLive } from "./commands.ts"
 import {
   RuntimeControlRequestReconcilerDaemonLive,
   RuntimeControlRequestReconcilerLive,
+  RuntimeControlRequestWorkflowEngineLive,
 } from "./control-request-reconciler.ts"
 import {
   FiregridRuntimeContextMcpBaseUrlLive,
@@ -303,6 +304,7 @@ export const FiregridRuntimeHostLive = (
     RuntimeInputIntentDispatcherLive,
     RuntimeStartCapabilityLive,
     RuntimeControlRequestReconcilerLive,
+    RuntimeControlRequestWorkflowEngineLive,
     ...(options.controlRequestReconciler === false
       ? []
       : [RuntimeControlRequestReconcilerDaemonLive]),
