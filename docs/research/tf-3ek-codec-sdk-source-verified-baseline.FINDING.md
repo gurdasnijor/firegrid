@@ -37,13 +37,18 @@ Of the five candidate causes for `tools/call=0` enumerated in
 
 | Cause | Verdict | Mechanism |
 |---|---|---|
-| **#1** claude-agent-acp loaded MCP but didn't forward tools to the model | **RULED OUT for ACP path; OPEN for native MCP path (see tf-s8y)** | `acp-agent.js:1438` merges our `_meta.claudeCode.options.mcpServers` payload with `request.mcpServers`; both reach the SDK. `sdk.d.ts:957` confirms `alwaysLoad:true` does what the codec assumes — tools always in the prompt, never deferred behind tool search. Tool naming through this path is prefix-renamed (`mcp__firegrid-alwaysload__<tool>`); the native path avoids this and is tested by spike tf-s8y. |
+| **#1** claude-agent-acp loaded MCP but didn't forward tools to the model | **RESOLVED** (PR #444 `tf-s8y` spike + PR #446 `tf-v7t` production codec change with `.mcp.json` split + permission handler) | `acp-agent.js:1438` merges our `_meta.claudeCode.options.mcpServers` payload with `request.mcpServers`; both reach the SDK. `sdk.d.ts:957` confirms `alwaysLoad:true` exists at the SDK layer, but the §6 resolution came from avoiding the ACP `_meta` alias path entirely: PR #444 proved native `.mcp.json` registration drives real Firegrid tool calls, and PR #446 turns that into the production codec shape while preserving `_meta.disableBuiltInTools`. |
 | **#2** `tool_choice` defaulted to `auto` → model chose prose | **CONFIRMED as a real SDK gap** | `rg 'tool_choice\|toolChoice' sdk.d.ts` = **0 hits**. The SDK does not expose `tool_choice` in its public typed surface. tf-549's conclusion re-confirmed against this exact pin. |
 | **#3** tool schema/name mismatch | **NOT INVESTIGATED here** — needs the instrumentation lane's wire capture |
 | **#4** claude-agent-acp's system-prompt steering toward prose/explore | **STRUCTURALLY LOCKED** | `acp-agent.js:1371-1387`: default = `{type:"preset", preset:"claude_code"}`. Custom `_meta.systemPrompt` allows forwarding `append`/`excludeDynamicSections` only; `type:"preset"` and `preset:"claude_code"` are force-set on the merged object. No override path through ACP `_meta`. |
 | **#5** tool-result round-trip break / streaming parse race | **PARTIALLY EVIDENCED — different mechanism than handoff framing** | The 2026-05-19 live run (see below) captured `observedToolInputs:['…wait_for:{}']` — the planner *did* call `wait_for`, but the assertion harness raced streaming JSON tool_use blocks and observed empty args. That is a **measurement gap in tiny-firegrid's harness**, not "model didn't invoke tools." |
+| **#6** permission gate (Layer 4 GAP — not in original five) | **RESOLVED** via PR #446 forked auto-approve handler | `claude-agent-acp@0.36.1` gates MCP tool use through `canUseTool` and `session/request_permission` (`acp-agent.js:1008-1118`, installed into SDK options at `acp-agent.js:1393`). Firegrid's codec forwards this as `PermissionRequest` (`packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts:480-493`). Dark-factory needed a driver-side policy loop using `session.wait.forPermissionRequest` + `session.permissions.respond`; PR #446 adds that loop before agent start. |
 
-**Net (ACP-mediated path): cause #4 is off-the-table by source; #2 is real-and-fixed-at-SDK-API-level (no public knob); #3 requires wire capture; #5 reconciles partly to a harness streaming-parse race rather than a model behavior. Cause #1 is "ruled out for the path we use today" — the native `.mcp.json` / stdio MCP path is a different mechanism through it and is being tested by spike tf-s8y.**
+**2026-05-20 arc-closure update:** cause #1 is resolved by the `.mcp.json`
+registration path, and the new cause #6 permission gate was the actual
+Layer-4 blocker once real tool calls started. Cause #2 remains a real SDK API
+gap, but it is no longer the §6 blocker. Cause #3 and #5 are still useful
+observability concerns, not reasons to call §6 dead.
 
 ## What the codec actually sends (source: `packages/runtime/src/agent-event-pipeline/codecs/acp/index.ts:148-194`)
 
