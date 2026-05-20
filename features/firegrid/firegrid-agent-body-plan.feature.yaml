@@ -39,8 +39,17 @@ components:
       3: Human channel schemas are substrate-neutral message envelopes that do not expose provider or MCP transport details.
       4: Human channel bindings are supplied at host composition time as incoming streams plus outgoing append targets.
 
+  WAIT_FOR_CHANNEL:
+    requirements:
+      1: The wait_for agent-tool input schema accepts channel, optional match, and optional timeoutMs fields.
+      2: The wait_for agent-tool input schema does not expose source, source._tag, or stream fields.
+      3: wait_for resolves its channel field through the host ChannelRegistry and only accepts afferent channel registrations.
+      4: wait_for accepts an omitted match as a channel discovery request and accepts timeoutMs:0 as an immediate discovery bound.
+      5: wait_for returns matched channel rows as matched:true event payloads and timeout results as matched:false timedOut:true.
+
 constraints:
   SLICE_BOUNDARY:
     requirements:
       1: Phase 2 Slice A is additive and does not change the wait_for tool input schema or tool-use lowering.
       2: Phase 2 Slice C.3 wraps DurableTable rows without redesigning DurableTable rows or subscribe primitives.
+      3: Phase 2 Lane 2 changes the wait_for channel-addressed tool surface but does not publish channel inventory metadata through MCP tools/list.

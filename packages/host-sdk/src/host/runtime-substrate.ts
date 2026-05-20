@@ -17,6 +17,7 @@ import { RuntimeToolUseExecutor } from "@firegrid/runtime/tool-executor"
 import {
   toolUseToEffect,
 } from "../agent-tools/execution/tool-use-to-effect.ts"
+import type { ChannelRegistry } from "./channel-registry.ts"
 import {
   toolErrorResult,
   toolExecutionFailed,
@@ -81,6 +82,7 @@ export type RuntimeContextWorkflowExecutionEnv =
 type RuntimeToolUseExecutorExecutionEnv =
   | HostRuntimeObservationSubstrateEnv
   | AgentToolHost
+  | ChannelRegistry
 
 // firegrid-host-sdk.TOOL_EXECUTOR_SEAM.2
 // Temporary runtime-host live layer. The future host-sdk layer can provide the

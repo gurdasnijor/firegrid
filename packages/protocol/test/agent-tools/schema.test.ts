@@ -4,14 +4,13 @@
  * These schemas are the source of truth for Firegrid agent-tool shapes.
  */
 
-import { Effect, Option, Schema } from "effect"
+import { Effect, JSONSchema, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   ApprovalCallOutputSchema,
   ApprovalCallRequestSchema,
   CallToolInputSchema,
   CallToolOutputSchema,
-  RuntimeWaitQuerySchema,
   ExecuteToolInputSchema,
   ExecuteToolOutputSchema,
   FiregridAgentToolOperations,
@@ -37,6 +36,7 @@ import {
   SpawnTaskSchema,
   SpawnToolInputSchema,
   SpawnToolOutputSchema,
+  WaitForToolMatchSchema,
   WaitForToolInputSchema,
   WaitForToolOutputSchema,
   WorkflowTerminalStateSchema,
@@ -85,32 +85,54 @@ describe("agent-tool schemas — sleep", () => {
 })
 
 describe("agent-tool schemas — wait_for", () => {
-  it("accepts a typed wait source with whereFields", async () => {
+  it("firegrid-agent-body-plan.WAIT_FOR_CHANNEL.1 accepts channel, optional match, and optional timeoutMs", async () => {
     const decoded = await decodes(WaitForToolInputSchema, {
-      waitQuery: {
-        source: { _tag: "AgentOutput" },
-        whereFields: { _tag: "PermissionRequest" },
-      },
+      channel: "factory.events",
+      match: { eventType: "factory.run.approved" },
       timeoutMs: 30_000,
     })
-    expect(decoded.waitQuery.source._tag).toBe("AgentOutput")
+    expect(decoded.channel).toBe("factory.events")
+    expect(decoded.match).toEqual({ eventType: "factory.run.approved" })
     expect(decoded.timeoutMs).toBe(30_000)
   })
 
-  it("accepts a query without optional timeout", async () => {
+  it("firegrid-agent-body-plan.WAIT_FOR_CHANNEL.4 accepts discovery shape without match and with timeoutMs:0", async () => {
     const decoded = await decodes(WaitForToolInputSchema, {
-      waitQuery: { source: { _tag: "RuntimeRun" }, whereFields: {} },
+      channel: "factory.events",
+      timeoutMs: 0,
     })
-    expect(decoded.waitQuery.source._tag).toBe("RuntimeRun")
-    expect(decoded.timeoutMs).toBeUndefined()
+    expect(decoded.channel).toBe("factory.events")
+    expect(decoded.match).toBeUndefined()
+    expect(decoded.timeoutMs).toBe(0)
   })
 
-  it("rejects an unknown wait source variant", async () => {
-    const error = await rejects(RuntimeWaitQuerySchema, {
-      source: { _tag: "RuntimeContext" },
-      whereFields: {},
+  it("firegrid-agent-body-plan.WAIT_FOR_CHANNEL.2 rejects the old source-shaped wait_for input", async () => {
+    const error = await rejects(WaitForToolInputSchema, {
+      waitQuery: {
+        source: { _tag: "CallerFact", stream: "darkFactory.facts" },
+        whereFields: {},
+      },
     })
     expect(error).toBeDefined()
+  })
+
+  it("firegrid-agent-body-plan.WAIT_FOR_CHANNEL.1 firegrid-agent-body-plan.WAIT_FOR_CHANNEL.2 projects channel-only JSON schema for tools/list", () => {
+    const jsonSchema = JSONSchema.make(WaitForToolInputSchema)
+    const text = JSON.stringify(jsonSchema)
+    expect(text).toContain("\"channel\"")
+    expect(text).toContain("\"match\"")
+    expect(text).toContain("\"timeoutMs\"")
+    expect(text).not.toContain("\"source\"")
+    expect(text).not.toContain("\"stream\"")
+  })
+
+  it("accepts arbitrary match values at the protocol boundary", async () => {
+    const decoded = await decodes(WaitForToolMatchSchema, {
+      nested: { value: "tool lowering validates scalar-only predicates" },
+    })
+    expect(decoded).toEqual({
+      nested: { value: "tool lowering validates scalar-only predicates" },
+    })
   })
 
   it("output accepts matched:true with event payload", async () => {
@@ -145,7 +167,7 @@ describe("schema projection metadata", () => {
 
   it("firegrid-schema-projection-contract.SCHEMA_CATALOG.2 keeps descriptions and examples on the operation entry", () => {
     expect(FiregridAgentToolOperations.waitFor.description).toContain(
-      "Wait until a matching durable event appears",
+      "host-declared channel",
     )
     expect(FiregridAgentToolOperations.waitFor.examples).toHaveLength(1)
   })

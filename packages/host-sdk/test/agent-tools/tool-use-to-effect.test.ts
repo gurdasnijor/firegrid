@@ -26,17 +26,15 @@ import { DurableStreamTestServer } from "@durable-streams/server"
 import { Prompt } from "@effect/ai"
 import { Workflow } from "@effect/workflow"
 import { DurableTable } from "effect-durable-operators"
-import { Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { Effect, Fiber, Layer, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { AgentOutputEvent, ToolResultEvent } from "@firegrid/runtime/events"
 import { AgentToolCallPartSchema, ToolResultEventSchema } from "@firegrid/runtime/events"
 import {
-  RuntimeAgentOutputEvents,
-} from "@firegrid/runtime"
-import { RuntimeRuns } from "@firegrid/runtime"
-import {
-  DurableToolsWaitForLive,
-} from "@firegrid/runtime/durable-tools"
+  ChannelRegistry,
+  makeAfferentChannel,
+  makeChannelRegistry,
+} from "../../src/host/index.ts"
 import { DurableStreamsWorkflowEngine } from "@firegrid/runtime/workflow-engine"
 import {
   AgentToolHost,
@@ -65,7 +63,6 @@ afterEach(async () => {
 
 interface Streams {
   readonly workflowUrl: string
-  readonly waitForUrl: string
   readonly sourceUrl: string
 }
 
@@ -74,7 +71,6 @@ const makeStreams = (label: string): Streams => {
   const id = crypto.randomUUID()
   return {
     workflowUrl: `${baseUrl}/v1/stream/tools-${label}-workflow-${id}`,
-    waitForUrl: `${baseUrl}/v1/stream/tools-${label}-waitfor-${id}`,
     sourceUrl: `${baseUrl}/v1/stream/tools-${label}-source-${id}`,
   }
 }
@@ -176,22 +172,20 @@ class TestSourceTable extends DurableTable("agent-tools.test.source", {
   rows: TestSourceRowSchema,
 }) {}
 
-// Typed wait-source harness: RuntimeRun is backed by TestSourceTable;
-// AgentOutput is an empty stream. wait_for lowers to the typed source.
-// firegrid-typed-wait-source-redesign.MIGRATION.2
-const RUNTIME_RUN_SOURCE = { _tag: "RuntimeRun" } as const
-const TestSourceWaitStreamsLive = Layer.mergeAll(
-  Layer.effect(
-    RuntimeRuns,
-    Effect.map(
-      TestSourceTable,
-      table => table.rows.rows() as unknown as RuntimeRuns["Type"],
-    ),
-  ),
-  Layer.succeed(
-    RuntimeAgentOutputEvents,
-    Stream.empty as unknown as RuntimeAgentOutputEvents["Type"],
-  ),
+const TEST_EVENTS_CHANNEL = "test.events"
+
+const TestChannelRegistryLive = Layer.effect(
+  ChannelRegistry,
+  Effect.gen(function* () {
+    const table = yield* TestSourceTable
+    return makeChannelRegistry([
+      makeAfferentChannel({
+        target: TEST_EVENTS_CHANNEL,
+        schema: TestSourceRowSchema,
+        stream: table.rows.rows(),
+      }),
+    ])
+  }),
 )
 
 // ---------------------------------------------------------------------------
@@ -210,10 +204,7 @@ const buildLayer = (
 ) =>
   RunToolWorkflowLayer.pipe(
     Layer.provideMerge(hostLayer),
-    Layer.provideMerge(
-      DurableToolsWaitForLive({ streamUrl: streams.waitForUrl }),
-    ),
-    Layer.provideMerge(TestSourceWaitStreamsLive),
+    Layer.provideMerge(TestChannelRegistryLive),
     Layer.provideMerge(DurableStreamsWorkflowEngine.layer({
       streamUrl: streams.workflowUrl,
     })),
@@ -236,10 +227,6 @@ const runWith = <A, E, ROut>(
       never
     >,
   )
-
-// Typed sources are resolved from the stream tag provided by the test layer;
-// no registration step. Kept as a no-op so call sites stay readable.
-const registerTestSource = Effect.void
 
 // ---------------------------------------------------------------------------
 // Descriptor-lookup tests (no workflow engine needed)
@@ -308,14 +295,11 @@ describe("toolUseToEffect — wait_for arm", () => {
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
       Effect.gen(function* () {
-        yield* registerTestSource
         return yield* RunToolWorkflow.execute({
           contextId: "ctx-wait",
           event: toolUse("tool-wait", "wait_for", {
-              waitQuery: {
-                source: RUNTIME_RUN_SOURCE,
-                whereFields: { requestId: "no-such-request" },
-              },
+              channel: TEST_EVENTS_CHANNEL,
+              match: { requestId: "no-such-request" },
               timeoutMs: 50,
             }),
         })
@@ -325,7 +309,7 @@ describe("toolUseToEffect — wait_for arm", () => {
     expect(resultContent(result)).toEqual({ matched: false, timedOut: true })
   })
 
-  it("rejects non-scalar whereFields predicates with ToolInvalidInput instead of matching every row", async () => {
+  it("rejects non-scalar match predicates with ToolInvalidInput instead of matching every row", async () => {
     const streams = makeStreams("waitfor-nonscalar")
     let waitForCalled = false
     const result = await runWith(
@@ -334,20 +318,16 @@ describe("toolUseToEffect — wait_for arm", () => {
         AgentToolHost.layer(fakeHost()),
       ),
       Effect.gen(function* () {
-        // Register the source so wait_for would resolve if it ran.
         // If the lowering accepted the non-scalar predicate, the empty
         // FieldEqualsTrigger would match the very first row we upsert
         // here; the test would race a match against the timeout.
-        yield* registerTestSource
         const fiber = yield* Effect.fork(
           RunToolWorkflow.execute({
             contextId: "ctx-wait-nonscalar",
             event: toolUse("tool-wait-nonscalar", "wait_for", {
-                waitQuery: {
-                  source: RUNTIME_RUN_SOURCE,
-                  whereFields: {
-                    requestId: { value: "not-a-scalar" },
-                  },
+                channel: TEST_EVENTS_CHANNEL,
+                match: {
+                  requestId: { value: "not-a-scalar" },
                 },
                 timeoutMs: 200,
               }),
@@ -373,44 +353,44 @@ describe("toolUseToEffect — wait_for arm", () => {
     })
   })
 
-  it("rejects an empty whereFields predicate set with ToolInvalidInput", async () => {
-    const streams = makeStreams("waitfor-empty")
+  it("firegrid-agent-body-plan.WAIT_FOR_CHANNEL.4 returns the first available row for channel discovery with timeoutMs:0", async () => {
+    const streams = makeStreams("waitfor-discovery")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
       Effect.gen(function* () {
-        yield* registerTestSource
+        const source = yield* TestSourceTable
+        yield* source.rows.upsert({
+          id: "row-discovery",
+          requestId: "rq-discovery",
+          status: "seeded",
+        } satisfies TestSourceRow)
         return yield* RunToolWorkflow.execute({
-          contextId: "ctx-wait-empty",
-          event: toolUse("tool-wait-empty", "wait_for", {
-              waitQuery: {
-                source: RUNTIME_RUN_SOURCE,
-                whereFields: {},
-              },
-              timeoutMs: 100,
+          contextId: "ctx-wait-discovery",
+          event: toolUse("tool-wait-discovery", "wait_for", {
+              channel: TEST_EVENTS_CHANNEL,
+              timeoutMs: 0,
             }),
         })
       }),
     )
-    expect(resultIsError(result)).toBe(true)
+    expect(resultIsError(result)).toBe(false)
     expect(resultContent(result)).toMatchObject({
-      error: { _tag: "ToolInvalidInput", name: "wait_for" },
+      matched: true,
+      event: { id: "row-discovery", requestId: "rq-discovery" },
     })
   })
 
-  it("returns the matched variant when a row appears that matches the EventQuery", async () => {
+  it("firegrid-agent-body-plan.WAIT_FOR_CHANNEL.3 firegrid-agent-body-plan.WAIT_FOR_CHANNEL.5 returns the matched variant when a channel row appears", async () => {
     const streams = makeStreams("waitfor-match")
     const result = await runWith(
       buildLayer(streams, AgentToolHost.layer(fakeHost())),
       Effect.gen(function* () {
-        yield* registerTestSource
         const fiber = yield* Effect.fork(
           RunToolWorkflow.execute({
             contextId: "ctx-wait-match",
             event: toolUse("tool-wait-match", "wait_for", {
-                waitQuery: {
-                  source: RUNTIME_RUN_SOURCE,
-                  whereFields: { requestId: "rq-1" },
-                },
+                channel: TEST_EVENTS_CHANNEL,
+                match: { requestId: "rq-1" },
               }),
           }),
         )
@@ -428,6 +408,26 @@ describe("toolUseToEffect — wait_for arm", () => {
     expect(resultContent(result)).toMatchObject({
       matched: true,
       event: { id: "row-1", requestId: "rq-1" },
+    })
+  })
+
+  it("firegrid-agent-body-plan.WAIT_FOR_CHANNEL.3 rejects unknown channels with ToolInvalidInput", async () => {
+    const streams = makeStreams("waitfor-unknown-channel")
+    const result = await runWith(
+      buildLayer(streams, AgentToolHost.layer(fakeHost())),
+      Effect.gen(function* () {
+        return yield* RunToolWorkflow.execute({
+          contextId: "ctx-wait-unknown-channel",
+          event: toolUse("tool-wait-unknown-channel", "wait_for", {
+              channel: "missing.channel",
+              timeoutMs: 0,
+            }),
+        })
+      }),
+    )
+    expect(resultIsError(result)).toBe(true)
+    expect(resultContent(result)).toMatchObject({
+      error: { _tag: "ToolInvalidInput", name: "wait_for" },
     })
   })
 })
