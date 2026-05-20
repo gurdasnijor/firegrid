@@ -23,6 +23,13 @@ export type {
   RuntimeAgentOutputObservation,
 } from "@firegrid/runtime/runtime-output"
 export { RuntimeIngressError } from "@firegrid/runtime/errors"
+// CallerOwnedFactStreams is a host-side capability: the host provides
+// the implementation, the runtime's wait_router consumes it to resolve
+// CallerFact waits. Hosts (including tests / sims that compose a host
+// layer) need this tag to bind their durable streams to the wait surface
+// — re-exported from the host-sdk public surface so consumers don't have
+// to reach into @firegrid/runtime/durable-tools.
+export { CallerOwnedFactStreams } from "@firegrid/runtime/durable-tools"
 export {
   localProcessSpawnEnvFromHostEnv,
   type LocalProcessSandboxProviderOptions,

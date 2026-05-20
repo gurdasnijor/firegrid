@@ -166,6 +166,42 @@ const commandSpanAttributes = (
   "firegrid.command.stdin_configured": command.stdin !== undefined,
 })
 
+// tf-ofq: Subprocess wire capture as OTel span attributes.
+//
+// Each chunk crossing the codec ↔ subprocess byte boundary already gets its
+// own per-chunk producer span via `Stream.withSpan`. We annotate that span
+// with the chunk's decoded raw text + byte count, so the wire content rides
+// on the existing trace structure — no separate JSONL file, no out-of-band
+// channel, no cross-correlation work.
+//
+// Why span attributes, not span events:
+//   - Already-existing one-span-per-chunk shape gives natural carriers.
+//   - jq queries can filter wire spans directly: `select(.name | endswith("_bytes"))`
+//     groups all wire activity; events would require a span-level scan.
+//   - Frame sizes are typically <1KB (ACP NDJSON); well under OTel's default
+//     ~64KB attribute-value cap. Truncation is a paper concern.
+//
+// Why not a long-lived "subprocess.lifetime" parent span carrying events:
+//   - Would reintroduce exactly the orphan-parent shape tf-gc7 catalogs
+//     (open span not yet flushed → consumers reference a phantom parent).
+//   - The producer-span lifetime discipline says: keep producer spans
+//     short-lived. Per-chunk spans already are.
+const ATTR_WIRE_RAW = "firegrid.wire.raw"
+const ATTR_WIRE_BYTES = "firegrid.wire.bytes"
+const ATTR_WIRE_DIRECTION = "firegrid.wire.direction"
+
+const wireDecoder = new TextDecoder("utf-8", { fatal: false })
+
+const annotateWireChunk = (
+  direction: "in" | "out" | "stderr",
+  chunk: Uint8Array,
+): Effect.Effect<void> =>
+  Effect.annotateCurrentSpan({
+    [ATTR_WIRE_DIRECTION]: direction,
+    [ATTR_WIRE_BYTES]: chunk.byteLength,
+    [ATTR_WIRE_RAW]: wireDecoder.decode(chunk, { stream: true }),
+  })
+
 // firegrid agent-io: convert an @effect/platform Process's Effect-shaped
 // stdio into the WHATWG web streams that codecs consume. stdout/stderr
 // are Effect Streams; we run them through Stream.toReadableStream.
@@ -185,7 +221,19 @@ const makeAgentByteStreamFromProcess = (
     )
     const stdin: WritableStream<Uint8Array> = new WritableStream<Uint8Array>({
       async write(chunk) {
-        await runPromise(Queue.offer(stdinQueue, chunk))
+        // tf-ofq: each stdin write becomes its own short-lived producer
+        // span so wire content is carried in trace, not as an
+        // out-of-band file. Mirrors the existing stdout/stderr shape.
+        await runPromise(
+          Effect.gen(function* () {
+            yield* annotateWireChunk("in", chunk)
+            yield* Queue.offer(stdinQueue, chunk)
+          }).pipe(
+            Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.stdin_bytes", {
+              kind: "producer",
+            }),
+          ),
+        )
       },
       async close() {
         await runPromise(Queue.shutdown(stdinQueue))
@@ -194,18 +242,31 @@ const makeAgentByteStreamFromProcess = (
         await runPromise(Queue.shutdown(stdinQueue))
       },
     })
+    // tf-ofq + tf-gc7 fix in-place: `Stream.withSpan` wraps the WHOLE
+    // stream's evaluation in ONE long-lived span. That span stays open
+    // for the entire subprocess lifetime, never flushes during the run,
+    // and (per the tf-gc7 analysis) leaves consumer spans referencing
+    // unexported parents. Replace with per-chunk `Effect.withSpan` inside
+    // a `Stream.tap` so each chunk gets a short-lived producer span that
+    // carries the wire content directly and flushes promptly.
     const stdout: ReadableStream<Uint8Array> = Stream.toReadableStreamRuntime(runtime)(
       process.stdout.pipe(
-        Stream.withSpan("firegrid.agent_event_pipeline.source.local_process.stdout_bytes", {
-          kind: "producer",
-        }),
+        Stream.tap(chunk =>
+          annotateWireChunk("out", chunk).pipe(
+            Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.stdout_bytes", {
+              kind: "producer",
+            }),
+          )),
       ),
     ) as ReadableStream<Uint8Array>
     const stderr: ReadableStream<Uint8Array> = Stream.toReadableStreamRuntime(runtime)(
       process.stderr.pipe(
-        Stream.withSpan("firegrid.agent_event_pipeline.source.local_process.stderr_bytes", {
-          kind: "producer",
-        }),
+        Stream.tap(chunk =>
+          annotateWireChunk("stderr", chunk).pipe(
+            Effect.withSpan("firegrid.agent_event_pipeline.source.local_process.stderr_bytes", {
+              kind: "producer",
+            }),
+          )),
       ),
     ) as ReadableStream<Uint8Array>
     const exit = process.exitCode.pipe(

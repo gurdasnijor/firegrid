@@ -193,6 +193,45 @@ const claudeAgentAcpAlwaysLoadMeta = (
   }
 }
 
+// 8-byte / 16-hex-char SHA-256 prefix via WHATWG WebCrypto. Mirrors the
+// idiom in @effect/workflow/internal/crypto.ts — uses crypto.subtle
+// (globally available in Node 19+) rather than node:crypto so this stays
+// platform-portable. 16 hex chars is enough collision-resistance for a
+// diagnostic "is this the same payload across two runs" question; it's not
+// a security primitive.
+const sha256Prefix = (text: string): Effect.Effect<string> =>
+  Effect.promise(async () => {
+    const buffer = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(text),
+    )
+    return Array.from(new Uint8Array(buffer).slice(0, 8))
+      .map(byte => byte.toString(16).padStart(2, "0"))
+      .join("")
+  })
+
+// firegrid.codec.tool_choice: best Firegrid-side approximation of the
+// SDK-level tool_choice — captures the codec's stance on tool constraint
+// (disableBuiltInTools strips the agent's built-in toolset, always-load
+// aliases force MCP tools out from behind ToolSearch). The literal
+// `tool_choice` value the underlying LLM SDK sets is not visible at the
+// ACP boundary — it lives inside the agent process. The wire capture
+// (tf-ofq) is the complementary observation channel.
+const codecToolChoice = (
+  declarations: ReadonlyArray<AcpMcpServerDeclaration>,
+): string => {
+  const meta = claudeAgentAcpAlwaysLoadMeta(declarations)
+  if (meta === undefined) return "default"
+  const parts: Array<string> = []
+  if ((meta as { disableBuiltInTools?: boolean }).disableBuiltInTools === true) {
+    parts.push("disable_built_in")
+  }
+  if (declarations.length > 0) {
+    parts.push(`always_load:${declarations.length}`)
+  }
+  return parts.length === 0 ? "default" : parts.join(",")
+}
+
 const codecSdkCallAttributes = (
   request: acp.NewSessionRequest,
   declarations: ReadonlyArray<AcpMcpServerDeclaration>,
@@ -204,6 +243,7 @@ const codecSdkCallAttributes = (
     "firegrid.codec.resolved_tools": mcpServerNames,
     "firegrid.codec.agent": codec,
     "firegrid.codec.agent_protocol": "acp",
+    "firegrid.codec.tool_choice": codecToolChoice(declarations),
     "firegrid.acp.mcp_server_count": mcpServerNames.length,
     "firegrid.acp.mcp_server_names": mcpServerNames,
     "firegrid.acp.claude_code_always_load_aliases": declarations
@@ -512,6 +552,12 @@ export const AcpSessionLive = (
           return meta === undefined ? {} : { _meta: meta }
         })(),
       }
+      // Hash the exact JSON the codec is about to put on the wire. Pair
+      // this against the subprocess wire capture (tf-ofq) to verify the
+      // SDK received what the codec sent — any mid-stream transform would
+      // change the digest. 16 hex chars is a diagnostic collision-resistance
+      // budget, not a security one.
+      const requestPayloadHash = yield* sha256Prefix(JSON.stringify(newSessionRequest))
       const session = yield* acpPromise("newSession", "failed to create ACP session", () =>
         connection.newSession(newSessionRequest)).pipe(
           Effect.tap(session =>
@@ -522,7 +568,10 @@ export const AcpSessionLive = (
             })),
           Effect.withSpan("firegrid.codec.sdk.call", {
             kind: "client",
-            attributes: codecSdkCallAttributes(newSessionRequest, mcpServerDeclarations),
+            attributes: {
+              ...codecSdkCallAttributes(newSessionRequest, mcpServerDeclarations),
+              "firegrid.codec.request_payload_hash": requestPayloadHash,
+            },
           }),
         )
       const sessionId = session.sessionId
@@ -532,6 +581,13 @@ export const AcpSessionLive = (
       ): Effect.Effect<void, AgentCodecError> =>
         Effect.gen(function*() {
           const prompt = yield* mapPromptContent(event)
+          // Hash the prompt content as Firegrid serialized it on the wire.
+          // Note: this is the USER-message-to-agent. The agent-side system
+          // prompt is set inside the agent process (claude-agent-sdk) and
+          // is NOT visible at this boundary — verifying it requires the
+          // subprocess wire capture (tf-ofq), which can also hash the
+          // outbound system-message frame as the SDK sees it.
+          const promptTextHash = yield* sha256Prefix(JSON.stringify(prompt))
           yield* acpPromise("prompt", "ACP prompt failed", () =>
             connection.prompt({
               sessionId,
@@ -543,6 +599,8 @@ export const AcpSessionLive = (
                 attributes: {
                   "firegrid.acp.session_id": sessionId,
                   "firegrid.input.correlation_id": event.correlationId,
+                  "firegrid.codec.prompt_text_hash": promptTextHash,
+                  "firegrid.codec.prompt_part_count": prompt.length,
                 },
               }),
               Effect.matchEffect({
