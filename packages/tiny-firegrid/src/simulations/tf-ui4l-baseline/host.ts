@@ -17,12 +17,12 @@ import {
 } from "effect-durable-operators"
 import type { TinyFiregridHostEnv } from "../../types.ts"
 
-export const FACT_SOURCE = "tf-ui4l.caller-facts"
-export const FACT_EVENT_TYPE_MATCH = "tf-ui4l.match"
-export const FACT_EVENT_TYPE_NOISE = "tf-ui4l.noise"
-export const FACT_CORRELATION_ID = "tf-ui4l-baseline"
+const FACT_SOURCE = "tf-ui4l.caller-facts"
+const FACT_EVENT_TYPE_MATCH = "tf-ui4l.match"
+const FACT_EVENT_TYPE_NOISE = "tf-ui4l.noise"
+const FACT_CORRELATION_ID = "tf-ui4l-baseline"
 
-export const FactRowSchema = Schema.Struct({
+const FactRowSchema = Schema.Struct({
   factId: Schema.String.pipe(DurableTable.primaryKey),
   source: Schema.String,
   eventType: Schema.String,
@@ -31,11 +31,11 @@ export const FactRowSchema = Schema.Struct({
   acceptedAt: Schema.String,
 })
 
-export class TfUi4lFactTable extends DurableTable("tfUi4lBaseline", {
+class TfUi4lFactTable extends DurableTable("tfUi4lBaseline", {
   facts: FactRowSchema,
 }) {}
 
-export const factTableLayerOptions = (
+const factTableLayerOptions = (
   baseUrl: string,
   namespace: string,
 ): DurableTableLayerOptions => ({
@@ -107,17 +107,11 @@ const FirstMatchActivity = Activity.make({
         Stream.filter(row => row.eventType === FACT_EVENT_TYPE_MATCH),
       ),
     )
-    return yield* Option.match(head, {
-      onNone: () =>
-        Effect.die(
-          "tf-ui4l-baseline: stream completed with no matching row",
-        ),
-      onSome: row =>
-        Effect.succeed({
-          factId: row.factId,
-          matchedValue: row.payload,
-        }),
-    })
+    // Seed guarantees a matching row; failure to find one means the
+    // sim's host wiring is broken. Unwrap via getOrThrow — Effect bridges
+    // the NoSuchElementException to a defect at the activity boundary.
+    const row = Option.getOrThrow(head)
+    return { factId: row.factId, matchedValue: row.payload }
   }).pipe(
     Effect.orDie,
     Effect.withSpan("firegrid.tf_ui4l.baseline.first_match.execute", {

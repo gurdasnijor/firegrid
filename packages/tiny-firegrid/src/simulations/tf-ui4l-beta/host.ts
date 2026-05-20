@@ -17,12 +17,12 @@ import {
 } from "effect-durable-operators"
 import type { TinyFiregridHostEnv } from "../../types.ts"
 
-export const FACT_SOURCE = "tf-ui4l.beta.caller-facts"
-export const FACT_EVENT_TYPE_MATCH = "tf-ui4l.match"
-export const FACT_EVENT_TYPE_NOISE = "tf-ui4l.noise"
-export const FACT_CORRELATION_ID = "tf-ui4l-beta"
+const FACT_SOURCE = "tf-ui4l.beta.caller-facts"
+const FACT_EVENT_TYPE_MATCH = "tf-ui4l.match"
+const FACT_EVENT_TYPE_NOISE = "tf-ui4l.noise"
+const FACT_CORRELATION_ID = "tf-ui4l-beta"
 
-export const FactRowSchema = Schema.Struct({
+const FactRowSchema = Schema.Struct({
   factId: Schema.String.pipe(DurableTable.primaryKey),
   source: Schema.String,
   eventType: Schema.String,
@@ -41,12 +41,12 @@ const BetaAckRowSchema = Schema.Struct({
   updatedAt: Schema.String,
 })
 
-export class TfUi4lBetaTables extends DurableTable("tfUi4lBeta", {
+class TfUi4lBetaTables extends DurableTable("tfUi4lBeta", {
   facts: FactRowSchema,
   betaAck: BetaAckRowSchema,
 }) {}
 
-export const factTableLayerOptions = (
+const factTableLayerOptions = (
   baseUrl: string,
   namespace: string,
 ): DurableTableLayerOptions => ({
@@ -167,11 +167,8 @@ const SubscribeActivityBeta = Activity.make({
       ),
     )
 
-    return yield* Option.match(matched, {
-      onNone: () =>
-        Effect.die("tf-ui4l-beta: stream completed without handler.some()"),
-      onSome: m => Effect.succeed(m),
-    })
+    // See tf-ui4l-baseline host's note on getOrThrow.
+    return Option.getOrThrow(matched)
   }).pipe(
     Effect.orDie,
     Effect.withSpan("firegrid.tf_ui4l.beta.subscribe.execute", {

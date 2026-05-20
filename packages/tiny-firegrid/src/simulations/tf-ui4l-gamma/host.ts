@@ -17,12 +17,12 @@ import {
 } from "effect-durable-operators"
 import type { TinyFiregridHostEnv } from "../../types.ts"
 
-export const FACT_SOURCE = "tf-ui4l.gamma.caller-facts"
-export const FACT_EVENT_TYPE_MATCH = "tf-ui4l.match"
-export const FACT_EVENT_TYPE_NOISE = "tf-ui4l.noise"
-export const FACT_CORRELATION_ID = "tf-ui4l-gamma"
+const FACT_SOURCE = "tf-ui4l.gamma.caller-facts"
+const FACT_EVENT_TYPE_MATCH = "tf-ui4l.match"
+const FACT_EVENT_TYPE_NOISE = "tf-ui4l.noise"
+const FACT_CORRELATION_ID = "tf-ui4l-gamma"
 
-export const FactRowSchema = Schema.Struct({
+const FactRowSchema = Schema.Struct({
   factId: Schema.String.pipe(DurableTable.primaryKey),
   source: Schema.String,
   eventType: Schema.String,
@@ -48,12 +48,12 @@ const GammaStateRowSchema = Schema.Struct({
   updatedAt: Schema.String,
 })
 
-export class TfUi4lGammaTables extends DurableTable("tfUi4lGamma", {
+class TfUi4lGammaTables extends DurableTable("tfUi4lGamma", {
   facts: FactRowSchema,
   gammaState: GammaStateRowSchema,
 }) {}
 
-export const factTableLayerOptions = (
+const factTableLayerOptions = (
   baseUrl: string,
   namespace: string,
 ): DurableTableLayerOptions => ({
@@ -125,15 +125,13 @@ const FindActivityGamma = Activity.make({
 
     // Resume seed: read durable state, fall back to empty.
     const stateRow = yield* tables.gammaState.get("tf-ui4l.gamma.find")
+    const initialState: typeof FindStateSchema.Type = {
+      found: false,
+      matchedFactId: null,
+      matchedValue: null,
+    }
     const seed = Option.match(stateRow, {
-      onNone: () => ({
-        seedState: {
-          found: false,
-          matchedFactId: null,
-          matchedValue: null,
-        } as typeof FindStateSchema.Type,
-        seedOffset: 0,
-      }),
+      onNone: () => ({ seedState: initialState, seedOffset: 0 }),
       onSome: row => ({
         seedState: row.state,
         seedOffset: row.consumedOffset,
@@ -181,16 +179,14 @@ const FindActivityGamma = Activity.make({
       ),
     )
 
-    return yield* Option.match(finalOpt, {
-      onNone: () =>
-        Effect.die("tf-ui4l-gamma: stream completed before fold produced state"),
-      onSome: final =>
-        final.found
-          ? Effect.succeed(final)
-          : Effect.die(
-              "tf-ui4l-gamma: fold reached end-of-stream without state.found=true",
-            ),
-    })
+    // See tf-ui4l-baseline host's note on getOrThrow.
+    const final = Option.getOrThrow(finalOpt)
+    if (!final.found) {
+      throw new Error(
+        "tf-ui4l-gamma: fold reached end-of-stream without state.found=true",
+      )
+    }
+    return final
   }).pipe(
     Effect.orDie,
     Effect.withSpan("firegrid.tf_ui4l.gamma.find.execute", {

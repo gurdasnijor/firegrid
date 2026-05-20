@@ -17,12 +17,12 @@ import {
 } from "effect-durable-operators"
 import type { TinyFiregridHostEnv } from "../../types.ts"
 
-export const FACT_SOURCE = "tf-ui4l.alpha.caller-facts"
-export const FACT_EVENT_TYPE_MATCH = "tf-ui4l.match"
-export const FACT_EVENT_TYPE_NOISE = "tf-ui4l.noise"
-export const FACT_CORRELATION_ID = "tf-ui4l-alpha"
+const FACT_SOURCE = "tf-ui4l.alpha.caller-facts"
+const FACT_EVENT_TYPE_MATCH = "tf-ui4l.match"
+const FACT_EVENT_TYPE_NOISE = "tf-ui4l.noise"
+const FACT_CORRELATION_ID = "tf-ui4l-alpha"
 
-export const FactRowSchema = Schema.Struct({
+const FactRowSchema = Schema.Struct({
   factId: Schema.String.pipe(DurableTable.primaryKey),
   source: Schema.String,
   eventType: Schema.String,
@@ -41,12 +41,12 @@ const AlphaCursorRowSchema = Schema.Struct({
   updatedAt: Schema.String,
 })
 
-export class TfUi4lAlphaTables extends DurableTable("tfUi4lAlpha", {
+class TfUi4lAlphaTables extends DurableTable("tfUi4lAlpha", {
   facts: FactRowSchema,
   alphaCursor: AlphaCursorRowSchema,
 }) {}
 
-export const factTableLayerOptions = (
+const factTableLayerOptions = (
   baseUrl: string,
   namespace: string,
 ): DurableTableLayerOptions => ({
@@ -148,12 +148,9 @@ const FirstMatchActivityAlpha = Activity.make({
         Stream.filter(row => row.eventType === FACT_EVENT_TYPE_MATCH),
       ),
     )
-    return yield* Option.match(head, {
-      onNone: () =>
-        Effect.die("tf-ui4l-alpha: stream completed with no matching row"),
-      onSome: row =>
-        Effect.succeed({ factId: row.factId, matchedValue: row.payload }),
-    })
+    // See tf-ui4l-baseline host's note on getOrThrow.
+    const row = Option.getOrThrow(head)
+    return { factId: row.factId, matchedValue: row.payload }
   }).pipe(
     Effect.orDie,
     Effect.withSpan("firegrid.tf_ui4l.alpha.first_match.execute", {
